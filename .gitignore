@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# Testing
+coverage/
+playwright-report/
+test-results/
+
+# BMAD personal overrides (per installer docs)
+_bmad/custom/config.user.toml
+
+# Misc
+*.log
+.DS_Store
