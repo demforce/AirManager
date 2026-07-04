@@ -1,0 +1,42 @@
+{
+  "name": "airmanager",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.8.0",
+    "@prisma/client": "7.8.0",
+    "geist": "^1.7.2",
+    "next": "16.2.10",
+    "next-intl": "4.13.1",
+    "pg": "8.22.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@tailwindcss/postcss": "4.3.2",
+    "@types/node": "^20",
+    "@types/pg": "8.20.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv": "^17.2.3",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.10",
+    "prisma": "7.8.0",
+    "tailwindcss": "4.3.2",
+    "tsx": "^4.20.6",
+    "typescript": "6.0.3",
+    "vitest": "4.1.9"
+  }
+}

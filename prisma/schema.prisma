@@ -1,0 +1,20 @@
+// AirManager — Prisma schema
+// See https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Generic key/value application setting. First minimal model for story 1.1
+/// scaffolding; domain models arrive in later stories per the architecture spine.
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}

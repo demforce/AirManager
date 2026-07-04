@@ -1,0 +1,22 @@
+@import 'tailwindcss';
+
+:root {
+  --background: #fbfbfa;
+  --foreground: #2f3437;
+  /* Self-hosted Geist (geist npm package) — no build-time font fetch. */
+  --font-sans: var(--font-geist-sans);
+  /* System serif stack for display headings (no external font download). */
+  --font-serif: 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
