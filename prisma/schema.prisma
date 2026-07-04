@@ -18,3 +18,43 @@ model AppSetting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+/// System roles. Full permission mapping (AD-5) lands in story 1.3 — here the
+/// enum only exists so `User.roles` can be populated at login time.
+enum Role {
+  ADMIN
+  STAFF
+  INSTRUCTOR
+  PILOT
+  STUDENT
+}
+
+/// Minimal person registry (AD-11: a single `Person` record per human being).
+/// Story 2.1 extends this with the full anagrafica; here it only carries the
+/// fields needed to attach a display name to an authenticated user.
+model Person {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User?
+}
+
+/// Login credentials. 1-to-0/1 with `Person` (AD-11) — not every `Person` has
+/// a login (e.g. a pilot who never receives an account), and not every `User`
+/// needs a `Person` yet (kept optional to avoid coupling auth to the full
+/// anagrafica before story 2.1 exists).
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+  roles        Role[]
+  personId     String?  @unique
+  person       Person?  @relation(fields: [personId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

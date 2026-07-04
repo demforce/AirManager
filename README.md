@@ -31,11 +31,14 @@ Vedi `CLAUDE.md` per le convenzioni di progetto e `_bmad-output/planning-artifac
    - PostgreSQL: `localhost:5432` (vedi `docker-compose.yml` per le credenziali)
    - Mailpit (SMTP fittizio + web UI): `http://localhost:8025`
 
-4. **Database — migrazioni Prisma**
+4. **Database — migrazioni Prisma + seed**
 
    ```bash
    npx prisma migrate dev
+   npx prisma db seed
    ```
+
+   Il seed crea l'utente admin demo: email `admin@airmanager.local`, password quella impostata in `SEED_ADMIN_PASSWORD` (`.env.example` la imposta a `ChangeMe123!` per lo sviluppo — non riusarla in produzione).
 
 5. **Avvio app**
 

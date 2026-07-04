@@ -10,5 +10,21 @@
     "statusLabel": "Stato del progetto",
     "statusValue": "Fondamenta in costruzione",
     "switchTo": "English"
+  },
+  "LoginPage": {
+    "kicker": "Accesso",
+    "title": "Accedi ad AirManager",
+    "description": "Inserisci email e password per accedere alla tua area riservata.",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "submit": "Accedi",
+    "submitting": "Accesso in corso…",
+    "errorGeneric": "Email o password non corretti."
+  },
+  "DashboardPage": {
+    "kicker": "Area riservata",
+    "welcome": "Bentornato, {name}",
+    "subtitle": "Le aree operative (piloti, velivoli, voli, prenotazioni...) arriveranno nelle prossime iterazioni.",
+    "logout": "Esci"
   }
 }

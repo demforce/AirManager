@@ -1,1 +1,1 @@
-Auth.js configuration and RBAC (`authorize(actor, permission, resource?)`) — added in stories 1.2/1.3; placeholder folder for now.
+Auth.js v5 configuration (`auth.ts`/`auth.config.ts`/`auth-edge.ts`), password hashing (`password.ts`) and the session helper (`session.ts`) — added in story 1.2. RBAC (`rbac.ts`, `authorize(actor, permission, resource?)`) lands in story 1.3.
