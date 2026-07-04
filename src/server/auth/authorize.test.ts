@@ -26,6 +26,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
       email: 'pilot@airmanager.local',
       passwordHash,
       isActive: true,
+      locale: 'it',
       roles: ['PILOT'],
       personId: 'person_1',
       createdAt: new Date(),
@@ -63,6 +64,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
       email: 'inactive@airmanager.local',
       passwordHash,
       isActive: false,
+      locale: 'it',
       roles: ['PILOT'],
       personId: null,
       createdAt: new Date(),
@@ -77,6 +79,27 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null for an invited user who has not set a password yet (nullable passwordHash, story 1.4)', async () => {
+    findUniqueMock.mockResolvedValue({
+      id: 'user_4',
+      email: 'invited@airmanager.local',
+      passwordHash: null,
+      isActive: true,
+      locale: 'it',
+      roles: ['PILOT'],
+      personId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const result = await authorizeCredentials({
+      email: 'invited@airmanager.local',
+      password: 'whatever-they-guess',
+    });
+
+    expect(result).toBeNull();
+  });
+
   it('returns null for a wrong password', async () => {
     const passwordHash = await hashPassword('CorrectHorseBatteryStaple1!');
     findUniqueMock.mockResolvedValue({
@@ -84,6 +107,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
       email: 'pilot@airmanager.local',
       passwordHash,
       isActive: true,
+      locale: 'it',
       roles: ['PILOT'],
       personId: null,
       createdAt: new Date(),

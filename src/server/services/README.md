@@ -1,3 +1,5 @@
 Domain services (one file per domain, e.g. `flights.service.ts`) — the only layer allowed to import the Prisma client; routes and pages call these, never Prisma directly.
 
 `errors.ts` (story 1.3) defines the `DomainError` hierarchy (`ForbiddenError`, `NotFoundError`, `ValidationError`, `ConflictError`) every service throws instead of a bare `Error`, each with a stable SCREAMING_SNAKE `code`. `me.service.ts` is the first real service (`getMe(actor)`, requires `self.read` via `src/server/auth/rbac.ts`); its route (`src/app/api/v1/me/route.ts`) does a minimal local `DomainError` → AD-8 HTTP mapping — the shared envelope helper every future route reuses arrives in story 1.5.
+
+Story 1.4 adds `users.service.ts` (list/create/update/resendInvite behind `authorize(actor, 'users.manage')`; invited users are created with `passwordHash: null`; no physical delete) and `auth-tokens.service.ts` (single-use sha256-hashed `AuthToken`s: invite 7 days, password reset 2 hours; `setPasswordWithToken` consumes them; `requestPasswordReset` is deliberately silent and does equivalent work whether or not the email matches an active account — no user enumeration by response or timing).

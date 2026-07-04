@@ -10,6 +10,7 @@ export type NavItemKey =
   | 'school'
   | 'expiries'
   | 'ppr'
+  | 'users'
   | 'settings';
 
 export type NavItem = {
@@ -39,6 +40,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { key: 'school', href: '/school', permissions: ['school.manage.own'] },
   { key: 'expiries', href: '/expiries', permissions: ['expiries.manage'] },
   { key: 'ppr', href: '/ppr-queue', permissions: ['bookings.manage.any'] },
+  // Story 1.4: the first real (non-placeholder) dashboard sub-page.
+  { key: 'users', href: '/dashboard/users', permissions: ['users.manage'] },
   { key: 'settings', href: '/settings', permissions: ['settings.manage'] },
 ];
 

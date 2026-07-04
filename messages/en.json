@@ -19,7 +19,8 @@
     "passwordLabel": "Password",
     "submit": "Sign in",
     "submitting": "Signing in…",
-    "errorGeneric": "Incorrect email or password."
+    "errorGeneric": "Incorrect email or password.",
+    "forgotPassword": "Forgot your password?"
   },
   "DashboardPage": {
     "kicker": "Dashboard",
@@ -36,7 +37,103 @@
       "school": "Flight school",
       "expiries": "Expiries",
       "ppr": "PPR requests",
+      "users": "Users",
       "settings": "Settings"
+    }
+  },
+  "UsersPage": {
+    "kicker": "Administration",
+    "title": "Users",
+    "description": "Create users, assign roles and manage access to the system.",
+    "backToDashboard": "Back to dashboard",
+    "newUser": "New user",
+    "table": {
+      "email": "Email",
+      "roles": "Roles",
+      "status": "Status",
+      "person": "Person",
+      "locale": "Language",
+      "actions": "Actions",
+      "noPerson": "None",
+      "empty": "No users found."
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "pending": "Invite pending"
+    },
+    "roles": {
+      "ADMIN": "Admin",
+      "STAFF": "Staff",
+      "INSTRUCTOR": "Instructor",
+      "PILOT": "Pilot",
+      "STUDENT": "Student"
+    },
+    "locales": {
+      "it": "Italian",
+      "en": "English"
+    },
+    "actions": {
+      "edit": "Edit",
+      "deactivate": "Deactivate",
+      "activate": "Reactivate",
+      "resendInvite": "Resend invite"
+    },
+    "form": {
+      "createTitle": "New user",
+      "editTitle": "Edit user",
+      "email": "Email",
+      "roles": "Roles",
+      "locale": "Language",
+      "person": "Linked person (optional)",
+      "personNone": "None",
+      "isActive": "Active",
+      "submitCreate": "Create and send invite",
+      "submitEdit": "Save changes",
+      "cancel": "Cancel",
+      "rolesRequired": "Select at least one role.",
+      "genericError": "Something went wrong. Please try again.",
+      "emailConflict": "A user with this email already exists."
+    },
+    "feedback": {
+      "created": "User created: invite email sent.",
+      "updated": "User updated.",
+      "inviteResent": "Invite resent."
+    }
+  },
+  "SetPasswordPage": {
+    "kicker": "Set password",
+    "title": "Set your password",
+    "description": "Choose a password of at least 10 characters to sign in to AirManager.",
+    "passwordLabel": "New password",
+    "confirmPasswordLabel": "Confirm password",
+    "submit": "Set password",
+    "submitting": "Setting password…",
+    "success": "Password set. You can now sign in.",
+    "goToLogin": "Go to sign in",
+    "errorMismatch": "Passwords do not match.",
+    "errorTooShort": "Password must be at least 10 characters long.",
+    "errorGeneric": "This link is invalid or has expired. Request a new one.",
+    "missingToken": "Invalid link: missing token."
+  },
+  "ForgotPasswordPage": {
+    "kicker": "Forgot password",
+    "title": "Recover your password",
+    "description": "Enter your email: if the account exists, we'll send you a link to reset your password.",
+    "emailLabel": "Email",
+    "submit": "Send reset link",
+    "submitting": "Sending…",
+    "confirmation": "If that email address matches an active account, you'll receive an email shortly with instructions to reset your password.",
+    "backToLogin": "Back to sign in"
+  },
+  "Emails": {
+    "invite": {
+      "subject": "You've been invited to AirManager",
+      "body": "Hello,\n\nYou've been invited to access AirManager. Set your password within {expiresInDays, plural, one {# day} other {# days}} by visiting the link below:\n\n{url}\n\nIf you weren't expecting this invite, you can ignore this email."
+    },
+    "passwordReset": {
+      "subject": "Reset your AirManager password",
+      "body": "Hello,\n\nYou requested to reset your AirManager account password. The link below is valid for {expiresInHours, plural, one {# hour} other {# hours}}:\n\n{url}\n\nIf you didn't request this, ignore this email: your current password remains unchanged."
     }
   }
 }

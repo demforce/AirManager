@@ -12,6 +12,12 @@ const envSchema = z.object({
   AUTH_SECRET: z.string().min(1, { error: 'AUTH_SECRET is required' }),
   // Password for the demo admin user created by `prisma/seed.ts` (dev/test only).
   SEED_ADMIN_PASSWORD: z.string().min(1, { error: 'SEED_ADMIN_PASSWORD is required' }),
+  // Base URL used to build absolute links in emails (invite/reset). Story 1.4.
+  APP_URL: z.url({ error: 'APP_URL must be a valid URL' }).default('http://localhost:3000'),
+  // SMTP transport for the MailSender adapter (story 1.4) — Mailpit in dev/test.
+  SMTP_HOST: z.string().min(1).default('localhost'),
+  SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  MAIL_FROM: z.string().min(1).default('AirManager <no-reply@airmanager.local>'),
 });
 
 export type Env = z.infer<typeof envSchema>;

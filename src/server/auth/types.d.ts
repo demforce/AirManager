@@ -26,6 +26,8 @@ declare module 'next-auth/jwt' {
     userId: string;
     roles: Role[];
     personId: string | null;
+    /** Epoch ms of the last `User.isActive` DB recheck (story 1.4, AC 2). */
+    lastActiveCheck: number;
   }
 }
 
@@ -41,5 +43,6 @@ declare module '@auth/core/jwt' {
     userId: string;
     roles: Role[];
     personId: string | null;
+    lastActiveCheck: number;
   }
 }

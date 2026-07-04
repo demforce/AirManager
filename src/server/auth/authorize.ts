@@ -26,9 +26,10 @@ export async function authorizeCredentials(rawCredentials: unknown): Promise<Nex
   const { email, password } = parsed.data;
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !user.isActive) {
-    // Same outcome for "no such user" and "inactive user" as for a wrong
-    // password below — never reveal which case it was (AC 2).
+  if (!user || !user.isActive || !user.passwordHash) {
+    // Same outcome for "no such user", "inactive user", and "invited user
+    // who hasn't set a password yet" (story 1.4: `passwordHash` is nullable)
+    // as for a wrong password below — never reveal which case it was (AC 2).
     await verifyPassword(await getTimingDummyHash(), password);
     return null;
   }

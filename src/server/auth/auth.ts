@@ -2,6 +2,7 @@ import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { authConfig } from './auth.config';
 import { authorizeCredentials } from './authorize';
+import { applyActiveRecheck } from './jwt-active-check';
 
 /**
  * Full Auth.js v5 instance (Node runtime — route handlers, server
@@ -28,4 +29,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       authorize: authorizeCredentials,
     }),
   ],
+  callbacks: {
+    ...authConfig.callbacks,
+    // Overrides the edge-safe `jwt` above: same sign-in field assignment,
+    // plus the `isActive` DB recheck (AC 2) — Node runtime only, since this
+    // instance (unlike `auth-edge.ts`) has Prisma available.
+    async jwt(params) {
+      const token = authConfig.callbacks.jwt(params);
+      if (params.user) {
+        // Fresh sign-in: authorizeCredentials() already required an active
+        // user with a password — nothing to recheck yet.
+        return token;
+      }
+      return applyActiveRecheck(token);
+    },
+  },
 });

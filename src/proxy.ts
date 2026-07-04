@@ -8,15 +8,17 @@ const intlMiddleware = createIntlMiddleware(routing);
 // Web paths (locale prefix already stripped) that never require a session.
 // Anything not listed here is protected by default (AC 3) — add future
 // public pages (e.g. the story 8.1 public PPR form) explicitly.
-const PUBLIC_WEB_PATHS = new Set(['', '/login']);
+const PUBLIC_WEB_PATHS = new Set(['', '/login', '/set-password', '/forgot-password']);
 
 // Auth.js's own endpoints (sign-in, callback, csrf, session, sign-out) must
 // stay reachable without a session — they are how a session gets created.
 const AUTH_API_PREFIX = '/api/auth';
 
 // `/api/v1/*` endpoints that stay public. AD-8's 401 envelope applies to
-// every other `/api/v1/*` route.
-const PUBLIC_API_PATHS = new Set(['/api/v1/health']);
+// every other `/api/v1/*` route. The two auth-token endpoints (story 1.4)
+// are necessarily public: they are what an invited/locked-out user calls
+// *before* they have a session.
+const PUBLIC_API_PATHS = new Set(['/api/v1/health', '/api/v1/auth/set-password', '/api/v1/auth/forgot-password']);
 
 function unauthenticatedApiResponse(): NextResponse {
   return NextResponse.json(

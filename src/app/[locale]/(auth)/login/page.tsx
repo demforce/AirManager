@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { redirect } from '@/i18n/navigation';
+import { Link, redirect } from '@/i18n/navigation';
+import type { AppLocale } from '@/i18n/routing';
 import { getSessionActor } from '@/server/auth/session';
 import { LoginForm } from './login-form';
 
@@ -50,6 +51,15 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
               errorGeneric: t('errorGeneric'),
             }}
           />
+          <p className="mt-6 text-center text-sm">
+            <Link
+              href="/forgot-password"
+              locale={locale as AppLocale}
+              className="font-medium text-[#787774] underline decoration-[#EAEAEA] underline-offset-4 transition-colors hover:text-[#2F3437] hover:decoration-[#2F3437]"
+            >
+              {t('forgotPassword')}
+            </Link>
+          </p>
         </div>
       </div>
     </main>

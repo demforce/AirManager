@@ -1,1 +1,3 @@
 External-system adapters (mail, PDF, Excel export) — stable interfaces implemented against dev fakes (e.g. Mailpit) and swapped for production providers at go-live.
+
+`mail/` (story 1.4): `MailSender` interface (`send({to, subject, text, html?})`), `SmtpMailSender` (nodemailer -> `SMTP_HOST`/`SMTP_PORT`, Mailpit in dev/test) and the `getMailSender()` factory every service uses — swapping in a production provider (architecture spine, Deferred) is a one-line change in the factory. `mail/templates.ts` builds the invite/password-reset emails from the `Emails.*` entries in `messages/{it,en}.json` in the *recipient's* stored locale (AD-7), never from hardcoded strings.

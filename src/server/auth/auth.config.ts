@@ -28,6 +28,11 @@ export const authConfig = {
         token.userId = user.id ?? token.sub ?? '';
         token.roles = user.roles;
         token.personId = user.personId;
+        // Story 1.4, AC 2: stamps when `isActive` was last verified against
+        // the DB. The Node instance (`auth.ts`) recheck-and-possibly-expires
+        // logic reads this; this edge-safe callback only ever *sets* it at
+        // sign-in (no DB access happens here, or in `auth-edge.ts`).
+        token.lastActiveCheck = Date.now();
       }
       return token;
     },
