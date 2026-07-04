@@ -72,11 +72,12 @@ async function dummyEquivalentDbWork(): Promise<void> {
 }
 
 /**
- * Silent by design (AC 3): does the *same* work — one Prisma lookup — for an
- * unknown or inactive email as for a real one, and never awaits the SMTP
- * send from the caller's perspective (`void ...catch`), so response timing
- * cannot distinguish "account exists" from "account doesn't exist". Never
- * throws.
+ * Silent by design (AC 3): the response status/body is identical for known
+ * and unknown emails, and the SMTP send is fire-and-forget. Residual limit,
+ * accepted and documented: the real-account branch still performs the token
+ * write transaction on the response path, so a low-noise timing oracle is
+ * not fully closed — `dummyEquivalentDbWork` only equalizes the lookup, not
+ * the writes. Never throws.
  */
 export async function requestPasswordReset(email: string): Promise<void> {
   const user = await prisma.user.findUnique({ where: { email } });
@@ -119,8 +120,18 @@ export async function setPasswordWithToken(rawToken: string, newPassword: string
 
   const passwordHash = await hashPassword(newPassword);
 
-  await prisma.$transaction([
-    prisma.authToken.update({ where: { id: authToken.id }, data: { usedAt: new Date() } }),
-    prisma.user.update({ where: { id: authToken.userId }, data: { passwordHash } }),
-  ]);
+  await prisma.$transaction(async (tx) => {
+    // Atomic single-use claim: the conditional `usedAt: null` filter makes
+    // the database decide exactly one winner between concurrent requests
+    // replaying the same token — a plain check-then-update would let both
+    // through (TOCTOU).
+    const claimed = await tx.authToken.updateMany({
+      where: { id: authToken.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    if (claimed.count === 0) {
+      throw new ValidationError('Invalid or expired token.');
+    }
+    await tx.user.update({ where: { id: authToken.userId }, data: { passwordHash } });
+  });
 }

@@ -4,7 +4,18 @@ baseline_commit: 828e16f82b2f73f1a93d32e25645f2913fd57f7d
 
 # Story 1.4: Gestione utenti con invito e reset password
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, security-focused, 2026-07-04)
+- **Verdict**: APPROVE WITH FIXES — applied by the orchestrator:
+  1. **MEDIUM — TOCTOU on single-use token**: `setPasswordWithToken` now claims the token atomically inside the transaction (`updateMany where usedAt: null` + count check) — the DB decides exactly one winner between concurrent replays.
+  2. **MEDIUM — last-admin lockout**: `updateUser` now refuses (409) to deactivate or de-admin the last active ADMIN.
+  3. **LOW — timing comment overclaim**: `requestPasswordReset` doc now states the accepted residual limit (write transaction on the real-account response path; SMTP already fire-and-forget; body/status neutral).
+  4. **LOW — concurrent person link**: P2002 unique violations in create/update now map to `ConflictError` (409) instead of a 500.
+- Verified clean by the reviewer: token entropy/hashing, INVITE/RESET no type confusion, invite reissue invalidation, JWT isActive recheck semantics (null → session cleared, confirmed against @auth/core source), edge instance DB-free, enumeration closed on status/body, no regressions of 1.2/1.3 security fixes, i18n symmetry.
+- **Post-fix gates**: lint ✔, typecheck ✔, test 99/99 ✔, build ✔, e2e 21/21 ✔.
 
 ## Story
 

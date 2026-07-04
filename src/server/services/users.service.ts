@@ -96,6 +96,16 @@ export async function getUser(actor: Actor, id: string): Promise<UserListItem> {
   return toListItem(user);
 }
 
+/** Prisma unique-constraint violation (e.g. concurrent link to the same person). */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === 'P2002'
+  );
+}
+
 /** Throws if `personId` doesn't exist, or is already linked to a *different* user. */
 async function assertPersonAvailable(personId: string, excludeUserId?: string): Promise<void> {
   const person = await prisma.person.findUnique({
@@ -128,17 +138,27 @@ export async function createUser(actor: Actor, input: CreateUserInput): Promise<
     await assertPersonAvailable(input.personId);
   }
 
-  const user = await prisma.user.create({
-    data: {
-      email: input.email,
-      roles: input.roles,
-      locale: input.locale,
-      personId: input.personId ?? null,
-      passwordHash: null,
-      isActive: true,
-    },
-    select: USER_SELECT,
-  });
+  let user;
+  try {
+    user = await prisma.user.create({
+      data: {
+        email: input.email,
+        roles: input.roles,
+        locale: input.locale,
+        personId: input.personId ?? null,
+        passwordHash: null,
+        isActive: true,
+      },
+      select: USER_SELECT,
+    });
+  } catch (error) {
+    // assertPersonAvailable/email check are check-then-write: a concurrent
+    // request can win the race and the unique constraint fires here instead.
+    if (isUniqueViolation(error)) {
+      throw new ConflictError('Email or person already linked to another user.');
+    }
+    throw error;
+  }
 
   try {
     await sendInviteEmail(user.id, user.email, emailLocale(user.locale));
@@ -162,16 +182,40 @@ export async function updateUser(actor: Actor, id: string, patch: UpdateUserInpu
     await assertPersonAvailable(patch.personId, id);
   }
 
-  const user = await prisma.user.update({
-    where: { id },
-    data: {
-      ...(patch.roles !== undefined && { roles: patch.roles }),
-      ...(patch.locale !== undefined && { locale: patch.locale }),
-      ...(patch.personId !== undefined && { personId: patch.personId }),
-      ...(patch.isActive !== undefined && { isActive: patch.isActive }),
-    },
-    select: USER_SELECT,
-  });
+  // Last-admin protection: user management must never lock itself out.
+  // Deactivating (or de-admining) the last active ADMIN would leave nobody
+  // able to manage users (FR-3), with no recovery path via UI/API.
+  const losesAdmin =
+    existing.isActive &&
+    existing.roles.includes('ADMIN') &&
+    (patch.isActive === false || (patch.roles !== undefined && !patch.roles.includes('ADMIN')));
+  if (losesAdmin) {
+    const otherActiveAdmins = await prisma.user.count({
+      where: { id: { not: id }, isActive: true, roles: { has: 'ADMIN' } },
+    });
+    if (otherActiveAdmins === 0) {
+      throw new ConflictError('Cannot deactivate or demote the last active admin.');
+    }
+  }
+
+  let user;
+  try {
+    user = await prisma.user.update({
+      where: { id },
+      data: {
+        ...(patch.roles !== undefined && { roles: patch.roles }),
+        ...(patch.locale !== undefined && { locale: patch.locale }),
+        ...(patch.personId !== undefined && { personId: patch.personId }),
+        ...(patch.isActive !== undefined && { isActive: patch.isActive }),
+      },
+      select: USER_SELECT,
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ConflictError('Email or person already linked to another user.');
+    }
+    throw error;
+  }
 
   return toListItem(user);
 }
