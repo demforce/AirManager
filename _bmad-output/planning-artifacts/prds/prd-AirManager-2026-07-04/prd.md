@@ -40,7 +40,7 @@ Il sistema nasce API-first: le stesse API REST che servono la web app alimentera
 ### 2.3 User Journeys chiave
 
 - **UJ-1. Marco prenota e vola.**
-  Marco, pilota socio con licenza PPL, apre AirManager sul telefono la sera prima. Autenticato, vede il calendario prenotazioni del velivolo I-ABCD, sceglie sabato 9:00–11:00 e conferma: il sistema verifica che non ci siano sovrapposizioni e che Marco non abbia scadenze bloccanti. Sabato Marco vola; al rientro lo staff (o Marco stesso `[ASSUMPTION: anche il pilota può registrare il proprio volo, lo staff lo può correggere]`) registra il volo: 1h20 di contaore. Il sistema calcola il costo con la tariffa in vigore, lo addebita sul conto prepagato di Marco e Marco vede subito il nuovo saldo. **Edge case:** se il saldo va sotto zero, il volo viene registrato comunque e il conto va in negativo con evidenza per staff e pilota.
+  Marco, pilota socio con licenza PPL, apre AirManager sul telefono la sera prima. Autenticato, vede il calendario prenotazioni del velivolo I-ABCD, sceglie sabato 9:00–11:00 e conferma: il sistema verifica che non ci siano sovrapposizioni e che Marco non abbia scadenze bloccanti. Sabato Marco vola; al rientro lo staff registra il volo: 1h20 di contaore. Il sistema calcola il costo con la tariffa in vigore, lo addebita sul conto prepagato di Marco e Marco vede subito il nuovo saldo. **Edge case:** se il saldo va sotto zero, il volo viene registrato comunque e il conto va in negativo con evidenza per staff e pilota.
 
 - **UJ-2. Silvia (staff) registra una ricarica.**
   Silvia riceve un bonifico di 500 € da Marco. Nel pannello finanze cerca il conto di Marco, registra una ricarica da 500 € con metodo "bonifico" e data valuta. Il saldo si aggiorna, il movimento compare nell'estratto conto di Marco, e Marco riceve conferma a video al prossimo accesso `[ASSUMPTION: nessuna email per le ricariche in v1]`.
@@ -170,7 +170,7 @@ Lo `staff` può vendere un Pacchetto a un Conto (genera Movimento "Acquisto pacc
 **Requisiti funzionali:**
 
 #### FR-14: Registrazione volo
-Lo `staff` (e il `pilota` per i propri voli `[ASSUMPTION]`) può registrare un Volo: Velivolo, Pilota o Allievo, eventuale Istruttore, data, contaore iniziale/finale o minuti, tipo volo, note, eventuale numero atterraggi.
+Solo lo `staff` (o `admin`) può registrare un Volo: Velivolo, Pilota o Allievo, eventuale Istruttore, data, contaore iniziale/finale o minuti, tipo volo, note, eventuale numero atterraggi. Piloti, allievi e istruttori consultano i voli in sola lettura. *(Deciso dall'utente il 2026-07-04.)*
 **Conseguenze (testabili):**
 - Tempo di volo derivato dal contaore (finale − iniziale) con possibilità di inserimento diretto dei minuti.
 - Contaore finale < iniziale → errore di validazione.
@@ -182,7 +182,7 @@ Alla registrazione, il sistema calcola: costo velivolo = tariffa oraria in vigor
 - Il dettaglio del Movimento mostra la scomposizione (minuti, tariffa usata, pacchetto scalato).
 
 #### FR-16: Correzione e annullamento volo
-Lo `staff` può correggere o annullare un Volo entro il mese contabile aperto `[ASSUMPTION: i mesi passati si chiudono e non sono modificabili senza rettifica manuale]`; il sistema storna e rigenera i Movimenti e ripristina i residui pacchetto.
+Lo `staff` può correggere o annullare un Volo di qualsiasi data (nessuna chiusura del mese contabile — *deciso dall'utente il 2026-07-04*); il sistema storna e rigenera i Movimenti e ripristina i residui pacchetto. Ogni correzione resta tracciata.
 **Conseguenze (testabili):**
 - L'annullamento produce movimenti di storno tracciati, non cancellazioni silenziose.
 
@@ -227,7 +227,7 @@ Lo `staff` vede le richieste `in attesa`, il dettaglio, e può approvare (assegn
 - Approvazione → email al richiedente con numero PPR, data/ora, istruzioni operative configurabili; rifiuto → email con motivo.
 
 #### FR-24: Registro PPR e chiusura
-Lo `staff` può marcare il PPR `completato` (atterraggio avvenuto, con eventuale incasso tassa di atterraggio registrato come Movimento di cassa `[ASSUMPTION: importo tassa configurabile]`) o `annullato`. Registro filtrabile ed esportabile.
+Lo `staff` può marcare il PPR `completato` (atterraggio avvenuto, con incasso della tassa di atterraggio registrato come Movimento di cassa: importo standard configurabile dall'admin, modificabile dallo staff alla chiusura — *deciso dall'utente il 2026-07-04*) o `annullato`. Registro filtrabile ed esportabile.
 
 ### 4.8 Finanze piloti (conti prepagati)
 
@@ -362,22 +362,18 @@ Strumento interno a bassa scala (decine di utenti): metriche leggere.
 
 ## 8. Domande aperte
 
-1. Il pilota può auto-registrare i propri voli o solo lo staff? (assunto: sì, con correzione staff — FR-14)
-2. La tassa di atterraggio PPR: importo fisso, per tonnellata, o libero? (assunto: configurabile — FR-24)
-3. Serve la chiusura formale del mese contabile con blocco modifiche? (assunto: sì — FR-16)
-4. I pacchetti ore hanno scadenza temporale? (assunto: opzionale — FR-12)
-5. Regole tariffarie aggiuntive (notturno/weekend/minimi) — l'utente ha detto che per ora bastano tariffa oraria pro-rata + pacchetti; confermare che non servano maggiorazioni.
-6. Email provider di produzione (SMTP dell'aviosuperficie? servizio tipo Resend/SES?) — decisione in architettura.
+*Risolte con l'utente il 2026-07-04:* solo lo staff registra i voli (FR-14); tassa PPR con importo standard configurabile (FR-24); nessuna chiusura del mese contabile (FR-16); pacchetti con scadenza opzionale, validi per set di velivoli, istruttore escluso (FR-12/13).
+
+Restano aperte:
+1. Regole tariffarie aggiuntive (notturno/weekend/minimi) — per ora bastano tariffa oraria pro-rata + pacchetti; riaprire solo se l'utente le chiede.
+2. Email provider di produzione (SMTP dell'aviosuperficie? servizio tipo Resend/SES?) — decisione rinviata al go-live (vedi architettura, Deferred).
 
 ## 9. Indice delle assunzioni
 
-- §2.3 UJ-1 / §4.5 FR-14 — Il pilota può registrare i propri voli; lo staff corregge.
+*(Confermate dall'utente il 2026-07-04 e quindi rimosse dall'indice: registrazione voli solo staff — FR-14; tassa PPR configurabile — FR-24; nessuna chiusura mese — FR-16; pacchetti con scadenza opzionale, per set di velivoli, istruttore escluso — FR-12/13.)*
+
 - §2.3 UJ-2 — Nessuna email di conferma ricarica in v1.
-- §2.3 UJ-4 / §4.4 FR-13 — Il pacchetto copre solo il velivolo; istruttore addebitato a parte.
-- §2.3 UJ-6 / §4.7 FR-24 — Il PPR può comportare una tassa di atterraggio, importo configurabile.
 - §4.1 — Accesso a invito, nessuna self-registration.
-- §4.4 FR-12 — Pacchetti con scadenza opzionale; validi per un insieme di velivoli.
-- §4.5 FR-16 — Mese contabile chiudibile, poi solo rettifiche.
 - §4.6 FR-18 — Gli allievi non prenotano da soli.
 - §4.6 FR-19 — Nomi dei prenotanti visibili a tutti gli utenti autenticati.
 - §4.6 FR-21 — Blocco prenotazione su medica/licenza scadute; warning su rating.

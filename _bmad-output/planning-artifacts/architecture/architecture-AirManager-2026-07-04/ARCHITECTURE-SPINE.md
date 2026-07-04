@@ -232,7 +232,6 @@ Ambienti: `development` (docker-compose: postgres + mailpit), `test` (DB Postgre
 
 - **Hosting di produzione** (VPS Docker vs Vercel + Postgres gestito): non blocca lo sviluppo; il seed produce Dockerfile + docker-compose. Rivisitare prima del go-live.
 - **Provider email di produzione** (Resend / SES / SMTP dell'aviosuperficie): dietro `MailSender` (AD — interfaccia stabile); dev usa Mailpit. Decidere al go-live.
-- **Chiusura mese contabile (FR-16)**: il meccanismo (flag periodo chiuso + blocco storni) si decide nell'epic Finanze, dopo conferma dell'assunzione col cliente.
 - **Rate limiting infrastrutturale**: per l'MVP basta il rate limit applicativo sul form PPR; una soluzione globale (reverse proxy) è del deployment.
 - **Strategia migrazioni in produzione** (prisma migrate deploy in CI): dettaglio della pipeline, si fissa quando esiste la pipeline.
 - **Schema dettagliato dei campi**: l'ERD fissa entità e relazioni; i campi vivono in `schema.prisma` (il codice è l'owner) nel rispetto di AD-2/AD-4/AD-11.
