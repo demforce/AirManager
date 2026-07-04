@@ -8,8 +8,10 @@ import { z } from 'zod';
  * domain endpoint (the registry lands in story 1.5).
  */
 export const loginSchema = z.object({
-  email: z.email(),
-  password: z.string().min(1),
+  // Trim + lowercase before validating: the DB stores lowercase emails and
+  // `findUnique` is case-sensitive.
+  email: z.string().trim().toLowerCase().pipe(z.email()),
+  password: z.string().min(1).max(256),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

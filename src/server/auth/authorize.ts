@@ -1,7 +1,16 @@
 import type { User as NextAuthUser } from 'next-auth';
 import { loginSchema } from '@/lib/schemas/login';
 import { prisma } from '@/server/db/prisma';
-import { verifyPassword } from './password';
+import { hashPassword, verifyPassword } from './password';
+
+// Verified against when the email doesn't match an active user, so the
+// unknown-email and wrong-password paths cost the same Argon2id work —
+// otherwise response timing reveals whether an account exists (AC 2).
+let timingDummyHash: string | undefined;
+async function getTimingDummyHash(): Promise<string> {
+  timingDummyHash ??= await hashPassword('timing-equalization-dummy');
+  return timingDummyHash;
+}
 
 /**
  * Credentials provider `authorize()` (AC 1, AC 2), extracted so it can be
@@ -20,6 +29,7 @@ export async function authorizeCredentials(rawCredentials: unknown): Promise<Nex
   if (!user || !user.isActive) {
     // Same outcome for "no such user" and "inactive user" as for a wrong
     // password below — never reveal which case it was (AC 2).
+    await verifyPassword(await getTimingDummyHash(), password);
     return null;
   }
 

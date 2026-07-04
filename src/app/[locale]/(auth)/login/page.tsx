@@ -35,7 +35,13 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
 
         <div className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-8">
           <LoginForm
-            callbackUrl={callbackUrl && callbackUrl.startsWith('/') ? callbackUrl : `/${locale}/dashboard`}
+            callbackUrl={
+              // Internal paths only: "//evil.com" and "/\evil.com" are
+              // protocol-relative external URLs, not local paths.
+              callbackUrl && /^\/(?![/\\])/.test(callbackUrl)
+                ? callbackUrl
+                : `/${locale}/dashboard`
+            }
             labels={{
               email: t('emailLabel'),
               password: t('passwordLabel'),

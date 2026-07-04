@@ -4,7 +4,19 @@ baseline_commit: 9c25deb5c91742370092d4f159389224046e7c09
 
 # Story 1.2: Login con email e password
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, security-focused, 2026-07-04)
+- **Verdict**: APPROVE WITH FIXES — all applied by the orchestrator:
+  1. **HIGH — open redirect**: `callbackUrl` accepted protocol-relative URLs (`//evil.com`, `/\evil.com`) → now rejected via `/^\/(?![/\\])/` in the login page.
+  2. **MEDIUM — user-enumeration timing**: unknown/inactive email returned without Argon2id work → `authorize()` now verifies against a cached dummy hash so both failure paths cost the same.
+  3. **LOW — email normalization**: login schema now trims + lowercases before `z.email()` validation.
+  4. **LOW — unbounded password**: `.max(256)` added to the login schema.
+  5. **LOW — proxy matcher dot gap**: added `'/api/:path*'` matcher so future API paths containing a dot (e.g. `report.xlsx`) can never bypass the 401 gate.
+- Approved as correct: edge/node Auth.js split, no sensitive data in JWT, adapter omission, dashboard path deviation, `@auth/core/jwt` type augmentation, seed handling, i18n symmetry.
+- **Post-fix gates**: lint ✔, typecheck ✔, test 44/44 ✔, build ✔, e2e 11/11 ✔.
 
 ## Story
 

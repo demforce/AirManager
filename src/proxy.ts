@@ -71,8 +71,10 @@ export default authEdge((req) => {
 });
 
 export const config = {
-  // Match every path except Next.js internals and files with an extension.
-  // Unlike story 1.1's version, `/api` is now included so `/api/v1/*` gets
-  // the 401 envelope below — Auth.js's own `/api/auth/*` is excluded above.
-  matcher: '/((?!_next|_vercel|.*\\..*).*)',
+  // First pattern: every path except Next.js internals and files with an
+  // extension. Second pattern: ALL of /api unconditionally — the dot
+  // exclusion must never exempt an API route from the 401 gate (a path like
+  // /api/v1/exports/report.xlsx contains a dot). Auth.js's own /api/auth/*
+  // is passed through above.
+  matcher: ['/((?!_next|_vercel|.*\\..*).*)', '/api/:path*'],
 };
