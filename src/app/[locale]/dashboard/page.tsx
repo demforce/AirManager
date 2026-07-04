@@ -1,8 +1,9 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { redirect } from '@/i18n/navigation';
+import { Link, redirect } from '@/i18n/navigation';
 import { signOut } from '@/server/auth/auth';
 import { getSessionActor } from '@/server/auth/session';
 import { prisma } from '@/server/db/prisma';
+import { visibleNavItems } from './nav-items';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -36,6 +37,7 @@ export default async function DashboardPage({ params }: PageProps) {
     : (user?.email ?? actor.email ?? '');
 
   const t = await getTranslations('DashboardPage');
+  const navItems = visibleNavItems(actor);
 
   async function logoutAction() {
     'use server';
@@ -63,6 +65,21 @@ export default async function DashboardPage({ params }: PageProps) {
           {t('welcome', { name: displayName })}
         </h1>
         <p className="mt-4 max-w-xl text-base leading-[1.6] text-[#787774]">{t('subtitle')}</p>
+
+        <nav className="mt-10" aria-label={t('navHeading')}>
+          <p className="text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">{t('navHeading')}</p>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {navItems.map((item) => (
+              <Link
+                key={item.key}
+                href={item.href}
+                className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              >
+                {t(`nav.${item.key}`)}
+              </Link>
+            ))}
+          </div>
+        </nav>
       </div>
     </main>
   );

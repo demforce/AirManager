@@ -10,15 +10,9 @@ const adapter = new PrismaPg(process.env['DATABASE_URL'] ?? '');
 const prisma = new PrismaClient({ adapter });
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
+const PILOT_EMAIL = 'pilot@airmanager.local';
 
-async function seedAdminUser(): Promise<void> {
-  const adminPassword = process.env['SEED_ADMIN_PASSWORD'];
-  if (!adminPassword) {
-    throw new Error('Seed: SEED_ADMIN_PASSWORD must be set (see .env.example).');
-  }
-
-  const passwordHash = await hashPassword(adminPassword);
-
+async function seedAdminUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
     where: { email: ADMIN_EMAIL },
     update: { passwordHash, isActive: true, roles: ['ADMIN'] },
@@ -40,8 +34,44 @@ async function seedAdminUser(): Promise<void> {
   console.log(`Seed: demo admin user ready (${ADMIN_EMAIL}).`);
 }
 
+/**
+ * Story 1.3: a PILOT test user, needed to exercise the RBAC permission
+ * matrix and the e2e "dashboard shows different nav for admin vs pilot"
+ * scenario. Same password as the admin (`SEED_ADMIN_PASSWORD`) for
+ * simplicity — this is dev/test-only seed data.
+ */
+async function seedPilotUser(passwordHash: string): Promise<void> {
+  await prisma.user.upsert({
+    where: { email: PILOT_EMAIL },
+    update: { passwordHash, isActive: true, roles: ['PILOT'] },
+    create: {
+      email: PILOT_EMAIL,
+      passwordHash,
+      isActive: true,
+      roles: ['PILOT'],
+      person: {
+        create: {
+          firstName: 'Piero',
+          lastName: 'Volante',
+          email: PILOT_EMAIL,
+        },
+      },
+    },
+  });
+
+  console.log(`Seed: demo pilot user ready (${PILOT_EMAIL}).`);
+}
+
 async function main() {
-  await seedAdminUser();
+  const seedPassword = process.env['SEED_ADMIN_PASSWORD'];
+  if (!seedPassword) {
+    throw new Error('Seed: SEED_ADMIN_PASSWORD must be set (see .env.example).');
+  }
+
+  const passwordHash = await hashPassword(seedPassword);
+
+  await seedAdminUser(passwordHash);
+  await seedPilotUser(passwordHash);
 }
 
 main()

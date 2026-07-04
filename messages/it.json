@@ -25,6 +25,18 @@
     "kicker": "Area riservata",
     "welcome": "Bentornato, {name}",
     "subtitle": "Le aree operative (piloti, velivoli, voli, prenotazioni...) arriveranno nelle prossime iterazioni.",
-    "logout": "Esci"
+    "logout": "Esci",
+    "navHeading": "Aree operative",
+    "nav": {
+      "people": "Persone",
+      "aircraft": "Velivoli",
+      "flights": "Voli",
+      "bookings": "Prenotazioni",
+      "finance": "Finanze",
+      "school": "Scuola volo",
+      "expiries": "Scadenze",
+      "ppr": "PPR",
+      "settings": "Impostazioni"
+    }
   }
 }

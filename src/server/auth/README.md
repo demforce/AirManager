@@ -1,1 +1,3 @@
-Auth.js v5 configuration (`auth.ts`/`auth.config.ts`/`auth-edge.ts`), password hashing (`password.ts`) and the session helper (`session.ts`) — added in story 1.2. RBAC (`rbac.ts`, `authorize(actor, permission, resource?)`) lands in story 1.3.
+Auth.js v5 configuration (`auth.ts`/`auth.config.ts`/`auth-edge.ts`), password hashing (`password.ts`) and the session helper (`session.ts`) — added in story 1.2.
+
+RBAC (story 1.3, AD-5): `rbac.ts` exports the flat `Permission` union, the `ROLE_PERMISSIONS` map, `hasPermission(actor, permission)` (pure, UI-only) and `authorize(actor, permission)` (throws `ForbiddenError`, the only real guard — see `src/server/services/errors.ts`). Every domain service receives an `Actor` (`{ userId, personId, roles }`, a subset of `getSessionActor()`'s `SessionActor`) and calls `authorize()` before acting; resource-level "own" filtering happens inside each service via `actor.personId`, never in this map.

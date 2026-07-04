@@ -1,1 +1,3 @@
 Domain services (one file per domain, e.g. `flights.service.ts`) — the only layer allowed to import the Prisma client; routes and pages call these, never Prisma directly.
+
+`errors.ts` (story 1.3) defines the `DomainError` hierarchy (`ForbiddenError`, `NotFoundError`, `ValidationError`, `ConflictError`) every service throws instead of a bare `Error`, each with a stable SCREAMING_SNAKE `code`. `me.service.ts` is the first real service (`getMe(actor)`, requires `self.read` via `src/server/auth/rbac.ts`); its route (`src/app/api/v1/me/route.ts`) does a minimal local `DomainError` → AD-8 HTTP mapping — the shared envelope helper every future route reuses arrives in story 1.5.
