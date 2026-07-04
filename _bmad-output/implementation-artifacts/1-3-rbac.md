@@ -4,7 +4,19 @@ baseline_commit: 39b5e85df9a9feedda2fcb25583f090290856589
 
 # Story 1.3: Ruoli e permessi applicati nel service layer
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-04)
+- **Verdict**: APPROVE WITH FIXES — applied by the orchestrator:
+  - **F1 (low, fixed)**: `hasPermission`/`getPermissions` now use `ROLE_PERMISSIONS[role] ?? []` — an unknown role carried by an old JWT grants nothing instead of throwing (fail closed).
+  - **F3 (low, fixed)**: dashboard page now reads through `getMe()` instead of direct Prisma (AD-1 compliance; duplication removed).
+  - **F2 (deferred to story 1.5)**: non-DomainError in `/api/v1/me` falls back to Next's default 500 without the AD-8 envelope — the shared API error helper in 1.5 closes this.
+  - **F5 (tracked for epic 9)**: STAFF has no school permission — introduce `school.manage.any` for staff when the flight-school epic lands (PRD §4.1 gives staff operational scope).
+  - **F4/F6 (accepted interim)**: PPR nav gated on `bookings.manage.any` until epic 8 adds `ppr.manage`; typed cast in me.service test accepted.
+- No privilege escalation paths; permission map verified against PRD §4.1; 1.2 security fixes untouched.
+- **Post-fix gates**: lint ✔, typecheck ✔, test 57/57 ✔, build ✔, e2e 14/14 ✔.
 
 ## Story
 

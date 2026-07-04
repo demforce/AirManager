@@ -2,7 +2,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import { signOut } from '@/server/auth/auth';
 import { getSessionActor } from '@/server/auth/session';
-import { prisma } from '@/server/db/prisma';
+import { getMe } from '@/server/services/me.service';
 import { visibleNavItems } from './nav-items';
 
 type PageProps = {
@@ -28,13 +28,11 @@ export default async function DashboardPage({ params }: PageProps) {
     return;
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: actor.userId },
-    select: { email: true, person: { select: { firstName: true, lastName: true } } },
-  });
-  const displayName = user?.person
-    ? `${user.person.firstName} ${user.person.lastName}`
-    : (user?.email ?? actor.email ?? '');
+  // AD-1: pages read through services, never Prisma directly.
+  const me = await getMe(actor);
+  const displayName = me.person
+    ? `${me.person.firstName} ${me.person.lastName}`
+    : me.email;
 
   const t = await getTranslations('DashboardPage');
   const navItems = visibleNavItems(actor);

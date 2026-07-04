@@ -88,7 +88,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 export function getPermissions(actor: Pick<Actor, 'roles'>): ReadonlySet<Permission> {
   const permissions = new Set<Permission>();
   for (const role of actor.roles) {
-    for (const permission of ROLE_PERMISSIONS[role]) {
+    // Fail closed: a role value carried by an old JWT but no longer in the
+    // map must grant nothing, not crash the guard.
+    for (const permission of ROLE_PERMISSIONS[role] ?? []) {
       permissions.add(permission);
     }
   }
@@ -101,7 +103,7 @@ export function getPermissions(actor: Pick<Actor, 'roles'>): ReadonlySet<Permiss
  * decide what to render, not to protect data.
  */
 export function hasPermission(actor: Pick<Actor, 'roles'>, permission: Permission): boolean {
-  return actor.roles.some((role) => ROLE_PERMISSIONS[role].includes(permission));
+  return actor.roles.some((role) => (ROLE_PERMISSIONS[role] ?? []).includes(permission));
 }
 
 /**

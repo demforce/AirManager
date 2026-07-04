@@ -34,7 +34,7 @@ development_status:
   epic-1: in-progress
   1-1-project-scaffold: done
   1-2-login: done
-  1-3-rbac: review
+  1-3-rbac: done
   1-4-user-management: backlog
   1-5-api-openapi: backlog
   epic-1-retrospective: optional
