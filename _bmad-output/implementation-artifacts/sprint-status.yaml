@@ -1,0 +1,102 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Story creation: Fable (main session) via bmad-create-story
+# - Dev: Sonnet subagent via bmad-dev-story
+# - Review: Opus subagent via bmad-code-review
+# - Mark epic as 'in-progress' when starting work on its first story
+
+generated: 2026-07-04 13:30
+last_updated: 2026-07-04 13:30
+project: AirManager
+project_key: AIRMGR
+tracking_system: file-system
+story_location: "_bmad-output/implementation-artifacts"
+
+development_status:
+  epic-1: in-progress
+  1-1-project-scaffold: ready-for-dev
+  1-2-login: backlog
+  1-3-rbac: backlog
+  1-4-user-management: backlog
+  1-5-api-openapi: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-people-crud: backlog
+  2-2-person-profiles: backlog
+  2-3-person-detail: backlog
+  2-4-aircraft-crud: backlog
+  2-5-aircraft-status-hours: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-accounts-topups: backlog
+  3-2-account-statement: backlog
+  3-3-adjustments-negative-alerts: backlog
+  3-4-cash-categories-movements: backlog
+  3-5-financial-report: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-aircraft-rates: backlog
+  4-2-instructor-rates: backlog
+  4-3-package-types: backlog
+  4-4-package-sale: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-flight-logging-charges: backlog
+  5-2-package-consumption: backlog
+  5-3-flight-reversal: backlog
+  5-4-flight-log-filters: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-expiry-types: backlog
+  6-2-expiry-registration: backlog
+  6-3-expiry-alerts: backlog
+  6-4-expiry-dashboard: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-booking-creation: backlog
+  7-2-booking-calendar: backlog
+  7-3-booking-edit-cancel: backlog
+  7-4-booking-expiry-block: backlog
+  epic-7-retrospective: optional
+
+  epic-8: backlog
+  8-1-ppr-public-form: backlog
+  8-2-ppr-approval-queue: backlog
+  8-3-ppr-closure-fee: backlog
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-student-instructor-assignment: backlog
+  9-2-training-notes: backlog
+  9-3-school-hour-summaries: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-excel-exports: backlog
+  10-2-pdf-exports: backlog
+  10-3-role-dashboards: backlog
+  epic-10-retrospective: optional
