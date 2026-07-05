@@ -4,7 +4,11 @@ import {
   aircraftListItemSchema,
   aircraftListResponseSchema,
   createAircraftSchema,
+  createHourMeterAdjustmentSchema,
+  hourMeterAdjustmentListResponseSchema,
   listAircraftQuerySchema,
+  listHourMeterAdjustmentsQuerySchema,
+  setOutOfServiceSchema,
   updateAircraftSchema,
 } from './aircraft';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
@@ -83,6 +87,9 @@ registry.register('Aircraft', aircraftListItemSchema);
 registry.register('AircraftList', aircraftListResponseSchema);
 registry.register('CreateAircraftRequest', createAircraftSchema);
 registry.register('UpdateAircraftRequest', updateAircraftSchema);
+registry.register('SetOutOfServiceRequest', setOutOfServiceSchema);
+registry.register('CreateHourMeterAdjustmentRequest', createHourMeterAdjustmentSchema);
+registry.register('HourMeterAdjustmentList', hourMeterAdjustmentListResponseSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -399,6 +406,64 @@ registry.registerPath({
   responses: {
     200: { description: 'The restored aircraft.', content: jsonContent(aircraftListItemSchema) },
     ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/out-of-service',
+  summary: 'Mark an aircraft out of service, with a mandatory reason',
+  description: 'Not archiving (story 2.5, AC 1) — the aircraft stays in the default fleet list, just flagged as ungrounded/not currently airworthy. Conflict if already out of service.',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams, body: { content: jsonContent(setOutOfServiceSchema), required: true } },
+  responses: {
+    200: { description: 'The aircraft, now out of service.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/return-to-service',
+  summary: 'Return an out-of-service aircraft to service',
+  description: 'Clears the status reason. Conflict if already operational.',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: 'The aircraft, now operational.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/aircraft/{id}/hour-meter-adjustments',
+  summary: "List an aircraft's hour-meter adjustment history (paginated, most recent first)",
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams, query: listHourMeterAdjustmentsQuerySchema },
+  responses: {
+    200: { description: 'A page of hour-meter adjustments.', content: jsonContent(hourMeterAdjustmentListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/hour-meter-adjustments',
+  summary: 'Record a tracked hour-meter (contaore) rectification',
+  description: 'Append-only (AD-3 spirit, story 2.5, AC 2) — creates the adjustment and updates Aircraft.hourMeterMinutes in one transaction. A negative delta is allowed.',
+  tags: ['Aircraft'],
+  security,
+  request: {
+    params: aircraftIdParams,
+    body: { content: jsonContent(createHourMeterAdjustmentSchema), required: true },
+  },
+  responses: {
+    200: { description: 'The aircraft, with the updated hour meter.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 422),
   },
 });
 

@@ -6,11 +6,18 @@ vi.mock('@/server/db/prisma', () => ({
   prisma: {
     aircraft: {
       findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    hourMeterAdjustment: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -18,31 +25,55 @@ vi.mock('@/server/db/prisma', () => ({
 
 const { prisma } = await import('@/server/db/prisma');
 const {
+  adjustHourMeter,
   archiveAircraft,
   createAircraft,
   getAircraft,
   listAircraft,
+  listHourMeterAdjustments,
+  returnToService,
+  setOutOfService,
   unarchiveAircraft,
   updateAircraft,
 } = await import('./aircraft.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
 const findUniqueMock = vi.mocked(prisma.aircraft.findUnique);
+const findUniqueOrThrowMock = vi.mocked(prisma.aircraft.findUniqueOrThrow);
 const findFirstMock = vi.mocked(prisma.aircraft.findFirst);
 const findManyMock = vi.mocked(prisma.aircraft.findMany);
 const countMock = vi.mocked(prisma.aircraft.count);
 const createMock = vi.mocked(prisma.aircraft.create);
 const updateMock = vi.mocked(prisma.aircraft.update);
+const updateManyMock = vi.mocked(prisma.aircraft.updateMany);
+const hourMeterAdjustmentCreateMock = vi.mocked(prisma.hourMeterAdjustment.create);
+const hourMeterAdjustmentFindManyMock = vi.mocked(prisma.hourMeterAdjustment.findMany);
+const hourMeterAdjustmentCountMock = vi.mocked(prisma.hourMeterAdjustment.count);
 const transactionMock = vi.mocked(prisma.$transaction);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as people.service.test.ts).
 type AircraftFixture = Record<string, unknown> | null;
 const aircraftFindUnique = findUniqueMock as unknown as { mockResolvedValue: (v: AircraftFixture) => void };
+const aircraftFindUniqueOrThrow = findUniqueOrThrowMock as unknown as { mockResolvedValue: (v: AircraftFixture) => void };
 const aircraftFindFirst = findFirstMock as unknown as { mockResolvedValue: (v: AircraftFixture) => void };
 const aircraftCreate = createMock as unknown as { mockResolvedValue: (v: AircraftFixture) => void };
 const aircraftUpdate = updateMock as unknown as { mockResolvedValue: (v: AircraftFixture) => void };
-const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void };
+const aircraftUpdateMany = updateManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
+const hourMeterAdjustmentCreate = hourMeterAdjustmentCreateMock as unknown as { mockResolvedValue: (v: unknown) => void };
+const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void; mockImplementation: (fn: (arg: unknown) => unknown) => void };
+
+/**
+ * `adjustHourMeter` runs its work inside `prisma.$transaction(async (tx) =>
+ * ...)` — the interactive-transaction overload. The mocked module's
+ * `prisma.aircraft`/`prisma.hourMeterAdjustment` delegates ARE what the
+ * service calls whether reached directly or via `tx`, so handing the same
+ * mocked `prisma` back as `tx` is a faithful stand-in for Prisma's real
+ * per-transaction client.
+ */
+function mockInteractiveTransaction(): void {
+  transaction.mockImplementation((arg: unknown) => (typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : arg));
+}
 
 function staffActor(): Actor {
   return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
@@ -59,6 +90,8 @@ const SELECTED_AIRCRAFT = {
   model: 'Tecnam P92 Eaglet',
   hourMeterMinutes: 750,
   notes: 'Velivolo scuola volo demo.',
+  status: 'OPERATIONAL',
+  statusReason: null,
   archivedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -66,11 +99,16 @@ const SELECTED_AIRCRAFT = {
 describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)', () => {
   beforeEach(() => {
     findUniqueMock.mockReset();
+    findUniqueOrThrowMock.mockReset();
     findFirstMock.mockReset();
     findManyMock.mockReset();
     countMock.mockReset();
     createMock.mockReset();
     updateMock.mockReset();
+    updateManyMock.mockReset();
+    hourMeterAdjustmentCreateMock.mockReset();
+    hourMeterAdjustmentFindManyMock.mockReset();
+    hourMeterAdjustmentCountMock.mockReset();
     transactionMock.mockReset();
   });
 
@@ -112,6 +150,31 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     it('unarchiveAircraft rejects an actor without aircraft.manage', async () => {
       await expect(unarchiveAircraft(pilotActor(), 'aircraft_1')).rejects.toThrow(ForbiddenError);
     });
+
+    it('setOutOfService rejects an actor without aircraft.manage', async () => {
+      await expect(setOutOfService(pilotActor(), 'aircraft_1', 'Engine inspection')).rejects.toThrow(ForbiddenError);
+      expect(findUniqueMock).not.toHaveBeenCalled();
+      expect(updateManyMock).not.toHaveBeenCalled();
+    });
+
+    it('returnToService rejects an actor without aircraft.manage', async () => {
+      await expect(returnToService(pilotActor(), 'aircraft_1')).rejects.toThrow(ForbiddenError);
+      expect(updateManyMock).not.toHaveBeenCalled();
+    });
+
+    it('adjustHourMeter rejects an actor without aircraft.manage', async () => {
+      await expect(
+        adjustHourMeter(pilotActor(), 'aircraft_1', { newMinutes: 800, reason: 'Correction' }),
+      ).rejects.toThrow(ForbiddenError);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('listHourMeterAdjustments rejects an actor without aircraft.manage', async () => {
+      await expect(
+        listHourMeterAdjustments(pilotActor(), 'aircraft_1', { page: 1, pageSize: 20 }),
+      ).rejects.toThrow(ForbiddenError);
+      expect(findUniqueMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('listAircraft', () => {
@@ -129,6 +192,8 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
             model: 'Tecnam P92 Eaglet',
             hourMeterMinutes: 750,
             notes: 'Velivolo scuola volo demo.',
+            status: 'OPERATIONAL',
+            statusReason: null,
             archivedAt: null,
             createdAt: SELECTED_AIRCRAFT.createdAt,
           },
@@ -243,14 +308,26 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
     it('updates only the provided fields', async () => {
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
-      aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 800 });
+      aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, model: 'Tecnam P2008' });
 
-      const result = await updateAircraft(staffActor(), 'aircraft_1', { hourMeterMinutes: 800 });
+      const result = await updateAircraft(staffActor(), 'aircraft_1', { model: 'Tecnam P2008' });
 
-      expect(updateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 800 } }),
-      );
-      expect(result.hourMeterMinutes).toBe(800);
+      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'aircraft_1' }, data: { model: 'Tecnam P2008' } }));
+      expect(result.model).toBe('Tecnam P2008');
+    });
+
+    it('never accepts hourMeterMinutes (story 2.5): the contaore changes only via a tracked adjustment', async () => {
+      aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+      aircraftUpdate.mockResolvedValue(SELECTED_AIRCRAFT);
+
+      // UpdateAircraftInput no longer has this field at the type level; cast
+      // to simulate a caller (e.g. a stale client) still sending it — it must
+      // be silently ignored, never forwarded to Prisma.
+      await updateAircraft(staffActor(), 'aircraft_1', { notes: 'x', hourMeterMinutes: 999 } as unknown as Parameters<
+        typeof updateAircraft
+      >[2]);
+
+      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { notes: 'x' } }));
     });
 
     it('does not check registration uniqueness when registration is not part of the patch', async () => {
@@ -315,6 +392,167 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { archivedAt: null } }));
       expect(result.archivedAt).toBeNull();
+    });
+  });
+
+  describe('setOutOfService (story 2.5, AC 1)', () => {
+    it('throws NotFoundError for a missing aircraft', async () => {
+      aircraftFindUnique.mockResolvedValue(null);
+      await expect(setOutOfService(staffActor(), 'missing', 'Engine inspection')).rejects.toThrow(NotFoundError);
+      expect(updateManyMock).not.toHaveBeenCalled();
+    });
+
+    it('sets status/statusReason via the atomic OPERATIONAL-guarded updateMany (review 2.2 F1 pattern)', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue({
+        ...SELECTED_AIRCRAFT,
+        status: 'OUT_OF_SERVICE',
+        statusReason: 'Engine inspection',
+      });
+
+      const result = await setOutOfService(staffActor(), 'aircraft_1', 'Engine inspection');
+
+      expect(updateManyMock).toHaveBeenCalledWith({
+        where: { id: 'aircraft_1', status: 'OPERATIONAL' },
+        data: { status: 'OUT_OF_SERVICE', statusReason: 'Engine inspection' },
+      });
+      expect(result.status).toBe('OUT_OF_SERVICE');
+      expect(result.statusReason).toBe('Engine inspection');
+    });
+
+    it('throws ConflictError when the atomic guard matches zero rows (already out of service)', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 0 });
+
+      await expect(setOutOfService(staffActor(), 'aircraft_1', 'Engine inspection')).rejects.toThrow(ConflictError);
+      expect(findUniqueOrThrowMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('returnToService (story 2.5, AC 1)', () => {
+    it('throws NotFoundError for a missing aircraft', async () => {
+      aircraftFindUnique.mockResolvedValue(null);
+      await expect(returnToService(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      expect(updateManyMock).not.toHaveBeenCalled();
+    });
+
+    it('clears statusReason via the atomic OUT_OF_SERVICE-guarded updateMany', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue({ ...SELECTED_AIRCRAFT, status: 'OPERATIONAL', statusReason: null });
+
+      const result = await returnToService(staffActor(), 'aircraft_1');
+
+      expect(updateManyMock).toHaveBeenCalledWith({
+        where: { id: 'aircraft_1', status: 'OUT_OF_SERVICE' },
+        data: { status: 'OPERATIONAL', statusReason: null },
+      });
+      expect(result.status).toBe('OPERATIONAL');
+      expect(result.statusReason).toBeNull();
+    });
+
+    it('throws ConflictError when the atomic guard matches zero rows (already operational)', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 0 });
+
+      await expect(returnToService(staffActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
+    });
+  });
+
+  describe('adjustHourMeter (story 2.5, AC 2)', () => {
+    it('throws NotFoundError for a missing aircraft, inside the same transaction', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue(null);
+
+      await expect(adjustHourMeter(staffActor(), 'missing', { newMinutes: 800, reason: 'Correction' })).rejects.toThrow(
+        NotFoundError,
+      );
+      expect(hourMeterAdjustmentCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('creates the adjustment (previous = current value, actorUserId = actor.userId) and updates the aircraft, in one transaction', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1', hourMeterMinutes: 750 });
+      hourMeterAdjustmentCreate.mockResolvedValue({});
+      aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 800 });
+
+      const result = await adjustHourMeter(staffActor(), 'aircraft_1', { newMinutes: 800, reason: 'Correction' });
+
+      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith({
+        data: {
+          aircraftId: 'aircraft_1',
+          actorUserId: 'staff_1',
+          previousMinutes: 750,
+          newMinutes: 800,
+          reason: 'Correction',
+        },
+      });
+      expect(updateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 800 } }),
+      );
+      expect(result.hourMeterMinutes).toBe(800);
+    });
+
+    it('allows a negative delta (a correction can go either direction)', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1', hourMeterMinutes: 750 });
+      hourMeterAdjustmentCreate.mockResolvedValue({});
+      aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 600 });
+
+      await adjustHourMeter(staffActor(), 'aircraft_1', { newMinutes: 600, reason: 'Reset after gauge swap' });
+
+      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ previousMinutes: 750, newMinutes: 600 }) }),
+      );
+    });
+  });
+
+  describe('listHourMeterAdjustments (story 2.5, AC 2)', () => {
+    const ADJUSTMENT = {
+      id: 'adj_1',
+      aircraftId: 'aircraft_1',
+      actorUserId: 'staff_1',
+      actorUser: { email: 'staff@airmanager.local' },
+      previousMinutes: 750,
+      newMinutes: 800,
+      reason: 'Correction',
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
+    };
+
+    it('throws NotFoundError for a missing aircraft', async () => {
+      aircraftFindUnique.mockResolvedValue(null);
+      await expect(listHourMeterAdjustments(staffActor(), 'missing', { page: 1, pageSize: 20 })).rejects.toThrow(
+        NotFoundError,
+      );
+    });
+
+    it('returns the AD-8 paginated shape, most recent first, with the joined actor email', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      transaction.mockResolvedValue([[ADJUSTMENT], 1]);
+
+      const result = await listHourMeterAdjustments(staffActor(), 'aircraft_1', { page: 1, pageSize: 20 });
+
+      expect(result).toEqual({
+        items: [
+          {
+            id: 'adj_1',
+            aircraftId: 'aircraft_1',
+            actorUserId: 'staff_1',
+            actorEmail: 'staff@airmanager.local',
+            previousMinutes: 750,
+            newMinutes: 800,
+            reason: 'Correction',
+            createdAt: ADJUSTMENT.createdAt,
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+      expect(hourMeterAdjustmentFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { aircraftId: 'aircraft_1' }, orderBy: [{ createdAt: 'desc' }] }),
+      );
     });
   });
 });

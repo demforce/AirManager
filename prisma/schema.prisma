@@ -103,6 +103,15 @@ model InstructorProfile {
   updatedAt     DateTime  @updatedAt
 }
 
+/// Aircraft operational status (story 2.5, AC 1; FR-8). `OUT_OF_SERVICE` is
+/// deliberately distinct from `Aircraft.archivedAt` (story 2.4): an
+/// out-of-service aircraft is still active fleet, just not bookable — the
+/// real booking block is Epic 7, this enum only carries the flag/reason.
+enum AircraftStatus {
+  OPERATIONAL
+  OUT_OF_SERVICE
+}
+
 /// Aircraft fleet registry (story 2.4, AC 1/2; FR-7). `registration` (marche,
 /// e.g. "I-ABCD") is the unique human-facing identifier — normalized
 /// (`trim().toUpperCase()`) at the Zod boundary so the DB-level uniqueness is
@@ -110,22 +119,55 @@ model InstructorProfile {
 /// minutes (AD-2 — the cardinal constraint of this story): the airframe's
 /// total-time contaore is never stored as a float/decimal-hours value: only
 /// this module's `src/lib/time.ts` helpers convert it to/from an `H:MM`
-/// display string. Operational status (out of service + reason, story 2.5)
-/// and rates (`AircraftRate`, epic 4) are deliberately out of scope here —
-/// this model is anagrafica only. `archivedAt` follows the same
-/// soft-archive pattern as `Person.archivedAt` (story 2.1): a timestamp
-/// rather than a boolean, no physical-delete API, since future flights/rates
-/// reference the aircraft by id.
+/// display string. Story 2.5 (AC 2) makes it change ONLY via a tracked
+/// `HourMeterAdjustment` — never through this table's generic update path —
+/// so the audit trail can't be bypassed. `status`/`statusReason` (story 2.5,
+/// AC 1) are the operational flag: `statusReason` is populated only while
+/// `OUT_OF_SERVICE` and cleared on return to service. Rates (`AircraftRate`,
+/// epic 4) are deliberately out of scope here — this model is anagrafica
+/// only. `archivedAt` follows the same soft-archive pattern as
+/// `Person.archivedAt` (story 2.1): a timestamp rather than a boolean, no
+/// physical-delete API, since future flights/rates reference the aircraft by
+/// id.
 model Aircraft {
-  id               String    @id @default(cuid())
-  registration     String    @unique
+  id               String         @id @default(cuid())
+  registration     String         @unique
   type             String
   model            String
   hourMeterMinutes Int
   notes            String?
+  status           AircraftStatus @default(OPERATIONAL)
+  /// Mandatory while `status == OUT_OF_SERVICE`; reset to `null` on return to
+  /// service (enforced in `aircraft.service.ts`, not at the DB level).
+  statusReason     String?
   archivedAt       DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  hourMeterAdjustments HourMeterAdjustment[]
+}
+
+/// Append-only audit trail for hour-meter (contaore) corrections (story 2.5,
+/// AC 2; AD-3's spirit — no ledger storno here, a wrong entry is corrected by
+/// another entry, never edited/deleted). Created exclusively inside
+/// `adjustHourMeter`'s single Prisma transaction, alongside the
+/// `Aircraft.hourMeterMinutes` update it audits — there is deliberately no
+/// update/delete API. `previousMinutes`/`newMinutes` are both stored (rather
+/// than just the delta) so the history reads without recomputation.
+model HourMeterAdjustment {
+  id              String   @id @default(cuid())
+  aircraftId      String
+  aircraft        Aircraft @relation(fields: [aircraftId], references: [id])
+  /// The acting `User.id` (`Actor.userId`, always present) — not `personId`:
+  /// a staff member performing the rectification may have no linked `Person`.
+  actorUserId     String
+  actorUser       User     @relation(fields: [actorUserId], references: [id])
+  previousMinutes Int
+  newMinutes      Int
+  reason          String
+  createdAt       DateTime @default(now())
+
+  @@index([aircraftId])
 }
 
 /// Login credentials. 1-to-0/1 with `Person` (AD-11) — not every `Person` has
@@ -150,6 +192,9 @@ model User {
   person       Person? @relation(fields: [personId], references: [id])
 
   authTokens AuthToken[]
+  /// Hour-meter rectifications this user performed (story 2.5, AC 2) —
+  /// `HourMeterAdjustment.actorUserId`.
+  hourMeterAdjustments HourMeterAdjustment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

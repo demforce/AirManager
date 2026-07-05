@@ -24,7 +24,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-05 18:30
+last_updated: 2026-07-05 19:15
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -44,7 +44,7 @@ development_status:
   2-2-person-profiles: done
   2-3-person-detail: done
   2-4-aircraft-crud: done
-  2-5-aircraft-status-hours: ready-for-dev
+  2-5-aircraft-status-hours: review
   epic-2-retrospective: optional
 
   epic-3: backlog

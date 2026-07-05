@@ -178,12 +178,17 @@
       "model": "Model",
       "hourMeter": "Hour meter",
       "status": "Status",
+      "operationalStatus": "Operational status",
       "actions": "Actions",
       "empty": "No aircraft found."
     },
     "status": {
       "active": "Active",
       "archived": "Archived"
+    },
+    "operationalStatus": {
+      "operational": "Operational",
+      "outOfService": "Out of service"
     },
     "actions": {
       "edit": "Edit",
@@ -192,7 +197,11 @@
       "confirmArchive": "Archive this aircraft?",
       "confirmUnarchive": "Restore this aircraft?",
       "confirmYes": "Confirm",
-      "confirmCancel": "Cancel"
+      "confirmCancel": "Cancel",
+      "setOutOfService": "Out of service",
+      "returnToService": "Return to service",
+      "confirmReturnToService": "Return this aircraft to service?",
+      "adjustHourMeter": "Adjust hour meter"
     },
     "form": {
       "createTitle": "New aircraft",
@@ -211,11 +220,44 @@
       "genericError": "Something went wrong. Please try again.",
       "conflictError": "An aircraft with this registration already exists."
     },
+    "statusForm": {
+      "title": "Out of service",
+      "reason": "Reason",
+      "reasonRequired": "The reason is required.",
+      "submit": "Confirm",
+      "cancel": "Cancel",
+      "conflictError": "The aircraft's status already changed in the meantime.",
+      "genericError": "Something went wrong. Please try again."
+    },
+    "hourMeterPanel": {
+      "title": "Adjust hour meter",
+      "current": "Current hour meter",
+      "newValue": "New value (minutes)",
+      "hint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm).",
+      "reason": "Reason",
+      "delta": "Change",
+      "submit": "Record adjustment",
+      "cancel": "Cancel",
+      "requiredField": "The reason is required.",
+      "invalidValue": "The hour meter must be a whole number of minutes, zero or greater.",
+      "genericError": "Something went wrong. Please try again.",
+      "historyTitle": "Adjustment history",
+      "historyEmpty": "No adjustments recorded yet.",
+      "historyWhen": "When",
+      "historyActor": "Who",
+      "historyPrevious": "Before",
+      "historyNew": "After",
+      "historyDelta": "Delta",
+      "historyReason": "Reason"
+    },
     "feedback": {
       "created": "Aircraft created.",
       "updated": "Aircraft updated.",
       "archived": "Aircraft archived.",
-      "unarchived": "Aircraft restored."
+      "unarchived": "Aircraft restored.",
+      "setOutOfService": "Aircraft marked out of service.",
+      "returnedToService": "Aircraft returned to service.",
+      "hourMeterAdjusted": "Hour meter adjusted."
     }
   },
   "UsersPage": {

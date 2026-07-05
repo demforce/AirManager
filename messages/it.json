@@ -178,12 +178,17 @@
       "model": "Modello",
       "hourMeter": "Contaore",
       "status": "Stato",
+      "operationalStatus": "Stato operativo",
       "actions": "Azioni",
       "empty": "Nessun velivolo trovato."
     },
     "status": {
       "active": "Attivo",
       "archived": "Archiviato"
+    },
+    "operationalStatus": {
+      "operational": "Operativo",
+      "outOfService": "Fuori servizio"
     },
     "actions": {
       "edit": "Modifica",
@@ -192,7 +197,11 @@
       "confirmArchive": "Archiviare questo velivolo?",
       "confirmUnarchive": "Ripristinare questo velivolo?",
       "confirmYes": "Conferma",
-      "confirmCancel": "Annulla"
+      "confirmCancel": "Annulla",
+      "setOutOfService": "Fuori servizio",
+      "returnToService": "Rientro in servizio",
+      "confirmReturnToService": "Rimettere in servizio questo velivolo?",
+      "adjustHourMeter": "Rettifica contaore"
     },
     "form": {
       "createTitle": "Nuovo velivolo",
@@ -211,11 +220,44 @@
       "genericError": "Si è verificato un errore. Riprova.",
       "conflictError": "Esiste già un velivolo con queste marche."
     },
+    "statusForm": {
+      "title": "Fuori servizio",
+      "reason": "Motivo",
+      "reasonRequired": "Il motivo è obbligatorio.",
+      "submit": "Conferma",
+      "cancel": "Annulla",
+      "conflictError": "Lo stato del velivolo è già cambiato nel frattempo.",
+      "genericError": "Si è verificato un errore. Riprova."
+    },
+    "hourMeterPanel": {
+      "title": "Rettifica contaore",
+      "current": "Contaore attuale",
+      "newValue": "Nuovo valore (minuti)",
+      "hint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm).",
+      "reason": "Motivo",
+      "delta": "Variazione",
+      "submit": "Registra rettifica",
+      "cancel": "Annulla",
+      "requiredField": "Il motivo è obbligatorio.",
+      "invalidValue": "Il contaore deve essere un numero intero di minuti maggiore o uguale a zero.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "historyTitle": "Storico rettifiche",
+      "historyEmpty": "Nessuna rettifica registrata.",
+      "historyWhen": "Quando",
+      "historyActor": "Chi",
+      "historyPrevious": "Prima",
+      "historyNew": "Dopo",
+      "historyDelta": "Delta",
+      "historyReason": "Motivo"
+    },
     "feedback": {
       "created": "Velivolo creato.",
       "updated": "Velivolo aggiornato.",
       "archived": "Velivolo archiviato.",
-      "unarchived": "Velivolo ripristinato."
+      "unarchived": "Velivolo ripristinato.",
+      "setOutOfService": "Velivolo segnato fuori servizio.",
+      "returnedToService": "Velivolo rimesso in servizio.",
+      "hourMeterAdjusted": "Contaore rettificato."
     }
   },
   "UsersPage": {

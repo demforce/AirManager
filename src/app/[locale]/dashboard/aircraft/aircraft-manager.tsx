@@ -9,11 +9,16 @@ import { DataTable } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
 import {
   createAircraftSchema,
+  createHourMeterAdjustmentSchema,
+  setOutOfServiceSchema,
   updateAircraftSchema,
   type CreateAircraftInput,
+  type CreateHourMeterAdjustmentInput,
+  type HourMeterAdjustmentListItemDto,
+  type SetOutOfServiceInput,
   type UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
-import { formatMinutes } from '@/lib/time';
+import { formatDateTime, formatMinutes } from '@/lib/time';
 
 export type AircraftRow = {
   id: string;
@@ -23,6 +28,10 @@ export type AircraftRow = {
   /** Integer number of minutes (AD-2) — never a decimal-hours value. */
   hourMeterMinutes: number;
   notes: string | null;
+  /** Operational status (story 2.5, AC 1) — independent of `archivedAt`. */
+  status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
+  /** Populated only while `status === 'OUT_OF_SERVICE'`. */
+  statusReason: string | null;
   /** ISO 8601 string (server `Date` already serialized) or `null` if active. */
   archivedAt: string | null;
 };
@@ -37,10 +46,12 @@ type Labels = {
     model: string;
     hourMeter: string;
     status: string;
+    operationalStatus: string;
     actions: string;
     empty: string;
   };
   status: { active: string; archived: string };
+  operationalStatus: { operational: string; outOfService: string };
   actions: {
     edit: string;
     archive: string;
@@ -49,6 +60,10 @@ type Labels = {
     confirmUnarchive: string;
     confirmYes: string;
     confirmCancel: string;
+    setOutOfService: string;
+    returnToService: string;
+    confirmReturnToService: string;
+    adjustHourMeter: string;
   };
   form: {
     createTitle: string;
@@ -67,7 +82,45 @@ type Labels = {
     genericError: string;
     conflictError: string;
   };
-  feedback: { created: string; updated: string; archived: string; unarchived: string };
+  statusForm: {
+    title: string;
+    reason: string;
+    reasonRequired: string;
+    submit: string;
+    cancel: string;
+    conflictError: string;
+    genericError: string;
+  };
+  hourMeterPanel: {
+    title: string;
+    current: string;
+    newValue: string;
+    hint: string;
+    reason: string;
+    delta: string;
+    submit: string;
+    cancel: string;
+    requiredField: string;
+    invalidValue: string;
+    genericError: string;
+    historyTitle: string;
+    historyEmpty: string;
+    historyWhen: string;
+    historyActor: string;
+    historyPrevious: string;
+    historyNew: string;
+    historyDelta: string;
+    historyReason: string;
+  };
+  feedback: {
+    created: string;
+    updated: string;
+    archived: string;
+    unarchived: string;
+    setOutOfService: string;
+    returnedToService: string;
+    hourMeterAdjusted: string;
+  };
 };
 
 type AircraftManagerProps = {
@@ -77,8 +130,12 @@ type AircraftManagerProps = {
   labels: Labels;
 };
 
-type Panel = { mode: 'create' } | { mode: 'edit'; aircraft: AircraftRow };
-type ConfirmState = { id: string; type: 'archive' | 'unarchive' };
+type Panel =
+  | { mode: 'create' }
+  | { mode: 'edit'; aircraft: AircraftRow }
+  | { mode: 'out-of-service'; aircraft: AircraftRow }
+  | { mode: 'hour-meter'; aircraft: AircraftRow };
+type ConfirmState = { id: string; type: 'archive' | 'unarchive' | 'return-to-service' };
 
 function statusLabel(aircraft: AircraftRow, labels: Labels): string {
   return aircraft.archivedAt ? labels.status.archived : labels.status.active;
@@ -87,6 +144,29 @@ function statusLabel(aircraft: AircraftRow, labels: Labels): string {
 function statusBadgeClasses(aircraft: AircraftRow): string {
   return aircraft.archivedAt ? 'bg-[#FBF3DB] text-[#956400]' : 'bg-[#EDF3EC] text-[#346538]';
 }
+
+/** Operational status badge (story 2.5, AC 1) — distinct from the archive badge above. */
+function operationalStatusLabel(aircraft: AircraftRow, labels: Labels): string {
+  return aircraft.status === 'OUT_OF_SERVICE' ? labels.operationalStatus.outOfService : labels.operationalStatus.operational;
+}
+
+function operationalStatusBadgeClasses(aircraft: AircraftRow): string {
+  return aircraft.status === 'OUT_OF_SERVICE' ? 'bg-[#FBF3DB] text-[#956400]' : 'bg-[#EDF3EC] text-[#346538]';
+}
+
+/** Signed `H:MM` delta preview (e.g. `+1:30`/`-0:45`) for the hour-meter adjustment form/history. */
+function formatSignedMinutes(deltaMinutes: number): string {
+  if (!Number.isInteger(deltaMinutes)) return '—';
+  const sign = deltaMinutes < 0 ? '-' : '+';
+  return `${sign}${formatMinutes(Math.abs(deltaMinutes))}`;
+}
+
+/** Endpoint suffix + feedback message for each two-step-confirm action (`handleStateAction`). */
+const STATE_ACTION_FEEDBACK: Record<ConfirmState['type'], (labels: Labels) => string> = {
+  archive: (l) => l.feedback.archived,
+  unarchive: (l) => l.feedback.unarchived,
+  'return-to-service': (l) => l.feedback.returnedToService,
+};
 
 /** Same `H:MM` display as the input's live preview — a malformed/negative value never crashes the row render. */
 function safeFormatMinutes(totalMinutes: number): string {
@@ -148,13 +228,13 @@ export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived
     navigate({ q: queryInput, includeArchived: checked });
   }
 
-  async function handleArchiveToggle(row: AircraftRow, type: 'archive' | 'unarchive'): Promise<void> {
+  async function handleStateAction(row: AircraftRow, type: ConfirmState['type']): Promise<void> {
     setPendingActionId(row.id);
     const response = await fetch(`/api/v1/aircraft/${row.id}/${type}`, { method: 'POST' });
     setPendingActionId(null);
     setConfirming(null);
     if (response.ok) {
-      setFeedback(type === 'archive' ? labels.feedback.archived : labels.feedback.unarchived);
+      setFeedback(STATE_ACTION_FEEDBACK[type](labels));
       router.refresh();
     } else {
       // e.g. 409 from a concurrent state change: surface it instead of
@@ -204,23 +284,42 @@ export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived
       ),
     },
     {
+      id: 'operationalStatus',
+      header: labels.table.operationalStatus,
+      cell: ({ row }) => (
+        <span
+          title={row.original.statusReason ?? undefined}
+          data-testid={`operational-status-${row.original.id}`}
+          className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] ${operationalStatusBadgeClasses(row.original)}`}
+        >
+          {operationalStatusLabel(row.original, labels)}
+        </span>
+      ),
+    },
+    {
       id: 'actions',
       header: labels.table.actions,
       cell: ({ row }) => {
         const item = row.original;
         const isArchived = item.archivedAt !== null;
-        const actionType: 'archive' | 'unarchive' = isArchived ? 'unarchive' : 'archive';
+        const archiveActionType: 'archive' | 'unarchive' = isArchived ? 'unarchive' : 'archive';
+        const isOutOfService = item.status === 'OUT_OF_SERVICE';
 
         if (confirming?.id === item.id) {
+          const confirmLabel =
+            confirming.type === 'return-to-service'
+              ? labels.actions.confirmReturnToService
+              : confirming.type === 'unarchive'
+                ? labels.actions.confirmUnarchive
+                : labels.actions.confirmArchive;
+
           return (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[#787774]">
-                {isArchived ? labels.actions.confirmUnarchive : labels.actions.confirmArchive}
-              </span>
+              <span className="text-xs text-[#787774]">{confirmLabel}</span>
               <button
                 type="button"
                 disabled={pendingActionId === item.id}
-                onClick={() => void handleArchiveToggle(item, actionType)}
+                onClick={() => void handleStateAction(item, confirming.type)}
                 className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
               >
                 {labels.actions.confirmYes}
@@ -248,10 +347,35 @@ export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived
             <button
               type="button"
               disabled={pendingActionId === item.id}
-              onClick={() => setConfirming({ id: item.id, type: actionType })}
+              onClick={() => setConfirming({ id: item.id, type: archiveActionType })}
               className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
             >
               {isArchived ? labels.actions.unarchive : labels.actions.archive}
+            </button>
+            {isOutOfService ? (
+              <button
+                type="button"
+                disabled={pendingActionId === item.id}
+                onClick={() => setConfirming({ id: item.id, type: 'return-to-service' })}
+                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
+              >
+                {labels.actions.returnToService}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPanel({ mode: 'out-of-service', aircraft: item })}
+                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              >
+                {labels.actions.setOutOfService}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPanel({ mode: 'hour-meter', aircraft: item })}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {labels.actions.adjustHourMeter}
             </button>
           </div>
         );
@@ -319,6 +443,32 @@ export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived
         </div>
       ) : null}
 
+      {panel?.mode === 'out-of-service' ? (
+        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+          <OutOfServiceForm
+            // Same remount rationale as EditAircraftForm above.
+            key={panel.aircraft.id}
+            aircraft={panel.aircraft}
+            labels={labels}
+            onCancel={() => setPanel(null)}
+            onSuccess={handleFormSuccess}
+          />
+        </div>
+      ) : null}
+
+      {panel?.mode === 'hour-meter' ? (
+        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+          <HourMeterAdjustmentPanel
+            // Same remount rationale as EditAircraftForm above.
+            key={panel.aircraft.id}
+            aircraft={panel.aircraft}
+            labels={labels}
+            onCancel={() => setPanel(null)}
+            onSuccess={handleFormSuccess}
+          />
+        </div>
+      ) : null}
+
       <div className="mt-6">
         <DataTable columns={columns} data={aircraft} emptyMessage={labels.table.empty} />
       </div>
@@ -365,6 +515,9 @@ function CreateAircraftForm({ labels, onCancel, onSuccess }: CreateAircraftFormP
     defaultValues: { registration: '', type: '', model: '', hourMeterMinutes: 0, notes: null },
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see AircraftFields' matching comment.
+  const hourMeterField = register('hourMeterMinutes', { valueAsNumber: true }) as any;
+
   async function onSubmit(values: CreateAircraftInput): Promise<void> {
     setFormError(null);
     const response = await fetch('/api/v1/aircraft', {
@@ -389,14 +542,43 @@ function CreateAircraftForm({ labels, onCancel, onSuccess }: CreateAircraftFormP
         {labels.form.createTitle}
       </h3>
 
-      <AircraftFields
-        register={register}
-        errors={errors}
-        labels={labels}
-        idPrefix="create"
-        hourMeterMinutes={hourMeterMinutes}
-        onHourMeterMinutesChange={setHourMeterMinutes}
-      />
+      <AircraftFields register={register} errors={errors} labels={labels} idPrefix="create" />
+
+      {/*
+       * `hourMeterMinutes` is create-only (story 2.5): after creation the
+       * contaore changes exclusively via a tracked `HourMeterAdjustment`
+       * ("Rettifica contaore"), never this form's generic PATCH — so this
+       * field is deliberately absent from `EditAircraftForm`/`AircraftFields`.
+       */}
+      <div>
+        <label htmlFor="create-hourMeterMinutes" className="block text-sm font-medium text-[#2F3437]">
+          {labels.form.hourMeter}
+        </label>
+        <div className="mt-2 flex items-center gap-3">
+          <input
+            id="create-hourMeterMinutes"
+            type="number"
+            step={1}
+            min={0}
+            inputMode="numeric"
+            aria-invalid={Boolean(errors.hourMeterMinutes)}
+            className="mt-0 w-full max-w-[140px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            {...hourMeterField}
+            onChange={(event) => {
+              // Compose react-hook-form's own `onChange` (keeps the submitted
+              // value as the single source of truth, AD-2) with a plain state
+              // mirror for the live hint — see `HourMeterHint`'s comment.
+              void hourMeterField.onChange(event);
+              setHourMeterMinutes(event.target.valueAsNumber);
+            }}
+          />
+          <span className="font-[family-name:var(--font-mono,monospace)] text-sm text-[#787774]" data-testid="create-hour-meter-hint">
+            (<HourMeterHint minutes={hourMeterMinutes} />)
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-[#787774]">{labels.form.hourMeterHint}</p>
+        {errors.hourMeterMinutes ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.invalidHourMeter}</p> : null}
+      </div>
 
       {formError ? (
         <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
@@ -418,10 +600,6 @@ type EditAircraftFormProps = {
 
 function EditAircraftForm({ aircraft, labels, onCancel, onSuccess }: EditAircraftFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
-  // See the matching comment in `CreateAircraftForm` — a local mirror avoids
-  // the React Compiler's "incompatible library" warning that `watch()`/
-  // `useWatch()` would add on top of `data-table.tsx`'s existing one.
-  const [hourMeterMinutes, setHourMeterMinutes] = useState(aircraft.hourMeterMinutes);
 
   const {
     register,
@@ -433,7 +611,6 @@ function EditAircraftForm({ aircraft, labels, onCancel, onSuccess }: EditAircraf
       registration: aircraft.registration,
       type: aircraft.type,
       model: aircraft.model,
-      hourMeterMinutes: aircraft.hourMeterMinutes,
       notes: aircraft.notes,
     },
   });
@@ -462,14 +639,7 @@ function EditAircraftForm({ aircraft, labels, onCancel, onSuccess }: EditAircraf
         {labels.form.editTitle}
       </h3>
 
-      <AircraftFields
-        register={register}
-        errors={errors}
-        labels={labels}
-        idPrefix="edit"
-        hourMeterMinutes={hourMeterMinutes}
-        onHourMeterMinutesChange={setHourMeterMinutes}
-      />
+      <AircraftFields register={register} errors={errors} labels={labels} idPrefix="edit" />
 
       {formError ? (
         <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
@@ -483,33 +653,29 @@ function EditAircraftForm({ aircraft, labels, onCancel, onSuccess }: EditAircraf
 }
 
 /**
- * Shared field set for create/edit. `register` is typed loosely (both forms'
- * input shapes only differ in whether fields are required) since both
- * `CreateAircraftInput`/`UpdateAircraftInput` share every field name — same
- * pattern as `PersonFields` in people-manager.tsx.
+ * Shared field set for create/edit: registration, type, model, notes.
+ * `register` is typed loosely (both forms' input shapes only differ in
+ * whether fields are required) since both `CreateAircraftInput`/
+ * `UpdateAircraftInput` share every remaining field name — same pattern as
+ * `PersonFields` in people-manager.tsx. `hourMeterMinutes` is deliberately
+ * NOT here (story 2.5): it is create-only, rendered inline by
+ * `CreateAircraftForm` — `UpdateAircraftInput` no longer carries it at all,
+ * since the contaore changes exclusively via a tracked adjustment.
  */
 function AircraftFields({
   register,
   errors,
   labels,
   idPrefix,
-  hourMeterMinutes,
-  onHourMeterMinutesChange,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- shared across two distinct RHF instances (create/edit); field names are identical.
   register: any;
-  errors: { registration?: unknown; type?: unknown; model?: unknown; hourMeterMinutes?: unknown };
+  errors: { registration?: unknown; type?: unknown; model?: unknown };
   labels: Labels;
   idPrefix: string;
-  /** Local mirror of the hour-meter input, for the live `H:MM` hint — see the form components' comments. */
-  hourMeterMinutes: number;
-  onHourMeterMinutesChange: (minutes: number) => void;
 }) {
   const inputClasses =
     'mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- `register()`'s return type is only known on the concrete RHF instance, erased above.
-  const hourMeterField = register('hourMeterMinutes', { valueAsNumber: true }) as any;
 
   return (
     <>
@@ -535,44 +701,12 @@ function AircraftFields({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <div>
-          <label htmlFor={`${idPrefix}-model`} className="block text-sm font-medium text-[#2F3437]">
-            {labels.form.model}
-          </label>
-          <input id={`${idPrefix}-model`} className={inputClasses} aria-invalid={Boolean(errors.model)} {...register('model')} />
-          {errors.model ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.requiredField}</p> : null}
-        </div>
-        <div>
-          <label htmlFor={`${idPrefix}-hourMeterMinutes`} className="block text-sm font-medium text-[#2F3437]">
-            {labels.form.hourMeter}
-          </label>
-          <div className="mt-2 flex items-center gap-3">
-            <input
-              id={`${idPrefix}-hourMeterMinutes`}
-              type="number"
-              step={1}
-              min={0}
-              inputMode="numeric"
-              aria-invalid={Boolean(errors.hourMeterMinutes)}
-              className={`${inputClasses} mt-0 max-w-[140px]`}
-              {...hourMeterField}
-              onChange={(event) => {
-                // Compose react-hook-form's own `onChange` (keeps the
-                // submitted value as the single source of truth, AD-2) with
-                // a plain state mirror for the live hint — see the form
-                // components' comments for why this isn't `watch()`.
-                void hourMeterField.onChange(event);
-                onHourMeterMinutesChange(event.target.valueAsNumber);
-              }}
-            />
-            <span className="font-[family-name:var(--font-mono,monospace)] text-sm text-[#787774]" data-testid={`${idPrefix}-hour-meter-hint`}>
-              (<HourMeterHint minutes={hourMeterMinutes} />)
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-[#787774]">{labels.form.hourMeterHint}</p>
-          {errors.hourMeterMinutes ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.invalidHourMeter}</p> : null}
-        </div>
+      <div>
+        <label htmlFor={`${idPrefix}-model`} className="block text-sm font-medium text-[#2F3437]">
+          {labels.form.model}
+        </label>
+        <input id={`${idPrefix}-model`} className={inputClasses} aria-invalid={Boolean(errors.model)} {...register('model')} />
+        {errors.model ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.requiredField}</p> : null}
       </div>
 
       <div>
@@ -619,6 +753,262 @@ function FormActions({
       >
         {cancelLabel}
       </button>
+    </div>
+  );
+}
+
+type OutOfServiceFormProps = {
+  aircraft: AircraftRow;
+  labels: Labels;
+  onCancel: () => void;
+  onSuccess: (message: string) => void;
+};
+
+/**
+ * "Fuori servizio" panel (story 2.5, AC 1): a mandatory reason plus a
+ * confirm/cancel pair — this IS the "form inline/pannello con motivo
+ * obbligatorio + conferma" the Dev Notes call for, distinct from the plain
+ * two-step confirm used for archive/unarchive/return-to-service (those need
+ * no extra input).
+ */
+function OutOfServiceForm({ aircraft, labels, onCancel, onSuccess }: OutOfServiceFormProps) {
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SetOutOfServiceInput>({
+    resolver: zodResolver(setOutOfServiceSchema),
+    defaultValues: { reason: '' },
+  });
+
+  async function onSubmit(values: SetOutOfServiceInput): Promise<void> {
+    setFormError(null);
+    const response = await fetch(`/api/v1/aircraft/${aircraft.id}/out-of-service`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(values),
+    });
+
+    if (!response.ok) {
+      const body: unknown = await response.json().catch(() => null);
+      const code = (body as { error?: { code?: string } } | null)?.error?.code;
+      setFormError(code === 'CONFLICT' ? labels.statusForm.conflictError : labels.statusForm.genericError);
+      return;
+    }
+
+    onSuccess(labels.feedback.setOutOfService);
+  }
+
+  return (
+    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
+      <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+        {labels.statusForm.title} — {aircraft.registration}
+      </h3>
+
+      <div>
+        <label htmlFor="out-of-service-reason" className="block text-sm font-medium text-[#2F3437]">
+          {labels.statusForm.reason}
+        </label>
+        <textarea
+          id="out-of-service-reason"
+          rows={3}
+          aria-invalid={Boolean(errors.reason)}
+          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          {...register('reason')}
+        />
+        {errors.reason ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.statusForm.reasonRequired}</p> : null}
+      </div>
+
+      {formError ? (
+        <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+          {formError}
+        </p>
+      ) : null}
+
+      <FormActions submitLabel={labels.statusForm.submit} cancelLabel={labels.statusForm.cancel} isSubmitting={isSubmitting} onCancel={onCancel} />
+    </form>
+  );
+}
+
+type HourMeterAdjustmentPanelProps = {
+  aircraft: AircraftRow;
+  labels: Labels;
+  onCancel: () => void;
+  onSuccess: (message: string) => void;
+};
+
+/**
+ * "Rettifica contaore" panel (story 2.5, AC 2): current value, a new-value
+ * input with a live `H:MM`/delta preview, a mandatory reason, and — below
+ * the form — the append-only adjustment history (fetched once per mount,
+ * i.e. per `key={aircraft.id}` remount, same rationale as `EditAircraftForm`
+ * — never a per-row fetch, only when this panel is actually open).
+ */
+function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: HourMeterAdjustmentPanelProps) {
+  const [formError, setFormError] = useState<string | null>(null);
+  const [history, setHistory] = useState<HourMeterAdjustmentListItemDto[] | null>(null);
+  // Local mirror for the live H:MM/delta preview — same rationale as the
+  // create/edit forms' `hourMeterMinutes` mirror (avoids a second React
+  // Compiler "incompatible library" warning on top of data-table.tsx's).
+  const [newMinutes, setNewMinutes] = useState(aircraft.hourMeterMinutes);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<CreateHourMeterAdjustmentInput>({
+    resolver: zodResolver(createHourMeterAdjustmentSchema),
+    defaultValues: { newMinutes: aircraft.hourMeterMinutes, reason: '' },
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- register()'s return type isn't worth threading through just for this composed onChange.
+  const newMinutesField = register('newMinutes', { valueAsNumber: true }) as any;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHistory(): Promise<void> {
+      const response = await fetch(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments?pageSize=50`);
+      if (cancelled) return;
+      if (!response.ok) {
+        setHistory([]);
+        return;
+      }
+      const body = (await response.json()) as { items: HourMeterAdjustmentListItemDto[] };
+      setHistory(body.items);
+    }
+    void loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [aircraft.id]);
+
+  async function onSubmit(values: CreateHourMeterAdjustmentInput): Promise<void> {
+    setFormError(null);
+    const response = await fetch(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(values),
+    });
+
+    if (!response.ok) {
+      setFormError(labels.hourMeterPanel.genericError);
+      return;
+    }
+
+    onSuccess(labels.feedback.hourMeterAdjusted);
+  }
+
+  const delta = Number.isInteger(newMinutes) ? newMinutes - aircraft.hourMeterMinutes : Number.NaN;
+
+  return (
+    <div className="space-y-8">
+      <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
+        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+          {labels.hourMeterPanel.title} — {aircraft.registration}
+        </h3>
+
+        <p className="text-sm text-[#787774]">
+          {labels.hourMeterPanel.current}: <span className="font-medium text-[#111111]">{safeFormatMinutes(aircraft.hourMeterMinutes)}</span>
+        </p>
+
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <div>
+            <label htmlFor="hour-meter-new-minutes" className="block text-sm font-medium text-[#2F3437]">
+              {labels.hourMeterPanel.newValue}
+            </label>
+            <div className="mt-2 flex items-center gap-3">
+              <input
+                id="hour-meter-new-minutes"
+                type="number"
+                step={1}
+                min={0}
+                inputMode="numeric"
+                aria-invalid={Boolean(errors.newMinutes)}
+                className="w-full max-w-[140px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                {...newMinutesField}
+                onChange={(event) => {
+                  void newMinutesField.onChange(event);
+                  setNewMinutes(event.target.valueAsNumber);
+                }}
+              />
+              <span className="font-[family-name:var(--font-mono,monospace)] text-sm text-[#787774]" data-testid="hour-meter-new-hint">
+                (<HourMeterHint minutes={newMinutes} />)
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-[#787774]">{labels.hourMeterPanel.hint}</p>
+            {errors.newMinutes ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.hourMeterPanel.invalidValue}</p> : null}
+          </div>
+          <div>
+            <span className="block text-sm font-medium text-[#2F3437]">{labels.hourMeterPanel.delta}</span>
+            <p data-testid="hour-meter-delta" className="mt-2 font-[family-name:var(--font-mono,monospace)] text-base text-[#111111]">
+              {formatSignedMinutes(delta)}
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="hour-meter-reason" className="block text-sm font-medium text-[#2F3437]">
+            {labels.hourMeterPanel.reason}
+          </label>
+          <textarea
+            id="hour-meter-reason"
+            rows={2}
+            aria-invalid={Boolean(errors.reason)}
+            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            {...register('reason')}
+          />
+          {errors.reason ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.hourMeterPanel.requiredField}</p> : null}
+        </div>
+
+        {formError ? (
+          <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+            {formError}
+          </p>
+        ) : null}
+
+        <FormActions
+          submitLabel={labels.hourMeterPanel.submit}
+          cancelLabel={labels.hourMeterPanel.cancel}
+          isSubmitting={isSubmitting}
+          onCancel={onCancel}
+        />
+      </form>
+
+      <div>
+        <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.hourMeterPanel.historyTitle}</h4>
+        {history === null ? null : history.length === 0 ? (
+          <p className="mt-3 text-sm text-[#787774]">{labels.hourMeterPanel.historyEmpty}</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+                  <th className="py-2 pr-4 font-medium">{labels.hourMeterPanel.historyWhen}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.hourMeterPanel.historyActor}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.hourMeterPanel.historyPrevious}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.hourMeterPanel.historyNew}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.hourMeterPanel.historyDelta}</th>
+                  <th className="py-2 font-medium">{labels.hourMeterPanel.historyReason}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((entry) => (
+                  <tr key={entry.id} data-testid="hour-meter-history-row" className="border-b border-[#EAEAEA] text-[#111111]">
+                    <td className="py-2 pr-4 whitespace-nowrap text-[#787774]">{formatDateTime(new Date(entry.createdAt))}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{entry.actorEmail}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{safeFormatMinutes(entry.previousMinutes)}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{safeFormatMinutes(entry.newMinutes)}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{formatSignedMinutes(entry.newMinutes - entry.previousMinutes)}</td>
+                    <td className="py-2">{entry.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
