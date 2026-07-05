@@ -368,11 +368,14 @@ export async function returnToService(actor: Actor, id: string): Promise<Aircraf
  * `Aircraft.hourMeterMinutes` update happen inside one Prisma transaction —
  * the project's first multi-statement `$transaction` — so the two writes
  * can never be observed out of sync (an adjustment recorded without the
- * aircraft actually changing, or vice versa). `previousMinutes` is read
- * inside the same transaction so it reflects the value this call actually
- * overwrites, even under concurrent adjustments. A negative delta
- * (`newMinutes < previousMinutes`) is allowed — Dev Notes: a correction can
- * go either direction, this is not a monotonic counter.
+ * aircraft actually changing, or vice versa). `previousMinutes` is read with
+ * a `SELECT ... FOR UPDATE` row lock: under the default READ COMMITTED
+ * isolation a plain read would let two concurrent adjustments both observe
+ * the same "previous" value and record a stale audit "before" (review 2.5
+ * F1) — the lock serializes them, so the second reads the first's committed
+ * result. A negative delta (`newMinutes < previousMinutes`) is allowed —
+ * Dev Notes: a correction can go either direction, this is not a monotonic
+ * counter.
  */
 export async function adjustHourMeter(
   actor: Actor,
@@ -382,7 +385,12 @@ export async function adjustHourMeter(
   authorize(actor, 'aircraft.manage');
 
   const aircraft = await prisma.$transaction(async (tx) => {
-    const existing = await tx.aircraft.findUnique({ where: { id }, select: { id: true, hourMeterMinutes: true } });
+    // Row-locked read (FOR UPDATE): a concurrent adjustment's transaction
+    // blocks here until this one commits, so its `previousMinutes` is never
+    // stale (review 2.5 F1). Raw SQL because Prisma has no select-for-update.
+    const locked = await tx.$queryRaw<Array<{ hourMeterMinutes: number }>>`
+      SELECT "hourMeterMinutes" FROM "Aircraft" WHERE "id" = ${id} FOR UPDATE`;
+    const existing = locked[0];
     if (!existing) {
       throw new NotFoundError('Aircraft not found.');
     }

@@ -4,7 +4,18 @@ baseline_commit: 4d3f32152188cdffb6916b57e5a2f28bad4aab0a
 
 # Story 2.5: Stato operativo e rettifica contaore
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-05)
+- **Verdict**: CHANGES REQUIRED → resolved. Verified as solid: hourMeterMinutes removed from every generic-update path (schema strips it AND service ignores it, dedicated test); append-only respected (no update/delete, FK RESTRICT); atomic updateMany guards on both status transitions with statusReason cleared on return; actorUserId from actor.userId with FK; actorEmail visible to staff/admin only (no PII leak); AD-2/AD-7/AD-8 honored; no 2.4 regressions.
+- **F1 (mandatory, applied)**: under READ COMMITTED two concurrent adjustments could both read the same hour meter value and record a stale audit "before" (the final value was still correct — the damage was confined to the history's integrity). Fixed for real, not just in the comment: the transaction now takes a `SELECT ... FOR UPDATE` row lock via `tx.$queryRaw` (Prisma has no select-for-update), serializing concurrent adjustments; unit tests updated to mock the locked read; e2e exercises the raw query against real Postgres.
+- **F3 (optional, applied)**: `reason` capped at 500 chars in both schemas (defense-in-depth, symmetric with the 2.4 F2 integer cap).
+- **F2 (optional, deferred)**: adjustment history shows the latest 50 with no "load more" — acceptable at realistic volumes; revisit if a real fleet accumulates more.
+- **F4 (nit, confirmed intended)**: adjusting the hour meter of an out-of-service or archived aircraft is legitimate (post-maintenance corrections, historical fixes).
+- **F5 (nit, no action)**: return-to-service 409 shows the generic error — consistent with the existing archive/unarchive pattern.
+- **Post-fix gates**: lint ✔ (1 documented benign warning), typecheck ✔, test 224/224 ✔, build ✔, e2e 49/49 ✔ (fresh DB).
 
 ## Story
 

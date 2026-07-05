@@ -47,7 +47,9 @@ export type UpdateAircraftInput = z.infer<typeof updateAircraftSchema>;
  * staff records *why* the aircraft is grounded.
  */
 export const setOutOfServiceSchema = z.object({
-  reason: z.string().trim().min(1),
+  // Length-capped for the same defense-in-depth reason the hour meter is
+  // range-capped (review 2.4 F2 / 2.5 F3): an oversized body fails as 422.
+  reason: z.string().trim().min(1).max(500),
 });
 
 export type SetOutOfServiceInput = z.infer<typeof setOutOfServiceSchema>;
@@ -62,7 +64,8 @@ export type SetOutOfServiceInput = z.infer<typeof setOutOfServiceSchema>;
  */
 export const createHourMeterAdjustmentSchema = z.object({
   newMinutes: z.number().int().min(0).max(2_147_483_647),
-  reason: z.string().trim().min(1),
+  // Same defense-in-depth cap as `setOutOfServiceSchema.reason`.
+  reason: z.string().trim().min(1).max(500),
 });
 
 export type CreateHourMeterAdjustmentInput = z.infer<typeof createHourMeterAdjustmentSchema>;

@@ -20,6 +20,7 @@ vi.mock('@/server/db/prisma', () => ({
       count: vi.fn(),
     },
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
   },
 }));
 
@@ -50,6 +51,7 @@ const hourMeterAdjustmentCreateMock = vi.mocked(prisma.hourMeterAdjustment.creat
 const hourMeterAdjustmentFindManyMock = vi.mocked(prisma.hourMeterAdjustment.findMany);
 const hourMeterAdjustmentCountMock = vi.mocked(prisma.hourMeterAdjustment.count);
 const transactionMock = vi.mocked(prisma.$transaction);
+const queryRawMock = vi.mocked(prisma.$queryRaw);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as people.service.test.ts).
@@ -60,6 +62,8 @@ const aircraftFindFirst = findFirstMock as unknown as { mockResolvedValue: (v: A
 const aircraftCreate = createMock as unknown as { mockResolvedValue: (v: AircraftFixture) => void };
 const aircraftUpdate = updateMock as unknown as { mockResolvedValue: (v: AircraftFixture) => void };
 const aircraftUpdateMany = updateManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
+// The FOR UPDATE locked read in `adjustHourMeter` (review 2.5 F1) — returns rows.
+const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: Array<{ hourMeterMinutes: number }>) => void };
 const hourMeterAdjustmentCreate = hourMeterAdjustmentCreateMock as unknown as { mockResolvedValue: (v: unknown) => void };
 const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void; mockImplementation: (fn: (arg: unknown) => unknown) => void };
 
@@ -110,6 +114,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     hourMeterAdjustmentFindManyMock.mockReset();
     hourMeterAdjustmentCountMock.mockReset();
     transactionMock.mockReset();
+    queryRawMock.mockReset();
   });
 
   describe('authorization (AD-5, AC 1/2)', () => {
@@ -463,7 +468,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   describe('adjustHourMeter (story 2.5, AC 2)', () => {
     it('throws NotFoundError for a missing aircraft, inside the same transaction', async () => {
       mockInteractiveTransaction();
-      aircraftFindUnique.mockResolvedValue(null);
+      queryRaw.mockResolvedValue([]);
 
       await expect(adjustHourMeter(staffActor(), 'missing', { newMinutes: 800, reason: 'Correction' })).rejects.toThrow(
         NotFoundError,
@@ -471,9 +476,9 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(hourMeterAdjustmentCreateMock).not.toHaveBeenCalled();
     });
 
-    it('creates the adjustment (previous = current value, actorUserId = actor.userId) and updates the aircraft, in one transaction', async () => {
+    it('creates the adjustment (previous = row-locked current value, actorUserId = actor.userId) and updates the aircraft, in one transaction', async () => {
       mockInteractiveTransaction();
-      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1', hourMeterMinutes: 750 });
+      queryRaw.mockResolvedValue([{ hourMeterMinutes: 750 }]);
       hourMeterAdjustmentCreate.mockResolvedValue({});
       aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 800 });
 
@@ -496,7 +501,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
     it('allows a negative delta (a correction can go either direction)', async () => {
       mockInteractiveTransaction();
-      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1', hourMeterMinutes: 750 });
+      queryRaw.mockResolvedValue([{ hourMeterMinutes: 750 }]);
       hourMeterAdjustmentCreate.mockResolvedValue({});
       aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 600 });
 

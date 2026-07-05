@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: Epic 1 done + Story 2.1 done)
+# HANDOFF — AirManager (aggiornato: Epic 2 DONE, pronti per Epic 3)
 
 ## Goal
 
@@ -6,43 +6,40 @@ Costruire AirManager, il gestionale per un'aviosuperficie (piloti, velivoli, vol
 
 ## Current Progress
 
-- **Fase 0 e Fase 1 complete e pushate** su `claude/airfield-management-system-rh1y4r` (PR #2 aperta verso main: https://github.com/demforce/AirManager/pull/2).
-  - PRD: `_bmad-output/planning-artifacts/prds/prd-AirManager-2026-07-04/prd.md` (42 FR; domande aperte risolte con l'utente).
-  - Architettura: `_bmad-output/planning-artifacts/architecture/architecture-AirManager-2026-07-04/ARCHITECTURE-SPINE.md` (AD-1..AD-11 vincolanti).
-  - Epics/stories: `_bmad-output/planning-artifacts/epics.md` (10 epics, 39 stories con AC). Tracking: `_bmad-output/implementation-artifacts/sprint-status.yaml`.
-- **Epic 1 (Fondazione e accesso) DONE** — 5 stories, ciascuna con commit di implementazione + commit di fix review:
-  - 1.1 scaffold Next 16.2/Prisma 7/next-intl 4/Tailwind 4; 1.2 login Auth.js v5 beta.31 (Credentials+JWT, Argon2id); 1.3 RBAC service-layer (rbac.ts, DomainError, /api/v1/me); 1.4 gestione utenti (MailSender→Mailpit, AuthToken monouso hashati, isActive recheck 15', pagine set/forgot-password); 1.5 wrapper apiRoute() + OpenAPI 3.1 su /api/v1/openapi.json + paginazione.
-  - Gate correnti: lint/typecheck verdi, **135/135 unit**, build verde, **25/25 e2e Playwright**.
-- Prossima story: **2.1 people-crud** (Epic 2 Anagrafiche). File story non ancora creato.
+- **Epic 1 (Fondazione e accesso) DONE** e merged in main (PR #2). Dettagli nei singoli story file.
+- **Epic 2 (Anagrafiche) DONE** sul branch **`claude/handoff-docs-6jz8ou`** (branch di sessione corrente; il vecchio `claude/airfield-management-system-rh1y4r` è merged e chiuso — CLAUDE.md va aggiornato se si cambia branch di nuovo):
+  - 2.1 people CRUD+archiving (era già done); 2.2 profili Pilota/Allievo/Istruttore (soft-deactivation `deactivatedAt`, transizione allievo→pilota, `PUT/POST /api/v1/people/[id]/profiles/[type]`); 2.3 scheda persona (`/dashboard/people/[id]`, own-access `self.read`+`personId` nel service, profiles-panel readOnly, 5 segnaposto per epic 3-7); 2.4 CRUD velivoli (`Aircraft`, `/dashboard/aircraft`, marche normalizzate uppercase, contaore in minuti AD-2); 2.5 stato operativo + rettifiche contaore (`AircraftStatus` enum, `HourMeterAdjustment` append-only con FOR UPDATE lock, contaore modificabile SOLO via rettifica — rimosso dal PATCH).
+  - Ogni story: commit di implementazione + commit di fix review; Review Record nel story file.
+  - Gate correnti: lint verde (1 warning benigno documentato su `data-table.tsx`, React Compiler + TanStack), typecheck verde, **224/224 unit**, build verde, **49/49 e2e**.
+- Tracking: `_bmad-output/implementation-artifacts/sprint-status.yaml` (epic-2: done). Prossimo: **Epic 3 Finanze — story 3.1 accounts-topups** (story file NON ancora creato).
 
 ## What Worked
 
-- Ciclo per story: Fable scrive lo story file (contesto ricco: vincoli AD, pattern esistenti, versioni verificate, cosa NON fare) → dev Sonnet con bmad-dev-story → commit → review Opus adversarial (ha SEMPRE trovato problemi reali: open redirect, timing attack, TOCTOU sul token monouso, last-admin lockout) → fix applicati da Fable → commit fix.
-- Versioni SEMPRE verificate su npm (`npm view`), mai da memoria; doc ufficiali via WebFetch su raw.githubusercontent.com.
-- Subagent interrotto (limite sessione): riprendibile con SendMessage sullo stesso agentId senza perdere contesto.
-- Playwright: Chromium preinstallato (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`), MAI eseguire `playwright install`.
+- Ciclo per story invariato e solido: Fable scrive story file ricco (vincoli AD, pattern esistenti, review-lessons precedenti, cosa NON fare) → dev Sonnet bmad-dev-story → commit → review Opus adversarial → fix di Fable → commit fix. Le review Opus continuano a trovare problemi veri: stale-form senza `key` remount (2.4 F1), TOCTOU su deactivate (2.2 F1), audit trail con previousMinutes stale sotto concorrenza → `SELECT ... FOR UPDATE` via `$queryRaw` (2.5 F1, mandatory).
+- **Lezioni review diventate pattern** (citarle negli story file nuovi): guardie atomiche `updateMany` per transizioni di stato; `key={id}` sui form di edit; `setValueAs` ''→null sui campi opzionali; cap INT max sui numeri e `.max(500)` sulle stringhe libere; ownership check PRIMA della query (no enumeration 403/404).
+- Subagent interrotto (limite sessione): riprendibile con SendMessage sullo stesso agentId senza perdere contesto — confermato di nuovo (dev 2.2).
+- Classificatore permessi giù ("claude-opus-4-8[1m] temporarily unavailable"): blocca spawn subagent e persino send_later; le operazioni read-only funzionano. Soluzione: tool Monitor con `sleep N && echo retry` come timer di ritentativo — funziona.
 
 ## What Didn't Work
 
-- `mcp.context7.com` e in generale i siti doc: bloccati dalla network policy (solo npm/PyPI/proxy.golang.org/GitHub API). `curl` verso doc = fallisce; WebFetch lato server funziona solo su raw.githubusercontent.com.
-- Docker Hub CDN bloccato: `docker compose up` non verificabile qui → si usa PostgreSQL 16 locale (`service postgresql start`) con credenziali identiche al compose. **Mailpit**: binari GitHub releases bloccati → compilato con `go install`, binario in `/root/go/bin/mailpit` (avviare con `--smtp 127.0.0.1:1025 --listen 127.0.0.1:8025` prima degli e2e).
-- Il classificatore permessi Bash va giù a tratti ("claude-opus-4-8[1m] temporarily unavailable"): i comandi falliscono temporaneamente — riprovare più tardi, non è un errore del codice.
-- npm rifiuta `create-next-app` in-place su directory con maiuscole (AirManager) → fatto in scratch dir e merged.
+- Rete: `mcp.context7.com` e siti doc bloccati (solo npm/PyPI/GitHub raw); Docker Hub bloccato → PostgreSQL 16 locale (`service postgresql start`); Mailpit compilato con `go install` → `/root/go/bin/mailpit` (container nuovo: ricompilare, ~1 min).
+- `prisma migrate dev` E `prisma migrate reset` rifiutano il sandbox non-interattivo: migrazioni con `migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` → file a mano → `migrate deploy` → `generate`; reset DB con `sudo -u postgres psql -c 'DROP DATABASE airmanager;' && createdb -O airmanager airmanager && migrate deploy && db seed`.
+- **e2e flaky su DB sporco**: i run accumulano Person/Aircraft e i test 2.1 che guardano la prima pagina falliscono (il record nuovo finisce a pagina 2). SEMPRE resettare il DB prima di giudicare un run completo. Da sistemare prima o poi (cleanup per-test o DB di test dedicato).
 
-## Key Decisions (oltre a PRD/spine/CLAUDE.md)
+## Key Decisions (oltre a PRD/spine/CLAUDE.md e story files)
 
-- Un commit per story + un commit per i fix di review (regola utente).
-- Next 16: UN SOLO file proxy (`src/proxy.ts`, ex middleware) — auth e next-intl composti lì.
-- `@auth/prisma-adapter` omesso deliberatamente (Credentials+JWT non usa le tabelle OAuth).
-- Schemi OpenAPI: importare `z` da `src/lib/schemas/zod-with-openapi.ts` (regola ESLint dedicata); component schemas col plain zod rompono il registry.
-- Permessi rinviati: `ppr.manage` (epic 8, oggi la nav PPR usa `bookings.manage.any`), `school.manage.any` per staff (epic 9).
-- Seed: `admin@airmanager.local` + `pilot@airmanager.local`, password da `SEED_ADMIN_PASSWORD`.
+- Un commit per story + un commit per i fix di review (regola utente). Nessun riferimento AI nei messaggi di commit.
+- Contaore: `hourMeterMinutes` cambia SOLO via `POST /api/v1/aircraft/[id]/hour-meter-adjustments` (audit: chi/quando/prima/dopo/motivo); tolto dal PATCH generico (2.5).
+- Fuori servizio ≠ archiviato: OUT_OF_SERVICE resta in elenco (flotta attiva non prenotabile, flag pronto per Epic 7); archiviato = fuori flotta.
+- Profili persona: 1-a-0/1 su Person (AD-11), soft-deactivation, mai delete; `Account` futuro apparterrà a Person, mai al profilo.
+- Own-access: `self.read` + confronto `actor.personId` nel service (mai in `authorize()`), check PRIMA della query.
+- Permessi rinviati: `ppr.manage` (epic 8), `school.manage.any` staff (epic 9); non esiste `aircraft.read` (piloti vedranno la flotta con l'epic 7).
+- Seed: `admin@airmanager.local` + `pilot@airmanager.local` (con Person + PilotProfile attivo) + velivolo `I-ABCD`.
 
 ## Next Steps (in ordine)
 
-1. **Story 2.2 person-profiles**: Fable crea `_bmad-output/implementation-artifacts/2-2-person-profiles.md` (profili Pilota/Allievo/Istruttore 1-a-0/1 su Person, AD-11; dati specifici per profilo; passaggio allievo→pilota senza perdere storico — vedi Story 2.2 in epics.md), sprint-status → ready-for-dev, commit; poi dev Sonnet → commit → review Opus → fix → commit → done.
-2. Stesso ciclo per 2.3 scheda persona, 2.4 velivoli, 2.5 stato/contaore; poi epic-2 done e avanti con Epic 3 (Finanze) secondo epics.md.
-3. **Story 2.1 people-crud è DONE** (commit d8d2ded + fix opzionali): ha introdotto `src/components/data-table.tsx` (TanStack Table riusabile — riusarlo nelle prossime viste), gli endpoint `/api/v1/people*` documentati in OpenAPI e il pattern di archiviazione con `archivedAt`. NOTA AMBIENTE NUOVA: `prisma migrate dev` NON funziona in questo sandbox (rifiuta il non-interattivo) — usare `prisma migrate diff --script` + file migrazione scritto a mano + `prisma migrate deploy` (vedi Dev Agent Record 2.1).
-4. Pendenze non bloccanti: Context7 (serve che l'utente sblocchi il dominio nella network policy), verifica `docker compose up` su macchina con Docker Hub, retrospettive epic opzionali, permessi rinviati (`ppr.manage` epic 8, `school.manage.any` epic 9).
+1. **Story 3.1 accounts-topups** (Epic 3 Finanze): Fable crea `_bmad-output/implementation-artifacts/3-1-accounts-topups.md` da epics.md. ATTENZIONE ai vincoli cardine: AD-2 (centesimi interi, `src/lib/money.ts` esiste già), AD-3 (ledger `AccountMovement` append-only con storno `reversalOfId`, saldo = SUM, MAI campo saldo), AD-11 (`Account` appartiene a `Person`). Poi ciclo solito: sprint-status ready-for-dev → dev Sonnet → review Opus → fix → done.
+2. Stories 3.2-3.5 (estratto conto, rettifiche+alert saldo negativo, cassa aviosuperficie, report finanziario) stesso ciclo; poi epic-3 done → Epic 4 (Tariffe e pacchetti).
+3. Pendenze non bloccanti: Context7 (utente deve sbloccare dominio), verifica `docker compose up` fuori sandbox, retrospettive epic opzionali, flakiness e2e su DB sporco (vedi sopra), F2 review 2.5 (storico rettifiche cappato a 50 senza load-more).
 
-Ambiente da ripristinare a inizio sessione: `service postgresql start`; Mailpit `/root/go/bin/mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025 &`; `.env` esiste già (non tracciato) — se il container è nuovo, ricrearlo da `.env.example` + `SEED_ADMIN_PASSWORD` qualsiasi e rieseguire `npx prisma migrate deploy && npx prisma db seed`.
+Ambiente da ripristinare a inizio sessione (container nuovo): `service postgresql start`; se manca il ruolo/DB: `sudo -u postgres psql -c "CREATE ROLE airmanager LOGIN PASSWORD 'airmanager' CREATEDB;" && sudo -u postgres createdb -O airmanager airmanager`; `.env` da `.env.example` (AUTH_SECRET random); `npm install`; `npx prisma migrate deploy && npx prisma db seed`; Mailpit: `go install github.com/axllent/mailpit@latest` poi `/root/go/bin/mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025 &`. MAI `playwright install` (Chromium in `/opt/pw-browsers`).
