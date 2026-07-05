@@ -41,6 +41,59 @@
       "settings": "Impostazioni"
     }
   },
+  "PeoplePage": {
+    "kicker": "Anagrafiche",
+    "title": "Persone",
+    "description": "Anagrafica unica di piloti, allievi, istruttori e staff: crea, modifica e archivia le persone.",
+    "backToDashboard": "Torna alla dashboard",
+    "newPerson": "Nuova persona",
+    "searchPlaceholder": "Cerca per nome, cognome o email…",
+    "includeArchivedLabel": "Includi archiviate",
+    "table": {
+      "name": "Nome",
+      "email": "Email",
+      "phone": "Telefono",
+      "status": "Stato",
+      "actions": "Azioni",
+      "noValue": "—",
+      "empty": "Nessuna persona trovata."
+    },
+    "status": {
+      "active": "Attiva",
+      "archived": "Archiviata"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "archive": "Archivia",
+      "unarchive": "Ripristina",
+      "confirmArchive": "Archiviare questa persona?",
+      "confirmUnarchive": "Ripristinare questa persona?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
+    },
+    "form": {
+      "createTitle": "Nuova persona",
+      "editTitle": "Modifica persona",
+      "firstName": "Nome",
+      "lastName": "Cognome",
+      "email": "Email",
+      "phone": "Telefono",
+      "address": "Indirizzo",
+      "fiscalCode": "Codice fiscale",
+      "submitCreate": "Crea persona",
+      "submitEdit": "Salva modifiche",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "conflictError": "Esiste già una persona con questa email o codice fiscale."
+    },
+    "feedback": {
+      "created": "Persona creata.",
+      "updated": "Persona aggiornata.",
+      "archived": "Persona archiviata.",
+      "unarchived": "Persona ripristinata."
+    }
+  },
   "UsersPage": {
     "kicker": "Amministrazione",
     "title": "Utenti",

@@ -32,7 +32,8 @@ export type NavItem = {
  * `ppr.manage` permission.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
-  { key: 'people', href: '/people', permissions: ['people.read'] },
+  // Story 2.1: the first real (non-placeholder) People sub-page.
+  { key: 'people', href: '/dashboard/people', permissions: ['people.read'] },
   { key: 'aircraft', href: '/aircraft', permissions: ['aircraft.manage'] },
   { key: 'flights', href: '/flights', permissions: ['flights.manage'] },
   { key: 'bookings', href: '/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any'] },

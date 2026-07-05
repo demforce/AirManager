@@ -29,16 +29,28 @@ enum Role {
   STUDENT
 }
 
-/// Minimal person registry (AD-11: a single `Person` record per human being).
-/// Story 2.1 extends this with the full anagrafica; here it only carries the
-/// fields needed to attach a display name to an authenticated user.
+/// Person registry (AD-11: a single `Person` record per human being; FR-4:
+/// one unique anagrafica, no duplicates). Story 1.2 introduced the minimal
+/// shape (name + optional email) to attach a display name to an
+/// authenticated user; story 2.1 extends it with the full CRUD fields
+/// (`phone`/`address`/`fiscalCode`) plus archiving.
 model Person {
-  id        String   @id @default(cuid())
-  firstName String
-  lastName  String
-  email     String?  @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(cuid())
+  firstName  String
+  lastName   String
+  email      String?   @unique
+  phone      String?
+  address    String?
+  /// Italian "codice fiscale" — optional (not every person has one on file
+  /// yet) but unique when present, same nullable-unique pattern as `email`.
+  fiscalCode String?   @unique
+  /// Soft-archive timestamp (story 2.1, AC 2): a timestamp rather than a
+  /// boolean also records *when* — and there is deliberately no physical
+  /// delete API for a `Person` (historical flights/movements must keep
+  /// referencing it).
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   user User?
 }

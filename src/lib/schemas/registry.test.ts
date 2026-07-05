@@ -15,6 +15,10 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       expect.arrayContaining([
         '/api/v1/health',
         '/api/v1/me',
+        '/api/v1/people',
+        '/api/v1/people/{id}',
+        '/api/v1/people/{id}/archive',
+        '/api/v1/people/{id}/unarchive',
         '/api/v1/users',
         '/api/v1/users/{id}',
         '/api/v1/users/{id}/resend-invite',

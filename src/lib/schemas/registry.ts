@@ -3,6 +3,13 @@ import { z } from './zod-with-openapi';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { meResponseSchema } from './me';
+import {
+  createPersonSchema,
+  listPeopleQuerySchema,
+  personListItemSchema,
+  personListResponseSchema,
+  updatePersonSchema,
+} from './people';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
 
 /**
@@ -47,6 +54,10 @@ const security = [{ [cookieAuth.name]: [] }];
 registry.register('Error', errorEnvelopeSchema);
 registry.register('Ok', okResponseSchema);
 registry.register('Me', meResponseSchema);
+registry.register('Person', personListItemSchema);
+registry.register('PersonList', personListResponseSchema);
+registry.register('CreatePersonRequest', createPersonSchema);
+registry.register('UpdatePersonRequest', updatePersonSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -55,6 +66,7 @@ registry.register('SetPasswordRequest', setPasswordSchema);
 registry.register('ForgotPasswordRequest', forgotPasswordSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
   401: 'Not authenticated (AD-8 `UNAUTHENTICATED`).',
@@ -105,6 +117,86 @@ registry.registerPath({
   responses: {
     200: { description: 'The caller.', content: jsonContent(meResponseSchema) },
     ...errorResponses(401, 404),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people',
+  summary: 'List persons (paginated, searchable)',
+  description: 'Search (`q`) matches first name, last name or email, case-insensitively. Archived persons are excluded unless `includeArchived=true` (AC 2).',
+  tags: ['People'],
+  security,
+  request: { query: listPeopleQuerySchema },
+  responses: {
+    200: { description: 'A page of persons.', content: jsonContent(personListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people',
+  summary: 'Create a person',
+  tags: ['People'],
+  security,
+  request: { body: { content: jsonContent(createPersonSchema), required: true } },
+  responses: {
+    201: { description: 'The created person.', content: jsonContent(personListItemSchema) },
+    ...errorResponses(401, 403, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}',
+  summary: 'Get a single person',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: 'The person.', content: jsonContent(personListItemSchema) },
+    ...errorResponses(401, 403, 404),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/people/{id}',
+  summary: 'Update a person (name, contact details, fiscal code)',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(updatePersonSchema), required: true } },
+  responses: {
+    200: { description: 'The updated person.', content: jsonContent(personListItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/archive',
+  summary: 'Archive a person',
+  description: 'Soft-archive only (AC 2) — there is no physical delete endpoint for a Person.',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: 'The archived person.', content: jsonContent(personListItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/unarchive',
+  summary: 'Restore a previously archived person',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: 'The restored person.', content: jsonContent(personListItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
   },
 });
 

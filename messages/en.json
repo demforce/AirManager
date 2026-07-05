@@ -41,6 +41,59 @@
       "settings": "Settings"
     }
   },
+  "PeoplePage": {
+    "kicker": "Records",
+    "title": "People",
+    "description": "The single source of truth for pilots, students, instructors and staff: create, edit and archive people.",
+    "backToDashboard": "Back to dashboard",
+    "newPerson": "New person",
+    "searchPlaceholder": "Search by first name, last name or email…",
+    "includeArchivedLabel": "Include archived",
+    "table": {
+      "name": "Name",
+      "email": "Email",
+      "phone": "Phone",
+      "status": "Status",
+      "actions": "Actions",
+      "noValue": "—",
+      "empty": "No people found."
+    },
+    "status": {
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "actions": {
+      "edit": "Edit",
+      "archive": "Archive",
+      "unarchive": "Restore",
+      "confirmArchive": "Archive this person?",
+      "confirmUnarchive": "Restore this person?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
+    },
+    "form": {
+      "createTitle": "New person",
+      "editTitle": "Edit person",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "phone": "Phone",
+      "address": "Address",
+      "fiscalCode": "Fiscal code",
+      "submitCreate": "Create person",
+      "submitEdit": "Save changes",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "genericError": "Something went wrong. Please try again.",
+      "conflictError": "A person with this email or fiscal code already exists."
+    },
+    "feedback": {
+      "created": "Person created.",
+      "updated": "Person updated.",
+      "archived": "Person archived.",
+      "unarchived": "Person restored."
+    }
+  },
   "UsersPage": {
     "kicker": "Administration",
     "title": "Users",
