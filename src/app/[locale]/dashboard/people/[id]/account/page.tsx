@@ -42,7 +42,7 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
     return;
   }
 
-  const page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
+  let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
 
   let person;
   let overview;
@@ -51,6 +51,14 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
     person = await getPerson(actor, id);
     overview = await getAccountOverview(actor, id);
     statement = await listAccountMovements(actor, id, { page, pageSize: PAGE_SIZE });
+    // Clamp an out-of-range ?page to the last real page (review 3.2 F1):
+    // otherwise a hand-edited URL shows a misleading "no movements" table
+    // with no nav rendered to get back (totalPages guards the nav block).
+    const lastPage = Math.max(1, Math.ceil(statement.total / PAGE_SIZE));
+    if (page > lastPage) {
+      page = lastPage;
+      statement = await listAccountMovements(actor, id, { page, pageSize: PAGE_SIZE });
+    }
   } catch (error) {
     if (error instanceof NotFoundError) {
       notFound();

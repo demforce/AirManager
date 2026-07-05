@@ -4,7 +4,17 @@ baseline_commit: fa3434b72c3be320048a4fe4c2cc2bcb7a617348
 
 # Story 3.2: Estratto conto
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-06)
+- **Verdict**: APPROVE — no mandatory findings. Hot areas verified: `actorEmail` is role-gated IN THE SERVICE (conditional spread, absent from the wire payload for the holder — not merely hidden by the UI; unit test asserts `not.toHaveProperty`), so a pilot cannot obtain staff emails via direct API; OpenAPI declares it optional; full own-access matrix tested with ownership-before-query; AD-8 pagination shape with pageSize cap and count+findMany in one transaction; M1 locale-aware money from the route locale (e2e checks €100.00 on /en); F3 tie-break and F4 404-vs-empty contracts respected; i18n symmetric.
+- **F1 (optional, applied)**: out-of-range `?page` now clamps to the last real page instead of showing a misleading empty table with no nav rendered to recover.
+- **F2 (optional, no action)**: the page performs three service calls each re-running the person lookup — redundant but safe, consistent with the 2.3 pattern; optimize later if it matters.
+- **F3 (informational, confirmed intended)**: ordering is by `createdAt` (registration order, ledger semantics AD-3), not by `effectiveDate` — a backdated top-up sorts by when it was recorded. Deliberate.
+- **F4 (nit, no action)**: unused `createdAt` crosses the RSC boundary in row props.
+- **Post-fix gates**: lint ✔ (1 documented benign warning), typecheck ✔, test 260/260 ✔, build ✔, e2e 59/59 ✔ (fresh DB).
 
 ## Story
 
