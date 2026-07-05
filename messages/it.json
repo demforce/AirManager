@@ -158,10 +158,38 @@
     "placeholders": {
       "comingSoon": "Disponibile prossimamente.",
       "expiries": "Scadenze",
-      "balance": "Saldo conto",
       "hoursPackages": "Pacchetti ore",
       "recentFlights": "Ultimi voli",
       "upcomingBookings": "Prossime prenotazioni"
+    },
+    "accountPanel": {
+      "heading": "Saldo conto",
+      "balanceLabel": "Saldo attuale",
+      "noAccount": "Nessun conto attivo",
+      "loadError": "Impossibile caricare il conto.",
+      "recentTitle": "Ultimi movimenti",
+      "recentEmpty": "Nessun movimento registrato.",
+      "movementType": {
+        "topUp": "Ricarica"
+      },
+      "topUp": {
+        "action": "Registra ricarica",
+        "title": "Registra ricarica",
+        "amount": "Importo (EUR)",
+        "paymentMethod": "Metodo di pagamento",
+        "paymentMethods": {
+          "cash": "Contanti",
+          "bankTransfer": "Bonifico",
+          "pos": "POS"
+        },
+        "effectiveDate": "Data valuta",
+        "description": "Note",
+        "submit": "Conferma ricarica",
+        "cancel": "Annulla",
+        "invalidAmount": "Inserisci un importo valido maggiore di zero.",
+        "requiredField": "Campo obbligatorio.",
+        "genericError": "Impossibile registrare la ricarica. Riprova."
+      }
     }
   },
   "AircraftPage": {

@@ -376,24 +376,33 @@ export async function upsertProfile(
 
   if (type === 'pilot') {
     const input = data as PilotProfileInput;
-    const profile = await prisma.pilotProfile.upsert({
-      where: { personId },
-      create: { personId, licenseNumber: input.licenseNumber, licenseType: input.licenseType },
-      update: { licenseNumber: input.licenseNumber, licenseType: input.licenseType, deactivatedAt: null },
-      select: { licenseNumber: true, licenseType: true, deactivatedAt: true },
-    });
+    // Story 3.1, AC 1/AD-11: the profile upsert and the Account upsert must
+    // land together — a crash between the two must never leave a pilot
+    // profile active with no account behind it.
+    const [profile] = await prisma.$transaction([
+      prisma.pilotProfile.upsert({
+        where: { personId },
+        create: { personId, licenseNumber: input.licenseNumber, licenseType: input.licenseType },
+        update: { licenseNumber: input.licenseNumber, licenseType: input.licenseType, deactivatedAt: null },
+        select: { licenseNumber: true, licenseType: true, deactivatedAt: true },
+      }),
+      prisma.account.upsert({ where: { personId }, create: { personId }, update: {} }),
+    ]);
     return profile;
   }
 
   if (type === 'student') {
     const input = data as StudentProfileInput;
     const courseStartDate = new Date(input.courseStartDate);
-    const profile = await prisma.studentProfile.upsert({
-      where: { personId },
-      create: { personId, courseStartDate },
-      update: { courseStartDate, deactivatedAt: null },
-      select: { courseStartDate: true, deactivatedAt: true },
-    });
+    const [profile] = await prisma.$transaction([
+      prisma.studentProfile.upsert({
+        where: { personId },
+        create: { personId, courseStartDate },
+        update: { courseStartDate, deactivatedAt: null },
+        select: { courseStartDate: true, deactivatedAt: true },
+      }),
+      prisma.account.upsert({ where: { personId }, create: { personId }, update: {} }),
+    ]);
     return { courseStartDate: toDateOnlyString(profile.courseStartDate), deactivatedAt: profile.deactivatedAt };
   }
 

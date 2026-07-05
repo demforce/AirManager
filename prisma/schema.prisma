@@ -56,6 +56,9 @@ model Person {
   pilotProfile      PilotProfile?
   studentProfile    StudentProfile?
   instructorProfile InstructorProfile?
+  /// Prepaid account (story 3.1, AD-11): 1-to-0/1 with `Person`, never the
+  /// profile — a student->pilot transition never touches it.
+  account           Account?
 }
 
 /// Pilot profile (story 2.2, AC 1/2, AD-11): 1-to-0/1 with `Person`, never a
@@ -195,6 +198,10 @@ model User {
   /// Hour-meter rectifications this user performed (story 2.5, AC 2) —
   /// `HourMeterAdjustment.actorUserId`.
   hourMeterAdjustments HourMeterAdjustment[]
+  /// Account ledger entries this user recorded (story 3.1) — `AccountMovement.actorUserId`.
+  accountMovements     AccountMovement[]
+  /// Cash ledger entries this user recorded (story 3.1) — `CashMovement.actorUserId`.
+  cashMovements        CashMovement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -222,4 +229,116 @@ model AuthToken {
   createdAt DateTime      @default(now())
 
   @@index([userId])
+}
+
+/// Prepaid account movement types (story 3.1, AD-3's ledger). Only `TOP_UP`
+/// is populated today — `ADJUSTMENT` (story 3.3) and flight debits (epic 5)
+/// grow this enum later; it is a migration, not something to pre-populate
+/// with values nothing writes yet.
+enum AccountMovementType {
+  TOP_UP
+}
+
+/// How a top-up was paid (story 3.1, AC 2). Only meaningful for `TOP_UP`
+/// movements today — kept on `AccountMovement` rather than a separate table
+/// since every current movement type needs at most this one extra field.
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  POS
+}
+
+/// Prepaid account (story 3.1, AC 1; AD-11): 1-to-0/1 with `Person`, NEVER
+/// with a profile — `PilotProfile`/`StudentProfile` come and go (student to
+/// pilot transition, deactivation) but the account and its whole ledger
+/// history survive untouched, because it is anchored to the person, not the
+/// role. Deliberately has NO balance column (AD-3): the balance is always
+/// `SUM(AccountMovement.amountCents)`, computed in `accounts.service.ts`,
+/// never a value written here.
+model Account {
+  id        String   @id @default(cuid())
+  personId  String   @unique
+  person    Person   @relation(fields: [personId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movements AccountMovement[]
+}
+
+/// Append-only ledger of a person's account activity (story 3.1, AC 2/3;
+/// AD-3's cardinal rule — this is the model that constraint is named after).
+/// There is deliberately no update/delete API: a wrong entry is corrected by
+/// a future storno movement referencing it via `reversalOfId` (story 3.3),
+/// never by editing/removing this row. `amountCents` is SIGNED (AD-2) — a
+/// top-up is positive; future movement types (debits) will be negative.
+/// `paymentMethod` is only ever set for `TOP_UP` today. `actorUserId` (not
+/// `personId`) records who *performed* the operation — same rationale as
+/// `HourMeterAdjustment.actorUserId` (story 2.5): the staff member recording
+/// a cash top-up is not the account holder.
+model AccountMovement {
+  id            String              @id @default(cuid())
+  accountId     String
+  account       Account             @relation(fields: [accountId], references: [id])
+  type          AccountMovementType
+  amountCents   Int
+  paymentMethod PaymentMethod?
+  description   String?
+  /// Value date (data valuta), calendar-only like `StudentProfile.courseStartDate`
+  /// (story 2.2) — never a timestamp.
+  effectiveDate DateTime            @db.Date
+  actorUserId   String
+  actorUser     User                @relation(fields: [actorUserId], references: [id])
+  /// Self-FK to the original movement this one reverses (AD-3 storno,
+  /// story 3.3). `@unique` — at most one reversal per original movement.
+  reversalOfId  String?             @unique
+  reversalOf    AccountMovement?    @relation("AccountMovementReversal", fields: [reversalOfId], references: [id])
+  reversal      AccountMovement?    @relation("AccountMovementReversal")
+  createdAt     DateTime            @default(now())
+
+  /// The automatic cash-ledger counterpart created in the same transaction
+  /// (story 3.1, AC 2) — present only for movement types that also move cash
+  /// (today, every `TOP_UP`).
+  cashMovement  CashMovement?
+
+  @@index([accountId])
+}
+
+/// Cash-ledger categories (story 3.1; full list assumed seeded per Dev Notes,
+/// story 3.4 owns further management UI). `isActive` lets a category be
+/// retired from new-movement pickers without breaking historical
+/// `CashMovement` rows that already reference it.
+model CashCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movements CashMovement[]
+}
+
+/// Append-only cash-register ledger (story 3.1, AC 2; AD-3 — same
+/// append-only/storno rule as `AccountMovement`, no update/delete API).
+/// `amountCents` is SIGNED (AD-2): an entrata (e.g. a top-up) is positive, a
+/// uscita is negative. `accountMovementId` links the automatic cash entry
+/// back to the `AccountMovement` (a top-up) that generated it — traceability
+/// and a natural idempotency key (at most one cash movement per account
+/// movement); manual cash movements (story 3.4) leave it `null`.
+model CashMovement {
+  id                String           @id @default(cuid())
+  categoryId        String
+  category          CashCategory     @relation(fields: [categoryId], references: [id])
+  amountCents       Int
+  description       String?
+  /// Value date (data valuta) — same calendar-only convention as `AccountMovement.effectiveDate`.
+  effectiveDate     DateTime         @db.Date
+  actorUserId       String
+  actorUser         User             @relation(fields: [actorUserId], references: [id])
+  accountMovementId String?          @unique
+  accountMovement   AccountMovement? @relation(fields: [accountMovementId], references: [id])
+  /// Self-FK to the original movement this one reverses (AD-3 storno, story 3.3/3.4).
+  reversalOfId      String?          @unique
+  reversalOf        CashMovement?    @relation("CashMovementReversal", fields: [reversalOfId], references: [id])
+  reversal          CashMovement?    @relation("CashMovementReversal")
+  createdAt         DateTime         @default(now())
 }

@@ -1,5 +1,6 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31, type ResponseConfig } from '@asteasolutions/zod-to-openapi';
 import { z } from './zod-with-openapi';
+import { accountOverviewSchema, recordTopUpSchema } from './accounts';
 import {
   aircraftListItemSchema,
   aircraftListResponseSchema,
@@ -90,6 +91,8 @@ registry.register('UpdateAircraftRequest', updateAircraftSchema);
 registry.register('SetOutOfServiceRequest', setOutOfServiceSchema);
 registry.register('CreateHourMeterAdjustmentRequest', createHourMeterAdjustmentSchema);
 registry.register('HourMeterAdjustmentList', hourMeterAdjustmentListResponseSchema);
+registry.register('AccountOverview', accountOverviewSchema);
+registry.register('RecordTopUpRequest', recordTopUpSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -324,6 +327,36 @@ registry.registerPath({
   responses: {
     200: { description: 'The profile was deactivated.', content: jsonContent(okResponseSchema) },
     ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/account',
+  summary: "Get a person's prepaid account overview (balance + recent movements preview)",
+  description:
+    'Balance is always `SUM(AccountMovement.amountCents)` (AD-3) — there is no stored balance column. `account: null` means the person never activated a pilot/student profile (AC 1). `recentMovements` previews at most the 5 most recent entries — the full paginated statement is story 3.2. Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}`, story 2.3).',
+  tags: ['Accounts'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: "The person's account overview.", content: jsonContent(accountOverviewSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/account/top-ups',
+  summary: 'Record a prepaid-account top-up',
+  description:
+    'Append-only (AD-3, story 3.1, AC 2/3) — in one transaction, upserts the `Account`, creates an immutable `AccountMovement` (TOP_UP) and its automatic `CashMovement` twin under the seeded "Ricariche" category. There is no update/delete endpoint for either ledger. Requires `finance.manage` (staff/admin) — never "own".',
+  tags: ['Accounts'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(recordTopUpSchema), required: true } },
+  responses: {
+    200: { description: 'The account overview, refreshed after the top-up.', content: jsonContent(accountOverviewSchema) },
+    ...errorResponses(401, 403, 404, 422),
   },
 });
 

@@ -6,14 +6,19 @@ import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { ForbiddenError, NotFoundError } from '@/server/services/errors';
 import { getPerson } from '@/server/services/people.service';
+import { AccountPanel } from '../account-panel';
 import { ProfilesPanel } from '../profiles-panel';
 
 type PageProps = {
   params: Promise<{ locale: string; id: string }>;
 };
 
-/** Story 2.3, AC 1: the 5 sections future epics will fill without restructuring the page. */
-const PLACEHOLDER_SECTIONS = ['expiries', 'balance', 'hoursPackages', 'recentFlights', 'upcomingBookings'] as const;
+/**
+ * Story 2.3, AC 1: the structural placeholders future epics fill without
+ * restructuring the page. Story 3.1 turns "balance" into the real
+ * `AccountPanel` below — it is deliberately removed from this list.
+ */
+const PLACEHOLDER_SECTIONS = ['expiries', 'hoursPackages', 'recentFlights', 'upcomingBookings'] as const;
 
 /**
  * The "scheda persona" (story 2.3): anagrafica + profiles (read-only unless
@@ -58,6 +63,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
   }
 
   const canManageProfiles = hasPermission(actor, 'people.manage');
+  const canManageFinance = hasPermission(actor, 'finance.manage');
   const t = await getTranslations('PersonDetailPage');
   const tPeople = await getTranslations('PeoplePage');
 
@@ -171,7 +177,41 @@ export default async function PersonDetailPage({ params }: PageProps) {
           />
         </div>
 
-        {/* Story 2.3, AC 1: structural placeholders — epics 3-7 replace the
+        <div className="mt-6">
+          <AccountPanel
+            personId={person.id}
+            canManageFinance={canManageFinance}
+            labels={{
+              heading: t('accountPanel.heading'),
+              balanceLabel: t('accountPanel.balanceLabel'),
+              noAccount: t('accountPanel.noAccount'),
+              loadError: t('accountPanel.loadError'),
+              recentTitle: t('accountPanel.recentTitle'),
+              recentEmpty: t('accountPanel.recentEmpty'),
+              movementType: { topUp: t('accountPanel.movementType.topUp') },
+              topUp: {
+                action: t('accountPanel.topUp.action'),
+                title: t('accountPanel.topUp.title'),
+                amount: t('accountPanel.topUp.amount'),
+                paymentMethod: t('accountPanel.topUp.paymentMethod'),
+                paymentMethods: {
+                  cash: t('accountPanel.topUp.paymentMethods.cash'),
+                  bankTransfer: t('accountPanel.topUp.paymentMethods.bankTransfer'),
+                  pos: t('accountPanel.topUp.paymentMethods.pos'),
+                },
+                effectiveDate: t('accountPanel.topUp.effectiveDate'),
+                description: t('accountPanel.topUp.description'),
+                submit: t('accountPanel.topUp.submit'),
+                cancel: t('accountPanel.topUp.cancel'),
+                invalidAmount: t('accountPanel.topUp.invalidAmount'),
+                requiredField: t('accountPanel.topUp.requiredField'),
+                genericError: t('accountPanel.topUp.genericError'),
+              },
+            }}
+          />
+        </div>
+
+        {/* Story 2.3, AC 1: structural placeholders — epics 4-7 replace the
             content, never this layout. */}
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {PLACEHOLDER_SECTIONS.map((section) => (

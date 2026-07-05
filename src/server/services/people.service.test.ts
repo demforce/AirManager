@@ -24,6 +24,9 @@ vi.mock('@/server/db/prisma', () => ({
       upsert: vi.fn(),
       updateMany: vi.fn(),
     },
+    account: {
+      upsert: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }));
@@ -54,6 +57,7 @@ const studentProfileUpsertMock = vi.mocked(prisma.studentProfile.upsert);
 const studentProfileUpdateManyMock = vi.mocked(prisma.studentProfile.updateMany);
 const instructorProfileUpsertMock = vi.mocked(prisma.instructorProfile.upsert);
 const instructorProfileUpdateManyMock = vi.mocked(prisma.instructorProfile.updateMany);
+const accountUpsertMock = vi.mocked(prisma.account.upsert);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as users.service.test.ts): narrow each
@@ -77,6 +81,7 @@ const studentProfileUpdateMany = studentProfileUpdateManyMock as unknown as {
 const instructorProfileUpdateMany = instructorProfileUpdateManyMock as unknown as {
   mockResolvedValue: (v: UpdateManyFixture) => void;
 };
+const accountUpsert = accountUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 
 function staffActor(): Actor {
   return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
@@ -123,6 +128,19 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     studentProfileUpdateManyMock.mockReset();
     instructorProfileUpsertMock.mockReset();
     instructorProfileUpdateManyMock.mockReset();
+    accountUpsertMock.mockReset();
+
+    // Story 3.1: `upsertProfile`'s pilot/student branches now run their
+    // profile upsert alongside the Account upsert inside `$transaction([...])`
+    // (the batch/array overload, not the interactive-callback one aircraft
+    // uses) — a faithful stand-in just awaits every already-invoked mock
+    // call, same rationale as `mockInteractiveTransaction` in
+    // aircraft.service.test.ts. Per-test `transaction.mockResolvedValue(...)`
+    // calls (e.g. `listPeople`'s `[items, total]`) still override this
+    // default, since they run later in the same test.
+    (transaction as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation(
+      (arg: unknown) => (typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[])),
+    );
   });
 
   describe('authorization (AD-5, AC 3)', () => {
@@ -517,6 +535,62 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         }),
       );
       expect(result).toEqual({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+    });
+
+    describe('Account creation on activation (story 3.1, AC 1, AD-11)', () => {
+      it('upserts the Account alongside the pilot profile', async () => {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+
+        await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
+
+        expect(accountUpsertMock).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' } }),
+        );
+      });
+
+      it('upserts the Account alongside the student profile', async () => {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        studentProfileUpsert.mockResolvedValue({ courseStartDate: new Date('2026-03-01'), deactivatedAt: null });
+
+        await upsertProfile(staffActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' });
+
+        expect(accountUpsertMock).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' } }),
+        );
+      });
+
+      it('does NOT create an Account for the instructor profile', async () => {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        instructorProfileUpsert.mockResolvedValue({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+
+        await upsertProfile(staffActor(), 'person_1', 'instructor', { ratings: 'SEP(land), FI(A)' });
+
+        expect(accountUpsertMock).not.toHaveBeenCalled();
+      });
+
+      it('reactivating an already-accounted person does not duplicate the account (idempotent upsert, AD-11 unique personId)', async () => {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+        accountUpsert.mockResolvedValue({ id: 'account_1' });
+
+        await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
+        await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
+
+        // Both calls are themselves upserts (create-if-missing / no-op
+        // update) — the unique `personId` constraint is what actually
+        // prevents a second row, this only asserts the call shape stays the
+        // same idempotent upsert on every activation.
+        expect(accountUpsertMock).toHaveBeenCalledTimes(2);
+        expect(accountUpsertMock).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' }, update: {} }),
+        );
+        expect(accountUpsertMock).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' }, update: {} }),
+        );
+      });
     });
   });
 

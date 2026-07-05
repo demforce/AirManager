@@ -110,6 +110,53 @@ async function seedAircraft(): Promise<void> {
   console.log('Seed: demo aircraft ready (I-ABCD).');
 }
 
+/**
+ * Story 3.1: the full cash-category catalogue (Dev Notes — story 3.4 assumes
+ * this list already exists, so it is seeded completely here rather than
+ * incrementally). Idempotent like the rest of this seed — `upsert` keyed on
+ * the unique `name`.
+ */
+const CASH_CATEGORY_NAMES = ['Ricariche', 'Pacchetti', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro'];
+
+async function seedCashCategories(): Promise<void> {
+  for (const name of CASH_CATEGORY_NAMES) {
+    await prisma.cashCategory.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+  }
+
+  console.log(`Seed: ${CASH_CATEGORY_NAMES.length} cash categories ready.`);
+}
+
+/**
+ * Story 3.1, AC 1: the demo pilot's `Person` already has an active
+ * `PilotProfile` from `seedPilotProfile` — a real profile activation would
+ * also have created the `Account` (AD-11: it belongs to the person, not the
+ * profile), so the seed does the same here. Idempotent — upsert keyed on the
+ * unique `personId`. No balance field to set (AD-3): a freshly created
+ * account has no movements yet, so its computed balance is already 0.
+ */
+async function seedPilotAccount(): Promise<void> {
+  const pilotUser = await prisma.user.findUnique({
+    where: { email: PILOT_EMAIL },
+    select: { personId: true },
+  });
+  if (!pilotUser?.personId) {
+    console.warn(`Seed: no person linked to ${PILOT_EMAIL}, skipping account.`);
+    return;
+  }
+
+  await prisma.account.upsert({
+    where: { personId: pilotUser.personId },
+    update: {},
+    create: { personId: pilotUser.personId },
+  });
+
+  console.log(`Seed: account ready for ${PILOT_EMAIL}.`);
+}
+
 async function main() {
   const seedPassword = process.env['SEED_ADMIN_PASSWORD'];
   if (!seedPassword) {
@@ -122,6 +169,8 @@ async function main() {
   await seedPilotUser(passwordHash);
   await seedPilotProfile();
   await seedAircraft();
+  await seedCashCategories();
+  await seedPilotAccount();
 }
 
 main()

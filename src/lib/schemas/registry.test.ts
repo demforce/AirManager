@@ -25,6 +25,8 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/people/{id}/profiles/student/deactivate',
         '/api/v1/people/{id}/profiles/instructor',
         '/api/v1/people/{id}/profiles/instructor/deactivate',
+        '/api/v1/people/{id}/account',
+        '/api/v1/people/{id}/account/top-ups',
         '/api/v1/aircraft',
         '/api/v1/aircraft/{id}',
         '/api/v1/aircraft/{id}/archive',

@@ -27,6 +27,18 @@ export function formatCents(cents: number, locale: 'it' | 'en' = 'it'): string {
 }
 
 /**
+ * Same as `formatCents`, but a positive amount gets an explicit leading `+`
+ * (`Intl.NumberFormat` never adds one on its own — only the negative sign is
+ * automatic). Used wherever an amount must visibly read as a signed ledger
+ * entry (AD-2, story 3.1's account/cash movement previews) rather than a
+ * plain magnitude — a `TOP_UP`'s `+100,00 €` vs a future debit's `-45,00 €`.
+ */
+export function formatSignedCents(cents: number, locale: 'it' | 'en' = 'it'): string {
+  const formatted = formatCents(cents, locale);
+  return cents > 0 ? `+${formatted}` : formatted;
+}
+
+/**
  * Parses a user-provided decimal amount (comma or dot as decimal separator,
  * at most 2 decimal digits) into an integer number of euro cents.
  * Throws `RangeError` on any input that isn't an unambiguous plain amount.

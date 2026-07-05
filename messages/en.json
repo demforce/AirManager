@@ -158,10 +158,38 @@
     "placeholders": {
       "comingSoon": "Coming soon.",
       "expiries": "Expiries",
-      "balance": "Account balance",
       "hoursPackages": "Hour packages",
       "recentFlights": "Recent flights",
       "upcomingBookings": "Upcoming bookings"
+    },
+    "accountPanel": {
+      "heading": "Account balance",
+      "balanceLabel": "Current balance",
+      "noAccount": "No active account",
+      "loadError": "Could not load the account.",
+      "recentTitle": "Recent movements",
+      "recentEmpty": "No movements recorded.",
+      "movementType": {
+        "topUp": "Top-up"
+      },
+      "topUp": {
+        "action": "Record top-up",
+        "title": "Record top-up",
+        "amount": "Amount (EUR)",
+        "paymentMethod": "Payment method",
+        "paymentMethods": {
+          "cash": "Cash",
+          "bankTransfer": "Bank transfer",
+          "pos": "POS"
+        },
+        "effectiveDate": "Value date",
+        "description": "Notes",
+        "submit": "Confirm top-up",
+        "cancel": "Cancel",
+        "invalidAmount": "Enter a valid amount greater than zero.",
+        "requiredField": "This field is required.",
+        "genericError": "Could not record the top-up. Please try again."
+      }
     }
   },
   "AircraftPage": {
