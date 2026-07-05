@@ -4,7 +4,15 @@ baseline_commit: 069a5975f2665154ead12d1a415fb45fcddb0cce
 
 # Story 2.3: Scheda dettaglio persona
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-05)
+- **Verdict**: APPROVE — no mandatory fixes. Hot areas verified: own-access rule performs the ownership check BEFORE the DB lookup (403 for any foreign id, existing or not — no 403-vs-404 enumeration side channel; unit test proves findUnique is not called); no IDOR (`actor.personId` from JWT vs route id); profile mutations still guarded server-side by `people.manage` regardless of the readOnly UI (AD-5); dashboard "my card" tile only for self-service actors with a linked Person; page-level check identical to the service rule (defense in depth); no regressions on the modal profiles panel; i18n symmetric.
+- Optional findings: **F1 applied** — the detail page catch now maps a hypothetical `ForbiddenError` from the service to the same dashboard redirect as the page-level check instead of degrading to a 500, keeping fail-closed clean if the two rules ever diverge. **F2/F3/F4 (nits) noted, no action**: F2 the API-403 e2e uses a nonexistent id (property already proven by the unit test); F3 tile uses DB personId vs JWT personId (fail-closed on the rare divergence); F4 Link locale prop style inconsistency (both forms correct in next-intl).
+- **Post-fix gates**: lint ✔ (1 documented benign warning), typecheck ✔, test 179/179 ✔, build ✔, e2e 40/40 ✔.
+- **Environment note**: full e2e runs on a DB polluted by many previous runs get flaky (paginated list pushes fresh rows to page 2; parallel-load timing) — reset with drop/recreate + `migrate deploy` + seed before judging a full-suite run (`prisma migrate reset` refuses non-interactive sandboxes).
 
 ## Story
 

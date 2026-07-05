@@ -4,7 +4,7 @@ import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import { NotFoundError } from '@/server/services/errors';
+import { ForbiddenError, NotFoundError } from '@/server/services/errors';
 import { getPerson } from '@/server/services/people.service';
 import { ProfilesPanel } from '../profiles-panel';
 
@@ -47,6 +47,12 @@ export default async function PersonDetailPage({ params }: PageProps) {
   } catch (error) {
     if (error instanceof NotFoundError) {
       notFound();
+    }
+    // Can't fire today (the page-level check above mirrors the service rule),
+    // but if the two ever diverge the service's 403 must degrade to the same
+    // redirect as the page check, not to a generic 500 (review 2.3 F1).
+    if (error instanceof ForbiddenError) {
+      redirect({ href: '/dashboard', locale });
     }
     throw error;
   }
