@@ -39,8 +39,8 @@ development_status:
   1-5-api-openapi: done
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-people-crud: backlog
+  epic-2: in-progress
+  2-1-people-crud: ready-for-dev
   2-2-person-profiles: backlog
   2-3-person-detail: backlog
   2-4-aircraft-crud: backlog
