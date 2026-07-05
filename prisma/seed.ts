@@ -88,6 +88,28 @@ async function seedPilotProfile(): Promise<void> {
   console.log(`Seed: pilot profile ready for ${PILOT_EMAIL}.`);
 }
 
+/**
+ * Story 2.4: a demo aircraft so the fleet CRUD UI/e2e have real data.
+ * Idempotent like the rest of the seed — upsert keyed on the unique
+ * `registration`. `hourMeterMinutes` is an integer (AD-2), never a decimal
+ * hours value.
+ */
+async function seedAircraft(): Promise<void> {
+  await prisma.aircraft.upsert({
+    where: { registration: 'I-ABCD' },
+    update: {},
+    create: {
+      registration: 'I-ABCD',
+      type: 'Ultraleggero 3 assi',
+      model: 'Tecnam P92 Eaglet',
+      hourMeterMinutes: 12 * 60 + 30,
+      notes: 'Velivolo scuola volo demo.',
+    },
+  });
+
+  console.log('Seed: demo aircraft ready (I-ABCD).');
+}
+
 async function main() {
   const seedPassword = process.env['SEED_ADMIN_PASSWORD'];
   if (!seedPassword) {
@@ -99,6 +121,7 @@ async function main() {
   await seedAdminUser(passwordHash);
   await seedPilotUser(passwordHash);
   await seedPilotProfile();
+  await seedAircraft();
 }
 
 main()

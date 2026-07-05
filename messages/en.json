@@ -164,6 +164,61 @@
       "upcomingBookings": "Upcoming bookings"
     }
   },
+  "AircraftPage": {
+    "kicker": "Fleet",
+    "title": "Aircraft",
+    "description": "The fleet registry: create, edit and archive aircraft.",
+    "backToDashboard": "Back to dashboard",
+    "newAircraft": "New aircraft",
+    "searchPlaceholder": "Search by registration or model…",
+    "includeArchivedLabel": "Include archived",
+    "table": {
+      "registration": "Registration",
+      "type": "Type",
+      "model": "Model",
+      "hourMeter": "Hour meter",
+      "status": "Status",
+      "actions": "Actions",
+      "noValue": "—",
+      "empty": "No aircraft found."
+    },
+    "status": {
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "actions": {
+      "edit": "Edit",
+      "archive": "Archive",
+      "unarchive": "Restore",
+      "confirmArchive": "Archive this aircraft?",
+      "confirmUnarchive": "Restore this aircraft?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
+    },
+    "form": {
+      "createTitle": "New aircraft",
+      "editTitle": "Edit aircraft",
+      "registration": "Registration",
+      "type": "Type",
+      "model": "Model",
+      "hourMeter": "Hour meter (minutes)",
+      "hourMeterHint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm).",
+      "notes": "Notes",
+      "submitCreate": "Create aircraft",
+      "submitEdit": "Save changes",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "invalidHourMeter": "The hour meter must be a whole number of minutes, zero or greater.",
+      "genericError": "Something went wrong. Please try again.",
+      "conflictError": "An aircraft with this registration already exists."
+    },
+    "feedback": {
+      "created": "Aircraft created.",
+      "updated": "Aircraft updated.",
+      "archived": "Aircraft archived.",
+      "unarchived": "Aircraft restored."
+    }
+  },
   "UsersPage": {
     "kicker": "Administration",
     "title": "Users",

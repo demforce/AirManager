@@ -34,7 +34,8 @@ export type NavItem = {
 export const NAV_ITEMS: readonly NavItem[] = [
   // Story 2.1: the first real (non-placeholder) People sub-page.
   { key: 'people', href: '/dashboard/people', permissions: ['people.read'] },
-  { key: 'aircraft', href: '/aircraft', permissions: ['aircraft.manage'] },
+  // Story 2.4: repointed the same way people was in 2.1.
+  { key: 'aircraft', href: '/dashboard/aircraft', permissions: ['aircraft.manage'] },
   { key: 'flights', href: '/flights', permissions: ['flights.manage'] },
   { key: 'bookings', href: '/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any'] },
   { key: 'finance', href: '/finance', permissions: ['finance.manage'] },

@@ -1,5 +1,12 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31, type ResponseConfig } from '@asteasolutions/zod-to-openapi';
 import { z } from './zod-with-openapi';
+import {
+  aircraftListItemSchema,
+  aircraftListResponseSchema,
+  createAircraftSchema,
+  listAircraftQuerySchema,
+  updateAircraftSchema,
+} from './aircraft';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { meResponseSchema } from './me';
@@ -72,6 +79,10 @@ registry.register('StudentProfileRequest', studentProfileRequestSchema);
 registry.register('StudentProfile', studentProfileSchema);
 registry.register('InstructorProfileRequest', instructorProfileRequestSchema);
 registry.register('InstructorProfile', instructorProfileSchema);
+registry.register('Aircraft', aircraftListItemSchema);
+registry.register('AircraftList', aircraftListResponseSchema);
+registry.register('CreateAircraftRequest', createAircraftSchema);
+registry.register('UpdateAircraftRequest', updateAircraftSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -81,6 +92,7 @@ registry.register('ForgotPasswordRequest', forgotPasswordSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const aircraftIdParams = z.object({ id: z.string().meta({ description: 'Aircraft id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
   401: 'Not authenticated (AD-8 `UNAUTHENTICATED`).',
@@ -304,6 +316,88 @@ registry.registerPath({
   request: { params: personIdParams },
   responses: {
     200: { description: 'The profile was deactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/aircraft',
+  summary: 'List aircraft (paginated, searchable)',
+  description:
+    'Search (`q`) matches registration or model, case-insensitively. Archived aircraft are excluded unless `includeArchived=true` (AC 2). Requires `aircraft.manage` — there is no `aircraft.read` permission (Dev Notes: pilots see the fleet via the future bookings epic).',
+  tags: ['Aircraft'],
+  security,
+  request: { query: listAircraftQuerySchema },
+  responses: {
+    200: { description: 'A page of aircraft.', content: jsonContent(aircraftListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft',
+  summary: 'Create an aircraft',
+  description: 'Registration (marche) must be unique — conflict is a 409.',
+  tags: ['Aircraft'],
+  security,
+  request: { body: { content: jsonContent(createAircraftSchema), required: true } },
+  responses: {
+    201: { description: 'The created aircraft.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/aircraft/{id}',
+  summary: 'Get a single aircraft',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: 'The aircraft.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/aircraft/{id}',
+  summary: 'Update an aircraft (registration, type, model, hour meter, notes)',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams, body: { content: jsonContent(updateAircraftSchema), required: true } },
+  responses: {
+    200: { description: 'The updated aircraft.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/archive',
+  summary: 'Archive an aircraft',
+  description: 'Soft-archive only (AC 2) — there is no physical delete endpoint for an Aircraft.',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: 'The archived aircraft.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/unarchive',
+  summary: 'Restore a previously archived aircraft',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: 'The restored aircraft.', content: jsonContent(aircraftListItemSchema) },
     ...errorResponses(401, 403, 404, 409),
   },
 });

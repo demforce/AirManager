@@ -103,6 +103,31 @@ model InstructorProfile {
   updatedAt     DateTime  @updatedAt
 }
 
+/// Aircraft fleet registry (story 2.4, AC 1/2; FR-7). `registration` (marche,
+/// e.g. "I-ABCD") is the unique human-facing identifier — normalized
+/// (`trim().toUpperCase()`) at the Zod boundary so the DB-level uniqueness is
+/// case-insensitive in practice. `hourMeterMinutes` is an integer number of
+/// minutes (AD-2 — the cardinal constraint of this story): the airframe's
+/// total-time contaore is never stored as a float/decimal-hours value: only
+/// this module's `src/lib/time.ts` helpers convert it to/from an `H:MM`
+/// display string. Operational status (out of service + reason, story 2.5)
+/// and rates (`AircraftRate`, epic 4) are deliberately out of scope here —
+/// this model is anagrafica only. `archivedAt` follows the same
+/// soft-archive pattern as `Person.archivedAt` (story 2.1): a timestamp
+/// rather than a boolean, no physical-delete API, since future flights/rates
+/// reference the aircraft by id.
+model Aircraft {
+  id               String    @id @default(cuid())
+  registration     String    @unique
+  type             String
+  model            String
+  hourMeterMinutes Int
+  notes            String?
+  archivedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
 /// Login credentials. 1-to-0/1 with `Person` (AD-11) — not every `Person` has
 /// a login (e.g. a pilot who never receives an account), and not every `User`
 /// needs a `Person` yet (kept optional to avoid coupling auth to the full

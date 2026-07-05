@@ -164,6 +164,61 @@
       "upcomingBookings": "Prossime prenotazioni"
     }
   },
+  "AircraftPage": {
+    "kicker": "Flotta",
+    "title": "Velivoli",
+    "description": "Anagrafica della flotta: crea, modifica e archivia i velivoli.",
+    "backToDashboard": "Torna alla dashboard",
+    "newAircraft": "Nuovo velivolo",
+    "searchPlaceholder": "Cerca per marche o modello…",
+    "includeArchivedLabel": "Includi archiviati",
+    "table": {
+      "registration": "Marche",
+      "type": "Tipo",
+      "model": "Modello",
+      "hourMeter": "Contaore",
+      "status": "Stato",
+      "actions": "Azioni",
+      "noValue": "—",
+      "empty": "Nessun velivolo trovato."
+    },
+    "status": {
+      "active": "Attivo",
+      "archived": "Archiviato"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "archive": "Archivia",
+      "unarchive": "Ripristina",
+      "confirmArchive": "Archiviare questo velivolo?",
+      "confirmUnarchive": "Ripristinare questo velivolo?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
+    },
+    "form": {
+      "createTitle": "Nuovo velivolo",
+      "editTitle": "Modifica velivolo",
+      "registration": "Marche",
+      "type": "Tipo",
+      "model": "Modello",
+      "hourMeter": "Contaore (minuti)",
+      "hourMeterHint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm).",
+      "notes": "Note",
+      "submitCreate": "Crea velivolo",
+      "submitEdit": "Salva modifiche",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "invalidHourMeter": "Il contaore deve essere un numero intero di minuti maggiore o uguale a zero.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "conflictError": "Esiste già un velivolo con queste marche."
+    },
+    "feedback": {
+      "created": "Velivolo creato.",
+      "updated": "Velivolo aggiornato.",
+      "archived": "Velivolo archiviato.",
+      "unarchived": "Velivolo ripristinato."
+    }
+  },
   "UsersPage": {
     "kicker": "Amministrazione",
     "title": "Utenti",
