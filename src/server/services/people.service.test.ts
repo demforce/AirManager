@@ -86,6 +86,11 @@ function pilotActor(): Actor {
   return { userId: 'pilot_1', personId: 'person_pilot', roles: ['PILOT'] };
 }
 
+/** No role at all (e.g. a stale JWT carrying a role removed from `ROLE_PERMISSIONS`) — fails closed to zero permissions. */
+function noRoleActor(): Actor {
+  return { userId: 'ghost_1', personId: null, roles: [] };
+}
+
 const SELECTED_PERSON = {
   id: 'person_1',
   firstName: 'Maria',
@@ -280,6 +285,33 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       });
       expect(result.instructorProfile).toBeNull();
       expect(result.profiles).toEqual({ pilot: true, student: false, instructor: false });
+    });
+
+    describe('own access (story 2.3, AC 2 — self.read + matching personId, scoped in the service)', () => {
+      it('lets a pilot read their own person record', async () => {
+        personFindUnique.mockResolvedValue({ ...SELECTED_PERSON, id: 'person_pilot' });
+
+        const result = await getPerson(pilotActor(), 'person_pilot');
+
+        expect(result.id).toBe('person_pilot');
+      });
+
+      it('rejects a pilot reading someone else’s person record', async () => {
+        await expect(getPerson(pilotActor(), 'person_1')).rejects.toThrow(ForbiddenError);
+        expect(findUniqueMock).not.toHaveBeenCalled();
+      });
+
+      it('rejects a pilot with no linked person (personId: null)', async () => {
+        const actor: Actor = { userId: 'pilot_no_person', personId: null, roles: ['PILOT'] };
+
+        await expect(getPerson(actor, 'person_1')).rejects.toThrow(ForbiddenError);
+        expect(findUniqueMock).not.toHaveBeenCalled();
+      });
+
+      it('rejects an actor with neither self.read nor people.read (stale/unknown role)', async () => {
+        await expect(getPerson(noRoleActor(), 'person_1')).rejects.toThrow(ForbiddenError);
+        expect(findUniqueMock).not.toHaveBeenCalled();
+      });
     });
   });
 

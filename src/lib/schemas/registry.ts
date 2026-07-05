@@ -165,7 +165,8 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/people/{id}',
   summary: 'Get a single person (with full profile data)',
-  description: 'Includes the pilot/student/instructor profiles in full (story 2.2, AC 1) — `null` when a profile was never activated.',
+  description:
+    'Includes the pilot/student/instructor profiles in full (story 2.2, AC 1) — `null` when a profile was never activated. Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (story 2.3, AC 2).',
   tags: ['People'],
   security,
   request: { params: personIdParams },

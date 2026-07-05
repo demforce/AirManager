@@ -28,6 +28,7 @@
     "subtitle": "Le aree operative (piloti, velivoli, voli, prenotazioni...) arriveranno nelle prossime iterazioni.",
     "logout": "Esci",
     "navHeading": "Aree operative",
+    "myProfile": "La mia scheda",
     "nav": {
       "people": "Persone",
       "aircraft": "Velivoli",
@@ -137,6 +138,30 @@
         "title": "Istruttore",
         "ratings": "Abilitazioni"
       }
+    }
+  },
+  "PersonDetailPage": {
+    "kicker": "Scheda persona",
+    "backToList": "Torna all'elenco",
+    "backToDashboard": "Torna alla dashboard",
+    "personalData": {
+      "heading": "Dati anagrafici",
+      "firstName": "Nome",
+      "lastName": "Cognome",
+      "email": "Email",
+      "phone": "Telefono",
+      "address": "Indirizzo",
+      "fiscalCode": "Codice fiscale",
+      "noValue": "—",
+      "archivedBadge": "Archiviata"
+    },
+    "placeholders": {
+      "comingSoon": "Disponibile prossimamente.",
+      "expiries": "Scadenze",
+      "balance": "Saldo conto",
+      "hoursPackages": "Pacchetti ore",
+      "recentFlights": "Ultimi voli",
+      "upcomingBookings": "Prossime prenotazioni"
     }
   },
   "UsersPage": {

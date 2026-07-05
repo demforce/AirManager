@@ -1,8 +1,8 @@
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import type { CreatePersonInput, ListPeopleQuery, UpdatePersonInput } from '@/lib/schemas/people';
-import { authorize, type Actor } from '@/server/auth/rbac';
+import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { ConflictError, NotFoundError } from './errors';
+import { ConflictError, ForbiddenError, NotFoundError } from './errors';
 
 /** Story 2.2, AC 1: which profiles (pilot/student/instructor) are currently active. */
 export type ProfileFlags = {
@@ -207,9 +207,22 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   return paginate(items.map(toListItem), total, query);
 }
 
-/** Returns a single person with the three profiles in full (story 2.2, AC 1). Read access: `people.read`. */
+/**
+ * Returns a single person with the three profiles in full (story 2.2, AC 1).
+ * Read access: `people.read` (staff/admin, any person) OR "own" access
+ * (story 2.3, AC 2) — an actor with `self.read` but not `people.read` may
+ * only read the record matching `actor.personId`. This is the "own"
+ * resource-level scoping documented in `rbac.ts`'s module doc: `authorize()`
+ * only ever checks the coarse permission, so the `personId` comparison lives
+ * here, never there.
+ */
 export async function getPerson(actor: Actor, id: string): Promise<PersonDetail> {
-  authorize(actor, 'people.read');
+  if (!hasPermission(actor, 'people.read')) {
+    authorize(actor, 'self.read');
+    if (actor.personId !== id) {
+      throw new ForbiddenError('Actor may only read their own person record.');
+    }
+  }
 
   const person = await prisma.person.findUnique({ where: { id }, select: PERSON_DETAIL_SELECT });
   if (!person) {

@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
+import { hasPermission } from '@/server/auth/rbac';
 import { signOut } from '@/server/auth/auth';
 import { getSessionActor } from '@/server/auth/session';
 import { getMe } from '@/server/services/me.service';
@@ -36,6 +37,17 @@ export default async function DashboardPage({ params }: PageProps) {
 
   const t = await getTranslations('DashboardPage');
   const navItems = visibleNavItems(actor);
+
+  /**
+   * Story 2.3, Task 2: a self-service actor (pilot/student/instructor —
+   * `self.read` but no `people.read`) has no "Persone" nav item to reach
+   * their own scheda through, so this dashboard (which already loads `me`)
+   * is the most coherent place to link it directly. Staff/admin reach any
+   * scheda via the "Persone" list instead (nav item above), so this tile is
+   * deliberately omitted for them.
+   */
+  const ownPersonHref =
+    me.person && !hasPermission(actor, 'people.read') ? `/dashboard/people/${me.person.id}` : null;
 
   async function logoutAction() {
     'use server';
@@ -76,6 +88,14 @@ export default async function DashboardPage({ params }: PageProps) {
                 {t(`nav.${item.key}`)}
               </Link>
             ))}
+            {ownPersonHref ? (
+              <Link
+                href={ownPersonHref}
+                className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              >
+                {t('myProfile')}
+              </Link>
+            ) : null}
           </div>
         </nav>
       </div>

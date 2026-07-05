@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 import { DataTable } from '@/components/data-table';
-import { useRouter } from '@/i18n/navigation';
+import { Link, useRouter } from '@/i18n/navigation';
 import { createPersonSchema, updatePersonSchema, type CreatePersonInput, type UpdatePersonInput } from '@/lib/schemas/people';
 import { ProfilesPanel, type ProfilesPanelLabels } from './profiles-panel';
 
@@ -156,9 +156,10 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, la
       id: 'name',
       header: labels.table.name,
       cell: ({ row }) => (
-        <span className="text-[#111111]">
+        // Story 2.3: the name is the entry point into the scheda persona.
+        <Link href={`/dashboard/people/${row.original.id}`} className="font-medium text-[#111111] underline-offset-4 hover:underline">
           {row.original.lastName} {row.original.firstName}
-        </span>
+        </Link>
       ),
     },
     {

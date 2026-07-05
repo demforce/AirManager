@@ -28,6 +28,7 @@
     "subtitle": "Operational areas (pilots, aircraft, flights, bookings...) arrive in upcoming iterations.",
     "logout": "Log out",
     "navHeading": "Operational areas",
+    "myProfile": "My profile",
     "nav": {
       "people": "People",
       "aircraft": "Aircraft",
@@ -137,6 +138,30 @@
         "title": "Instructor",
         "ratings": "Ratings"
       }
+    }
+  },
+  "PersonDetailPage": {
+    "kicker": "Person record",
+    "backToList": "Back to list",
+    "backToDashboard": "Back to dashboard",
+    "personalData": {
+      "heading": "Personal data",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "phone": "Phone",
+      "address": "Address",
+      "fiscalCode": "Fiscal code",
+      "noValue": "—",
+      "archivedBadge": "Archived"
+    },
+    "placeholders": {
+      "comingSoon": "Coming soon.",
+      "expiries": "Expiries",
+      "balance": "Account balance",
+      "hoursPackages": "Hour packages",
+      "recentFlights": "Recent flights",
+      "upcomingBookings": "Upcoming bookings"
     }
   },
   "UsersPage": {

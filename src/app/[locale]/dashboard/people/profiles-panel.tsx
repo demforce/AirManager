@@ -56,9 +56,18 @@ type ProfilesPanelProps = {
   personId: string;
   personLabel: string;
   labels: ProfilesPanelLabels;
-  onClose: () => void;
-  /** Called after any successful activate/update/deactivate so the parent list (badges) can refresh. */
-  onChanged: () => void;
+  /** Omitted when the panel is embedded read-only (story 2.3) — no "close" affordance for a permanent page section. */
+  onClose?: () => void;
+  /** Called after any successful activate/update/deactivate so the parent list (badges) can refresh. Never invoked in `readOnly` mode (no mutations). */
+  onChanged?: () => void;
+  /**
+   * Story 2.3, Task 3: hides every form/activate/deactivate control, leaving
+   * only the read data — derived server-side from `hasPermission(actor,
+   * 'people.manage')` by the caller. The UI hides; the service (whose writes
+   * already `authorize(actor, 'people.manage')`) remains the actual guardian
+   * (AD-5).
+   */
+  readOnly?: boolean;
 };
 
 async function fetchDetail(personId: string): Promise<PersonProfilesDetail | null> {
@@ -67,7 +76,7 @@ async function fetchDetail(personId: string): Promise<PersonProfilesDetail | nul
   return (await response.json()) as PersonProfilesDetail;
 }
 
-export function ProfilesPanel({ personId, personLabel, labels, onClose, onChanged }: ProfilesPanelProps) {
+export function ProfilesPanel({ personId, personLabel, labels, onClose, onChanged, readOnly = false }: ProfilesPanelProps) {
   // The parent renders this panel with `key={personId}`, so switching person
   // remounts it — initial state is always fresh and the effect below only
   // ever needs to run the async fetch (setState happens in its callback,
@@ -96,7 +105,7 @@ export function ProfilesPanel({ personId, personLabel, labels, onClose, onChange
   async function refresh(): Promise<void> {
     const result = await fetchDetail(personId);
     if (result) setDetail(result);
-    onChanged();
+    onChanged?.();
   }
 
   return (
@@ -108,13 +117,15 @@ export function ProfilesPanel({ personId, personLabel, labels, onClose, onChange
           </h3>
           <p className="mt-1 text-sm text-[#787774]">{personLabel}</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-        >
-          {labels.close}
-        </button>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          >
+            {labels.close}
+          </button>
+        ) : null}
       </div>
 
       {loading ? <p className="mt-6 text-sm text-[#787774]">…</p> : null}
@@ -122,9 +133,9 @@ export function ProfilesPanel({ personId, personLabel, labels, onClose, onChange
 
       {!loading && !error && detail ? (
         <div className="mt-6 space-y-6">
-          <PilotSection personId={personId} profile={detail.pilotProfile} labels={labels} onSaved={refresh} />
-          <StudentSection personId={personId} profile={detail.studentProfile} labels={labels} onSaved={refresh} />
-          <InstructorSection personId={personId} profile={detail.instructorProfile} labels={labels} onSaved={refresh} />
+          <PilotSection personId={personId} profile={detail.pilotProfile} labels={labels} onSaved={refresh} readOnly={readOnly} />
+          <StudentSection personId={personId} profile={detail.studentProfile} labels={labels} onSaved={refresh} readOnly={readOnly} />
+          <InstructorSection personId={personId} profile={detail.instructorProfile} labels={labels} onSaved={refresh} readOnly={readOnly} />
         </div>
       ) : null}
     </div>
@@ -166,9 +177,10 @@ type PilotSectionProps = {
   profile: PilotProfileData | null;
   labels: ProfilesPanelLabels;
   onSaved: () => Promise<void>;
+  readOnly: boolean;
 };
 
-function PilotSection({ personId, profile, labels, onSaved }: PilotSectionProps) {
+function PilotSection({ personId, profile, labels, onSaved, readOnly }: PilotSectionProps) {
   const [editing, setEditing] = useState(false);
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -224,7 +236,15 @@ function PilotSection({ personId, profile, labels, onSaved }: PilotSectionProps)
       badgeClasses={sectionBadgeClasses(profile)}
       testId="profile-section-pilot"
     >
-      {editing ? (
+      {readOnly ? (
+        profile ? (
+          <p className="text-sm text-[#2F3437]">
+            {labels.pilot.licenseNumber}: {profile.licenseNumber} · {labels.pilot.licenseType}: {profile.licenseType}
+          </p>
+        ) : (
+          <span />
+        )
+      ) : editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
@@ -330,9 +350,10 @@ type StudentSectionProps = {
   profile: StudentProfileData | null;
   labels: ProfilesPanelLabels;
   onSaved: () => Promise<void>;
+  readOnly: boolean;
 };
 
-function StudentSection({ personId, profile, labels, onSaved }: StudentSectionProps) {
+function StudentSection({ personId, profile, labels, onSaved, readOnly }: StudentSectionProps) {
   const [editing, setEditing] = useState(false);
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -388,7 +409,15 @@ function StudentSection({ personId, profile, labels, onSaved }: StudentSectionPr
       badgeClasses={sectionBadgeClasses(profile)}
       testId="profile-section-student"
     >
-      {editing ? (
+      {readOnly ? (
+        profile ? (
+          <p className="text-sm text-[#2F3437]">
+            {labels.student.courseStartDate}: {profile.courseStartDate}
+          </p>
+        ) : (
+          <span />
+        )
+      ) : editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4">
           <div>
             <label htmlFor="student-courseStartDate" className="block text-sm font-medium text-[#2F3437]">
@@ -481,9 +510,10 @@ type InstructorSectionProps = {
   profile: InstructorProfileData | null;
   labels: ProfilesPanelLabels;
   onSaved: () => Promise<void>;
+  readOnly: boolean;
 };
 
-function InstructorSection({ personId, profile, labels, onSaved }: InstructorSectionProps) {
+function InstructorSection({ personId, profile, labels, onSaved, readOnly }: InstructorSectionProps) {
   const [editing, setEditing] = useState(false);
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -539,7 +569,9 @@ function InstructorSection({ personId, profile, labels, onSaved }: InstructorSec
       badgeClasses={sectionBadgeClasses(profile)}
       testId="profile-section-instructor"
     >
-      {editing ? (
+      {readOnly ? (
+        profile ? <p className="text-sm text-[#2F3437]">{profile.ratings}</p> : <span />
+      ) : editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4">
           <div>
             <label htmlFor="instructor-ratings" className="block text-sm font-medium text-[#2F3437]">
