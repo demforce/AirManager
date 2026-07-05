@@ -12,14 +12,36 @@ vi.mock('@/server/db/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    pilotProfile: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+    },
+    studentProfile: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+    },
+    instructorProfile: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { archivePerson, createPerson, getPerson, listPeople, unarchivePerson, updatePerson } = await import(
-  './people.service'
-);
+const {
+  archivePerson,
+  createPerson,
+  deactivateProfile,
+  getPerson,
+  listPeople,
+  unarchivePerson,
+  updatePerson,
+  upsertProfile,
+} = await import('./people.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
 const findUniqueMock = vi.mocked(prisma.person.findUnique);
@@ -29,6 +51,15 @@ const countMock = vi.mocked(prisma.person.count);
 const createMock = vi.mocked(prisma.person.create);
 const updateMock = vi.mocked(prisma.person.update);
 const transactionMock = vi.mocked(prisma.$transaction);
+const pilotProfileFindUniqueMock = vi.mocked(prisma.pilotProfile.findUnique);
+const pilotProfileUpsertMock = vi.mocked(prisma.pilotProfile.upsert);
+const pilotProfileUpdateMock = vi.mocked(prisma.pilotProfile.update);
+const studentProfileFindUniqueMock = vi.mocked(prisma.studentProfile.findUnique);
+const studentProfileUpsertMock = vi.mocked(prisma.studentProfile.upsert);
+const studentProfileUpdateMock = vi.mocked(prisma.studentProfile.update);
+const instructorProfileFindUniqueMock = vi.mocked(prisma.instructorProfile.findUnique);
+const instructorProfileUpsertMock = vi.mocked(prisma.instructorProfile.upsert);
+const instructorProfileUpdateMock = vi.mocked(prisma.instructorProfile.update);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as users.service.test.ts): narrow each
@@ -39,6 +70,14 @@ const personFindFirst = findFirstMock as unknown as { mockResolvedValue: (v: Per
 const personCreate = createMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 const personUpdate = updateMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void };
+const pilotProfileFindUnique = pilotProfileFindUniqueMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+const pilotProfileUpsert = pilotProfileUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+const studentProfileFindUnique = studentProfileFindUniqueMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+const studentProfileUpsert = studentProfileUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+const instructorProfileFindUnique = instructorProfileFindUniqueMock as unknown as {
+  mockResolvedValue: (v: PersonFixture) => void;
+};
+const instructorProfileUpsert = instructorProfileUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 
 function staffActor(): Actor {
   return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
@@ -58,6 +97,11 @@ const SELECTED_PERSON = {
   fiscalCode: 'BNCMRA80A01L219K',
   archivedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  // Story 2.2: `toListItem` derives the active-profile flags from these
+  // 1-to-0/1 relations — `null` = never activated.
+  pilotProfile: null,
+  studentProfile: null,
+  instructorProfile: null,
 };
 
 describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/archiving)', () => {
@@ -69,6 +113,15 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     createMock.mockReset();
     updateMock.mockReset();
     transactionMock.mockReset();
+    pilotProfileFindUniqueMock.mockReset();
+    pilotProfileUpsertMock.mockReset();
+    pilotProfileUpdateMock.mockReset();
+    studentProfileFindUniqueMock.mockReset();
+    studentProfileUpsertMock.mockReset();
+    studentProfileUpdateMock.mockReset();
+    instructorProfileFindUniqueMock.mockReset();
+    instructorProfileUpsertMock.mockReset();
+    instructorProfileUpdateMock.mockReset();
   });
 
   describe('authorization (AD-5, AC 3)', () => {
@@ -101,6 +154,19 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     it('unarchivePerson rejects an actor without people.manage', async () => {
       await expect(unarchivePerson(pilotActor(), 'person_1')).rejects.toThrow(ForbiddenError);
     });
+
+    it('upsertProfile rejects an actor without people.manage (story 2.2, AC 3)', async () => {
+      await expect(
+        upsertProfile(pilotActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' }),
+      ).rejects.toThrow(ForbiddenError);
+      expect(findUniqueMock).not.toHaveBeenCalled();
+      expect(pilotProfileUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('deactivateProfile rejects an actor without people.manage (story 2.2, AC 3)', async () => {
+      await expect(deactivateProfile(pilotActor(), 'person_1', 'pilot')).rejects.toThrow(ForbiddenError);
+      expect(pilotProfileUpdateMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('listPeople', () => {
@@ -121,12 +187,31 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
             fiscalCode: 'BNCMRA80A01L219K',
             archivedAt: null,
             createdAt: SELECTED_PERSON.createdAt,
+            profiles: { pilot: false, student: false, instructor: false },
           },
         ],
         total: 1,
         page: 1,
         pageSize: 20,
       });
+    });
+
+    it('flags a profile as active only when it exists with deactivatedAt null (story 2.2, AC 1)', async () => {
+      transaction.mockResolvedValue([
+        [
+          {
+            ...SELECTED_PERSON,
+            pilotProfile: { deactivatedAt: null },
+            studentProfile: { deactivatedAt: new Date('2026-03-01T00:00:00.000Z') },
+            instructorProfile: null,
+          },
+        ],
+        1,
+      ]);
+
+      const result = await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+
+      expect(result.items[0]?.profiles).toEqual({ pilot: true, student: false, instructor: false });
     });
 
     it('excludes archived persons by default (AC 2)', async () => {
@@ -173,6 +258,32 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindUnique.mockResolvedValue(SELECTED_PERSON);
       const result = await getPerson(staffActor(), 'person_1');
       expect(result.id).toBe('person_1');
+      expect(result.pilotProfile).toBeNull();
+      expect(result.studentProfile).toBeNull();
+      expect(result.instructorProfile).toBeNull();
+    });
+
+    it('includes full profile data with people.read alone (story 2.2, AC 1)', async () => {
+      personFindUnique.mockResolvedValue({
+        ...SELECTED_PERSON,
+        pilotProfile: { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null },
+        studentProfile: {
+          courseStartDate: new Date('2026-03-01T00:00:00.000Z'),
+          deactivatedAt: new Date('2026-06-01T00:00:00.000Z'),
+        },
+        instructorProfile: null,
+      });
+
+      const result = await getPerson(staffActor(), 'person_1');
+
+      expect(result.pilotProfile).toEqual({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+      // `courseStartDate` is a calendar date on the wire — `YYYY-MM-DD`, never a datetime.
+      expect(result.studentProfile).toEqual({
+        courseStartDate: '2026-03-01',
+        deactivatedAt: new Date('2026-06-01T00:00:00.000Z'),
+      });
+      expect(result.instructorProfile).toBeNull();
+      expect(result.profiles).toEqual({ pilot: true, student: false, instructor: false });
     });
   });
 
@@ -312,6 +423,131 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
 
       expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { archivedAt: null } }));
       expect(result.archivedAt).toBeNull();
+    });
+  });
+
+  describe('upsertProfile (story 2.2, AC 1/2)', () => {
+    it('throws NotFoundError for a missing person', async () => {
+      personFindUnique.mockResolvedValue(null);
+
+      await expect(
+        upsertProfile(staffActor(), 'missing', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' }),
+      ).rejects.toThrow(NotFoundError);
+      expect(pilotProfileUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('creates or updates+reactivates the pilot profile in one upsert', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+
+      const result = await upsertProfile(staffActor(), 'person_1', 'pilot', {
+        licenseNumber: 'IT-PPL-1',
+        licenseType: 'PPL(A)',
+      });
+
+      expect(pilotProfileUpsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { personId: 'person_1' },
+          create: { personId: 'person_1', licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' },
+          // Reactivation is part of the update path: `deactivatedAt` is always cleared (AC 2).
+          update: { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null },
+        }),
+      );
+      expect(result).toEqual({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+    });
+
+    it('stores the student courseStartDate as a Date and returns it as YYYY-MM-DD', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      studentProfileUpsert.mockResolvedValue({
+        courseStartDate: new Date('2026-03-01T00:00:00.000Z'),
+        deactivatedAt: null,
+      });
+
+      const result = await upsertProfile(staffActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' });
+
+      expect(studentProfileUpsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { personId: 'person_1' },
+          create: { personId: 'person_1', courseStartDate: new Date('2026-03-01') },
+          update: { courseStartDate: new Date('2026-03-01'), deactivatedAt: null },
+        }),
+      );
+      expect(result).toEqual({ courseStartDate: '2026-03-01', deactivatedAt: null });
+    });
+
+    it('upserts the instructor profile with its free-text ratings', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      instructorProfileUpsert.mockResolvedValue({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+
+      const result = await upsertProfile(staffActor(), 'person_1', 'instructor', { ratings: 'SEP(land), FI(A)' });
+
+      expect(instructorProfileUpsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { personId: 'person_1' },
+          create: { personId: 'person_1', ratings: 'SEP(land), FI(A)' },
+          update: { ratings: 'SEP(land), FI(A)', deactivatedAt: null },
+        }),
+      );
+      expect(result).toEqual({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+    });
+  });
+
+  describe('deactivateProfile (story 2.2, AC 1/2)', () => {
+    it('throws NotFoundError for a missing person', async () => {
+      personFindUnique.mockResolvedValue(null);
+
+      await expect(deactivateProfile(staffActor(), 'missing', 'student')).rejects.toThrow(NotFoundError);
+      expect(studentProfileFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('sets deactivatedAt on an active profile', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      studentProfileFindUnique.mockResolvedValue({ id: 'sp_1', personId: 'person_1', deactivatedAt: null });
+
+      await deactivateProfile(staffActor(), 'person_1', 'student');
+
+      expect(studentProfileUpdateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { personId: 'person_1' }, data: { deactivatedAt: expect.any(Date) } }),
+      );
+    });
+
+    it('throws ConflictError when the profile was never activated', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      instructorProfileFindUnique.mockResolvedValue(null);
+
+      await expect(deactivateProfile(staffActor(), 'person_1', 'instructor')).rejects.toThrow(ConflictError);
+      expect(instructorProfileUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictError when the profile is already deactivated', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      pilotProfileFindUnique.mockResolvedValue({
+        id: 'pp_1',
+        personId: 'person_1',
+        deactivatedAt: new Date('2026-06-01T00:00:00.000Z'),
+      });
+
+      await expect(deactivateProfile(staffActor(), 'person_1', 'pilot')).rejects.toThrow(ConflictError);
+      expect(pilotProfileUpdateMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('student → pilot transition (story 2.2, AC 2)', () => {
+    it('deactivates the student profile and activates the pilot profile without ever touching Person', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      studentProfileFindUnique.mockResolvedValue({ id: 'sp_1', personId: 'person_1', deactivatedAt: null });
+      pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-9', licenseType: 'PPL(A)', deactivatedAt: null });
+
+      await deactivateProfile(staffActor(), 'person_1', 'student');
+      await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-9', licenseType: 'PPL(A)' });
+
+      // Both operations address the same Person.id, and the transition never
+      // creates/updates/deletes a Person row — the id (and its history/future
+      // account, AD-11) survives untouched.
+      expect(studentProfileUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
+      expect(pilotProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
+      expect(createMock).not.toHaveBeenCalled();
+      expect(updateMock).not.toHaveBeenCalled();
     });
   });
 });

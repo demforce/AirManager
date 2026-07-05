@@ -52,7 +52,55 @@ model Person {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  user User?
+  user              User?
+  pilotProfile      PilotProfile?
+  studentProfile    StudentProfile?
+  instructorProfile InstructorProfile?
+}
+
+/// Pilot profile (story 2.2, AC 1/2, AD-11): 1-to-0/1 with `Person`, never a
+/// second `Person` row. `deactivatedAt` soft-disables the profile (same
+/// rationale as `Person.archivedAt`) instead of deleting the row — future
+/// epics (4/5/9) attach rates/flights/training notes to a profile and that
+/// history must survive a student→pilot transition or any other
+/// deactivation. Reactivating (AC 2) just clears `deactivatedAt` again.
+model PilotProfile {
+  id            String    @id @default(cuid())
+  personId      String    @unique
+  person        Person    @relation(fields: [personId], references: [id])
+  licenseNumber String
+  licenseType   String
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+/// Student ("allievo") profile (story 2.2, AC 1/2, AD-11) — see `PilotProfile`
+/// doc for the 1-to-0/1 + soft-deactivation rationale, identical here.
+/// `courseStartDate` is a calendar date only (no time-of-day), `@db.Date` so
+/// Postgres never stores a time/timezone component for it.
+model StudentProfile {
+  id              String    @id @default(cuid())
+  personId        String    @unique
+  person          Person    @relation(fields: [personId], references: [id])
+  courseStartDate DateTime  @db.Date
+  deactivatedAt   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+/// Instructor profile (story 2.2, AC 1/2, AD-11) — see `PilotProfile` doc for
+/// the 1-to-0/1 + soft-deactivation rationale, identical here. `ratings` is a
+/// single free-text field for the MVP (e.g. "SEP(land), FI(A)"); structuring
+/// it further is deferred to epic 9 if the school domain needs it.
+model InstructorProfile {
+  id            String    @id @default(cuid())
+  personId      String    @unique
+  person        Person    @relation(fields: [personId], references: [id])
+  ratings       String
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 /// Login credentials. 1-to-0/1 with `Person` (AD-11) — not every `Person` has

@@ -54,6 +54,7 @@
       "email": "Email",
       "phone": "Telefono",
       "status": "Stato",
+      "profiles": "Profili",
       "actions": "Azioni",
       "noValue": "—",
       "empty": "Nessuna persona trovata."
@@ -69,7 +70,8 @@
       "confirmArchive": "Archiviare questa persona?",
       "confirmUnarchive": "Ripristinare questa persona?",
       "confirmYes": "Conferma",
-      "confirmCancel": "Annulla"
+      "confirmCancel": "Annulla",
+      "profiles": "Profili"
     },
     "form": {
       "createTitle": "Nuova persona",
@@ -92,6 +94,49 @@
       "updated": "Persona aggiornata.",
       "archived": "Persona archiviata.",
       "unarchived": "Persona ripristinata."
+    },
+    "profilesPanel": {
+      "heading": "Profili",
+      "close": "Chiudi",
+      "loadError": "Impossibile caricare i profili. Riprova.",
+      "badges": {
+        "pilot": "P",
+        "student": "A",
+        "instructor": "I"
+      },
+      "status": {
+        "active": "Attivo",
+        "inactive": "Disattivato",
+        "notActivated": "Non attivato"
+      },
+      "actions": {
+        "activate": "Attiva",
+        "edit": "Modifica",
+        "reactivate": "Riattiva",
+        "deactivate": "Disattiva",
+        "confirmDeactivate": "Disattivare questo profilo?",
+        "confirmYes": "Conferma",
+        "confirmCancel": "Annulla",
+        "cancel": "Annulla",
+        "save": "Salva"
+      },
+      "errors": {
+        "requiredField": "Campo obbligatorio.",
+        "generic": "Si è verificato un errore. Riprova."
+      },
+      "pilot": {
+        "title": "Pilota",
+        "licenseNumber": "Numero licenza",
+        "licenseType": "Tipo licenza"
+      },
+      "student": {
+        "title": "Allievo",
+        "courseStartDate": "Data inizio corso"
+      },
+      "instructor": {
+        "title": "Istruttore",
+        "ratings": "Abilitazioni"
+      }
     }
   },
   "UsersPage": {

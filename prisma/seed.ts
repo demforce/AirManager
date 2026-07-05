@@ -62,6 +62,32 @@ async function seedPilotUser(passwordHash: string): Promise<void> {
   console.log(`Seed: demo pilot user ready (${PILOT_EMAIL}).`);
 }
 
+/**
+ * Story 2.2: the demo pilot's `Person` gets an active `PilotProfile`
+ * (AD-11: 1-to-0/1 with `Person`), so the profiles UI/e2e have real data.
+ * Idempotent like the rest of the seed: upsert keyed on the unique
+ * `personId`, reactivated (`deactivatedAt: null`) if a test left it
+ * deactivated.
+ */
+async function seedPilotProfile(): Promise<void> {
+  const pilotUser = await prisma.user.findUnique({
+    where: { email: PILOT_EMAIL },
+    select: { personId: true },
+  });
+  if (!pilotUser?.personId) {
+    console.warn(`Seed: no person linked to ${PILOT_EMAIL}, skipping pilot profile.`);
+    return;
+  }
+
+  await prisma.pilotProfile.upsert({
+    where: { personId: pilotUser.personId },
+    update: { licenseNumber: 'IT-PPL-100200', licenseType: 'PPL(A)', deactivatedAt: null },
+    create: { personId: pilotUser.personId, licenseNumber: 'IT-PPL-100200', licenseType: 'PPL(A)' },
+  });
+
+  console.log(`Seed: pilot profile ready for ${PILOT_EMAIL}.`);
+}
+
 async function main() {
   const seedPassword = process.env['SEED_ADMIN_PASSWORD'];
   if (!seedPassword) {
@@ -72,6 +98,7 @@ async function main() {
 
   await seedAdminUser(passwordHash);
   await seedPilotUser(passwordHash);
+  await seedPilotProfile();
 }
 
 main()

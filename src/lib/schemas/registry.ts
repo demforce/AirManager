@@ -5,9 +5,16 @@ import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { meResponseSchema } from './me';
 import {
   createPersonSchema,
+  instructorProfileRequestSchema,
+  instructorProfileSchema,
   listPeopleQuerySchema,
+  personDetailSchema,
   personListItemSchema,
   personListResponseSchema,
+  pilotProfileRequestSchema,
+  pilotProfileSchema,
+  studentProfileRequestSchema,
+  studentProfileSchema,
   updatePersonSchema,
 } from './people';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
@@ -56,8 +63,15 @@ registry.register('Ok', okResponseSchema);
 registry.register('Me', meResponseSchema);
 registry.register('Person', personListItemSchema);
 registry.register('PersonList', personListResponseSchema);
+registry.register('PersonDetail', personDetailSchema);
 registry.register('CreatePersonRequest', createPersonSchema);
 registry.register('UpdatePersonRequest', updatePersonSchema);
+registry.register('PilotProfileRequest', pilotProfileRequestSchema);
+registry.register('PilotProfile', pilotProfileSchema);
+registry.register('StudentProfileRequest', studentProfileRequestSchema);
+registry.register('StudentProfile', studentProfileSchema);
+registry.register('InstructorProfileRequest', instructorProfileRequestSchema);
+registry.register('InstructorProfile', instructorProfileSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -150,12 +164,13 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/people/{id}',
-  summary: 'Get a single person',
+  summary: 'Get a single person (with full profile data)',
+  description: 'Includes the pilot/student/instructor profiles in full (story 2.2, AC 1) — `null` when a profile was never activated.',
   tags: ['People'],
   security,
   request: { params: personIdParams },
   responses: {
-    200: { description: 'The person.', content: jsonContent(personListItemSchema) },
+    200: { description: 'The person, with its profiles.', content: jsonContent(personDetailSchema) },
     ...errorResponses(401, 403, 404),
   },
 });
@@ -196,6 +211,98 @@ registry.registerPath({
   request: { params: personIdParams },
   responses: {
     200: { description: 'The restored person.', content: jsonContent(personListItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+/**
+ * Profiles (story 2.2, AC 1/2, AD-11): implemented by a single dynamic
+ * `[type]` route (`src/app/api/v1/people/[id]/profiles/[type]/route.ts`)
+ * that validates `type` against `pilot`/`student`/`instructor` at runtime —
+ * documented here as three literal paths, one per type, since each has a
+ * distinct request/response body and that reads far better in the generated
+ * spec than a single `oneOf`-discriminated path would.
+ */
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/people/{id}/profiles/pilot',
+  summary: 'Activate or update the pilot profile',
+  description: 'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(pilotProfileRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The activated/updated pilot profile.', content: jsonContent(pilotProfileSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/profiles/pilot/deactivate',
+  summary: 'Deactivate the pilot profile',
+  description: 'Soft-deactivation only — the row is never deleted (future epics reference it). Conflict if never activated or already deactivated.',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: 'The profile was deactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/people/{id}/profiles/student',
+  summary: 'Activate or update the student profile',
+  description: 'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(studentProfileRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The activated/updated student profile.', content: jsonContent(studentProfileSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/profiles/student/deactivate',
+  summary: 'Deactivate the student profile',
+  description: 'Soft-deactivation only — the row is never deleted (future epics reference it). Conflict if never activated or already deactivated.',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: 'The profile was deactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/people/{id}/profiles/instructor',
+  summary: 'Activate or update the instructor profile',
+  description: 'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(instructorProfileRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The activated/updated instructor profile.', content: jsonContent(instructorProfileSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/profiles/instructor/deactivate',
+  summary: 'Deactivate the instructor profile',
+  description: 'Soft-deactivation only — the row is never deleted (future epics reference it). Conflict if never activated or already deactivated.',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: 'The profile was deactivated.', content: jsonContent(okResponseSchema) },
     ...errorResponses(401, 403, 404, 409),
   },
 });

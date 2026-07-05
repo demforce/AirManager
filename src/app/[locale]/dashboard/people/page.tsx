@@ -81,6 +81,7 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
               address: person.address,
               fiscalCode: person.fiscalCode,
               archivedAt: person.archivedAt ? person.archivedAt.toISOString() : null,
+              profiles: person.profiles,
             }))}
             initialQuery={q ?? ''}
             initialIncludeArchived={includeArchived}
@@ -93,6 +94,7 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
                 email: t('table.email'),
                 phone: t('table.phone'),
                 status: t('table.status'),
+                profiles: t('table.profiles'),
                 actions: t('table.actions'),
                 noValue: t('table.noValue'),
                 empty: t('table.empty'),
@@ -109,6 +111,50 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
                 confirmUnarchive: t('actions.confirmUnarchive'),
                 confirmYes: t('actions.confirmYes'),
                 confirmCancel: t('actions.confirmCancel'),
+                profiles: t('actions.profiles'),
+              },
+              profilesPanel: {
+                heading: t('profilesPanel.heading'),
+                close: t('profilesPanel.close'),
+                loadError: t('profilesPanel.loadError'),
+                badges: {
+                  pilot: t('profilesPanel.badges.pilot'),
+                  student: t('profilesPanel.badges.student'),
+                  instructor: t('profilesPanel.badges.instructor'),
+                },
+                status: {
+                  active: t('profilesPanel.status.active'),
+                  inactive: t('profilesPanel.status.inactive'),
+                  notActivated: t('profilesPanel.status.notActivated'),
+                },
+                actions: {
+                  activate: t('profilesPanel.actions.activate'),
+                  edit: t('profilesPanel.actions.edit'),
+                  reactivate: t('profilesPanel.actions.reactivate'),
+                  deactivate: t('profilesPanel.actions.deactivate'),
+                  confirmDeactivate: t('profilesPanel.actions.confirmDeactivate'),
+                  confirmYes: t('profilesPanel.actions.confirmYes'),
+                  confirmCancel: t('profilesPanel.actions.confirmCancel'),
+                  cancel: t('profilesPanel.actions.cancel'),
+                  save: t('profilesPanel.actions.save'),
+                },
+                errors: {
+                  requiredField: t('profilesPanel.errors.requiredField'),
+                  generic: t('profilesPanel.errors.generic'),
+                },
+                pilot: {
+                  title: t('profilesPanel.pilot.title'),
+                  licenseNumber: t('profilesPanel.pilot.licenseNumber'),
+                  licenseType: t('profilesPanel.pilot.licenseType'),
+                },
+                student: {
+                  title: t('profilesPanel.student.title'),
+                  courseStartDate: t('profilesPanel.student.courseStartDate'),
+                },
+                instructor: {
+                  title: t('profilesPanel.instructor.title'),
+                  ratings: t('profilesPanel.instructor.ratings'),
+                },
               },
               form: {
                 createTitle: t('form.createTitle'),

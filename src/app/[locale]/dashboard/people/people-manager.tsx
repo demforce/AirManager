@@ -8,6 +8,7 @@ import type { z } from 'zod';
 import { DataTable } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
 import { createPersonSchema, updatePersonSchema, type CreatePersonInput, type UpdatePersonInput } from '@/lib/schemas/people';
+import { ProfilesPanel, type ProfilesPanelLabels } from './profiles-panel';
 
 export type PersonRow = {
   id: string;
@@ -19,13 +20,15 @@ export type PersonRow = {
   fiscalCode: string | null;
   /** ISO 8601 string (server `Date` already serialized) or `null` if active. */
   archivedAt: string | null;
+  /** Active-profile flags (story 2.2, AC 1) — rendered as P/A/I badges in the list. */
+  profiles: { pilot: boolean; student: boolean; instructor: boolean };
 };
 
 type Labels = {
   newPerson: string;
   searchPlaceholder: string;
   includeArchivedLabel: string;
-  table: { name: string; email: string; phone: string; status: string; actions: string; noValue: string; empty: string };
+  table: { name: string; email: string; phone: string; status: string; profiles: string; actions: string; noValue: string; empty: string };
   status: { active: string; archived: string };
   actions: {
     edit: string;
@@ -35,7 +38,9 @@ type Labels = {
     confirmUnarchive: string;
     confirmYes: string;
     confirmCancel: string;
+    profiles: string;
   };
+  profilesPanel: ProfilesPanelLabels;
   form: {
     createTitle: string;
     editTitle: string;
@@ -62,7 +67,7 @@ type PeopleManagerProps = {
   labels: Labels;
 };
 
-type Panel = { mode: 'create' } | { mode: 'edit'; person: PersonRow };
+type Panel = { mode: 'create' } | { mode: 'edit'; person: PersonRow } | { mode: 'profiles'; person: PersonRow };
 type ConfirmState = { id: string; type: 'archive' | 'unarchive' };
 
 function statusLabel(person: PersonRow, labels: Labels): string {
@@ -176,6 +181,38 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, la
       ),
     },
     {
+      id: 'profiles',
+      header: labels.table.profiles,
+      cell: ({ row }) => {
+        const { profiles } = row.original;
+        const badges: Array<{ key: string; label: string; title: string }> = [
+          ...(profiles.pilot ? [{ key: 'pilot', label: labels.profilesPanel.badges.pilot, title: labels.profilesPanel.pilot.title }] : []),
+          ...(profiles.student
+            ? [{ key: 'student', label: labels.profilesPanel.badges.student, title: labels.profilesPanel.student.title }]
+            : []),
+          ...(profiles.instructor
+            ? [{ key: 'instructor', label: labels.profilesPanel.badges.instructor, title: labels.profilesPanel.instructor.title }]
+            : []),
+        ];
+        if (badges.length === 0) {
+          return labels.table.noValue;
+        }
+        return (
+          <div className="flex gap-1.5" data-testid={`person-profile-badges-${row.original.id}`}>
+            {badges.map((badge) => (
+              <span
+                key={badge.key}
+                title={badge.title}
+                className="rounded-full bg-[#E1F3FE] px-2.5 py-1 text-xs font-medium uppercase tracking-[0.05em] text-[#1F6C9F]"
+              >
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        );
+      },
+    },
+    {
       id: 'actions',
       header: labels.table.actions,
       cell: ({ row }) => {
@@ -216,6 +253,13 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, la
               className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.edit}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPanel({ mode: 'profiles', person })}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {labels.actions.profiles}
             </button>
             <button
               type="button"
@@ -282,6 +326,19 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, la
             labels={labels}
             onCancel={() => setPanel(null)}
             onSuccess={handleFormSuccess}
+          />
+        </div>
+      ) : null}
+
+      {panel?.mode === 'profiles' ? (
+        <div className="mt-6">
+          <ProfilesPanel
+            key={panel.person.id}
+            personId={panel.person.id}
+            personLabel={`${panel.person.lastName} ${panel.person.firstName}`}
+            labels={labels.profilesPanel}
+            onClose={() => setPanel(null)}
+            onChanged={() => router.refresh()}
           />
         </div>
       ) : null}

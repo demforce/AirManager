@@ -54,6 +54,7 @@
       "email": "Email",
       "phone": "Phone",
       "status": "Status",
+      "profiles": "Profiles",
       "actions": "Actions",
       "noValue": "—",
       "empty": "No people found."
@@ -69,7 +70,8 @@
       "confirmArchive": "Archive this person?",
       "confirmUnarchive": "Restore this person?",
       "confirmYes": "Confirm",
-      "confirmCancel": "Cancel"
+      "confirmCancel": "Cancel",
+      "profiles": "Profiles"
     },
     "form": {
       "createTitle": "New person",
@@ -92,6 +94,49 @@
       "updated": "Person updated.",
       "archived": "Person archived.",
       "unarchived": "Person restored."
+    },
+    "profilesPanel": {
+      "heading": "Profiles",
+      "close": "Close",
+      "loadError": "Could not load profiles. Please try again.",
+      "badges": {
+        "pilot": "P",
+        "student": "S",
+        "instructor": "I"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Deactivated",
+        "notActivated": "Not activated"
+      },
+      "actions": {
+        "activate": "Activate",
+        "edit": "Edit",
+        "reactivate": "Reactivate",
+        "deactivate": "Deactivate",
+        "confirmDeactivate": "Deactivate this profile?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel",
+        "cancel": "Cancel",
+        "save": "Save"
+      },
+      "errors": {
+        "requiredField": "This field is required.",
+        "generic": "Something went wrong. Please try again."
+      },
+      "pilot": {
+        "title": "Pilot",
+        "licenseNumber": "License number",
+        "licenseType": "License type"
+      },
+      "student": {
+        "title": "Student",
+        "courseStartDate": "Course start date"
+      },
+      "instructor": {
+        "title": "Instructor",
+        "ratings": "Ratings"
+      }
     }
   },
   "UsersPage": {

@@ -4,6 +4,13 @@ import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError } from './errors';
 
+/** Story 2.2, AC 1: which profiles (pilot/student/instructor) are currently active. */
+export type ProfileFlags = {
+  pilot: boolean;
+  student: boolean;
+  instructor: boolean;
+};
+
 export type PersonListItem = {
   id: string;
   firstName: string;
@@ -14,10 +21,41 @@ export type PersonListItem = {
   fiscalCode: string | null;
   archivedAt: Date | null;
   createdAt: Date;
+  profiles: ProfileFlags;
+};
+
+/**
+ * `GET /api/v1/people/{id}` shape (story 2.2, AC 1): the list item plus the
+ * three profiles in full. `null` means the profile was never activated for
+ * this person; an object (possibly with `deactivatedAt` set) means it was.
+ */
+export type PersonDetail = PersonListItem & {
+  pilotProfile: PilotProfileDto | null;
+  studentProfile: StudentProfileDto | null;
+  instructorProfile: InstructorProfileDto | null;
 };
 
 /** AD-8 paginated shape, via the shared helper (story 1.5). */
 export type PersonListResult = PaginatedResult<PersonListItem>;
+
+/** Story 2.2: a `Person` may activate any of these 1-to-0/1 profiles (AD-11). */
+export type ProfileType = 'pilot' | 'student' | 'instructor';
+
+export type PilotProfileInput = { licenseNumber: string; licenseType: string };
+/** `courseStartDate` arrives as the wire's `YYYY-MM-DD` string (AD-8). */
+export type StudentProfileInput = { courseStartDate: string };
+export type InstructorProfileInput = { ratings: string };
+
+export type PilotProfileDto = { licenseNumber: string; licenseType: string; deactivatedAt: Date | null };
+/** `courseStartDate` stays a `YYYY-MM-DD` string on the way out — never a full datetime (Dev Notes). */
+export type StudentProfileDto = { courseStartDate: string; deactivatedAt: Date | null };
+export type InstructorProfileDto = { ratings: string; deactivatedAt: Date | null };
+
+const PROFILE_FLAG_SELECT = {
+  pilotProfile: { select: { deactivatedAt: true } },
+  studentProfile: { select: { deactivatedAt: true } },
+  instructorProfile: { select: { deactivatedAt: true } },
+} as const;
 
 const PERSON_SELECT = {
   id: true,
@@ -29,6 +67,15 @@ const PERSON_SELECT = {
   fiscalCode: true,
   archivedAt: true,
   createdAt: true,
+  ...PROFILE_FLAG_SELECT,
+} as const;
+
+/** `getPerson` needs the full profile data, not just the active flags. */
+const PERSON_DETAIL_SELECT = {
+  ...PERSON_SELECT,
+  pilotProfile: { select: { licenseNumber: true, licenseType: true, deactivatedAt: true } },
+  studentProfile: { select: { courseStartDate: true, deactivatedAt: true } },
+  instructorProfile: { select: { ratings: true, deactivatedAt: true } },
 } as const;
 
 type SelectedPerson = {
@@ -41,7 +88,21 @@ type SelectedPerson = {
   fiscalCode: string | null;
   archivedAt: Date | null;
   createdAt: Date;
+  pilotProfile: { deactivatedAt: Date | null } | null;
+  studentProfile: { deactivatedAt: Date | null } | null;
+  instructorProfile: { deactivatedAt: Date | null } | null;
 };
+
+type SelectedPersonDetail = SelectedPerson & {
+  pilotProfile: { licenseNumber: string; licenseType: string; deactivatedAt: Date | null } | null;
+  studentProfile: { courseStartDate: Date; deactivatedAt: Date | null } | null;
+  instructorProfile: { ratings: string; deactivatedAt: Date | null } | null;
+};
+
+/** `@db.Date` round-trips as a UTC-midnight `Date` — format with UTC parts so no server timezone can shift the calendar day. */
+function toDateOnlyString(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 
 function toListItem(person: SelectedPerson): PersonListItem {
   return {
@@ -54,6 +115,26 @@ function toListItem(person: SelectedPerson): PersonListItem {
     fiscalCode: person.fiscalCode,
     archivedAt: person.archivedAt,
     createdAt: person.createdAt,
+    profiles: {
+      pilot: person.pilotProfile !== null && person.pilotProfile.deactivatedAt === null,
+      student: person.studentProfile !== null && person.studentProfile.deactivatedAt === null,
+      instructor: person.instructorProfile !== null && person.instructorProfile.deactivatedAt === null,
+    },
+  };
+}
+
+function toPersonDetail(person: SelectedPersonDetail): PersonDetail {
+  return {
+    ...toListItem(person),
+    pilotProfile: person.pilotProfile
+      ? { licenseNumber: person.pilotProfile.licenseNumber, licenseType: person.pilotProfile.licenseType, deactivatedAt: person.pilotProfile.deactivatedAt }
+      : null,
+    studentProfile: person.studentProfile
+      ? { courseStartDate: toDateOnlyString(person.studentProfile.courseStartDate), deactivatedAt: person.studentProfile.deactivatedAt }
+      : null,
+    instructorProfile: person.instructorProfile
+      ? { ratings: person.instructorProfile.ratings, deactivatedAt: person.instructorProfile.deactivatedAt }
+      : null,
   };
 }
 
@@ -126,14 +207,15 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   return paginate(items.map(toListItem), total, query);
 }
 
-export async function getPerson(actor: Actor, id: string): Promise<PersonListItem> {
+/** Returns a single person with the three profiles in full (story 2.2, AC 1). Read access: `people.read`. */
+export async function getPerson(actor: Actor, id: string): Promise<PersonDetail> {
   authorize(actor, 'people.read');
 
-  const person = await prisma.person.findUnique({ where: { id }, select: PERSON_SELECT });
+  const person = await prisma.person.findUnique({ where: { id }, select: PERSON_DETAIL_SELECT });
   if (!person) {
     throw new NotFoundError('Person not found.');
   }
-  return toListItem(person);
+  return toPersonDetail(person);
 }
 
 /** Creates a person (AC 1). Write access: `people.manage` (staff/admin). */
@@ -247,4 +329,108 @@ export async function unarchivePerson(actor: Actor, id: string): Promise<PersonL
     select: PERSON_SELECT,
   });
   return toListItem(person);
+}
+
+/**
+ * Activates or updates one of a person's profiles (story 2.2, AC 1/2).
+ * Creates the profile row if it doesn't exist yet; if it does — active or
+ * previously deactivated — updates its data and clears `deactivatedAt`
+ * (AC 2: reactivating, e.g. the student→pilot transition, is just an
+ * upsert). `Person.id` never changes across this. Write access:
+ * `people.manage`. Allowed on an archived person (Dev Notes, consistent with
+ * review 2.1 F3: editing an archived person is by-design).
+ */
+export async function upsertProfile(actor: Actor, personId: string, type: 'pilot', data: PilotProfileInput): Promise<PilotProfileDto>;
+export async function upsertProfile(actor: Actor, personId: string, type: 'student', data: StudentProfileInput): Promise<StudentProfileDto>;
+export async function upsertProfile(
+  actor: Actor,
+  personId: string,
+  type: 'instructor',
+  data: InstructorProfileInput,
+): Promise<InstructorProfileDto>;
+export async function upsertProfile(
+  actor: Actor,
+  personId: string,
+  type: ProfileType,
+  data: PilotProfileInput | StudentProfileInput | InstructorProfileInput,
+): Promise<PilotProfileDto | StudentProfileDto | InstructorProfileDto> {
+  authorize(actor, 'people.manage');
+
+  const person = await prisma.person.findUnique({ where: { id: personId }, select: { id: true } });
+  if (!person) {
+    throw new NotFoundError('Person not found.');
+  }
+
+  if (type === 'pilot') {
+    const input = data as PilotProfileInput;
+    const profile = await prisma.pilotProfile.upsert({
+      where: { personId },
+      create: { personId, licenseNumber: input.licenseNumber, licenseType: input.licenseType },
+      update: { licenseNumber: input.licenseNumber, licenseType: input.licenseType, deactivatedAt: null },
+      select: { licenseNumber: true, licenseType: true, deactivatedAt: true },
+    });
+    return profile;
+  }
+
+  if (type === 'student') {
+    const input = data as StudentProfileInput;
+    const courseStartDate = new Date(input.courseStartDate);
+    const profile = await prisma.studentProfile.upsert({
+      where: { personId },
+      create: { personId, courseStartDate },
+      update: { courseStartDate, deactivatedAt: null },
+      select: { courseStartDate: true, deactivatedAt: true },
+    });
+    return { courseStartDate: toDateOnlyString(profile.courseStartDate), deactivatedAt: profile.deactivatedAt };
+  }
+
+  const input = data as InstructorProfileInput;
+  const profile = await prisma.instructorProfile.upsert({
+    where: { personId },
+    create: { personId, ratings: input.ratings },
+    update: { ratings: input.ratings, deactivatedAt: null },
+    select: { ratings: true, deactivatedAt: true },
+  });
+  return profile;
+}
+
+/**
+ * Deactivates one of a person's profiles (story 2.2, AC 1/2) — soft, never a
+ * physical delete (Dev Notes: future epics reference the profile row).
+ * `ConflictError` covers both "never activated" and "already deactivated"
+ * (same "nothing to do" shape as `archivePerson`/`unarchivePerson`); a
+ * missing `Person` is a `NotFoundError` instead, same distinction as every
+ * other write in this service. Write access: `people.manage`.
+ */
+export async function deactivateProfile(actor: Actor, personId: string, type: ProfileType): Promise<void> {
+  authorize(actor, 'people.manage');
+
+  const person = await prisma.person.findUnique({ where: { id: personId }, select: { id: true } });
+  if (!person) {
+    throw new NotFoundError('Person not found.');
+  }
+
+  if (type === 'pilot') {
+    const existing = await prisma.pilotProfile.findUnique({ where: { personId } });
+    if (!existing || existing.deactivatedAt !== null) {
+      throw new ConflictError('Pilot profile is not active.');
+    }
+    await prisma.pilotProfile.update({ where: { personId }, data: { deactivatedAt: new Date() } });
+    return;
+  }
+
+  if (type === 'student') {
+    const existing = await prisma.studentProfile.findUnique({ where: { personId } });
+    if (!existing || existing.deactivatedAt !== null) {
+      throw new ConflictError('Student profile is not active.');
+    }
+    await prisma.studentProfile.update({ where: { personId }, data: { deactivatedAt: new Date() } });
+    return;
+  }
+
+  const existing = await prisma.instructorProfile.findUnique({ where: { personId } });
+  if (!existing || existing.deactivatedAt !== null) {
+    throw new ConflictError('Instructor profile is not active.');
+  }
+  await prisma.instructorProfile.update({ where: { personId }, data: { deactivatedAt: new Date() } });
 }

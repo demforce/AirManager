@@ -54,6 +54,18 @@ export const listPeopleQuerySchema = paginationQuerySchema.extend({
 export type ListPeopleQuery = z.infer<typeof listPeopleQuerySchema>;
 
 /**
+ * Active-profile flags shown as list badges (story 2.2, AC 1) — `true` iff
+ * the corresponding profile exists and `deactivatedAt` is `null`. Full
+ * profile data is only in the single-person detail response
+ * (`personDetailSchema`), not the list, to keep `GET /api/v1/people` light.
+ */
+export const profileFlagsSchema = z.object({
+  pilot: z.boolean(),
+  student: z.boolean(),
+  instructor: z.boolean(),
+});
+
+/**
  * Response shape of one list item (`people.service.ts#PersonListItem`).
  * Documentation only — the service's TS type remains the runtime source of
  * truth — registered in the OpenAPI registry (story 1.5 pattern). `Date`
@@ -69,9 +81,88 @@ export const personListItemSchema = z.object({
   fiscalCode: z.string().nullable(),
   archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
+  profiles: profileFlagsSchema,
 });
 
 export type PersonListItemDto = z.infer<typeof personListItemSchema>;
 
 /** `GET /api/v1/people` response — AD-8 paginated shape. */
 export const personListResponseSchema = paginatedResponseSchema(personListItemSchema);
+
+/**
+ * Profile types a `Person` may activate (story 2.2, AC 1) — 1-to-0/1 with
+ * `Person` (AD-11), never a second anagrafica. Used both to validate the
+ * `[type]` path segment of the profile routes (unknown value → 404, chosen
+ * over 422 because the URL itself doesn't address a route — see the route
+ * handler) and as the discriminant for the per-type request/response shapes
+ * below.
+ */
+export const profileTypeSchema = z.enum(['pilot', 'student', 'instructor']);
+
+export type ProfileType = z.infer<typeof profileTypeSchema>;
+
+/** `PUT /api/v1/people/{id}/profiles/pilot` request body. */
+export const pilotProfileRequestSchema = z.object({
+  licenseNumber: z.string().trim().min(1),
+  licenseType: z.string().trim().min(1),
+});
+
+export type PilotProfileRequestInput = z.infer<typeof pilotProfileRequestSchema>;
+
+/**
+ * `PUT /api/v1/people/{id}/profiles/student` request body. `courseStartDate`
+ * is a calendar date only (no time-of-day) — `YYYY-MM-DD` on the wire
+ * (Dev Notes: `@db.Date` in Prisma, presented in Europe/Rome without a
+ * day-shift). `z.iso.date()` both validates the format and matches the
+ * `<input type="date">` value the UI sends verbatim.
+ */
+export const studentProfileRequestSchema = z.object({
+  courseStartDate: z.iso.date(),
+});
+
+export type StudentProfileRequestInput = z.infer<typeof studentProfileRequestSchema>;
+
+/** `PUT /api/v1/people/{id}/profiles/instructor` request body. */
+export const instructorProfileRequestSchema = z.object({
+  ratings: z.string().trim().min(1),
+});
+
+export type InstructorProfileRequestInput = z.infer<typeof instructorProfileRequestSchema>;
+
+/** Pilot profile as returned by the API — `deactivatedAt: null` means active. */
+export const pilotProfileSchema = z.object({
+  licenseNumber: z.string(),
+  licenseType: z.string(),
+  deactivatedAt: z.iso.datetime().nullable(),
+});
+
+export type PilotProfileDto = z.infer<typeof pilotProfileSchema>;
+
+/** Student profile as returned by the API — `courseStartDate` stays `YYYY-MM-DD` (no time). */
+export const studentProfileSchema = z.object({
+  courseStartDate: z.iso.date(),
+  deactivatedAt: z.iso.datetime().nullable(),
+});
+
+export type StudentProfileDto = z.infer<typeof studentProfileSchema>;
+
+/** Instructor profile as returned by the API. */
+export const instructorProfileSchema = z.object({
+  ratings: z.string(),
+  deactivatedAt: z.iso.datetime().nullable(),
+});
+
+export type InstructorProfileDto = z.infer<typeof instructorProfileSchema>;
+
+/**
+ * `GET /api/v1/people/{id}` response (story 2.2, AC 1): the list item shape
+ * plus the three profiles in full — `null` when the profile was never
+ * activated, an object (with `deactivatedAt` possibly set) once it has been.
+ */
+export const personDetailSchema = personListItemSchema.extend({
+  pilotProfile: pilotProfileSchema.nullable(),
+  studentProfile: studentProfileSchema.nullable(),
+  instructorProfile: instructorProfileSchema.nullable(),
+});
+
+export type PersonDetailDto = z.infer<typeof personDetailSchema>;
