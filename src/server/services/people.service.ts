@@ -410,27 +410,20 @@ export async function deactivateProfile(actor: Actor, personId: string, type: Pr
     throw new NotFoundError('Person not found.');
   }
 
-  if (type === 'pilot') {
-    const existing = await prisma.pilotProfile.findUnique({ where: { personId } });
-    if (!existing || existing.deactivatedAt !== null) {
-      throw new ConflictError('Pilot profile is not active.');
-    }
-    await prisma.pilotProfile.update({ where: { personId }, data: { deactivatedAt: new Date() } });
-    return;
+  // Single guarded UPDATE (`deactivatedAt: null` in the where) so two
+  // concurrent deactivations can't both pass a separate read-then-check: the
+  // loser matches zero rows and gets the same ConflictError as a deactivate
+  // on a never-activated or already-deactivated profile (review 2.2 F1).
+  const where = { personId, deactivatedAt: null };
+  const update = { deactivatedAt: new Date() };
+  const { count } =
+    type === 'pilot'
+      ? await prisma.pilotProfile.updateMany({ where, data: update })
+      : type === 'student'
+        ? await prisma.studentProfile.updateMany({ where, data: update })
+        : await prisma.instructorProfile.updateMany({ where, data: update });
+  if (count === 0) {
+    const label = type === 'pilot' ? 'Pilot' : type === 'student' ? 'Student' : 'Instructor';
+    throw new ConflictError(`${label} profile is not active.`);
   }
-
-  if (type === 'student') {
-    const existing = await prisma.studentProfile.findUnique({ where: { personId } });
-    if (!existing || existing.deactivatedAt !== null) {
-      throw new ConflictError('Student profile is not active.');
-    }
-    await prisma.studentProfile.update({ where: { personId }, data: { deactivatedAt: new Date() } });
-    return;
-  }
-
-  const existing = await prisma.instructorProfile.findUnique({ where: { personId } });
-  if (!existing || existing.deactivatedAt !== null) {
-    throw new ConflictError('Instructor profile is not active.');
-  }
-  await prisma.instructorProfile.update({ where: { personId }, data: { deactivatedAt: new Date() } });
 }

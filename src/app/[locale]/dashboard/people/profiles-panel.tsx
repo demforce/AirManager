@@ -192,6 +192,10 @@ function PilotSection({ personId, profile, labels, onSaved }: PilotSectionProps)
     });
     if (!response.ok) {
       setFormError(labels.errors.generic);
+      // Refetch even on failure: a 409/404 usually means this section was
+      // stale (concurrent change) — show the server's current state along
+      // with the error message (review 2.2 F2, same rationale as 2.1 F1).
+      await onSaved();
       return;
     }
     setEditing(false);
@@ -205,6 +209,7 @@ function PilotSection({ personId, profile, labels, onSaved }: PilotSectionProps)
     setConfirmingDeactivate(false);
     if (!response.ok) {
       setFormError(labels.errors.generic);
+      await onSaved();
       return;
     }
     await onSaved();
@@ -351,6 +356,10 @@ function StudentSection({ personId, profile, labels, onSaved }: StudentSectionPr
     });
     if (!response.ok) {
       setFormError(labels.errors.generic);
+      // Refetch even on failure: a 409/404 usually means this section was
+      // stale (concurrent change) — show the server's current state along
+      // with the error message (review 2.2 F2, same rationale as 2.1 F1).
+      await onSaved();
       return;
     }
     setEditing(false);
@@ -364,6 +373,7 @@ function StudentSection({ personId, profile, labels, onSaved }: StudentSectionPr
     setConfirmingDeactivate(false);
     if (!response.ok) {
       setFormError(labels.errors.generic);
+      await onSaved();
       return;
     }
     await onSaved();
@@ -497,6 +507,10 @@ function InstructorSection({ personId, profile, labels, onSaved }: InstructorSec
     });
     if (!response.ok) {
       setFormError(labels.errors.generic);
+      // Refetch even on failure: a 409/404 usually means this section was
+      // stale (concurrent change) — show the server's current state along
+      // with the error message (review 2.2 F2, same rationale as 2.1 F1).
+      await onSaved();
       return;
     }
     setEditing(false);
@@ -510,6 +524,7 @@ function InstructorSection({ personId, profile, labels, onSaved }: InstructorSec
     setConfirmingDeactivate(false);
     if (!response.ok) {
       setFormError(labels.errors.generic);
+      await onSaved();
       return;
     }
     await onSaved();

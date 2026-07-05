@@ -4,7 +4,15 @@ baseline_commit: 3aae25484a37d12d7a59d5a31579a42a44881966
 
 # Story 2.2: Profili pilota, allievo, istruttore
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-05)
+- **Verdict**: APPROVE — no mandatory fixes. Hot areas verified empirically: authorize() first statement on every profile path; [type] segment Zod-validated → 404; courseStartDate round-trip TZ-independent (tested under America/New_York and Pacific/Kiritimati); Prisma upsert compiles to atomic INSERT ... ON CONFLICT (no P2002 race); AD-8 envelope consistent; i18n 0 asymmetric keys; no XSS (React auto-escape, no dangerouslySetInnerHTML); no regressions on existing people routes; AD-11 respected (nothing ties economic/history data to profiles).
+- Optional findings applied anyway by the orchestrator: **F1** `deactivateProfile` check-then-update TOCTOU → single guarded `updateMany({ where: { personId, deactivatedAt: null } })`, ConflictError on `count === 0` (unit tests updated to the new atomic semantics); **F2** profiles panel now refetches the person detail on the error branch too, so a 409/404 from a concurrent change shows current server state alongside the error (same rationale as 2.1 F1).
+- F3 (nit, body validated before person existence → 422 over 404 for a missing person) confirmed as standard behavior, no action.
+- **Post-fix gates**: lint ✔ (1 documented benign warning), typecheck ✔, test 175/175 ✔, build ✔, e2e 36/36 ✔.
 
 ## Story
 
