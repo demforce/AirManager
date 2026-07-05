@@ -40,7 +40,7 @@ development_status:
   epic-1-retrospective: optional
 
   epic-2: in-progress
-  2-1-people-crud: review
+  2-1-people-crud: done
   2-2-person-profiles: backlog
   2-3-person-detail: backlog
   2-4-aircraft-crud: backlog

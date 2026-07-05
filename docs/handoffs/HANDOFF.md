@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato al completamento dell'Epic 1)
+# HANDOFF — AirManager (aggiornato: Epic 1 done + Story 2.1 done)
 
 ## Goal
 
@@ -40,9 +40,9 @@ Costruire AirManager, il gestionale per un'aviosuperficie (piloti, velivoli, vol
 
 ## Next Steps (in ordine)
 
-1. **Story 2.1 people-crud**: Fable crea `_bmad-output/implementation-artifacts/2-1-people-crud.md` (CRUD Persone con archiviazione, permessi people.read/people.manage, elenco paginato+ricerca, estende la Person minimale esistente di 1.2 — vedi FR-4 e AC in epics.md), sprint-status → ready-for-dev, commit.
-2. Dev Sonnet (bmad-dev-story) → commit story → review Opus → fix → commit fix → sprint-status done. Stesso ciclo per 2.2 profili, 2.3 scheda persona, 2.4 velivoli, 2.5 stato/contaore.
-3. Epic 2 finito → epic-2 done, poi Epic 3 (Finanze) e avanti secondo epics.md.
-4. Pendenze non bloccanti: Context7 (serve che l'utente sblocchi il dominio nella network policy), verifica `docker compose up` su macchina con Docker Hub, retrospettive epic opzionali.
+1. **Story 2.2 person-profiles**: Fable crea `_bmad-output/implementation-artifacts/2-2-person-profiles.md` (profili Pilota/Allievo/Istruttore 1-a-0/1 su Person, AD-11; dati specifici per profilo; passaggio allievo→pilota senza perdere storico — vedi Story 2.2 in epics.md), sprint-status → ready-for-dev, commit; poi dev Sonnet → commit → review Opus → fix → commit → done.
+2. Stesso ciclo per 2.3 scheda persona, 2.4 velivoli, 2.5 stato/contaore; poi epic-2 done e avanti con Epic 3 (Finanze) secondo epics.md.
+3. **Story 2.1 people-crud è DONE** (commit d8d2ded + fix opzionali): ha introdotto `src/components/data-table.tsx` (TanStack Table riusabile — riusarlo nelle prossime viste), gli endpoint `/api/v1/people*` documentati in OpenAPI e il pattern di archiviazione con `archivedAt`. NOTA AMBIENTE NUOVA: `prisma migrate dev` NON funziona in questo sandbox (rifiuta il non-interattivo) — usare `prisma migrate diff --script` + file migrazione scritto a mano + `prisma migrate deploy` (vedi Dev Agent Record 2.1).
+4. Pendenze non bloccanti: Context7 (serve che l'utente sblocchi il dominio nella network policy), verifica `docker compose up` su macchina con Docker Hub, retrospettive epic opzionali, permessi rinviati (`ppr.manage` epic 8, `school.manage.any` epic 9).
 
 Ambiente da ripristinare a inizio sessione: `service postgresql start`; Mailpit `/root/go/bin/mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025 &`; `.env` esiste già (non tracciato) — se il container è nuovo, ricrearlo da `.env.example` + `SEED_ADMIN_PASSWORD` qualsiasi e rieseguire `npx prisma migrate deploy && npx prisma db seed`.

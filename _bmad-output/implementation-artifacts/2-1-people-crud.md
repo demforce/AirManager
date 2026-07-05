@@ -1,6 +1,14 @@
 # Story 2.1: CRUD persone con archiviazione
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-05)
+- **Verdict**: APPROVE — no mandatory fixes. Hand-written migration verified purely additive and safe; z.preprocess deviation verified correct ("false" handled properly); AC 3 defense in depth confirmed; no XSS/injection; i18n 41/41 symmetric; all prior security fixes intact; data-table genuinely reusable.
+- Optional findings applied anyway by the orchestrator: F1 archive/unarchive failures now surface a feedback message instead of failing silently; F2 debounce moved from useState to useRef (idiomatic, race-free).
+- F3 (editing an archived person allowed) confirmed by-design per AC 2. Known cosmetic: page not clamped to totalPages (same pattern as users page, pre-existing).
+- **Post-fix gates**: lint ✔ (1 documented benign warning), typecheck ✔, test 162/162 ✔, build ✔, e2e 31/31 ✔.
 
 ## Story
 

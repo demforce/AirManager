@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { ColumnDef } from '@tanstack/react-table';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 import { DataTable } from '@/components/data-table';
@@ -78,13 +78,18 @@ function statusBadgeClasses(person: PersonRow): string {
  * search) — otherwise every keystroke would trigger a full page navigation.
  */
 function useDebouncedCallback(callback: (value: string) => void, delayMs: number): (value: string) => void {
-  const [timer, setTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => (timer ? clearTimeout(timer) : undefined), [timer]);
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
 
   return (value: string) => {
-    if (timer) clearTimeout(timer);
-    setTimer(setTimeout(() => callback(value), delayMs));
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => callback(value), delayMs);
   };
 }
 
@@ -126,6 +131,11 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, la
     setConfirming(null);
     if (response.ok) {
       setFeedback(type === 'archive' ? labels.feedback.archived : labels.feedback.unarchived);
+      router.refresh();
+    } else {
+      // e.g. 409 from a concurrent state change: surface it instead of
+      // leaving the row untouched with no explanation (review 2.1 F1).
+      setFeedback(labels.form.genericError);
       router.refresh();
     }
   }
