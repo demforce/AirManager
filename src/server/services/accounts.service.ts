@@ -95,6 +95,14 @@ function assertReadAccess(actor: Actor, personId: string): void {
 export async function getAccountOverview(actor: Actor, personId: string): Promise<AccountOverview> {
   assertReadAccess(actor, personId);
 
+  // Same contract as `recordTopUp` (review 3.1 F4): an unknown person is a
+  // 404, not a 200 with an empty overview — only "person exists but never got
+  // an account" reads as `account: null`.
+  const person = await prisma.person.findUnique({ where: { id: personId }, select: { id: true } });
+  if (!person) {
+    throw new NotFoundError('Person not found.');
+  }
+
   const account = await prisma.account.findUnique({
     where: { personId },
     select: { id: true, createdAt: true },
@@ -103,6 +111,18 @@ export async function getAccountOverview(actor: Actor, personId: string): Promis
     return { account: null, balanceCents: 0, recentMovements: [] };
   }
 
+  return buildOverview(account);
+}
+
+/**
+ * Assembles the overview for an account the caller is already authorized to
+ * see. Kept guard-free on purpose (review 3.1 F1): `recordTopUp` returns the
+ * fresh overview through here after its committed write, and routing that
+ * read back through `assertReadAccess` would couple `finance.manage` to also
+ * holding a read permission — a future write-only role would get its top-up
+ * committed and then a 403 on the response.
+ */
+async function buildOverview(account: { id: string; createdAt: Date }): Promise<AccountOverview> {
   const [aggregate, recent] = await prisma.$transaction([
     prisma.accountMovement.aggregate({
       where: { accountId: account.id },
@@ -111,7 +131,9 @@ export async function getAccountOverview(actor: Actor, personId: string): Promis
     prisma.accountMovement.findMany({
       where: { accountId: account.id },
       select: RECENT_MOVEMENT_SELECT,
-      orderBy: [{ createdAt: 'desc' }],
+      // `id` as tie-break: same-millisecond `createdAt` (batch imports/seeds)
+      // must not make the preview order non-deterministic (review 3.1 F3).
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: RECENT_MOVEMENTS_LIMIT,
     }),
   ]);
@@ -161,17 +183,17 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
   const effectiveDate = new Date(input.effectiveDate);
   const description = input.description ?? null;
 
-  await prisma.$transaction(async (tx) => {
-    const account = await tx.account.upsert({
+  const account = await prisma.$transaction(async (tx) => {
+    const upserted = await tx.account.upsert({
       where: { personId },
       create: { personId },
       update: {},
-      select: { id: true },
+      select: { id: true, createdAt: true },
     });
 
     const accountMovement = await tx.accountMovement.create({
       data: {
-        accountId: account.id,
+        accountId: upserted.id,
         type: 'TOP_UP',
         amountCents: input.amountCents,
         paymentMethod: input.paymentMethod,
@@ -192,7 +214,12 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
         accountMovementId: accountMovement.id,
       },
     });
+
+    return upserted;
   });
 
-  return getAccountOverview(actor, personId);
+  // Guard-free on purpose: the write was authorized by `finance.manage`, and
+  // the fresh overview must not require a separate read permission (review
+  // 3.1 F1 — see `buildOverview`).
+  return buildOverview(account);
 }

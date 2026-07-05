@@ -321,9 +321,11 @@ model CashCategory {
 /// append-only/storno rule as `AccountMovement`, no update/delete API).
 /// `amountCents` is SIGNED (AD-2): an entrata (e.g. a top-up) is positive, a
 /// uscita is negative. `accountMovementId` links the automatic cash entry
-/// back to the `AccountMovement` (a top-up) that generated it — traceability
-/// and a natural idempotency key (at most one cash movement per account
-/// movement); manual cash movements (story 3.4) leave it `null`.
+/// back to the `AccountMovement` (a top-up) that generated it — traceability,
+/// and the unique constraint caps the twin relation at one cash movement per
+/// account movement. NOTE: this does NOT make the top-up REQUEST idempotent —
+/// two identical POSTs still create two independent movement pairs (review
+/// 3.1 F2, deferred); manual cash movements (story 3.4) leave it `null`.
 model CashMovement {
   id                String           @id @default(cuid())
   categoryId        String

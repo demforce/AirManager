@@ -81,6 +81,11 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     await expect(movementRow).toHaveCount(1);
     await expect(movementRow.getByText('Ricarica', { exact: true })).toBeVisible();
     await expect(movementRow.getByText(/\+100,00\s€/)).toBeVisible();
+
+    // Money follows the page locale (review 3.1 F1): the same balance on /en
+    // renders with English formatting (€100.00), not Italian separators.
+    await page.goto(`/en/dashboard/people/${personId}`);
+    await expect(page.getByTestId('account-balance')).toHaveText(/€100\.00/);
   });
 
   test('a person without pilot/student profile shows "Nessun conto attivo" (AC 1)', async ({ page }) => {

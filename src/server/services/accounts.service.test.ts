@@ -95,6 +95,10 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     cashMovementCreateMock.mockReset();
     transactionMock.mockReset();
     mockTransaction();
+    // Review 3.1 F4: `getAccountOverview` now 404s on an unknown person, so
+    // every happy-path test needs the person to exist; per-test overrides
+    // (e.g. the NotFound tests) still win by re-mocking.
+    personFindUnique.mockResolvedValue({ id: 'person_1' });
   });
 
   describe('getAccountOverview — own-access (story 2.3 pattern, AC 1)', () => {
@@ -192,8 +196,16 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       await getAccountOverview(staffActor(), 'person_1');
 
       expect(accountMovementFindManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 5, orderBy: [{ createdAt: 'desc' }] }),
+        // `id` tie-break keeps same-millisecond rows deterministic (review 3.1 F3).
+        expect.objectContaining({ take: 5, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
       );
+    });
+
+    it('throws NotFoundError for an unknown person instead of an empty overview (review 3.1 F4)', async () => {
+      personFindUnique.mockResolvedValue(null);
+
+      await expect(getAccountOverview(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      expect(accountFindUniqueMock).not.toHaveBeenCalled();
     });
   });
 

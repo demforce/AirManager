@@ -4,7 +4,18 @@ baseline_commit: 4ea93e05689bcd16f1d21a670c39033a2297035b
 
 # Story 3.1: Conto prepagato e ricariche
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-05)
+- **Verdict**: CHANGES REQUIRED → resolved. Verified as solid: recordTopUp atomicity (category resolved before the tx, fail-fast on missing seed; Account upsert + AccountMovement + CashMovement twin all inside the interactive tx); no double-count possible under concurrent top-ups (balance = SUM by construction); `_sum` null normalized; parseCents boundary correct (comma/dot, ≤2 decimals, integer arithmetic, no float leakage, zero/negative rejected); own-access ownership-before-query with full test matrix; FK RESTRICT on ledgers; no update/delete APIs (405 verified); i18n keys symmetric.
+- **M1 (mandatory, applied)**: money was always formatted with the Italian locale, even on /en — the panel now derives the locale via `useLocale()` and passes it to `formatCents`/`formatSignedCents`; e2e extended to assert `€100.00` on the EN page. First money-rendering component of the finance epics — the pattern is now correct at the source.
+- **O1 (applied)**: recordTopUp no longer re-authorizes as a READ after the committed write — the fresh overview is built by a guard-free internal `buildOverview` (a future write-only finance role would have gotten its top-up committed and then a 403 on the response).
+- **O3 (applied)**: recent movements ordered `[{createdAt desc}, {id desc}]` — deterministic under same-millisecond rows.
+- **O4 (applied)**: getAccountOverview now 404s on an unknown person (was 200 with an empty overview), matching recordTopUp's contract.
+- **O2 (deferred)**: no request-level idempotency key on the top-up POST — a network retry can record twice; correction is a 3.3 storno. To evaluate as an epic-wide pattern (note also in schema comment, reworded per NIT-2 so nobody mistakes the twin-relation unique for request idempotency). **NIT-1 (deferred)**: client-side maxLength on description.
+- **Post-fix gates**: lint ✔ (1 documented benign warning), typecheck ✔, test 253/253 ✔, build ✔, e2e 55/55 ✔ (fresh DB).
 
 ## Story
 

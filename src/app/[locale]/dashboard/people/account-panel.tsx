@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useLocale } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -74,6 +75,9 @@ function movementTypeLabel(type: AccountMovementListItemDto['type'], labels: Acc
  * by `getAccountOverview` itself.
  */
 export function AccountPanel({ personId, canManageFinance, labels }: AccountPanelProps) {
+  // Money must follow the page locale (review 3.1 F1 — mandatory): without
+  // this, `formatCents`' default renders Italian separators on /en too.
+  const moneyLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [overview, setOverview] = useState<AccountOverviewDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -119,7 +123,7 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
           <div>
             <span className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.balanceLabel}</span>
             <p data-testid="account-balance" className="mt-1 text-2xl font-medium text-[#111111]">
-              {overview.account ? formatCents(overview.balanceCents) : labels.noAccount}
+              {overview.account ? formatCents(overview.balanceCents, moneyLocale) : labels.noAccount}
             </p>
           </div>
 
@@ -156,7 +160,7 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
                         movement.amountCents >= 0 ? 'text-[#346538]' : 'text-[#9F2F2D]'
                       }`}
                     >
-                      {formatSignedCents(movement.amountCents)}
+                      {formatSignedCents(movement.amountCents, moneyLocale)}
                     </span>
                   </li>
                 ))}
