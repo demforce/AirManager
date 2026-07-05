@@ -47,6 +47,12 @@ export function validationErrorResponse(error: z.ZodError): NextResponse {
 
 export function domainErrorResponse(error: DomainError): NextResponse {
   const status = statusForDomainError(error);
+  if (status === 500) {
+    // A DomainError subclass with no explicit HTTP mapping is a programming
+    // gap, not a user-facing condition: emit the generic AD-8 500 envelope
+    // instead of leaking a domain code at the wrong status.
+    return internalErrorResponse(error);
+  }
   const details = error instanceof ValidationError ? error.details : undefined;
   return NextResponse.json(errorEnvelope(error.code, error.message, details), { status });
 }

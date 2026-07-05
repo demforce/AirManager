@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from './zod-with-openapi';
 
 /**
  * Shared login form schema — used by the client-side form (react-hook-form +

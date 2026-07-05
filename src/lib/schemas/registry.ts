@@ -1,5 +1,5 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31, type ResponseConfig } from '@asteasolutions/zod-to-openapi';
-import { z } from 'zod';
+import { z } from './zod-with-openapi';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { meResponseSchema } from './me';
@@ -13,16 +13,16 @@ import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemS
  * (`src/lib/api/handler.ts`) via the very same schemas; this module only
  * describes them for the spec.
  *
- * Deliberately not using `extendZodWithOpenApi`/`.openapi()`: that helper
- * patches `ZodType.prototype` at call time, which only affects schema
- * instances created *afterwards* — it does nothing for the domain schemas
- * already constructed at import time in `users.ts`/`auth-tokens.ts`/`me.ts`
- * (verified against the installed zod-to-openapi 8.5.0 + zod 4.4.3: schemas
- * built before the `extendZodWithOpenApi` call never gain `.openapi()`,
- * even though `instanceof ZodType` still reports true for them). Plain
- * `registry.register(name, schema)` needs no extension at all — the
- * generator reads the schema's shape directly — so every schema below is
- * registered unmodified.
+ * IMPORTANT (review 1.5 F1): every schema registered as a *component* via
+ * `registry.register(name, schema)` MUST be built from the extended `z`
+ * exported by `zod-with-openapi.ts` — `register()` throws
+ * "zodSchema.openapi is not a function" on a schema built from plain
+ * `'zod'`. `extendZodWithOpenApi` patches `ZodType.prototype` at call time,
+ * so it only affects schema instances created *afterwards*; the wrapper
+ * module guarantees the extension runs before any schema construction.
+ * Only inline schemas passed to `registerPath` (e.g. `idParams`, health)
+ * tolerate plain `'zod'`. An ESLint `no-restricted-imports` rule on
+ * `src/lib/schemas/**` enforces the wrapper import.
  */
 export const registry = new OpenAPIRegistry();
 

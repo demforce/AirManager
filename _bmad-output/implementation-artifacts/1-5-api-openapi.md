@@ -4,7 +4,19 @@ baseline_commit: d4ddd6570adfc0b719d960a1ca6147a8542ad20a
 
 # Story 1.5: Infrastruttura API v1 con OpenAPI
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-05)
+- **Verdict**: APPROVE WITH FIXES (all low/nit) — applied by the orchestrator:
+  1. **F1 (low, fixed)**: registry.ts comment was factually wrong (claimed plain `register()` needs no extension — empirically false); corrected to state that component schemas MUST use the extended `z` from zod-with-openapi.ts.
+  2. **F2 (low, fixed)**: ESLint `no-restricted-imports` rule added for `zod` under `src/lib/schemas/**` (wrapper excluded); it immediately caught login.ts and registry.ts, both switched to the wrapper import.
+  3. **F3 (nit, fixed)**: an unmapped future DomainError subclass now routes to the generic INTERNAL_ERROR 500 envelope instead of leaking a domain code at status 500.
+  4. **F4 (nit, accepted)**: openapi.json regenerated per request — accepted, infra endpoint.
+- Verified clean: 422 details never echo input values; auth 'public' limited to health/openapi/set-password/forgot-password; defense in depth intact; 1.2/1.4 security fixes unregressed; pagination reject-not-clamp behavior consistent with 1.4 and the story.
+- **Reviewer statement: Epic 1 is DONE** (deferred F2 from 1.3 closed; e2e 25/25 verified by orchestrator).
+- **Post-fix gates**: lint ✔, typecheck ✔, test 135/135 ✔, build ✔, e2e 25/25 ✔.
 
 ## Story
 

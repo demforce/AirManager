@@ -5,6 +5,27 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // Schemas registered as OpenAPI components must be built from the
+    // extended `z` (zod-with-openapi.ts): registry.register() throws on
+    // schemas built from plain 'zod' (story 1.5 review F2).
+    files: ["src/lib/schemas/**/*.ts"],
+    ignores: ["src/lib/schemas/zod-with-openapi.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "zod",
+              message:
+                "Import { z } from '@/lib/schemas/zod-with-openapi' instead: OpenAPI component schemas need the extended z (see registry.ts).",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
