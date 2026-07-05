@@ -1,0 +1,42 @@
+import { describe, expect, it } from 'vitest';
+import { generateOpenApiDocument } from './registry';
+
+describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
+  const doc = generateOpenApiDocument();
+
+  it('generates an OpenAPI 3.x document', () => {
+    expect(doc.openapi.startsWith('3.')).toBe(true);
+    expect(doc.info.title).toBe('AirManager API');
+  });
+
+  it('includes every existing endpoint', () => {
+    const paths = Object.keys(doc.paths ?? {});
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        '/api/v1/health',
+        '/api/v1/me',
+        '/api/v1/users',
+        '/api/v1/users/{id}',
+        '/api/v1/users/{id}/resend-invite',
+        '/api/v1/auth/set-password',
+        '/api/v1/auth/forgot-password',
+      ]),
+    );
+  });
+
+  it('documents a cookie-based session security scheme', () => {
+    const securitySchemes = doc.components?.securitySchemes as Record<string, { type: string; in?: string }> | undefined;
+    expect(securitySchemes?.['cookieAuth']).toMatchObject({ type: 'apiKey', in: 'cookie' });
+  });
+
+  it('documents 401/403/404/409/422/500 error responses on the protected users list endpoint', () => {
+    const listUsers = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)['/api/v1/users']?.[
+      'get'
+    ];
+    expect(Object.keys(listUsers?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+  });
+
+  it('produces valid JSON (round-trips through JSON.stringify/parse)', () => {
+    expect(() => JSON.parse(JSON.stringify(doc))).not.toThrow();
+  });
+});

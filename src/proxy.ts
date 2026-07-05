@@ -17,8 +17,15 @@ const AUTH_API_PREFIX = '/api/auth';
 // `/api/v1/*` endpoints that stay public. AD-8's 401 envelope applies to
 // every other `/api/v1/*` route. The two auth-token endpoints (story 1.4)
 // are necessarily public: they are what an invited/locked-out user calls
-// *before* they have a session.
-const PUBLIC_API_PATHS = new Set(['/api/v1/health', '/api/v1/auth/set-password', '/api/v1/auth/forgot-password']);
+// *before* they have a session. `openapi.json` (story 1.5) is public too —
+// it exposes only contracts (request/response shapes), never data, and a
+// future Flutter client needs to be able to fetch it without a session.
+const PUBLIC_API_PATHS = new Set([
+  '/api/v1/health',
+  '/api/v1/auth/set-password',
+  '/api/v1/auth/forgot-password',
+  '/api/v1/openapi.json',
+]);
 
 function unauthenticatedApiResponse(): NextResponse {
   return NextResponse.json(

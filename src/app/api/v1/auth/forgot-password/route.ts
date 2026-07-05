@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { apiRoute } from '@/lib/api/handler';
 import { forgotPasswordSchema } from '@/lib/schemas/auth-tokens';
 import { requestPasswordReset } from '@/server/services/auth-tokens.service';
 
@@ -10,16 +10,11 @@ import { requestPasswordReset } from '@/server/services/auth-tokens.service';
  * timing. A malformed email still gets a distinct 422 — rejecting an
  * obviously-invalid input shape isn't an enumeration channel.
  */
-export async function POST(request: NextRequest) {
-  const body: unknown = await request.json().catch(() => null);
-  const parsed = forgotPasswordSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: { code: 'VALIDATION_ERROR', message: 'Invalid input.' } },
-      { status: 422 },
-    );
-  }
-
-  await requestPasswordReset(parsed.data.email);
-  return NextResponse.json({ ok: true });
-}
+export const POST = apiRoute({
+  auth: 'public',
+  bodySchema: forgotPasswordSchema,
+  handle: async ({ body }) => {
+    await requestPasswordReset(body.email);
+    return { ok: true };
+  },
+});

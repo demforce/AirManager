@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from './zod-with-openapi';
 
 /**
  * Shared by `/set-password` (form + `POST /api/v1/auth/set-password`) for

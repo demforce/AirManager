@@ -1,5 +1,6 @@
-import { z } from 'zod';
 import { Role } from '@/generated/prisma/enums';
+import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { z } from './zod-with-openapi';
 
 /** Mirrors `next-intl`'s `AppLocale` — kept local to avoid a schema → i18n
  * routing import cycle; the two must be extended together if a locale is
@@ -38,9 +39,30 @@ export const updateUserSchema = z.object({
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
-export const listUsersQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-});
+// `GET /api/v1/users` was already paginated (story 1.4); it now reuses the
+// shared `page`/`pageSize` schema (story 1.5, AD-8) instead of redefining
+// the same shape.
+export const listUsersQuerySchema = paginationQuerySchema;
 
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;
+
+/**
+ * Response shape of one list item (`users.service.ts#UserListItem`).
+ * Documentation only — the service's TS type remains the runtime source of
+ * truth — registered in the OpenAPI registry (story 1.5). `createdAt` is
+ * ISO 8601 UTC on the wire (AD-8; `Date` → `JSON.stringify` already emits
+ * this format).
+ */
+export const userListItemSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  roles: z.array(roleSchema),
+  isActive: z.boolean(),
+  locale: localeSchema,
+  passwordSet: z.boolean(),
+  person: z.object({ id: z.string(), firstName: z.string(), lastName: z.string() }).nullable(),
+  createdAt: z.iso.datetime(),
+});
+
+/** `GET /api/v1/users` response — AD-8 paginated shape. */
+export const userListResponseSchema = paginatedResponseSchema(userListItemSchema);

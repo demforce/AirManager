@@ -1,4 +1,5 @@
 import type { Role } from '@/generated/prisma/enums';
+import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { CreateUserInput, UpdateUserInput } from '@/lib/schemas/users';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
@@ -18,12 +19,8 @@ export type UserListItem = {
   createdAt: Date;
 };
 
-export type UserListResult = {
-  items: UserListItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
+/** AD-8 paginated shape, via the shared helper (story 1.5). */
+export type UserListResult = PaginatedResult<UserListItem>;
 
 const USER_SELECT = {
   id: true,
@@ -65,25 +62,20 @@ function emailLocale(locale: string): 'it' | 'en' {
 }
 
 /** List users, paginated (AD-8: `{ items, total, page, pageSize }`). Admin-only (`users.manage`). */
-export async function listUsers(
-  actor: Actor,
-  query: { page: number; pageSize: number },
-): Promise<UserListResult> {
+export async function listUsers(actor: Actor, query: PaginationQuery): Promise<UserListResult> {
   authorize(actor, 'users.manage');
-  const { page, pageSize } = query;
 
   const [items, total] = await prisma.$transaction([
     prisma.user.findMany({
       select: USER_SELECT,
       // Newest first: keeps freshly invited users on page 1 for the admin.
       orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      ...paginationOffset(query),
     }),
     prisma.user.count(),
   ]);
 
-  return { items: items.map(toListItem), total, page, pageSize };
+  return paginate(items.map(toListItem), total, query);
 }
 
 export async function getUser(actor: Actor, id: string): Promise<UserListItem> {
