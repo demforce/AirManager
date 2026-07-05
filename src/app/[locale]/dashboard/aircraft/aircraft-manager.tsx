@@ -38,7 +38,6 @@ type Labels = {
     hourMeter: string;
     status: string;
     actions: string;
-    noValue: string;
     empty: string;
   };
   status: { active: string; archived: string };
@@ -307,6 +306,11 @@ export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived
       {panel?.mode === 'edit' ? (
         <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
           <EditAircraftForm
+            // Remount when the edit target changes: react-hook-form reads
+            // defaultValues only at mount, so without the key switching from
+            // aircraft A to B keeps A's field values and PATCHes them onto B
+            // (review 2.4 F1).
+            key={panel.aircraft.id}
             aircraft={panel.aircraft}
             labels={labels}
             onCancel={() => setPanel(null)}
@@ -575,7 +579,14 @@ function AircraftFields({
         <label htmlFor={`${idPrefix}-notes`} className="block text-sm font-medium text-[#2F3437]">
           {labels.form.notes}
         </label>
-        <input id={`${idPrefix}-notes`} className={inputClasses} {...register('notes')} />
+        <input
+          id={`${idPrefix}-notes`}
+          className={inputClasses}
+          // Empty input means "no note": map '' to null so clearing the field
+          // deletes the note instead of silently failing the `.min(1)`
+          // validation with no rendered error (review 2.4 F3).
+          {...register('notes', { setValueAs: (value: string) => (value === '' ? null : value) })}
+        />
       </div>
     </>
   );

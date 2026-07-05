@@ -323,6 +323,10 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, la
       {panel?.mode === 'edit' ? (
         <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
           <EditPersonForm
+            // Remount when the edit target changes — same latent stale-form
+            // bug found on the aircraft manager (review 2.4 F1): without the
+            // key, switching edit target keeps the previous person's values.
+            key={panel.person.id}
             person={panel.person}
             labels={labels}
             onCancel={() => setPanel(null)}

@@ -179,7 +179,6 @@
       "hourMeter": "Hour meter",
       "status": "Status",
       "actions": "Actions",
-      "noValue": "—",
       "empty": "No aircraft found."
     },
     "status": {

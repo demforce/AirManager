@@ -96,7 +96,6 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
                 hourMeter: t('table.hourMeter'),
                 status: t('table.status'),
                 actions: t('table.actions'),
-                noValue: t('table.noValue'),
                 empty: t('table.empty'),
               },
               status: {

@@ -4,7 +4,14 @@ baseline_commit: 994af4f2fd869a1e04c49b77656c4452bab70f17
 
 # Story 2.4: CRUD velivoli
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-05)
+- **Verdict**: APPROVE — no mandatory fixes. Verified: AD-2 respected end-to-end (Int everywhere, no float/parseFloat, H:MM is presentation-only); registration normalization (trim+uppercase) applied on create AND update with normalized pre-check + P2002 backstop, case collisions caught, self excluded on update; authorize('aircraft.manage') first line of all six service functions; AD-8 envelope on 401/403/404/409/422; additive migration with correct unique index; i18n symmetric; registry extended without regressions.
+- Optional/nit findings applied by the orchestrator: **F1** `EditAircraftForm` now remounts via `key={aircraft.id}` — without it, switching edit target from aircraft A to B kept A's form values and PATCHed them onto B (real latent bug; same fix applied to `EditPersonForm` in people-manager as the reviewer recommended); **F2** `hourMeterMinutes` capped at Postgres INTEGER max in create/update schemas (absurd input now 422, not driver overflow → 500); **F3** notes input maps '' → null (`setValueAs`) so clearing a note works instead of silently failing `.min(1)` with no rendered error; **F4** dead `table.noValue` label removed (type, page mapping, both catalogs).
+- **Post-fix gates**: lint ✔ (1 documented benign warning), typecheck ✔, test 205/205 ✔, build ✔, e2e 46/46 ✔ (after the usual dirty-DB reset — see 2.3 environment note).
 
 ## Story
 

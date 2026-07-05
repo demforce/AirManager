@@ -15,7 +15,9 @@ export const createAircraftSchema = z.object({
   registration: z.string().trim().toUpperCase().min(1),
   type: z.string().trim().min(1),
   model: z.string().trim().min(1),
-  hourMeterMinutes: z.number().int().min(0),
+  // Capped at Postgres INTEGER max so an absurd value fails as a clean 422
+  // instead of a driver overflow error → 500 (review 2.4 F2).
+  hourMeterMinutes: z.number().int().min(0).max(2_147_483_647),
   notes: z.string().trim().min(1).nullish(),
 });
 
@@ -30,7 +32,7 @@ export const updateAircraftSchema = z.object({
   registration: z.string().trim().toUpperCase().min(1).optional(),
   type: z.string().trim().min(1).optional(),
   model: z.string().trim().min(1).optional(),
-  hourMeterMinutes: z.number().int().min(0).optional(),
+  hourMeterMinutes: z.number().int().min(0).max(2_147_483_647).optional(),
   notes: z.string().trim().min(1).nullish(),
 });
 
