@@ -1,0 +1,192 @@
+{
+  "Metadata": {
+    "title": "AirManager",
+    "description": "Gestionale per aviosuperficie: piloti, velivoli, voli, prenotazioni e finanze in un unico posto."
+  },
+  "HomePage": {
+    "kicker": "Gestionale aviosuperficie",
+    "title": "AirManager",
+    "description": "Piloti, velivoli, voli, PPR, finanze, scuola volo e scadenze: la gestione dell'aviosuperficie in un unico ambiente affidabile.",
+    "statusLabel": "Stato del progetto",
+    "statusValue": "Fondamenta in costruzione",
+    "switchTo": "English"
+  },
+  "LoginPage": {
+    "kicker": "Accesso",
+    "title": "Accedi ad AirManager",
+    "description": "Inserisci email e password per accedere alla tua area riservata.",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "submit": "Accedi",
+    "submitting": "Accesso in corso…",
+    "errorGeneric": "Email o password non corretti.",
+    "forgotPassword": "Password dimenticata?"
+  },
+  "DashboardPage": {
+    "kicker": "Area riservata",
+    "welcome": "Bentornato, {name}",
+    "subtitle": "Le aree operative (piloti, velivoli, voli, prenotazioni...) arriveranno nelle prossime iterazioni.",
+    "logout": "Esci",
+    "navHeading": "Aree operative",
+    "nav": {
+      "people": "Persone",
+      "aircraft": "Velivoli",
+      "flights": "Voli",
+      "bookings": "Prenotazioni",
+      "finance": "Finanze",
+      "school": "Scuola volo",
+      "expiries": "Scadenze",
+      "ppr": "PPR",
+      "users": "Utenti",
+      "settings": "Impostazioni"
+    }
+  },
+  "PeoplePage": {
+    "kicker": "Anagrafiche",
+    "title": "Persone",
+    "description": "Anagrafica unica di piloti, allievi, istruttori e staff: crea, modifica e archivia le persone.",
+    "backToDashboard": "Torna alla dashboard",
+    "newPerson": "Nuova persona",
+    "searchPlaceholder": "Cerca per nome, cognome o email…",
+    "includeArchivedLabel": "Includi archiviate",
+    "table": {
+      "name": "Nome",
+      "email": "Email",
+      "phone": "Telefono",
+      "status": "Stato",
+      "actions": "Azioni",
+      "noValue": "—",
+      "empty": "Nessuna persona trovata."
+    },
+    "status": {
+      "active": "Attiva",
+      "archived": "Archiviata"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "archive": "Archivia",
+      "unarchive": "Ripristina",
+      "confirmArchive": "Archiviare questa persona?",
+      "confirmUnarchive": "Ripristinare questa persona?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
+    },
+    "form": {
+      "createTitle": "Nuova persona",
+      "editTitle": "Modifica persona",
+      "firstName": "Nome",
+      "lastName": "Cognome",
+      "email": "Email",
+      "phone": "Telefono",
+      "address": "Indirizzo",
+      "fiscalCode": "Codice fiscale",
+      "submitCreate": "Crea persona",
+      "submitEdit": "Salva modifiche",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "conflictError": "Esiste già una persona con questa email o codice fiscale."
+    },
+    "feedback": {
+      "created": "Persona creata.",
+      "updated": "Persona aggiornata.",
+      "archived": "Persona archiviata.",
+      "unarchived": "Persona ripristinata."
+    }
+  },
+  "UsersPage": {
+    "kicker": "Amministrazione",
+    "title": "Utenti",
+    "description": "Crea utenti, assegna ruoli e gestisci l'accesso al sistema.",
+    "backToDashboard": "Torna alla dashboard",
+    "newUser": "Nuovo utente",
+    "table": {
+      "email": "Email",
+      "roles": "Ruoli",
+      "status": "Stato",
+      "person": "Persona",
+      "locale": "Lingua",
+      "actions": "Azioni",
+      "noPerson": "Nessuna",
+      "empty": "Nessun utente trovato."
+    },
+    "status": {
+      "active": "Attivo",
+      "inactive": "Disattivo",
+      "pending": "Invito in sospeso"
+    },
+    "roles": {
+      "ADMIN": "Admin",
+      "STAFF": "Staff",
+      "INSTRUCTOR": "Istruttore",
+      "PILOT": "Pilota",
+      "STUDENT": "Allievo"
+    },
+    "locales": {
+      "it": "Italiano",
+      "en": "Inglese"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "deactivate": "Disattiva",
+      "activate": "Riattiva",
+      "resendInvite": "Reinvia invito"
+    },
+    "form": {
+      "createTitle": "Nuovo utente",
+      "editTitle": "Modifica utente",
+      "email": "Email",
+      "roles": "Ruoli",
+      "locale": "Lingua",
+      "person": "Persona collegata (opzionale)",
+      "personNone": "Nessuna",
+      "isActive": "Attivo",
+      "submitCreate": "Crea e invia invito",
+      "submitEdit": "Salva modifiche",
+      "cancel": "Annulla",
+      "rolesRequired": "Seleziona almeno un ruolo.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "emailConflict": "Esiste già un utente con questa email."
+    },
+    "feedback": {
+      "created": "Utente creato: email di invito inviata.",
+      "updated": "Utente aggiornato.",
+      "inviteResent": "Invito reinviato."
+    }
+  },
+  "SetPasswordPage": {
+    "kicker": "Imposta password",
+    "title": "Imposta la tua password",
+    "description": "Scegli una password di almeno 10 caratteri per accedere ad AirManager.",
+    "passwordLabel": "Nuova password",
+    "confirmPasswordLabel": "Conferma password",
+    "submit": "Imposta password",
+    "submitting": "Impostazione in corso…",
+    "success": "Password impostata. Ora puoi accedere.",
+    "goToLogin": "Vai al login",
+    "errorMismatch": "Le password non coincidono.",
+    "errorTooShort": "La password deve avere almeno 10 caratteri.",
+    "errorGeneric": "Il link non è valido o è scaduto. Richiedine uno nuovo.",
+    "missingToken": "Link non valido: token mancante."
+  },
+  "ForgotPasswordPage": {
+    "kicker": "Password dimenticata",
+    "title": "Recupera la password",
+    "description": "Inserisci la tua email: se l'account esiste ti invieremo un link per reimpostare la password.",
+    "emailLabel": "Email",
+    "submit": "Invia link di reset",
+    "submitting": "Invio in corso…",
+    "confirmation": "Se l'indirizzo email corrisponde a un account attivo, riceverai a breve un'email con le istruzioni per reimpostare la password.",
+    "backToLogin": "Torna al login"
+  },
+  "Emails": {
+    "invite": {
+      "subject": "Sei stato invitato ad AirManager",
+      "body": "Ciao,\n\nSei stato invitato ad accedere ad AirManager. Imposta la tua password entro {expiresInDays, plural, one {# giorno} other {# giorni}} visitando il link seguente:\n\n{url}\n\nSe non ti aspettavi questo invito, puoi ignorare questa email."
+    },
+    "passwordReset": {
+      "subject": "Reimposta la tua password AirManager",
+      "body": "Ciao,\n\nHai richiesto di reimpostare la password del tuo account AirManager. Il link seguente è valido per {expiresInHours, plural, one {# ora} other {# ore}}:\n\n{url}\n\nSe non hai richiesto tu questa operazione, ignora questa email: la password attuale resta invariata."
+    }
+  }
+}

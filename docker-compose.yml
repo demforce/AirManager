@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: airmanager
+      POSTGRES_PASSWORD: airmanager
+      POSTGRES_DB: airmanager
+    ports:
+      - '5432:5432'
+    volumes:
+      - airmanager-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U airmanager -d airmanager']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit
+    restart: unless-stopped
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # Web UI
+
+volumes:
+  airmanager-postgres-data:

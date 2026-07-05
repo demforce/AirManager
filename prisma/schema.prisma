@@ -1,0 +1,107 @@
+// AirManager — Prisma schema
+// See https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Generic key/value application setting. First minimal model for story 1.1
+/// scaffolding; domain models arrive in later stories per the architecture spine.
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// System roles. Full permission mapping (AD-5) lands in story 1.3 — here the
+/// enum only exists so `User.roles` can be populated at login time.
+enum Role {
+  ADMIN
+  STAFF
+  INSTRUCTOR
+  PILOT
+  STUDENT
+}
+
+/// Person registry (AD-11: a single `Person` record per human being; FR-4:
+/// one unique anagrafica, no duplicates). Story 1.2 introduced the minimal
+/// shape (name + optional email) to attach a display name to an
+/// authenticated user; story 2.1 extends it with the full CRUD fields
+/// (`phone`/`address`/`fiscalCode`) plus archiving.
+model Person {
+  id         String    @id @default(cuid())
+  firstName  String
+  lastName   String
+  email      String?   @unique
+  phone      String?
+  address    String?
+  /// Italian "codice fiscale" — optional (not every person has one on file
+  /// yet) but unique when present, same nullable-unique pattern as `email`.
+  fiscalCode String?   @unique
+  /// Soft-archive timestamp (story 2.1, AC 2): a timestamp rather than a
+  /// boolean also records *when* — and there is deliberately no physical
+  /// delete API for a `Person` (historical flights/movements must keep
+  /// referencing it).
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user User?
+}
+
+/// Login credentials. 1-to-0/1 with `Person` (AD-11) — not every `Person` has
+/// a login (e.g. a pilot who never receives an account), and not every `User`
+/// needs a `Person` yet (kept optional to avoid coupling auth to the full
+/// anagrafica before story 2.1 exists).
+model User {
+  id     String @id @default(cuid())
+  email  String @unique
+  /// Nullable (story 1.4): an invited user has no password until they follow
+  /// their invite link and set one via `AuthToken`. `authorize()` rejects
+  /// login for a null `passwordHash` (with the same dummy-verify timing
+  /// pattern used for "unknown email"/"inactive user" — see story 1.2/1.4).
+  passwordHash String?
+  isActive     Boolean @default(true)
+  /// UI/email language (story 1.4, AD-7). Kept as a plain string rather than
+  /// a Prisma enum so it maps 1:1 onto `next-intl`'s `AppLocale` ('it'|'en')
+  /// without a translation layer; validated at the Zod boundary.
+  locale       String  @default("it")
+  roles        Role[]
+  personId     String? @unique
+  person       Person? @relation(fields: [personId], references: [id])
+
+  authTokens AuthToken[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Single-use, hashed tokens backing the invite and password-reset email
+/// flows (story 1.4, AC 1/3). Only the sha256 hash of the token is ever
+/// persisted — the raw value exists only in the emailed link and is never
+/// logged or stored.
+enum AuthTokenType {
+  INVITE
+  PASSWORD_RESET
+}
+
+model AuthToken {
+  id        String        @id @default(cuid())
+  tokenHash String        @unique
+  type      AuthTokenType
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  /// Set once the token is consumed — monouso (single-use), never deleted so
+  /// a reused/replayed link can still be told apart from an unknown one.
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+
+  @@index([userId])
+}

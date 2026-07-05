@@ -1,0 +1,56 @@
+import type { Actor, Permission } from '@/server/auth/rbac';
+import { hasPermission } from '@/server/auth/rbac';
+
+export type NavItemKey =
+  | 'people'
+  | 'aircraft'
+  | 'flights'
+  | 'bookings'
+  | 'finance'
+  | 'school'
+  | 'expiries'
+  | 'ppr'
+  | 'users'
+  | 'settings';
+
+export type NavItem = {
+  key: NavItemKey;
+  href: string;
+  permissions: readonly Permission[];
+};
+
+/**
+ * Placeholder dashboard navigation (Story 1.3, Task 3). Each entry becomes a
+ * real section in a later epic (see the architecture spine's Capability →
+ * Architecture Map) — for now the links only exist to prove role-based
+ * filtering end-to-end (AC 2).
+ *
+ * `ppr` has no dedicated permission yet: the initial permission set (Task 2)
+ * doesn't include one, since the PPR domain itself doesn't exist until epic
+ * 8. It is gated on `bookings.manage.any` as the closest existing proxy for
+ * "staff/admin operational work" — revisit once epic 8 introduces a
+ * `ppr.manage` permission.
+ */
+export const NAV_ITEMS: readonly NavItem[] = [
+  // Story 2.1: the first real (non-placeholder) People sub-page.
+  { key: 'people', href: '/dashboard/people', permissions: ['people.read'] },
+  { key: 'aircraft', href: '/aircraft', permissions: ['aircraft.manage'] },
+  { key: 'flights', href: '/flights', permissions: ['flights.manage'] },
+  { key: 'bookings', href: '/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any'] },
+  { key: 'finance', href: '/finance', permissions: ['finance.manage'] },
+  { key: 'school', href: '/school', permissions: ['school.manage.own'] },
+  { key: 'expiries', href: '/expiries', permissions: ['expiries.manage'] },
+  { key: 'ppr', href: '/ppr-queue', permissions: ['bookings.manage.any'] },
+  // Story 1.4: the first real (non-placeholder) dashboard sub-page.
+  { key: 'users', href: '/dashboard/users', permissions: ['users.manage'] },
+  { key: 'settings', href: '/settings', permissions: ['settings.manage'] },
+];
+
+/**
+ * Union filtering (AC 2): an item is visible if the actor has ANY of its
+ * permissions — a multi-role actor (e.g. pilot+instructor) therefore sees
+ * the union of what each role would see alone, never the intersection.
+ */
+export function visibleNavItems(actor: Pick<Actor, 'roles'>): NavItem[] {
+  return NAV_ITEMS.filter((item) => item.permissions.some((permission) => hasPermission(actor, permission)));
+}
