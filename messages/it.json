@@ -29,6 +29,7 @@
     "logout": "Esci",
     "navHeading": "Aree operative",
     "myProfile": "La mia scheda",
+    "myAccount": "Il mio conto",
     "nav": {
       "people": "Persone",
       "aircraft": "Velivoli",
@@ -169,6 +170,7 @@
       "loadError": "Impossibile caricare il conto.",
       "recentTitle": "Ultimi movimenti",
       "recentEmpty": "Nessun movimento registrato.",
+      "viewStatement": "Estratto conto completo",
       "movementType": {
         "topUp": "Ricarica"
       },
@@ -190,6 +192,23 @@
         "requiredField": "Campo obbligatorio.",
         "genericError": "Impossibile registrare la ricarica. Riprova."
       }
+    }
+  },
+  "AccountStatementPage": {
+    "kicker": "Estratto conto",
+    "backToPerson": "Torna alla scheda",
+    "noAccount": "Nessun conto attivo",
+    "table": {
+      "date": "Data",
+      "type": "Tipo",
+      "description": "Descrizione",
+      "amount": "Importo",
+      "recordedBy": "Registrato da",
+      "noValue": "—",
+      "empty": "Nessun movimento registrato."
+    },
+    "movementType": {
+      "topUp": "Ricarica"
     }
   },
   "AircraftPage": {

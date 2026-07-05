@@ -1,3 +1,4 @@
+import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { z } from './zod-with-openapi';
 
 /** Mirrors the Prisma `PaymentMethod` enum (story 3.1, AC 2). */
@@ -79,3 +80,35 @@ export const accountOverviewSchema = z.object({
 });
 
 export type AccountOverviewDto = z.infer<typeof accountOverviewSchema>;
+
+/**
+ * `GET /api/v1/people/{id}/account/movements` query (story 3.2) — the shared
+ * pagination shape (story 1.5), same reuse as `listHourMeterAdjustmentsQuerySchema`.
+ */
+export const listAccountMovementsQuerySchema = paginationQuerySchema;
+
+export type ListAccountMovementsQuery = z.infer<typeof listAccountMovementsQuerySchema>;
+
+/**
+ * One entry of the full, paginated account statement (story 3.2, AC 1/2).
+ * Documentation only, mirroring `accounts.service.ts`'s `AccountStatementItem`.
+ * `actorEmail` is present ONLY when the caller has `people.read` (AC 2's
+ * operational detail for staff) — absent for a titolare reading their own
+ * statement, same conditional-field pattern as the service's own guard.
+ */
+export const accountStatementItemSchema = z.object({
+  id: z.string(),
+  type: accountMovementTypeSchema,
+  amountCents: z.number().int(),
+  effectiveDate: z.iso.date(),
+  description: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  actorEmail: z.string().optional(),
+});
+
+export type AccountStatementItemDto = z.infer<typeof accountStatementItemSchema>;
+
+/** `GET /api/v1/people/{id}/account/movements` response — AD-8 paginated shape. */
+export const accountStatementResponseSchema = paginatedResponseSchema(accountStatementItemSchema);
+
+export type AccountStatementResponseDto = z.infer<typeof accountStatementResponseSchema>;

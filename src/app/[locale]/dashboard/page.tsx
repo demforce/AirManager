@@ -49,6 +49,15 @@ export default async function DashboardPage({ params }: PageProps) {
   const ownPersonHref =
     me.person && !hasPermission(actor, 'people.read') ? `/dashboard/people/${me.person.id}` : null;
 
+  /**
+   * Story 3.2, Task 2: the "Il mio conto" tile sits alongside "La mia
+   * scheda" for the same self-service actor — staff/admin reach any
+   * account's statement via the "Persone" list + scheda persona instead
+   * (the "Estratto conto" link on `AccountPanel`), so this tile is
+   * deliberately omitted for them too.
+   */
+  const ownAccountHref = ownPersonHref ? `${ownPersonHref}/account` : null;
+
   async function logoutAction() {
     'use server';
     await signOut({ redirectTo: `/${locale}/login` });
@@ -94,6 +103,14 @@ export default async function DashboardPage({ params }: PageProps) {
                 className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {t('myProfile')}
+              </Link>
+            ) : null}
+            {ownAccountHref ? (
+              <Link
+                href={ownAccountHref}
+                className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              >
+                {t('myAccount')}
               </Link>
             ) : null}
           </div>

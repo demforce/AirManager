@@ -1,4 +1,5 @@
 import type { AccountMovementType, PaymentMethod } from '@/generated/prisma/client';
+import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { RecordTopUpInput } from '@/lib/schemas/accounts';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
@@ -222,4 +223,103 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
   // the fresh overview must not require a separate read permission (review
   // 3.1 F1 — see `buildOverview`).
   return buildOverview(account);
+}
+
+/**
+ * One entry of the full, paginated account statement (story 3.2, AC 1/2).
+ * `actorEmail` is a display-only join over `actorUserId` (same enrichment
+ * pattern as `listHourMeterAdjustments`, story 2.5) but, unlike that list,
+ * it is conditional: only present when the caller has `people.read` (AC
+ * 2's "dettaglio operativo" for staff) — a titolare reading their own
+ * statement never sees who registered a movement (Dev Notes, AD-5: the
+ * service is the guardian of the data, not just the UI).
+ */
+export type AccountStatementItem = {
+  id: string;
+  type: AccountMovementType;
+  amountCents: number;
+  effectiveDate: string;
+  description: string | null;
+  createdAt: Date;
+  actorEmail?: string;
+};
+
+export type AccountStatementResult = PaginatedResult<AccountStatementItem>;
+
+const ACCOUNT_STATEMENT_SELECT = {
+  id: true,
+  type: true,
+  amountCents: true,
+  description: true,
+  effectiveDate: true,
+  createdAt: true,
+  actorUser: { select: { email: true } },
+} as const;
+
+type SelectedStatementMovement = {
+  id: string;
+  type: AccountMovementType;
+  amountCents: number;
+  description: string | null;
+  effectiveDate: Date;
+  createdAt: Date;
+  actorUser: { email: string };
+};
+
+function toStatementItem(movement: SelectedStatementMovement, includeActor: boolean): AccountStatementItem {
+  return {
+    id: movement.id,
+    type: movement.type,
+    amountCents: movement.amountCents,
+    effectiveDate: toDateOnlyString(movement.effectiveDate),
+    description: movement.description,
+    createdAt: movement.createdAt,
+    ...(includeActor ? { actorEmail: movement.actorUser.email } : {}),
+  };
+}
+
+/**
+ * Lists a person's full account statement, paginated and most-recent-first
+ * (story 3.2, AC 1/2). Read access: the same own-access rule as
+ * `getAccountOverview` (`assertReadAccess`) — checked BEFORE any query. A
+ * person that exists but never activated an account gets an empty page
+ * (`total: 0`), NOT a 404 — only an unknown person is (same 404-vs-null
+ * split as `getAccountOverview`, review 3.1 F4).
+ */
+export async function listAccountMovements(
+  actor: Actor,
+  personId: string,
+  query: PaginationQuery,
+): Promise<AccountStatementResult> {
+  assertReadAccess(actor, personId);
+
+  const person = await prisma.person.findUnique({ where: { id: personId }, select: { id: true } });
+  if (!person) {
+    throw new NotFoundError('Person not found.');
+  }
+
+  const account = await prisma.account.findUnique({ where: { personId }, select: { id: true } });
+  if (!account) {
+    return paginate([], 0, query);
+  }
+
+  const includeActor = hasPermission(actor, 'people.read');
+  const where = { accountId: account.id };
+  const [items, total] = await prisma.$transaction([
+    prisma.accountMovement.findMany({
+      select: ACCOUNT_STATEMENT_SELECT,
+      where,
+      // `id` tie-break: same-millisecond rows (batch imports/seeds) must not
+      // make the page order non-deterministic (same pattern as `buildOverview`, review 3.1 F3).
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      ...paginationOffset(query),
+    }),
+    prisma.accountMovement.count({ where }),
+  ]);
+
+  return paginate(
+    items.map((item) => toStatementItem(item, includeActor)),
+    total,
+    query,
+  );
 }

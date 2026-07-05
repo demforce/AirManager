@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Link } from '@/i18n/navigation';
 import { formatCents, formatSignedCents, parseCents } from '@/lib/money';
 import { paymentMethodSchema, type AccountMovementListItemDto, type AccountOverviewDto } from '@/lib/schemas/accounts';
 
@@ -15,6 +16,8 @@ export type AccountPanelLabels = {
   loadError: string;
   recentTitle: string;
   recentEmpty: string;
+  /** Story 3.2: link to the full, paginated `/account` statement page (the drill-down behind this preview). */
+  viewStatement: string;
   movementType: { topUp: string };
   topUp: {
     action: string;
@@ -140,7 +143,15 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
           ) : null}
 
           <div>
-            <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.recentTitle}</h4>
+            <div className="flex items-center justify-between gap-4">
+              <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.recentTitle}</h4>
+              <Link
+                href={`/dashboard/people/${personId}/account`}
+                className="text-xs font-medium text-[#2F3437] underline-offset-4 hover:underline"
+              >
+                {labels.viewStatement}
+              </Link>
+            </div>
             {overview.recentMovements.length === 0 ? (
               <p className="mt-3 text-sm text-[#787774]">{labels.recentEmpty}</p>
             ) : (

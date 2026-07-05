@@ -1,6 +1,6 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31, type ResponseConfig } from '@asteasolutions/zod-to-openapi';
 import { z } from './zod-with-openapi';
-import { accountOverviewSchema, recordTopUpSchema } from './accounts';
+import { accountOverviewSchema, accountStatementResponseSchema, listAccountMovementsQuerySchema, recordTopUpSchema } from './accounts';
 import {
   aircraftListItemSchema,
   aircraftListResponseSchema,
@@ -93,6 +93,7 @@ registry.register('CreateHourMeterAdjustmentRequest', createHourMeterAdjustmentS
 registry.register('HourMeterAdjustmentList', hourMeterAdjustmentListResponseSchema);
 registry.register('AccountOverview', accountOverviewSchema);
 registry.register('RecordTopUpRequest', recordTopUpSchema);
+registry.register('AccountStatement', accountStatementResponseSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -356,6 +357,21 @@ registry.registerPath({
   request: { params: personIdParams, body: { content: jsonContent(recordTopUpSchema), required: true } },
   responses: {
     200: { description: 'The account overview, refreshed after the top-up.', content: jsonContent(accountOverviewSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/account/movements',
+  summary: "List a person's full account statement (paginated, most recent first)",
+  description:
+    'The full, paginated ledger (story 3.2) behind `GET /api/v1/people/{id}/account`\'s 5-entry preview. A person without an `Account` yet gets an empty page (`total: 0`), NOT a 404 — only an unknown person is. `actorEmail` (who registered the movement) is included ONLY when the caller has `people.read` (AC 2\'s operational detail for staff) — absent for a titolare reading their own statement. Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}/account`).',
+  tags: ['Accounts'],
+  security,
+  request: { params: personIdParams, query: listAccountMovementsQuerySchema },
+  responses: {
+    200: { description: "A page of the person's account statement.", content: jsonContent(accountStatementResponseSchema) },
     ...errorResponses(401, 403, 404, 422),
   },
 });

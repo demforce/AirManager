@@ -188,6 +188,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
               loadError: t('accountPanel.loadError'),
               recentTitle: t('accountPanel.recentTitle'),
               recentEmpty: t('accountPanel.recentEmpty'),
+              viewStatement: t('accountPanel.viewStatement'),
               movementType: { topUp: t('accountPanel.movementType.topUp') },
               topUp: {
                 action: t('accountPanel.topUp.action'),

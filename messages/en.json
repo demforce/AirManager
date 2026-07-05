@@ -29,6 +29,7 @@
     "logout": "Log out",
     "navHeading": "Operational areas",
     "myProfile": "My profile",
+    "myAccount": "My account",
     "nav": {
       "people": "People",
       "aircraft": "Aircraft",
@@ -169,6 +170,7 @@
       "loadError": "Could not load the account.",
       "recentTitle": "Recent movements",
       "recentEmpty": "No movements recorded.",
+      "viewStatement": "Full account statement",
       "movementType": {
         "topUp": "Top-up"
       },
@@ -190,6 +192,23 @@
         "requiredField": "This field is required.",
         "genericError": "Could not record the top-up. Please try again."
       }
+    }
+  },
+  "AccountStatementPage": {
+    "kicker": "Account statement",
+    "backToPerson": "Back to record",
+    "noAccount": "No active account",
+    "table": {
+      "date": "Date",
+      "type": "Type",
+      "description": "Description",
+      "amount": "Amount",
+      "recordedBy": "Recorded by",
+      "noValue": "—",
+      "empty": "No movements recorded."
+    },
+    "movementType": {
+      "topUp": "Top-up"
     }
   },
   "AircraftPage": {

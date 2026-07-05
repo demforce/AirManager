@@ -13,6 +13,7 @@ vi.mock('@/server/db/prisma', () => ({
       aggregate: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
+      count: vi.fn(),
     },
     person: {
       findUnique: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { getAccountOverview, recordTopUp } = await import('./accounts.service');
+const { getAccountOverview, listAccountMovements, recordTopUp } = await import('./accounts.service');
 const { NotFoundError } = await import('./errors');
 
 const accountFindUniqueMock = vi.mocked(prisma.account.findUnique);
@@ -36,6 +37,7 @@ const accountUpsertMock = vi.mocked(prisma.account.upsert);
 const accountMovementAggregateMock = vi.mocked(prisma.accountMovement.aggregate);
 const accountMovementFindManyMock = vi.mocked(prisma.accountMovement.findMany);
 const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
+const accountMovementCountMock = vi.mocked(prisma.accountMovement.count);
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const cashCategoryFindUniqueMock = vi.mocked(prisma.cashCategory.findUnique);
 const cashMovementCreateMock = vi.mocked(prisma.cashMovement.create);
@@ -50,6 +52,7 @@ const accountMovementAggregate = accountMovementAggregateMock as unknown as {
   mockResolvedValue: (v: { _sum: { amountCents: number | null } }) => void;
 };
 const accountMovementFindMany = accountMovementFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const accountMovementCount = accountMovementCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const accountMovementCreate = accountMovementCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const personFindUnique = personFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
@@ -90,6 +93,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     accountMovementAggregateMock.mockReset();
     accountMovementFindManyMock.mockReset();
     accountMovementCreateMock.mockReset();
+    accountMovementCountMock.mockReset();
     personFindUniqueMock.mockReset();
     cashCategoryFindUniqueMock.mockReset();
     cashMovementCreateMock.mockReset();
@@ -206,6 +210,109 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
 
       await expect(getAccountOverview(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
       expect(accountFindUniqueMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listAccountMovements — own-access (story 3.2, AC 1/2)', () => {
+    const query = { page: 1, pageSize: 20 };
+
+    it('staff (people.read) can read any statement, WITH actorEmail (AC 2)', async () => {
+      accountFindUnique.mockResolvedValue({ id: 'account_1' });
+      accountMovementFindMany.mockResolvedValue([
+        {
+          id: 'movement_1',
+          type: 'TOP_UP',
+          amountCents: 10000,
+          description: 'Contanti',
+          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
+          createdAt: new Date('2026-03-01T10:00:00.000Z'),
+          actorUser: { email: 'staff@airmanager.local' },
+        },
+      ]);
+      accountMovementCount.mockResolvedValue(1);
+
+      const result = await listAccountMovements(staffActor(), 'person_1', query);
+
+      expect(result).toEqual({
+        items: [
+          {
+            id: 'movement_1',
+            type: 'TOP_UP',
+            amountCents: 10000,
+            effectiveDate: '2026-03-01',
+            description: 'Contanti',
+            createdAt: new Date('2026-03-01T10:00:00.000Z'),
+            actorEmail: 'staff@airmanager.local',
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+    });
+
+    it('a titolare can read their own statement, WITHOUT actorEmail (AC 1)', async () => {
+      accountFindUnique.mockResolvedValue({ id: 'account_1' });
+      accountMovementFindMany.mockResolvedValue([
+        {
+          id: 'movement_1',
+          type: 'TOP_UP',
+          amountCents: 10000,
+          description: 'Contanti',
+          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
+          createdAt: new Date('2026-03-01T10:00:00.000Z'),
+          actorUser: { email: 'staff@airmanager.local' },
+        },
+      ]);
+      accountMovementCount.mockResolvedValue(1);
+
+      const result = await listAccountMovements(pilotActor('person_pilot'), 'person_pilot', query);
+
+      expect(result.items[0]).not.toHaveProperty('actorEmail');
+    });
+
+    it('rejects a pilot reading someone else’s statement, BEFORE any query', async () => {
+      await expect(listAccountMovements(pilotActor('person_pilot'), 'person_other', query)).rejects.toThrow(ForbiddenError);
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(accountFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects a pilot with no linked person (personId: null)', async () => {
+      await expect(listAccountMovements(pilotActor(null), 'person_1', query)).rejects.toThrow(ForbiddenError);
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundError for an unknown person', async () => {
+      personFindUnique.mockResolvedValue(null);
+
+      await expect(listAccountMovements(staffActor(), 'missing', query)).rejects.toThrow(NotFoundError);
+      expect(accountFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty page (total 0), NOT a 404, for a person with no account yet', async () => {
+      accountFindUnique.mockResolvedValue(null);
+
+      const result = await listAccountMovements(staffActor(), 'person_1', query);
+
+      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+      expect(accountMovementFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('paginates with the id tie-break, most-recent-first (review 3.1 F3 pattern)', async () => {
+      accountFindUnique.mockResolvedValue({ id: 'account_1' });
+      accountMovementFindMany.mockResolvedValue([]);
+      accountMovementCount.mockResolvedValue(0);
+
+      await listAccountMovements(staffActor(), 'person_1', { page: 2, pageSize: 10 });
+
+      expect(accountMovementFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { accountId: 'account_1' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          skip: 10,
+          take: 10,
+        }),
+      );
     });
   });
 
