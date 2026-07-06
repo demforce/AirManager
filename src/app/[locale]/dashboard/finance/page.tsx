@@ -6,23 +6,36 @@ import { formatDateTime } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listNegativeBalances } from '@/server/services/accounts.service';
+import { listCashCategories, listCashMovements } from '@/server/services/cash.service';
+import { CashRegister, type CashRegisterFilters } from './cash-register';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ page?: string; from?: string; to?: string; categoryId?: string; sign?: string }>;
 };
 
+const PAGE_SIZE = 20;
+
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Hand-edited URL defense: only a well-formed `YYYY-MM-DD` reaches the service (the API route has the Zod schema; this page calls the service directly). */
+function sanitizeDateParam(value: string | undefined): string | undefined {
+  return value && DATE_ONLY_PATTERN.test(value) ? value : undefined;
+}
+
 /**
- * The first finance landing page (story 3.3, Task 3): the staff-facing
- * "Saldi negativi" list (AC 2) — every account below zero, most negative
- * first, each person linked to their scheda. Purely server-rendered (no
- * client interactivity needed): the data comes from `listNegativeBalances`
- * (AD-1: pages read through services, never Prisma directly). The rest of
- * the finance area (cassa, report) arrives with stories 3.4/3.5.
- * `hasPermission` here only decides whether to redirect; the service calls
- * `authorize()` again (AD-5: the UI is never the only guardian).
+ * The finance landing page: the staff-facing "Saldi negativi" list (story
+ * 3.3, AC 2) plus the cash register (story 3.4, AC 2) — filterable by
+ * period/category/sign via URL params (pattern of the people search, story
+ * 2.1) and paginated server-side. Data always comes through the services
+ * (AD-1), whose own `authorize()` calls remain the real guardians (AD-5) —
+ * the `hasPermission` redirect here only hides navigation. The category
+ * management page (`/dashboard/finance/categories`, story 3.4, AC 1) is
+ * linked only for `settings.manage` actors.
  */
-export default async function FinancePage({ params }: PageProps) {
+export default async function FinancePage({ params, searchParams }: PageProps) {
   const { locale } = await params;
+  const { page: pageParam, from: fromParam, to: toParam, categoryId: categoryIdParam, sign: signParam } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -35,12 +48,51 @@ export default async function FinancePage({ params }: PageProps) {
     return;
   }
 
-  const negativeBalances = await listNegativeBalances(actor);
+  const from = sanitizeDateParam(fromParam);
+  const to = sanitizeDateParam(toParam);
+  const categoryId = categoryIdParam || undefined;
+  const sign: 'in' | 'out' | undefined = signParam === 'in' ? 'in' : signParam === 'out' ? 'out' : undefined;
+  let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
 
+  const negativeBalances = await listNegativeBalances(actor);
+  // Inactive categories included: the FILTER select must cover historical
+  // movements recorded under a since-deactivated category; the new-movement
+  // picker inside `CashRegister` filters down to active ones itself.
+  const categories = await listCashCategories(actor, { includeInactive: true });
+
+  const movementsQuery = { pageSize: PAGE_SIZE, from, to, categoryId, sign };
+  let movements = await listCashMovements(actor, { ...movementsQuery, page });
+  // Clamp an out-of-range ?page to the last real page (review 3.2 F1 pattern).
+  const lastPage = Math.max(1, Math.ceil(movements.total / PAGE_SIZE));
+  if (page > lastPage) {
+    page = lastPage;
+    movements = await listCashMovements(actor, { ...movementsQuery, page });
+  }
+
+  const canManageSettings = hasPermission(actor, 'settings.manage');
   const t = await getTranslations('FinancePage');
   // Money must follow the page locale (review 3.1 M1 — mandatory), same
   // pattern as the account statement page.
   const moneyLocale = locale === 'en' ? ('en' as const) : ('it' as const);
+  const totalPages = Math.max(1, Math.ceil(movements.total / PAGE_SIZE));
+
+  const filterQuery = {
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+    ...(categoryId ? { categoryId } : {}),
+    ...(sign ? { sign } : {}),
+  };
+
+  function pageHref(targetPage: number) {
+    return { pathname: '/dashboard/finance', query: { page: targetPage, ...filterQuery } };
+  }
+
+  const initialFilters: CashRegisterFilters = {
+    from: from ?? '',
+    to: to ?? '',
+    categoryId: categoryId ?? '',
+    sign: sign ?? '',
+  };
 
   return (
     <main className="flex-1 px-6 py-16 sm:px-16">
@@ -55,13 +107,24 @@ export default async function FinancePage({ params }: PageProps) {
             </h1>
             <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
           </div>
-          <Link
-            href="/dashboard"
-            locale={locale as AppLocale}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-          >
-            {t('backToDashboard')}
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            {canManageSettings ? (
+              <Link
+                href="/dashboard/finance/categories"
+                locale={locale as AppLocale}
+                className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              >
+                {t('manageCategories')}
+              </Link>
+            ) : null}
+            <Link
+              href="/dashboard"
+              locale={locale as AppLocale}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {t('backToDashboard')}
+            </Link>
+          </div>
         </div>
 
         <section className="mt-10">
@@ -106,6 +169,113 @@ export default async function FinancePage({ params }: PageProps) {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="mt-14">
+          <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('cashRegister.heading')}</h2>
+          <div className="mt-4">
+            <CashRegister
+              rows={movements.items.map((item) => ({
+                id: item.id,
+                categoryId: item.categoryId,
+                categoryName: item.categoryName,
+                amountCents: item.amountCents,
+                effectiveDate: item.effectiveDate,
+                description: item.description,
+                actorEmail: item.actorEmail,
+                reversalOfId: item.reversalOfId,
+                hasReversal: item.hasReversal,
+                isAutomatic: item.isAutomatic,
+              }))}
+              categories={categories.map((category) => ({ id: category.id, name: category.name, isActive: category.isActive }))}
+              initialFilters={initialFilters}
+              moneyLocale={moneyLocale}
+              labels={{
+                newMovement: t('cashRegister.newMovement'),
+                filters: {
+                  from: t('cashRegister.filters.from'),
+                  to: t('cashRegister.filters.to'),
+                  category: t('cashRegister.filters.category'),
+                  sign: t('cashRegister.filters.sign'),
+                  allCategories: t('cashRegister.filters.allCategories'),
+                  allSigns: t('cashRegister.filters.allSigns'),
+                  signIn: t('cashRegister.filters.signIn'),
+                  signOut: t('cashRegister.filters.signOut'),
+                },
+                table: {
+                  date: t('cashRegister.table.date'),
+                  category: t('cashRegister.table.category'),
+                  description: t('cashRegister.table.description'),
+                  amount: t('cashRegister.table.amount'),
+                  recordedBy: t('cashRegister.table.recordedBy'),
+                  actions: t('cashRegister.table.actions'),
+                  noValue: t('cashRegister.table.noValue'),
+                  empty: t('cashRegister.table.empty'),
+                },
+                // `t.raw`: carries a literal `{date}` placeholder the CLIENT
+                // fills in (same rationale as the 3.3 adjustment badge).
+                reversalOfDate: t.raw('cashRegister.reversalBadge.ofDate') as string,
+                reversalLinked: t('cashRegister.reversalBadge.linked'),
+                automaticBadge: t('cashRegister.automaticBadge'),
+                form: {
+                  title: t('cashRegister.form.title'),
+                  direction: t('cashRegister.form.direction'),
+                  directionIn: t('cashRegister.form.directionIn'),
+                  directionOut: t('cashRegister.form.directionOut'),
+                  category: t('cashRegister.form.category'),
+                  amount: t('cashRegister.form.amount'),
+                  amountHint: t('cashRegister.form.amountHint'),
+                  effectiveDate: t('cashRegister.form.effectiveDate'),
+                  description: t('cashRegister.form.description'),
+                  submit: t('cashRegister.form.submit'),
+                  cancel: t('cashRegister.form.cancel'),
+                  invalidAmount: t('cashRegister.form.invalidAmount'),
+                  requiredField: t('cashRegister.form.requiredField'),
+                  conflictError: t('cashRegister.form.conflictError'),
+                  genericError: t('cashRegister.form.genericError'),
+                  success: t('cashRegister.form.success'),
+                },
+                reverse: {
+                  action: t('cashRegister.reverse.action'),
+                  reason: t('cashRegister.reverse.reason'),
+                  confirm: t('cashRegister.reverse.confirm'),
+                  cancel: t('cashRegister.reverse.cancel'),
+                  requiredReason: t('cashRegister.reverse.requiredReason'),
+                  conflictError: t('cashRegister.reverse.conflictError'),
+                  genericError: t('cashRegister.reverse.genericError'),
+                  success: t('cashRegister.reverse.success'),
+                },
+              }}
+            />
+          </div>
+
+          {totalPages > 1 ? (
+            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
+              <Link
+                href={pageHref(page - 1)}
+                locale={locale as AppLocale}
+                aria-disabled={page <= 1}
+                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
+                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                }`}
+              >
+                ←
+              </Link>
+              <span>
+                {page} / {totalPages}
+              </span>
+              <Link
+                href={pageHref(page + 1)}
+                locale={locale as AppLocale}
+                aria-disabled={page >= totalPages}
+                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
+                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                }`}
+              >
+                →
+              </Link>
+            </nav>
+          ) : null}
         </section>
       </div>
     </main>

@@ -194,15 +194,23 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
     throw new NotFoundError('Person not found.');
   }
 
+  // `isActive: true` in the WHERE (story 3.4, Task 1 Dev Notes): if an admin
+  // deactivates "Ricariche" from the new category-management UI, a top-up
+  // must fail loudly here rather than silently creating a cash movement
+  // under a category the admin just turned off — same rationale as
+  // `recordCashMovement`'s own active-category guard.
   const category = await prisma.cashCategory.findUnique({
-    where: { name: TOP_UP_CASH_CATEGORY_NAME },
+    where: { name: TOP_UP_CASH_CATEGORY_NAME, isActive: true },
     select: { id: true },
   });
   if (!category) {
-    // Not a DomainError: a missing seed category is an operational
-    // misconfiguration, not something the caller can fix by retrying with
-    // different input — it surfaces as AD-8's generic 500 envelope.
-    throw new Error(`Cash category "${TOP_UP_CASH_CATEGORY_NAME}" is missing — seed the database before recording top-ups.`);
+    // Not a DomainError: a missing-or-deactivated seed category is an
+    // operational misconfiguration, not something the caller can fix by
+    // retrying with different input — it surfaces as AD-8's generic 500
+    // envelope.
+    throw new Error(
+      `Cash category "${TOP_UP_CASH_CATEGORY_NAME}" is missing or inactive — seed/reactivate it before recording top-ups.`,
+    );
   }
 
   const effectiveDate = new Date(input.effectiveDate);

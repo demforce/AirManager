@@ -237,8 +237,9 @@
   "FinancePage": {
     "kicker": "Finanze",
     "title": "Finanze",
-    "description": "La situazione finanziaria dell'aviosuperficie: conti prepagati, saldi negativi e, prossimamente, cassa e report.",
+    "description": "La situazione finanziaria dell'aviosuperficie: conti prepagati, saldi negativi e registro cassa.",
     "backToDashboard": "Torna alla dashboard",
+    "manageCategories": "Gestisci categorie",
     "negativeBalances": {
       "heading": "Saldi negativi",
       "empty": "Nessun conto in negativo.",
@@ -248,6 +249,110 @@
         "lastMovement": "Ultimo movimento",
         "noValue": "—"
       }
+    },
+    "cashRegister": {
+      "heading": "Registro cassa",
+      "newMovement": "Nuovo movimento",
+      "automaticBadge": "Automatico",
+      "filters": {
+        "from": "Dal",
+        "to": "Al",
+        "category": "Categoria",
+        "sign": "Segno",
+        "allCategories": "Tutte le categorie",
+        "allSigns": "Tutti",
+        "signIn": "Entrate",
+        "signOut": "Uscite"
+      },
+      "table": {
+        "date": "Data",
+        "category": "Categoria",
+        "description": "Descrizione",
+        "amount": "Importo",
+        "recordedBy": "Registrato da",
+        "actions": "Azioni",
+        "noValue": "—",
+        "empty": "Nessun movimento di cassa registrato."
+      },
+      "reversalBadge": {
+        "ofDate": "Storno del movimento del {date}",
+        "linked": "Storno di un movimento precedente"
+      },
+      "form": {
+        "title": "Nuovo movimento di cassa",
+        "direction": "Tipo",
+        "directionIn": "Entrata",
+        "directionOut": "Uscita",
+        "category": "Categoria",
+        "amount": "Importo (EUR)",
+        "amountHint": "Importo positivo (es. 50,00) — il tipo decide il segno.",
+        "effectiveDate": "Data",
+        "description": "Descrizione",
+        "submit": "Registra movimento",
+        "cancel": "Annulla",
+        "invalidAmount": "Inserisci un importo valido maggiore di zero.",
+        "requiredField": "Campo obbligatorio.",
+        "conflictError": "La categoria selezionata è stata disattivata: scegline un'altra.",
+        "genericError": "Impossibile registrare il movimento. Riprova.",
+        "success": "Movimento registrato."
+      },
+      "reverse": {
+        "action": "Storna",
+        "reason": "Motivo dello storno",
+        "confirm": "Conferma storno",
+        "cancel": "Annulla",
+        "requiredReason": "Il motivo è obbligatorio.",
+        "conflictError": "Questo movimento non è stornabile (già stornato o automatico).",
+        "genericError": "Impossibile registrare lo storno. Riprova.",
+        "success": "Storno registrato."
+      }
+    }
+  },
+  "CashCategoriesPage": {
+    "kicker": "Finanze",
+    "title": "Categorie di cassa",
+    "description": "Le categorie del registro cassa: crea, rinomina, disattiva o elimina quelle mai usate.",
+    "backToFinance": "Torna alle finanze",
+    "newCategory": "Nuova categoria",
+    "table": {
+      "name": "Nome",
+      "status": "Stato",
+      "movements": "Movimenti",
+      "actions": "Azioni",
+      "empty": "Nessuna categoria."
+    },
+    "status": {
+      "active": "Attiva",
+      "inactive": "Disattivata"
+    },
+    "actions": {
+      "rename": "Rinomina",
+      "deactivate": "Disattiva",
+      "reactivate": "Riattiva",
+      "delete": "Elimina",
+      "confirmDelete": "Eliminare questa categoria?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
+    },
+    "form": {
+      "createTitle": "Nuova categoria",
+      "renameTitle": "Rinomina categoria",
+      "name": "Nome",
+      "submitCreate": "Crea categoria",
+      "submitRename": "Salva",
+      "cancel": "Annulla",
+      "requiredField": "Il nome è obbligatorio.",
+      "conflictError": "Esiste già una categoria con questo nome.",
+      "genericError": "Operazione non riuscita. Riprova."
+    },
+    "feedback": {
+      "created": "Categoria creata.",
+      "renamed": "Categoria rinominata.",
+      "deactivated": "Categoria disattivata.",
+      "reactivated": "Categoria riattivata.",
+      "deleted": "Categoria eliminata.",
+      "deleteInUseError": "La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.",
+      "genericError": "Operazione non riuscita. Riprova."
     }
   },
   "AircraftPage": {

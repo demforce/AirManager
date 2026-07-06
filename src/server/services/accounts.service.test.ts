@@ -437,6 +437,20 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
+    it('looks up the "Ricariche" category with isActive: true (story 3.4 Dev Notes) — a deactivated category also fails loudly, not silently', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      // A deactivated category is invisible to this WHERE (isActive: true),
+      // so Prisma returns null exactly like a missing one — the same code
+      // path, deliberately, per the Dev Notes.
+      cashCategoryFindUnique.mockResolvedValue(null);
+
+      await expect(recordTopUp(staffActor(), 'person_1', input)).rejects.toThrow(/Ricariche/);
+      expect(cashCategoryFindUniqueMock).toHaveBeenCalledWith({
+        where: { name: 'Ricariche', isActive: true },
+        select: { id: true },
+      });
+    });
+
     it('upserts the Account, creates the TOP_UP AccountMovement and its linked CashMovement twin, all inside one transaction', async () => {
       personFindUnique.mockResolvedValue({ id: 'person_1' });
       cashCategoryFindUnique.mockResolvedValue({ id: 'category_ricariche' });

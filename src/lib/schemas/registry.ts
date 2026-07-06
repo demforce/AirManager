@@ -20,6 +20,18 @@ import {
   updateAircraftSchema,
 } from './aircraft';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
+import {
+  cashCategoryItemSchema,
+  cashCategoryListResponseSchema,
+  cashMovementItemSchema,
+  cashMovementListResponseSchema,
+  createCashCategorySchema,
+  listCashCategoriesQuerySchema,
+  listCashMovementsQuerySchema,
+  recordCashMovementSchema,
+  renameCashCategorySchema,
+  reverseCashMovementSchema,
+} from './cash';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { meResponseSchema } from './me';
 import {
@@ -103,6 +115,14 @@ registry.register('RecordTopUpRequest', recordTopUpSchema);
 registry.register('AccountStatement', accountStatementResponseSchema);
 registry.register('RecordAdjustmentRequest', recordAdjustmentSchema);
 registry.register('NegativeBalancesList', negativeBalancesResponseSchema);
+registry.register('CashCategory', cashCategoryItemSchema);
+registry.register('CashCategoryList', cashCategoryListResponseSchema);
+registry.register('CreateCashCategoryRequest', createCashCategorySchema);
+registry.register('RenameCashCategoryRequest', renameCashCategorySchema);
+registry.register('CashMovement', cashMovementItemSchema);
+registry.register('CashMovementList', cashMovementListResponseSchema);
+registry.register('RecordCashMovementRequest', recordCashMovementSchema);
+registry.register('ReverseCashMovementRequest', reverseCashMovementSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -411,6 +431,143 @@ registry.registerPath({
   responses: {
     200: { description: 'Every account with a negative balance.', content: jsonContent(negativeBalancesResponseSchema) },
     ...errorResponses(401, 403),
+  },
+});
+
+// --- Cash register (story 3.4) ---------------------------------------------
+
+const cashCategoryIdParams = z.object({ id: z.string().meta({ description: 'Cash category id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const cashMovementIdParams = z.object({ id: z.string().meta({ description: 'Cash movement id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/cash-categories',
+  summary: 'List cash-register categories',
+  description:
+    'Active categories only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 3.4, AC 1). Requires `finance.manage` (the same list feeds the "new movement" category picker).',
+  tags: ['Cash'],
+  security,
+  request: { query: listCashCategoriesQuerySchema },
+  responses: {
+    200: { description: 'Every cash category, with its movement count.', content: jsonContent(cashCategoryListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-categories',
+  summary: 'Create a cash-register category',
+  description: 'Name must be unique — conflict is a 409. Requires `settings.manage` (admin-only configuration, story 3.4, AC 1).',
+  tags: ['Cash'],
+  security,
+  request: { body: { content: jsonContent(createCashCategorySchema), required: true } },
+  responses: {
+    201: { description: 'The created category.', content: jsonContent(cashCategoryItemSchema) },
+    ...errorResponses(401, 403, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/cash-categories/{id}',
+  summary: 'Rename a cash-register category',
+  description: 'Name must stay unique — conflict is a 409. Requires `settings.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashCategoryIdParams, body: { content: jsonContent(renameCashCategorySchema), required: true } },
+  responses: {
+    200: { description: 'The renamed category.', content: jsonContent(cashCategoryItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-categories/{id}/deactivate',
+  summary: 'Deactivate a cash-register category',
+  description:
+    'Soft only (story 3.4, AC 1): the category disappears from new-movement pickers but historical movements stay intact. Conflict if already inactive. Requires `settings.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashCategoryIdParams },
+  responses: {
+    200: { description: 'The category was deactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-categories/{id}/reactivate',
+  summary: 'Reactivate a previously deactivated cash-register category',
+  description: 'Conflict if already active. Requires `settings.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashCategoryIdParams },
+  responses: {
+    200: { description: 'The category was reactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/cash-categories/{id}',
+  summary: 'Delete a cash-register category (only if never used)',
+  description:
+    'A category with recorded movements cannot be deleted — 409 suggesting deactivation instead (story 3.4, AC 1; the `CashMovement.categoryId` FK RESTRICT backstops the race). Requires `settings.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashCategoryIdParams },
+  responses: {
+    200: { description: 'The category was deleted.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/cash-movements',
+  summary: 'List the cash register (paginated, filterable by period/category/sign)',
+  description:
+    'Ordered by `effectiveDate` (data valuta) descending — deliberately different from the account statement (story 3.2, ordered by registration time): the cash register is consulted per accounting period. `from`/`to` filter inclusively on `effectiveDate`; `sign` is `in` (`amountCents > 0`) or `out` (`< 0`). Requires `finance.manage` (story 3.4, AC 2).',
+  tags: ['Cash'],
+  security,
+  request: { query: listCashMovementsQuerySchema },
+  responses: {
+    200: { description: 'A page of cash movements.', content: jsonContent(cashMovementListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-movements',
+  summary: 'Record a manual cash movement (entrata or uscita)',
+  description:
+    'Append-only (AD-3, story 3.4, AC 2): there is no update/delete endpoint — corrections go through `POST /api/v1/cash-movements/{id}/reverse`. The category must exist and be active (409 if deactivated). `amountCents` is SIGNED: positive = entrata, negative = uscita. Requires `finance.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { body: { content: jsonContent(recordCashMovementSchema), required: true } },
+  responses: {
+    201: { description: 'The recorded movement.', content: jsonContent(cashMovementItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-movements/{id}/reverse',
+  summary: 'Reverse (storna) a manual cash movement',
+  description:
+    'AD-3 storno (story 3.4, AC 2): creates a NEW movement with the OPPOSITE amount, the SAME category (even if meanwhile deactivated), linked via `reversalOfId` (unique — at most one storno per movement, 409 on a second attempt). A storno itself and the automatic top-up twins (story 3.1) cannot be reversed — 409 (the latter are corrected via the account rettifica, story 3.3). Requires `finance.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashMovementIdParams, body: { content: jsonContent(reverseCashMovementSchema), required: true } },
+  responses: {
+    200: { description: 'The reversal movement.', content: jsonContent(cashMovementItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 

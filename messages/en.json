@@ -237,8 +237,9 @@
   "FinancePage": {
     "kicker": "Finance",
     "title": "Finance",
-    "description": "The airfield's financial picture: prepaid accounts, negative balances and, soon, the cash ledger and reports.",
+    "description": "The airfield's financial picture: prepaid accounts, negative balances and the cash register.",
     "backToDashboard": "Back to dashboard",
+    "manageCategories": "Manage categories",
     "negativeBalances": {
       "heading": "Negative balances",
       "empty": "No account is in the negative.",
@@ -248,6 +249,110 @@
         "lastMovement": "Last movement",
         "noValue": "—"
       }
+    },
+    "cashRegister": {
+      "heading": "Cash register",
+      "newMovement": "New movement",
+      "automaticBadge": "Automatic",
+      "filters": {
+        "from": "From",
+        "to": "To",
+        "category": "Category",
+        "sign": "Sign",
+        "allCategories": "All categories",
+        "allSigns": "All",
+        "signIn": "Inflows",
+        "signOut": "Outflows"
+      },
+      "table": {
+        "date": "Date",
+        "category": "Category",
+        "description": "Description",
+        "amount": "Amount",
+        "recordedBy": "Recorded by",
+        "actions": "Actions",
+        "noValue": "—",
+        "empty": "No cash movement recorded."
+      },
+      "reversalBadge": {
+        "ofDate": "Reversal of the movement of {date}",
+        "linked": "Reversal of a previous movement"
+      },
+      "form": {
+        "title": "New cash movement",
+        "direction": "Type",
+        "directionIn": "Inflow",
+        "directionOut": "Outflow",
+        "category": "Category",
+        "amount": "Amount (EUR)",
+        "amountHint": "Positive amount (e.g. 50.00) — the type decides the sign.",
+        "effectiveDate": "Date",
+        "description": "Description",
+        "submit": "Record movement",
+        "cancel": "Cancel",
+        "invalidAmount": "Enter a valid amount greater than zero.",
+        "requiredField": "This field is required.",
+        "conflictError": "The selected category has been deactivated: pick another one.",
+        "genericError": "Could not record the movement. Try again.",
+        "success": "Movement recorded."
+      },
+      "reverse": {
+        "action": "Reverse",
+        "reason": "Reversal reason",
+        "confirm": "Confirm reversal",
+        "cancel": "Cancel",
+        "requiredReason": "The reason is required.",
+        "conflictError": "This movement cannot be reversed (already reversed or automatic).",
+        "genericError": "Could not record the reversal. Try again.",
+        "success": "Reversal recorded."
+      }
+    }
+  },
+  "CashCategoriesPage": {
+    "kicker": "Finance",
+    "title": "Cash categories",
+    "description": "The cash register's categories: create, rename, deactivate or delete the never-used ones.",
+    "backToFinance": "Back to finance",
+    "newCategory": "New category",
+    "table": {
+      "name": "Name",
+      "status": "Status",
+      "movements": "Movements",
+      "actions": "Actions",
+      "empty": "No categories."
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Deactivated"
+    },
+    "actions": {
+      "rename": "Rename",
+      "deactivate": "Deactivate",
+      "reactivate": "Reactivate",
+      "delete": "Delete",
+      "confirmDelete": "Delete this category?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
+    },
+    "form": {
+      "createTitle": "New category",
+      "renameTitle": "Rename category",
+      "name": "Name",
+      "submitCreate": "Create category",
+      "submitRename": "Save",
+      "cancel": "Cancel",
+      "requiredField": "The name is required.",
+      "conflictError": "A category with this name already exists.",
+      "genericError": "The operation failed. Try again."
+    },
+    "feedback": {
+      "created": "Category created.",
+      "renamed": "Category renamed.",
+      "deactivated": "Category deactivated.",
+      "reactivated": "Category reactivated.",
+      "deleted": "Category deleted.",
+      "deleteInUseError": "This category has recorded movements and cannot be deleted: deactivate it instead.",
+      "genericError": "The operation failed. Try again."
     }
   },
   "AircraftPage": {
