@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMinutes, formatTimeOfDay, parseMinutes } from './time';
+import { formatDateTime, formatMinutes, formatTimeOfDay, parseMinutes } from './time';
 
 describe('formatMinutes', () => {
   it('formats minutes under an hour', () => {
@@ -75,5 +75,22 @@ describe('formatTimeOfDay', () => {
   it('defaults to the Italian locale', () => {
     const date = new Date(Date.UTC(2026, 0, 15, 12, 0));
     expect(formatTimeOfDay(date)).toBe(formatTimeOfDay(date, 'it'));
+  });
+});
+
+describe('formatDateTime', () => {
+  it('presents a winter UTC timestamp in Europe/Rome (CET, UTC+1)', () => {
+    const date = new Date(Date.UTC(2026, 0, 15, 12, 0));
+    expect(formatDateTime(date, 'it')).toBe('15/01/2026, 13:00');
+  });
+
+  it('presents a summer UTC timestamp in Europe/Rome (CEST, UTC+2)', () => {
+    const date = new Date(Date.UTC(2026, 6, 15, 12, 0));
+    expect(formatDateTime(date, 'it')).toBe('15/07/2026, 14:00');
+  });
+
+  it('defaults to the Italian locale', () => {
+    const date = new Date(Date.UTC(2026, 0, 15, 12, 0));
+    expect(formatDateTime(date)).toBe(formatDateTime(date, 'it'));
   });
 });

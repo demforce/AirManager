@@ -28,6 +28,8 @@
     "subtitle": "Operational areas (pilots, aircraft, flights, bookings...) arrive in upcoming iterations.",
     "logout": "Log out",
     "navHeading": "Operational areas",
+    "myProfile": "My profile",
+    "myAccount": "My account",
     "nav": {
       "people": "People",
       "aircraft": "Aircraft",
@@ -54,6 +56,7 @@
       "email": "Email",
       "phone": "Phone",
       "status": "Status",
+      "profiles": "Profiles",
       "actions": "Actions",
       "noValue": "—",
       "empty": "No people found."
@@ -69,7 +72,8 @@
       "confirmArchive": "Archive this person?",
       "confirmUnarchive": "Restore this person?",
       "confirmYes": "Confirm",
-      "confirmCancel": "Cancel"
+      "confirmCancel": "Cancel",
+      "profiles": "Profiles"
     },
     "form": {
       "createTitle": "New person",
@@ -92,6 +96,359 @@
       "updated": "Person updated.",
       "archived": "Person archived.",
       "unarchived": "Person restored."
+    },
+    "profilesPanel": {
+      "heading": "Profiles",
+      "close": "Close",
+      "loadError": "Could not load profiles. Please try again.",
+      "badges": {
+        "pilot": "P",
+        "student": "S",
+        "instructor": "I"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Deactivated",
+        "notActivated": "Not activated"
+      },
+      "actions": {
+        "activate": "Activate",
+        "edit": "Edit",
+        "reactivate": "Reactivate",
+        "deactivate": "Deactivate",
+        "confirmDeactivate": "Deactivate this profile?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel",
+        "cancel": "Cancel",
+        "save": "Save"
+      },
+      "errors": {
+        "requiredField": "This field is required.",
+        "generic": "Something went wrong. Please try again."
+      },
+      "pilot": {
+        "title": "Pilot",
+        "licenseNumber": "License number",
+        "licenseType": "License type"
+      },
+      "student": {
+        "title": "Student",
+        "courseStartDate": "Course start date"
+      },
+      "instructor": {
+        "title": "Instructor",
+        "ratings": "Ratings"
+      }
+    }
+  },
+  "PersonDetailPage": {
+    "kicker": "Person record",
+    "backToList": "Back to list",
+    "backToDashboard": "Back to dashboard",
+    "personalData": {
+      "heading": "Personal data",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "phone": "Phone",
+      "address": "Address",
+      "fiscalCode": "Fiscal code",
+      "noValue": "—",
+      "archivedBadge": "Archived"
+    },
+    "placeholders": {
+      "comingSoon": "Coming soon.",
+      "expiries": "Expiries",
+      "hoursPackages": "Hour packages",
+      "recentFlights": "Recent flights",
+      "upcomingBookings": "Upcoming bookings"
+    },
+    "accountPanel": {
+      "heading": "Account balance",
+      "balanceLabel": "Current balance",
+      "noAccount": "No active account",
+      "loadError": "Could not load the account.",
+      "recentTitle": "Recent movements",
+      "recentEmpty": "No movements recorded.",
+      "viewStatement": "Full account statement",
+      "movementType": {
+        "topUp": "Top-up",
+        "adjustment": "Adjustment"
+      },
+      "topUp": {
+        "action": "Record top-up",
+        "title": "Record top-up",
+        "amount": "Amount (EUR)",
+        "paymentMethod": "Payment method",
+        "paymentMethods": {
+          "cash": "Cash",
+          "bankTransfer": "Bank transfer",
+          "pos": "POS"
+        },
+        "effectiveDate": "Value date",
+        "description": "Notes",
+        "submit": "Confirm top-up",
+        "cancel": "Cancel",
+        "invalidAmount": "Enter a valid amount greater than zero.",
+        "requiredField": "This field is required.",
+        "genericError": "Could not record the top-up. Please try again."
+      }
+    }
+  },
+  "AccountStatementPage": {
+    "kicker": "Account statement",
+    "backToPerson": "Back to record",
+    "noAccount": "No active account",
+    "table": {
+      "date": "Date",
+      "type": "Type",
+      "description": "Description",
+      "amount": "Amount",
+      "recordedBy": "Recorded by",
+      "actions": "Actions",
+      "noValue": "—",
+      "empty": "No movements recorded."
+    },
+    "movementType": {
+      "topUp": "Top-up",
+      "adjustment": "Adjustment"
+    },
+    "adjustmentBadge": {
+      "ofDate": "Adjusts the movement of {date}",
+      "linked": "Adjusts a previous movement"
+    },
+    "adjustments": {
+      "action": "Record adjustment",
+      "rowAction": "Adjust this movement",
+      "title": "Record adjustment",
+      "linkedTo": "Linked to the movement of {date}",
+      "amount": "Amount (EUR, signed)",
+      "amountHint": "Positive to credit, negative to debit (e.g. -25.00).",
+      "reason": "Reason",
+      "submit": "Confirm adjustment",
+      "cancel": "Cancel",
+      "invalidAmount": "Enter a valid non-zero amount.",
+      "requiredReason": "A reason is required.",
+      "conflictError": "This movement already has a linked adjustment.",
+      "genericError": "Could not record the adjustment. Please try again.",
+      "success": "Adjustment recorded."
+    }
+  },
+  "FinancePage": {
+    "kicker": "Finance",
+    "title": "Finance",
+    "description": "The airfield's financial picture: prepaid accounts, negative balances and the cash register.",
+    "backToDashboard": "Back to dashboard",
+    "manageCategories": "Manage categories",
+    "negativeBalances": {
+      "heading": "Negative balances",
+      "empty": "No account is in the negative.",
+      "table": {
+        "person": "Person",
+        "balance": "Balance",
+        "lastMovement": "Last movement",
+        "noValue": "—"
+      }
+    },
+    "cashRegister": {
+      "heading": "Cash register",
+      "newMovement": "New movement",
+      "automaticBadge": "Automatic",
+      "filters": {
+        "from": "From",
+        "to": "To",
+        "category": "Category",
+        "sign": "Sign",
+        "allCategories": "All categories",
+        "allSigns": "All",
+        "signIn": "Inflows",
+        "signOut": "Outflows"
+      },
+      "table": {
+        "date": "Date",
+        "category": "Category",
+        "description": "Description",
+        "amount": "Amount",
+        "recordedBy": "Recorded by",
+        "actions": "Actions",
+        "noValue": "—",
+        "empty": "No cash movement recorded."
+      },
+      "reversalBadge": {
+        "ofDate": "Reversal of the movement of {date}",
+        "linked": "Reversal of a previous movement"
+      },
+      "form": {
+        "title": "New cash movement",
+        "direction": "Type",
+        "directionIn": "Inflow",
+        "directionOut": "Outflow",
+        "category": "Category",
+        "amount": "Amount (EUR)",
+        "amountHint": "Positive amount (e.g. 50.00) — the type decides the sign.",
+        "effectiveDate": "Date",
+        "description": "Description",
+        "submit": "Record movement",
+        "cancel": "Cancel",
+        "invalidAmount": "Enter a valid amount greater than zero.",
+        "requiredField": "This field is required.",
+        "conflictError": "The selected category has been deactivated: pick another one.",
+        "genericError": "Could not record the movement. Try again.",
+        "success": "Movement recorded."
+      },
+      "reverse": {
+        "action": "Reverse",
+        "reason": "Reversal reason",
+        "confirm": "Confirm reversal",
+        "cancel": "Cancel",
+        "requiredReason": "The reason is required.",
+        "conflictError": "This movement cannot be reversed (already reversed or automatic).",
+        "genericError": "Could not record the reversal. Try again.",
+        "success": "Reversal recorded."
+      }
+    }
+  },
+  "CashCategoriesPage": {
+    "kicker": "Finance",
+    "title": "Cash categories",
+    "description": "The cash register's categories: create, rename, deactivate or delete the never-used ones.",
+    "backToFinance": "Back to finance",
+    "newCategory": "New category",
+    "table": {
+      "name": "Name",
+      "status": "Status",
+      "movements": "Movements",
+      "actions": "Actions",
+      "empty": "No categories."
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Deactivated"
+    },
+    "actions": {
+      "rename": "Rename",
+      "deactivate": "Deactivate",
+      "reactivate": "Reactivate",
+      "delete": "Delete",
+      "confirmDelete": "Delete this category?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
+    },
+    "form": {
+      "createTitle": "New category",
+      "renameTitle": "Rename category",
+      "name": "Name",
+      "submitCreate": "Create category",
+      "submitRename": "Save",
+      "cancel": "Cancel",
+      "requiredField": "The name is required.",
+      "conflictError": "A category with this name already exists.",
+      "genericError": "The operation failed. Try again."
+    },
+    "feedback": {
+      "created": "Category created.",
+      "renamed": "Category renamed.",
+      "deactivated": "Category deactivated.",
+      "reactivated": "Category reactivated.",
+      "deleted": "Category deleted.",
+      "deleteInUseError": "This category has recorded movements and cannot be deleted: deactivate it instead.",
+      "genericError": "The operation failed. Try again."
+    }
+  },
+  "AircraftPage": {
+    "kicker": "Fleet",
+    "title": "Aircraft",
+    "description": "The fleet registry: create, edit and archive aircraft.",
+    "backToDashboard": "Back to dashboard",
+    "newAircraft": "New aircraft",
+    "searchPlaceholder": "Search by registration or model…",
+    "includeArchivedLabel": "Include archived",
+    "table": {
+      "registration": "Registration",
+      "type": "Type",
+      "model": "Model",
+      "hourMeter": "Hour meter",
+      "status": "Status",
+      "operationalStatus": "Operational status",
+      "actions": "Actions",
+      "empty": "No aircraft found."
+    },
+    "status": {
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "operationalStatus": {
+      "operational": "Operational",
+      "outOfService": "Out of service"
+    },
+    "actions": {
+      "edit": "Edit",
+      "archive": "Archive",
+      "unarchive": "Restore",
+      "confirmArchive": "Archive this aircraft?",
+      "confirmUnarchive": "Restore this aircraft?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel",
+      "setOutOfService": "Out of service",
+      "returnToService": "Return to service",
+      "confirmReturnToService": "Return this aircraft to service?",
+      "adjustHourMeter": "Adjust hour meter"
+    },
+    "form": {
+      "createTitle": "New aircraft",
+      "editTitle": "Edit aircraft",
+      "registration": "Registration",
+      "type": "Type",
+      "model": "Model",
+      "hourMeter": "Hour meter (minutes)",
+      "hourMeterHint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm).",
+      "notes": "Notes",
+      "submitCreate": "Create aircraft",
+      "submitEdit": "Save changes",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "invalidHourMeter": "The hour meter must be a whole number of minutes, zero or greater.",
+      "genericError": "Something went wrong. Please try again.",
+      "conflictError": "An aircraft with this registration already exists."
+    },
+    "statusForm": {
+      "title": "Out of service",
+      "reason": "Reason",
+      "reasonRequired": "The reason is required.",
+      "submit": "Confirm",
+      "cancel": "Cancel",
+      "conflictError": "The aircraft's status already changed in the meantime.",
+      "genericError": "Something went wrong. Please try again."
+    },
+    "hourMeterPanel": {
+      "title": "Adjust hour meter",
+      "current": "Current hour meter",
+      "newValue": "New value (minutes)",
+      "hint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm).",
+      "reason": "Reason",
+      "delta": "Change",
+      "submit": "Record adjustment",
+      "cancel": "Cancel",
+      "requiredField": "The reason is required.",
+      "invalidValue": "The hour meter must be a whole number of minutes, zero or greater.",
+      "genericError": "Something went wrong. Please try again.",
+      "historyTitle": "Adjustment history",
+      "historyEmpty": "No adjustments recorded yet.",
+      "historyWhen": "When",
+      "historyActor": "Who",
+      "historyPrevious": "Before",
+      "historyNew": "After",
+      "historyDelta": "Delta",
+      "historyReason": "Reason"
+    },
+    "feedback": {
+      "created": "Aircraft created.",
+      "updated": "Aircraft updated.",
+      "archived": "Aircraft archived.",
+      "unarchived": "Aircraft restored.",
+      "setOutOfService": "Aircraft marked out of service.",
+      "returnedToService": "Aircraft returned to service.",
+      "hourMeterAdjusted": "Hour meter adjusted."
     }
   },
   "UsersPage": {
@@ -187,6 +544,10 @@
     "passwordReset": {
       "subject": "Reset your AirManager password",
       "body": "Hello,\n\nYou requested to reset your AirManager account password. The link below is valid for {expiresInHours, plural, one {# hour} other {# hours}}:\n\n{url}\n\nIf you didn't request this, ignore this email: your current password remains unchanged."
+    },
+    "negativeBalanceAlert": {
+      "subject": "Your AirManager account is in the negative",
+      "body": "Hello {name},\n\nYour AirManager prepaid account balance is now {balance}.\n\nPlease contact the airfield office to settle your position."
     }
   }
 }

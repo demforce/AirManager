@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCents, parseCents } from './money';
+import { formatCents, formatSignedCents, parseCents } from './money';
 
 // Node's ICU formats "<amount> €" for it-IT (non-breaking space before
 // the currency symbol) — spelled out explicitly since it's invisible in a
@@ -33,6 +33,24 @@ describe('formatCents', () => {
 
   it('throws on non-integer input', () => {
     expect(() => formatCents(10.5)).toThrow(TypeError);
+  });
+});
+
+describe('formatSignedCents', () => {
+  it('prefixes a positive amount with a leading +', () => {
+    expect(formatSignedCents(15000, 'it')).toBe(`+150,00${NBSP}€`);
+  });
+
+  it('leaves a negative amount to Intl’s own minus sign (no double sign)', () => {
+    expect(formatSignedCents(-550, 'it')).toBe(`-5,50${NBSP}€`);
+  });
+
+  it('does not prefix zero', () => {
+    expect(formatSignedCents(0, 'it')).toBe(`0,00${NBSP}€`);
+  });
+
+  it('defaults to the Italian locale', () => {
+    expect(formatSignedCents(1000)).toBe(formatSignedCents(1000, 'it'));
   });
 });
 

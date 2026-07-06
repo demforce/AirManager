@@ -1,13 +1,51 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31, type ResponseConfig } from '@asteasolutions/zod-to-openapi';
 import { z } from './zod-with-openapi';
+import {
+  accountOverviewSchema,
+  accountStatementResponseSchema,
+  listAccountMovementsQuerySchema,
+  negativeBalancesResponseSchema,
+  recordAdjustmentSchema,
+  recordTopUpSchema,
+} from './accounts';
+import {
+  aircraftListItemSchema,
+  aircraftListResponseSchema,
+  createAircraftSchema,
+  createHourMeterAdjustmentSchema,
+  hourMeterAdjustmentListResponseSchema,
+  listAircraftQuerySchema,
+  listHourMeterAdjustmentsQuerySchema,
+  setOutOfServiceSchema,
+  updateAircraftSchema,
+} from './aircraft';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
+import {
+  cashCategoryItemSchema,
+  cashCategoryListResponseSchema,
+  cashMovementItemSchema,
+  cashMovementListResponseSchema,
+  createCashCategorySchema,
+  listCashCategoriesQuerySchema,
+  listCashMovementsQuerySchema,
+  recordCashMovementSchema,
+  renameCashCategorySchema,
+  reverseCashMovementSchema,
+} from './cash';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { meResponseSchema } from './me';
 import {
   createPersonSchema,
+  instructorProfileRequestSchema,
+  instructorProfileSchema,
   listPeopleQuerySchema,
+  personDetailSchema,
   personListItemSchema,
   personListResponseSchema,
+  pilotProfileRequestSchema,
+  pilotProfileSchema,
+  studentProfileRequestSchema,
+  studentProfileSchema,
   updatePersonSchema,
 } from './people';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
@@ -56,8 +94,35 @@ registry.register('Ok', okResponseSchema);
 registry.register('Me', meResponseSchema);
 registry.register('Person', personListItemSchema);
 registry.register('PersonList', personListResponseSchema);
+registry.register('PersonDetail', personDetailSchema);
 registry.register('CreatePersonRequest', createPersonSchema);
 registry.register('UpdatePersonRequest', updatePersonSchema);
+registry.register('PilotProfileRequest', pilotProfileRequestSchema);
+registry.register('PilotProfile', pilotProfileSchema);
+registry.register('StudentProfileRequest', studentProfileRequestSchema);
+registry.register('StudentProfile', studentProfileSchema);
+registry.register('InstructorProfileRequest', instructorProfileRequestSchema);
+registry.register('InstructorProfile', instructorProfileSchema);
+registry.register('Aircraft', aircraftListItemSchema);
+registry.register('AircraftList', aircraftListResponseSchema);
+registry.register('CreateAircraftRequest', createAircraftSchema);
+registry.register('UpdateAircraftRequest', updateAircraftSchema);
+registry.register('SetOutOfServiceRequest', setOutOfServiceSchema);
+registry.register('CreateHourMeterAdjustmentRequest', createHourMeterAdjustmentSchema);
+registry.register('HourMeterAdjustmentList', hourMeterAdjustmentListResponseSchema);
+registry.register('AccountOverview', accountOverviewSchema);
+registry.register('RecordTopUpRequest', recordTopUpSchema);
+registry.register('AccountStatement', accountStatementResponseSchema);
+registry.register('RecordAdjustmentRequest', recordAdjustmentSchema);
+registry.register('NegativeBalancesList', negativeBalancesResponseSchema);
+registry.register('CashCategory', cashCategoryItemSchema);
+registry.register('CashCategoryList', cashCategoryListResponseSchema);
+registry.register('CreateCashCategoryRequest', createCashCategorySchema);
+registry.register('RenameCashCategoryRequest', renameCashCategorySchema);
+registry.register('CashMovement', cashMovementItemSchema);
+registry.register('CashMovementList', cashMovementListResponseSchema);
+registry.register('RecordCashMovementRequest', recordCashMovementSchema);
+registry.register('ReverseCashMovementRequest', reverseCashMovementSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -67,6 +132,7 @@ registry.register('ForgotPasswordRequest', forgotPasswordSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const aircraftIdParams = z.object({ id: z.string().meta({ description: 'Aircraft id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
   401: 'Not authenticated (AD-8 `UNAUTHENTICATED`).',
@@ -150,12 +216,14 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/people/{id}',
-  summary: 'Get a single person',
+  summary: 'Get a single person (with full profile data)',
+  description:
+    'Includes the pilot/student/instructor profiles in full (story 2.2, AC 1) — `null` when a profile was never activated. Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (story 2.3, AC 2).',
   tags: ['People'],
   security,
   request: { params: personIdParams },
   responses: {
-    200: { description: 'The person.', content: jsonContent(personListItemSchema) },
+    200: { description: 'The person, with its profiles.', content: jsonContent(personDetailSchema) },
     ...errorResponses(401, 403, 404),
   },
 });
@@ -197,6 +265,449 @@ registry.registerPath({
   responses: {
     200: { description: 'The restored person.', content: jsonContent(personListItemSchema) },
     ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+/**
+ * Profiles (story 2.2, AC 1/2, AD-11): implemented by a single dynamic
+ * `[type]` route (`src/app/api/v1/people/[id]/profiles/[type]/route.ts`)
+ * that validates `type` against `pilot`/`student`/`instructor` at runtime —
+ * documented here as three literal paths, one per type, since each has a
+ * distinct request/response body and that reads far better in the generated
+ * spec than a single `oneOf`-discriminated path would.
+ */
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/people/{id}/profiles/pilot',
+  summary: 'Activate or update the pilot profile',
+  description: 'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(pilotProfileRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The activated/updated pilot profile.', content: jsonContent(pilotProfileSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/profiles/pilot/deactivate',
+  summary: 'Deactivate the pilot profile',
+  description: 'Soft-deactivation only — the row is never deleted (future epics reference it). Conflict if never activated or already deactivated.',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: 'The profile was deactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/people/{id}/profiles/student',
+  summary: 'Activate or update the student profile',
+  description: 'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(studentProfileRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The activated/updated student profile.', content: jsonContent(studentProfileSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/profiles/student/deactivate',
+  summary: 'Deactivate the student profile',
+  description: 'Soft-deactivation only — the row is never deleted (future epics reference it). Conflict if never activated or already deactivated.',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: 'The profile was deactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/people/{id}/profiles/instructor',
+  summary: 'Activate or update the instructor profile',
+  description: 'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(instructorProfileRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The activated/updated instructor profile.', content: jsonContent(instructorProfileSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/profiles/instructor/deactivate',
+  summary: 'Deactivate the instructor profile',
+  description: 'Soft-deactivation only — the row is never deleted (future epics reference it). Conflict if never activated or already deactivated.',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: 'The profile was deactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/account',
+  summary: "Get a person's prepaid account overview (balance + recent movements preview)",
+  description:
+    'Balance is always `SUM(AccountMovement.amountCents)` (AD-3) — there is no stored balance column. `account: null` means the person never activated a pilot/student profile (AC 1). `recentMovements` previews at most the 5 most recent entries — the full paginated statement is story 3.2. Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}`, story 2.3).',
+  tags: ['Accounts'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: "The person's account overview.", content: jsonContent(accountOverviewSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/account/top-ups',
+  summary: 'Record a prepaid-account top-up',
+  description:
+    'Append-only (AD-3, story 3.1, AC 2/3) — in one transaction, upserts the `Account`, creates an immutable `AccountMovement` (TOP_UP) and its automatic `CashMovement` twin under the seeded "Ricariche" category. There is no update/delete endpoint for either ledger. Requires `finance.manage` (staff/admin) — never "own".',
+  tags: ['Accounts'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(recordTopUpSchema), required: true } },
+  responses: {
+    200: { description: 'The account overview, refreshed after the top-up.', content: jsonContent(accountOverviewSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/account/movements',
+  summary: "List a person's full account statement (paginated, most recent first)",
+  description:
+    'The full, paginated ledger (story 3.2) behind `GET /api/v1/people/{id}/account`\'s 5-entry preview. A person without an `Account` yet gets an empty page (`total: 0`), NOT a 404 — only an unknown person is. `actorEmail` (who registered the movement) is included ONLY when the caller has `people.read` (AC 2\'s operational detail for staff) — absent for a titolare reading their own statement. Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}/account`).',
+  tags: ['Accounts'],
+  security,
+  request: { params: personIdParams, query: listAccountMovementsQuerySchema },
+  responses: {
+    200: { description: "A page of the person's account statement.", content: jsonContent(accountStatementResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/account/adjustments',
+  summary: 'Record a motivated adjustment (rettifica) on a person\'s account',
+  description:
+    'Append-only (AD-3, story 3.3, AC 1) — creates a NEW, independent `AccountMovement` (`ADJUSTMENT`); the original movement is never touched. `originalMovementId`, when given, links this adjustment to the movement it corrects and must belong to the same account (404 otherwise, never revealing another account\'s movement) and must not already have a linked adjustment (409). Triggers the negative-balance alert email (AC 2/3) when the balance band worsens. Requires `finance.manage` — never "own".',
+  tags: ['Accounts'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(recordAdjustmentSchema), required: true } },
+  responses: {
+    200: { description: 'The account overview, refreshed after the adjustment.', content: jsonContent(accountOverviewSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/accounts/negative-balances',
+  summary: 'List every account with a negative balance, most negative first',
+  description:
+    'The staff-facing "saldi negativi" list (story 3.3, AC 2) shown on the `/dashboard/finance` landing page. Balance is always `SUM(AccountMovement.amountCents)` (AD-3). Requires `finance.manage`.',
+  tags: ['Accounts'],
+  security,
+  responses: {
+    200: { description: 'Every account with a negative balance.', content: jsonContent(negativeBalancesResponseSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+// --- Cash register (story 3.4) ---------------------------------------------
+
+const cashCategoryIdParams = z.object({ id: z.string().meta({ description: 'Cash category id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const cashMovementIdParams = z.object({ id: z.string().meta({ description: 'Cash movement id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/cash-categories',
+  summary: 'List cash-register categories',
+  description:
+    'Active categories only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 3.4, AC 1). Requires `finance.manage` (the same list feeds the "new movement" category picker).',
+  tags: ['Cash'],
+  security,
+  request: { query: listCashCategoriesQuerySchema },
+  responses: {
+    200: { description: 'Every cash category, with its movement count.', content: jsonContent(cashCategoryListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-categories',
+  summary: 'Create a cash-register category',
+  description: 'Name must be unique — conflict is a 409. Requires `settings.manage` (admin-only configuration, story 3.4, AC 1).',
+  tags: ['Cash'],
+  security,
+  request: { body: { content: jsonContent(createCashCategorySchema), required: true } },
+  responses: {
+    201: { description: 'The created category.', content: jsonContent(cashCategoryItemSchema) },
+    ...errorResponses(401, 403, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/cash-categories/{id}',
+  summary: 'Rename a cash-register category',
+  description: 'Name must stay unique — conflict is a 409. Requires `settings.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashCategoryIdParams, body: { content: jsonContent(renameCashCategorySchema), required: true } },
+  responses: {
+    200: { description: 'The renamed category.', content: jsonContent(cashCategoryItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-categories/{id}/deactivate',
+  summary: 'Deactivate a cash-register category',
+  description:
+    'Soft only (story 3.4, AC 1): the category disappears from new-movement pickers but historical movements stay intact. Conflict if already inactive. Requires `settings.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashCategoryIdParams },
+  responses: {
+    200: { description: 'The category was deactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-categories/{id}/reactivate',
+  summary: 'Reactivate a previously deactivated cash-register category',
+  description: 'Conflict if already active. Requires `settings.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashCategoryIdParams },
+  responses: {
+    200: { description: 'The category was reactivated.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/cash-categories/{id}',
+  summary: 'Delete a cash-register category (only if never used)',
+  description:
+    'A category with recorded movements cannot be deleted — 409 suggesting deactivation instead (story 3.4, AC 1; the `CashMovement.categoryId` FK RESTRICT backstops the race). Requires `settings.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashCategoryIdParams },
+  responses: {
+    200: { description: 'The category was deleted.', content: jsonContent(okResponseSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/cash-movements',
+  summary: 'List the cash register (paginated, filterable by period/category/sign)',
+  description:
+    'Ordered by `effectiveDate` (data valuta) descending — deliberately different from the account statement (story 3.2, ordered by registration time): the cash register is consulted per accounting period. `from`/`to` filter inclusively on `effectiveDate`; `sign` is `in` (`amountCents > 0`) or `out` (`< 0`). Requires `finance.manage` (story 3.4, AC 2).',
+  tags: ['Cash'],
+  security,
+  request: { query: listCashMovementsQuerySchema },
+  responses: {
+    200: { description: 'A page of cash movements.', content: jsonContent(cashMovementListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-movements',
+  summary: 'Record a manual cash movement (entrata or uscita)',
+  description:
+    'Append-only (AD-3, story 3.4, AC 2): there is no update/delete endpoint — corrections go through `POST /api/v1/cash-movements/{id}/reverse`. The category must exist and be active (409 if deactivated). `amountCents` is SIGNED: positive = entrata, negative = uscita. Requires `finance.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { body: { content: jsonContent(recordCashMovementSchema), required: true } },
+  responses: {
+    201: { description: 'The recorded movement.', content: jsonContent(cashMovementItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/cash-movements/{id}/reverse',
+  summary: 'Reverse (storna) a manual cash movement',
+  description:
+    'AD-3 storno (story 3.4, AC 2): creates a NEW movement with the OPPOSITE amount, the SAME category (even if meanwhile deactivated), linked via `reversalOfId` (unique — at most one storno per movement, 409 on a second attempt). A storno itself and the automatic top-up twins (story 3.1) cannot be reversed — 409 (the latter are corrected via the account rettifica, story 3.3). Requires `finance.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashMovementIdParams, body: { content: jsonContent(reverseCashMovementSchema), required: true } },
+  responses: {
+    200: { description: 'The reversal movement.', content: jsonContent(cashMovementItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/aircraft',
+  summary: 'List aircraft (paginated, searchable)',
+  description:
+    'Search (`q`) matches registration or model, case-insensitively. Archived aircraft are excluded unless `includeArchived=true` (AC 2). Requires `aircraft.manage` — there is no `aircraft.read` permission (Dev Notes: pilots see the fleet via the future bookings epic).',
+  tags: ['Aircraft'],
+  security,
+  request: { query: listAircraftQuerySchema },
+  responses: {
+    200: { description: 'A page of aircraft.', content: jsonContent(aircraftListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft',
+  summary: 'Create an aircraft',
+  description: 'Registration (marche) must be unique — conflict is a 409.',
+  tags: ['Aircraft'],
+  security,
+  request: { body: { content: jsonContent(createAircraftSchema), required: true } },
+  responses: {
+    201: { description: 'The created aircraft.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/aircraft/{id}',
+  summary: 'Get a single aircraft',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: 'The aircraft.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/aircraft/{id}',
+  summary: 'Update an aircraft (registration, type, model, hour meter, notes)',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams, body: { content: jsonContent(updateAircraftSchema), required: true } },
+  responses: {
+    200: { description: 'The updated aircraft.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/archive',
+  summary: 'Archive an aircraft',
+  description: 'Soft-archive only (AC 2) — there is no physical delete endpoint for an Aircraft.',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: 'The archived aircraft.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/unarchive',
+  summary: 'Restore a previously archived aircraft',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: 'The restored aircraft.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/out-of-service',
+  summary: 'Mark an aircraft out of service, with a mandatory reason',
+  description: 'Not archiving (story 2.5, AC 1) — the aircraft stays in the default fleet list, just flagged as ungrounded/not currently airworthy. Conflict if already out of service.',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams, body: { content: jsonContent(setOutOfServiceSchema), required: true } },
+  responses: {
+    200: { description: 'The aircraft, now out of service.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/return-to-service',
+  summary: 'Return an out-of-service aircraft to service',
+  description: 'Clears the status reason. Conflict if already operational.',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: 'The aircraft, now operational.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/aircraft/{id}/hour-meter-adjustments',
+  summary: "List an aircraft's hour-meter adjustment history (paginated, most recent first)",
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams, query: listHourMeterAdjustmentsQuerySchema },
+  responses: {
+    200: { description: 'A page of hour-meter adjustments.', content: jsonContent(hourMeterAdjustmentListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/hour-meter-adjustments',
+  summary: 'Record a tracked hour-meter (contaore) rectification',
+  description: 'Append-only (AD-3 spirit, story 2.5, AC 2) — creates the adjustment and updates Aircraft.hourMeterMinutes in one transaction. A negative delta is allowed.',
+  tags: ['Aircraft'],
+  security,
+  request: {
+    params: aircraftIdParams,
+    body: { content: jsonContent(createHourMeterAdjustmentSchema), required: true },
+  },
+  responses: {
+    200: { description: 'The aircraft, with the updated hour meter.', content: jsonContent(aircraftListItemSchema) },
+    ...errorResponses(401, 403, 404, 422),
   },
 });
 

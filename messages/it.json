@@ -28,6 +28,8 @@
     "subtitle": "Le aree operative (piloti, velivoli, voli, prenotazioni...) arriveranno nelle prossime iterazioni.",
     "logout": "Esci",
     "navHeading": "Aree operative",
+    "myProfile": "La mia scheda",
+    "myAccount": "Il mio conto",
     "nav": {
       "people": "Persone",
       "aircraft": "Velivoli",
@@ -54,6 +56,7 @@
       "email": "Email",
       "phone": "Telefono",
       "status": "Stato",
+      "profiles": "Profili",
       "actions": "Azioni",
       "noValue": "—",
       "empty": "Nessuna persona trovata."
@@ -69,7 +72,8 @@
       "confirmArchive": "Archiviare questa persona?",
       "confirmUnarchive": "Ripristinare questa persona?",
       "confirmYes": "Conferma",
-      "confirmCancel": "Annulla"
+      "confirmCancel": "Annulla",
+      "profiles": "Profili"
     },
     "form": {
       "createTitle": "Nuova persona",
@@ -92,6 +96,359 @@
       "updated": "Persona aggiornata.",
       "archived": "Persona archiviata.",
       "unarchived": "Persona ripristinata."
+    },
+    "profilesPanel": {
+      "heading": "Profili",
+      "close": "Chiudi",
+      "loadError": "Impossibile caricare i profili. Riprova.",
+      "badges": {
+        "pilot": "P",
+        "student": "A",
+        "instructor": "I"
+      },
+      "status": {
+        "active": "Attivo",
+        "inactive": "Disattivato",
+        "notActivated": "Non attivato"
+      },
+      "actions": {
+        "activate": "Attiva",
+        "edit": "Modifica",
+        "reactivate": "Riattiva",
+        "deactivate": "Disattiva",
+        "confirmDeactivate": "Disattivare questo profilo?",
+        "confirmYes": "Conferma",
+        "confirmCancel": "Annulla",
+        "cancel": "Annulla",
+        "save": "Salva"
+      },
+      "errors": {
+        "requiredField": "Campo obbligatorio.",
+        "generic": "Si è verificato un errore. Riprova."
+      },
+      "pilot": {
+        "title": "Pilota",
+        "licenseNumber": "Numero licenza",
+        "licenseType": "Tipo licenza"
+      },
+      "student": {
+        "title": "Allievo",
+        "courseStartDate": "Data inizio corso"
+      },
+      "instructor": {
+        "title": "Istruttore",
+        "ratings": "Abilitazioni"
+      }
+    }
+  },
+  "PersonDetailPage": {
+    "kicker": "Scheda persona",
+    "backToList": "Torna all'elenco",
+    "backToDashboard": "Torna alla dashboard",
+    "personalData": {
+      "heading": "Dati anagrafici",
+      "firstName": "Nome",
+      "lastName": "Cognome",
+      "email": "Email",
+      "phone": "Telefono",
+      "address": "Indirizzo",
+      "fiscalCode": "Codice fiscale",
+      "noValue": "—",
+      "archivedBadge": "Archiviata"
+    },
+    "placeholders": {
+      "comingSoon": "Disponibile prossimamente.",
+      "expiries": "Scadenze",
+      "hoursPackages": "Pacchetti ore",
+      "recentFlights": "Ultimi voli",
+      "upcomingBookings": "Prossime prenotazioni"
+    },
+    "accountPanel": {
+      "heading": "Saldo conto",
+      "balanceLabel": "Saldo attuale",
+      "noAccount": "Nessun conto attivo",
+      "loadError": "Impossibile caricare il conto.",
+      "recentTitle": "Ultimi movimenti",
+      "recentEmpty": "Nessun movimento registrato.",
+      "viewStatement": "Estratto conto completo",
+      "movementType": {
+        "topUp": "Ricarica",
+        "adjustment": "Rettifica"
+      },
+      "topUp": {
+        "action": "Registra ricarica",
+        "title": "Registra ricarica",
+        "amount": "Importo (EUR)",
+        "paymentMethod": "Metodo di pagamento",
+        "paymentMethods": {
+          "cash": "Contanti",
+          "bankTransfer": "Bonifico",
+          "pos": "POS"
+        },
+        "effectiveDate": "Data valuta",
+        "description": "Note",
+        "submit": "Conferma ricarica",
+        "cancel": "Annulla",
+        "invalidAmount": "Inserisci un importo valido maggiore di zero.",
+        "requiredField": "Campo obbligatorio.",
+        "genericError": "Impossibile registrare la ricarica. Riprova."
+      }
+    }
+  },
+  "AccountStatementPage": {
+    "kicker": "Estratto conto",
+    "backToPerson": "Torna alla scheda",
+    "noAccount": "Nessun conto attivo",
+    "table": {
+      "date": "Data",
+      "type": "Tipo",
+      "description": "Descrizione",
+      "amount": "Importo",
+      "recordedBy": "Registrato da",
+      "actions": "Azioni",
+      "noValue": "—",
+      "empty": "Nessun movimento registrato."
+    },
+    "movementType": {
+      "topUp": "Ricarica",
+      "adjustment": "Rettifica"
+    },
+    "adjustmentBadge": {
+      "ofDate": "Rettifica del movimento del {date}",
+      "linked": "Rettifica di un movimento precedente"
+    },
+    "adjustments": {
+      "action": "Registra rettifica",
+      "rowAction": "Rettifica questo movimento",
+      "title": "Registra rettifica",
+      "linkedTo": "Collegata al movimento del {date}",
+      "amount": "Importo (EUR, con segno)",
+      "amountHint": "Positivo per accreditare, negativo per addebitare (es. -25,00).",
+      "reason": "Motivo",
+      "submit": "Conferma rettifica",
+      "cancel": "Annulla",
+      "invalidAmount": "Inserisci un importo valido diverso da zero.",
+      "requiredReason": "Il motivo è obbligatorio.",
+      "conflictError": "Questo movimento ha già una rettifica collegata.",
+      "genericError": "Impossibile registrare la rettifica. Riprova.",
+      "success": "Rettifica registrata."
+    }
+  },
+  "FinancePage": {
+    "kicker": "Finanze",
+    "title": "Finanze",
+    "description": "La situazione finanziaria dell'aviosuperficie: conti prepagati, saldi negativi e registro cassa.",
+    "backToDashboard": "Torna alla dashboard",
+    "manageCategories": "Gestisci categorie",
+    "negativeBalances": {
+      "heading": "Saldi negativi",
+      "empty": "Nessun conto in negativo.",
+      "table": {
+        "person": "Persona",
+        "balance": "Saldo",
+        "lastMovement": "Ultimo movimento",
+        "noValue": "—"
+      }
+    },
+    "cashRegister": {
+      "heading": "Registro cassa",
+      "newMovement": "Nuovo movimento",
+      "automaticBadge": "Automatico",
+      "filters": {
+        "from": "Dal",
+        "to": "Al",
+        "category": "Categoria",
+        "sign": "Segno",
+        "allCategories": "Tutte le categorie",
+        "allSigns": "Tutti",
+        "signIn": "Entrate",
+        "signOut": "Uscite"
+      },
+      "table": {
+        "date": "Data",
+        "category": "Categoria",
+        "description": "Descrizione",
+        "amount": "Importo",
+        "recordedBy": "Registrato da",
+        "actions": "Azioni",
+        "noValue": "—",
+        "empty": "Nessun movimento di cassa registrato."
+      },
+      "reversalBadge": {
+        "ofDate": "Storno del movimento del {date}",
+        "linked": "Storno di un movimento precedente"
+      },
+      "form": {
+        "title": "Nuovo movimento di cassa",
+        "direction": "Tipo",
+        "directionIn": "Entrata",
+        "directionOut": "Uscita",
+        "category": "Categoria",
+        "amount": "Importo (EUR)",
+        "amountHint": "Importo positivo (es. 50,00) — il tipo decide il segno.",
+        "effectiveDate": "Data",
+        "description": "Descrizione",
+        "submit": "Registra movimento",
+        "cancel": "Annulla",
+        "invalidAmount": "Inserisci un importo valido maggiore di zero.",
+        "requiredField": "Campo obbligatorio.",
+        "conflictError": "La categoria selezionata è stata disattivata: scegline un'altra.",
+        "genericError": "Impossibile registrare il movimento. Riprova.",
+        "success": "Movimento registrato."
+      },
+      "reverse": {
+        "action": "Storna",
+        "reason": "Motivo dello storno",
+        "confirm": "Conferma storno",
+        "cancel": "Annulla",
+        "requiredReason": "Il motivo è obbligatorio.",
+        "conflictError": "Questo movimento non è stornabile (già stornato o automatico).",
+        "genericError": "Impossibile registrare lo storno. Riprova.",
+        "success": "Storno registrato."
+      }
+    }
+  },
+  "CashCategoriesPage": {
+    "kicker": "Finanze",
+    "title": "Categorie di cassa",
+    "description": "Le categorie del registro cassa: crea, rinomina, disattiva o elimina quelle mai usate.",
+    "backToFinance": "Torna alle finanze",
+    "newCategory": "Nuova categoria",
+    "table": {
+      "name": "Nome",
+      "status": "Stato",
+      "movements": "Movimenti",
+      "actions": "Azioni",
+      "empty": "Nessuna categoria."
+    },
+    "status": {
+      "active": "Attiva",
+      "inactive": "Disattivata"
+    },
+    "actions": {
+      "rename": "Rinomina",
+      "deactivate": "Disattiva",
+      "reactivate": "Riattiva",
+      "delete": "Elimina",
+      "confirmDelete": "Eliminare questa categoria?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
+    },
+    "form": {
+      "createTitle": "Nuova categoria",
+      "renameTitle": "Rinomina categoria",
+      "name": "Nome",
+      "submitCreate": "Crea categoria",
+      "submitRename": "Salva",
+      "cancel": "Annulla",
+      "requiredField": "Il nome è obbligatorio.",
+      "conflictError": "Esiste già una categoria con questo nome.",
+      "genericError": "Operazione non riuscita. Riprova."
+    },
+    "feedback": {
+      "created": "Categoria creata.",
+      "renamed": "Categoria rinominata.",
+      "deactivated": "Categoria disattivata.",
+      "reactivated": "Categoria riattivata.",
+      "deleted": "Categoria eliminata.",
+      "deleteInUseError": "La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.",
+      "genericError": "Operazione non riuscita. Riprova."
+    }
+  },
+  "AircraftPage": {
+    "kicker": "Flotta",
+    "title": "Velivoli",
+    "description": "Anagrafica della flotta: crea, modifica e archivia i velivoli.",
+    "backToDashboard": "Torna alla dashboard",
+    "newAircraft": "Nuovo velivolo",
+    "searchPlaceholder": "Cerca per marche o modello…",
+    "includeArchivedLabel": "Includi archiviati",
+    "table": {
+      "registration": "Marche",
+      "type": "Tipo",
+      "model": "Modello",
+      "hourMeter": "Contaore",
+      "status": "Stato",
+      "operationalStatus": "Stato operativo",
+      "actions": "Azioni",
+      "empty": "Nessun velivolo trovato."
+    },
+    "status": {
+      "active": "Attivo",
+      "archived": "Archiviato"
+    },
+    "operationalStatus": {
+      "operational": "Operativo",
+      "outOfService": "Fuori servizio"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "archive": "Archivia",
+      "unarchive": "Ripristina",
+      "confirmArchive": "Archiviare questo velivolo?",
+      "confirmUnarchive": "Ripristinare questo velivolo?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla",
+      "setOutOfService": "Fuori servizio",
+      "returnToService": "Rientro in servizio",
+      "confirmReturnToService": "Rimettere in servizio questo velivolo?",
+      "adjustHourMeter": "Rettifica contaore"
+    },
+    "form": {
+      "createTitle": "Nuovo velivolo",
+      "editTitle": "Modifica velivolo",
+      "registration": "Marche",
+      "type": "Tipo",
+      "model": "Modello",
+      "hourMeter": "Contaore (minuti)",
+      "hourMeterHint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm).",
+      "notes": "Note",
+      "submitCreate": "Crea velivolo",
+      "submitEdit": "Salva modifiche",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "invalidHourMeter": "Il contaore deve essere un numero intero di minuti maggiore o uguale a zero.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "conflictError": "Esiste già un velivolo con queste marche."
+    },
+    "statusForm": {
+      "title": "Fuori servizio",
+      "reason": "Motivo",
+      "reasonRequired": "Il motivo è obbligatorio.",
+      "submit": "Conferma",
+      "cancel": "Annulla",
+      "conflictError": "Lo stato del velivolo è già cambiato nel frattempo.",
+      "genericError": "Si è verificato un errore. Riprova."
+    },
+    "hourMeterPanel": {
+      "title": "Rettifica contaore",
+      "current": "Contaore attuale",
+      "newValue": "Nuovo valore (minuti)",
+      "hint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm).",
+      "reason": "Motivo",
+      "delta": "Variazione",
+      "submit": "Registra rettifica",
+      "cancel": "Annulla",
+      "requiredField": "Il motivo è obbligatorio.",
+      "invalidValue": "Il contaore deve essere un numero intero di minuti maggiore o uguale a zero.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "historyTitle": "Storico rettifiche",
+      "historyEmpty": "Nessuna rettifica registrata.",
+      "historyWhen": "Quando",
+      "historyActor": "Chi",
+      "historyPrevious": "Prima",
+      "historyNew": "Dopo",
+      "historyDelta": "Delta",
+      "historyReason": "Motivo"
+    },
+    "feedback": {
+      "created": "Velivolo creato.",
+      "updated": "Velivolo aggiornato.",
+      "archived": "Velivolo archiviato.",
+      "unarchived": "Velivolo ripristinato.",
+      "setOutOfService": "Velivolo segnato fuori servizio.",
+      "returnedToService": "Velivolo rimesso in servizio.",
+      "hourMeterAdjusted": "Contaore rettificato."
     }
   },
   "UsersPage": {
@@ -187,6 +544,10 @@
     "passwordReset": {
       "subject": "Reimposta la tua password AirManager",
       "body": "Ciao,\n\nHai richiesto di reimpostare la password del tuo account AirManager. Il link seguente è valido per {expiresInHours, plural, one {# ora} other {# ore}}:\n\n{url}\n\nSe non hai richiesto tu questa operazione, ignora questa email: la password attuale resta invariata."
+    },
+    "negativeBalanceAlert": {
+      "subject": "Il tuo conto AirManager è in negativo",
+      "body": "Ciao {name},\n\nIl tuo conto prepagato AirManager ha ora un saldo di {balance}.\n\nTi invitiamo a regolarizzare la posizione contattando la segreteria dell'aviosuperficie."
     }
   }
 }

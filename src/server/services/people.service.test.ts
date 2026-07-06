@@ -12,14 +12,36 @@ vi.mock('@/server/db/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    pilotProfile: {
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    studentProfile: {
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    instructorProfile: {
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    account: {
+      upsert: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { archivePerson, createPerson, getPerson, listPeople, unarchivePerson, updatePerson } = await import(
-  './people.service'
-);
+const {
+  archivePerson,
+  createPerson,
+  deactivateProfile,
+  getPerson,
+  listPeople,
+  unarchivePerson,
+  updatePerson,
+  upsertProfile,
+} = await import('./people.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
 const findUniqueMock = vi.mocked(prisma.person.findUnique);
@@ -29,6 +51,13 @@ const countMock = vi.mocked(prisma.person.count);
 const createMock = vi.mocked(prisma.person.create);
 const updateMock = vi.mocked(prisma.person.update);
 const transactionMock = vi.mocked(prisma.$transaction);
+const pilotProfileUpsertMock = vi.mocked(prisma.pilotProfile.upsert);
+const pilotProfileUpdateManyMock = vi.mocked(prisma.pilotProfile.updateMany);
+const studentProfileUpsertMock = vi.mocked(prisma.studentProfile.upsert);
+const studentProfileUpdateManyMock = vi.mocked(prisma.studentProfile.updateMany);
+const instructorProfileUpsertMock = vi.mocked(prisma.instructorProfile.upsert);
+const instructorProfileUpdateManyMock = vi.mocked(prisma.instructorProfile.updateMany);
+const accountUpsertMock = vi.mocked(prisma.account.upsert);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as users.service.test.ts): narrow each
@@ -39,6 +68,20 @@ const personFindFirst = findFirstMock as unknown as { mockResolvedValue: (v: Per
 const personCreate = createMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 const personUpdate = updateMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void };
+const pilotProfileUpsert = pilotProfileUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+const studentProfileUpsert = studentProfileUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+const instructorProfileUpsert = instructorProfileUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+type UpdateManyFixture = { count: number };
+const pilotProfileUpdateMany = pilotProfileUpdateManyMock as unknown as {
+  mockResolvedValue: (v: UpdateManyFixture) => void;
+};
+const studentProfileUpdateMany = studentProfileUpdateManyMock as unknown as {
+  mockResolvedValue: (v: UpdateManyFixture) => void;
+};
+const instructorProfileUpdateMany = instructorProfileUpdateManyMock as unknown as {
+  mockResolvedValue: (v: UpdateManyFixture) => void;
+};
+const accountUpsert = accountUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 
 function staffActor(): Actor {
   return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
@@ -46,6 +89,11 @@ function staffActor(): Actor {
 
 function pilotActor(): Actor {
   return { userId: 'pilot_1', personId: 'person_pilot', roles: ['PILOT'] };
+}
+
+/** No role at all (e.g. a stale JWT carrying a role removed from `ROLE_PERMISSIONS`) — fails closed to zero permissions. */
+function noRoleActor(): Actor {
+  return { userId: 'ghost_1', personId: null, roles: [] };
 }
 
 const SELECTED_PERSON = {
@@ -58,6 +106,11 @@ const SELECTED_PERSON = {
   fiscalCode: 'BNCMRA80A01L219K',
   archivedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  // Story 2.2: `toListItem` derives the active-profile flags from these
+  // 1-to-0/1 relations — `null` = never activated.
+  pilotProfile: null,
+  studentProfile: null,
+  instructorProfile: null,
 };
 
 describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/archiving)', () => {
@@ -69,6 +122,25 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     createMock.mockReset();
     updateMock.mockReset();
     transactionMock.mockReset();
+    pilotProfileUpsertMock.mockReset();
+    pilotProfileUpdateManyMock.mockReset();
+    studentProfileUpsertMock.mockReset();
+    studentProfileUpdateManyMock.mockReset();
+    instructorProfileUpsertMock.mockReset();
+    instructorProfileUpdateManyMock.mockReset();
+    accountUpsertMock.mockReset();
+
+    // Story 3.1: `upsertProfile`'s pilot/student branches now run their
+    // profile upsert alongside the Account upsert inside `$transaction([...])`
+    // (the batch/array overload, not the interactive-callback one aircraft
+    // uses) — a faithful stand-in just awaits every already-invoked mock
+    // call, same rationale as `mockInteractiveTransaction` in
+    // aircraft.service.test.ts. Per-test `transaction.mockResolvedValue(...)`
+    // calls (e.g. `listPeople`'s `[items, total]`) still override this
+    // default, since they run later in the same test.
+    (transaction as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation(
+      (arg: unknown) => (typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[])),
+    );
   });
 
   describe('authorization (AD-5, AC 3)', () => {
@@ -101,6 +173,19 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     it('unarchivePerson rejects an actor without people.manage', async () => {
       await expect(unarchivePerson(pilotActor(), 'person_1')).rejects.toThrow(ForbiddenError);
     });
+
+    it('upsertProfile rejects an actor without people.manage (story 2.2, AC 3)', async () => {
+      await expect(
+        upsertProfile(pilotActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' }),
+      ).rejects.toThrow(ForbiddenError);
+      expect(findUniqueMock).not.toHaveBeenCalled();
+      expect(pilotProfileUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('deactivateProfile rejects an actor without people.manage (story 2.2, AC 3)', async () => {
+      await expect(deactivateProfile(pilotActor(), 'person_1', 'pilot')).rejects.toThrow(ForbiddenError);
+      expect(pilotProfileUpdateManyMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('listPeople', () => {
@@ -121,12 +206,31 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
             fiscalCode: 'BNCMRA80A01L219K',
             archivedAt: null,
             createdAt: SELECTED_PERSON.createdAt,
+            profiles: { pilot: false, student: false, instructor: false },
           },
         ],
         total: 1,
         page: 1,
         pageSize: 20,
       });
+    });
+
+    it('flags a profile as active only when it exists with deactivatedAt null (story 2.2, AC 1)', async () => {
+      transaction.mockResolvedValue([
+        [
+          {
+            ...SELECTED_PERSON,
+            pilotProfile: { deactivatedAt: null },
+            studentProfile: { deactivatedAt: new Date('2026-03-01T00:00:00.000Z') },
+            instructorProfile: null,
+          },
+        ],
+        1,
+      ]);
+
+      const result = await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+
+      expect(result.items[0]?.profiles).toEqual({ pilot: true, student: false, instructor: false });
     });
 
     it('excludes archived persons by default (AC 2)', async () => {
@@ -173,6 +277,59 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindUnique.mockResolvedValue(SELECTED_PERSON);
       const result = await getPerson(staffActor(), 'person_1');
       expect(result.id).toBe('person_1');
+      expect(result.pilotProfile).toBeNull();
+      expect(result.studentProfile).toBeNull();
+      expect(result.instructorProfile).toBeNull();
+    });
+
+    it('includes full profile data with people.read alone (story 2.2, AC 1)', async () => {
+      personFindUnique.mockResolvedValue({
+        ...SELECTED_PERSON,
+        pilotProfile: { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null },
+        studentProfile: {
+          courseStartDate: new Date('2026-03-01T00:00:00.000Z'),
+          deactivatedAt: new Date('2026-06-01T00:00:00.000Z'),
+        },
+        instructorProfile: null,
+      });
+
+      const result = await getPerson(staffActor(), 'person_1');
+
+      expect(result.pilotProfile).toEqual({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+      // `courseStartDate` is a calendar date on the wire — `YYYY-MM-DD`, never a datetime.
+      expect(result.studentProfile).toEqual({
+        courseStartDate: '2026-03-01',
+        deactivatedAt: new Date('2026-06-01T00:00:00.000Z'),
+      });
+      expect(result.instructorProfile).toBeNull();
+      expect(result.profiles).toEqual({ pilot: true, student: false, instructor: false });
+    });
+
+    describe('own access (story 2.3, AC 2 — self.read + matching personId, scoped in the service)', () => {
+      it('lets a pilot read their own person record', async () => {
+        personFindUnique.mockResolvedValue({ ...SELECTED_PERSON, id: 'person_pilot' });
+
+        const result = await getPerson(pilotActor(), 'person_pilot');
+
+        expect(result.id).toBe('person_pilot');
+      });
+
+      it('rejects a pilot reading someone else’s person record', async () => {
+        await expect(getPerson(pilotActor(), 'person_1')).rejects.toThrow(ForbiddenError);
+        expect(findUniqueMock).not.toHaveBeenCalled();
+      });
+
+      it('rejects a pilot with no linked person (personId: null)', async () => {
+        const actor: Actor = { userId: 'pilot_no_person', personId: null, roles: ['PILOT'] };
+
+        await expect(getPerson(actor, 'person_1')).rejects.toThrow(ForbiddenError);
+        expect(findUniqueMock).not.toHaveBeenCalled();
+      });
+
+      it('rejects an actor with neither self.read nor people.read (stale/unknown role)', async () => {
+        await expect(getPerson(noRoleActor(), 'person_1')).rejects.toThrow(ForbiddenError);
+        expect(findUniqueMock).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -312,6 +469,188 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
 
       expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { archivedAt: null } }));
       expect(result.archivedAt).toBeNull();
+    });
+  });
+
+  describe('upsertProfile (story 2.2, AC 1/2)', () => {
+    it('throws NotFoundError for a missing person', async () => {
+      personFindUnique.mockResolvedValue(null);
+
+      await expect(
+        upsertProfile(staffActor(), 'missing', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' }),
+      ).rejects.toThrow(NotFoundError);
+      expect(pilotProfileUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('creates or updates+reactivates the pilot profile in one upsert', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+
+      const result = await upsertProfile(staffActor(), 'person_1', 'pilot', {
+        licenseNumber: 'IT-PPL-1',
+        licenseType: 'PPL(A)',
+      });
+
+      expect(pilotProfileUpsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { personId: 'person_1' },
+          create: { personId: 'person_1', licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' },
+          // Reactivation is part of the update path: `deactivatedAt` is always cleared (AC 2).
+          update: { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null },
+        }),
+      );
+      expect(result).toEqual({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+    });
+
+    it('stores the student courseStartDate as a Date and returns it as YYYY-MM-DD', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      studentProfileUpsert.mockResolvedValue({
+        courseStartDate: new Date('2026-03-01T00:00:00.000Z'),
+        deactivatedAt: null,
+      });
+
+      const result = await upsertProfile(staffActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' });
+
+      expect(studentProfileUpsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { personId: 'person_1' },
+          create: { personId: 'person_1', courseStartDate: new Date('2026-03-01') },
+          update: { courseStartDate: new Date('2026-03-01'), deactivatedAt: null },
+        }),
+      );
+      expect(result).toEqual({ courseStartDate: '2026-03-01', deactivatedAt: null });
+    });
+
+    it('upserts the instructor profile with its free-text ratings', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      instructorProfileUpsert.mockResolvedValue({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+
+      const result = await upsertProfile(staffActor(), 'person_1', 'instructor', { ratings: 'SEP(land), FI(A)' });
+
+      expect(instructorProfileUpsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { personId: 'person_1' },
+          create: { personId: 'person_1', ratings: 'SEP(land), FI(A)' },
+          update: { ratings: 'SEP(land), FI(A)', deactivatedAt: null },
+        }),
+      );
+      expect(result).toEqual({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+    });
+
+    describe('Account creation on activation (story 3.1, AC 1, AD-11)', () => {
+      it('upserts the Account alongside the pilot profile', async () => {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+
+        await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
+
+        expect(accountUpsertMock).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' } }),
+        );
+      });
+
+      it('upserts the Account alongside the student profile', async () => {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        studentProfileUpsert.mockResolvedValue({ courseStartDate: new Date('2026-03-01'), deactivatedAt: null });
+
+        await upsertProfile(staffActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' });
+
+        expect(accountUpsertMock).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' } }),
+        );
+      });
+
+      it('does NOT create an Account for the instructor profile', async () => {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        instructorProfileUpsert.mockResolvedValue({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+
+        await upsertProfile(staffActor(), 'person_1', 'instructor', { ratings: 'SEP(land), FI(A)' });
+
+        expect(accountUpsertMock).not.toHaveBeenCalled();
+      });
+
+      it('reactivating an already-accounted person does not duplicate the account (idempotent upsert, AD-11 unique personId)', async () => {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+        accountUpsert.mockResolvedValue({ id: 'account_1' });
+
+        await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
+        await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
+
+        // Both calls are themselves upserts (create-if-missing / no-op
+        // update) — the unique `personId` constraint is what actually
+        // prevents a second row, this only asserts the call shape stays the
+        // same idempotent upsert on every activation.
+        expect(accountUpsertMock).toHaveBeenCalledTimes(2);
+        expect(accountUpsertMock).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' }, update: {} }),
+        );
+        expect(accountUpsertMock).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' }, update: {} }),
+        );
+      });
+    });
+  });
+
+  describe('deactivateProfile (story 2.2, AC 1/2)', () => {
+    it('throws NotFoundError for a missing person', async () => {
+      personFindUnique.mockResolvedValue(null);
+
+      await expect(deactivateProfile(staffActor(), 'missing', 'student')).rejects.toThrow(NotFoundError);
+      expect(studentProfileUpdateManyMock).not.toHaveBeenCalled();
+    });
+
+    it('sets deactivatedAt on an active profile via a single guarded update (review 2.2 F1)', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      studentProfileUpdateMany.mockResolvedValue({ count: 1 });
+
+      await deactivateProfile(staffActor(), 'person_1', 'student');
+
+      // The `deactivatedAt: null` guard in the where is what makes concurrent
+      // deactivations safe — exactly one of them can match the row.
+      expect(studentProfileUpdateManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { personId: 'person_1', deactivatedAt: null },
+          data: { deactivatedAt: expect.any(Date) },
+        }),
+      );
+    });
+
+    it('throws ConflictError when the profile was never activated', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      instructorProfileUpdateMany.mockResolvedValue({ count: 0 });
+
+      await expect(deactivateProfile(staffActor(), 'person_1', 'instructor')).rejects.toThrow(ConflictError);
+    });
+
+    it('throws ConflictError when the profile is already deactivated (guarded update matches no row)', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      pilotProfileUpdateMany.mockResolvedValue({ count: 0 });
+
+      await expect(deactivateProfile(staffActor(), 'person_1', 'pilot')).rejects.toThrow(ConflictError);
+    });
+  });
+
+  describe('student → pilot transition (story 2.2, AC 2)', () => {
+    it('deactivates the student profile and activates the pilot profile without ever touching Person', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      studentProfileUpdateMany.mockResolvedValue({ count: 1 });
+      pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-9', licenseType: 'PPL(A)', deactivatedAt: null });
+
+      await deactivateProfile(staffActor(), 'person_1', 'student');
+      await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-9', licenseType: 'PPL(A)' });
+
+      // Both operations address the same Person.id, and the transition never
+      // creates/updates/deletes a Person row — the id (and its history/future
+      // account, AD-11) survives untouched.
+      expect(studentProfileUpdateManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { personId: 'person_1', deactivatedAt: null } }),
+      );
+      expect(pilotProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
+      expect(createMock).not.toHaveBeenCalled();
+      expect(updateMock).not.toHaveBeenCalled();
     });
   });
 });
