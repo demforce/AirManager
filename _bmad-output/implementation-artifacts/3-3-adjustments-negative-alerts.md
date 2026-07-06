@@ -4,7 +4,17 @@ baseline_commit: cb9fe916c8411ffa7c3d74f6ac467908d9a9ee6b
 
 # Story 3.3: Rettifiche e alert saldo negativo
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-06)
+- **Verdict**: APPROVE — no mandatory findings. Verified: balanceBand boundaries exact (0→ok, -1→negative, threshold→negative, threshold-1→belowThreshold); FOR UPDATE lock inside the tx serializes concurrent adjustments (no lost/duplicated band emails); email fire-and-forget post-commit with the RECIPIENT's locale and locale-formatted amount (AD-7/M1), SMTP failure never invalidates the movement; recordAdjustment 404s identically on foreign/unknown originalMovementId (no leak), 409 + P2002 backstop on duplicate reversal, original never touched, no CashMovement; listNegativeBalances groupBy having <0 ordered most-negative-first; additive enum migration; no XSS; i18n symmetric.
+- **F2 (optional, applied)**: the alert email now quotes the POST-COMMIT re-read balance instead of the in-tx computed one — a concurrent top-up (recordTopUp takes no Account lock) could make the in-tx figure stale by send time; the band decision stays in-tx (dedup semantics unchanged).
+- **F3 (nit, applied)**: threshold from AppSetting clamped to <= 0 — a mistakenly positive stored value made every sub-zero balance read as belowThreshold.
+- **F1 (optional, resolved as conscious decision)**: archived people stay in the negative-balances list ON PURPOSE (a debtor who left the airfield is exactly who staff must still see) — documented in the service doc comment.
+- **F4 (nit, no action)**: e2e uses localhost:8025 vs the story's 127.0.0.1 — cosmetic.
+- **Post-fix gates**: lint ✔ (1 documented benign warning), typecheck ✔, test 297/297 ✔, build ✔, e2e 63/63 ✔ (fresh DB).
 
 ## Story
 

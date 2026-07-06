@@ -403,7 +403,10 @@ async function getNegativeBalanceThresholdCents(): Promise<number> {
   if (!setting) return DEFAULT_NEGATIVE_BALANCE_THRESHOLD_CENTS;
 
   const parsed = Number.parseInt(setting.value, 10);
-  return Number.isFinite(parsed) ? parsed : DEFAULT_NEGATIVE_BALANCE_THRESHOLD_CENTS;
+  if (!Number.isFinite(parsed)) return DEFAULT_NEGATIVE_BALANCE_THRESHOLD_CENTS;
+  // Clamp to <= 0 (review 3.3 F3): a mistakenly positive stored value would
+  // make every sub-zero balance read as belowThreshold immediately.
+  return Math.min(parsed, 0);
 }
 
 /**
@@ -546,16 +549,22 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
     return { balanceBeforeCents: beforeCents, balanceAfterCents: beforeCents + input.amountCents };
   });
 
+  // Guard-free re-read, same rationale as `recordTopUp` (review 3.1 F1).
+  const overview = await buildOverview(account);
+
   const bandBefore = balanceBand(balanceBeforeCents, thresholdCents);
   const bandAfter = balanceBand(balanceAfterCents, thresholdCents);
   if (bandWorsened(bandBefore, bandAfter)) {
     // Fire-and-forget, AFTER commit (Dev Notes) — never awaited into the
     // caller's critical path beyond this dangling promise's own try/catch.
-    void sendNegativeBalanceAlert(personId, person, balanceAfterCents);
+    // The email quotes the POST-COMMIT balance (review 3.3 F2): the in-tx
+    // `balanceAfterCents` decides the band transition, but a concurrent
+    // top-up committed in parallel (recordTopUp takes no Account lock) could
+    // make it stale by send time — the freshly re-read overview can't.
+    void sendNegativeBalanceAlert(personId, person, overview.balanceCents);
   }
 
-  // Guard-free re-read, same rationale as `recordTopUp` (review 3.1 F1).
-  return buildOverview(account);
+  return overview;
 }
 
 /** `@db.Date` calendar-only "today" (server clock, UTC) — a rettifica always values as of today (Dev Notes: no `effectiveDate` input). */
@@ -583,6 +592,11 @@ export type NegativeBalanceItem = {
  * rather than fetching every account and filtering in JS) followed by one
  * `Account`+`Person` lookup to enrich the surviving groups with a display
  * name — `groupBy` cannot itself join across relations.
+ *
+ * ARCHIVED people are deliberately NOT filtered out (review 3.3 F1,
+ * conscious deviation from the people/aircraft list convention): a debtor
+ * who left the airfield is exactly who staff must still see here —
+ * archiving must never hide money owed.
  */
 export async function listNegativeBalances(actor: Actor): Promise<NegativeBalanceItem[]> {
   authorize(actor, 'finance.manage');
