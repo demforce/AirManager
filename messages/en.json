@@ -172,7 +172,8 @@
       "recentEmpty": "No movements recorded.",
       "viewStatement": "Full account statement",
       "movementType": {
-        "topUp": "Top-up"
+        "topUp": "Top-up",
+        "adjustment": "Adjustment"
       },
       "topUp": {
         "action": "Record top-up",
@@ -204,11 +205,49 @@
       "description": "Description",
       "amount": "Amount",
       "recordedBy": "Recorded by",
+      "actions": "Actions",
       "noValue": "—",
       "empty": "No movements recorded."
     },
     "movementType": {
-      "topUp": "Top-up"
+      "topUp": "Top-up",
+      "adjustment": "Adjustment"
+    },
+    "adjustmentBadge": {
+      "ofDate": "Adjusts the movement of {date}",
+      "linked": "Adjusts a previous movement"
+    },
+    "adjustments": {
+      "action": "Record adjustment",
+      "rowAction": "Adjust this movement",
+      "title": "Record adjustment",
+      "linkedTo": "Linked to the movement of {date}",
+      "amount": "Amount (EUR, signed)",
+      "amountHint": "Positive to credit, negative to debit (e.g. -25.00).",
+      "reason": "Reason",
+      "submit": "Confirm adjustment",
+      "cancel": "Cancel",
+      "invalidAmount": "Enter a valid non-zero amount.",
+      "requiredReason": "A reason is required.",
+      "conflictError": "This movement already has a linked adjustment.",
+      "genericError": "Could not record the adjustment. Please try again.",
+      "success": "Adjustment recorded."
+    }
+  },
+  "FinancePage": {
+    "kicker": "Finance",
+    "title": "Finance",
+    "description": "The airfield's financial picture: prepaid accounts, negative balances and, soon, the cash ledger and reports.",
+    "backToDashboard": "Back to dashboard",
+    "negativeBalances": {
+      "heading": "Negative balances",
+      "empty": "No account is in the negative.",
+      "table": {
+        "person": "Person",
+        "balance": "Balance",
+        "lastMovement": "Last movement",
+        "noValue": "—"
+      }
     }
   },
   "AircraftPage": {
@@ -400,6 +439,10 @@
     "passwordReset": {
       "subject": "Reset your AirManager password",
       "body": "Hello,\n\nYou requested to reset your AirManager account password. The link below is valid for {expiresInHours, plural, one {# hour} other {# hours}}:\n\n{url}\n\nIf you didn't request this, ignore this email: your current password remains unchanged."
+    },
+    "negativeBalanceAlert": {
+      "subject": "Your AirManager account is in the negative",
+      "body": "Hello {name},\n\nYour AirManager prepaid account balance is now {balance}.\n\nPlease contact the airfield office to settle your position."
     }
   }
 }

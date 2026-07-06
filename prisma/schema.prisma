@@ -231,12 +231,13 @@ model AuthToken {
   @@index([userId])
 }
 
-/// Prepaid account movement types (story 3.1, AD-3's ledger). Only `TOP_UP`
-/// is populated today — `ADJUSTMENT` (story 3.3) and flight debits (epic 5)
-/// grow this enum later; it is a migration, not something to pre-populate
-/// with values nothing writes yet.
+/// Prepaid account movement types (story 3.1, AD-3's ledger). `TOP_UP` (3.1)
+/// and `ADJUSTMENT` (story 3.3 — a motivated correction, AC 1) are populated
+/// today; flight debits (epic 5) grow this enum later. Additive migration
+/// only (Dev Notes) — no existing row's `type` ever changes.
 enum AccountMovementType {
   TOP_UP
+  ADJUSTMENT
 }
 
 /// How a top-up was paid (story 3.1, AC 2). Only meaningful for `TOP_UP`

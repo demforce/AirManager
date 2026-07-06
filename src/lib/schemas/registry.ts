@@ -1,6 +1,13 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31, type ResponseConfig } from '@asteasolutions/zod-to-openapi';
 import { z } from './zod-with-openapi';
-import { accountOverviewSchema, accountStatementResponseSchema, listAccountMovementsQuerySchema, recordTopUpSchema } from './accounts';
+import {
+  accountOverviewSchema,
+  accountStatementResponseSchema,
+  listAccountMovementsQuerySchema,
+  negativeBalancesResponseSchema,
+  recordAdjustmentSchema,
+  recordTopUpSchema,
+} from './accounts';
 import {
   aircraftListItemSchema,
   aircraftListResponseSchema,
@@ -94,6 +101,8 @@ registry.register('HourMeterAdjustmentList', hourMeterAdjustmentListResponseSche
 registry.register('AccountOverview', accountOverviewSchema);
 registry.register('RecordTopUpRequest', recordTopUpSchema);
 registry.register('AccountStatement', accountStatementResponseSchema);
+registry.register('RecordAdjustmentRequest', recordAdjustmentSchema);
+registry.register('NegativeBalancesList', negativeBalancesResponseSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -373,6 +382,35 @@ registry.registerPath({
   responses: {
     200: { description: "A page of the person's account statement.", content: jsonContent(accountStatementResponseSchema) },
     ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/account/adjustments',
+  summary: 'Record a motivated adjustment (rettifica) on a person\'s account',
+  description:
+    'Append-only (AD-3, story 3.3, AC 1) — creates a NEW, independent `AccountMovement` (`ADJUSTMENT`); the original movement is never touched. `originalMovementId`, when given, links this adjustment to the movement it corrects and must belong to the same account (404 otherwise, never revealing another account\'s movement) and must not already have a linked adjustment (409). Triggers the negative-balance alert email (AC 2/3) when the balance band worsens. Requires `finance.manage` — never "own".',
+  tags: ['Accounts'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(recordAdjustmentSchema), required: true } },
+  responses: {
+    200: { description: 'The account overview, refreshed after the adjustment.', content: jsonContent(accountOverviewSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/accounts/negative-balances',
+  summary: 'List every account with a negative balance, most negative first',
+  description:
+    'The staff-facing "saldi negativi" list (story 3.3, AC 2) shown on the `/dashboard/finance` landing page. Balance is always `SUM(AccountMovement.amountCents)` (AD-3). Requires `finance.manage`.',
+  tags: ['Accounts'],
+  security,
+  responses: {
+    200: { description: 'Every account with a negative balance.', content: jsonContent(negativeBalancesResponseSchema) },
+    ...errorResponses(401, 403),
   },
 });
 

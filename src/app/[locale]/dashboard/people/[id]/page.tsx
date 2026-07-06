@@ -189,7 +189,10 @@ export default async function PersonDetailPage({ params }: PageProps) {
               recentTitle: t('accountPanel.recentTitle'),
               recentEmpty: t('accountPanel.recentEmpty'),
               viewStatement: t('accountPanel.viewStatement'),
-              movementType: { topUp: t('accountPanel.movementType.topUp') },
+              movementType: {
+                topUp: t('accountPanel.movementType.topUp'),
+                adjustment: t('accountPanel.movementType.adjustment'),
+              },
               topUp: {
                 action: t('accountPanel.topUp.action'),
                 title: t('accountPanel.topUp.title'),

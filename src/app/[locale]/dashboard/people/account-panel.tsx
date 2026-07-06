@@ -18,7 +18,7 @@ export type AccountPanelLabels = {
   recentEmpty: string;
   /** Story 3.2: link to the full, paginated `/account` statement page (the drill-down behind this preview). */
   viewStatement: string;
-  movementType: { topUp: string };
+  movementType: { topUp: string; adjustment: string };
   topUp: {
     action: string;
     title: string;
@@ -62,6 +62,8 @@ function movementTypeLabel(type: AccountMovementListItemDto['type'], labels: Acc
   switch (type) {
     case 'TOP_UP':
       return labels.topUp;
+    case 'ADJUSTMENT':
+      return labels.adjustment;
     default:
       return type;
   }

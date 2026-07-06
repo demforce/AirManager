@@ -78,6 +78,9 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
   // wire payload for anyone without it (AD-5: it is the real guardian), this
   // only decides whether to render an extra column.
   const showActor = hasPermission(actor, 'people.read');
+  // Story 3.3: `finance.manage` gates the "Registra rettifica" actions —
+  // the UI hides, `recordAdjustment`'s own `authorize()` is the guardian (AD-5).
+  const canManageFinance = hasPermission(actor, 'finance.manage');
   // Money must follow the page locale (review 3.1 M1 — mandatory), same
   // pattern as `AccountPanel`.
   const moneyLocale = locale === 'en' ? ('en' as const) : ('it' as const);
@@ -114,8 +117,10 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
 
         <div className="mt-10">
           <AccountStatementTable
+            personId={id}
             rows={statement.items}
             showActor={showActor}
+            canManageFinance={canManageFinance}
             moneyLocale={moneyLocale}
             labels={{
               date: t('table.date'),
@@ -123,9 +128,32 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
               description: t('table.description'),
               amount: t('table.amount'),
               recordedBy: t('table.recordedBy'),
+              actions: t('table.actions'),
               noValue: t('table.noValue'),
               empty: t('table.empty'),
-              movementType: { topUp: t('movementType.topUp') },
+              movementType: { topUp: t('movementType.topUp'), adjustment: t('movementType.adjustment') },
+              // `t.raw`: these carry a literal `{date}` placeholder the CLIENT
+              // fills in (the original movement's date lives in the row data)
+              // — `t()` would fail on the missing ICU value server-side.
+              adjustmentOfDate: t.raw('adjustmentBadge.ofDate') as string,
+              adjustmentLinked: t('adjustmentBadge.linked'),
+            }}
+            adjustmentLabels={{
+              action: t('adjustments.action'),
+              rowAction: t('adjustments.rowAction'),
+              title: t('adjustments.title'),
+              // Same `t.raw` rationale as `adjustmentOfDate` above.
+              linkedTo: t.raw('adjustments.linkedTo') as string,
+              amount: t('adjustments.amount'),
+              amountHint: t('adjustments.amountHint'),
+              reason: t('adjustments.reason'),
+              submit: t('adjustments.submit'),
+              cancel: t('adjustments.cancel'),
+              invalidAmount: t('adjustments.invalidAmount'),
+              requiredReason: t('adjustments.requiredReason'),
+              conflictError: t('adjustments.conflictError'),
+              genericError: t('adjustments.genericError'),
+              success: t('adjustments.success'),
             }}
           />
         </div>

@@ -6,8 +6,8 @@ export const paymentMethodSchema = z.enum(['CASH', 'BANK_TRANSFER', 'POS']);
 
 export type PaymentMethodDto = z.infer<typeof paymentMethodSchema>;
 
-/** Mirrors the Prisma `AccountMovementType` enum. Only `TOP_UP` is populated today (Dev Notes). */
-export const accountMovementTypeSchema = z.enum(['TOP_UP']);
+/** Mirrors the Prisma `AccountMovementType` enum. `ADJUSTMENT` is story 3.3's motivated correction (AC 1). */
+export const accountMovementTypeSchema = z.enum(['TOP_UP', 'ADJUSTMENT']);
 
 export type AccountMovementTypeDto = z.infer<typeof accountMovementTypeSchema>;
 
@@ -104,6 +104,20 @@ export const accountStatementItemSchema = z.object({
   description: z.string().nullable(),
   createdAt: z.iso.datetime(),
   actorEmail: z.string().optional(),
+  /**
+   * Story 3.3, AC 1: set only on an `ADJUSTMENT` row that is linked to the
+   * original movement it corrects — the UI badges these rows "rettifica di
+   * ...". `null` for a standalone adjustment (never linked) and for every
+   * non-`ADJUSTMENT` row.
+   */
+  reversalOfId: z.string().nullable(),
+  /**
+   * True when this movement already has an `ADJUSTMENT` linked to it via
+   * `reversalOfId` (`@unique` — at most one). Drives whether the estratto
+   * conto's "Rettifica questo movimento" row action is shown (Dev Notes: a
+   * second adjustment on the same original is a 409, not silently allowed).
+   */
+  hasReversal: z.boolean(),
 });
 
 export type AccountStatementItemDto = z.infer<typeof accountStatementItemSchema>;
@@ -112,3 +126,56 @@ export type AccountStatementItemDto = z.infer<typeof accountStatementItemSchema>
 export const accountStatementResponseSchema = paginatedResponseSchema(accountStatementItemSchema);
 
 export type AccountStatementResponseDto = z.infer<typeof accountStatementResponseSchema>;
+
+/**
+ * `POST /api/v1/people/{id}/account/adjustments` request body (story 3.3,
+ * AC 1). `amountCents` is a SIGNED, non-zero integer (AD-2) — a rettifica can
+ * correct the balance in either direction — capped at the Postgres INTEGER
+ * max on both ends (same defense-in-depth as `recordTopUpSchema`). `reason`
+ * is mandatory (AC 1: "motivo obbligatorio"), capped at 500 chars like every
+ * other free-text field in the domain. `originalMovementId`, when present,
+ * links this adjustment to the movement it corrects (`reversalOfId`) — the
+ * service enforces same-account ownership and the at-most-one-reversal rule
+ * (never a Zod-level concern).
+ */
+export const recordAdjustmentSchema = z.object({
+  amountCents: z
+    .number()
+    .int()
+    .min(-2_147_483_647)
+    .max(2_147_483_647)
+    .refine((value) => value !== 0, { message: 'amountCents must not be zero' }),
+  reason: z.string().trim().min(1).max(500),
+  originalMovementId: z.string().nullish(),
+});
+
+export type RecordAdjustmentInput = z.infer<typeof recordAdjustmentSchema>;
+
+/**
+ * One entry of `GET /api/v1/accounts/negative-balances` (story 3.3, AC 2):
+ * the staff-facing "saldi negativi" list. `balanceCents` is always the same
+ * `SUM(AccountMovement.amountCents)` computation as everywhere else (AD-3) —
+ * never a stored column. `lastMovementAt` is `null` only in the
+ * (theoretical) case of an account whose every movement was concurrently
+ * removed — cannot happen today (AD-3: append-only, nothing is ever
+ * deleted), kept nullable defensively rather than asserted non-null.
+ */
+export const negativeBalanceItemSchema = z.object({
+  personId: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
+  balanceCents: z.number().int(),
+  lastMovementAt: z.iso.datetime().nullable(),
+});
+
+export type NegativeBalanceItemDto = z.infer<typeof negativeBalanceItemSchema>;
+
+/**
+ * `GET /api/v1/accounts/negative-balances` response — a plain array, not the
+ * AD-8 paginated envelope: the list is expected to stay small (Dev Notes) and
+ * the UI (dashboard finance landing) always renders it in full, most-negative
+ * first.
+ */
+export const negativeBalancesResponseSchema = z.array(negativeBalanceItemSchema);
+
+export type NegativeBalancesResponseDto = z.infer<typeof negativeBalancesResponseSchema>;

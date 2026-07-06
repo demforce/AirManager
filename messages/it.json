@@ -172,7 +172,8 @@
       "recentEmpty": "Nessun movimento registrato.",
       "viewStatement": "Estratto conto completo",
       "movementType": {
-        "topUp": "Ricarica"
+        "topUp": "Ricarica",
+        "adjustment": "Rettifica"
       },
       "topUp": {
         "action": "Registra ricarica",
@@ -204,11 +205,49 @@
       "description": "Descrizione",
       "amount": "Importo",
       "recordedBy": "Registrato da",
+      "actions": "Azioni",
       "noValue": "—",
       "empty": "Nessun movimento registrato."
     },
     "movementType": {
-      "topUp": "Ricarica"
+      "topUp": "Ricarica",
+      "adjustment": "Rettifica"
+    },
+    "adjustmentBadge": {
+      "ofDate": "Rettifica del movimento del {date}",
+      "linked": "Rettifica di un movimento precedente"
+    },
+    "adjustments": {
+      "action": "Registra rettifica",
+      "rowAction": "Rettifica questo movimento",
+      "title": "Registra rettifica",
+      "linkedTo": "Collegata al movimento del {date}",
+      "amount": "Importo (EUR, con segno)",
+      "amountHint": "Positivo per accreditare, negativo per addebitare (es. -25,00).",
+      "reason": "Motivo",
+      "submit": "Conferma rettifica",
+      "cancel": "Annulla",
+      "invalidAmount": "Inserisci un importo valido diverso da zero.",
+      "requiredReason": "Il motivo è obbligatorio.",
+      "conflictError": "Questo movimento ha già una rettifica collegata.",
+      "genericError": "Impossibile registrare la rettifica. Riprova.",
+      "success": "Rettifica registrata."
+    }
+  },
+  "FinancePage": {
+    "kicker": "Finanze",
+    "title": "Finanze",
+    "description": "La situazione finanziaria dell'aviosuperficie: conti prepagati, saldi negativi e, prossimamente, cassa e report.",
+    "backToDashboard": "Torna alla dashboard",
+    "negativeBalances": {
+      "heading": "Saldi negativi",
+      "empty": "Nessun conto in negativo.",
+      "table": {
+        "person": "Persona",
+        "balance": "Saldo",
+        "lastMovement": "Ultimo movimento",
+        "noValue": "—"
+      }
     }
   },
   "AircraftPage": {
@@ -400,6 +439,10 @@
     "passwordReset": {
       "subject": "Reimposta la tua password AirManager",
       "body": "Ciao,\n\nHai richiesto di reimpostare la password del tuo account AirManager. Il link seguente è valido per {expiresInHours, plural, one {# ora} other {# ore}}:\n\n{url}\n\nSe non hai richiesto tu questa operazione, ignora questa email: la password attuale resta invariata."
+    },
+    "negativeBalanceAlert": {
+      "subject": "Il tuo conto AirManager è in negativo",
+      "body": "Ciao {name},\n\nIl tuo conto prepagato AirManager ha ora un saldo di {balance}.\n\nTi invitiamo a regolarizzare la posizione contattando la segreteria dell'aviosuperficie."
     }
   }
 }

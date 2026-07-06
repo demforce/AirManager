@@ -38,7 +38,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { key: 'aircraft', href: '/dashboard/aircraft', permissions: ['aircraft.manage'] },
   { key: 'flights', href: '/flights', permissions: ['flights.manage'] },
   { key: 'bookings', href: '/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any'] },
-  { key: 'finance', href: '/finance', permissions: ['finance.manage'] },
+  // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4.
+  { key: 'finance', href: '/dashboard/finance', permissions: ['finance.manage'] },
   { key: 'school', href: '/school', permissions: ['school.manage.own'] },
   { key: 'expiries', href: '/expiries', permissions: ['expiries.manage'] },
   { key: 'ppr', href: '/ppr-queue', permissions: ['bookings.manage.any'] },
