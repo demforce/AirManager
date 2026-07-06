@@ -118,7 +118,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(categoryFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { isActive: true }, orderBy: { name: 'asc' } }),
       );
-      expect(result).toEqual([{ id: 'cat_1', name: 'Carburante', isActive: true, movementCount: 3 }]);
+      expect(result).toEqual([{ id: 'cat_1', name: 'Carburante', isActive: true, movementCount: 3, isSystem: false }]);
     });
 
     it('includeInactive: true also lists deactivated categories (admin management page)', async () => {
@@ -131,7 +131,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
 
       expect(categoryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }));
       expect(result).toHaveLength(2);
-      expect(result[1]).toEqual({ id: 'cat_2', name: 'Obsoleta', isActive: false, movementCount: 0 });
+      expect(result[1]).toEqual({ id: 'cat_2', name: 'Obsoleta', isActive: false, movementCount: 0, isSystem: false });
     });
   });
 
@@ -147,7 +147,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       const result = await createCashCategory(adminActor(), { name: 'Nuova' });
 
       expect(categoryCreateMock).toHaveBeenCalledWith({ data: { name: 'Nuova' }, select: { id: true, name: true, isActive: true } });
-      expect(result).toEqual({ id: 'cat_new', name: 'Nuova', isActive: true, movementCount: 0 });
+      expect(result).toEqual({ id: 'cat_new', name: 'Nuova', isActive: true, movementCount: 0, isSystem: false });
     });
 
     it('maps a duplicate name (P2002) to ConflictError', async () => {
@@ -170,6 +170,13 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(categoryUpdateMock).not.toHaveBeenCalled();
     });
 
+    it('a system category ("Ricariche") is never renameable — top-ups resolve it by name (review 3.4 F2)', async () => {
+      categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name: 'Ricariche' });
+
+      await expect(renameCashCategory(adminActor(), 'cat_sys', { name: 'Altro nome' })).rejects.toThrow(ConflictError);
+      expect(categoryUpdateMock).not.toHaveBeenCalled();
+    });
+
     it('renames the category', async () => {
       categoryFindUnique.mockResolvedValue({ id: 'cat_1' });
       categoryUpdate.mockResolvedValue({ id: 'cat_1', name: 'Rinominata', isActive: true, _count: { movements: 2 } });
@@ -179,7 +186,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(categoryUpdateMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'cat_1' }, data: { name: 'Rinominata' } }),
       );
-      expect(result).toEqual({ id: 'cat_1', name: 'Rinominata', isActive: true, movementCount: 2 });
+      expect(result).toEqual({ id: 'cat_1', name: 'Rinominata', isActive: true, movementCount: 2, isSystem: false });
     });
 
     it('maps a duplicate name (P2002) to ConflictError', async () => {
@@ -267,6 +274,13 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
 
       await expect(deleteCashCategory(adminActor(), 'cat_1')).rejects.toThrow(ConflictError);
     });
+
+    it('a system category ("Ricariche") is never deletable, even when unused (review 3.4 F2)', async () => {
+      categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name: 'Ricariche', _count: { movements: 0 } });
+
+      await expect(deleteCashCategory(adminActor(), 'cat_sys')).rejects.toThrow(ConflictError);
+      expect(categoryDeleteMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('recordCashMovement (Task 2, AC 2)', () => {
@@ -275,6 +289,15 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         recordCashMovement(pilotActor(), { categoryId: 'cat_1', amountCents: 5000, effectiveDate: '2026-07-01', description: null }),
       ).rejects.toThrow(ForbiddenError);
       expect(categoryFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects a manual movement in a system category ("Ricariche") — review 3.4 F1', async () => {
+      categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name: 'Ricariche', isActive: true });
+
+      await expect(
+        recordCashMovement(staffActor(), { categoryId: 'cat_sys', amountCents: 5000, effectiveDate: '2026-07-01', description: null }),
+      ).rejects.toThrow(ConflictError);
+      expect(movementCreateMock).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundError for an unknown category', async () => {

@@ -29,6 +29,8 @@ export type CashCategoryOption = {
   id: string;
   name: string;
   isActive: boolean;
+  /** Reserved for automatic flows — excluded from the new-movement picker (review 3.4 F1). */
+  isSystem: boolean;
 };
 
 export type CashRegisterFilters = {
@@ -297,7 +299,9 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, la
       {panelOpen ? (
         <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
           <NewMovementForm
-            categories={categories.filter((category) => category.isActive)}
+            // System categories (e.g. "Ricariche") are written only by their
+            // automatic flow — the service rejects them anyway (review 3.4 F1).
+            categories={categories.filter((category) => category.isActive && !category.isSystem)}
             labels={labels.form}
             onCancel={() => setPanelOpen(false)}
             onSuccess={() => handleSuccess(labels.form.success)}

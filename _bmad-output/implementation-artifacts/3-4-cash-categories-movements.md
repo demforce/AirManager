@@ -4,7 +4,15 @@ baseline_commit: 89b9235cdc23ab7d9075d63a726d8994cd68a3b1
 
 # Story 3.4: Cassa — categorie e movimenti manuali
 
-Status: review
+Status: done
+
+## Review Record
+
+- **Reviewer**: claude-opus via BMAD code-review (adversarial, 2026-07-06)
+- **Verdict**: APPROVE — no mandatory findings. Verified: storno amount exactly opposite with INT_MIN excluded by the schema cap (negation can't overflow); double-storno/storno-of-storno blocked with real P2002 race backstop; storno of automatic top-up twins rejected IN THE SERVICE (not just hidden in UI); delete-category race covered by the P2003 FK RESTRICT backstop (FK verified in the 3.1 migration); settings.manage vs finance.manage on the right functions; period filters inclusive and TZ-exact on @db.Date; recordTopUp isActive lookup fails loud (no 3.1 regression); no XSS; i18n 45/45; no 3.3 regressions.
+- **F1+F2 (optional, applied together as a "system category" guard)**: "Ricariche" (written only by the automatic top-up flow) is now `isSystem` in the contract — manual movements in it are rejected in the service (a manual entry would inflate a cash line no account reflects: conto/cassa divergence), it can't be deleted even when unused (deleting it would 500 every subsequent top-up), and — same failure class found while fixing — it can't be RENAMED either (top-ups resolve it by name). UI: excluded from the new-movement picker, delete action hidden on the categories page. Deactivation stays allowed (fails loud in recordTopUp by design). Unit tests added for all three guards.
+- **F3/F4/F5 (nits, no action)**: generic error on lifecycle-race 409; no client validation for from > to (empty result, harmless); success feedback persists across filter navigation. Cosmetic.
+- **Post-fix gates**: lint ✔ (1 documented benign warning), typecheck ✔, test 346/346 ✔, build ✔, e2e 68/68 ✔ (fresh DB).
 
 ## Story
 

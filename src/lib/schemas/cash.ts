@@ -49,6 +49,8 @@ export const cashCategoryItemSchema = z.object({
   name: z.string(),
   isActive: z.boolean(),
   movementCount: z.number().int().min(0),
+  // Reserved for automatic flows (review 3.4 F1/F2): no manual movements, no delete.
+  isSystem: z.boolean(),
 });
 
 export type CashCategoryItemDto = z.infer<typeof cashCategoryItemSchema>;

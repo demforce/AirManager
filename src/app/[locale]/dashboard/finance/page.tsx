@@ -187,7 +187,12 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
                 hasReversal: item.hasReversal,
                 isAutomatic: item.isAutomatic,
               }))}
-              categories={categories.map((category) => ({ id: category.id, name: category.name, isActive: category.isActive }))}
+              categories={categories.map((category) => ({
+                id: category.id,
+                name: category.name,
+                isActive: category.isActive,
+                isSystem: category.isSystem,
+              }))}
               initialFilters={initialFilters}
               moneyLocale={moneyLocale}
               labels={{

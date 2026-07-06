@@ -13,6 +13,8 @@ export type CashCategoryRow = {
   name: string;
   isActive: boolean;
   movementCount: number;
+  /** Reserved for automatic flows (review 3.4 F1/F2) — the delete action is hidden; the service rejects it regardless. */
+  isSystem: boolean;
 };
 
 export type CategoriesManagerLabels = {
@@ -186,14 +188,16 @@ export function CategoriesManager({ categories, labels }: CategoriesManagerProps
             >
               {category.isActive ? labels.actions.deactivate : labels.actions.reactivate}
             </button>
-            <button
-              type="button"
-              disabled={pendingActionId === category.id}
-              onClick={() => setConfirmingDeleteId(category.id)}
-              className={secondaryButton}
-            >
-              {labels.actions.delete}
-            </button>
+            {category.isSystem ? null : (
+              <button
+                type="button"
+                disabled={pendingActionId === category.id}
+                onClick={() => setConfirmingDeleteId(category.id)}
+                className={secondaryButton}
+              >
+                {labels.actions.delete}
+              </button>
+            )}
           </div>
         );
       },

@@ -64,6 +64,7 @@ export default async function CashCategoriesPage({ params }: PageProps) {
               name: category.name,
               isActive: category.isActive,
               movementCount: category.movementCount,
+              isSystem: category.isSystem,
             }))}
             labels={{
               newCategory: t('newCategory'),

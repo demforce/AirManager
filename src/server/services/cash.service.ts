@@ -22,11 +22,25 @@ function isForeignKeyViolation(error: unknown): boolean {
 
 // --- Categories (Task 1, AC 1) ---------------------------------------------
 
+/**
+ * Categories owned by automated flows — currently only "Ricariche", the
+ * top-up twin's category (story 3.1, `accounts.service.ts`'s
+ * `TOP_UP_CASH_CATEGORY_NAME`). Guarded here (review 3.4 F1/F2): a MANUAL
+ * movement in one of these would inflate a cash line no account reflects
+ * (the exact conto/cassa divergence the storno rules defend against), and
+ * DELETING one — legal per AC 1 while unused — would 500 every subsequent
+ * top-up until the seed is re-run. Deactivation stays allowed: it fails
+ * loudly in `recordTopUp` by design (story 3.4 Task 1).
+ */
+const SYSTEM_CASH_CATEGORY_NAMES = new Set(['Ricariche']);
+
 export type CashCategoryListItem = {
   id: string;
   name: string;
   isActive: boolean;
   movementCount: number;
+  /** True for categories reserved to automatic flows (see `SYSTEM_CASH_CATEGORY_NAMES`) — no manual movements, no delete. */
+  isSystem: boolean;
 };
 
 /**
@@ -54,6 +68,7 @@ export async function listCashCategories(actor: Actor, query: ListCashCategories
     name: category.name,
     isActive: category.isActive,
     movementCount: category._count.movements,
+    isSystem: SYSTEM_CASH_CATEGORY_NAMES.has(category.name),
   }));
 }
 
@@ -70,7 +85,7 @@ export async function createCashCategory(actor: Actor, input: { name: string }):
       data: { name: input.name },
       select: { id: true, name: true, isActive: true },
     });
-    return { ...category, movementCount: 0 };
+    return { ...category, movementCount: 0, isSystem: SYSTEM_CASH_CATEGORY_NAMES.has(category.name) };
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw new ConflictError('A cash category with this name already exists.');
@@ -83,9 +98,15 @@ export async function createCashCategory(actor: Actor, input: { name: string }):
 export async function renameCashCategory(actor: Actor, id: string, input: { name: string }): Promise<CashCategoryListItem> {
   authorize(actor, 'settings.manage');
 
-  const existing = await prisma.cashCategory.findUnique({ where: { id }, select: { id: true } });
+  const existing = await prisma.cashCategory.findUnique({ where: { id }, select: { id: true, name: true } });
   if (!existing) {
     throw new NotFoundError('Cash category not found.');
+  }
+  if (SYSTEM_CASH_CATEGORY_NAMES.has(existing.name)) {
+    // Same class as the delete guard (review 3.4 F2): automatic flows
+    // resolve system categories BY NAME — renaming "Ricariche" would break
+    // every subsequent top-up as surely as deleting it.
+    throw new ConflictError('This is a system category required by automatic movements — it cannot be renamed.');
   }
 
   try {
@@ -94,7 +115,13 @@ export async function renameCashCategory(actor: Actor, id: string, input: { name
       data: { name: input.name },
       select: { id: true, name: true, isActive: true, _count: { select: { movements: true } } },
     });
-    return { id: category.id, name: category.name, isActive: category.isActive, movementCount: category._count.movements };
+    return {
+      id: category.id,
+      name: category.name,
+      isActive: category.isActive,
+      movementCount: category._count.movements,
+      isSystem: SYSTEM_CASH_CATEGORY_NAMES.has(category.name),
+    };
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw new ConflictError('A cash category with this name already exists.');
@@ -156,10 +183,15 @@ export async function deleteCashCategory(actor: Actor, id: string): Promise<void
 
   const existing = await prisma.cashCategory.findUnique({
     where: { id },
-    select: { id: true, _count: { select: { movements: true } } },
+    select: { id: true, name: true, _count: { select: { movements: true } } },
   });
   if (!existing) {
     throw new NotFoundError('Cash category not found.');
+  }
+  if (SYSTEM_CASH_CATEGORY_NAMES.has(existing.name)) {
+    // Review 3.4 F2: deleting an (unused) system category would break every
+    // subsequent automatic movement — recordTopUp 500s until re-seeded.
+    throw new ConflictError('This is a system category required by automatic movements — it cannot be deleted.');
   }
   if (existing._count.movements > 0) {
     throw new ConflictError('This category has recorded movements — deactivate it instead of deleting it.');
@@ -269,13 +301,19 @@ export async function recordCashMovement(actor: Actor, input: RecordCashMovement
 
   const category = await prisma.cashCategory.findUnique({
     where: { id: input.categoryId },
-    select: { id: true, isActive: true },
+    select: { id: true, name: true, isActive: true },
   });
   if (!category) {
     throw new NotFoundError('Cash category not found.');
   }
   if (!category.isActive) {
     throw new ConflictError('This cash category is inactive — reactivate it before recording new movements.');
+  }
+  if (SYSTEM_CASH_CATEGORY_NAMES.has(category.name)) {
+    // Review 3.4 F1: a manual entry in a system category would inflate a
+    // cash line no account movement reflects (conto/cassa divergence) —
+    // those lines are written exclusively by their automatic flow.
+    throw new ConflictError('This category is reserved for automatic movements — record manual entries in another category.');
   }
 
   const movement = await prisma.cashMovement.create({
