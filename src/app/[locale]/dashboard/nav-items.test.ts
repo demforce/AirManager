@@ -24,14 +24,14 @@ describe('visibleNavItems (Story 1.3 AC 2 — dashboard navigation by role)', ()
     );
   });
 
-  it('shows only self-service items for a pilot', () => {
+  it('shows only self-service items for a pilot (story 5.4: flights joins bookings, FR-17)', () => {
     const keys = visibleNavItems(actorWith(['PILOT'])).map((item) => item.key);
-    expect(keys).toEqual(['bookings']);
+    expect(keys.sort()).toEqual(['bookings', 'flights'].sort());
   });
 
   it('shows the union of items for a multi-role pilot+instructor actor', () => {
     const keys = visibleNavItems(actorWith(['PILOT', 'INSTRUCTOR'])).map((item) => item.key);
-    expect(keys.sort()).toEqual(['bookings', 'school'].sort());
+    expect(keys.sort()).toEqual(['bookings', 'flights', 'school'].sort());
   });
 
   it('hides settings and users-only areas from staff', () => {

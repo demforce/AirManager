@@ -179,7 +179,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     await loginExpectingDashboard(page, staffEmail, staffPassword);
 
     await page.goto('/it/dashboard/flights');
-    await page.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await page.getByLabel('Minuti', { exact: true }).fill('80');
     await page.getByRole('button', { name: 'Registra volo' }).click();
@@ -218,7 +218,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
 
     // Still authenticated as admin — creating the pilot/instructor logins above never touched this session cookie.
     await page.goto('/it/dashboard/flights');
-    await page.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await page.getByLabel('Istruttore').selectOption({ label: `${instructor.lastName} ${instructor.firstName}` });
     await page.getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
@@ -246,7 +246,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     const pilot = await createPilotWithLogin(page, 'PilotFlights789!');
 
     await page.goto('/it/dashboard/flights');
-    await page.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await page.getByRole('radio', { name: 'Contaore iniziale/finale' }).click();
     await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
@@ -263,7 +263,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     const pilot = await createPilotWithLogin(page, 'PilotFlightsNoRate1!');
 
     await page.goto('/it/dashboard/flights');
-    await page.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await page.getByLabel('Minuti', { exact: true }).fill('30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
@@ -286,7 +286,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  test('nav shows "Voli" for staff and hides it for a pilot', async ({ page }) => {
+  test('nav shows "Voli" for both staff and a pilot (story 5.4, FR-17: own-access registry)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilot = await createPilotWithLogin(page, 'PilotFlightsNav123!');
 
@@ -297,6 +297,6 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, 'PilotFlightsNav123!');
     const pilotNav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(pilotNav.getByRole('link', { name: 'Voli', exact: true })).toHaveCount(0);
+    await expect(pilotNav.getByRole('link', { name: 'Voli', exact: true })).toHaveAttribute('href', '/it/dashboard/flights');
   });
 });

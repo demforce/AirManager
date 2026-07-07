@@ -760,9 +760,9 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/flights',
-  summary: 'List registered flights (paginated, most recent first)',
+  summary: 'List flights (paginated, most recent first, own-access or all with filters)',
   description:
-    'Story 5.1, AC 1/2 — staff-only for now (no own-access/filters yet, story 5.4). `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column. Requires `flights.manage`.',
+    'Story 5.1/5.4, AC 1/2/3/4 — `flights.manage` (staff/admin) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`flightType`/`status`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard (CANCELLED included). A non-staff `personId` filter for anyone else answers 403. `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for staff.',
   tags: ['Flights'],
   security,
   request: { query: listFlightsQuerySchema },

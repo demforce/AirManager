@@ -4,7 +4,7 @@ baseline_commit: 6ab21fd
 
 # Story 5.4: Registro voli con filtri e permessi
 
-Status: ready-for-dev
+Status: ready-for-review
 
 ## Story
 
@@ -33,18 +33,18 @@ so that ognuno abbia il proprio storico (FR-17).
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Service (AC 1/2/3/4)
-  - [ ] `flights.service.ts#listFlights(actor, query)`: nuovo ramo permessi come da Contesto (manage → tutto; self.read → scope forzato OR own/instructor, personId null → pagina vuota); costruzione `where` AND-combinata dai filtri; guardia 403 sul filtro `personId` altrui per non-staff; `actorEmail` condizionale su `people.read` (il DTO/tipo diventa `actorEmail?`). Aggiornare doc-comment (la promessa 5.1 "5.4 estenderà" si realizza).
-  - [ ] `src/lib/schemas/flights.ts`: `listFlightsQuerySchema` esteso con i 6 filtri opzionali + refine date; registry aggiornato (parametri query documentati in OpenAPI) + coverage.
-- [ ] Task 2: UI (AC 1/2/3) — **skill `design-taste-frontend` + `ui-ux-pro-max` OBBLIGATORIE**, stile minimalista editoriale
-  - [ ] `/dashboard/flights/page.tsx`: rendere la pagina accessibile ai non-staff (oggi presumibilmente redirect/gate staff — verificare) caricando i dati scope-aware; passare al client component i flag (`canManage` da `flights.manage`, `canPickEntities` per i dropdown).
-  - [ ] `flights-manager.tsx` (o componente estratto se più pulito): barra filtri sobria sopra il registro — periodo (due date input), tipo (select), stato (select), e SOLO per staff velivolo (select da `listAircraft` incl. archiviati per consultare lo storico — decidere e documentare) e persona (select da `listPeople`); reset filtri; i filtri aggiornano la query e riportano a pagina 1; paginazione visibile (pattern `data-table`/liste esistenti). Non-staff: niente form registrazione, niente azioni annulla/correggi, titolo/descrizione adeguati ("I miei voli").
-  - [ ] Nav `flights` → `['flights.manage', 'self.read']`; aggiornare `nav-items.test.ts` e ogni asserzione e2e sulla nav del pilota.
-  - [ ] i18n simmetrici it/en (chiavi filtri, stato vuoto, titolo own-view).
-- [ ] Task 3: Test (AC tutti)
-  - [ ] Unit (`flights.service.test.ts`): pilota vede solo i propri (where con OR own/instructor — query-shape assertion); istruttore: OR include la gamba instructorProfile; staff: where dai filtri combinati (periodo gte/lte date-only, aircraftId, personId, flightType, status); non-staff + `personId` altrui → Forbidden; non-staff + proprio `personId` → ok; `personId` null + self.read → pagina vuota senza query; `actorEmail` presente per staff, assente per pilota; refine dateFrom>dateTo → errore Zod (422). Schema: enum invalidi → 422.
-  - [ ] e2e (`e2e/flight-log.spec.ts`): staff registra voli per DUE persone diverse (una è il pilota seed) su velivoli/tipi diversi; login pilota → nav "Voli" ora visibile, registro mostra SOLO i suoi (anche l'annullato se creato), niente form/azioni; filtro periodo/tipo/stato dal pilota funziona; staff: filtri per persona e velivolo restringono, combinazione periodo+tipo, paginazione (>1 pagina con pageSize piccolo via query param se supportato o creando abbastanza voli run-unique); pilota chiama `GET /api/v1/flights?personId=<altro>` → 403 envelope. Aggiornare asserzioni nav esistenti se rompono.
-  - [ ] Regressione: suite 5.1/5.2/5.3 verdi (l'unico contratto cambiato è l'apertura own-access + actorEmail condizionale).
+- [x] Task 1: Service (AC 1/2/3/4)
+  - [x] `flights.service.ts#listFlights(actor, query)`: nuovo ramo permessi come da Contesto (manage → tutto; self.read → scope forzato OR own/instructor, personId null → pagina vuota); costruzione `where` AND-combinata dai filtri; guardia 403 sul filtro `personId` altrui per non-staff; `actorEmail` condizionale su `people.read` (il DTO/tipo diventa `actorEmail?`). Aggiornato doc-comment (la promessa 5.1 "5.4 estenderà" si realizza).
+  - [x] `src/lib/schemas/flights.ts`: `listFlightsQuerySchema` esteso con i 6 filtri opzionali + refine date; registry aggiornato (parametri query documentati in OpenAPI) + coverage (test generici invariati, path esistente).
+- [x] Task 2: UI (AC 1/2/3) — **skill `design-taste-frontend` + `ui-ux-pro-max` OBBLIGATORIE**, stile minimalista editoriale
+  - [x] `/dashboard/flights/page.tsx`: pagina accessibile a ogni ruolo (`canManage` da `flights.manage`, redirect difensivo solo se manca anche `self.read`); dati caricati scope-aware (`listFlights` con filtri sanificati dai `searchParams`; `listAircraft`/`listPeople` con `includeArchived: true`, solo se `canManage`, per alimentare SIA i picker della barra filtri SIA — filtrati in-memory su `archivedAt`/`profiles` — quelli invariati del form di registrazione).
+  - [x] `flights-manager.tsx`: nuovo componente `FilterBar` — periodo (due date input), tipo (select), stato (select), e SOLO per staff velivolo/persona (select da `listAircraft`/`listPeople`, incl. archiviati — decisione presa e documentata nel doc-comment: "consultare lo storico"); reset filtri (`Azzera filtri`, mostrato solo con filtri attivi); ogni cambio filtro naviga subito (URL-driven, pattern `CashRegister`) e riporta a pagina 1 (mai `page` nel query string costruito); paginazione Prev/Next (pattern `FinancePage`, resa dalla server page, non dal client component). Non-staff: niente form registrazione, niente colonna/azioni annulla-correggi, titolo/descrizione "I miei voli" (chiavi `titleOwn`/`descriptionOwn`).
+  - [x] Nav `flights` → `['flights.manage', 'self.read']`; aggiornati `nav-items.test.ts` (pilota/pilota+istruttore ora includono `flights`) e l'asserzione e2e sulla nav del pilota in `e2e/flights.spec.ts`.
+  - [x] i18n simmetrici it/en (`filters.*`, `titleOwn`/`descriptionOwn`; 667 chiavi ciascuno, verificato via script Node).
+- [x] Task 3: Test (AC tutti)
+  - [x] Unit (`flights.service.test.ts`): pilota vede solo i propri (where con OR own/instructor — query-shape assertion); istruttore: OR include la gamba instructorProfile; staff: where dai filtri combinati (periodo gte/lte date-only, aircraftId, personId, flightType, status) + staff senza scope OR; non-staff + `personId` altrui → Forbidden, nessuna query; non-staff + proprio `personId` → ok (redundante ma lecito); `personId` null + self.read → pagina vuota senza query/transazione; `actorEmail` presente per staff, assente per pilota; attore senza alcun permesso → Forbidden. Schema (`listFlightsQuerySchema`): tutti i filtri combinati, dateFrom>dateTo → 422, dateFrom===dateTo ok, range aperto ok, data malformata/enum invalidi → 422.
+  - [x] e2e (`e2e/flight-log.spec.ts`, 4 test): pilota vede SOLO i propri voli (incl. un annullato), niente form/azioni/picker staff, filtri periodo/tipo/stato propri funzionano; non-staff `personId` altrui → 403 envelope (proprio id → 200); staff: filtri velivolo/persona/tipo/periodo (combinati) restringono su 2 persone/2 velivoli/2 tipi/2 periodi; paginazione (21 voli per una persona filtrata, pageSize 20 → "1 / 2", Next/Prev funzionanti). Aggiornata l'asserzione nav esistente in `flights.spec.ts` (pilota ora vede "Voli").
+  - [x] Regressione: suite 5.1/5.2/5.3 verdi (l'unico contratto cambiato è l'apertura own-access + actorEmail condizionale) — fallout reale trovato e corretto: `getByLabel('Velivolo')` non era più univoco su `/dashboard/flights` (form + nuova barra filtri condividono l'etichetta) → scoping a `getByTestId('flight-form').getByLabel(...)` in `flights.spec.ts`/`flight-reversal.spec.ts`/`package-consumption.spec.ts` (9 occorrenze).
 
 ## Dev Notes
 
@@ -68,13 +68,41 @@ so that ognuno abbia il proprio storico (FR-17).
 
 ### Agent Model Used
 
-_(da compilare dal dev agent)_
+Sonnet 5 (single dev agent, xhigh)
 
 ### Debug Log References
 
+- Trovato durante la verifica interattiva (Playwright MCP): il pattern esistente di `CashRegister` di avvolgere il `<select>` DENTRO il proprio `<label>` (senza `htmlFor`/id separati) fa sì che il nome accessibile calcolato dal browser includa il `textContent` di TUTTE le `<option>` annidate — su `/dashboard/flights` questo ha fatto sì che il filtro "Persona" (le cui opzioni includono nomi di persone run-unique creati da altri spec e2e nello stesso DB condiviso) matchasse ACCIDENTALMENTE `page.getByLabel('Istruttore')` di un test preesistente, perché una delle opzioni conteneva la sottostringa "Istruttore" (un nome sintetico tipo `Istruttore-<suffix>` creato da `createInstructorWithRate` in un'altra spec). Riprodotto e verificato via `browser_evaluate` (confrontando `label[for=...].textContent` prima/dopo il fix). Corretto smontando l'annidamento nella `FilterBar` di questa story: `<label htmlFor>` come FRATELLO del controllo, mai wrapper — stesso pattern già usato (correttamente) da `RegisterFlightForm`. Non ho toccato `CashRegister` (stesso difetto latente, ma fuori scope di questa story: nessuna collisione osservata lì).
+- Verifica interattiva end-to-end via Playwright MCP (Chromium headless, dev server + Mailpit locali) prima di scrivere gli e2e, in entrambi i ruoli: staff (admin) — form di registrazione invariato, barra filtri completa (Dal/Al/Velivolo/Persona/Tipo/Stato), filtro persona/stato che restringe correttamente, "Azzera filtri", annullamento volo con badge "Annullato" invariato; pilota (login separato) — titolo "I miei voli"/"My flights" (`/en` verificato per simmetria), SOLO Dal/Al/Tipo/Stato nella barra filtri (niente Velivolo/Persona), registro con SOLO il proprio volo, niente form né colonna Azioni, filtro stato/tipo funzionante, un `?personId=<altro>` manomesso nell'URL viene ignorato lato pagina (nessun crash) mentre la stessa chiamata diretta a `GET /api/v1/flights?personId=<altro>` risponde 403 `FORBIDDEN`. Paginazione verificata creando 21 voli per una persona via API e filtrando: "1 / 2", Next → "2 / 2" con 1 riga, Prev torna a "1 / 2".
+- `npx playwright test` (suite intera, DB fresco): prima esecuzione post-fix-label, 91/96 poi 92/96 poi 92/96 a seconda del run — i fallimenti (mai la stessa spec due volte di fila, mai `flight-log.spec.ts`) sono tutti in `people-management.spec.ts` (2 test, estraneo a questa story) e a rotazione in `flights.spec.ts`/`flight-reversal.spec.ts`/`package-consumption.spec.ts` (1-2 test), sempre per timeout/elemento-non-trovato sotto il carico di ~96 test in parallelo sullo stesso dev server/DB — stesso pattern di flakiness "sotto carico" già documentato dalle story precedenti (5.1/5.3). Ogni spec fallita è stata ri-eseguita DA SOLA su DB fresco (`npx playwright test e2e/<file>.spec.ts`) ed è risultata **verde al 100%** (`flights.spec.ts` 6/6, `flight-reversal.spec.ts` 2/2, `people-management.spec.ts` 6/6, `flight-log.spec.ts` 4/4) — nessuna regressione reale, solo contesa di risorse sotto carico massimo.
+
 ### Completion Notes List
 
+- Tutti gli AC (1-4) implementati e verificati: `listFlights` biforca su `flights.manage` (tutto + ogni filtro, `actorEmail` sempre) vs `self.read` (scope FORZATO `OR: [{personId}, {instructorProfile:{personId}}]`, `actorEmail` mai, ANNULLATI inclusi); guardia 403 sul filtro `personId` altrui PRIMA di ogni query; `personId` null con solo `self.read` → pagina vuota SENZA toccare `Flight`/aprire transazione; filtri (`dateFrom`/`dateTo` via `parseDateOnlyUtc`, `aircraftId`, `personId`, `flightType`, `status`) AND-combinati nel `where`, mai un ramo separato dallo scope own-access (si sommano).
+- `toListItem` ora richiede esplicitamente `includeActorEmail: boolean` (nessun default silenzioso) — i tre chiamanti staff-only (`registerFlight`/`cancelFlight`/`correctFlight`) passano `true` esplicito, `listFlights` passa `hasPermission(actor, 'people.read')`.
+- Nav (`nav-items.ts`): `flights` → `['flights.manage', 'self.read']` (union OR — ogni ruolo ha `self.read`, quindi la voce compare per tutti, VOLUTO da FR-17). `nav-items.test.ts` aggiornato (pilota ora vede `['bookings', 'flights']`; pilota+istruttore `['bookings', 'flights', 'school']`).
+- Pagina `/dashboard/flights`: le letture aircraft/people restano SEQUENZIALI (mai `Promise.all`, stessa cautela 5.1 sul client `pg` condiviso) e avvengono SOLO se `canManage` (un non-staff non tocca `listAircraft`/`listPeople`, che richiederebbero permessi che non ha); `aircraftId`/`personId` dall'URL sono forwarded a `listFlights` SOLO se `canManage` — un non-staff con un `?personId=` manomesso nell'URL lo vede semplicemente ignorato dalla pagina (mai un crash), mentre il servizio resta comunque il guardiano reale per chi chiama l'API direttamente (AD-5). `FlightsManager` riceve un `key` derivato da `{page, ...filterQuery}`: forza un remount pulito ad ogni cambio filtro/pagina, cosicché lo stato locale ottimistico (righe da registra/annulla/correggi) riparta sempre dai dati freschi del server invece di restare "sporco" da una pagina/filtro precedente — stesso idioma di remount-per-identità già usato da `RegisterFlightForm`.
+- Picker della barra filtri (solo staff): `aircraftFilterOptions`/`personFilterOptions` includono ARCHIVIATI (decisione presa e documentata: consultare lo storico) — derivati dalla STESSA chiamata `listAircraft`/`listPeople` (`includeArchived: true`) che il form di registrazione filtra poi in-memory su `archivedAt === null` (+ profili per persona/istruttore) per i SUOI picker attivi-soli, invariati da 5.1 — nessuna query aggiuntiva.
+- `actorEmail` diventato opzionale nel DTO/schema (`flightListItemSchema.actorEmail: z.string().optional()`) — nessun consumer UI esistente lo leggeva (mai renderizzato in tabella), quindi zero fallout lato client.
+- UI: skill `design-taste-frontend` interrogata — esplicitamente fuori scope per una pagina di dashboard interna (stesso precedente di 5.1/5.2/5.3); consultata anche `ui-ux-pro-max` (query su filtri/tabelle/pattern enterprise) che conferma lo stile minimalista/Swiss già in uso per dashboard essere la scelta giusta. Nessun sistema di design nuovo introdotto: la barra filtri riusa `inputClasses` in stile coerente con gli altri pannelli (`CashRegister`), pulsante "Azzera filtri" mostrato solo quando c'è almeno un filtro attivo.
+- Deviazione consapevole rispetto al pattern `CashRegister` copiato inizialmente: le etichette della barra filtri NON avvolgono più i rispettivi `<select>`/`<input>` (label e controllo sono fratelli con `htmlFor`/`id`) — vedi Debug Log References per il bug di accessibilità/testabilità che questo evita.
+- Fallout e2e onestamente documentato: 9 occorrenze di `page.getByLabel('Velivolo')` non scoped in `flights.spec.ts`/`flight-reversal.spec.ts`/`package-consumption.spec.ts` sono diventate ambigue (la nuova barra filtri ha anch'essa un campo "Velivolo") — corrette con `page.getByTestId('flight-form').getByLabel('Velivolo')`, nessun'altra asserzione indebolita.
+
 ### File List
+
+- `src/lib/schemas/flights.ts` (`listFlightsQuerySchema` con i 6 filtri + refine date; `flightListItemSchema.actorEmail` opzionale)
+- `src/lib/schemas/registry.ts` (descrizione `GET /api/v1/flights` aggiornata)
+- `src/server/services/flights.service.ts` (`listFlights` own-access + filtri; `toListItem(flight, includeActorEmail)`; `FlightListItem.actorEmail` opzionale)
+- `src/server/services/flights.service.test.ts` (nuova suite `listFlights` own-access/filtri; nuova suite `listFlightsQuerySchema`)
+- `src/app/[locale]/dashboard/nav-items.ts` (`flights` → `['flights.manage', 'self.read']`)
+- `src/app/[locale]/dashboard/nav-items.test.ts` (pilota/pilota+istruttore vedono `flights`)
+- `src/app/[locale]/dashboard/flights/page.tsx` (query filtri da searchParams, dati scope-aware, paginazione, titolo/descrizione own-view)
+- `src/app/[locale]/dashboard/flights/flights-manager.tsx` (`FilterBar`, `canManage`, gating form/azioni/colonna, remount via `key`)
+- `messages/it.json`, `messages/en.json` (`FlightsPage.filters.*`, `titleOwn`/`descriptionOwn`, `list.heading` rinominato)
+- `e2e/flight-log.spec.ts` (nuovo — 4 test, story 5.4)
+- `e2e/flights.spec.ts` (asserzione nav pilota aggiornata; scoping `getByLabel('Velivolo')`)
+- `e2e/flight-reversal.spec.ts` (scoping `getByLabel('Velivolo')`)
+- `e2e/package-consumption.spec.ts` (scoping `getByLabel('Velivolo')`)
 
 ## Review Record
 
@@ -83,3 +111,4 @@ _(da compilare dopo la review)_
 ## Change Log
 
 - 2026-07-07: Story file created (Fable 5 main session), ready-for-dev.
+- 2026-07-07: Implemented (Sonnet 5 single dev agent, xhigh) — all tasks complete, all gates green (e2e: 3 full-suite runs, only known-flaky specs under full parallel load, all 100% green in isolation on a fresh DB). Status → ready-for-review.

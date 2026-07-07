@@ -1,35 +1,72 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import type { FlightStatusDto, FlightTypeDto } from '@/lib/schemas/flights';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listAircraft } from '@/server/services/aircraft.service';
 import { listFlights } from '@/server/services/flights.service';
 import { listPeople } from '@/server/services/people.service';
-import { FlightsManager } from './flights-manager';
+import { FlightsManager, type FlightsFilters } from './flights-manager';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{
+    page?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    aircraftId?: string;
+    personId?: string;
+    flightType?: string;
+    status?: string;
+  }>;
 };
 
 /** How many candidates the aircraft/person/instructor pickers load — same "small admin-managed list" cap as `packages/page.tsx`'s `activeAircraftResult`. */
 const OPTIONS_PAGE_SIZE = 100;
 
-/** How many recent flights the landing list shows — no pagination yet (Dev Notes: story 5.4 owns the full filterable registry). */
-const RECENT_FLIGHTS_PAGE_SIZE = 20;
+/** The registry's own page size (story 5.4, NFR-6) — same convention as `FinancePage`'s cash register. */
+const FLIGHTS_PAGE_SIZE = 20;
+
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const FLIGHT_TYPES: readonly FlightTypeDto[] = ['PRIVATE', 'SCHOOL', 'OTHER'];
+const FLIGHT_STATUSES: readonly FlightStatusDto[] = ['REGISTERED', 'CANCELLED'];
+
+/** Hand-edited URL defense: only a well-formed `YYYY-MM-DD` reaches the service (same pattern as `FinancePage`'s `sanitizeDateParam`). */
+function sanitizeDateParam(value: string | undefined): string | undefined {
+  return value && DATE_ONLY_PATTERN.test(value) ? value : undefined;
+}
+
+function sanitizeFlightType(value: string | undefined): FlightTypeDto | undefined {
+  return value && (FLIGHT_TYPES as readonly string[]).includes(value) ? (value as FlightTypeDto) : undefined;
+}
+
+function sanitizeFlightStatus(value: string | undefined): FlightStatusDto | undefined {
+  return value && (FLIGHT_STATUSES as readonly string[]).includes(value) ? (value as FlightStatusDto) : undefined;
+}
 
 /**
- * Flight logging with automatic charges (epic 5, story 5.1, Task 5; FR-9/
- * FR-14/FR-15) — `flights.manage` (staff/admin) only; `hasPermission` here
- * only decides whether to *redirect* (AD-5: `registerFlight`/`listFlights`
- * re-check their own `authorize()` regardless). Only ACTIVE aircraft and
- * people with an active pilot/student profile are offered in the pickers
- * (`PersonListItem.profiles`, story 2.2); the instructor picker is people
- * with an active instructor profile — the service still re-validates all of
- * this server-side (AC 3).
+ * Flight registry (epic 5, story 5.1 Task 5; story 5.4 Task 2, AC 1/2/3;
+ * FR-9/FR-14/FR-15/FR-17) — two faces of the SAME page, decided by
+ * `flights.manage`:
+ *
+ * - **Staff/admin** (`canManage`): the full manager unchanged from 5.1/5.3
+ *   (the "Registra volo" form, per-row Annulla/Correggi) PLUS the new filter
+ *   bar (period/velivolo/persona/tipo/stato).
+ * - **Everyone else** (own-access, `self.read` — every role holds it, so the
+ *   nav item now opens to all): a READ-ONLY registry of just the actor's own
+ *   flights (as the flight's person OR its instructor), with a filter bar
+ *   limited to period/tipo/stato (Contesto: no `listAircraft`/`listPeople`
+ *   picker to source the other two from without a staff-only endpoint).
+ *
+ * `hasPermission` here only decides what to RENDER (AD-5) — `listFlights`
+ * re-authorizes and re-scopes regardless, so a hand-edited `?personId=`/
+ * `?aircraftId=` from a non-staff session is simply dropped before it ever
+ * reaches the service (never forwarded for a non-`canManage` actor).
  */
-export default async function FlightsPage({ params }: PageProps) {
+export default async function FlightsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
+  const sp = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -37,36 +74,107 @@ export default async function FlightsPage({ params }: PageProps) {
     redirect({ href: '/login', locale });
     return;
   }
-  if (!hasPermission(actor, 'flights.manage')) {
+  const canManage = hasPermission(actor, 'flights.manage');
+  // Defensive only (story 5.4: every role holds `self.read`) — an actor with
+  // neither permission (e.g. no roles at all) never reaches `listFlights`,
+  // which would otherwise answer 403 (AD-5 is the real guardian either way).
+  if (!canManage && !hasPermission(actor, 'self.read')) {
     redirect({ href: '/dashboard', locale });
     return;
   }
 
-  // Sequential, not `Promise.all` (unlike `AircraftPage`'s per-row rate
-  // lookups): each of these already opens its own `$transaction` internally
-  // (`listAircraft`/`listFlights`), and firing three concurrently against the
-  // shared driver-adapter Prisma client triggered a `pg` "client is already
-  // executing a query" deprecation warning under load — sequential awaits
-  // are the same conservative pattern most other dashboard pages already use.
-  const aircraftResult = await listAircraft(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: false });
-  const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: false });
-  const flightsResult = await listFlights(actor, { page: 1, pageSize: RECENT_FLIGHTS_PAGE_SIZE });
+  const dateFrom = sanitizeDateParam(sp.dateFrom);
+  const dateTo = sanitizeDateParam(sp.dateTo);
+  const flightType = sanitizeFlightType(sp.flightType);
+  const status = sanitizeFlightStatus(sp.status);
+  // Own-access actors have no picker to source these from (Dev Notes) — a
+  // hand-edited `?aircraftId=`/`?personId=` on their URL is simply dropped
+  // here, never forwarded to `listFlights` (which would 403 a `personId` for
+  // anyone but themselves, AC 4 — this page never lets that happen by
+  // accident).
+  const aircraftId = canManage ? (sp.aircraftId || undefined) : undefined;
+  const personId = canManage ? (sp.personId || undefined) : undefined;
 
-  const aircraftOptions = aircraftResult.items.map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration }));
-  const personOptions = peopleResult.items
-    .filter((person) => person.profiles.pilot || person.profiles.student)
-    .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
-  const instructorOptions = peopleResult.items
-    .filter((person) => person.profiles.instructor)
-    .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+  // Sequential, not `Promise.all` (5.1 Debug Log: concurrent `$transaction`s
+  // on the shared driver-adapter Prisma client trigger a `pg` "client is
+  // already executing a query" warning under load) — aircraft/people (staff
+  // only) load first, flights last, same order as 5.1.
+  let aircraftOptions: { id: string; registration: string }[] = [];
+  let personOptions: { id: string; firstName: string; lastName: string }[] = [];
+  let instructorOptions: { id: string; firstName: string; lastName: string }[] = [];
+  let aircraftFilterOptions: { id: string; registration: string; archived: boolean }[] = [];
+  let personFilterOptions: { id: string; firstName: string; lastName: string; archived: boolean }[] = [];
+
+  if (canManage) {
+    // `includeArchived: true` on BOTH: the filter pickers need the full
+    // history (Dev Notes: "incl. archiviati per consultare lo storico") —
+    // the registration form's own pickers below filter back down to active
+    // only, so nothing archived is ever offered there (unchanged from 5.1).
+    const aircraftResult = await listAircraft(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: true });
+    const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: true });
+
+    aircraftOptions = aircraftResult.items
+      .filter((aircraft) => aircraft.archivedAt === null)
+      .map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration }));
+    aircraftFilterOptions = aircraftResult.items.map((aircraft) => ({
+      id: aircraft.id,
+      registration: aircraft.registration,
+      archived: aircraft.archivedAt !== null,
+    }));
+    personOptions = peopleResult.items
+      .filter((person) => person.archivedAt === null && (person.profiles.pilot || person.profiles.student))
+      .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+    instructorOptions = peopleResult.items
+      .filter((person) => person.archivedAt === null && person.profiles.instructor)
+      .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+    personFilterOptions = peopleResult.items.map((person) => ({
+      id: person.id,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      archived: person.archivedAt !== null,
+    }));
+  }
+
+  const flightsQuery = { pageSize: FLIGHTS_PAGE_SIZE, dateFrom, dateTo, aircraftId, personId, flightType, status };
+  let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
+  let flightsResult = await listFlights(actor, { ...flightsQuery, page });
+  // Clamp an out-of-range ?page to the last real page (same pattern as `FinancePage`).
+  const lastPage = Math.max(1, Math.ceil(flightsResult.total / FLIGHTS_PAGE_SIZE));
+  if (page > lastPage) {
+    page = lastPage;
+    flightsResult = await listFlights(actor, { ...flightsQuery, page });
+  }
+  const totalPages = Math.max(1, Math.ceil(flightsResult.total / FLIGHTS_PAGE_SIZE));
+
   // `createdAt`/`cancelledAt` serialized to ISO (AD-8) — the service's `Date`
-  // cannot cross the server/client boundary as-is (same pattern as
-  // `AircraftPage`'s `archivedAt`; story 5.3 adds `cancelledAt`).
+  // cannot cross the server/client boundary as-is (same pattern as 5.1/5.3).
   const initialFlights = flightsResult.items.map((flight) => ({
     ...flight,
     createdAt: flight.createdAt.toISOString(),
     cancelledAt: flight.cancelledAt ? flight.cancelledAt.toISOString() : null,
   }));
+
+  const filters: FlightsFilters = {
+    dateFrom: dateFrom ?? '',
+    dateTo: dateTo ?? '',
+    aircraftId: aircraftId ?? '',
+    personId: personId ?? '',
+    flightType: flightType ?? '',
+    status: status ?? '',
+  };
+
+  const filterQuery = {
+    ...(dateFrom ? { dateFrom } : {}),
+    ...(dateTo ? { dateTo } : {}),
+    ...(aircraftId ? { aircraftId } : {}),
+    ...(personId ? { personId } : {}),
+    ...(flightType ? { flightType } : {}),
+    ...(status ? { status } : {}),
+  };
+
+  function pageHref(targetPage: number) {
+    return { pathname: '/dashboard/flights', query: { page: targetPage, ...filterQuery } };
+  }
 
   const t = await getTranslations('FlightsPage');
 
@@ -79,9 +187,9 @@ export default async function FlightsPage({ params }: PageProps) {
               {t('kicker')}
             </span>
             <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
-              {t('title')}
+              {canManage ? t('title') : t('titleOwn')}
             </h1>
-            <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
+            <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{canManage ? t('description') : t('descriptionOwn')}</p>
           </div>
           <Link
             href="/dashboard"
@@ -94,11 +202,23 @@ export default async function FlightsPage({ params }: PageProps) {
 
         <div className="mt-10">
           <FlightsManager
+            // Remounts on every filter/page navigation (story 5.4): the
+            // parent server component re-queries and passes fresh
+            // `initialFlights`, and this `key` forces the client component's
+            // OWN local state (the optimistic register/cancel/correct
+            // patches) to start clean from it rather than keep stale rows
+            // from a previous filter/page (same remount-on-identity-change
+            // idiom already used by `RegisterFlightForm`'s own `key`).
+            key={JSON.stringify({ page, ...filterQuery })}
+            canManage={canManage}
             aircraftOptions={aircraftOptions}
             personOptions={personOptions}
             instructorOptions={instructorOptions}
+            aircraftFilterOptions={aircraftFilterOptions}
+            personFilterOptions={personFilterOptions}
             initialFlights={initialFlights}
             moneyLocale={locale === 'en' ? 'en' : 'it'}
+            filters={filters}
             labels={{
               form: {
                 title: t('form.title'),
@@ -201,8 +321,54 @@ export default async function FlightsPage({ params }: PageProps) {
                 exit: t('correctPanel.exit'),
                 conflictError: t('correctPanel.conflictError'),
               },
+              filters: {
+                dateFrom: t('filters.dateFrom'),
+                dateTo: t('filters.dateTo'),
+                aircraft: t('filters.aircraft'),
+                allAircraft: t('filters.allAircraft'),
+                person: t('filters.person'),
+                allPeople: t('filters.allPeople'),
+                flightType: t('filters.flightType'),
+                allTypes: t('filters.allTypes'),
+                status: t('filters.status'),
+                allStatuses: t('filters.allStatuses'),
+                statusOptions: {
+                  registered: t('filters.statusOptions.registered'),
+                  cancelled: t('filters.statusOptions.cancelled'),
+                },
+                archivedSuffix: t('filters.archivedSuffix'),
+                reset: t('filters.reset'),
+              },
             }}
           />
+
+          {totalPages > 1 ? (
+            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
+              <Link
+                href={pageHref(page - 1)}
+                locale={locale as AppLocale}
+                aria-disabled={page <= 1}
+                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
+                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                }`}
+              >
+                ←
+              </Link>
+              <span data-testid="flight-pagination-status">
+                {page} / {totalPages}
+              </span>
+              <Link
+                href={pageHref(page + 1)}
+                locale={locale as AppLocale}
+                aria-disabled={page >= totalPages}
+                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
+                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                }`}
+              >
+                →
+              </Link>
+            </nav>
+          ) : null}
         </div>
       </div>
     </main>

@@ -643,6 +643,8 @@
     "kicker": "Voli",
     "title": "Voli",
     "description": "Registra un volo e vedi l'addebito su velivolo e, se presente, istruttore generato automaticamente.",
+    "titleOwn": "I miei voli",
+    "descriptionOwn": "Il tuo registro voli personale, storico completo incluso.",
     "backToDashboard": "Torna alla dashboard",
     "form": {
       "title": "Registra volo",
@@ -700,7 +702,7 @@
       "newBalance": "Nuovo saldo"
     },
     "list": {
-      "heading": "Voli recenti",
+      "heading": "Registro voli",
       "empty": "Nessun volo registrato.",
       "table": {
         "date": "Data",
@@ -741,6 +743,24 @@
       "submit": "Conferma correzione",
       "exit": "Annulla correzione",
       "conflictError": "Questo volo è già stato annullato."
+    },
+    "filters": {
+      "dateFrom": "Dal",
+      "dateTo": "Al",
+      "aircraft": "Velivolo",
+      "allAircraft": "Tutti i velivoli",
+      "person": "Persona",
+      "allPeople": "Tutte le persone",
+      "flightType": "Tipo",
+      "allTypes": "Tutti i tipi",
+      "status": "Stato",
+      "allStatuses": "Tutti gli stati",
+      "statusOptions": {
+        "registered": "Registrato",
+        "cancelled": "Annullato"
+      },
+      "archivedSuffix": " (Archiviato)",
+      "reset": "Azzera filtri"
     }
   },
   "UsersPage": {

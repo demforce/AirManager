@@ -4,12 +4,38 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { useRouter } from '@/i18n/navigation';
 import { formatCents } from '@/lib/money';
-import { flightTypeSchema, type FlightListItemDto, type RegisterFlightResponseDto } from '@/lib/schemas/flights';
+import {
+  flightTypeSchema,
+  type FlightListItemDto,
+  type FlightStatusDto,
+  type FlightTypeDto,
+  type RegisterFlightResponseDto,
+} from '@/lib/schemas/flights';
 import { formatMinutes } from '@/lib/time';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type AircraftOption = { id: string; registration: string };
+/** Filter-bar picker option (story 5.4) — `archived` drives the "(Archiviato)" suffix (Dev Notes: these pickers include archived entities to consult the storico, unlike the registration form's active-only ones). */
+type AircraftFilterOption = AircraftOption & { archived: boolean };
+type PersonFilterOption = PersonOption & { archived: boolean };
+
+/**
+ * The filter bar's current values (story 5.4, AC 1/2/3), always strings
+ * (`''` = unset) so every `<select>`/`<input type="date">` stays a plain
+ * controlled element — converted to real query params only in `navigate`.
+ * `aircraftId`/`personId` are meaningless for a non-staff actor (Dev Notes:
+ * no picker to source them from) but the shape stays uniform either way.
+ */
+export type FlightsFilters = {
+  dateFrom: string;
+  dateTo: string;
+  aircraftId: string;
+  personId: string;
+  flightType: '' | FlightTypeDto;
+  status: '' | FlightStatusDto;
+};
 
 export type FlightsManagerLabels = {
   form: {
@@ -110,14 +136,39 @@ export type FlightsManagerLabels = {
     exit: string;
     conflictError: string;
   };
+  /** Story 5.4 (AC 1/2/3) — the filter bar above the registry; `aircraft`/`person` and their "all" options are staff-only (Contesto: no picker to source them from for a non-staff actor). */
+  filters: {
+    dateFrom: string;
+    dateTo: string;
+    aircraft: string;
+    allAircraft: string;
+    person: string;
+    allPeople: string;
+    flightType: string;
+    allTypes: string;
+    status: string;
+    allStatuses: string;
+    statusOptions: { registered: string; cancelled: string };
+    /** Appended to an archived aircraft/person's label in the filter pickers (e.g. " (Archiviato)"). */
+    archivedSuffix: string;
+    reset: string;
+  };
 };
 
 type FlightsManagerProps = {
+  /** Story 5.4 — `flights.manage`: full manager (form + actions + every filter). Otherwise: the own-access read-only registry (period/type/status only). */
+  canManage: boolean;
   aircraftOptions: AircraftOption[];
   personOptions: PersonOption[];
   instructorOptions: PersonOption[];
+  /** Filter-bar aircraft picker (staff only) — includes archived aircraft (Dev Notes: consulting the storico). */
+  aircraftFilterOptions: AircraftFilterOption[];
+  /** Filter-bar person picker (staff only) — includes archived people, same rationale. */
+  personFilterOptions: PersonFilterOption[];
   initialFlights: FlightListItemDto[];
   moneyLocale: 'it' | 'en';
+  /** The filter values the current page was rendered with (from the URL, story 5.4) — the bar's initial/controlled state. */
+  filters: FlightsFilters;
   labels: FlightsManagerLabels;
 };
 
@@ -144,15 +195,29 @@ function flightTypeLabel(type: FlightListItemDto['flightType'], labels: FlightsM
 }
 
 /**
- * Flight logging with automatic charges (story 5.1, Task 5, AC 1/2): a
- * "Registra volo" form (always visible — this whole page already requires
- * `flights.manage`, unlike `PackagesPanel`'s conditional `canSell`) plus a
- * "Voli recenti" list below it (first page only, `GET /api/v1/flights` —
- * story 5.4 owns filters/pagination). On success the form's response
- * (`RegisterFlightResponseDto`) drives BOTH the addebito breakdown panel and
- * a prepend onto the recent-flights list — no second round-trip needed
- * (same "the POST already returns everything the UI needs" pattern as
- * `sellPackage`/`recordTopUp`).
+ * Flight logging with automatic charges (story 5.1, Task 5, AC 1/2), extended
+ * to a role-scoped registry with filters (story 5.4, AC 1/2/3/4; FR-17):
+ * `canManage` (staff/admin, `flights.manage`) gets the full manager — a
+ * "Registra volo" form, the filter bar with every filter (period, velivolo,
+ * persona, tipo, stato) and per-row "Annulla"/"Correggi" actions. Everyone
+ * else (own-access, `self.read`) gets a READ-ONLY registry of just their own
+ * flights (as the flight's person OR its instructor, `flights.service.ts`'s
+ * own-access scope) — no form, no actions, and a filter bar limited to
+ * period/tipo/stato (Contesto: no aircraft/person picker to source options
+ * from without a staff-only endpoint). The page component is the real
+ * guardian of what data arrives here (AD-5, `listFlights`'s own-access
+ * branch) — `canManage` only decides what to RENDER.
+ *
+ * The registry itself is paginated server-side (NFR-6) — the parent server
+ * component re-renders this whole client component with fresh `key`/props on
+ * every filter or page change (a hand-edited URL, a filter select, or a
+ * Prev/Next click all just navigate), so `flights`'s local state below always
+ * starts from the CURRENT page's data.
+ *
+ * On a successful registration the form's response (`RegisterFlightResponseDto`)
+ * drives BOTH the addebito breakdown panel and a prepend onto the list — no
+ * second round-trip needed (same "the POST already returns everything the UI
+ * needs" pattern as `sellPackage`/`recordTopUp`).
  *
  * Story 5.3 (AC 1/2): the same form doubles as the "Correggi" editor — when
  * a REGISTERED row's "Correggi" action is clicked, the form remounts
@@ -169,18 +234,55 @@ function flightTypeLabel(type: FlightListItemDto['flightType'], labels: FlightsM
  * DB-authoritative timestamp).
  */
 export function FlightsManager({
+  canManage,
   aircraftOptions,
   personOptions,
   instructorOptions,
+  aircraftFilterOptions,
+  personFilterOptions,
   initialFlights,
   moneyLocale,
+  filters: initialFilters,
   labels,
 }: FlightsManagerProps) {
+  const router = useRouter();
   const [flights, setFlights] = useState<FlightListItemDto[]>(initialFlights);
   const [lastResult, setLastResult] = useState<RegisterFlightResponseDto | null>(null);
   const [correctingFlight, setCorrectingFlight] = useState<FlightListItemDto | null>(null);
   const [cancellingFlight, setCancellingFlight] = useState<FlightListItemDto | null>(null);
   const [cancelFeedback, setCancelFeedback] = useState<string | null>(null);
+  const [filters, setFilters] = useState<FlightsFilters>(initialFilters);
+
+  /**
+   * Pushes the new filter values into the URL (dropping `page` — any filter
+   * change goes back to page 1, same behavior as `CashRegister`'s own
+   * `navigate`). The parent server page re-reads `searchParams`, re-queries
+   * `listFlights` with the new filters, and re-renders this component with a
+   * fresh `key` (`page.tsx`), so there is nothing else to sync here.
+   */
+  function navigate(next: FlightsFilters): void {
+    const params = new URLSearchParams();
+    if (next.dateFrom) params.set('dateFrom', next.dateFrom);
+    if (next.dateTo) params.set('dateTo', next.dateTo);
+    if (canManage && next.aircraftId) params.set('aircraftId', next.aircraftId);
+    if (canManage && next.personId) params.set('personId', next.personId);
+    if (next.flightType) params.set('flightType', next.flightType);
+    if (next.status) params.set('status', next.status);
+    const search = params.toString();
+    router.push(`/dashboard/flights${search ? `?${search}` : ''}`);
+  }
+
+  function handleFilterChange(patch: Partial<FlightsFilters>): void {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    navigate(next);
+  }
+
+  function handleResetFilters(): void {
+    const cleared: FlightsFilters = { dateFrom: '', dateTo: '', aircraftId: '', personId: '', flightType: '', status: '' };
+    setFilters(cleared);
+    navigate(cleared);
+  }
 
   function handleRegistered(result: RegisterFlightResponseDto): void {
     setLastResult(result);
@@ -214,95 +316,97 @@ export function FlightsManager({
 
   return (
     <div className="space-y-10">
-      <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-        <RegisterFlightForm
-          key={correctingFlight?.id ?? 'register'}
-          aircraftOptions={aircraftOptions}
-          personOptions={personOptions}
-          instructorOptions={instructorOptions}
-          labels={labels.form}
-          correctLabels={labels.correctPanel}
-          correctingFlight={correctingFlight}
-          onExitCorrection={() => setCorrectingFlight(null)}
-          onSuccess={handleRegistered}
-          onCorrected={handleCorrected}
-        />
+      {canManage ? (
+        <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+          <RegisterFlightForm
+            key={correctingFlight?.id ?? 'register'}
+            aircraftOptions={aircraftOptions}
+            personOptions={personOptions}
+            instructorOptions={instructorOptions}
+            labels={labels.form}
+            correctLabels={labels.correctPanel}
+            correctingFlight={correctingFlight}
+            onExitCorrection={() => setCorrectingFlight(null)}
+            onSuccess={handleRegistered}
+            onCorrected={handleCorrected}
+          />
 
-        {lastResult ? (
-          <div data-testid="flight-result-panel" className="mt-6 rounded-[8px] border border-[#EAEAEA] bg-[#F7F6F3] p-4 text-sm">
-            <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.result.title}</h4>
-            <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-              <div className="flex justify-between gap-2 sm:justify-start">
-                <dt className="text-[#787774]">{labels.result.minutes}</dt>
-                <dd className="font-[family-name:var(--font-mono,monospace)] text-[#111111]">
-                  {formatMinutes(lastResult.flight.minutes)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-2 sm:justify-start">
-                <dt className="text-[#787774]">{labels.result.aircraftRate}</dt>
-                <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.aircraftRateCentsPerHour, moneyLocale)}/h</dd>
-              </div>
-              {lastResult.flight.breakdown.packageCoveredMinutes > 0 ? (
-                <>
-                  <div className="flex justify-between gap-2 sm:justify-start">
-                    <dt className="text-[#787774]">{labels.result.packageCovered}</dt>
-                    <dd className="text-[#111111]">{formatMinutes(lastResult.flight.breakdown.packageCoveredMinutes)}</dd>
-                  </div>
-                  <div className="flex justify-between gap-2 sm:justify-start">
-                    <dt className="text-[#787774]">{labels.result.chargedMinutes}</dt>
-                    <dd className="text-[#111111]">{formatMinutes(lastResult.flight.breakdown.chargedMinutes)}</dd>
-                  </div>
-                  {lastResult.flight.breakdown.packageConsumptions.length > 1 ? (
-                    <div className="sm:col-span-2">
-                      <ul data-testid="flight-result-packages" className="mt-1 space-y-1 border-t border-[#EAEAEA] pt-2 text-xs text-[#787774]">
-                        {lastResult.flight.breakdown.packageConsumptions.map((consumption) => (
-                          <li key={consumption.hourPackageId} className="flex justify-between gap-3">
-                            <span>{consumption.typeName}</span>
-                            <span className="font-[family-name:var(--font-mono,monospace)]">{formatMinutes(consumption.minutes)}</span>
-                          </li>
-                        ))}
-                      </ul>
+          {lastResult ? (
+            <div data-testid="flight-result-panel" className="mt-6 rounded-[8px] border border-[#EAEAEA] bg-[#F7F6F3] p-4 text-sm">
+              <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.result.title}</h4>
+              <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+                <div className="flex justify-between gap-2 sm:justify-start">
+                  <dt className="text-[#787774]">{labels.result.minutes}</dt>
+                  <dd className="font-[family-name:var(--font-mono,monospace)] text-[#111111]">
+                    {formatMinutes(lastResult.flight.minutes)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2 sm:justify-start">
+                  <dt className="text-[#787774]">{labels.result.aircraftRate}</dt>
+                  <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.aircraftRateCentsPerHour, moneyLocale)}/h</dd>
+                </div>
+                {lastResult.flight.breakdown.packageCoveredMinutes > 0 ? (
+                  <>
+                    <div className="flex justify-between gap-2 sm:justify-start">
+                      <dt className="text-[#787774]">{labels.result.packageCovered}</dt>
+                      <dd className="text-[#111111]">{formatMinutes(lastResult.flight.breakdown.packageCoveredMinutes)}</dd>
                     </div>
-                  ) : null}
-                </>
-              ) : null}
-              <div className="flex justify-between gap-2 sm:justify-start">
-                <dt className="text-[#787774]">{labels.result.aircraftAmount}</dt>
-                <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.aircraftAmountCents, moneyLocale)}</dd>
-              </div>
-              {lastResult.flight.breakdown.instructorAmountCents !== undefined &&
-              lastResult.flight.breakdown.instructorRateCentsPerHour !== undefined ? (
-                <>
-                  <div className="flex justify-between gap-2 sm:justify-start">
-                    <dt className="text-[#787774]">{labels.result.instructorRate}</dt>
-                    <dd className="text-[#111111]">
-                      {formatCents(lastResult.flight.breakdown.instructorRateCentsPerHour, moneyLocale)}/h
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-2 sm:justify-start">
-                    <dt className="text-[#787774]">{labels.result.instructorAmount}</dt>
-                    <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.instructorAmountCents, moneyLocale)}</dd>
-                  </div>
-                </>
-              ) : null}
-              <div className="flex justify-between gap-2 sm:justify-start">
-                <dt className="font-medium text-[#787774]">{labels.result.total}</dt>
-                <dd data-testid="flight-result-total" className="font-medium text-[#111111]">
-                  {formatCents(lastResult.flight.breakdown.totalAmountCents, moneyLocale)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-2 sm:justify-start">
-                <dt className="font-medium text-[#787774]">{labels.result.newBalance}</dt>
-                <dd data-testid="flight-result-new-balance" className="font-medium text-[#111111]">
-                  {formatCents(lastResult.account.balanceCents, moneyLocale)}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        ) : null}
-      </div>
+                    <div className="flex justify-between gap-2 sm:justify-start">
+                      <dt className="text-[#787774]">{labels.result.chargedMinutes}</dt>
+                      <dd className="text-[#111111]">{formatMinutes(lastResult.flight.breakdown.chargedMinutes)}</dd>
+                    </div>
+                    {lastResult.flight.breakdown.packageConsumptions.length > 1 ? (
+                      <div className="sm:col-span-2">
+                        <ul data-testid="flight-result-packages" className="mt-1 space-y-1 border-t border-[#EAEAEA] pt-2 text-xs text-[#787774]">
+                          {lastResult.flight.breakdown.packageConsumptions.map((consumption) => (
+                            <li key={consumption.hourPackageId} className="flex justify-between gap-3">
+                              <span>{consumption.typeName}</span>
+                              <span className="font-[family-name:var(--font-mono,monospace)]">{formatMinutes(consumption.minutes)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+                <div className="flex justify-between gap-2 sm:justify-start">
+                  <dt className="text-[#787774]">{labels.result.aircraftAmount}</dt>
+                  <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.aircraftAmountCents, moneyLocale)}</dd>
+                </div>
+                {lastResult.flight.breakdown.instructorAmountCents !== undefined &&
+                lastResult.flight.breakdown.instructorRateCentsPerHour !== undefined ? (
+                  <>
+                    <div className="flex justify-between gap-2 sm:justify-start">
+                      <dt className="text-[#787774]">{labels.result.instructorRate}</dt>
+                      <dd className="text-[#111111]">
+                        {formatCents(lastResult.flight.breakdown.instructorRateCentsPerHour, moneyLocale)}/h
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2 sm:justify-start">
+                      <dt className="text-[#787774]">{labels.result.instructorAmount}</dt>
+                      <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.instructorAmountCents, moneyLocale)}</dd>
+                    </div>
+                  </>
+                ) : null}
+                <div className="flex justify-between gap-2 sm:justify-start">
+                  <dt className="font-medium text-[#787774]">{labels.result.total}</dt>
+                  <dd data-testid="flight-result-total" className="font-medium text-[#111111]">
+                    {formatCents(lastResult.flight.breakdown.totalAmountCents, moneyLocale)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2 sm:justify-start">
+                  <dt className="font-medium text-[#787774]">{labels.result.newBalance}</dt>
+                  <dd data-testid="flight-result-new-balance" className="font-medium text-[#111111]">
+                    {formatCents(lastResult.account.balanceCents, moneyLocale)}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
-      {cancellingFlight ? (
+      {canManage && cancellingFlight ? (
         <CancelFlightPanel
           flight={cancellingFlight}
           moneyLocale={moneyLocale}
@@ -313,7 +417,18 @@ export function FlightsManager({
       ) : null}
 
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <FilterBar
+          canManage={canManage}
+          filters={filters}
+          onChange={handleFilterChange}
+          onReset={handleResetFilters}
+          aircraftOptions={aircraftFilterOptions}
+          personOptions={personFilterOptions}
+          labels={labels.filters}
+          flightTypeLabels={labels.form.flightTypes}
+        />
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
           <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
             {labels.list.heading}
           </h3>
@@ -339,7 +454,7 @@ export function FlightsManager({
                   <th className="py-2 pr-4 font-medium">{labels.list.table.amount}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.landings}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.status}</th>
-                  <th className="py-2 font-medium">{labels.list.table.actions}</th>
+                  {canManage ? <th className="py-2 font-medium">{labels.list.table.actions}</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -365,31 +480,33 @@ export function FlightsManager({
                     <td className="py-2 pr-4">
                       <FlightStatusCell flight={flight} labels={labels.list.table} />
                     </td>
-                    <td className="py-2 whitespace-nowrap">
-                      {flight.status === 'REGISTERED' ? (
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            data-testid="flight-cancel-action"
-                            onClick={() => {
-                              setCancelFeedback(null);
-                              setCancellingFlight(flight);
-                            }}
-                            className="rounded-[6px] border border-[#EAEAEA] bg-white px-2.5 py-1 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-                          >
-                            {labels.list.table.cancelAction}
-                          </button>
-                          <button
-                            type="button"
-                            data-testid="flight-correct-action"
-                            onClick={() => setCorrectingFlight(flight)}
-                            className="rounded-[6px] border border-[#EAEAEA] bg-white px-2.5 py-1 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-                          >
-                            {labels.list.table.correctAction}
-                          </button>
-                        </div>
-                      ) : null}
-                    </td>
+                    {canManage ? (
+                      <td className="py-2 whitespace-nowrap">
+                        {flight.status === 'REGISTERED' ? (
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              data-testid="flight-cancel-action"
+                              onClick={() => {
+                                setCancelFeedback(null);
+                                setCancellingFlight(flight);
+                              }}
+                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-2.5 py-1 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                            >
+                              {labels.list.table.cancelAction}
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="flight-correct-action"
+                              onClick={() => setCorrectingFlight(flight)}
+                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-2.5 py-1 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                            >
+                              {labels.list.table.correctAction}
+                            </button>
+                          </div>
+                        ) : null}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -435,6 +552,148 @@ function FlightStatusCell({ flight, labels }: { flight: FlightListItemDto; label
       ) : null}
       {flight.correctionOfId ? <p className="text-xs text-[#787774]">{labels.correctionOf}</p> : null}
       {flight.correctedByFlightId ? <p className="text-xs text-[#787774]">{labels.correctedBy}</p> : null}
+    </div>
+  );
+}
+
+type FilterBarProps = {
+  canManage: boolean;
+  filters: FlightsFilters;
+  onChange: (patch: Partial<FlightsFilters>) => void;
+  onReset: () => void;
+  aircraftOptions: AircraftFilterOption[];
+  personOptions: PersonFilterOption[];
+  labels: FlightsManagerLabels['filters'];
+  /** Reused verbatim from the registration form's labels (private/school/other) — no separate i18n keys for the same three values. */
+  flightTypeLabels: FlightsManagerLabels['form']['flightTypes'];
+};
+
+/**
+ * The registry's filter bar (story 5.4, AC 1/2/3) — a sober row of plain
+ * inputs/selects above the table, coherent with the rest of the minimalist
+ * editorial dashboard (no separate filter panel/drawer, same "controls sit
+ * directly above their data" pattern as `CashRegister`). Period/tipo/stato
+ * are offered to EVERY role; velivolo/persona render only for `canManage`
+ * (Contesto: a non-staff actor has no staff-only `listAircraft`/`listPeople`
+ * picker to source them from). Every change navigates immediately (no
+ * "Applica" button, same as `CashRegister`) — "Azzera filtri" clears the
+ * whole bar in one click.
+ */
+function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, personOptions, labels, flightTypeLabels }: FilterBarProps) {
+  const inputClasses =
+    'mt-2 min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const hasActiveFilter = Object.values(filters).some((value) => value !== '');
+
+  return (
+    <div className="flex flex-wrap items-end gap-4 border-b border-[#EAEAEA] pb-6" data-testid="flight-filter-bar">
+      {/* `<label htmlFor>` as a SIBLING of its control, never wrapping it: a
+          wrapping `<label>` around a `<select>` folds every `<option>`'s
+          text into the label's own accessible name (browsers compute it from
+          textContent), which can accidentally collide with an unrelated
+          label elsewhere on the page once option text is dynamic (e.g. a
+          person's name) — the same footgun `CashRegister`'s filter bar has,
+          fixed here instead of repeated. */}
+      <div className="flex flex-col text-sm text-[#2F3437]">
+        <label htmlFor="flight-filter-date-from">{labels.dateFrom}</label>
+        <input
+          id="flight-filter-date-from"
+          type="date"
+          value={filters.dateFrom}
+          onChange={(event) => onChange({ dateFrom: event.target.value })}
+          className={inputClasses}
+          data-testid="flight-filter-date-from"
+        />
+      </div>
+      <div className="flex flex-col text-sm text-[#2F3437]">
+        <label htmlFor="flight-filter-date-to">{labels.dateTo}</label>
+        <input
+          id="flight-filter-date-to"
+          type="date"
+          value={filters.dateTo}
+          onChange={(event) => onChange({ dateTo: event.target.value })}
+          className={inputClasses}
+          data-testid="flight-filter-date-to"
+        />
+      </div>
+      {canManage ? (
+        <div className="flex flex-col text-sm text-[#2F3437]">
+          <label htmlFor="flight-filter-aircraft">{labels.aircraft}</label>
+          <select
+            id="flight-filter-aircraft"
+            value={filters.aircraftId}
+            onChange={(event) => onChange({ aircraftId: event.target.value })}
+            className={inputClasses}
+            data-testid="flight-filter-aircraft"
+          >
+            <option value="">{labels.allAircraft}</option>
+            {aircraftOptions.map((aircraft) => (
+              <option key={aircraft.id} value={aircraft.id}>
+                {aircraft.registration}
+                {aircraft.archived ? labels.archivedSuffix : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+      {canManage ? (
+        <div className="flex flex-col text-sm text-[#2F3437]">
+          <label htmlFor="flight-filter-person">{labels.person}</label>
+          <select
+            id="flight-filter-person"
+            value={filters.personId}
+            onChange={(event) => onChange({ personId: event.target.value })}
+            className={inputClasses}
+            data-testid="flight-filter-person"
+          >
+            <option value="">{labels.allPeople}</option>
+            {personOptions.map((person) => (
+              <option key={person.id} value={person.id}>
+                {personLabel(person)}
+                {person.archived ? labels.archivedSuffix : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+      <div className="flex flex-col text-sm text-[#2F3437]">
+        <label htmlFor="flight-filter-type">{labels.flightType}</label>
+        <select
+          id="flight-filter-type"
+          value={filters.flightType}
+          onChange={(event) => onChange({ flightType: event.target.value as FlightsFilters['flightType'] })}
+          className={inputClasses}
+          data-testid="flight-filter-type"
+        >
+          <option value="">{labels.allTypes}</option>
+          <option value="PRIVATE">{flightTypeLabels.private}</option>
+          <option value="SCHOOL">{flightTypeLabels.school}</option>
+          <option value="OTHER">{flightTypeLabels.other}</option>
+        </select>
+      </div>
+      <div className="flex flex-col text-sm text-[#2F3437]">
+        <label htmlFor="flight-filter-status">{labels.status}</label>
+        <select
+          id="flight-filter-status"
+          value={filters.status}
+          onChange={(event) => onChange({ status: event.target.value as FlightsFilters['status'] })}
+          className={inputClasses}
+          data-testid="flight-filter-status"
+        >
+          <option value="">{labels.allStatuses}</option>
+          <option value="REGISTERED">{labels.statusOptions.registered}</option>
+          <option value="CANCELLED">{labels.statusOptions.cancelled}</option>
+        </select>
+      </div>
+      {hasActiveFilter ? (
+        <button
+          type="button"
+          onClick={onReset}
+          data-testid="flight-filter-reset"
+          className="min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+        >
+          {labels.reset}
+        </button>
+      ) : null}
     </div>
   );
 }

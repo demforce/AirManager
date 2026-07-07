@@ -1,9 +1,9 @@
 import { Prisma, type FlightStatus, type FlightType } from '@/generated/prisma/client';
-import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
+import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
-import type { CancelFlightInput, CorrectFlightInput, RegisterFlightInput } from '@/lib/schemas/flights';
+import type { CancelFlightInput, CorrectFlightInput, ListFlightsQuery, RegisterFlightInput } from '@/lib/schemas/flights';
 import { formatMinutes } from '@/lib/time';
-import { authorize, type Actor } from '@/server/auth/rbac';
+import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import {
   balanceBand,
@@ -13,7 +13,7 @@ import {
   sendNegativeBalanceAlert,
   type AccountOverview,
 } from './accounts.service';
-import { ConflictError, NotFoundError, ValidationError } from './errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { getEffectiveInstructorRate, type InstructorRateListItem } from './instructor-rates.service';
 import { getEffectiveRate } from './rates.service';
 
@@ -199,8 +199,8 @@ export type FlightListItem = {
   /** `null` <=> no instructor on this flight. `personId` (not the profile id — AD-11/consistency with the API's own `instructorPersonId`). */
   instructor: { personId: string; firstName: string; lastName: string } | null;
   breakdown: FlightBreakdown;
-  /** This list is staff-only (`flights.manage`) — always present, unlike the account statement's conditional `actorEmail`. */
-  actorEmail: string;
+  /** Story 5.4 — CONDITIONAL: present only when the caller has `people.read` (staff), same pattern as `AccountStatementItem` (3.2). */
+  actorEmail?: string;
   createdAt: Date;
   /** Story 5.3 — set together, exactly once, when `status` becomes `CANCELLED`. Both `null` while `REGISTERED`. */
   cancelledAt: Date | null;
@@ -286,7 +286,16 @@ type SelectedFlight = {
   packageConsumptions: { hourPackageId: string; minutes: number; hourPackage: { packageType: { name: string } } }[];
 };
 
-function toListItem(flight: SelectedFlight): FlightListItem {
+/**
+ * Maps a selected row to the wire DTO. `includeActorEmail` is the story 5.4
+ * own-access gate (`hasPermission(actor, 'people.read')` at the call site) —
+ * a pilot/student reading their own registry never learns who registered the
+ * movement (same conditional-field pattern as `accounts.service.ts`'s
+ * `toStatementItem`). Every staff-only entrypoint in this file
+ * (`registerFlight`/`cancelFlight`/`correctFlight`, all gated on
+ * `flights.manage`) always passes `true`.
+ */
+function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightListItem {
   const hasInstructor = flight.instructorRateCentsPerHour !== null && flight.instructorAmountCents !== null;
   return {
     id: flight.id,
@@ -325,7 +334,7 @@ function toListItem(flight: SelectedFlight): FlightListItem {
       })),
       totalAmountCents: flight.aircraftAmountCents + (flight.instructorAmountCents ?? 0),
     },
-    actorEmail: flight.actorUser.email,
+    ...(includeActorEmail ? { actorEmail: flight.actorUser.email } : {}),
     createdAt: flight.createdAt,
     cancelledAt: flight.cancelledAt,
     cancelReason: flight.cancelReason,
@@ -816,7 +825,10 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
     );
   }
 
-  return { flight: toListItem(createdFlight), account };
+  // `true`: registerFlight/cancelFlight/correctFlight are all staff-only
+  // (`flights.manage`, story 5.4's own-access branch never reaches here) —
+  // `actorEmail` is always shown to the staff actor who just acted.
+  return { flight: toListItem(createdFlight, true), account };
 }
 
 /** The `FLIGHT_CHARGE` movement a `REGISTERED` flight must always have — loaded so `cancelFlight`/`correctFlight` can reverse it. */
@@ -984,7 +996,7 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
 
   const account = await getAccountOverview(actor, flight.personId);
 
-  return { flight: toListItem(updated), account };
+  return { flight: toListItem(updated, true), account };
 }
 
 /**
@@ -1135,28 +1147,94 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
     );
   }
 
-  return { flight: toListItem(createdFlight), account };
+  return { flight: toListItem(createdFlight, true), account };
 }
 
 /**
- * Lists registered flights, most recent first (AC 1/2). `flights.manage`
- * only today — story 5.4 extends this to own-access plus filters (Dev
- * Notes); this story keeps it a plain staff-only paginated list, same
- * pattern as `listAccountMovements`.
+ * Lists flights, most recent first (story 5.1 AC 1/2; story 5.4 AC 1/2/3/4 —
+ * the own-access + filters extension promised since 5.1). Two branches,
+ * decided ONCE at the top (never trusted from the UI, AD-5):
+ *
+ * - `flights.manage` (staff/admin): sees EVERY flight, every filter is a
+ *   free exact-match/range constraint, `actorEmail` is always included
+ *   (`people.read` — every `flights.manage` role also holds it today, same
+ *   coarser-permission caveat as `registerFlight`'s doc-comment).
+ * - Otherwise, `self.read` (AC 1/2): the `where` is FORCED to
+ *   `OR: [{ personId: actor.personId }, { instructorProfile: { personId:
+ *   actor.personId } }]` — the titolare of the flight OR the instructor on
+ *   board (the second leg alone already covers an instructor who ALSO flew
+ *   as the flight's own person via the first leg) — CANCELLED flights stay
+ *   visible in this scope (AC 1: "storia completa", a `status` filter can
+ *   still narrow it down on request). `actorEmail` is omitted (Contesto: a
+ *   titolare never learns who registered the movement).
+ *
+ * `personId` filter guard (AC 4, Contesto): for a non-staff actor, providing
+ * anyone else's id is a 403 — checked BEFORE any query, never silently
+ * ignored or narrowed (never enumerate/filter another person's data via a
+ * filter). Providing exactly the actor's own id is redundant but harmless.
+ *
+ * `actor.personId === null` with only `self.read` (AC 1, Contesto): nothing
+ * is "theirs" — an EMPTY page, without ever touching `Flight`, not a 403
+ * (the registry exists, it is simply empty for an account with no linked
+ * anagrafica).
+ *
+ * Filters (all optional, AND-combined): `dateFrom`/`dateTo` bound
+ * `flightDate` via `parseDateOnlyUtc` (`@db.Date`, review 3.5 F1's lesson —
+ * NEVER a raw timestamp comparison); `aircraftId`/`personId`/`flightType`/
+ * `status` are plain exact matches. Order/pagination unchanged from 5.1
+ * (`flightDate desc, createdAt desc, id desc`; `paginate`/`paginationOffset`).
  */
-export async function listFlights(actor: Actor, query: PaginationQuery): Promise<FlightListResult> {
-  authorize(actor, 'flights.manage');
+export async function listFlights(actor: Actor, query: ListFlightsQuery): Promise<FlightListResult> {
+  const canManage = hasPermission(actor, 'flights.manage');
+  if (!canManage) {
+    authorize(actor, 'self.read');
+  }
+
+  // AC 4 — checked before any query, staff exempt (they may filter by any
+  // personId).
+  if (!canManage && query.personId && query.personId !== actor.personId) {
+    throw new ForbiddenError('Actor may only filter their own flights.');
+  }
+
+  // AC 1/Contesto — an own-access actor with no linked person has nothing of
+  // their own: an empty page, never a query.
+  if (!canManage && actor.personId === null) {
+    return paginate([], 0, query);
+  }
+
+  const where: Prisma.FlightWhereInput = {
+    ...(canManage ? {} : { OR: [{ personId: actor.personId! }, { instructorProfile: { personId: actor.personId! } }] }),
+    ...(query.dateFrom || query.dateTo
+      ? {
+          flightDate: {
+            ...(query.dateFrom ? { gte: parseDateOnlyUtc(query.dateFrom) } : {}),
+            ...(query.dateTo ? { lte: parseDateOnlyUtc(query.dateTo) } : {}),
+          },
+        }
+      : {}),
+    ...(query.aircraftId ? { aircraftId: query.aircraftId } : {}),
+    ...(query.personId ? { personId: query.personId } : {}),
+    ...(query.flightType ? { flightType: query.flightType } : {}),
+    ...(query.status ? { status: query.status } : {}),
+  };
+
+  const includeActorEmail = hasPermission(actor, 'people.read');
 
   const [items, total] = await prisma.$transaction([
     prisma.flight.findMany({
       select: FLIGHT_SELECT,
+      where,
       // `id` tie-break: same-millisecond rows must not make the page order
       // non-deterministic (same pattern as `buildOverview`/`listAccountMovements`).
       orderBy: [{ flightDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       ...paginationOffset(query),
     }),
-    prisma.flight.count(),
+    prisma.flight.count({ where }),
   ]);
 
-  return paginate(items.map(toListItem), total, query);
+  return paginate(
+    items.map((item) => toListItem(item, includeActorEmail)),
+    total,
+    query,
+  );
 }

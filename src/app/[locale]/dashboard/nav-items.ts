@@ -37,8 +37,10 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // Story 2.4: repointed the same way people was in 2.1.
   { key: 'aircraft', href: '/dashboard/aircraft', permissions: ['aircraft.manage'] },
   // Story 5.1: repointed the same way people/aircraft/finance were in
-  // 2.1/2.4/3.3 — permissions unchanged (5.4 will reopen visibility to pilots/students).
-  { key: 'flights', href: '/dashboard/flights', permissions: ['flights.manage'] },
+  // 2.1/2.4/3.3. Story 5.4 (FR-17): reopened to every role via `self.read` —
+  // the page itself (own-access registry vs full staff manager) and the
+  // service (`flights.service.ts#listFlights`) decide what each role sees.
+  { key: 'flights', href: '/dashboard/flights', permissions: ['flights.manage', 'self.read'] },
   { key: 'bookings', href: '/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any'] },
   // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4.
   { key: 'finance', href: '/dashboard/finance', permissions: ['finance.manage'] },

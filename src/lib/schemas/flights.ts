@@ -15,6 +15,35 @@ export const flightStatusSchema = z.enum(['REGISTERED', 'CANCELLED']);
 export type FlightStatusDto = z.infer<typeof flightStatusSchema>;
 
 /**
+ * `GET /api/v1/flights` query (story 5.4, AC 1/2/3/4): every filter is
+ * optional and AND-combinable. `dateFrom`/`dateTo` bound `flightDate`
+ * (`@db.Date`, date-only string comparison is safe here because `z.iso.date()`
+ * guarantees the fixed-width `YYYY-MM-DD` shape — same reasoning as
+ * `cashReportQuerySchema`); the `.refine` below rejects an inverted range with
+ * a plain 422 `VALIDATION_ERROR` (Contesto: no custom code needed for this
+ * one). `aircraftId`/`personId`/`flightType`/`status` are exact-match filters
+ * — an id that does not exist simply yields zero results (a filter, never a
+ * lookup, so never a 404). A non-staff actor's `personId` filter is further
+ * constrained server-side (`flights.service.ts#listFlights`, AC 4): providing
+ * anyone else's id is a 403, never silently ignored or narrowed.
+ */
+export const listFlightsQuerySchema = paginationQuerySchema
+  .extend({
+    dateFrom: z.iso.date().optional(),
+    dateTo: z.iso.date().optional(),
+    aircraftId: z.string().trim().min(1).optional(),
+    personId: z.string().trim().min(1).optional(),
+    flightType: flightTypeSchema.optional(),
+    status: flightStatusSchema.optional(),
+  })
+  .refine((value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, {
+    message: 'dateFrom must not be after dateTo',
+    path: ['dateTo'],
+  });
+
+export type ListFlightsQuery = z.infer<typeof listFlightsQuerySchema>;
+
+/**
  * `POST /api/v1/flights` body (story 5.1, AC 1/2/3). EXACTLY ONE of
  * `minutes` (a direct duration) or the `hourMeterStart`/`hourMeterEnd` pair
  * (observed readings — the service derives `minutes = end - start`) must be
@@ -131,12 +160,14 @@ export const flightBreakdownSchema = z.object({
 export type FlightBreakdownDto = z.infer<typeof flightBreakdownSchema>;
 
 /**
- * One entry of `GET /api/v1/flights` (AC 1/2, story 5.1 — staff-only, no
- * filters/own-access yet, story 5.4). Documentation only, mirroring
+ * One entry of `GET /api/v1/flights` (AC 1/2/3, story 5.1, extended story
+ * 5.4 to own-access + filters). Documentation only, mirroring
  * `flights.service.ts`'s `FlightListItem` TS type. `hourMeterStart`/
  * `hourMeterEnd` are the OBSERVATIONS recorded on this flight — never the
- * aircraft's own contaore. `actorEmail` is always present here (a
- * staff-only list), unlike the account statement's conditional field.
+ * aircraft's own contaore. `actorEmail` is now CONDITIONAL (story 5.4,
+ * Contesto): present only when the caller has `people.read` (staff), same
+ * pattern as `AccountStatementItem` (3.2) — a pilot/student reading their own
+ * registry never learns who registered the movement.
  */
 export const flightListItemSchema = z.object({
   id: z.string(),
@@ -152,7 +183,7 @@ export const flightListItemSchema = z.object({
   person: z.object({ id: z.string(), firstName: z.string(), lastName: z.string() }),
   instructor: z.object({ personId: z.string(), firstName: z.string(), lastName: z.string() }).nullable(),
   breakdown: flightBreakdownSchema,
-  actorEmail: z.string(),
+  actorEmail: z.string().optional(),
   createdAt: z.iso.datetime(),
   /** Story 5.3 — set together, exactly once, when `status` becomes `CANCELLED`. Both `null` while `REGISTERED`. */
   cancelledAt: z.iso.datetime().nullable(),
@@ -164,11 +195,6 @@ export const flightListItemSchema = z.object({
 });
 
 export type FlightListItemDto = z.infer<typeof flightListItemSchema>;
-
-/** `GET /api/v1/flights` query — the shared pagination shape (story 1.5); filters land in story 5.4. */
-export const listFlightsQuerySchema = paginationQuerySchema;
-
-export type ListFlightsQuery = z.infer<typeof listFlightsQuerySchema>;
 
 /** `GET /api/v1/flights` response — AD-8 paginated shape. */
 export const flightListResponseSchema = paginatedResponseSchema(flightListItemSchema);

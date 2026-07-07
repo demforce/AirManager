@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
-import { cancelFlightSchema, correctFlightSchema, registerFlightSchema, type RegisterFlightInput } from '@/lib/schemas/flights';
+import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
+import {
+  cancelFlightSchema,
+  correctFlightSchema,
+  listFlightsQuerySchema,
+  registerFlightSchema,
+  type RegisterFlightInput,
+} from '@/lib/schemas/flights';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
@@ -1253,17 +1259,25 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
   });
 
-  describe('listFlights (AC 1/2 — staff-only paginated registry, story 5.4 owns filters/own-access)', () => {
-    it('rejects an actor without flights.manage', async () => {
-      await expect(listFlights(pilotActor(), { page: 1, pageSize: 20 })).rejects.toThrow(ForbiddenError);
+  describe('listFlights (story 5.1 AC 1/2, story 5.4 AC 1/2/3/4 — own-access + filters)', () => {
+    function noRoleActor(): Actor {
+      return { userId: 'nobody_1', personId: null, roles: [] };
+    }
+
+    function baseQuery(overrides: Partial<Parameters<typeof listFlights>[1]> = {}) {
+      return listFlightsQuerySchema.parse({ page: 1, pageSize: 20, ...overrides });
+    }
+
+    it('rejects an actor with neither flights.manage nor self.read', async () => {
+      await expect(listFlights(noRoleActor(), baseQuery())).rejects.toThrow(ForbiddenError);
       expect(flightFindManyMock).not.toHaveBeenCalled();
     });
 
-    it('orders by flightDate desc, createdAt desc, id desc', async () => {
+    it('orders by flightDate desc, createdAt desc, id desc (staff)', async () => {
       flightFindMany.mockResolvedValue([]);
       flightCount.mockResolvedValue(0);
 
-      await listFlights(staffActor(), { page: 1, pageSize: 20 });
+      await listFlights(staffActor(), baseQuery());
 
       expect(flightFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1272,15 +1286,112 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       );
     });
 
-    it('maps rows through the same DTO shape as registerFlight (breakdown computed, actorEmail present)', async () => {
+    it('maps rows through the same DTO shape as registerFlight (breakdown computed, actorEmail present for staff)', async () => {
       flightFindMany.mockResolvedValue([CREATED_FLIGHT_ROW]);
       flightCount.mockResolvedValue(1);
 
-      const result = await listFlights(adminActor(), { page: 1, pageSize: 20 });
+      const result = await listFlights(adminActor(), baseQuery());
 
       expect(result.total).toBe(1);
       expect(result.items[0]?.actorEmail).toBe('staff@airmanager.local');
       expect(result.items[0]?.breakdown.totalAmountCents).toBe(20000);
+    });
+
+    it('staff: builds the where clause from combined filters (period gte/lte date-only, aircraftId, personId, flightType, status)', async () => {
+      flightFindMany.mockResolvedValue([]);
+      flightCount.mockResolvedValue(0);
+
+      await listFlights(
+        staffActor(),
+        baseQuery({ dateFrom: '2026-01-01', dateTo: '2026-01-31', aircraftId: 'aircraft_9', personId: 'person_9', flightType: 'SCHOOL', status: 'REGISTERED' }),
+      );
+
+      const expectedWhere = {
+        flightDate: { gte: parseDateOnlyUtc('2026-01-01'), lte: parseDateOnlyUtc('2026-01-31') },
+        aircraftId: 'aircraft_9',
+        personId: 'person_9',
+        flightType: 'SCHOOL',
+        status: 'REGISTERED',
+      };
+      expect(flightFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expectedWhere }));
+      expect(flightCountMock).toHaveBeenCalledWith({ where: expectedWhere });
+    });
+
+    it('staff: no OR own-access scope in the where clause (sees every flight)', async () => {
+      flightFindMany.mockResolvedValue([]);
+      flightCount.mockResolvedValue(0);
+
+      await listFlights(staffActor(), baseQuery());
+
+      const [callArgs] = flightFindManyMock.mock.calls.at(-1)!;
+      expect((callArgs as { where: object }).where).not.toHaveProperty('OR');
+    });
+
+    it('pilot (self.read only): forces the where to OR own/instructor scope', async () => {
+      flightFindMany.mockResolvedValue([]);
+      flightCount.mockResolvedValue(0);
+
+      await listFlights(pilotActor('person_1'), baseQuery());
+
+      expect(flightFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { OR: [{ personId: 'person_1' }, { instructorProfile: { personId: 'person_1' } }] },
+        }),
+      );
+    });
+
+    it('instructor: the OR scope includes the instructorProfile leg with their own personId', async () => {
+      flightFindMany.mockResolvedValue([]);
+      flightCount.mockResolvedValue(0);
+
+      await listFlights(instructorActor(), baseQuery());
+
+      expect(flightFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { OR: [{ personId: 'person_instructor' }, { instructorProfile: { personId: 'person_instructor' } }] },
+        }),
+      );
+    });
+
+    it('non-staff filtering by someone else\'s personId -> Forbidden, no query issued (AC 4)', async () => {
+      await expect(listFlights(pilotActor('person_1'), baseQuery({ personId: 'person_someone_else' }))).rejects.toThrow(
+        ForbiddenError,
+      );
+      expect(flightFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('non-staff filtering by their OWN personId is redundant but allowed', async () => {
+      flightFindMany.mockResolvedValue([]);
+      flightCount.mockResolvedValue(0);
+
+      await listFlights(pilotActor('person_1'), baseQuery({ personId: 'person_1' }));
+
+      expect(flightFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [{ personId: 'person_1' }, { instructorProfile: { personId: 'person_1' } }],
+            personId: 'person_1',
+          },
+        }),
+      );
+    });
+
+    it('non-staff with no linked person (personId null) gets an empty page, no query at all', async () => {
+      const result = await listFlights(pilotActor(null), baseQuery());
+
+      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+      expect(flightFindManyMock).not.toHaveBeenCalled();
+      expect(flightCountMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('actorEmail is absent for a non-staff (own-access) actor', async () => {
+      flightFindMany.mockResolvedValue([CREATED_FLIGHT_ROW]);
+      flightCount.mockResolvedValue(1);
+
+      const result = await listFlights(pilotActor('person_1'), baseQuery());
+
+      expect(result.items[0]?.actorEmail).toBeUndefined();
     });
   });
 });
@@ -1352,5 +1463,49 @@ describe('registerFlightSchema (story 5.1, Task 4, AC 1/2/3; AD-2)', () => {
     expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, landings: -1 }).success).toBe(false);
     expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, landings: 501 }).success).toBe(false);
     expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, landings: 0 }).success).toBe(true);
+  });
+});
+
+describe('listFlightsQuerySchema (story 5.4, Task 1 — all six filters optional/AND-combinable)', () => {
+  it('accepts bare pagination with no filters at all', () => {
+    expect(listFlightsQuerySchema.safeParse({}).success).toBe(true);
+  });
+
+  it('accepts every filter combined', () => {
+    const result = listFlightsQuerySchema.safeParse({
+      dateFrom: '2026-01-01',
+      dateTo: '2026-01-31',
+      aircraftId: 'aircraft_1',
+      personId: 'person_1',
+      flightType: 'SCHOOL',
+      status: 'CANCELLED',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects dateFrom after dateTo (422 VALIDATION_ERROR, no custom code needed)', () => {
+    const result = listFlightsQuerySchema.safeParse({ dateFrom: '2026-02-01', dateTo: '2026-01-01' });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts dateFrom === dateTo (a single-day window)', () => {
+    expect(listFlightsQuerySchema.safeParse({ dateFrom: '2026-01-15', dateTo: '2026-01-15' }).success).toBe(true);
+  });
+
+  it('accepts dateFrom or dateTo alone (an open-ended window)', () => {
+    expect(listFlightsQuerySchema.safeParse({ dateFrom: '2026-01-01' }).success).toBe(true);
+    expect(listFlightsQuerySchema.safeParse({ dateTo: '2026-01-31' }).success).toBe(true);
+  });
+
+  it('rejects a malformed date', () => {
+    expect(listFlightsQuerySchema.safeParse({ dateFrom: '01/01/2026' }).success).toBe(false);
+  });
+
+  it('rejects an invalid flightType', () => {
+    expect(listFlightsQuerySchema.safeParse({ flightType: 'JOYRIDE' }).success).toBe(false);
+  });
+
+  it('rejects an invalid status', () => {
+    expect(listFlightsQuerySchema.safeParse({ status: 'DELETED' }).success).toBe(false);
   });
 });

@@ -643,6 +643,8 @@
     "kicker": "Flights",
     "title": "Flights",
     "description": "Log a flight and see the aircraft charge, plus the instructor charge when there is one, generated automatically.",
+    "titleOwn": "My flights",
+    "descriptionOwn": "Your personal flight log, including cancelled flights.",
     "backToDashboard": "Back to dashboard",
     "form": {
       "title": "Log a flight",
@@ -700,7 +702,7 @@
       "newBalance": "New balance"
     },
     "list": {
-      "heading": "Recent flights",
+      "heading": "Flight log",
       "empty": "No flights logged yet.",
       "table": {
         "date": "Date",
@@ -741,6 +743,24 @@
       "submit": "Confirm correction",
       "exit": "Cancel correction",
       "conflictError": "This flight has already been cancelled."
+    },
+    "filters": {
+      "dateFrom": "From",
+      "dateTo": "To",
+      "aircraft": "Aircraft",
+      "allAircraft": "All aircraft",
+      "person": "Person",
+      "allPeople": "All people",
+      "flightType": "Type",
+      "allTypes": "All types",
+      "status": "Status",
+      "allStatuses": "All statuses",
+      "statusOptions": {
+        "registered": "Registered",
+        "cancelled": "Cancelled"
+      },
+      "archivedSuffix": " (Archived)",
+      "reset": "Clear filters"
     }
   },
   "UsersPage": {

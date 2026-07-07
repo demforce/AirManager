@@ -175,7 +175,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
 
     // Register a SCHOOL flight (60' — fully covered by the package) with an instructor.
     await page.goto('/it/dashboard/flights');
-    await page.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await page.getByLabel('Istruttore').selectOption({ label: `${instructor.lastName} ${instructor.firstName}` });
     await page.getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
@@ -243,7 +243,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
 
     // A second (independent) 60' flight consumes the SAME (now-restored) package fully again, no instructor this time.
     await page.goto('/it/dashboard/flights');
-    await page.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await page.getByLabel('Data volo').fill('2020-01-02');
     await page.getByLabel('Minuti', { exact: true }).fill('60');

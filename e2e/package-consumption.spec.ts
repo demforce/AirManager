@@ -162,7 +162,7 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
 
     // Register a 70' flight on the eligible aircraft: 60' from the package, 10' pro-rata at full rate.
     await page.goto('/it/dashboard/flights');
-    await page.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Minuti', { exact: true }).fill('70');
@@ -193,7 +193,7 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
 
     // A second flight on the SAME (now-exhausted) package: full rate, no coverage.
     await page.goto('/it/dashboard/flights');
-    await page.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await page.getByLabel('Data volo').fill('2020-01-02');
     await page.getByLabel('Minuti', { exact: true }).fill('10');
@@ -223,7 +223,7 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(page.getByTestId('packages-panel-feedback')).toBeVisible();
 
     await page.goto('/it/dashboard/flights');
-    await page.getByLabel('Velivolo').selectOption({ label: otherAircraft.registration });
+    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: otherAircraft.registration });
     await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await page.getByLabel('Data volo').fill('2020-01-04');
     await page.getByLabel('Minuti', { exact: true }).fill('30');
