@@ -4,7 +4,7 @@ baseline_commit: b6c3ae5
 
 # Story 5.3: Correzione e annullamento volo con storno
 
-Status: ready-for-review
+Status: done
 
 ## Story
 
@@ -83,7 +83,7 @@ Sonnet 5 (single dev agent, xhigh)
 
 ### Debug Log References
 
-- Migrazione a mano: `npx prisma format && npx prisma validate` puliti, `npx prisma migrate diff --from-config-datasource prisma/schema.prisma --to-schema prisma/schema.prisma --script` (banner "Loaded Prisma config..." + riga vuota rimossi, prime due righe), salvata come `prisma/migrations/20260707170000_add_flight_reversal/migration.sql`, poi `npx prisma migrate deploy` + `npx prisma generate` — applicata pulita (17 migrazioni totali su DB fresco). Verificato a mano via `psql \d "Flight"` che `cancelledAt`/`cancelReason`/`correctionOfId` esistono, `Flight_correctionOfId_key` è UNIQUE e la FK self-referenziale `Flight_correctionOfId_fkey` è `ON DELETE SET NULL`; `enum_range(NULL::"AccountMovementType")` conferma `FLIGHT_CHARGE_REVERSAL` in coda (additivo).
+- Migrazione a mano: `npx prisma format && npx prisma validate` puliti, `npx prisma migrate diff --from-config-datasource prisma/schema.prisma --to-schema prisma/schema.prisma --script` (banner "Loaded Prisma config..." + riga vuota rimossi, prime due righe), salvata come `prisma/migrations/20260707170000_add_flight_reversal/migration.sql`, poi `npx prisma migrate deploy` + `npx prisma generate` — applicata pulita (16 migrazioni totali su DB fresco; il conteggio "17" iniziale era un refuso — review 5.3 D1). Verificato a mano via `psql \d "Flight"` che `cancelledAt`/`cancelReason`/`correctionOfId` esistono, `Flight_correctionOfId_key` è UNIQUE e la FK self-referenziale `Flight_correctionOfId_fkey` è `ON DELETE SET NULL`; `enum_range(NULL::"AccountMovementType")` conferma `FLIGHT_CHARGE_REVERSAL` in coda (additivo).
 - Refactor `registerFlightCore`: estratto l'intero corpo in-tx di `registerFlight` (dall'aggregate del saldo in poi) in una funzione condivisa che ASSUME i lock già presi e riceve il valore corrente di `hourMeterMinutes` come parametro (mai una re-lettura interna) — questo è ciò che permette a `correctFlight` di passare il valore GIÀ decrementato dallo storno quando la correzione mantiene lo stesso velivolo, ottenendo `current - vecchiMinuti + nuoviMinuti` senza una seconda query. `registerFlight` esternamente identico: stesso ordine di lock (Aircraft poi Account, stesse due query raw single-row), stessa firma, stesso contratto — i 60 test 5.1/5.2 esistenti in `flights.service.test.ts` sono rimasti verdi SENZA modifiche (solo un `queryRaw`/mock aggiuntivo per i nuovi test, nessun mock esistente toccato).
 - Lock deterministico per `correctFlight`: `SELECT "id","hourMeterMinutes" FROM "Aircraft" WHERE "id" IN (${Prisma.join(aircraftIds)}) ORDER BY "id" FOR UPDATE` (e l'equivalente per `Account`) — richiede `Prisma` come import VALORE (non più solo `type`) da `@/generated/prisma/client` per `Prisma.join`/`Prisma.TransactionClient`; verificato che l'import a valore non rompe l'uso esistente di `Prisma.PackageConsumptionOrderByWithRelationInput[]` nel cast di `FLIGHT_SELECT`.
 - Verifica interattiva end-to-end via Playwright MCP (Chromium headless, dev server + Mailpit locali) prima di scrivere gli e2e: registrato un volo (80'×150€/h→200,00€, contaore 750→830), annullato con motivo → riga ANNULLATO con motivo/data, estratto conto con FLIGHT_CHARGE −200,00€ + FLIGHT_CHARGE_REVERSAL +200,00€ (badge "Storno del movimento del..." — verificato che il badge esistente di 3.3, generalizzato, funziona anche per questo tipo), saldo tornato a 0,00€, contaore tornato a 750 (12:30); registrato un secondo volo (60') e corretto a 30' → volo vecchio ANNULLATO con chip "Corretto da un volo successivo", volo nuovo con chip "Correzione di un volo precedente", contaore netto coerente (750+60−60+30=780, 13:00), saldo netto coerente; secondo annullo dello stesso volo → 409 CONFLICT via fetch autenticato; volo scuola con pacchetto (copertura totale, movimento a 0 — mai `-0`) annullato → residuo pacchetto ripristinato (0:00→1:00, nota "Usati" sparita) — la SUM filtrata su `status not CANCELLED` verificata contro DB reale, non solo mock. Verificato anche il rendering `/en` (chiavi simmetriche, "Cancelled"/"Corrected by a later flight"/"Correction of a previous flight").
@@ -127,9 +127,27 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
-_(da compilare dopo la review)_
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: findings — 1 minor (M1, fixato), 1 refuso doc (D1, corretto), nessun must-fix.** Fix applicati dalla sessione principale (terzo commit della story).
+
+Verificato e trovato corretto (review con riproduzioni DB-backed, inclusa concorrenza reale e assert email via Mailpit):
+- **Annullo**: ledger = FLIGHT_CHARGE −X + FLIGHT_CHARGE_REVERSAL +X collegati (`reversalOfId`/`flightId`); saldo tornato al pre-volo; **importo storno letto dall'ORIGINALE, mai ricalcolato** (provato cambiando la tariffa a 99999 dopo la registrazione: lo storno usa quella vecchia — AD-4); contaore −minuti con **clamp a 0 verificato** (rettifica manuale a 0 prima dell'annullo); residuo pacchetto ripristinato via SUM filtrata SENZA toccare le righe `PackageConsumption` (row count invariato — storia intatta); `effectiveDate` storno = oggi; CANCELLED + cancelledAt/cancelReason.
+- **Correzione**: 60'→30' su pacchetto interamente consumato → il nuovo volo consuma 30' dallo STESSO pacchetto nella stessa tx (read-your-own-writes sul filtro stato); persona A→B → A rimborsata, B addebitata; cambio velivolo → contaori entrambi corretti; **ri-registrazione fallita (velivolo nuovo archiviato) → rollback TOTALE** (nessuno storno orfano, originale ancora REGISTERED); catena di correzioni ok, `correctionOfId` unique in PG.
+- **Concorrenza**: doppio annullo → esattamente uno riesce, l'altro 409 (backstop P2002), UNA sola riga di storno; correzioni incrociate su velivoli A↔B → nessun deadlock (lock ordinati `IN ... ORDER BY id FOR UPDATE`, Aircraft poi Account).
+- **Alert FR-27**: correzione che peggiora la banda → ESATTAMENTE UNA email (saldo-prima letto DOPO lo storno, verificato via Mailpit); annullo → nessuna email.
+- **Refactor**: comportamento esterno di `registerFlight` invariato (lock shape/ordine, codici errore) — i 60 test 5.1/5.2 verdi senza modifiche ai mock; `correctFlightSchema.extend` preserva il superRefine exactly-one a runtime (zod 4.4 verificato).
+- **UI/i18n**: label "Storno volo"/"Flight reversal" nei due switch, badge reversal generalizzato, chiavi simmetriche.
+- Gate reviewer: tsc pulito, 571/571 unit, lint pulito; il fallimento `next build` del reviewer è stato provato **ambientale** (identico sul commit padre; NODE_ENV leakage) — build ri-verificata VERDE dalla sessione principale in env pulito, prima e dopo i fix.
+
+Findings e risoluzione:
+- **M1 (minor, FIXATO)** — se una rettifica manuale (3.3) ha già occupato lo slot unique `reversalOfId` del FLIGHT_CHARGE, annullo/correzione rispondevano 409 "Flight is already cancelled." con volo ancora REGISTERED (blocco corretto, messaggio falso). Fix: pre-check esplicito in `loadRegisteredFlightForReversal` → 409 "This flight's charge has already been reversed by a manual adjustment."; backstop P2002 riformulato status-agnostic ("This flight's charge has already been reversed."). +2 unit test (cancel + correct). Il flusso resta correttamente bloccato: i conti sono già stati sistemati a mano.
+- **D1 (doc, CORRETTO)** — refuso "17 migrazioni" → 16 nel Dev Agent Record.
+
+### Final gates (fix run, sessione principale)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **573/573 unit** (571 + 2 nuovi), `next build` verde in env pulito; e2e 92/92 dal run dev (fix = solo messaggi 409 + pre-check, nessuna asserzione e2e sui messaggi — suite completa ri-verificata a fine epic).
 
 ## Change Log
 
 - 2026-07-07: Story file created (Fable 5 main session), ready-for-dev.
 - 2026-07-07: Implemented (Sonnet 5 single dev agent, xhigh) — all tasks complete, all gates green. Status → ready-for-review.
+- 2026-07-07: Review Opus 4.8 xhigh — 1 minor + 1 doc typo; M1/D1 fixati in sessione. Status → done.

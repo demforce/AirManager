@@ -848,7 +848,10 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
       minutes: true,
       flightDate: true,
       aircraft: { select: { registration: true } },
-      movements: { where: { type: 'FLIGHT_CHARGE' }, select: { id: true, amountCents: true, accountId: true } },
+      movements: {
+        where: { type: 'FLIGHT_CHARGE' },
+        select: { id: true, amountCents: true, accountId: true, reversal: { select: { id: true } } },
+      },
     },
   });
   if (!flight) {
@@ -865,6 +868,16 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
     // itself, AC 2) — a defensive guard against a silent, orphaned storno
     // rather than a generic Prisma error deep in the transaction below.
     throw new Error(`Flight ${flightId} has no FLIGHT_CHARGE movement to reverse.`);
+  }
+  if (originalMovement.reversal) {
+    // The flight is still REGISTERED but its charge's unique `reversalOfId`
+    // slot is already taken — only a manual rettifica (`recordAdjustment`,
+    // story 3.3, linkable to any movement) can have claimed it. The refusal
+    // is correct (never two reversals of one movement) but the message must
+    // not lie about the flight's status (review 5.3 M1): such a flight can
+    // no longer be cancelled/corrected through this API — the books were
+    // already settled by hand.
+    throw new ConflictError("This flight's charge has already been reversed by a manual adjustment.");
   }
 
   return {
@@ -951,10 +964,12 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
-        // Concurrent-race backstop (TOCTOU) for the pre-check in
-        // `loadRegisteredFlightForReversal`: two concurrent cancellations of
-        // the SAME flight.
-        throw new ConflictError('Flight is already cancelled.');
+        // Concurrent-race backstop (TOCTOU) for the pre-checks in
+        // `loadRegisteredFlightForReversal`: a concurrent double-cancel of
+        // the SAME flight — or, rarer, a concurrent manual rettifica that
+        // claimed the charge's unique `reversalOfId` slot first (review 5.3
+        // M1) — hence the status-agnostic wording.
+        throw new ConflictError("This flight's charge has already been reversed.");
       }
       throw error;
     }
@@ -1068,7 +1083,10 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new ConflictError('Flight is already cancelled.');
+        // Same status-agnostic backstop wording as `cancelFlight` (review
+        // 5.3 M1): the racer may have been a double-correct/-cancel or a
+        // concurrent manual rettifica.
+        throw new ConflictError("This flight's charge has already been reversed.");
       }
       throw error;
     }

@@ -212,7 +212,7 @@ const ORIGINAL_FLIGHT_ROW = {
   minutes: 80,
   flightDate: new Date('2020-01-15T00:00:00.000Z'),
   aircraft: { registration: 'I-ABCD' },
-  movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1' }],
+  movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: null }],
 };
 
 // Safely in the past no matter when this suite runs (same `PAST_DATE`
@@ -959,6 +959,18 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
+    it("throws ConflictError naming the manual adjustment when the charge's reversal slot is already taken on a still-REGISTERED flight (review 5.3 M1)", async () => {
+      flightFindUnique.mockResolvedValue({
+        ...ORIGINAL_FLIGHT_ROW,
+        movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: { id: 'adj_1' } }],
+      });
+
+      await expect(cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(
+        /already been reversed by a manual adjustment/,
+      );
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
     it('P2002 on reversalOfId (concurrent double-cancel) surfaces as ConflictError (backstop for the pre-check)', async () => {
       accountMovementCreate.mockRejectedValueOnce({ code: 'P2002' });
 
@@ -1080,6 +1092,18 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, status: 'CANCELLED' });
 
       await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(ConflictError);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it("throws ConflictError naming the manual adjustment when the charge's reversal slot is already taken on a still-REGISTERED flight (review 5.3 M1)", async () => {
+      flightFindUnique.mockResolvedValue({
+        ...ORIGINAL_FLIGHT_ROW,
+        movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: { id: 'adj_1' } }],
+      });
+
+      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(
+        /already been reversed by a manual adjustment/,
+      );
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
