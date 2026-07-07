@@ -4,7 +4,7 @@ baseline_commit: d16444c
 
 # Story 5.1: Registrazione volo con calcolo costo e addebito
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -128,9 +128,29 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
-_(da compilare dopo la review)_
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean pass — nessuna modifica al codice richiesta.**
+
+Verificato e trovato corretto (review con verifica empirica su DB + riproduzione concorrenza):
+- **Money math (AD-2/NFR-5)**: 80'×150€/h = 20000 cents esatti; arrotondamento half-up per-componente verificato empiricamente (30'×333c/h → `Math.round(166.5)=167`); totale = somma dei componenti GIÀ arrotondati (mai round-della-somma); movimento a −totale, SUM del ledger scende esattamente del totale.
+- **AD-4**: volo datato ESATTAMENTE sul `validFrom` prende quella tariffa (`lte` inclusivo); volo prima di ogni tariffa → 422 `NO_AIRCRAFT_RATE`; query tipizzate su `@db.Date` (mai raw SQL), round-trip `parseDateOnlyUtc` verificato — TZ-safe.
+- **Atomicità e lock (riproduzione DB-backed)**: 3 registrazioni parallele stesso velivolo → contaore avanzato esattamente della somma (10+25+5=40, nessun lost update — FOR UPDATE serializza, stesso pattern di `adjustHourMeter` che quindi si serializza anche con i voli); 4 addebiti paralleli stesso conto → SUM coerente (lock su Account serializza la lettura saldo-prima); Flight + movimento + contaore in UNA transazione, partial failure → rollback completo.
+- **FR-9**: contaore `+= minutes` dal valore lockato, mai `SET = end`; nessun `HourMeterAdjustment` creato.
+- **Guardie e RBAC (AD-5)**: authorize → 404 esistenza → 422 stato → 422 tariffe, tutti i 10 codici specifici verificati; persona con solo profilo istruttore attivo → `PERSON_NOT_PILOT_OR_STUDENT`; PILOT senza `flights.manage` → 403 e nav nascosta; `INSTRUCTOR_NOT_FOUND` enumeration-safe (fold voluto).
+- **AC 3**: `ValidationError` con code opzionale, default `VALIDATION_ERROR` preservato (nessun consumer esistente rotto), mapping handler invariato (instanceof).
+- **Alert FR-27**: helper 3.3 esportati verbatim (soli `export` aggiunti, corpi invariati; `recordTopUp`/`recordAdjustment`/`sellPackage` intatti); threshold pre-tx, bande before/after, send POST-commit fire-and-forget col saldo ri-letto fresco; unit: send su peggioramento, no-send su banda invariata.
+- **Migrazione**: 14 migrazioni pulite su DB fresco; `ALTER TYPE ADD VALUE` mai usato nella propria migrazione; FK corrette (`AccountMovement.flightId` SET NULL non-unique, pronto per 5.3; aircraft/person/actorUser RESTRICT; instructorProfile SET NULL); indici presenti; nessuna colonna totale persistita.
+- **API/OpenAPI/UI/i18n**: path e componenti registrati (tag `Flights`) + coverage; it/en 100% simmetrici (59 chiavi `FlightsPage`); `FLIGHT_CHARGE` nei due switch movimento + schema; mapping errori per codice nel form (tutti i 10 wired); picker filtrati sui profili ATTIVI coerenti con la re-validazione server.
+- **Story compliance**: tutti gli AC e i task onesti; File List = diff reale (23 file). Gate ri-eseguiti dal reviewer: tsc pulito, 530/530 unit, migrate deploy + seed su DB fresco OK (+4 check integrativi DB-backed throwaway, tutti passati).
+
+Deferral (non bloccante, nessuna azione):
+- **D1** — un istruttore la cui Person è archiviata ma col profilo istruttore ancora attivo verrebbe accettato via API diretta (la UI non lo propone: `includeArchived: false`). Sanzionato dalla spec (la guard list scopa la validazione istruttore al solo profilo attivo); se in futuro va vietato: guard `archivedAt` foldato in `INSTRUCTOR_NOT_FOUND`.
+
+### Final gates (review run)
+
+typecheck pulito, **530/530 unit**, `migrate deploy` 14/14 + seed su DB fresco, 4 riproduzioni DB-backed (AD-4 boundary, NO_AIRCRAFT_RATE, concorrenza contaore, concorrenza SUM ledger) tutte verdi; e2e 89/89 dal run dev (non ri-eseguito dal reviewer: logica coperta da unit+integrazione). Working tree pulito.
 
 ## Change Log
 
 - 2026-07-07: Story file created (Fable 5 main session), ready-for-dev.
 - 2026-07-07: Implemented (Sonnet 5 single dev agent, xhigh) — all tasks complete, all gates green.
+- 2026-07-07: Review Opus 4.8 xhigh — clean pass (D1 deferred, non bloccante). Status → done.

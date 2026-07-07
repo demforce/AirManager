@@ -68,7 +68,7 @@ development_status:
   epic-4-retrospective: optional
 
   epic-5: in-progress
-  5-1-flight-logging-charges: ready-for-dev
+  5-1-flight-logging-charges: done
   5-2-package-consumption: backlog
   5-3-flight-reversal: backlog
   5-4-flight-log-filters: backlog
