@@ -4,7 +4,7 @@ baseline_commit: 79cb9a7
 
 # Story 4.3: Definizione tipi di pacchetto ore
 
-Status: review
+Status: done
 
 ## Story
 
@@ -106,8 +106,21 @@ Sonnet 5 (ultracode dev workflow)
 
 ## Review Record
 
-_(da compilare in review)_
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: fixes-required → F1 applicato dalla sessione principale (Fable 5), poi done.**
+
+- **F1 (mandatory, FIXED)** — `updatePackageType` rifiutava un tipo che CONSERVA un velivolo associato e archiviato DOPO l'associazione: la form di edit rimanda sempre l'insieme completo (deliberatamente, per non perdere le associazioni storiche), ma `assertAircraftEligible` lanciava 409 per QUALSIASI id archiviato → un tipo col velivolo archiviato post-associazione diventava immodificabile (perfino un edit del solo prezzo falliva, per giunta col messaggio fuorviante "nome già esistente"). Confermato empiricamente dal reviewer con un test DB-backed. Fix: su UPDATE l'esistenza (404) resta verificata per tutti gli id, ma il check archiviato→409 si applica SOLO alle associazioni NUOVE (`aircraftIds` − associazioni correnti); su CREATE resta strict. Due unit test di regressione aggiunti (retained-archived ok; nuovo archiviato → 409).
+- **F2 (accepted-deferral)** — seconda opinione sul finding respinto in dev (conflazione dei 409 in un solo messaggio per form): deferral accettato come convenzione di codebase (stesso pattern in rates/categories; messaggi server English-only per il futuro client Flutter), con la nota che il sintomo peggiore era in realtà F1 — dopo il fix F1 la conflazione residua è solo il raro race "archiviato tra load e submit".
+- **M1 (deferred)** — doppio DELETE concorrente → P2025 non catturato → 500 invece di 404: pattern identico pre-esistente in `deleteCashCategory` (già accettato); se mai indurito, farlo uniformemente su tutti i servizi catalogo.
+- **M2 (deferred)** — l'errore di submit della form non è annunciato agli screen reader (manca `role="alert"`/`aria-live`; il banner di successo usa correttamente `role="status"`): stessa omissione byte-per-byte del categories-manager mirrorato → convenzione app-wide, rimandato a un pass a11y globale (nota per epic futuri, guideline ui-ux-pro-max "Error Messages must be announced").
+
+Verificato e trovato corretto (sintesi; dettagli nel run di review): AC 1 CRUD end-to-end; AD-2 (solo interi persistiti, €/h derivato mai salvato); split permessi `finance.manage`/`settings.manage` con `authorize()` prima di ogni query; unicità nome (pre-check + P2002 su create E update); backstop P2003 pronto per la FK 4.4; transazioni atomiche su create/update/delete con ordine 404-prima-di-409 senza state leak; fix 204 in `apiRoute()` corretto per spec Fetch e senza impatti su altre route; boundary Zod completo (null-vs-undefined su `validityMonths`, body vuoto → 422); migrazione pulita su DB fresco con struttura identica allo schema; i18n 52/52 chiavi simmetriche; UI coerente col categories-manager (overflow in container, label/fieldset, `key={id}`, feedback `role="status"`).
+
+### Final gates (dopo il fix F1)
+
+lint 0 errori (1 warning benigno noto `data-table.tsx`), typecheck pulito, **439/439 unit** (di cui package-types 27/27), `next build` verde, e2e `package-types.spec.ts` verde su DB resettato (suite completa 81/81 nel run dev, superficie UI invariata dal fix).
 
 ## Change Log
 
 - 2026-07-07: Story file created (Fable 5 main session), ready-for-dev.
+- 2026-07-07: Implemented (Sonnet 5 ultracode dev workflow: implement → verify fan-out → fix) — commit `Story 4.3: package types catalogue (listino pacchetti ore)`. Status → review.
+- 2026-07-07: Review Opus 4.8 xhigh — F1 mandatory (retained archived aircraft su update) applicato dalla sessione principale; F2/M1/M2 deferred con motivazione. Status → done.

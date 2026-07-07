@@ -78,13 +78,17 @@ function dedupIds(ids: string[]): string[] {
 /**
  * Validates a set of aircraft ids for eligibility (create/update, AC 1):
  * every id must exist (404 `NotFoundError` otherwise — a typo/stale id in
- * the payload) and must NOT be archived at the time of association (409
- * `ConflictError` — same "valid id, wrong state" shape as
+ * the payload) and a NEW association must not target an archived aircraft
+ * (409 `ConflictError` — same "valid id, wrong state" shape as
  * `rates.service.ts#createAircraftRate`'s archived-aircraft guard). An
- * aircraft archived AFTER being associated stays in the set (Dev Notes) —
- * this check only runs at create/update time, never retroactively.
+ * aircraft archived AFTER being associated stays in the set (Dev Notes), and
+ * the edit form deliberately re-sends the full set including such aircraft —
+ * so ids in `alreadyAssociatedIds` are exempt from the archived check (only
+ * from that one: existence is still enforced for every id). Review 4.3 F1:
+ * without the exemption, a type retaining a later-archived aircraft was
+ * uneditable (even a price-only edit 409ed).
  */
-async function assertAircraftEligible(aircraftIds: string[]): Promise<void> {
+async function assertAircraftEligible(aircraftIds: string[], alreadyAssociatedIds: ReadonlySet<string> = new Set()): Promise<void> {
   if (aircraftIds.length === 0) {
     return;
   }
@@ -100,7 +104,7 @@ async function assertAircraftEligible(aircraftIds: string[]): Promise<void> {
     if (!match) {
       throw new NotFoundError('Aircraft not found.');
     }
-    if (match.archivedAt !== null) {
+    if (match.archivedAt !== null && !alreadyAssociatedIds.has(id)) {
       throw new ConflictError('Cannot associate an archived aircraft with a package type.');
     }
   }
@@ -211,7 +215,15 @@ export async function updatePackageType(actor: Actor, id: string, input: UpdateP
   let aircraftIds: string[] | undefined;
   if (input.aircraftIds !== undefined) {
     aircraftIds = dedupIds(input.aircraftIds);
-    await assertAircraftEligible(aircraftIds);
+    // Retained associations are exempt from the archived check (review 4.3
+    // F1): the form re-sends the full set, so an aircraft archived after
+    // association must not block the edit — only genuinely NEW associations
+    // are held to the active-aircraft rule.
+    const current = await prisma.packageTypeAircraft.findMany({
+      where: { packageTypeId: id },
+      select: { aircraftId: true },
+    });
+    await assertAircraftEligible(aircraftIds, new Set(current.map((row) => row.aircraftId)));
   }
 
   try {

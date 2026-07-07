@@ -19,6 +19,7 @@ vi.mock('@/server/db/prisma', () => ({
       delete: vi.fn(),
     },
     packageTypeAircraft: {
+      findMany: vi.fn(),
       createMany: vi.fn(),
       deleteMany: vi.fn(),
     },
@@ -40,6 +41,7 @@ const packageTypeFindUniqueOrThrowMock = vi.mocked(prisma.packageType.findUnique
 const packageTypeCreateMock = vi.mocked(prisma.packageType.create);
 const packageTypeUpdateMock = vi.mocked(prisma.packageType.update);
 const packageTypeDeleteMock = vi.mocked(prisma.packageType.delete);
+const joinFindManyMock = vi.mocked(prisma.packageTypeAircraft.findMany);
 const joinCreateManyMock = vi.mocked(prisma.packageTypeAircraft.createMany);
 const joinDeleteManyMock = vi.mocked(prisma.packageTypeAircraft.deleteMany);
 const aircraftFindManyMock = vi.mocked(prisma.aircraft.findMany);
@@ -62,6 +64,7 @@ const packageTypeDelete = packageTypeDeleteMock as unknown as {
   mockRejectedValue: (v: unknown) => void;
 };
 const aircraftFindMany = aircraftFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const joinFindMany = joinFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 
 /** Same batch/interactive `$transaction` stand-in as `cash.service.test.ts`. */
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
@@ -105,6 +108,8 @@ describe('package-types.service (story 4.3 — package-type listino, AD-2/AD-4)'
     packageTypeCreateMock.mockReset();
     packageTypeUpdateMock.mockReset();
     packageTypeDeleteMock.mockReset();
+    joinFindManyMock.mockReset();
+    joinFindMany.mockResolvedValue([]);
     joinCreateManyMock.mockReset();
     joinDeleteManyMock.mockReset();
     aircraftFindManyMock.mockReset();
@@ -297,6 +302,36 @@ describe('package-types.service (story 4.3 — package-type listino, AD-2/AD-4)'
       expect(joinDeleteManyMock).toHaveBeenCalledWith({ where: { packageTypeId: 'pt_1' } });
       expect(joinCreateManyMock).toHaveBeenCalledWith({ data: [{ packageTypeId: 'pt_1', aircraftId: 'ac_2' }] });
       expect(result.eligibleAircraft).toEqual([{ id: 'ac_2', registration: 'I-BBBB' }]);
+    });
+
+    it('retaining an already-associated, now-archived aircraft is allowed (review 4.3 F1)', async () => {
+      packageTypeFindUnique.mockResolvedValue({ id: 'pt_1' });
+      // The aircraft was associated while active, then archived: the edit
+      // form re-sends the full set — the update must NOT 409.
+      joinFindMany.mockResolvedValue([{ aircraftId: 'ac_arch' }]);
+      aircraftFindMany.mockResolvedValue([{ id: 'ac_arch', archivedAt: new Date('2026-06-01') }]);
+      packageTypeUpdate.mockResolvedValue({ id: 'pt_1' });
+      packageTypeFindUniqueOrThrow.mockResolvedValue(
+        withEligible({ id: 'pt_1', name: 'Pacchetto 10 ore', includedMinutes: 600, priceCents: 150000, validityMonths: 12, isActive: true, createdAt: new Date('2026-01-01') }, [
+          { id: 'ac_arch', registration: 'I-AAAA' },
+        ]),
+      );
+      const input = updatePackageTypeSchema.parse({ priceCents: 150000, aircraftIds: ['ac_arch'] });
+
+      const result = await updatePackageType(adminActor(), 'pt_1', input);
+
+      expect(joinCreateManyMock).toHaveBeenCalledWith({ data: [{ packageTypeId: 'pt_1', aircraftId: 'ac_arch' }] });
+      expect(result.eligibleAircraft).toEqual([{ id: 'ac_arch', registration: 'I-AAAA' }]);
+    });
+
+    it('adding a NEW archived aircraft on update still → ConflictError (review 4.3 F1)', async () => {
+      packageTypeFindUnique.mockResolvedValue({ id: 'pt_1' });
+      joinFindMany.mockResolvedValue([{ aircraftId: 'ac_1' }]);
+      aircraftFindMany.mockResolvedValue([activeAircraft('ac_1'), { id: 'ac_new', archivedAt: new Date('2026-06-01') }]);
+      const input = updatePackageTypeSchema.parse({ aircraftIds: ['ac_1', 'ac_new'] });
+
+      await expect(updatePackageType(adminActor(), 'pt_1', input)).rejects.toThrow(ConflictError);
+      expect(packageTypeUpdateMock).not.toHaveBeenCalled();
     });
 
     it('validityMonths: null clears the validity (distinguished from omitted)', async () => {
