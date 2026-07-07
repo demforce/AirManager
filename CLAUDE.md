@@ -19,7 +19,7 @@ Software di gestione per un'aviosuperficie: piloti, velivoli, voli, PPR, finanze
   - Ogni **epic** ha la sua **PR** (branch dedicato; PR stacked sulla precedente se non ancora merged).
   - Ogni **story** ha i suoi **commit** (story file → implementazione → fix di review).
   - A epic finito: creare l'handoff con la skill `/handoff` (→ `docs/handoffs/HANDOFF.md`, committato), push, e **fermarsi** — la sessione NON inizia l'epic successivo: aspetta che l'utente apra una nuova sessione.
-- Stories con UI: il prompt del dev agent deve richiamare la skill `minimalist-ui` (dashboard/tabelle/form) o `design-taste-frontend` (pagine pubbliche/landing, es. form PPR).
+- **Stories con UI** (regola utente): il dev agent DEVE usare la skill `design-taste-frontend` ("taste", anti-slop) E la skill di progetto `ui-ux-pro-max` (`.claude/skills/ui-ux-pro-max` — design intelligence: stili, palette, tipografia, UX checklist; interrogabile via `python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<query>"`). Mantenere la coerenza visiva con lo stile editoriale minimalista già stabilito nell'app (`minimalist-ui`: monocromi caldi, bento flat, niente gradienti/ombre pesanti). Verifica UI interattiva col Playwright MCP.
 
 ## Consultazione documentazione librerie
 
