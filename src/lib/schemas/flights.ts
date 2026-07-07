@@ -154,6 +154,13 @@ export const flightListItemSchema = z.object({
   breakdown: flightBreakdownSchema,
   actorEmail: z.string(),
   createdAt: z.iso.datetime(),
+  /** Story 5.3 — set together, exactly once, when `status` becomes `CANCELLED`. Both `null` while `REGISTERED`. */
+  cancelledAt: z.iso.datetime().nullable(),
+  cancelReason: z.string().nullable(),
+  /** Story 5.3 — the ORIGINAL flight this one replaces, when this flight IS a correction. `null` for a plain registration. */
+  correctionOfId: z.string().nullable(),
+  /** Story 5.3 — the NEW flight that replaced THIS one (inverse relation). `null` unless this flight was corrected. */
+  correctedByFlightId: z.string().nullable(),
 });
 
 export type FlightListItemDto = z.infer<typeof flightListItemSchema>;
@@ -180,3 +187,31 @@ export const registerFlightResponseSchema = z.object({
 });
 
 export type RegisterFlightResponseDto = z.infer<typeof registerFlightResponseSchema>;
+
+// --- Cancellation and correction with reversal (story 5.3, Task 3, AC 1/2/3/4) --
+
+/**
+ * `POST /api/v1/flights/{id}/cancel` body (story 5.3, AC 1). `reason` is
+ * mandatory (Contesto: "il motivo è OBBLIGATORIO nell'input", same convention
+ * as `recordAdjustment`'s `reason` and `setOutOfServiceSchema`'s).
+ */
+export const cancelFlightSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+
+export type CancelFlightInput = z.infer<typeof cancelFlightSchema>;
+
+/**
+ * `POST /api/v1/flights/{id}/correct` body (story 5.3, AC 2): exactly the
+ * same fields as `registerFlightSchema` (Dev Notes: `registerFlightSchema`
+ * itself is NEVER changed for `registerFlight`'s own input) plus the
+ * mandatory `reason` — `.extend()` on a `superRefine`-wrapped `ZodObject`
+ * preserves the underlying exactly-one-of-minutes-or-hourMeter refinement
+ * (verified: zod v4's `.superRefine()` still returns an extendable
+ * `ZodObject`, not a separate wrapper type).
+ */
+export const correctFlightSchema = registerFlightSchema.extend({
+  reason: z.string().trim().min(1).max(500),
+});
+
+export type CorrectFlightInput = z.infer<typeof correctFlightSchema>;

@@ -19,6 +19,7 @@ next-env.d.ts
 coverage/
 playwright-report/
 test-results/
+.playwright-mcp/
 
 # BMAD personal overrides (per installer docs)
 _bmad/custom/config.user.toml

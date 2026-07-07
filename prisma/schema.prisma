@@ -329,13 +329,19 @@ model AuthToken {
 /// FR-14/FR-15) is the first REAL debit: `amountCents` is NEGATIVE (aircraft
 /// cost + optional instructor cost) and the balance is allowed to go
 /// negative — see `Flight`'s doc for the snapshot it links to via
-/// `AccountMovement.flightId`. Additive migration only (Dev Notes) — no
-/// existing row's `type` ever changes.
+/// `AccountMovement.flightId`. `FLIGHT_CHARGE_REVERSAL` (epic 5, story 5.3;
+/// AD-3 storno) is the opposite-signed movement a flight cancellation or
+/// correction creates: `amountCents` is POSITIVE, equal to the ORIGINAL
+/// `FLIGHT_CHARGE.amountCents` negated (never recalculated, AD-4) — linked to
+/// it via `reversalOfId` (the same self-FK `AccountMovement` already uses for
+/// `ADJUSTMENT`, story 3.3) and to the same `Flight` via `flightId`. Additive
+/// migration only (Dev Notes) — no existing row's `type` ever changes.
 enum AccountMovementType {
   TOP_UP
   ADJUSTMENT
   PACKAGE_PURCHASE
   FLIGHT_CHARGE
+  FLIGHT_CHARGE_REVERSAL
 }
 
 /// How a top-up was paid (story 3.1, AC 2). Only meaningful for `TOP_UP`
@@ -646,9 +652,22 @@ enum FlightStatus {
 /// flight itself is the audit trail of the advance.
 ///
 /// Package consumption (story 5.2, see `packageCoveredMinutes` and
-/// `PackageConsumption` below) and storno/cancellation (story 5.3, via
-/// `status`/`reversalOfId`-style linking on the movement) are extensions of
-/// this model — 5.2 wires the former, 5.3 the latter.
+/// `PackageConsumption` below) is wired here; storno/cancellation and
+/// correction (epic 5, story 5.3; FR-16) extend the lifecycle further:
+/// **`REGISTERED` -> `CANCELLED`** is the only transition, driven by
+/// `cancelFlight`/`correctFlight` (`flights.service.ts`) — a flight is NEVER
+/// physically deleted, and there is deliberately no edit-in-place API: every
+/// "modifica" is storno (of this row) + a brand-new `Flight` row. `cancelledAt`/
+/// `cancelReason` are populated together, exactly once, the moment this
+/// happens (`cancelReason` is the mandatory motivo, same convention as
+/// `HourMeterAdjustment.reason`) — the linked `FLIGHT_CHARGE_REVERSAL`
+/// movement (via `AccountMovement.flightId`, story 5.3) is the money-side
+/// half of the same storno. **Correction is a CHAIN, not an edit**:
+/// `correctionOfId` (self-FK, `@unique` — at most one direct correction per
+/// flight) points this (NEW) flight at the ORIGINAL (now `CANCELLED`) one it
+/// replaces; the inverse `correctedBy` relation lets the ORIGINAL flight
+/// answer "what replaced me". A correction of a correction is a fresh row
+/// pointing at the already-corrected flight — the chain is never collapsed.
 model Flight {
   id                  String             @id @default(cuid())
   aircraftId          String
@@ -660,9 +679,30 @@ model Flight {
 
   /// Calendar-only date of the flight (`@db.Date`) — never in the future
   /// (enforced in the service against the server-clock UTC "today").
-  flightDate DateTime     @db.Date
-  flightType FlightType
-  status     FlightStatus @default(REGISTERED)
+  flightDate     DateTime     @db.Date
+  flightType     FlightType
+  status         FlightStatus @default(REGISTERED)
+  /// Set together with `cancelReason`, exactly once, when this flight
+  /// transitions to `CANCELLED` (story 5.3) — `null` while `REGISTERED`.
+  cancelledAt    DateTime?
+  /// The mandatory motivo behind the cancellation/correction (story 5.3,
+  /// AC 1/2) — `null` while `REGISTERED`. The ACTOR who cancelled is tracked
+  /// on the linked `FLIGHT_CHARGE_REVERSAL` movement's `actorUserId`, not
+  /// here (same split as every other ledger entry).
+  cancelReason   String?
+  /// Self-FK (story 5.3): set on a NEW flight that replaces an ANNULLATO one
+  /// via `correctFlight` — points at the ORIGINAL flight. `@unique`: at most
+  /// one direct correction per flight (a correction of a correction is a new
+  /// row pointing at the already-corrected one — the chain is never
+  /// collapsed/rewritten). `null` for a flight that is not itself a
+  /// correction (every `registerFlight`-created row, and any flight that was
+  /// only cancelled, never corrected).
+  correctionOfId String?      @unique
+  correctionOf   Flight?      @relation("FlightCorrection", fields: [correctionOfId], references: [id])
+  /// Inverse of `correctionOf` — the NEW flight that replaced THIS one, when
+  /// any (`null` otherwise). Lets a `CANCELLED` flight answer "what replaced
+  /// me" without a separate query.
+  correctedBy    Flight?      @relation("FlightCorrection")
 
   minutes        Int
   hourMeterStart Int?
@@ -695,9 +735,10 @@ model Flight {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// The `FLIGHT_CHARGE` movement (and, from story 5.3, its storno) linked
-  /// to this flight — plural: more than one movement can reference the same
-  /// flight.
+  /// The `FLIGHT_CHARGE` movement AND, once cancelled/corrected (story 5.3),
+  /// its `FLIGHT_CHARGE_REVERSAL` twin — both linked to THIS flight via
+  /// `AccountMovement.flightId` — plural since day one (story 5.1) for
+  /// exactly this reason.
   movements           AccountMovement[]
   /// Per-package consumption detail for this flight (story 5.2) — see
   /// `PackageConsumption` doc. Empty when no eligible package existed at
@@ -713,17 +754,20 @@ model Flight {
 /// Per-flight package consumption ledger row (epic 5, story 5.2; AD-6). One
 /// row per (flight, package) pair that the FIFO allocation actually touched
 /// — `@@unique([flightId, hourPackageId])` guarantees a flight consumes a
-/// given package AT MOST ONCE, and doubles as the deterministic anchor
-/// story 5.3's storno/reversal will need (one row to undo per package
-/// touched). `minutes` is always a positive integer (AD-2): a package whose
-/// FIFO allocation would `take` 0 minutes never gets a row here — see
-/// `flights.service.ts#registerFlight`'s allocation loop. Append-only in
-/// 5.2: there is deliberately no update/delete API yet (5.3 decides how a
-/// cancelled flight's consumption gets reversed; this story does not
-/// anticipate it, Dev Notes). FK RESTRICT on both `flightId`/`hourPackageId`
-/// (Prisma default for a required relation) — neither row this references
-/// can be deleted out from under it (moot today, nothing deletes a
-/// Flight/HourPackage, but the backstop is free).
+/// given package AT MOST ONCE. `minutes` is always a positive integer
+/// (AD-2): a package whose FIFO allocation would `take` 0 minutes never gets
+/// a row here — see `flights.service.ts#registerFlightCore`'s allocation
+/// loop. Append-only FOREVER, including after story 5.3: a cancelled
+/// flight's rows are NEVER updated/deleted — the "reversal" of consumption
+/// is achieved WITHOUT touching this table at all, by changing what every
+/// reader's SUM counts: every consumed-so-far aggregate in the codebase
+/// (`registerFlightCore`'s own allocation query, `packages.service.ts#listPersonPackages`)
+/// filters `flight: { status: { not: 'CANCELLED' } }`, so a cancelled
+/// flight's consumption simply stops counting against its packages' residuo
+/// — the historical row stays exactly as it was. FK RESTRICT on both
+/// `flightId`/`hourPackageId` (Prisma default for a required relation) —
+/// neither row this references can be deleted out from under it (moot
+/// today, nothing deletes a Flight/HourPackage, but the backstop is free).
 model PackageConsumption {
   id            String      @id @default(cuid())
   flightId      String

@@ -39,6 +39,8 @@ import {
 } from './cash';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import {
+  cancelFlightSchema,
+  correctFlightSchema,
   flightListResponseSchema,
   listFlightsQuerySchema,
   registerFlightResponseSchema,
@@ -163,6 +165,8 @@ registry.register('SellPackageResponse', sellPackageResponseSchema);
 registry.register('RegisterFlightRequest', registerFlightSchema);
 registry.register('RegisterFlightResponse', registerFlightResponseSchema);
 registry.register('FlightList', flightListResponseSchema);
+registry.register('CancelFlightRequest', cancelFlightSchema);
+registry.register('CorrectFlightRequest', correctFlightSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -173,6 +177,7 @@ registry.register('ForgotPasswordRequest', forgotPasswordSchema);
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const aircraftIdParams = z.object({ id: z.string().meta({ description: 'Aircraft id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const flightIdParams = z.object({ id: z.string().meta({ description: 'Flight id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
   401: 'Not authenticated (AD-8 `UNAUTHENTICATED`).',
@@ -779,6 +784,36 @@ registry.registerPath({
   responses: {
     201: { description: 'The registered flight, plus the refreshed account overview.', content: jsonContent(registerFlightResponseSchema) },
     ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/flights/{id}/cancel',
+  summary: 'Cancel (storno) a registered flight (FR-16)',
+  description:
+    'Story 5.3, AC 1/3/4 — in one transaction: the flight becomes CANCELLED (cancelledAt/cancelReason set), an opposite-signed FLIGHT_CHARGE_REVERSAL movement is created (linked via reversalOfId to the original FLIGHT_CHARGE), package minutes become available again (via a status-filtered SUM, no PackageConsumption row is touched), and the aircraft hour meter is reduced by the flight\'s minutes (clamped at 0). Always allowed, even if the person/aircraft is now archived. Already-cancelled -> 409. Requires `flights.manage`.',
+  tags: ['Flights'],
+  security,
+  request: { params: flightIdParams, body: { content: jsonContent(cancelFlightSchema), required: true } },
+  responses: {
+    200: { description: 'The cancelled flight, plus the refreshed account overview.', content: jsonContent(registerFlightResponseSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/flights/{id}/correct',
+  summary: 'Correct a registered flight: storno + new registration (FR-16)',
+  description:
+    'Story 5.3, AC 2/3/4 — in one transaction: storno of the original flight (identical to /cancel) followed immediately by a brand-new registration with the given data, re-validated from scratch (the same 404/422 guards as POST /flights apply to the NEW data) — linked via Flight.correctionOfId. If the new registration fails, the whole transaction (storno included) rolls back. Already-cancelled -> 409. Requires `flights.manage`.',
+  tags: ['Flights'],
+  security,
+  request: { params: flightIdParams, body: { content: jsonContent(correctFlightSchema), required: true } },
+  responses: {
+    201: { description: 'The new flight, plus the refreshed account overview (of the corrected data\'s person).', content: jsonContent(registerFlightResponseSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 

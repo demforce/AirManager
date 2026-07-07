@@ -78,7 +78,37 @@ export type FlightsManagerLabels = {
       noValue: string;
       /** Story 5.2 (AC 1) — literal `{duration}` placeholder, CLIENT-filled (t.raw, same pattern as `account-statement-table.tsx`'s `adjustmentOfDate`). */
       packageNote: string;
+      /** Story 5.3 (AC 1) — the status column header; REGISTERED renders no badge at all (Contesto). */
+      status: string;
+      statusCancelled: string;
+      /** Literal `{date}`/`{reason}` placeholders, CLIENT-filled — same `t.raw` pattern as `packageNote`. */
+      cancelledDetail: string;
+      correctionOf: string;
+      correctedBy: string;
+      actions: string;
+      cancelAction: string;
+      correctAction: string;
     };
+  };
+  /** Story 5.3, AC 1 — the inline "Annulla volo" confirmation panel. */
+  cancelPanel: {
+    title: string;
+    reason: string;
+    requiredReason: string;
+    submit: string;
+    close: string;
+    conflictError: string;
+    genericError: string;
+    success: string;
+  };
+  /** Story 5.3, AC 2 — the extra fields/labels the registration form grows in correction mode. */
+  correctPanel: {
+    title: string;
+    reason: string;
+    requiredReason: string;
+    submit: string;
+    exit: string;
+    conflictError: string;
   };
 };
 
@@ -123,6 +153,20 @@ function flightTypeLabel(type: FlightListItemDto['flightType'], labels: FlightsM
  * a prepend onto the recent-flights list — no second round-trip needed
  * (same "the POST already returns everything the UI needs" pattern as
  * `sellPackage`/`recordTopUp`).
+ *
+ * Story 5.3 (AC 1/2): the same form doubles as the "Correggi" editor — when
+ * a REGISTERED row's "Correggi" action is clicked, the form remounts
+ * (`key`) pre-filled with that flight's data plus a mandatory motivo field,
+ * and submits to `/correct` instead of `/`. "Annulla" opens a small,
+ * separate confirmation panel (never a modal, Contesto: "niente modali
+ * barocche") asking only for a motivo. Both write paths patch the
+ * client-side list directly from their responses: `cancel`'s response
+ * already IS the updated (cancelled) row (server-authoritative); `correct`'s
+ * response is the NEW row only, so the just-superseded row is patched
+ * locally with the same status/reason the server just recorded (an exact
+ * value, not a guess — the reason came from this same submit) plus a
+ * client-computed `cancelledAt` (a full page reload always shows the
+ * DB-authoritative timestamp).
  */
 export function FlightsManager({
   aircraftOptions,
@@ -134,21 +178,54 @@ export function FlightsManager({
 }: FlightsManagerProps) {
   const [flights, setFlights] = useState<FlightListItemDto[]>(initialFlights);
   const [lastResult, setLastResult] = useState<RegisterFlightResponseDto | null>(null);
+  const [correctingFlight, setCorrectingFlight] = useState<FlightListItemDto | null>(null);
+  const [cancellingFlight, setCancellingFlight] = useState<FlightListItemDto | null>(null);
+  const [cancelFeedback, setCancelFeedback] = useState<string | null>(null);
 
   function handleRegistered(result: RegisterFlightResponseDto): void {
     setLastResult(result);
     setFlights((current) => [result.flight, ...current]);
   }
 
+  function handleCorrected(result: RegisterFlightResponseDto, originalFlightId: string, reason: string): void {
+    setLastResult(result);
+    setFlights((current) => [
+      result.flight,
+      ...current.map((flight) =>
+        flight.id === originalFlightId
+          ? {
+              ...flight,
+              status: 'CANCELLED' as const,
+              cancelledAt: new Date().toISOString(),
+              cancelReason: reason,
+              correctedByFlightId: result.flight.id,
+            }
+          : flight,
+      ),
+    ]);
+    setCorrectingFlight(null);
+  }
+
+  function handleCancelled(result: RegisterFlightResponseDto): void {
+    setFlights((current) => current.map((flight) => (flight.id === result.flight.id ? result.flight : flight)));
+    setCancellingFlight(null);
+    setCancelFeedback(labels.cancelPanel.success);
+  }
+
   return (
     <div className="space-y-10">
       <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
         <RegisterFlightForm
+          key={correctingFlight?.id ?? 'register'}
           aircraftOptions={aircraftOptions}
           personOptions={personOptions}
           instructorOptions={instructorOptions}
           labels={labels.form}
+          correctLabels={labels.correctPanel}
+          correctingFlight={correctingFlight}
+          onExitCorrection={() => setCorrectingFlight(null)}
           onSuccess={handleRegistered}
+          onCorrected={handleCorrected}
         />
 
         {lastResult ? (
@@ -225,15 +302,32 @@ export function FlightsManager({
         ) : null}
       </div>
 
+      {cancellingFlight ? (
+        <CancelFlightPanel
+          flight={cancellingFlight}
+          moneyLocale={moneyLocale}
+          labels={labels.cancelPanel}
+          onClose={() => setCancellingFlight(null)}
+          onCancelled={handleCancelled}
+        />
+      ) : null}
+
       <div>
-        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
-          {labels.list.heading}
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+            {labels.list.heading}
+          </h3>
+          {cancelFeedback ? (
+            <p role="status" data-testid="flight-cancel-feedback" className="text-sm text-[#346538]">
+              {cancelFeedback}
+            </p>
+          ) : null}
+        </div>
         {flights.length === 0 ? (
           <p className="mt-4 text-sm text-[#787774]">{labels.list.empty}</p>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[860px] text-left text-sm">
               <thead>
                 <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
                   <th className="py-2 pr-4 font-medium">{labels.list.table.date}</th>
@@ -243,7 +337,9 @@ export function FlightsManager({
                   <th className="py-2 pr-4 font-medium">{labels.list.table.type}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.duration}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.amount}</th>
-                  <th className="py-2 font-medium">{labels.list.table.landings}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.landings}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.status}</th>
+                  <th className="py-2 font-medium">{labels.list.table.actions}</th>
                 </tr>
               </thead>
               <tbody>
@@ -265,13 +361,177 @@ export function FlightsManager({
                       ) : null}
                     </td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatCents(flight.breakdown.totalAmountCents, moneyLocale)}</td>
-                    <td className="py-2 whitespace-nowrap">{flight.landings ?? labels.list.table.noValue}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{flight.landings ?? labels.list.table.noValue}</td>
+                    <td className="py-2 pr-4">
+                      <FlightStatusCell flight={flight} labels={labels.list.table} />
+                    </td>
+                    <td className="py-2 whitespace-nowrap">
+                      {flight.status === 'REGISTERED' ? (
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            data-testid="flight-cancel-action"
+                            onClick={() => {
+                              setCancelFeedback(null);
+                              setCancellingFlight(flight);
+                            }}
+                            className="rounded-[6px] border border-[#EAEAEA] bg-white px-2.5 py-1 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                          >
+                            {labels.list.table.cancelAction}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="flight-correct-action"
+                            onClick={() => setCorrectingFlight(flight)}
+                            className="rounded-[6px] border border-[#EAEAEA] bg-white px-2.5 py-1 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                          >
+                            {labels.list.table.correctAction}
+                          </button>
+                        </div>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The status/lineage cell (story 5.3, AC 1/2): REGISTERED renders nothing
+ * (Contesto: "REGISTERED senza badge o neutro") — a CANCELLED flight shows a
+ * muted/red badge plus, in a small secondary line, when/why (the reason is
+ * also the row's `title` so the full text is always reachable even if the
+ * line truncates). The correction chips ("corretto da"/"correzione di")
+ * render whenever their id is present, REGARDLESS of this row's own status
+ * — a REGISTERED flight can itself be a correction of an earlier ANNULLATO
+ * one.
+ */
+function FlightStatusCell({ flight, labels }: { flight: FlightListItemDto; labels: FlightsManagerLabels['list']['table'] }) {
+  if (flight.status !== 'CANCELLED' && !flight.correctionOfId && !flight.correctedByFlightId) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-1">
+      {flight.status === 'CANCELLED' ? (
+        <>
+          <span
+            data-testid="flight-status-badge"
+            className="inline-block rounded-full bg-[#FDEBEC] px-2.5 py-1 text-xs font-medium text-[#9F2F2D]"
+          >
+            {labels.statusCancelled}
+          </span>
+          {flight.cancelledAt && flight.cancelReason ? (
+            <p className="text-xs text-[#787774]" title={flight.cancelReason}>
+              {labels.cancelledDetail.replace('{date}', flight.cancelledAt.slice(0, 10)).replace('{reason}', flight.cancelReason)}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+      {flight.correctionOfId ? <p className="text-xs text-[#787774]">{labels.correctionOf}</p> : null}
+      {flight.correctedByFlightId ? <p className="text-xs text-[#787774]">{labels.correctedBy}</p> : null}
+    </div>
+  );
+}
+
+type CancelFlightPanelProps = {
+  flight: FlightListItemDto;
+  moneyLocale: 'it' | 'en';
+  labels: FlightsManagerLabels['cancelPanel'];
+  onClose: () => void;
+  onCancelled: (result: RegisterFlightResponseDto) => void;
+};
+
+/**
+ * "Annulla volo" confirmation (story 5.3, AC 1) — a small inline panel, NOT
+ * a modal (Contesto: "niente modali barocche"), asking only for the
+ * mandatory motivo. On success, the response's `flight` IS the updated
+ * (cancelled) row — the parent patches the list with it directly, no
+ * separate re-fetch (same "the POST already returns everything the UI
+ * needs" pattern as registration).
+ */
+function CancelFlightPanel({ flight, moneyLocale, labels, onClose, onCancelled }: CancelFlightPanelProps) {
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleConfirm(): Promise<void> {
+    const trimmed = reason.trim();
+    if (trimmed === '') {
+      setReasonError(true);
+      return;
+    }
+    setReasonError(false);
+    setFormError(null);
+    setSubmitting(true);
+
+    const response = await fetch(`/api/v1/flights/${flight.id}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: trimmed }),
+    });
+
+    setSubmitting(false);
+    if (!response.ok) {
+      setFormError(response.status === 409 ? labels.conflictError : labels.genericError);
+      return;
+    }
+
+    const result = (await response.json()) as RegisterFlightResponseDto;
+    onCancelled(result);
+  }
+
+  return (
+    <div data-testid="flight-cancel-panel" className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+      <h4 className="font-[family-name:var(--font-serif)] text-xl font-medium tracking-[-0.02em] text-[#111111]">{labels.title}</h4>
+      <p className="mt-2 text-sm text-[#787774]">
+        {flight.aircraft.registration} — {flight.flightDate} — {formatCents(flight.breakdown.totalAmountCents, moneyLocale)}
+      </p>
+
+      <div className="mt-4 max-w-md">
+        <label htmlFor="cancel-reason" className="block text-sm font-medium text-[#2F3437]">
+          {labels.reason}
+        </label>
+        <input
+          id="cancel-reason"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          aria-invalid={reasonError}
+          maxLength={500}
+          className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+        />
+        {reasonError ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredReason}</p> : null}
+      </div>
+
+      {formError ? (
+        <p role="alert" data-testid="flight-cancel-error" className="mt-4 rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+          {formError}
+        </p>
+      ) : null}
+
+      <div className="mt-5 flex gap-3">
+        <button
+          type="button"
+          data-testid="flight-cancel-confirm"
+          disabled={submitting}
+          onClick={() => void handleConfirm()}
+          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {labels.submit}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+        >
+          {labels.close}
+        </button>
       </div>
     </div>
   );
@@ -301,32 +561,10 @@ const flightFormSchema = z.object({
 
 type FlightFormValues = z.infer<typeof flightFormSchema>;
 
-type RegisterFlightFormProps = {
-  aircraftOptions: AircraftOption[];
-  personOptions: PersonOption[];
-  instructorOptions: PersonOption[];
-  labels: FlightsManagerLabels['form'];
-  onSuccess: (result: RegisterFlightResponseDto) => void;
-};
-
-function RegisterFlightForm({ aircraftOptions, personOptions, instructorOptions, labels, onSuccess }: RegisterFlightFormProps) {
-  const [formError, setFormError] = useState<string | null>(null);
-  // Deliberately plain component state, NOT a react-hook-form field read via
-  // `watch()` (the React Compiler flags TanStack/RHF's `watch()`/table hooks
-  // as unmemoizable, same documented exception as `data-table.tsx` — a
-  // second one here would add a second lint warning beyond the one already
-  // accepted). `durationMode` only ever drives which inputs render and which
-  // branch `onSubmit` takes; it is never itself sent to the API.
-  const [durationMode, setDurationMode] = useState<'minutes' | 'hourMeter'>('minutes');
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<FlightFormValues>({
-    resolver: zodResolver(flightFormSchema),
-    defaultValues: {
+/** Blank/registration defaults, or (story 5.3) pre-filled from the flight being corrected. */
+function flightFormDefaults(aircraftOptions: AircraftOption[], correctingFlight: FlightListItemDto | null): FlightFormValues {
+  if (!correctingFlight) {
+    return {
       aircraftId: aircraftOptions[0]?.id ?? '',
       personId: '',
       instructorPersonId: '',
@@ -337,14 +575,84 @@ function RegisterFlightForm({ aircraftOptions, personOptions, instructorOptions,
       hourMeterEnd: '',
       landings: '',
       notes: '',
-    },
+    };
+  }
+  return {
+    aircraftId: correctingFlight.aircraft.id,
+    personId: correctingFlight.person.id,
+    instructorPersonId: correctingFlight.instructor?.personId ?? '',
+    flightDate: correctingFlight.flightDate,
+    flightType: correctingFlight.flightType,
+    minutes: correctingFlight.hourMeterStart === null ? String(correctingFlight.minutes) : '',
+    hourMeterStart: correctingFlight.hourMeterStart !== null ? String(correctingFlight.hourMeterStart) : '',
+    hourMeterEnd: correctingFlight.hourMeterEnd !== null ? String(correctingFlight.hourMeterEnd) : '',
+    landings: correctingFlight.landings !== null ? String(correctingFlight.landings) : '',
+    notes: correctingFlight.notes ?? '',
+  };
+}
+
+type RegisterFlightFormProps = {
+  aircraftOptions: AircraftOption[];
+  personOptions: PersonOption[];
+  instructorOptions: PersonOption[];
+  labels: FlightsManagerLabels['form'];
+  correctLabels: FlightsManagerLabels['correctPanel'];
+  /** Story 5.3, AC 2 — non-null re-purposes this SAME form into the "Correggi volo" editor. */
+  correctingFlight: FlightListItemDto | null;
+  onExitCorrection: () => void;
+  onSuccess: (result: RegisterFlightResponseDto) => void;
+  onCorrected: (result: RegisterFlightResponseDto, originalFlightId: string, reason: string) => void;
+};
+
+function RegisterFlightForm({
+  aircraftOptions,
+  personOptions,
+  instructorOptions,
+  labels,
+  correctLabels,
+  correctingFlight,
+  onExitCorrection,
+  onSuccess,
+  onCorrected,
+}: RegisterFlightFormProps) {
+  const [formError, setFormError] = useState<string | null>(null);
+  // Deliberately plain component state, NOT a react-hook-form field read via
+  // `watch()` (the React Compiler flags TanStack/RHF's `watch()`/table hooks
+  // as unmemoizable, same documented exception as `data-table.tsx` — a
+  // second one here would add a second lint warning beyond the one already
+  // accepted). `durationMode` only ever drives which inputs render and which
+  // branch `onSubmit` takes; it is never itself sent to the API.
+  const [durationMode, setDurationMode] = useState<'minutes' | 'hourMeter'>(
+    correctingFlight?.hourMeterStart != null ? 'hourMeter' : 'minutes',
+  );
+  // Story 5.3 (AC 2): the mandatory motivo, only rendered/required in
+  // correction mode — same "plain local state, not a schema field" pattern
+  // as `durationMode` (the field only exists in one of the two modes).
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<FlightFormValues>({
+    resolver: zodResolver(flightFormSchema),
+    defaultValues: flightFormDefaults(aircraftOptions, correctingFlight),
   });
 
   const noAircraft = aircraftOptions.length === 0;
   const noPerson = personOptions.length === 0;
+  const isCorrecting = correctingFlight !== null;
 
   async function onSubmit(values: FlightFormValues): Promise<void> {
     setFormError(null);
+
+    if (isCorrecting && reason.trim() === '') {
+      setReasonError(true);
+      return;
+    }
+    setReasonError(false);
 
     let durationPayload: { minutes: number } | { hourMeterStart: number; hourMeterEnd: number };
     if (durationMode === 'minutes') {
@@ -366,8 +674,9 @@ function RegisterFlightForm({ aircraftOptions, personOptions, instructorOptions,
 
     const landings = values.landings.trim() === '' ? undefined : Number(values.landings);
     const notes = values.notes.trim() === '' ? undefined : values.notes.trim();
+    const trimmedReason = reason.trim();
 
-    const response = await fetch('/api/v1/flights', {
+    const response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight.id}/correct` : '/api/v1/flights', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -379,10 +688,15 @@ function RegisterFlightForm({ aircraftOptions, personOptions, instructorOptions,
         ...durationPayload,
         landings,
         notes,
+        ...(isCorrecting ? { reason: trimmedReason } : {}),
       }),
     });
 
     if (!response.ok) {
+      if (isCorrecting && response.status === 409) {
+        setFormError(correctLabels.conflictError);
+        return;
+      }
       const body: unknown = await response.json().catch(() => null);
       const code = (body as { error?: { code?: string } } | null)?.error?.code;
       const knownErrors: Record<string, string> = labels.errors;
@@ -391,25 +705,33 @@ function RegisterFlightForm({ aircraftOptions, personOptions, instructorOptions,
     }
 
     const result = (await response.json()) as RegisterFlightResponseDto;
-    onSuccess(result);
-    reset({
-      aircraftId: values.aircraftId,
-      personId: '',
-      instructorPersonId: '',
-      flightDate: todayDateOnly(),
-      flightType: 'PRIVATE',
-      minutes: '',
-      hourMeterStart: '',
-      hourMeterEnd: '',
-      landings: '',
-      notes: '',
-    });
+    if (isCorrecting) {
+      onCorrected(result, correctingFlight.id, trimmedReason);
+    } else {
+      onSuccess(result);
+    }
+    reset(flightFormDefaults(aircraftOptions, null));
     setDurationMode('minutes');
+    setReason('');
   }
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5" data-testid="flight-form">
-      <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{labels.title}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+          {isCorrecting ? correctLabels.title : labels.title}
+        </h3>
+        {isCorrecting ? (
+          <button
+            type="button"
+            data-testid="flight-correct-exit"
+            onClick={onExitCorrection}
+            className="text-xs font-medium text-[#787774] underline-offset-4 hover:underline"
+          >
+            {correctLabels.exit}
+          </button>
+        ) : null}
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
@@ -609,6 +931,23 @@ function RegisterFlightForm({ aircraftOptions, personOptions, instructorOptions,
         />
       </div>
 
+      {isCorrecting ? (
+        <div className="max-w-md">
+          <label htmlFor="flight-correct-reason" className="block text-sm font-medium text-[#2F3437]">
+            {correctLabels.reason}
+          </label>
+          <input
+            id="flight-correct-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            aria-invalid={reasonError}
+            maxLength={500}
+            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          />
+          {reasonError ? <p className="mt-1 text-xs text-[#9F2F2D]">{correctLabels.requiredReason}</p> : null}
+        </div>
+      ) : null}
+
       {formError ? (
         <p role="alert" data-testid="flight-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
           {formError}
@@ -620,7 +959,7 @@ function RegisterFlightForm({ aircraftOptions, personOptions, instructorOptions,
         disabled={isSubmitting || noAircraft || noPerson}
         className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {labels.submit}
+        {isCorrecting ? correctLabels.submit : labels.submit}
       </button>
     </form>
   );

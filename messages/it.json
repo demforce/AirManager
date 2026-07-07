@@ -174,7 +174,8 @@
         "topUp": "Ricarica",
         "adjustment": "Rettifica",
         "packagePurchase": "Acquisto pacchetto",
-        "flightCharge": "Addebito volo"
+        "flightCharge": "Addebito volo",
+        "flightChargeReversal": "Storno volo"
       },
       "topUp": {
         "action": "Registra ricarica",
@@ -271,11 +272,16 @@
       "topUp": "Ricarica",
       "adjustment": "Rettifica",
       "packagePurchase": "Acquisto pacchetto",
-      "flightCharge": "Addebito volo"
+      "flightCharge": "Addebito volo",
+      "flightChargeReversal": "Storno volo"
     },
     "adjustmentBadge": {
       "ofDate": "Rettifica del movimento del {date}",
       "linked": "Rettifica di un movimento precedente"
+    },
+    "reversalBadge": {
+      "ofDate": "Storno del movimento del {date}",
+      "linked": "Storno di un movimento precedente"
     },
     "adjustments": {
       "action": "Registra rettifica",
@@ -707,8 +713,34 @@
         "amount": "Addebito",
         "landings": "Atterraggi",
         "noValue": "—",
-        "packageNote": "di cui {duration} da pacchetto"
+        "packageNote": "di cui {duration} da pacchetto",
+        "status": "Stato",
+        "statusCancelled": "Annullato",
+        "cancelledDetail": "Annullato il {date} — {reason}",
+        "correctionOf": "Correzione di un volo precedente",
+        "correctedBy": "Corretto da un volo successivo",
+        "actions": "Azioni",
+        "cancelAction": "Annulla",
+        "correctAction": "Correggi"
       }
+    },
+    "cancelPanel": {
+      "title": "Annulla volo",
+      "reason": "Motivo",
+      "requiredReason": "Il motivo è obbligatorio.",
+      "submit": "Conferma annullamento",
+      "close": "Chiudi",
+      "conflictError": "Questo volo è già stato annullato.",
+      "genericError": "Impossibile annullare il volo. Riprova.",
+      "success": "Volo annullato."
+    },
+    "correctPanel": {
+      "title": "Correggi volo",
+      "reason": "Motivo della correzione",
+      "requiredReason": "Il motivo è obbligatorio.",
+      "submit": "Conferma correzione",
+      "exit": "Annulla correzione",
+      "conflictError": "Questo volo è già stato annullato."
     }
   },
   "UsersPage": {

@@ -32,11 +32,15 @@ export type AccountStatementTableLabels = {
   actions: string;
   noValue: string;
   empty: string;
-  movementType: { topUp: string; adjustment: string; packagePurchase: string; flightCharge: string };
+  movementType: { topUp: string; adjustment: string; packagePurchase: string; flightCharge: string; flightChargeReversal: string };
   /** Badge on a linked ADJUSTMENT row; `{date}` is replaced with the original movement's date when it is on the same page. */
   adjustmentOfDate: string;
   /** Badge fallback when the original movement is not on the current page. */
   adjustmentLinked: string;
+  /** Badge on a linked FLIGHT_CHARGE_REVERSAL row (story 5.3) — same `{date}` mechanics as `adjustmentOfDate`. */
+  reversalOfDate: string;
+  /** Badge fallback when the original movement is not on the current page. */
+  reversalLinked: string;
 };
 
 export type AdjustmentLabels = {
@@ -84,6 +88,8 @@ function movementTypeLabel(type: AccountMovementTypeDto, labels: AccountStatemen
       return labels.packagePurchase;
     case 'FLIGHT_CHARGE':
       return labels.flightCharge;
+    case 'FLIGHT_CHARGE_REVERSAL':
+      return labels.flightChargeReversal;
     default:
       return type;
   }
@@ -124,6 +130,12 @@ export function AccountStatementTable({
     return original ? labels.adjustmentOfDate.replace('{date}', original.effectiveDate) : labels.adjustmentLinked;
   }
 
+  /** Story 5.3: the `reversalOfId` badge, generalized from `ADJUSTMENT` (story 3.3) to also cover a flight's `FLIGHT_CHARGE_REVERSAL` storno row. */
+  function reversalBadgeText(row: AccountStatementRow): string {
+    const original = row.reversalOfId ? rowById.get(row.reversalOfId) : undefined;
+    return original ? labels.reversalOfDate.replace('{date}', original.effectiveDate) : labels.reversalLinked;
+  }
+
   function handleSuccess(): void {
     setPanel(null);
     setFeedback(adjustmentLabels.success);
@@ -151,6 +163,14 @@ export function AccountStatementTable({
               className="rounded-full bg-[#FBF3DB] px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] text-[#956400]"
             >
               {adjustmentBadgeText(row.original)}
+            </span>
+          ) : null}
+          {row.original.type === 'FLIGHT_CHARGE_REVERSAL' && row.original.reversalOfId ? (
+            <span
+              data-testid="reversal-badge"
+              className="rounded-full bg-[#FDEBEC] px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] text-[#9F2F2D]"
+            >
+              {reversalBadgeText(row.original)}
             </span>
           ) : null}
         </span>

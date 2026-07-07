@@ -59,9 +59,14 @@ export default async function FlightsPage({ params }: PageProps) {
   const instructorOptions = peopleResult.items
     .filter((person) => person.profiles.instructor)
     .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
-  // `createdAt` serialized to ISO (AD-8) — the service's `Date` cannot cross
-  // the server/client boundary as-is (same pattern as `AircraftPage`'s `archivedAt`).
-  const initialFlights = flightsResult.items.map((flight) => ({ ...flight, createdAt: flight.createdAt.toISOString() }));
+  // `createdAt`/`cancelledAt` serialized to ISO (AD-8) — the service's `Date`
+  // cannot cross the server/client boundary as-is (same pattern as
+  // `AircraftPage`'s `archivedAt`; story 5.3 adds `cancelledAt`).
+  const initialFlights = flightsResult.items.map((flight) => ({
+    ...flight,
+    createdAt: flight.createdAt.toISOString(),
+    cancelledAt: flight.cancelledAt ? flight.cancelledAt.toISOString() : null,
+  }));
 
   const t = await getTranslations('FlightsPage');
 
@@ -167,7 +172,34 @@ export default async function FlightsPage({ params }: PageProps) {
                   // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
                   // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).
                   packageNote: t.raw('list.table.packageNote') as string,
+                  status: t('list.table.status'),
+                  statusCancelled: t('list.table.statusCancelled'),
+                  // `t.raw`: literal `{date}`/`{reason}` placeholders, CLIENT-filled (same pattern as `packageNote`).
+                  cancelledDetail: t.raw('list.table.cancelledDetail') as string,
+                  correctionOf: t('list.table.correctionOf'),
+                  correctedBy: t('list.table.correctedBy'),
+                  actions: t('list.table.actions'),
+                  cancelAction: t('list.table.cancelAction'),
+                  correctAction: t('list.table.correctAction'),
                 },
+              },
+              cancelPanel: {
+                title: t('cancelPanel.title'),
+                reason: t('cancelPanel.reason'),
+                requiredReason: t('cancelPanel.requiredReason'),
+                submit: t('cancelPanel.submit'),
+                close: t('cancelPanel.close'),
+                conflictError: t('cancelPanel.conflictError'),
+                genericError: t('cancelPanel.genericError'),
+                success: t('cancelPanel.success'),
+              },
+              correctPanel: {
+                title: t('correctPanel.title'),
+                reason: t('correctPanel.reason'),
+                requiredReason: t('correctPanel.requiredReason'),
+                submit: t('correctPanel.submit'),
+                exit: t('correctPanel.exit'),
+                conflictError: t('correctPanel.conflictError'),
               },
             }}
           />

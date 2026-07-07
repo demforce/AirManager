@@ -427,7 +427,7 @@ describe('packages.service (story 4.4 — package sale and residuals, FR-13)', (
 
         expect(packageConsumptionGroupByMock).toHaveBeenCalledWith({
           by: ['hourPackageId'],
-          where: { hourPackageId: { in: ['hp_1', 'hp_2'] } },
+          where: { hourPackageId: { in: ['hp_1', 'hp_2'] }, flight: { status: { not: 'CANCELLED' } } },
           _sum: { minutes: true },
         });
         expect(items[0]).toMatchObject({ id: 'hp_1', includedMinutes: 600, consumedMinutes: 200, remainingMinutes: 400 });
@@ -450,6 +450,24 @@ describe('packages.service (story 4.4 — package sale and residuals, FR-13)', (
         await listPersonPackages(staffActor(), 'person_1');
 
         expect(packageConsumptionGroupByMock).not.toHaveBeenCalled();
+      });
+
+      it("story 5.3: the residuo rises back up after a flight is cancelled (its consumption stops counting, DB-side filter — not simulated here beyond the groupBy's own return value)", async () => {
+        hourPackageFindMany.mockResolvedValue([ROW]);
+        // Before any cancellation: the (mocked) DB-side filter would still
+        // include this flight's 200' — simulated directly via the groupBy's
+        // return value, since the filter itself lives in the WHERE clause
+        // asserted above, not in this mock.
+        packageConsumptionGroupBy.mockResolvedValue([{ hourPackageId: 'hp_1', _sum: { minutes: 200 } }]);
+        const before = await listPersonPackages(staffActor(), 'person_1');
+        expect(before[0]?.remainingMinutes).toBe(400);
+
+        // After that flight is cancelled: `flight: { status: { not: 'CANCELLED' } }`
+        // (asserted above) excludes its consumption row from the real SUM —
+        // here, simply a lower aggregate returned by the (still mocked) groupBy.
+        packageConsumptionGroupBy.mockResolvedValue([]);
+        const after = await listPersonPackages(staffActor(), 'person_1');
+        expect(after[0]?.remainingMinutes).toBe(600);
       });
     });
 

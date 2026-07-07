@@ -180,12 +180,15 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
                 adjustment: t('movementType.adjustment'),
                 packagePurchase: t('movementType.packagePurchase'),
                 flightCharge: t('movementType.flightCharge'),
+                flightChargeReversal: t('movementType.flightChargeReversal'),
               },
               // `t.raw`: these carry a literal `{date}` placeholder the CLIENT
               // fills in (the original movement's date lives in the row data)
               // — `t()` would fail on the missing ICU value server-side.
               adjustmentOfDate: t.raw('adjustmentBadge.ofDate') as string,
               adjustmentLinked: t('adjustmentBadge.linked'),
+              reversalOfDate: t.raw('reversalBadge.ofDate') as string,
+              reversalLinked: t('reversalBadge.linked'),
             }}
             adjustmentLabels={{
               action: t('adjustments.action'),

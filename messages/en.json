@@ -174,7 +174,8 @@
         "topUp": "Top-up",
         "adjustment": "Adjustment",
         "packagePurchase": "Package purchase",
-        "flightCharge": "Flight charge"
+        "flightCharge": "Flight charge",
+        "flightChargeReversal": "Flight reversal"
       },
       "topUp": {
         "action": "Record top-up",
@@ -271,11 +272,16 @@
       "topUp": "Top-up",
       "adjustment": "Adjustment",
       "packagePurchase": "Package purchase",
-      "flightCharge": "Flight charge"
+      "flightCharge": "Flight charge",
+      "flightChargeReversal": "Flight reversal"
     },
     "adjustmentBadge": {
       "ofDate": "Adjusts the movement of {date}",
       "linked": "Adjusts a previous movement"
+    },
+    "reversalBadge": {
+      "ofDate": "Reverses the movement of {date}",
+      "linked": "Reverses a previous movement"
     },
     "adjustments": {
       "action": "Record adjustment",
@@ -707,8 +713,34 @@
         "amount": "Charge",
         "landings": "Landings",
         "noValue": "—",
-        "packageNote": "of which {duration} from package"
+        "packageNote": "of which {duration} from package",
+        "status": "Status",
+        "statusCancelled": "Cancelled",
+        "cancelledDetail": "Cancelled on {date} — {reason}",
+        "correctionOf": "Correction of a previous flight",
+        "correctedBy": "Corrected by a later flight",
+        "actions": "Actions",
+        "cancelAction": "Cancel",
+        "correctAction": "Correct"
       }
+    },
+    "cancelPanel": {
+      "title": "Cancel flight",
+      "reason": "Reason",
+      "requiredReason": "The reason is required.",
+      "submit": "Confirm cancellation",
+      "close": "Close",
+      "conflictError": "This flight has already been cancelled.",
+      "genericError": "Could not cancel the flight. Please try again.",
+      "success": "Flight cancelled."
+    },
+    "correctPanel": {
+      "title": "Correct flight",
+      "reason": "Correction reason",
+      "requiredReason": "The reason is required.",
+      "submit": "Confirm correction",
+      "exit": "Cancel correction",
+      "conflictError": "This flight has already been cancelled."
     }
   },
   "UsersPage": {

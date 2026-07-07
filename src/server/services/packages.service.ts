@@ -26,11 +26,24 @@ import { ConflictError, ForbiddenError, NotFoundError } from './errors';
  * **Consumption (epic 5, story 5.2)**: `computeRemainingMinutes` is the ONE
  * place that turns `includedMinutes - consumedMinutes` into the residuo
  * every reader (this module's own `sellPackage`/`listPersonPackages`, and
- * `flights.service.ts#registerFlight`'s FIFO allocation) agrees on;
+ * `flights.service.ts#registerFlightCore`'s FIFO allocation) agrees on;
  * `consumedMinutes` itself is always a fresh `SUM(PackageConsumption.minutes)`
  * aggregate, never a persisted counter (AD-3). This module never writes a
- * `PackageConsumption` row itself — only `registerFlight` does, inside its
- * own transaction (the consumption side of AD-6 lives there, not here).
+ * `PackageConsumption` row itself — only `flights.service.ts` does, inside
+ * its own transaction (the consumption side of AD-6 lives there, not here).
+ *
+ * **Reversal (epic 5, story 5.3)**: cancelling/correcting a flight NEVER
+ * touches a `PackageConsumption` row (append-only forever, `PackageConsumption`
+ * doc) — the minutes it consumed become available again purely by changing
+ * what the SUM counts. Every consumed-so-far aggregate in this module (and
+ * `flights.service.ts#registerFlightCore`'s own) filters
+ * `flight: { status: { not: 'CANCELLED' } }` — a cancelled flight's
+ * consumption rows simply stop counting against their packages' residuo.
+ * This is what lets a correction (storno + new registration, same
+ * transaction) see the just-restored minutes as already available: the
+ * storno flips the original flight's `status` to `CANCELLED` first, so the
+ * new registration's own filtered SUM — read moments later in the SAME
+ * transaction — already excludes it.
  */
 
 /** The cash category package sales land in (AC 1) — seeded, never created on the fly (same pattern as `recordTopUp`'s "Ricariche"). */
@@ -93,8 +106,11 @@ type SelectedHourPackage = {
  * one, or one nobody has flown against yet) — this function stays the ONE
  * place that turns "included minus consumed" into the residuo everyone else
  * reads (`sellPackage`, `listPersonPackages`, and
- * `flights.service.ts#registerFlight`'s own FIFO allocation all agree with
- * this formula).
+ * `flights.service.ts#registerFlightCore`'s own FIFO allocation all agree
+ * with this formula). Story 5.3: `consumedMinutes` itself already excludes
+ * cancelled flights' consumption (every caller's SUM filters
+ * `flight: { status: { not: 'CANCELLED' } }`) — this function has no idea
+ * whether a storno happened; it only ever sees the already-filtered number.
  */
 export function computeRemainingMinutes(pkg: { includedMinutes: number; consumedMinutes: number }): number {
   return pkg.includedMinutes - pkg.consumedMinutes;
@@ -303,11 +319,15 @@ export async function listPersonPackages(actor: Actor, personId: string): Promis
 
   // ONE aggregated query for every listed package's consumed-so-far SUM
   // (epic 5, story 5.2) — never one query per package (Dev Notes: no N+1).
+  // `flight: { status: { not: 'CANCELLED' } }` (story 5.3): a cancelled
+  // flight's consumption rows are never deleted (PackageConsumption doc) —
+  // they simply stop counting here, which is exactly what "restores" the
+  // minutes after a storno.
   const consumedRows =
     packages.length > 0
       ? await prisma.packageConsumption.groupBy({
           by: ['hourPackageId'],
-          where: { hourPackageId: { in: packages.map((pkg) => pkg.id) } },
+          where: { hourPackageId: { in: packages.map((pkg) => pkg.id) }, flight: { status: { not: 'CANCELLED' } } },
           _sum: { minutes: true },
         })
       : [];

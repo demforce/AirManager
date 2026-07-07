@@ -209,6 +209,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 adjustment: t('accountPanel.movementType.adjustment'),
                 packagePurchase: t('accountPanel.movementType.packagePurchase'),
                 flightCharge: t('accountPanel.movementType.flightCharge'),
+                flightChargeReversal: t('accountPanel.movementType.flightChargeReversal'),
               },
               topUp: {
                 action: t('accountPanel.topUp.action'),
