@@ -60,11 +60,11 @@ development_status:
   3-5-financial-report: done
   epic-3-retrospective: optional
 
-  epic-4: in-progress
+  epic-4: done
   4-1-aircraft-rates: done
   4-2-instructor-rates: done
   4-3-package-types: done
-  4-4-package-sale: ready-for-dev
+  4-4-package-sale: done
   epic-4-retrospective: optional
 
   epic-5: backlog

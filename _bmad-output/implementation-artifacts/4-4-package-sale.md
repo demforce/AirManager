@@ -4,7 +4,7 @@ baseline_commit: 764f654
 
 # Story 4.4: Vendita pacchetti e residui
 
-Status: review
+Status: done
 
 ## Story
 
@@ -116,9 +116,30 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
-_(da compilare in review)_
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean pass — nessuna modifica al codice richiesta.**
+
+Verificato e trovato corretto (review con verifica empirica su DB + introspezione):
+- **AC 1 / atomicità**: upsert `Account` + `AccountMovement(PACKAGE_PURCHASE, amountCents: 0)` + `HourPackage` + `CashMovement(+prezzo, "Pacchetti")` in UNA `$transaction`; categoria risolta fail-fast (attiva) PRIMA della transazione; nessun percorso di fallimento parziale. **Saldo provabilmente invariato** (unica scrittura conto = 0; assert in unit e e2e), cassa correttamente +prezzo, doppio link `accountMovementId` (HourPackage e CashMovement, ciascuno `@unique`) coerente.
+- **Snapshot AD-4**: minuti/prezzo copiati alla vendita, `expiresAt` materializzato una volta sola; edit/disattivazione successivi del tipo non toccano il venduto. `addMonthsClampUtc` validato empiricamente su 8 casi limite (31 gen→28 feb, bisestile, rollover dicembre→gennaio, +12, identità +0) — tutto UTC date-only, `@db.Date` solo via query tipizzate.
+- **`isExpired` boundary**: strettamente `expiresAt < oggi` (UTC midnight) — il giorno di scadenza è ancora valido, 4 test di confine.
+- **Ordine guardie e own-access**: `authorize` → persona 404 → archiviata 409 → tipo 404 → inattivo 409 → categoria; `listPersonPackages` con check own-access PRIMA della query (niente enumeration), `actorEmail` condizionale su `people.read`; pilota non vende (403 pre-DB).
+- **AC 3**: pre-check `_count.soldPackages > 0` → 409 "deactivate it instead" + backstop P2003 intatto; e2e prova il DELETE su tipo venduto → 409.
+- **Residuo**: `computeRemainingMinutes` unico punto di calcolo, nessuna colonna persistita.
+- **Statement/preview**: `PACKAGE_PURCHASE` renderizzato in preview e estratto (IT/EN); gemello cassa correttamente NON stornabile (blocco `accountMovementId != null`).
+- **Migrazione** `20260707140000`: `ALTER TYPE ADD VALUE` (mai usato nella stessa tx, PG16-safe) + `HourPackage` con 4 FK RESTRICT verificate live (`confdeltype=r`), unique su `accountMovementId`; 13 migrazioni pulite su DB fresco.
+- **OpenAPI/Zod/UI**: endpoint registrati + coverage; tag `Finance` (judgment call del dev) accettato; 44px touch target su tutti i controlli nuovi, `key={person.id}`, feedback `role=status/alert`, i18n 100% simmetrica, select solo tipi attivi.
+
+Deferrals (non bloccanti, nessuna azione):
+- **D1** — l'overview conto ritornata da `sellPackage` non è consumata dal `PackagesPanel` (sibling `AccountPanel` non refresha la preview movimenti fino al reload; il saldo mostrato resta comunque corretto perché invariato). Da valutare in un refactor UI futuro.
+- **D2** — `recordAdjustment` (3.3) può puntare una rettifica a un movimento `PACKAGE_PURCHASE` a importo 0: affordance semanticamente strana ma pre-esistente (valeva già per TOP_UP), nessuna corruzione; eventuale guard sui tipi rettificabili in futuro. Lo storno vendita vero resta scope epic 5+.
+- **D3** — scadenza mostrata come ISO `YYYY-MM-DD` grezzo (non locale-aware come il denaro); cosmetico, coerente con l'assert e2e. Nota anche il commento impreciso su `todayDateOnly` client-side (usa UTC, il commento dice local).
+
+### Final gates (review run)
+
+typecheck pulito, **479/479 unit**, lint 0 errori (warning benigno noto), `next build` verde, `prisma migrate status` 13/13, introspezione DB conforme; e2e 83/83 nel run dev su DB resettato (review statica dello spec: assert su saldo invariato, entrata cassa, 409 tipo venduto/inattivo, envelope 403, riga amount-0).
 
 ## Change Log
 
 - 2026-07-07: Story file created (Fable 5 main session), ready-for-dev.
 - 2026-07-07: Implemented (Sonnet 5, single dev agent, xhigh) — commit `Story 4.4: package sale and residuals`. Status → review.
+- 2026-07-07: Review Opus 4.8 xhigh — clean pass (D1/D2/D3 deferred, non bloccanti). Status → done; Epic 4 chiuso.
