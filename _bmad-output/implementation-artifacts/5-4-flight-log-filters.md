@@ -4,7 +4,7 @@ baseline_commit: 6ab21fd
 
 # Story 5.4: Registro voli con filtri e permessi
 
-Status: ready-for-review
+Status: done
 
 ## Story
 
@@ -106,9 +106,24 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
-_(da compilare dopo la review)_
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial (audit access-control). **Verdict: findings — solo D1 deferrable (pre-esistente, non di questa story); nessuna modifica al codice richiesta.**
+
+Verificato e trovato corretto (14 chiamate service dirette su Postgres seedato + e2e mirati su DB fresco):
+- **Ordine guardie own-access**: 403 sul `personId` altrui PRIMA dello short-circuit pagina-vuota PRIMA della costruzione `where` — un attore `self.read` SENZA personId che filtra il personId altrui riceve 403, mai una pagina vuota silenziosa.
+- **Scope AND, mai OR-widening**: lo scope `OR own/instructor` è combinato in AND con ogni filtro (chiavi Prisma top-level distinte) — 6 combinazioni di attacco (aircraftId altrui, periodo che copre voli altrui, tipo, stato) non fanno MAI vedere al pilota A i voli di B.
+- **Istruttore**: vede own-as-person + voli dove `instructorProfile.personId` è il suo e NIENT'ALTRO; filtro `personId=allievo` → 403 (non è staff).
+- **`actorEmail` condizionale**: assente per pilota/istruttore, presente per staff (verificato sui DTO reali); nessun consumer client legge il campo → nessun riferimento stale.
+- **Annullati visibili al titolare** (storia completa); `status=REGISTERED` li esclude a richiesta; boundary date INCLUSIVE (`gte`/`lte` date-only via `parseDateOnlyUtc`, volo SU dateFrom=dateTo incluso); `dateFrom>dateTo` → 422.
+- **`toListItem` 2-arg**: esattamente 4 call site, i tre entrypoint staff-only passano `true`, `listFlights` passa `hasPermission('people.read')`.
+- **I guardiani restano nel service**: POST /flights, /cancel, /correct invariati staff-only — pilota → 403 envelope a prescindere dalla UI.
+- **Nav/UI/i18n**: `['flights.manage','self.read']` in OR (pilota/allievo/istruttore vedono "Voli", FR-17); i 9 rescoping e2e restringono solo i locator (nessuna asserzione indebolita); fix a11y label-sibling confermato nel diff; it/en 667/667 chiavi simmetriche; OpenAPI: query params registrati, response `registerFlight` invariata (contratto intatto).
+- **Gate reviewer**: tsc pulito; 589/589 unit; `env -u NODE_ENV next build` exit 0; `flight-log.spec` 4/4, `flights.spec` 6/6, `rbac.spec` 3/3 su DB fresco.
+
+Deferral (non bloccante, nessuna azione in questa story):
+- **D1** — i picker staff velivolo/persona (form + barra filtri) si alimentano con `OPTIONS_PAGE_SIZE=100` (pre-esistente da 5.1): oltre 100 persone/velivoli le voci successive mancano silenziosamente dal dropdown (il filtro via URL/API funziona per qualunque id). È anche la causa radice del flake e2e `flights.spec.ts:210` su DB sporco (provato empiricamente: 6/6 su DB pulito). Follow-up futuro: picker typeahead/paginato o endpoint dedicato.
 
 ## Change Log
 
 - 2026-07-07: Story file created (Fable 5 main session), ready-for-dev.
 - 2026-07-07: Implemented (Sonnet 5 single dev agent, xhigh) — all tasks complete, all gates green (e2e: 3 full-suite runs, only known-flaky specs under full parallel load, all 100% green in isolation on a fresh DB). Status → ready-for-review.
+- 2026-07-07: Review Opus 4.8 xhigh (audit access-control) — clean sul codice, D1 deferrable pre-esistente documentato. Status → done; tutte le 4 story dell'epic 5 done.
