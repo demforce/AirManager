@@ -487,10 +487,16 @@ type RawCashReportCategoryRow = {
  * the conditional sums AND the per-category movement count in a single
  * round trip. The template is parameterized (tagged template — the dates
  * are bound values, never string-interpolated into the SQL text), so there
- * is no injection risk. Categories with NO movements in the period are
- * excluded "for free": the `JOIN` + `WHERE` combination simply never
- * produces a row for them (AC 1) — no separate "has movements" check
- * needed. Ordered by category NAME ascending (same convention as
+ * is no injection risk. The `from`/`to` bounds are bound as TEXT and cast
+ * `::date` in SQL (NOT as JS `Date` objects): `effectiveDate` is a Postgres
+ * `date`, and a JS `Date` binds as `timestamptz`, so a `date >= timestamptz`
+ * comparison would promote the column to the SESSION timezone and silently
+ * drop rows dated exactly on `from` under any non-UTC session — a pure
+ * `date >= date` comparison is timezone-independent and exactly inclusive,
+ * matching how Prisma's typed `listCashMovements` filter behaves. Categories
+ * with NO movements in the period are excluded "for free": the `JOIN` +
+ * `WHERE` combination simply never produces a row for them (AC 1) — no
+ * separate "has movements" check needed. Ordered by category NAME ascending (same convention as
  * `listCashCategories`), not by `netCents` — a stable, predictable order to
  * read top to bottom, not a "biggest number first" ranking.
  *
@@ -515,7 +521,7 @@ export async function getCashReport(actor: Actor, query: CashReportQuery): Promi
       COALESCE(SUM(CASE WHEN cm."amountCents" < 0 THEN cm."amountCents" ELSE 0 END), 0)::int AS "outCents"
     FROM "CashCategory" c
     JOIN "CashMovement" cm ON cm."categoryId" = c.id
-    WHERE cm."effectiveDate" >= ${new Date(query.from)} AND cm."effectiveDate" <= ${new Date(query.to)}
+    WHERE cm."effectiveDate" >= ${query.from}::date AND cm."effectiveDate" <= ${query.to}::date
     GROUP BY c.id, c.name
     ORDER BY c.name ASC
   `;

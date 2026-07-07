@@ -1,6 +1,6 @@
 # Story 3.5: Report finanziario per periodo
 
-Status: review
+Status: done
 
 ## Story
 
@@ -79,6 +79,28 @@ None — no blocking failures. One environment-only e2e flake was found and fixe
 - `messages/en.json` (modified — `CashReportPage`, `FinancePage.viewReport`)
 - `e2e/cash-report.spec.ts` (new)
 
+## Review Record
+
+Reviewer: main session (Opus 4.8) — adversarial in-session review (new model-role assignment, 2026-07-07).
+
+### F1 (fixed) — latent timezone bug in the raw aggregation query, `cash.service.ts#getCashReport`
+
+The period filter bound the `from`/`to` bounds as JS `Date` objects in the `$queryRaw` tagged template (`cm."effectiveDate" >= ${new Date(query.from)} ...`). `effectiveDate` is a Postgres `date`, but a JS `Date` binds as `timestamptz`, so the comparison `date >= timestamptz` promotes the column to the **session** timezone. Verified empirically: under the container's `Etc/UTC` session both bounds are correct, but under any non-UTC session (tested `Europe/Rome`) the lower bound `>= from` evaluates false for a movement dated exactly on `from` — silently dropping the first day's movements from every total. No test caught it because both the unit tests (which mock `$queryRaw`) and the e2e suite run against the UTC container, exactly the configuration that hides the defect; and it directly contradicts the story's "same TZ-exact filter as `listCashMovements`" requirement (Prisma's typed filter binds `@db.Date` as a real `date`, so the register was already TZ-safe).
+
+Fix: bind the validated `YYYY-MM-DD` strings as TEXT and cast `::date` in SQL (`cm."effectiveDate" >= ${query.from}::date AND cm."effectiveDate" <= ${query.to}::date`) — a pure `date >= date` comparison, timezone-independent and exactly inclusive, matching the register. Verified TZ-invariant under both `Etc/UTC` and `Europe/Rome`. Doc comment updated to explain the choice.
+
+### Reviewed and accepted (no change)
+
+- AC 2 invariant holds by construction — totals are summed in JS from the same per-category Postgres sums; unit test with a cancelling storno pair confirms `netCents === Σ category.netCents === totalIn + totalOut`.
+- Aggregation via one parameterized raw query (vs. two `groupBy`s): justified and injection-safe (bound params).
+- RSC page bypasses the Zod `from <= to` guard on hand-edited URLs → Postgres returns zero rows for an inverted range: inert, matches the already-accepted `listCashMovements` pattern.
+- The 5 e2e failures reported by the dev were independently verified as environment-only (MailPit not running): after starting MailPit the FULL suite is 71/71 green — none of the failures touched cash/report code.
+
+### Final gates (Opus review run, DB reset + MailPit up)
+
+lint 0 errors (1 known benign `data-table.tsx` warning), typecheck clean, **363/363 unit**, `next build` green, **71/71 e2e**.
+
 ## Change Log
 
 - 2026-07-07: Story implemented (service, API, UI, i18n, unit + e2e tests). Status → review.
+- 2026-07-07: Opus in-session review — F1 (raw-query timezone bug) fixed; all gates green. Status → done.

@@ -50,12 +50,12 @@ development_status:
   2-5-aircraft-status-hours: done
   epic-2-retrospective: optional
 
-  epic-3: in-progress
+  epic-3: done
   3-1-accounts-topups: done
   3-2-account-statement: done
   3-3-adjustments-negative-alerts: done
   3-4-cash-categories-movements: done
-  3-5-financial-report: in-progress
+  3-5-financial-report: done
   epic-3-retrospective: optional
 
   epic-4: backlog
