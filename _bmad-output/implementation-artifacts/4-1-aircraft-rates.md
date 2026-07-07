@@ -4,7 +4,7 @@ baseline_commit: 3712b2b
 
 # Story 4.1: Tariffe velivolo storicizzate
 
-Status: review
+Status: done
 
 ## Story
 
@@ -100,7 +100,29 @@ Sonnet 5 (dev subagent)
 - `messages/en.json` (modified — same keys, English)
 - `e2e/aircraft-rates.spec.ts` (new)
 
+## Review Record
+
+Reviewer: main session (Opus 4.8) — adversarial in-session review (model-role assignment 2026-07-07). **Verdict: clean pass, no code changes required.**
+
+### Focus areas scrutinized (the high-risk parts of this story)
+
+- **AD-4 effective-rate correctness** — `getEffectiveRate` is `findFirst({ where: { validFrom: { lte: onDate } }, orderBy: { validFrom: 'desc' } })`, i.e. the max `validFrom <= D`, exactly the rule. Verified TZ-safe: it uses Prisma's TYPED query (binds `@db.Date` as a real `date`, not `timestamptz`) AND every `Date` fed in is UTC-midnight (`parseDateOnlyUtc`/`todayDateOnlyUtc`) — the 3.5 F1 lesson is correctly applied, so no session-timezone boundary drift. Unit tests pin the exact boundary (D === validFrom included; D one day earlier falls back; `null` when nothing qualifies) and the e2e confirms current = 160€/h against real Postgres.
+- **Migration** — hand-authored `20260706100000_add_aircraft_rates` applies cleanly on a fully dropped/recreated DB (re-verified in the review gate run): `CREATE TABLE`, both FKs `ON DELETE RESTRICT`, `@@index([aircraftId])`, and the `UNIQUE(aircraftId, validFrom)` that backs AC 2.
+- **AC 2 uniqueness** — pre-check (`assertRateAvailable`) + `try/catch` P2002 backstop (never trusts the pre-check alone); unique index enforces it at the DB. Client + server both reject non-positive / overflow prices.
+- **Permission split** — create = `settings.manage` (admin), read/list/effective = `aircraft.manage` (staff+admin); `authorize()` precedes every query; UI form gated on server-derived `canManageSettings`, read-only view otherwise. e2e proves a staff-only actor gets 403 on POST.
+- **Archived-aircraft → 409** (the dev's flagged decision): accepted — "valid id, wrong state" mirrors `archiveAircraft`'s own conflict, and it IS covered by a unit test (`createAircraftRate throws ConflictError for an archived aircraft`), so the "untested" caveat in the Dev Record is stale.
+- **Current-rate consistency** — the panel and the fleet-table cell both read the single server-computed `currentRatePriceCentsPerHour` (effective today), never a client recompute, so they cannot disagree; a future-dated rate correctly does NOT change today's effective rate.
+
+### Noted, non-blocking (deferred — no change this story)
+
+- `page.tsx` issues N `getEffectiveRate` queries per page (page size 20, parallel `Promise.all`, each an indexed lookup). Fine now; if the fleet grows or epic 5 needs batch effective-rate reads, a single grouped query is the natural follow-up.
+
+### Final gates (Opus review run — fresh DB reset re-applying the migration, MailPit up)
+
+lint 0 errors (1 known benign `data-table.tsx` warning), typecheck clean, **382/382 unit**, `next build` green, **75/75 e2e**.
+
 ## Change Log
 
 - 2026-07-07: Story file created (Opus 4.8 main session), ready-for-dev.
 - 2026-07-07: Implemented (Sonnet 5 dev subagent) — historicized `AircraftRate` model/migration, `rates.service.ts` (create/list/effective-rate), API + OpenAPI, `aircraft-manager.tsx` rates panel + fleet-table current-rate column, unit + e2e tests. Status set to review.
+- 2026-07-07: Opus in-session review — clean pass (effective-rate boundary, migration, uniqueness, permission split, archived-409 all verified; no code changes). Status → done.
