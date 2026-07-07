@@ -108,6 +108,13 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
             <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
           </div>
           <div className="flex flex-wrap gap-3">
+            <Link
+              href="/dashboard/finance/report"
+              locale={locale as AppLocale}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {t('viewReport')}
+            </Link>
             {canManageSettings ? (
               <Link
                 href="/dashboard/finance/categories"

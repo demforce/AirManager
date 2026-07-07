@@ -36,6 +36,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/cash-categories/{id}/reactivate',
         '/api/v1/cash-movements',
         '/api/v1/cash-movements/{id}/reverse',
+        '/api/v1/cash-report',
         '/api/v1/aircraft',
         '/api/v1/aircraft/{id}',
         '/api/v1/aircraft/{id}/archive',

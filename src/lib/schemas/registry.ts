@@ -25,6 +25,8 @@ import {
   cashCategoryListResponseSchema,
   cashMovementItemSchema,
   cashMovementListResponseSchema,
+  cashReportQuerySchema,
+  cashReportResponseSchema,
   createCashCategorySchema,
   listCashCategoriesQuerySchema,
   listCashMovementsQuerySchema,
@@ -123,6 +125,7 @@ registry.register('CashMovement', cashMovementItemSchema);
 registry.register('CashMovementList', cashMovementListResponseSchema);
 registry.register('RecordCashMovementRequest', recordCashMovementSchema);
 registry.register('ReverseCashMovementRequest', reverseCashMovementSchema);
+registry.register('CashReport', cashReportResponseSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -553,6 +556,21 @@ registry.registerPath({
   responses: {
     201: { description: 'The recorded movement.', content: jsonContent(cashMovementItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/cash-report',
+  summary: 'Period financial report over the cash ledger (totals by category, in/out/net)',
+  description:
+    'A read-only aggregation over the cash register (story 3.5, AC 1/2) — NO new model or write path. `from`/`to` are both mandatory (`YYYY-MM-DD`), inclusive on `effectiveDate`, and rejected with a 422 if inverted. `netCents = totalInCents + totalOutCents` (`outCents` is already negative, AD-2). Categories with no movements in the period are excluded; the remaining ones are ordered by name. Requires `finance.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { query: cashReportQuerySchema },
+  responses: {
+    200: { description: 'The financial report for the requested period.', content: jsonContent(cashReportResponseSchema) },
+    ...errorResponses(401, 403, 422),
   },
 });
 

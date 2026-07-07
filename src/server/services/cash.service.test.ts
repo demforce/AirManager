@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { recordCashMovementSchema, reverseCashMovementSchema } from '@/lib/schemas/cash';
+import { cashReportQuerySchema, recordCashMovementSchema, reverseCashMovementSchema } from '@/lib/schemas/cash';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
@@ -20,6 +20,7 @@ vi.mock('@/server/db/prisma', () => ({
       count: vi.fn(),
     },
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
   },
 }));
 
@@ -28,6 +29,7 @@ const {
   createCashCategory,
   deactivateCashCategory,
   deleteCashCategory,
+  getCashReport,
   listCashCategories,
   listCashMovements,
   reactivateCashCategory,
@@ -48,6 +50,7 @@ const movementFindUniqueMock = vi.mocked(prisma.cashMovement.findUnique);
 const movementFindManyMock = vi.mocked(prisma.cashMovement.findMany);
 const movementCountMock = vi.mocked(prisma.cashMovement.count);
 const transactionMock = vi.mocked(prisma.$transaction);
+const queryRawMock = vi.mocked(prisma.$queryRaw);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as accounts.service.test.ts).
@@ -101,6 +104,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
     movementFindManyMock.mockReset();
     movementCountMock.mockReset();
     transactionMock.mockReset();
+    queryRawMock.mockReset();
     mockTransaction();
   });
 
@@ -622,6 +626,67 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
     });
   });
 
+  describe('getCashReport (story 3.5, Task 1, AC 1/2)', () => {
+    it('rejects a pilot (finance.manage required)', async () => {
+      await expect(getCashReport(pilotActor(), { from: '2026-07-01', to: '2026-07-31' })).rejects.toThrow(ForbiddenError);
+      expect(queryRawMock).not.toHaveBeenCalled();
+    });
+
+    it('mixed in/out across multiple categories: per-category and overall totals are correct', async () => {
+      queryRawMock.mockResolvedValue([
+        { categoryId: 'cat_ppr', categoryName: 'PPR', movementCount: 2, inCents: 10000, outCents: -2000 },
+        { categoryId: 'cat_fuel', categoryName: 'Carburante', movementCount: 1, inCents: 0, outCents: -3000 },
+      ]);
+
+      const result = await getCashReport(staffActor(), { from: '2026-07-01', to: '2026-07-31' });
+
+      expect(result.categories).toEqual([
+        { categoryId: 'cat_ppr', categoryName: 'PPR', inCents: 10000, outCents: -2000, netCents: 8000 },
+        { categoryId: 'cat_fuel', categoryName: 'Carburante', inCents: 0, outCents: -3000, netCents: -3000 },
+      ]);
+      expect(result.totalInCents).toBe(10000);
+      expect(result.totalOutCents).toBe(-5000);
+      expect(result.netCents).toBe(5000);
+      expect(result.movementCount).toBe(3);
+      expect(result.from).toBe('2026-07-01');
+      expect(result.to).toBe('2026-07-31');
+    });
+
+    it('AC 2 invariant: sum of movements === netCents === sum of per-category netCents (fixture includes a storno pair that cancels)', async () => {
+      // A 50,00 € entrata and its exact storno (-50,00 €), both inside the
+      // period — story 3.4's AD-3: they cancel in the category's totals.
+      // Combined with an unrelated +20,00 €/-5,00 € pair in another category.
+      queryRawMock.mockResolvedValue([
+        { categoryId: 'cat_a', categoryName: 'Categoria A', movementCount: 2, inCents: 5000, outCents: -5000 },
+        { categoryId: 'cat_b', categoryName: 'Categoria B', movementCount: 2, inCents: 2000, outCents: -500 },
+      ]);
+
+      const result = await getCashReport(staffActor(), { from: '2026-07-01', to: '2026-07-31' });
+
+      const sumOfCategoryNet = result.categories.reduce((sum, category) => sum + category.netCents, 0);
+      expect(result.netCents).toBe(sumOfCategoryNet);
+      expect(result.netCents).toBe(result.totalInCents + result.totalOutCents);
+      expect(result.netCents).toBe(1500); // (5000 - 5000) + (2000 - 500)
+      expect(result.categories[0]).toMatchObject({ netCents: 0 }); // the storno pair cancels
+    });
+
+    it('empty period: no rows → all totals zero and an empty categories array', async () => {
+      queryRawMock.mockResolvedValue([]);
+
+      const result = await getCashReport(staffActor(), { from: '2026-08-01', to: '2026-08-31' });
+
+      expect(result).toEqual({
+        from: '2026-08-01',
+        to: '2026-08-31',
+        totalInCents: 0,
+        totalOutCents: 0,
+        netCents: 0,
+        categories: [],
+        movementCount: 0,
+      });
+    });
+  });
+
   describe('schemas (Task 2, AC 2 — Zod-level validation)', () => {
     it('recordCashMovementSchema rejects a zero amount', () => {
       const result = recordCashMovementSchema.safeParse({
@@ -654,6 +719,26 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
     it('reverseCashMovementSchema requires a non-empty reason', () => {
       expect(reverseCashMovementSchema.safeParse({ reason: '' }).success).toBe(false);
       expect(reverseCashMovementSchema.safeParse({ reason: 'Motivo valido' }).success).toBe(true);
+    });
+
+    it('cashReportQuerySchema accepts a well-formed, non-inverted range', () => {
+      const result = cashReportQuerySchema.safeParse({ from: '2026-07-01', to: '2026-07-31' });
+      expect(result.success).toBe(true);
+    });
+
+    it('cashReportQuerySchema accepts a single-day range (from === to)', () => {
+      expect(cashReportQuerySchema.safeParse({ from: '2026-07-01', to: '2026-07-01' }).success).toBe(true);
+    });
+
+    it('cashReportQuerySchema rejects an inverted range (from > to) — story 3.5 must reject where 3.4 review F4 left it open', () => {
+      const result = cashReportQuerySchema.safeParse({ from: '2026-07-31', to: '2026-07-01' });
+      expect(result.success).toBe(false);
+    });
+
+    it('cashReportQuerySchema rejects missing or malformed dates', () => {
+      expect(cashReportQuerySchema.safeParse({ from: '2026-07-01' }).success).toBe(false);
+      expect(cashReportQuerySchema.safeParse({ from: '2026-07-01', to: 'not-a-date' }).success).toBe(false);
+      expect(cashReportQuerySchema.safeParse({}).success).toBe(false);
     });
   });
 });

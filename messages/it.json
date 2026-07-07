@@ -240,6 +240,7 @@
     "description": "La situazione finanziaria dell'aviosuperficie: conti prepagati, saldi negativi e registro cassa.",
     "backToDashboard": "Torna alla dashboard",
     "manageCategories": "Gestisci categorie",
+    "viewReport": "Report finanziario",
     "negativeBalances": {
       "heading": "Saldi negativi",
       "empty": "Nessun conto in negativo.",
@@ -306,6 +307,36 @@
         "genericError": "Impossibile registrare lo storno. Riprova.",
         "success": "Storno registrato."
       }
+    }
+  },
+  "CashReportPage": {
+    "kicker": "Finanze",
+    "title": "Report finanziario",
+    "description": "Entrate, uscite e saldo del periodo selezionato, con i totali per categoria.",
+    "backToFinance": "Torna alle finanze",
+    "openInRegister": "Apri nel registro",
+    "filters": {
+      "heading": "Periodo",
+      "month": "Mese corrente",
+      "quarter": "Trimestre corrente",
+      "year": "Anno corrente",
+      "custom": "Intervallo libero",
+      "from": "Dal",
+      "to": "Al"
+    },
+    "summary": {
+      "totalIn": "Entrate",
+      "totalOut": "Uscite",
+      "net": "Saldo del periodo",
+      "movementCount": "Movimenti nel periodo"
+    },
+    "categories": {
+      "heading": "Totali per categoria",
+      "name": "Categoria",
+      "in": "Entrate",
+      "out": "Uscite",
+      "net": "Netto",
+      "empty": "Nessun movimento nel periodo selezionato."
     }
   },
   "CashCategoriesPage": {

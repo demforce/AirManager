@@ -240,6 +240,7 @@
     "description": "The airfield's financial picture: prepaid accounts, negative balances and the cash register.",
     "backToDashboard": "Back to dashboard",
     "manageCategories": "Manage categories",
+    "viewReport": "Financial report",
     "negativeBalances": {
       "heading": "Negative balances",
       "empty": "No account is in the negative.",
@@ -306,6 +307,36 @@
         "genericError": "Could not record the reversal. Try again.",
         "success": "Reversal recorded."
       }
+    }
+  },
+  "CashReportPage": {
+    "kicker": "Finance",
+    "title": "Financial report",
+    "description": "Inflows, outflows and balance for the selected period, with totals by category.",
+    "backToFinance": "Back to finance",
+    "openInRegister": "Open in the register",
+    "filters": {
+      "heading": "Period",
+      "month": "Current month",
+      "quarter": "Current quarter",
+      "year": "Current year",
+      "custom": "Custom range",
+      "from": "From",
+      "to": "To"
+    },
+    "summary": {
+      "totalIn": "Inflows",
+      "totalOut": "Outflows",
+      "net": "Period balance",
+      "movementCount": "Movements in period"
+    },
+    "categories": {
+      "heading": "Totals by category",
+      "name": "Category",
+      "in": "Inflows",
+      "out": "Outflows",
+      "net": "Net",
+      "empty": "No movement in the selected period."
     }
   },
   "CashCategoriesPage": {

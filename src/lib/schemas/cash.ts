@@ -145,3 +145,60 @@ export type CashMovementItemDto = z.infer<typeof cashMovementItemSchema>;
 export const cashMovementListResponseSchema = paginatedResponseSchema(cashMovementItemSchema);
 
 export type CashMovementListResponseDto = z.infer<typeof cashMovementListResponseSchema>;
+
+// --- Financial report (story 3.5, Task 1/2, AC 1/2) -------------------------
+
+/**
+ * `GET /api/v1/cash-report` query — BOTH bounds mandatory (unlike
+ * `listCashMovementsQuerySchema`'s optional `from`/`to`): a report always
+ * covers an explicit period, there is no "all time" report. Plain
+ * `YYYY-MM-DD` string comparison is safe for the `.refine` because
+ * `z.iso.date()` guarantees the fixed-width ISO format. Rejects an inverted
+ * range with a 422 (Dev Notes: story 3.4 review F4 left this hole open on
+ * the register's own `from`/`to` — the report must not repeat it). Period
+ * presets (mese/trimestre/anno correnti) are UI-only (`period-presets.ts`)
+ * — the service always receives explicit bounds, never calendar logic.
+ */
+export const cashReportQuerySchema = z
+  .object({
+    from: z.iso.date(),
+    to: z.iso.date(),
+  })
+  .refine((value) => value.from <= value.to, { message: 'from must not be after to', path: ['to'] });
+
+export type CashReportQuery = z.infer<typeof cashReportQuerySchema>;
+
+/**
+ * One category row of the report (AC 1). Documentation only, mirroring
+ * `cash.service.ts`'s `CashReportCategoryTotal`. `netCents = inCents +
+ * outCents` (AD-2, `outCents` already negative) — categories with no
+ * movements in the period are never present (excluded upstream).
+ */
+export const cashReportCategorySchema = z.object({
+  categoryId: z.string(),
+  categoryName: z.string(),
+  inCents: z.number().int(),
+  outCents: z.number().int(),
+  netCents: z.number().int(),
+});
+
+export type CashReportCategoryDto = z.infer<typeof cashReportCategorySchema>;
+
+/**
+ * `GET /api/v1/cash-report` response (AC 1/2). `netCents` is the period's
+ * saldo (`totalInCents + totalOutCents`); `categories` is ordered by name
+ * and excludes categories untouched in the period (`cash.service.ts`'s
+ * `getCashReport`). `movementCount` is the total number of ledger rows
+ * (across every category) that fall in the period.
+ */
+export const cashReportResponseSchema = z.object({
+  from: z.iso.date(),
+  to: z.iso.date(),
+  totalInCents: z.number().int(),
+  totalOutCents: z.number().int(),
+  netCents: z.number().int(),
+  categories: z.array(cashReportCategorySchema),
+  movementCount: z.number().int().min(0),
+});
+
+export type CashReportResponseDto = z.infer<typeof cashReportResponseSchema>;
