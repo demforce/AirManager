@@ -4,7 +4,7 @@ baseline_commit: dab7391
 
 # Story 4.2: Tariffe istruttore storicizzate
 
-Status: review
+Status: done
 
 ## Story
 
@@ -103,7 +103,24 @@ Sonnet 5 (dev subagent)
 - `messages/en.json` (modified — same keys, English)
 - `e2e/instructor-rates.spec.ts` (new)
 
+## Review Record
+
+Reviewer: main session (Opus 4.8) — adversarial in-session review. **Verdict: clean pass, no code changes required.**
+
+Since 4.2 is the deliberate twin of the already-reviewed 4.1, the review concentrated on the parts that are NOT a straight copy:
+
+- **`date-only.ts` extraction** — verified `rates.service.ts` (4.1) is unchanged in behavior: the three helpers moved verbatim into `src/lib/date-only.ts`, `rates.service.ts` now imports them and **re-exports `todayDateOnlyUtc`** so `aircraft/page.tsx`'s existing import path still resolves. `cash.service.ts`/`accounts.service.ts` deliberately left alone (out of scope). New `date-only.test.ts` covers parse/today/format incl. the UTC-midnight case. No regression — 4.1's 382-test baseline is subsumed by the 412 now green.
+- **Instructor resolution (the one real divergence from 4.1)** — `resolveInstructorProfile(personId)`: unknown person → 404 (never reveals profile existence); person without a profile → `null`, which create turns into a **409** and reads turn into empty `[]`/`null` (the "estratto conto vuoto" split from 3.2); a **deactivated** profile → 409 on create only, while reads still expose its history (correct — a past flight needs that instructor's then-effective rate; the hook for epic 5).
+- **AD-4 effective-rate + TZ-safety** — identical typed-Prisma `findFirst(validFrom: { lte }, orderBy desc)` as 4.1, fed UTC-midnight Dates via the shared helpers; unit tests pin the exact boundary (D===validFrom included, D-1 falls back, null when none) and the e2e confirms current = 45€/h against real Postgres.
+- **Permission asymmetry vs 4.1** — read = `people.read` (instructor data lives under `people`) instead of 4.1's `aircraft.manage`; write stays `settings.manage`. Intentional and documented; e2e proves staff → 403 on POST.
+- **UI gating** — the person page renders `InstructorRatesPanel` only when `person.instructorProfile !== null`, computes the effective-today rate server-side, and sets `canAddRate = canManageSettings && deactivatedAt === null` (deactivated instructor → read-only). `key={person.id}` remount. Migration correct (FK RESTRICT, unique index) and applies on a fresh DB.
+
+### Final gates (Opus review run — fresh DB reset re-applying both epic-4 migrations, MailPit up)
+
+lint 0 errors (1 known benign `data-table.tsx` warning), typecheck clean, **412/412 unit**, `next build` green, **79/79 e2e**.
+
 ## Change Log
 
 - 2026-07-07: Story file created (Opus 4.8 main session), ready-for-dev.
 - 2026-07-07: Implemented (Sonnet 5 dev subagent) — historicized `InstructorRate` model/migration (twin of 4.1's `AircraftRate`), extracted shared `src/lib/date-only.ts` helpers, `instructor-rates.service.ts` (create/list/effective-rate, person-scoped instructor resolution), API + OpenAPI, person-page `InstructorRatesPanel`, unit + e2e tests. Status set to review.
+- 2026-07-07: Opus in-session review — clean pass (date-only extraction, instructor resolution 409/404/empty, AD-4/TZ, permission split, UI gating all verified; no code changes). Status → done.
