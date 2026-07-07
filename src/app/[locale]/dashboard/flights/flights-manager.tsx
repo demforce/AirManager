@@ -55,6 +55,10 @@ export type FlightsManagerLabels = {
     aircraftAmount: string;
     instructorRate: string;
     instructorAmount: string;
+    /** Story 5.2 (AC 1) — total minutes covered by package consumption, shown only when > 0. */
+    packageCovered: string;
+    /** Story 5.2 (AC 1) — the pro-rata remainder the aircraft component is actually rated on. */
+    chargedMinutes: string;
     total: string;
     newBalance: string;
   };
@@ -72,6 +76,8 @@ export type FlightsManagerLabels = {
       amount: string;
       landings: string;
       noValue: string;
+      /** Story 5.2 (AC 1) — literal `{duration}` placeholder, CLIENT-filled (t.raw, same pattern as `account-statement-table.tsx`'s `adjustmentOfDate`). */
+      packageNote: string;
     };
   };
 };
@@ -159,6 +165,30 @@ export function FlightsManager({
                 <dt className="text-[#787774]">{labels.result.aircraftRate}</dt>
                 <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.aircraftRateCentsPerHour, moneyLocale)}/h</dd>
               </div>
+              {lastResult.flight.breakdown.packageCoveredMinutes > 0 ? (
+                <>
+                  <div className="flex justify-between gap-2 sm:justify-start">
+                    <dt className="text-[#787774]">{labels.result.packageCovered}</dt>
+                    <dd className="text-[#111111]">{formatMinutes(lastResult.flight.breakdown.packageCoveredMinutes)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2 sm:justify-start">
+                    <dt className="text-[#787774]">{labels.result.chargedMinutes}</dt>
+                    <dd className="text-[#111111]">{formatMinutes(lastResult.flight.breakdown.chargedMinutes)}</dd>
+                  </div>
+                  {lastResult.flight.breakdown.packageConsumptions.length > 1 ? (
+                    <div className="sm:col-span-2">
+                      <ul data-testid="flight-result-packages" className="mt-1 space-y-1 border-t border-[#EAEAEA] pt-2 text-xs text-[#787774]">
+                        {lastResult.flight.breakdown.packageConsumptions.map((consumption) => (
+                          <li key={consumption.hourPackageId} className="flex justify-between gap-3">
+                            <span>{consumption.typeName}</span>
+                            <span className="font-[family-name:var(--font-mono,monospace)]">{formatMinutes(consumption.minutes)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
               <div className="flex justify-between gap-2 sm:justify-start">
                 <dt className="text-[#787774]">{labels.result.aircraftAmount}</dt>
                 <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.aircraftAmountCents, moneyLocale)}</dd>
@@ -226,8 +256,13 @@ export function FlightsManager({
                       {flight.instructor ? personLabel(flight.instructor) : labels.list.table.noInstructor}
                     </td>
                     <td className="py-2 pr-4 whitespace-nowrap">{flightTypeLabel(flight.flightType, labels.form.flightTypes)}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap font-[family-name:var(--font-mono,monospace)]">
-                      {formatMinutes(flight.minutes)}
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      <span className="font-[family-name:var(--font-mono,monospace)]">{formatMinutes(flight.minutes)}</span>
+                      {flight.breakdown.packageCoveredMinutes > 0 ? (
+                        <span className="block text-xs font-normal text-[#787774]">
+                          {labels.list.table.packageNote.replace('{duration}', formatMinutes(flight.breakdown.packageCoveredMinutes))}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatCents(flight.breakdown.totalAmountCents, moneyLocale)}</td>
                     <td className="py-2 whitespace-nowrap">{flight.landings ?? labels.list.table.noValue}</td>

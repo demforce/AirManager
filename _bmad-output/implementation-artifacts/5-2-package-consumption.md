@@ -4,7 +4,7 @@ baseline_commit: 8fdd207
 
 # Story 5.2: Consumo pacchetti nel calcolo del volo
 
-Status: ready-for-dev
+Status: ready-for-review
 
 ## Story
 
@@ -40,26 +40,26 @@ so that lo sconto acquistato venga applicato da solo (FR-13 consumo).
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Modello + migrazione (AC 1/2)
-  - [ ] Nuovo modello `PackageConsumption`: `id String @id @default(cuid())`; `flightId` + FK `Flight` (back-relation `Flight.packageConsumptions PackageConsumption[]`); `hourPackageId` + FK `HourPackage` (back-relation `HourPackage.consumptions PackageConsumption[]`); `minutes Int` (interi, > 0 — AD-2); `createdAt`. `@@unique([flightId, hourPackageId])` (un volo consuma da un pacchetto al più una volta — e rende deterministico lo storno 5.3), `@@index([hourPackageId])`. FK RESTRICT (default Prisma) su entrambe. Doc-comment: registro per-volo AD-6, reversibilità 5.3, mai update/cancellazione in 5.2.
-  - [ ] `Flight`: aggiungere `packageCoveredMinutes Int @default(0)` (snapshot totale minuti coperti; default 0 corretto per i voli 5.1 pregressi). Aggiornare il doc-comment del modello.
-  - [ ] Migrazione a mano (procedura consolidata, timestamp dopo `20260707150000`), `migrate deploy` + `generate`. Verificare CREATE TABLE, unique, FK, ADD COLUMN con default.
-- [ ] Task 2: Service — consumo dentro la transazione (AC 1/2/3)
-  - [ ] `flights.service.ts#registerFlight`: dentro la `$transaction`, DOPO il lock `FOR UPDATE` su `Account`: caricare i pacchetti CANDIDATI della persona (filtro DB: `personId`, `effectiveDate <= flightDate`, `expiresAt null || >= flightDate`, tipo con `eligibleAircraft` contenente `aircraftId`) in ordine `effectiveDate asc, createdAt asc, id asc`, con la SUM dei consumi esistenti per ciascuno (aggregata in una query — `groupBy` su `hourPackageId` o include equivalente, NON una query per pacchetto). Allocazione greedy FIFO sui residui > 0; creare le righe `PackageConsumption` (solo `take > 0`); `packageCoveredMinutes = Σ take`; `chargedMinutes = minutes − coveredMinutes`; `aircraftAmountCents = Math.round(rate × chargedMinutes / 60)`; istruttore sui minuti pieni (INVARIATO); movimento `FLIGHT_CHARGE` a `−(aircraftAmountCents + instructorAmountCents)` (può essere 0). `Flight.create` con `packageCoveredMinutes`; il calcolo importi esce dal pre-tx e entra in-tx (le TARIFFE restano lette pre-tx). Il saldo-prima/banda (alert 3.3) non cambia struttura.
-  - [ ] DTO `FlightListItem.breakdown`: aggiungere `packageCoveredMinutes`, `chargedMinutes`, e `packageConsumptions: [{ hourPackageId, typeName, minutes }]` (typeName via `hourPackage.packageType.name`). `listFlights` carica la relazione (select annidata, niente N+1).
-  - [ ] Descrizione movimento: quando `coveredMinutes > 0`, appendere ` (H:MM da pacchetto)` via `formatMinutes` — es. `Volo I-ABCD 2026-07-07 — 1:10 (1:00 da pacchetto)`.
-  - [ ] `packages.service.ts`: estendere `computeRemainingMinutes({ includedMinutes, consumedMinutes })` (resta il punto UNICO); `listPersonPackages` e `sellPackage` alimentano `consumedMinutes` con la SUM aggregata (groupBy su `hourPackageId in [...]`, una query); il DTO `HourPackageListItem.remainingMinutes` ora riflette il consumo (aggiungere anche `consumedMinutes` al DTO per trasparenza UI). Aggiornare doc-comment (la promessa "epic 5 estenderà" si realizza qui).
-- [ ] Task 3: Schemi/OpenAPI (AC 1)
-  - [ ] `src/lib/schemas/flights.ts`: response schema del volo con i nuovi campi breakdown; `src/lib/schemas/packages.ts`: `consumedMinutes` nel list item. Registry: aggiornare i componenti registrati (nessun path nuovo). Coverage test invariati/estesi.
-- [ ] Task 4: UI (AC 1/3) — **skill `design-taste-frontend` + `ui-ux-pro-max` OBBLIGATORIE** (regola utente), stile minimalista editoriale esistente
-  - [ ] `/dashboard/flights` (flights-manager.tsx): il pannello scomposizione post-registrazione mostra, quando presente, la riga "Da pacchetto: H:MM" (per-pacchetto se più d'uno, col nome tipo) e i minuti addebitati pro-rata; la tabella voli recenti mostra la copertura (es. colonna durata con badge o nota "di cui H:MM pacchetto" — decidere resa pulita e sobria).
-  - [ ] `packages-panel.tsx` (scheda persona + estratto conto): il residuo mostrato ora scende col consumo (già automatico via DTO); mostrare anche i minuti consumati se aiuta la leggibilità (giudizio del dev, coerenza visiva).
-  - [ ] i18n `messages/{it,en}.json` simmetrici (chiavi nuove `FlightsPage.*`/`HourPackagesPanel.*` minime necessarie).
-- [ ] Task 5: Test (AC 1/2/3/4)
-  - [ ] Unit (`flights.service.test.ts` esteso, mock prisma): pacchetto ESATTO (60' su 60' → covered 60, charged 0, movimento = −(0 + eventuale istruttore)); ECCEDENZA (70' con 60' → covered 60, charged 10, importo `round(rate×10/60)`); MULTI-PACCHETTO (60'+30' residui, volo 80' → 60 dal più vecchio, 20 dal secondo, due righe consumo, FIFO per `effectiveDate`); SCADUTO alla data volo (non toccato) e boundary `expiresAt === flightDate` (idoneo); VELIVOLO NON IDONEO (tipo non associato → nessun consumo, tariffa piena); ESAURITO (residuo 0 → salta); acquisto DOPO la data volo (`effectiveDate > flightDate` → non idoneo); copertura TOTALE senza istruttore → movimento a 0 (creato comunque); istruttore MAI coperto (covered pieno + istruttore intero); descrizione con "da pacchetto". `computeRemainingMinutes` esteso: 0 consumo, parziale, esaurito. `listPersonPackages` con consumi aggregati.
-  - [ ] e2e (`e2e/flights.spec.ts` esteso o spec dedicato `package-consumption.spec.ts`): via API/UI — vendi pacchetto (tipo associato al velivolo seed), registra volo eccedente → scomposizione UI mostra copertura + pro-rata, estratto conto: movimento col solo importo eccedenza, packages panel: residuo sceso; secondo volo → consuma il residuo rimanente; volo su velivolo NON idoneo → tariffa piena e residuo intatto. Nomi/date run-unique.
-- [ ] Task 6: Regressione
-  - [ ] I test 5.1 esistenti restano verdi (nessun pacchetto → covered 0, percorso identico a prima). Gate completi come da Dev Notes.
+- [x] Task 1: Modello + migrazione (AC 1/2)
+  - [x] Nuovo modello `PackageConsumption`: `id String @id @default(cuid())`; `flightId` + FK `Flight` (back-relation `Flight.packageConsumptions PackageConsumption[]`); `hourPackageId` + FK `HourPackage` (back-relation `HourPackage.consumptions PackageConsumption[]`); `minutes Int` (interi, > 0 — AD-2); `createdAt`. `@@unique([flightId, hourPackageId])` (un volo consuma da un pacchetto al più una volta — e rende deterministico lo storno 5.3), `@@index([hourPackageId])`. FK RESTRICT (default Prisma) su entrambe. Doc-comment: registro per-volo AD-6, reversibilità 5.3, mai update/cancellazione in 5.2.
+  - [x] `Flight`: aggiungere `packageCoveredMinutes Int @default(0)` (snapshot totale minuti coperti; default 0 corretto per i voli 5.1 pregressi). Aggiornare il doc-comment del modello.
+  - [x] Migrazione a mano (procedura consolidata, timestamp dopo `20260707150000`), `migrate deploy` + `generate`. Verificare CREATE TABLE, unique, FK, ADD COLUMN con default.
+- [x] Task 2: Service — consumo dentro la transazione (AC 1/2/3)
+  - [x] `flights.service.ts#registerFlight`: dentro la `$transaction`, DOPO il lock `FOR UPDATE` su `Account`: caricare i pacchetti CANDIDATI della persona (filtro DB: `personId`, `effectiveDate <= flightDate`, `expiresAt null || >= flightDate`, tipo con `eligibleAircraft` contenente `aircraftId`) in ordine `effectiveDate asc, createdAt asc, id asc`, con la SUM dei consumi esistenti per ciascuno (aggregata in una query — `groupBy` su `hourPackageId` o include equivalente, NON una query per pacchetto). Allocazione greedy FIFO sui residui > 0; creare le righe `PackageConsumption` (solo `take > 0`); `packageCoveredMinutes = Σ take`; `chargedMinutes = minutes − coveredMinutes`; `aircraftAmountCents = Math.round(rate × chargedMinutes / 60)`; istruttore sui minuti pieni (INVARIATO); movimento `FLIGHT_CHARGE` a `−(aircraftAmountCents + instructorAmountCents)` (può essere 0). `Flight.create` con `packageCoveredMinutes`; il calcolo importi esce dal pre-tx e entra in-tx (le TARIFFE restano lette pre-tx). Il saldo-prima/banda (alert 3.3) non cambia struttura.
+  - [x] DTO `FlightListItem.breakdown`: aggiungere `packageCoveredMinutes`, `chargedMinutes`, e `packageConsumptions: [{ hourPackageId, typeName, minutes }]` (typeName via `hourPackage.packageType.name`). `listFlights` carica la relazione (select annidata, niente N+1).
+  - [x] Descrizione movimento: quando `coveredMinutes > 0`, appendere ` (H:MM da pacchetto)` via `formatMinutes` — es. `Volo I-ABCD 2026-07-07 — 1:10 (1:00 da pacchetto)`.
+  - [x] `packages.service.ts`: estendere `computeRemainingMinutes({ includedMinutes, consumedMinutes })` (resta il punto UNICO); `listPersonPackages` e `sellPackage` alimentano `consumedMinutes` con la SUM aggregata (groupBy su `hourPackageId in [...]`, una query); il DTO `HourPackageListItem.remainingMinutes` ora riflette il consumo (aggiungere anche `consumedMinutes` al DTO per trasparenza UI). Aggiornare doc-comment (la promessa "epic 5 estenderà" si realizza qui).
+- [x] Task 3: Schemi/OpenAPI (AC 1)
+  - [x] `src/lib/schemas/flights.ts`: response schema del volo con i nuovi campi breakdown; `src/lib/schemas/packages.ts`: `consumedMinutes` nel list item. Registry: aggiornare i componenti registrati (nessun path nuovo). Coverage test invariati/estesi.
+- [x] Task 4: UI (AC 1/3) — **skill `design-taste-frontend` + `ui-ux-pro-max` OBBLIGATORIE** (regola utente), stile minimalista editoriale esistente
+  - [x] `/dashboard/flights` (flights-manager.tsx): il pannello scomposizione post-registrazione mostra, quando presente, la riga "Da pacchetto: H:MM" (per-pacchetto se più d'uno, col nome tipo) e i minuti addebitati pro-rata; la tabella voli recenti mostra la copertura (es. colonna durata con badge o nota "di cui H:MM pacchetto" — decidere resa pulita e sobria).
+  - [x] `packages-panel.tsx` (scheda persona + estratto conto): il residuo mostrato ora scende col consumo (già automatico via DTO); mostrare anche i minuti consumati se aiuta la leggibilità (giudizio del dev, coerenza visiva).
+  - [x] i18n `messages/{it,en}.json` simmetrici (chiavi nuove `FlightsPage.*`/`HourPackagesPanel.*` minime necessarie).
+- [x] Task 5: Test (AC 1/2/3/4)
+  - [x] Unit (`flights.service.test.ts` esteso, mock prisma): pacchetto ESATTO (60' su 60' → covered 60, charged 0, movimento = −(0 + eventuale istruttore)); ECCEDENZA (70' con 60' → covered 60, charged 10, importo `round(rate×10/60)`); MULTI-PACCHETTO (60'+30' residui, volo 80' → 60 dal più vecchio, 20 dal secondo, due righe consumo, FIFO per `effectiveDate`); SCADUTO alla data volo (non toccato) e boundary `expiresAt === flightDate` (idoneo); VELIVOLO NON IDONEO (tipo non associato → nessun consumo, tariffa piena); ESAURITO (residuo 0 → salta); acquisto DOPO la data volo (`effectiveDate > flightDate` → non idoneo); copertura TOTALE senza istruttore → movimento a 0 (creato comunque); istruttore MAI coperto (covered pieno + istruttore intero); descrizione con "da pacchetto". `computeRemainingMinutes` esteso: 0 consumo, parziale, esaurito. `listPersonPackages` con consumi aggregati.
+  - [x] e2e (`e2e/flights.spec.ts` esteso o spec dedicato `package-consumption.spec.ts`): via API/UI — vendi pacchetto (tipo associato al velivolo seed), registra volo eccedente → scomposizione UI mostra copertura + pro-rata, estratto conto: movimento col solo importo eccedenza, packages panel: residuo sceso; secondo volo → consuma il residuo rimanente; volo su velivolo NON idoneo → tariffa piena e residuo intatto. Nomi/date run-unique.
+- [x] Task 6: Regressione
+  - [x] I test 5.1 esistenti restano verdi (nessun pacchetto → covered 0, percorso identico a prima). Gate completi come da Dev Notes.
 
 ## Dev Notes
 
@@ -83,13 +83,41 @@ so that lo sconto acquistato venga applicato da solo (FR-13 consumo).
 
 ### Agent Model Used
 
-_(da compilare dal dev agent)_
+Sonnet 5 (single dev agent, xhigh)
 
 ### Debug Log References
 
+- Migrazione a mano: `npx prisma format && npx prisma validate` puliti, `npx prisma migrate diff --from-config-datasource prisma/schema.prisma --to-schema prisma/schema.prisma --script` (banner "Loaded Prisma config..." rimosso, prima riga), salvata come `prisma/migrations/20260707160000_add_package_consumption/migration.sql`, poi `npx prisma migrate deploy` + `npx prisma generate` — applicata pulita (16 migrazioni totali su DB fresco). Verificato a mano via `psql \d` che `PackageConsumption` ha PK, FK RESTRICT su entrambe, `@@unique([flightId, hourPackageId])` e l'indice su `hourPackageId`, e che `Flight.packageCoveredMinutes` è `INTEGER NOT NULL DEFAULT 0`.
+- `npx tsc --noEmit` ha inizialmente fallito su `FLIGHT_SELECT`: l'intero oggetto è `as const` (necessario perché Prisma calcoli il payload-shape corretto dai literal `true` per-campo), ma questo rende anche l'array `orderBy` annidato in `packageConsumptions` un tuple `readonly`, che Prisma rifiuta (si aspetta un array mutabile per `...OrderByWithRelationInput[]`). Risolto con un cast mirato SOLO sull'array (`as Prisma.PackageConsumptionOrderByWithRelationInput[]`), lasciando `select` come literal puro (necessario per l'inferenza del payload) — un cast identificatore separato (estrarre l'intero sotto-oggetto in una costante tipata `Prisma.Flight$packageConsumptionsArgs`) è stato provato per primo ma fallisce silenziosamente: perde la narrow-typing letterale al call-site e Prisma torna a restituire la riga `PackageConsumption` intera invece dei soli campi selezionati.
+- Bug colto dai propri unit test (non dal reviewer): `amountCents: -totalAmountCents` produceva `-0` (non `0`) quando la copertura pacchetto azzera l'importo totale senza istruttore — `Object.is(-0, 0) === false` fa fallire un `toHaveBeenCalledWith(expect.objectContaining({ amountCents: 0 }))`. Corretto scrivendo `0 - totalAmountCents` (sottrazione, non negazione unaria) — stesso identico comportamento per ogni totale positivo, ma niente `-0` per il caso zero.
+- Verifica interattiva end-to-end via Playwright MCP (Chromium headless, dev server + Mailpit locali) prima di scrivere gli e2e: venduto un pacchetto (60' inclusi, velivolo associato) a un pilota run-unique, registrato un volo di 70' → pannello scomposizione con "Da pacchetto 1:00", "Minuti addebitati 0:10", costo/totale 25,00 €, saldo -25,00 €; riga "Voli recenti" con nota "di cui 1:00 da pacchetto"; estratto conto con l'addebito da 25,00 € (mai l'importo pieno); scheda persona con residuo sceso a 0:00 e "Usati: 1:00". Secondo volo (5') sullo stesso pacchetto esaurito → tariffa piena (12,50 €), nessuna nota pacchetto. Terzo volo su un SECONDO velivolo non associato al tipo pacchetto → tariffa piena (50,00 €), un pacchetto fresco (30' inclusi, associato al PRIMO velivolo) resta intatto (0:30, nessun "Usati"). Verificato anche il rendering `/en` (chiavi i18n simmetriche, "of which 1:00 from package").
+
 ### Completion Notes List
 
+- Tutti gli AC (1-4) implementati e verificati: idoneità pacchetto a quattro condizioni (persona, tipo↔velivolo via `PackageTypeAircraft`, non scaduto alla data volo, acquistato entro la data volo), FIFO per `effectiveDate asc, createdAt asc, id asc`, allocazione greedy dentro la `$transaction` DOPO il lock `Account` (stesso lock di 5.1 riusato come serializzatore per il consumo — nessun nuovo lock aggiunto), pro-rata `Math.round(rate × chargedMinutes / 60)` sull'eccedenza, istruttore MAI toccato dal consumo (sempre sui minuti pieni), movimento `FLIGHT_CHARGE` creato SEMPRE anche a importo 0 quando la copertura è totale e non c'è istruttore.
+- `computeRemainingMinutes` esteso a `{ includedMinutes, consumedMinutes }` (resta l'unico punto — nessuna colonna residuo); `sellPackage` passa `consumedMinutes: 0` senza query (un pacchetto appena venduto non ha ancora consumi); `listPersonPackages` aggrega con UNA `groupBy` (mai una query per pacchetto), stesso pattern usato dentro `registerFlight` per il proprio calcolo.
+- `PackageConsumption` creato con `createMany` (una query, non un loop di `create`) solo per gli allocamenti con `take > 0`; il DTO del volo appena creato usa gli allocamenti calcolati in memoria per popolare `breakdown.packageConsumptions` invece di ri-leggere dal DB (le righe non esistevano ancora al momento della `SELECT` di `flight.create`) — nessuna query aggiuntiva.
+- UI: skill `design-taste-frontend` interrogata — dichiaratamente fuori scope per una pagina di dashboard interna (la skill è per landing/portfolio, non per data-dense internal tooling, sezione "Out of Scope" della skill stessa), quindi ho seguito lo stile minimalista editoriale già stabilito (stesso approccio documentato in 5.1); consultata anche `ui-ux-pro-max` (query "data table badge breakdown financial line item") per una spunta di sobrietà su tabelle finanziarie con totali. Risultato: righe aggiuntive nel pannello `dl` scomposizione (Da pacchetto / Minuti addebitati, con dettaglio per-pacchetto SOLO quando più di uno), nota testuale sobria "di cui H:MM da pacchetto" sotto la durata nella tabella voli recenti (niente badge/pill nuovi, coerenza con l'assenza di badge già nella tabella esistente), e una riga "Usati: H:MM" nel packages-panel SOLO quando `consumedMinutes > 0` (un pacchetto intatto resta pulito, senza rumore visivo).
+- i18n: chiavi `{date}`-style → qui `{duration}`, stesso pattern `t.raw` + `.replace()` lato client già usato da `account-statement-table.tsx`'s `adjustmentOfDate` (mai `t()` diretto lato server per stringhe con placeholder letterale). Verificato che it.json/en.json hanno le stesse 625 chiavi (script Node ad-hoc, non un test permanente).
+- Nessuna modifica alla firma dell'API `POST /flights` (input) — solo la response cresce con i nuovi campi breakdown, come da Contesto. Nessun nuovo codice errore (AD-8): il consumo non può mai far fallire la registrazione del volo.
+
 ### File List
+
+- `prisma/schema.prisma` (modello `PackageConsumption`, `Flight.packageCoveredMinutes`, `Flight.packageConsumptions`, `HourPackage.consumptions`, doc-comment aggiornati)
+- `prisma/migrations/20260707160000_add_package_consumption/migration.sql`
+- `src/server/services/flights.service.ts`
+- `src/server/services/flights.service.test.ts`
+- `src/server/services/packages.service.ts`
+- `src/server/services/packages.service.test.ts`
+- `src/lib/schemas/flights.ts`
+- `src/lib/schemas/packages.ts`
+- `src/app/[locale]/dashboard/flights/flights-manager.tsx`
+- `src/app/[locale]/dashboard/flights/page.tsx`
+- `src/app/[locale]/dashboard/people/packages-panel.tsx`
+- `src/app/[locale]/dashboard/people/[id]/page.tsx`
+- `src/app/[locale]/dashboard/people/[id]/account/page.tsx`
+- `messages/it.json`, `messages/en.json`
+- `e2e/package-consumption.spec.ts`
 
 ## Review Record
 
@@ -98,3 +126,4 @@ _(da compilare dopo la review)_
 ## Change Log
 
 - 2026-07-07: Story file created (Fable 5 main session), ready-for-dev.
+- 2026-07-07: Implemented (Sonnet 5 single dev agent, xhigh) — all tasks complete, all gates green. Status → ready-for-review.

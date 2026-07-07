@@ -25,6 +25,13 @@ vi.mock('@/server/db/prisma', () => ({
       findMany: vi.fn(),
       count: vi.fn(),
     },
+    hourPackage: {
+      findMany: vi.fn(),
+    },
+    packageConsumption: {
+      groupBy: vi.fn(),
+      createMany: vi.fn(),
+    },
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
   },
@@ -81,6 +88,9 @@ const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
 const flightCreateMock = vi.mocked(prisma.flight.create);
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const flightCountMock = vi.mocked(prisma.flight.count);
+const hourPackageFindManyMock = vi.mocked(prisma.hourPackage.findMany);
+const packageConsumptionGroupByMock = vi.mocked(prisma.packageConsumption.groupBy);
+const packageConsumptionCreateManyMock = vi.mocked(prisma.packageConsumption.createMany);
 const transactionMock = vi.mocked(prisma.$transaction);
 const queryRawMock = vi.mocked(prisma.$queryRaw);
 
@@ -100,6 +110,10 @@ const accountMovementCreate = accountMovementCreateMock as unknown as { mockReso
 const flightCreate = flightCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const flightFindMany = flightFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const flightCount = flightCountMock as unknown as { mockResolvedValue: (v: number) => void };
+const hourPackageFindMany = hourPackageFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const packageConsumptionGroupBy = packageConsumptionGroupByMock as unknown as {
+  mockResolvedValue: (v: { hourPackageId: string; _sum: { minutes: number | null } }[]) => void;
+};
 const queryRaw = queryRawMock as unknown as {
   mockResolvedValueOnce: (v: unknown[]) => { mockResolvedValueOnce: (v: unknown[]) => void };
 };
@@ -160,11 +174,17 @@ const CREATED_FLIGHT_ROW = {
   aircraftAmountCents: 20000,
   instructorRateCentsPerHour: null,
   instructorAmountCents: null,
+  // Story 5.2: no package consumption in the 5.1-inherited fixture (the
+  // pre-5.2 regression case) — `packageConsumptions` here would be
+  // overwritten by the service's own allocations anyway (Dev Notes), but is
+  // shaped realistically for tests that inspect the raw fixture directly.
+  packageCoveredMinutes: 0,
   createdAt: new Date('2020-01-15T10:00:00.000Z'),
   aircraft: { id: 'aircraft_1', registration: 'I-ABCD' },
   person: { id: 'person_1', firstName: 'Mario', lastName: 'Rossi' },
   instructorProfile: null,
   actorUser: { email: 'staff@airmanager.local' },
+  packageConsumptions: [] as { hourPackageId: string; minutes: number; hourPackage: { packageType: { name: string } } }[],
 };
 
 // Safely in the past no matter when this suite runs (same `PAST_DATE`
@@ -190,6 +210,9 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     flightCreateMock.mockReset();
     flightFindManyMock.mockReset();
     flightCountMock.mockReset();
+    hourPackageFindManyMock.mockReset();
+    packageConsumptionGroupByMock.mockReset();
+    packageConsumptionCreateManyMock.mockReset();
     transactionMock.mockReset();
     queryRawMock.mockReset();
     getAccountOverviewMock.mockReset();
@@ -201,6 +224,10 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
     getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+    // Default: no eligible packages (story 5.2's "5.1 regression" path —
+    // most tests in this suite are not about consumption at all).
+    hourPackageFindMany.mockResolvedValue([]);
+    packageConsumptionGroupBy.mockResolvedValue([]);
     mockTransaction();
   });
 
@@ -538,7 +565,14 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       const result = await registerFlight(staffActor(), BASE_INPUT);
 
       expect(result.flight.id).toBe('flight_1');
-      expect(result.flight.breakdown).toEqual({ aircraftRateCentsPerHour: 15000, aircraftAmountCents: 20000, totalAmountCents: 20000 });
+      expect(result.flight.breakdown).toEqual({
+        aircraftRateCentsPerHour: 15000,
+        aircraftAmountCents: 20000,
+        packageCoveredMinutes: 0,
+        chargedMinutes: 80,
+        packageConsumptions: [],
+        totalAmountCents: 20000,
+      });
       expect(result.account).toEqual(ACCOUNT_OVERVIEW);
       expect(getAccountOverviewMock).toHaveBeenCalledWith(staffActor(), 'person_1');
     });
@@ -631,6 +665,181 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(result.flight.instructor).toBeNull();
       expect(result.flight.breakdown.instructorRateCentsPerHour).toBeUndefined();
       expect(result.flight.breakdown.instructorAmountCents).toBeUndefined();
+    });
+  });
+
+  describe('registerFlight — package consumption (story 5.2, AD-6, FR-13)', () => {
+    beforeEach(() => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+    });
+
+    it('queries eligible packages INSIDE the transaction with the AD-6 eligibility filter (personId, effectiveDate <= flightDate, expiresAt null-or->=flightDate, type associated with this aircraft) in FIFO order', async () => {
+      hourPackageFindMany.mockResolvedValue([]);
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+
+      await registerFlight(staffActor(), BASE_INPUT);
+
+      expect(hourPackageFindManyMock).toHaveBeenCalledWith({
+        where: {
+          personId: 'person_1',
+          effectiveDate: { lte: new Date('2020-01-15') },
+          OR: [{ expiresAt: null }, { expiresAt: { gte: new Date('2020-01-15') } }],
+          packageType: { eligibleAircraft: { some: { aircraftId: 'aircraft_1' } } },
+        },
+        select: { id: true, includedMinutes: true, packageType: { select: { name: true } } },
+        orderBy: [{ effectiveDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      });
+    });
+
+    it("exact package (60' residuo on a 60' flight): covered 60, charged 0, aircraft amount 0, movement -(0) with no instructor", async () => {
+      hourPackageFindMany.mockResolvedValue([{ id: 'hp_1', includedMinutes: 60, packageType: { name: 'Pacchetto 10 ore' } }]);
+      packageConsumptionGroupBy.mockResolvedValue([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, minutes: 60 });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 60, aircraftAmountCents: 0, packageCoveredMinutes: 60 });
+
+      const result = await registerFlight(staffActor(), input);
+
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ aircraftAmountCents: 0, packageCoveredMinutes: 60 }) }),
+      );
+      expect(packageConsumptionCreateManyMock).toHaveBeenCalledWith({
+        data: [{ flightId: 'flight_1', hourPackageId: 'hp_1', minutes: 60 }],
+      });
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amountCents: 0 }) }));
+      expect(result.flight.breakdown.packageCoveredMinutes).toBe(60);
+      expect(result.flight.breakdown.chargedMinutes).toBe(0);
+      expect(result.flight.breakdown.packageConsumptions).toEqual([{ hourPackageId: 'hp_1', typeName: 'Pacchetto 10 ore', minutes: 60 }]);
+    });
+
+    it("excess (70' flight, 60' package residuo): covered 60, charged 10, pro-rata aircraft amount round(rate*10/60)", async () => {
+      hourPackageFindMany.mockResolvedValue([{ id: 'hp_1', includedMinutes: 60, packageType: { name: 'Pacchetto 10 ore' } }]);
+      packageConsumptionGroupBy.mockResolvedValue([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, minutes: 70 });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 70, aircraftAmountCents: 2500, packageCoveredMinutes: 60 });
+
+      await registerFlight(staffActor(), input);
+
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ aircraftAmountCents: 2500, packageCoveredMinutes: 60 }) }),
+      );
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ amountCents: -2500, description: expect.stringContaining('(1:00 da pacchetto)') }),
+        }),
+      );
+    });
+
+    it("multi-package FIFO (60'+30' residuo, volo 80'): 60 dal più vecchio, 20 dal secondo, due righe consumo", async () => {
+      hourPackageFindMany.mockResolvedValue([
+        { id: 'hp_old', includedMinutes: 60, packageType: { name: 'Pacchetto Vecchio' } },
+        { id: 'hp_new', includedMinutes: 30, packageType: { name: 'Pacchetto Nuovo' } },
+      ]);
+      packageConsumptionGroupBy.mockResolvedValue([]);
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 80, aircraftAmountCents: 0, packageCoveredMinutes: 80 });
+
+      const result = await registerFlight(staffActor(), BASE_INPUT);
+
+      expect(packageConsumptionCreateManyMock).toHaveBeenCalledWith({
+        data: [
+          { flightId: 'flight_1', hourPackageId: 'hp_old', minutes: 60 },
+          { flightId: 'flight_1', hourPackageId: 'hp_new', minutes: 20 },
+        ],
+      });
+      expect(result.flight.breakdown.packageConsumptions).toEqual([
+        { hourPackageId: 'hp_old', typeName: 'Pacchetto Vecchio', minutes: 60 },
+        { hourPackageId: 'hp_new', typeName: 'Pacchetto Nuovo', minutes: 20 },
+      ]);
+    });
+
+    it('exhausted package (residuo 0, fully consumed already): skipped entirely, full rate charged, no PackageConsumption row', async () => {
+      hourPackageFindMany.mockResolvedValue([{ id: 'hp_1', includedMinutes: 60, packageType: { name: 'Pacchetto 10 ore' } }]);
+      packageConsumptionGroupBy.mockResolvedValue([{ hourPackageId: 'hp_1', _sum: { minutes: 60 } }]);
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW); // aircraftAmountCents 20000 (full rate), packageCoveredMinutes 0
+
+      const result = await registerFlight(staffActor(), BASE_INPUT);
+
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ aircraftAmountCents: 20000, packageCoveredMinutes: 0 }) }),
+      );
+      expect(packageConsumptionCreateManyMock).not.toHaveBeenCalled();
+      expect(result.flight.breakdown.packageConsumptions).toEqual([]);
+    });
+
+    it('purchased AFTER the flight date (effectiveDate > flightDate): filtered out at the query level, never eligible', async () => {
+      // The DB-side `effectiveDate: { lte: flightDate }` filter is exactly
+      // what excludes this case (asserted above) — from the service's
+      // perspective, an ineligible purchase never appears in the candidate
+      // list it receives, same as any other ineligible package.
+      hourPackageFindMany.mockResolvedValue([]);
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+
+      await registerFlight(staffActor(), BASE_INPUT);
+
+      expect(packageConsumptionCreateManyMock).not.toHaveBeenCalled();
+    });
+
+    it('aircraft/type not eligible (no candidate found): full rate charged, residuo untouched', async () => {
+      hourPackageFindMany.mockResolvedValue([]);
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+
+      await registerFlight(staffActor(), BASE_INPUT);
+
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ aircraftAmountCents: 20000, packageCoveredMinutes: 0 }) }),
+      );
+      expect(packageConsumptionCreateManyMock).not.toHaveBeenCalled();
+    });
+
+    it('total coverage with no instructor: the FLIGHT_CHARGE movement is still created, with amountCents 0 (never omitted)', async () => {
+      hourPackageFindMany.mockResolvedValue([{ id: 'hp_1', includedMinutes: 80, packageType: { name: 'Pacchetto Full' } }]);
+      packageConsumptionGroupBy.mockResolvedValue([]);
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, aircraftAmountCents: 0, packageCoveredMinutes: 80 });
+
+      await registerFlight(staffActor(), BASE_INPUT);
+
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amountCents: 0 }) }));
+    });
+
+    it('the instructor charge is NEVER reduced by package consumption (AD-6): full aircraft coverage + full instructor charge', async () => {
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+      hourPackageFindMany.mockResolvedValue([{ id: 'hp_1', includedMinutes: 80, packageType: { name: 'Pacchetto Full' } }]);
+      packageConsumptionGroupBy.mockResolvedValue([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
+      flightCreate.mockResolvedValue({
+        ...CREATED_FLIGHT_ROW,
+        aircraftAmountCents: 0,
+        packageCoveredMinutes: 80,
+        instructorRateCentsPerHour: 10000,
+        instructorAmountCents: 13333,
+      });
+
+      const result = await registerFlight(staffActor(), input);
+
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ instructorAmountCents: 13333, aircraftAmountCents: 0 }) }),
+      );
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ amountCents: -13333 }) }),
+      );
+      expect(result.flight.breakdown.totalAmountCents).toBe(13333);
+    });
+
+    it('appends "(H:MM da pacchetto)" to the movement description only when coverage is non-zero (5.1 regression: byte-identical description otherwise)', async () => {
+      hourPackageFindMany.mockResolvedValue([]);
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+
+      await registerFlight(staffActor(), BASE_INPUT);
+
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ description: 'Volo I-ABCD 2020-01-15 — 1:20' }) }),
+      );
     });
   });
 

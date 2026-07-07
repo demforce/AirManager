@@ -529,10 +529,11 @@ model PackageTypeAircraft {
 /// and package delivered cancel out).
 ///
 /// **Residuo is always COMPUTED, never a persisted counter** (AD-3's
-/// "totali sempre SUM" lesson): there is no `remainingMinutes` column. Story
-/// 4.4 has no consumption model yet, so the residuo is simply
-/// `includedMinutes` (see `packages.service.ts#computeRemainingMinutes`,
-/// the single point epic 5 will extend to subtract consumed minutes).
+/// "totali sempre SUM" lesson): there is no `remainingMinutes` column.
+/// Story 5.2 (epic 5) wires the consumption model: the residuo is
+/// `includedMinutes - SUM(PackageConsumption.minutes)` (see
+/// `packages.service.ts#computeRemainingMinutes`, the single computation
+/// point).
 ///
 /// **Snapshot at sale time** (AD-4, same principle as the historicized
 /// rates): `includedMinutes`/`pricePaidCents` are copied from the
@@ -578,6 +579,12 @@ model HourPackage {
   actorUserId       String
   actorUser         User            @relation(fields: [actorUserId], references: [id])
   createdAt         DateTime        @default(now())
+
+  /// Per-flight consumption rows against THIS package (epic 5, story 5.2,
+  /// AD-6) — see `PackageConsumption` doc. The residuo is `includedMinutes -
+  /// SUM(consumptions.minutes)`, always computed (never a persisted
+  /// counter).
+  consumptions PackageConsumption[]
 
   @@index([personId])
   @@index([packageTypeId])
@@ -638,9 +645,10 @@ enum FlightStatus {
 /// that table stays reserved for motivated manual rectifications; the
 /// flight itself is the audit trail of the advance.
 ///
-/// Package consumption (story 5.2) and storno/cancellation (story 5.3, via
-/// `status`/`reversalOfId`-style linking on the movement) are future
-/// extensions of this model, out of scope here.
+/// Package consumption (story 5.2, see `packageCoveredMinutes` and
+/// `PackageConsumption` below) and storno/cancellation (story 5.3, via
+/// `status`/`reversalOfId`-style linking on the movement) are extensions of
+/// this model — 5.2 wires the former, 5.3 the latter.
 model Flight {
   id                  String             @id @default(cuid())
   aircraftId          String
@@ -663,9 +671,21 @@ model Flight {
   notes          String?
 
   aircraftRateCentsPerHour   Int
+  /// Snapshot (AD-4) of the amount ACTUALLY CHARGED for the aircraft
+  /// component (story 5.2): pro-rata on `minutes - packageCoveredMinutes`,
+  /// never on the full flight duration once a package covered part of it.
   aircraftAmountCents        Int
   instructorRateCentsPerHour Int?
+  /// Never reduced by package consumption (AD-6: the instructor is NEVER
+  /// covered by a package) — always `round(rate * minutes / 60)` on the
+  /// FULL flight duration.
   instructorAmountCents      Int?
+  /// Snapshot total of minutes covered by package consumption (story 5.2,
+  /// AD-4/AD-6) — `default 0` is correct for every flight registered before
+  /// this story existed. The per-package detail lives on
+  /// `packageConsumptions`; this column is the SUM of those rows' `minutes`
+  /// at the moment the flight was registered, never recomputed later.
+  packageCoveredMinutes      Int  @default(0)
 
   /// Who recorded this flight (`Actor.userId`, always present) — same
   /// rationale as every other ledger's `actorUserId`.
@@ -678,10 +698,42 @@ model Flight {
   /// The `FLIGHT_CHARGE` movement (and, from story 5.3, its storno) linked
   /// to this flight — plural: more than one movement can reference the same
   /// flight.
-  movements AccountMovement[]
+  movements           AccountMovement[]
+  /// Per-package consumption detail for this flight (story 5.2) — see
+  /// `PackageConsumption` doc. Empty when no eligible package existed at
+  /// registration time (the pre-5.2 case: `packageCoveredMinutes == 0`).
+  packageConsumptions PackageConsumption[]
 
   @@index([aircraftId])
   @@index([personId])
   @@index([instructorProfileId])
   @@index([flightDate])
+}
+
+/// Per-flight package consumption ledger row (epic 5, story 5.2; AD-6). One
+/// row per (flight, package) pair that the FIFO allocation actually touched
+/// — `@@unique([flightId, hourPackageId])` guarantees a flight consumes a
+/// given package AT MOST ONCE, and doubles as the deterministic anchor
+/// story 5.3's storno/reversal will need (one row to undo per package
+/// touched). `minutes` is always a positive integer (AD-2): a package whose
+/// FIFO allocation would `take` 0 minutes never gets a row here — see
+/// `flights.service.ts#registerFlight`'s allocation loop. Append-only in
+/// 5.2: there is deliberately no update/delete API yet (5.3 decides how a
+/// cancelled flight's consumption gets reversed; this story does not
+/// anticipate it, Dev Notes). FK RESTRICT on both `flightId`/`hourPackageId`
+/// (Prisma default for a required relation) — neither row this references
+/// can be deleted out from under it (moot today, nothing deletes a
+/// Flight/HourPackage, but the backstop is free).
+model PackageConsumption {
+  id            String      @id @default(cuid())
+  flightId      String
+  flight        Flight      @relation(fields: [flightId], references: [id])
+  hourPackageId String
+  hourPackage   HourPackage @relation(fields: [hourPackageId], references: [id])
+  /// Minutes taken from `hourPackage`'s residuo for this flight — always > 0.
+  minutes       Int
+  createdAt     DateTime    @default(now())
+
+  @@unique([flightId, hourPackageId])
+  @@index([hourPackageId])
 }

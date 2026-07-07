@@ -24,6 +24,9 @@ vi.mock('@/server/db/prisma', () => ({
       create: vi.fn(),
       findMany: vi.fn(),
     },
+    packageConsumption: {
+      groupBy: vi.fn(),
+    },
     cashMovement: {
       create: vi.fn(),
     },
@@ -47,6 +50,7 @@ const accountUpsertMock = vi.mocked(prisma.account.upsert);
 const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
 const hourPackageCreateMock = vi.mocked(prisma.hourPackage.create);
 const hourPackageFindManyMock = vi.mocked(prisma.hourPackage.findMany);
+const packageConsumptionGroupByMock = vi.mocked(prisma.packageConsumption.groupBy);
 const cashMovementCreateMock = vi.mocked(prisma.cashMovement.create);
 const transactionMock = vi.mocked(prisma.$transaction);
 
@@ -60,6 +64,9 @@ const accountUpsert = accountUpsertMock as unknown as { mockResolvedValue: (v: F
 const accountMovementCreate = accountMovementCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const hourPackageCreate = hourPackageCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const hourPackageFindMany = hourPackageFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const packageConsumptionGroupBy = packageConsumptionGroupByMock as unknown as {
+  mockResolvedValue: (v: { hourPackageId: string; _sum: { minutes: number | null } }[]) => void;
+};
 
 /** Same batch/interactive `$transaction` stand-in as `accounts.service.test.ts`/`package-types.service.test.ts`. */
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
@@ -114,17 +121,23 @@ describe('packages.service (story 4.4 — package sale and residuals, FR-13)', (
     accountMovementCreateMock.mockReset();
     hourPackageCreateMock.mockReset();
     hourPackageFindManyMock.mockReset();
+    packageConsumptionGroupByMock.mockReset();
     cashMovementCreateMock.mockReset();
     transactionMock.mockReset();
     getAccountOverviewMock.mockReset();
     getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
+    // Default: nobody has consumed anything yet (story 5.2's "5.1 regression"
+    // path — most tests in this suite are not about consumption at all).
+    packageConsumptionGroupBy.mockResolvedValue([]);
     mockTransaction();
   });
 
   describe('computeRemainingMinutes (AD-3 — single computation point, never a persisted counter)', () => {
-    it('equals includedMinutes today (no consumption model yet, epic 5)', () => {
-      expect(computeRemainingMinutes({ includedMinutes: 600 })).toBe(600);
-      expect(computeRemainingMinutes({ includedMinutes: 0 })).toBe(0);
+    it('equals includedMinutes minus consumedMinutes (story 5.2, FR-13 consumo)', () => {
+      expect(computeRemainingMinutes({ includedMinutes: 600, consumedMinutes: 0 })).toBe(600);
+      expect(computeRemainingMinutes({ includedMinutes: 0, consumedMinutes: 0 })).toBe(0);
+      expect(computeRemainingMinutes({ includedMinutes: 600, consumedMinutes: 200 })).toBe(400);
+      expect(computeRemainingMinutes({ includedMinutes: 600, consumedMinutes: 600 })).toBe(0);
     });
   });
 
@@ -268,6 +281,14 @@ describe('packages.service (story 4.4 — package sale and residuals, FR-13)', (
       expect(getAccountOverviewMock).toHaveBeenCalledWith(staffActor(), 'person_1');
     });
 
+    it('a freshly sold package has consumedMinutes 0 and remainingMinutes === includedMinutes, with no PackageConsumption query (story 5.2)', async () => {
+      const result = await sellPackage(staffActor(), 'person_1', SELL_INPUT);
+
+      expect(result.package.consumedMinutes).toBe(0);
+      expect(result.package.remainingMinutes).toBe(600);
+      expect(packageConsumptionGroupByMock).not.toHaveBeenCalled();
+    });
+
     it('materializes expiresAt via addMonthsClampUtc when the type has validityMonths (end-of-month clamp)', async () => {
       packageTypeFindUnique.mockResolvedValue({ ...ACTIVE_TYPE, validityMonths: 1 });
       await sellPackage(
@@ -387,10 +408,49 @@ describe('packages.service (story 4.4 — package sale and residuals, FR-13)', (
       expect(ownResult[0]?.actorEmail).toBeUndefined();
     });
 
-    it('remainingMinutes equals includedMinutes (no consumption model yet)', async () => {
+    it('remainingMinutes equals includedMinutes when nothing has been consumed yet', async () => {
       hourPackageFindMany.mockResolvedValue([ROW]);
       const [item] = await listPersonPackages(staffActor(), 'person_1');
       expect(item?.remainingMinutes).toBe(600);
+      expect(item?.consumedMinutes).toBe(0);
+    });
+
+    describe('consumedMinutes / remainingMinutes (story 5.2, FR-13 consumo) — ONE aggregated groupBy, never one query per package', () => {
+      it('aggregates SUM(PackageConsumption.minutes) per package and subtracts it from includedMinutes', async () => {
+        hourPackageFindMany.mockResolvedValue([ROW, { ...ROW, id: 'hp_2', includedMinutes: 300 }]);
+        packageConsumptionGroupBy.mockResolvedValue([
+          { hourPackageId: 'hp_1', _sum: { minutes: 200 } },
+          { hourPackageId: 'hp_2', _sum: { minutes: 300 } },
+        ]);
+
+        const items = await listPersonPackages(staffActor(), 'person_1');
+
+        expect(packageConsumptionGroupByMock).toHaveBeenCalledWith({
+          by: ['hourPackageId'],
+          where: { hourPackageId: { in: ['hp_1', 'hp_2'] } },
+          _sum: { minutes: true },
+        });
+        expect(items[0]).toMatchObject({ id: 'hp_1', includedMinutes: 600, consumedMinutes: 200, remainingMinutes: 400 });
+        expect(items[1]).toMatchObject({ id: 'hp_2', includedMinutes: 300, consumedMinutes: 300, remainingMinutes: 0 });
+      });
+
+      it('a package with no PackageConsumption rows (absent from the groupBy result) has consumedMinutes 0', async () => {
+        hourPackageFindMany.mockResolvedValue([ROW]);
+        packageConsumptionGroupBy.mockResolvedValue([]);
+
+        const [item] = await listPersonPackages(staffActor(), 'person_1');
+
+        expect(item?.consumedMinutes).toBe(0);
+        expect(item?.remainingMinutes).toBe(600);
+      });
+
+      it('never queries packageConsumption.groupBy when the person has no packages at all', async () => {
+        hourPackageFindMany.mockResolvedValue([]);
+
+        await listPersonPackages(staffActor(), 'person_1');
+
+        expect(packageConsumptionGroupByMock).not.toHaveBeenCalled();
+      });
     });
 
     describe('isExpired boundary (Dev Notes: expired only if STRICTLY before today, expiry day itself is still valid)', () => {

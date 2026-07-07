@@ -93,17 +93,38 @@ export const registerFlightSchema = z
 export type RegisterFlightInput = z.infer<typeof registerFlightSchema>;
 
 /**
+ * One package's contribution to a flight's breakdown (story 5.2, AC 1/2) —
+ * documentation only, mirroring `flights.service.ts`'s
+ * `FlightPackageConsumptionItem`. `typeName` is denormalized (the
+ * `PackageType.name` at read time) so the UI never needs a second
+ * round-trip to label the row.
+ */
+export const flightPackageConsumptionSchema = z.object({
+  hourPackageId: z.string(),
+  typeName: z.string(),
+  minutes: z.number().int().positive(),
+});
+
+export type FlightPackageConsumptionDto = z.infer<typeof flightPackageConsumptionSchema>;
+
+/**
  * The addebito breakdown carried by every flight (AC 1/2, AD-4). Documentation
  * only, mirroring `flights.service.ts`'s `FlightBreakdown` TS type.
  * `instructorRateCentsPerHour`/`instructorAmountCents` are present iff the
  * flight had an instructor; `totalAmountCents` is always the (already
- * separately rounded) sum, never a persisted column.
+ * separately rounded) sum, never a persisted column. `packageCoveredMinutes`/
+ * `chargedMinutes`/`packageConsumptions` are story 5.2's consumption detail
+ * (AD-6) — `packageCoveredMinutes` is 0 and `packageConsumptions` empty when
+ * no eligible package existed at registration time.
  */
 export const flightBreakdownSchema = z.object({
   aircraftRateCentsPerHour: z.number().int().positive(),
   aircraftAmountCents: z.number().int().nonnegative(),
   instructorRateCentsPerHour: z.number().int().positive().optional(),
   instructorAmountCents: z.number().int().nonnegative().optional(),
+  packageCoveredMinutes: z.number().int().nonnegative(),
+  chargedMinutes: z.number().int().nonnegative(),
+  packageConsumptions: z.array(flightPackageConsumptionSchema),
   totalAmountCents: z.number().int().nonnegative(),
 });
 

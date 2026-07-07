@@ -231,7 +231,8 @@
       "price": "Prezzo pagato",
       "expiresAt": "Scadenza",
       "noExpiry": "—",
-      "expiredBadge": "Scaduto"
+      "expiredBadge": "Scaduto",
+      "consumedNote": "Usati: {duration}"
     },
     "form": {
       "title": "Vendi pacchetto",
@@ -687,6 +688,8 @@
       "aircraftAmount": "Costo velivolo",
       "instructorRate": "Tariffa istruttore",
       "instructorAmount": "Costo istruttore",
+      "packageCovered": "Da pacchetto",
+      "chargedMinutes": "Minuti addebitati",
       "total": "Totale addebitato",
       "newBalance": "Nuovo saldo"
     },
@@ -703,7 +706,8 @@
         "duration": "Durata",
         "amount": "Addebito",
         "landings": "Atterraggi",
-        "noValue": "—"
+        "noValue": "—",
+        "packageNote": "di cui {duration} da pacchetto"
       }
     }
   },

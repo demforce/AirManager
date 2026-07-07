@@ -231,7 +231,8 @@
       "price": "Price paid",
       "expiresAt": "Expires",
       "noExpiry": "—",
-      "expiredBadge": "Expired"
+      "expiredBadge": "Expired",
+      "consumedNote": "Used: {duration}"
     },
     "form": {
       "title": "Sell package",
@@ -687,6 +688,8 @@
       "aircraftAmount": "Aircraft cost",
       "instructorRate": "Instructor rate",
       "instructorAmount": "Instructor cost",
+      "packageCovered": "From package",
+      "chargedMinutes": "Charged minutes",
       "total": "Total charged",
       "newBalance": "New balance"
     },
@@ -703,7 +706,8 @@
         "duration": "Duration",
         "amount": "Charge",
         "landings": "Landings",
-        "noValue": "—"
+        "noValue": "—",
+        "packageNote": "of which {duration} from package"
       }
     }
   },

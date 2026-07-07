@@ -145,6 +145,8 @@ export default async function FlightsPage({ params }: PageProps) {
                 aircraftAmount: t('result.aircraftAmount'),
                 instructorRate: t('result.instructorRate'),
                 instructorAmount: t('result.instructorAmount'),
+                packageCovered: t('result.packageCovered'),
+                chargedMinutes: t('result.chargedMinutes'),
                 total: t('result.total'),
                 newBalance: t('result.newBalance'),
               },
@@ -162,6 +164,9 @@ export default async function FlightsPage({ params }: PageProps) {
                   amount: t('list.table.amount'),
                   landings: t('list.table.landings'),
                   noValue: t('list.table.noValue'),
+                  // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
+                  // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).
+                  packageNote: t.raw('list.table.packageNote') as string,
                 },
               },
             }}
