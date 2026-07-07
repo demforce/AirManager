@@ -44,6 +44,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/aircraft/{id}/out-of-service',
         '/api/v1/aircraft/{id}/return-to-service',
         '/api/v1/aircraft/{id}/hour-meter-adjustments',
+        '/api/v1/aircraft/{id}/rates',
         '/api/v1/users',
         '/api/v1/users/{id}',
         '/api/v1/users/{id}/resend-invite',

@@ -148,6 +148,38 @@ model Aircraft {
   updatedAt        DateTime       @updatedAt
 
   hourMeterAdjustments HourMeterAdjustment[]
+  /// Historicized hourly rates (epic 4, story 4.1, AD-4) — see `AircraftRate` doc.
+  rates                AircraftRate[]
+}
+
+/// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). Append-only
+/// (AD-3's spirit): there is deliberately NO update/delete API — a wrong
+/// price is corrected by inserting ANOTHER rate with a later `validFrom`,
+/// the history is never rewritten. The rate in effect for a given date D is
+/// the row with the MAXIMUM `validFrom <= D` (AD-4) — see
+/// `rates.service.ts#getEffectiveRate`, the hook epic 5's flight snapshot
+/// will call (not implemented here). `priceCentsPerHour` is an integer
+/// number of euro cents (AD-2) and always > 0 — enforced at the Zod/service
+/// boundary, not a DB constraint, same choice as `Aircraft.hourMeterMinutes`.
+/// `validFrom` is calendar-only (`@db.Date`, same convention as
+/// `AccountMovement.effectiveDate`) — a rate takes effect on a whole day,
+/// never at a specific time. `@@unique([aircraftId, validFrom])` backs AC 2:
+/// two rates for the same aircraft on the same day is a 409, not a silent
+/// overwrite.
+model AircraftRate {
+  id                String   @id @default(cuid())
+  aircraftId        String
+  aircraft          Aircraft @relation(fields: [aircraftId], references: [id])
+  priceCentsPerHour Int
+  validFrom         DateTime @db.Date
+  /// The acting `User.id` (`Actor.userId`, always present) — who recorded
+  /// this rate, same rationale as `HourMeterAdjustment.actorUserId`.
+  actorUserId       String
+  actorUser         User     @relation(fields: [actorUserId], references: [id])
+  createdAt         DateTime @default(now())
+
+  @@unique([aircraftId, validFrom])
+  @@index([aircraftId])
 }
 
 /// Append-only audit trail for hour-meter (contaore) corrections (story 2.5,
@@ -198,6 +230,8 @@ model User {
   /// Hour-meter rectifications this user performed (story 2.5, AC 2) —
   /// `HourMeterAdjustment.actorUserId`.
   hourMeterAdjustments HourMeterAdjustment[]
+  /// Aircraft rates this user recorded (story 4.1) — `AircraftRate.actorUserId`.
+  aircraftRates        AircraftRate[]
   /// Account ledger entries this user recorded (story 3.1) — `AccountMovement.actorUserId`.
   accountMovements     AccountMovement[]
   /// Cash ledger entries this user recorded (story 3.1) — `CashMovement.actorUserId`.

@@ -11,6 +11,9 @@ import {
 import {
   aircraftListItemSchema,
   aircraftListResponseSchema,
+  aircraftRateItemSchema,
+  aircraftRateListResponseSchema,
+  createAircraftRateSchema,
   createAircraftSchema,
   createHourMeterAdjustmentSchema,
   hourMeterAdjustmentListResponseSchema,
@@ -112,6 +115,9 @@ registry.register('UpdateAircraftRequest', updateAircraftSchema);
 registry.register('SetOutOfServiceRequest', setOutOfServiceSchema);
 registry.register('CreateHourMeterAdjustmentRequest', createHourMeterAdjustmentSchema);
 registry.register('HourMeterAdjustmentList', hourMeterAdjustmentListResponseSchema);
+registry.register('AircraftRate', aircraftRateItemSchema);
+registry.register('AircraftRateList', aircraftRateListResponseSchema);
+registry.register('CreateAircraftRateRequest', createAircraftRateSchema);
 registry.register('AccountOverview', accountOverviewSchema);
 registry.register('RecordTopUpRequest', recordTopUpSchema);
 registry.register('AccountStatement', accountStatementResponseSchema);
@@ -726,6 +732,36 @@ registry.registerPath({
   responses: {
     200: { description: 'The aircraft, with the updated hour meter.', content: jsonContent(aircraftListItemSchema) },
     ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/aircraft/{id}/rates',
+  summary: "List an aircraft's historicized rate history (most recent validFrom first)",
+  description:
+    'Story 4.1, AC 1 — a plain array (no pagination, small admin-managed list, capped at 500). Requires `aircraft.manage` (staff+admin see fleet pricing, a wider read than the `settings.manage` write below).',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: "The aircraft's rate history.", content: jsonContent(aircraftRateListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/rates',
+  summary: 'Record a new historicized rate (AD-4)',
+  description:
+    'Append-only (AD-3 spirit, story 4.1, AC 1/2) — there is no update/delete endpoint; a wrong price is corrected by a NEW rate with a later `validFrom`. Two rates sharing the same `(aircraftId, validFrom)` are a 409 (AC 2). An archived aircraft also answers 409. Requires `settings.manage` (admin-only pricing configuration, story 3.4\'s cash-category pattern).',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams, body: { content: jsonContent(createAircraftRateSchema), required: true } },
+  responses: {
+    201: { description: 'The created rate.', content: jsonContent(aircraftRateItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 

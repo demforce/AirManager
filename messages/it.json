@@ -401,6 +401,8 @@
       "hourMeter": "Contaore",
       "status": "Stato",
       "operationalStatus": "Stato operativo",
+      "currentRate": "Tariffa attuale",
+      "noRate": "—",
       "actions": "Azioni",
       "empty": "Nessun velivolo trovato."
     },
@@ -423,7 +425,8 @@
       "setOutOfService": "Fuori servizio",
       "returnToService": "Rientro in servizio",
       "confirmReturnToService": "Rimettere in servizio questo velivolo?",
-      "adjustHourMeter": "Rettifica contaore"
+      "adjustHourMeter": "Rettifica contaore",
+      "rates": "Tariffe"
     },
     "form": {
       "createTitle": "Nuovo velivolo",
@@ -472,6 +475,28 @@
       "historyDelta": "Delta",
       "historyReason": "Motivo"
     },
+    "ratesPanel": {
+      "title": "Tariffe",
+      "current": "Tariffa attuale",
+      "noCurrentRate": "Nessuna tariffa in vigore",
+      "newRateTitle": "Nuova tariffa",
+      "price": "Prezzo (€/h)",
+      "validFrom": "In vigore da",
+      "submit": "Aggiungi tariffa",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "invalidPrice": "Il prezzo deve essere un importo positivo (es. 160,00).",
+      "invalidDate": "Inserisci una data valida.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "conflictError": "Esiste già una tariffa con questa data di decorrenza.",
+      "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe.",
+      "historyTitle": "Storico tariffe",
+      "historyEmpty": "Nessuna tariffa registrata.",
+      "historyValidFrom": "In vigore da",
+      "historyPrice": "Prezzo",
+      "historyActor": "Chi",
+      "historyWhen": "Registrata il"
+    },
     "feedback": {
       "created": "Velivolo creato.",
       "updated": "Velivolo aggiornato.",
@@ -479,7 +504,8 @@
       "unarchived": "Velivolo ripristinato.",
       "setOutOfService": "Velivolo segnato fuori servizio.",
       "returnedToService": "Velivolo rimesso in servizio.",
-      "hourMeterAdjusted": "Contaore rettificato."
+      "hourMeterAdjusted": "Contaore rettificato.",
+      "rateAdded": "Tariffa aggiunta."
     }
   },
   "UsersPage": {

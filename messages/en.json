@@ -401,6 +401,8 @@
       "hourMeter": "Hour meter",
       "status": "Status",
       "operationalStatus": "Operational status",
+      "currentRate": "Current rate",
+      "noRate": "—",
       "actions": "Actions",
       "empty": "No aircraft found."
     },
@@ -423,7 +425,8 @@
       "setOutOfService": "Out of service",
       "returnToService": "Return to service",
       "confirmReturnToService": "Return this aircraft to service?",
-      "adjustHourMeter": "Adjust hour meter"
+      "adjustHourMeter": "Adjust hour meter",
+      "rates": "Rates"
     },
     "form": {
       "createTitle": "New aircraft",
@@ -472,6 +475,28 @@
       "historyDelta": "Delta",
       "historyReason": "Reason"
     },
+    "ratesPanel": {
+      "title": "Rates",
+      "current": "Current rate",
+      "noCurrentRate": "No rate in effect",
+      "newRateTitle": "New rate",
+      "price": "Price (€/h)",
+      "validFrom": "Effective from",
+      "submit": "Add rate",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "invalidPrice": "The price must be a positive amount (e.g. 160.00).",
+      "invalidDate": "Enter a valid date.",
+      "genericError": "Something went wrong. Please try again.",
+      "conflictError": "A rate with this effective date already exists.",
+      "readOnlyHint": "Only an administrator can add new rates.",
+      "historyTitle": "Rate history",
+      "historyEmpty": "No rates recorded yet.",
+      "historyValidFrom": "Effective from",
+      "historyPrice": "Price",
+      "historyActor": "Who",
+      "historyWhen": "Recorded on"
+    },
     "feedback": {
       "created": "Aircraft created.",
       "updated": "Aircraft updated.",
@@ -479,7 +504,8 @@
       "unarchived": "Aircraft restored.",
       "setOutOfService": "Aircraft marked out of service.",
       "returnedToService": "Aircraft returned to service.",
-      "hourMeterAdjusted": "Hour meter adjusted."
+      "hourMeterAdjusted": "Hour meter adjusted.",
+      "rateAdded": "Rate added."
     }
   },
   "UsersPage": {

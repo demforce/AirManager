@@ -4,6 +4,7 @@ import type { AppLocale } from '@/i18n/routing';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listAircraft } from '@/server/services/aircraft.service';
+import { getEffectiveRate, todayDateOnlyUtc } from '@/server/services/rates.service';
 import { AircraftManager } from './aircraft-manager';
 
 type PageProps = {
@@ -40,6 +41,15 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
 
   const aircraftResult = await listAircraft(actor, { page, pageSize: PAGE_SIZE, q, includeArchived });
 
+  // Story 4.1, AD-4: the hourly rate in effect TODAY for each row of the
+  // current page — small (page size 20), so N `getEffectiveRate` calls (each
+  // just a permission check + a single indexed query) beats inventing a
+  // batch function the story's Dev Notes never asked for.
+  const today = todayDateOnlyUtc();
+  const currentRates = await Promise.all(
+    aircraftResult.items.map((item) => getEffectiveRate(actor, item.id, today)),
+  );
+
   const t = await getTranslations('AircraftPage');
   const totalPages = Math.max(1, Math.ceil(aircraftResult.total / PAGE_SIZE));
 
@@ -74,7 +84,7 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
 
         <div className="mt-10">
           <AircraftManager
-            aircraft={aircraftResult.items.map((aircraft) => ({
+            aircraft={aircraftResult.items.map((aircraft, index) => ({
               id: aircraft.id,
               registration: aircraft.registration,
               type: aircraft.type,
@@ -84,9 +94,11 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
               status: aircraft.status,
               statusReason: aircraft.statusReason,
               archivedAt: aircraft.archivedAt ? aircraft.archivedAt.toISOString() : null,
+              currentRatePriceCentsPerHour: currentRates[index]?.priceCentsPerHour ?? null,
             }))}
             initialQuery={q ?? ''}
             initialIncludeArchived={includeArchived}
+            canManageSettings={hasPermission(actor, 'settings.manage')}
             labels={{
               newAircraft: t('newAircraft'),
               searchPlaceholder: t('searchPlaceholder'),
@@ -98,6 +110,8 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
                 hourMeter: t('table.hourMeter'),
                 status: t('table.status'),
                 operationalStatus: t('table.operationalStatus'),
+                currentRate: t('table.currentRate'),
+                noRate: t('table.noRate'),
                 actions: t('table.actions'),
                 empty: t('table.empty'),
               },
@@ -121,6 +135,7 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
                 returnToService: t('actions.returnToService'),
                 confirmReturnToService: t('actions.confirmReturnToService'),
                 adjustHourMeter: t('actions.adjustHourMeter'),
+                rates: t('actions.rates'),
               },
               form: {
                 createTitle: t('form.createTitle'),
@@ -169,6 +184,28 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
                 historyDelta: t('hourMeterPanel.historyDelta'),
                 historyReason: t('hourMeterPanel.historyReason'),
               },
+              ratesPanel: {
+                title: t('ratesPanel.title'),
+                current: t('ratesPanel.current'),
+                noCurrentRate: t('ratesPanel.noCurrentRate'),
+                newRateTitle: t('ratesPanel.newRateTitle'),
+                price: t('ratesPanel.price'),
+                validFrom: t('ratesPanel.validFrom'),
+                submit: t('ratesPanel.submit'),
+                cancel: t('ratesPanel.cancel'),
+                requiredField: t('ratesPanel.requiredField'),
+                invalidPrice: t('ratesPanel.invalidPrice'),
+                invalidDate: t('ratesPanel.invalidDate'),
+                genericError: t('ratesPanel.genericError'),
+                conflictError: t('ratesPanel.conflictError'),
+                readOnlyHint: t('ratesPanel.readOnlyHint'),
+                historyTitle: t('ratesPanel.historyTitle'),
+                historyEmpty: t('ratesPanel.historyEmpty'),
+                historyValidFrom: t('ratesPanel.historyValidFrom'),
+                historyPrice: t('ratesPanel.historyPrice'),
+                historyActor: t('ratesPanel.historyActor'),
+                historyWhen: t('ratesPanel.historyWhen'),
+              },
               feedback: {
                 created: t('feedback.created'),
                 updated: t('feedback.updated'),
@@ -177,6 +214,7 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
                 setOutOfService: t('feedback.setOutOfService'),
                 returnedToService: t('feedback.returnedToService'),
                 hourMeterAdjusted: t('feedback.hourMeterAdjusted'),
+                rateAdded: t('feedback.rateAdded'),
               },
             }}
           />
