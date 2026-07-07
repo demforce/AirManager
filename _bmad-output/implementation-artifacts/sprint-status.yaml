@@ -58,8 +58,8 @@ development_status:
   3-5-financial-report: done
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-aircraft-rates: backlog
+  epic-4: in-progress
+  4-1-aircraft-rates: ready-for-dev
   4-2-instructor-rates: backlog
   4-3-package-types: backlog
   4-4-package-sale: backlog
