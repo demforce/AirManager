@@ -64,7 +64,7 @@ development_status:
   4-1-aircraft-rates: done
   4-2-instructor-rates: done
   4-3-package-types: ready-for-dev
-  4-4-package-sale: backlog
+  4-4-package-sale: ready-for-dev
   epic-4-retrospective: optional
 
   epic-5: backlog
