@@ -193,6 +193,30 @@
         "requiredField": "This field is required.",
         "genericError": "Could not record the top-up. Please try again."
       }
+    },
+    "instructorRates": {
+      "heading": "Instructor rates",
+      "current": "Current rate",
+      "noCurrentRate": "No rate in effect",
+      "loadError": "Could not load the rate history.",
+      "newRateTitle": "New rate",
+      "addAction": "New rate",
+      "price": "Price (€/h)",
+      "validFrom": "Effective from",
+      "submit": "Add rate",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "invalidPrice": "The price must be a positive amount (e.g. 45.00).",
+      "invalidDate": "Enter a valid date.",
+      "genericError": "Something went wrong. Please try again.",
+      "conflictError": "A rate with this effective date already exists, or the person has no active instructor profile.",
+      "readOnlyHint": "Only an administrator can add new instructor rates.",
+      "historyTitle": "Rate history",
+      "historyEmpty": "No rates recorded.",
+      "historyValidFrom": "Effective from",
+      "historyPrice": "Price",
+      "historyActor": "Who",
+      "historyWhen": "Recorded on"
     }
   },
   "AccountStatementPage": {

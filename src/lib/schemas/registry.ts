@@ -40,9 +40,12 @@ import {
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { meResponseSchema } from './me';
 import {
+  createInstructorRateSchema,
   createPersonSchema,
   instructorProfileRequestSchema,
   instructorProfileSchema,
+  instructorRateItemSchema,
+  instructorRateListResponseSchema,
   listPeopleQuerySchema,
   personDetailSchema,
   personListItemSchema,
@@ -108,6 +111,9 @@ registry.register('StudentProfileRequest', studentProfileRequestSchema);
 registry.register('StudentProfile', studentProfileSchema);
 registry.register('InstructorProfileRequest', instructorProfileRequestSchema);
 registry.register('InstructorProfile', instructorProfileSchema);
+registry.register('InstructorRate', instructorRateItemSchema);
+registry.register('InstructorRateList', instructorRateListResponseSchema);
+registry.register('CreateInstructorRateRequest', createInstructorRateSchema);
 registry.register('Aircraft', aircraftListItemSchema);
 registry.register('AircraftList', aircraftListResponseSchema);
 registry.register('CreateAircraftRequest', createAircraftSchema);
@@ -425,6 +431,36 @@ registry.registerPath({
   request: { params: personIdParams, body: { content: jsonContent(recordAdjustmentSchema), required: true } },
   responses: {
     200: { description: 'The account overview, refreshed after the adjustment.', content: jsonContent(accountOverviewSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/instructor-rates',
+  summary: "List a person's historicized instructor-rate history (most recent validFrom first)",
+  description:
+    'Story 4.2, AC 1 — the twin of `GET /api/v1/aircraft/{id}/rates`, a plain array (no pagination, capped at 500). A person without an (active) instructor profile gets an empty array, NOT a 404 — only an unknown person is. Requires `people.read` (staff+admin — a wider read than the `settings.manage` write below, since instructor data lives under `people`).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: "The instructor's rate history.", content: jsonContent(instructorRateListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/instructor-rates',
+  summary: 'Record a new historicized instructor rate (AD-4)',
+  description:
+    'Story 4.2, AC 1/2 — the twin of `POST /api/v1/aircraft/{id}/rates`. Append-only (AD-3 spirit): there is no update/delete endpoint; a wrong price is corrected by a NEW rate with a later `validFrom`. Two rates sharing the same `(instructorProfileId, validFrom)` are a 409 (AC 2). A person with no active instructor profile (never activated, or deactivated) also answers 409. Requires `settings.manage` (admin-only pricing configuration, same as `POST /api/v1/aircraft/{id}/rates`).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(createInstructorRateSchema), required: true } },
+  responses: {
+    201: { description: 'The created rate.', content: jsonContent(instructorRateItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });

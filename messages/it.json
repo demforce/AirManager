@@ -193,6 +193,30 @@
         "requiredField": "Campo obbligatorio.",
         "genericError": "Impossibile registrare la ricarica. Riprova."
       }
+    },
+    "instructorRates": {
+      "heading": "Tariffe istruttore",
+      "current": "Tariffa attuale",
+      "noCurrentRate": "Nessuna tariffa in vigore",
+      "loadError": "Impossibile caricare lo storico tariffe.",
+      "newRateTitle": "Nuova tariffa",
+      "addAction": "Nuova tariffa",
+      "price": "Prezzo (€/h)",
+      "validFrom": "In vigore da",
+      "submit": "Aggiungi tariffa",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "invalidPrice": "Il prezzo deve essere un importo positivo (es. 45,00).",
+      "invalidDate": "Inserisci una data valida.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "conflictError": "Esiste già una tariffa con questa data di decorrenza, oppure la persona non ha un profilo istruttore attivo.",
+      "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe istruttore.",
+      "historyTitle": "Storico tariffe",
+      "historyEmpty": "Nessuna tariffa registrata.",
+      "historyValidFrom": "In vigore da",
+      "historyPrice": "Prezzo",
+      "historyActor": "Chi",
+      "historyWhen": "Registrata il"
     }
   },
   "AccountStatementPage": {

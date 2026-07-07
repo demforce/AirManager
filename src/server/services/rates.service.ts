@@ -1,7 +1,15 @@
+import { parseDateOnlyUtc, todayDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { CreateAircraftRateInput } from '@/lib/schemas/aircraft';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError } from './errors';
+
+// `parseDateOnlyUtc`/`todayDateOnlyUtc`/`toDateOnlyString` used to live here;
+// story 4.2 extracted them into `src/lib/date-only.ts` so this service and
+// its twin `instructor-rates.service.ts` share one implementation instead of
+// duplicating it. Re-exported so existing importers (`aircraft/page.tsx`)
+// don't need to change their import path.
+export { todayDateOnlyUtc };
 
 /**
  * Historicized aircraft rates (epic 4, story 4.1, AD-4/AD-2). Append-only
@@ -39,29 +47,6 @@ type SelectedRate = {
   actorUser: { email: string };
   createdAt: Date;
 };
-
-/** `@db.Date` round-trips as a UTC-midnight `Date` — same helper as `accounts.service.ts`/`cash.service.ts`. */
-function toDateOnlyString(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-/**
- * Parses a `YYYY-MM-DD` string (already validated by `z.iso.date()` at the
- * Zod boundary) into a UTC-midnight `Date` — the exact shape Prisma expects
- * to bind against a `@db.Date` column (review 3.5 F1's lesson: never let a
- * JS `Date` carry any time-of-day/timezone component into a date-only
- * comparison).
- */
-function parseDateOnlyUtc(dateOnly: string): Date {
-  const [year, month, day] = dateOnly.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
-/** `@db.Date` calendar-only "today" (server clock, UTC) — same helper as `accounts.service.ts#todayDateOnlyUtc`. */
-export function todayDateOnlyUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
 
 function toListItem(rate: SelectedRate): AircraftRateListItem {
   return {

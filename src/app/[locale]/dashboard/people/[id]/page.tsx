@@ -2,11 +2,14 @@ import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { todayDateOnlyUtc } from '@/lib/date-only';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { ForbiddenError, NotFoundError } from '@/server/services/errors';
+import { getEffectiveInstructorRate } from '@/server/services/instructor-rates.service';
 import { getPerson } from '@/server/services/people.service';
 import { AccountPanel } from '../account-panel';
+import { InstructorRatesPanel } from '../instructor-rates-panel';
 import { ProfilesPanel } from '../profiles-panel';
 
 type PageProps = {
@@ -64,8 +67,17 @@ export default async function PersonDetailPage({ params }: PageProps) {
 
   const canManageProfiles = hasPermission(actor, 'people.manage');
   const canManageFinance = hasPermission(actor, 'finance.manage');
+  const canManageSettings = hasPermission(actor, 'settings.manage');
   const t = await getTranslations('PersonDetailPage');
   const tPeople = await getTranslations('PeoplePage');
+
+  // Story 4.2, AC 1/AD-4: the instructor-rate section is shown only when the
+  // person has an instructor profile (active or deactivated — deactivated
+  // stays read-only, per Dev Notes). The effective-today rate is
+  // server-computed here (never recomputed client-side, same rationale as
+  // `aircraft/page.tsx#getEffectiveRate`).
+  const currentInstructorRate =
+    person.instructorProfile !== null ? await getEffectiveInstructorRate(actor, person.id, todayDateOnlyUtc()) : null;
 
   const personalDataRows: Array<{ label: string; value: string }> = [
     { label: t('personalData.firstName'), value: person.firstName },
@@ -214,6 +226,43 @@ export default async function PersonDetailPage({ params }: PageProps) {
             }}
           />
         </div>
+
+        {person.instructorProfile !== null ? (
+          <div className="mt-6">
+            <InstructorRatesPanel
+              // Remount on person change — same rationale as
+              // `aircraft-manager.tsx`'s `RatesPanel` (review 2.4 F1).
+              key={person.id}
+              personId={person.id}
+              currentRatePriceCentsPerHour={currentInstructorRate?.priceCentsPerHour ?? null}
+              canAddRate={canManageSettings && person.instructorProfile.deactivatedAt === null}
+              labels={{
+                heading: t('instructorRates.heading'),
+                current: t('instructorRates.current'),
+                noCurrentRate: t('instructorRates.noCurrentRate'),
+                loadError: t('instructorRates.loadError'),
+                newRateTitle: t('instructorRates.newRateTitle'),
+                addAction: t('instructorRates.addAction'),
+                price: t('instructorRates.price'),
+                validFrom: t('instructorRates.validFrom'),
+                submit: t('instructorRates.submit'),
+                cancel: t('instructorRates.cancel'),
+                requiredField: t('instructorRates.requiredField'),
+                invalidPrice: t('instructorRates.invalidPrice'),
+                invalidDate: t('instructorRates.invalidDate'),
+                genericError: t('instructorRates.genericError'),
+                conflictError: t('instructorRates.conflictError'),
+                readOnlyHint: t('instructorRates.readOnlyHint'),
+                historyTitle: t('instructorRates.historyTitle'),
+                historyEmpty: t('instructorRates.historyEmpty'),
+                historyValidFrom: t('instructorRates.historyValidFrom'),
+                historyPrice: t('instructorRates.historyPrice'),
+                historyActor: t('instructorRates.historyActor'),
+                historyWhen: t('instructorRates.historyWhen'),
+              }}
+            />
+          </div>
+        ) : null}
 
         {/* Story 2.3, AC 1: structural placeholders — epics 4-7 replace the
             content, never this layout. */}

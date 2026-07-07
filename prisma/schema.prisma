@@ -104,6 +104,9 @@ model InstructorProfile {
   deactivatedAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
+  rates InstructorRate[]
 }
 
 /// Aircraft operational status (story 2.5, AC 1; FR-8). `OUT_OF_SERVICE` is
@@ -182,6 +185,38 @@ model AircraftRate {
   @@index([aircraftId])
 }
 
+/// Historicized hourly rate for an instructor (story 4.2, epic 4; AD-4/AD-2)
+/// — the deliberate twin of `AircraftRate`, same shape and same rules, just
+/// keyed on `instructorProfileId` instead of `aircraftId`. Append-only (AD-3's
+/// spirit): there is deliberately NO update/delete API — a wrong price is
+/// corrected by inserting ANOTHER rate with a later `validFrom`, the history
+/// is never rewritten. The rate in effect for a given date D is the row with
+/// the MAXIMUM `validFrom <= D` (AD-4) — see
+/// `instructor-rates.service.ts#getEffectiveInstructorRate`, the hook epic 5's
+/// flight snapshot will call (not implemented here). `priceCentsPerHour` is an
+/// integer number of euro cents (AD-2) and always > 0 — enforced at the
+/// Zod/service boundary, not a DB constraint, same choice as `AircraftRate`.
+/// `validFrom` is calendar-only (`@db.Date`, same convention as
+/// `AccountMovement.effectiveDate`/`AircraftRate.validFrom`) — a rate takes
+/// effect on a whole day, never at a specific time.
+/// `@@unique([instructorProfileId, validFrom])` backs AC 2: two rates for the
+/// same instructor on the same day is a 409, not a silent overwrite.
+model InstructorRate {
+  id                  String            @id @default(cuid())
+  instructorProfileId String
+  instructorProfile   InstructorProfile @relation(fields: [instructorProfileId], references: [id])
+  priceCentsPerHour   Int
+  validFrom           DateTime          @db.Date
+  /// The acting `User.id` (`Actor.userId`, always present) — who recorded
+  /// this rate, same rationale as `AircraftRate.actorUserId`.
+  actorUserId         String
+  actorUser           User              @relation(fields: [actorUserId], references: [id])
+  createdAt           DateTime          @default(now())
+
+  @@unique([instructorProfileId, validFrom])
+  @@index([instructorProfileId])
+}
+
 /// Append-only audit trail for hour-meter (contaore) corrections (story 2.5,
 /// AC 2; AD-3's spirit — no ledger storno here, a wrong entry is corrected by
 /// another entry, never edited/deleted). Created exclusively inside
@@ -210,8 +245,8 @@ model HourMeterAdjustment {
 /// needs a `Person` yet (kept optional to avoid coupling auth to the full
 /// anagrafica before story 2.1 exists).
 model User {
-  id     String @id @default(cuid())
-  email  String @unique
+  id           String  @id @default(cuid())
+  email        String  @unique
   /// Nullable (story 1.4): an invited user has no password until they follow
   /// their invite link and set one via `AuthToken`. `authorize()` rejects
   /// login for a null `passwordHash` (with the same dummy-verify timing
@@ -226,12 +261,14 @@ model User {
   personId     String? @unique
   person       Person? @relation(fields: [personId], references: [id])
 
-  authTokens AuthToken[]
+  authTokens           AuthToken[]
   /// Hour-meter rectifications this user performed (story 2.5, AC 2) —
   /// `HourMeterAdjustment.actorUserId`.
   hourMeterAdjustments HourMeterAdjustment[]
   /// Aircraft rates this user recorded (story 4.1) — `AircraftRate.actorUserId`.
   aircraftRates        AircraftRate[]
+  /// Instructor rates this user recorded (story 4.2) — `InstructorRate.actorUserId`.
+  instructorRates      InstructorRate[]
   /// Account ledger entries this user recorded (story 3.1) — `AccountMovement.actorUserId`.
   accountMovements     AccountMovement[]
   /// Cash ledger entries this user recorded (story 3.1) — `CashMovement.actorUserId`.
@@ -333,7 +370,7 @@ model AccountMovement {
   /// The automatic cash-ledger counterpart created in the same transaction
   /// (story 3.1, AC 2) — present only for movement types that also move cash
   /// (today, every `TOP_UP`).
-  cashMovement  CashMovement?
+  cashMovement CashMovement?
 
   @@index([accountId])
 }
