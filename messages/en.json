@@ -159,7 +159,6 @@
     "placeholders": {
       "comingSoon": "Coming soon.",
       "expiries": "Expiries",
-      "hoursPackages": "Hour packages",
       "recentFlights": "Recent flights",
       "upcomingBookings": "Upcoming bookings"
     },
@@ -173,7 +172,8 @@
       "viewStatement": "Full account statement",
       "movementType": {
         "topUp": "Top-up",
-        "adjustment": "Adjustment"
+        "adjustment": "Adjustment",
+        "packagePurchase": "Package purchase"
       },
       "topUp": {
         "action": "Record top-up",
@@ -193,6 +193,62 @@
         "requiredField": "This field is required.",
         "genericError": "Could not record the top-up. Please try again."
       }
+    },
+    "instructorRates": {
+      "heading": "Instructor rates",
+      "current": "Current rate",
+      "noCurrentRate": "No rate in effect",
+      "loadError": "Could not load the rate history.",
+      "newRateTitle": "New rate",
+      "addAction": "New rate",
+      "price": "Price (€/h)",
+      "validFrom": "Effective from",
+      "submit": "Add rate",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "invalidPrice": "The price must be a positive amount (e.g. 45.00).",
+      "invalidDate": "Enter a valid date.",
+      "genericError": "Something went wrong. Please try again.",
+      "conflictError": "A rate with this effective date already exists, or the person has no active instructor profile.",
+      "readOnlyHint": "Only an administrator can add new instructor rates.",
+      "historyTitle": "Rate history",
+      "historyEmpty": "No rates recorded.",
+      "historyValidFrom": "Effective from",
+      "historyPrice": "Price",
+      "historyActor": "Who",
+      "historyWhen": "Recorded on"
+    }
+  },
+  "HourPackagesPanel": {
+    "heading": "Hour packages",
+    "loadError": "Could not load the packages.",
+    "empty": "No packages purchased.",
+    "addAction": "Sell package",
+    "feedback": "Package sold.",
+    "table": {
+      "remaining": "Remaining",
+      "price": "Price paid",
+      "expiresAt": "Expires",
+      "noExpiry": "—",
+      "expiredBadge": "Expired"
+    },
+    "form": {
+      "title": "Sell package",
+      "packageType": "Package type",
+      "noActiveTypes": "No active package type. Configure one in the listino.",
+      "paymentMethod": "Payment method",
+      "paymentMethods": {
+        "cash": "Cash",
+        "bankTransfer": "Bank transfer",
+        "pos": "POS"
+      },
+      "effectiveDate": "Value date",
+      "description": "Notes",
+      "submit": "Confirm sale",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "inactiveTypeError": "The selected package type is no longer active. Refresh the page and try again.",
+      "genericError": "Could not record the sale. Please try again."
     }
   },
   "AccountStatementPage": {
@@ -211,7 +267,8 @@
     },
     "movementType": {
       "topUp": "Top-up",
-      "adjustment": "Adjustment"
+      "adjustment": "Adjustment",
+      "packagePurchase": "Package purchase"
     },
     "adjustmentBadge": {
       "ofDate": "Adjusts the movement of {date}",
@@ -240,6 +297,7 @@
     "description": "The airfield's financial picture: prepaid accounts, negative balances and the cash register.",
     "backToDashboard": "Back to dashboard",
     "manageCategories": "Manage categories",
+    "viewPackages": "Package listing",
     "viewReport": "Financial report",
     "negativeBalances": {
       "heading": "Negative balances",
@@ -386,6 +444,70 @@
       "genericError": "The operation failed. Try again."
     }
   },
+  "PackagesPage": {
+    "kicker": "Finance",
+    "title": "Hour-package listing",
+    "description": "The discounted hour-bundle types sold to pilots: name, included hours, price, eligible aircraft and validity.",
+    "backToFinance": "Back to finance",
+    "newPackageType": "New package type",
+    "table": {
+      "name": "Name",
+      "includedHours": "Included hours",
+      "price": "Price",
+      "effectivePrice": "Effective hourly price",
+      "aircraft": "Eligible aircraft",
+      "validity": "Validity",
+      "status": "Status",
+      "actions": "Actions",
+      "empty": "No package type configured.",
+      "noValidity": "—",
+      "noAircraft": "None",
+      "monthsUnit": "months"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Deactivated"
+    },
+    "actions": {
+      "edit": "Edit",
+      "deactivate": "Deactivate",
+      "reactivate": "Reactivate",
+      "delete": "Delete",
+      "confirmDelete": "Delete this package type?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
+    },
+    "form": {
+      "createTitle": "New package type",
+      "editTitle": "Edit package type",
+      "name": "Name",
+      "includedHours": "Included hours",
+      "includedHoursHint": "H:MM format, e.g. 10:00",
+      "price": "Price (€)",
+      "validityMonths": "Validity (months)",
+      "validityMonthsHint": "Empty = no expiry",
+      "aircraft": "Eligible aircraft",
+      "noAircraftAvailable": "No active aircraft available.",
+      "submitCreate": "Create package type",
+      "submitSave": "Save",
+      "cancel": "Cancel",
+      "requiredField": "The name is required.",
+      "invalidDuration": "Enter a valid duration in H:MM format.",
+      "invalidAmount": "Enter a valid price greater than zero.",
+      "invalidValidity": "Enter a valid number of months (1-600), or leave it empty.",
+      "conflictError": "A package type with this name already exists.",
+      "genericError": "The operation failed. Try again."
+    },
+    "feedback": {
+      "created": "Package type created.",
+      "updated": "Package type updated.",
+      "deactivated": "Package type deactivated.",
+      "reactivated": "Package type reactivated.",
+      "deleted": "Package type deleted.",
+      "deleteInUseError": "This package type has already been sold and cannot be deleted: deactivate it instead.",
+      "genericError": "The operation failed. Try again."
+    }
+  },
   "AircraftPage": {
     "kicker": "Fleet",
     "title": "Aircraft",
@@ -401,6 +523,8 @@
       "hourMeter": "Hour meter",
       "status": "Status",
       "operationalStatus": "Operational status",
+      "currentRate": "Current rate",
+      "noRate": "—",
       "actions": "Actions",
       "empty": "No aircraft found."
     },
@@ -423,7 +547,8 @@
       "setOutOfService": "Out of service",
       "returnToService": "Return to service",
       "confirmReturnToService": "Return this aircraft to service?",
-      "adjustHourMeter": "Adjust hour meter"
+      "adjustHourMeter": "Adjust hour meter",
+      "rates": "Rates"
     },
     "form": {
       "createTitle": "New aircraft",
@@ -472,6 +597,28 @@
       "historyDelta": "Delta",
       "historyReason": "Reason"
     },
+    "ratesPanel": {
+      "title": "Rates",
+      "current": "Current rate",
+      "noCurrentRate": "No rate in effect",
+      "newRateTitle": "New rate",
+      "price": "Price (€/h)",
+      "validFrom": "Effective from",
+      "submit": "Add rate",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "invalidPrice": "The price must be a positive amount (e.g. 160.00).",
+      "invalidDate": "Enter a valid date.",
+      "genericError": "Something went wrong. Please try again.",
+      "conflictError": "A rate with this effective date already exists.",
+      "readOnlyHint": "Only an administrator can add new rates.",
+      "historyTitle": "Rate history",
+      "historyEmpty": "No rates recorded yet.",
+      "historyValidFrom": "Effective from",
+      "historyPrice": "Price",
+      "historyActor": "Who",
+      "historyWhen": "Recorded on"
+    },
     "feedback": {
       "created": "Aircraft created.",
       "updated": "Aircraft updated.",
@@ -479,7 +626,8 @@
       "unarchived": "Aircraft restored.",
       "setOutOfService": "Aircraft marked out of service.",
       "returnedToService": "Aircraft returned to service.",
-      "hourMeterAdjusted": "Hour meter adjusted."
+      "hourMeterAdjusted": "Hour meter adjusted.",
+      "rateAdded": "Rate added."
     }
   },
   "UsersPage": {

@@ -1,0 +1,126 @@
+---
+baseline_commit: 79cb9a7
+---
+
+# Story 4.3: Definizione tipi di pacchetto ore
+
+Status: done
+
+## Story
+
+As a admin,
+I want definire pacchetti ore scontati,
+so that i piloti possano comprare blocchi di ore a prezzo ridotto (FR-12).
+
+## Acceptance Criteria
+
+1. **Given** il permesso admin, **When** creo un `PackageType` con nome, minuti inclusi, prezzo in centesimi, insieme di velivoli idonei, validità opzionale in mesi, **Then** il tipo appare nel listino.
+2. **And** i tipi con pacchetti venduti non sono eliminabili (solo disattivabili). *(In questa story non esiste ancora `HourPackage` — arriva in 4.4: qui si implementa il DELETE con il backstop P2003→409 e la 4.4 aggiunge il pre-check esplicito con messaggio chiaro + test end-to-end del vincolo. Vedi Dev Notes.)*
+
+## Contesto: catalogo/listino mutabile, NON ledger
+
+`PackageType` è **configurazione di listino** (come `CashCategory` di 3.4), NON un ledger append-only: si crea, si modifica, si disattiva, e si elimina SOLO finché nessun pacchetto è stato venduto. Il motivo per cui la modifica è lecita: la vendita (4.4) farà **snapshot** di prezzo e minuti sul `HourPackage`/`AccountMovement` al momento della vendita (AD-4, stesso principio delle tariffe storicizzate) — cambiare il listino dopo non riscrive mai la storia. Il pattern di riferimento per service/UI è la **gestione categorie cassa di 3.4** (`cash.service.ts` + `/dashboard/finance/categories`), non i rate service di 4.1/4.2.
+
+## Tasks / Subtasks
+
+- [x] Task 1: Modello + migrazione (AC 1/2)
+  - [x] Nuovo modello `PackageType` in `prisma/schema.prisma`: `id String @id @default(cuid())`; `name String @unique` (409 su duplicato); `includedMinutes Int` (AD-2: MINUTI interi, mai ore decimali — stessa regola di `Aircraft.hourMeterMinutes`); `priceCents Int` (AD-2: centesimi interi, > 0 al boundary Zod/service); `validityMonths Int?` (validità opzionale in mesi, > 0 quando presente, `null` = nessuna scadenza); `isActive Boolean @default(true)` (disattivazione = via dal picker vendita futuro, mai delete quando venduto — stesso ruolo di `CashCategory.isActive`); `createdAt`/`updatedAt`. Doc-comment sul modello: mutabile perché la vendita fa snapshot (vedi Contesto), delete consentito solo se mai venduto (FK RESTRICT da `HourPackage` in 4.4).
+  - [x] Insieme di velivoli idonei: **join table esplicita** `PackageTypeAircraft` (`id`, `packageTypeId` + FK, `aircraftId` + FK, `@@unique([packageTypeId, aircraftId])`, `@@index([aircraftId])`) — esplicita e non m-n implicita Prisma, coerente con lo stile del repo (tutti i modelli espliciti e documentati) e con le migrazioni a mano. Back-relations: `PackageType.eligibleAircraft PackageTypeAircraft[]`, `Aircraft.packageTypes PackageTypeAircraft[]`. Un velivolo **archiviato dopo** l'associazione resta nell'insieme (storico consultabile); il blocco d'uso reale è del consumo (epic 5), non del listino.
+  - [x] Migrazione a mano (Prisma 7: `npx prisma migrate diff --from-config-datasource prisma/schema.prisma --to-schema prisma/schema.prisma --script`, **rimuovere la riga banner `Loaded Prisma config...`** dallo stdout) in `prisma/migrations/<YYYYMMDDHHMMSS>_add_package_types/migration.sql`, timestamp successivo a `20260707120000` (4.2). Poi `npx prisma migrate deploy` + `npx prisma generate`. Verificare le due `CREATE TABLE`, le FK e gli indici unique.
+- [x] Task 2: Service `package-types.service.ts` (AC 1/2) — pattern gestione categorie di `cash.service.ts`
+  - [x] `listPackageTypes(actor, { includeInactive })` — `authorize(actor, 'finance.manage')`: lo staff DEVE leggere il listino (in 4.4 vende da qui); la scrittura resta admin. Ordinamento `name asc`, include gli `eligibleAircraft` (id + registration, via join) e i campi del tipo. DTO `PackageTypeListItem` (`id`, `name`, `includedMinutes`, `priceCents`, `validityMonths`, `isActive`, `eligibleAircraft: { id, registration }[]`, `createdAt`). `take: 500`.
+  - [x] `createPackageType(actor, input)` — `authorize(actor, 'settings.manage')` (config listino = admin, come le tariffe 4.1/4.2). Validare gli `aircraftIds` (deduplicati): TUTTI devono esistere → altrimenti **404** `NotFoundError('Aircraft not found.')`; un velivolo **archiviato** all'atto dell'associazione → **409** `ConflictError` (stato sbagliato, stessa forma di "archived aircraft → 409" di 4.1). Nome: `trim()`, pre-check `findFirst` + `try/catch` P2002 backstop → 409. Creazione tipo + righe join in **una** `prisma.$transaction` (o nested create).
+  - [x] `updatePackageType(actor, id, input)` — `authorize(actor, 'settings.manage')`. PATCH parziale: ogni campo opzionale (`name`, `includedMinutes`, `priceCents`, `validityMonths` — nullable esplicito per AZZERARE la validità, distinguere `undefined` da `null`, `isActive`, `aircraftIds`). `aircraftIds`, se presente, è la **sostituzione integrale** dell'insieme (deleteMany + createMany nella stessa transazione), con le stesse validazioni del create. 404 su id inesistente; P2002 sul nome → 409. Modificare un tipo con pacchetti già venduti è LECITO (snapshot alla vendita, vedi Contesto) — doc-comment nel service, non un guard.
+  - [x] `deletePackageType(actor, id)` — `authorize(actor, 'settings.manage')`. 404 su id inesistente; delete righe join + tipo nella stessa transazione; `try/catch` **P2003 → 409** `ConflictError('This package type has sold packages — deactivate it instead.')`: oggi (4.3) nessuna FK esterna punta a `PackageType`, ma la 4.4 aggiunge `HourPackage.packageTypeId` con RESTRICT e questo catch diventa il backstop del vincolo AC 2 (la 4.4 aggiunge anche il pre-check esplicito `_count`). Stesso pattern di `deleteCashCategory` (3.4).
+- [x] Task 3: API + OpenAPI (AC 1/2)
+  - [x] `GET /api/v1/package-types` (query `includeInactive` bool opzionale, lista) e `POST /api/v1/package-types` (body `createPackageTypeSchema`, 201); `PATCH /api/v1/package-types/{id}` (body `updatePackageTypeSchema`) e `DELETE /api/v1/package-types/{id}` (204). Thin `apiRoute()`, `z` da `zod-with-openapi`.
+  - [x] Schemi in nuovo `src/lib/schemas/package-types.ts`: `createPackageTypeSchema` — `name` `.trim().min(1).max(100)`; `includedMinutes` `.int().positive().max(2_147_483_647)`; `priceCents` `.int().positive().max(2_147_483_647)`; `validityMonths` `.int().positive().max(600).nullable().optional()`; `aircraftIds` `z.array(z.string().min(1)).max(100)` (default `[]`; dedup nel service). `updatePackageTypeSchema`: tutti opzionali + `.refine` "almeno un campo presente" (pattern degli update esistenti); `isActive z.boolean().optional()`. `packageTypeItemSchema` mirror del DTO. Registrare componenti + le due path in `registry.ts` (tag `['Finance']` come cash; POST `errorResponses(401,403,404,409,422)`, PATCH idem, GET `(401,403,422)`, DELETE `(401,403,404,409)`), e aggiungere le path a `registry.test.ts` (coverage assertion).
+- [x] Task 4: UI (AC 1) — stile `minimalist-ui`
+  - [x] Nuova pagina `/dashboard/finance/packages` (`page.tsx` server component + `packages-manager.tsx` client component, **mirror di `/dashboard/finance/categories`**): tabella listino (nome, ore incluse formattate `H:MM` via `formatMinutes` di `src/lib/time.ts`, prezzo `formatCents` locale-aware M1, **prezzo orario effettivo derivato** `round(priceCents * 60 / includedMinutes)` mostrato come colonna informativa calcolata client/server-side ma MAI persistita, velivoli idonei come badge di marche, validità in mesi o "—", stato attivo/disattivo). Form crea/modifica (nome, ore incluse input `H:MM` con `parseMinutes`, prezzo € con `parseCents`, validità mesi opzionale, multi-selezione velivoli attivi non archiviati — checkbox list, niente librerie nuove) + azioni disattiva/riattiva/elimina, TUTTE visibili solo con `settings.manage`; `finance.manage`-only (staff) vede il listino in sola lettura. 409 delete (venduto — da 4.4 in poi) e 409 nome duplicato mappati a messaggi chiari; `key={id}` sui form di edit.
+  - [x] Link "Listino pacchetti" dalla landing finance (`/dashboard/finance/page.tsx`), visibile a `finance.manage` (a differenza di "Gestisci categorie" che è solo admin: lo staff consulta il listino).
+  - [x] i18n `messages/{it,en}.json` simmetrici (nuova sezione `PackagesPage.*`).
+- [x] Task 5: Test (AC 1/2)
+  - [x] Unit (`package-types.service.test.ts`, mock `prisma` come gli altri service test): permessi (staff `listPackageTypes` ok, staff `createPackageType` → Forbidden, pilota list → Forbidden); create con nome duplicato P2002 → Conflict; `aircraftIds` con id inesistente → NotFound; con velivolo archiviato → Conflict; dedup degli `aircraftIds`; update parziale (solo prezzo) non tocca l'insieme velivoli; update con `aircraftIds` sostituisce integralmente; `validityMonths: null` azzera; update id inesistente → NotFound; delete ok su tipo mai venduto; delete P2003 → Conflict; schema: minuti/prezzo 0/negativi/overflow → 422, `validityMonths` 0 → 422, nome vuoto/oltre max → 422, update body vuoto → 422.
+  - [x] e2e (`e2e/package-types.spec.ts`): admin crea un tipo (es. "Pacchetto 10 ore", 10:00, 1.400 €, velivolo I-ABCD idoneo, 12 mesi) → appare nel listino con ore `10:00` e prezzo formattato; nome duplicato → 409 mostrato; modifica prezzo → aggiornato in tabella; disattiva → badge disattivo; elimina (mai venduto) → sparisce; staff (login staff esistente o creato via API) vede il listino ma NON i controlli di gestione; `POST /api/v1/package-types` come staff → **403** envelope. Nomi run-unique (pattern `unique*` degli e2e esistenti) per il DB sporco.
+
+## Dev Notes
+
+- **AD-2 (cardine)**: minuti interi e centesimi interi OVUNQUE (`includedMinutes`, `priceCents`); il "prezzo orario effettivo" in UI è derivato al volo e mai persistito. **AD-3**: qui NON si applica l'append-only (vedi Contesto) — non costruire storni/storicizzazione sul listino. **AD-4**: la coerenza storica è garantita dallo snapshot in 4.4, citarlo nei doc-comment.
+- **AC 2 e la 4.4**: il vincolo "venduto → non eliminabile" si completa in 4.4 (`HourPackage.packageTypeId` FK RESTRICT + pre-check `_count` + test). In 4.3 il DELETE esiste, funziona sui tipi mai venduti, e il catch P2003→409 è già scritto e unit-testato (mock che lancia P2003). NON rimandare il catch alla 4.4.
+- **Permessi (asimmetria voluta, documentarla)**: lettura listino = `finance.manage` (staff vende in 4.4 e consulta ora); scrittura = `settings.manage` (admin, come tariffe 4.1/4.2 e categorie 3.4). Nessuna vista pilota in questa story (il pilota vedrà i PROPRI pacchetti in 4.4 nell'estratto conto, non il listino).
+- **Lezioni review da rispettare** (evitano i F* già visti): unicità = pre-check + `try/catch` P2002; `key={id}` sui form di edit; `.positive()`/`.max()` sui numeri e `.max(100/500)` sulle stringhe libere; `authorize()` PRIMA di ogni query; ownership/esistenza check PRIMA di rivelare stato (404 vs 409); envelope errori AD-8; i18n IT/EN simmetrica; denaro locale-aware (M1); niente `Date` JS in raw SQL (qui non servono query raw: usare SOLO query tipizzate Prisma).
+- **Riuso**: `formatMinutes`/`parseMinutes` (`src/lib/time.ts`) per le ore `H:MM`; `formatCents`/`parseCents` (`src/lib/money.ts`); pattern manager UI e service lifecycle da 3.4 (categorie). NON creare nuovi helper duplicati.
+- **Ambiente**: postgres attivo; Mailpit già in esecuzione (se serve: Bash `run_in_background: true`, mai `&`); reset DB pulito prima di giudicare un run e2e completo (`sudo -u postgres psql -c 'DROP DATABASE airmanager;' && sudo -u postgres createdb -O airmanager airmanager && npx prisma migrate deploy && npx prisma db seed`). MAI `playwright install`.
+- **Gate** (tutti verdi prima del commit): `npm run lint` (1 warning benigno noto su `data-table.tsx`), `npm run typecheck`, `npx vitest run` (>= 412 attesi), `npx next build`, `npx playwright test` (>= 79 attesi, DB resettato + Mailpit up).
+- Un commit di implementazione (`Story 4.3: <sintesi>`, nessun riferimento AI/modello). NON push: review + push li fa la sessione principale. Branch corrente: `claude/epic-4-resume-pr-5-ambmfd` (sarà pushato anche su `claude/epic-4-rates-packages`, PR #5).
+
+### References
+
+- [Source: _bmad-output/planning-artifacts/epics.md#Story 4.3]
+- [Source: _bmad-output/planning-artifacts/architecture/architecture-AirManager-2026-07-04/ARCHITECTURE-SPINE.md#AD-2, #AD-3, #AD-4, #AD-5, #AD-8]
+- [Source: src/server/services/cash.service.ts] — pattern lifecycle catalogo (create/rename/deactivate/reactivate/delete, P2003→409, isActive)
+- [Source: src/app/[locale]/dashboard/finance/categories/] — pattern UI manager da mirrorare
+- [Source: _bmad-output/implementation-artifacts/4-1-aircraft-rates.md, 4-2-instructor-rates.md] — Review Record: lezioni su 409/404, permessi, TZ
+- [Source: prisma/schema.prisma#CashCategory, #Aircraft] — isActive lifecycle e soft-archive velivoli
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Sonnet 5 (ultracode dev workflow)
+
+### Debug Log References
+
+- Resumed a session left mid-implementation by a previous dev agent (API error) whose UNCOMMITTED work was already in the working tree (model/migration, service, unit tests, schemas, API routes, UI, i18n, finance-landing link). Audited every piece against this story file's tasks/Dev Notes before trusting it (see Completion Notes List for what the audit found and fixed).
+- `npx prisma migrate status`: schema already up to date (migration `20260707130000_add_package_types` was already applied to the dev DB by the previous agent) — confirmed via `psql \dt` (both `PackageType`/`PackageTypeAircraft` tables present) before re-verifying via a full DB reset (`DROP DATABASE` + recreate + `migrate deploy` + `db seed`), which re-applied all 12 migrations cleanly including this one.
+- `npm run typecheck` failed once: `package-types.service.test.ts`'s `packageTypeCreate` mock-cast object was missing `mockRejectedValue` (only had `mockResolvedValue`), needed by the existing "P2002 concurrency backstop" test — added the missing method to the cast type (mirrors the `packageTypeDelete` cast a few lines below, which already had both).
+- First full `npx playwright test` run: 2 pre-existing `account-adjustments.spec.ts` failures (login redirect timeout under parallel load — the story's own documented dirty-DB/parallel-load flake, unrelated to 4.3) + 1 new `package-types.spec.ts` failure (my own e2e test used `1.400,00`/`1.500,00` — Italian thousands-grouping — as price input, but `parseCents`/`money.ts`'s `AMOUNT_PATTERN` only accepts a single decimal separator, no thousands grouping). Fixed the e2e input to `1400,00`/`1500,00`; while investigating, found the same mismatch in the product code's price-input placeholder (`"1.400,00"`, which a real user typing verbatim would have rejected) and fixed it to `"1400,00"` too (`packages-manager.tsx`).
+- Reset the DB again and re-ran: `e2e/package-types.spec.ts` in isolation → 2/2 passed; `e2e/account-adjustments.spec.ts` in isolation → 4/4 passed (confirms the parallel-load flake, not a regression); full `npx playwright test` on a freshly reset DB → 81/81 passed.
+
+### Completion Notes List
+
+- Audited the inherited partial work task-by-task against this story file: Prisma model/migration (Task 1), service (Task 2), API routes + OpenAPI registry (Task 3), and UI + i18n (Task 4) all matched the story's Dev Notes (AD-2 integer minutes/cents, `finance.manage` read / `settings.manage` write split, P2002/P2003 handling, `key={id}` on edit forms, i18n IT/EN symmetry, effective-hourly-price derived-not-persisted) with no functional defects found — only the typecheck-breaking test-mock gap and the price-placeholder/e2e-input mismatch above needed fixing.
+- The 204 DELETE required a small, well-scoped addition to the SHARED `src/lib/api/handler.ts` (not story-specific, but strictly necessary for `DELETE /api/v1/package-types/{id}` to return a spec-correct empty body): `NextResponse.json(null, ...)` cannot be used for a `204` (Fetch spec forbids a body on a null-body status), so `apiRoute()` now special-cases `successStatus === 204` to return `new NextResponse(null, { status: 204 })`. This is the first 204 route in the codebase (`cash-categories` DELETE predates this convention and returns `{ ok: true }` with 200 instead) — left as-is, out of scope for this story.
+- Wrote the missing `e2e/package-types.spec.ts` (Task 5): admin create → listino row (hours `10:00`, price, aircraft badge, validity), duplicate name → 409 form error, edit price → table update, deactivate → status badge, delete (never sold) → row disappears; STAFF sees the read-only listino (no management buttons) and a direct `POST /api/v1/package-types` as STAFF gets a 403 AD-8 envelope.
+- Did NOT implement any `HourPackage`/sale logic, `_count` pre-check, or explicit "sold → not deletable" UI copy beyond the generic 409 mapping — per Dev Notes, that pre-check and its dedicated end-to-end test belong to story 4.4; the P2003 catch (AC 2's backstop) is already written and unit-tested here.
+- All gates green (see below): lint (1 known benign warning on `data-table.tsx`), typecheck, 437/437 Vitest, `next build`, 81/81 Playwright (full run on a freshly reset DB; `package-types.spec.ts` and `account-adjustments.spec.ts` additionally re-verified in isolation).
+- Post-review audit (fixer pass): a verification finding flagged that `packages-manager.tsx`'s form collapses every 409 into one hardcoded "name already exists" message, even though `assertAircraftEligible` can also throw a 409 for an archived aircraft in `aircraftIds` (a race with another admin archiving it after the form loaded). Investigated and rejected as NOT a 4.3-specific defect: this exact pattern (`response.status === 409 ? labels.conflictError : labels.genericError`, one generic localized message per form regardless of which of several server-side `ConflictError` causes fired) is the codebase's established, pre-existing convention — identical in `rates.service.ts#createAircraftRate` (duplicate `validFrom` vs. archived-aircraft, surfaced through `aircraft-manager.tsx`'s `RatesPanel` the same way) and in `cash.service.ts`'s category delete (system category vs. has movements) via `categories-manager.tsx`/`cash-register.tsx`. Server error messages are English-only constants (not next-intl keys) precisely so the API stays consumable by the future Flutter client, which is why the UI never displays them directly — collapsing to one localized per-form message is the deliberate tradeoff, not an oversight. Fixing it only here would be inconsistent, cross-story scope creep; left unchanged. Re-ran all gates after the audit (lint, typecheck, 437/437 Vitest, `next build`, 81/81 Playwright on a freshly reset DB) — all green, no code changed.
+
+### File List
+
+- `prisma/schema.prisma` (modified — `PackageType`, `PackageTypeAircraft` models; `Aircraft.packageTypes` back-relation)
+- `prisma/migrations/20260707130000_add_package_types/migration.sql` (new)
+- `src/server/services/package-types.service.ts` (new)
+- `src/server/services/package-types.service.test.ts` (new; fixed missing `mockRejectedValue` on the create mock cast)
+- `src/lib/schemas/package-types.ts` (new)
+- `src/lib/schemas/registry.ts` (modified — package-types schemas + 4 paths registered)
+- `src/lib/schemas/registry.test.ts` (modified — coverage assertion for the 2 new paths)
+- `src/lib/api/handler.ts` (modified — `apiRoute()` now returns a true empty-body `204` instead of `NextResponse.json(null, ...)`)
+- `src/app/api/v1/package-types/route.ts` (new — GET/POST)
+- `src/app/api/v1/package-types/[id]/route.ts` (new — PATCH/DELETE)
+- `src/app/[locale]/dashboard/finance/packages/page.tsx` (new)
+- `src/app/[locale]/dashboard/finance/packages/packages-manager.tsx` (new; fixed the price-input placeholder to a value `parseCents` actually accepts)
+- `src/app/[locale]/dashboard/finance/page.tsx` (modified — "Listino pacchetti" link)
+- `messages/it.json`, `messages/en.json` (modified — `PackagesPage.*`, `FinancePage.viewPackages`)
+- `e2e/package-types.spec.ts` (new)
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: fixes-required → F1 applicato dalla sessione principale (Fable 5), poi done.**
+
+- **F1 (mandatory, FIXED)** — `updatePackageType` rifiutava un tipo che CONSERVA un velivolo associato e archiviato DOPO l'associazione: la form di edit rimanda sempre l'insieme completo (deliberatamente, per non perdere le associazioni storiche), ma `assertAircraftEligible` lanciava 409 per QUALSIASI id archiviato → un tipo col velivolo archiviato post-associazione diventava immodificabile (perfino un edit del solo prezzo falliva, per giunta col messaggio fuorviante "nome già esistente"). Confermato empiricamente dal reviewer con un test DB-backed. Fix: su UPDATE l'esistenza (404) resta verificata per tutti gli id, ma il check archiviato→409 si applica SOLO alle associazioni NUOVE (`aircraftIds` − associazioni correnti); su CREATE resta strict. Due unit test di regressione aggiunti (retained-archived ok; nuovo archiviato → 409).
+- **F2 (accepted-deferral)** — seconda opinione sul finding respinto in dev (conflazione dei 409 in un solo messaggio per form): deferral accettato come convenzione di codebase (stesso pattern in rates/categories; messaggi server English-only per il futuro client Flutter), con la nota che il sintomo peggiore era in realtà F1 — dopo il fix F1 la conflazione residua è solo il raro race "archiviato tra load e submit".
+- **M1 (deferred)** — doppio DELETE concorrente → P2025 non catturato → 500 invece di 404: pattern identico pre-esistente in `deleteCashCategory` (già accettato); se mai indurito, farlo uniformemente su tutti i servizi catalogo.
+- **M2 (deferred)** — l'errore di submit della form non è annunciato agli screen reader (manca `role="alert"`/`aria-live`; il banner di successo usa correttamente `role="status"`): stessa omissione byte-per-byte del categories-manager mirrorato → convenzione app-wide, rimandato a un pass a11y globale (nota per epic futuri, guideline ui-ux-pro-max "Error Messages must be announced").
+
+Verificato e trovato corretto (sintesi; dettagli nel run di review): AC 1 CRUD end-to-end; AD-2 (solo interi persistiti, €/h derivato mai salvato); split permessi `finance.manage`/`settings.manage` con `authorize()` prima di ogni query; unicità nome (pre-check + P2002 su create E update); backstop P2003 pronto per la FK 4.4; transazioni atomiche su create/update/delete con ordine 404-prima-di-409 senza state leak; fix 204 in `apiRoute()` corretto per spec Fetch e senza impatti su altre route; boundary Zod completo (null-vs-undefined su `validityMonths`, body vuoto → 422); migrazione pulita su DB fresco con struttura identica allo schema; i18n 52/52 chiavi simmetriche; UI coerente col categories-manager (overflow in container, label/fieldset, `key={id}`, feedback `role="status"`).
+
+### Final gates (dopo il fix F1)
+
+lint 0 errori (1 warning benigno noto `data-table.tsx`), typecheck pulito, **439/439 unit** (di cui package-types 27/27), `next build` verde, e2e `package-types.spec.ts` verde su DB resettato (suite completa 81/81 nel run dev, superficie UI invariata dal fix).
+
+## Change Log
+
+- 2026-07-07: Story file created (Fable 5 main session), ready-for-dev.
+- 2026-07-07: Implemented (Sonnet 5 ultracode dev workflow: implement → verify fan-out → fix) — commit `Story 4.3: package types catalogue (listino pacchetti ore)`. Status → review.
+- 2026-07-07: Review Opus 4.8 xhigh — F1 mandatory (retained archived aircraft su update) applicato dalla sessione principale; F2/M1/M2 deferred con motivazione. Status → done.

@@ -18,12 +18,14 @@
 #
 # WORKFLOW NOTES:
 # ===============
-# - Model roles (updated 2026-07-07): main session runs on Opus 4.8 and
-#   owns BOTH story creation AND code review (review done in-session, no
-#   longer delegated to a subagent); dev is a Sonnet 5 subagent.
-# - Story creation: main session (Opus 4.8) via bmad-create-story
-# - Dev: Sonnet 5 subagent via bmad-dev-story
-# - Review: main session (Opus 4.8) via bmad-code-review
+# - Model roles (user-approved config 2026-07-07, effective from story 4.4):
+#   stories = main session Fable 5 (effort xhigh); dev = ONE Sonnet 5
+#   subagent per story (effort xhigh, no ultracode fan-out); review =
+#   Opus 4.8 subagent (effort xhigh, the single adversarial layer).
+#   (Story 4.3 dev ran on the earlier ultracode workflow config.)
+# - Story creation: main session (Fable 5 xhigh) via bmad-create-story
+# - Dev: Sonnet 5 xhigh single subagent via bmad-dev-story
+# - Review: Opus 4.8 xhigh subagent via bmad-code-review
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
@@ -58,11 +60,11 @@ development_status:
   3-5-financial-report: done
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-aircraft-rates: backlog
-  4-2-instructor-rates: backlog
-  4-3-package-types: backlog
-  4-4-package-sale: backlog
+  epic-4: done
+  4-1-aircraft-rates: done
+  4-2-instructor-rates: done
+  4-3-package-types: done
+  4-4-package-sale: done
   epic-4-retrospective: optional
 
   epic-5: backlog

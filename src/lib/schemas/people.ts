@@ -166,3 +166,52 @@ export const personDetailSchema = personListItemSchema.extend({
 });
 
 export type PersonDetailDto = z.infer<typeof personDetailSchema>;
+
+// --- Instructor rates (story 4.2, Task 1/2/3, AC 1/2) -----------------------
+// The deliberate twin of `aircraft.ts`'s rate schemas (story 4.1): same
+// shape, same rules — the only difference is the subject (an instructor,
+// resolved from the person-scoped route's `{id}`, instead of an aircraft).
+
+/**
+ * `POST /api/v1/people/{id}/instructor-rates` body (story 4.2, AC 1/2): a new
+ * historicized rate. `priceCentsPerHour` is an integer number of euro cents
+ * (AD-2) — an HOURLY price, always > 0, capped at the Postgres INTEGER max
+ * (identical to `createAircraftRateSchema.priceCentsPerHour`). `validFrom` is
+ * a calendar date only (`YYYY-MM-DD`, same `z.iso.date()` pattern) — two
+ * rates sharing the same `(instructorProfileId, validFrom)` are a 409 (AC 2),
+ * never silently overwritten.
+ */
+export const createInstructorRateSchema = z.object({
+  priceCentsPerHour: z.number().int().positive().max(2_147_483_647),
+  validFrom: z.iso.date(),
+});
+
+export type CreateInstructorRateInput = z.infer<typeof createInstructorRateSchema>;
+
+/**
+ * One entry of `GET /api/v1/people/{id}/instructor-rates` (story 4.2).
+ * Documentation only, mirroring `instructor-rates.service.ts`'s
+ * `InstructorRateListItem` TS type — same pattern as `aircraftRateItemSchema`.
+ * `actorEmail` is a display-only join over the stored `actorUserId`.
+ */
+export const instructorRateItemSchema = z.object({
+  id: z.string(),
+  instructorProfileId: z.string(),
+  priceCentsPerHour: z.number().int().positive(),
+  validFrom: z.iso.date(),
+  actorUserId: z.string(),
+  actorEmail: z.string(),
+  createdAt: z.iso.datetime(),
+});
+
+export type InstructorRateItemDto = z.infer<typeof instructorRateItemSchema>;
+
+/**
+ * `GET /api/v1/people/{id}/instructor-rates` response — a plain array, not
+ * the AD-8 paginated envelope (same no-pagination choice as
+ * `aircraftRateListResponseSchema`, defensively capped at `take: 500` in the
+ * service).
+ */
+export const instructorRateListResponseSchema = z.array(instructorRateItemSchema);
+
+export type InstructorRateListResponseDto = z.infer<typeof instructorRateListResponseSchema>;

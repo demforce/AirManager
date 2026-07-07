@@ -2,9 +2,10 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { ColumnDef } from '@tanstack/react-table';
+import { useLocale } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { DataTable } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
 import {
@@ -12,12 +13,14 @@ import {
   createHourMeterAdjustmentSchema,
   setOutOfServiceSchema,
   updateAircraftSchema,
+  type AircraftRateItemDto,
   type CreateAircraftInput,
   type CreateHourMeterAdjustmentInput,
   type HourMeterAdjustmentListItemDto,
   type SetOutOfServiceInput,
   type UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
+import { formatCents, parseCents } from '@/lib/money';
 import { formatDateTime, formatMinutes } from '@/lib/time';
 
 export type AircraftRow = {
@@ -34,6 +37,13 @@ export type AircraftRow = {
   statusReason: string | null;
   /** ISO 8601 string (server `Date` already serialized) or `null` if active. */
   archivedAt: string | null;
+  /**
+   * The hourly rate in effect today (AD-4, story 4.1) — integer euro cents,
+   * or `null` if the aircraft has no rate on or before today yet. Computed
+   * server-side via `rates.service.ts#getEffectiveRate` so the fleet table
+   * reads at a glance without a per-row client fetch.
+   */
+  currentRatePriceCentsPerHour: number | null;
 };
 
 type Labels = {
@@ -47,6 +57,8 @@ type Labels = {
     hourMeter: string;
     status: string;
     operationalStatus: string;
+    currentRate: string;
+    noRate: string;
     actions: string;
     empty: string;
   };
@@ -64,6 +76,7 @@ type Labels = {
     returnToService: string;
     confirmReturnToService: string;
     adjustHourMeter: string;
+    rates: string;
   };
   form: {
     createTitle: string;
@@ -112,6 +125,28 @@ type Labels = {
     historyDelta: string;
     historyReason: string;
   };
+  ratesPanel: {
+    title: string;
+    current: string;
+    noCurrentRate: string;
+    newRateTitle: string;
+    price: string;
+    validFrom: string;
+    submit: string;
+    cancel: string;
+    requiredField: string;
+    invalidPrice: string;
+    invalidDate: string;
+    genericError: string;
+    conflictError: string;
+    readOnlyHint: string;
+    historyTitle: string;
+    historyEmpty: string;
+    historyValidFrom: string;
+    historyPrice: string;
+    historyActor: string;
+    historyWhen: string;
+  };
   feedback: {
     created: string;
     updated: string;
@@ -120,6 +155,7 @@ type Labels = {
     setOutOfService: string;
     returnedToService: string;
     hourMeterAdjusted: string;
+    rateAdded: string;
   };
 };
 
@@ -127,6 +163,15 @@ type AircraftManagerProps = {
   aircraft: AircraftRow[];
   initialQuery: string;
   initialIncludeArchived: boolean;
+  /**
+   * Derived server-side from `hasPermission(actor, 'settings.manage')`
+   * (same `readOnly`/`canManage*` pattern as `account-panel.tsx`'s
+   * `canManageFinance`) — hides the "Nuova tariffa" form for an actor who
+   * only has `aircraft.manage` (staff sees the rates panel read-only).
+   * `createAircraftRate`'s own `authorize(actor, 'settings.manage')`
+   * remains the real guardian (AD-5).
+   */
+  canManageSettings: boolean;
   labels: Labels;
 };
 
@@ -134,7 +179,8 @@ type Panel =
   | { mode: 'create' }
   | { mode: 'edit'; aircraft: AircraftRow }
   | { mode: 'out-of-service'; aircraft: AircraftRow }
-  | { mode: 'hour-meter'; aircraft: AircraftRow };
+  | { mode: 'hour-meter'; aircraft: AircraftRow }
+  | { mode: 'rates'; aircraft: AircraftRow };
 type ConfirmState = { id: string; type: 'archive' | 'unarchive' | 'return-to-service' };
 
 function statusLabel(aircraft: AircraftRow, labels: Labels): string {
@@ -197,8 +243,12 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
   };
 }
 
-export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived, labels }: AircraftManagerProps) {
+export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived, canManageSettings, labels }: AircraftManagerProps) {
   const router = useRouter();
+  // Money must follow the page locale (review 3.1 F1 — mandatory, same
+  // pattern as `account-panel.tsx`): without this, `formatCents`' default
+  // renders Italian separators on /en too.
+  const moneyLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
@@ -297,6 +347,17 @@ export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived
       ),
     },
     {
+      id: 'currentRate',
+      header: labels.table.currentRate,
+      cell: ({ row }) => (
+        <span data-testid={`current-rate-${row.original.id}`}>
+          {row.original.currentRatePriceCentsPerHour === null
+            ? labels.table.noRate
+            : `${formatCents(row.original.currentRatePriceCentsPerHour, moneyLocale)}/h`}
+        </span>
+      ),
+    },
+    {
       id: 'actions',
       header: labels.table.actions,
       cell: ({ row }) => {
@@ -376,6 +437,13 @@ export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived
               className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.adjustHourMeter}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPanel({ mode: 'rates', aircraft: item })}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {labels.actions.rates}
             </button>
           </div>
         );
@@ -462,6 +530,21 @@ export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived
             // Same remount rationale as EditAircraftForm above.
             key={panel.aircraft.id}
             aircraft={panel.aircraft}
+            labels={labels}
+            onCancel={() => setPanel(null)}
+            onSuccess={handleFormSuccess}
+          />
+        </div>
+      ) : null}
+
+      {panel?.mode === 'rates' ? (
+        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+          <RatesPanel
+            // Same remount rationale as EditAircraftForm above.
+            key={panel.aircraft.id}
+            aircraft={panel.aircraft}
+            canManageSettings={canManageSettings}
+            moneyLocale={moneyLocale}
             labels={labels}
             onCancel={() => setPanel(null)}
             onSuccess={handleFormSuccess}
@@ -1002,6 +1085,217 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
                     <td className="py-2 pr-4 whitespace-nowrap">{safeFormatMinutes(entry.newMinutes)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatSignedMinutes(entry.newMinutes - entry.previousMinutes)}</td>
                     <td className="py-2">{entry.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** `<input type="date">` default — same browser-local-time convention as `account-panel.tsx#todayDateOnly`. */
+function todayDateOnly(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Local, UI-only schema (never sent over the wire): the price input stays a
+ * euro-with-2-decimals string end to end while the user types (same
+ * pattern/rationale as `account-panel.tsx`'s `topUpFormSchema`) — only
+ * `NewRateForm.onSubmit` converts it to integer cents via `parseCents`,
+ * exactly at the API-call boundary (AD-2).
+ */
+const newRateFormSchema = z
+  .object({
+    price: z.string().trim().min(1),
+    validFrom: z.string().trim().min(1),
+  })
+  .refine(
+    (values) => {
+      let cents: number;
+      try {
+        cents = parseCents(values.price);
+      } catch {
+        return false;
+      }
+      return cents > 0 && cents <= 2_147_483_647;
+    },
+    { message: 'invalidPrice', path: ['price'] },
+  );
+
+type NewRateFormValues = z.infer<typeof newRateFormSchema>;
+
+type RatesPanelProps = {
+  aircraft: AircraftRow;
+  /** See `AircraftManagerProps.canManageSettings` doc — hides the form for a read-only (`aircraft.manage`-only) viewer. */
+  canManageSettings: boolean;
+  moneyLocale: 'it' | 'en';
+  labels: Labels;
+  onCancel: () => void;
+  onSuccess: (message: string) => void;
+};
+
+/**
+ * "Tariffe" panel (story 4.1, AC 1/2, AD-4): the rate in effect today (from
+ * `aircraft.currentRatePriceCentsPerHour` — the same server-computed value
+ * already shown in the fleet table, so this never disagrees with it), the
+ * full append-only history (fetched once per mount, i.e. per
+ * `key={aircraft.id}` remount, same rationale as `HourMeterAdjustmentPanel`),
+ * and — for `settings.manage` actors only — a "Nuova tariffa" form.
+ * `aircraft.manage`-only viewers (staff) get the read-only view: current
+ * rate + history, no form (Dev Notes: pricing configuration is admin-only).
+ */
+function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel, onSuccess }: RatesPanelProps) {
+  const [formError, setFormError] = useState<string | null>(null);
+  const [history, setHistory] = useState<AircraftRateItemDto[] | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<NewRateFormValues>({
+    resolver: zodResolver(newRateFormSchema),
+    defaultValues: { price: '', validFrom: todayDateOnly() },
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHistory(): Promise<void> {
+      const response = await fetch(`/api/v1/aircraft/${aircraft.id}/rates`);
+      if (cancelled) return;
+      if (!response.ok) {
+        setHistory([]);
+        return;
+      }
+      const body = (await response.json()) as AircraftRateItemDto[];
+      setHistory(body);
+    }
+    void loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [aircraft.id]);
+
+  async function onSubmit(values: NewRateFormValues): Promise<void> {
+    setFormError(null);
+    // Boundary conversion (AD-2): the user types euros, the wire format is
+    // always integer cents — never a float past this point.
+    const priceCentsPerHour = parseCents(values.price);
+    const response = await fetch(`/api/v1/aircraft/${aircraft.id}/rates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priceCentsPerHour, validFrom: values.validFrom }),
+    });
+
+    if (!response.ok) {
+      const body: unknown = await response.json().catch(() => null);
+      const code = (body as { error?: { code?: string } } | null)?.error?.code;
+      setFormError(code === 'CONFLICT' ? labels.ratesPanel.conflictError : labels.ratesPanel.genericError);
+      return;
+    }
+
+    onSuccess(labels.feedback.rateAdded);
+  }
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+          {labels.ratesPanel.title} — {aircraft.registration}
+        </h3>
+      </div>
+
+      <div>
+        <span className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.ratesPanel.current}</span>
+        <p data-testid="rates-current" className="mt-1 text-2xl font-medium text-[#111111]">
+          {aircraft.currentRatePriceCentsPerHour === null
+            ? labels.ratesPanel.noCurrentRate
+            : `${formatCents(aircraft.currentRatePriceCentsPerHour, moneyLocale)}/h`}
+        </p>
+      </div>
+
+      {canManageSettings ? (
+        <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
+          <h4 className="text-base font-medium text-[#111111]">{labels.ratesPanel.newRateTitle}</h4>
+
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div>
+              <label htmlFor="rate-price" className="block text-sm font-medium text-[#2F3437]">
+                {labels.ratesPanel.price}
+              </label>
+              <input
+                id="rate-price"
+                inputMode="decimal"
+                placeholder="0,00"
+                aria-invalid={Boolean(errors.price)}
+                className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                {...register('price')}
+              />
+              {errors.price ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.ratesPanel.invalidPrice}</p> : null}
+            </div>
+            <div>
+              <label htmlFor="rate-valid-from" className="block text-sm font-medium text-[#2F3437]">
+                {labels.ratesPanel.validFrom}
+              </label>
+              <input
+                id="rate-valid-from"
+                type="date"
+                aria-invalid={Boolean(errors.validFrom)}
+                className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                {...register('validFrom')}
+              />
+              {errors.validFrom ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.ratesPanel.invalidDate}</p> : null}
+            </div>
+          </div>
+
+          {formError ? (
+            <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+              {formError}
+            </p>
+          ) : null}
+
+          <FormActions submitLabel={labels.ratesPanel.submit} cancelLabel={labels.ratesPanel.cancel} isSubmitting={isSubmitting} onCancel={onCancel} />
+        </form>
+      ) : (
+        <div className="space-y-5">
+          <p className="text-sm text-[#787774]">{labels.ratesPanel.readOnlyHint}</p>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {labels.ratesPanel.cancel}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.ratesPanel.historyTitle}</h4>
+        {history === null ? null : history.length === 0 ? (
+          <p className="mt-3 text-sm text-[#787774]">{labels.ratesPanel.historyEmpty}</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[480px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+                  <th className="py-2 pr-4 font-medium">{labels.ratesPanel.historyValidFrom}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.ratesPanel.historyPrice}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.ratesPanel.historyActor}</th>
+                  <th className="py-2 font-medium">{labels.ratesPanel.historyWhen}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((entry) => (
+                  <tr key={entry.id} data-testid="rate-history-row" className="border-b border-[#EAEAEA] text-[#111111]">
+                    <td className="py-2 pr-4 whitespace-nowrap">{entry.validFrom}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{formatCents(entry.priceCentsPerHour, moneyLocale)}/h</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{entry.actorEmail}</td>
+                    <td className="py-2 whitespace-nowrap text-[#787774]">{formatDateTime(new Date(entry.createdAt))}</td>
                   </tr>
                 ))}
               </tbody>

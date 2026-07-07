@@ -159,7 +159,6 @@
     "placeholders": {
       "comingSoon": "Disponibile prossimamente.",
       "expiries": "Scadenze",
-      "hoursPackages": "Pacchetti ore",
       "recentFlights": "Ultimi voli",
       "upcomingBookings": "Prossime prenotazioni"
     },
@@ -173,7 +172,8 @@
       "viewStatement": "Estratto conto completo",
       "movementType": {
         "topUp": "Ricarica",
-        "adjustment": "Rettifica"
+        "adjustment": "Rettifica",
+        "packagePurchase": "Acquisto pacchetto"
       },
       "topUp": {
         "action": "Registra ricarica",
@@ -193,6 +193,62 @@
         "requiredField": "Campo obbligatorio.",
         "genericError": "Impossibile registrare la ricarica. Riprova."
       }
+    },
+    "instructorRates": {
+      "heading": "Tariffe istruttore",
+      "current": "Tariffa attuale",
+      "noCurrentRate": "Nessuna tariffa in vigore",
+      "loadError": "Impossibile caricare lo storico tariffe.",
+      "newRateTitle": "Nuova tariffa",
+      "addAction": "Nuova tariffa",
+      "price": "Prezzo (€/h)",
+      "validFrom": "In vigore da",
+      "submit": "Aggiungi tariffa",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "invalidPrice": "Il prezzo deve essere un importo positivo (es. 45,00).",
+      "invalidDate": "Inserisci una data valida.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "conflictError": "Esiste già una tariffa con questa data di decorrenza, oppure la persona non ha un profilo istruttore attivo.",
+      "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe istruttore.",
+      "historyTitle": "Storico tariffe",
+      "historyEmpty": "Nessuna tariffa registrata.",
+      "historyValidFrom": "In vigore da",
+      "historyPrice": "Prezzo",
+      "historyActor": "Chi",
+      "historyWhen": "Registrata il"
+    }
+  },
+  "HourPackagesPanel": {
+    "heading": "Pacchetti ore",
+    "loadError": "Impossibile caricare i pacchetti.",
+    "empty": "Nessun pacchetto acquistato.",
+    "addAction": "Vendi pacchetto",
+    "feedback": "Pacchetto venduto.",
+    "table": {
+      "remaining": "Residuo",
+      "price": "Prezzo pagato",
+      "expiresAt": "Scadenza",
+      "noExpiry": "—",
+      "expiredBadge": "Scaduto"
+    },
+    "form": {
+      "title": "Vendi pacchetto",
+      "packageType": "Tipo di pacchetto",
+      "noActiveTypes": "Nessun tipo di pacchetto attivo. Configuralo nel listino.",
+      "paymentMethod": "Metodo di pagamento",
+      "paymentMethods": {
+        "cash": "Contanti",
+        "bankTransfer": "Bonifico",
+        "pos": "POS"
+      },
+      "effectiveDate": "Data valuta",
+      "description": "Note",
+      "submit": "Conferma vendita",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "inactiveTypeError": "Il tipo di pacchetto selezionato non è più attivo. Aggiorna la pagina e riprova.",
+      "genericError": "Impossibile registrare la vendita. Riprova."
     }
   },
   "AccountStatementPage": {
@@ -211,7 +267,8 @@
     },
     "movementType": {
       "topUp": "Ricarica",
-      "adjustment": "Rettifica"
+      "adjustment": "Rettifica",
+      "packagePurchase": "Acquisto pacchetto"
     },
     "adjustmentBadge": {
       "ofDate": "Rettifica del movimento del {date}",
@@ -240,6 +297,7 @@
     "description": "La situazione finanziaria dell'aviosuperficie: conti prepagati, saldi negativi e registro cassa.",
     "backToDashboard": "Torna alla dashboard",
     "manageCategories": "Gestisci categorie",
+    "viewPackages": "Listino pacchetti",
     "viewReport": "Report finanziario",
     "negativeBalances": {
       "heading": "Saldi negativi",
@@ -386,6 +444,70 @@
       "genericError": "Operazione non riuscita. Riprova."
     }
   },
+  "PackagesPage": {
+    "kicker": "Finanze",
+    "title": "Listino pacchetti ore",
+    "description": "I tipi di pacchetto ore scontati in vendita ai piloti: nome, ore incluse, prezzo, velivoli idonei e validità.",
+    "backToFinance": "Torna alle finanze",
+    "newPackageType": "Nuovo pacchetto",
+    "table": {
+      "name": "Nome",
+      "includedHours": "Ore incluse",
+      "price": "Prezzo",
+      "effectivePrice": "Prezzo orario effettivo",
+      "aircraft": "Velivoli idonei",
+      "validity": "Validità",
+      "status": "Stato",
+      "actions": "Azioni",
+      "empty": "Nessun pacchetto configurato.",
+      "noValidity": "—",
+      "noAircraft": "Nessuno",
+      "monthsUnit": "mesi"
+    },
+    "status": {
+      "active": "Attivo",
+      "inactive": "Disattivato"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "deactivate": "Disattiva",
+      "reactivate": "Riattiva",
+      "delete": "Elimina",
+      "confirmDelete": "Eliminare questo pacchetto?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
+    },
+    "form": {
+      "createTitle": "Nuovo tipo di pacchetto",
+      "editTitle": "Modifica tipo di pacchetto",
+      "name": "Nome",
+      "includedHours": "Ore incluse",
+      "includedHoursHint": "Formato H:MM, es. 10:00",
+      "price": "Prezzo (€)",
+      "validityMonths": "Validità (mesi)",
+      "validityMonthsHint": "Vuoto = nessuna scadenza",
+      "aircraft": "Velivoli idonei",
+      "noAircraftAvailable": "Nessun velivolo attivo disponibile.",
+      "submitCreate": "Crea pacchetto",
+      "submitSave": "Salva",
+      "cancel": "Annulla",
+      "requiredField": "Il nome è obbligatorio.",
+      "invalidDuration": "Inserisci una durata valida in formato H:MM.",
+      "invalidAmount": "Inserisci un prezzo valido maggiore di zero.",
+      "invalidValidity": "Inserisci un numero di mesi valido (1-600) oppure lascia vuoto.",
+      "conflictError": "Esiste già un pacchetto con questo nome.",
+      "genericError": "Operazione non riuscita. Riprova."
+    },
+    "feedback": {
+      "created": "Pacchetto creato.",
+      "updated": "Pacchetto aggiornato.",
+      "deactivated": "Pacchetto disattivato.",
+      "reactivated": "Pacchetto riattivato.",
+      "deleted": "Pacchetto eliminato.",
+      "deleteInUseError": "Il pacchetto è già stato venduto e non può essere eliminato: disattivalo invece.",
+      "genericError": "Operazione non riuscita. Riprova."
+    }
+  },
   "AircraftPage": {
     "kicker": "Flotta",
     "title": "Velivoli",
@@ -401,6 +523,8 @@
       "hourMeter": "Contaore",
       "status": "Stato",
       "operationalStatus": "Stato operativo",
+      "currentRate": "Tariffa attuale",
+      "noRate": "—",
       "actions": "Azioni",
       "empty": "Nessun velivolo trovato."
     },
@@ -423,7 +547,8 @@
       "setOutOfService": "Fuori servizio",
       "returnToService": "Rientro in servizio",
       "confirmReturnToService": "Rimettere in servizio questo velivolo?",
-      "adjustHourMeter": "Rettifica contaore"
+      "adjustHourMeter": "Rettifica contaore",
+      "rates": "Tariffe"
     },
     "form": {
       "createTitle": "Nuovo velivolo",
@@ -472,6 +597,28 @@
       "historyDelta": "Delta",
       "historyReason": "Motivo"
     },
+    "ratesPanel": {
+      "title": "Tariffe",
+      "current": "Tariffa attuale",
+      "noCurrentRate": "Nessuna tariffa in vigore",
+      "newRateTitle": "Nuova tariffa",
+      "price": "Prezzo (€/h)",
+      "validFrom": "In vigore da",
+      "submit": "Aggiungi tariffa",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "invalidPrice": "Il prezzo deve essere un importo positivo (es. 160,00).",
+      "invalidDate": "Inserisci una data valida.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "conflictError": "Esiste già una tariffa con questa data di decorrenza.",
+      "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe.",
+      "historyTitle": "Storico tariffe",
+      "historyEmpty": "Nessuna tariffa registrata.",
+      "historyValidFrom": "In vigore da",
+      "historyPrice": "Prezzo",
+      "historyActor": "Chi",
+      "historyWhen": "Registrata il"
+    },
     "feedback": {
       "created": "Velivolo creato.",
       "updated": "Velivolo aggiornato.",
@@ -479,7 +626,8 @@
       "unarchived": "Velivolo ripristinato.",
       "setOutOfService": "Velivolo segnato fuori servizio.",
       "returnedToService": "Velivolo rimesso in servizio.",
-      "hourMeterAdjusted": "Contaore rettificato."
+      "hourMeterAdjusted": "Contaore rettificato.",
+      "rateAdded": "Tariffa aggiunta."
     }
   },
   "UsersPage": {

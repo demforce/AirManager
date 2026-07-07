@@ -31,7 +31,11 @@ function sanitizeDateParam(value: string | undefined): string | undefined {
  * (AD-1), whose own `authorize()` calls remain the real guardians (AD-5) —
  * the `hasPermission` redirect here only hides navigation. The category
  * management page (`/dashboard/finance/categories`, story 3.4, AC 1) is
- * linked only for `settings.manage` actors.
+ * linked only for `settings.manage` actors. The package-type listino
+ * (`/dashboard/finance/packages`, story 4.3, FR-12) is linked for every
+ * `finance.manage` actor reaching this page — staff consult it read-only
+ * (they will sell from it in story 4.4), only `settings.manage` gets its
+ * write controls.
  */
 export default async function FinancePage({ params, searchParams }: PageProps) {
   const { locale } = await params;
@@ -114,6 +118,13 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
               className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {t('viewReport')}
+            </Link>
+            <Link
+              href="/dashboard/finance/packages"
+              locale={locale as AppLocale}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {t('viewPackages')}
             </Link>
             {canManageSettings ? (
               <Link
