@@ -1,5 +1,5 @@
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
-import type { ListCashCategoriesQuery, ListCashMovementsQuery, RecordCashMovementInput } from '@/lib/schemas/cash';
+import type { CashReportQuery, ListCashCategoriesQuery, ListCashMovementsQuery, RecordCashMovementInput } from '@/lib/schemas/cash';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError } from './errors';
@@ -440,4 +440,111 @@ export async function listCashMovements(actor: Actor, query: ListCashMovementsQu
   ]);
 
   return paginate(items.map(toMovementListItem), total, query);
+}
+
+// --- Financial report (story 3.5, Task 1, AC 1/2) --------------------------
+
+export type CashReportCategoryTotal = {
+  categoryId: string;
+  categoryName: string;
+  inCents: number;
+  outCents: number;
+  netCents: number;
+};
+
+export type CashReport = {
+  from: string;
+  to: string;
+  totalInCents: number;
+  totalOutCents: number;
+  netCents: number;
+  categories: CashReportCategoryTotal[];
+  movementCount: number;
+};
+
+/** Raw shape of one row of the per-category aggregation query below. */
+type RawCashReportCategoryRow = {
+  categoryId: string;
+  categoryName: string;
+  movementCount: number;
+  inCents: number;
+  outCents: number;
+};
+
+/**
+ * Period financial report (story 3.5, AC 1/2) — a read-only aggregation
+ * over the cash ledger, NO new model/migration/write path. `from`/`to` are
+ * inclusive on `effectiveDate`, same TZ-exact filter as `listCashMovements`
+ * (both are `@db.Date`, so a plain `gte`/`lte` on the parsed date is exact —
+ * story 3.4). Period presets (mese/trimestre/anno correnti) are UI-only
+ * (`period-presets.ts`); this function only ever sees explicit bounds.
+ *
+ * Aggregation approach — ONE raw SQL query with conditional `SUM(CASE WHEN
+ * ...)`, chosen over two separate Prisma `groupBy` calls (one filtered
+ * `amountCents > 0`, one `< 0`): `groupBy` alone cannot join in the
+ * category name, so two `groupBy`s would still need a follow-up category
+ * lookup and a JS-side merge by `categoryId` — the raw query does the join,
+ * the conditional sums AND the per-category movement count in a single
+ * round trip. The template is parameterized (tagged template — the dates
+ * are bound values, never string-interpolated into the SQL text), so there
+ * is no injection risk. The `from`/`to` bounds are bound as TEXT and cast
+ * `::date` in SQL (NOT as JS `Date` objects): `effectiveDate` is a Postgres
+ * `date`, and a JS `Date` binds as `timestamptz`, so a `date >= timestamptz`
+ * comparison would promote the column to the SESSION timezone and silently
+ * drop rows dated exactly on `from` under any non-UTC session — a pure
+ * `date >= date` comparison is timezone-independent and exactly inclusive,
+ * matching how Prisma's typed `listCashMovements` filter behaves. Categories
+ * with NO movements in the period are excluded "for free": the `JOIN` +
+ * `WHERE` combination simply never produces a row for them (AC 1) — no
+ * separate "has movements" check needed. Ordered by category NAME ascending (same convention as
+ * `listCashCategories`), not by `netCents` — a stable, predictable order to
+ * read top to bottom, not a "biggest number first" ranking.
+ *
+ * AD-3 + AC 2 invariant: `totalInCents`/`totalOutCents`/`movementCount` are
+ * derived by summing the per-category rows in JS, NEVER a second,
+ * independently-queried "total" — so `netCents === sum(categories[].netCents)`
+ * holds BY CONSTRUCTION (both figures come from the very same
+ * Postgres-computed per-category sums, there is nothing left to drift out
+ * of sync). A storno pair fully inside the period cancels out in its
+ * category's sums exactly as it does in the register (story 3.4, AD-3) —
+ * this is correct accounting behavior, not a bug to "fix".
+ */
+export async function getCashReport(actor: Actor, query: CashReportQuery): Promise<CashReport> {
+  authorize(actor, 'finance.manage');
+
+  const rows = await prisma.$queryRaw<RawCashReportCategoryRow[]>`
+    SELECT
+      c.id AS "categoryId",
+      c.name AS "categoryName",
+      COUNT(cm.id)::int AS "movementCount",
+      COALESCE(SUM(CASE WHEN cm."amountCents" > 0 THEN cm."amountCents" ELSE 0 END), 0)::int AS "inCents",
+      COALESCE(SUM(CASE WHEN cm."amountCents" < 0 THEN cm."amountCents" ELSE 0 END), 0)::int AS "outCents"
+    FROM "CashCategory" c
+    JOIN "CashMovement" cm ON cm."categoryId" = c.id
+    WHERE cm."effectiveDate" >= ${query.from}::date AND cm."effectiveDate" <= ${query.to}::date
+    GROUP BY c.id, c.name
+    ORDER BY c.name ASC
+  `;
+
+  const categories: CashReportCategoryTotal[] = rows.map((row) => ({
+    categoryId: row.categoryId,
+    categoryName: row.categoryName,
+    inCents: row.inCents,
+    outCents: row.outCents,
+    netCents: row.inCents + row.outCents,
+  }));
+
+  const totalInCents = categories.reduce((sum, category) => sum + category.inCents, 0);
+  const totalOutCents = categories.reduce((sum, category) => sum + category.outCents, 0);
+  const movementCount = rows.reduce((sum, row) => sum + row.movementCount, 0);
+
+  return {
+    from: query.from,
+    to: query.to,
+    totalInCents,
+    totalOutCents,
+    netCents: totalInCents + totalOutCents,
+    categories,
+    movementCount,
+  };
 }

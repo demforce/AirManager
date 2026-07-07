@@ -144,3 +144,49 @@ export type AircraftListItemDto = z.infer<typeof aircraftListItemSchema>;
 
 /** `GET /api/v1/aircraft` response — AD-8 paginated shape. */
 export const aircraftListResponseSchema = paginatedResponseSchema(aircraftListItemSchema);
+
+// --- Rates (story 4.1, Task 1/2/3, AC 1/2) ----------------------------------
+
+/**
+ * `POST /api/v1/aircraft/{id}/rates` body (story 4.1, AC 1/2): a new
+ * historicized rate. `priceCentsPerHour` is an integer number of euro cents
+ * (AD-2) — an HOURLY price, always > 0, capped at the Postgres INTEGER max
+ * (same defense-in-depth as `hourMeterMinutes`). `validFrom` is a calendar
+ * date only (`YYYY-MM-DD`, same `z.iso.date()` pattern as
+ * `recordCashMovementSchema.effectiveDate`) — two rates sharing the same
+ * `(aircraftId, validFrom)` are a 409 (AC 2), never silently overwritten.
+ */
+export const createAircraftRateSchema = z.object({
+  priceCentsPerHour: z.number().int().positive().max(2_147_483_647),
+  validFrom: z.iso.date(),
+});
+
+export type CreateAircraftRateInput = z.infer<typeof createAircraftRateSchema>;
+
+/**
+ * One entry of `GET /api/v1/aircraft/{id}/rates` (story 4.1). Documentation
+ * only, mirroring `rates.service.ts`'s `AircraftRateListItem` TS type — same
+ * pattern as `hourMeterAdjustmentListItemSchema`. `actorEmail` is a
+ * display-only join over the stored `actorUserId`.
+ */
+export const aircraftRateItemSchema = z.object({
+  id: z.string(),
+  aircraftId: z.string(),
+  priceCentsPerHour: z.number().int().positive(),
+  validFrom: z.iso.date(),
+  actorUserId: z.string(),
+  actorEmail: z.string(),
+  createdAt: z.iso.datetime(),
+});
+
+export type AircraftRateItemDto = z.infer<typeof aircraftRateItemSchema>;
+
+/**
+ * `GET /api/v1/aircraft/{id}/rates` response — a plain array, not the AD-8
+ * paginated envelope (Dev Notes: no pagination for this story, defensively
+ * capped at `take: 500` in the service) — same choice as
+ * `cashCategoryListResponseSchema`.
+ */
+export const aircraftRateListResponseSchema = z.array(aircraftRateItemSchema);
+
+export type AircraftRateListResponseDto = z.infer<typeof aircraftRateListResponseSchema>;

@@ -157,6 +157,14 @@ export function apiRoute<
 
       const args = { actor, query, body, params, request } as ApiHandlerArgs<TQuery, TBody, TParams, TAuth>;
       const result = await handle(args);
+      if (successStatus === 204) {
+        // A 204 is a "null body status" per the Fetch spec (the WHATWG
+        // Response constructor throws if a body is set alongside it) —
+        // `NextResponse.json(...)` always serializes a body, even for
+        // `null`, so it cannot be used here (story 4.3, `DELETE
+        // /api/v1/package-types/{id}`, the first 204 route in this codebase).
+        return new NextResponse(null, { status: 204 });
+      }
       return NextResponse.json(result === undefined ? null : result, { status: successStatus });
     } catch (error) {
       if (error instanceof DomainError) {

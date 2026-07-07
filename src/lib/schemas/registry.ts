@@ -11,6 +11,9 @@ import {
 import {
   aircraftListItemSchema,
   aircraftListResponseSchema,
+  aircraftRateItemSchema,
+  aircraftRateListResponseSchema,
+  createAircraftRateSchema,
   createAircraftSchema,
   createHourMeterAdjustmentSchema,
   hourMeterAdjustmentListResponseSchema,
@@ -25,6 +28,8 @@ import {
   cashCategoryListResponseSchema,
   cashMovementItemSchema,
   cashMovementListResponseSchema,
+  cashReportQuerySchema,
+  cashReportResponseSchema,
   createCashCategorySchema,
   listCashCategoriesQuerySchema,
   listCashMovementsQuerySchema,
@@ -35,9 +40,20 @@ import {
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { meResponseSchema } from './me';
 import {
+  createPackageTypeSchema,
+  listPackageTypesQuerySchema,
+  packageTypeItemSchema,
+  packageTypeListResponseSchema,
+  updatePackageTypeSchema,
+} from './package-types';
+import { hourPackageItemSchema, hourPackageListResponseSchema, sellPackageResponseSchema, sellPackageSchema } from './packages';
+import {
+  createInstructorRateSchema,
   createPersonSchema,
   instructorProfileRequestSchema,
   instructorProfileSchema,
+  instructorRateItemSchema,
+  instructorRateListResponseSchema,
   listPeopleQuerySchema,
   personDetailSchema,
   personListItemSchema,
@@ -103,6 +119,9 @@ registry.register('StudentProfileRequest', studentProfileRequestSchema);
 registry.register('StudentProfile', studentProfileSchema);
 registry.register('InstructorProfileRequest', instructorProfileRequestSchema);
 registry.register('InstructorProfile', instructorProfileSchema);
+registry.register('InstructorRate', instructorRateItemSchema);
+registry.register('InstructorRateList', instructorRateListResponseSchema);
+registry.register('CreateInstructorRateRequest', createInstructorRateSchema);
 registry.register('Aircraft', aircraftListItemSchema);
 registry.register('AircraftList', aircraftListResponseSchema);
 registry.register('CreateAircraftRequest', createAircraftSchema);
@@ -110,6 +129,9 @@ registry.register('UpdateAircraftRequest', updateAircraftSchema);
 registry.register('SetOutOfServiceRequest', setOutOfServiceSchema);
 registry.register('CreateHourMeterAdjustmentRequest', createHourMeterAdjustmentSchema);
 registry.register('HourMeterAdjustmentList', hourMeterAdjustmentListResponseSchema);
+registry.register('AircraftRate', aircraftRateItemSchema);
+registry.register('AircraftRateList', aircraftRateListResponseSchema);
+registry.register('CreateAircraftRateRequest', createAircraftRateSchema);
 registry.register('AccountOverview', accountOverviewSchema);
 registry.register('RecordTopUpRequest', recordTopUpSchema);
 registry.register('AccountStatement', accountStatementResponseSchema);
@@ -123,6 +145,15 @@ registry.register('CashMovement', cashMovementItemSchema);
 registry.register('CashMovementList', cashMovementListResponseSchema);
 registry.register('RecordCashMovementRequest', recordCashMovementSchema);
 registry.register('ReverseCashMovementRequest', reverseCashMovementSchema);
+registry.register('CashReport', cashReportResponseSchema);
+registry.register('PackageType', packageTypeItemSchema);
+registry.register('PackageTypeList', packageTypeListResponseSchema);
+registry.register('CreatePackageTypeRequest', createPackageTypeSchema);
+registry.register('UpdatePackageTypeRequest', updatePackageTypeSchema);
+registry.register('HourPackage', hourPackageItemSchema);
+registry.register('HourPackageList', hourPackageListResponseSchema);
+registry.register('SellPackageRequest', sellPackageSchema);
+registry.register('SellPackageResponse', sellPackageResponseSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -422,6 +453,66 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
+  path: '/api/v1/people/{id}/instructor-rates',
+  summary: "List a person's historicized instructor-rate history (most recent validFrom first)",
+  description:
+    'Story 4.2, AC 1 — the twin of `GET /api/v1/aircraft/{id}/rates`, a plain array (no pagination, capped at 500). A person without an (active) instructor profile gets an empty array, NOT a 404 — only an unknown person is. Requires `people.read` (staff+admin — a wider read than the `settings.manage` write below, since instructor data lives under `people`).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: "The instructor's rate history.", content: jsonContent(instructorRateListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/instructor-rates',
+  summary: 'Record a new historicized instructor rate (AD-4)',
+  description:
+    'Story 4.2, AC 1/2 — the twin of `POST /api/v1/aircraft/{id}/rates`. Append-only (AD-3 spirit): there is no update/delete endpoint; a wrong price is corrected by a NEW rate with a later `validFrom`. Two rates sharing the same `(instructorProfileId, validFrom)` are a 409 (AC 2). A person with no active instructor profile (never activated, or deactivated) also answers 409. Requires `settings.manage` (admin-only pricing configuration, same as `POST /api/v1/aircraft/{id}/rates`).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(createInstructorRateSchema), required: true } },
+  responses: {
+    201: { description: 'The created rate.', content: jsonContent(instructorRateItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/packages',
+  summary: "List a person's sold hour packages (residuals + expiry)",
+  description:
+    'Story 4.4, AC 2 — a plain array (no pagination, capped at 500), most recent sale first. An unknown person is a 404; a person with no packages yet gets an empty array. `remainingMinutes` is always computed (AD-3, epic 5 will extend it to subtract consumption); `isExpired` is true only when `expiresAt` is strictly before today. `actorEmail` is included ONLY when the caller has `people.read` (same conditional-field pattern as the account statement). Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}/account`).',
+  tags: ['Finance'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: "The person's sold packages.", content: jsonContent(hourPackageListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/packages',
+  summary: 'Sell an hour package to a person (FR-13)',
+  description:
+    'Story 4.4, AC 1 — in one transaction: upserts the `Account`, creates the `PACKAGE_PURCHASE` `AccountMovement` (always `amountCents: 0` — the payment is external to the account, see `HourPackage`\'s doc-comment), the `HourPackage` snapshot (`includedMinutes`/`pricePaidCents` copied from the type, `expiresAt` materialized from `validityMonths` when present) and the linked `CashMovement` under the seeded "Pacchetti" category (`amountCents: +priceCents`). `packageTypeId` must reference an ACTIVE type (409 otherwise); an archived person is also a 409. Requires `finance.manage` (staff/admin) — an operazione di sportello, never "own".',
+  tags: ['Finance'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(sellPackageSchema), required: true } },
+  responses: {
+    201: { description: 'The created package, plus the refreshed account overview.', content: jsonContent(sellPackageResponseSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
   path: '/api/v1/accounts/negative-balances',
   summary: 'List every account with a negative balance, most negative first',
   description:
@@ -557,6 +648,21 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'get',
+  path: '/api/v1/cash-report',
+  summary: 'Period financial report over the cash ledger (totals by category, in/out/net)',
+  description:
+    'A read-only aggregation over the cash register (story 3.5, AC 1/2) — NO new model or write path. `from`/`to` are both mandatory (`YYYY-MM-DD`), inclusive on `effectiveDate`, and rejected with a 422 if inverted. `netCents = totalInCents + totalOutCents` (`outCents` is already negative, AD-2). Categories with no movements in the period are excluded; the remaining ones are ordered by name. Requires `finance.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { query: cashReportQuerySchema },
+  responses: {
+    200: { description: 'The financial report for the requested period.', content: jsonContent(cashReportResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
   method: 'post',
   path: '/api/v1/cash-movements/{id}/reverse',
   summary: 'Reverse (storna) a manual cash movement',
@@ -568,6 +674,70 @@ registry.registerPath({
   responses: {
     200: { description: 'The reversal movement.', content: jsonContent(cashMovementItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- Package types (story 4.3, FR-12) ---------------------------------------
+
+const packageTypeIdParams = z.object({ id: z.string().meta({ description: 'Package type id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/package-types',
+  summary: 'List the package-type listino (discounted hour bundles, FR-12)',
+  description:
+    'Active types only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 4.3, AC 1). Requires `finance.manage` (the same list feeds the sale picker, story 4.4).',
+  tags: ['Finance'],
+  security,
+  request: { query: listPackageTypesQuerySchema },
+  responses: {
+    200: { description: 'Every package type, with its eligible-aircraft set.', content: jsonContent(packageTypeListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/package-types',
+  summary: 'Create a package type',
+  description:
+    'Name must be unique — conflict is a 409. Every `aircraftId` in `aircraftIds` must exist (404) and must not be archived (409). Requires `settings.manage` (admin-only configuration, story 4.3, AC 1).',
+  tags: ['Finance'],
+  security,
+  request: { body: { content: jsonContent(createPackageTypeSchema), required: true } },
+  responses: {
+    201: { description: 'The created package type.', content: jsonContent(packageTypeItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/package-types/{id}',
+  summary: 'Update a package type (partial patch)',
+  description:
+    'Every field optional; `validityMonths: null` clears the validity. `aircraftIds`, when present, fully replaces the eligible-aircraft set. Editing a type with sold packages is legal (the sale snapshots price/minutes, story 4.4). Requires `settings.manage`.',
+  tags: ['Finance'],
+  security,
+  request: { params: packageTypeIdParams, body: { content: jsonContent(updatePackageTypeSchema), required: true } },
+  responses: {
+    200: { description: 'The updated package type.', content: jsonContent(packageTypeItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/package-types/{id}',
+  summary: 'Delete a package type (only if never sold)',
+  description:
+    'A package type with sold packages cannot be deleted — 409 suggesting deactivation instead (story 4.3, AC 2; story 4.4 adds the `HourPackage.packageTypeId` FK RESTRICT this backstops). Requires `settings.manage`.',
+  tags: ['Finance'],
+  security,
+  request: { params: packageTypeIdParams },
+  responses: {
+    204: { description: 'The package type was deleted.' },
+    ...errorResponses(401, 403, 404, 409),
   },
 });
 
@@ -708,6 +878,36 @@ registry.registerPath({
   responses: {
     200: { description: 'The aircraft, with the updated hour meter.', content: jsonContent(aircraftListItemSchema) },
     ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/aircraft/{id}/rates',
+  summary: "List an aircraft's historicized rate history (most recent validFrom first)",
+  description:
+    'Story 4.1, AC 1 — a plain array (no pagination, small admin-managed list, capped at 500). Requires `aircraft.manage` (staff+admin see fleet pricing, a wider read than the `settings.manage` write below).',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams },
+  responses: {
+    200: { description: "The aircraft's rate history.", content: jsonContent(aircraftRateListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/aircraft/{id}/rates',
+  summary: 'Record a new historicized rate (AD-4)',
+  description:
+    'Append-only (AD-3 spirit, story 4.1, AC 1/2) — there is no update/delete endpoint; a wrong price is corrected by a NEW rate with a later `validFrom`. Two rates sharing the same `(aircraftId, validFrom)` are a 409 (AC 2). An archived aircraft also answers 409. Requires `settings.manage` (admin-only pricing configuration, story 3.4\'s cash-category pattern).',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams, body: { content: jsonContent(createAircraftRateSchema), required: true } },
+  responses: {
+    201: { description: 'The created rate.', content: jsonContent(aircraftRateItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 

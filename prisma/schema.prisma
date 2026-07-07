@@ -59,6 +59,10 @@ model Person {
   /// Prepaid account (story 3.1, AD-11): 1-to-0/1 with `Person`, never the
   /// profile — a student->pilot transition never touches it.
   account           Account?
+  /// Sold hour packages (epic 4, story 4.4, AD-11): belongs to the PERSON,
+  /// never a profile — same rationale as `account` (survives a
+  /// student->pilot transition). See `HourPackage` doc.
+  hourPackages      HourPackage[]
 }
 
 /// Pilot profile (story 2.2, AC 1/2, AD-11): 1-to-0/1 with `Person`, never a
@@ -104,6 +108,9 @@ model InstructorProfile {
   deactivatedAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
+  rates InstructorRate[]
 }
 
 /// Aircraft operational status (story 2.5, AC 1; FR-8). `OUT_OF_SERVICE` is
@@ -148,6 +155,72 @@ model Aircraft {
   updatedAt        DateTime       @updatedAt
 
   hourMeterAdjustments HourMeterAdjustment[]
+  /// Historicized hourly rates (epic 4, story 4.1, AD-4) — see `AircraftRate` doc.
+  rates                AircraftRate[]
+  /// Package types this aircraft is eligible for (epic 4, story 4.3) — see `PackageTypeAircraft` doc.
+  packageTypes         PackageTypeAircraft[]
+}
+
+/// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). Append-only
+/// (AD-3's spirit): there is deliberately NO update/delete API — a wrong
+/// price is corrected by inserting ANOTHER rate with a later `validFrom`,
+/// the history is never rewritten. The rate in effect for a given date D is
+/// the row with the MAXIMUM `validFrom <= D` (AD-4) — see
+/// `rates.service.ts#getEffectiveRate`, the hook epic 5's flight snapshot
+/// will call (not implemented here). `priceCentsPerHour` is an integer
+/// number of euro cents (AD-2) and always > 0 — enforced at the Zod/service
+/// boundary, not a DB constraint, same choice as `Aircraft.hourMeterMinutes`.
+/// `validFrom` is calendar-only (`@db.Date`, same convention as
+/// `AccountMovement.effectiveDate`) — a rate takes effect on a whole day,
+/// never at a specific time. `@@unique([aircraftId, validFrom])` backs AC 2:
+/// two rates for the same aircraft on the same day is a 409, not a silent
+/// overwrite.
+model AircraftRate {
+  id                String   @id @default(cuid())
+  aircraftId        String
+  aircraft          Aircraft @relation(fields: [aircraftId], references: [id])
+  priceCentsPerHour Int
+  validFrom         DateTime @db.Date
+  /// The acting `User.id` (`Actor.userId`, always present) — who recorded
+  /// this rate, same rationale as `HourMeterAdjustment.actorUserId`.
+  actorUserId       String
+  actorUser         User     @relation(fields: [actorUserId], references: [id])
+  createdAt         DateTime @default(now())
+
+  @@unique([aircraftId, validFrom])
+  @@index([aircraftId])
+}
+
+/// Historicized hourly rate for an instructor (story 4.2, epic 4; AD-4/AD-2)
+/// — the deliberate twin of `AircraftRate`, same shape and same rules, just
+/// keyed on `instructorProfileId` instead of `aircraftId`. Append-only (AD-3's
+/// spirit): there is deliberately NO update/delete API — a wrong price is
+/// corrected by inserting ANOTHER rate with a later `validFrom`, the history
+/// is never rewritten. The rate in effect for a given date D is the row with
+/// the MAXIMUM `validFrom <= D` (AD-4) — see
+/// `instructor-rates.service.ts#getEffectiveInstructorRate`, the hook epic 5's
+/// flight snapshot will call (not implemented here). `priceCentsPerHour` is an
+/// integer number of euro cents (AD-2) and always > 0 — enforced at the
+/// Zod/service boundary, not a DB constraint, same choice as `AircraftRate`.
+/// `validFrom` is calendar-only (`@db.Date`, same convention as
+/// `AccountMovement.effectiveDate`/`AircraftRate.validFrom`) — a rate takes
+/// effect on a whole day, never at a specific time.
+/// `@@unique([instructorProfileId, validFrom])` backs AC 2: two rates for the
+/// same instructor on the same day is a 409, not a silent overwrite.
+model InstructorRate {
+  id                  String            @id @default(cuid())
+  instructorProfileId String
+  instructorProfile   InstructorProfile @relation(fields: [instructorProfileId], references: [id])
+  priceCentsPerHour   Int
+  validFrom           DateTime          @db.Date
+  /// The acting `User.id` (`Actor.userId`, always present) — who recorded
+  /// this rate, same rationale as `AircraftRate.actorUserId`.
+  actorUserId         String
+  actorUser           User              @relation(fields: [actorUserId], references: [id])
+  createdAt           DateTime          @default(now())
+
+  @@unique([instructorProfileId, validFrom])
+  @@index([instructorProfileId])
 }
 
 /// Append-only audit trail for hour-meter (contaore) corrections (story 2.5,
@@ -178,8 +251,8 @@ model HourMeterAdjustment {
 /// needs a `Person` yet (kept optional to avoid coupling auth to the full
 /// anagrafica before story 2.1 exists).
 model User {
-  id     String @id @default(cuid())
-  email  String @unique
+  id           String  @id @default(cuid())
+  email        String  @unique
   /// Nullable (story 1.4): an invited user has no password until they follow
   /// their invite link and set one via `AuthToken`. `authorize()` rejects
   /// login for a null `passwordHash` (with the same dummy-verify timing
@@ -194,14 +267,20 @@ model User {
   personId     String? @unique
   person       Person? @relation(fields: [personId], references: [id])
 
-  authTokens AuthToken[]
+  authTokens           AuthToken[]
   /// Hour-meter rectifications this user performed (story 2.5, AC 2) —
   /// `HourMeterAdjustment.actorUserId`.
   hourMeterAdjustments HourMeterAdjustment[]
+  /// Aircraft rates this user recorded (story 4.1) — `AircraftRate.actorUserId`.
+  aircraftRates        AircraftRate[]
+  /// Instructor rates this user recorded (story 4.2) — `InstructorRate.actorUserId`.
+  instructorRates      InstructorRate[]
   /// Account ledger entries this user recorded (story 3.1) — `AccountMovement.actorUserId`.
   accountMovements     AccountMovement[]
   /// Cash ledger entries this user recorded (story 3.1) — `CashMovement.actorUserId`.
   cashMovements        CashMovement[]
+  /// Package sales this user recorded (story 4.4) — `HourPackage.actorUserId`.
+  hourPackagesSold     HourPackage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -233,11 +312,16 @@ model AuthToken {
 
 /// Prepaid account movement types (story 3.1, AD-3's ledger). `TOP_UP` (3.1)
 /// and `ADJUSTMENT` (story 3.3 — a motivated correction, AC 1) are populated
-/// today; flight debits (epic 5) grow this enum later. Additive migration
-/// only (Dev Notes) — no existing row's `type` ever changes.
+/// today; `PACKAGE_PURCHASE` (story 4.4, AC 1) is the estratto-conto row a
+/// package sale creates — always `amountCents: 0` (the payment is external
+/// to the account, see `HourPackage` doc), it exists purely so the titolare
+/// sees the purchase in their statement. Flight debits (epic 5) grow this
+/// enum later. Additive migration only (Dev Notes) — no existing row's
+/// `type` ever changes.
 enum AccountMovementType {
   TOP_UP
   ADJUSTMENT
+  PACKAGE_PURCHASE
 }
 
 /// How a top-up was paid (story 3.1, AC 2). Only meaningful for `TOP_UP`
@@ -298,8 +382,12 @@ model AccountMovement {
 
   /// The automatic cash-ledger counterpart created in the same transaction
   /// (story 3.1, AC 2) — present only for movement types that also move cash
-  /// (today, every `TOP_UP`).
-  cashMovement  CashMovement?
+  /// (today, every `TOP_UP` and every `PACKAGE_PURCHASE`).
+  cashMovement CashMovement?
+  /// The `HourPackage` this movement is the estratto-conto twin of (story
+  /// 4.4) — present only for `PACKAGE_PURCHASE` rows, same 1-to-0/1 pattern
+  /// as `cashMovement`.
+  hourPackage  HourPackage?
 
   @@index([accountId])
 }
@@ -344,4 +432,132 @@ model CashMovement {
   reversalOf        CashMovement?    @relation("CashMovementReversal", fields: [reversalOfId], references: [id])
   reversal          CashMovement?    @relation("CashMovementReversal")
   createdAt         DateTime         @default(now())
+}
+
+/// Package-type catalogue (epic 4, story 4.3; FR-12). MUTABLE listino
+/// configuration — like `CashCategory` — NOT an append-only ledger: it is
+/// created, edited and deactivated freely, and deleted ONLY while never
+/// sold. This is legal because the sale (story 4.4) will SNAPSHOT
+/// `includedMinutes`/`priceCents` onto the sold `HourPackage`/
+/// `AccountMovement` at the moment of purchase (AD-4, the same principle as
+/// the historicized rates) — changing the catalogue afterwards never
+/// rewrites that history. `includedMinutes` is an integer number of minutes
+/// (AD-2 — same cardinal rule as `Aircraft.hourMeterMinutes`), never a
+/// decimal-hours float. `priceCents` is an integer number of euro cents
+/// (AD-2), always > 0, enforced at the Zod/service boundary (not a DB
+/// constraint, same choice as `AircraftRate.priceCentsPerHour`). The
+/// "effective hourly price" shown in the UI is derived from these two
+/// fields at render time and is NEVER persisted. `validityMonths` is the
+/// optional validity of a sold package, in whole months; `null` means no
+/// expiry. `isActive` hides the type from the future sale picker (story
+/// 4.4) without touching any history already sold under it — same
+/// lifecycle role as `CashCategory.isActive`. Delete is allowed ONLY while
+/// never sold: today (story 4.3) no FK references this table yet; story 4.4
+/// adds `HourPackage.packageTypeId` with `ON DELETE RESTRICT`, and
+/// `package-types.service.ts#deletePackageType`'s `P2003` catch is already
+/// the 409 backstop for that constraint (AC 2).
+model PackageType {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  includedMinutes Int
+  priceCents      Int
+  validityMonths  Int?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  /// The set of aircraft this package type may be used on (story 4.3) — see `PackageTypeAircraft` doc.
+  eligibleAircraft PackageTypeAircraft[]
+  /// Packages sold under this type (story 4.4) — a non-empty set is exactly
+  /// what makes this type non-deletable (FK RESTRICT, AC 3); see `HourPackage` doc.
+  soldPackages     HourPackage[]
+}
+
+/// Explicit join table between `PackageType` and `Aircraft` (story 4.3) — the
+/// set of aircraft eligible for a given package type. Modeled explicitly
+/// (never an implicit Prisma m-n) per the repo's convention of documented,
+/// hand-migrated relations. An aircraft archived AFTER being associated
+/// stays in the set (historical listino record, still consultable) — the
+/// real usage block on a retired airframe belongs to consumption (epic 5),
+/// not to this catalogue.
+model PackageTypeAircraft {
+  id            String      @id @default(cuid())
+  packageTypeId String
+  packageType   PackageType @relation(fields: [packageTypeId], references: [id])
+  aircraftId    String
+  aircraft      Aircraft    @relation(fields: [aircraftId], references: [id])
+
+  @@unique([packageTypeId, aircraftId])
+  @@index([aircraftId])
+}
+
+/// A sold hour package (epic 4, story 4.4; FR-13). Append-only in spirit
+/// (AD-3): there is deliberately no update/delete API here — a wrong sale
+/// is out of scope for this story (a coordinated storno across
+/// conto+cassa+pacchetto would be an epic 5+ concern, if ever needed).
+///
+/// **The payment is EXTERNAL to the prepaid account** (contanti/bonifico/
+/// POS, exactly like a top-up): the cash register receives `pricePaidCents`
+/// (a `CashMovement` under the "Pacchetti" category), but the account
+/// BALANCE never changes — buying a package paid in full must never push
+/// the account into the red. The twin `AccountMovement` this row links to
+/// (`accountMovementId`, type `PACKAGE_PURCHASE`) exists purely so the
+/// titolare sees the purchase in their estratto conto: it always carries
+/// `amountCents: 0` (the price/method live on `pricePaidCents`/
+/// `paymentMethod` here instead — a closed transaction, payment received
+/// and package delivered cancel out).
+///
+/// **Residuo is always COMPUTED, never a persisted counter** (AD-3's
+/// "totali sempre SUM" lesson): there is no `remainingMinutes` column. Story
+/// 4.4 has no consumption model yet, so the residuo is simply
+/// `includedMinutes` (see `packages.service.ts#computeRemainingMinutes`,
+/// the single point epic 5 will extend to subtract consumed minutes).
+///
+/// **Snapshot at sale time** (AD-4, same principle as the historicized
+/// rates): `includedMinutes`/`pricePaidCents` are copied from the
+/// `PackageType` at the moment of sale and `expiresAt` is materialized
+/// (`effectiveDate + validityMonths`, clamped to end-of-month — `null` when
+/// the type has no `validityMonths`). A LATER edit to the `PackageType`
+/// (story 4.3) never rewrites an already-sold package — this is exactly why
+/// the catalogue is allowed to stay mutable. `packageTypeId` is `ON DELETE
+/// RESTRICT` (Prisma default for a required relation) — the FK backstop
+/// behind `package-types.service.ts#deletePackageType`'s 409 (AC 3).
+///
+/// The package belongs to the PERSON (`personId`), never a profile (AD-11) —
+/// same rationale as `Account`: it survives a student->pilot transition.
+model HourPackage {
+  id                String          @id @default(cuid())
+  personId          String
+  person            Person          @relation(fields: [personId], references: [id])
+  packageTypeId     String
+  packageType       PackageType     @relation(fields: [packageTypeId], references: [id])
+  /// Snapshot of `PackageType.includedMinutes` at sale time (AD-2/AD-4).
+  includedMinutes   Int
+  /// Snapshot of `PackageType.priceCents` at sale time (AD-2/AD-4) — the
+  /// amount the cash register received, NOT the account's `amountCents`
+  /// (which is always 0 on the linked `AccountMovement`, see model doc).
+  pricePaidCents    Int
+  /// How the price was paid (reuse of the top-up enum, story 3.1) — external
+  /// to the account, mirrored onto the linked `CashMovement` too.
+  paymentMethod     PaymentMethod
+  /// Value date (data valuta) of the sale — same calendar-only convention as
+  /// `AccountMovement.effectiveDate`; the base `expiresAt` is computed from.
+  effectiveDate     DateTime        @db.Date
+  /// Materialized expiry (AD-4): `effectiveDate + validityMonths`, clamped
+  /// to end-of-month (`src/lib/date-only.ts#addMonthsClampUtc`). `null` when
+  /// the type had no `validityMonths` at sale time (never expires).
+  expiresAt         DateTime?       @db.Date
+  /// The `PACKAGE_PURCHASE` twin this package is linked to (traceability,
+  /// same pattern as `CashMovement.accountMovementId`) — `@unique`, at most
+  /// one package per account movement.
+  accountMovementId String          @unique
+  accountMovement   AccountMovement @relation(fields: [accountMovementId], references: [id])
+  /// The acting `User.id` who recorded the sale — same rationale as every
+  /// other ledger's `actorUserId`.
+  actorUserId       String
+  actorUser         User            @relation(fields: [actorUserId], references: [id])
+  createdAt         DateTime        @default(now())
+
+  @@index([personId])
+  @@index([packageTypeId])
 }
