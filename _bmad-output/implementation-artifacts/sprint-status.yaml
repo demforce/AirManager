@@ -18,12 +18,13 @@
 #
 # WORKFLOW NOTES:
 # ===============
-# - Model roles (updated 2026-07-07): main session runs on Opus 4.8 and
-#   owns BOTH story creation AND code review (review done in-session, no
-#   longer delegated to a subagent); dev is a Sonnet 5 subagent.
-# - Story creation: main session (Opus 4.8) via bmad-create-story
-# - Dev: Sonnet 5 subagent via bmad-dev-story
-# - Review: main session (Opus 4.8) via bmad-code-review
+# - Model roles (updated 2026-07-07, Epic 4 resume): main session runs on
+#   Fable 5 (extra-high) and owns story creation; dev is Sonnet 5 via
+#   ultracode multi-agent workflow; review is an Opus 4.8 (extra-high)
+#   subagent.
+# - Story creation: main session (Fable 5) via bmad-create-story
+# - Dev: Sonnet 5 ultracode workflow via bmad-dev-story
+# - Review: Opus 4.8 subagent via bmad-code-review
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
@@ -61,7 +62,7 @@ development_status:
   epic-4: in-progress
   4-1-aircraft-rates: done
   4-2-instructor-rates: done
-  4-3-package-types: backlog
+  4-3-package-types: ready-for-dev
   4-4-package-sale: backlog
   epic-4-retrospective: optional
 
