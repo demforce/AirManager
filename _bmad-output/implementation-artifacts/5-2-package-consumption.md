@@ -4,7 +4,7 @@ baseline_commit: 8fdd207
 
 # Story 5.2: Consumo pacchetti nel calcolo del volo
 
-Status: ready-for-review
+Status: done
 
 ## Story
 
@@ -121,9 +121,23 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
-_(da compilare dopo la review)_
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean pass — zero findings, nessuna modifica richiesta.**
+
+Verificato e trovato corretto (review con riproduzioni DB-backed su flussi reali `registerFlight`/`sellPackage`):
+- **Concorrenza/sovra-consumo (il punto più rischioso)**: race reale di 2 `registerFlight` concorrenti da 60' (stessa persona, un solo pacchetto da 60') → consumo totale = 60, MAI 120 (uno copre 60/addebita 0, l'altro copre 0/addebita pieno). Il lock `FOR UPDATE` su `Account` (preso PRIMA della lettura candidati, verificato l'ordine nel codice) è un punto di serializzazione corretto perché ogni volo che può consumare un pacchetto appartiene alla persona di quel singolo Account.
+- **Pro-rata (DB-backed)**: 70' su pacchetto 60' @150€/h → covered 60, charged 10, `round(15000×10/60)=2500`.
+- **Boundary scadenza (DB-backed)**: `expiresAt === flightDate` INCLUSO; scaduto il giorno prima ESCLUSO; confronto vs `flightDate`, non vs oggi.
+- **Multi-pacchetto FIFO (DB-backed)**: 80' su 60'(più vecchio)+30' → 60 dal più vecchio poi 20 dal secondo, 2 righe consumo, charged 0.
+- **Istruttore mai coperto (DB-backed)**: volo scuola 60' interamente coperto → aircraft 0 ma istruttore 6000 sui minuti PIENI; movimento −6000; descrizione con "(1:00 da pacchetto)".
+- **Fix `-0`**: volo interamente coperto senza istruttore persiste `amountCents: 0` (non `-0`); banda invariata → nessun alert spurio.
+- **DTO/ordering**: il patch in-memory delle allocazioni sul ritorno di `create()` coincide con la ri-lettura DB di `listFlights` (tie-break `id` a parità di millisecondo, verificato via psql); il cast `as Prisma...OrderByWithRelationInput[]` allarga solo una tupla readonly di campi genuini (non è un type lie).
+- **`computeRemainingMinutes`**: tutti i caller aggiornati (nessuna chiamata stale); il residuo non può andare sotto 0 (`take = min(residuo, scoperto)` mantiene SUM ≤ included); groupBy scopato alla persona (nessun leak da consumi altrui).
+- **AD-3/AD-4**: saldo sempre SUM; movimento a 0 mai omesso; `packageCoveredMinutes` = SUM delle righe consumo del volo; DTO legge solo snapshot.
+- **Migrazione** `20260707160000`: pulita su DB fresco; PK, FK RESTRICT su entrambe, unique `(flightId, hourPackageId)`, indice su `hourPackageId`; colonna con DEFAULT 0.
+- **Gate ri-eseguiti**: tsc pulito; 544/544 unit; `next build` verde (NODE_ENV=production); i18n it/en 625/625 chiavi simmetriche; File List = diff reale; working tree pulito.
 
 ## Change Log
 
 - 2026-07-07: Story file created (Fable 5 main session), ready-for-dev.
 - 2026-07-07: Implemented (Sonnet 5 single dev agent, xhigh) — all tasks complete, all gates green. Status → ready-for-review.
+- 2026-07-07: Review Opus 4.8 xhigh — clean pass, zero findings. Status → done.
