@@ -63,6 +63,10 @@ model Person {
   /// never a profile — same rationale as `account` (survives a
   /// student->pilot transition). See `HourPackage` doc.
   hourPackages      HourPackage[]
+  /// Flights this person flew/paid for (epic 5, story 5.1, AD-11): belongs
+  /// to the PERSON, never a profile — same rationale as `account`. See
+  /// `Flight` doc.
+  flights           Flight[]
 }
 
 /// Pilot profile (story 2.2, AC 1/2, AD-11): 1-to-0/1 with `Person`, never a
@@ -110,7 +114,9 @@ model InstructorProfile {
   updatedAt     DateTime  @updatedAt
 
   /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
-  rates InstructorRate[]
+  rates   InstructorRate[]
+  /// Flights where this profile was the instructor aboard (epic 5, story 5.1) — see `Flight` doc.
+  flights Flight[]
 }
 
 /// Aircraft operational status (story 2.5, AC 1; FR-8). `OUT_OF_SERVICE` is
@@ -159,6 +165,8 @@ model Aircraft {
   rates                AircraftRate[]
   /// Package types this aircraft is eligible for (epic 4, story 4.3) — see `PackageTypeAircraft` doc.
   packageTypes         PackageTypeAircraft[]
+  /// Flights logged on this airframe (epic 5, story 5.1) — see `Flight` doc.
+  flights              Flight[]
 }
 
 /// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). Append-only
@@ -281,6 +289,8 @@ model User {
   cashMovements        CashMovement[]
   /// Package sales this user recorded (story 4.4) — `HourPackage.actorUserId`.
   hourPackagesSold     HourPackage[]
+  /// Flights this user registered (epic 5, story 5.1) — `Flight.actorUserId`.
+  flightsRecorded      Flight[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -315,13 +325,17 @@ model AuthToken {
 /// today; `PACKAGE_PURCHASE` (story 4.4, AC 1) is the estratto-conto row a
 /// package sale creates — always `amountCents: 0` (the payment is external
 /// to the account, see `HourPackage` doc), it exists purely so the titolare
-/// sees the purchase in their statement. Flight debits (epic 5) grow this
-/// enum later. Additive migration only (Dev Notes) — no existing row's
-/// `type` ever changes.
+/// sees the purchase in their statement. `FLIGHT_CHARGE` (epic 5, story 5.1;
+/// FR-14/FR-15) is the first REAL debit: `amountCents` is NEGATIVE (aircraft
+/// cost + optional instructor cost) and the balance is allowed to go
+/// negative — see `Flight`'s doc for the snapshot it links to via
+/// `AccountMovement.flightId`. Additive migration only (Dev Notes) — no
+/// existing row's `type` ever changes.
 enum AccountMovementType {
   TOP_UP
   ADJUSTMENT
   PACKAGE_PURCHASE
+  FLIGHT_CHARGE
 }
 
 /// How a top-up was paid (story 3.1, AC 2). Only meaningful for `TOP_UP`
@@ -388,8 +402,15 @@ model AccountMovement {
   /// 4.4) — present only for `PACKAGE_PURCHASE` rows, same 1-to-0/1 pattern
   /// as `cashMovement`.
   hourPackage  HourPackage?
+  /// The `Flight` this movement charges for (epic 5, story 5.1) — present
+  /// only for `FLIGHT_CHARGE` rows. NOT unique: more than one movement can
+  /// reference the same flight in the future (5.3's storno links to the
+  /// same flight via its own `flightId`).
+  flightId     String?
+  flight       Flight?       @relation(fields: [flightId], references: [id])
 
   @@index([accountId])
+  @@index([flightId])
 }
 
 /// Cash-ledger categories (story 3.1; full list assumed seeded per Dev Notes,
@@ -560,4 +581,107 @@ model HourPackage {
 
   @@index([personId])
   @@index([packageTypeId])
+}
+
+/// A logged flight's purpose (epic 5, story 5.1). The PRD does not enumerate
+/// these — `PRIVATE` is a private/tourism flight, `SCHOOL` is a training
+/// flight WITH an instructor (epic 9 will sum school hours per instructor
+/// off this), `OTHER` covers everything else. `SCHOOL` mandates an
+/// instructor (422 `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`); an instructor is
+/// also allowed (never required) on `PRIVATE`/`OTHER` (e.g. a checkride) and
+/// always generates their own charge either way.
+enum FlightType {
+  PRIVATE
+  SCHOOL
+  OTHER
+}
+
+/// A logged flight's lifecycle state (epic 5, story 5.1). Story 5.1 never
+/// produces `CANCELLED` (that is story 5.3's storno/cancellation) — the
+/// column and enum exist from the start because story 5.4's flight registry
+/// filters by status, and adding it as a later additive enum migration would
+/// be more fragile than having it from day one.
+enum FlightStatus {
+  REGISTERED
+  CANCELLED
+}
+
+/// A registered flight (epic 5, story 5.1; FR-9/FR-14/FR-15) — the model
+/// that, in ONE transaction (`flights.service.ts#registerFlight`), both
+/// produces the `FLIGHT_CHARGE` `AccountMovement` (linked via
+/// `AccountMovement.flightId`) and advances `Aircraft.hourMeterMinutes`
+/// (FR-9). `personId` is who flew/pays (AD-11: always the `Person`, never a
+/// profile) — a pilot OR student profile must be active on this person at
+/// registration time. `instructorProfileId` is the instructor aboard, when
+/// any (the ERD keys it on `InstructorProfile`, while the API accepts a
+/// `Person` id and resolves it, consistent with
+/// `.../people/{id}/instructor-rates`) — mandatory on `SCHOOL` flights,
+/// optional otherwise, and in every case generating its own charge.
+///
+/// **Snapshot, never recalculated** (AD-4, the same principle as
+/// `AircraftRate`/`InstructorRate`/`HourPackage`): `aircraftRateCentsPerHour`/
+/// `aircraftAmountCents` (and, when there is an instructor,
+/// `instructorRateCentsPerHour`/`instructorAmountCents`) capture the rate in
+/// effect at `flightDate` at registration time — a later change to the rate
+/// history never rewrites an already-registered flight. There is
+/// deliberately NO persisted total: the total lives on the linked
+/// `AccountMovement.amountCents` (negative); the UI/DTO computes it from the
+/// two per-component amounts (`flights.service.ts#FlightListItem`).
+///
+/// **`minutes` is always populated** (AD-2), either given directly or
+/// derived as `hourMeterEnd - hourMeterStart`. `hourMeterStart`/`hourMeterEnd`
+/// (both present or both absent) are OBSERVATIONS recorded on this flight —
+/// NOT a `SET` of `Aircraft.hourMeterMinutes`, which instead always
+/// increments by `minutes` (`+=`), the same way flights registered
+/// out-of-order or on top of a prior manual `HourMeterAdjustment` remain
+/// correct. No `HourMeterAdjustment` row is ever created for this advance —
+/// that table stays reserved for motivated manual rectifications; the
+/// flight itself is the audit trail of the advance.
+///
+/// Package consumption (story 5.2) and storno/cancellation (story 5.3, via
+/// `status`/`reversalOfId`-style linking on the movement) are future
+/// extensions of this model, out of scope here.
+model Flight {
+  id                  String             @id @default(cuid())
+  aircraftId          String
+  aircraft            Aircraft           @relation(fields: [aircraftId], references: [id])
+  personId            String
+  person              Person             @relation(fields: [personId], references: [id])
+  instructorProfileId String?
+  instructorProfile   InstructorProfile? @relation(fields: [instructorProfileId], references: [id])
+
+  /// Calendar-only date of the flight (`@db.Date`) — never in the future
+  /// (enforced in the service against the server-clock UTC "today").
+  flightDate DateTime     @db.Date
+  flightType FlightType
+  status     FlightStatus @default(REGISTERED)
+
+  minutes        Int
+  hourMeterStart Int?
+  hourMeterEnd   Int?
+  landings       Int?
+  notes          String?
+
+  aircraftRateCentsPerHour   Int
+  aircraftAmountCents        Int
+  instructorRateCentsPerHour Int?
+  instructorAmountCents      Int?
+
+  /// Who recorded this flight (`Actor.userId`, always present) — same
+  /// rationale as every other ledger's `actorUserId`.
+  actorUserId String
+  actorUser   User   @relation(fields: [actorUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The `FLIGHT_CHARGE` movement (and, from story 5.3, its storno) linked
+  /// to this flight — plural: more than one movement can reference the same
+  /// flight.
+  movements AccountMovement[]
+
+  @@index([aircraftId])
+  @@index([personId])
+  @@index([instructorProfileId])
+  @@index([flightDate])
 }

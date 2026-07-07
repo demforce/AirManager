@@ -32,7 +32,7 @@ export type AccountStatementTableLabels = {
   actions: string;
   noValue: string;
   empty: string;
-  movementType: { topUp: string; adjustment: string; packagePurchase: string };
+  movementType: { topUp: string; adjustment: string; packagePurchase: string; flightCharge: string };
   /** Badge on a linked ADJUSTMENT row; `{date}` is replaced with the original movement's date when it is on the same page. */
   adjustmentOfDate: string;
   /** Badge fallback when the original movement is not on the current page. */
@@ -82,6 +82,8 @@ function movementTypeLabel(type: AccountMovementTypeDto, labels: AccountStatemen
       return labels.adjustment;
     case 'PACKAGE_PURCHASE':
       return labels.packagePurchase;
+    case 'FLIGHT_CHARGE':
+      return labels.flightCharge;
     default:
       return type;
   }

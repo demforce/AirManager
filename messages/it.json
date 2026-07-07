@@ -173,7 +173,8 @@
       "movementType": {
         "topUp": "Ricarica",
         "adjustment": "Rettifica",
-        "packagePurchase": "Acquisto pacchetto"
+        "packagePurchase": "Acquisto pacchetto",
+        "flightCharge": "Addebito volo"
       },
       "topUp": {
         "action": "Registra ricarica",
@@ -268,7 +269,8 @@
     "movementType": {
       "topUp": "Ricarica",
       "adjustment": "Rettifica",
-      "packagePurchase": "Acquisto pacchetto"
+      "packagePurchase": "Acquisto pacchetto",
+      "flightCharge": "Addebito volo"
     },
     "adjustmentBadge": {
       "ofDate": "Rettifica del movimento del {date}",
@@ -628,6 +630,81 @@
       "returnedToService": "Velivolo rimesso in servizio.",
       "hourMeterAdjusted": "Contaore rettificato.",
       "rateAdded": "Tariffa aggiunta."
+    }
+  },
+  "FlightsPage": {
+    "kicker": "Voli",
+    "title": "Voli",
+    "description": "Registra un volo e vedi l'addebito su velivolo e, se presente, istruttore generato automaticamente.",
+    "backToDashboard": "Torna alla dashboard",
+    "form": {
+      "title": "Registra volo",
+      "aircraft": "Velivolo",
+      "noAircraftAvailable": "Nessun velivolo attivo disponibile.",
+      "person": "Pilota o allievo",
+      "noPersonAvailable": "Nessuna persona con profilo pilota o allievo attivo.",
+      "instructor": "Istruttore",
+      "noInstructor": "— Nessuno —",
+      "flightDate": "Data volo",
+      "flightType": "Tipo di volo",
+      "flightTypes": {
+        "private": "Privato",
+        "school": "Scuola",
+        "other": "Altro"
+      },
+      "durationMode": "Come indichi la durata?",
+      "durationModes": {
+        "minutes": "Minuti diretti",
+        "hourMeter": "Contaore iniziale/finale"
+      },
+      "minutes": "Minuti",
+      "hourMeterStart": "Contaore iniziale",
+      "hourMeterEnd": "Contaore finale",
+      "landings": "Atterraggi",
+      "notes": "Note",
+      "submit": "Registra volo",
+      "requiredField": "Campo obbligatorio.",
+      "invalidMinutes": "Inserisci una durata valida, di almeno 1 minuto.",
+      "invalidHourMeter": "Il contaore finale deve essere maggiore dell'iniziale.",
+      "errors": {
+        "HOUR_METER_INVALID": "Il contaore finale deve essere maggiore dell'iniziale.",
+        "NO_AIRCRAFT_RATE": "Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.",
+        "NO_INSTRUCTOR_RATE": "Nessuna tariffa oraria è in vigore per questo istruttore alla data del volo.",
+        "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "Un volo scuola richiede un istruttore.",
+        "AIRCRAFT_ARCHIVED": "Il velivolo selezionato è archiviato.",
+        "PERSON_ARCHIVED": "La persona selezionata è archiviata.",
+        "PERSON_NOT_PILOT_OR_STUDENT": "La persona deve avere un profilo pilota o allievo attivo.",
+        "INSTRUCTOR_NOT_FOUND": "L'istruttore selezionato non ha un profilo istruttore attivo.",
+        "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
+        "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
+        "generic": "Impossibile registrare il volo. Riprova."
+      }
+    },
+    "result": {
+      "title": "Addebito generato",
+      "minutes": "Durata",
+      "aircraftRate": "Tariffa velivolo",
+      "aircraftAmount": "Costo velivolo",
+      "instructorRate": "Tariffa istruttore",
+      "instructorAmount": "Costo istruttore",
+      "total": "Totale addebitato",
+      "newBalance": "Nuovo saldo"
+    },
+    "list": {
+      "heading": "Voli recenti",
+      "empty": "Nessun volo registrato.",
+      "table": {
+        "date": "Data",
+        "aircraft": "Velivolo",
+        "person": "Persona",
+        "instructor": "Istruttore",
+        "noInstructor": "—",
+        "type": "Tipo",
+        "duration": "Durata",
+        "amount": "Addebito",
+        "landings": "Atterraggi",
+        "noValue": "—"
+      }
     }
   },
   "UsersPage": {

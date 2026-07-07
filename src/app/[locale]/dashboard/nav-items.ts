@@ -36,7 +36,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { key: 'people', href: '/dashboard/people', permissions: ['people.read'] },
   // Story 2.4: repointed the same way people was in 2.1.
   { key: 'aircraft', href: '/dashboard/aircraft', permissions: ['aircraft.manage'] },
-  { key: 'flights', href: '/flights', permissions: ['flights.manage'] },
+  // Story 5.1: repointed the same way people/aircraft/finance were in
+  // 2.1/2.4/3.3 — permissions unchanged (5.4 will reopen visibility to pilots/students).
+  { key: 'flights', href: '/dashboard/flights', permissions: ['flights.manage'] },
   { key: 'bookings', href: '/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any'] },
   // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4.
   { key: 'finance', href: '/dashboard/finance', permissions: ['finance.manage'] },

@@ -29,13 +29,22 @@ export class NotFoundError extends DomainError {
   readonly code = 'NOT_FOUND';
 }
 
-/** Input failed domain-level validation (beyond Zod's schema shape) → HTTP 422. */
+/**
+ * Input failed domain-level validation (beyond Zod's schema shape) → HTTP
+ * 422. `code` defaults to the generic `VALIDATION_ERROR` (every existing
+ * caller keeps that behavior unchanged) but a domain guard can pass a
+ * stable SCREAMING_SNAKE code instead (story 5.1, AC 3) so a 422 caused by
+ * e.g. an invalid hour-meter reading is distinguishable, on the wire, from
+ * one caused by a missing rate — `flights.service.ts#registerFlight` is the
+ * first caller to do so.
+ */
 export class ValidationError extends DomainError {
-  readonly code = 'VALIDATION_ERROR';
+  readonly code: string;
   readonly details?: Record<string, unknown>;
 
-  constructor(message: string, details?: Record<string, unknown>) {
+  constructor(message: string, details?: Record<string, unknown>, code: string = 'VALIDATION_ERROR') {
     super(message);
+    this.code = code;
     this.details = details;
   }
 }

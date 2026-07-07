@@ -176,6 +176,7 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
                 topUp: t('movementType.topUp'),
                 adjustment: t('movementType.adjustment'),
                 packagePurchase: t('movementType.packagePurchase'),
+                flightCharge: t('movementType.flightCharge'),
               },
               // `t.raw`: these carry a literal `{date}` placeholder the CLIENT
               // fills in (the original movement's date lives in the row data)

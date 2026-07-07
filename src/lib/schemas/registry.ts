@@ -38,6 +38,12 @@ import {
   reverseCashMovementSchema,
 } from './cash';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
+import {
+  flightListResponseSchema,
+  listFlightsQuerySchema,
+  registerFlightResponseSchema,
+  registerFlightSchema,
+} from './flights';
 import { meResponseSchema } from './me';
 import {
   createPackageTypeSchema,
@@ -154,6 +160,9 @@ registry.register('HourPackage', hourPackageItemSchema);
 registry.register('HourPackageList', hourPackageListResponseSchema);
 registry.register('SellPackageRequest', sellPackageSchema);
 registry.register('SellPackageResponse', sellPackageResponseSchema);
+registry.register('RegisterFlightRequest', registerFlightSchema);
+registry.register('RegisterFlightResponse', registerFlightResponseSchema);
+registry.register('FlightList', flightListResponseSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -738,6 +747,38 @@ registry.registerPath({
   responses: {
     204: { description: 'The package type was deleted.' },
     ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+// --- Flights (epic 5, story 5.1, FR-9/FR-14/FR-15) --------------------------
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/flights',
+  summary: 'List registered flights (paginated, most recent first)',
+  description:
+    'Story 5.1, AC 1/2 — staff-only for now (no own-access/filters yet, story 5.4). `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column. Requires `flights.manage`.',
+  tags: ['Flights'],
+  security,
+  request: { query: listFlightsQuerySchema },
+  responses: {
+    200: { description: 'A page of registered flights.', content: jsonContent(flightListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/flights',
+  summary: 'Register a flight and its automatic charge (FR-9/FR-14/FR-15)',
+  description:
+    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`), the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block), and advances `Aircraft.hourMeterMinutes` by the flight\'s minutes. Exactly one of `minutes` or the `hourMeterStart`/`hourMeterEnd` pair must be given. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid hour-meter pair, a SCHOOL flight without an instructor, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Requires `flights.manage` (FR-14: only staff/admin register a flight).',
+  tags: ['Flights'],
+  security,
+  request: { body: { content: jsonContent(registerFlightSchema), required: true } },
+  responses: {
+    201: { description: 'The registered flight, plus the refreshed account overview.', content: jsonContent(registerFlightResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
   },
 });
 
