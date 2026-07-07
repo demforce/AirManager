@@ -264,6 +264,7 @@
     "description": "The airfield's financial picture: prepaid accounts, negative balances and the cash register.",
     "backToDashboard": "Back to dashboard",
     "manageCategories": "Manage categories",
+    "viewPackages": "Package listing",
     "viewReport": "Financial report",
     "negativeBalances": {
       "heading": "Negative balances",
@@ -407,6 +408,70 @@
       "reactivated": "Category reactivated.",
       "deleted": "Category deleted.",
       "deleteInUseError": "This category has recorded movements and cannot be deleted: deactivate it instead.",
+      "genericError": "The operation failed. Try again."
+    }
+  },
+  "PackagesPage": {
+    "kicker": "Finance",
+    "title": "Hour-package listing",
+    "description": "The discounted hour-bundle types sold to pilots: name, included hours, price, eligible aircraft and validity.",
+    "backToFinance": "Back to finance",
+    "newPackageType": "New package type",
+    "table": {
+      "name": "Name",
+      "includedHours": "Included hours",
+      "price": "Price",
+      "effectivePrice": "Effective hourly price",
+      "aircraft": "Eligible aircraft",
+      "validity": "Validity",
+      "status": "Status",
+      "actions": "Actions",
+      "empty": "No package type configured.",
+      "noValidity": "—",
+      "noAircraft": "None",
+      "monthsUnit": "months"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Deactivated"
+    },
+    "actions": {
+      "edit": "Edit",
+      "deactivate": "Deactivate",
+      "reactivate": "Reactivate",
+      "delete": "Delete",
+      "confirmDelete": "Delete this package type?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
+    },
+    "form": {
+      "createTitle": "New package type",
+      "editTitle": "Edit package type",
+      "name": "Name",
+      "includedHours": "Included hours",
+      "includedHoursHint": "H:MM format, e.g. 10:00",
+      "price": "Price (€)",
+      "validityMonths": "Validity (months)",
+      "validityMonthsHint": "Empty = no expiry",
+      "aircraft": "Eligible aircraft",
+      "noAircraftAvailable": "No active aircraft available.",
+      "submitCreate": "Create package type",
+      "submitSave": "Save",
+      "cancel": "Cancel",
+      "requiredField": "The name is required.",
+      "invalidDuration": "Enter a valid duration in H:MM format.",
+      "invalidAmount": "Enter a valid price greater than zero.",
+      "invalidValidity": "Enter a valid number of months (1-600), or leave it empty.",
+      "conflictError": "A package type with this name already exists.",
+      "genericError": "The operation failed. Try again."
+    },
+    "feedback": {
+      "created": "Package type created.",
+      "updated": "Package type updated.",
+      "deactivated": "Package type deactivated.",
+      "reactivated": "Package type reactivated.",
+      "deleted": "Package type deleted.",
+      "deleteInUseError": "This package type has already been sold and cannot be deleted: deactivate it instead.",
       "genericError": "The operation failed. Try again."
     }
   },

@@ -40,6 +40,13 @@ import {
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { meResponseSchema } from './me';
 import {
+  createPackageTypeSchema,
+  listPackageTypesQuerySchema,
+  packageTypeItemSchema,
+  packageTypeListResponseSchema,
+  updatePackageTypeSchema,
+} from './package-types';
+import {
   createInstructorRateSchema,
   createPersonSchema,
   instructorProfileRequestSchema,
@@ -138,6 +145,10 @@ registry.register('CashMovementList', cashMovementListResponseSchema);
 registry.register('RecordCashMovementRequest', recordCashMovementSchema);
 registry.register('ReverseCashMovementRequest', reverseCashMovementSchema);
 registry.register('CashReport', cashReportResponseSchema);
+registry.register('PackageType', packageTypeItemSchema);
+registry.register('PackageTypeList', packageTypeListResponseSchema);
+registry.register('CreatePackageTypeRequest', createPackageTypeSchema);
+registry.register('UpdatePackageTypeRequest', updatePackageTypeSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -628,6 +639,70 @@ registry.registerPath({
   responses: {
     200: { description: 'The reversal movement.', content: jsonContent(cashMovementItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- Package types (story 4.3, FR-12) ---------------------------------------
+
+const packageTypeIdParams = z.object({ id: z.string().meta({ description: 'Package type id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/package-types',
+  summary: 'List the package-type listino (discounted hour bundles, FR-12)',
+  description:
+    'Active types only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 4.3, AC 1). Requires `finance.manage` (the same list feeds the sale picker, story 4.4).',
+  tags: ['Finance'],
+  security,
+  request: { query: listPackageTypesQuerySchema },
+  responses: {
+    200: { description: 'Every package type, with its eligible-aircraft set.', content: jsonContent(packageTypeListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/package-types',
+  summary: 'Create a package type',
+  description:
+    'Name must be unique — conflict is a 409. Every `aircraftId` in `aircraftIds` must exist (404) and must not be archived (409). Requires `settings.manage` (admin-only configuration, story 4.3, AC 1).',
+  tags: ['Finance'],
+  security,
+  request: { body: { content: jsonContent(createPackageTypeSchema), required: true } },
+  responses: {
+    201: { description: 'The created package type.', content: jsonContent(packageTypeItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/package-types/{id}',
+  summary: 'Update a package type (partial patch)',
+  description:
+    'Every field optional; `validityMonths: null` clears the validity. `aircraftIds`, when present, fully replaces the eligible-aircraft set. Editing a type with sold packages is legal (the sale snapshots price/minutes, story 4.4). Requires `settings.manage`.',
+  tags: ['Finance'],
+  security,
+  request: { params: packageTypeIdParams, body: { content: jsonContent(updatePackageTypeSchema), required: true } },
+  responses: {
+    200: { description: 'The updated package type.', content: jsonContent(packageTypeItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/package-types/{id}',
+  summary: 'Delete a package type (only if never sold)',
+  description:
+    'A package type with sold packages cannot be deleted — 409 suggesting deactivation instead (story 4.3, AC 2; story 4.4 adds the `HourPackage.packageTypeId` FK RESTRICT this backstops). Requires `settings.manage`.',
+  tags: ['Finance'],
+  security,
+  request: { params: packageTypeIdParams },
+  responses: {
+    204: { description: 'The package type was deleted.' },
+    ...errorResponses(401, 403, 404, 409),
   },
 });
 

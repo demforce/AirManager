@@ -153,6 +153,8 @@ model Aircraft {
   hourMeterAdjustments HourMeterAdjustment[]
   /// Historicized hourly rates (epic 4, story 4.1, AD-4) — see `AircraftRate` doc.
   rates                AircraftRate[]
+  /// Package types this aircraft is eligible for (epic 4, story 4.3) — see `PackageTypeAircraft` doc.
+  packageTypes         PackageTypeAircraft[]
 }
 
 /// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). Append-only
@@ -415,4 +417,58 @@ model CashMovement {
   reversalOf        CashMovement?    @relation("CashMovementReversal", fields: [reversalOfId], references: [id])
   reversal          CashMovement?    @relation("CashMovementReversal")
   createdAt         DateTime         @default(now())
+}
+
+/// Package-type catalogue (epic 4, story 4.3; FR-12). MUTABLE listino
+/// configuration — like `CashCategory` — NOT an append-only ledger: it is
+/// created, edited and deactivated freely, and deleted ONLY while never
+/// sold. This is legal because the sale (story 4.4) will SNAPSHOT
+/// `includedMinutes`/`priceCents` onto the sold `HourPackage`/
+/// `AccountMovement` at the moment of purchase (AD-4, the same principle as
+/// the historicized rates) — changing the catalogue afterwards never
+/// rewrites that history. `includedMinutes` is an integer number of minutes
+/// (AD-2 — same cardinal rule as `Aircraft.hourMeterMinutes`), never a
+/// decimal-hours float. `priceCents` is an integer number of euro cents
+/// (AD-2), always > 0, enforced at the Zod/service boundary (not a DB
+/// constraint, same choice as `AircraftRate.priceCentsPerHour`). The
+/// "effective hourly price" shown in the UI is derived from these two
+/// fields at render time and is NEVER persisted. `validityMonths` is the
+/// optional validity of a sold package, in whole months; `null` means no
+/// expiry. `isActive` hides the type from the future sale picker (story
+/// 4.4) without touching any history already sold under it — same
+/// lifecycle role as `CashCategory.isActive`. Delete is allowed ONLY while
+/// never sold: today (story 4.3) no FK references this table yet; story 4.4
+/// adds `HourPackage.packageTypeId` with `ON DELETE RESTRICT`, and
+/// `package-types.service.ts#deletePackageType`'s `P2003` catch is already
+/// the 409 backstop for that constraint (AC 2).
+model PackageType {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  includedMinutes Int
+  priceCents      Int
+  validityMonths  Int?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  /// The set of aircraft this package type may be used on (story 4.3) — see `PackageTypeAircraft` doc.
+  eligibleAircraft PackageTypeAircraft[]
+}
+
+/// Explicit join table between `PackageType` and `Aircraft` (story 4.3) — the
+/// set of aircraft eligible for a given package type. Modeled explicitly
+/// (never an implicit Prisma m-n) per the repo's convention of documented,
+/// hand-migrated relations. An aircraft archived AFTER being associated
+/// stays in the set (historical listino record, still consultable) — the
+/// real usage block on a retired airframe belongs to consumption (epic 5),
+/// not to this catalogue.
+model PackageTypeAircraft {
+  id            String      @id @default(cuid())
+  packageTypeId String
+  packageType   PackageType @relation(fields: [packageTypeId], references: [id])
+  aircraftId    String
+  aircraft      Aircraft    @relation(fields: [aircraftId], references: [id])
+
+  @@unique([packageTypeId, aircraftId])
+  @@index([aircraftId])
 }

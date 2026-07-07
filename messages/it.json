@@ -264,6 +264,7 @@
     "description": "La situazione finanziaria dell'aviosuperficie: conti prepagati, saldi negativi e registro cassa.",
     "backToDashboard": "Torna alla dashboard",
     "manageCategories": "Gestisci categorie",
+    "viewPackages": "Listino pacchetti",
     "viewReport": "Report finanziario",
     "negativeBalances": {
       "heading": "Saldi negativi",
@@ -407,6 +408,70 @@
       "reactivated": "Categoria riattivata.",
       "deleted": "Categoria eliminata.",
       "deleteInUseError": "La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.",
+      "genericError": "Operazione non riuscita. Riprova."
+    }
+  },
+  "PackagesPage": {
+    "kicker": "Finanze",
+    "title": "Listino pacchetti ore",
+    "description": "I tipi di pacchetto ore scontati in vendita ai piloti: nome, ore incluse, prezzo, velivoli idonei e validità.",
+    "backToFinance": "Torna alle finanze",
+    "newPackageType": "Nuovo pacchetto",
+    "table": {
+      "name": "Nome",
+      "includedHours": "Ore incluse",
+      "price": "Prezzo",
+      "effectivePrice": "Prezzo orario effettivo",
+      "aircraft": "Velivoli idonei",
+      "validity": "Validità",
+      "status": "Stato",
+      "actions": "Azioni",
+      "empty": "Nessun pacchetto configurato.",
+      "noValidity": "—",
+      "noAircraft": "Nessuno",
+      "monthsUnit": "mesi"
+    },
+    "status": {
+      "active": "Attivo",
+      "inactive": "Disattivato"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "deactivate": "Disattiva",
+      "reactivate": "Riattiva",
+      "delete": "Elimina",
+      "confirmDelete": "Eliminare questo pacchetto?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
+    },
+    "form": {
+      "createTitle": "Nuovo tipo di pacchetto",
+      "editTitle": "Modifica tipo di pacchetto",
+      "name": "Nome",
+      "includedHours": "Ore incluse",
+      "includedHoursHint": "Formato H:MM, es. 10:00",
+      "price": "Prezzo (€)",
+      "validityMonths": "Validità (mesi)",
+      "validityMonthsHint": "Vuoto = nessuna scadenza",
+      "aircraft": "Velivoli idonei",
+      "noAircraftAvailable": "Nessun velivolo attivo disponibile.",
+      "submitCreate": "Crea pacchetto",
+      "submitSave": "Salva",
+      "cancel": "Annulla",
+      "requiredField": "Il nome è obbligatorio.",
+      "invalidDuration": "Inserisci una durata valida in formato H:MM.",
+      "invalidAmount": "Inserisci un prezzo valido maggiore di zero.",
+      "invalidValidity": "Inserisci un numero di mesi valido (1-600) oppure lascia vuoto.",
+      "conflictError": "Esiste già un pacchetto con questo nome.",
+      "genericError": "Operazione non riuscita. Riprova."
+    },
+    "feedback": {
+      "created": "Pacchetto creato.",
+      "updated": "Pacchetto aggiornato.",
+      "deactivated": "Pacchetto disattivato.",
+      "reactivated": "Pacchetto riattivato.",
+      "deleted": "Pacchetto eliminato.",
+      "deleteInUseError": "Il pacchetto è già stato venduto e non può essere eliminato: disattivalo invece.",
       "genericError": "Operazione non riuscita. Riprova."
     }
   },
