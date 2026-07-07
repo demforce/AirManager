@@ -31,3 +31,4 @@ L'utente vuole best practice aggiornate via Context7 (https://context7.com). In 
 - Codice, commenti e identificatori in inglese; UI bilingue IT/EN via next-intl; documenti BMAD in italiano.
 - Prima di ogni commit di una story: `lint`, `typecheck`, test Vitest e `next build` devono passare.
 - PostgreSQL 16 è disponibile nel container (`/usr/lib/postgresql/16`); Docker disponibile.
+- **Playwright MCP** (`.mcp.json`, server `playwright` = `@playwright/mcp` headless sul Chromium preinstallato `/opt/pw-browsers/chromium`): usarlo per la verifica UI interattiva durante dev e review (navigare l'app reale, screenshot, driving dei form) — complementare agli e2e Playwright (`e2e/`), che restano il gate automatico. I tool MCP (`mcp__playwright__*`) sono disponibili dalle sessioni avviate dopo il commit di `.mcp.json`. MAI `playwright install`.
