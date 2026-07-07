@@ -159,7 +159,6 @@
     "placeholders": {
       "comingSoon": "Coming soon.",
       "expiries": "Expiries",
-      "hoursPackages": "Hour packages",
       "recentFlights": "Recent flights",
       "upcomingBookings": "Upcoming bookings"
     },
@@ -173,7 +172,8 @@
       "viewStatement": "Full account statement",
       "movementType": {
         "topUp": "Top-up",
-        "adjustment": "Adjustment"
+        "adjustment": "Adjustment",
+        "packagePurchase": "Package purchase"
       },
       "topUp": {
         "action": "Record top-up",
@@ -219,6 +219,38 @@
       "historyWhen": "Recorded on"
     }
   },
+  "HourPackagesPanel": {
+    "heading": "Hour packages",
+    "loadError": "Could not load the packages.",
+    "empty": "No packages purchased.",
+    "addAction": "Sell package",
+    "feedback": "Package sold.",
+    "table": {
+      "remaining": "Remaining",
+      "price": "Price paid",
+      "expiresAt": "Expires",
+      "noExpiry": "—",
+      "expiredBadge": "Expired"
+    },
+    "form": {
+      "title": "Sell package",
+      "packageType": "Package type",
+      "noActiveTypes": "No active package type. Configure one in the listino.",
+      "paymentMethod": "Payment method",
+      "paymentMethods": {
+        "cash": "Cash",
+        "bankTransfer": "Bank transfer",
+        "pos": "POS"
+      },
+      "effectiveDate": "Value date",
+      "description": "Notes",
+      "submit": "Confirm sale",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "inactiveTypeError": "The selected package type is no longer active. Refresh the page and try again.",
+      "genericError": "Could not record the sale. Please try again."
+    }
+  },
   "AccountStatementPage": {
     "kicker": "Account statement",
     "backToPerson": "Back to record",
@@ -235,7 +267,8 @@
     },
     "movementType": {
       "topUp": "Top-up",
-      "adjustment": "Adjustment"
+      "adjustment": "Adjustment",
+      "packagePurchase": "Package purchase"
     },
     "adjustmentBadge": {
       "ofDate": "Adjusts the movement of {date}",

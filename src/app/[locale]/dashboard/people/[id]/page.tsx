@@ -10,6 +10,7 @@ import { getEffectiveInstructorRate } from '@/server/services/instructor-rates.s
 import { getPerson } from '@/server/services/people.service';
 import { AccountPanel } from '../account-panel';
 import { InstructorRatesPanel } from '../instructor-rates-panel';
+import { PackagesPanel } from '../packages-panel';
 import { ProfilesPanel } from '../profiles-panel';
 
 type PageProps = {
@@ -19,9 +20,10 @@ type PageProps = {
 /**
  * Story 2.3, AC 1: the structural placeholders future epics fill without
  * restructuring the page. Story 3.1 turns "balance" into the real
- * `AccountPanel` below — it is deliberately removed from this list.
+ * `AccountPanel` below (removed from this list); story 4.4 does the same for
+ * "hoursPackages" -> the real `PackagesPanel`.
  */
-const PLACEHOLDER_SECTIONS = ['expiries', 'hoursPackages', 'recentFlights', 'upcomingBookings'] as const;
+const PLACEHOLDER_SECTIONS = ['expiries', 'recentFlights', 'upcomingBookings'] as const;
 
 /**
  * The "scheda persona" (story 2.3): anagrafica + profiles (read-only unless
@@ -70,6 +72,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
   const canManageSettings = hasPermission(actor, 'settings.manage');
   const t = await getTranslations('PersonDetailPage');
   const tPeople = await getTranslations('PeoplePage');
+  const tPackages = await getTranslations('HourPackagesPanel');
 
   // Story 4.2, AC 1/AD-4: the instructor-rate section is shown only when the
   // person has an instructor profile (active or deactivated — deactivated
@@ -204,6 +207,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
               movementType: {
                 topUp: t('accountPanel.movementType.topUp'),
                 adjustment: t('accountPanel.movementType.adjustment'),
+                packagePurchase: t('accountPanel.movementType.packagePurchase'),
               },
               topUp: {
                 action: t('accountPanel.topUp.action'),
@@ -222,6 +226,48 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 invalidAmount: t('accountPanel.topUp.invalidAmount'),
                 requiredField: t('accountPanel.topUp.requiredField'),
                 genericError: t('accountPanel.topUp.genericError'),
+              },
+            }}
+          />
+        </div>
+
+        <div className="mt-6">
+          <PackagesPanel
+            // Remount on person change — same rationale as
+            // `InstructorRatesPanel`'s `key={person.id}` (review 2.4 F1 pattern).
+            key={person.id}
+            personId={person.id}
+            canSell={canManageFinance}
+            labels={{
+              heading: tPackages('heading'),
+              loadError: tPackages('loadError'),
+              empty: tPackages('empty'),
+              addAction: tPackages('addAction'),
+              feedback: tPackages('feedback'),
+              table: {
+                remaining: tPackages('table.remaining'),
+                price: tPackages('table.price'),
+                expiresAt: tPackages('table.expiresAt'),
+                noExpiry: tPackages('table.noExpiry'),
+                expiredBadge: tPackages('table.expiredBadge'),
+              },
+              form: {
+                title: tPackages('form.title'),
+                packageType: tPackages('form.packageType'),
+                noActiveTypes: tPackages('form.noActiveTypes'),
+                paymentMethod: tPackages('form.paymentMethod'),
+                paymentMethods: {
+                  cash: tPackages('form.paymentMethods.cash'),
+                  bankTransfer: tPackages('form.paymentMethods.bankTransfer'),
+                  pos: tPackages('form.paymentMethods.pos'),
+                },
+                effectiveDate: tPackages('form.effectiveDate'),
+                description: tPackages('form.description'),
+                submit: tPackages('form.submit'),
+                cancel: tPackages('form.cancel'),
+                requiredField: tPackages('form.requiredField'),
+                inactiveTypeError: tPackages('form.inactiveTypeError'),
+                genericError: tPackages('form.genericError'),
               },
             }}
           />

@@ -6,8 +6,14 @@ export const paymentMethodSchema = z.enum(['CASH', 'BANK_TRANSFER', 'POS']);
 
 export type PaymentMethodDto = z.infer<typeof paymentMethodSchema>;
 
-/** Mirrors the Prisma `AccountMovementType` enum. `ADJUSTMENT` is story 3.3's motivated correction (AC 1). */
-export const accountMovementTypeSchema = z.enum(['TOP_UP', 'ADJUSTMENT']);
+/**
+ * Mirrors the Prisma `AccountMovementType` enum. `ADJUSTMENT` is story 3.3's
+ * motivated correction (AC 1); `PACKAGE_PURCHASE` (story 4.4, AC 1) is the
+ * always-`amountCents: 0` row a package sale creates purely so the titolare
+ * sees the purchase in their estratto conto (the actual payment is external
+ * to the account — see `HourPackage`'s doc-comment).
+ */
+export const accountMovementTypeSchema = z.enum(['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE']);
 
 export type AccountMovementTypeDto = z.infer<typeof accountMovementTypeSchema>;
 

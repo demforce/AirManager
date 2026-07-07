@@ -46,6 +46,7 @@ import {
   packageTypeListResponseSchema,
   updatePackageTypeSchema,
 } from './package-types';
+import { hourPackageItemSchema, hourPackageListResponseSchema, sellPackageResponseSchema, sellPackageSchema } from './packages';
 import {
   createInstructorRateSchema,
   createPersonSchema,
@@ -149,6 +150,10 @@ registry.register('PackageType', packageTypeItemSchema);
 registry.register('PackageTypeList', packageTypeListResponseSchema);
 registry.register('CreatePackageTypeRequest', createPackageTypeSchema);
 registry.register('UpdatePackageTypeRequest', updatePackageTypeSchema);
+registry.register('HourPackage', hourPackageItemSchema);
+registry.register('HourPackageList', hourPackageListResponseSchema);
+registry.register('SellPackageRequest', sellPackageSchema);
+registry.register('SellPackageResponse', sellPackageResponseSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -472,6 +477,36 @@ registry.registerPath({
   request: { params: personIdParams, body: { content: jsonContent(createInstructorRateSchema), required: true } },
   responses: {
     201: { description: 'The created rate.', content: jsonContent(instructorRateItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/packages',
+  summary: "List a person's sold hour packages (residuals + expiry)",
+  description:
+    'Story 4.4, AC 2 — a plain array (no pagination, capped at 500), most recent sale first. An unknown person is a 404; a person with no packages yet gets an empty array. `remainingMinutes` is always computed (AD-3, epic 5 will extend it to subtract consumption); `isExpired` is true only when `expiresAt` is strictly before today. `actorEmail` is included ONLY when the caller has `people.read` (same conditional-field pattern as the account statement). Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}/account`).',
+  tags: ['Finance'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: "The person's sold packages.", content: jsonContent(hourPackageListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/packages',
+  summary: 'Sell an hour package to a person (FR-13)',
+  description:
+    'Story 4.4, AC 1 — in one transaction: upserts the `Account`, creates the `PACKAGE_PURCHASE` `AccountMovement` (always `amountCents: 0` — the payment is external to the account, see `HourPackage`\'s doc-comment), the `HourPackage` snapshot (`includedMinutes`/`pricePaidCents` copied from the type, `expiresAt` materialized from `validityMonths` when present) and the linked `CashMovement` under the seeded "Pacchetti" category (`amountCents: +priceCents`). `packageTypeId` must reference an ACTIVE type (409 otherwise); an archived person is also a 409. Requires `finance.manage` (staff/admin) — an operazione di sportello, never "own".',
+  tags: ['Finance'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(sellPackageSchema), required: true } },
+  responses: {
+    201: { description: 'The created package, plus the refreshed account overview.', content: jsonContent(sellPackageResponseSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });

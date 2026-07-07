@@ -159,7 +159,6 @@
     "placeholders": {
       "comingSoon": "Disponibile prossimamente.",
       "expiries": "Scadenze",
-      "hoursPackages": "Pacchetti ore",
       "recentFlights": "Ultimi voli",
       "upcomingBookings": "Prossime prenotazioni"
     },
@@ -173,7 +172,8 @@
       "viewStatement": "Estratto conto completo",
       "movementType": {
         "topUp": "Ricarica",
-        "adjustment": "Rettifica"
+        "adjustment": "Rettifica",
+        "packagePurchase": "Acquisto pacchetto"
       },
       "topUp": {
         "action": "Registra ricarica",
@@ -219,6 +219,38 @@
       "historyWhen": "Registrata il"
     }
   },
+  "HourPackagesPanel": {
+    "heading": "Pacchetti ore",
+    "loadError": "Impossibile caricare i pacchetti.",
+    "empty": "Nessun pacchetto acquistato.",
+    "addAction": "Vendi pacchetto",
+    "feedback": "Pacchetto venduto.",
+    "table": {
+      "remaining": "Residuo",
+      "price": "Prezzo pagato",
+      "expiresAt": "Scadenza",
+      "noExpiry": "—",
+      "expiredBadge": "Scaduto"
+    },
+    "form": {
+      "title": "Vendi pacchetto",
+      "packageType": "Tipo di pacchetto",
+      "noActiveTypes": "Nessun tipo di pacchetto attivo. Configuralo nel listino.",
+      "paymentMethod": "Metodo di pagamento",
+      "paymentMethods": {
+        "cash": "Contanti",
+        "bankTransfer": "Bonifico",
+        "pos": "POS"
+      },
+      "effectiveDate": "Data valuta",
+      "description": "Note",
+      "submit": "Conferma vendita",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "inactiveTypeError": "Il tipo di pacchetto selezionato non è più attivo. Aggiorna la pagina e riprova.",
+      "genericError": "Impossibile registrare la vendita. Riprova."
+    }
+  },
   "AccountStatementPage": {
     "kicker": "Estratto conto",
     "backToPerson": "Torna alla scheda",
@@ -235,7 +267,8 @@
     },
     "movementType": {
       "topUp": "Ricarica",
-      "adjustment": "Rettifica"
+      "adjustment": "Rettifica",
+      "packagePurchase": "Acquisto pacchetto"
     },
     "adjustmentBadge": {
       "ofDate": "Rettifica del movimento del {date}",

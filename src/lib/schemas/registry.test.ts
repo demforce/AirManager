@@ -30,6 +30,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/people/{id}/account/movements',
         '/api/v1/people/{id}/account/adjustments',
         '/api/v1/people/{id}/instructor-rates',
+        '/api/v1/people/{id}/packages',
         '/api/v1/accounts/negative-balances',
         '/api/v1/cash-categories',
         '/api/v1/cash-categories/{id}',

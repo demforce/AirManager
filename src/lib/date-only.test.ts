@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from './date-only';
+import { addMonthsClampUtc, parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from './date-only';
 
 describe('date-only helpers (story 4.2 — shared by rates.service.ts/instructor-rates.service.ts)', () => {
   describe('parseDateOnlyUtc', () => {
@@ -50,6 +50,46 @@ describe('date-only helpers (story 4.2 — shared by rates.service.ts/instructor
       // formatter itself must always read UTC parts (never local time) so a
       // stray non-midnight Date still formats to the correct calendar day.
       expect(toDateOnlyString(new Date('2026-07-07T23:59:59.000Z'))).toBe('2026-07-07');
+    });
+  });
+
+  describe('addMonthsClampUtc (story 4.4, Task 2 — HourPackage.expiresAt)', () => {
+    it('adds whole months in the common case', () => {
+      const result = addMonthsClampUtc(parseDateOnlyUtc('2026-07-07'), 12);
+      expect(toDateOnlyString(result)).toBe('2027-07-07');
+    });
+
+    it('clamps end-of-month overflow instead of rolling into the next month (31 Jan + 1 month -> 28 Feb, non-leap year)', () => {
+      const result = addMonthsClampUtc(parseDateOnlyUtc('2026-01-31'), 1);
+      expect(toDateOnlyString(result)).toBe('2026-02-28');
+    });
+
+    it('clamps to 29 Feb on a leap year', () => {
+      const result = addMonthsClampUtc(parseDateOnlyUtc('2024-01-31'), 1);
+      expect(toDateOnlyString(result)).toBe('2024-02-29');
+    });
+
+    it('rolls over the calendar year (December -> January)', () => {
+      const result = addMonthsClampUtc(parseDateOnlyUtc('2026-12-15'), 1);
+      expect(toDateOnlyString(result)).toBe('2027-01-15');
+    });
+
+    it('clamps across a multi-month span landing on a shorter month (31 Oct + 4 months -> 28/29 Feb)', () => {
+      const result = addMonthsClampUtc(parseDateOnlyUtc('2026-10-31'), 4);
+      expect(toDateOnlyString(result)).toBe('2027-02-28');
+    });
+
+    it('a non-end-of-month day is never clamped', () => {
+      const result = addMonthsClampUtc(parseDateOnlyUtc('2026-01-15'), 1);
+      expect(toDateOnlyString(result)).toBe('2026-02-15');
+    });
+
+    it('returns a UTC-midnight Date carrying no time-of-day component', () => {
+      const result = addMonthsClampUtc(parseDateOnlyUtc('2026-01-31'), 1);
+      expect(result.getUTCHours()).toBe(0);
+      expect(result.getUTCMinutes()).toBe(0);
+      expect(result.getUTCSeconds()).toBe(0);
+      expect(result.getUTCMilliseconds()).toBe(0);
     });
   });
 });

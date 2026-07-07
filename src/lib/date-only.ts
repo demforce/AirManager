@@ -38,3 +38,28 @@ export function todayDateOnlyUtc(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
+
+/**
+ * Adds a whole number of months to a UTC-midnight date-only `Date`, CLAMPING
+ * to the end of the target month rather than overflowing into the next one
+ * (story 4.4, Task 2 — `HourPackage.expiresAt = effectiveDate +
+ * validityMonths`). E.g. 31 Jan + 1 month -> 28/29 Feb, NEVER 2/3 Mar. Always
+ * operates in UTC (never local time, same rationale as every other helper
+ * here) and always returns a fresh UTC-midnight `Date`.
+ */
+export function addMonthsClampUtc(date: Date, months: number): Date {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+
+  const targetMonthIndex = month + months;
+  const targetYear = year + Math.floor(targetMonthIndex / 12);
+  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+
+  // Day 0 of the FOLLOWING month is the last day of the target month — the
+  // standard trick to get a month's day count without a lookup table.
+  const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(day, daysInTargetMonth);
+
+  return new Date(Date.UTC(targetYear, targetMonth, clampedDay));
+}

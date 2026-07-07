@@ -357,7 +357,7 @@ describe('package-types.service (story 4.3 — package-type listino, AD-2/AD-4)'
     });
   });
 
-  describe('deletePackageType (Task 2, AC 2 — delete only if never sold, FK RESTRICT backstop)', () => {
+  describe('deletePackageType (Task 2, AC 2/3 — explicit _count pre-check + FK RESTRICT backstop)', () => {
     it('rejects a staff actor (settings.manage required)', async () => {
       await expect(deletePackageType(staffActor(), 'pt_1')).rejects.toThrow(ForbiddenError);
     });
@@ -370,7 +370,7 @@ describe('package-types.service (story 4.3 — package-type listino, AD-2/AD-4)'
     });
 
     it('deletes a package type never sold', async () => {
-      packageTypeFindUnique.mockResolvedValue({ id: 'pt_1' });
+      packageTypeFindUnique.mockResolvedValue({ id: 'pt_1', _count: { soldPackages: 0 } });
       packageTypeDelete.mockResolvedValue({ id: 'pt_1' });
 
       await expect(deletePackageType(adminActor(), 'pt_1')).resolves.toBeUndefined();
@@ -378,8 +378,15 @@ describe('package-types.service (story 4.3 — package-type listino, AD-2/AD-4)'
       expect(packageTypeDeleteMock).toHaveBeenCalledWith({ where: { id: 'pt_1' } });
     });
 
-    it('maps a FK violation (P2003 — sold packages, story 4.4 backstop) to ConflictError', async () => {
-      packageTypeFindUnique.mockResolvedValue({ id: 'pt_1' });
+    it('story 4.4 AC 3: an explicit _count pre-check (soldPackages > 0) -> ConflictError, delete never attempted', async () => {
+      packageTypeFindUnique.mockResolvedValue({ id: 'pt_1', _count: { soldPackages: 2 } });
+
+      await expect(deletePackageType(adminActor(), 'pt_1')).rejects.toThrow(ConflictError);
+      expect(packageTypeDeleteMock).not.toHaveBeenCalled();
+    });
+
+    it('maps a FK violation (P2003 — the concurrency backstop for a sale racing the pre-check) to ConflictError', async () => {
+      packageTypeFindUnique.mockResolvedValue({ id: 'pt_1', _count: { soldPackages: 0 } });
       packageTypeDelete.mockRejectedValue(prismaError('P2003'));
 
       await expect(deletePackageType(adminActor(), 'pt_1')).rejects.toThrow(ConflictError);

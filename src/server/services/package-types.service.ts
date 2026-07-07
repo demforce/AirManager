@@ -261,19 +261,28 @@ export async function updatePackageType(actor: Actor, id: string, input: UpdateP
 }
 
 /**
- * Deletes a package type — ONLY when it has never been sold (AC 2).
- * `settings.manage` only. There is no `_count` pre-check here yet (story 4.4
- * adds one, once `HourPackage` exists): today the `P2003` catch below is
- * already written and unit-tested as the 409 backstop for that future FK
- * (Dev Notes: "NON rimandare il catch alla 4.4"). Join rows are deleted in
- * the same transaction as the type itself.
+ * Deletes a package type — ONLY when it has never been sold (AC 2/3).
+ * `settings.manage` only. Story 4.4 completes AC 2's constraint with an
+ * explicit pre-check (`_count.soldPackages > 0` -> 409 with a clear
+ * message) NOW that `HourPackage` exists; the `P2003` catch remains as the
+ * concurrency backstop (a sale that slips in between the pre-check and the
+ * `DELETE` still reads as the same `Conflict`, never a raw 500 — same
+ * pre-check + backstop shape as every other unique/FK guard in this
+ * codebase). Join rows are deleted in the same transaction as the type
+ * itself.
  */
 export async function deletePackageType(actor: Actor, id: string): Promise<void> {
   authorize(actor, 'settings.manage');
 
-  const existing = await prisma.packageType.findUnique({ where: { id }, select: { id: true } });
+  const existing = await prisma.packageType.findUnique({
+    where: { id },
+    select: { id: true, _count: { select: { soldPackages: true } } },
+  });
   if (!existing) {
     throw new NotFoundError('Package type not found.');
+  }
+  if (existing._count.soldPackages > 0) {
+    throw new ConflictError('This package type has sold packages — deactivate it instead.');
   }
 
   try {
