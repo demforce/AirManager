@@ -14,7 +14,7 @@ Software di gestione per un'aviosuperficie: piloti, velivoli, voli, PPR, finanze
 ## Processo di sviluppo (metodo BMAD, v6 in `_bmad/`)
 
 - Workflow: PRD → architettura → epics → stories → dev → review. Artefatti in `_bmad-output/`, conoscenza di progetto in `docs/`.
-- **Ruoli modello**: la sessione principale (Fable) crea documenti e stories; il dev di ogni story è un subagent **Sonnet** (`model: "sonnet"`); la review è un subagent **Opus** (`model: "opus"`).
+- **Ruoli modello** (aggiornato 2026-07-07): la sessione principale gira su **Opus 4.8** e si occupa sia della creazione di documenti/stories sia della **code review** (fatta direttamente in-session, non più delega a subagent); il dev di ogni story è un subagent **Sonnet 5** (`model: "sonnet"`).
 - Stories con UI: il prompt del dev agent deve richiamare la skill `minimalist-ui` (dashboard/tabelle/form) o `design-taste-frontend` (pagine pubbliche/landing, es. form PPR).
 - Fine sessione: usare la skill `handoff` → `docs/handoffs/HANDOFF.md`, committata.
 
@@ -24,7 +24,7 @@ L'utente vuole best practice aggiornate via Context7 (https://context7.com). In 
 
 ## Convenzioni
 
-- Branch di lavoro: `claude/airfield-management-system-rh1y4r` — commit e push sempre lì (`git push -u origin`).
+- Branch di lavoro: `claude/handoff-model-assignment-yyv1r1` — commit e push sempre lì (`git push -u origin`). (Storici, merged: `claude/airfield-management-system-rh1y4r` epic 1-2, `claude/handoff-docs-6jz8ou` epic 3.1-3.4 via PR #3.)
 - Codice, commenti e identificatori in inglese; UI bilingue IT/EN via next-intl; documenti BMAD in italiano.
 - Prima di ogni commit di una story: `lint`, `typecheck`, test Vitest e `next build` devono passare.
 - PostgreSQL 16 è disponibile nel container (`/usr/lib/postgresql/16`); Docker disponibile.
