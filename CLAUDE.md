@@ -14,7 +14,7 @@ Software di gestione per un'aviosuperficie: piloti, velivoli, voli, PPR, finanze
 ## Processo di sviluppo (metodo BMAD, v6 in `_bmad/`)
 
 - Workflow: PRD → architettura → epics → stories → dev → review. Artefatti in `_bmad-output/`, conoscenza di progetto in `docs/`.
-- **Ruoli modello** (aggiornato 2026-07-07, resume Epic 4): la sessione principale gira su **Fable 5 (extra-high)** e crea documenti/stories; il dev di ogni story è **Sonnet 5 via workflow ultracode** (implement → verifica multi-agente → fix); la review è un agente **Opus 4.8 (extra-high)** adversarial.
+- **Ruoli modello** (config approvata dall'utente 2026-07-07, in vigore dalla story 4.4): stories = sessione principale **Fable 5 extra-high**; dev = **UN SOLO subagent Sonnet 5 extra-high** per story (niente fan-out ultracode: la story file prescrittiva + la review Opus coprono la verifica); review = subagent **Opus 4.8 extra-high** adversarial (l'unico layer adversarial — mai abbassarlo). Un dev agent per story, 3 commit per story (story file → implementazione → fix review).
 - **Regole PR/commit/sessione** (fissate dall'utente):
   - Ogni **epic** ha la sua **PR** (branch dedicato; PR stacked sulla precedente se non ancora merged).
   - Ogni **story** ha i suoi **commit** (story file → implementazione → fix di review).
