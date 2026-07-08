@@ -4,7 +4,7 @@ baseline_commit: 1b42384
 
 # Story 6.2: Registrazione scadenze per persona
 
-Status: review
+Status: done
 
 ## Story
 
@@ -140,7 +140,19 @@ Sonnet 5 (single dev agent)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial, con incarico prioritario di analisi regressione e2e. **Verdict: clean-pass** — nessun fix richiesto.
+
+- **Analisi regressione e2e (priorità zero)**: i 5 fail del run full-parallel del dev sono la **classe flaky pre-esistente di epic 5, NON una regressione di 6.2**. Evidenza (run isolati `--workers=1` su DB resettato tra OGNI run): `flights.spec.ts` 6/6 PASS, `people-management.spec.ts` 6/6 PASS (proprio le due istanze che il dev dava per fallite), `package-consumption.spec.ts` FAIL/PASS/FAIL su tre run identici (non-deterministico per definizione), `flight-reversal.spec.ts` 1 FAIL / 1 PASS. Causa radice comune: `flight-result-panel`/`flight-result-total` che non compare entro il timeout 5s dopo il submit — superficie 100% codice 5.x, nessun meccanismo per cui le modifiche 6.2 (additive su rbac/nav, ExpiriesPanel su people/[id]) possano causarla. NOTA: la caratterizzazione del dev "riprodotti deterministicamente in isolamento" era INESATTA (il verdetto flaky però è corretto) — la procedura resta quella del handoff: giudicare su DB fresco + re-run in isolamento.
+- **D1 (deferral accettato)** — stabilizzazione della classe flaky flight-logging come task di test-hardening dedicato (attendere il refresh/segnale di submit-complete prima di asserire sul result panel), già nei follow-up del handoff di epic 5. Nessun cambiamento richiesto in 6.2.
+
+Verificato empiricamente e trovato corretto (sintesi): AC 2 atomico (riga `Expiry` INVARIATA in DB tra propose e approve, valori applicati in tx con `actorUserId` del decisore, REJECT non tocca); concorrenza reale provata su tutti e tre i vincoli (2 APPROVE paralleli → un 200 + un 409, guard `updateMany`-count-0; 2 proposte parallele → un 201 + un 409 via partial unique index verificato in pg; 2 register paralleli → un 201 + un 409 su composite unique); matrice permessi API completa (pilota register 403, list altrui 403/own 200, staff propose 403 — non ha `propose.own`, unauth 401, envelope AD-8); ordering 404→409→422 senza state leak (deactivated type 409 vince su scope 422; propose: 404 prima di ownership 403); SCOPE_MISMATCH su profilo mancante E disattivato, ALL ok anche a zero profili, persona archiviata 409; boundary stato via API (+61 ok, +60/+0 expiring, −1 expired) con `computeExpiryStatus` UTC date-only senza drift DST; merge-validation update (422 su range risultante invalido, `notes:null` svuota, campi person/type strippati da Zod); contratto 6.1 completato (DELETE tipo in uso → 409 pre-check `_count`, FK RESTRICT in pg, deactivate ok); CASCADE proposte provato in pg; fix banner coda-vuota verificato (e `MyExpiries` non suscettibile); a11y (`key={id}`, `role="status"`/`role="alert"`); i18n 797/797 chiavi simmetriche con render EN completo; registry 5 path + coverage; rbac esatto (propose.own SOLO a INSTRUCTOR/PILOT/STUDENT).
+
+### Final gates (re-run dal reviewer)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **675/675 unit**, `expiry-registration.spec.ts` + `expiry-types.spec.ts` 5/5 su DB fresco, `env -u NODE_ENV npx next build` verde.
+
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session), ready-for-dev.
-- 2026-07-08: Implemented (Sonnet 5 dev agent) — person expiries with computed status (`ok`/`expiring`/`expired`, `src/lib/expiry-status.ts`), the titolare-facing update-proposal queue (`Expiry`/`ExpiryUpdateProposal`, `expiries.service.ts`, `expiries.propose.own`), story 6.1's delete-constraint completion, API + OpenAPI, `ExpiriesPanel` on the scheda persona, and the two-variant `/dashboard/expiries` landing page ("Coda proposte" for staff, "Le mie scadenze" for self-access). All gates green (lint/typecheck/675 vitest/build/101 e2e — 96 passed, 5 failed are the documented pre-existing flaky class, reproduced in isolation, none touching expiries). Status: review.
+- 2026-07-08: Implemented (Sonnet 5 dev agent) — person expiries with computed status (`ok`/`expiring`/`expired`, `src/lib/expiry-status.ts`), the titolare-facing update-proposal queue (`Expiry`/`ExpiryUpdateProposal`, `expiries.service.ts`, `expiries.propose.own`), story 6.1's delete-constraint completion, API + OpenAPI, `ExpiriesPanel` on the scheda persona, and the two-variant `/dashboard/expiries` landing page ("Coda proposte" for staff, "Le mie scadenze" for self-access). All gates green (lint/typecheck/675 vitest/build/101 e2e — 96 passed, 5 failed are the documented pre-existing flaky class (non-deterministic — the review's isolated fresh-DB re-runs passed 3 of the 5), none touching expiries). Status: review.
+- 2026-07-08: Review Opus 4.8 xhigh (con analisi regressione e2e prioritaria) — clean pass, zero fix; i 5 fail e2e confermati classe flaky pre-esistente di epic 5 (non regressione 6.2); D1 test-hardening deferito. Status → done.

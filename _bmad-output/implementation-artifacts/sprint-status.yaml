@@ -76,7 +76,7 @@ development_status:
 
   epic-6: in-progress
   6-1-expiry-types: done
-  6-2-expiry-registration: review
+  6-2-expiry-registration: done
   6-3-expiry-alerts: backlog
   6-4-expiry-dashboard: backlog
   epic-6-retrospective: optional
