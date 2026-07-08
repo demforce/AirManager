@@ -181,18 +181,38 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   authorize(actor, 'people.read');
 
   const q = query.q?.trim();
-  const where = {
-    ...(query.includeArchived ? {} : { archivedAt: null }),
-    ...(q
-      ? {
-          OR: [
-            { firstName: { contains: q, mode: 'insensitive' as const } },
-            { lastName: { contains: q, mode: 'insensitive' as const } },
-            { email: { contains: q, mode: 'insensitive' as const } },
-          ],
-        }
-      : {}),
-  };
+  // Story TD-3 (AC 1/3): `q` and `profile` are now independent, COMBINABLE
+  // filters (the flight form's person/istruttore pickers search AND narrow
+  // by profile in the SAME request) — each condition that applies is pushed
+  // as its own entry and Prisma ANDs the array. A flat object with two
+  // `OR:` keys (one for the name/email search, one for the profile check)
+  // would silently collide (the later spread overwrites the earlier one in
+  // a plain JS object literal), which is exactly the bug this `AND` array
+  // avoids.
+  const conditions: Array<Record<string, unknown>> = [];
+  if (!query.includeArchived) conditions.push({ archivedAt: null });
+  if (q) {
+    conditions.push({
+      OR: [
+        { firstName: { contains: q, mode: 'insensitive' as const } },
+        { lastName: { contains: q, mode: 'insensitive' as const } },
+        { email: { contains: q, mode: 'insensitive' as const } },
+      ],
+    });
+  }
+  // A to-one relation filter with a plain object requires the relation to
+  // EXIST and match (Prisma's implicit `is`), so `pilotProfile: {
+  // deactivatedAt: null }` already excludes a person with no pilot profile
+  // at all — exactly the `pilotProfile !== null && pilotProfile.deactivatedAt
+  // === null` semantics `toListItem` derives (same rule the client-side
+  // filter in `flights/page.tsx` used to apply on the first 100 rows only).
+  if (query.profile === 'pilot-or-student') {
+    conditions.push({ OR: [{ pilotProfile: { deactivatedAt: null } }, { studentProfile: { deactivatedAt: null } }] });
+  }
+  if (query.profile === 'instructor') {
+    conditions.push({ instructorProfile: { deactivatedAt: null } });
+  }
+  const where = conditions.length > 0 ? { AND: conditions } : {};
 
   // Interactive transaction (story TD-1, AC 3) — a batch `$transaction([...])`
   // sends both queries over the shared driver-adapter connection without

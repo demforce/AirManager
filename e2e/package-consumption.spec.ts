@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -17,6 +17,13 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Accedi' }).click();
   await expect(page).toHaveURL(/\/it\/dashboard$/);
+}
+
+/** Same `SearchCombobox` typeahead helper as `flights.spec.ts` (story TD-3) — velivolo/persona. */
+async function selectFromCombobox(combobox: Locator, query: string, optionLabel: string): Promise<void> {
+  await combobox.click();
+  await combobox.fill(query);
+  await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
 /** Run-unique names (same pattern as the other specs, for the dirty DB). */
@@ -162,8 +169,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
 
     // Register a 70' flight on the eligible aircraft: 60' from the package, 10' pro-rata at full rate.
     await page.goto('/it/dashboard/flights');
-    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Minuti', { exact: true }).fill('70');
     await page.getByRole('button', { name: 'Registra volo' }).click();
@@ -193,8 +200,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
 
     // A second flight on the SAME (now-exhausted) package: full rate, no coverage.
     await page.goto('/it/dashboard/flights');
-    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-02');
     await page.getByLabel('Minuti', { exact: true }).fill('10');
     await page.getByRole('button', { name: 'Registra volo' }).click();
@@ -223,8 +230,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(page.getByTestId('packages-panel-feedback')).toBeVisible();
 
     await page.goto('/it/dashboard/flights');
-    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: otherAircraft.registration });
-    await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), otherAircraft.registration, otherAircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-04');
     await page.getByLabel('Minuti', { exact: true }).fill('30');
     await page.getByRole('button', { name: 'Registra volo' }).click();

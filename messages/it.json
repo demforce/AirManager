@@ -699,6 +699,8 @@
     "titleOwn": "I miei voli",
     "descriptionOwn": "Il tuo registro voli personale, storico completo incluso.",
     "backToDashboard": "Torna alla dashboard",
+    "searchPlaceholder": "Cerca...",
+    "noResults": "Nessun risultato.",
     "form": {
       "title": "Registra volo",
       "aircraft": "Velivolo",

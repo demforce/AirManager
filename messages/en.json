@@ -699,6 +699,8 @@
     "titleOwn": "My flights",
     "descriptionOwn": "Your personal flight log, including cancelled flights.",
     "backToDashboard": "Back to dashboard",
+    "searchPlaceholder": "Search...",
+    "noResults": "No matches.",
     "form": {
       "title": "Log a flight",
       "aircraft": "Aircraft",

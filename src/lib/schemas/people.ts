@@ -49,6 +49,15 @@ export const listPeopleQuerySchema = paginationQuerySchema.extend({
   // schema is ever reused off a JSON body) turns the flag on; anything else,
   // including an explicit `"false"` or an absent param, is `false`.
   includeArchived: z.preprocess((value) => value === 'true' || value === true, z.boolean()).default(false),
+  // Story TD-3 (AC 3) — additive, optional profile filter for the flight
+  // form's typeahead pickers: `pilot-or-student` narrows to an ACTIVE pilot
+  // or student profile (the "Pilota o allievo" picker's domain rule),
+  // `instructor` to an ACTIVE instructor profile (the "Istruttore" picker's
+  // rule) — same semantics as the client-side filter it replaces
+  // (`flights/page.tsx`'s old `person.profiles.pilot || person.profiles.student`
+  // / `person.profiles.instructor`). Omitted entirely for the filter bar
+  // (Dev Notes: "la barra filtri non filtra per profilo, com'è oggi").
+  profile: z.enum(['pilot-or-student', 'instructor']).optional(),
 });
 
 export type ListPeopleQuery = z.infer<typeof listPeopleQuerySchema>;

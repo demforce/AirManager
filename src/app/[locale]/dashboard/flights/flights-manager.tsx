@@ -1,9 +1,10 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { useRouter } from '@/i18n/navigation';
 import { formatCents } from '@/lib/money';
 import {
@@ -18,6 +19,61 @@ import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type AircraftOption = { id: string; registration: string };
+
+/**
+ * Raw shape of one `GET /api/v1/aircraft` / `GET /api/v1/people` list item,
+ * as far as the 5 typeahead pickers below need it (story TD-3, AC 1/3) — the
+ * two search helpers below are the `fetchOptions` every `SearchCombobox`
+ * instance on this page is built from.
+ */
+type AircraftSearchItem = { id: string; registration: string; archivedAt: string | null };
+type PersonSearchItem = { id: string; firstName: string; lastName: string; archivedAt: string | null };
+
+/**
+ * Server-side aircraft search (story TD-3, AC 1/3) — `GET /api/v1/aircraft`
+ * already supports `q` (case-insensitive, registration/model) and
+ * `includeArchived`; the domain rule (form = active-only, filter bar =
+ * includes archived) is entirely in what the CALLER passes here, never in
+ * this helper. `pageSize: 50` is a generous result cap for a targeted
+ * search (well under the API's own 100-per-page cap) — not a "first N"
+ * truncation, since a narrower query only ever needs to return a handful of
+ * plausible matches.
+ */
+async function searchAircraft(query: string, options: { includeArchived: boolean; archivedSuffix?: string }): Promise<SearchComboboxOption[]> {
+  const params = new URLSearchParams({ q: query, pageSize: '50' });
+  if (options.includeArchived) params.set('includeArchived', 'true');
+  const response = await fetch(`/api/v1/aircraft?${params.toString()}`);
+  if (!response.ok) return [];
+  const body = (await response.json()) as { items: AircraftSearchItem[] };
+  return body.items.map((aircraft) => ({
+    id: aircraft.id,
+    label: aircraft.registration + (options.includeArchived && options.archivedSuffix && aircraft.archivedAt ? options.archivedSuffix : ''),
+  }));
+}
+
+/**
+ * Server-side people search (story TD-3, AC 1/3) — `GET /api/v1/people`'s
+ * new `profile` param (`pilot-or-student`/`instructor`) is what makes this
+ * safe to reuse for both the form's "Pilota o allievo"/"Istruttore" pickers
+ * (server-enforced domain rule, AD-5 — the client typeahead is only
+ * affordance) AND the filter bar's unrestricted "Persona" picker (`profile`
+ * simply omitted there, same as today).
+ */
+async function searchPeople(
+  query: string,
+  options: { includeArchived: boolean; profile?: 'pilot-or-student' | 'instructor'; archivedSuffix?: string },
+): Promise<SearchComboboxOption[]> {
+  const params = new URLSearchParams({ q: query, pageSize: '50' });
+  if (options.includeArchived) params.set('includeArchived', 'true');
+  if (options.profile) params.set('profile', options.profile);
+  const response = await fetch(`/api/v1/people?${params.toString()}`);
+  if (!response.ok) return [];
+  const body = (await response.json()) as { items: PersonSearchItem[] };
+  return body.items.map((person) => ({
+    id: person.id,
+    label: personLabel(person) + (options.includeArchived && options.archivedSuffix && person.archivedAt ? options.archivedSuffix : ''),
+  }));
+}
 /** Filter-bar picker option (story 5.4) — `archived` drives the "(Archiviato)" suffix (Dev Notes: these pickers include archived entities to consult the storico, unlike the registration form's active-only ones). */
 type AircraftFilterOption = AircraftOption & { archived: boolean };
 type PersonFilterOption = PersonOption & { archived: boolean };
@@ -153,6 +209,11 @@ export type FlightsManagerLabels = {
     /** Appended to an archived aircraft/person's label in the filter pickers (e.g. " (Archiviato)"). */
     archivedSuffix: string;
     reset: string;
+  };
+  /** Story TD-3 (AC 2) — shared chrome for all 5 `SearchCombobox` pickers on this page (form + filter bar). */
+  picker: {
+    placeholder: string;
+    noResults: string;
   };
 };
 
@@ -326,6 +387,7 @@ export function FlightsManager({
             instructorOptions={instructorOptions}
             labels={labels.form}
             correctLabels={labels.correctPanel}
+            pickerLabels={labels.picker}
             correctingFlight={correctingFlight}
             onExitCorrection={() => setCorrectingFlight(null)}
             onSuccess={handleRegistered}
@@ -427,6 +489,7 @@ export function FlightsManager({
           personOptions={personFilterOptions}
           labels={labels.filters}
           flightTypeLabels={labels.form.flightTypes}
+          pickerLabels={labels.picker}
         />
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
@@ -567,11 +630,13 @@ type FilterBarProps = {
   labels: FlightsManagerLabels['filters'];
   /** Reused verbatim from the registration form's labels (private/school/other) — no separate i18n keys for the same three values. */
   flightTypeLabels: FlightsManagerLabels['form']['flightTypes'];
+  pickerLabels: FlightsManagerLabels['picker'];
 };
 
 /**
- * The registry's filter bar (story 5.4, AC 1/2/3) — a sober row of plain
- * inputs/selects above the table, coherent with the rest of the minimalist
+ * The registry's filter bar (story 5.4, AC 1/2/3; velivolo/persona migrated
+ * to `SearchCombobox` in story TD-3, AC 1/3) — a sober row of plain
+ * inputs/pickers above the table, coherent with the rest of the minimalist
  * editorial dashboard (no separate filter panel/drawer, same "controls sit
  * directly above their data" pattern as `CashRegister`). Period/tipo/stato
  * are offered to EVERY role; velivolo/persona render only for `canManage`
@@ -580,10 +645,38 @@ type FilterBarProps = {
  * "Applica" button, same as `CashRegister`) — "Azzera filtri" clears the
  * whole bar in one click.
  */
-function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, personOptions, labels, flightTypeLabels }: FilterBarProps) {
+function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, personOptions, labels, flightTypeLabels, pickerLabels }: FilterBarProps) {
   const inputClasses =
     'mt-2 min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
   const hasActiveFilter = Object.values(filters).some((value) => value !== '');
+
+  // The filter bar includes archived entities (Dev Notes: consulting the
+  // storico) AND offers "Tutti i velivoli"/"Tutte le persone" to clear the
+  // filter — a plain `{ id: '', label: ... }` entry the combobox itself
+  // knows nothing special about (story TD-3's exact prop contract has no
+  // "clear" affordance: this IS how a caller expresses one). Backspacing the
+  // query back to empty re-shows this entry at the top, reachable by
+  // keyboard exactly like every other option.
+  const aircraftComboOptions = useMemo<SearchComboboxOption[]>(
+    () => [
+      { id: '', label: labels.allAircraft },
+      ...aircraftOptions.map((aircraft) => ({
+        id: aircraft.id,
+        label: aircraft.registration + (aircraft.archived ? labels.archivedSuffix : ''),
+      })),
+    ],
+    [aircraftOptions, labels.allAircraft, labels.archivedSuffix],
+  );
+  const personComboOptions = useMemo<SearchComboboxOption[]>(
+    () => [
+      { id: '', label: labels.allPeople },
+      ...personOptions.map((person) => ({
+        id: person.id,
+        label: personLabel(person) + (person.archived ? labels.archivedSuffix : ''),
+      })),
+    ],
+    [personOptions, labels.allPeople, labels.archivedSuffix],
+  );
 
   return (
     <div className="flex flex-wrap items-end gap-4 border-b border-[#EAEAEA] pb-6" data-testid="flight-filter-bar">
@@ -617,44 +710,28 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
         />
       </div>
       {canManage ? (
-        <div className="flex flex-col text-sm text-[#2F3437]">
-          <label htmlFor="flight-filter-aircraft">{labels.aircraft}</label>
-          <select
-            id="flight-filter-aircraft"
-            value={filters.aircraftId}
-            onChange={(event) => onChange({ aircraftId: event.target.value })}
-            className={inputClasses}
-            data-testid="flight-filter-aircraft"
-          >
-            <option value="">{labels.allAircraft}</option>
-            {aircraftOptions.map((aircraft) => (
-              <option key={aircraft.id} value={aircraft.id}>
-                {aircraft.registration}
-                {aircraft.archived ? labels.archivedSuffix : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+        <SearchCombobox
+          id="flight-filter-aircraft"
+          label={labels.aircraft}
+          value={filters.aircraftId}
+          onChange={(id) => onChange({ aircraftId: id })}
+          fetchOptions={(q) => searchAircraft(q, { includeArchived: true, archivedSuffix: labels.archivedSuffix })}
+          initialOptions={aircraftComboOptions}
+          placeholder={pickerLabels.placeholder}
+          emptyText={pickerLabels.noResults}
+        />
       ) : null}
       {canManage ? (
-        <div className="flex flex-col text-sm text-[#2F3437]">
-          <label htmlFor="flight-filter-person">{labels.person}</label>
-          <select
-            id="flight-filter-person"
-            value={filters.personId}
-            onChange={(event) => onChange({ personId: event.target.value })}
-            className={inputClasses}
-            data-testid="flight-filter-person"
-          >
-            <option value="">{labels.allPeople}</option>
-            {personOptions.map((person) => (
-              <option key={person.id} value={person.id}>
-                {personLabel(person)}
-                {person.archived ? labels.archivedSuffix : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+        <SearchCombobox
+          id="flight-filter-person"
+          label={labels.person}
+          value={filters.personId}
+          onChange={(id) => onChange({ personId: id })}
+          fetchOptions={(q) => searchPeople(q, { includeArchived: true, archivedSuffix: labels.archivedSuffix })}
+          initialOptions={personComboOptions}
+          placeholder={pickerLabels.placeholder}
+          emptyText={pickerLabels.noResults}
+        />
       ) : null}
       <div className="flex flex-col text-sm text-[#2F3437]">
         <label htmlFor="flight-filter-type">{labels.flightType}</label>
@@ -805,11 +882,17 @@ function CancelFlightPanel({ flight, moneyLocale, labels, onClose, onCancelled }
  * interi o la coppia contaore") is resolved by `durationMode` — a plain
  * toggle, not a Zod refine — and validated in `onSubmit`, not here: the
  * fields the current mode doesn't use are never required.
+ *
+ * Story TD-3: `aircraftId`/`personId`/`instructorPersonId` are deliberately
+ * NOT part of this schema anymore — they moved to plain component state
+ * driven by `SearchCombobox` (same "plain local state, not an RHF field"
+ * pattern already used here for `durationMode`/`reason`, for the identical
+ * reason: a controlled value that isn't read via RHF's `watch()`). Their
+ * "required" check moved from the Zod resolver to a manual pre-submit check
+ * in `onSubmit`, reusing the SAME `labels.requiredField` message
+ * `flightDate` already showed inline — see `onSubmit` below.
  */
 const flightFormSchema = z.object({
-  aircraftId: z.string().trim().min(1),
-  personId: z.string().trim().min(1),
-  instructorPersonId: z.string(),
   flightDate: z.string().trim().min(1),
   flightType: flightTypeSchema,
   minutes: z.string(),
@@ -822,12 +905,9 @@ const flightFormSchema = z.object({
 type FlightFormValues = z.infer<typeof flightFormSchema>;
 
 /** Blank/registration defaults, or (story 5.3) pre-filled from the flight being corrected. */
-function flightFormDefaults(aircraftOptions: AircraftOption[], correctingFlight: FlightListItemDto | null): FlightFormValues {
+function flightFormDefaults(correctingFlight: FlightListItemDto | null): FlightFormValues {
   if (!correctingFlight) {
     return {
-      aircraftId: aircraftOptions[0]?.id ?? '',
-      personId: '',
-      instructorPersonId: '',
       flightDate: todayDateOnly(),
       flightType: 'PRIVATE',
       minutes: '',
@@ -838,9 +918,6 @@ function flightFormDefaults(aircraftOptions: AircraftOption[], correctingFlight:
     };
   }
   return {
-    aircraftId: correctingFlight.aircraft.id,
-    personId: correctingFlight.person.id,
-    instructorPersonId: correctingFlight.instructor?.personId ?? '',
     flightDate: correctingFlight.flightDate,
     flightType: correctingFlight.flightType,
     minutes: correctingFlight.hourMeterStart === null ? String(correctingFlight.minutes) : '',
@@ -851,12 +928,25 @@ function flightFormDefaults(aircraftOptions: AircraftOption[], correctingFlight:
   };
 }
 
+/** The 3 picker fields' defaults — mirrors `flightFormDefaults` but kept separate since they live in their own plain state, not the RHF-managed `FlightFormValues` (story TD-3). */
+function pickerDefaults(aircraftOptions: AircraftOption[], correctingFlight: FlightListItemDto | null): { aircraftId: string; personId: string; instructorPersonId: string } {
+  if (!correctingFlight) {
+    return { aircraftId: aircraftOptions[0]?.id ?? '', personId: '', instructorPersonId: '' };
+  }
+  return {
+    aircraftId: correctingFlight.aircraft.id,
+    personId: correctingFlight.person.id,
+    instructorPersonId: correctingFlight.instructor?.personId ?? '',
+  };
+}
+
 type RegisterFlightFormProps = {
   aircraftOptions: AircraftOption[];
   personOptions: PersonOption[];
   instructorOptions: PersonOption[];
   labels: FlightsManagerLabels['form'];
   correctLabels: FlightsManagerLabels['correctPanel'];
+  pickerLabels: FlightsManagerLabels['picker'];
   /** Story 5.3, AC 2 — non-null re-purposes this SAME form into the "Correggi volo" editor. */
   correctingFlight: FlightListItemDto | null;
   onExitCorrection: () => void;
@@ -870,6 +960,7 @@ function RegisterFlightForm({
   instructorOptions,
   labels,
   correctLabels,
+  pickerLabels,
   correctingFlight,
   onExitCorrection,
   onSuccess,
@@ -890,6 +981,14 @@ function RegisterFlightForm({
   // as `durationMode` (the field only exists in one of the two modes).
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState(false);
+  // Story TD-3: the 3 picker fields, plain component state driven by
+  // `SearchCombobox` instead of RHF-registered `<select>`s (same rationale
+  // as `durationMode`/`reason` above) — initialized from the SAME defaults
+  // `flightFormDefaults` used before the split (`pickerDefaults`).
+  const initialPickerValues = pickerDefaults(aircraftOptions, correctingFlight);
+  const [aircraftId, setAircraftId] = useState(initialPickerValues.aircraftId);
+  const [personId, setPersonId] = useState(initialPickerValues.personId);
+  const [instructorPersonId, setInstructorPersonId] = useState(initialPickerValues.instructorPersonId);
   // Story TD-2 (AC 5/6): idempotency-key lifecycle for the REGISTRATION POST
   // only (`/flights`, `endpoint: 'flight-register'`) — the correction POST
   // (`/flights/{id}/correct`, same form, `isCorrecting` branch below) is NOT
@@ -904,15 +1003,51 @@ function RegisterFlightForm({
     formState: { errors, isSubmitting },
   } = useForm<FlightFormValues>({
     resolver: zodResolver(flightFormSchema),
-    defaultValues: flightFormDefaults(aircraftOptions, correctingFlight),
+    defaultValues: flightFormDefaults(correctingFlight),
   });
 
   const noAircraft = aircraftOptions.length === 0;
   const noPerson = personOptions.length === 0;
   const isCorrecting = correctingFlight !== null;
 
+  // Story TD-3: the FORM's pickers are active-only (Dev Notes) — but a flight
+  // under correction may reference an aircraft/person/instructor that has
+  // SINCE been archived/deactivated. Injecting that one entry (if missing)
+  // keeps "Correggi volo" showing the correct label instead of a blank
+  // field, without loosening the picker's active-only domain rule for any
+  // OTHER selection (the server remains the real guardian either way, AD-5).
+  const aircraftComboOptions = useMemo<SearchComboboxOption[]>(() => {
+    const base = aircraftOptions.map((aircraft) => ({ id: aircraft.id, label: aircraft.registration }));
+    if (correctingFlight && !base.some((option) => option.id === correctingFlight.aircraft.id)) {
+      base.unshift({ id: correctingFlight.aircraft.id, label: correctingFlight.aircraft.registration });
+    }
+    return base;
+  }, [aircraftOptions, correctingFlight]);
+  const personComboOptions = useMemo<SearchComboboxOption[]>(() => {
+    const base = personOptions.map((person) => ({ id: person.id, label: personLabel(person) }));
+    if (correctingFlight && !base.some((option) => option.id === correctingFlight.person.id)) {
+      base.unshift({ id: correctingFlight.person.id, label: personLabel(correctingFlight.person) });
+    }
+    return base;
+  }, [personOptions, correctingFlight]);
+  const instructorComboOptions = useMemo<SearchComboboxOption[]>(() => {
+    const base: SearchComboboxOption[] = [
+      { id: '', label: labels.noInstructor },
+      ...instructorOptions.map((instructor) => ({ id: instructor.id, label: personLabel(instructor) })),
+    ];
+    if (correctingFlight?.instructor && !base.some((option) => option.id === correctingFlight.instructor!.personId)) {
+      base.splice(1, 0, { id: correctingFlight.instructor.personId, label: personLabel(correctingFlight.instructor) });
+    }
+    return base;
+  }, [instructorOptions, correctingFlight, labels.noInstructor]);
+
   async function onSubmit(values: FlightFormValues): Promise<void> {
     setFormError(null);
+
+    if (aircraftId.trim() === '' || personId.trim() === '') {
+      setFormError(labels.requiredField);
+      return;
+    }
 
     if (isCorrecting && reason.trim() === '') {
       setReasonError(true);
@@ -955,9 +1090,9 @@ function RegisterFlightForm({
           ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
         },
         body: JSON.stringify({
-          aircraftId: values.aircraftId,
-          personId: values.personId,
-          instructorPersonId: values.instructorPersonId === '' ? undefined : values.instructorPersonId,
+          aircraftId,
+          personId,
+          instructorPersonId: instructorPersonId === '' ? undefined : instructorPersonId,
           flightDate: values.flightDate,
           flightType: values.flightType,
           ...durationPayload,
@@ -992,7 +1127,15 @@ function RegisterFlightForm({
     } else {
       onSuccess(result);
     }
-    reset(flightFormDefaults(aircraftOptions, null));
+    reset(flightFormDefaults(null));
+    // Story TD-3: the 3 picker fields reset alongside the RHF-managed ones
+    // above — `SearchCombobox` is controlled, so setting these back to the
+    // blank/first-active defaults is enough to re-sync its visible text (see
+    // its own doc-comment on the external-value sync effect).
+    const blankPickerValues = pickerDefaults(aircraftOptions, null);
+    setAircraftId(blankPickerValues.aircraftId);
+    setPersonId(blankPickerValues.personId);
+    setInstructorPersonId(blankPickerValues.instructorPersonId);
     setDurationMode('minutes');
     setReason('');
   }
@@ -1017,67 +1160,46 @@ function RegisterFlightForm({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="flight-aircraft" className="block text-sm font-medium text-[#2F3437]">
-            {labels.aircraft}
-          </label>
-          <select
+          <SearchCombobox
             id="flight-aircraft"
+            label={labels.aircraft}
+            value={aircraftId}
+            onChange={setAircraftId}
+            fetchOptions={(q) => searchAircraft(q, { includeArchived: false })}
+            initialOptions={aircraftComboOptions}
+            placeholder={pickerLabels.placeholder}
+            emptyText={pickerLabels.noResults}
             disabled={noAircraft}
-            aria-invalid={Boolean(errors.aircraftId)}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437] disabled:cursor-not-allowed disabled:bg-[#F7F6F3]"
-            {...register('aircraftId')}
-          >
-            <option value="" disabled>
-              {labels.aircraft}
-            </option>
-            {aircraftOptions.map((aircraft) => (
-              <option key={aircraft.id} value={aircraft.id}>
-                {aircraft.registration}
-              </option>
-            ))}
-          </select>
+          />
           {noAircraft ? <p className="mt-1 text-xs text-[#787774]">{labels.noAircraftAvailable}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="flight-person" className="block text-sm font-medium text-[#2F3437]">
-            {labels.person}
-          </label>
-          <select
+          <SearchCombobox
             id="flight-person"
+            label={labels.person}
+            value={personId}
+            onChange={setPersonId}
+            fetchOptions={(q) => searchPeople(q, { includeArchived: false, profile: 'pilot-or-student' })}
+            initialOptions={personComboOptions}
+            placeholder={pickerLabels.placeholder}
+            emptyText={pickerLabels.noResults}
             disabled={noPerson}
-            aria-invalid={Boolean(errors.personId)}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437] disabled:cursor-not-allowed disabled:bg-[#F7F6F3]"
-            {...register('personId')}
-          >
-            <option value="" disabled>
-              {labels.person}
-            </option>
-            {personOptions.map((person) => (
-              <option key={person.id} value={person.id}>
-                {personLabel(person)}
-              </option>
-            ))}
-          </select>
+          />
           {noPerson ? <p className="mt-1 text-xs text-[#787774]">{labels.noPersonAvailable}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="flight-instructor" className="block text-sm font-medium text-[#2F3437]">
-            {labels.instructor}
-          </label>
-          <select
+          <SearchCombobox
             id="flight-instructor"
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-            {...register('instructorPersonId')}
-          >
-            <option value="">{labels.noInstructor}</option>
-            {instructorOptions.map((instructor) => (
-              <option key={instructor.id} value={instructor.id}>
-                {personLabel(instructor)}
-              </option>
-            ))}
-          </select>
+            label={labels.instructor}
+            value={instructorPersonId}
+            onChange={setInstructorPersonId}
+            fetchOptions={(q) => searchPeople(q, { includeArchived: false, profile: 'instructor' })}
+            initialOptions={instructorComboOptions}
+            placeholder={pickerLabels.placeholder}
+            emptyText={pickerLabels.noResults}
+          />
         </div>
 
         <div>

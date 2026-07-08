@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -17,6 +17,13 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Accedi' }).click();
   await expect(page).toHaveURL(/\/it\/dashboard$/);
+}
+
+/** Same `SearchCombobox` typeahead helper as `flights.spec.ts` (story TD-3) — the filter bar's velivolo/persona pickers. */
+async function selectFromCombobox(combobox: Locator, query: string, optionLabel: string): Promise<void> {
+  await combobox.click();
+  await combobox.fill(query);
+  await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
 /** Run-unique names (same pattern as the other specs, for the dirty/parallel DB). */
@@ -237,7 +244,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await page.goto('/it/dashboard/flights');
 
     // Velivolo filter: only aircraftA's flight.
-    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraftA.registration });
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraftA.registration, aircraftA.registration);
     let rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(aircraftA.registration);
@@ -246,7 +253,11 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await page.getByTestId('flight-filter-reset').click();
 
     // Persona filter: only personB's flight.
-    await page.getByTestId('flight-filter-person').selectOption({ label: `${personB.lastName} ${personB.firstName}` });
+    await selectFromCombobox(
+      page.getByTestId('flight-filter-person'),
+      personB.lastName,
+      `${personB.lastName} ${personB.firstName}`,
+    );
     rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(personB.lastName);

@@ -4,7 +4,7 @@ baseline_commit: 8982579
 
 # Story TD-3: Picker ricercabili oltre il cap di 100 opzioni
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -56,14 +56,40 @@ so that con un'anagrafica reale (centinaia di persone) nessuna voce manchi silen
 
 ### Agent Model Used
 
+Sonnet 5 (single dev agent, xhigh). NOTA DI PROCESSO: l'agente ha completato TUTTA l'implementazione (T1-T5, tracker interno completo) e parte di T6, poi ha esaurito il contesto in attesa di un run e2e in background — senza commit, Dev Agent Record né output strutturato. La sessione principale (Fable 5) ha completato T6: gate ri-eseguiti sull'albero dell'agente, verifica e2e interrotta ripresa e chiusa, questo record ricostruito da transcript + log dell'agente (evidenze citate sotto).
+
 ### Debug Log References
+
+- Skill `design-taste-frontend` invocata e `ui-ux-pro-max` interrogata 2 volte ("combobox autocomplete accessibility", "keyboard navigation focus state dropdown") PRIMA di costruire il componente; verifica interattiva Playwright MCP: 63 chiamate (tastiera frecce/Enter/Esc, focus, empty state, flusso select→submit) — da transcript.
+- `SearchCombobox` (`src/components/search-combobox.tsx`): pattern combobox ARIA (`role="combobox"` + popup `role="listbox"`, `aria-expanded`/`aria-controls`/`aria-activedescendant`), label SEMPRE sibling `htmlFor` (il componente possiede il pairing), debounce 250ms con guard di sequenza sulle fetch stale, `initialOptions` filtrate client-side come risultato immediato poi superate dalla risposta server, min-h 44px, stile editoriale esistente. Nessuna dipendenza nuova.
+- `profile` param additivo su `ListPeopleQuery`/`listPeople` (`pilot-or-student` | `instructor`, filtro sui profili ATTIVI, stessa semantica del filtro client-side precedente di flights/page) + OpenAPI; unit test dedicati (793 totali, +4).
+- 5 picker della pagina voli migrati (form: Velivolo/Pilota o allievo/Istruttore; barra filtri: Velivolo/Persona) con `initialOptions` server-passed; `finance/packages/page.tsx` ora esegue il loop full-fetch di tutte le pagine per la checkbox-list velivoli; 4 spec e2e adattati al nuovo pattern di interazione (type+click al posto di selectOption) senza indebolire le assert.
+- `e2e/typeahead-pickers.spec.ts` (T5): 105 persone buffer via API + target `Zztypeahead-<suffix>` oltre il cap, selezione via typeahead e registrazione volo reale — VERDE.
+- Evidenza e2e del dev: `flights.spec.ts` repeat-run **30/30** (flights-repeat5-v2.log); run interrotto `other-flight-specs` ripreso e chiuso dalla sessione principale (sotto).
 
 ### Completion Notes List
 
+- Gate ri-eseguiti dalla sessione principale sull'albero finale: lint 0 errori (warning benigno noto), `tsc --noEmit` pulito, **793/793 unit**, `env -u NODE_ENV npx next build` verde.
+- Verifica e2e ripresa: `flight-log+flight-reversal+package-consumption+typeahead-pickers` isolati su DB ACCUMULATO (incluse le 105 persone di T5) → 6/8; i 2 fail (`flight-log:232`, `flight-reversal:158`) ri-eseguiti in isolamento su DB FRESCO → **2/2 VERDI** (36s) — classificati classe volume nota, NON regressione TD-3, col criterio stabilito.
+- Il tracker interno dell'agente marca T1-T5 completed e T6 in_progress al momento dell'interruzione; nessuna deviazione dichiarata reperita nel transcript oltre a quanto sopra. La review Opus riceve la classificazione dei 2 fail come input di priorità zero da ri-verificare.
+
 ### File List
+
+- `src/components/search-combobox.tsx` (new)
+- `e2e/typeahead-pickers.spec.ts` (new)
+- `src/app/[locale]/dashboard/flights/flights-manager.tsx` (M)
+- `src/app/[locale]/dashboard/flights/page.tsx` (M)
+- `src/app/[locale]/dashboard/finance/packages/page.tsx` (M)
+- `src/lib/schemas/people.ts` (M)
+- `src/server/services/people.service.ts` (M)
+- `src/server/services/people.service.test.ts` (M)
+- `e2e/flights.spec.ts`, `e2e/flight-log.spec.ts`, `e2e/flight-reversal.spec.ts`, `e2e/package-consumption.spec.ts` (M — adattamento interazioni combobox)
+- `messages/it.json`, `messages/en.json` (M — stringhe combobox IT/EN simmetriche)
+- `_bmad-output/implementation-artifacts/td-3-typeahead-pickers.md`, `sprint-status.yaml` (M)
 
 ## Review Record
 
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session) — scioglie il deferral 5.4 D1 su decisione utente ("fix everything before epic 7").
+- 2026-07-08: Implemented (Sonnet 5 single dev agent, xhigh; T6 completato dalla sessione principale dopo esaurimento contesto a implementazione finita). Gate: 793/793 unit, lint/typecheck/build verdi, flights.spec repeat 30/30, typeahead-pickers verde, 2 fail su DB accumulato provati verdi su DB fresco. Status → review.

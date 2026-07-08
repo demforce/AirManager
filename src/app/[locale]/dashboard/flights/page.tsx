@@ -22,7 +22,15 @@ type PageProps = {
   }>;
 };
 
-/** How many candidates the aircraft/person/instructor pickers load — same "small admin-managed list" cap as `packages/page.tsx`'s `activeAircraftResult`. */
+/**
+ * How many candidates the aircraft/person/instructor pickers SEED with —
+ * story TD-3 (AC 1): these are now only the `SearchCombobox`'s
+ * `initialOptions` (shown on focus with zero extra fetches, filtered
+ * client-side as an optimistic placeholder while typing), NOT the complete
+ * set — a query beyond this first page is answered by the pickers'
+ * server-side typeahead (`GET /api/v1/aircraft`/`GET /api/v1/people`'s `q`),
+ * never truncated silently (finding 5.4 D1, closed by this story).
+ */
 const OPTIONS_PAGE_SIZE = 100;
 
 /** The registry's own page size (story 5.4, NFR-6) — same convention as `FinancePage`'s cash register. */
@@ -338,6 +346,10 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                 },
                 archivedSuffix: t('filters.archivedSuffix'),
                 reset: t('filters.reset'),
+              },
+              picker: {
+                placeholder: t('searchPlaceholder'),
+                noResults: t('noResults'),
               },
             }}
           />

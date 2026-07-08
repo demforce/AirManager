@@ -1,6 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import type { Actor } from '@/server/auth/rbac';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listAircraft } from '@/server/services/aircraft.service';
@@ -10,6 +11,30 @@ import { PackagesManager } from './packages-manager';
 type PageProps = {
   params: Promise<{ locale: string }>;
 };
+
+/** Same per-page cap `listAircraft` enforces server-side (`src/lib/api/pagination.ts`) — the loop below just walks every page instead of stopping at the first one. */
+const AIRCRAFT_PAGE_SIZE = 100;
+
+/**
+ * Story TD-3 (AC 4): the package-type form's aircraft checkbox list is a
+ * SMALL admin-managed catalog by nature (a real fleet, not a search-scale
+ * anagrafica) — it needs every ACTIVE aircraft, never a typeahead. A single
+ * `pageSize: 100` call (the shape this replaces) silently truncated once the
+ * fleet grew past the cap. This loop walks every page until `items` covers
+ * `total`, exactly the handful of extra requests a paginated UI would make
+ * anyway — never worse than a few round-trips for a fleet this size.
+ */
+async function listAllActiveAircraft(actor: Actor): Promise<{ id: string; registration: string }[]> {
+  const all: { id: string; registration: string }[] = [];
+  let page = 1;
+  for (;;) {
+    const result = await listAircraft(actor, { page, pageSize: AIRCRAFT_PAGE_SIZE, includeArchived: false });
+    all.push(...result.items.map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration })));
+    if (all.length >= result.total || result.items.length === 0) break;
+    page += 1;
+  }
+  return all;
+}
 
 /**
  * Package-type listino management (story 4.3, Task 4, AC 1/2; FR-12) —
@@ -41,9 +66,8 @@ export default async function PackagesPage({ params }: PageProps) {
   const packageTypes = await listPackageTypes(actor, { includeInactive: true });
   // Only the write-capable (admin) viewer needs the picker's aircraft
   // options — a read-only staff viewer never opens the create/edit form.
-  const activeAircraftResult = canManage
-    ? await listAircraft(actor, { page: 1, pageSize: 100, includeArchived: false })
-    : null;
+  // Story TD-3 (AC 4): every ACTIVE aircraft, not just the first page.
+  const activeAircraft = canManage ? await listAllActiveAircraft(actor) : [];
 
   const t = await getTranslations('PackagesPage');
 
@@ -80,7 +104,7 @@ export default async function PackagesPage({ params }: PageProps) {
               isActive: packageType.isActive,
               eligibleAircraft: packageType.eligibleAircraft,
             }))}
-            activeAircraft={activeAircraftResult?.items.map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration })) ?? []}
+            activeAircraft={activeAircraft}
             canManage={canManage}
             moneyLocale={locale === 'en' ? 'en' : 'it'}
             labels={{

@@ -246,8 +246,11 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
 
       await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
 
-      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: Record<string, unknown> };
-      expect(findManyCall.where).toMatchObject({ archivedAt: null });
+      // Story TD-3: `where` is now an `AND` array of the conditions that
+      // apply (combinable `q`/`profile`, see `people.service.ts`) — assert
+      // against the array's contents rather than top-level keys.
+      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
+      expect(findManyCall.where.AND).toContainEqual({ archivedAt: null });
     });
 
     it('includes archived persons when includeArchived is true (AC 2)', async () => {
@@ -256,8 +259,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
 
       await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: true });
 
-      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: Record<string, unknown> };
-      expect(findManyCall.where).not.toHaveProperty('archivedAt');
+      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND?: Record<string, unknown>[] } };
+      expect(findManyCall.where.AND ?? []).not.toContainEqual({ archivedAt: null });
     });
 
     it('searches first name, last name and email case-insensitively (AC 1)', async () => {
@@ -266,14 +269,65 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
 
       await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'maria' });
 
-      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: Record<string, unknown> };
-      expect(findManyCall.where).toMatchObject({
+      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
+      expect(findManyCall.where.AND).toContainEqual({
         OR: [
           { firstName: { contains: 'maria', mode: 'insensitive' } },
           { lastName: { contains: 'maria', mode: 'insensitive' } },
           { email: { contains: 'maria', mode: 'insensitive' } },
         ],
       });
+    });
+
+    it('combines q and profile as separate AND conditions, never colliding on the OR key (AC 1/3, story TD-3)', async () => {
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
+
+      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'zz', profile: 'pilot-or-student' });
+
+      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
+      expect(findManyCall.where.AND).toContainEqual({
+        OR: [
+          { firstName: { contains: 'zz', mode: 'insensitive' } },
+          { lastName: { contains: 'zz', mode: 'insensitive' } },
+          { email: { contains: 'zz', mode: 'insensitive' } },
+        ],
+      });
+      expect(findManyCall.where.AND).toContainEqual({
+        OR: [{ pilotProfile: { deactivatedAt: null } }, { studentProfile: { deactivatedAt: null } }],
+      });
+    });
+
+    it('profile: pilot-or-student filters to an active pilot or student profile (AC 3, story TD-3)', async () => {
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
+
+      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, profile: 'pilot-or-student' });
+
+      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
+      expect(findManyCall.where.AND).toContainEqual({
+        OR: [{ pilotProfile: { deactivatedAt: null } }, { studentProfile: { deactivatedAt: null } }],
+      });
+    });
+
+    it('profile: instructor filters to an active instructor profile (AC 3, story TD-3)', async () => {
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
+
+      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, profile: 'instructor' });
+
+      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
+      expect(findManyCall.where.AND).toContainEqual({ instructorProfile: { deactivatedAt: null } });
+    });
+
+    it('no profile filter (filter-bar usage) leaves the where clause unrestricted by profile (AC 3, story TD-3)', async () => {
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
+
+      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: true });
+
+      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND?: Record<string, unknown>[] } };
+      expect(findManyCall.where).toEqual({});
     });
   });
 
