@@ -84,7 +84,7 @@ const expiryFindMany = expiryFindManyMock as unknown as { mockResolvedValue: (v:
 const expiryCount = expiryCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const expiryCreate = expiryCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
 const expiryUpdate = expiryUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const expiryDelete = expiryDeleteMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const expiryDelete = expiryDeleteMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
 const proposalFindFirst = proposalFindFirstMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const proposalFindUnique = proposalFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const proposalFindUniqueOrThrow = proposalFindUniqueOrThrowMock as unknown as { mockResolvedValue: (v: Fixture) => void };
@@ -669,6 +669,13 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
 
       await expect(deleteExpiry(staffActor(), 'exp_1')).resolves.toBeUndefined();
       expect(expiryDeleteMock).toHaveBeenCalledWith({ where: { id: 'exp_1' } });
+    });
+
+    it('maps a concurrent double-DELETE race (P2025 — the loser of the race) to NotFoundError, not a raw 500 (TD-1, AC 1)', async () => {
+      expiryFindUnique.mockResolvedValue({ id: 'exp_1' });
+      expiryDelete.mockRejectedValue(prismaError('P2025'));
+
+      await expect(deleteExpiry(staffActor(), 'exp_1')).rejects.toThrow(NotFoundError);
     });
   });
 

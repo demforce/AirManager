@@ -97,12 +97,14 @@ const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockRe
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void };
 
 /**
- * `getAccountOverview` uses the batch/array `$transaction([aggregate, findMany])`
- * overload; `recordTopUp` uses the interactive-callback overload
- * (`$transaction(async (tx) => ...)`, same as `adjustHourMeter` in
- * aircraft.service.ts). A faithful stand-in for both: an array is awaited
- * with `Promise.all` (the already-invoked mocked calls inside it), a
- * function is invoked with the mocked `prisma` itself as `tx`.
+ * Every call site in this service now uses the interactive-callback overload
+ * (`$transaction(async (tx) => ...)`, story TD-1 AC 3 hardened `buildOverview`/
+ * `listAccountMovements` off the batch/array form — same as `recordTopUp`/
+ * `recordAdjustment` already did, and same as `adjustHourMeter` in
+ * aircraft.service.ts). This stand-in still accepts a legacy array argument
+ * too (`Promise.all` over it) for robustness, but a function is the only
+ * form this service's production code sends: it is invoked with the mocked
+ * `prisma` itself as `tx`.
  */
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
 
@@ -658,6 +660,23 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         recordAdjustment(staffActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
       ).rejects.toThrow(ConflictError);
       expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictError when the original is a PACKAGE_PURCHASE (zero-amount marker, story TD-1 AC 6)', async () => {
+      personFindUnique.mockResolvedValue(PERSON);
+      accountFindUnique.mockResolvedValue(ACCOUNT);
+      accountMovementFindUnique.mockResolvedValue({
+        id: 'movement_1',
+        accountId: 'account_1',
+        type: 'PACKAGE_PURCHASE',
+        reversal: null,
+      });
+
+      await expect(
+        recordAdjustment(staffActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
+      ).rejects.toThrow(ConflictError);
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
     });
 
     it('maps a concurrent P2002 on the unique reversalOfId to ConflictError (TOCTOU backstop)', async () => {

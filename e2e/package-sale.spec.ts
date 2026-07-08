@@ -142,7 +142,8 @@ test.describe('Package sale and residuals (Story 4.4, AC 1/2/3)', () => {
     const row = page.getByTestId('hour-package-row').filter({ hasText: typeName });
     await expect(row).toContainText('5:00'); // residuo pieno = includedMinutes
     await expect(row).toContainText(/500,00\s€/);
-    await expect(row).toContainText(/\d{4}-\d{2}-\d{2}/); // scadenza calcolata (validityMonths: 6), non "—"
+    // scadenza calcolata (validityMonths: 6), locale-aware DD/MM/YYYY (TD-1, AC 7), non "—"
+    await expect(row).toContainText(/\d{2}\/\d{2}\/\d{4}/);
     await expect(row.getByTestId('hour-package-expired-badge')).toHaveCount(0);
 
     // Balance AFTER the sale — unchanged (AC 1).
@@ -179,6 +180,14 @@ test.describe('Package sale and residuals (Story 4.4, AC 1/2/3)', () => {
     const cashRow = page.getByTestId('cash-register-table').locator('tbody tr').filter({ hasText: typeName });
     await expect(cashRow).toContainText(/500,00\s€/);
     await expect(cashRow).toContainText(pilot.lastName);
+
+    // TD-1, AC 6: the estratto conto's "Rettifica questo movimento" action is
+    // hidden on a PACKAGE_PURCHASE row (still admin, who has finance.manage
+    // and would otherwise see the action column).
+    await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
+    const packagePurchaseRow = page.locator('tbody tr').filter({ hasText: 'Acquisto pacchetto' });
+    await expect(packagePurchaseRow).toBeVisible();
+    await expect(packagePurchaseRow.getByRole('button', { name: 'Rettifica questo movimento' })).toHaveCount(0);
 
     // Titolare's own view: log out admin, log in as the newly created pilot.
     await page.context().clearCookies();

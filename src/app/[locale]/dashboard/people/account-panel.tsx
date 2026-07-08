@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { Link } from '@/i18n/navigation';
 import { formatCents, formatSignedCents, parseCents } from '@/lib/money';
 import { paymentMethodSchema, type AccountMovementListItemDto, type AccountOverviewDto } from '@/lib/schemas/accounts';
+import { useAccountRefresh } from './account-refresh-context';
 
 export type AccountPanelLabels = {
   heading: string;
@@ -93,6 +94,11 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  // Story TD-1, AC 8: `version` bumps whenever the sibling `PackagesPanel`
+  // sells a package on the SAME scheda persona (no-op default, see
+  // `account-refresh-context.tsx`) — added to this effect's dependencies so
+  // a sale re-fetches the overview without a full page reload.
+  const { version } = useAccountRefresh();
 
   useEffect(() => {
     let cancelled = false;
@@ -103,13 +109,17 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
         setLoading(false);
         return;
       }
+      // Explicit reset (needed now that `version` can re-run this effect
+      // after a prior failed attempt, TD-1 AC 8 — a stale `loadError` must
+      // not hide a subsequently successful refresh forever).
+      setLoadError(false);
       setOverview(result);
       setLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [personId]);
+  }, [personId, version]);
 
   return (
     <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="account-panel">
@@ -329,13 +339,18 @@ function TopUpForm({ personId, labels, onCancel, onSuccess }: TopUpFormProps) {
           </label>
           <input
             id="topup-description"
+            maxLength={500}
             className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
             {...register('description')}
           />
         </div>
       </div>
 
-      {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+      {formError ? (
+        <p role="alert" className="text-sm text-[#9F2F2D]">
+          {formError}
+        </p>
+      ) : null}
 
       <div className="flex gap-3">
         <button

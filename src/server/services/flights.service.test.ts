@@ -171,7 +171,7 @@ const PILOT_PERSON = {
   pilotProfile: { deactivatedAt: null },
   studentProfile: null,
 };
-const INSTRUCTOR_PROFILE_ROW = { instructorProfile: { id: 'instr_profile_1', deactivatedAt: null } };
+const INSTRUCTOR_PROFILE_ROW = { archivedAt: null, instructorProfile: { id: 'instr_profile_1', deactivatedAt: null } };
 
 const ACCOUNT_OVERVIEW = { account: { id: 'account_1', createdAt: new Date('2026-01-01T00:00:00.000Z') }, balanceCents: 0, recentMovements: [] };
 
@@ -448,10 +448,27 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique
         .mockResolvedValueOnce(PILOT_PERSON)
-        .mockResolvedValueOnce({ instructorProfile: { id: 'instr_profile_1', deactivatedAt: new Date('2026-01-01T00:00:00.000Z') } });
+        .mockResolvedValueOnce({
+          archivedAt: null,
+          instructorProfile: { id: 'instr_profile_1', deactivatedAt: new Date('2026-01-01T00:00:00.000Z') },
+        });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
 
       await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_NOT_FOUND' });
+    });
+
+    it('throws a 422 INSTRUCTOR_NOT_FOUND (folded, anti-enumeration) when the instructor Person is ARCHIVED, even with an active InstructorProfile (TD-1, AC 9)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique
+        .mockResolvedValueOnce(PILOT_PERSON)
+        .mockResolvedValueOnce({
+          archivedAt: new Date('2026-01-01T00:00:00.000Z'),
+          instructorProfile: { id: 'instr_profile_1', deactivatedAt: null },
+        });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
+
+      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_NOT_FOUND' });
+      expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('throws a 422 NO_AIRCRAFT_RATE when the aircraft has no rate in effect', async () => {

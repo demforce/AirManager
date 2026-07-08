@@ -218,7 +218,26 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     expect(buildExpiryAlertEmail).not.toHaveBeenCalled();
     expect(buildExpiryDigestEmail).toHaveBeenCalledWith(
       'it',
-      expect.objectContaining({ items: [expect.objectContaining({ personName: 'Anna Verdi', holderEmailed: false })] }),
+      expect.objectContaining({ items: [expect.objectContaining({ personName: 'Anna Verdi', holderStatus: 'NO_EMAIL' })] }),
+    );
+  });
+
+  it('titolare HAS an email but the SMTP send fails -> thresholds still consumed, NOT counted in holdersWithoutEmail, digest flags SEND_FAILED distinctly from NO_EMAIL (TD-1, AC 2)', async () => {
+    expiryFindMany.mockResolvedValue([
+      candidateFixture({ person: { id: 'person_3', firstName: 'Luca', lastName: 'Neri', email: 'luca@example.com' }, sentAlerts: [] }),
+    ]);
+    sendMock.mockRejectedValueOnce(new Error('smtp down'));
+
+    const result = await runExpiryAlertsJob();
+
+    expect(result.alertsCreated).toBe(1);
+    expect(result.holderEmailsSent).toBe(0);
+    // NOT the no-email counter — the semantics stay reserved for a truly
+    // missing `Person.email` (TD-1, AC 2: the story's binding decision).
+    expect(result.holdersWithoutEmail).toBe(0);
+    expect(buildExpiryDigestEmail).toHaveBeenCalledWith(
+      'it',
+      expect.objectContaining({ items: [expect.objectContaining({ personName: 'Luca Neri', holderStatus: 'SEND_FAILED' })] }),
     );
   });
 

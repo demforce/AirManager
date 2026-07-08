@@ -461,10 +461,15 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Pro
 
     const instructorPerson = await prisma.person.findUnique({
       where: { id: instructorPersonId },
-      select: { instructorProfile: { select: { id: true, deactivatedAt: true } } },
+      select: { archivedAt: true, instructorProfile: { select: { id: true, deactivatedAt: true } } },
     });
     const instructorProfile = instructorPerson?.instructorProfile ?? null;
-    if (!instructorProfile || instructorProfile.deactivatedAt !== null) {
+    // TD-1, AC 9: an archived Person with an otherwise-active
+    // InstructorProfile is treated EXACTLY like a missing/deactivated
+    // profile — same folded `INSTRUCTOR_NOT_FOUND` code (anti-enumeration,
+    // decision 5.1 D1), never a distinct message that would reveal the
+    // person exists but is archived.
+    if (!instructorPerson || instructorPerson.archivedAt !== null || !instructorProfile || instructorProfile.deactivatedAt !== null) {
       throw new ValidationError('Instructor has no active instructor profile.', undefined, 'INSTRUCTOR_NOT_FOUND');
     }
     instructorProfileId = instructorProfile.id;
@@ -1220,17 +1225,21 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
 
   const includeActorEmail = hasPermission(actor, 'people.read');
 
-  const [items, total] = await prisma.$transaction([
-    prisma.flight.findMany({
+  // Interactive transaction (story TD-1, AC 3) — see
+  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
+  // `pg` DeprecationWarning rationale.
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.flight.findMany({
       select: FLIGHT_SELECT,
       where,
       // `id` tie-break: same-millisecond rows must not make the page order
       // non-deterministic (same pattern as `buildOverview`/`listAccountMovements`).
       orderBy: [{ flightDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       ...paginationOffset(query),
-    }),
-    prisma.flight.count({ where }),
-  ]);
+    });
+    const total = await tx.flight.count({ where });
+    return [items, total] as const;
+  });
 
   return paginate(
     items.map((item) => toListItem(item, includeActorEmail)),

@@ -130,14 +130,16 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     instructorProfileUpdateManyMock.mockReset();
     accountUpsertMock.mockReset();
 
-    // Story 3.1: `upsertProfile`'s pilot/student branches now run their
-    // profile upsert alongside the Account upsert inside `$transaction([...])`
-    // (the batch/array overload, not the interactive-callback one aircraft
-    // uses) — a faithful stand-in just awaits every already-invoked mock
-    // call, same rationale as `mockInteractiveTransaction` in
-    // aircraft.service.test.ts. Per-test `transaction.mockResolvedValue(...)`
-    // calls (e.g. `listPeople`'s `[items, total]`) still override this
-    // default, since they run later in the same test.
+    // Story 3.1 (interactive-callback form since story TD-1, AC 3):
+    // `upsertProfile`'s pilot/student branches run their profile upsert
+    // alongside the Account upsert inside ONE `$transaction(async (tx) =>
+    // ...)` — this generic stand-in handles BOTH the interactive-callback
+    // form (invokes the callback with the plain `prisma` mock as `tx`) and a
+    // legacy batch-array argument (`Promise.all`), same rationale as
+    // `mockTransaction` in `cash.service.test.ts`/`package-types.service.test.ts`.
+    // Per-test `transaction.mockResolvedValue(...)` calls (e.g. `listPeople`'s
+    // `[items, total]`) still override this default outright (they don't
+    // inspect the argument at all), since they run later in the same test.
     (transaction as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation(
       (arg: unknown) => (typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[])),
     );
@@ -234,7 +236,13 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     });
 
     it('excludes archived persons by default (AC 2)', async () => {
-      transaction.mockResolvedValue([[], 0]);
+      // Interactive-callback transaction (story TD-1, AC 3): the generic
+      // `beforeEach` `mockImplementation` invokes the callback with `prisma`
+      // as `tx`, so `findMany`/`count` must resolve on their OWN mocks now —
+      // a per-test `transaction.mockResolvedValue(...)` override would skip
+      // invoking the callback entirely (never calling `findMany`).
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
 
       await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
 
@@ -243,7 +251,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     });
 
     it('includes archived persons when includeArchived is true (AC 2)', async () => {
-      transaction.mockResolvedValue([[], 0]);
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
 
       await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: true });
 
@@ -252,7 +261,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     });
 
     it('searches first name, last name and email case-insensitively (AC 1)', async () => {
-      transaction.mockResolvedValue([[], 0]);
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
 
       await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'maria' });
 

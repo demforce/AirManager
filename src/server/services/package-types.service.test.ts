@@ -391,6 +391,13 @@ describe('package-types.service (story 4.3 — package-type listino, AD-2/AD-4)'
 
       await expect(deletePackageType(adminActor(), 'pt_1')).rejects.toThrow(ConflictError);
     });
+
+    it('maps a concurrent double-DELETE race (P2025 — the loser of the race) to NotFoundError, not a raw 500 (TD-1, AC 1)', async () => {
+      packageTypeFindUnique.mockResolvedValue({ id: 'pt_1', _count: { soldPackages: 0 } });
+      packageTypeDelete.mockRejectedValue(prismaError('P2025'));
+
+      await expect(deletePackageType(adminActor(), 'pt_1')).rejects.toThrow(NotFoundError);
+    });
   });
 
   describe('schema validation (Task 3, AC 1/2)', () => {

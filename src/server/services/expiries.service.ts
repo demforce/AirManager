@@ -27,6 +27,17 @@ function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2002';
 }
 
+/**
+ * Prisma "record not found" on write (story TD-1, AC 1) — the loser of a
+ * concurrent double-DELETE race: both requests pass the `findUnique`
+ * pre-check (the row still exists at that instant), one wins the `DELETE`,
+ * and the other's `DELETE` then hits a row that is already gone. Maps to the
+ * SAME 404 the pre-check itself would have produced, never a raw 500.
+ */
+function isRecordNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2025';
+}
+
 // --- Person expiries (AC 1) --------------------------------------------------
 
 export type PendingProposalSummary = {
@@ -294,7 +305,9 @@ export async function updateExpiry(actor: Actor, id: string, input: UpdateExpiry
 /**
  * Deletes a scadenza — a staff correction tool (wrong type/person), AC 1.
  * `expiries.manage` only. 404 on an unknown id; the delete cascades to any
- * `ExpiryUpdateProposal` rows (pending included, `onDelete: Cascade`).
+ * `ExpiryUpdateProposal` rows (pending included, `onDelete: Cascade`) — no
+ * FK `RESTRICT` points at `Expiry`, so the only concurrency backstop needed
+ * (story TD-1, AC 1) is the P2025 race of a concurrent double-DELETE.
  */
 export async function deleteExpiry(actor: Actor, id: string): Promise<void> {
   authorize(actor, 'expiries.manage');
@@ -304,7 +317,15 @@ export async function deleteExpiry(actor: Actor, id: string): Promise<void> {
     throw new NotFoundError('Expiry not found.');
   }
 
-  await prisma.expiry.delete({ where: { id } });
+  try {
+    await prisma.expiry.delete({ where: { id } });
+  } catch (error) {
+    if (isRecordNotFound(error)) {
+      // Concurrent double-DELETE race (TD-1, AC 1): the other request won.
+      throw new NotFoundError('Expiry not found.');
+    }
+    throw error;
+  }
 }
 
 // --- Expiry dashboard (story 6.4, AC 1; FR-38) -------------------------------
@@ -422,15 +443,19 @@ export async function listAllExpiries(actor: Actor, query: ListAllExpiriesQuery)
     ...(query.status ? { expiresAt: expiresAtRangeForStatus(query.status, today) } : {}),
   };
 
-  const [items, total] = await prisma.$transaction([
-    prisma.expiry.findMany({
+  // Interactive transaction (story TD-1, AC 3) — see
+  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
+  // `pg` DeprecationWarning rationale.
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.expiry.findMany({
       select: DASHBOARD_SELECT,
       where,
       orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }],
       ...paginationOffset(query),
-    }),
-    prisma.expiry.count({ where }),
-  ]);
+    });
+    const total = await tx.expiry.count({ where });
+    return [items, total] as const;
+  });
 
   return paginate(items.map((item) => toDashboardItem(item, today)), total, query);
 }
@@ -602,15 +627,19 @@ export async function listExpiryProposals(actor: Actor, query: ListExpiryProposa
 
   const where = { status: query.status };
 
-  const [items, total] = await prisma.$transaction([
-    prisma.expiryUpdateProposal.findMany({
+  // Interactive transaction (story TD-1, AC 3) — see
+  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
+  // `pg` DeprecationWarning rationale.
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.expiryUpdateProposal.findMany({
       select: EXPIRY_PROPOSAL_SELECT,
       where,
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       ...paginationOffset(query),
-    }),
-    prisma.expiryUpdateProposal.count({ where }),
-  ]);
+    });
+    const total = await tx.expiryUpdateProposal.count({ where });
+    return [items, total] as const;
+  });
 
   return paginate(items.map(toProposalListItem), total, query);
 }

@@ -9,7 +9,8 @@ import { formatCents } from '@/lib/money';
 import { paymentMethodSchema } from '@/lib/schemas/accounts';
 import type { PackageTypeItemDto } from '@/lib/schemas/package-types';
 import type { HourPackageItemDto } from '@/lib/schemas/packages';
-import { formatMinutes } from '@/lib/time';
+import { formatDateOnly, formatMinutes } from '@/lib/time';
+import { useAccountRefresh } from './account-refresh-context';
 
 export type PackagesPanelLabels = {
   heading: string;
@@ -56,7 +57,18 @@ type PackagesPanelProps = {
   labels: PackagesPanelLabels;
 };
 
-/** `<input type="date">` default — same browser-local-time convention as the other panels' `todayDateOnly`. */
+/**
+ * `<input type="date">` default. Comment fix (story TD-1, AC 7 D3): despite
+ * the "browser-local-time" wording this comment used to carry (copied
+ * verbatim from the other panels' identical `todayDateOnly`), `toISOString()`
+ * ALWAYS returns the UTC representation of the instant regardless of the
+ * browser's timezone — this is the CURRENT UTC calendar day, not the
+ * browser's local one (they only coincide when the browser's UTC offset
+ * doesn't currently straddle midnight). The other panels
+ * (`account-panel.tsx`, `flights-manager.tsx`) carry the identical
+ * misleading comment on the identical implementation — out of this AC's
+ * named scope (packages-panel.tsx:59 only), not touched here.
+ */
 function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -83,6 +95,10 @@ export function PackagesPanel({ personId, canSell, labels }: PackagesPanelProps)
   const [loadError, setLoadError] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  // Story TD-1, AC 8: bumps the sibling `AccountPanel`'s refresh signal on a
+  // successful sale (no-op default when this panel is used outside the
+  // scheda persona, see `account-refresh-context.tsx`).
+  const { bump } = useAccountRefresh();
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +119,7 @@ export function PackagesPanel({ personId, canSell, labels }: PackagesPanelProps)
   async function handleSold(): Promise<void> {
     setFormOpen(false);
     setFeedback(labels.feedback);
+    bump();
     const result = await fetchPackages(personId);
     if (result !== null) {
       setLoadError(false);
@@ -165,7 +182,9 @@ export function PackagesPanel({ personId, canSell, labels }: PackagesPanelProps)
                     ) : null}
                   </span>
                   <span className="text-right">
-                    <span className="block text-sm text-[#2F3437]">{pkg.expiresAt ?? labels.table.noExpiry}</span>
+                    <span className="block text-sm text-[#2F3437]">
+                      {pkg.expiresAt ? formatDateOnly(pkg.expiresAt, moneyLocale) : labels.table.noExpiry}
+                    </span>
                     <span className="block text-xs text-[#787774]">{labels.table.expiresAt}</span>
                   </span>
                   {pkg.isExpired ? (

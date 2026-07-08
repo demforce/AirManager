@@ -194,15 +194,24 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
       : {}),
   };
 
-  const [items, total] = await prisma.$transaction([
-    prisma.person.findMany({
+  // Interactive transaction (story TD-1, AC 3) — a batch `$transaction([...])`
+  // sends both queries over the shared driver-adapter connection without
+  // waiting for the first to finish, which the underlying `pg` driver flags
+  // as a deprecated "client already executing a query" (only ever surfaces
+  // once per process, per Node's warning dedup — reproduced empirically on a
+  // fresh dev server before this fix). The awaited callback form serializes
+  // the two reads while staying in the SAME transaction (still one
+  // consistent snapshot for items/total under concurrent writes).
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.person.findMany({
       where,
       select: PERSON_SELECT,
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
       ...paginationOffset(query),
-    }),
-    prisma.person.count({ where }),
-  ]);
+    });
+    const total = await tx.person.count({ where });
+    return [items, total] as const;
+  });
 
   return paginate(items.map(toListItem), total, query);
 }
@@ -378,31 +387,35 @@ export async function upsertProfile(
     const input = data as PilotProfileInput;
     // Story 3.1, AC 1/AD-11: the profile upsert and the Account upsert must
     // land together — a crash between the two must never leave a pilot
-    // profile active with no account behind it.
-    const [profile] = await prisma.$transaction([
-      prisma.pilotProfile.upsert({
+    // profile active with no account behind it. Interactive transaction
+    // (story TD-1, AC 3) — same batch-vs-interactive rationale as
+    // `listPeople` above.
+    const [profile] = await prisma.$transaction(async (tx) => {
+      const profile = await tx.pilotProfile.upsert({
         where: { personId },
         create: { personId, licenseNumber: input.licenseNumber, licenseType: input.licenseType },
         update: { licenseNumber: input.licenseNumber, licenseType: input.licenseType, deactivatedAt: null },
         select: { licenseNumber: true, licenseType: true, deactivatedAt: true },
-      }),
-      prisma.account.upsert({ where: { personId }, create: { personId }, update: {} }),
-    ]);
+      });
+      await tx.account.upsert({ where: { personId }, create: { personId }, update: {} });
+      return [profile] as const;
+    });
     return profile;
   }
 
   if (type === 'student') {
     const input = data as StudentProfileInput;
     const courseStartDate = new Date(input.courseStartDate);
-    const [profile] = await prisma.$transaction([
-      prisma.studentProfile.upsert({
+    const [profile] = await prisma.$transaction(async (tx) => {
+      const profile = await tx.studentProfile.upsert({
         where: { personId },
         create: { personId, courseStartDate },
         update: { courseStartDate, deactivatedAt: null },
         select: { courseStartDate: true, deactivatedAt: true },
-      }),
-      prisma.account.upsert({ where: { personId }, create: { personId }, update: {} }),
-    ]);
+      });
+      await tx.account.upsert({ where: { personId }, create: { personId }, update: {} });
+      return [profile] as const;
+    });
     return { courseStartDate: toDateOnlyString(profile.courseStartDate), deactivatedAt: profile.deactivatedAt };
   }
 

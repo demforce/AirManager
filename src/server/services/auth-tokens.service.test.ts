@@ -82,9 +82,18 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
     vi.mocked(buildInviteEmail).mockClear();
     vi.mocked(buildPasswordResetEmail).mockClear();
 
+    // Interactive-callback stand-in (story TD-1, AC 3: `issueAuthToken` now
+    // uses `$transaction(async (tx) => ...)`, not the batch/array form) —
+    // same pattern as `mockTransaction` in `cash.service.test.ts`: a
+    // function argument is INVOKED with the mocked `prisma` as `tx` (never
+    // just returned unexecuted), a legacy array argument still falls back to
+    // `Promise.all`.
     transactionMock.mockImplementation(async (ops: unknown) => {
       if (Array.isArray(ops)) {
         return Promise.all(ops as Promise<unknown>[]);
+      }
+      if (typeof ops === 'function') {
+        return (ops as (tx: unknown) => unknown)(prisma);
       }
       return ops;
     });
@@ -230,11 +239,20 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
         usedAt: null,
         expiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
+      // The interactive-callback `$transaction` mock (fixed story TD-1, AC 3
+      // — see the `transactionMock.mockImplementation` above) now actually
+      // INVOKES the callback, so the atomic single-use claim inside it needs
+      // a real resolved value: `{ count: 1 }` simulates the winning claim
+      // (previously this test passed vacuously — the old, buggy mock never
+      // called the callback at all, so `updateMany`/`user.update` never ran).
+      (updateManyTokenMock as unknown as { mockResolvedValue: (v: { count: number }) => void }).mockResolvedValue({ count: 1 });
 
       await setPasswordWithToken('valid-raw-token', 'a-long-enough-password');
 
       expect(hashPassword).toHaveBeenCalledWith('a-long-enough-password');
       expect(transactionMock).toHaveBeenCalled();
+      expect(updateManyTokenMock).toHaveBeenCalledWith({ where: { id: 'token_1', usedAt: null }, data: { usedAt: expect.any(Date) } });
+      expect(updateUserMock).toHaveBeenCalledWith({ where: { id: 'user_1' }, data: { passwordHash: expect.any(String) } });
     });
   });
 });

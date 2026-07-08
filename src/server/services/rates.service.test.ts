@@ -17,7 +17,7 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { createAircraftRate, getEffectiveRate, listAircraftRates } = await import('./rates.service');
+const { createAircraftRate, getEffectiveRate, getEffectiveRates, listAircraftRates } = await import('./rates.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
 const aircraftFindUniqueMock = vi.mocked(prisma.aircraft.findUnique);
@@ -220,6 +220,71 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
       const result = await getEffectiveRate(adminActor(), 'aircraft_1', new Date('2020-01-01T00:00:00.000Z'));
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getEffectiveRates (story TD-1, AC 4 — batched N+1 fix, parity with getEffectiveRate)', () => {
+    it('rejects a pilot actor', async () => {
+      await expect(getEffectiveRates(pilotActor(), ['aircraft_1'], new Date('2026-07-07T00:00:00.000Z'))).rejects.toThrow(
+        ForbiddenError,
+      );
+    });
+
+    it('an empty id list short-circuits to an empty Map without querying', async () => {
+      const result = await getEffectiveRates(adminActor(), [], new Date('2026-07-07T00:00:00.000Z'));
+
+      expect(result.size).toBe(0);
+      expect(rateFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('queries with the exact AD-4 shape: aircraftId in ids, validFrom <= onDate, ordered aircraftId asc/validFrom desc, distinct aircraftId', async () => {
+      rateFindMany.mockResolvedValue([]);
+      const onDate = new Date('2026-07-07T00:00:00.000Z');
+
+      await getEffectiveRates(adminActor(), ['aircraft_1', 'aircraft_2'], onDate);
+
+      expect(rateFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { aircraftId: { in: ['aircraft_1', 'aircraft_2'] }, validFrom: { lte: onDate } },
+          orderBy: [{ aircraftId: 'asc' }, { validFrom: 'desc' }],
+          distinct: ['aircraftId'],
+        }),
+      );
+    });
+
+    it('maps a multi-rate-per-aircraft dataset to a Map of the current rate per id (parity with getEffectiveRate)', async () => {
+      // `distinct: ['aircraftId']` on `aircraftId asc, validFrom desc` means
+      // Prisma would only ever return ONE row per aircraft — the fixture
+      // simulates exactly that already-deduplicated shape.
+      rateFindMany.mockResolvedValue([
+        rateFixture({ aircraftId: 'aircraft_1', validFrom: new Date('2026-06-01T00:00:00.000Z'), priceCentsPerHour: 15500 }),
+        rateFixture({ aircraftId: 'aircraft_2', validFrom: new Date('2026-01-01T00:00:00.000Z'), priceCentsPerHour: 12000 }),
+      ]);
+
+      const result = await getEffectiveRates(adminActor(), ['aircraft_1', 'aircraft_2', 'aircraft_3'], new Date('2026-07-07T00:00:00.000Z'));
+
+      expect(result.get('aircraft_1')?.priceCentsPerHour).toBe(15500);
+      expect(result.get('aircraft_2')?.priceCentsPerHour).toBe(12000);
+      // No qualifying rate for aircraft_3 -> null in the Map, never a missing key.
+      expect(result.has('aircraft_3')).toBe(true);
+      expect(result.get('aircraft_3')).toBeNull();
+    });
+
+    it('boundary: D === validFrom is included, same as getEffectiveRate', async () => {
+      rateFindMany.mockResolvedValue([rateFixture({ aircraftId: 'aircraft_1', validFrom: new Date('2026-07-07T00:00:00.000Z'), priceCentsPerHour: 16000 })]);
+
+      const result = await getEffectiveRates(adminActor(), ['aircraft_1'], new Date('2026-07-07T00:00:00.000Z'));
+
+      expect(result.get('aircraft_1')?.priceCentsPerHour).toBe(16000);
+    });
+
+    it('a lone aircraft with no rate at all maps to null in an otherwise-empty Map', async () => {
+      rateFindMany.mockResolvedValue([]);
+
+      const result = await getEffectiveRates(adminActor(), ['aircraft_lonely'], new Date('2026-07-07T00:00:00.000Z'));
+
+      expect(result.size).toBe(1);
+      expect(result.get('aircraft_lonely')).toBeNull();
     });
   });
 

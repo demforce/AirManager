@@ -245,29 +245,42 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, la
       </div>
 
       <div className="mt-6 flex flex-wrap items-end gap-4">
-        <label className="flex flex-col gap-2 text-sm text-[#2F3437]">
-          {labels.filters.from}
+        {/* `<label htmlFor>` as a SIBLING of its control, never wrapping it
+            (TD-1, AC 5): a wrapping `<label>` around a `<select>` folds every
+            `<option>`'s text into the label's own accessible name (browsers
+            compute it from textContent), which can accidentally collide with
+            an unrelated label elsewhere on the page once option text is
+            dynamic (e.g. a category name) — same footgun already fixed in
+            `flights-manager.tsx`'s `FilterBar` (story 5.4) and in this same
+            file's `NewMovementForm`/`ReverseForm` below (`cash-category`
+            etc.); the layout classes move to a wrapping `<div>` so the
+            visual result stays identical. */}
+        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+          <label htmlFor="cash-filter-from">{labels.filters.from}</label>
           <input
+            id="cash-filter-from"
             type="date"
             value={filters.from}
             onChange={(event) => handleFilterChange({ from: event.target.value })}
             className={selectClasses}
             data-testid="cash-filter-from"
           />
-        </label>
-        <label className="flex flex-col gap-2 text-sm text-[#2F3437]">
-          {labels.filters.to}
+        </div>
+        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+          <label htmlFor="cash-filter-to">{labels.filters.to}</label>
           <input
+            id="cash-filter-to"
             type="date"
             value={filters.to}
             onChange={(event) => handleFilterChange({ to: event.target.value })}
             className={selectClasses}
             data-testid="cash-filter-to"
           />
-        </label>
-        <label className="flex flex-col gap-2 text-sm text-[#2F3437]">
-          {labels.filters.category}
+        </div>
+        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+          <label htmlFor="cash-filter-category">{labels.filters.category}</label>
           <select
+            id="cash-filter-category"
             value={filters.categoryId}
             onChange={(event) => handleFilterChange({ categoryId: event.target.value })}
             className={selectClasses}
@@ -280,10 +293,11 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, la
               </option>
             ))}
           </select>
-        </label>
-        <label className="flex flex-col gap-2 text-sm text-[#2F3437]">
-          {labels.filters.sign}
+        </div>
+        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+          <label htmlFor="cash-filter-sign">{labels.filters.sign}</label>
           <select
+            id="cash-filter-sign"
             value={filters.sign}
             onChange={(event) => handleFilterChange({ sign: event.target.value as CashRegisterFilters['sign'] })}
             className={selectClasses}
@@ -293,7 +307,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, la
             <option value="in">{labels.filters.signIn}</option>
             <option value="out">{labels.filters.signOut}</option>
           </select>
-        </label>
+        </div>
       </div>
 
       {panelOpen ? (
@@ -482,7 +496,11 @@ function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovemen
         <input id="cash-description" maxLength={500} className={inputClasses} {...register('description')} />
       </div>
 
-      {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+      {formError ? (
+        <p role="alert" className="text-sm text-[#9F2F2D]">
+          {formError}
+        </p>
+      ) : null}
 
       <div className="flex gap-3">
         <button
@@ -572,7 +590,11 @@ function ReverseForm({ movement, moneyLocale, labels, onCancel, onSuccess }: Rev
         {errors.reason ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredReason}</p> : null}
       </div>
 
-      {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+      {formError ? (
+        <p role="alert" className="text-sm text-[#9F2F2D]">
+          {formError}
+        </p>
+      ) : null}
 
       <div className="flex gap-3">
         <button

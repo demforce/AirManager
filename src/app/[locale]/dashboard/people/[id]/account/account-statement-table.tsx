@@ -205,7 +205,12 @@ export function AccountStatementTable({
             id: 'actions',
             header: labels.actions,
             cell: ({ row }) =>
-              row.original.hasReversal ? null : (
+              // TD-1, AC 6: a PACKAGE_PURCHASE row is a zero-amount marker
+              // (the real payment is external to the account, story 4.4) —
+              // the service rejects linking a rettifica to it, same
+              // mechanism that already hides the action on rows that have
+              // one (`hasReversal`).
+              row.original.hasReversal || row.original.type === 'PACKAGE_PURCHASE' ? null : (
                 <button
                   type="button"
                   onClick={() => setPanel({ originalMovement: row.original })}
@@ -377,6 +382,7 @@ function AdjustmentForm({ personId, originalMovement, labels, onCancel, onSucces
           <input
             id="adjustment-reason"
             aria-invalid={Boolean(errors.reason)}
+            maxLength={500}
             className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
             {...register('reason')}
           />
@@ -384,7 +390,11 @@ function AdjustmentForm({ personId, originalMovement, labels, onCancel, onSucces
         </div>
       </div>
 
-      {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+      {formError ? (
+        <p role="alert" className="text-sm text-[#9F2F2D]">
+          {formError}
+        </p>
+      ) : null}
 
       <div className="flex gap-3">
         <button
