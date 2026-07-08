@@ -114,12 +114,20 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
   let personFilterOptions: { id: string; firstName: string; lastName: string; archived: boolean }[] = [];
 
   if (canManage) {
-    // `includeArchived: true` on BOTH: the filter pickers need the full
-    // history (Dev Notes: "incl. archiviati per consultare lo storico") —
-    // the registration form's own pickers below filter back down to active
-    // only, so nothing archived is ever offered there (unchanged from 5.1).
+    // `includeArchived: true` on the FILTER sources: the filter pickers need
+    // the full history (Dev Notes: "incl. archiviati per consultare lo
+    // storico"). The FORM pickers' `initialOptions` instead come from the
+    // profile-filtered queries below (review TD-3 D2): deriving them from
+    // the first unfiltered page re-created the 5.4 D1 silent-miss class —
+    // if the first 100 people by lastName held zero active pilot/student,
+    // the person picker rendered disabled even though eligible people
+    // existed past the cap. With the profile-filtered query, page 1 is
+    // empty IFF the whole filtered set is empty, so the pickers' disabled
+    // gating (`options.length === 0`) is exact again.
     const aircraftResult = await listAircraft(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: true });
     const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: true });
+    const pilotStudentResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
+    const instructorResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'instructor', includeArchived: false });
 
     aircraftOptions = aircraftResult.items
       .filter((aircraft) => aircraft.archivedAt === null)
@@ -129,12 +137,8 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
       registration: aircraft.registration,
       archived: aircraft.archivedAt !== null,
     }));
-    personOptions = peopleResult.items
-      .filter((person) => person.archivedAt === null && (person.profiles.pilot || person.profiles.student))
-      .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
-    instructorOptions = peopleResult.items
-      .filter((person) => person.archivedAt === null && person.profiles.instructor)
-      .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+    personOptions = pilotStudentResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+    instructorOptions = instructorResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
     personFilterOptions = peopleResult.items.map((person) => ({
       id: person.id,
       firstName: person.firstName,

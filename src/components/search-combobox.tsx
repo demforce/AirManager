@@ -127,6 +127,13 @@ export function SearchCombobox({
   );
 
   function openWithOptions(nextOptions: SearchComboboxOption[]): void {
+    // Invalidate any pending/in-flight search (review TD-3 D3): without the
+    // seq bump, a fetch scheduled by earlier typing could resolve AFTER a
+    // blur→refocus reopened browse mode and clobber `nextOptions` with stale
+    // results. `runSearch`'s own fetch takes a NEWER seq right after this,
+    // so live searches are unaffected.
+    seqRef.current += 1;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     setOptions(nextOptions);
     setActiveIndex(nextOptions.length > 0 ? 0 : -1);
     setOpen(true);

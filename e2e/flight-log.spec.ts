@@ -26,6 +26,26 @@ async function selectFromCombobox(combobox: Locator, query: string, optionLabel:
   await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
+/**
+ * Clicks "Azzera filtri" and waits for the reset NAVIGATION to land (story
+ * TD-3 review M1): the manager subtree is keyed on the query string, so the
+ * reset's `router.push` REMOUNTS every filter control — typing into a picker
+ * before the remount settles gets discarded with the old subtree (reproduced
+ * deterministically on a high-volume DB, where the server round-trip is slow
+ * enough to lose the race). `dirtyFilter` is a control that held a value
+ * before the reset — it reading empty proves the remounted tree is the one
+ * on screen.
+ */
+async function resetFiltersAndSettle(page: Page, dirtyFilter: Locator, dirtyValue: string): Promise<void> {
+  await page.getByTestId('flight-filter-reset').click();
+  await expect(page).toHaveURL(/\/dashboard\/flights$/);
+  // The remounted control shows its own empty-state label (e.g. "Tutti i
+  // velivoli"), never the value it held before the reset — waiting for the
+  // DIRTY value to disappear is the remount-complete signal that works for
+  // combobox and date inputs alike.
+  await expect(dirtyFilter).not.toHaveValue(dirtyValue);
+}
+
 /** Run-unique names (same pattern as the other specs, for the dirty/parallel DB). */
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -250,7 +270,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(rows.first()).toContainText(aircraftA.registration);
     await expect(rows.first()).toContainText(personA.lastName);
 
-    await page.getByTestId('flight-filter-reset').click();
+    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-aircraft'), aircraftA.registration);
 
     // Persona filter: only personB's flight.
     await selectFromCombobox(
@@ -262,21 +282,47 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(personB.lastName);
 
-    await page.getByTestId('flight-filter-reset').click();
+    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-person'), `${personB.lastName} ${personB.firstName}`);
 
-    // Combined periodo + tipo: dateFrom/dateTo bracketing only the June flight, tipo OTHER -> only personB's flight.
+    // Combined persona + periodo + tipo: the RUN-UNIQUE person keyed with
+    // dateFrom/dateTo bracketing only the June flight and tipo OTHER -> that
+    // one flight. The person filter is what keeps the assertion run-unique
+    // (lesson 6.3 F1): periodo+tipo alone match the June/OTHER flights EVERY
+    // past execution of this very test left in an accumulated DB.
+    await selectFromCombobox(
+      page.getByTestId('flight-filter-person'),
+      personB.lastName,
+      `${personB.lastName} ${personB.firstName}`,
+    );
+    // EVERY filter change navigates and remounts the subtree (same M1 race
+    // as the reset) — settle each step on its URL effect before touching the
+    // next control, or the next fill can land on the node the remount is
+    // about to discard.
+    await expect(page).toHaveURL(/personId=/);
     await page.getByTestId('flight-filter-date-from').fill('2020-06-01');
+    await expect(page).toHaveURL(/dateFrom=2020-06-01/);
     await page.getByTestId('flight-filter-date-to').fill('2020-06-30');
+    await expect(page).toHaveURL(/dateTo=2020-06-30/);
     await page.getByTestId('flight-filter-type').selectOption('OTHER');
+    await expect(page).toHaveURL(/flightType=OTHER/);
     rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(personB.lastName);
     await expect(rows.first()).toContainText('Altro');
 
-    await page.getByTestId('flight-filter-reset').click();
-    // Reset shows both again (no other run's flights ever touch these run-unique aircraft).
-    await expect(page.getByTestId('flight-row').filter({ hasText: aircraftA.registration })).toHaveCount(1);
-    await expect(page.getByTestId('flight-row').filter({ hasText: aircraftB.registration })).toHaveCount(1);
+    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-date-from'), '2020-06-01');
+    // Both flights still reachable after the reset — each located through its
+    // run-unique aircraft filter, NOT on the unfiltered page 1: the registry
+    // orders by flightDate desc with a 20-row page, so on an accumulated DB
+    // recent-dated flights from other runs bury these 2020-dated rows past
+    // the cap (review TD-3 M1/D1 lesson: assert on run-unique observables).
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraftA.registration, aircraftA.registration);
+    await expect(page.getByTestId('flight-row')).toHaveCount(1);
+    await expect(page.getByTestId('flight-row').first()).toContainText(aircraftA.registration);
+    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-aircraft'), aircraftA.registration);
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraftB.registration, aircraftB.registration);
+    await expect(page.getByTestId('flight-row')).toHaveCount(1);
+    await expect(page.getByTestId('flight-row').first()).toContainText(aircraftB.registration);
   });
 
   test('staff: pagination shows a second page once a filtered person has more than one page of flights (NFR-6)', async ({ page }) => {
