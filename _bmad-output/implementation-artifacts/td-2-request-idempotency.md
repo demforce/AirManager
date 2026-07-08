@@ -4,7 +4,7 @@ baseline_commit: 0d4e008
 
 # Story TD-2: Idempotenza delle richieste sui POST monetari
 
-Status: review
+Status: done
 
 ## Story
 
@@ -113,7 +113,21 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial (superficie money-critical). **Verdict: clean pass — nessuna modifica al codice richiesta** (zero mandatory findings).
+
+- **Priorità zero (a) — full suite su DB fresco (4 worker)**: 96/113 con 17 fail, TUTTI riclassificati non-regressione col criterio stabilito: 13 = flake da carico parallelo/cold-compile (12/12 verdi in isolamento, incluse le superfici toccate da TD-2 e il nuovo `idempotency.spec`); 4 = classe flaky epic-5 volume-driven (`flights:165/:219`, `flight-reversal:151`, `package-consumption:134`) — **esperimento decisivo del reviewer**: revert di `flights-manager.tsx` alla baseline sullo stesso DB → gli STESSI 4 fail identici senza il codice TD-2. Zero regressioni.
+- **Priorità zero (b) — concorrenza con curl paralleli REALI** (indipendente dagli e2e): 5 iterazioni di doppio POST simultaneo stesso key → **sempre esattamente 1 `AccountMovement`** (conteggio psql), status in {200,409}, zero orphan PENDING.
+- **Attacchi verificati vivi**: cross-user replay leak (secondo utente STAFF reale creato via invito+Mailpit: stesso key stesso endpoint → entrambi eseguono, 2 record con userId distinti, nessun leak — lo scoping per-utente regge); fedeltà replay (header `Idempotency-Replayed` SOLO sul replay); key liberato su 404 (zero righe orfane, retry stesso key esegue); PENDING orfano inserito a mano via psql → 409 senza ri-esecuzione né 500; header vuoto/201-char → 422 senza toccare handle né DB; header su route non coperta → ignorato; guard di costruzione (public/204) → throw a module load; migrazione = schema senza drift, FK RESTRICT, 20/20 pulite; OpenAPI header sui 5 path (e ASSENTE sui 3 già idempotenti) con min/max round-trip verificato su openapi.json live; File List = diff esatto (24 file); zero stringhe UI nuove, i18n invariata; copertura unit completa dei rami del wrapper.
+- **D1 (deferral)** — il replay è deep-equal ma NON byte-identico: JSONB non preserva l'ordine delle chiavi (i valori sono lossless — cents interi, ISO string). Conforme all'AC ("stesso body" = uguaglianza semantica); da documentare solo se un futuro consumer facesse hash/ETag dei byte grezzi.
+- **D2 (deferral)** — il path correzione volo ora ha il fetch in try/catch (a baseline un errore di rete propagava come unhandled rejection): micro-miglioramento benigno dichiarato nella deviazione del dev, non una regressione; l'header NON viene mai inviato sul path correzione (verificato nel diff).
+- **D3 (deferral)** — il ramo difensivo `Prisma.JsonNull` (handle che ritorna null/undefined) non ha test né caller vivi: corretto per ispezione, da coprire se mai arriverà una route idempotente che risponde null.
+
+### Final gates (review run, DB fresco)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **789/789 unit**, `env -u NODE_ENV npx next build` verde (51 pagine, header OpenAPI live), full suite 96/113 a 4 worker su DB fresco con TUTTI i 17 fail provati non-regressione (12/12 isolamento per le superfici TD-2; revert-alla-baseline riproduce i 4 residui). Working tree pulito post-review.
+
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session) — scioglie il deferral 3.1 O2 su decisione utente ("fix everything before epic 7").
 - 2026-07-08: Implemented (Sonnet 5 single dev agent, xhigh) — T1-T6 completati. Modello `IdempotencyRecord` + migrazione hand-written (20 migrazioni, catena pulita); opzione `idempotency` in `apiRoute` (gate dopo la validazione Zod, guardie di costruzione, `Idempotency-Replayed`/`IDEMPOTENCY_IN_PROGRESS`); 5 endpoint configurati + 3 doc-comment sugli endpoint già idempotenti via `reversalOfId`; componente header OpenAPI riusabile sui 5 path; hook UI condiviso `useIdempotencyKey()` wired identicamente nei 5 form (deviazione dichiarata: nel form voli l'header è inviato solo sul branch di registrazione, non su quello di correzione); `e2e/idempotency.spec.ts` con race PARALLELA REALE provata (lezione 6.2). Gate: lint 0 errori, typecheck pulito, **789/789 unit** (+22 nuovi), build verde, e2e full-suite **111/113 su DB non fresco** (accumulato dai run di questa stessa sessione, non resettabile dal dev agent) — i 2 fail sono la classe flaky epic-5/TD-1 già documentata (`flights.spec.ts:165`, `flight-reversal.spec.ts:151`), diagnosticata come NON regressiva con verifica empirica (`git stash` del file toccato + re-test sullo stesso DB → fallisce identico anche senza la modifica di questa story). Zero fail sulle 5 superfici toccate. Status → review.
+- 2026-07-08: Review Opus 4.8 xhigh — clean pass, zero mandatory; concorrenza/cross-user/orfani provati vivi con curl+psql; 17 fail e2e da carico tutti riclassificati non-regressione (revert-esperimento decisivo). D1 replay non byte-identico (JSONB), D2 try/catch correzione, D3 ramo JsonNull scoperto → deferred. Status → done.
