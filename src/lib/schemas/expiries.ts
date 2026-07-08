@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { expiryScopeSchema } from './expiry-types';
 import { z } from './zod-with-openapi';
 
 // --- Expiries (epic 6, story 6.2, Task 1/2/4, AC 1/2; FR-36) ----------------
@@ -182,3 +183,54 @@ export const decideProposalSchema = z.object({
 });
 
 export type DecideProposalInput = z.infer<typeof decideProposalSchema>;
+
+// --- Expiry dashboard (epic 6, story 6.4, AC 1; FR-38) ----------------------
+// The staff-facing "Tutte le scadenze" landing (`/dashboard/expiries`) — every
+// scadenza across every person, ordered by urgency. `status` is NEVER
+// post-filtered client-side: it maps to an `expiresAt` date range in the
+// service (`expiries.service.ts#listAllExpiries`'s doc-comment), using the
+// SAME `today`/`EXPIRY_WARNING_DAYS` boundary the per-row `status` field
+// (`expiryStatusSchema`, computed via `computeExpiryStatus`) already uses —
+// the two always agree by construction.
+
+/**
+ * `GET /api/v1/expiries` query (AC 1). Every filter optional and
+ * AND-combinable (pattern `listFlightsQuerySchema`, story 5.4).
+ * `expiryTypeId` is an exact-match filter, not a lookup — an id that does
+ * not exist yields an empty page, never a 404 (same convention as
+ * `personId`/`aircraftId` on `listFlightsQuerySchema`).
+ */
+export const listAllExpiriesQuerySchema = paginationQuerySchema.extend({
+  expiryTypeId: z.string().trim().min(1).optional(),
+  scope: expiryScopeSchema.optional(),
+  status: expiryStatusSchema.optional(),
+});
+
+export type ListAllExpiriesQuery = z.infer<typeof listAllExpiriesQuerySchema>;
+
+/**
+ * One entry of `GET /api/v1/expiries` (AC 1). Mirrors
+ * `expiries.service.ts`'s `ExpiryDashboardItem` — `personFirstName`/
+ * `personLastName`/`typeName`/`typeScope` denormalized at read time (never
+ * snapshotted, same choice as `expiryItemSchema`).
+ */
+export const expiryDashboardItemSchema = z.object({
+  id: z.string(),
+  personId: z.string(),
+  personFirstName: z.string(),
+  personLastName: z.string(),
+  expiryTypeId: z.string(),
+  typeName: z.string(),
+  typeScope: expiryScopeSchema,
+  issuedAt: z.iso.date(),
+  expiresAt: z.iso.date(),
+  notes: z.string().nullable(),
+  status: expiryStatusSchema,
+});
+
+export type ExpiryDashboardItemDto = z.infer<typeof expiryDashboardItemSchema>;
+
+/** `GET /api/v1/expiries` response — the AD-8 paginated envelope (same shape as `expiryProposalListResponseSchema`). */
+export const expiryDashboardListResponseSchema = paginatedResponseSchema(expiryDashboardItemSchema);
+
+export type ExpiryDashboardListResponseDto = z.infer<typeof expiryDashboardListResponseSchema>;

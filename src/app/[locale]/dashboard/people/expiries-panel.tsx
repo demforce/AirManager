@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { ExpiryTypeItemDto } from '@/lib/schemas/expiry-types';
 import type { ExpiryItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
+import { ExpiryStatusBadge } from '../expiries/expiry-status-badge';
 
 export type ExpiriesPanelLabels = {
   heading: string;
@@ -68,12 +69,6 @@ type ExpiriesPanelProps = {
    */
   activeProfiles: { pilot: boolean; student: boolean; instructor: boolean };
   labels: ExpiriesPanelLabels;
-};
-
-const STATUS_BADGE_CLASSES: Record<ExpiryStatusDto, string> = {
-  ok: 'bg-[#EDF3EC] text-[#346538]',
-  expiring: 'bg-[#FBF3DB] text-[#956400]',
-  expired: 'bg-[#FDEBEC] text-[#9F2F2D]',
 };
 
 /** `<input type="date">` default — same browser-local-time convention as the other panels' `todayDateOnly`. */
@@ -286,12 +281,7 @@ function ExpiryRow({
       <td className="py-3 pr-4 whitespace-nowrap">{expiry.issuedAt}</td>
       <td className="py-3 pr-4 whitespace-nowrap">{expiry.expiresAt}</td>
       <td className="py-3 pr-4">
-        <span
-          data-testid="expiry-status-badge"
-          className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] ${STATUS_BADGE_CLASSES[expiry.status]}`}
-        >
-          {labels.table.status[expiry.status]}
-        </span>
+        <ExpiryStatusBadge status={expiry.status} label={labels.table.status[expiry.status]} data-testid="expiry-status-badge" />
       </td>
       <td className="py-3 pr-4 text-[#787774]">{expiry.notes ?? labels.table.noNotes}</td>
       {canManage ? (

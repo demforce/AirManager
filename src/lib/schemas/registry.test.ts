@@ -94,6 +94,13 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(Object.keys(listUsers?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
   });
 
+  it('documents 401/403/422/500 error responses on the expiry dashboard endpoint (story 6.4)', () => {
+    const listExpiries = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)['/api/v1/expiries']?.[
+      'get'
+    ];
+    expect(Object.keys(listExpiries?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+  });
+
   it('produces valid JSON (round-trips through JSON.stringify/parse)', () => {
     expect(() => JSON.parse(JSON.stringify(doc))).not.toThrow();
   });

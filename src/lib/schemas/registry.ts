@@ -41,10 +41,13 @@ import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { expiryAlertsJobResultSchema } from './expiry-alerts';
 import {
   decideProposalSchema,
+  expiryDashboardItemSchema,
+  expiryDashboardListResponseSchema,
   expiryItemSchema,
   expiryListResponseSchema,
   expiryProposalItemSchema,
   expiryProposalListResponseSchema,
+  listAllExpiriesQuerySchema,
   listExpiryProposalsQuerySchema,
   pendingProposalSummarySchema,
   proposeExpirySchema,
@@ -222,6 +225,8 @@ registry.register('ExpiryProposal', expiryProposalItemSchema);
 registry.register('ExpiryProposalList', expiryProposalListResponseSchema);
 registry.register('DecideProposalRequest', decideProposalSchema);
 registry.register('ExpiryAlertsJobResult', expiryAlertsJobResultSchema);
+registry.register('ExpiryDashboardItem', expiryDashboardItemSchema);
+registry.register('ExpiryDashboardList', expiryDashboardListResponseSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -1216,6 +1221,21 @@ registry.registerPath({
   responses: {
     200: { description: "The person's scadenze.", content: jsonContent(expiryListResponseSchema) },
     ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/expiries',
+  summary: 'The urgency dashboard: every scadenza across every person, filterable (story 6.4, AC 1, FR-38)',
+  description:
+    'Ordered by `expiresAt asc, id asc` (soonest-expiring/most-overdue first, tie-broken for stable pagination). Filters `expiryTypeId`/`scope`/`status` are optional and AND-combinable; `status` maps to an `expiresAt` date range server-side (never post-filtered), always agreeing with the per-row `status` field by construction (same `today`/`EXPIRY_WARNING_DAYS` boundary as `computeExpiryStatus`). Requires `expiries.manage`.',
+  tags: ['Expiries'],
+  security,
+  request: { query: listAllExpiriesQuerySchema },
+  responses: {
+    200: { description: 'A page of scadenze, ordered by urgency.', content: jsonContent(expiryDashboardListResponseSchema) },
+    ...errorResponses(401, 403, 422),
   },
 });
 

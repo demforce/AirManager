@@ -1,18 +1,48 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import type { ExpiryItemDto, ExpiryProposalItemDto } from '@/lib/schemas/expiries';
+import type { ExpiryScopeDto } from '@/lib/schemas/expiry-types';
+import type { ExpiryItemDto, ExpiryProposalItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import { listExpiryProposals, listPersonExpiries, type ExpiryListItem, type ExpiryProposalListItem } from '@/server/services/expiries.service';
+import {
+  listAllExpiries,
+  listExpiryProposals,
+  listPersonExpiries,
+  type ExpiryListItem,
+  type ExpiryProposalListItem,
+} from '@/server/services/expiries.service';
 import { listExpiryTypes } from '@/server/services/expiry-types.service';
+import { ExpiryDashboardFilters, type ExpiryDashboardFiltersValue } from './dashboard-filters';
+import { ExpiryStatusBadge } from './expiry-status-badge';
 import { MyExpiries } from './my-expiries';
 import { ProposalsQueue } from './proposals-queue';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    dashboardPage?: string;
+    expiryTypeId?: string;
+    scope?: string;
+    status?: string;
+  }>;
 };
+
+/** The staff dashboard's own page size (story 6.4, AC 1) — its own `dashboardPage` query param, deliberately SEPARATE from the proposal queue's `page` above (Dev Notes: two independently paginated sections on one landing page). */
+const DASHBOARD_PAGE_SIZE = 20;
+
+const EXPIRY_SCOPES: readonly ExpiryScopeDto[] = ['PILOTS', 'STUDENTS', 'INSTRUCTORS', 'ALL'];
+const EXPIRY_STATUSES: readonly ExpiryStatusDto[] = ['ok', 'expiring', 'expired'];
+
+/** Hand-edited URL defense (pattern `finance/page.tsx`'s `sanitizeDateParam`/`flights/page.tsx`'s enum sanitizers): only a value actually in the enum reaches `listAllExpiries` — the service also validates at the Zod boundary (`GET /api/v1/expiries`), this only keeps a malformed page param from ever being forwarded. */
+function sanitizeScope(value: string | undefined): ExpiryScopeDto | undefined {
+  return value && (EXPIRY_SCOPES as readonly string[]).includes(value) ? (value as ExpiryScopeDto) : undefined;
+}
+
+function sanitizeStatus(value: string | undefined): ExpiryStatusDto | undefined {
+  return value && (EXPIRY_STATUSES as readonly string[]).includes(value) ? (value as ExpiryStatusDto) : undefined;
+}
 
 /**
  * The client components below receive their INITIAL data as server-component
@@ -39,14 +69,18 @@ function toExpiryDto(item: ExpiryListItem): ExpiryItemDto {
 const PROPOSALS_PAGE_SIZE = 20;
 
 /**
- * The Scadenze landing (epic 6, stories 6.1/6.2) — two faces of the SAME
+ * The Scadenze landing (epic 6, stories 6.1/6.2/6.4) — two faces of the SAME
  * page, decided by `expiries.manage` (same dual-face pattern as
  * `FlightsPage`, story 5.4):
  *
- * - **Staff/admin** (`canManage`): unchanged catalogue link/stat from 6.1,
- *   PLUS the new "Coda proposte" section above it — the FIFO queue of
- *   PENDING `ExpiryUpdateProposal`s (AC 2), paginated (`?page=`) once past
- *   `PROPOSALS_PAGE_SIZE`.
+ * - **Staff/admin** (`canManage`): "Tutte le scadenze" (story 6.4, AC 1) —
+ *   every scadenza ordered by urgency (`expiresAt asc`), with combinable
+ *   filters (tipo/ambito/stato) and its OWN pagination (`?dashboardPage=`,
+ *   deliberately separate from the queue's own `?page=` below — two
+ *   independently paginated sections on one page); PLUS, unchanged since
+ *   6.2, "Coda proposte" — the FIFO queue of PENDING
+ *   `ExpiryUpdateProposal`s (AC 2), paginated (`?page=`) once past
+ *   `PROPOSALS_PAGE_SIZE`; PLUS the unchanged 6.1 catalogue link/stat.
  * - **Everyone else** (own-access, `self.read` — every role holds it):
  *   "Le mie scadenze" — the actor's own scadenze (status badges, same
  *   colors as the scheda persona's `ExpiriesPanel`) with a "Proponi
@@ -54,12 +88,16 @@ const PROPOSALS_PAGE_SIZE = 20;
  *
  * Gate: `expiries.manage` OR `self.read` (redirect to `/dashboard`
  * otherwise — defense in depth only, AD-5: both services re-authorize).
- * Doc-comment (Dev Notes): story 6.4 replaces the staff section with the
- * real by-urgency dashboard; nothing from 6.4 is built here.
  */
 export default async function ExpiriesPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { page: pageParam } = await searchParams;
+  const {
+    page: pageParam,
+    dashboardPage: dashboardPageParam,
+    expiryTypeId: expiryTypeIdParam,
+    scope: scopeParam,
+    status: statusParam,
+  } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -78,11 +116,64 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
 
   if (canManage) {
     const canManageSettings = hasPermission(actor, 'settings.manage');
-    const activeTypes = await listExpiryTypes(actor, { includeInactive: false });
+    // `includeInactive: true` (Contesto: the dashboard filter must cover a
+    // scadenza registered against a since-deactivated type too) — the
+    // "Tipi attivi" stat below simply counts the active subset of the same
+    // list rather than issuing a second query.
+    const allTypes = await listExpiryTypes(actor, { includeInactive: true });
+    const activeTypesCount = allTypes.filter((type) => type.isActive).length;
 
     const page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
     const proposalsResult = await listExpiryProposals(actor, { status: 'PENDING', page, pageSize: PROPOSALS_PAGE_SIZE });
     const totalPages = Math.max(1, Math.ceil(proposalsResult.total / PROPOSALS_PAGE_SIZE));
+
+    // --- "Tutte le scadenze" (AC 1) — its own filters + pagination, a
+    // SEPARATE `dashboardPage` query param from the proposal queue's `page`
+    // above (Dev Notes: two independently paginated sections on one page).
+    const expiryTypeId = expiryTypeIdParam || undefined;
+    const scope = sanitizeScope(scopeParam);
+    const status = sanitizeStatus(statusParam);
+
+    const dashboardQuery = { expiryTypeId, scope, status, pageSize: DASHBOARD_PAGE_SIZE };
+    let dashboardPage = Math.max(1, Number.parseInt(dashboardPageParam ?? '1', 10) || 1);
+    let dashboardResult = await listAllExpiries(actor, { ...dashboardQuery, page: dashboardPage });
+    // Clamp an out-of-range ?dashboardPage to the last real page (same pattern as `FinancePage`/`FlightsPage`).
+    const dashboardLastPage = Math.max(1, Math.ceil(dashboardResult.total / DASHBOARD_PAGE_SIZE));
+    if (dashboardPage > dashboardLastPage) {
+      dashboardPage = dashboardLastPage;
+      dashboardResult = await listAllExpiries(actor, { ...dashboardQuery, page: dashboardPage });
+    }
+    const dashboardTotalPages = Math.max(1, Math.ceil(dashboardResult.total / DASHBOARD_PAGE_SIZE));
+
+    const dashboardFilterQuery = {
+      ...(expiryTypeId ? { expiryTypeId } : {}),
+      ...(scope ? { scope } : {}),
+      ...(status ? { status } : {}),
+    };
+
+    function dashboardPageHref(targetPage: number) {
+      return { pathname: '/dashboard/expiries', query: { dashboardPage: targetPage, ...dashboardFilterQuery } };
+    }
+
+    const dashboardInitialFilters: ExpiryDashboardFiltersValue = {
+      expiryTypeId: expiryTypeId ?? '',
+      scope: scope ?? '',
+      status: status ?? '',
+    };
+
+    // Ambito/stato labels are REUSED (Dev Notes), never redefined: `ExpiryTypesPage.scope` (story 6.1) and this same page's own `own.table.status` (story 6.2).
+    const tTypes = await getTranslations('ExpiryTypesPage');
+    const scopeLabels: Record<ExpiryScopeDto, string> = {
+      PILOTS: tTypes('scope.PILOTS'),
+      STUDENTS: tTypes('scope.STUDENTS'),
+      INSTRUCTORS: tTypes('scope.INSTRUCTORS'),
+      ALL: tTypes('scope.ALL'),
+    };
+    const statusLabels: Record<ExpiryStatusDto, string> = {
+      ok: t('own.table.status.ok'),
+      expiring: t('own.table.status.expiring'),
+      expired: t('own.table.status.expired'),
+    };
 
     return (
       <main className="flex-1 px-6 py-16 sm:px-16">
@@ -116,6 +207,105 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               </Link>
             </div>
           </div>
+
+          <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="expiry-dashboard-section">
+            <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+              {t('dashboard.heading')}
+            </h2>
+            <p className="mt-1 text-sm text-[#787774]">{t('dashboard.description')}</p>
+
+            <div className="mt-6 border-b border-[#EAEAEA] pb-6">
+              <ExpiryDashboardFilters
+                types={allTypes}
+                initialFilters={dashboardInitialFilters}
+                labels={{
+                  type: t('dashboard.filters.type'),
+                  allTypes: t('dashboard.filters.allTypes'),
+                  inactiveSuffix: t('dashboard.filters.inactiveSuffix'),
+                  scope: t('dashboard.filters.scope'),
+                  allScopes: t('dashboard.filters.allScopes'),
+                  scopeOptions: scopeLabels,
+                  status: t('dashboard.filters.status'),
+                  allStatuses: t('dashboard.filters.allStatuses'),
+                  statusOptions: statusLabels,
+                  reset: t('dashboard.filters.reset'),
+                }}
+              />
+            </div>
+
+            <div className="mt-6 overflow-x-auto rounded-[12px] border border-[#EAEAEA]">
+              <table className="w-full min-w-[720px] text-left text-sm" data-testid="expiry-dashboard-table">
+                <thead>
+                  <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+                    <th className="px-5 py-3">{t('dashboard.table.person')}</th>
+                    <th className="px-5 py-3">{t('dashboard.table.type')}</th>
+                    <th className="px-5 py-3">{t('dashboard.table.scope')}</th>
+                    <th className="px-5 py-3">{t('dashboard.table.issuedAt')}</th>
+                    <th className="px-5 py-3">{t('dashboard.table.expiresAt')}</th>
+                    <th className="px-5 py-3">{t('dashboard.table.status')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboardResult.items.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-5 py-8 text-center text-[#787774]">
+                        {t('dashboard.table.empty')}
+                      </td>
+                    </tr>
+                  ) : (
+                    dashboardResult.items.map((item) => (
+                      <tr key={item.id} className="border-b border-[#EAEAEA] last:border-b-0" data-testid="expiry-dashboard-row">
+                        <td className="px-5 py-3 align-middle">
+                          <Link
+                            href={`/dashboard/people/${item.personId}`}
+                            locale={locale as AppLocale}
+                            className="font-medium text-[#111111] underline-offset-4 hover:underline"
+                          >
+                            {item.personLastName} {item.personFirstName}
+                          </Link>
+                        </td>
+                        <td className="px-5 py-3 align-middle text-[#2F3437]">{item.typeName}</td>
+                        <td className="px-5 py-3 align-middle text-[#2F3437]">{scopeLabels[item.typeScope]}</td>
+                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">{item.issuedAt}</td>
+                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">{item.expiresAt}</td>
+                        <td className="px-5 py-3 align-middle">
+                          <ExpiryStatusBadge status={item.status} label={statusLabels[item.status]} data-testid="expiry-dashboard-status-badge" />
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {dashboardTotalPages > 1 ? (
+              <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
+                <Link
+                  href={dashboardPageHref(dashboardPage - 1)}
+                  locale={locale as AppLocale}
+                  aria-disabled={dashboardPage <= 1}
+                  className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
+                    dashboardPage <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                  }`}
+                >
+                  &larr;
+                </Link>
+                <span data-testid="expiry-dashboard-pagination-status">
+                  {dashboardPage} / {dashboardTotalPages}
+                </span>
+                <Link
+                  href={dashboardPageHref(dashboardPage + 1)}
+                  locale={locale as AppLocale}
+                  aria-disabled={dashboardPage >= dashboardTotalPages}
+                  className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
+                    dashboardPage >= dashboardTotalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                  }`}
+                >
+                  &rarr;
+                </Link>
+              </nav>
+            ) : null}
+          </section>
 
           <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
             <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
@@ -186,13 +376,8 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6 sm:col-span-1">
               <p className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{t('stat.label')}</p>
-              <p className="mt-3 font-[family-name:var(--font-serif)] text-4xl font-medium text-[#111111]">{activeTypes.length}</p>
+              <p className="mt-3 font-[family-name:var(--font-serif)] text-4xl font-medium text-[#111111]">{activeTypesCount}</p>
               <p className="mt-1 text-sm text-[#787774]">{t('stat.hint')}</p>
-            </div>
-
-            <div className="rounded-[12px] border border-[#EAEAEA] bg-[#F7F6F3] p-6 sm:col-span-2">
-              <p className="text-sm font-medium text-[#111111]">{t('placeholder.heading')}</p>
-              <p className="mt-2 max-w-lg text-sm leading-[1.6] text-[#787774]">{t('placeholder.body')}</p>
             </div>
           </div>
         </div>

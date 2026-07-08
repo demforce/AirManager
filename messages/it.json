@@ -30,6 +30,10 @@
     "navHeading": "Aree operative",
     "myProfile": "La mia scheda",
     "myAccount": "Il mio conto",
+    "myExpiries": {
+      "heading": "Le mie scadenze",
+      "link": "Tutte le mie scadenze"
+    },
     "nav": {
       "people": "Persone",
       "aircraft": "Velivoli",
@@ -823,9 +827,28 @@
       "label": "Tipi attivi",
       "hint": "Nel catalogo, pronti per la registrazione delle scadenze."
     },
-    "placeholder": {
-      "heading": "La vista per urgenza arriva a breve",
-      "body": "L'elenco ordinato per urgenza (in scadenza, scadute) sarà disponibile in una prossima versione."
+    "dashboard": {
+      "heading": "Tutte le scadenze",
+      "description": "Ogni scadenza registrata, ordinata per urgenza: le scadute per prime, poi quelle in scadenza, poi le altre.",
+      "filters": {
+        "type": "Tipo",
+        "allTypes": "Tutti i tipi",
+        "inactiveSuffix": " (disattivato)",
+        "scope": "Ambito",
+        "allScopes": "Tutti gli ambiti",
+        "status": "Stato",
+        "allStatuses": "Tutti gli stati",
+        "reset": "Azzera filtri"
+      },
+      "table": {
+        "person": "Persona",
+        "type": "Tipo",
+        "scope": "Ambito",
+        "issuedAt": "Rilascio",
+        "expiresAt": "Scadenza",
+        "status": "Stato",
+        "empty": "Nessuna scadenza registrata."
+      }
     },
     "queue": {
       "heading": "Coda proposte",

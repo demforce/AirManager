@@ -30,6 +30,10 @@
     "navHeading": "Operational areas",
     "myProfile": "My profile",
     "myAccount": "My account",
+    "myExpiries": {
+      "heading": "My expiries",
+      "link": "All my expiries"
+    },
     "nav": {
       "people": "People",
       "aircraft": "Aircraft",
@@ -823,9 +827,28 @@
       "label": "Active types",
       "hint": "In the catalogue, ready for expiry registration."
     },
-    "placeholder": {
-      "heading": "The urgency view is coming soon",
-      "body": "The list ordered by urgency (expiring, expired) will be available in an upcoming release."
+    "dashboard": {
+      "heading": "All expiries",
+      "description": "Every registered scadenza, ordered by urgency: expired first, then expiring soon, then the rest.",
+      "filters": {
+        "type": "Type",
+        "allTypes": "All types",
+        "inactiveSuffix": " (deactivated)",
+        "scope": "Scope",
+        "allScopes": "All scopes",
+        "status": "Status",
+        "allStatuses": "All statuses",
+        "reset": "Clear filters"
+      },
+      "table": {
+        "person": "Person",
+        "type": "Type",
+        "scope": "Scope",
+        "issuedAt": "Issued",
+        "expiresAt": "Expires",
+        "status": "Status",
+        "empty": "No expiry registered."
+      }
     },
     "queue": {
       "heading": "Proposal queue",

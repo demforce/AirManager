@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseDateOnlyUtc } from '@/lib/date-only';
+import { parseDateOnlyUtc, todayDateOnlyUtc } from '@/lib/date-only';
+import { EXPIRY_WARNING_DAYS } from '@/lib/expiry-status';
 import {
   decideProposalSchema,
+  listAllExpiriesQuerySchema,
   proposeExpirySchema,
   registerExpirySchema,
   updateExpirySchema,
@@ -20,6 +22,7 @@ vi.mock('@/server/db/prisma', () => ({
     expiry: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -44,6 +47,7 @@ const { prisma } = await import('@/server/db/prisma');
 const {
   decideExpiryProposal,
   deleteExpiry,
+  listAllExpiries,
   listExpiryProposals,
   listPersonExpiries,
   proposeExpiryUpdate,
@@ -56,6 +60,7 @@ const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const typeFindUniqueMock = vi.mocked(prisma.expiryType.findUnique);
 const expiryFindUniqueMock = vi.mocked(prisma.expiry.findUnique);
 const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
+const expiryCountMock = vi.mocked(prisma.expiry.count);
 const expiryCreateMock = vi.mocked(prisma.expiry.create);
 const expiryUpdateMock = vi.mocked(prisma.expiry.update);
 const expiryDeleteMock = vi.mocked(prisma.expiry.delete);
@@ -76,6 +81,7 @@ const personFindUnique = personFindUniqueMock as unknown as { mockResolvedValue:
 const typeFindUnique = typeFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryFindUnique = expiryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryFindMany = expiryFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const expiryCount = expiryCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const expiryCreate = expiryCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
 const expiryUpdate = expiryUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryDelete = expiryDeleteMock as unknown as { mockResolvedValue: (v: Fixture) => void };
@@ -133,6 +139,20 @@ function expiryFixture(overrides: Partial<Record<string, unknown>> = {}): Record
   };
 }
 
+function dashboardExpiryFixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    id: 'exp_1',
+    personId: 'person_1',
+    person: { firstName: 'Mario', lastName: 'Rossi' },
+    expiryTypeId: 'type_1',
+    expiryType: { name: 'Visita medica classe 2', scope: 'PILOTS' },
+    issuedAt: parseDateOnlyUtc('2026-01-01'),
+    expiresAt: parseDateOnlyUtc('2026-12-31'),
+    notes: null,
+    ...overrides,
+  };
+}
+
 function proposalCreateFixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
     id: 'prop_1',
@@ -175,6 +195,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
     typeFindUniqueMock.mockReset();
     expiryFindUniqueMock.mockReset();
     expiryFindManyMock.mockReset();
+    expiryCountMock.mockReset();
     expiryCreateMock.mockReset();
     expiryUpdateMock.mockReset();
     expiryDeleteMock.mockReset();
@@ -259,6 +280,18 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
     it('listExpiryProposals rejects a pilot', async () => {
       await expect(listExpiryProposals(pilotActor(), { page: 1, pageSize: 20, status: 'PENDING' })).rejects.toThrow(ForbiddenError);
     });
+
+    it('listAllExpiries rejects a pilot (needs expiries.manage) without querying anything', async () => {
+      await expect(listAllExpiries(pilotActor(), { page: 1, pageSize: 20 })).rejects.toThrow(ForbiddenError);
+      expect(expiryFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('listAllExpiries allows staff', async () => {
+      expiryFindMany.mockResolvedValue([]);
+      expiryCount.mockResolvedValue(0);
+
+      await expect(listAllExpiries(staffActor(), { page: 1, pageSize: 20 })).resolves.toMatchObject({ total: 0 });
+    });
   });
 
   // --- listPersonExpiries: computed status + pending proposal ----------
@@ -291,6 +324,146 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
         proposedIssuedAt: '2026-02-01',
         proposedExpiresAt: '2027-02-01',
         proposedNotes: 'nuova nota',
+      });
+    });
+  });
+
+  // --- listAllExpiries: the urgency dashboard (story 6.4, AC 1) ---------
+
+  describe('listAllExpiries', () => {
+    it('maps rows into ExpiryDashboardItem shape (personFirstName/personLastName/typeName/typeScope denormalized, status computed)', async () => {
+      expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: parseDateOnlyUtc('2020-01-01') })]);
+      expiryCount.mockResolvedValue(1);
+
+      const result = await listAllExpiries(staffActor(), { page: 1, pageSize: 20 });
+
+      expect(result.items[0]).toMatchObject({
+        id: 'exp_1',
+        personId: 'person_1',
+        personFirstName: 'Mario',
+        personLastName: 'Rossi',
+        expiryTypeId: 'type_1',
+        typeName: 'Visita medica classe 2',
+        typeScope: 'PILOTS',
+        issuedAt: '2026-01-01',
+        expiresAt: '2020-01-01',
+        status: 'expired',
+      });
+    });
+
+    it('orders by expiresAt asc, id asc (urgency first, stable tie-break)', async () => {
+      expiryFindMany.mockResolvedValue([]);
+      expiryCount.mockResolvedValue(0);
+
+      await listAllExpiries(staffActor(), { page: 1, pageSize: 20 });
+
+      expect(expiryFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }] }),
+      );
+    });
+
+    it('paginates via skip/take derived from page/pageSize, and total reflects the SAME filtered where', async () => {
+      expiryFindMany.mockResolvedValue([]);
+      expiryCount.mockResolvedValue(57);
+
+      const result = await listAllExpiries(staffActor(), { page: 3, pageSize: 20 });
+
+      expect(expiryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ skip: 40, take: 20 }));
+      expect(result).toMatchObject({ total: 57, page: 3, pageSize: 20 });
+    });
+
+    it('expiryTypeId filter: an id that does not exist yields an empty page, not an error (a filter, never a lookup)', async () => {
+      expiryFindMany.mockResolvedValue([]);
+      expiryCount.mockResolvedValue(0);
+
+      const result = await listAllExpiries(staffActor(), { expiryTypeId: 'type_missing', page: 1, pageSize: 20 });
+
+      expect(expiryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { expiryTypeId: 'type_missing' } }));
+      expect(result).toMatchObject({ total: 0, items: [] });
+    });
+
+    it('scope filter maps to the TYPE relation, not a field on Expiry itself', async () => {
+      expiryFindMany.mockResolvedValue([]);
+      expiryCount.mockResolvedValue(0);
+
+      await listAllExpiries(staffActor(), { scope: 'INSTRUCTORS', page: 1, pageSize: 20 });
+
+      expect(expiryFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { expiryType: { scope: 'INSTRUCTORS' } } }),
+      );
+    });
+
+    it('expiryTypeId + scope + status combine in AND (all three keys present in the same where)', async () => {
+      expiryFindMany.mockResolvedValue([]);
+      expiryCount.mockResolvedValue(0);
+
+      await listAllExpiries(staffActor(), { expiryTypeId: 'type_1', scope: 'PILOTS', status: 'ok', page: 1, pageSize: 20 });
+
+      const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as Record<string, unknown>;
+      expect(where).toMatchObject({ expiryTypeId: 'type_1', expiryType: { scope: 'PILOTS' } });
+      expect(where).toHaveProperty('expiresAt');
+    });
+
+    // --- status -> expiresAt range mapping (Contesto: never post-filtered in JS) ---
+
+    describe('status filter -> expiresAt date range (same today/EXPIRY_WARNING_DAYS boundary as computeExpiryStatus)', () => {
+      it('status=expired -> expiresAt < today', async () => {
+        expiryFindMany.mockResolvedValue([]);
+        expiryCount.mockResolvedValue(0);
+
+        await listAllExpiries(staffActor(), { status: 'expired', page: 1, pageSize: 20 });
+
+        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { lt: Date } };
+        expect(where.expiresAt).toEqual({ lt: todayDateOnlyUtc() });
+      });
+
+      it('status=expiring -> today <= expiresAt <= today + EXPIRY_WARNING_DAYS (inclusive both ends)', async () => {
+        expiryFindMany.mockResolvedValue([]);
+        expiryCount.mockResolvedValue(0);
+
+        await listAllExpiries(staffActor(), { status: 'expiring', page: 1, pageSize: 20 });
+
+        const today = todayDateOnlyUtc();
+        const horizon = new Date(today.getTime() + EXPIRY_WARNING_DAYS * 86_400_000);
+        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { gte: Date; lte: Date } };
+        expect(where.expiresAt).toEqual({ gte: today, lte: horizon });
+      });
+
+      it('status=ok -> expiresAt > today + EXPIRY_WARNING_DAYS', async () => {
+        expiryFindMany.mockResolvedValue([]);
+        expiryCount.mockResolvedValue(0);
+
+        await listAllExpiries(staffActor(), { status: 'ok', page: 1, pageSize: 20 });
+
+        const today = todayDateOnlyUtc();
+        const horizon = new Date(today.getTime() + EXPIRY_WARNING_DAYS * 86_400_000);
+        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { gt: Date } };
+        expect(where.expiresAt).toEqual({ gt: horizon });
+      });
+
+      // Boundary: the filter range and the per-row `computeExpiryStatus` MUST
+      // agree exactly at the EXPIRY_WARNING_DAYS edge (Contesto: "i due
+      // DEVONO combaciare").
+      it('a scadenza at exactly today + EXPIRY_WARNING_DAYS is `expiring` in BOTH the filter and the per-row status', async () => {
+        const today = todayDateOnlyUtc();
+        const atHorizon = new Date(today.getTime() + EXPIRY_WARNING_DAYS * 86_400_000);
+        expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: atHorizon })]);
+        expiryCount.mockResolvedValue(1);
+
+        const filtered = await listAllExpiries(staffActor(), { status: 'expiring', page: 1, pageSize: 20 });
+        expect(filtered.items).toHaveLength(1);
+        expect(filtered.items[0]?.status).toBe('expiring');
+      });
+
+      it('a scadenza at today + EXPIRY_WARNING_DAYS + 1 day is `ok` in BOTH the filter and the per-row status', async () => {
+        const today = todayDateOnlyUtc();
+        const beyondHorizon = new Date(today.getTime() + (EXPIRY_WARNING_DAYS + 1) * 86_400_000);
+        expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: beyondHorizon })]);
+        expiryCount.mockResolvedValue(1);
+
+        const filtered = await listAllExpiries(staffActor(), { status: 'ok', page: 1, pageSize: 20 });
+        expect(filtered.items).toHaveLength(1);
+        expect(filtered.items[0]?.status).toBe('ok');
       });
     });
   });
@@ -750,6 +923,26 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
 
     it('decideProposalSchema rejects a decision outside the enum', () => {
       expect(decideProposalSchema.safeParse({ decision: 'MAYBE' }).success).toBe(false);
+    });
+
+    it('listAllExpiriesQuerySchema rejects a status outside the enum', () => {
+      expect(listAllExpiriesQuerySchema.safeParse({ status: 'overdue' }).success).toBe(false);
+    });
+
+    it('listAllExpiriesQuerySchema rejects a scope outside the enum', () => {
+      expect(listAllExpiriesQuerySchema.safeParse({ scope: 'EVERYONE' }).success).toBe(false);
+    });
+
+    it('listAllExpiriesQuerySchema rejects a pageSize beyond the max (100)', () => {
+      expect(listAllExpiriesQuerySchema.safeParse({ pageSize: 101 }).success).toBe(false);
+    });
+
+    it('listAllExpiriesQuerySchema accepts an empty query (every filter optional, defaults applied)', () => {
+      const result = listAllExpiriesQuerySchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toMatchObject({ page: 1, pageSize: 20 });
+      }
     });
   });
 });

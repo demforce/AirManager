@@ -1,8 +1,9 @@
 import type { ExpiryProposalStatus, ExpiryScope } from '@/generated/prisma/client';
 import { paginate, paginationOffset } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
-import { computeExpiryStatus, type ExpiryStatus } from '@/lib/expiry-status';
+import { computeExpiryStatus, EXPIRY_WARNING_DAYS, type ExpiryStatus } from '@/lib/expiry-status';
 import type {
+  ListAllExpiriesQuery,
   ListExpiryProposalsQuery,
   ProposeExpiryInput,
   RegisterExpiryInput,
@@ -304,6 +305,134 @@ export async function deleteExpiry(actor: Actor, id: string): Promise<void> {
   }
 
   await prisma.expiry.delete({ where: { id } });
+}
+
+// --- Expiry dashboard (story 6.4, AC 1; FR-38) -------------------------------
+
+export type ExpiryDashboardItem = {
+  id: string;
+  personId: string;
+  personFirstName: string;
+  personLastName: string;
+  expiryTypeId: string;
+  typeName: string;
+  typeScope: ExpiryScope;
+  issuedAt: string;
+  expiresAt: string;
+  notes: string | null;
+  status: ExpiryStatus;
+};
+
+export type ExpiryDashboardListResult = {
+  items: ExpiryDashboardItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+const DASHBOARD_SELECT = {
+  id: true,
+  personId: true,
+  person: { select: { firstName: true, lastName: true } },
+  expiryTypeId: true,
+  expiryType: { select: { name: true, scope: true } },
+  issuedAt: true,
+  expiresAt: true,
+  notes: true,
+} as const;
+
+type SelectedDashboardExpiry = {
+  id: string;
+  personId: string;
+  person: { firstName: string; lastName: string };
+  expiryTypeId: string;
+  expiryType: { name: string; scope: ExpiryScope };
+  issuedAt: Date;
+  expiresAt: Date;
+  notes: string | null;
+};
+
+function toDashboardItem(expiry: SelectedDashboardExpiry, today: Date): ExpiryDashboardItem {
+  return {
+    id: expiry.id,
+    personId: expiry.personId,
+    personFirstName: expiry.person.firstName,
+    personLastName: expiry.person.lastName,
+    expiryTypeId: expiry.expiryTypeId,
+    typeName: expiry.expiryType.name,
+    typeScope: expiry.expiryType.scope,
+    issuedAt: toDateOnlyString(expiry.issuedAt),
+    expiresAt: toDateOnlyString(expiry.expiresAt),
+    notes: expiry.notes,
+    status: computeExpiryStatus(expiry.expiresAt, today),
+  };
+}
+
+/** Same private `MS_PER_DAY` copy as `expiry-alerts.service.ts` (story 6.3) — the day-BOUNDARY arithmetic itself (`computeExpiryStatus`/`daysUntilUtc`) stays the single shared implementation in `expiry-status.ts`; this is only a millisecond-per-day constant for building a `Date` threshold, not a second status algorithm. */
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Maps the `status` filter to an `expiresAt` date range (Contesto: NEVER
+ * post-filtered in JS). Uses the SAME `today` `listAllExpiries` already
+ * computed once for this request, and the SAME `EXPIRY_WARNING_DAYS` window
+ * `computeExpiryStatus` uses for the per-row `status` field below — by
+ * construction the SQL range and the computed status can never disagree:
+ * `expired` is `expiresAt < today` (strictly before, mirrors
+ * `computeExpiryStatus`'s `daysRemaining < 0`); `expiring` is `today <=
+ * expiresAt <= today + EXPIRY_WARNING_DAYS` (inclusive both ends, mirrors
+ * `daysRemaining <= EXPIRY_WARNING_DAYS`); `ok` is everything beyond that
+ * horizon. The boundary unit tests prove this: a scadenza at exactly
+ * `today + EXPIRY_WARNING_DAYS` lands in `expiring` for both the query and
+ * `computeExpiryStatus`; at `+1` day beyond that, both agree on `ok`.
+ */
+function expiresAtRangeForStatus(status: ExpiryStatus, today: Date): { lt: Date } | { gte: Date; lte: Date } | { gt: Date } {
+  const horizon = new Date(today.getTime() + EXPIRY_WARNING_DAYS * MS_PER_DAY);
+  if (status === 'expired') {
+    return { lt: today };
+  }
+  if (status === 'expiring') {
+    return { gte: today, lte: horizon };
+  }
+  return { gt: horizon };
+}
+
+/**
+ * Lists EVERY scadenza across every person, ordered by urgency (AC 1) — the
+ * data behind the staff `/dashboard/expiries` "Tutte le scadenze" table.
+ * `expiries.manage` only. Filters are AND-combinable (pattern `listFlights`,
+ * story 5.4): `expiryTypeId` (exact id — a filter, never a lookup: an id
+ * that does not exist simply yields an empty page, not a 404); `scope` (the
+ * TYPE's ambito, via the `expiryType` relation — NOT the `Expiry` itself,
+ * which has no scope of its own); `status` (mapped to an `expiresAt` date
+ * range by `expiresAtRangeForStatus` above, never post-filtered in JS).
+ * Ordered `expiresAt asc, id asc` — the scadute sort first by construction
+ * (the most urgent items are the smallest/most-negative `expiresAt`), `id`
+ * only breaks ties for stable pagination across identical dates. `total`
+ * reflects the SAME filtered `where` (AD-8 paginated envelope, pattern
+ * `listCashMovements`/`listExpiryProposals`).
+ */
+export async function listAllExpiries(actor: Actor, query: ListAllExpiriesQuery): Promise<ExpiryDashboardListResult> {
+  authorize(actor, 'expiries.manage');
+
+  const today = todayDateOnlyUtc();
+
+  const where = {
+    ...(query.expiryTypeId ? { expiryTypeId: query.expiryTypeId } : {}),
+    ...(query.scope ? { expiryType: { scope: query.scope } } : {}),
+    ...(query.status ? { expiresAt: expiresAtRangeForStatus(query.status, today) } : {}),
+  };
+
+  const [items, total] = await prisma.$transaction([
+    prisma.expiry.findMany({
+      select: DASHBOARD_SELECT,
+      where,
+      orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }],
+      ...paginationOffset(query),
+    }),
+    prisma.expiry.count({ where }),
+  ]);
+
+  return paginate(items.map((item) => toDashboardItem(item, today)), total, query);
 }
 
 // --- Update proposals (AC 2) -------------------------------------------------
