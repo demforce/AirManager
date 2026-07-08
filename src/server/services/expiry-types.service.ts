@@ -136,19 +136,27 @@ export async function updateExpiryType(actor: Actor, id: string, input: UpdateEx
 
 /**
  * Deletes an expiry type — ONLY when it has never been used (AC 2).
- * `settings.manage` only. Today (story 6.1) no FK references `ExpiryType`
- * yet, so this always succeeds on an existing id; story 6.2 adds
- * `Expiry.expiryTypeId` (`ON DELETE RESTRICT`) plus an explicit `_count`
- * pre-check ahead of this — the `P2003` catch here is ALREADY the 409
- * backstop for that future constraint (identical split to
+ * `settings.manage` only. Story 6.2 completes the contract this story's
+ * doc-comment promised: `Expiry.expiryTypeId` now exists with `ON DELETE
+ * RESTRICT`, so this adds the explicit `_count` pre-check (409 with a clear
+ * "in use" message) BEFORE the delete — the `P2003` catch remains as the
+ * concurrency backstop (a scadenza registered against this very type
+ * between the pre-check and the `DELETE` still reads as the same
+ * `Conflict`, never a raw 500 — identical pre-check + backstop split to
  * `package-types.service.ts#deletePackageType`, story 4.3 → 4.4).
  */
 export async function deleteExpiryType(actor: Actor, id: string): Promise<void> {
   authorize(actor, 'settings.manage');
 
-  const existing = await prisma.expiryType.findUnique({ where: { id }, select: { id: true } });
+  const existing = await prisma.expiryType.findUnique({
+    where: { id },
+    select: { id: true, _count: { select: { expiries: true } } },
+  });
   if (!existing) {
     throw new NotFoundError('Expiry type not found.');
+  }
+  if (existing._count.expiries > 0) {
+    throw new ConflictError('This expiry type is in use — deactivate it instead.');
   }
 
   try {

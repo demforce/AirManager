@@ -158,7 +158,6 @@
     },
     "placeholders": {
       "comingSoon": "Coming soon.",
-      "expiries": "Expiries",
       "recentFlights": "Recent flights",
       "upcomingBookings": "Upcoming bookings"
     },
@@ -252,6 +251,55 @@
       "requiredField": "This field is required.",
       "inactiveTypeError": "The selected package type is no longer active. Refresh the page and try again.",
       "genericError": "Could not record the sale. Please try again."
+    }
+  },
+  "ExpiriesPanel": {
+    "heading": "Expiries",
+    "loadError": "Could not load the expiries.",
+    "empty": "No expiry registered.",
+    "addAction": "Register expiry",
+    "feedback": {
+      "registered": "Expiry registered.",
+      "updated": "Expiry updated.",
+      "deleted": "Expiry deleted."
+    },
+    "table": {
+      "type": "Type",
+      "issuedAt": "Issued",
+      "expiresAt": "Expires",
+      "notes": "Notes",
+      "noNotes": "—",
+      "statusHeader": "Status",
+      "status": {
+        "ok": "OK",
+        "expiring": "Expiring soon",
+        "expired": "Expired"
+      },
+      "pendingBadge": "Pending proposal",
+      "actions": "Actions"
+    },
+    "form": {
+      "title": "Register expiry",
+      "type": "Expiry type",
+      "noCompatibleTypes": "No active expiry type is compatible with this person's profiles.",
+      "issuedAt": "Issued on",
+      "expiresAt": "Expires on",
+      "notes": "Notes",
+      "submit": "Register",
+      "cancel": "Cancel",
+      "save": "Save",
+      "edit": "Edit",
+      "requiredField": "This field is required.",
+      "invalidRange": "The expiry date cannot be before the issue date.",
+      "scopeMismatchError": "This expiry type is not compatible with the person's active profiles.",
+      "conflictError": "Could not register the expiry: the person is archived, the type is deactivated, or an expiry of this type is already registered for this person.",
+      "genericError": "Could not save the expiry. Please try again."
+    },
+    "actions": {
+      "delete": "Delete",
+      "confirmDelete": "Delete this expiry?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
     }
   },
   "AccountStatementPage": {
@@ -766,7 +814,9 @@
   "ExpiriesPage": {
     "kicker": "Expiries",
     "title": "Expiries",
-    "description": "The airfield's expiry-type catalogue: medical certificates, licenses, ratings and your own custom entries.",
+    "description": "The pending proposal queue and the airfield's expiry-type catalogue.",
+    "titleOwn": "My expiries",
+    "descriptionOwn": "Your registered expiries, with the computed status. Propose an update whenever you renew.",
     "manageTypes": "Expiry types",
     "backToDashboard": "Back to dashboard",
     "stat": {
@@ -775,7 +825,66 @@
     },
     "placeholder": {
       "heading": "The urgency view is coming soon",
-      "body": "Individual people's expiries and the list ordered by urgency (expiring, expired) will be available in an upcoming release. For now this page hosts the expiry-type catalogue."
+      "body": "The list ordered by urgency (expiring, expired) will be available in an upcoming release."
+    },
+    "queue": {
+      "heading": "Proposal queue",
+      "description": "Update proposals pending validation, in order of arrival.",
+      "empty": "No pending proposals.",
+      "table": {
+        "person": "Person",
+        "type": "Type",
+        "current": "Current values",
+        "proposed": "Proposed values",
+        "proposedBy": "Proposed by",
+        "when": "When",
+        "actions": "Actions"
+      },
+      "actions": {
+        "approve": "Approve",
+        "reject": "Reject",
+        "confirmApprove": "Approve this proposal?",
+        "confirmReject": "Reject this proposal?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel"
+      },
+      "feedback": {
+        "approved": "Proposal approved.",
+        "rejected": "Proposal rejected.",
+        "genericError": "Could not record the decision. Please try again."
+      }
+    },
+    "own": {
+      "empty": "No expiry registered.",
+      "table": {
+        "type": "Type",
+        "issuedAt": "Issued",
+        "expiresAt": "Expires",
+        "notes": "Notes",
+        "noNotes": "—",
+        "statusHeader": "Status",
+        "status": {
+          "ok": "OK",
+          "expiring": "Expiring soon",
+          "expired": "Expired"
+        },
+        "pendingBadge": "Pending proposal",
+        "pendingHint": "A proposal is already pending validation."
+      },
+      "proposeAction": "Propose update",
+      "form": {
+        "title": "Propose an update",
+        "issuedAt": "Issued on",
+        "expiresAt": "Expires on",
+        "notes": "Notes",
+        "submit": "Send proposal",
+        "cancel": "Cancel",
+        "requiredField": "This field is required.",
+        "invalidRange": "The expiry date cannot be before the issue date.",
+        "conflictError": "A proposal is already pending validation for this expiry.",
+        "genericError": "Could not send the proposal. Please try again.",
+        "success": "Proposal sent, pending validation by staff."
+      }
     }
   },
   "ExpiryTypesPage": {

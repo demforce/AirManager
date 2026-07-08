@@ -39,6 +39,18 @@ import {
 } from './cash';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import {
+  decideProposalSchema,
+  expiryItemSchema,
+  expiryListResponseSchema,
+  expiryProposalItemSchema,
+  expiryProposalListResponseSchema,
+  listExpiryProposalsQuerySchema,
+  pendingProposalSummarySchema,
+  proposeExpirySchema,
+  registerExpirySchema,
+  updateExpirySchema,
+} from './expiries';
+import {
   createExpiryTypeSchema,
   expiryTypeItemSchema,
   expiryTypeListResponseSchema,
@@ -184,6 +196,15 @@ registry.register('ExpiryType', expiryTypeItemSchema);
 registry.register('ExpiryTypeList', expiryTypeListResponseSchema);
 registry.register('CreateExpiryTypeRequest', createExpiryTypeSchema);
 registry.register('UpdateExpiryTypeRequest', updateExpiryTypeSchema);
+registry.register('Expiry', expiryItemSchema);
+registry.register('ExpiryList', expiryListResponseSchema);
+registry.register('RegisterExpiryRequest', registerExpirySchema);
+registry.register('UpdateExpiryRequest', updateExpirySchema);
+registry.register('ProposeExpiryRequest', proposeExpirySchema);
+registry.register('PendingProposalSummary', pendingProposalSummarySchema);
+registry.register('ExpiryProposal', expiryProposalItemSchema);
+registry.register('ExpiryProposalList', expiryProposalListResponseSchema);
+registry.register('DecideProposalRequest', decideProposalSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -1154,6 +1175,120 @@ registry.registerPath({
   responses: {
     204: { description: 'The expiry type was deleted.' },
     ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+// --- Expiries + update-proposal queue (epic 6, story 6.2, FR-36) -----------
+// Person expiries with computed status (`ok`/`expiring`/`expired`, never
+// persisted) plus a titolare-facing update-proposal queue staff validates.
+
+const expiryIdParams = z.object({ id: z.string().meta({ description: 'Expiry id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const expiryProposalIdParams = z.object({
+  id: z.string().meta({ description: 'ExpiryUpdateProposal id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/expiries',
+  summary: "List a person's scadenze, with computed status (AC 1/2, FR-36)",
+  description:
+    'Ordered by `expiresAt asc` (soonest-expiring first), capped at 200. `status` (`ok`/`expiring`/`expired`) is always server-computed, never persisted. Readable with `expiries.manage` (any person) or own-access (`self.read` plus a matching `personId`, same rule as the account statement/packages endpoints).',
+  tags: ['Expiries'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: "The person's scadenze.", content: jsonContent(expiryListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/expiries',
+  summary: 'Register a new scadenza for a person (AC 1)',
+  description:
+    "Verification order: person exists -> archived -> expiry type exists -> deactivated -> ambito/profile compatibility (422 `SCOPE_MISMATCH`) -> duplicate (person, type) -> 409 pointing at the update endpoint instead. A scadenza already in the past may legitimately be registered (the real state of the world). Requires `expiries.manage`.",
+  tags: ['Expiries'],
+  security,
+  request: { body: { content: jsonContent(registerExpirySchema), required: true } },
+  responses: {
+    201: { description: 'The created scadenza.', content: jsonContent(expiryItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/expiries/{id}',
+  summary: 'Update a scadenza (partial patch, AC 1)',
+  description:
+    "Every field optional; `personId`/`expiryTypeId` are NOT patchable (a wrong type/person is corrected by delete + re-register). The cross-field `expiresAt >= issuedAt` check validates against the RESULTING (merged current + patch) values. A PENDING proposal already filed against this scadenza is left untouched. Requires `expiries.manage`.",
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryIdParams, body: { content: jsonContent(updateExpirySchema), required: true } },
+  responses: {
+    200: { description: 'The updated scadenza.', content: jsonContent(expiryItemSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/expiries/{id}',
+  summary: 'Delete a scadenza (staff correction tool, AC 1)',
+  description:
+    'For correcting a wrong type/person registration — deletes the scadenza and cascades to any `ExpiryUpdateProposal` rows (pending included). Requires `expiries.manage`.',
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryIdParams },
+  responses: {
+    204: { description: 'The scadenza was deleted.' },
+    ...errorResponses(401, 403, 404),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/expiries/{id}/proposals',
+  summary: 'Propose an update to your OWN scadenza (AC 2, FR-36)',
+  description:
+    "Requires `expiries.propose.own` (instructor/pilot/student, never staff — staff edits directly via `expiries.manage`). The actor must be the scadenza's own titolare (403 otherwise, including an actor with no linked `personId`). Values are COMPLETE (not a partial patch) — the form arrives prefilled. Does NOT touch the `Expiry` itself (it stays authoritative until staff decides); at most one PENDING proposal per scadenza (409 pre-check + P2002 backstop on the hand-appended partial unique index).",
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryIdParams, body: { content: jsonContent(proposeExpirySchema), required: true } },
+  responses: {
+    201: { description: 'The pending proposal.', content: jsonContent(pendingProposalSummarySchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/expiry-proposals',
+  summary: 'List the staff update-proposal queue (AC 2)',
+  description:
+    "Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED` to review past decisions. Current vs proposed values side by side. Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `expiries.manage`.",
+  tags: ['Expiries'],
+  security,
+  request: { query: listExpiryProposalsQuerySchema },
+  responses: {
+    200: { description: 'A page of proposals.', content: jsonContent(expiryProposalListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/expiry-proposals/{id}/decision',
+  summary: 'Approve or reject a pending proposal (AC 2)',
+  description:
+    "404 on an unknown id; already-decided -> 409. Runs in one transaction with an optimistic `updateMany`-count guard against two staff members deciding concurrently. On APPROVE, the proposed values are applied to the target `Expiry` in the SAME transaction; REJECT leaves it untouched. Requires `expiries.manage`.",
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryProposalIdParams, body: { content: jsonContent(decideProposalSchema), required: true } },
+  responses: {
+    200: { description: 'The decided proposal.', content: jsonContent(expiryProposalItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 

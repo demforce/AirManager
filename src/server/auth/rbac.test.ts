@@ -17,6 +17,7 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     'bookings.manage.any',
     'school.manage.own',
     'expiries.manage',
+    'expiries.propose.own',
     'settings.manage',
     'users.manage',
     'self.read',
@@ -43,6 +44,10 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     expect(hasPermission(staff, 'bookings.manage.any')).toBe(true);
     expect(hasPermission(staff, 'expiries.manage')).toBe(true);
 
+    // Story 6.2: staff edits scadenze directly (`expiries.manage`) — it
+    // deliberately does NOT hold the titolare-facing propose permission.
+    expect(hasPermission(staff, 'expiries.propose.own')).toBe(false);
+
     expect(hasPermission(staff, 'users.manage')).toBe(false);
     expect(hasPermission(staff, 'settings.manage')).toBe(false);
     expect(() => authorize(staff, 'users.manage')).toThrow(ForbiddenError);
@@ -54,6 +59,8 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
 
     expect(hasPermission(pilot, 'self.read')).toBe(true);
     expect(hasPermission(pilot, 'bookings.manage.own')).toBe(true);
+    // Story 6.2 (FR-36): a pilot proposes updates to their OWN scadenze.
+    expect(hasPermission(pilot, 'expiries.propose.own')).toBe(true);
 
     expect(hasPermission(pilot, 'people.read')).toBe(false);
     expect(hasPermission(pilot, 'bookings.manage.any')).toBe(false);
@@ -74,7 +81,9 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     expect(hasPermission(pilotInstructor, 'users.manage')).toBe(false);
 
     const permissions = getPermissions(pilotInstructor);
-    expect(permissions).toEqual(new Set(['self.read', 'bookings.manage.own', 'school.manage.own']));
+    expect(permissions).toEqual(
+      new Set(['self.read', 'bookings.manage.own', 'school.manage.own', 'expiries.propose.own']),
+    );
   });
 
   it('authorize() throws ForbiddenError (never a generic Error) when the permission is missing', () => {

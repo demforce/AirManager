@@ -175,10 +175,23 @@ test.describe('Expiry-type catalogue (Story 6.1, AC 1/2, FR-35)', () => {
     expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  test('the pilot seed user (no expiries.manage) does not see the Scadenze nav item', async ({ page }) => {
+  test('the pilot seed user (no expiries.manage) sees the Scadenze nav item (story 6.2 reopens it via self.read) but /dashboard/expiries/types stays out of reach', async ({
+    page,
+  }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
+    // Story 6.2 (FR-36): `expiries` joins `flights` in being reopened to
+    // every role via `self.read` — the pilot now lands on "Le mie
+    // scadenze" (own-access), not the staff catalogue this story built.
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(nav.getByRole('link', { name: 'Scadenze' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Scadenze' })).toHaveCount(1);
+    await nav.getByRole('link', { name: 'Scadenze' }).click();
+    await expect(page.getByRole('heading', { name: 'Le mie scadenze' })).toBeVisible();
+
+    // The catalogue management page itself is still gated on
+    // `expiries.manage` (story 6.1, unchanged by 6.2) — a pilot has neither
+    // that nor `settings.manage`, so it redirects to the dashboard.
+    await page.goto('/it/dashboard/expiries/types');
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 });

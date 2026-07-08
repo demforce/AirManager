@@ -59,6 +59,12 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/users/{id}/resend-invite',
         '/api/v1/auth/set-password',
         '/api/v1/auth/forgot-password',
+        '/api/v1/people/{id}/expiries',
+        '/api/v1/expiries',
+        '/api/v1/expiries/{id}',
+        '/api/v1/expiries/{id}/proposals',
+        '/api/v1/expiry-proposals',
+        '/api/v1/expiry-proposals/{id}/decision',
       ]),
     );
   });

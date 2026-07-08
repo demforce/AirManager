@@ -208,15 +208,22 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
     });
 
     it('deletes a type never used', async () => {
-      findUnique.mockResolvedValue({ id: 'et_1' });
+      findUnique.mockResolvedValue({ id: 'et_1', _count: { expiries: 0 } });
       del.mockResolvedValue({ id: 'et_1' });
 
       await expect(deleteExpiryType(adminActor(), 'et_1')).resolves.toBeUndefined();
       expect(deleteMock).toHaveBeenCalledWith({ where: { id: 'et_1' } });
     });
 
-    it('maps a FK violation (P2003 — the 6.2 concurrency backstop) to ConflictError', async () => {
-      findUnique.mockResolvedValue({ id: 'et_1' });
+    it('story 6.2 Task 3: the explicit _count pre-check rejects a type in use with ConflictError, BEFORE attempting the delete', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1', _count: { expiries: 3 } });
+
+      await expect(deleteExpiryType(adminActor(), 'et_1')).rejects.toThrow(ConflictError);
+      expect(deleteMock).not.toHaveBeenCalled();
+    });
+
+    it('maps a FK violation (P2003 — the concurrency backstop for a scadenza registered between the pre-check and the delete) to ConflictError', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1', _count: { expiries: 0 } });
       del.mockRejectedValue(prismaError('P2003'));
 
       await expect(deleteExpiryType(adminActor(), 'et_1')).rejects.toThrow(ConflictError);
