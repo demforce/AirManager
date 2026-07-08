@@ -1,0 +1,89 @@
+---
+baseline_commit: 42893c4
+---
+
+# Story 6.3: Alert automatici via email
+
+Status: ready-for-dev
+
+## Story
+
+As a pilota,
+I want ricevere promemoria prima delle scadenze,
+so that non voli mai con documenti scaduti (FR-37).
+
+## Acceptance Criteria
+
+1. **Given** scadenze a 60/30/7/0 giorni dalla data odierna, **When** il job `POST /api/v1/jobs/expiry-alerts` (bearer `JOBS_SECRET`, AD-9) viene invocato, **Then** ogni titolare riceve una email nella propria lingua per ogni soglia raggiunta, e lo staff un riepilogo unico.
+2. **Given** il job invocato due volte nello stesso giorno, **When** rigira, **Then** nessuna email duplicata: `SentAlert` ha vincolo unico (scadenza, soglia) — test automatico.
+
+## Contesto e decisioni di design (vincolanti)
+
+- **NIENTE UI in questa story** — solo backend: modello, service del job, route bearer-protetta, template email, test. Le skill UI e la verifica Playwright MCP NON si applicano; la verifica empirica è via **Mailpit API** (`http://127.0.0.1:8025/api/v1/messages`).
+- **Soglie = marcatori di cadenza, non uguaglianze strette**: `EXPIRY_ALERT_THRESHOLDS = [60, 30, 7, 0]` (const esportata da `src/lib/expiry-status.ts`, accanto a `EXPIRY_WARNING_DAYS`). Per ogni scadenza con `daysLeft = giorni calendariali (expiresAt − oggi, UTC date-only)`: le soglie **dovute** sono TUTTE le `T` con `daysLeft <= T`; le **da consumare** sono le dovute senza riga `SentAlert`. Se ce ne sono: **UNA sola email al titolare** (il testo parla dei giorni REALI, mai della soglia) e una riga `SentAlert` per OGNI soglia consumata. Così il ritmo normale è 60→30→7→0 (4 email), ma il catch-up (job saltato per giorni, o scadenza registrata già a −N giorni) produce UNA email e consuma tutte le soglie arretrate in colpo solo — mai 4 email insieme, mai alert persi per sempre per un cron mancato. Anche `daysLeft < 0` (già scaduta) rientra: tutte e 4 le soglie dovute.
+- **Idempotenza AD-9 = vincolo DB, e l'ordine è insert-PRIMA-send**: `SentAlert` `@@unique([expiryId, threshold])`; le righe si creano in transazione PRIMA dell'invio email; un P2002 (secondo run concorrente) = quell'expiry la manda l'altro run → skip silenzioso. Trade-off documentato (doc-comment): un crash tra insert e send perde quell'email (accettato: AD-9 privilegia "un alert per soglia, SEMPRE al massimo uno"; il riepilogo staff resta la rete di sicurezza).
+- **Rinnovo = nuovo ciclo di alert**: quando `expiresAt` CAMBIA VALORE (via `updateExpiry` o APPROVE di proposta con data diversa), le righe `SentAlert` di quella scadenza vengono cancellate NELLA STESSA transazione (`deleteMany`) — altrimenti il vincolo unico bloccherebbe per sempre gli alert del nuovo ciclo. Se la data non cambia (es. update delle sole note), NON si tocca nulla.
+- **Titolare senza email** (`Person.email` null): le soglie si consumano COMUNQUE (`SentAlert` creato, il job non rivaluta all'infinito) ma l'email non parte; la voce compare nel riepilogo staff marcata "senza email" — lo staff è la rete di recupero. Lingua del titolare: `User.locale` della persona linkata, fallback `'it'` (esattamente il pattern di `sendNegativeBalanceAlert`, 3.3).
+- **Riepilogo staff = UN'email per destinatario staff PER RUN, solo se il run ha consumato alert**: destinatari = tutti gli `User` attivi (`isActive`) con ruolo `ADMIN` o `STAFF`, ciascuno nella PROPRIA `locale`; il corpo elenca gli alert del run (persona, tipo, data scadenza, giorni rimanenti/scaduta, flag senza-email). Run senza nuovi alert → NESSUNA email a nessuno (è ciò che rende vero l'AC 2 end-to-end, riepilogo incluso).
+- **Auth del job = bearer, NON sessione/RBAC** (AD-9): la route confronta `Authorization: Bearer <token>` con `process.env.JOBS_SECRET` in modo timing-safe (`crypto.timingSafeEqual` su digest — mai `===` su stringhe segrete); mancante/errato → 401 envelope AD-8; `JOBS_SECRET` non configurato → 500 envelope (mai fallback insicuro). Il service del job NON riceve un `Actor` — doc-comment che dichiara l'eccezione ad AD-5: il guardiano è il bearer al boundary della route (unica route non-sessione oltre alle auth).
+- **"Oggi" = `todayDateOnlyUtc()`** (coerente con 6.2 e tutto il calendario `@db.Date` del repo); `daysLeft` = differenza in giorni su mezzenotte UTC (riusare la stessa aritmetica di `computeExpiryStatus` — estrarre un helper `daysUntilUtc(expiresAt, today)` in `expiry-status.ts` se serve, senza duplicare la formula).
+
+## Tasks / Subtasks
+
+- [ ] Task 1: Modello `SentAlert` + migrazione + wipe-on-renewal (AC 2)
+  - [ ] `prisma/schema.prisma`: `model SentAlert` — `id cuid`; `expiryId` + FK `Expiry` **`onDelete: Cascade`** (la 6.2 l'aveva annunciato: cancellare la scadenza cancella la sua storia alert; back-relation `Expiry.sentAlerts SentAlert[]`); `threshold Int` (giorni: 60/30/7/0); `sentAt DateTime @default(now())`; `@@unique([expiryId, threshold])` (AD-9); `@@index([expiryId])` implicito nel unique composito — aggiungere solo se serve altro. Doc-comment: semantica soglia-consumata (vedi Contesto), wipe on renewal.
+  - [ ] Migrazione `prisma/migrations/20260708100000_add_sent_alerts/migration.sql` (diff a mano, banner rimosso); `migrate deploy` + `generate`; verificare FK CASCADE e unique in SQL.
+  - [ ] `expiries.service.ts`: in `updateExpiry` e nel ramo APPROVE di `decideExpiryProposal`, se il valore di `expiresAt` cambia rispetto al corrente → `sentAlert.deleteMany({ where: { expiryId } })` NELLA STESSA transazione della scrittura (per `updateExpiry`, che oggi è single-write, questo introduce una `$transaction` a due statement); se non cambia → nessun delete. Doc-comment + unit test per entrambe le vie (cambia → wipe; non cambia → non tocca).
+- [ ] Task 2: Config `JOBS_SECRET`
+  - [ ] `.env.example`: `JOBS_SECRET="dev-jobs-secret-change-me"` con commento (bearer del cron esterno per `/api/v1/jobs/*`, AD-9; generare un valore reale per ambiente). Aggiungere la stessa riga al `.env` locale (serve a dev server ed e2e).
+- [ ] Task 3: Service del job `expiry-alerts.service.ts` (AC 1/2)
+  - [ ] Nuovo `src/server/services/expiry-alerts.service.ts`: `runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult>` con `ExpiryAlertsJobResult = { candidates: number; alertsCreated: number; holderEmailsSent: number; holdersWithoutEmail: number; digestEmailsSent: number }` (il JSON di risposta del job — il log del cron esterno). Nessun `Actor` (vedi Contesto).
+  - [ ] Query candidati: `expiry.findMany({ where: { expiresAt: { lte: today+60gg } }, include: { person (nome, email), expiryType (name), sentAlerts } })` + `user.findUnique` per locale del titolare (o include via person → user se la relazione lo consente); `today+60` costruito con aritmetica UTC date-only (60 = `Math.max(...EXPIRY_ALERT_THRESHOLDS)` — MAI hardcodare 60 due volte).
+  - [ ] Per ogni candidato: calcolare `daysLeft`, soglie dovute e da consumare (vedi Contesto); se da consumare è vuoto → skip. Altrimenti: `sentAlert.createMany({ data: [...] })` in try/catch — **P2002 → skip email e non conteggiare** (run concorrente); poi UNA email al titolare (se `person.email`) via `getMailSender()`, nella sua lingua.
+  - [ ] Riepilogo: se `alertsCreated > 0`, per ogni utente staff/admin attivo un'email nella sua `locale` con l'elenco del run. Errori di invio singoli: try/catch per destinatario, il job NON fallisce per un send fallito (conta e prosegue — il result riporta i numeri effettivi).
+  - [ ] Template in `src/server/adapters/mail/templates.ts` (stesso file/pattern di `buildNegativeBalanceAlertEmail`, recipient-locale AD-7): `buildExpiryAlertEmail(locale, { personName, typeName, expiresAt, daysLeft })` e `buildExpiryDigestEmail(locale, { items: Array<{ personName, typeName, expiresAt, daysLeft, holderEmailed }> })`. Corpi plain-text da `Emails.expiryAlert.*` / `Emails.expiryDigest.*` in `messages/{it,en}.json` (SIMMETRICI): la frase temporale via sotto-chiavi dedicate (`expiresToday`, `expiresInDays` con `{days}`, `expiredDaysAgo` con `{days}`) — MAI la soglia nel testo, sempre i giorni reali; data formattata locale-aware date-only UTC (`Intl.DateTimeFormat(locale, { timeZone: 'UTC', dateStyle: 'long' })` o helper esistente se c'è — non inventarne un secondo).
+- [ ] Task 4: Route + OpenAPI (AC 1)
+  - [ ] `src/app/api/v1/jobs/expiry-alerts/route.ts`: `POST` — estrae il bearer, confronto timing-safe con `JOBS_SECRET` (vedi Contesto: `crypto.timingSafeEqual` su hash/digest di pari lunghezza), 401 su mismatch/assente, 500 su env mancante, poi `runExpiryAlertsJob()` → 200 col result JSON. Envelope errori AD-8 coerente col resto (riusare `apiRoute()` SE il suo contratto lo consente senza sessione; altrimenti handler dedicato che replica l'envelope — decidere leggendo `handler.ts`, documentare la scelta).
+  - [ ] `registry.ts`: nuovo tag `['Jobs']`, path `POST /api/v1/jobs/expiry-alerts` con security scheme bearer (registrare `bearerAuth` nei components se non esiste), response 200 (schema del result) + errorResponses `(401)` (+500 implicito dell'envelope); schema Zod del result in `src/lib/schemas/expiry-alerts.ts` (o dentro `expiries.ts` se più coerente — una scelta, documentata). `registry.test.ts` coverage della path.
+- [ ] Task 5: Test (AC 1/2)
+  - [ ] Unit `expiry-alerts.service.test.ts` (mock prisma + mock MailSender — spiare `send`): cadenza normale (daysLeft 60 → 1 email titolare + soglia 60 consumata; poi 30 → seconda email); catch-up (daysLeft 5, nessuna soglia consumata → UNA email, soglie 60/30/7 consumate; daysLeft −3 → UNA email "scaduta", tutte e 4); già consumate → zero email; secondo run identico → zero email zero righe (AC 2); P2002 su createMany → skip senza email e senza throw; titolare senza `Person.email` → soglie consumate, zero email titolare, voce nel digest con flag; locale destinatario (user EN → email EN, senza user → IT); digest: un'email per staff/admin attivo nella propria locale, NESSUN digest se zero alert; utenti staff inattivi esclusi; send che throwa su UN destinatario → job prosegue e conta giusto.
+  - [ ] Unit in `expiries.service.test.ts`: wipe SentAlert quando `expiresAt` cambia (update e approve), NO wipe quando resta uguale.
+  - [ ] Unit route (pattern degli altri route/handler test se esistono; altrimenti servizio del confronto bearer estratto e testato): bearer giusto → 200; sbagliato/assente/malformato (`Bearer` senza token, token vuoto) → 401; `JOBS_SECRET` assente dall'env → 500 (mai 200).
+  - [ ] e2e `expiry-alerts.spec.ts` (Mailpit DEVE essere su; leggere `JOBS_SECRET` da `process.env.JOBS_SECRET ?? 'dev-jobs-secret-change-me'`): via API staff creare persona run-unique con email run-unique + profilo pilota + scadenza a +7 giorni (tipo run-unique scope ALL); `POST /api/v1/jobs/expiry-alerts` col bearer → 200, result con `alertsCreated >= 1`; interrogare Mailpit API (`GET /api/v1/search?query=to:<email-run-unique>` o lista messaggi filtrata) → l'email del titolare esiste; **secondo POST identico → 200 con zero nuovi alert e il conteggio Mailpit per quel destinatario INVARIATO (AC 2)**; POST senza/con bearer errato → 401 envelope. (Filtrare SEMPRE per l'email run-unique: il DB e Mailpit sono sporchi degli altri test. Il digest si asserisce nel result count, non nella mailbox staff — l'admin seed riceve digest da ogni run del file, contarli sarebbe flaky.)
+- [ ] Task 6: Nota architettura — aggiornare `docs/` SOLO se esiste già una pagina operativa/deploy che elenca le env var (grep veloce); altrimenti il commento in `.env.example` basta. NON creare nuova documentazione.
+
+## Dev Notes
+
+- **Perimetro**: niente UI, niente dashboard (6.4), niente scheduling interno (il cron è ESTERNO e invoca la route — AD-9); niente alert per saldo negativo (già coperti, 3.3) — non toccare quel flusso.
+- **AD-7**: ogni email nella lingua del DESTINATARIO (`User.locale`), mai in quella di chi/cosa triggera. **AD-8**: envelope errori standard anche su 401/500 della route job. **AD-2**: qui non c'è denaro; le date restano date-only UTC.
+- **MailSender SEMPRE via `getMailSender()`** (`src/server/adapters/mail`) — mai nodemailer diretto; i template SEMPRE in `templates.ts` con `createTranslator` + catalogo messages (mai stringhe hardcoded).
+- **Attenzione al doppio conteggio nel result**: `alertsCreated` = righe `SentAlert` create; `holderEmailsSent` = email titolare effettivamente inviate (≤ del numero di expiry processate); tenerli distinti rende il log del cron leggibile e i test precisi.
+- **Lezioni review**: P2002 backstop OVUNQUE si creino righe con unique (qui è il cuore dell'AC 2); niente `Date` con time-of-day contro `@db.Date`; i18n simmetrica contata; messaggi server English-only; niente segreti loggati (mai loggare il bearer ricevuto).
+- **Ambiente**: DB resettato a inizio story; **Mailpit su** (background, `/root/go/bin/mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025` se fosse caduto — Bash `run_in_background: true`, MAI `&`). Aggiungere `JOBS_SECRET` al `.env` PRIMA di avviare dev server/e2e. Build SEMPRE `env -u NODE_ENV npx next build`. MAI `playwright install`. Flaky e2e: classe nota (flight specs), stessa procedura (DB fresco, isolamento per le spec estranee).
+- **Gate**: lint (warning noto), typecheck, `npx vitest run` (≥ 675 + nuovi), build, `npx playwright test` (≥ 101 + nuovi) su DB fresco + Mailpit.
+- Un commit di implementazione (`Story 6.3: <sintesi>`, nessun riferimento AI/modello), story file aggiornato (Dev Agent Record, Status: review) e `sprint-status.yaml` → `6-3-expiry-alerts: review` inclusi. NON push. `git status` prima del commit (branch giusto, non detached).
+
+### References
+
+- [Source: _bmad-output/planning-artifacts/epics.md#Story 6.3]
+- [Source: _bmad-output/planning-artifacts/architecture/architecture-AirManager-2026-07-04/ARCHITECTURE-SPINE.md#AD-9] — job idempotenti via route protette, `SentAlert` unique
+- [Source: src/server/adapters/mail/templates.ts] — pattern template recipient-locale (AD-7), da estendere
+- [Source: src/server/services/accounts.service.ts#sendNegativeBalanceAlert] — pattern locale destinatario + person.email (3.3)
+- [Source: src/lib/expiry-status.ts, src/lib/date-only.ts] — aritmetica giorni UTC da riusare, MAI duplicare
+- [Source: _bmad-output/implementation-artifacts/6-2-expiry-registration.md] — modelli Expiry/proposal, nota "SentAlert dovrà scegliere onDelete"
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
+
+## Review Record
+
+## Change Log
+
+- 2026-07-08: Story file created (Fable 5 main session), ready-for-dev.
