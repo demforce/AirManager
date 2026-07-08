@@ -4,7 +4,7 @@ baseline_commit: 42893c4
 
 # Story 6.3: Alert automatici via email
 
-Status: review
+Status: done
 
 ## Story
 
@@ -109,7 +109,19 @@ Sonnet 5 (single dev agent); gate finali ed e2e completati dalla sessione princi
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: fixes-required → F1 applicato dalla sessione principale (Fable 5), poi done.**
+
+- **F1 (mandatory, FIXED)** — `expiry-alerts.spec.ts` flaky: le assert su `alertsCreated`/`holderEmailsSent` leggevano i contatori GLOBALI del singolo run del job, che gareggiano coi test/spec concorrenti che creano anch'essi scadenze dovute (un run parallelo può spazzare l'expiry del test prima della sua chiamata, o viceversa). Riprodotto dal reviewer: 1 fail su 7 run su DB fresco (`alertsCreated ... Received: 0`). Il comportamento del PRODOTTO è corretto (verificato indipendentemente); il difetto era solo di isolamento del test. Fix: eliminate TUTTE le assert sui contatori globali (test 1 E test 2, che aveva la stessa classe di race); AC 1/AC 2 asseriti SOLO su osservabili run-unique — mailbox Mailpit del destinatario run-unique (esiste, count===1, invariata al secondo run) e, per il test senza-email, il CONTENUTO del digest (nuovo helper `waitForMailpitMessageWithText`: cerca il cognome run-unique nel corpo del digest all'admin + flag "senza email"). Verifica del fix: 5/5 run isolati su DB fresco + 3/3 run insieme a `expiry-registration.spec.ts` (lo stress del cross-file race) + suite completa.
+- **M1 (deferred)** — il flag "senza email" del digest compare anche quando il titolare HA l'email ma l'invio SMTP è fallito (path raro; l'azione di recupero dello staff è identica). Wording distinto invio-fallito/senza-email rimandato — proposta del reviewer stesso: deferral sicuro.
+
+Verificato empiricamente e trovato corretto (sintesi): allowlist proxy exact-match (probe su varianti path/case/encoding/trailing-slash → tutte ancora 401/404, nessun path aperto); bearer guard (no header/token errato/'Bearer ' vuoto/scheme lowercase/secret in query → 401 envelope; `JOBS_SECRET` assente → 500 anche con bearer corretto, provato su server reale con env strippata — mai fallback insicuro; regex e SHA-256+timingSafeEqual solidi, nessun secret loggato); cadenza/catch-up esatti su daysLeft 61/60/30/7/0/−1/−400 (61 escluso; set di soglie consumate corretti; 24 alert, 7 email, 1 senza-email, 1 digest); testo email coi giorni REALI mai la soglia, locale destinatario (EN→EN, non linkato→IT), date date-only UTC; AC 2 (secondo run tutto-zero, Mailpit e SentAlert invariati); doppio run CONCORRENTE → 1 sola email titolare via P2002-skip, zero duplicati; ciclo rinnovo (PATCH data → wipe + re-alert; solo-note/stessa-data → NO wipe; wipe in-transazione confermato per update e APPROVE); matrice digest (uno per staff/admin attivo nella PROPRIA locale, inattivi e piloti esclusi, zero digest su run a zero alert); migrazione (unique + CASCADE in pg); `EXPIRY_ALERT_THRESHOLDS` unica fonte del 60; registry bearerAuth + coverage; i18n 9/9 simmetriche; regressione 6.2 intatta (734/734). Giudizi del dev accettati (N+1 lookup locale ok a questi volumi, translator per-item ok, subject digest senza conteggio ok).
+
+### Final gates (dopo il fix F1, sessione principale)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **734/734 unit**, `expiry-alerts.spec.ts` 5/5 isolato + 3/3 con expiry-registration su DB fresco, suite e2e completa su DB fresco (vedi Change Log), `env -u NODE_ENV npx next build` verde.
+
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session), ready-for-dev.
 - 2026-07-08: Implemented (Sonnet 5 single dev agent; gate e2e finale completato dalla sessione principale dopo un riavvio container e la bonifica di un dev server stale che falsava il run) — SentAlert + wipe-on-renewal, job idempotente con catch-up, template IT/EN recipient-locale, route bearer timing-safe + allowlist proxy. Tutti i gate verdi. Status: review.
+- 2026-07-08: Review Opus 4.8 xhigh — F1 mandatory (assert e2e sui contatori globali del job → race coi test paralleli) FIXATO dalla sessione principale: assert solo su osservabili run-unique (mailbox titolare + contenuto digest), verificato 5/5 isolato + 3/3 cross-file + suite completa 100/103 (3 fail = classe flaky nota); M1 (wording flag digest su SMTP fallito) deferred su proposta del reviewer. Prodotto verificato corretto su tutta la superficie d'attacco (proxy, bearer, cadenza, concorrenza, rinnovo, digest). Status → done.

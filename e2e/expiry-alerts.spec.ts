@@ -64,6 +64,35 @@ async function waitForMailpitMessage(to: string, subjectIncludes: string, timeou
   throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
 }
 
+/**
+ * Polls for a Mailpit message to `to` whose BODY contains `textIncludes`
+ * (review 6.3 F1: digest assertions must be scoped to a run-unique needle in
+ * the CONTENT — the digest subject is fixed and the staff mailbox is polluted
+ * by every other run of this file and by concurrent job calls).
+ */
+async function waitForMailpitMessageWithText(to: string, textIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const query = `to:${to} "${textIncludes}"`;
+    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(query)}`);
+    const searchBody = (await searchResponse.json()) as MailpitSearchResult;
+    const candidate = searchBody.messages[0];
+
+    if (candidate) {
+      const messageResponse = await fetch(`${MAILPIT_API}/message/${candidate.ID}`);
+      const message = (await messageResponse.json()) as MailpitFullMessage;
+      if (message.Text.includes(textIncludes)) {
+        return message;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`No Mailpit message to "${to}" containing "${textIncludes}" within ${timeoutMs}ms`);
+}
+
 /** Counts every Mailpit message to `to` right now (no polling — used to assert a count did NOT change, AC 2). */
 async function countMailpitMessagesTo(to: string): Promise<number> {
   const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
@@ -91,14 +120,6 @@ async function createExpiryType(page: Page): Promise<{ id: string; name: string 
   return { id: created.id, name };
 }
 
-type JobResult = {
-  candidates: number;
-  alertsCreated: number;
-  holderEmailsSent: number;
-  holdersWithoutEmail: number;
-  digestEmailsSent: number;
-};
-
 async function callJob(request: APIRequestContext, bearer?: string): Promise<{ status: number; body: unknown }> {
   const response = await request.post('/api/v1/jobs/expiry-alerts', {
     headers: bearer !== undefined ? { authorization: bearer } : {},
@@ -121,11 +142,13 @@ test.describe('Automatic expiry alert emails, idempotent job (Story 6.3, AC 1/2,
     expect(registerResponse.status()).toBe(201);
 
     // AC 1: the bearer-protected job route runs and finds this scadenza.
+    // NOTE (review 6.3 F1): the job-result counters are GLOBAL for one
+    // invocation and race with concurrent tests/specs that also create due
+    // expiries (a parallel job call may sweep this one first, or this call
+    // may sweep theirs) — so AC 1/AC 2 are asserted ONLY via the run-unique
+    // Mailpit mailbox below, never via the counters.
     const firstRun = await callJob(page.request, `Bearer ${JOBS_SECRET}`);
     expect(firstRun.status).toBe(200);
-    const firstResult = firstRun.body as JobResult;
-    expect(firstResult.alertsCreated).toBeGreaterThanOrEqual(1);
-    expect(firstResult.holderEmailsSent).toBeGreaterThanOrEqual(1);
 
     // The titolare actually received ONE email, in their language, naming
     // the expiry type — filtered by the run-unique recipient address (the
@@ -136,13 +159,11 @@ test.describe('Automatic expiry alert emails, idempotent job (Story 6.3, AC 1/2,
     const messageCountAfterFirstRun = await countMailpitMessagesTo(person.email);
     expect(messageCountAfterFirstRun).toBe(1);
 
-    // AC 2: an identical second run is a complete no-op — zero new alerts,
-    // and the Mailpit count for this recipient is UNCHANGED (no duplicate).
+    // AC 2: an identical second run is a complete no-op FOR THIS EXPIRY —
+    // the Mailpit count for this run-unique recipient is UNCHANGED (no
+    // duplicate). The global counters are deliberately NOT asserted (F1).
     const secondRun = await callJob(page.request, `Bearer ${JOBS_SECRET}`);
     expect(secondRun.status).toBe(200);
-    const secondResult = secondRun.body as JobResult;
-    expect(secondResult.alertsCreated).toBe(0);
-    expect(secondResult.holderEmailsSent).toBe(0);
 
     const messageCountAfterSecondRun = await countMailpitMessagesTo(person.email);
     expect(messageCountAfterSecondRun).toBe(messageCountAfterFirstRun);
@@ -165,9 +186,12 @@ test.describe('Automatic expiry alert emails, idempotent job (Story 6.3, AC 1/2,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
-    // No `email` given — the titolare has none on file.
+    // No `email` given — the titolare has none on file. The run-unique last
+    // name is the needle for the digest-content assertion below (F1: never
+    // assert the global job counters).
+    const lastName = `Alert-${uniqueSuffix()}`;
     const createResponse = await page.request.post('/api/v1/people', {
-      data: { firstName: 'NoEmail', lastName: `Alert-${uniqueSuffix()}` },
+      data: { firstName: 'NoEmail', lastName },
     });
     expect(createResponse.status()).toBe(201);
     const person = (await createResponse.json()) as { id: string };
@@ -180,12 +204,14 @@ test.describe('Automatic expiry alert emails, idempotent job (Story 6.3, AC 1/2,
 
     const run = await callJob(page.request, `Bearer ${JOBS_SECRET}`);
     expect(run.status).toBe(200);
-    const result = run.body as JobResult;
-    expect(result.alertsCreated).toBeGreaterThanOrEqual(1);
-    expect(result.holdersWithoutEmail).toBeGreaterThanOrEqual(1);
-    // The digest (admin seed is always active) is the recovery net — the
-    // result count is asserted here rather than the staff mailbox itself,
-    // which every e2e test file's run pollutes (Task 5's flakiness note).
-    expect(result.digestEmailsSent).toBeGreaterThanOrEqual(1);
+
+    // The digest (admin seed is always active, locale IT) is the recovery
+    // net: whichever concurrent job invocation swept this expiry, exactly one
+    // digest email names this run-unique person, flagged "senza email" —
+    // asserted by CONTENT (F1: the staff mailbox is polluted by every run of
+    // this file and the global result counters race with parallel tests).
+    const digest = await waitForMailpitMessageWithText(ADMIN_EMAIL, lastName);
+    expect(digest.Text).toContain(lastName);
+    expect(digest.Text).toContain('senza email');
   });
 });
