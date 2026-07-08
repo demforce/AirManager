@@ -38,4 +38,16 @@ describe('visibleNavItems (Story 1.3 AC 2 — dashboard navigation by role)', ()
     const keys = visibleNavItems(actorWith(['STAFF'])).map((item) => item.key);
     expect(keys).not.toContain('settings');
   });
+
+  it('hides bookings from a student alone (story 7.1: school bookings are made by the instructor/staff)', () => {
+    const keys = visibleNavItems(actorWith(['STUDENT'])).map((item) => item.key);
+    expect(keys).not.toContain('bookings');
+    // Still sees flights/expiries (both hold `self.read`, story 5.4/6.2 — unaffected by this story).
+    expect(keys.sort()).toEqual(['expiries', 'flights'].sort());
+  });
+
+  it('points the bookings nav item at /dashboard/bookings (story 7.1)', () => {
+    const item = visibleNavItems(actorWith(['PILOT'])).find((entry) => entry.key === 'bookings');
+    expect(item?.href).toBe('/dashboard/bookings');
+  });
 });

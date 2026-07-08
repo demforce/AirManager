@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-08 18:54
+last_updated: 2026-07-08 20:00
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -82,7 +82,7 @@ development_status:
   epic-6-retrospective: optional
 
   epic-7: in-progress
-  7-1-booking-creation: ready-for-dev
+  7-1-booking-creation: review
   7-2-booking-calendar: backlog
   7-3-booking-edit-cancel: backlog
   7-4-booking-expiry-block: backlog

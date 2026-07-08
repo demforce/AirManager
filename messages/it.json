@@ -964,6 +964,54 @@
       "genericError": "Operazione non riuscita. Riprova."
     }
   },
+  "BookingsPage": {
+    "kicker": "Prenotazioni",
+    "title": "Prenotazioni",
+    "description": "Prenota un velivolo per un intervallo di data e ora futuro.",
+    "backToDashboard": "Torna alla dashboard",
+    "form": {
+      "title": "Nuova prenotazione",
+      "selectPlaceholder": "Seleziona…",
+      "aircraft": "Velivolo",
+      "outOfServiceSuffix": "{reason} (fuori servizio)",
+      "person": "Pilota o allievo",
+      "noPersonAvailable": "Nessuna persona prenotabile disponibile.",
+      "instructorOptional": "Istruttore (opzionale)",
+      "noInstructor": "Nessuno",
+      "bookingTarget": "Prenota",
+      "bookForMe": "Per me",
+      "bookForStudent": "Per un allievo",
+      "student": "Allievo",
+      "noStudentAvailable": "Nessun allievo attivo disponibile.",
+      "startsAt": "Inizio",
+      "endsAt": "Fine",
+      "notes": "Note",
+      "submit": "Prenota",
+      "requiredField": "Campo obbligatorio.",
+      "invalidRange": "L'orario di fine deve essere successivo a quello di inizio.",
+      "errors": {
+        "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
+        "BOOKING_IN_PAST": "L'orario di inizio deve essere nel futuro.",
+        "PERSON_NOT_BOOKABLE": "Questa persona non ha un profilo attivo idoneo alla prenotazione.",
+        "overlap": "Il velivolo è già prenotato per un intervallo che si sovrappone a questo.",
+        "generic": "Impossibile creare la prenotazione. Riprova."
+      },
+      "success": "Prenotazione creata."
+    },
+    "list": {
+      "heading": "Prossime prenotazioni",
+      "description": "Le prenotazioni future su tutti i velivoli.",
+      "empty": "Nessuna prenotazione futura.",
+      "table": {
+        "aircraft": "Velivolo",
+        "date": "Data",
+        "time": "Orario",
+        "person": "Prenotante",
+        "instructor": "Istruttore",
+        "noInstructor": "—"
+      }
+    }
+  },
   "UsersPage": {
     "kicker": "Amministrazione",
     "title": "Utenti",

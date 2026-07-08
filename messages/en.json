@@ -964,6 +964,54 @@
       "genericError": "The operation failed. Please try again."
     }
   },
+  "BookingsPage": {
+    "kicker": "Bookings",
+    "title": "Bookings",
+    "description": "Book an aircraft for a future date/time interval.",
+    "backToDashboard": "Back to dashboard",
+    "form": {
+      "title": "New booking",
+      "selectPlaceholder": "Select…",
+      "aircraft": "Aircraft",
+      "outOfServiceSuffix": "{reason} (out of service)",
+      "person": "Pilot or student",
+      "noPersonAvailable": "No bookable person available.",
+      "instructorOptional": "Instructor (optional)",
+      "noInstructor": "None",
+      "bookingTarget": "Book",
+      "bookForMe": "For me",
+      "bookForStudent": "For a student",
+      "student": "Student",
+      "noStudentAvailable": "No active student available.",
+      "startsAt": "Starts",
+      "endsAt": "Ends",
+      "notes": "Notes",
+      "submit": "Book",
+      "requiredField": "This field is required.",
+      "invalidRange": "The end time must be after the start time.",
+      "errors": {
+        "AIRCRAFT_OUT_OF_SERVICE": "The aircraft is out of service: {reason}.",
+        "BOOKING_IN_PAST": "The start time must be in the future.",
+        "PERSON_NOT_BOOKABLE": "This person has no active profile eligible for a booking.",
+        "overlap": "The aircraft is already booked for an overlapping interval.",
+        "generic": "Could not create the booking. Please try again."
+      },
+      "success": "Booking created."
+    },
+    "list": {
+      "heading": "Upcoming bookings",
+      "description": "Future bookings across every aircraft.",
+      "empty": "No upcoming bookings.",
+      "table": {
+        "aircraft": "Aircraft",
+        "date": "Date",
+        "time": "Time",
+        "person": "Booked by",
+        "instructor": "Instructor",
+        "noInstructor": "—"
+      }
+    }
+  },
   "UsersPage": {
     "kicker": "Administration",
     "title": "Users",

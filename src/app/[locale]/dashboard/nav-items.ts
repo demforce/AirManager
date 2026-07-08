@@ -41,7 +41,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // the page itself (own-access registry vs full staff manager) and the
   // service (`flights.service.ts#listFlights`) decide what each role sees.
   { key: 'flights', href: '/dashboard/flights', permissions: ['flights.manage', 'self.read'] },
-  { key: 'bookings', href: '/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any'] },
+  // Story 7.1: repointed the same way people/aircraft/finance/flights/
+  // expiries were in 2.1/2.4/3.3/5.4/6.2. Permissions unchanged for now —
+  // `bookings.manage.own` was removed from STUDENT in `rbac.ts` (school
+  // bookings are made by the instructor/staff), so an allievo alone no
+  // longer sees this item; the extension to every authenticated role
+  // (FR-19, calendar view) arrives in story 7.2.
+  { key: 'bookings', href: '/dashboard/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any'] },
   // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4.
   { key: 'finance', href: '/dashboard/finance', permissions: ['finance.manage'] },
   { key: 'school', href: '/school', permissions: ['school.manage.own'] },

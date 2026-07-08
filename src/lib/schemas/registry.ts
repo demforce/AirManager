@@ -23,6 +23,7 @@ import {
   updateAircraftSchema,
 } from './aircraft';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
+import { bookingItemSchema, bookingListResponseSchema, createBookingSchema, listBookingsQuerySchema } from './bookings';
 import {
   cashCategoryItemSchema,
   cashCategoryListResponseSchema,
@@ -227,6 +228,9 @@ registry.register('DecideProposalRequest', decideProposalSchema);
 registry.register('ExpiryAlertsJobResult', expiryAlertsJobResultSchema);
 registry.register('ExpiryDashboardItem', expiryDashboardItemSchema);
 registry.register('ExpiryDashboardList', expiryDashboardListResponseSchema);
+registry.register('Booking', bookingItemSchema);
+registry.register('BookingList', bookingListResponseSchema);
+registry.register('CreateBookingRequest', createBookingSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -1325,6 +1329,40 @@ registry.registerPath({
   request: { params: expiryProposalIdParams, body: { content: jsonContent(decideProposalSchema), required: true } },
   responses: {
     200: { description: 'The decided proposal.', content: jsonContent(expiryProposalItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- Bookings (epic 7, story 7.1, FR-18) ------------------------------------
+// Reserves a `[startsAt, endsAt)` interval on an aircraft for a person — see
+// `bookings.service.ts`'s module doc-comment for the full creation matrix.
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/bookings',
+  summary: 'List bookings (paginated, filterable by period/aircraft/person, AC 1)',
+  description:
+    'Ordered by `startsAt asc, id asc` (soonest-first, tie-broken for stable pagination). `from`/`to` use the SAME semi-open `[startsAt, endsAt)` semantics as the overlap guard (`endsAt > from`, `startsAt < to`). Readable with `self.read` — every authenticated role holds it (FR-19, anticipated to its minimum for this story).',
+  tags: ['Bookings'],
+  security,
+  request: { query: listBookingsQuerySchema },
+  responses: {
+    200: { description: 'A page of bookings.', content: jsonContent(bookingListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/bookings',
+  summary: 'Book an aircraft for a person over a future interval (AC 1/2/3, FR-18)',
+  description:
+    "`bookings.manage.any` (staff/admin) books for anyone, with an optional instructor. `bookings.manage.own` books for the actor's own person (an active pilot or instructor only, no instructor may be indicated — 403 otherwise) OR, for an instructor, on behalf of an allievo with an active student profile (mandatory `instructorProfileId` matching the actor's own profile, 403 checked BEFORE any query on the target person). Concurrency (AC 2): a `FOR UPDATE` lock on the `Aircraft` row inside one transaction serializes the overlap pre-check against every concurrent request on the same aircraft — two overlapping concurrent POSTs always yield exactly one 201 and one 409. `[startsAt, endsAt)` is semi-open: back-to-back bookings do not overlap. Domain failures answer 422 with a stable code: `AIRCRAFT_OUT_OF_SERVICE` (with the reason), `BOOKING_IN_PAST`, `PERSON_NOT_BOOKABLE`.",
+  tags: ['Bookings'],
+  security,
+  request: { body: { content: jsonContent(createBookingSchema), required: true } },
+  responses: {
+    201: { description: 'The created booking.', content: jsonContent(bookingItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });
