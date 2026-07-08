@@ -18,7 +18,7 @@ export type AccountPanelLabels = {
   recentEmpty: string;
   /** Story 3.2: link to the full, paginated `/account` statement page (the drill-down behind this preview). */
   viewStatement: string;
-  movementType: { topUp: string; adjustment: string; packagePurchase: string };
+  movementType: { topUp: string; adjustment: string; packagePurchase: string; flightCharge: string; flightChargeReversal: string };
   topUp: {
     action: string;
     title: string;
@@ -66,6 +66,10 @@ function movementTypeLabel(type: AccountMovementListItemDto['type'], labels: Acc
       return labels.adjustment;
     case 'PACKAGE_PURCHASE':
       return labels.packagePurchase;
+    case 'FLIGHT_CHARGE':
+      return labels.flightCharge;
+    case 'FLIGHT_CHARGE_REVERSAL':
+      return labels.flightChargeReversal;
     default:
       return type;
   }

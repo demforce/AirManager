@@ -38,6 +38,14 @@ import {
   reverseCashMovementSchema,
 } from './cash';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
+import {
+  cancelFlightSchema,
+  correctFlightSchema,
+  flightListResponseSchema,
+  listFlightsQuerySchema,
+  registerFlightResponseSchema,
+  registerFlightSchema,
+} from './flights';
 import { meResponseSchema } from './me';
 import {
   createPackageTypeSchema,
@@ -154,6 +162,11 @@ registry.register('HourPackage', hourPackageItemSchema);
 registry.register('HourPackageList', hourPackageListResponseSchema);
 registry.register('SellPackageRequest', sellPackageSchema);
 registry.register('SellPackageResponse', sellPackageResponseSchema);
+registry.register('RegisterFlightRequest', registerFlightSchema);
+registry.register('RegisterFlightResponse', registerFlightResponseSchema);
+registry.register('FlightList', flightListResponseSchema);
+registry.register('CancelFlightRequest', cancelFlightSchema);
+registry.register('CorrectFlightRequest', correctFlightSchema);
 registry.register('User', userListItemSchema);
 registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
@@ -164,6 +177,7 @@ registry.register('ForgotPasswordRequest', forgotPasswordSchema);
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const aircraftIdParams = z.object({ id: z.string().meta({ description: 'Aircraft id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const flightIdParams = z.object({ id: z.string().meta({ description: 'Flight id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
   401: 'Not authenticated (AD-8 `UNAUTHENTICATED`).',
@@ -738,6 +752,68 @@ registry.registerPath({
   responses: {
     204: { description: 'The package type was deleted.' },
     ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+// --- Flights (epic 5, story 5.1, FR-9/FR-14/FR-15) --------------------------
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/flights',
+  summary: 'List flights (paginated, most recent first, own-access or all with filters)',
+  description:
+    'Story 5.1/5.4, AC 1/2/3/4 — `flights.manage` (staff/admin) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`flightType`/`status`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard (CANCELLED included). A non-staff `personId` filter for anyone else answers 403. `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for staff.',
+  tags: ['Flights'],
+  security,
+  request: { query: listFlightsQuerySchema },
+  responses: {
+    200: { description: 'A page of registered flights.', content: jsonContent(flightListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/flights',
+  summary: 'Register a flight and its automatic charge (FR-9/FR-14/FR-15)',
+  description:
+    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`), the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block), and advances `Aircraft.hourMeterMinutes` by the flight\'s minutes. Exactly one of `minutes` or the `hourMeterStart`/`hourMeterEnd` pair must be given. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid hour-meter pair, a SCHOOL flight without an instructor, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Requires `flights.manage` (FR-14: only staff/admin register a flight).',
+  tags: ['Flights'],
+  security,
+  request: { body: { content: jsonContent(registerFlightSchema), required: true } },
+  responses: {
+    201: { description: 'The registered flight, plus the refreshed account overview.', content: jsonContent(registerFlightResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/flights/{id}/cancel',
+  summary: 'Cancel (storno) a registered flight (FR-16)',
+  description:
+    'Story 5.3, AC 1/3/4 — in one transaction: the flight becomes CANCELLED (cancelledAt/cancelReason set), an opposite-signed FLIGHT_CHARGE_REVERSAL movement is created (linked via reversalOfId to the original FLIGHT_CHARGE), package minutes become available again (via a status-filtered SUM, no PackageConsumption row is touched), and the aircraft hour meter is reduced by the flight\'s minutes (clamped at 0). Always allowed, even if the person/aircraft is now archived. Already-cancelled -> 409. Requires `flights.manage`.',
+  tags: ['Flights'],
+  security,
+  request: { params: flightIdParams, body: { content: jsonContent(cancelFlightSchema), required: true } },
+  responses: {
+    200: { description: 'The cancelled flight, plus the refreshed account overview.', content: jsonContent(registerFlightResponseSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/flights/{id}/correct',
+  summary: 'Correct a registered flight: storno + new registration (FR-16)',
+  description:
+    'Story 5.3, AC 2/3/4 — in one transaction: storno of the original flight (identical to /cancel) followed immediately by a brand-new registration with the given data, re-validated from scratch (the same 404/422 guards as POST /flights apply to the NEW data) — linked via Flight.correctionOfId. If the new registration fails, the whole transaction (storno included) rolls back. Already-cancelled -> 409. Requires `flights.manage`.',
+  tags: ['Flights'],
+  security,
+  request: { params: flightIdParams, body: { content: jsonContent(correctFlightSchema), required: true } },
+  responses: {
+    201: { description: 'The new flight, plus the refreshed account overview (of the corrected data\'s person).', content: jsonContent(registerFlightResponseSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 

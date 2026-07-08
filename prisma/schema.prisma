@@ -63,6 +63,10 @@ model Person {
   /// never a profile — same rationale as `account` (survives a
   /// student->pilot transition). See `HourPackage` doc.
   hourPackages      HourPackage[]
+  /// Flights this person flew/paid for (epic 5, story 5.1, AD-11): belongs
+  /// to the PERSON, never a profile — same rationale as `account`. See
+  /// `Flight` doc.
+  flights           Flight[]
 }
 
 /// Pilot profile (story 2.2, AC 1/2, AD-11): 1-to-0/1 with `Person`, never a
@@ -110,7 +114,9 @@ model InstructorProfile {
   updatedAt     DateTime  @updatedAt
 
   /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
-  rates InstructorRate[]
+  rates   InstructorRate[]
+  /// Flights where this profile was the instructor aboard (epic 5, story 5.1) — see `Flight` doc.
+  flights Flight[]
 }
 
 /// Aircraft operational status (story 2.5, AC 1; FR-8). `OUT_OF_SERVICE` is
@@ -159,6 +165,8 @@ model Aircraft {
   rates                AircraftRate[]
   /// Package types this aircraft is eligible for (epic 4, story 4.3) — see `PackageTypeAircraft` doc.
   packageTypes         PackageTypeAircraft[]
+  /// Flights logged on this airframe (epic 5, story 5.1) — see `Flight` doc.
+  flights              Flight[]
 }
 
 /// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). Append-only
@@ -281,6 +289,8 @@ model User {
   cashMovements        CashMovement[]
   /// Package sales this user recorded (story 4.4) — `HourPackage.actorUserId`.
   hourPackagesSold     HourPackage[]
+  /// Flights this user registered (epic 5, story 5.1) — `Flight.actorUserId`.
+  flightsRecorded      Flight[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -315,13 +325,23 @@ model AuthToken {
 /// today; `PACKAGE_PURCHASE` (story 4.4, AC 1) is the estratto-conto row a
 /// package sale creates — always `amountCents: 0` (the payment is external
 /// to the account, see `HourPackage` doc), it exists purely so the titolare
-/// sees the purchase in their statement. Flight debits (epic 5) grow this
-/// enum later. Additive migration only (Dev Notes) — no existing row's
-/// `type` ever changes.
+/// sees the purchase in their statement. `FLIGHT_CHARGE` (epic 5, story 5.1;
+/// FR-14/FR-15) is the first REAL debit: `amountCents` is NEGATIVE (aircraft
+/// cost + optional instructor cost) and the balance is allowed to go
+/// negative — see `Flight`'s doc for the snapshot it links to via
+/// `AccountMovement.flightId`. `FLIGHT_CHARGE_REVERSAL` (epic 5, story 5.3;
+/// AD-3 storno) is the opposite-signed movement a flight cancellation or
+/// correction creates: `amountCents` is POSITIVE, equal to the ORIGINAL
+/// `FLIGHT_CHARGE.amountCents` negated (never recalculated, AD-4) — linked to
+/// it via `reversalOfId` (the same self-FK `AccountMovement` already uses for
+/// `ADJUSTMENT`, story 3.3) and to the same `Flight` via `flightId`. Additive
+/// migration only (Dev Notes) — no existing row's `type` ever changes.
 enum AccountMovementType {
   TOP_UP
   ADJUSTMENT
   PACKAGE_PURCHASE
+  FLIGHT_CHARGE
+  FLIGHT_CHARGE_REVERSAL
 }
 
 /// How a top-up was paid (story 3.1, AC 2). Only meaningful for `TOP_UP`
@@ -388,8 +408,15 @@ model AccountMovement {
   /// 4.4) — present only for `PACKAGE_PURCHASE` rows, same 1-to-0/1 pattern
   /// as `cashMovement`.
   hourPackage  HourPackage?
+  /// The `Flight` this movement charges for (epic 5, story 5.1) — present
+  /// only for `FLIGHT_CHARGE` rows. NOT unique: more than one movement can
+  /// reference the same flight in the future (5.3's storno links to the
+  /// same flight via its own `flightId`).
+  flightId     String?
+  flight       Flight?       @relation(fields: [flightId], references: [id])
 
   @@index([accountId])
+  @@index([flightId])
 }
 
 /// Cash-ledger categories (story 3.1; full list assumed seeded per Dev Notes,
@@ -508,10 +535,11 @@ model PackageTypeAircraft {
 /// and package delivered cancel out).
 ///
 /// **Residuo is always COMPUTED, never a persisted counter** (AD-3's
-/// "totali sempre SUM" lesson): there is no `remainingMinutes` column. Story
-/// 4.4 has no consumption model yet, so the residuo is simply
-/// `includedMinutes` (see `packages.service.ts#computeRemainingMinutes`,
-/// the single point epic 5 will extend to subtract consumed minutes).
+/// "totali sempre SUM" lesson): there is no `remainingMinutes` column.
+/// Story 5.2 (epic 5) wires the consumption model: the residuo is
+/// `includedMinutes - SUM(PackageConsumption.minutes)` (see
+/// `packages.service.ts#computeRemainingMinutes`, the single computation
+/// point).
 ///
 /// **Snapshot at sale time** (AD-4, same principle as the historicized
 /// rates): `includedMinutes`/`pricePaidCents` are copied from the
@@ -558,6 +586,198 @@ model HourPackage {
   actorUser         User            @relation(fields: [actorUserId], references: [id])
   createdAt         DateTime        @default(now())
 
+  /// Per-flight consumption rows against THIS package (epic 5, story 5.2,
+  /// AD-6) — see `PackageConsumption` doc. The residuo is `includedMinutes -
+  /// SUM(consumptions.minutes)`, always computed (never a persisted
+  /// counter).
+  consumptions PackageConsumption[]
+
   @@index([personId])
   @@index([packageTypeId])
+}
+
+/// A logged flight's purpose (epic 5, story 5.1). The PRD does not enumerate
+/// these — `PRIVATE` is a private/tourism flight, `SCHOOL` is a training
+/// flight WITH an instructor (epic 9 will sum school hours per instructor
+/// off this), `OTHER` covers everything else. `SCHOOL` mandates an
+/// instructor (422 `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`); an instructor is
+/// also allowed (never required) on `PRIVATE`/`OTHER` (e.g. a checkride) and
+/// always generates their own charge either way.
+enum FlightType {
+  PRIVATE
+  SCHOOL
+  OTHER
+}
+
+/// A logged flight's lifecycle state (epic 5, story 5.1). Story 5.1 never
+/// produces `CANCELLED` (that is story 5.3's storno/cancellation) — the
+/// column and enum exist from the start because story 5.4's flight registry
+/// filters by status, and adding it as a later additive enum migration would
+/// be more fragile than having it from day one.
+enum FlightStatus {
+  REGISTERED
+  CANCELLED
+}
+
+/// A registered flight (epic 5, story 5.1; FR-9/FR-14/FR-15) — the model
+/// that, in ONE transaction (`flights.service.ts#registerFlight`), both
+/// produces the `FLIGHT_CHARGE` `AccountMovement` (linked via
+/// `AccountMovement.flightId`) and advances `Aircraft.hourMeterMinutes`
+/// (FR-9). `personId` is who flew/pays (AD-11: always the `Person`, never a
+/// profile) — a pilot OR student profile must be active on this person at
+/// registration time. `instructorProfileId` is the instructor aboard, when
+/// any (the ERD keys it on `InstructorProfile`, while the API accepts a
+/// `Person` id and resolves it, consistent with
+/// `.../people/{id}/instructor-rates`) — mandatory on `SCHOOL` flights,
+/// optional otherwise, and in every case generating its own charge.
+///
+/// **Snapshot, never recalculated** (AD-4, the same principle as
+/// `AircraftRate`/`InstructorRate`/`HourPackage`): `aircraftRateCentsPerHour`/
+/// `aircraftAmountCents` (and, when there is an instructor,
+/// `instructorRateCentsPerHour`/`instructorAmountCents`) capture the rate in
+/// effect at `flightDate` at registration time — a later change to the rate
+/// history never rewrites an already-registered flight. There is
+/// deliberately NO persisted total: the total lives on the linked
+/// `AccountMovement.amountCents` (negative); the UI/DTO computes it from the
+/// two per-component amounts (`flights.service.ts#FlightListItem`).
+///
+/// **`minutes` is always populated** (AD-2), either given directly or
+/// derived as `hourMeterEnd - hourMeterStart`. `hourMeterStart`/`hourMeterEnd`
+/// (both present or both absent) are OBSERVATIONS recorded on this flight —
+/// NOT a `SET` of `Aircraft.hourMeterMinutes`, which instead always
+/// increments by `minutes` (`+=`), the same way flights registered
+/// out-of-order or on top of a prior manual `HourMeterAdjustment` remain
+/// correct. No `HourMeterAdjustment` row is ever created for this advance —
+/// that table stays reserved for motivated manual rectifications; the
+/// flight itself is the audit trail of the advance.
+///
+/// Package consumption (story 5.2, see `packageCoveredMinutes` and
+/// `PackageConsumption` below) is wired here; storno/cancellation and
+/// correction (epic 5, story 5.3; FR-16) extend the lifecycle further:
+/// **`REGISTERED` -> `CANCELLED`** is the only transition, driven by
+/// `cancelFlight`/`correctFlight` (`flights.service.ts`) — a flight is NEVER
+/// physically deleted, and there is deliberately no edit-in-place API: every
+/// "modifica" is storno (of this row) + a brand-new `Flight` row. `cancelledAt`/
+/// `cancelReason` are populated together, exactly once, the moment this
+/// happens (`cancelReason` is the mandatory motivo, same convention as
+/// `HourMeterAdjustment.reason`) — the linked `FLIGHT_CHARGE_REVERSAL`
+/// movement (via `AccountMovement.flightId`, story 5.3) is the money-side
+/// half of the same storno. **Correction is a CHAIN, not an edit**:
+/// `correctionOfId` (self-FK, `@unique` — at most one direct correction per
+/// flight) points this (NEW) flight at the ORIGINAL (now `CANCELLED`) one it
+/// replaces; the inverse `correctedBy` relation lets the ORIGINAL flight
+/// answer "what replaced me". A correction of a correction is a fresh row
+/// pointing at the already-corrected flight — the chain is never collapsed.
+model Flight {
+  id                  String             @id @default(cuid())
+  aircraftId          String
+  aircraft            Aircraft           @relation(fields: [aircraftId], references: [id])
+  personId            String
+  person              Person             @relation(fields: [personId], references: [id])
+  instructorProfileId String?
+  instructorProfile   InstructorProfile? @relation(fields: [instructorProfileId], references: [id])
+
+  /// Calendar-only date of the flight (`@db.Date`) — never in the future
+  /// (enforced in the service against the server-clock UTC "today").
+  flightDate     DateTime     @db.Date
+  flightType     FlightType
+  status         FlightStatus @default(REGISTERED)
+  /// Set together with `cancelReason`, exactly once, when this flight
+  /// transitions to `CANCELLED` (story 5.3) — `null` while `REGISTERED`.
+  cancelledAt    DateTime?
+  /// The mandatory motivo behind the cancellation/correction (story 5.3,
+  /// AC 1/2) — `null` while `REGISTERED`. The ACTOR who cancelled is tracked
+  /// on the linked `FLIGHT_CHARGE_REVERSAL` movement's `actorUserId`, not
+  /// here (same split as every other ledger entry).
+  cancelReason   String?
+  /// Self-FK (story 5.3): set on a NEW flight that replaces an ANNULLATO one
+  /// via `correctFlight` — points at the ORIGINAL flight. `@unique`: at most
+  /// one direct correction per flight (a correction of a correction is a new
+  /// row pointing at the already-corrected one — the chain is never
+  /// collapsed/rewritten). `null` for a flight that is not itself a
+  /// correction (every `registerFlight`-created row, and any flight that was
+  /// only cancelled, never corrected).
+  correctionOfId String?      @unique
+  correctionOf   Flight?      @relation("FlightCorrection", fields: [correctionOfId], references: [id])
+  /// Inverse of `correctionOf` — the NEW flight that replaced THIS one, when
+  /// any (`null` otherwise). Lets a `CANCELLED` flight answer "what replaced
+  /// me" without a separate query.
+  correctedBy    Flight?      @relation("FlightCorrection")
+
+  minutes        Int
+  hourMeterStart Int?
+  hourMeterEnd   Int?
+  landings       Int?
+  notes          String?
+
+  aircraftRateCentsPerHour   Int
+  /// Snapshot (AD-4) of the amount ACTUALLY CHARGED for the aircraft
+  /// component (story 5.2): pro-rata on `minutes - packageCoveredMinutes`,
+  /// never on the full flight duration once a package covered part of it.
+  aircraftAmountCents        Int
+  instructorRateCentsPerHour Int?
+  /// Never reduced by package consumption (AD-6: the instructor is NEVER
+  /// covered by a package) — always `round(rate * minutes / 60)` on the
+  /// FULL flight duration.
+  instructorAmountCents      Int?
+  /// Snapshot total of minutes covered by package consumption (story 5.2,
+  /// AD-4/AD-6) — `default 0` is correct for every flight registered before
+  /// this story existed. The per-package detail lives on
+  /// `packageConsumptions`; this column is the SUM of those rows' `minutes`
+  /// at the moment the flight was registered, never recomputed later.
+  packageCoveredMinutes      Int  @default(0)
+
+  /// Who recorded this flight (`Actor.userId`, always present) — same
+  /// rationale as every other ledger's `actorUserId`.
+  actorUserId String
+  actorUser   User   @relation(fields: [actorUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The `FLIGHT_CHARGE` movement AND, once cancelled/corrected (story 5.3),
+  /// its `FLIGHT_CHARGE_REVERSAL` twin — both linked to THIS flight via
+  /// `AccountMovement.flightId` — plural since day one (story 5.1) for
+  /// exactly this reason.
+  movements           AccountMovement[]
+  /// Per-package consumption detail for this flight (story 5.2) — see
+  /// `PackageConsumption` doc. Empty when no eligible package existed at
+  /// registration time (the pre-5.2 case: `packageCoveredMinutes == 0`).
+  packageConsumptions PackageConsumption[]
+
+  @@index([aircraftId])
+  @@index([personId])
+  @@index([instructorProfileId])
+  @@index([flightDate])
+}
+
+/// Per-flight package consumption ledger row (epic 5, story 5.2; AD-6). One
+/// row per (flight, package) pair that the FIFO allocation actually touched
+/// — `@@unique([flightId, hourPackageId])` guarantees a flight consumes a
+/// given package AT MOST ONCE. `minutes` is always a positive integer
+/// (AD-2): a package whose FIFO allocation would `take` 0 minutes never gets
+/// a row here — see `flights.service.ts#registerFlightCore`'s allocation
+/// loop. Append-only FOREVER, including after story 5.3: a cancelled
+/// flight's rows are NEVER updated/deleted — the "reversal" of consumption
+/// is achieved WITHOUT touching this table at all, by changing what every
+/// reader's SUM counts: every consumed-so-far aggregate in the codebase
+/// (`registerFlightCore`'s own allocation query, `packages.service.ts#listPersonPackages`)
+/// filters `flight: { status: { not: 'CANCELLED' } }`, so a cancelled
+/// flight's consumption simply stops counting against its packages' residuo
+/// — the historical row stays exactly as it was. FK RESTRICT on both
+/// `flightId`/`hourPackageId` (Prisma default for a required relation) —
+/// neither row this references can be deleted out from under it (moot
+/// today, nothing deletes a Flight/HourPackage, but the backstop is free).
+model PackageConsumption {
+  id            String      @id @default(cuid())
+  flightId      String
+  flight        Flight      @relation(fields: [flightId], references: [id])
+  hourPackageId String
+  hourPackage   HourPackage @relation(fields: [hourPackageId], references: [id])
+  /// Minutes taken from `hourPackage`'s residuo for this flight — always > 0.
+  minutes       Int
+  createdAt     DateTime    @default(now())
+
+  @@unique([flightId, hourPackageId])
+  @@index([hourPackageId])
 }

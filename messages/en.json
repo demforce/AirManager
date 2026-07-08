@@ -173,7 +173,9 @@
       "movementType": {
         "topUp": "Top-up",
         "adjustment": "Adjustment",
-        "packagePurchase": "Package purchase"
+        "packagePurchase": "Package purchase",
+        "flightCharge": "Flight charge",
+        "flightChargeReversal": "Flight reversal"
       },
       "topUp": {
         "action": "Record top-up",
@@ -230,7 +232,8 @@
       "price": "Price paid",
       "expiresAt": "Expires",
       "noExpiry": "—",
-      "expiredBadge": "Expired"
+      "expiredBadge": "Expired",
+      "consumedNote": "Used: {duration}"
     },
     "form": {
       "title": "Sell package",
@@ -268,11 +271,17 @@
     "movementType": {
       "topUp": "Top-up",
       "adjustment": "Adjustment",
-      "packagePurchase": "Package purchase"
+      "packagePurchase": "Package purchase",
+      "flightCharge": "Flight charge",
+      "flightChargeReversal": "Flight reversal"
     },
     "adjustmentBadge": {
       "ofDate": "Adjusts the movement of {date}",
       "linked": "Adjusts a previous movement"
+    },
+    "reversalBadge": {
+      "ofDate": "Reverses the movement of {date}",
+      "linked": "Reverses a previous movement"
     },
     "adjustments": {
       "action": "Record adjustment",
@@ -628,6 +637,130 @@
       "returnedToService": "Aircraft returned to service.",
       "hourMeterAdjusted": "Hour meter adjusted.",
       "rateAdded": "Rate added."
+    }
+  },
+  "FlightsPage": {
+    "kicker": "Flights",
+    "title": "Flights",
+    "description": "Log a flight and see the aircraft charge, plus the instructor charge when there is one, generated automatically.",
+    "titleOwn": "My flights",
+    "descriptionOwn": "Your personal flight log, including cancelled flights.",
+    "backToDashboard": "Back to dashboard",
+    "form": {
+      "title": "Log a flight",
+      "aircraft": "Aircraft",
+      "noAircraftAvailable": "No active aircraft available.",
+      "person": "Pilot or student",
+      "noPersonAvailable": "No person with an active pilot or student profile.",
+      "instructor": "Instructor",
+      "noInstructor": "— None —",
+      "flightDate": "Flight date",
+      "flightType": "Flight type",
+      "flightTypes": {
+        "private": "Private",
+        "school": "School",
+        "other": "Other"
+      },
+      "durationMode": "How do you want to enter the duration?",
+      "durationModes": {
+        "minutes": "Direct minutes",
+        "hourMeter": "Start/end hour meter"
+      },
+      "minutes": "Minutes",
+      "hourMeterStart": "Hour meter start",
+      "hourMeterEnd": "Hour meter end",
+      "landings": "Landings",
+      "notes": "Notes",
+      "submit": "Log flight",
+      "requiredField": "Required field.",
+      "invalidMinutes": "Enter a valid duration of at least 1 minute.",
+      "invalidHourMeter": "The end reading must be greater than the start reading.",
+      "errors": {
+        "HOUR_METER_INVALID": "The end reading must be greater than the start reading.",
+        "NO_AIRCRAFT_RATE": "No hourly rate is in effect for this aircraft on the flight date.",
+        "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
+        "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "A school flight requires an instructor.",
+        "AIRCRAFT_ARCHIVED": "The selected aircraft is archived.",
+        "PERSON_ARCHIVED": "The selected person is archived.",
+        "PERSON_NOT_PILOT_OR_STUDENT": "The person must have an active pilot or student profile.",
+        "INSTRUCTOR_NOT_FOUND": "The selected instructor has no active instructor profile.",
+        "INSTRUCTOR_SAME_AS_PILOT": "The instructor cannot be the same person as the pilot or student.",
+        "FLIGHT_DATE_IN_FUTURE": "The flight date cannot be in the future.",
+        "generic": "Could not log the flight. Please try again."
+      }
+    },
+    "result": {
+      "title": "Charge generated",
+      "minutes": "Duration",
+      "aircraftRate": "Aircraft rate",
+      "aircraftAmount": "Aircraft cost",
+      "instructorRate": "Instructor rate",
+      "instructorAmount": "Instructor cost",
+      "packageCovered": "From package",
+      "chargedMinutes": "Charged minutes",
+      "total": "Total charged",
+      "newBalance": "New balance"
+    },
+    "list": {
+      "heading": "Flight log",
+      "empty": "No flights logged yet.",
+      "table": {
+        "date": "Date",
+        "aircraft": "Aircraft",
+        "person": "Person",
+        "instructor": "Instructor",
+        "noInstructor": "—",
+        "type": "Type",
+        "duration": "Duration",
+        "amount": "Charge",
+        "landings": "Landings",
+        "noValue": "—",
+        "packageNote": "of which {duration} from package",
+        "status": "Status",
+        "statusCancelled": "Cancelled",
+        "cancelledDetail": "Cancelled on {date} — {reason}",
+        "correctionOf": "Correction of a previous flight",
+        "correctedBy": "Corrected by a later flight",
+        "actions": "Actions",
+        "cancelAction": "Cancel",
+        "correctAction": "Correct"
+      }
+    },
+    "cancelPanel": {
+      "title": "Cancel flight",
+      "reason": "Reason",
+      "requiredReason": "The reason is required.",
+      "submit": "Confirm cancellation",
+      "close": "Close",
+      "conflictError": "This flight has already been cancelled.",
+      "genericError": "Could not cancel the flight. Please try again.",
+      "success": "Flight cancelled."
+    },
+    "correctPanel": {
+      "title": "Correct flight",
+      "reason": "Correction reason",
+      "requiredReason": "The reason is required.",
+      "submit": "Confirm correction",
+      "exit": "Cancel correction",
+      "conflictError": "This flight has already been cancelled."
+    },
+    "filters": {
+      "dateFrom": "From",
+      "dateTo": "To",
+      "aircraft": "Aircraft",
+      "allAircraft": "All aircraft",
+      "person": "Person",
+      "allPeople": "All people",
+      "flightType": "Type",
+      "allTypes": "All types",
+      "status": "Status",
+      "allStatuses": "All statuses",
+      "statusOptions": {
+        "registered": "Registered",
+        "cancelled": "Cancelled"
+      },
+      "archivedSuffix": " (Archived)",
+      "reset": "Clear filters"
     }
   },
   "UsersPage": {

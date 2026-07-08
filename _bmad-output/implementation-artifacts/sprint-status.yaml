@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-06 14:50
+last_updated: 2026-07-07 22:20
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -67,11 +67,11 @@ development_status:
   4-4-package-sale: done
   epic-4-retrospective: optional
 
-  epic-5: backlog
-  5-1-flight-logging-charges: backlog
-  5-2-package-consumption: backlog
-  5-3-flight-reversal: backlog
-  5-4-flight-log-filters: backlog
+  epic-5: done
+  5-1-flight-logging-charges: done
+  5-2-package-consumption: done
+  5-3-flight-reversal: done
+  5-4-flight-log-filters: done
   epic-5-retrospective: optional
 
   epic-6: backlog

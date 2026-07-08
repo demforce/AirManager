@@ -23,6 +23,8 @@ export type PackagesPanelLabels = {
     expiresAt: string;
     noExpiry: string;
     expiredBadge: string;
+    /** Story 5.2 (AC 3) — literal `{duration}` placeholder, CLIENT-filled (t.raw, same pattern as `account-statement-table.tsx`'s `adjustmentOfDate`); shown only when `consumedMinutes > 0`. */
+    consumedNote: string;
   };
   form: {
     title: string;
@@ -156,6 +158,11 @@ export function PackagesPanel({ personId, canSell, labels }: PackagesPanelProps)
                       {formatMinutes(pkg.remainingMinutes)}
                     </span>
                     <span className="block text-xs text-[#787774]">{labels.table.remaining}</span>
+                    {pkg.consumedMinutes > 0 ? (
+                      <span data-testid="hour-package-consumed-note" className="block text-xs text-[#787774]">
+                        {labels.table.consumedNote.replace('{duration}', formatMinutes(pkg.consumedMinutes))}
+                      </span>
+                    ) : null}
                   </span>
                   <span className="text-right">
                     <span className="block text-sm text-[#2F3437]">{pkg.expiresAt ?? labels.table.noExpiry}</span>

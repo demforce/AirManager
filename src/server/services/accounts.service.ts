@@ -391,8 +391,13 @@ export function balanceBand(balanceCents: number, thresholdCents: number): Balan
   return 'belowThreshold';
 }
 
-/** True when `after` is strictly worse than `before` (AC 2: only a worsening transition alerts). */
-function bandWorsened(before: BalanceBand, after: BalanceBand): boolean {
+/**
+ * True when `after` is strictly worse than `before` (AC 2: only a worsening
+ * transition alerts). Exported (story 5.1, Dev Notes) so
+ * `flights.service.ts#registerFlight` reuses this exact lock-read-compare-send
+ * dance rather than duplicating it — logic UNCHANGED, only the visibility widened.
+ */
+export function bandWorsened(before: BalanceBand, after: BalanceBand): boolean {
   return BAND_ORDER[after] > BAND_ORDER[before];
 }
 
@@ -401,9 +406,10 @@ function bandWorsened(before: BalanceBand, after: BalanceBand): boolean {
  * back to `DEFAULT_NEGATIVE_BALANCE_THRESHOLD_CENTS` when the row is absent
  * — an admin settings UI to manage it is out of scope here (epic 10). A
  * non-numeric stored value also falls back to the default rather than
- * crashing the movement that triggered the read.
+ * crashing the movement that triggered the read. Exported (story 5.1, Dev
+ * Notes) for `flights.service.ts#registerFlight` — logic UNCHANGED.
  */
-async function getNegativeBalanceThresholdCents(): Promise<number> {
+export async function getNegativeBalanceThresholdCents(): Promise<number> {
   const setting = await prisma.appSetting.findUnique({
     where: { key: NEGATIVE_BALANCE_THRESHOLD_SETTING_KEY },
     select: { value: true },
@@ -423,9 +429,10 @@ async function getNegativeBalanceThresholdCents(): Promise<number> {
  * slow/broken SMTP server must never hold the `Account` row lock or fail an
  * otherwise-valid movement. Silent no-op (with a log) when the person has no
  * email — a titolare without one just never gets alerted, but the movement
- * and the "saldi negativi" list are unaffected (Task 2).
+ * and the "saldi negativi" list are unaffected (Task 2). Exported (story
+ * 5.1, Dev Notes) for `flights.service.ts#registerFlight` — logic UNCHANGED.
  */
-async function sendNegativeBalanceAlert(
+export async function sendNegativeBalanceAlert(
   personId: string,
   person: { firstName: string; lastName: string; email: string | null },
   balanceCents: number,

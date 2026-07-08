@@ -207,6 +207,20 @@ describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
       expect(body.error.code).toBe('VALIDATION_ERROR');
       expect(body.error.details).toEqual({ field: 'roles' });
     });
+
+    it('maps a domain-level ValidationError with a custom code to 422 with THAT code (story 5.1, AC 3)', async () => {
+      const GET = apiRoute({
+        handle: async () => {
+          throw new ValidationError('hour meter end must be after start', undefined, 'HOUR_METER_INVALID');
+        },
+      });
+
+      const response = await GET(req('http://localhost/api/v1/x'));
+
+      expect(response.status).toBe(422);
+      const body = (await readJson(response)) as { error: { code: string } };
+      expect(body.error.code).toBe('HOUR_METER_INVALID');
+    });
   });
 
   describe('unexpected errors (AD-8 / story 1.3 review F2)', () => {

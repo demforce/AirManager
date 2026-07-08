@@ -22,6 +22,28 @@ import { ConflictError, ForbiddenError, NotFoundError } from './errors';
  * `amountCents: 0` (a closed transaction: payment received and package
  * delivered cancel out). Buying a package paid in full must NEVER push the
  * account into the red.
+ *
+ * **Consumption (epic 5, story 5.2)**: `computeRemainingMinutes` is the ONE
+ * place that turns `includedMinutes - consumedMinutes` into the residuo
+ * every reader (this module's own `sellPackage`/`listPersonPackages`, and
+ * `flights.service.ts#registerFlightCore`'s FIFO allocation) agrees on;
+ * `consumedMinutes` itself is always a fresh `SUM(PackageConsumption.minutes)`
+ * aggregate, never a persisted counter (AD-3). This module never writes a
+ * `PackageConsumption` row itself — only `flights.service.ts` does, inside
+ * its own transaction (the consumption side of AD-6 lives there, not here).
+ *
+ * **Reversal (epic 5, story 5.3)**: cancelling/correcting a flight NEVER
+ * touches a `PackageConsumption` row (append-only forever, `PackageConsumption`
+ * doc) — the minutes it consumed become available again purely by changing
+ * what the SUM counts. Every consumed-so-far aggregate in this module (and
+ * `flights.service.ts#registerFlightCore`'s own) filters
+ * `flight: { status: { not: 'CANCELLED' } }` — a cancelled flight's
+ * consumption rows simply stop counting against their packages' residuo.
+ * This is what lets a correction (storno + new registration, same
+ * transaction) see the just-restored minutes as already available: the
+ * storno flips the original flight's `status` to `CANCELLED` first, so the
+ * new registration's own filtered SUM — read moments later in the SAME
+ * transaction — already excludes it.
  */
 
 /** The cash category package sales land in (AC 1) — seeded, never created on the fly (same pattern as `recordTopUp`'s "Ricariche"). */
@@ -32,6 +54,8 @@ export type HourPackageListItem = {
   typeName: string;
   includedMinutes: number;
   remainingMinutes: number;
+  /** Total minutes consumed so far (epic 5, story 5.2) — `SUM(PackageConsumption.minutes)`, 0 for a freshly sold package. */
+  consumedMinutes: number;
   pricePaidCents: number;
   paymentMethod: PaymentMethod;
   /** Calendar-only date (`YYYY-MM-DD`) — see `toDateOnlyString`. */
@@ -76,23 +100,30 @@ type SelectedHourPackage = {
 
 /**
  * Single computation point for a sold package's residuo (AD-3, "totali
- * sempre SUM" — never a persisted counter). Story 4.4 has no consumption
- * model yet (that arrives with epic 5), so the residuo is simply the
- * included amount; epic 5 extends this function to subtract consumed
- * minutes (a SUM over the future consumption movements) instead of touching
- * every caller.
+ * sempre SUM" — never a persisted counter). Extended by epic 5, story 5.2
+ * (FR-13 consumo): `consumedMinutes` is the caller-supplied
+ * `SUM(PackageConsumption.minutes)` for this package (0 for a freshly sold
+ * one, or one nobody has flown against yet) — this function stays the ONE
+ * place that turns "included minus consumed" into the residuo everyone else
+ * reads (`sellPackage`, `listPersonPackages`, and
+ * `flights.service.ts#registerFlightCore`'s own FIFO allocation all agree
+ * with this formula). Story 5.3: `consumedMinutes` itself already excludes
+ * cancelled flights' consumption (every caller's SUM filters
+ * `flight: { status: { not: 'CANCELLED' } }`) — this function has no idea
+ * whether a storno happened; it only ever sees the already-filtered number.
  */
-export function computeRemainingMinutes(pkg: { includedMinutes: number }): number {
-  return pkg.includedMinutes;
+export function computeRemainingMinutes(pkg: { includedMinutes: number; consumedMinutes: number }): number {
+  return pkg.includedMinutes - pkg.consumedMinutes;
 }
 
-function toListItem(pkg: SelectedHourPackage, includeActor: boolean): HourPackageListItem {
+function toListItem(pkg: SelectedHourPackage, includeActor: boolean, consumedMinutes: number): HourPackageListItem {
   const today = todayDateOnlyUtc();
   return {
     id: pkg.id,
     typeName: pkg.packageType.name,
     includedMinutes: pkg.includedMinutes,
-    remainingMinutes: computeRemainingMinutes(pkg),
+    remainingMinutes: computeRemainingMinutes({ includedMinutes: pkg.includedMinutes, consumedMinutes }),
+    consumedMinutes,
     pricePaidCents: pkg.pricePaidCents,
     paymentMethod: pkg.paymentMethod,
     effectiveDate: toDateOnlyString(pkg.effectiveDate),
@@ -251,7 +282,10 @@ export async function sellPackage(actor: Actor, personId: string, input: SellPac
   const includeActor = hasPermission(actor, 'people.read');
   const account = await getAccountOverview(actor, personId);
 
-  return { package: toListItem(created, includeActor), account };
+  // A package just sold this instant has no `PackageConsumption` rows yet —
+  // 0 consumed, no query needed (unlike `listPersonPackages`, which must
+  // aggregate across possibly-already-consumed packages).
+  return { package: toListItem(created, includeActor, 0), account };
 }
 
 /**
@@ -283,5 +317,21 @@ export async function listPersonPackages(actor: Actor, personId: string): Promis
     take: 500,
   });
 
-  return packages.map((pkg) => toListItem(pkg, includeActor));
+  // ONE aggregated query for every listed package's consumed-so-far SUM
+  // (epic 5, story 5.2) — never one query per package (Dev Notes: no N+1).
+  // `flight: { status: { not: 'CANCELLED' } }` (story 5.3): a cancelled
+  // flight's consumption rows are never deleted (PackageConsumption doc) —
+  // they simply stop counting here, which is exactly what "restores" the
+  // minutes after a storno.
+  const consumedRows =
+    packages.length > 0
+      ? await prisma.packageConsumption.groupBy({
+          by: ['hourPackageId'],
+          where: { hourPackageId: { in: packages.map((pkg) => pkg.id) }, flight: { status: { not: 'CANCELLED' } } },
+          _sum: { minutes: true },
+        })
+      : [];
+  const consumedByPackageId = new Map(consumedRows.map((row) => [row.hourPackageId, row._sum.minutes ?? 0]));
+
+  return packages.map((pkg) => toListItem(pkg, includeActor, consumedByPackageId.get(pkg.id) ?? 0));
 }

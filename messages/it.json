@@ -173,7 +173,9 @@
       "movementType": {
         "topUp": "Ricarica",
         "adjustment": "Rettifica",
-        "packagePurchase": "Acquisto pacchetto"
+        "packagePurchase": "Acquisto pacchetto",
+        "flightCharge": "Addebito volo",
+        "flightChargeReversal": "Storno volo"
       },
       "topUp": {
         "action": "Registra ricarica",
@@ -230,7 +232,8 @@
       "price": "Prezzo pagato",
       "expiresAt": "Scadenza",
       "noExpiry": "—",
-      "expiredBadge": "Scaduto"
+      "expiredBadge": "Scaduto",
+      "consumedNote": "Usati: {duration}"
     },
     "form": {
       "title": "Vendi pacchetto",
@@ -268,11 +271,17 @@
     "movementType": {
       "topUp": "Ricarica",
       "adjustment": "Rettifica",
-      "packagePurchase": "Acquisto pacchetto"
+      "packagePurchase": "Acquisto pacchetto",
+      "flightCharge": "Addebito volo",
+      "flightChargeReversal": "Storno volo"
     },
     "adjustmentBadge": {
       "ofDate": "Rettifica del movimento del {date}",
       "linked": "Rettifica di un movimento precedente"
+    },
+    "reversalBadge": {
+      "ofDate": "Storno del movimento del {date}",
+      "linked": "Storno di un movimento precedente"
     },
     "adjustments": {
       "action": "Registra rettifica",
@@ -628,6 +637,130 @@
       "returnedToService": "Velivolo rimesso in servizio.",
       "hourMeterAdjusted": "Contaore rettificato.",
       "rateAdded": "Tariffa aggiunta."
+    }
+  },
+  "FlightsPage": {
+    "kicker": "Voli",
+    "title": "Voli",
+    "description": "Registra un volo e vedi l'addebito su velivolo e, se presente, istruttore generato automaticamente.",
+    "titleOwn": "I miei voli",
+    "descriptionOwn": "Il tuo registro voli personale, storico completo incluso.",
+    "backToDashboard": "Torna alla dashboard",
+    "form": {
+      "title": "Registra volo",
+      "aircraft": "Velivolo",
+      "noAircraftAvailable": "Nessun velivolo attivo disponibile.",
+      "person": "Pilota o allievo",
+      "noPersonAvailable": "Nessuna persona con profilo pilota o allievo attivo.",
+      "instructor": "Istruttore",
+      "noInstructor": "— Nessuno —",
+      "flightDate": "Data volo",
+      "flightType": "Tipo di volo",
+      "flightTypes": {
+        "private": "Privato",
+        "school": "Scuola",
+        "other": "Altro"
+      },
+      "durationMode": "Come indichi la durata?",
+      "durationModes": {
+        "minutes": "Minuti diretti",
+        "hourMeter": "Contaore iniziale/finale"
+      },
+      "minutes": "Minuti",
+      "hourMeterStart": "Contaore iniziale",
+      "hourMeterEnd": "Contaore finale",
+      "landings": "Atterraggi",
+      "notes": "Note",
+      "submit": "Registra volo",
+      "requiredField": "Campo obbligatorio.",
+      "invalidMinutes": "Inserisci una durata valida, di almeno 1 minuto.",
+      "invalidHourMeter": "Il contaore finale deve essere maggiore dell'iniziale.",
+      "errors": {
+        "HOUR_METER_INVALID": "Il contaore finale deve essere maggiore dell'iniziale.",
+        "NO_AIRCRAFT_RATE": "Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.",
+        "NO_INSTRUCTOR_RATE": "Nessuna tariffa oraria è in vigore per questo istruttore alla data del volo.",
+        "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "Un volo scuola richiede un istruttore.",
+        "AIRCRAFT_ARCHIVED": "Il velivolo selezionato è archiviato.",
+        "PERSON_ARCHIVED": "La persona selezionata è archiviata.",
+        "PERSON_NOT_PILOT_OR_STUDENT": "La persona deve avere un profilo pilota o allievo attivo.",
+        "INSTRUCTOR_NOT_FOUND": "L'istruttore selezionato non ha un profilo istruttore attivo.",
+        "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
+        "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
+        "generic": "Impossibile registrare il volo. Riprova."
+      }
+    },
+    "result": {
+      "title": "Addebito generato",
+      "minutes": "Durata",
+      "aircraftRate": "Tariffa velivolo",
+      "aircraftAmount": "Costo velivolo",
+      "instructorRate": "Tariffa istruttore",
+      "instructorAmount": "Costo istruttore",
+      "packageCovered": "Da pacchetto",
+      "chargedMinutes": "Minuti addebitati",
+      "total": "Totale addebitato",
+      "newBalance": "Nuovo saldo"
+    },
+    "list": {
+      "heading": "Registro voli",
+      "empty": "Nessun volo registrato.",
+      "table": {
+        "date": "Data",
+        "aircraft": "Velivolo",
+        "person": "Persona",
+        "instructor": "Istruttore",
+        "noInstructor": "—",
+        "type": "Tipo",
+        "duration": "Durata",
+        "amount": "Addebito",
+        "landings": "Atterraggi",
+        "noValue": "—",
+        "packageNote": "di cui {duration} da pacchetto",
+        "status": "Stato",
+        "statusCancelled": "Annullato",
+        "cancelledDetail": "Annullato il {date} — {reason}",
+        "correctionOf": "Correzione di un volo precedente",
+        "correctedBy": "Corretto da un volo successivo",
+        "actions": "Azioni",
+        "cancelAction": "Annulla",
+        "correctAction": "Correggi"
+      }
+    },
+    "cancelPanel": {
+      "title": "Annulla volo",
+      "reason": "Motivo",
+      "requiredReason": "Il motivo è obbligatorio.",
+      "submit": "Conferma annullamento",
+      "close": "Chiudi",
+      "conflictError": "Questo volo è già stato annullato.",
+      "genericError": "Impossibile annullare il volo. Riprova.",
+      "success": "Volo annullato."
+    },
+    "correctPanel": {
+      "title": "Correggi volo",
+      "reason": "Motivo della correzione",
+      "requiredReason": "Il motivo è obbligatorio.",
+      "submit": "Conferma correzione",
+      "exit": "Annulla correzione",
+      "conflictError": "Questo volo è già stato annullato."
+    },
+    "filters": {
+      "dateFrom": "Dal",
+      "dateTo": "Al",
+      "aircraft": "Velivolo",
+      "allAircraft": "Tutti i velivoli",
+      "person": "Persona",
+      "allPeople": "Tutte le persone",
+      "flightType": "Tipo",
+      "allTypes": "Tutti i tipi",
+      "status": "Stato",
+      "allStatuses": "Tutti gli stati",
+      "statusOptions": {
+        "registered": "Registrato",
+        "cancelled": "Annullato"
+      },
+      "archivedSuffix": " (Archiviato)",
+      "reset": "Azzera filtri"
     }
   },
   "UsersPage": {

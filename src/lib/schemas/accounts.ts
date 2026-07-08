@@ -11,9 +11,14 @@ export type PaymentMethodDto = z.infer<typeof paymentMethodSchema>;
  * motivated correction (AC 1); `PACKAGE_PURCHASE` (story 4.4, AC 1) is the
  * always-`amountCents: 0` row a package sale creates purely so the titolare
  * sees the purchase in their estratto conto (the actual payment is external
- * to the account — see `HourPackage`'s doc-comment).
+ * to the account — see `HourPackage`'s doc-comment). `FLIGHT_CHARGE` (epic
+ * 5, story 5.1) is the first REAL debit — `amountCents` is negative and the
+ * balance is allowed to go negative (see `Flight`'s doc-comment).
+ * `FLIGHT_CHARGE_REVERSAL` (epic 5, story 5.3) is the storno a flight
+ * cancellation/correction creates — `amountCents` is POSITIVE (the original
+ * `FLIGHT_CHARGE` negated, linked via `reversalOfId`).
  */
-export const accountMovementTypeSchema = z.enum(['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE']);
+export const accountMovementTypeSchema = z.enum(['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE', 'FLIGHT_CHARGE', 'FLIGHT_CHARGE_REVERSAL']);
 
 export type AccountMovementTypeDto = z.infer<typeof accountMovementTypeSchema>;
 

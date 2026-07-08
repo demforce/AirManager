@@ -133,6 +133,9 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
                 expiresAt: tPackages('table.expiresAt'),
                 noExpiry: tPackages('table.noExpiry'),
                 expiredBadge: tPackages('table.expiredBadge'),
+                // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
+                // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).
+                consumedNote: tPackages.raw('table.consumedNote') as string,
               },
               form: {
                 title: tPackages('form.title'),
@@ -176,12 +179,16 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
                 topUp: t('movementType.topUp'),
                 adjustment: t('movementType.adjustment'),
                 packagePurchase: t('movementType.packagePurchase'),
+                flightCharge: t('movementType.flightCharge'),
+                flightChargeReversal: t('movementType.flightChargeReversal'),
               },
               // `t.raw`: these carry a literal `{date}` placeholder the CLIENT
               // fills in (the original movement's date lives in the row data)
               // — `t()` would fail on the missing ICU value server-side.
               adjustmentOfDate: t.raw('adjustmentBadge.ofDate') as string,
               adjustmentLinked: t('adjustmentBadge.linked'),
+              reversalOfDate: t.raw('reversalBadge.ofDate') as string,
+              reversalLinked: t('reversalBadge.linked'),
             }}
             adjustmentLabels={{
               action: t('adjustments.action'),

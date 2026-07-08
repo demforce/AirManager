@@ -208,6 +208,8 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 topUp: t('accountPanel.movementType.topUp'),
                 adjustment: t('accountPanel.movementType.adjustment'),
                 packagePurchase: t('accountPanel.movementType.packagePurchase'),
+                flightCharge: t('accountPanel.movementType.flightCharge'),
+                flightChargeReversal: t('accountPanel.movementType.flightChargeReversal'),
               },
               topUp: {
                 action: t('accountPanel.topUp.action'),
@@ -250,6 +252,9 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 expiresAt: tPackages('table.expiresAt'),
                 noExpiry: tPackages('table.noExpiry'),
                 expiredBadge: tPackages('table.expiredBadge'),
+                // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
+                // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).
+                consumedNote: tPackages.raw('table.consumedNote') as string,
               },
               form: {
                 title: tPackages('form.title'),
