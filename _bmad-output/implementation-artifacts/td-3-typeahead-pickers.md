@@ -4,7 +4,7 @@ baseline_commit: 8982579
 
 # Story TD-3: Picker ricercabili oltre il cap di 100 opzioni
 
-Status: review
+Status: done
 
 ## Story
 
@@ -89,7 +89,21 @@ Sonnet 5 (single dev agent, xhigh). NOTA DI PROCESSO: l'agente ha completato TUT
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial (brief extra-sospettoso: nessun self-report di prima mano del dev). **Verdict: fixes-required — 1 mandatory (TD3-M1), fixato dalla sessione principale.**
+
+- **Priorità zero (full suite su DB fresco, workers=1)**: 112/113 + `typeahead-pickers.spec` (AC 5) VERDE; riclassificazione: `flight-log:232` (AC 3 barra filtri) riprodotto **2/2 deterministico** sul DB accumulato a 165 persone → **TD3-M1 mandatory** (sotto); `flight-reversal:158` → fragilità da volume PRE-esistente e picker-independent (ordinamento `flightDate desc` + 20/pagina seppelliscono il volo 2020 del test oltre pagina 1 — fallisce identico a baseline) → deferrable TD3-D1.
+- **TD3-M1 (mandatory, FIXATO)** — il PRODOTTO è corretto (il reviewer ha guidato la stessa combobox Persona via Playwright MCP sul DB a 165 persone: opzioni presenti e selezionabili da tastiera); il difetto era nel TEST adattato: "Azzera filtri" fa `router.push` e il manager è keyed sulla query string → REMOUNT dell'intero subtree; su DB voluminoso (render lento) il `fill()` del test atterrava sul nodo VECCHIO e il testo digitato veniva scartato col remount (su DB pristino il remount vince la race e il test passa — per questo il fail sembrava "volume flake"). Fix della sessione principale in `flight-log.spec.ts`: helper `resetFiltersAndSettle` (attende l'URL query-less E la scomparsa del valore sporco dal controllo — il segnale remount-completo), settle per-step su OGNI cambio filtro (ogni cambio naviga e rimonta, stessa race), e assert del filtro combinato resa run-unique (persona run-unique + periodo + tipo: periodo+tipo da soli matchano i voli lasciati da OGNI esecuzione passata del test stesso — lezione 6.3 F1; la coda del test ora localizza i voli via filtro velivolo run-unique invece che sulla pagina 1 non filtrata, stessa lezione). Verifica: `flight-log.spec.ts --repeat-each=2` sul DB accumulato ostile → **8/8**, due volte.
+- **TD3-D2 (APPLICATO dalla sessione principale)** — le `initialOptions`/gating disabled dei picker del form derivavano dalla prima pagina NON filtrata (primi 100 per cognome): con zero piloti/allievi attivi nei primi 100 il picker si disabilitava anche con eleggibili oltre il cap — reintroduzione latente della classe silent-miss 5.4 D1. Fix: `initialOptions` da query `profile`-filtrate (pagina 1 vuota ⟺ insieme filtrato vuoto → gating esatto).
+- **TD3-D3 (APPLICATO)** — race stretta browse-mode: una fetch di ricerca pendente poteva risolvere DOPO un blur→refocus e sovrascrivere le `initialOptions` con risultati stale; fix: `openWithOptions` invalida seq e debounce pendenti.
+- **TD3-D1 (deferred)** — fragilità da volume di `flight-reversal:158` (e classe): debito di test PRE-esistente (localizzare la riga via pagina 1 non filtrata con date passate), da indurire in un pass futuro con la stessa lezione run-unique.
+- **Verificato corretto dal reviewer (sintesi)**: AC 5 e2e >100 verde + `total=168>100` via API; barra filtri trova entità oltre-cap/archiviate live (root cause storica dei flake chiusa); a11y completa live (combobox/listbox/aria-activedescendant, tastiera end-to-end, label sibling senza folding); guard server `profile` (422 su valore invalido, filtra i profili ATTIVI); loop full-fetch packages corretto (terminazione/total/overlap); i18n 2 chiavi simmetriche; OpenAPI `profile` registrato; coesistenza con l'Idempotency-Key di TD-2 intatta; File List onesta; nessuna assert indebolita.
+
+### Final gates (dopo i fix, sessione principale)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **793/793 unit**, `env -u NODE_ENV npx next build` verde; `flight-log.spec.ts --repeat-each=2` **8/8** sul DB accumulato (165 persone — la condizione che riproduceva M1); `flights.spec` + `typeahead-pickers.spec` verdi post-fix; full suite di review 112/113+AC5 su DB fresco (unico fail = TD3-D1 pre-esistente).
+
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session) — scioglie il deferral 5.4 D1 su decisione utente ("fix everything before epic 7").
 - 2026-07-08: Implemented (Sonnet 5 single dev agent, xhigh; T6 completato dalla sessione principale dopo esaurimento contesto a implementazione finita). Gate: 793/793 unit, lint/typecheck/build verdi, flights.spec repeat 30/30, typeahead-pickers verde, 2 fail su DB accumulato provati verdi su DB fresco. Status → review.
+- 2026-07-08: Review Opus 4.8 xhigh — fixes-required: TD3-M1 (race remount reset-filtri nel test adattato, prodotto corretto) FIXATO in sessione con settle-helper + assert run-unique (8/8 repeat sul DB ostile); TD3-D2 (gating picker su pagina non filtrata) e TD3-D3 (fetch stale su browse-mode) APPLICATI; TD3-D1 (fragilità volume flight-reversal:158, pre-esistente) deferred. Status → done.
