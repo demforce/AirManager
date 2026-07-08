@@ -4,7 +4,7 @@ baseline_commit: 9fdfdf4
 
 # Story 7.1: Creazione prenotazione con regole
 
-Status: review
+Status: done
 
 ## Story
 
@@ -138,7 +138,25 @@ Sonnet 5 (single dev agent)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial via `bmad-code-review`, con priorità zero sull'analisi di regressione e2e su DB fresco. **Verdict: clean-pass** — zero fix obbligatori, 2 nit (N1 fixato in sessione, N2 deferred).
+
+- **Analisi regressione e2e (priorità zero)**: full suite su DB fresco = 106 passed / 7 failed; `bookings.spec.ts` 6/6 verde sia nel run parallelo sia da solo (35.8s). I 7 fail (cash-register:175, flight-reversal:151, flights:274, package-consumption:134, package-sale:112, people-management:44/:69) classificati TUTTI flaky class pre-esistente, NESSUNA regressione da 7.1 — tre evidenze indipendenti: (1) ROTAZIONE del set di fail tra run parallelo e `--workers=1` (flights:165/:210 subentrano, cash-register/package-sale/flights:274 passano — una regressione vera fallirebbe sempre la stessa assert); (2) people-management:44/:69 root-caused al flake da VOLUME (83 Person attive dopo i run e2e, la persona run-unique finisce oltre pageSize 20 — il sibling test :55 di ricerca PASSA nello stesso run, quindi la persona esiste); (3) match con la baseline documentata (flights:210 riproduce anche da solo, noto da epic 5). Blast-radius: l'unica modifica cross-cutting di 7.1 (STUDENT senza `bookings.manage.own` + nav repoint) non è esercitata da alcun test fallito.
+- **Concorrenza (AC 2) provata più duramente del dev**: 4 POST paralleli identici → esattamente un 201 + tre 409; 2 POST parzialmente sovrapposti → un 201 + un 409; 2 POST back-to-back → entrambi 201. Lock `FOR UPDATE` prima statement della tx, overlap predicato sul solo velivolo lockato, unico code path di insert — nessun TOCTOU trovato.
+- **Matrice RBAC empirica via API reale**: tutte le celle conformi al Contesto, incluso NESSUN oracle di esistenza persona sul 403 del pilota cross-person (403 identico per target esistente e inesistente); allievo-solo 403 da authorize ma GET lista 200 (`self.read`, FR-19 minimo); unauth 401 envelope.
+- **AC 3**: OOS → 422 `AIRCRAFT_OUT_OF_SERVICE` con motivo in `details.reason` E nel message; in UI option disabilitata col motivo.
+- **Boundary overlap**: back-to-back (end==start) 201 (semi-aperto confermato), 1-minuto overlap 409, identico 409, `BOOKING_IN_PAST` su passato, `endsAt<=startsAt` 422 Zod.
+- **DB (psql)**: 3 indici + 4 FK come da story (instructorProfileId SET NULL, il resto RESTRICT), `actorUserId` corretto sulle righe create; colonne `timestamp(3)` coerenti con la norma del codebase (wire/storage UTC uniforme). Drift schema: `migrate diff` = 'No difference detected'.
+- **i18n**: 38 chiavi `BookingsPage.*` simmetriche (861/861 flat keys totali). **OpenAPI**: 2 path registrati con error responses corrette. **UI**: date pulite (fix virgola verificato), display UTC→Europe/Rome corretto (09:00Z → 11:00 CEST), conversione datetime-local irraggiungibile su valore vuoto (superRefine prima del submit).
+- Deviazioni del dev tutte ratificate: ordine persona-prima-di-velivolo (Task 3 letterale, leak-free provato), 4 helper `self.read` per i picker (selezione campi minima, filtri archiviazione/disattivazione rispettati), 404/409 su `instructorProfileId` staff-path, codici default per i casi non nominati.
+- **N1 (nit, FIXATO in sessione)**: il refine di `createBookingSchema` confrontava le ISO string lessicograficamente — precision mista sub-secondo (es. `10:00:00Z` → `10:00:00.500Z`) veniva respinta a torto ('.' < 'Z'). Fix: confronto come istanti (`new Date(...).getTime()`), doc-comment + unit test dedicato (806/806).
+- **N2 (nit, deferred)**: tabella/DTO "Nome Cognome" vs option dei picker "Cognome Nome" — cosmetico, ogni superficie internamente coerente; eventuale armonizzazione nelle story 7.x successive.
+
+### Final gates (re-run dal reviewer; unit ri-verificati post-N1 in sessione)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **806/806 unit** (805 del reviewer + 1 test N1), `env -u NODE_ENV npx next build` verde, e2e: bookings 6/6 (parallelo e isolato), full suite 106/113 coi 7 fail classificati flaky pre-esistenti.
+
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session via bmad-create-story), ready-for-dev.
 - 2026-07-08: Implemented (Sonnet 5 single dev agent) — model/migration, RBAC, service, API+OpenAPI, UI, tests; status → review.
+- 2026-07-08: Review Opus 4.8 xhigh via bmad-code-review (priorità zero regressione e2e su DB fresco) — clean pass, 0 mandatory; N1 (refine string-compare) fixato in sessione, N2 (ordine nomi) deferred. Status → done.

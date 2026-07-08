@@ -14,7 +14,10 @@ import { z } from './zod-with-openapi';
  * calendar-only dates. `.refine`: `endsAt` must be strictly AFTER `startsAt`
  * (a zero/negative-length interval is never valid, regardless of the
  * semi-open-interval overlap semantics the service applies between DIFFERENT
- * bookings). `instructorProfileId`, when present, is resolved/validated
+ * bookings) — compared as INSTANTS, not strings: `z.iso.datetime()` accepts
+ * variable fractional-second precision, and a lexicographic comparison would
+ * spuriously reject e.g. `10:00:00Z` → `10:00:00.500Z` ('.' sorts before
+ * 'Z'). `instructorProfileId`, when present, is resolved/validated
  * server-side (`bookings.service.ts`) — never trusted as-is. `notes` is
  * capped at 500 chars, same convention as `registerExpirySchema`.
  */
@@ -27,7 +30,10 @@ export const createBookingSchema = z
     endsAt: z.iso.datetime(),
     notes: z.string().trim().max(500).optional(),
   })
-  .refine((value) => value.endsAt > value.startsAt, { message: 'endsAt must be strictly after startsAt', path: ['endsAt'] });
+  .refine((value) => new Date(value.endsAt).getTime() > new Date(value.startsAt).getTime(), {
+    message: 'endsAt must be strictly after startsAt',
+    path: ['endsAt'],
+  });
 
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 

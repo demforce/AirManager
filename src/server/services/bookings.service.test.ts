@@ -555,6 +555,14 @@ describe('createBookingSchema (Story 7.1, Task 4)', () => {
     expect(createBookingSchema.safeParse({ ...VALID, startsAt: FUTURE_STARTS_AT, endsAt: FUTURE_STARTS_AT }).success).toBe(false);
   });
 
+  it('compares startsAt/endsAt as instants, not strings (review 7.1 N1: mixed fractional-second precision)', () => {
+    // Lexicographically '.500Z' sorts BEFORE 'Z', but chronologically it is
+    // 500ms later — a valid (if degenerate) interval a direct API client may send.
+    const base = FUTURE_STARTS_AT.replace(/\.\d+Z$/, '');
+    expect(createBookingSchema.safeParse({ ...VALID, startsAt: `${base}Z`, endsAt: `${base}.500Z` }).success).toBe(true);
+    expect(createBookingSchema.safeParse({ ...VALID, startsAt: `${base}.500Z`, endsAt: `${base}Z` }).success).toBe(false);
+  });
+
   it('rejects notes over 500 chars', () => {
     expect(createBookingSchema.safeParse({ ...VALID, notes: 'x'.repeat(501) }).success).toBe(false);
   });
