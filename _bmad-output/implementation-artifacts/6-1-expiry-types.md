@@ -4,7 +4,7 @@ baseline_commit: a1d663f
 
 # Story 6.1: Tipi di scadenza standard e personalizzati
 
-Status: review
+Status: done
 
 ## Story
 
@@ -118,7 +118,18 @@ Sonnet 5 (single dev agent)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean-pass** — nessun fix richiesto.
+
+- **D1 (deferral accettato)** — race stretta di doppio DELETE concorrente: `deleteExpiryType` fa findUnique-then-delete non atomico e il catch mappa solo P2003→409; un P2025 dal perdente della race bollirebbe a 500. NON riprodotto empiricamente (4 DELETE paralleli → un 204 + tre 404, zero 500: la finestra non si è sovrapposta sul dev server single-worker), ma il code path è identico byte-per-byte al pattern già deferito in `deleteCashCategory` (3.4) e `deletePackageType` (M1 di 4.3). Deferito per parità: se mai indurito, farlo come cleanup cross-service unico (cash + package-types + expiry-types), non qui.
+
+Verificato empiricamente e trovato corretto (sintesi; dettagli nel run di review): AC 1 seed esatto dei 6 tipi con gli ambiti della story (psql) e idempotenza del re-seed su un tipo rinominato/ri-scopato/disattivato (nessun clobber, `update: {}`); split permessi a livello SERVICE (admin/staff GET 200, pilota GET 403, unauth 401; staff POST 403 `settings.manage`) con auth prima della validazione body e envelope AD-8 ovunque; race di creazione duplicata (6 POST paralleli → UN 201 + cinque 409, una sola riga, mai 500 — backstop P2002 provato); rename su nome esistente → 409 ma su SE STESSO (anche variante trim) → 200; ordering 404-prima-di-409 senza state leak; boundary Zod completo (body vuoto 422, scope fuori enum 422, nome >100/solo-spazi 422, trim applicato fino alla riga DB); DELETE 204 su tipo inutilizzato e backstop P2003→409 reale e unit-testato; UI admin/staff in ENTRAMBE le locale senza enum raw (chip ambito #F0EEE6/#5F5B53 ≈ 5.8:1, WCAG AA ok); nav per staff presente / pilota assente + redirect 307 su accesso diretto; i18n 11+46 chiavi perfettamente simmetriche; migrazione pulita su DB fresco; registry 4 componenti + 4 path tag `Expiries` con coverage test; flights.spec.ts spot-check in isolamento 6/6 (classe flaky estranea alla 6.1).
+
+### Final gates (re-run dal reviewer)
+
+lint 0 errori (warning benigno noto `data-table.tsx`), typecheck pulito, **612/612 unit**, `env -u NODE_ENV npx next build` verde, `expiry-types.spec.ts` 3/3 su DB fresco.
+
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session), ready-for-dev.
 - 2026-07-08: Implemented (Sonnet 5 single dev agent) — expiry-type catalogue (model/migration/seed, service, API+OpenAPI, UI landing+manager, nav repoint, i18n, unit+e2e tests). All gates green. Status: review.
+- 2026-07-08: Review Opus 4.8 xhigh — clean pass, zero fix; D1 (race doppio DELETE, pattern app-wide pre-esistente) deferito per parità con 3.4/4.3. Status → done.
