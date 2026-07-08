@@ -4,7 +4,7 @@ baseline_commit: 9fdfdf4
 
 # Story TD-1: Bonifica dei finding aperti (tech-debt hardening cross-epic)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -158,9 +158,21 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
-_(da compilare dopo la review)_
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean pass — nessuna modifica al codice richiesta** (zero mandatory findings).
+
+- **Priorità zero (full suite su DB FRESCO, eseguita dal reviewer prima di ogni altro probing)**: **103/107** — il miglior risultato full-suite del progetto. I 4 fail ri-classificati uno a uno col criterio stabilito: 3 = classe flaky epic-5 nota (form-refresh flight specs sotto carico parallelo: `flights.spec:165`/`:219` PASSANO 3/3 in isolamento su server production; `flight-reversal.spec:151` timeout da carico), 1 = artefatto ambientale next-dev (pagina HTML di compile al posto del JSON sotto carico, zero 5xx reali su 20 GET paralleli in production build). **ZERO regressioni da TD-1.** La predizione del dev di 8 fail da picker-cap NON si è verificata su DB genuinamente fresco (34 piloti attivi < 100): erano contaminazione del suo DB non resettabile, come da lui stesso ipotizzato.
+- **Verifiche empiriche del reviewer** (sintesi): AC 1 race 4 DELETE paralleli → un 204 + tre 404, zero 500, predicato P2025 su tutti e 4 i servizi; AC 2 digest via Mailpit con flag NO_EMAIL corretto e SEND_FAILED coperto da unit rafforzato; AC 3 tutti i 13 siti convertiti, stessa transazione, zero 5xx e zero connessioni leakate sotto 20 GET paralleli; AC 4 parità `getEffectiveRates` provata viva con boundary `validFrom === oggi` incluso e tariffa futura esclusa; AC 6 409 con messaggio esatto via curl + azione nascosta in UI; AC 9 profilo attivo passa / persona archiviata → 422 `INSTRUCTOR_NOT_FOUND` provato vivo; AC 5 unwrap label verificato senza residui app-wide; AC 8 contratto no-op-senza-provider confermato sul consumer read-only; fix del mock vacuo auth-tokens verificato reale; File List = diff esatto (46 file); i18n 825/825 simmetrica.
+- **D1 (deferral)** — la DeprecationWarning pg residua sotto concorrenza origina negli internals Prisma (`PgTransaction`/pg.Pool non configurato in `prisma.ts`), stack trace SENZA frame applicativi, funzionalmente innocua (zero 5xx): è il residuo del 6.4 D1, fuori dallo scope letterale di AC 3 (i siti batch, tutti eliminati). Follow-up: story dedicata sul pool sizing di `@prisma/adapter-pg` se mai rilevante per il carico di produzione.
+- **D2 (deferral)** — commento `todayDateOnly` fuorviante rimasto in `account-panel.tsx`/`flights-manager.tsx` (l'AC nominava solo `packages-panel.tsx`; deviazione dichiarata giudicata sana). Cosmetico.
+- **D3 (deferral)** — "Carica altri" senza e2e dedicato: contratto verificato empiricamente dal reviewer (51 rettifiche su velivolo throwaway: page 1 → 50/51, page 2 → 1; condizione di visibilità del bottone corretta). Gap accettabile.
+- **D4 (nota)** — 5.4 D1 picker-cap resta fuori scope come da story (→ TD-3).
+
+### Final gates (review run, DB fresco)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **767/767 unit**, `env -u NODE_ENV npx next build` verde, **full suite e2e 103/107 su DB fresco** (4 fail = classe flaky epic-5/ambientale, zero regressioni), zero connessioni idle-in-transaction post-run.
 
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session) dai finding aperti censiti nel handoff di Epic 6, ready-for-dev.
 - 2026-07-08: Implemented (Sonnet 5 single dev agent, xhigh) — tutti i task T0-T12 completati. T0 (priorità zero) diagnosticato e indurito PRIMA di ogni altro task, su DB genuinamente fresco; il lavoro diagnostico necessario (multipli run e2e ripetuti, richiesti esplicitamente dal metodo di riproduzione) ha fatto crescere il volume di test-data nel DB fino a superare la soglia del finding 5.4 D1 (già fuori scope, deferred), che a fine sessione causa fail deterministici — ma non regressivi — su `flights.spec.ts`/`flight-reversal.spec.ts`/`package-consumption.spec.ts`/`aircraft-rates.spec.ts` in modalità full-suite; tutti diagnosticati singolarmente con evidenza (vedi Dev Agent Record). Gate: lint 0 errori, typecheck pulito, **767/767 unit**, build verde, e2e mirato T5-T11 **28/28**, full suite finale **97/107** (10 fail tutti attribuiti a D1 fuori-scope o a flake da carico confermato non-riproducibile in isolamento, mai a una regressione). Status → review.
+- 2026-07-08: Review Opus 4.8 xhigh — clean pass, zero mandatory findings, zero regressioni; full suite 103/107 su DB fresco (miglior risultato del progetto; 4 fail = classe flaky epic-5/ambientale). D1 pg-pool Prisma-internal, D2 commenti, D3 e2e load-more, D4 picker-cap → deferred/annotati. Status → done.

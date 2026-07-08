@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-08 (td-1 implementation complete, sent to review)
+last_updated: 2026-07-08 (td-1 done after clean-pass review)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -82,7 +82,7 @@ development_status:
   epic-6-retrospective: optional
 
   # Tech-debt pass (deferred review findings from epics 2-6, session 2026-07-08)
-  td-1-open-findings-hardening: review
+  td-1-open-findings-hardening: done
 
   epic-7: backlog
   7-1-booking-creation: backlog
