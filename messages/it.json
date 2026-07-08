@@ -763,6 +763,75 @@
       "reset": "Azzera filtri"
     }
   },
+  "ExpiriesPage": {
+    "kicker": "Scadenze",
+    "title": "Scadenze",
+    "description": "Il catalogo dei tipi di scadenza dell'aviosuperficie: visite mediche, licenze, rating e le tue voci personalizzate.",
+    "manageTypes": "Tipi di scadenza",
+    "backToDashboard": "Torna alla dashboard",
+    "stat": {
+      "label": "Tipi attivi",
+      "hint": "Nel catalogo, pronti per la registrazione delle scadenze."
+    },
+    "placeholder": {
+      "heading": "La vista per urgenza arriva a breve",
+      "body": "Le scadenze delle singole persone e l'elenco ordinato per urgenza (in scadenza, scadute) saranno disponibili in una prossima versione. Per ora questa pagina raccoglie il catalogo dei tipi di scadenza."
+    }
+  },
+  "ExpiryTypesPage": {
+    "kicker": "Scadenze",
+    "title": "Tipi di scadenza",
+    "description": "I tipi di scadenza standard e personalizzati: nome, ambito e stato. Un tipo mai usato può essere eliminato, altrimenti va disattivato.",
+    "backToExpiries": "Torna alle scadenze",
+    "newType": "Nuovo tipo",
+    "table": {
+      "name": "Nome",
+      "scope": "Ambito",
+      "status": "Stato",
+      "actions": "Azioni",
+      "empty": "Nessun tipo di scadenza."
+    },
+    "scope": {
+      "PILOTS": "Piloti",
+      "STUDENTS": "Allievi",
+      "INSTRUCTORS": "Istruttori",
+      "ALL": "Tutti"
+    },
+    "status": {
+      "active": "Attivo",
+      "inactive": "Disattivato"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "deactivate": "Disattiva",
+      "reactivate": "Riattiva",
+      "delete": "Elimina",
+      "confirmDelete": "Eliminare questo tipo di scadenza?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
+    },
+    "form": {
+      "createTitle": "Nuovo tipo di scadenza",
+      "editTitle": "Modifica tipo di scadenza",
+      "name": "Nome",
+      "scope": "Ambito",
+      "submitCreate": "Crea tipo",
+      "submitSave": "Salva",
+      "cancel": "Annulla",
+      "requiredField": "Il nome è obbligatorio.",
+      "conflictError": "Esiste già un tipo di scadenza con questo nome.",
+      "genericError": "Operazione non riuscita. Riprova."
+    },
+    "feedback": {
+      "created": "Tipo di scadenza creato.",
+      "updated": "Tipo di scadenza aggiornato.",
+      "deactivated": "Tipo di scadenza disattivato.",
+      "reactivated": "Tipo di scadenza riattivato.",
+      "deleted": "Tipo di scadenza eliminato.",
+      "deleteInUseError": "Il tipo è in uso su una o più scadenze registrate e non può essere eliminato: disattivalo invece.",
+      "genericError": "Operazione non riuscita. Riprova."
+    }
+  },
   "UsersPage": {
     "kicker": "Amministrazione",
     "title": "Utenti",

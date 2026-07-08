@@ -1,0 +1,249 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createExpiryTypeSchema, listExpiryTypesQuerySchema, updateExpiryTypeSchema } from '@/lib/schemas/expiry-types';
+import type { Actor } from '@/server/auth/rbac';
+import { ForbiddenError } from './errors';
+
+vi.mock('@/server/db/prisma', () => ({
+  prisma: {
+    expiryType: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+  },
+}));
+
+const { prisma } = await import('@/server/db/prisma');
+const { createExpiryType, deleteExpiryType, listExpiryTypes, updateExpiryType } = await import('./expiry-types.service');
+const { ConflictError, NotFoundError } = await import('./errors');
+
+const findManyMock = vi.mocked(prisma.expiryType.findMany);
+const findFirstMock = vi.mocked(prisma.expiryType.findFirst);
+const findUniqueMock = vi.mocked(prisma.expiryType.findUnique);
+const createMock = vi.mocked(prisma.expiryType.create);
+const updateMock = vi.mocked(prisma.expiryType.update);
+const deleteMock = vi.mocked(prisma.expiryType.delete);
+
+// Prisma's overloaded delegate types make `mockResolvedValue`'s literal
+// fixtures ambiguous (same workaround as `package-types.service.test.ts`).
+type Fixture = Record<string, unknown> | null;
+const findMany = findManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const findFirst = findFirstMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const findUnique = findUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const create = createMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
+const update = updateMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
+const del = deleteMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
+
+function adminActor(): Actor {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
+}
+
+function staffActor(): Actor {
+  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
+}
+
+function pilotActor(): Actor {
+  return { userId: 'pilot_1', personId: 'person_pilot', roles: ['PILOT'] };
+}
+
+/** A Prisma error shape with a `.code`, same helper style as other `*.service.test.ts` files. */
+function prismaError(code: string): unknown {
+  return { code };
+}
+
+function fixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    id: 'et_1',
+    name: 'Visita medica classe 2',
+    scope: 'PILOTS',
+    isActive: true,
+    createdAt: new Date('2026-01-01'),
+    ...overrides,
+  };
+}
+
+describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', () => {
+  beforeEach(() => {
+    findManyMock.mockReset();
+    findFirstMock.mockReset();
+    findUniqueMock.mockReset();
+    createMock.mockReset();
+    updateMock.mockReset();
+    deleteMock.mockReset();
+  });
+
+  describe('listExpiryTypes (Task 2, AC 1)', () => {
+    it('rejects a pilot (expiries.manage required)', async () => {
+      const query = listExpiryTypesQuerySchema.parse({});
+      await expect(listExpiryTypes(pilotActor(), query)).rejects.toThrow(ForbiddenError);
+      expect(findManyMock).not.toHaveBeenCalled();
+    });
+
+    it('a staff actor (expiries.manage) can list — active only by default', async () => {
+      findMany.mockResolvedValue([fixture()]);
+
+      const result = await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({}));
+
+      expect(findManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { isActive: true }, orderBy: { name: 'asc' }, take: 500 }),
+      );
+      expect(result).toEqual([fixture()]);
+    });
+
+    it('an admin actor can also list', async () => {
+      findMany.mockResolvedValue([]);
+      await expect(listExpiryTypes(adminActor(), listExpiryTypesQuerySchema.parse({}))).resolves.toEqual([]);
+    });
+
+    it('includeInactive: true also lists deactivated types (admin management page)', async () => {
+      findMany.mockResolvedValue([]);
+
+      await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({ includeInactive: 'true' }));
+
+      expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }));
+    });
+  });
+
+  describe('createExpiryType (Task 2, AC 1/2 — settings.manage only)', () => {
+    it('rejects a staff actor (expiries.manage is not enough — settings.manage required)', async () => {
+      const input = createExpiryTypeSchema.parse({ name: 'Nuovo tipo', scope: 'ALL' });
+      await expect(createExpiryType(staffActor(), input)).rejects.toThrow(ForbiddenError);
+      expect(findFirstMock).not.toHaveBeenCalled();
+    });
+
+    it('a duplicate name (pre-check) → ConflictError, create never attempted', async () => {
+      findFirst.mockResolvedValue({ id: 'et_existing' });
+      const input = createExpiryTypeSchema.parse({ name: 'Visita medica classe 2', scope: 'PILOTS' });
+
+      await expect(createExpiryType(adminActor(), input)).rejects.toThrow(ConflictError);
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    it('trims the name before persisting', async () => {
+      findFirst.mockResolvedValue(null);
+      create.mockResolvedValue(fixture({ name: 'Nuovo tipo' }));
+      const input = createExpiryTypeSchema.parse({ name: '  Nuovo tipo  ', scope: 'ALL' });
+
+      await createExpiryType(adminActor(), input);
+
+      expect(findFirstMock).toHaveBeenCalledWith(expect.objectContaining({ where: { name: 'Nuovo tipo' } }));
+      expect(createMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { name: 'Nuovo tipo', scope: 'ALL' } }),
+      );
+    });
+
+    it('maps a duplicate name (P2002 concurrency backstop) to ConflictError', async () => {
+      findFirst.mockResolvedValue(null);
+      create.mockRejectedValue(prismaError('P2002'));
+      const input = createExpiryTypeSchema.parse({ name: 'Visita medica classe 2', scope: 'PILOTS' });
+
+      await expect(createExpiryType(adminActor(), input)).rejects.toThrow(ConflictError);
+    });
+  });
+
+  describe('updateExpiryType (Task 2, AC 1/2)', () => {
+    it('rejects a staff actor (settings.manage required)', async () => {
+      const input = updateExpiryTypeSchema.parse({ isActive: false });
+      await expect(updateExpiryType(staffActor(), 'et_1', input)).rejects.toThrow(ForbiddenError);
+      expect(findUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundError for an unknown id BEFORE any other check', async () => {
+      findUnique.mockResolvedValue(null);
+      const input = updateExpiryTypeSchema.parse({ name: 'Qualcosa' });
+
+      await expect(updateExpiryType(adminActor(), 'missing', input)).rejects.toThrow(NotFoundError);
+      expect(findFirstMock).not.toHaveBeenCalled();
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    it('a partial update (isActive only) does not touch name/scope', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      update.mockResolvedValue(fixture({ isActive: false }));
+      const input = updateExpiryTypeSchema.parse({ isActive: false });
+
+      await updateExpiryType(adminActor(), 'et_1', input);
+
+      expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { isActive: false }, select: expect.anything() });
+      expect(findFirstMock).not.toHaveBeenCalled();
+    });
+
+    it('a duplicate name on update (excluding self) → ConflictError, update never attempted', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      findFirst.mockResolvedValue({ id: 'et_other' });
+      const input = updateExpiryTypeSchema.parse({ name: 'Nome già usato' });
+
+      await expect(updateExpiryType(adminActor(), 'et_1', input)).rejects.toThrow(ConflictError);
+      expect(findFirstMock).toHaveBeenCalledWith(expect.objectContaining({ where: { name: 'Nome già usato', NOT: { id: 'et_1' } } }));
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    it('maps a duplicate name (P2002 concurrency backstop) to ConflictError', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      findFirst.mockResolvedValue(null);
+      update.mockRejectedValue(prismaError('P2002'));
+      const input = updateExpiryTypeSchema.parse({ name: 'Qualcosa' });
+
+      await expect(updateExpiryType(adminActor(), 'et_1', input)).rejects.toThrow(ConflictError);
+    });
+
+    it('an update with an empty body → 422 at the schema layer (never reaches the service)', () => {
+      expect(updateExpiryTypeSchema.safeParse({}).success).toBe(false);
+    });
+  });
+
+  describe('deleteExpiryType (Task 2, AC 2 — P2003 backstop ready for 6.2)', () => {
+    it('rejects a staff actor (settings.manage required)', async () => {
+      await expect(deleteExpiryType(staffActor(), 'et_1')).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws NotFoundError for an unknown id', async () => {
+      findUnique.mockResolvedValue(null);
+
+      await expect(deleteExpiryType(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
+      expect(deleteMock).not.toHaveBeenCalled();
+    });
+
+    it('deletes a type never used', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      del.mockResolvedValue({ id: 'et_1' });
+
+      await expect(deleteExpiryType(adminActor(), 'et_1')).resolves.toBeUndefined();
+      expect(deleteMock).toHaveBeenCalledWith({ where: { id: 'et_1' } });
+    });
+
+    it('maps a FK violation (P2003 — the 6.2 concurrency backstop) to ConflictError', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      del.mockRejectedValue(prismaError('P2003'));
+
+      await expect(deleteExpiryType(adminActor(), 'et_1')).rejects.toThrow(ConflictError);
+    });
+  });
+
+  describe('schema validation (Task 3, AC 1/2)', () => {
+    it('rejects an empty/whitespace-only or over-max name', () => {
+      expect(createExpiryTypeSchema.safeParse({ name: '', scope: 'ALL' }).success).toBe(false);
+      expect(createExpiryTypeSchema.safeParse({ name: '   ', scope: 'ALL' }).success).toBe(false);
+      expect(createExpiryTypeSchema.safeParse({ name: 'x'.repeat(101), scope: 'ALL' }).success).toBe(false);
+    });
+
+    it('rejects a scope outside the enum', () => {
+      expect(createExpiryTypeSchema.safeParse({ name: 'X', scope: 'EVERYONE' }).success).toBe(false);
+    });
+
+    it('rejects a missing scope on create', () => {
+      expect(createExpiryTypeSchema.safeParse({ name: 'X' }).success).toBe(false);
+    });
+
+    it('rejects an empty update body', () => {
+      expect(updateExpiryTypeSchema.safeParse({}).success).toBe(false);
+    });
+
+    it('accepts a partial update body with just isActive', () => {
+      expect(updateExpiryTypeSchema.safeParse({ isActive: true }).success).toBe(true);
+    });
+  });
+});

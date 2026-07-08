@@ -39,6 +39,13 @@ import {
 } from './cash';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import {
+  createExpiryTypeSchema,
+  expiryTypeItemSchema,
+  expiryTypeListResponseSchema,
+  listExpiryTypesQuerySchema,
+  updateExpiryTypeSchema,
+} from './expiry-types';
+import {
   cancelFlightSchema,
   correctFlightSchema,
   flightListResponseSchema,
@@ -173,6 +180,10 @@ registry.register('CreateUserRequest', createUserSchema);
 registry.register('UpdateUserRequest', updateUserSchema);
 registry.register('SetPasswordRequest', setPasswordSchema);
 registry.register('ForgotPasswordRequest', forgotPasswordSchema);
+registry.register('ExpiryType', expiryTypeItemSchema);
+registry.register('ExpiryTypeList', expiryTypeListResponseSchema);
+registry.register('CreateExpiryTypeRequest', createExpiryTypeSchema);
+registry.register('UpdateExpiryTypeRequest', updateExpiryTypeSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -1075,6 +1086,74 @@ registry.registerPath({
   responses: {
     200: { description: 'Always returned, regardless of whether the account exists.', content: jsonContent(okResponseSchema) },
     ...errorResponses(422),
+  },
+});
+
+// --- Expiry types (epic 6, story 6.1, FR-35) --------------------------------
+// First resource of epic 6 — a new `Expiries` tag. Catalogue only (see
+// `ExpiryType` doc-comment): the actual scadenze registered against these
+// types (`Expiry`), the alert job and the urgency dashboard arrive in
+// stories 6.2/6.3/6.4.
+
+const expiryTypeIdParams = z.object({ id: z.string().meta({ description: 'Expiry type id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/expiry-types',
+  summary: 'List the expiry-type catalogue (standard + custom, FR-35)',
+  description:
+    'Active types only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 6.1, AC 1). Requires `expiries.manage` (admin+staff — staff will register scadenze against this catalogue in story 6.2).',
+  tags: ['Expiries'],
+  security,
+  request: { query: listExpiryTypesQuerySchema },
+  responses: {
+    200: { description: 'Every expiry type.', content: jsonContent(expiryTypeListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/expiry-types',
+  summary: 'Create an expiry type',
+  description:
+    'Name must be unique — conflict is a 409 (story 6.1, AC 1/2). Requires `settings.manage` (admin-only catalogue configuration, same split as `POST /api/v1/cash-categories`/`POST /api/v1/package-types`).',
+  tags: ['Expiries'],
+  security,
+  request: { body: { content: jsonContent(createExpiryTypeSchema), required: true } },
+  responses: {
+    201: { description: 'The created expiry type.', content: jsonContent(expiryTypeItemSchema) },
+    ...errorResponses(401, 403, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/expiry-types/{id}',
+  summary: 'Update an expiry type (partial patch)',
+  description:
+    'Every field optional; `isActive` toggling the lifecycle is a plain field on this same PATCH — there is no dedicated deactivate/reactivate endpoint (story 6.1, AC 1/2). Editing a type already in use is legal (a registered scadenza, story 6.2, references it by id, never a name snapshot). Requires `settings.manage`.',
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryTypeIdParams, body: { content: jsonContent(updateExpiryTypeSchema), required: true } },
+  responses: {
+    200: { description: 'The updated expiry type.', content: jsonContent(expiryTypeItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/expiry-types/{id}',
+  summary: 'Delete an expiry type (only if never used)',
+  description:
+    'An expiry type referenced by a recorded scadenza cannot be deleted — 409 suggesting deactivation instead (story 6.1, AC 2; story 6.2 adds the `Expiry.expiryTypeId` FK RESTRICT this backstops). Requires `settings.manage`.',
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryTypeIdParams },
+  responses: {
+    204: { description: 'The expiry type was deleted.' },
+    ...errorResponses(401, 403, 404, 409),
   },
 });
 

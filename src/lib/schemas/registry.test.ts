@@ -41,6 +41,8 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/cash-report',
         '/api/v1/package-types',
         '/api/v1/package-types/{id}',
+        '/api/v1/expiry-types',
+        '/api/v1/expiry-types/{id}',
         '/api/v1/flights',
         '/api/v1/flights/{id}/cancel',
         '/api/v1/flights/{id}/correct',

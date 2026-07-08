@@ -763,6 +763,75 @@
       "reset": "Clear filters"
     }
   },
+  "ExpiriesPage": {
+    "kicker": "Expiries",
+    "title": "Expiries",
+    "description": "The airfield's expiry-type catalogue: medical certificates, licenses, ratings and your own custom entries.",
+    "manageTypes": "Expiry types",
+    "backToDashboard": "Back to dashboard",
+    "stat": {
+      "label": "Active types",
+      "hint": "In the catalogue, ready for expiry registration."
+    },
+    "placeholder": {
+      "heading": "The urgency view is coming soon",
+      "body": "Individual people's expiries and the list ordered by urgency (expiring, expired) will be available in an upcoming release. For now this page hosts the expiry-type catalogue."
+    }
+  },
+  "ExpiryTypesPage": {
+    "kicker": "Expiries",
+    "title": "Expiry types",
+    "description": "Standard and custom expiry types: name, scope and status. A type never used can be deleted, otherwise it must be deactivated.",
+    "backToExpiries": "Back to expiries",
+    "newType": "New type",
+    "table": {
+      "name": "Name",
+      "scope": "Scope",
+      "status": "Status",
+      "actions": "Actions",
+      "empty": "No expiry types."
+    },
+    "scope": {
+      "PILOTS": "Pilots",
+      "STUDENTS": "Students",
+      "INSTRUCTORS": "Instructors",
+      "ALL": "Everyone"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Deactivated"
+    },
+    "actions": {
+      "edit": "Edit",
+      "deactivate": "Deactivate",
+      "reactivate": "Reactivate",
+      "delete": "Delete",
+      "confirmDelete": "Delete this expiry type?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
+    },
+    "form": {
+      "createTitle": "New expiry type",
+      "editTitle": "Edit expiry type",
+      "name": "Name",
+      "scope": "Scope",
+      "submitCreate": "Create type",
+      "submitSave": "Save",
+      "cancel": "Cancel",
+      "requiredField": "Name is required.",
+      "conflictError": "An expiry type with this name already exists.",
+      "genericError": "The operation failed. Please try again."
+    },
+    "feedback": {
+      "created": "Expiry type created.",
+      "updated": "Expiry type updated.",
+      "deactivated": "Expiry type deactivated.",
+      "reactivated": "Expiry type reactivated.",
+      "deleted": "Expiry type deleted.",
+      "deleteInUseError": "This type is in use on one or more recorded expiries and cannot be deleted: deactivate it instead.",
+      "genericError": "The operation failed. Please try again."
+    }
+  },
   "UsersPage": {
     "kicker": "Administration",
     "title": "Users",

@@ -781,3 +781,47 @@ model PackageConsumption {
   @@unique([flightId, hourPackageId])
   @@index([hourPackageId])
 }
+
+/// Expiry-type "ambito" (epic 6, story 6.1; FR-35) — who a given expiry type
+/// is meant for. `ALL` matches any person; every other value matches a
+/// person with the corresponding profile currently active. The
+/// scope↔person compatibility CHECK is deliberately NOT implemented here —
+/// it belongs to `Expiry` registration (story 6.2, its own AC); here scope
+/// is only an attribute shown/managed on the catalogue entry.
+enum ExpiryScope {
+  PILOTS
+  STUDENTS
+  INSTRUCTORS
+  ALL
+}
+
+/// Expiry-type catalogue (epic 6, story 6.1; FR-35). MUTABLE catalogue
+/// configuration — like `CashCategory` (story 3.4) / `PackageType` (story
+/// 4.3) — NOT an append-only ledger: created, edited and
+/// activated/deactivated freely, and deleted ONLY while never referenced by
+/// a recorded `Expiry`. Today (story 6.1) no FK points at this table yet;
+/// story 6.2 adds `Expiry.expiryTypeId` with `ON DELETE RESTRICT`, and
+/// `expiry-types.service.ts#deleteExpiryType`'s `P2003` catch is already
+/// the 409 backstop for that constraint (same split already validated for
+/// `PackageType` → `HourPackage`, story 4.3 → 4.4).
+///
+/// Deliberately NO `isSystem` flag: the standard types seeded here (visita
+/// medica classe 1/2/LAPL, licenza, rating SEP, inglese ICAO) are plain
+/// rows — the admin can rename them, change their scope, deactivate them
+/// and (while still unused) delete them exactly like a custom type. The
+/// seed is idempotent (`update: {}`), so a re-seed never overwrites an
+/// admin's customization.
+///
+/// Editing a type already IN USE is legal: a registered `Expiry` (story
+/// 6.2) references this row by id and never snapshots the name, so a
+/// rename/re-scope is never a retroactive rewrite of history — a scope
+/// change only affects FUTURE registration-time compatibility checks
+/// (story 6.2), never past ones.
+model ExpiryType {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  scope     ExpiryScope
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
