@@ -17,6 +17,15 @@ vi.mock('@/server/auth/session', () => ({
   getSessionActor: vi.fn(),
 }));
 
+// Story TD-2: `@/lib/api/handler` (imported by the real `./route` below) now
+// statically imports `@/server/db/prisma` for the `idempotency` option —
+// unused by this route (no `idempotency` config here), but the real module
+// eagerly validates `env.ts`'s `DATABASE_URL`, unset in the unit-test
+// process. Mocked out for the same reason every service test mocks it.
+vi.mock('@/server/db/prisma', () => ({
+  prisma: {},
+}));
+
 vi.mock('@/server/services/users.service', () => ({
   listUsers: vi.fn(),
   createUser: vi.fn(),

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { Link } from '@/i18n/navigation';
 import { formatCents, formatSignedCents, parseCents } from '@/lib/money';
 import { paymentMethodSchema, type AccountMovementListItemDto, type AccountOverviewDto } from '@/lib/schemas/accounts';
+import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { useAccountRefresh } from './account-refresh-context';
 
 export type AccountPanelLabels = {
@@ -248,6 +249,7 @@ type TopUpFormProps = {
  */
 function TopUpForm({ personId, labels, onCancel, onSuccess }: TopUpFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
 
   const {
     register,
@@ -263,16 +265,25 @@ function TopUpForm({ personId, labels, onCancel, onSuccess }: TopUpFormProps) {
     // Boundary conversion (Dev Notes/AD-2): the user types euros, the wire
     // format is always integer cents — never a float past this point.
     const amountCents = parseCents(values.amount);
-    const response = await fetch(`/api/v1/people/${personId}/account/top-ups`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        amountCents,
-        paymentMethod: values.paymentMethod,
-        effectiveDate: values.effectiveDate,
-        description: values.description.trim() === '' ? null : values.description.trim(),
-      }),
-    });
+    // Story TD-2 (AC 6): the key survives a network failure (the retry this
+    // protects) but is regenerated once ANY HTTP response arrives.
+    let response: Response;
+    try {
+      response = await fetch(`/api/v1/people/${personId}/account/top-ups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+        body: JSON.stringify({
+          amountCents,
+          paymentMethod: values.paymentMethod,
+          effectiveDate: values.effectiveDate,
+          description: values.description.trim() === '' ? null : values.description.trim(),
+        }),
+      });
+    } catch {
+      setFormError(labels.genericError);
+      return;
+    }
+    regenerateIdempotencyKey();
 
     if (!response.ok) {
       setFormError(labels.genericError);

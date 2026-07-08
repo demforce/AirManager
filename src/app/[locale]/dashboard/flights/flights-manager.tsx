@@ -14,6 +14,7 @@ import {
   type RegisterFlightResponseDto,
 } from '@/lib/schemas/flights';
 import { formatMinutes } from '@/lib/time';
+import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type AircraftOption = { id: string; registration: string };
@@ -889,6 +890,12 @@ function RegisterFlightForm({
   // as `durationMode` (the field only exists in one of the two modes).
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState(false);
+  // Story TD-2 (AC 5/6): idempotency-key lifecycle for the REGISTRATION POST
+  // only (`/flights`, `endpoint: 'flight-register'`) — the correction POST
+  // (`/flights/{id}/correct`, same form, `isCorrecting` branch below) is NOT
+  // covered: it is already protected by `AccountMovement.reversalOfId`'s
+  // unique constraint (see that route's doc-comment).
+  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
 
   const {
     register,
@@ -935,21 +942,37 @@ function RegisterFlightForm({
     const notes = values.notes.trim() === '' ? undefined : values.notes.trim();
     const trimmedReason = reason.trim();
 
-    const response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight.id}/correct` : '/api/v1/flights', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        aircraftId: values.aircraftId,
-        personId: values.personId,
-        instructorPersonId: values.instructorPersonId === '' ? undefined : values.instructorPersonId,
-        flightDate: values.flightDate,
-        flightType: values.flightType,
-        ...durationPayload,
-        landings,
-        notes,
-        ...(isCorrecting ? { reason: trimmedReason } : {}),
-      }),
-    });
+    // Story TD-2 (AC 6): only the registration path sends the key (see the
+    // hook's doc-comment above) — the key survives a network failure (the
+    // retry this protects) but is regenerated once ANY HTTP response
+    // arrives.
+    let response: Response;
+    try {
+      response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight.id}/correct` : '/api/v1/flights', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
+        },
+        body: JSON.stringify({
+          aircraftId: values.aircraftId,
+          personId: values.personId,
+          instructorPersonId: values.instructorPersonId === '' ? undefined : values.instructorPersonId,
+          flightDate: values.flightDate,
+          flightType: values.flightType,
+          ...durationPayload,
+          landings,
+          notes,
+          ...(isCorrecting ? { reason: trimmedReason } : {}),
+        }),
+      });
+    } catch {
+      setFormError(labels.errors.generic);
+      return;
+    }
+    if (!isCorrecting) {
+      regenerateIdempotencyKey();
+    }
 
     if (!response.ok) {
       if (isCorrecting && response.status === 409) {

@@ -10,6 +10,7 @@ import { paymentMethodSchema } from '@/lib/schemas/accounts';
 import type { PackageTypeItemDto } from '@/lib/schemas/package-types';
 import type { HourPackageItemDto } from '@/lib/schemas/packages';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
+import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { useAccountRefresh } from './account-refresh-context';
 
 export type PackagesPanelLabels = {
@@ -239,6 +240,7 @@ type SellPackageFormProps = {
 function SellPackageForm({ personId, labels, onCancel, onSuccess }: SellPackageFormProps) {
   const [types, setTypes] = useState<PackageTypeItemDto[] | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
 
   useEffect(() => {
     let cancelled = false;
@@ -269,16 +271,25 @@ function SellPackageForm({ personId, labels, onCancel, onSuccess }: SellPackageF
 
   async function onSubmit(values: SellPackageFormValues): Promise<void> {
     setFormError(null);
-    const response = await fetch(`/api/v1/people/${personId}/packages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        packageTypeId: values.packageTypeId,
-        paymentMethod: values.paymentMethod,
-        effectiveDate: values.effectiveDate,
-        description: values.description.trim() === '' ? null : values.description.trim(),
-      }),
-    });
+    // Story TD-2 (AC 6): the key survives a network failure (the retry this
+    // protects) but is regenerated once ANY HTTP response arrives.
+    let response: Response;
+    try {
+      response = await fetch(`/api/v1/people/${personId}/packages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+        body: JSON.stringify({
+          packageTypeId: values.packageTypeId,
+          paymentMethod: values.paymentMethod,
+          effectiveDate: values.effectiveDate,
+          description: values.description.trim() === '' ? null : values.description.trim(),
+        }),
+      });
+    } catch {
+      setFormError(labels.genericError);
+      return;
+    }
+    regenerateIdempotencyKey();
 
     if (!response.ok) {
       setFormError(response.status === 409 ? labels.inactiveTypeError : labels.genericError);

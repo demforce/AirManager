@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { DataTable } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
 import { formatSignedCents, parseCents } from '@/lib/money';
+import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
 export type CashMovementRow = {
   id: string;
@@ -389,6 +390,7 @@ type NewMovementFormProps = {
 
 function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovementFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
 
   const {
     register,
@@ -411,16 +413,25 @@ function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovemen
     // wire — the direction select supplies the sign.
     const magnitudeCents = parseCents(values.amount);
     const amountCents = values.direction === 'out' ? -magnitudeCents : magnitudeCents;
-    const response = await fetch('/api/v1/cash-movements', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        categoryId: values.categoryId,
-        amountCents,
-        effectiveDate: values.effectiveDate,
-        description: values.description.trim() === '' ? null : values.description.trim(),
-      }),
-    });
+    // Story TD-2 (AC 6): the key survives a network failure (the retry this
+    // protects) but is regenerated once ANY HTTP response arrives.
+    let response: Response;
+    try {
+      response = await fetch('/api/v1/cash-movements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+        body: JSON.stringify({
+          categoryId: values.categoryId,
+          amountCents,
+          effectiveDate: values.effectiveDate,
+          description: values.description.trim() === '' ? null : values.description.trim(),
+        }),
+      });
+    } catch {
+      setFormError(labels.genericError);
+      return;
+    }
+    regenerateIdempotencyKey();
 
     if (!response.ok) {
       // 409 = the category was deactivated in the meantime (Dev Notes).
