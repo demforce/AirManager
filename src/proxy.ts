@@ -20,11 +20,20 @@ const AUTH_API_PREFIX = '/api/auth';
 // *before* they have a session. `openapi.json` (story 1.5) is public too —
 // it exposes only contracts (request/response shapes), never data, and a
 // future Flutter client needs to be able to fetch it without a session.
+// `jobs/expiry-alerts` (story 6.3, AD-9) is "public" from THIS gate's point
+// of view for the same reason: it's called by an EXTERNAL cron that never
+// carries a browser session. "Public" here only means "skip the session
+// check" — the route itself
+// (`src/app/api/v1/jobs/expiry-alerts/route.ts`) still enforces its OWN
+// auth, a timing-safe `JOBS_SECRET` bearer check, before doing anything
+// (401/500 on its own terms). Any future `/api/v1/jobs/*` route needs the
+// same entry here.
 const PUBLIC_API_PATHS = new Set([
   '/api/v1/health',
   '/api/v1/auth/set-password',
   '/api/v1/auth/forgot-password',
   '/api/v1/openapi.json',
+  '/api/v1/jobs/expiry-alerts',
 ]);
 
 function unauthenticatedApiResponse(): NextResponse {

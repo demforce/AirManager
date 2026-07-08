@@ -19,6 +19,17 @@ async function loadMessages(locale: AppLocale): Promise<Messages> {
 export type InviteEmailContent = { subject: string; text: string };
 export type PasswordResetEmailContent = { subject: string; text: string };
 export type NegativeBalanceAlertEmailContent = { subject: string; text: string };
+export type ExpiryAlertEmailContent = { subject: string; text: string };
+export type ExpiryDigestEmailContent = { subject: string; text: string };
+
+/** One row of the staff digest (story 6.3) — mirrors `expiry-alerts.service.ts`'s per-candidate loop state. */
+export type ExpiryDigestItem = {
+  personName: string;
+  typeName: string;
+  expiresAt: Date;
+  daysLeft: number;
+  holderEmailed: boolean;
+};
 
 /**
  * Builds the invite email (AC 1). Subject/body come from the `Emails.invite`
@@ -73,5 +84,100 @@ export async function buildNegativeBalanceAlertEmail(
   return {
     subject: t('subject'),
     text: t('body', { name: params.personName, balance: formatCents(params.balanceCents, locale) }),
+  };
+}
+
+/**
+ * Locale-aware, date-ONLY (no time-of-day) long date — story 6.3, Dev Notes:
+ * "data formattata locale-aware date-only UTC". `time.ts`'s formatters
+ * don't cover this shape (they present a Europe/Rome timestamp-of-day, for
+ * timestamps — not a bare calendar date); `timeZone: 'UTC'` keeps a
+ * `@db.Date` value's calendar day intact regardless of server timezone,
+ * the same date-only discipline as `date-only.ts`. Private to this module —
+ * only the expiry email builders need it.
+ */
+function formatExpiryDate(date: Date, locale: AppLocale): string {
+  return new Intl.DateTimeFormat(locale === 'it' ? 'it-IT' : 'en-IE', { timeZone: 'UTC', dateStyle: 'long' }).format(date);
+}
+
+/**
+ * Renders the `Emails.expiryDays.*` day-phrase sub-key for a given
+ * `daysLeft` (story 6.3, Contesto: "la frase temporale via sotto-chiavi
+ * dedicate ... MAI la soglia nel testo, sempre i giorni reali"). Shared by
+ * both the holder alert and the staff digest so the wording — and its
+ * it/en pairing — never drifts between the two templates (one catalogue
+ * entry, not two copies). Each sub-key is a full verb phrase ("scade
+ * oggi"/"expires today", "scade tra N giorni"/"expires in N days", "è
+ * scaduta da N giorni"/"expired N days ago") so callers can slot it
+ * straight into a sentence without re-conjugating around it.
+ *
+ * Builds its OWN narrowly-namespaced translator (`Emails.expiryDays`)
+ * rather than accepting one from the caller: `createTranslator`'s return
+ * type is generic over BOTH the full message tree and the exact namespace
+ * literal it was built with, so a translator scoped to `'Emails'` and one
+ * scoped to `'Emails.expiryDays'` are not interchangeable at the type
+ * level (the key parameter's literal-union type differs) — reconstructing
+ * it here, with a namespace known at this call site, sidesteps that
+ * entirely instead of fighting it with a loosened function-parameter type.
+ */
+function expiryDaysPhrase(locale: AppLocale, messages: Messages, daysLeft: number): string {
+  const t = createTranslator({ locale, messages, namespace: 'Emails.expiryDays' });
+
+  if (daysLeft === 0) {
+    return t('expiresToday');
+  }
+  if (daysLeft > 0) {
+    return t('expiresInDays', { days: daysLeft });
+  }
+  return t('expiredDaysAgo', { days: Math.abs(daysLeft) });
+}
+
+/**
+ * Builds the holder-facing expiry alert email (story 6.3, AC 1). Sent AT
+ * MOST once per titolare per job run, no matter how many thresholds that
+ * run consumed for this scadenza (see `expiry-alerts.service.ts`'s
+ * catch-up doc-comment) — the body always talks about the REAL `daysLeft`,
+ * never the threshold(s) that triggered it.
+ */
+export async function buildExpiryAlertEmail(
+  locale: AppLocale,
+  params: { personName: string; typeName: string; expiresAt: Date; daysLeft: number },
+): Promise<ExpiryAlertEmailContent> {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.expiryAlert' });
+  const daysPhrase = expiryDaysPhrase(locale, messages, params.daysLeft);
+  const date = formatExpiryDate(params.expiresAt, locale);
+
+  return {
+    subject: t('subject', { typeName: params.typeName }),
+    text: t('body', { name: params.personName, typeName: params.typeName, daysPhrase, date }),
+  };
+}
+
+/**
+ * Builds the staff digest email (story 6.3, AC 1) — one per active
+ * admin/staff user per run, sent ONLY when the run consumed at least one
+ * alert (the caller, `expiry-alerts.service.ts`, never invokes this
+ * otherwise). Lists every alert consumed this run, flagging holders with no
+ * `Person.email` on file — the recovery net for the "thresholds are
+ * consumed regardless" rule (Contesto).
+ */
+export async function buildExpiryDigestEmail(
+  locale: AppLocale,
+  params: { items: ExpiryDigestItem[] },
+): Promise<ExpiryDigestEmailContent> {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.expiryDigest' });
+
+  const lines = params.items.map((item) => {
+    const daysPhrase = expiryDaysPhrase(locale, messages, item.daysLeft);
+    const date = formatExpiryDate(item.expiresAt, locale);
+    const noEmailFlag = item.holderEmailed ? '' : t('noEmailFlag');
+    return t('itemLine', { name: item.personName, typeName: item.typeName, daysPhrase, date, noEmailFlag });
+  });
+
+  return {
+    subject: t('subject'),
+    text: `${t('intro')}\n\n${lines.join('\n')}`,
   };
 }

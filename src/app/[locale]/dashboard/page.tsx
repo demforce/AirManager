@@ -1,9 +1,12 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
+import type { ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { hasPermission } from '@/server/auth/rbac';
 import { signOut } from '@/server/auth/auth';
 import { getSessionActor } from '@/server/auth/session';
+import { listPersonExpiries } from '@/server/services/expiries.service';
 import { getMe } from '@/server/services/me.service';
+import { ExpiryStatusBadge } from './expiries/expiry-status-badge';
 import { visibleNavItems } from './nav-items';
 
 type PageProps = {
@@ -57,6 +60,27 @@ export default async function DashboardPage({ params }: PageProps) {
    * deliberately omitted for them too.
    */
   const ownAccountHref = ownPersonHref ? `${ownPersonHref}/account` : null;
+
+  /**
+   * Story 6.4, Task 4 (Contesto): "Le mie scadenze" home widget — same
+   * asymmetric-tile rule as `ownPersonHref`/`ownAccountHref` above: staff
+   * has the real `/dashboard/expiries` dashboard, so this widget is
+   * deliberately omitted for any actor holding `expiries.manage`, even one
+   * also linked to a `Person`. `listPersonExpiries` is reused AS-IS (no new
+   * service) — its own-access guard (`self.read` + matching `personId`)
+   * is satisfied here by construction, since every role holds `self.read`
+   * (`rbac.ts`) and `me.person.id` is this actor's own person by
+   * definition. The section itself only renders below when non-empty (a
+   * clean home for someone with no scadenze registered yet).
+   */
+  const canManageExpiries = hasPermission(actor, 'expiries.manage');
+  const myExpiries = me.person && !canManageExpiries ? await listPersonExpiries(actor, me.person.id) : [];
+  const tExpiries = await getTranslations('ExpiriesPage');
+  const expiryStatusLabels: Record<ExpiryStatusDto, string> = {
+    ok: tExpiries('own.table.status.ok'),
+    expiring: tExpiries('own.table.status.expiring'),
+    expired: tExpiries('own.table.status.expired'),
+  };
 
   async function logoutAction() {
     'use server';
@@ -115,6 +139,36 @@ export default async function DashboardPage({ params }: PageProps) {
             ) : null}
           </div>
         </nav>
+
+        {myExpiries.length > 0 ? (
+          <section className="mt-10" data-testid="my-expiries-widget">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">{t('myExpiries.heading')}</p>
+              <Link href="/dashboard/expiries" className="text-sm font-medium text-[#2F3437] underline-offset-4 hover:underline">
+                {t('myExpiries.link')}
+              </Link>
+            </div>
+            <div className="mt-4 divide-y divide-[#EAEAEA] rounded-[8px] border border-[#EAEAEA] bg-white">
+              {myExpiries.map((expiry) => (
+                <div
+                  key={expiry.id}
+                  data-testid="my-expiries-widget-row"
+                  className="flex items-center justify-between gap-4 px-4 py-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-[#111111]">{expiry.typeName}</p>
+                    <p className="text-xs text-[#787774]">{expiry.expiresAt}</p>
+                  </div>
+                  <ExpiryStatusBadge
+                    status={expiry.status}
+                    label={expiryStatusLabels[expiry.status]}
+                    data-testid="my-expiries-widget-badge"
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     </main>
   );

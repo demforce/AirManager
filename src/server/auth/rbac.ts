@@ -31,6 +31,7 @@ export type Permission =
   | 'bookings.manage.any'
   | 'school.manage.own'
   | 'expiries.manage'
+  | 'expiries.propose.own'
   | 'settings.manage'
   | 'users.manage'
   | 'self.read';
@@ -45,6 +46,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'bookings.manage.any',
   'school.manage.own',
   'expiries.manage',
+  'expiries.propose.own',
   'settings.manage',
   'users.manage',
   'self.read',
@@ -75,9 +77,13 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'expiries.manage',
     'self.read',
   ],
-  INSTRUCTOR: ['self.read', 'bookings.manage.own', 'school.manage.own'],
-  PILOT: ['self.read', 'bookings.manage.own'],
-  STUDENT: ['self.read', 'bookings.manage.own'],
+  // `expiries.propose.own` (story 6.2, FR-36): the titolare proposes a
+  // renewal of their OWN scadenza, staff validates it — staff deliberately
+  // does NOT hold this permission (it edits directly via `expiries.manage`
+  // instead, never through the proposal queue).
+  INSTRUCTOR: ['self.read', 'bookings.manage.own', 'school.manage.own', 'expiries.propose.own'],
+  PILOT: ['self.read', 'bookings.manage.own', 'expiries.propose.own'],
+  STUDENT: ['self.read', 'bookings.manage.own', 'expiries.propose.own'],
 };
 
 /**

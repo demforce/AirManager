@@ -41,6 +41,8 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/cash-report',
         '/api/v1/package-types',
         '/api/v1/package-types/{id}',
+        '/api/v1/expiry-types',
+        '/api/v1/expiry-types/{id}',
         '/api/v1/flights',
         '/api/v1/flights/{id}/cancel',
         '/api/v1/flights/{id}/correct',
@@ -57,6 +59,13 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/users/{id}/resend-invite',
         '/api/v1/auth/set-password',
         '/api/v1/auth/forgot-password',
+        '/api/v1/people/{id}/expiries',
+        '/api/v1/expiries',
+        '/api/v1/expiries/{id}',
+        '/api/v1/expiries/{id}/proposals',
+        '/api/v1/expiry-proposals',
+        '/api/v1/expiry-proposals/{id}/decision',
+        '/api/v1/jobs/expiry-alerts',
       ]),
     );
   });
@@ -66,11 +75,30 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(securitySchemes?.['cookieAuth']).toMatchObject({ type: 'apiKey', in: 'cookie' });
   });
 
+  it('documents a bearer security scheme for the jobs route (story 6.3, AD-9)', () => {
+    const securitySchemes = doc.components?.securitySchemes as Record<string, { type: string; scheme?: string }> | undefined;
+    expect(securitySchemes?.['bearerAuth']).toMatchObject({ type: 'http', scheme: 'bearer' });
+  });
+
+  it('documents only 401/500 error responses on the jobs route (no session, no RBAC 403)', () => {
+    const jobRoute = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)[
+      '/api/v1/jobs/expiry-alerts'
+    ]?.['post'];
+    expect(Object.keys(jobRoute?.responses ?? {}).sort()).toEqual(['200', '401', '500']);
+  });
+
   it('documents 401/403/404/409/422/500 error responses on the protected users list endpoint', () => {
     const listUsers = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)['/api/v1/users']?.[
       'get'
     ];
     expect(Object.keys(listUsers?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+  });
+
+  it('documents 401/403/422/500 error responses on the expiry dashboard endpoint (story 6.4)', () => {
+    const listExpiries = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)['/api/v1/expiries']?.[
+      'get'
+    ];
+    expect(Object.keys(listExpiries?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
   });
 
   it('produces valid JSON (round-trips through JSON.stringify/parse)', () => {

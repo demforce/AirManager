@@ -30,6 +30,10 @@
     "navHeading": "Aree operative",
     "myProfile": "La mia scheda",
     "myAccount": "Il mio conto",
+    "myExpiries": {
+      "heading": "Le mie scadenze",
+      "link": "Tutte le mie scadenze"
+    },
     "nav": {
       "people": "Persone",
       "aircraft": "Velivoli",
@@ -158,7 +162,6 @@
     },
     "placeholders": {
       "comingSoon": "Disponibile prossimamente.",
-      "expiries": "Scadenze",
       "recentFlights": "Ultimi voli",
       "upcomingBookings": "Prossime prenotazioni"
     },
@@ -252,6 +255,55 @@
       "requiredField": "Campo obbligatorio.",
       "inactiveTypeError": "Il tipo di pacchetto selezionato non è più attivo. Aggiorna la pagina e riprova.",
       "genericError": "Impossibile registrare la vendita. Riprova."
+    }
+  },
+  "ExpiriesPanel": {
+    "heading": "Scadenze",
+    "loadError": "Impossibile caricare le scadenze.",
+    "empty": "Nessuna scadenza registrata.",
+    "addAction": "Registra scadenza",
+    "feedback": {
+      "registered": "Scadenza registrata.",
+      "updated": "Scadenza aggiornata.",
+      "deleted": "Scadenza eliminata."
+    },
+    "table": {
+      "type": "Tipo",
+      "issuedAt": "Rilascio",
+      "expiresAt": "Scadenza",
+      "notes": "Note",
+      "noNotes": "—",
+      "statusHeader": "Stato",
+      "status": {
+        "ok": "In regola",
+        "expiring": "In scadenza",
+        "expired": "Scaduta"
+      },
+      "pendingBadge": "Proposta in attesa",
+      "actions": "Azioni"
+    },
+    "form": {
+      "title": "Registra scadenza",
+      "type": "Tipo di scadenza",
+      "noCompatibleTypes": "Nessun tipo di scadenza attivo compatibile con i profili di questa persona.",
+      "issuedAt": "Data rilascio",
+      "expiresAt": "Data scadenza",
+      "notes": "Note",
+      "submit": "Registra",
+      "cancel": "Annulla",
+      "save": "Salva",
+      "edit": "Modifica",
+      "requiredField": "Campo obbligatorio.",
+      "invalidRange": "La data di scadenza non può precedere la data di rilascio.",
+      "scopeMismatchError": "Questo tipo di scadenza non è compatibile con i profili attivi della persona.",
+      "conflictError": "Impossibile registrare la scadenza: la persona è archiviata, il tipo è disattivato, oppure una scadenza di questo tipo è già registrata per questa persona.",
+      "genericError": "Impossibile salvare la scadenza. Riprova."
+    },
+    "actions": {
+      "delete": "Elimina",
+      "confirmDelete": "Eliminare questa scadenza?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
     }
   },
   "AccountStatementPage": {
@@ -763,6 +815,155 @@
       "reset": "Azzera filtri"
     }
   },
+  "ExpiriesPage": {
+    "kicker": "Scadenze",
+    "title": "Scadenze",
+    "description": "La coda delle proposte da validare e il catalogo dei tipi di scadenza dell'aviosuperficie.",
+    "titleOwn": "Le mie scadenze",
+    "descriptionOwn": "Le tue scadenze registrate, con lo stato calcolato. Proponi un aggiornamento quando rinnovi.",
+    "manageTypes": "Tipi di scadenza",
+    "backToDashboard": "Torna alla dashboard",
+    "stat": {
+      "label": "Tipi attivi",
+      "hint": "Nel catalogo, pronti per la registrazione delle scadenze."
+    },
+    "dashboard": {
+      "heading": "Tutte le scadenze",
+      "description": "Ogni scadenza registrata, ordinata per urgenza: le scadute per prime, poi quelle in scadenza, poi le altre.",
+      "filters": {
+        "type": "Tipo",
+        "allTypes": "Tutti i tipi",
+        "inactiveSuffix": " (disattivato)",
+        "scope": "Ambito",
+        "allScopes": "Tutti gli ambiti",
+        "status": "Stato",
+        "allStatuses": "Tutti gli stati",
+        "reset": "Azzera filtri"
+      },
+      "table": {
+        "person": "Persona",
+        "type": "Tipo",
+        "scope": "Ambito",
+        "issuedAt": "Rilascio",
+        "expiresAt": "Scadenza",
+        "status": "Stato",
+        "empty": "Nessuna scadenza registrata."
+      }
+    },
+    "queue": {
+      "heading": "Coda proposte",
+      "description": "Le proposte di aggiornamento in attesa di validazione, in ordine di arrivo.",
+      "empty": "Nessuna proposta in attesa.",
+      "table": {
+        "person": "Persona",
+        "type": "Tipo",
+        "current": "Valori attuali",
+        "proposed": "Valori proposti",
+        "proposedBy": "Proposto da",
+        "when": "Quando",
+        "actions": "Azioni"
+      },
+      "actions": {
+        "approve": "Approva",
+        "reject": "Rifiuta",
+        "confirmApprove": "Approvare questa proposta?",
+        "confirmReject": "Rifiutare questa proposta?",
+        "confirmYes": "Conferma",
+        "confirmCancel": "Annulla"
+      },
+      "feedback": {
+        "approved": "Proposta approvata.",
+        "rejected": "Proposta rifiutata.",
+        "genericError": "Impossibile registrare la decisione. Riprova."
+      }
+    },
+    "own": {
+      "empty": "Nessuna scadenza registrata.",
+      "table": {
+        "type": "Tipo",
+        "issuedAt": "Rilascio",
+        "expiresAt": "Scadenza",
+        "notes": "Note",
+        "noNotes": "—",
+        "statusHeader": "Stato",
+        "status": {
+          "ok": "In regola",
+          "expiring": "In scadenza",
+          "expired": "Scaduta"
+        },
+        "pendingBadge": "Proposta in attesa",
+        "pendingHint": "Una proposta è già in attesa di validazione."
+      },
+      "proposeAction": "Proponi aggiornamento",
+      "form": {
+        "title": "Proponi aggiornamento",
+        "issuedAt": "Data rilascio",
+        "expiresAt": "Data scadenza",
+        "notes": "Note",
+        "submit": "Invia proposta",
+        "cancel": "Annulla",
+        "requiredField": "Campo obbligatorio.",
+        "invalidRange": "La data di scadenza non può precedere la data di rilascio.",
+        "conflictError": "Una proposta è già in attesa di validazione per questa scadenza.",
+        "genericError": "Impossibile inviare la proposta. Riprova.",
+        "success": "Proposta inviata, in attesa di validazione da parte dello staff."
+      }
+    }
+  },
+  "ExpiryTypesPage": {
+    "kicker": "Scadenze",
+    "title": "Tipi di scadenza",
+    "description": "I tipi di scadenza standard e personalizzati: nome, ambito e stato. Un tipo mai usato può essere eliminato, altrimenti va disattivato.",
+    "backToExpiries": "Torna alle scadenze",
+    "newType": "Nuovo tipo",
+    "table": {
+      "name": "Nome",
+      "scope": "Ambito",
+      "status": "Stato",
+      "actions": "Azioni",
+      "empty": "Nessun tipo di scadenza."
+    },
+    "scope": {
+      "PILOTS": "Piloti",
+      "STUDENTS": "Allievi",
+      "INSTRUCTORS": "Istruttori",
+      "ALL": "Tutti"
+    },
+    "status": {
+      "active": "Attivo",
+      "inactive": "Disattivato"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "deactivate": "Disattiva",
+      "reactivate": "Riattiva",
+      "delete": "Elimina",
+      "confirmDelete": "Eliminare questo tipo di scadenza?",
+      "confirmYes": "Conferma",
+      "confirmCancel": "Annulla"
+    },
+    "form": {
+      "createTitle": "Nuovo tipo di scadenza",
+      "editTitle": "Modifica tipo di scadenza",
+      "name": "Nome",
+      "scope": "Ambito",
+      "submitCreate": "Crea tipo",
+      "submitSave": "Salva",
+      "cancel": "Annulla",
+      "requiredField": "Il nome è obbligatorio.",
+      "conflictError": "Esiste già un tipo di scadenza con questo nome.",
+      "genericError": "Operazione non riuscita. Riprova."
+    },
+    "feedback": {
+      "created": "Tipo di scadenza creato.",
+      "updated": "Tipo di scadenza aggiornato.",
+      "deactivated": "Tipo di scadenza disattivato.",
+      "reactivated": "Tipo di scadenza riattivato.",
+      "deleted": "Tipo di scadenza eliminato.",
+      "deleteInUseError": "Il tipo è in uso su una o più scadenze registrate e non può essere eliminato: disattivalo invece.",
+      "genericError": "Operazione non riuscita. Riprova."
+    }
+  },
   "UsersPage": {
     "kicker": "Amministrazione",
     "title": "Utenti",
@@ -860,6 +1061,21 @@
     "negativeBalanceAlert": {
       "subject": "Il tuo conto AirManager è in negativo",
       "body": "Ciao {name},\n\nIl tuo conto prepagato AirManager ha ora un saldo di {balance}.\n\nTi invitiamo a regolarizzare la posizione contattando la segreteria dell'aviosuperficie."
+    },
+    "expiryDays": {
+      "expiresToday": "scade oggi",
+      "expiresInDays": "scade tra {days, plural, one {# giorno} other {# giorni}}",
+      "expiredDaysAgo": "è scaduta da {days, plural, one {# giorno} other {# giorni}}"
+    },
+    "expiryAlert": {
+      "subject": "Promemoria scadenza: {typeName}",
+      "body": "Ciao {name},\n\nLa tua scadenza \"{typeName}\" {daysPhrase} (il {date}).\n\nTi invitiamo a provvedere al rinnovo e ad aggiornare i tuoi dati su AirManager appena possibile."
+    },
+    "expiryDigest": {
+      "subject": "Riepilogo alert scadenze",
+      "intro": "Sono stati inviati i seguenti alert di scadenza:",
+      "itemLine": "- {name} — {typeName}: {daysPhrase} (il {date}){noEmailFlag}",
+      "noEmailFlag": " [senza email — contattare la persona direttamente]"
     }
   }
 }

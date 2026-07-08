@@ -67,6 +67,11 @@ model Person {
   /// to the PERSON, never a profile — same rationale as `account`. See
   /// `Flight` doc.
   flights           Flight[]
+  /// This person's abilitative scadenze (epic 6, story 6.2, AD-11): belongs
+  /// to the PERSON, never a profile — same rationale as `account`/
+  /// `hourPackages`/`flights` (survives a student->pilot transition). See
+  /// `Expiry` doc.
+  expiries          Expiry[]
 }
 
 /// Pilot profile (story 2.2, AC 1/2, AD-11): 1-to-0/1 with `Person`, never a
@@ -275,22 +280,28 @@ model User {
   personId     String? @unique
   person       Person? @relation(fields: [personId], references: [id])
 
-  authTokens           AuthToken[]
+  authTokens             AuthToken[]
   /// Hour-meter rectifications this user performed (story 2.5, AC 2) —
   /// `HourMeterAdjustment.actorUserId`.
-  hourMeterAdjustments HourMeterAdjustment[]
+  hourMeterAdjustments   HourMeterAdjustment[]
   /// Aircraft rates this user recorded (story 4.1) — `AircraftRate.actorUserId`.
-  aircraftRates        AircraftRate[]
+  aircraftRates          AircraftRate[]
   /// Instructor rates this user recorded (story 4.2) — `InstructorRate.actorUserId`.
-  instructorRates      InstructorRate[]
+  instructorRates        InstructorRate[]
   /// Account ledger entries this user recorded (story 3.1) — `AccountMovement.actorUserId`.
-  accountMovements     AccountMovement[]
+  accountMovements       AccountMovement[]
   /// Cash ledger entries this user recorded (story 3.1) — `CashMovement.actorUserId`.
-  cashMovements        CashMovement[]
+  cashMovements          CashMovement[]
   /// Package sales this user recorded (story 4.4) — `HourPackage.actorUserId`.
-  hourPackagesSold     HourPackage[]
+  hourPackagesSold       HourPackage[]
   /// Flights this user registered (epic 5, story 5.1) — `Flight.actorUserId`.
-  flightsRecorded      Flight[]
+  flightsRecorded        Flight[]
+  /// Scadenze this user registered/last updated (epic 6, story 6.2) — `Expiry.actorUserId`.
+  expiriesRecorded       Expiry[]
+  /// Update proposals this user FILED, as the scadenza's titolare (epic 6, story 6.2) — `ExpiryUpdateProposal.proposedByUserId`.
+  expiryProposalsFiled   ExpiryUpdateProposal[] @relation("ExpiryProposalProposedBy")
+  /// Update proposals this user DECIDED, as staff (epic 6, story 6.2) — `ExpiryUpdateProposal.decidedByUserId`.
+  expiryProposalsDecided ExpiryUpdateProposal[] @relation("ExpiryProposalDecidedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -780,4 +791,213 @@ model PackageConsumption {
 
   @@unique([flightId, hourPackageId])
   @@index([hourPackageId])
+}
+
+/// Expiry-type "ambito" (epic 6, story 6.1; FR-35) — who a given expiry type
+/// is meant for. `ALL` matches any person; every other value matches a
+/// person with the corresponding profile currently active. The
+/// scope↔person compatibility CHECK is deliberately NOT implemented here —
+/// it belongs to `Expiry` registration (story 6.2, its own AC); here scope
+/// is only an attribute shown/managed on the catalogue entry.
+enum ExpiryScope {
+  PILOTS
+  STUDENTS
+  INSTRUCTORS
+  ALL
+}
+
+/// Expiry-type catalogue (epic 6, story 6.1; FR-35). MUTABLE catalogue
+/// configuration — like `CashCategory` (story 3.4) / `PackageType` (story
+/// 4.3) — NOT an append-only ledger: created, edited and
+/// activated/deactivated freely, and deleted ONLY while never referenced by
+/// a recorded `Expiry`. Today (story 6.1) no FK points at this table yet;
+/// story 6.2 adds `Expiry.expiryTypeId` with `ON DELETE RESTRICT`, and
+/// `expiry-types.service.ts#deleteExpiryType`'s `P2003` catch is already
+/// the 409 backstop for that constraint (same split already validated for
+/// `PackageType` → `HourPackage`, story 4.3 → 4.4).
+///
+/// Deliberately NO `isSystem` flag: the standard types seeded here (visita
+/// medica classe 1/2/LAPL, licenza, rating SEP, inglese ICAO) are plain
+/// rows — the admin can rename them, change their scope, deactivate them
+/// and (while still unused) delete them exactly like a custom type. The
+/// seed is idempotent (`update: {}`), so a re-seed never overwrites an
+/// admin's customization.
+///
+/// Editing a type already IN USE is legal: a registered `Expiry` (story
+/// 6.2) references this row by id and never snapshots the name, so a
+/// rename/re-scope is never a retroactive rewrite of history — a scope
+/// change only affects FUTURE registration-time compatibility checks
+/// (story 6.2), never past ones.
+model ExpiryType {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  scope     ExpiryScope
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  /// Scadenze registered against this type (epic 6, story 6.2) — a non-empty
+  /// set is exactly what makes this type non-deletable (FK RESTRICT, story
+  /// 6.1 AC 2 completed here); see `Expiry` doc.
+  expiries Expiry[]
+}
+
+/// Proposal lifecycle state for `ExpiryUpdateProposal` (epic 6, story 6.2, AC 2).
+enum ExpiryProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// The CURRENT abilitative scadenza for a (persona, tipo) pair (epic 6,
+/// story 6.2; FR-36). ONE row per `(personId, expiryTypeId)` —
+/// `@@unique` below — because this domain tracks the current
+/// abilitative STATE, not a renewal history: a renewal (e.g. a new visita
+/// medica) is an UPDATE of this same row, never a new row. The history of
+/// APPROVED renewals stays consultable via `ExpiryUpdateProposal` (see that
+/// model's doc) — nothing here is append-only.
+///
+/// **Status is NEVER persisted** (no `status` column): `ok` / `expiring` /
+/// `expired` is always DERIVED from `expiresAt` vs "today" via the shared,
+/// pure `src/lib/expiry-status.ts#computeExpiryStatus` helper (usable from
+/// server AND client, story 6.3's alert job and 6.4's dashboard reuse the
+/// exact same function) — `expired` iff `expiresAt < today` (the expiry day
+/// itself is still valid, the same boundary convention as
+/// `HourPackage.expiresAt` vs `flightDate`).
+///
+/// `issuedAt`/`expiresAt` are calendar-only (`@db.Date`, same convention as
+/// `AccountMovement.effectiveDate`) — bound ONLY via `date-only.ts`'s
+/// `parseDateOnlyUtc`/`todayDateOnlyUtc` helpers, never a raw
+/// `new Date(string)` (review 3.5 F1's lesson).
+///
+/// `expiryTypeId`'s FK is EXPLICIT `onDelete: Restrict` (this already
+/// matches the Prisma default for a required relation — spelled out here to
+/// honor `ExpiryType`'s doc-comment promise, story 6.1 -> 6.2): a scadenza
+/// referencing a type makes that type non-deletable, backed by
+/// `expiry-types.service.ts#deleteExpiryType`'s pre-check + `P2003` backstop
+/// (409, "in use — deactivate it instead").
+model Expiry {
+  id           String     @id @default(cuid())
+  personId     String
+  person       Person     @relation(fields: [personId], references: [id])
+  expiryTypeId String
+  expiryType   ExpiryType @relation(fields: [expiryTypeId], references: [id], onDelete: Restrict)
+  issuedAt     DateTime   @db.Date
+  expiresAt    DateTime   @db.Date
+  notes        String?
+  /// Who registered/last updated this scadenza (`Actor.userId`, always
+  /// present) — same rationale as every other ledger's `actorUserId`.
+  actorUserId  String
+  actorUser    User       @relation(fields: [actorUserId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  /// Update proposals filed by this scadenza's titolare (epic 6, story 6.2,
+  /// AC 2) — see `ExpiryUpdateProposal` doc. Cascades on delete (that
+  /// model's `expiryId` FK) — deleting a scadenza (a staff correction tool,
+  /// e.g. wrong type/person) drops its proposals too, pending included.
+  proposals ExpiryUpdateProposal[]
+  /// Alert-threshold idempotence ledger (epic 6, story 6.3, AD-9) — see
+  /// `SentAlert` doc. Cascades on delete, same rationale as `proposals`.
+  /// Wiped (NOT cascaded-delete — a `deleteMany`) whenever `expiresAt`
+  /// actually changes value, in `expiries.service.ts#updateExpiry` and the
+  /// APPROVE branch of `decideExpiryProposal` — a renewal must re-earn its
+  /// alert cycle.
+  sentAlerts SentAlert[]
+
+  @@unique([personId, expiryTypeId])
+  @@index([expiryTypeId])
+  @@index([expiresAt])
+}
+
+/// Idempotence ledger for the automatic expiry-alert job (epic 6, story 6.3,
+/// AD-9; FR-37) — `expiry-alerts.service.ts#runExpiryAlertsJob`. One row per
+/// `(Expiry, threshold)` EVER consumed; `@@unique` below is the DB-level
+/// guarantee a threshold is alerted AT MOST ONCE, the actual idempotence
+/// contract (AC 2) — the job's own pre-check is only an optimization, this
+/// row is what a concurrent/duplicate run's `P2002` backstops against.
+///
+/// "Threshold consumed" is not the same as "an email was sent about exactly
+/// that threshold": when a run finds MULTIPLE due-but-unconsumed thresholds
+/// for the same scadenza (a skipped cron, or a scadenza registered already
+/// close to/past its date), it sends ONE holder email — about the real
+/// `daysLeft`, never the threshold — and inserts a `SentAlert` row for EVERY
+/// threshold it just caught up on, in the SAME transaction, BEFORE sending
+/// that email (insert-before-send: a crash in between loses that one email,
+/// deliberately accepted — AD-9 privileges "never more than one alert per
+/// threshold" over "never lose one", and the staff digest is the recovery
+/// net).
+///
+/// `expiryId`'s FK is `onDelete: Cascade` (announced by story 6.2's `Expiry`
+/// doc-comment): deleting a scadenza (a staff correction tool) drops its
+/// alert history too — nothing meaningful survives without the scadenza it
+/// alerted about.
+model SentAlert {
+  id       String @id @default(cuid())
+  expiryId String
+  expiry   Expiry @relation(fields: [expiryId], references: [id], onDelete: Cascade)
+  /// The alert threshold consumed, in days (`EXPIRY_ALERT_THRESHOLDS` =
+  /// `[60, 30, 7, 0]`, `src/lib/expiry-status.ts`) — a marker of cadence
+  /// consumed, not a claim that the email literally mentioned this number.
+  threshold Int
+  sentAt    DateTime @default(now())
+
+  @@unique([expiryId, threshold])
+}
+
+/// A titolare-filed proposal to update their OWN `Expiry` (epic 6, story
+/// 6.2, AC 2; FR-36) — the value on `Expiry` stays authoritative until staff
+/// approves it (the own-vs-manage split, AD-5: `expiries.propose.own` files
+/// this, only `expiries.manage` decides it — never the reverse). Approving
+/// applies `proposedIssuedAt`/`proposedExpiresAt`/`proposedNotes` onto the
+/// target `Expiry` inside the SAME transaction as the decision
+/// (`expiries.service.ts#decideExpiryProposal`); rejecting leaves the
+/// `Expiry` untouched. This table itself is the append-only record of every
+/// proposal ever filed (PENDING/APPROVED/REJECTED all stay, never deleted —
+/// except cascading away with their `Expiry`, see that model's doc).
+///
+/// **At most one PENDING proposal per `Expiry`** — enforced by a
+/// HAND-APPENDED partial unique index
+/// (`ExpiryUpdateProposal_expiryId_pending_key` — see the migration SQL,
+/// the Prisma DSL cannot express a partial/filtered unique index),
+/// backstopped by a `P2002` catch in
+/// `expiries.service.ts#proposeExpiryUpdate` (pre-check + backstop, the same
+/// shape as every other unique constraint in this codebase). A future
+/// `prisma migrate diff` against this schema will report drift for that one
+/// index — accepted, the same tradeoff already made for any hand-appended
+/// SQL the Prisma DSL cannot express.
+///
+/// `expiryId`'s FK is `onDelete: Cascade` — the first cascading FK in this
+/// domain, deliberate: a proposal has no standalone meaning once its target
+/// scadenza is gone (see `Expiry.proposals` doc).
+///
+/// Two independent FKs to `User` (`proposedByUserId`/`decidedByUserId`) —
+/// the first case in this codebase where more than one relation targets the
+/// same model, which Prisma requires disambiguating with an explicit
+/// `@relation("name")` on BOTH sides (`ExpiryProposalProposedBy`/
+/// `ExpiryProposalDecidedBy`, see the matching `User.expiryProposalsFiled`/
+/// `expiryProposalsDecided` back-relations).
+///
+/// `decidedByUserId`/`decidedAt` are set TOGETHER, exactly once, by
+/// `decideExpiryProposal` (APPROVE or REJECT) — both `null` while PENDING,
+/// same "set together exactly once" convention as
+/// `Flight.cancelledAt`/`cancelReason`.
+model ExpiryUpdateProposal {
+  id                String               @id @default(cuid())
+  expiryId          String
+  expiry            Expiry               @relation(fields: [expiryId], references: [id], onDelete: Cascade)
+  proposedIssuedAt  DateTime             @db.Date
+  proposedExpiresAt DateTime             @db.Date
+  proposedNotes     String?
+  status            ExpiryProposalStatus @default(PENDING)
+  proposedByUserId  String
+  proposedByUser    User                 @relation("ExpiryProposalProposedBy", fields: [proposedByUserId], references: [id])
+  decidedByUserId   String?
+  decidedByUser     User?                @relation("ExpiryProposalDecidedBy", fields: [decidedByUserId], references: [id])
+  decidedAt         DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([expiryId])
+  @@index([status])
 }

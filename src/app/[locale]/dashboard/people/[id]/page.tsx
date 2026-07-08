@@ -9,6 +9,7 @@ import { ForbiddenError, NotFoundError } from '@/server/services/errors';
 import { getEffectiveInstructorRate } from '@/server/services/instructor-rates.service';
 import { getPerson } from '@/server/services/people.service';
 import { AccountPanel } from '../account-panel';
+import { ExpiriesPanel } from '../expiries-panel';
 import { InstructorRatesPanel } from '../instructor-rates-panel';
 import { PackagesPanel } from '../packages-panel';
 import { ProfilesPanel } from '../profiles-panel';
@@ -21,9 +22,10 @@ type PageProps = {
  * Story 2.3, AC 1: the structural placeholders future epics fill without
  * restructuring the page. Story 3.1 turns "balance" into the real
  * `AccountPanel` below (removed from this list); story 4.4 does the same for
- * "hoursPackages" -> the real `PackagesPanel`.
+ * "hoursPackages" -> the real `PackagesPanel`; story 6.2 does the same for
+ * "expiries" -> the real `ExpiriesPanel`.
  */
-const PLACEHOLDER_SECTIONS = ['expiries', 'recentFlights', 'upcomingBookings'] as const;
+const PLACEHOLDER_SECTIONS = ['recentFlights', 'upcomingBookings'] as const;
 
 /**
  * The "scheda persona" (story 2.3): anagrafica + profiles (read-only unless
@@ -70,9 +72,11 @@ export default async function PersonDetailPage({ params }: PageProps) {
   const canManageProfiles = hasPermission(actor, 'people.manage');
   const canManageFinance = hasPermission(actor, 'finance.manage');
   const canManageSettings = hasPermission(actor, 'settings.manage');
+  const canManageExpiries = hasPermission(actor, 'expiries.manage');
   const t = await getTranslations('PersonDetailPage');
   const tPeople = await getTranslations('PeoplePage');
   const tPackages = await getTranslations('HourPackagesPanel');
+  const tExpiries = await getTranslations('ExpiriesPanel');
 
   // Story 4.2, AC 1/AD-4: the instructor-rate section is shown only when the
   // person has an instructor profile (active or deactivated — deactivated
@@ -314,6 +318,70 @@ export default async function PersonDetailPage({ params }: PageProps) {
             />
           </div>
         ) : null}
+
+        <div className="mt-6">
+          <ExpiriesPanel
+            // Remount on person change — same rationale as
+            // `InstructorRatesPanel`'s `key={person.id}` (review 2.4 F1).
+            key={person.id}
+            personId={person.id}
+            canManage={canManageExpiries}
+            activeProfiles={{
+              pilot: person.pilotProfile !== null && person.pilotProfile.deactivatedAt === null,
+              student: person.studentProfile !== null && person.studentProfile.deactivatedAt === null,
+              instructor: person.instructorProfile !== null && person.instructorProfile.deactivatedAt === null,
+            }}
+            labels={{
+              heading: tExpiries('heading'),
+              loadError: tExpiries('loadError'),
+              empty: tExpiries('empty'),
+              addAction: tExpiries('addAction'),
+              feedback: {
+                registered: tExpiries('feedback.registered'),
+                updated: tExpiries('feedback.updated'),
+                deleted: tExpiries('feedback.deleted'),
+              },
+              table: {
+                type: tExpiries('table.type'),
+                issuedAt: tExpiries('table.issuedAt'),
+                expiresAt: tExpiries('table.expiresAt'),
+                notes: tExpiries('table.notes'),
+                noNotes: tExpiries('table.noNotes'),
+                statusHeader: tExpiries('table.statusHeader'),
+                status: {
+                  ok: tExpiries('table.status.ok'),
+                  expiring: tExpiries('table.status.expiring'),
+                  expired: tExpiries('table.status.expired'),
+                },
+                pendingBadge: tExpiries('table.pendingBadge'),
+                actions: tExpiries('table.actions'),
+              },
+              form: {
+                title: tExpiries('form.title'),
+                type: tExpiries('form.type'),
+                noCompatibleTypes: tExpiries('form.noCompatibleTypes'),
+                issuedAt: tExpiries('form.issuedAt'),
+                expiresAt: tExpiries('form.expiresAt'),
+                notes: tExpiries('form.notes'),
+                submit: tExpiries('form.submit'),
+                cancel: tExpiries('form.cancel'),
+                save: tExpiries('form.save'),
+                edit: tExpiries('form.edit'),
+                requiredField: tExpiries('form.requiredField'),
+                invalidRange: tExpiries('form.invalidRange'),
+                scopeMismatchError: tExpiries('form.scopeMismatchError'),
+                conflictError: tExpiries('form.conflictError'),
+                genericError: tExpiries('form.genericError'),
+              },
+              actions: {
+                delete: tExpiries('actions.delete'),
+                confirmDelete: tExpiries('actions.confirmDelete'),
+                confirmYes: tExpiries('actions.confirmYes'),
+                confirmCancel: tExpiries('actions.confirmCancel'),
+              },
+            }}
+          />
+        </div>
 
         {/* Story 2.3, AC 1: structural placeholders — epics 4-7 replace the
             content, never this layout. */}

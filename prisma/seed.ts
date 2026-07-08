@@ -157,6 +157,37 @@ async function seedPilotAccount(): Promise<void> {
   console.log(`Seed: account ready for ${PILOT_EMAIL}.`);
 }
 
+/**
+ * Story 6.1, AC 1: the six standard expiry types (visita medica classe 1/2/
+ * LAPL, licenza, rating SEP, inglese ICAO), each with a sensible default
+ * `scope` for a demo aviosuperficie — the admin adapts these afterwards
+ * (Dev Notes: "l'admin li adatta"; `ALL` is deliberately not covered here,
+ * the e2e custom-type test covers it). Idempotent like the rest of this
+ * seed — `upsert` keyed on the unique `name`, `update: {}` so a re-seed
+ * NEVER overwrites an admin's rename/re-scope/deactivation of a standard
+ * type (same principle as `seedCashCategories`/`seedAircraft`).
+ */
+const STANDARD_EXPIRY_TYPES: Array<{ name: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL' }> = [
+  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS' },
+  { name: 'Visita medica classe 2', scope: 'PILOTS' },
+  { name: 'Visita medica LAPL', scope: 'STUDENTS' },
+  { name: 'Licenza', scope: 'PILOTS' },
+  { name: 'Rating SEP', scope: 'PILOTS' },
+  { name: 'Inglese ICAO', scope: 'PILOTS' },
+];
+
+async function seedExpiryTypes(): Promise<void> {
+  for (const { name, scope } of STANDARD_EXPIRY_TYPES) {
+    await prisma.expiryType.upsert({
+      where: { name },
+      update: {},
+      create: { name, scope },
+    });
+  }
+
+  console.log(`Seed: ${STANDARD_EXPIRY_TYPES.length} expiry types ready.`);
+}
+
 async function main() {
   const seedPassword = process.env['SEED_ADMIN_PASSWORD'];
   if (!seedPassword) {
@@ -171,6 +202,7 @@ async function main() {
   await seedAircraft();
   await seedCashCategories();
   await seedPilotAccount();
+  await seedExpiryTypes();
 }
 
 main()

@@ -30,6 +30,10 @@
     "navHeading": "Operational areas",
     "myProfile": "My profile",
     "myAccount": "My account",
+    "myExpiries": {
+      "heading": "My expiries",
+      "link": "All my expiries"
+    },
     "nav": {
       "people": "People",
       "aircraft": "Aircraft",
@@ -158,7 +162,6 @@
     },
     "placeholders": {
       "comingSoon": "Coming soon.",
-      "expiries": "Expiries",
       "recentFlights": "Recent flights",
       "upcomingBookings": "Upcoming bookings"
     },
@@ -252,6 +255,55 @@
       "requiredField": "This field is required.",
       "inactiveTypeError": "The selected package type is no longer active. Refresh the page and try again.",
       "genericError": "Could not record the sale. Please try again."
+    }
+  },
+  "ExpiriesPanel": {
+    "heading": "Expiries",
+    "loadError": "Could not load the expiries.",
+    "empty": "No expiry registered.",
+    "addAction": "Register expiry",
+    "feedback": {
+      "registered": "Expiry registered.",
+      "updated": "Expiry updated.",
+      "deleted": "Expiry deleted."
+    },
+    "table": {
+      "type": "Type",
+      "issuedAt": "Issued",
+      "expiresAt": "Expires",
+      "notes": "Notes",
+      "noNotes": "—",
+      "statusHeader": "Status",
+      "status": {
+        "ok": "OK",
+        "expiring": "Expiring soon",
+        "expired": "Expired"
+      },
+      "pendingBadge": "Pending proposal",
+      "actions": "Actions"
+    },
+    "form": {
+      "title": "Register expiry",
+      "type": "Expiry type",
+      "noCompatibleTypes": "No active expiry type is compatible with this person's profiles.",
+      "issuedAt": "Issued on",
+      "expiresAt": "Expires on",
+      "notes": "Notes",
+      "submit": "Register",
+      "cancel": "Cancel",
+      "save": "Save",
+      "edit": "Edit",
+      "requiredField": "This field is required.",
+      "invalidRange": "The expiry date cannot be before the issue date.",
+      "scopeMismatchError": "This expiry type is not compatible with the person's active profiles.",
+      "conflictError": "Could not register the expiry: the person is archived, the type is deactivated, or an expiry of this type is already registered for this person.",
+      "genericError": "Could not save the expiry. Please try again."
+    },
+    "actions": {
+      "delete": "Delete",
+      "confirmDelete": "Delete this expiry?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
     }
   },
   "AccountStatementPage": {
@@ -763,6 +815,155 @@
       "reset": "Clear filters"
     }
   },
+  "ExpiriesPage": {
+    "kicker": "Expiries",
+    "title": "Expiries",
+    "description": "The pending proposal queue and the airfield's expiry-type catalogue.",
+    "titleOwn": "My expiries",
+    "descriptionOwn": "Your registered expiries, with the computed status. Propose an update whenever you renew.",
+    "manageTypes": "Expiry types",
+    "backToDashboard": "Back to dashboard",
+    "stat": {
+      "label": "Active types",
+      "hint": "In the catalogue, ready for expiry registration."
+    },
+    "dashboard": {
+      "heading": "All expiries",
+      "description": "Every registered scadenza, ordered by urgency: expired first, then expiring soon, then the rest.",
+      "filters": {
+        "type": "Type",
+        "allTypes": "All types",
+        "inactiveSuffix": " (deactivated)",
+        "scope": "Scope",
+        "allScopes": "All scopes",
+        "status": "Status",
+        "allStatuses": "All statuses",
+        "reset": "Clear filters"
+      },
+      "table": {
+        "person": "Person",
+        "type": "Type",
+        "scope": "Scope",
+        "issuedAt": "Issued",
+        "expiresAt": "Expires",
+        "status": "Status",
+        "empty": "No expiry registered."
+      }
+    },
+    "queue": {
+      "heading": "Proposal queue",
+      "description": "Update proposals pending validation, in order of arrival.",
+      "empty": "No pending proposals.",
+      "table": {
+        "person": "Person",
+        "type": "Type",
+        "current": "Current values",
+        "proposed": "Proposed values",
+        "proposedBy": "Proposed by",
+        "when": "When",
+        "actions": "Actions"
+      },
+      "actions": {
+        "approve": "Approve",
+        "reject": "Reject",
+        "confirmApprove": "Approve this proposal?",
+        "confirmReject": "Reject this proposal?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel"
+      },
+      "feedback": {
+        "approved": "Proposal approved.",
+        "rejected": "Proposal rejected.",
+        "genericError": "Could not record the decision. Please try again."
+      }
+    },
+    "own": {
+      "empty": "No expiry registered.",
+      "table": {
+        "type": "Type",
+        "issuedAt": "Issued",
+        "expiresAt": "Expires",
+        "notes": "Notes",
+        "noNotes": "—",
+        "statusHeader": "Status",
+        "status": {
+          "ok": "OK",
+          "expiring": "Expiring soon",
+          "expired": "Expired"
+        },
+        "pendingBadge": "Pending proposal",
+        "pendingHint": "A proposal is already pending validation."
+      },
+      "proposeAction": "Propose update",
+      "form": {
+        "title": "Propose an update",
+        "issuedAt": "Issued on",
+        "expiresAt": "Expires on",
+        "notes": "Notes",
+        "submit": "Send proposal",
+        "cancel": "Cancel",
+        "requiredField": "This field is required.",
+        "invalidRange": "The expiry date cannot be before the issue date.",
+        "conflictError": "A proposal is already pending validation for this expiry.",
+        "genericError": "Could not send the proposal. Please try again.",
+        "success": "Proposal sent, pending validation by staff."
+      }
+    }
+  },
+  "ExpiryTypesPage": {
+    "kicker": "Expiries",
+    "title": "Expiry types",
+    "description": "Standard and custom expiry types: name, scope and status. A type never used can be deleted, otherwise it must be deactivated.",
+    "backToExpiries": "Back to expiries",
+    "newType": "New type",
+    "table": {
+      "name": "Name",
+      "scope": "Scope",
+      "status": "Status",
+      "actions": "Actions",
+      "empty": "No expiry types."
+    },
+    "scope": {
+      "PILOTS": "Pilots",
+      "STUDENTS": "Students",
+      "INSTRUCTORS": "Instructors",
+      "ALL": "Everyone"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Deactivated"
+    },
+    "actions": {
+      "edit": "Edit",
+      "deactivate": "Deactivate",
+      "reactivate": "Reactivate",
+      "delete": "Delete",
+      "confirmDelete": "Delete this expiry type?",
+      "confirmYes": "Confirm",
+      "confirmCancel": "Cancel"
+    },
+    "form": {
+      "createTitle": "New expiry type",
+      "editTitle": "Edit expiry type",
+      "name": "Name",
+      "scope": "Scope",
+      "submitCreate": "Create type",
+      "submitSave": "Save",
+      "cancel": "Cancel",
+      "requiredField": "Name is required.",
+      "conflictError": "An expiry type with this name already exists.",
+      "genericError": "The operation failed. Please try again."
+    },
+    "feedback": {
+      "created": "Expiry type created.",
+      "updated": "Expiry type updated.",
+      "deactivated": "Expiry type deactivated.",
+      "reactivated": "Expiry type reactivated.",
+      "deleted": "Expiry type deleted.",
+      "deleteInUseError": "This type is in use on one or more recorded expiries and cannot be deleted: deactivate it instead.",
+      "genericError": "The operation failed. Please try again."
+    }
+  },
   "UsersPage": {
     "kicker": "Administration",
     "title": "Users",
@@ -860,6 +1061,21 @@
     "negativeBalanceAlert": {
       "subject": "Your AirManager account is in the negative",
       "body": "Hello {name},\n\nYour AirManager prepaid account balance is now {balance}.\n\nPlease contact the airfield office to settle your position."
+    },
+    "expiryDays": {
+      "expiresToday": "expires today",
+      "expiresInDays": "expires in {days, plural, one {# day} other {# days}}",
+      "expiredDaysAgo": "expired {days, plural, one {# day} other {# days}} ago"
+    },
+    "expiryAlert": {
+      "subject": "Expiry reminder: {typeName}",
+      "body": "Hello {name},\n\nYour \"{typeName}\" {daysPhrase} (on {date}).\n\nPlease arrange the renewal and update your details on AirManager as soon as possible."
+    },
+    "expiryDigest": {
+      "subject": "Expiry alert summary",
+      "intro": "The following expiry alerts were sent:",
+      "itemLine": "- {name} — {typeName}: {daysPhrase} (on {date}){noEmailFlag}",
+      "noEmailFlag": " [no email on file — contact them directly]"
     }
   }
 }

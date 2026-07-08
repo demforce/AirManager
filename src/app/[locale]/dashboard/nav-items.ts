@@ -45,7 +45,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4.
   { key: 'finance', href: '/dashboard/finance', permissions: ['finance.manage'] },
   { key: 'school', href: '/school', permissions: ['school.manage.own'] },
-  { key: 'expiries', href: '/expiries', permissions: ['expiries.manage'] },
+  // Story 6.1: repointed the same way people/aircraft/finance/flights were
+  // in 2.1/2.4/3.3/5.4. Story 6.2 (FR-36): reopened to every role via
+  // `self.read` — same pattern as `flights` in 5.4: the page itself (staff
+  // proposal queue vs "Le mie scadenze" own-access view) and the service
+  // decide what each role sees.
+  { key: 'expiries', href: '/dashboard/expiries', permissions: ['expiries.manage', 'self.read'] },
   { key: 'ppr', href: '/ppr-queue', permissions: ['bookings.manage.any'] },
   // Story 1.4: the first real (non-placeholder) dashboard sub-page.
   { key: 'users', href: '/dashboard/users', permissions: ['users.manage'] },

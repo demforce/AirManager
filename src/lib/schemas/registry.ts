@@ -38,6 +38,29 @@ import {
   reverseCashMovementSchema,
 } from './cash';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
+import { expiryAlertsJobResultSchema } from './expiry-alerts';
+import {
+  decideProposalSchema,
+  expiryDashboardItemSchema,
+  expiryDashboardListResponseSchema,
+  expiryItemSchema,
+  expiryListResponseSchema,
+  expiryProposalItemSchema,
+  expiryProposalListResponseSchema,
+  listAllExpiriesQuerySchema,
+  listExpiryProposalsQuerySchema,
+  pendingProposalSummarySchema,
+  proposeExpirySchema,
+  registerExpirySchema,
+  updateExpirySchema,
+} from './expiries';
+import {
+  createExpiryTypeSchema,
+  expiryTypeItemSchema,
+  expiryTypeListResponseSchema,
+  listExpiryTypesQuerySchema,
+  updateExpiryTypeSchema,
+} from './expiry-types';
 import {
   cancelFlightSchema,
   correctFlightSchema,
@@ -111,6 +134,21 @@ const cookieAuth = registry.registerComponent('securitySchemes', 'cookieAuth', {
 
 const security = [{ [cookieAuth.name]: [] }];
 
+/**
+ * Bearer token for `/api/v1/jobs/*` (story 6.3, AD-9) — the EXTERNAL cron's
+ * credential, never a user session. Deliberately a SEPARATE scheme from
+ * `cookieAuth` above (different transport, different comparison —
+ * timing-safe against `JOBS_SECRET`, not Auth.js), the only route family
+ * that uses it.
+ */
+const bearerAuth = registry.registerComponent('securitySchemes', 'bearerAuth', {
+  type: 'http',
+  scheme: 'bearer',
+  description: 'JOBS_SECRET bearer token (AD-9) — presented by the external cron invoking /api/v1/jobs/*, never a user session.',
+});
+
+const jobsSecurity = [{ [bearerAuth.name]: [] }];
+
 // Named component schemas — nicer `$ref`s in the generated document than
 // inlining every shape at every path.
 registry.register('Error', errorEnvelopeSchema);
@@ -173,6 +211,22 @@ registry.register('CreateUserRequest', createUserSchema);
 registry.register('UpdateUserRequest', updateUserSchema);
 registry.register('SetPasswordRequest', setPasswordSchema);
 registry.register('ForgotPasswordRequest', forgotPasswordSchema);
+registry.register('ExpiryType', expiryTypeItemSchema);
+registry.register('ExpiryTypeList', expiryTypeListResponseSchema);
+registry.register('CreateExpiryTypeRequest', createExpiryTypeSchema);
+registry.register('UpdateExpiryTypeRequest', updateExpiryTypeSchema);
+registry.register('Expiry', expiryItemSchema);
+registry.register('ExpiryList', expiryListResponseSchema);
+registry.register('RegisterExpiryRequest', registerExpirySchema);
+registry.register('UpdateExpiryRequest', updateExpirySchema);
+registry.register('ProposeExpiryRequest', proposeExpirySchema);
+registry.register('PendingProposalSummary', pendingProposalSummarySchema);
+registry.register('ExpiryProposal', expiryProposalItemSchema);
+registry.register('ExpiryProposalList', expiryProposalListResponseSchema);
+registry.register('DecideProposalRequest', decideProposalSchema);
+registry.register('ExpiryAlertsJobResult', expiryAlertsJobResultSchema);
+registry.register('ExpiryDashboardItem', expiryDashboardItemSchema);
+registry.register('ExpiryDashboardList', expiryDashboardListResponseSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -1075,6 +1129,222 @@ registry.registerPath({
   responses: {
     200: { description: 'Always returned, regardless of whether the account exists.', content: jsonContent(okResponseSchema) },
     ...errorResponses(422),
+  },
+});
+
+// --- Expiry types (epic 6, story 6.1, FR-35) --------------------------------
+// First resource of epic 6 — a new `Expiries` tag. Catalogue only (see
+// `ExpiryType` doc-comment): the actual scadenze registered against these
+// types (`Expiry`), the alert job and the urgency dashboard arrive in
+// stories 6.2/6.3/6.4.
+
+const expiryTypeIdParams = z.object({ id: z.string().meta({ description: 'Expiry type id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/expiry-types',
+  summary: 'List the expiry-type catalogue (standard + custom, FR-35)',
+  description:
+    'Active types only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 6.1, AC 1). Requires `expiries.manage` (admin+staff — staff will register scadenze against this catalogue in story 6.2).',
+  tags: ['Expiries'],
+  security,
+  request: { query: listExpiryTypesQuerySchema },
+  responses: {
+    200: { description: 'Every expiry type.', content: jsonContent(expiryTypeListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/expiry-types',
+  summary: 'Create an expiry type',
+  description:
+    'Name must be unique — conflict is a 409 (story 6.1, AC 1/2). Requires `settings.manage` (admin-only catalogue configuration, same split as `POST /api/v1/cash-categories`/`POST /api/v1/package-types`).',
+  tags: ['Expiries'],
+  security,
+  request: { body: { content: jsonContent(createExpiryTypeSchema), required: true } },
+  responses: {
+    201: { description: 'The created expiry type.', content: jsonContent(expiryTypeItemSchema) },
+    ...errorResponses(401, 403, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/expiry-types/{id}',
+  summary: 'Update an expiry type (partial patch)',
+  description:
+    'Every field optional; `isActive` toggling the lifecycle is a plain field on this same PATCH — there is no dedicated deactivate/reactivate endpoint (story 6.1, AC 1/2). Editing a type already in use is legal (a registered scadenza, story 6.2, references it by id, never a name snapshot). Requires `settings.manage`.',
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryTypeIdParams, body: { content: jsonContent(updateExpiryTypeSchema), required: true } },
+  responses: {
+    200: { description: 'The updated expiry type.', content: jsonContent(expiryTypeItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/expiry-types/{id}',
+  summary: 'Delete an expiry type (only if never used)',
+  description:
+    'An expiry type referenced by a recorded scadenza cannot be deleted — 409 suggesting deactivation instead (story 6.1, AC 2; story 6.2 adds the `Expiry.expiryTypeId` FK RESTRICT this backstops). Requires `settings.manage`.',
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryTypeIdParams },
+  responses: {
+    204: { description: 'The expiry type was deleted.' },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+// --- Expiries + update-proposal queue (epic 6, story 6.2, FR-36) -----------
+// Person expiries with computed status (`ok`/`expiring`/`expired`, never
+// persisted) plus a titolare-facing update-proposal queue staff validates.
+
+const expiryIdParams = z.object({ id: z.string().meta({ description: 'Expiry id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const expiryProposalIdParams = z.object({
+  id: z.string().meta({ description: 'ExpiryUpdateProposal id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/expiries',
+  summary: "List a person's scadenze, with computed status (AC 1/2, FR-36)",
+  description:
+    'Ordered by `expiresAt asc` (soonest-expiring first), capped at 200. `status` (`ok`/`expiring`/`expired`) is always server-computed, never persisted. Readable with `expiries.manage` (any person) or own-access (`self.read` plus a matching `personId`, same rule as the account statement/packages endpoints).',
+  tags: ['Expiries'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: "The person's scadenze.", content: jsonContent(expiryListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/expiries',
+  summary: 'The urgency dashboard: every scadenza across every person, filterable (story 6.4, AC 1, FR-38)',
+  description:
+    'Ordered by `expiresAt asc, id asc` (soonest-expiring/most-overdue first, tie-broken for stable pagination). Filters `expiryTypeId`/`scope`/`status` are optional and AND-combinable; `status` maps to an `expiresAt` date range server-side (never post-filtered), always agreeing with the per-row `status` field by construction (same `today`/`EXPIRY_WARNING_DAYS` boundary as `computeExpiryStatus`). Requires `expiries.manage`.',
+  tags: ['Expiries'],
+  security,
+  request: { query: listAllExpiriesQuerySchema },
+  responses: {
+    200: { description: 'A page of scadenze, ordered by urgency.', content: jsonContent(expiryDashboardListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/expiries',
+  summary: 'Register a new scadenza for a person (AC 1)',
+  description:
+    "Verification order: person exists -> archived -> expiry type exists -> deactivated -> ambito/profile compatibility (422 `SCOPE_MISMATCH`) -> duplicate (person, type) -> 409 pointing at the update endpoint instead. A scadenza already in the past may legitimately be registered (the real state of the world). Requires `expiries.manage`.",
+  tags: ['Expiries'],
+  security,
+  request: { body: { content: jsonContent(registerExpirySchema), required: true } },
+  responses: {
+    201: { description: 'The created scadenza.', content: jsonContent(expiryItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/expiries/{id}',
+  summary: 'Update a scadenza (partial patch, AC 1)',
+  description:
+    "Every field optional; `personId`/`expiryTypeId` are NOT patchable (a wrong type/person is corrected by delete + re-register). The cross-field `expiresAt >= issuedAt` check validates against the RESULTING (merged current + patch) values. A PENDING proposal already filed against this scadenza is left untouched. Requires `expiries.manage`.",
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryIdParams, body: { content: jsonContent(updateExpirySchema), required: true } },
+  responses: {
+    200: { description: 'The updated scadenza.', content: jsonContent(expiryItemSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/expiries/{id}',
+  summary: 'Delete a scadenza (staff correction tool, AC 1)',
+  description:
+    'For correcting a wrong type/person registration — deletes the scadenza and cascades to any `ExpiryUpdateProposal` rows (pending included). Requires `expiries.manage`.',
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryIdParams },
+  responses: {
+    204: { description: 'The scadenza was deleted.' },
+    ...errorResponses(401, 403, 404),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/expiries/{id}/proposals',
+  summary: 'Propose an update to your OWN scadenza (AC 2, FR-36)',
+  description:
+    "Requires `expiries.propose.own` (instructor/pilot/student, never staff — staff edits directly via `expiries.manage`). The actor must be the scadenza's own titolare (403 otherwise, including an actor with no linked `personId`). Values are COMPLETE (not a partial patch) — the form arrives prefilled. Does NOT touch the `Expiry` itself (it stays authoritative until staff decides); at most one PENDING proposal per scadenza (409 pre-check + P2002 backstop on the hand-appended partial unique index).",
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryIdParams, body: { content: jsonContent(proposeExpirySchema), required: true } },
+  responses: {
+    201: { description: 'The pending proposal.', content: jsonContent(pendingProposalSummarySchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/expiry-proposals',
+  summary: 'List the staff update-proposal queue (AC 2)',
+  description:
+    "Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED` to review past decisions. Current vs proposed values side by side. Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `expiries.manage`.",
+  tags: ['Expiries'],
+  security,
+  request: { query: listExpiryProposalsQuerySchema },
+  responses: {
+    200: { description: 'A page of proposals.', content: jsonContent(expiryProposalListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/expiry-proposals/{id}/decision',
+  summary: 'Approve or reject a pending proposal (AC 2)',
+  description:
+    "404 on an unknown id; already-decided -> 409. Runs in one transaction with an optimistic `updateMany`-count guard against two staff members deciding concurrently. On APPROVE, the proposed values are applied to the target `Expiry` in the SAME transaction; REJECT leaves it untouched. Requires `expiries.manage`.",
+  tags: ['Expiries'],
+  security,
+  request: { params: expiryProposalIdParams, body: { content: jsonContent(decideProposalSchema), required: true } },
+  responses: {
+    200: { description: 'The decided proposal.', content: jsonContent(expiryProposalItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- Jobs (epic 6, story 6.3, AD-9) -----------------------------------------
+// Bearer-protected routes invoked by an EXTERNAL cron, never a user session
+// (`jobsSecurity`/`bearerAuth` above) — the only route family besides `Auth`
+// that isn't `cookieAuth`-gated.
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/jobs/expiry-alerts',
+  summary: 'Run the automatic expiry-alert job (FR-37)',
+  description:
+    "Story 6.3, AC 1/2 — for every scadenza whose 60/30/7/0-day alert threshold(s) are newly due, sends ONE email to the titolare (their own locale) plus, if the run consumed at least one alert, ONE digest email to every active ADMIN/STAFF user (their own locale). Idempotent (AD-9): `SentAlert` has a unique `(expiryId, threshold)` constraint, so running this twice for the same day sends no duplicate email and creates no duplicate row. Authenticated with a `JOBS_SECRET` bearer token — NOT a user session/RBAC (401 on missing/wrong token; 500 if `JOBS_SECRET` itself is unconfigured, never an insecure fallback).",
+  tags: ['Jobs'],
+  security: jobsSecurity,
+  responses: {
+    200: { description: 'The job ran (possibly with nothing to do — see `alertsCreated`).', content: jsonContent(expiryAlertsJobResultSchema) },
+    ...errorResponses(401),
   },
 });
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildInviteEmail, buildNegativeBalanceAlertEmail, buildPasswordResetEmail } from './templates';
+import {
+  buildExpiryAlertEmail,
+  buildExpiryDigestEmail,
+  buildInviteEmail,
+  buildNegativeBalanceAlertEmail,
+  buildPasswordResetEmail,
+} from './templates';
 
 describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', () => {
   describe('buildInviteEmail', () => {
@@ -66,6 +72,130 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
       expect(email.subject).toBe('Your AirManager account is in the negative');
       expect(email.text).toContain('John Smith');
       expect(email.text).toContain('-€250.00');
+    });
+  });
+
+  describe('buildExpiryAlertEmail (story 6.3, AC 1 — the days-phrase talks about REAL days, never a threshold)', () => {
+    it('Italian, expires today (daysLeft 0) -> "scade oggi"', async () => {
+      const email = await buildExpiryAlertEmail('it', {
+        personName: 'Mario Rossi',
+        typeName: 'Visita medica classe 2',
+        expiresAt: new Date(Date.UTC(2026, 6, 8)),
+        daysLeft: 0,
+      });
+
+      expect(email.subject).toContain('Visita medica classe 2');
+      expect(email.text).toContain('Mario Rossi');
+      expect(email.text).toContain('scade oggi');
+      expect(email.text).not.toMatch(/\b60\b|\b30\b|\b7\b/);
+    });
+
+    it('Italian, still ahead (daysLeft 7) -> "scade tra 7 giorni", the real count — never the threshold word', async () => {
+      const email = await buildExpiryAlertEmail('it', {
+        personName: 'Mario Rossi',
+        typeName: 'Visita medica classe 2',
+        expiresAt: new Date(Date.UTC(2026, 6, 15)),
+        daysLeft: 7,
+      });
+
+      expect(email.text).toContain('scade tra 7 giorni');
+    });
+
+    it('Italian, already expired (daysLeft -3, a catch-up run) -> "è scaduta da 3 giorni", not the threshold', async () => {
+      const email = await buildExpiryAlertEmail('it', {
+        personName: 'Mario Rossi',
+        typeName: 'Visita medica classe 2',
+        expiresAt: new Date(Date.UTC(2026, 6, 5)),
+        daysLeft: -3,
+      });
+
+      expect(email.text).toContain('è scaduta da 3 giorni');
+    });
+
+    it('Italian, singular day count (daysLeft 1) uses the singular ICU plural form', async () => {
+      const email = await buildExpiryAlertEmail('it', {
+        personName: 'Mario Rossi',
+        typeName: 'Visita medica classe 2',
+        expiresAt: new Date(Date.UTC(2026, 6, 9)),
+        daysLeft: 1,
+      });
+
+      expect(email.text).toContain('scade tra 1 giorno');
+    });
+
+    it('English, symmetric structure and day phrase', async () => {
+      const email = await buildExpiryAlertEmail('en', {
+        personName: 'John Smith',
+        typeName: 'Class 2 medical',
+        expiresAt: new Date(Date.UTC(2026, 6, 15)),
+        daysLeft: 7,
+      });
+
+      expect(email.subject).toContain('Class 2 medical');
+      expect(email.text).toContain('John Smith');
+      expect(email.text).toContain('expires in 7 days');
+    });
+
+    it('formats the date locale-aware and date-only (no time-of-day)', async () => {
+      const email = await buildExpiryAlertEmail('it', {
+        personName: 'Mario Rossi',
+        typeName: 'Visita medica classe 2',
+        expiresAt: new Date(Date.UTC(2026, 6, 15)),
+        daysLeft: 7,
+      });
+
+      expect(email.text).toContain('15 luglio 2026');
+    });
+  });
+
+  describe('buildExpiryDigestEmail (story 6.3, AC 1 — one line per alert, flags holders without email)', () => {
+    it('renders one line per item, in Italian, with the no-email flag only on the flagged item', async () => {
+      const email = await buildExpiryDigestEmail('it', {
+        items: [
+          {
+            personName: 'Mario Rossi',
+            typeName: 'Visita medica classe 2',
+            expiresAt: new Date(Date.UTC(2026, 6, 8)),
+            daysLeft: 0,
+            holderEmailed: true,
+          },
+          {
+            personName: 'Chiara Bianchi',
+            typeName: 'Licenza PPL',
+            expiresAt: new Date(Date.UTC(2026, 6, 5)),
+            daysLeft: -3,
+            holderEmailed: false,
+          },
+        ],
+      });
+
+      expect(email.subject).toBe('Riepilogo alert scadenze');
+      expect(email.text).toContain('Mario Rossi');
+      expect(email.text).toContain('scade oggi');
+      expect(email.text).toContain('Chiara Bianchi');
+      expect(email.text).toContain('è scaduta da 3 giorni');
+      expect(email.text).toContain('senza email');
+      // Only ONE flag, on Chiara's line — Mario's line must not carry it.
+      expect(email.text.split('\n').find((line) => line.includes('Mario Rossi'))).not.toContain('senza email');
+    });
+
+    it('renders the English digest with symmetric structure', async () => {
+      const email = await buildExpiryDigestEmail('en', {
+        items: [
+          {
+            personName: 'John Smith',
+            typeName: 'Class 2 medical',
+            expiresAt: new Date(Date.UTC(2026, 6, 15)),
+            daysLeft: 7,
+            holderEmailed: true,
+          },
+        ],
+      });
+
+      expect(email.subject).toBe('Expiry alert summary');
+      expect(email.text).toContain('John Smith');
+      expect(email.text).toContain('expires in 7 days');
+      expect(email.text).not.toContain('no email on file');
     });
   });
 });
