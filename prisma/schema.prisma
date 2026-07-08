@@ -897,10 +897,52 @@ model Expiry {
   /// model's `expiryId` FK) — deleting a scadenza (a staff correction tool,
   /// e.g. wrong type/person) drops its proposals too, pending included.
   proposals ExpiryUpdateProposal[]
+  /// Alert-threshold idempotence ledger (epic 6, story 6.3, AD-9) — see
+  /// `SentAlert` doc. Cascades on delete, same rationale as `proposals`.
+  /// Wiped (NOT cascaded-delete — a `deleteMany`) whenever `expiresAt`
+  /// actually changes value, in `expiries.service.ts#updateExpiry` and the
+  /// APPROVE branch of `decideExpiryProposal` — a renewal must re-earn its
+  /// alert cycle.
+  sentAlerts SentAlert[]
 
   @@unique([personId, expiryTypeId])
   @@index([expiryTypeId])
   @@index([expiresAt])
+}
+
+/// Idempotence ledger for the automatic expiry-alert job (epic 6, story 6.3,
+/// AD-9; FR-37) — `expiry-alerts.service.ts#runExpiryAlertsJob`. One row per
+/// `(Expiry, threshold)` EVER consumed; `@@unique` below is the DB-level
+/// guarantee a threshold is alerted AT MOST ONCE, the actual idempotence
+/// contract (AC 2) — the job's own pre-check is only an optimization, this
+/// row is what a concurrent/duplicate run's `P2002` backstops against.
+///
+/// "Threshold consumed" is not the same as "an email was sent about exactly
+/// that threshold": when a run finds MULTIPLE due-but-unconsumed thresholds
+/// for the same scadenza (a skipped cron, or a scadenza registered already
+/// close to/past its date), it sends ONE holder email — about the real
+/// `daysLeft`, never the threshold — and inserts a `SentAlert` row for EVERY
+/// threshold it just caught up on, in the SAME transaction, BEFORE sending
+/// that email (insert-before-send: a crash in between loses that one email,
+/// deliberately accepted — AD-9 privileges "never more than one alert per
+/// threshold" over "never lose one", and the staff digest is the recovery
+/// net).
+///
+/// `expiryId`'s FK is `onDelete: Cascade` (announced by story 6.2's `Expiry`
+/// doc-comment): deleting a scadenza (a staff correction tool) drops its
+/// alert history too — nothing meaningful survives without the scadenza it
+/// alerted about.
+model SentAlert {
+  id       String @id @default(cuid())
+  expiryId String
+  expiry   Expiry @relation(fields: [expiryId], references: [id], onDelete: Cascade)
+  /// The alert threshold consumed, in days (`EXPIRY_ALERT_THRESHOLDS` =
+  /// `[60, 30, 7, 0]`, `src/lib/expiry-status.ts`) — a marker of cadence
+  /// consumed, not a claim that the email literally mentioned this number.
+  threshold Int
+  sentAt    DateTime @default(now())
+
+  @@unique([expiryId, threshold])
 }
 
 /// A titolare-filed proposal to update their OWN `Expiry` (epic 6, story

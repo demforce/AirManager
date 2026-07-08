@@ -18,6 +18,11 @@ const envSchema = z.object({
   SMTP_HOST: z.string().min(1).default('localhost'),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   MAIL_FROM: z.string().min(1).default('AirManager <no-reply@airmanager.local>'),
+  // Bearer token for POST /api/v1/jobs/* (story 6.3, AD-9). Deliberately
+  // OPTIONAL here (no default) so a deployment that forgot to set it still
+  // boots normally — only the job route itself answers 500 for a missing
+  // secret (Contesto: "mai fallback insicuro"), never the whole app.
+  JOBS_SECRET: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

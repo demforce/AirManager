@@ -247,6 +247,12 @@ export async function registerExpiry(actor: Actor, input: RegisterExpiryInput): 
  * PENDING proposal already filed against this scadenza is left untouched —
  * staff will see it in the queue alongside the freshly updated current
  * values (doc-comment, not a guard: there is no conflict to prevent here).
+ *
+ * Story 6.3 (AD-9): when `expiresAt` actually CHANGES value (a renewal),
+ * this scadenza's `SentAlert` rows are wiped in the SAME transaction as the
+ * write — otherwise the `(expiryId, threshold)` unique constraint would
+ * permanently block the new cycle's alerts. Patching only `notes` (or
+ * re-submitting the SAME `expiresAt`) leaves `SentAlert` untouched.
  */
 export async function updateExpiry(actor: Actor, id: string, input: UpdateExpiryInput): Promise<ExpiryListItem> {
   authorize(actor, 'expiries.manage');
@@ -262,15 +268,23 @@ export async function updateExpiry(actor: Actor, id: string, input: UpdateExpiry
     throw new ValidationError('expiresAt must not be before issuedAt.', { path: ['expiresAt'] });
   }
 
-  const updated = await prisma.expiry.update({
-    where: { id },
-    data: {
-      ...(input.issuedAt !== undefined ? { issuedAt: nextIssuedAt } : {}),
-      ...(input.expiresAt !== undefined ? { expiresAt: nextExpiresAt } : {}),
-      ...(input.notes !== undefined ? { notes: input.notes } : {}),
-      actorUserId: actor.userId,
-    },
-    select: EXPIRY_SELECT,
+  const expiresAtChanged = nextExpiresAt.getTime() !== existing.expiresAt.getTime();
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (expiresAtChanged) {
+      await tx.sentAlert.deleteMany({ where: { expiryId: id } });
+    }
+
+    return tx.expiry.update({
+      where: { id },
+      data: {
+        ...(input.issuedAt !== undefined ? { issuedAt: nextIssuedAt } : {}),
+        ...(input.expiresAt !== undefined ? { expiresAt: nextExpiresAt } : {}),
+        ...(input.notes !== undefined ? { notes: input.notes } : {}),
+        actorUserId: actor.userId,
+      },
+      select: EXPIRY_SELECT,
+    });
   });
 
   return toListItem(updated, todayDateOnlyUtc());
@@ -483,6 +497,12 @@ export async function listExpiryProposals(actor: Actor, query: ListExpiryProposa
  * back). On APPROVE, the proposed values are applied to the target
  * `Expiry` in the SAME transaction (`actorUserId` updated too); REJECT
  * leaves the `Expiry` untouched.
+ *
+ * Story 6.3 (AD-9): on APPROVE, if `proposedExpiresAt` actually differs
+ * from the scadenza's CURRENT `expiresAt`, this same transaction also wipes
+ * that scadenza's `SentAlert` rows — same "renewal re-earns its alert
+ * cycle" rule as `updateExpiry`. A REJECT never touches `SentAlert` (the
+ * `Expiry` itself is untouched too).
  */
 export async function decideExpiryProposal(
   actor: Actor,
@@ -500,6 +520,7 @@ export async function decideExpiryProposal(
       proposedIssuedAt: true,
       proposedExpiresAt: true,
       proposedNotes: true,
+      expiry: { select: { expiresAt: true } },
     },
   });
   if (!proposal) {
@@ -511,6 +532,7 @@ export async function decideExpiryProposal(
 
   const decidedAt = new Date();
   const nextStatus: ExpiryProposalStatus = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+  const expiresAtChanged = proposal.proposedExpiresAt.getTime() !== proposal.expiry.expiresAt.getTime();
 
   const decided = await prisma.$transaction(async (tx) => {
     const guard = await tx.expiryUpdateProposal.updateMany({
@@ -522,6 +544,10 @@ export async function decideExpiryProposal(
     }
 
     if (decision === 'APPROVE') {
+      if (expiresAtChanged) {
+        await tx.sentAlert.deleteMany({ where: { expiryId: proposal.expiryId } });
+      }
+
       await tx.expiry.update({
         where: { id: proposal.expiryId },
         data: {

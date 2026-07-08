@@ -1038,6 +1038,21 @@
     "negativeBalanceAlert": {
       "subject": "Il tuo conto AirManager è in negativo",
       "body": "Ciao {name},\n\nIl tuo conto prepagato AirManager ha ora un saldo di {balance}.\n\nTi invitiamo a regolarizzare la posizione contattando la segreteria dell'aviosuperficie."
+    },
+    "expiryDays": {
+      "expiresToday": "scade oggi",
+      "expiresInDays": "scade tra {days, plural, one {# giorno} other {# giorni}}",
+      "expiredDaysAgo": "è scaduta da {days, plural, one {# giorno} other {# giorni}}"
+    },
+    "expiryAlert": {
+      "subject": "Promemoria scadenza: {typeName}",
+      "body": "Ciao {name},\n\nLa tua scadenza \"{typeName}\" {daysPhrase} (il {date}).\n\nTi invitiamo a provvedere al rinnovo e ad aggiornare i tuoi dati su AirManager appena possibile."
+    },
+    "expiryDigest": {
+      "subject": "Riepilogo alert scadenze",
+      "intro": "Sono stati inviati i seguenti alert di scadenza:",
+      "itemLine": "- {name} — {typeName}: {daysPhrase} (il {date}){noEmailFlag}",
+      "noEmailFlag": " [senza email — contattare la persona direttamente]"
     }
   }
 }

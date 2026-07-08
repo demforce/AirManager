@@ -28,9 +28,36 @@
 /** Warning window (Contesto, AC 1): a scadenza within this many days of `expiresAt` (inclusive) is `expiring`. Story 6.3 reuses this same constant for the alert job's threshold. */
 export const EXPIRY_WARNING_DAYS = 60;
 
+/**
+ * Alert cadence markers (story 6.3, Contesto) — NOT strict equalities: a
+ * threshold `T` is "due" for a scadenza whenever `daysLeft <= T`. Consumed
+ * once via `SentAlert` (unique per `(expiryId, threshold)`, AD-9). The
+ * normal rhythm walks this array in order (60 -> 30 -> 7 -> 0, one email
+ * each); a job that skipped days (or a scadenza registered already close
+ * to/past its date) instead finds several DUE-but-unconsumed thresholds at
+ * once and catches them all up behind a SINGLE holder email — see
+ * `expiry-alerts.service.ts#runExpiryAlertsJob`'s doc-comment. `Math.max`
+ * of this array (never a second hardcoded `60`) bounds the job's candidate
+ * query window.
+ */
+export const EXPIRY_ALERT_THRESHOLDS = [60, 30, 7, 0] as const;
+
 export type ExpiryStatus = 'ok' | 'expiring' | 'expired';
 
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * Calendar-day difference `expiresAt - today` (both already UTC-midnight
+ * date-only values) — positive means "still ahead", 0 means "expires
+ * today", negative means "already expired that many days ago". Extracted
+ * (story 6.3, Dev Notes: "riusare la stessa aritmetica ... senza duplicare
+ * la formula") so `computeExpiryStatus` below and the alert job's threshold
+ * calculation share the exact same day-boundary arithmetic — there must
+ * never be a second implementation of it.
+ */
+export function daysUntilUtc(expiresAt: Date, today: Date): number {
+  return Math.round((expiresAt.getTime() - today.getTime()) / MS_PER_DAY);
+}
 
 /**
  * Computes the calendar-day difference `expiresAt - today` (both already
@@ -38,7 +65,7 @@ const MS_PER_DAY = 86_400_000;
  * `expired` per the boundaries documented above.
  */
 export function computeExpiryStatus(expiresAt: Date, today: Date): ExpiryStatus {
-  const daysRemaining = Math.round((expiresAt.getTime() - today.getTime()) / MS_PER_DAY);
+  const daysRemaining = daysUntilUtc(expiresAt, today);
 
   if (daysRemaining < 0) {
     return 'expired';

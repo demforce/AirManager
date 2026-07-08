@@ -1038,6 +1038,21 @@
     "negativeBalanceAlert": {
       "subject": "Your AirManager account is in the negative",
       "body": "Hello {name},\n\nYour AirManager prepaid account balance is now {balance}.\n\nPlease contact the airfield office to settle your position."
+    },
+    "expiryDays": {
+      "expiresToday": "expires today",
+      "expiresInDays": "expires in {days, plural, one {# day} other {# days}}",
+      "expiredDaysAgo": "expired {days, plural, one {# day} other {# days}} ago"
+    },
+    "expiryAlert": {
+      "subject": "Expiry reminder: {typeName}",
+      "body": "Hello {name},\n\nYour \"{typeName}\" {daysPhrase} (on {date}).\n\nPlease arrange the renewal and update your details on AirManager as soon as possible."
+    },
+    "expiryDigest": {
+      "subject": "Expiry alert summary",
+      "intro": "The following expiry alerts were sent:",
+      "itemLine": "- {name} — {typeName}: {daysPhrase} (on {date}){noEmailFlag}",
+      "noEmailFlag": " [no email on file — contact them directly]"
     }
   }
 }

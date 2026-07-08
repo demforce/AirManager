@@ -65,6 +65,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/expiries/{id}/proposals',
         '/api/v1/expiry-proposals',
         '/api/v1/expiry-proposals/{id}/decision',
+        '/api/v1/jobs/expiry-alerts',
       ]),
     );
   });
@@ -72,6 +73,18 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
   it('documents a cookie-based session security scheme', () => {
     const securitySchemes = doc.components?.securitySchemes as Record<string, { type: string; in?: string }> | undefined;
     expect(securitySchemes?.['cookieAuth']).toMatchObject({ type: 'apiKey', in: 'cookie' });
+  });
+
+  it('documents a bearer security scheme for the jobs route (story 6.3, AD-9)', () => {
+    const securitySchemes = doc.components?.securitySchemes as Record<string, { type: string; scheme?: string }> | undefined;
+    expect(securitySchemes?.['bearerAuth']).toMatchObject({ type: 'http', scheme: 'bearer' });
+  });
+
+  it('documents only 401/500 error responses on the jobs route (no session, no RBAC 403)', () => {
+    const jobRoute = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)[
+      '/api/v1/jobs/expiry-alerts'
+    ]?.['post'];
+    expect(Object.keys(jobRoute?.responses ?? {}).sort()).toEqual(['200', '401', '500']);
   });
 
   it('documents 401/403/404/409/422/500 error responses on the protected users list endpoint', () => {

@@ -33,6 +33,9 @@ vi.mock('@/server/db/prisma', () => ({
       create: vi.fn(),
       updateMany: vi.fn(),
     },
+    sentAlert: {
+      deleteMany: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }));
@@ -63,6 +66,7 @@ const proposalFindManyMock = vi.mocked(prisma.expiryUpdateProposal.findMany);
 const proposalCountMock = vi.mocked(prisma.expiryUpdateProposal.count);
 const proposalCreateMock = vi.mocked(prisma.expiryUpdateProposal.create);
 const proposalUpdateManyMock = vi.mocked(prisma.expiryUpdateProposal.updateMany);
+const sentAlertDeleteManyMock = vi.mocked(prisma.sentAlert.deleteMany);
 const transactionMock = vi.mocked(prisma.$transaction);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
@@ -82,6 +86,7 @@ const proposalFindMany = proposalFindManyMock as unknown as { mockResolvedValue:
 const proposalCount = proposalCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const proposalCreate = proposalCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
 const proposalUpdateMany = proposalUpdateManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
+const sentAlertDeleteMany = sentAlertDeleteManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
 
 /** Same batch/interactive `$transaction` stand-in as `cash.service.test.ts`/`flights.service.test.ts`. */
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
@@ -180,6 +185,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
     proposalCountMock.mockReset();
     proposalCreateMock.mockReset();
     proposalUpdateManyMock.mockReset();
+    sentAlertDeleteManyMock.mockReset();
     transactionMock.mockReset();
     mockTransaction();
   });
@@ -441,6 +447,37 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
         expect.objectContaining({ data: expect.objectContaining({ notes: null, actorUserId: 'staff_1' }) }),
       );
     });
+
+    // --- SentAlert wipe-on-renewal (story 6.3, AD-9) -----------------------
+
+    it('expiresAt CHANGES value -> wipes SentAlert in the same transaction (renewal re-earns its alert cycle)', async () => {
+      expiryFindUnique.mockResolvedValue({ id: 'exp_1', issuedAt: parseDateOnlyUtc('2026-01-01'), expiresAt: parseDateOnlyUtc('2026-12-31') });
+      sentAlertDeleteMany.mockResolvedValue({ count: 2 });
+      expiryUpdate.mockResolvedValue(expiryFixture({ expiresAt: parseDateOnlyUtc('2027-06-30') }));
+
+      await updateExpiry(staffActor(), 'exp_1', { expiresAt: '2027-06-30' });
+
+      expect(transactionMock).toHaveBeenCalled();
+      expect(sentAlertDeleteManyMock).toHaveBeenCalledWith({ where: { expiryId: 'exp_1' } });
+    });
+
+    it('expiresAt stays the SAME value (re-submitted, or only notes patched) -> does NOT touch SentAlert', async () => {
+      expiryFindUnique.mockResolvedValue({ id: 'exp_1', issuedAt: parseDateOnlyUtc('2026-01-01'), expiresAt: parseDateOnlyUtc('2026-12-31') });
+      expiryUpdate.mockResolvedValue(expiryFixture());
+
+      await updateExpiry(staffActor(), 'exp_1', { expiresAt: '2026-12-31', notes: 'stessa data' });
+
+      expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
+    });
+
+    it('only notes patched (expiresAt absent from the input) -> does NOT touch SentAlert', async () => {
+      expiryFindUnique.mockResolvedValue({ id: 'exp_1', issuedAt: parseDateOnlyUtc('2026-01-01'), expiresAt: parseDateOnlyUtc('2026-12-31') });
+      expiryUpdate.mockResolvedValue(expiryFixture());
+
+      await updateExpiry(staffActor(), 'exp_1', { notes: 'solo note' });
+
+      expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
+    });
   });
 
   // --- deleteExpiry -------------------------------------------------------
@@ -554,6 +591,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
         proposedIssuedAt: parseDateOnlyUtc('2026-01-01'),
         proposedExpiresAt: parseDateOnlyUtc('2026-12-31'),
         proposedNotes: null,
+        expiry: { expiresAt: parseDateOnlyUtc('2026-06-01') },
       });
       proposalUpdateMany.mockResolvedValue({ count: 0 });
 
@@ -568,6 +606,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
         proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
         proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
         proposedNotes: 'nuova nota',
+        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
       });
       proposalUpdateMany.mockResolvedValue({ count: 1 });
       proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'APPROVED' }));
@@ -594,6 +633,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
         proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
         proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
         proposedNotes: null,
+        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
       });
       proposalUpdateMany.mockResolvedValue({ count: 1 });
       proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'REJECTED' }));
@@ -601,6 +641,63 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
       await decideExpiryProposal(staffActor(), 'prop_1', 'REJECT');
 
       expect(expiryUpdateMock).not.toHaveBeenCalled();
+    });
+
+    // --- SentAlert wipe-on-renewal (story 6.3, AD-9) -----------------------
+
+    it('APPROVE with a proposedExpiresAt DIFFERENT from the current value -> wipes SentAlert in the same transaction', async () => {
+      proposalFindUnique.mockResolvedValue({
+        id: 'prop_1',
+        status: 'PENDING',
+        expiryId: 'exp_1',
+        proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
+        proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
+        proposedNotes: null,
+        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
+      });
+      proposalUpdateMany.mockResolvedValue({ count: 1 });
+      sentAlertDeleteMany.mockResolvedValue({ count: 3 });
+      proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'APPROVED' }));
+
+      await decideExpiryProposal(staffActor(), 'prop_1', 'APPROVE');
+
+      expect(sentAlertDeleteManyMock).toHaveBeenCalledWith({ where: { expiryId: 'exp_1' } });
+    });
+
+    it('APPROVE with a proposedExpiresAt EQUAL to the current value -> does NOT touch SentAlert', async () => {
+      proposalFindUnique.mockResolvedValue({
+        id: 'prop_1',
+        status: 'PENDING',
+        expiryId: 'exp_1',
+        proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
+        proposedExpiresAt: parseDateOnlyUtc('2026-12-31'),
+        proposedNotes: 'solo note aggiornate',
+        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
+      });
+      proposalUpdateMany.mockResolvedValue({ count: 1 });
+      proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'APPROVED' }));
+
+      await decideExpiryProposal(staffActor(), 'prop_1', 'APPROVE');
+
+      expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
+    });
+
+    it('REJECT never touches SentAlert, even when proposedExpiresAt differs from the current value', async () => {
+      proposalFindUnique.mockResolvedValue({
+        id: 'prop_1',
+        status: 'PENDING',
+        expiryId: 'exp_1',
+        proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
+        proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
+        proposedNotes: null,
+        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
+      });
+      proposalUpdateMany.mockResolvedValue({ count: 1 });
+      proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'REJECTED' }));
+
+      await decideExpiryProposal(staffActor(), 'prop_1', 'REJECT');
+
+      expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
     });
   });
 

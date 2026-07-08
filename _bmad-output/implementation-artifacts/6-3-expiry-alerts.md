@@ -4,7 +4,7 @@ baseline_commit: 42893c4
 
 # Story 6.3: Alert automatici via email
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -30,27 +30,27 @@ so that non voli mai con documenti scaduti (FR-37).
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Modello `SentAlert` + migrazione + wipe-on-renewal (AC 2)
-  - [ ] `prisma/schema.prisma`: `model SentAlert` — `id cuid`; `expiryId` + FK `Expiry` **`onDelete: Cascade`** (la 6.2 l'aveva annunciato: cancellare la scadenza cancella la sua storia alert; back-relation `Expiry.sentAlerts SentAlert[]`); `threshold Int` (giorni: 60/30/7/0); `sentAt DateTime @default(now())`; `@@unique([expiryId, threshold])` (AD-9); `@@index([expiryId])` implicito nel unique composito — aggiungere solo se serve altro. Doc-comment: semantica soglia-consumata (vedi Contesto), wipe on renewal.
-  - [ ] Migrazione `prisma/migrations/20260708100000_add_sent_alerts/migration.sql` (diff a mano, banner rimosso); `migrate deploy` + `generate`; verificare FK CASCADE e unique in SQL.
-  - [ ] `expiries.service.ts`: in `updateExpiry` e nel ramo APPROVE di `decideExpiryProposal`, se il valore di `expiresAt` cambia rispetto al corrente → `sentAlert.deleteMany({ where: { expiryId } })` NELLA STESSA transazione della scrittura (per `updateExpiry`, che oggi è single-write, questo introduce una `$transaction` a due statement); se non cambia → nessun delete. Doc-comment + unit test per entrambe le vie (cambia → wipe; non cambia → non tocca).
-- [ ] Task 2: Config `JOBS_SECRET`
-  - [ ] `.env.example`: `JOBS_SECRET="dev-jobs-secret-change-me"` con commento (bearer del cron esterno per `/api/v1/jobs/*`, AD-9; generare un valore reale per ambiente). Aggiungere la stessa riga al `.env` locale (serve a dev server ed e2e).
-- [ ] Task 3: Service del job `expiry-alerts.service.ts` (AC 1/2)
-  - [ ] Nuovo `src/server/services/expiry-alerts.service.ts`: `runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult>` con `ExpiryAlertsJobResult = { candidates: number; alertsCreated: number; holderEmailsSent: number; holdersWithoutEmail: number; digestEmailsSent: number }` (il JSON di risposta del job — il log del cron esterno). Nessun `Actor` (vedi Contesto).
-  - [ ] Query candidati: `expiry.findMany({ where: { expiresAt: { lte: today+60gg } }, include: { person (nome, email), expiryType (name), sentAlerts } })` + `user.findUnique` per locale del titolare (o include via person → user se la relazione lo consente); `today+60` costruito con aritmetica UTC date-only (60 = `Math.max(...EXPIRY_ALERT_THRESHOLDS)` — MAI hardcodare 60 due volte).
-  - [ ] Per ogni candidato: calcolare `daysLeft`, soglie dovute e da consumare (vedi Contesto); se da consumare è vuoto → skip. Altrimenti: `sentAlert.createMany({ data: [...] })` in try/catch — **P2002 → skip email e non conteggiare** (run concorrente); poi UNA email al titolare (se `person.email`) via `getMailSender()`, nella sua lingua.
-  - [ ] Riepilogo: se `alertsCreated > 0`, per ogni utente staff/admin attivo un'email nella sua `locale` con l'elenco del run. Errori di invio singoli: try/catch per destinatario, il job NON fallisce per un send fallito (conta e prosegue — il result riporta i numeri effettivi).
-  - [ ] Template in `src/server/adapters/mail/templates.ts` (stesso file/pattern di `buildNegativeBalanceAlertEmail`, recipient-locale AD-7): `buildExpiryAlertEmail(locale, { personName, typeName, expiresAt, daysLeft })` e `buildExpiryDigestEmail(locale, { items: Array<{ personName, typeName, expiresAt, daysLeft, holderEmailed }> })`. Corpi plain-text da `Emails.expiryAlert.*` / `Emails.expiryDigest.*` in `messages/{it,en}.json` (SIMMETRICI): la frase temporale via sotto-chiavi dedicate (`expiresToday`, `expiresInDays` con `{days}`, `expiredDaysAgo` con `{days}`) — MAI la soglia nel testo, sempre i giorni reali; data formattata locale-aware date-only UTC (`Intl.DateTimeFormat(locale, { timeZone: 'UTC', dateStyle: 'long' })` o helper esistente se c'è — non inventarne un secondo).
-- [ ] Task 4: Route + OpenAPI (AC 1)
-  - [ ] `src/app/api/v1/jobs/expiry-alerts/route.ts`: `POST` — estrae il bearer, confronto timing-safe con `JOBS_SECRET` (vedi Contesto: `crypto.timingSafeEqual` su hash/digest di pari lunghezza), 401 su mismatch/assente, 500 su env mancante, poi `runExpiryAlertsJob()` → 200 col result JSON. Envelope errori AD-8 coerente col resto (riusare `apiRoute()` SE il suo contratto lo consente senza sessione; altrimenti handler dedicato che replica l'envelope — decidere leggendo `handler.ts`, documentare la scelta).
-  - [ ] `registry.ts`: nuovo tag `['Jobs']`, path `POST /api/v1/jobs/expiry-alerts` con security scheme bearer (registrare `bearerAuth` nei components se non esiste), response 200 (schema del result) + errorResponses `(401)` (+500 implicito dell'envelope); schema Zod del result in `src/lib/schemas/expiry-alerts.ts` (o dentro `expiries.ts` se più coerente — una scelta, documentata). `registry.test.ts` coverage della path.
-- [ ] Task 5: Test (AC 1/2)
-  - [ ] Unit `expiry-alerts.service.test.ts` (mock prisma + mock MailSender — spiare `send`): cadenza normale (daysLeft 60 → 1 email titolare + soglia 60 consumata; poi 30 → seconda email); catch-up (daysLeft 5, nessuna soglia consumata → UNA email, soglie 60/30/7 consumate; daysLeft −3 → UNA email "scaduta", tutte e 4); già consumate → zero email; secondo run identico → zero email zero righe (AC 2); P2002 su createMany → skip senza email e senza throw; titolare senza `Person.email` → soglie consumate, zero email titolare, voce nel digest con flag; locale destinatario (user EN → email EN, senza user → IT); digest: un'email per staff/admin attivo nella propria locale, NESSUN digest se zero alert; utenti staff inattivi esclusi; send che throwa su UN destinatario → job prosegue e conta giusto.
-  - [ ] Unit in `expiries.service.test.ts`: wipe SentAlert quando `expiresAt` cambia (update e approve), NO wipe quando resta uguale.
-  - [ ] Unit route (pattern degli altri route/handler test se esistono; altrimenti servizio del confronto bearer estratto e testato): bearer giusto → 200; sbagliato/assente/malformato (`Bearer` senza token, token vuoto) → 401; `JOBS_SECRET` assente dall'env → 500 (mai 200).
-  - [ ] e2e `expiry-alerts.spec.ts` (Mailpit DEVE essere su; leggere `JOBS_SECRET` da `process.env.JOBS_SECRET ?? 'dev-jobs-secret-change-me'`): via API staff creare persona run-unique con email run-unique + profilo pilota + scadenza a +7 giorni (tipo run-unique scope ALL); `POST /api/v1/jobs/expiry-alerts` col bearer → 200, result con `alertsCreated >= 1`; interrogare Mailpit API (`GET /api/v1/search?query=to:<email-run-unique>` o lista messaggi filtrata) → l'email del titolare esiste; **secondo POST identico → 200 con zero nuovi alert e il conteggio Mailpit per quel destinatario INVARIATO (AC 2)**; POST senza/con bearer errato → 401 envelope. (Filtrare SEMPRE per l'email run-unique: il DB e Mailpit sono sporchi degli altri test. Il digest si asserisce nel result count, non nella mailbox staff — l'admin seed riceve digest da ogni run del file, contarli sarebbe flaky.)
-- [ ] Task 6: Nota architettura — aggiornare `docs/` SOLO se esiste già una pagina operativa/deploy che elenca le env var (grep veloce); altrimenti il commento in `.env.example` basta. NON creare nuova documentazione.
+- [x] Task 1: Modello `SentAlert` + migrazione + wipe-on-renewal (AC 2)
+  - [x] `prisma/schema.prisma`: `model SentAlert` — `id cuid`; `expiryId` + FK `Expiry` **`onDelete: Cascade`** (la 6.2 l'aveva annunciato: cancellare la scadenza cancella la sua storia alert; back-relation `Expiry.sentAlerts SentAlert[]`); `threshold Int` (giorni: 60/30/7/0); `sentAt DateTime @default(now())`; `@@unique([expiryId, threshold])` (AD-9); `@@index([expiryId])` implicito nel unique composito — aggiungere solo se serve altro. Doc-comment: semantica soglia-consumata (vedi Contesto), wipe on renewal.
+  - [x] Migrazione `prisma/migrations/20260708100000_add_sent_alerts/migration.sql` (diff a mano, banner rimosso); `migrate deploy` + `generate`; verificare FK CASCADE e unique in SQL.
+  - [x] `expiries.service.ts`: in `updateExpiry` e nel ramo APPROVE di `decideExpiryProposal`, se il valore di `expiresAt` cambia rispetto al corrente → `sentAlert.deleteMany({ where: { expiryId } })` NELLA STESSA transazione della scrittura (per `updateExpiry`, che oggi è single-write, questo introduce una `$transaction` a due statement); se non cambia → nessun delete. Doc-comment + unit test per entrambe le vie (cambia → wipe; non cambia → non tocca).
+- [x] Task 2: Config `JOBS_SECRET`
+  - [x] `.env.example`: `JOBS_SECRET="dev-jobs-secret-change-me"` con commento (bearer del cron esterno per `/api/v1/jobs/*`, AD-9; generare un valore reale per ambiente). Aggiungere la stessa riga al `.env` locale (serve a dev server ed e2e).
+- [x] Task 3: Service del job `expiry-alerts.service.ts` (AC 1/2)
+  - [x] Nuovo `src/server/services/expiry-alerts.service.ts`: `runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult>` con `ExpiryAlertsJobResult = { candidates: number; alertsCreated: number; holderEmailsSent: number; holdersWithoutEmail: number; digestEmailsSent: number }` (il JSON di risposta del job — il log del cron esterno). Nessun `Actor` (vedi Contesto).
+  - [x] Query candidati: `expiry.findMany({ where: { expiresAt: { lte: today+60gg } }, include: { person (nome, email), expiryType (name), sentAlerts } })` + `user.findUnique` per locale del titolare (o include via person → user se la relazione lo consente); `today+60` costruito con aritmetica UTC date-only (60 = `Math.max(...EXPIRY_ALERT_THRESHOLDS)` — MAI hardcodare 60 due volte).
+  - [x] Per ogni candidato: calcolare `daysLeft`, soglie dovute e da consumare (vedi Contesto); se da consumare è vuoto → skip. Altrimenti: `sentAlert.createMany({ data: [...] })` in try/catch — **P2002 → skip email e non conteggiare** (run concorrente); poi UNA email al titolare (se `person.email`) via `getMailSender()`, nella sua lingua.
+  - [x] Riepilogo: se `alertsCreated > 0`, per ogni utente staff/admin attivo un'email nella sua `locale` con l'elenco del run. Errori di invio singoli: try/catch per destinatario, il job NON fallisce per un send fallito (conta e prosegue — il result riporta i numeri effettivi).
+  - [x] Template in `src/server/adapters/mail/templates.ts` (stesso file/pattern di `buildNegativeBalanceAlertEmail`, recipient-locale AD-7): `buildExpiryAlertEmail(locale, { personName, typeName, expiresAt, daysLeft })` e `buildExpiryDigestEmail(locale, { items: Array<{ personName, typeName, expiresAt, daysLeft, holderEmailed }> })`. Corpi plain-text da `Emails.expiryAlert.*` / `Emails.expiryDigest.*` in `messages/{it,en}.json` (SIMMETRICI): la frase temporale via sotto-chiavi dedicate (`expiresToday`, `expiresInDays` con `{days}`, `expiredDaysAgo` con `{days}`) — MAI la soglia nel testo, sempre i giorni reali; data formattata locale-aware date-only UTC (`Intl.DateTimeFormat(locale, { timeZone: 'UTC', dateStyle: 'long' })` o helper esistente se c'è — non inventarne un secondo).
+- [x] Task 4: Route + OpenAPI (AC 1)
+  - [x] `src/app/api/v1/jobs/expiry-alerts/route.ts`: `POST` — estrae il bearer, confronto timing-safe con `JOBS_SECRET` (vedi Contesto: `crypto.timingSafeEqual` su hash/digest di pari lunghezza), 401 su mismatch/assente, 500 su env mancante, poi `runExpiryAlertsJob()` → 200 col result JSON. Envelope errori AD-8 coerente col resto (riusare `apiRoute()` SE il suo contratto lo consente senza sessione; altrimenti handler dedicato che replica l'envelope — decidere leggendo `handler.ts`, documentare la scelta).
+  - [x] `registry.ts`: nuovo tag `['Jobs']`, path `POST /api/v1/jobs/expiry-alerts` con security scheme bearer (registrare `bearerAuth` nei components se non esiste), response 200 (schema del result) + errorResponses `(401)` (+500 implicito dell'envelope); schema Zod del result in `src/lib/schemas/expiry-alerts.ts` (o dentro `expiries.ts` se più coerente — una scelta, documentata). `registry.test.ts` coverage della path.
+- [x] Task 5: Test (AC 1/2)
+  - [x] Unit `expiry-alerts.service.test.ts` (mock prisma + mock MailSender — spiare `send`): cadenza normale (daysLeft 60 → 1 email titolare + soglia 60 consumata; poi 30 → seconda email); catch-up (daysLeft 5, nessuna soglia consumata → UNA email, soglie 60/30/7 consumate; daysLeft −3 → UNA email "scaduta", tutte e 4); già consumate → zero email; secondo run identico → zero email zero righe (AC 2); P2002 su createMany → skip senza email e senza throw; titolare senza `Person.email` → soglie consumate, zero email titolare, voce nel digest con flag; locale destinatario (user EN → email EN, senza user → IT); digest: un'email per staff/admin attivo nella propria locale, NESSUN digest se zero alert; utenti staff inattivi esclusi; send che throwa su UN destinatario → job prosegue e conta giusto.
+  - [x] Unit in `expiries.service.test.ts`: wipe SentAlert quando `expiresAt` cambia (update e approve), NO wipe quando resta uguale.
+  - [x] Unit route (pattern degli altri route/handler test se esistono; altrimenti servizio del confronto bearer estratto e testato): bearer giusto → 200; sbagliato/assente/malformato (`Bearer` senza token, token vuoto) → 401; `JOBS_SECRET` assente dall'env → 500 (mai 200).
+  - [x] e2e `expiry-alerts.spec.ts` (Mailpit DEVE essere su; leggere `JOBS_SECRET` da `process.env.JOBS_SECRET ?? 'dev-jobs-secret-change-me'`): via API staff creare persona run-unique con email run-unique + profilo pilota + scadenza a +7 giorni (tipo run-unique scope ALL); `POST /api/v1/jobs/expiry-alerts` col bearer → 200, result con `alertsCreated >= 1`; interrogare Mailpit API (`GET /api/v1/search?query=to:<email-run-unique>` o lista messaggi filtrata) → l'email del titolare esiste; **secondo POST identico → 200 con zero nuovi alert e il conteggio Mailpit per quel destinatario INVARIATO (AC 2)**; POST senza/con bearer errato → 401 envelope. (Filtrare SEMPRE per l'email run-unique: il DB e Mailpit sono sporchi degli altri test. Il digest si asserisce nel result count, non nella mailbox staff — l'admin seed riceve digest da ogni run del file, contarli sarebbe flaky.)
+- [x] Task 6: Nota architettura — aggiornare `docs/` SOLO se esiste già una pagina operativa/deploy che elenca le env var (grep veloce); altrimenti il commento in `.env.example` basta. NON creare nuova documentazione.
 
 ## Dev Notes
 
@@ -76,14 +76,40 @@ so that non voli mai con documenti scaduti (FR-37).
 
 ### Agent Model Used
 
+Sonnet 5 (single dev agent); gate finali ed e2e completati dalla sessione principale (Fable 5) — il run e2e completo non era terminato entro il turno del dev, che ha correttamente TRATTENUTO il commit (regola "tutti i gate verdi prima del commit").
+
 ### Debug Log References
+
+- Typecheck rotto una volta da un generic `Translator<...>` nei template mail: risolto facendo costruire a `expiryDaysPhrase()` il proprio translator ristretto al namespace `Emails.expiryDays` invece di passarne uno condiviso tra namespace.
+- Gap NON previsto dalla story trovato durante la verifica end-to-end: `src/proxy.ts` (edge middleware) risponde 401 a ogni `/api/v1/*` non in `PUBLIC_API_PATHS` PRIMA che la route giri — la route job non ci sarebbe MAI arrivata al proprio check bearer. Aggiunta `/api/v1/jobs/expiry-alerts` all'allowlist con doc-comment (la route resta protetta dal SUO bearer; ogni futura `/api/v1/jobs/*` richiede la stessa entry).
+- Sessione principale: il primo run e2e completo era contaminato da un dev server STALE (avviato a metà implementazione; `reuseExistingServer: !CI` lo riusa) → 2 falsi fail deterministici su `person-profiles.spec.ts` (404 al posto di 403). Dopo il riavvio del container (nessun server preesistente): person-profiles 5/5, run completo pulito. LEZIONE per le prossime story: prima di un run e2e di gate, verificare che NON ci sia un dev server residuo su :3000 (`curl -s -o /dev/null localhost:3000` deve fallire) — o ammazzarlo.
 
 ### Completion Notes List
 
+- `SentAlert` (unique `(expiryId, threshold)`, CASCADE con la Expiry) + wipe-on-renewal: `updateExpiry` ora è una `$transaction` a due statement e il ramo APPROVE di `decideExpiryProposal` confronta `expiresAt` correnti/proposti via `.getTime()` e cancella le righe alert solo se la data CAMBIA.
+- `runExpiryAlertsJob` con semantica catch-up delle soglie (dovute = `daysLeft <= T`, consumate in blocco, UNA email coi giorni reali), P2002 → skip silenzioso (run concorrente), insert-prima-send, titolare senza email conteggiato e flaggato nel digest; digest a ogni staff/admin attivo nella propria locale SOLO se il run ha consumato alert.
+- Bearer timing-safe in `src/server/auth/jobs-bearer.ts`: entrambi i lati hashati SHA-256 a lunghezza fissa prima di `crypto.timingSafeEqual` (che throwa su buffer di lunghezza diversa e leakerebbe la lunghezza via eccezione); `JOBS_SECRET` assente → 500, mai fallback.
+- Route job hand-rolled sull'envelope AD-8 (`apiRoute()` presuppone la sessione e non ha il path 401-bearer); `JOBS_SECRET` opzionale in `env.ts` (deploy senza secret boota, solo la route risponde 500).
+- Il job fa N+1 `user.findUnique` per la locale dei titolari (pattern 3.3 `sendNegativeBalanceAlert` citato dalla story) — flaggato al reviewer come possibile join unico.
+- e2e `expiry-alerts.spec.ts` (2 test): run del job con bearer → email titolare in Mailpit (filtro per destinatario run-unique), secondo run → zero nuove email e mailbox invariata (AC 2 end-to-end), bearer errato/assente → 401 envelope.
+- Deviazioni: (1) Task 6 — nessuna pagina docs/ operativa esistente, quindi solo il commento in `.env.example` (fallback previsto dal task); (2) e2e con tipo scope ALL (nessun profilo necessario, pattern di `expiry-registration.spec.ts`); (3) fix fuori-lista a `src/proxy.ts` (vedi Debug Log — load-bearing per AC 1).
+- Gate finali (sessione principale, dopo riavvio container, DB fresco + Mailpit): lint 0 errori (warning noto), typecheck pulito, **734/734 unit**, `env -u NODE_ENV npx next build` verde, e2e **98/103** — i 5 fail sono ESATTAMENTE la classe flaky documentata (3 flight-form race + coppia people-management, quest'ultima ri-verificata 6/6 in isolamento su DB fresco); `expiry-alerts.spec.ts` verde nel run completo e in isolamento.
+
 ### File List
+
+- `prisma/schema.prisma` + `prisma/migrations/20260708100000_add_sent_alerts/migration.sql`
+- `src/lib/env.ts`, `src/lib/expiry-status.ts` (+test), `src/lib/schemas/expiry-alerts.ts`, `src/lib/schemas/registry.ts` (+test)
+- `src/proxy.ts` (allowlist job route — vedi Debug Log)
+- `src/server/auth/jobs-bearer.ts` (+test)
+- `src/server/adapters/mail/templates.ts` (+test)
+- `src/server/services/expiry-alerts.service.ts` (+test), `src/server/services/expiries.service.ts` (+test, wipe-on-renewal)
+- `src/app/api/v1/jobs/expiry-alerts/route.ts` (+test)
+- `messages/it.json`, `messages/en.json`, `.env.example`
+- `e2e/expiry-alerts.spec.ts`
 
 ## Review Record
 
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session), ready-for-dev.
+- 2026-07-08: Implemented (Sonnet 5 single dev agent; gate e2e finale completato dalla sessione principale dopo un riavvio container e la bonifica di un dev server stale che falsava il run) — SentAlert + wipe-on-renewal, job idempotente con catch-up, template IT/EN recipient-locale, route bearer timing-safe + allowlist proxy. Tutti i gate verdi. Status: review.

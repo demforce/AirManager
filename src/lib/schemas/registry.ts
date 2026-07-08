@@ -38,6 +38,7 @@ import {
   reverseCashMovementSchema,
 } from './cash';
 import { errorEnvelopeSchema, okResponseSchema } from './common';
+import { expiryAlertsJobResultSchema } from './expiry-alerts';
 import {
   decideProposalSchema,
   expiryItemSchema,
@@ -130,6 +131,21 @@ const cookieAuth = registry.registerComponent('securitySchemes', 'cookieAuth', {
 
 const security = [{ [cookieAuth.name]: [] }];
 
+/**
+ * Bearer token for `/api/v1/jobs/*` (story 6.3, AD-9) — the EXTERNAL cron's
+ * credential, never a user session. Deliberately a SEPARATE scheme from
+ * `cookieAuth` above (different transport, different comparison —
+ * timing-safe against `JOBS_SECRET`, not Auth.js), the only route family
+ * that uses it.
+ */
+const bearerAuth = registry.registerComponent('securitySchemes', 'bearerAuth', {
+  type: 'http',
+  scheme: 'bearer',
+  description: 'JOBS_SECRET bearer token (AD-9) — presented by the external cron invoking /api/v1/jobs/*, never a user session.',
+});
+
+const jobsSecurity = [{ [bearerAuth.name]: [] }];
+
 // Named component schemas — nicer `$ref`s in the generated document than
 // inlining every shape at every path.
 registry.register('Error', errorEnvelopeSchema);
@@ -205,6 +221,7 @@ registry.register('PendingProposalSummary', pendingProposalSummarySchema);
 registry.register('ExpiryProposal', expiryProposalItemSchema);
 registry.register('ExpiryProposalList', expiryProposalListResponseSchema);
 registry.register('DecideProposalRequest', decideProposalSchema);
+registry.register('ExpiryAlertsJobResult', expiryAlertsJobResultSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -1289,6 +1306,25 @@ registry.registerPath({
   responses: {
     200: { description: 'The decided proposal.', content: jsonContent(expiryProposalItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- Jobs (epic 6, story 6.3, AD-9) -----------------------------------------
+// Bearer-protected routes invoked by an EXTERNAL cron, never a user session
+// (`jobsSecurity`/`bearerAuth` above) — the only route family besides `Auth`
+// that isn't `cookieAuth`-gated.
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/jobs/expiry-alerts',
+  summary: 'Run the automatic expiry-alert job (FR-37)',
+  description:
+    "Story 6.3, AC 1/2 — for every scadenza whose 60/30/7/0-day alert threshold(s) are newly due, sends ONE email to the titolare (their own locale) plus, if the run consumed at least one alert, ONE digest email to every active ADMIN/STAFF user (their own locale). Idempotent (AD-9): `SentAlert` has a unique `(expiryId, threshold)` constraint, so running this twice for the same day sends no duplicate email and creates no duplicate row. Authenticated with a `JOBS_SECRET` bearer token — NOT a user session/RBAC (401 on missing/wrong token; 500 if `JOBS_SECRET` itself is unconfigured, never an insecure fallback).",
+  tags: ['Jobs'],
+  security: jobsSecurity,
+  responses: {
+    200: { description: 'The job ran (possibly with nothing to do — see `alertsCreated`).', content: jsonContent(expiryAlertsJobResultSchema) },
+    ...errorResponses(401),
   },
 });
 
