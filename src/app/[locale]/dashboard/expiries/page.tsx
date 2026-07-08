@@ -151,8 +151,26 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
       ...(status ? { status } : {}),
     };
 
+    // Review 6.4 M1: each section's pagination Link must PRESERVE the other
+    // section's URL state (a Next `Link` query object replaces the whole
+    // query string — a bare `{ page }` would silently reset the dashboard's
+    // filters/page, and vice versa).
     function dashboardPageHref(targetPage: number) {
-      return { pathname: '/dashboard/expiries', query: { dashboardPage: targetPage, ...dashboardFilterQuery } };
+      return {
+        pathname: '/dashboard/expiries',
+        query: { dashboardPage: targetPage, ...dashboardFilterQuery, ...(page > 1 ? { page } : {}) },
+      };
+    }
+
+    function proposalsPageHref(targetPage: number) {
+      return {
+        pathname: '/dashboard/expiries',
+        query: {
+          page: targetPage,
+          ...(dashboardPage > 1 ? { dashboardPage } : {}),
+          ...dashboardFilterQuery,
+        },
+      };
     }
 
     const dashboardInitialFilters: ExpiryDashboardFiltersValue = {
@@ -347,7 +365,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             {totalPages > 1 ? (
               <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
                 <Link
-                  href={{ pathname: '/dashboard/expiries', query: { page: page - 1 } }}
+                  href={proposalsPageHref(page - 1)}
                   locale={locale as AppLocale}
                   aria-disabled={page <= 1}
                   className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
@@ -360,7 +378,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                   {page} / {totalPages}
                 </span>
                 <Link
-                  href={{ pathname: '/dashboard/expiries', query: { page: page + 1 } }}
+                  href={proposalsPageHref(page + 1)}
                   locale={locale as AppLocale}
                   aria-disabled={page >= totalPages}
                   className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${

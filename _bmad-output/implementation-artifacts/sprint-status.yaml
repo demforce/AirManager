@@ -74,11 +74,11 @@ development_status:
   5-4-flight-log-filters: done
   epic-5-retrospective: optional
 
-  epic-6: in-progress
+  epic-6: done
   6-1-expiry-types: done
   6-2-expiry-registration: done
   6-3-expiry-alerts: done
-  6-4-expiry-dashboard: review
+  6-4-expiry-dashboard: done
   epic-6-retrospective: optional
 
   epic-7: backlog

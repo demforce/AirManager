@@ -4,7 +4,7 @@ baseline_commit: 966e64a
 
 # Story 6.4: Dashboard scadenze
 
-Status: review
+Status: done
 
 ## Story
 
@@ -110,7 +110,20 @@ Sonnet 5 (single dev agent)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial, con full-suite e2e su DB GENUINAMENTE fresco come priorità zero. **Verdict: clean-pass → M1 minor applicato dalla sessione principale, poi done.**
+
+- **Priorità zero (full suite su DB fresco)**: i 4 fail riportati dal dev (che non poteva resettare il suo DB accumulato — il guard AI-consent di Prisma ha correttamente rifiutato il reset a un subagent) sono confermati **flake ambientale pre-esistente, NON regressione 6.4**: sul DB fresco 3 fail della stessa classe nota sotto carico parallelo, NESSUNO riconducibile al diff (per i login staff/admin la home non emette query extra: `listPersonExpiries` gira solo per actor person-linked senza `expiries.manage`); tutte le spec expiries (6.1-6.4) verdi nel run completo, 6.4 4/4 anche in isolamento.
+- **M1 (minor, FIXED)** — crosstalk residuo tra le due sezioni paginate della landing: i `Link` di paginazione della coda proposte emettevano `query: { page }` secco (un query-object di Next SOSTITUISCE l'intera query string) → paginare le proposte azzerava filtri e `dashboardPage` della dashboard; simmetricamente l'href della dashboard scartava `?page=` delle proposte. Raggiungibile solo con >20 proposte PENDING e un filtro attivo insieme; il rename `dashboardPage` del dev risolveva solo la collisione di LETTURA. Fix: `proposalsPageHref`/`dashboardPageHref` che PRESERVANO lo stato dell'altra sezione (spread reciproco, pattern `filterQuery` di finance). Verifica: lint/typecheck/752 unit/build verdi, `expiry-dashboard.spec.ts` + `expiry-registration.spec.ts` 6/6 su DB fresco.
+- **D1 (deferral)** — DeprecationWarning `pg@9` ("client already executing a query") dal batch `prisma.$transaction([findMany, count])` dell'adapter: pattern app-wide pre-esistente (identico in `listExpiryProposals`/`listCashMovements`), emesso once-per-process — è solo apparso sulla prima pagina caricata. Se mai affrontato: migrazione uniforme dei batch transaction cross-service, non qui.
+
+Verificato empiricamente e trovato corretto (sintesi): boundary filtro/badge ESATTI (seed a −1/0/+60/+61/+400 → ogni riga in UN solo bucket, `status` per-riga sempre uguale al bucket, +60=expiring e +61=ok provati); `today` calcolato UNA volta per request (filtro e badge non possono divergere a cavallo di mezzanotte); ordinamento con tie-break `id asc` provato senza overlap su 25 righe a pari data; filtri AND (type+scope+status), typeId inesistente → lista vuota non-404, `total` filtrato; clamp `dashboardPage` fuori range/malformato; permessi (unauth 401, pilota 403 envelope anche a livello service, staff 200); home widget (pilota con scadenze sì, senza scadenze niente sezione, admin/staff mai); badge byte-identici sulle 4 superfici con e2e 6.2 ancora verdi; hygiene query-param (injection/status=DROP TABLE/scope=<script> → 422 o sanitizzati, zero reflected injection, zero 500); i18n 823/823 simmetriche, placeholder rimosso pulito (deviazione 2 giudicata corretta); contract sweep completo (no migrazioni, no rbac, no export, DTO completo, registry+coverage, `DASHBOARD_SELECT` senza colonne extra, pageSize cap 100); `listExpiryTypes(includeInactive)` accessibile allo staff semplice per il dropdown.
+
+### Final gates (dopo il fix M1)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **752/752 unit**, `env -u NODE_ENV npx next build` verde, `expiry-dashboard.spec.ts` + `expiry-registration.spec.ts` 6/6 su DB fresco; full suite su DB fresco nel run di review (vedi sopra).
+
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session), ready-for-dev.
 - 2026-07-08: Implementation complete (Sonnet 5 dev agent) — `listAllExpiries` service/API/OpenAPI, staff "Tutte le scadenze" dashboard with filters/pagination, shared `ExpiryStatusBadge` (4 surfaces), pilot home widget, unit + e2e coverage. All gates green (lint/typecheck/752 unit tests/build); full e2e suite 103/107 passing with the 4 non-6.4 failures confirmed pre-existing/environmental (DB volume from repeated non-reset runs in this sandbox, not a regression — see Debug Log References). Status: review.
+- 2026-07-08: Review Opus 4.8 xhigh (full suite su DB fresco come priorità zero) — clean pass; i 4 fail del dev confermati flake ambientale non-6.4; M1 minor (crosstalk paginazioni della landing) FIXATO dalla sessione principale; D1 (DeprecationWarning pg@9 app-wide) deferito. Status → done; Epic 6 chiuso.
