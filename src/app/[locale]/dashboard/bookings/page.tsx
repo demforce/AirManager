@@ -1,7 +1,8 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { formatDateTime, formatTimeOfDay } from '@/lib/time';
+import { APP_TIMEZONE, formatDateTime, formatTimeOfDay } from '@/lib/time';
+import { addDaysDateOnly, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import {
@@ -10,13 +11,16 @@ import {
   listBookableAircraft,
   listBookableStudents,
   listBookings,
+  listCalendarBookings,
+  type BookingListItem,
 } from '@/server/services/bookings.service';
 import { listPeople } from '@/server/services/people.service';
+import { BookingCalendar, type BookingCalendarView, type CalendarDayBlock, type CalendarNav, type CalendarWeekChip } from './booking-calendar';
 import { NewBookingForm, type AircraftOption, type InstructorOption, type NewBookingFormMode, type PersonOption } from './new-booking-form';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; view?: string; date?: string }>;
 };
 
 /** Staff/instructor picker candidate cap — same "small admin-managed list" convention as `flights/page.tsx`'s `OPTIONS_PAGE_SIZE`. */
@@ -25,15 +29,152 @@ const OPTIONS_PAGE_SIZE = 100;
 /** "Prossime prenotazioni" page size. */
 const BOOKINGS_PAGE_SIZE = 20;
 
+// --- Calendar (epic 7, story 7.2, FR-19) ------------------------------------
+// Hand-edited URL defense (same pattern as `expiries/page.tsx`'s
+// `sanitizeScope`/`sanitizeStatus`): an invalid `?view`/`?date` NEVER
+// errors, it silently falls back to the default — the calendar's own
+// helpers (`zoned-time.ts`) also never see anything but a validated value.
+
+const CALENDAR_VIEWS = ['day', 'week'] as const;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function sanitizeView(value: string | undefined): BookingCalendarView {
+  return value && (CALENDAR_VIEWS as readonly string[]).includes(value) ? (value as BookingCalendarView) : 'day';
+}
+
+/** Accepts only a REAL calendar date in `YYYY-MM-DD` form (rejects e.g. `2026-02-30` via a round-trip check) — anything else falls back to "today" in `APP_TIMEZONE`. */
+function sanitizeDate(value: string | undefined, today: string): string {
+  if (!value || !DATE_ONLY_PATTERN.test(value)) return today;
+  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+  const roundTrip = new Date(Date.UTC(year, month - 1, day));
+  const isRealDate = roundTrip.getUTCFullYear() === year && roundTrip.getUTCMonth() === month - 1 && roundTrip.getUTCDate() === day;
+  return isRealDate ? value : today;
+}
+
+/** The day-view vertical axis (Contesto: "06:00–22:00 Europe/Rome ... su 960'"). Minutes from midnight. */
+const WINDOW_START_MINUTES = 6 * 60;
+const WINDOW_END_MINUTES = 22 * 60;
+const WINDOW_SPAN_MINUTES = WINDOW_END_MINUTES - WINDOW_START_MINUTES;
+const MINUTES_PER_DAY = 24 * 60;
 /**
- * Aircraft bookings (epic 7, story 7.1; FR-18) — Task 5. Gate:
- * `bookings.manage.own` OR `bookings.manage.any` OR `self.read` (in practice
- * every authenticated actor, Contesto: "la pagina serve anche la lista",
- * FR-19 anticipated to its minimum). `canCreate` (either `bookings.manage.*`
- * permission) decides whether the "Nuova prenotazione" form renders at all;
- * within that, `formMode` picks the SHAPE of the form (AD-5: only what to
- * RENDER — `bookings.service.ts#createBooking` is the real guardian
- * regardless of what this page decides to show):
+ * A block is never rendered with zero (or near-zero) visible height, even
+ * for a booking that is entirely clamped away (Contesto: "MAI nascosti") —
+ * 8% of the 768px grid is ~61px, enough to fit the clamp indicator + time +
+ * name on three short lines without the `overflow-hidden` wrapper clipping
+ * them (verified interactively, Playwright MCP: a booking entirely before
+ * 06:00 needs exactly this).
+ */
+const MIN_BLOCK_HEIGHT_PERCENT = 8;
+
+function wallMinutesOfDay(instant: Date): number {
+  const { hour, minute } = zonedWallTime(instant, APP_TIMEZONE);
+  return hour * 60 + minute;
+}
+
+function formatWallClock(instant: Date): string {
+  const { hour, minute } = zonedWallTime(instant, APP_TIMEZONE);
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function clampToWindowPercent(rawMinutes: number): number {
+  return (Math.min(WINDOW_SPAN_MINUTES, Math.max(0, rawMinutes)) / WINDOW_SPAN_MINUTES) * 100;
+}
+
+/**
+ * Projects every booking overlapping `dateOnly` (Europe/Rome) into an
+ * ALREADY-POSITIONED day-view block (Dev Notes: "il client riceve blocchi
+ * già proiettati ({top%, height%, label})") — SERVER-SIDE, via
+ * `zonedWallTime`/`zonedMidnightUtc` (`zoned-time.ts`, story 7.2 Task 1):
+ * the client never redoes this conversion (lesson 7.1: "container UTC vs
+ * display CEST").
+ *
+ * A booking that starts before this day (or before 06:00 within it) is
+ * clamped to the top edge with `clampedTop`; one that ends after this day
+ * (or after 22:00) is clamped to the bottom edge with `clampedBottom` —
+ * EITHER WAY IT IS STILL RENDERED (Contesto: "MAI nascosti"), just clamped,
+ * with the REAL (unclamped) `HH:MM–HH:MM` always shown as `timeLabel`.
+ */
+function projectDayBlocks(bookings: BookingListItem[], dateOnly: string): CalendarDayBlock[] {
+  const dayStart = zonedMidnightUtc(dateOnly, APP_TIMEZONE);
+  const dayEnd = zonedMidnightUtc(addDaysDateOnly(dateOnly, 1), APP_TIMEZONE);
+
+  const blocks: CalendarDayBlock[] = [];
+  for (const booking of bookings) {
+    const startsAt = new Date(booking.startsAt);
+    const endsAt = new Date(booking.endsAt);
+    if (endsAt <= dayStart || startsAt >= dayEnd) continue; // does not overlap this day at all
+
+    const startsBeforeDay = startsAt < dayStart;
+    const endsAtOrAfterDay = endsAt >= dayEnd;
+    const startMinutesOfDay = startsBeforeDay ? 0 : wallMinutesOfDay(startsAt);
+    const endMinutesOfDay = endsAtOrAfterDay ? MINUTES_PER_DAY : wallMinutesOfDay(endsAt);
+
+    const rawTop = startMinutesOfDay - WINDOW_START_MINUTES;
+    const rawBottom = endMinutesOfDay - WINDOW_START_MINUTES;
+    const top = clampToWindowPercent(rawTop);
+    const bottom = clampToWindowPercent(rawBottom);
+
+    blocks.push({
+      id: booking.id,
+      aircraftId: booking.aircraftId,
+      top,
+      height: Math.max(bottom - top, MIN_BLOCK_HEIGHT_PERCENT),
+      clampedTop: rawTop < 0,
+      clampedBottom: rawBottom > WINDOW_SPAN_MINUTES,
+      timeLabel: `${formatWallClock(startsAt)}–${formatWallClock(endsAt)}`,
+      personName: booking.personName,
+      instructorName: booking.instructorName,
+    });
+  }
+  return blocks;
+}
+
+/**
+ * Projects every booking overlapping any of `weekDates` into a compact
+ * week-view chip (Contesto: "celle con chip compatti HH:MM–HH:MM Nome") —
+ * one chip PER (booking, day) it overlaps, so a booking spanning midnight
+ * appears once in each neighboring day's cell, each clamped independently
+ * (same rationale as {@link projectDayBlocks}, without the 06-22 window —
+ * the week view has no vertical axis to clamp against, only day
+ * boundaries). Composite `id` (`bookingId:dateOnly`) keeps React's
+ * `key={id}` unique across those repeats.
+ */
+function projectWeekChips(bookings: BookingListItem[], weekDates: string[]): CalendarWeekChip[] {
+  const chips: CalendarWeekChip[] = [];
+  for (const dateOnly of weekDates) {
+    const dayStart = zonedMidnightUtc(dateOnly, APP_TIMEZONE);
+    const dayEnd = zonedMidnightUtc(addDaysDateOnly(dateOnly, 1), APP_TIMEZONE);
+    for (const booking of bookings) {
+      const startsAt = new Date(booking.startsAt);
+      const endsAt = new Date(booking.endsAt);
+      if (endsAt <= dayStart || startsAt >= dayEnd) continue;
+
+      chips.push({
+        id: `${booking.id}:${dateOnly}`,
+        aircraftId: booking.aircraftId,
+        dateOnly,
+        timeLabel: `${formatWallClock(startsAt)}–${formatWallClock(endsAt)}`,
+        clampedStart: startsAt < dayStart,
+        clampedEnd: endsAt >= dayEnd,
+        personName: booking.personName,
+        instructorName: booking.instructorName,
+      });
+    }
+  }
+  return chips;
+}
+
+/**
+ * Aircraft bookings (epic 7, stories 7.1/7.2; FR-18/FR-19) — Task 5 (7.1) +
+ * Task 3 (7.2). Page order (7.2 Contesto): header -> **calendar** -> "Nuova
+ * prenotazione" form (unchanged, `canCreate`-gated) -> "Prossime
+ * prenotazioni" (unchanged). Gate: `bookings.manage.own` OR
+ * `bookings.manage.any` OR `self.read` (in practice every authenticated
+ * actor — the calendar/list serve everyone, FR-19). `canCreate` (either
+ * `bookings.manage.*` permission) decides whether the "Nuova prenotazione"
+ * form renders at all; within that, `formMode` picks the SHAPE of the form
+ * (AD-5: only what to RENDER — `bookings.service.ts#createBooking` is the
+ * real guardian regardless of what this page decides to show):
  *
  * - `staff` (`bookings.manage.any`): free person + optional instructor picker.
  * - `instructor` (`bookings.manage.own` AND an active own `InstructorProfile`,
@@ -41,14 +182,17 @@ const BOOKINGS_PAGE_SIZE = 20;
  * - `pilot` (`bookings.manage.own`, no active own instructor profile): books
  *   for self only, no picker at all.
  *
- * The "Prossime prenotazioni" table (`listBookings({ from: now })`) stays a
- * PLAIN server read (AD-1, pattern `expiries/page.tsx`'s dashboard table) —
- * the form is the only client-interactive piece, and its `router.refresh()`
- * on success is what makes a freshly created booking show up here.
+ * The calendar (7.2) and "Prossime prenotazioni" (7.1) table are BOTH plain
+ * server reads (AD-1) — the form is the only client-interactive piece, and
+ * its `router.refresh()` on success is what makes a freshly created booking
+ * show up in either. `?view`/`?date` (calendar) and `?page` (list) are two
+ * INDEPENDENT pieces of URL state on the SAME page (lesson 6.4 M1, same
+ * pattern as `expiries/page.tsx`'s `dashboardPage`/`page`): every href
+ * below preserves the OTHER section's current state, never resets it.
  */
 export default async function BookingsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, view: viewParam, date: dateParam } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -66,16 +210,18 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   const canCreate = canManageAny || canManageOwn;
 
+  // `listBookableAircraft` now serves the calendar too (story 7.2) — moved
+  // OUT of the `canCreate` branch below, called unconditionally for every
+  // viewer (Task 3: "ORA serve anche ai non-creator").
+  const aircraftOptions: AircraftOption[] = await listBookableAircraft(actor);
+
   let formMode: NewBookingFormMode = 'pilot';
-  let aircraftOptions: AircraftOption[] = [];
   let personOptions: PersonOption[] = [];
   let instructorOptions: InstructorOption[] = [];
   let studentOptions: PersonOption[] = [];
   let ownInstructorProfileId: string | null = null;
 
   if (canCreate) {
-    aircraftOptions = await listBookableAircraft(actor);
-
     if (canManageAny) {
       formMode = 'staff';
       const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: false });
@@ -105,8 +251,60 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   }
   const totalPages = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
 
+  // --- Calendar (story 7.2, AC 1) --------------------------------------
+  const today = todayDateOnlyInZone(APP_TIMEZONE);
+  const view = sanitizeView(viewParam);
+  const date = sanitizeDate(dateParam, today);
+
+  const weekStart = weekStartDateOnly(date);
+  const weekDates = view === 'week' ? Array.from({ length: 7 }, (_, i) => addDaysDateOnly(weekStart, i)) : [];
+  const rangeFromDateOnly = view === 'day' ? date : weekStart;
+  const rangeToDateOnly = view === 'day' ? addDaysDateOnly(date, 1) : addDaysDateOnly(weekStart, 7);
+  const calendarFrom = zonedMidnightUtc(rangeFromDateOnly, APP_TIMEZONE);
+  const calendarTo = zonedMidnightUtc(rangeToDateOnly, APP_TIMEZONE);
+
+  const calendarBookings = await listCalendarBookings(actor, { from: calendarFrom.toISOString(), to: calendarTo.toISOString() });
+  const dayBlocks = view === 'day' ? projectDayBlocks(calendarBookings, date) : [];
+  const weekChips = view === 'week' ? projectWeekChips(calendarBookings, weekDates) : [];
+
+  const prevDate = view === 'day' ? addDaysDateOnly(date, -1) : addDaysDateOnly(date, -7);
+  const nextDate = view === 'day' ? addDaysDateOnly(date, 1) : addDaysDateOnly(date, 7);
+
+  // Href builder (lesson 6.4 M1): every calendar link preserves the LIST
+  // section's `?page` (only when it isn't the default page 1), never resets
+  // it — a next-intl `Link`'s query object REPLACES the whole query string.
+  function calendarHref(overrides: { view?: BookingCalendarView; date?: string }) {
+    const nextView = overrides.view ?? view;
+    const nextDateValue = overrides.date ?? date;
+    return {
+      pathname: '/dashboard/bookings',
+      query: {
+        ...(nextView !== 'day' ? { view: nextView } : {}),
+        ...(nextDateValue !== today ? { date: nextDateValue } : {}),
+        ...(page > 1 ? { page } : {}),
+      },
+    };
+  }
+
+  const calendarNav: CalendarNav = {
+    prevHref: calendarHref({ date: prevDate }),
+    todayHref: calendarHref({ date: today }),
+    nextHref: calendarHref({ date: nextDate }),
+    dayViewHref: calendarHref({ view: 'day' }),
+    weekViewHref: calendarHref({ view: 'week' }),
+  };
+
+  // `pageHref` (list pagination) preserves the CALENDAR's `?view`/`?date`
+  // the same way (lesson 6.4 M1) — the inverse direction of `calendarHref` above.
   function pageHref(targetPage: number) {
-    return { pathname: '/dashboard/bookings', query: { page: targetPage } };
+    return {
+      pathname: '/dashboard/bookings',
+      query: {
+        page: targetPage,
+        ...(view !== 'day' ? { view } : {}),
+        ...(date !== today ? { date } : {}),
+      },
+    };
   }
 
   const t = await getTranslations('BookingsPage');
@@ -131,6 +329,32 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
             {t('backToDashboard')}
           </Link>
         </div>
+
+        <BookingCalendar
+          view={view}
+          date={date}
+          weekDates={weekDates}
+          aircraft={aircraftOptions}
+          dayBlocks={dayBlocks}
+          weekChips={weekChips}
+          locale={dateLocale}
+          nav={calendarNav}
+          labels={{
+            prev: t('calendar.toolbar.prev'),
+            today: t('calendar.toolbar.today'),
+            next: t('calendar.toolbar.next'),
+            dayView: t('calendar.toolbar.dayView'),
+            weekView: t('calendar.toolbar.weekView'),
+            viewToggleLabel: t('calendar.toolbar.viewToggleLabel'),
+            outOfService: t('calendar.outOfService'),
+            dayEmpty: t('calendar.dayEmpty'),
+            weekEmpty: t('calendar.weekEmpty'),
+            noAircraft: t('calendar.noAircraft'),
+            clampedStartHint: t('calendar.clampedStartHint'),
+            clampedEndHint: t('calendar.clampedEndHint'),
+            weekdayColumnLabel: t('calendar.weekdayColumnLabel'),
+          }}
+        />
 
         {canCreate ? (
           <div className="mt-10">

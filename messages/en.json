@@ -1010,6 +1010,23 @@
         "instructor": "Instructor",
         "noInstructor": "—"
       }
+    },
+    "calendar": {
+      "toolbar": {
+        "prev": "Previous",
+        "today": "Today",
+        "next": "Next",
+        "dayView": "Day",
+        "weekView": "Week",
+        "viewToggleLabel": "Calendar view"
+      },
+      "outOfService": "Out of service",
+      "dayEmpty": "No bookings on this day.",
+      "weekEmpty": "No bookings this week.",
+      "noAircraft": "No aircraft available.",
+      "clampedStartHint": "Starts before this time window",
+      "clampedEndHint": "Continues past this time window",
+      "weekdayColumnLabel": "Day"
     }
   },
   "UsersPage": {

@@ -39,11 +39,15 @@ describe('visibleNavItems (Story 1.3 AC 2 — dashboard navigation by role)', ()
     expect(keys).not.toContain('settings');
   });
 
-  it('hides bookings from a student alone (story 7.1: school bookings are made by the instructor/staff)', () => {
+  // CONTRACT CHANGE (story 7.2, FR-19): `bookings` gained `self.read`
+  // (calendar view for every authenticated role) — a student alone now
+  // SEES the item again, same pattern as story 6.2 did for 6.1's nav test
+  // when `expiries` gained `self.read`. The 7.1 assertion this replaces
+  // ("hides bookings from a student alone") only ever reflected 7.1's own
+  // interim state before the calendar view existed.
+  it('shows bookings to a student alone (story 7.2: calendar view is FR-19, every authenticated role)', () => {
     const keys = visibleNavItems(actorWith(['STUDENT'])).map((item) => item.key);
-    expect(keys).not.toContain('bookings');
-    // Still sees flights/expiries (both hold `self.read`, story 5.4/6.2 — unaffected by this story).
-    expect(keys.sort()).toEqual(['expiries', 'flights'].sort());
+    expect(keys.sort()).toEqual(['bookings', 'expiries', 'flights'].sort());
   });
 
   it('points the bookings nav item at /dashboard/bookings (story 7.1)', () => {

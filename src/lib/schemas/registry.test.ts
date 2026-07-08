@@ -67,6 +67,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/expiry-proposals/{id}/decision',
         '/api/v1/jobs/expiry-alerts',
         '/api/v1/bookings',
+        '/api/v1/bookings/calendar',
       ]),
     );
   });
@@ -107,6 +108,13 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       'post'
     ];
     expect(Object.keys(createBooking?.responses ?? {}).sort()).toEqual(['201', '401', '403', '404', '409', '422', '500']);
+  });
+
+  it('documents 401/403/422/500 error responses on the booking calendar endpoint (story 7.2, AC 1)', () => {
+    const calendarBookings = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)[
+      '/api/v1/bookings/calendar'
+    ]?.['get'];
+    expect(Object.keys(calendarBookings?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
   });
 
   it('produces valid JSON (round-trips through JSON.stringify/parse)', () => {

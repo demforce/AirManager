@@ -23,7 +23,14 @@ import {
   updateAircraftSchema,
 } from './aircraft';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
-import { bookingItemSchema, bookingListResponseSchema, createBookingSchema, listBookingsQuerySchema } from './bookings';
+import {
+  bookingItemSchema,
+  bookingListResponseSchema,
+  calendarBookingsQuerySchema,
+  calendarBookingsResponseSchema,
+  createBookingSchema,
+  listBookingsQuerySchema,
+} from './bookings';
 import {
   cashCategoryItemSchema,
   cashCategoryListResponseSchema,
@@ -1364,6 +1371,21 @@ registry.registerPath({
   responses: {
     201: { description: 'The created booking.', content: jsonContent(bookingItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/bookings/calendar',
+  summary: 'List every booking overlapping a bounded date/time range, for the calendar view (AC 1, FR-19)',
+  description:
+    'Deliberately UNPAGINATED (a calendar renders a bounded window, never "page 2") — see `bookings.service.ts#listCalendarBookings`\'s doc-comment. `from`/`to` are BOTH required and compared as instants; `to` must be strictly after `from` and the range cannot exceed 8 days (`RANGE_TOO_WIDE`). Same semi-open overlap predicate and ordering as `GET /api/v1/bookings`. Readable with `self.read` (every authenticated role, FR-19).',
+  tags: ['Bookings'],
+  security,
+  request: { query: calendarBookingsQuerySchema },
+  responses: {
+    200: { description: 'Every booking overlapping the range.', content: jsonContent(calendarBookingsResponseSchema) },
+    ...errorResponses(401, 403, 422),
   },
 });
 

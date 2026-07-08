@@ -1,6 +1,6 @@
 import type { AircraftStatus } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
-import type { CreateBookingInput, ListBookingsQuery } from '@/lib/schemas/bookings';
+import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery } from '@/lib/schemas/bookings';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -329,6 +329,57 @@ export async function listBookings(actor: Actor, query: ListBookingsQuery): Prom
   ]);
 
   return paginate(items.map(toListItem), total, query);
+}
+
+/** The calendar's own maximum span (story 7.2, Task 2) — a calendar renders a week at most, so a wider range is always a client error, never a legitimate page. */
+const MAX_CALENDAR_RANGE_MS = 8 * 24 * 60 * 60 * 1000;
+
+/**
+ * Lists EVERY booking overlapping `[from, to)` (FR-19, story 7.2, AC 1) —
+ * the calendar's own read, deliberately UNPAGINATED (`listBookings` above
+ * stays the paginated "Prossime prenotazioni" list). `self.read` (every
+ * authenticated role, same rationale as `listBookings`). `from`/`to` are
+ * BOTH required (unlike `listBookings`'s optional filters — a calendar
+ * without a range makes no sense) and validated here too, independently of
+ * `calendarBookingsQuerySchema`'s own refine (AD-5: the service is the real
+ * guardian; `page.tsx` calls this directly, bypassing the API's Zod query
+ * schema entirely):
+ * - `to` must be strictly after `from` (compared as INSTANTS, same lesson
+ *   as `createBookingSchema`'s N1 review fix — never a string compare).
+ * - The range must not exceed 8 days (`RANGE_TOO_WIDE`) — generous enough
+ *   for a week view plus one day of slack, tight enough that a malicious
+ *   `from`/`to` can never turn this into an unbounded table scan.
+ *
+ * Same semi-open overlap predicate as `listBookings`/`createBooking`'s
+ * pre-check (`startsAt < to AND endsAt > from`), same `startsAt asc, id
+ * asc` order, same `BOOKING_SELECT`/`toListItem` DTO projection (Dev
+ * Notes: never duplicate the projection). `take: 1000` is a SAFETY BOUND,
+ * not pagination (Contesto: "un calendario non si pagina") — an 8-day
+ * window with 1000 bookings across every aircraft is already an
+ * operationally absurd volume; this only guards against a pathological DB
+ * state turning a calendar render into an unbounded response.
+ */
+export async function listCalendarBookings(actor: Actor, query: CalendarBookingsQuery): Promise<BookingListItem[]> {
+  authorize(actor, 'self.read');
+
+  const from = new Date(query.from);
+  const to = new Date(query.to);
+
+  if (to.getTime() <= from.getTime()) {
+    throw new ValidationError('to must be strictly after from.');
+  }
+  if (to.getTime() - from.getTime() > MAX_CALENDAR_RANGE_MS) {
+    throw new ValidationError('The calendar range cannot exceed 8 days.', undefined, 'RANGE_TOO_WIDE');
+  }
+
+  const bookings = await prisma.booking.findMany({
+    select: BOOKING_SELECT,
+    where: { startsAt: { lt: to }, endsAt: { gt: from } },
+    orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
+    take: 1000,
+  });
+
+  return bookings.map(toListItem);
 }
 
 // --- Booking-form picker data (Task 5) --------------------------------------

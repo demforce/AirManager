@@ -29,6 +29,28 @@ function uniqueEmail(prefix: string): string {
   return `${prefix}-${uniqueSuffix()}@airmanager.local`;
 }
 
+/**
+ * Navigates to `/dashboard/bookings` and waits for the page to settle
+ * before returning — necessary before interacting with the "Nuova
+ * prenotazione" form specifically (story 7.2 finding, this session): the
+ * page now carries a much larger DOM (the calendar's hour grid times
+ * aircraft columns, plus however many rows "Prossime prenotazioni" has
+ * accumulated) — a plain `page.goto()` only waits for the `load` event,
+ * which can resolve before React finishes hydrating a page this size. An
+ * automated `selectOption`/`fill`/`click` landing in that window sets the
+ * native control's DOM value, but React's hydration reconciliation then
+ * resets it to the server-rendered `defaultValue`, silently discarding the
+ * interaction (react-hook-form never observes the change, so the form
+ * fails its own "Campo obbligatorio" validation on submit). A human never
+ * notices — hydration still completes in well under a second — but
+ * Playwright's automated interaction can outrun it. Test-only hardening;
+ * no application code is touched.
+ */
+async function gotoBookingsAndWaitForHydration(page: Page): Promise<void> {
+  await page.goto('/it/dashboard/bookings');
+  await page.waitForLoadState('networkidle');
+}
+
 type MailpitMessageSummary = { ID: string; Subject: string };
 type MailpitFullMessage = { Text: string; Subject: string };
 
@@ -170,7 +192,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
-    await page.goto('/it/dashboard/bookings');
+    await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:00`);
@@ -204,7 +226,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const aircraft = await createAircraft(page);
     const pilot = await createPilotPerson(page);
 
-    await page.goto('/it/dashboard/bookings');
+    await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
@@ -261,7 +283,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, instructor.email, instructorPassword);
 
-    await page.goto('/it/dashboard/bookings');
+    await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByRole('radio', { name: 'Per un allievo' }).click();
@@ -278,30 +300,148 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(row).toContainText(`${instructor.firstName} ${instructor.lastName}`);
   });
 
-  test('an allievo alone gets a 403 AD-8 envelope from POST /api/v1/bookings and does not see the Prenotazioni nav item', async ({
+  // CONTRACT CHANGE (story 7.2, FR-19): the calendar view opened `bookings`
+  // to every authenticated role via `self.read` — an allievo alone now SEES
+  // the "Prenotazioni" nav item and the calendar (with prenotante names,
+  // FR-19), same pattern as story 6.2 did for 6.1's nav test when
+  // `expiries` gained `self.read`. What does NOT change: no create form,
+  // and a direct `POST /api/v1/bookings` still answers 403 (the calendar's
+  // own `GET .../calendar` is `self.read`-gated, creation stays
+  // `bookings.manage.*`-gated).
+  test('an allievo alone sees "Prenotazioni" and the calendar with prenotante names, but no create form; a direct POST still gets 403', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+
+    // Read "tomorrow" (Europe/Rome) off the app's OWN next-day link (Dev
+    // Notes: never re-derive the zoned date in the test — the server is the
+    // single source of truth for what "tomorrow" means).
+    await page.goto('/it/dashboard/bookings');
+    const nextHref = await page.getByTestId('calendar-next').getAttribute('href');
+    const tomorrow = nextHref?.match(/date=(\d{4}-\d{2}-\d{2})/)?.[1];
+    if (!tomorrow) throw new Error(`Could not extract tomorrow's date from calendar-next href: ${nextHref}`);
+
+    // A booking visible to EVERY authenticated role (FR-19) — the allievo
+    // must see the PILOT's name on the calendar despite having no booking
+    // permission at all.
+    const bookingResponse = await page.request.post('/api/v1/bookings', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        startsAt: `${tomorrow}T09:00:00.000Z`,
+        endsAt: `${tomorrow}T10:00:00.000Z`,
+      },
+    });
+    expect(bookingResponse.status()).toBe(201);
+
     const student = await createStudentWithLogin(page, 'AllievoForbidden123!');
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, student.email, 'AllievoForbidden123!');
 
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(nav.getByRole('link', { name: 'Prenotazioni' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Prenotazioni' })).toBeVisible();
+
+    await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
+    const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft.registration });
+    const block = column.getByTestId('calendar-block').filter({ hasText: pilot.lastName });
+    await expect(block).toBeVisible();
+    await expect(block).toContainText(pilot.firstName);
+
+    await expect(page.getByTestId('new-booking-form')).toHaveCount(0);
 
     const response = await page.request.post('/api/v1/bookings', {
       data: {
         aircraftId: aircraft.id,
         personId: student.personId,
-        startsAt: `${FUTURE_DAY}T09:00:00.000Z`,
-        endsAt: `${FUTURE_DAY}T10:00:00.000Z`,
+        startsAt: `${tomorrow}T11:00:00.000Z`,
+        endsAt: `${tomorrow}T12:00:00.000Z`,
       },
     });
     expect(response.status()).toBe(403);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  test('calendar (Story 7.2, AC 1): day-view blocks on the run-unique aircraft column, week-view chips, prev/next change the heading', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+
+    await page.goto('/it/dashboard/bookings');
+    const nextHref = await page.getByTestId('calendar-next').getAttribute('href');
+    const tomorrow = nextHref?.match(/date=(\d{4}-\d{2}-\d{2})/)?.[1];
+    if (!tomorrow) throw new Error(`Could not extract tomorrow's date from calendar-next href: ${nextHref}`);
+
+    // Two run-unique bookings via the admin API at known times (Task 4: "orari noti di DOMANI, es. 09:00Z e 14:00Z").
+    const first = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${tomorrow}T09:00:00.000Z`, endsAt: `${tomorrow}T10:00:00.000Z` },
+    });
+    expect(first.status()).toBe(201);
+    const second = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${tomorrow}T14:00:00.000Z`, endsAt: `${tomorrow}T15:00:00.000Z` },
+    });
+    expect(second.status()).toBe(201);
+
+    // Navigate to tomorrow via the "next" link (Task 4: "link next o `?date=`") in day view.
+    await page.getByTestId('calendar-next').click();
+    await expect(page).toHaveURL(new RegExp(`date=${tomorrow}`));
+
+    const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft.registration });
+    await expect(column).toBeVisible();
+    const blocksOnAircraft = column.getByTestId('calendar-block');
+    await expect(blocksOnAircraft).toHaveCount(2);
+    await expect(blocksOnAircraft.filter({ hasText: pilot.lastName })).toHaveCount(2);
+
+    // prev/next change the heading (Task 4) — round-trip back to the same day.
+    const headingOnTomorrow = await page.getByTestId('calendar-heading').textContent();
+    await page.getByTestId('calendar-next').click();
+    await expect(page.getByTestId('calendar-heading')).not.toHaveText(headingOnTomorrow ?? '');
+    await page.getByTestId('calendar-prev').click();
+    await expect(page.getByTestId('calendar-heading')).toHaveText(headingOnTomorrow ?? '');
+
+    // Toggle week -> compact chips present, in the run-unique aircraft's column.
+    await page.getByTestId('calendar-view-week').click();
+    await expect(page.getByTestId('calendar-week-table')).toBeVisible();
+    const weekChips = page.getByTestId('calendar-chip').filter({ hasText: pilot.lastName });
+    await expect(weekChips).toHaveCount(2);
+  });
+
+  test('calendar mobile viewport (375x812, Task 4): day view is usable, no page-level horizontal overflow, touch targets >= 44px', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+
+    await page.goto('/it/dashboard/bookings');
+    const nextHref = await page.getByTestId('calendar-next').getAttribute('href');
+    const tomorrow = nextHref?.match(/date=(\d{4}-\d{2}-\d{2})/)?.[1];
+    if (!tomorrow) throw new Error(`Could not extract tomorrow's date from calendar-next href: ${nextHref}`);
+
+    const bookingResponse = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${tomorrow}T09:00:00.000Z`, endsAt: `${tomorrow}T10:00:00.000Z` },
+    });
+    expect(bookingResponse.status()).toBe(201);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
+
+    const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft.registration });
+    const block = column.getByTestId('calendar-block').filter({ hasText: pilot.lastName });
+    await expect(block).toBeVisible();
+
+    // Pragmatic mobile-usability assert (Dev Notes): the body itself never scrolls horizontally — only the calendar's own `overflow-x-auto` wrapper does.
+    const bodyFitsViewport = await page.evaluate(() => document.body.scrollWidth <= window.innerWidth);
+    expect(bodyFitsViewport).toBe(true);
+
+    const nextBox = await page.getByTestId('calendar-next').boundingBox();
+    expect(nextBox?.width).toBeGreaterThanOrEqual(44);
+    expect(nextBox?.height).toBeGreaterThanOrEqual(44);
   });
 
   test('concurrency (AC 2): two parallel POSTs for the same run-unique aircraft/interval yield exactly one 201 and one 409', async ({

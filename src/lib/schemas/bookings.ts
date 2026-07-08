@@ -80,3 +80,37 @@ export type BookingItemDto = z.infer<typeof bookingItemSchema>;
 export const bookingListResponseSchema = paginatedResponseSchema(bookingItemSchema);
 
 export type BookingListResponseDto = z.infer<typeof bookingListResponseSchema>;
+
+// --- Booking calendar (epic 7, story 7.2, FR-19) ----------------------------
+// The calendar view's own read — deliberately UNPAGINATED (a calendar
+// renders a bounded window, never "page 2"), see
+// `bookings.service.ts#listCalendarBookings`'s doc-comment for the full
+// range-validation rationale.
+
+/**
+ * `GET /api/v1/bookings/calendar` query (AC 1). Both `from`/`to` are
+ * REQUIRED (unlike `listBookingsQuerySchema`'s optional filters). `.refine`:
+ * `to` must be strictly AFTER `from`, compared as INSTANTS, not strings —
+ * same lesson as `createBookingSchema`'s N1 review fix
+ * (`z.iso.datetime()` accepts variable fractional-second precision, so a
+ * lexicographic compare would spuriously reject mixed-precision pairs).
+ * The 8-day range cap itself is enforced service-side
+ * (`RANGE_TOO_WIDE`) — not duplicated here, since the schema's job is
+ * shape/ordering, not the domain-specific span limit.
+ */
+export const calendarBookingsQuerySchema = z
+  .object({
+    from: z.iso.datetime(),
+    to: z.iso.datetime(),
+  })
+  .refine((value) => new Date(value.to).getTime() > new Date(value.from).getTime(), {
+    message: 'to must be strictly after from',
+    path: ['to'],
+  });
+
+export type CalendarBookingsQuery = z.infer<typeof calendarBookingsQuerySchema>;
+
+/** `GET /api/v1/bookings/calendar` response — a bare array (Contesto: "un calendario non si pagina"), never the paginated envelope `bookingListResponseSchema` uses. */
+export const calendarBookingsResponseSchema = z.array(bookingItemSchema);
+
+export type CalendarBookingsResponseDto = z.infer<typeof calendarBookingsResponseSchema>;

@@ -1010,6 +1010,23 @@
         "instructor": "Istruttore",
         "noInstructor": "—"
       }
+    },
+    "calendar": {
+      "toolbar": {
+        "prev": "Precedente",
+        "today": "Oggi",
+        "next": "Successivo",
+        "dayView": "Giorno",
+        "weekView": "Settimana",
+        "viewToggleLabel": "Vista calendario"
+      },
+      "outOfService": "Fuori servizio",
+      "dayEmpty": "Nessuna prenotazione in questo giorno.",
+      "weekEmpty": "Nessuna prenotazione in questa settimana.",
+      "noAircraft": "Nessun velivolo disponibile.",
+      "clampedStartHint": "Inizia prima di questa finestra oraria",
+      "clampedEndHint": "Continua oltre questa finestra oraria",
+      "weekdayColumnLabel": "Giorno"
     }
   },
   "UsersPage": {

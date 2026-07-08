@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createBookingSchema, listBookingsQuerySchema } from '@/lib/schemas/bookings';
+import { calendarBookingsQuerySchema, createBookingSchema, listBookingsQuerySchema } from '@/lib/schemas/bookings';
 import type { Actor } from '@/server/auth/rbac';
 
 vi.mock('@/server/db/prisma', () => ({
@@ -27,8 +27,15 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { createBooking, listBookings, listBookableAircraft, listBookableStudents, listActiveInstructors, getOwnInstructorProfileId } =
-  await import('./bookings.service');
+const {
+  createBooking,
+  listBookings,
+  listCalendarBookings,
+  listBookableAircraft,
+  listBookableStudents,
+  listActiveInstructors,
+  getOwnInstructorProfileId,
+} = await import('./bookings.service');
 const { ForbiddenError, NotFoundError, ConflictError, ValidationError } = await import('./errors');
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
@@ -484,6 +491,125 @@ describe('listBookings (Story 7.1, AC 1, FR-19)', () => {
     const result = await listBookings(staffActor(), { page: 1, pageSize: 20 });
 
     expect(result.items[0]?.instructorName).toBeNull();
+  });
+});
+
+describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
+  const FROM = '2026-08-03T00:00:00.000Z';
+  const TO = '2026-08-04T00:00:00.000Z';
+
+  it('any authenticated role (self.read) can list — a student succeeds', async () => {
+    bookingFindMany.mockResolvedValue([CREATED_BOOKING_ROW]);
+
+    const result = await listCalendarBookings(studentActor(), { from: FROM, to: TO });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe('booking_1');
+  });
+
+  it('rejects to <= from with a 422 (equal instants)', async () => {
+    const error = await listCalendarBookings(staffActor(), { from: FROM, to: FROM }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(bookingFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects to < from with a 422', async () => {
+    const error = await listCalendarBookings(staffActor(), { from: TO, to: FROM }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ValidationError);
+  });
+
+  it('rejects a range wider than 8 days with 422 RANGE_TOO_WIDE', async () => {
+    const error = await listCalendarBookings(staffActor(), { from: '2026-08-01T00:00:00.000Z', to: '2026-08-10T00:00:01.000Z' }).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('RANGE_TOO_WIDE');
+    expect(bookingFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts an EXACT 8-day range (boundary, not RANGE_TOO_WIDE)', async () => {
+    bookingFindMany.mockResolvedValue([]);
+    await expect(
+      listCalendarBookings(staffActor(), { from: '2026-08-01T00:00:00.000Z', to: '2026-08-09T00:00:00.000Z' }),
+    ).resolves.toEqual([]);
+  });
+
+  it('uses the semi-open overlap predicate (startsAt < to AND endsAt > from)', async () => {
+    bookingFindMany.mockResolvedValue([]);
+
+    await listCalendarBookings(staffActor(), { from: FROM, to: TO });
+
+    expect(bookingFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { startsAt: { lt: new Date(TO) }, endsAt: { gt: new Date(FROM) } },
+      }),
+    );
+  });
+
+  it('a booking that ENDS exactly at `from` is EXCLUDED (semi-open)', async () => {
+    // `findMany` is mocked directly (not filtered in-memory), so this
+    // documents/asserts the WHERE clause sent to Prisma is exactly the
+    // semi-open predicate that would exclude such a row — the DB, not this
+    // test, performs the actual filtering (same convention as
+    // `listBookings`'s equivalent assertion above).
+    bookingFindMany.mockResolvedValue([]);
+    await listCalendarBookings(staffActor(), { from: FROM, to: TO });
+    const where = bookingFindManyMock.mock.calls[0]?.[0]?.where as { endsAt: { gt: Date } };
+    expect(new Date(FROM).getTime()).not.toBeGreaterThan(where.endsAt.gt.getTime());
+  });
+
+  it('orders by startsAt asc, id asc, with a take: 1000 safety bound (not pagination)', async () => {
+    bookingFindMany.mockResolvedValue([]);
+
+    await listCalendarBookings(staffActor(), { from: FROM, to: TO });
+
+    expect(bookingFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: [{ startsAt: 'asc' }, { id: 'asc' }], take: 1000 }),
+    );
+    // No `skip`/pagination args at all (Contesto: "un calendario non si pagina").
+    expect(bookingFindManyMock.mock.calls[0]?.[0]).not.toHaveProperty('skip');
+  });
+
+  it('reuses BOOKING_SELECT/toListItem — the DTO composes personName/instructorName', async () => {
+    bookingFindMany.mockResolvedValue([
+      { ...CREATED_BOOKING_ROW, instructorProfileId: 'instr_profile_1', instructorProfile: { person: { firstName: 'Livia', lastName: 'Bernasconi' } } },
+    ]);
+
+    const result = await listCalendarBookings(staffActor(), { from: FROM, to: TO });
+
+    expect(result[0]).toMatchObject({ personName: 'Mario Rossi', instructorName: 'Livia Bernasconi', aircraftRegistration: 'I-ABCD' });
+  });
+});
+
+describe('calendarBookingsQuerySchema (Story 7.2, Task 2)', () => {
+  it('accepts a valid from/to pair', () => {
+    expect(
+      calendarBookingsQuerySchema.safeParse({ from: '2026-08-01T00:00:00.000Z', to: '2026-08-02T00:00:00.000Z' }).success,
+    ).toBe(true);
+  });
+
+  it('rejects missing from/to', () => {
+    expect(calendarBookingsQuerySchema.safeParse({}).success).toBe(false);
+    expect(calendarBookingsQuerySchema.safeParse({ from: '2026-08-01T00:00:00.000Z' }).success).toBe(false);
+  });
+
+  it('rejects malformed from/to', () => {
+    expect(calendarBookingsQuerySchema.safeParse({ from: '2026-08-01', to: '2026-08-02T00:00:00.000Z' }).success).toBe(false);
+  });
+
+  it('rejects to <= from', () => {
+    expect(
+      calendarBookingsQuerySchema.safeParse({ from: '2026-08-02T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' }).success,
+    ).toBe(false);
+    expect(
+      calendarBookingsQuerySchema.safeParse({ from: '2026-08-01T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' }).success,
+    ).toBe(false);
+  });
+
+  it('compares from/to as instants, not strings (same N1 lesson as createBookingSchema)', () => {
+    const base = '2026-08-01T10:00:00';
+    expect(calendarBookingsQuerySchema.safeParse({ from: `${base}Z`, to: `${base}.500Z` }).success).toBe(true);
+    expect(calendarBookingsQuerySchema.safeParse({ from: `${base}.500Z`, to: `${base}Z` }).success).toBe(false);
   });
 });
 

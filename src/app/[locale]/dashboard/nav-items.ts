@@ -42,12 +42,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // service (`flights.service.ts#listFlights`) decide what each role sees.
   { key: 'flights', href: '/dashboard/flights', permissions: ['flights.manage', 'self.read'] },
   // Story 7.1: repointed the same way people/aircraft/finance/flights/
-  // expiries were in 2.1/2.4/3.3/5.4/6.2. Permissions unchanged for now —
-  // `bookings.manage.own` was removed from STUDENT in `rbac.ts` (school
-  // bookings are made by the instructor/staff), so an allievo alone no
-  // longer sees this item; the extension to every authenticated role
-  // (FR-19, calendar view) arrives in story 7.2.
-  { key: 'bookings', href: '/dashboard/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any'] },
+  // expiries were in 2.1/2.4/3.3/5.4/6.2. Story 7.2 (FR-19): reopened to
+  // every role via `self.read` — same pattern as `flights`/`expiries` in
+  // 5.4/6.2: the page itself (calendar + own-access list vs the
+  // `bookings.manage.*`-gated creation form) and the service decide what
+  // each role sees. An allievo alone therefore sees this item again (it
+  // shows the calendar/list, never the form).
+  { key: 'bookings', href: '/dashboard/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any', 'self.read'] },
   // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4.
   { key: 'finance', href: '/dashboard/finance', permissions: ['finance.manage'] },
   { key: 'school', href: '/school', permissions: ['school.manage.own'] },
