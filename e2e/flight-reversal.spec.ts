@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -17,6 +17,13 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Accedi' }).click();
   await expect(page).toHaveURL(/\/it\/dashboard$/);
+}
+
+/** Same `SearchCombobox` typeahead helper as `flights.spec.ts` (story TD-3) — velivolo/persona/istruttore. */
+async function selectFromCombobox(combobox: Locator, query: string, optionLabel: string): Promise<void> {
+  await combobox.click();
+  await combobox.fill(query);
+  await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
 /** Run-unique names (same pattern as the other specs, for the dirty DB). */
@@ -175,9 +182,9 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
 
     // Register a SCHOOL flight (60' — fully covered by the package) with an instructor.
     await page.goto('/it/dashboard/flights');
-    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
-    await page.getByLabel('Istruttore').selectOption({ label: `${instructor.lastName} ${instructor.firstName}` });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
     await page.getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
     await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Minuti', { exact: true }).fill('60');
@@ -189,11 +196,21 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-40,00\s€/);
 
     // Aircraft hour meter advanced by 60' (500 -> 560 = 9:20).
-    await page.goto('/it/dashboard/aircraft');
+    // Search-scoped: the fleet list is paginated 20/page ordered by
+    // registration, so on an accumulated DB this run's aircraft can sit past
+    // page 1 (same TD-1 T0 fix as flights.spec).
+    await page.goto(`/it/dashboard/aircraft?q=${encodeURIComponent(aircraft.registration)}`);
     await expect(page.getByRole('row', { name: new RegExp(aircraft.registration) })).toContainText('9:20');
 
-    // Cancel it with a reason.
+    // Cancel it with a reason. Scope the registry to this run's aircraft via
+    // the filter bar FIRST (TD-3 review D1): the unfiltered page 1 orders by
+    // flightDate desc with a 20-row cap, so on an accumulated DB recent-dated
+    // flights from other runs bury this 2020-dated row past the page. The
+    // filter change navigates and REMOUNTS the manager — settle on its URL
+    // effect before touching anything else (TD-3 review M1 lesson).
     await page.goto('/it/dashboard/flights');
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await expect(page).toHaveURL(/aircraftId=/);
     const flightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).first();
     await flightRow.getByTestId('flight-cancel-action').click();
     const cancelPanel = page.getByTestId('flight-cancel-panel');
@@ -220,7 +237,10 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(page.getByTestId('reversal-badge')).toBeVisible();
 
     // Aircraft hour meter reverted to 8:20 (560 - 60 = 500).
-    await page.goto('/it/dashboard/aircraft');
+    // Search-scoped: the fleet list is paginated 20/page ordered by
+    // registration, so on an accumulated DB this run's aircraft can sit past
+    // page 1 (same TD-1 T0 fix as flights.spec).
+    await page.goto(`/it/dashboard/aircraft?q=${encodeURIComponent(aircraft.registration)}`);
     await expect(page.getByRole('row', { name: new RegExp(aircraft.registration) })).toContainText('8:20');
 
     // Package residuo restored to 1:00 (no more "Usati" note).
@@ -230,7 +250,10 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(packageRow).not.toContainText('Usati');
 
     // A second cancel attempt on the same flight is a 409 AD-8 envelope.
-    const flightsResponse = await page.request.get('/api/v1/flights?page=1&pageSize=20');
+    // Scoped to this run's aircraft (TD-3 review D1 class): an UNSCOPED page 1
+    // is ordered by flightDate desc, so other runs' recent-dated flights bury
+    // this 2020-dated one past the page on an accumulated DB.
+    const flightsResponse = await page.request.get(`/api/v1/flights?page=1&pageSize=20&aircraftId=${aircraft.id}`);
     const flightsBody = (await flightsResponse.json()) as { items: { id: string; status: string; aircraft: { registration: string } }[] };
     const cancelledFlight = flightsBody.items.find((item) => item.aircraft.registration === aircraft.registration && item.status === 'CANCELLED');
     expect(cancelledFlight).toBeDefined();
@@ -242,9 +265,14 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     expect(secondCancelBody.error.code).toBe('CONFLICT');
 
     // A second (independent) 60' flight consumes the SAME (now-restored) package fully again, no instructor this time.
+    // Same run-unique registry scoping as above (TD-3 review D1/M1): filter by
+    // this run's aircraft and settle BEFORE using the form, so the '2020-01-02'
+    // row lookups below cannot be buried by other runs' recent-dated flights.
     await page.goto('/it/dashboard/flights');
-    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await expect(page).toHaveURL(/aircraftId=/);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-02');
     await page.getByLabel('Minuti', { exact: true }).fill('60');
     await page.getByRole('button', { name: 'Registra volo' }).click();

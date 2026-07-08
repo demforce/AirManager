@@ -20,6 +20,17 @@ function isForeignKeyViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2003';
 }
 
+/**
+ * Prisma "record not found" on write (story TD-1, AC 1) — the loser of a
+ * concurrent double-DELETE race: both requests pass the `findUnique`
+ * pre-check (the row still exists at that instant), one wins the `DELETE`,
+ * and the other's `DELETE` then hits a row that is already gone. Maps to the
+ * SAME 404 the pre-check itself would have produced, never a raw 500.
+ */
+function isRecordNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2025';
+}
+
 // --- Categories (Task 1, AC 1) ---------------------------------------------
 
 /**
@@ -203,6 +214,10 @@ export async function deleteCashCategory(actor: Actor, id: string): Promise<void
     if (isForeignKeyViolation(error)) {
       throw new ConflictError('This category has recorded movements — deactivate it instead of deleting it.');
     }
+    if (isRecordNotFound(error)) {
+      // Concurrent double-DELETE race (TD-1, AC 1): the other request won.
+      throw new NotFoundError('Cash category not found.');
+    }
     throw error;
   }
 }
@@ -343,10 +358,11 @@ export async function recordCashMovement(actor: Actor, input: RecordCashMovement
  *  - it already has a linked storno (`hasReversal`) — pre-checked here and
  *    backstopped by the `@unique` constraint (`P2002` race → the same
  *    `ConflictError`);
- *  - it is the automatic twin of a top-up (`accountMovementId != null`) —
- *    correcting those goes through the account rettifica (story 3.3) only,
- *    never the cash register directly (Dev Notes: otherwise conto and
- *    cassa diverge).
+ *  - it is the automatic twin of an account movement (`accountMovementId !=
+ *    null` — a top-up, story 3.1, OR a package purchase, story 4.4: both
+ *    create a linked `CashMovement`) — correcting those goes through the
+ *    account rettifica (story 3.3) only, never the cash register directly
+ *    (Dev Notes: otherwise conto and cassa diverge).
  * `effectiveDate` is always today (server clock, UTC calendar date) — same
  * choice as `recordAdjustment` (story 3.3): a storno is dated when it is
  * recorded, never backdated to the original's date.
@@ -369,7 +385,13 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
     throw new NotFoundError('Cash movement not found.');
   }
   if (original.accountMovementId !== null) {
-    throw new ConflictError('This is an automatic top-up movement — correct it via the account rettifica, not the cash register.');
+    // Generalized wording (TD-1, AC 6): this guard already covered EVERY
+    // automatic twin (top-up AND package-purchase, both set
+    // `accountMovementId`) — the message used to say "top-up" specifically,
+    // which was misleading for the other case.
+    throw new ConflictError(
+      'This movement is the automatic twin of an account movement — correct it via the account rettifica, not the cash register.',
+    );
   }
   if (original.reversalOfId !== null) {
     throw new ConflictError('A reversal cannot itself be reversed.');
@@ -429,15 +451,19 @@ export async function listCashMovements(actor: Actor, query: ListCashMovementsQu
     ...(query.sign === 'in' ? { amountCents: { gt: 0 } } : query.sign === 'out' ? { amountCents: { lt: 0 } } : {}),
   };
 
-  const [items, total] = await prisma.$transaction([
-    prisma.cashMovement.findMany({
+  // Interactive transaction (story TD-1, AC 3) — see
+  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
+  // `pg` DeprecationWarning rationale.
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.cashMovement.findMany({
       select: CASH_MOVEMENT_SELECT,
       where,
       orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       ...paginationOffset(query),
-    }),
-    prisma.cashMovement.count({ where }),
-  ]);
+    });
+    const total = await tx.cashMovement.count({ where });
+    return [items, total] as const;
+  });
 
   return paginate(items.map(toMovementListItem), total, query);
 }

@@ -656,7 +656,8 @@
       "historyPrevious": "Prima",
       "historyNew": "Dopo",
       "historyDelta": "Delta",
-      "historyReason": "Motivo"
+      "historyReason": "Motivo",
+      "loadMore": "Carica altri"
     },
     "ratesPanel": {
       "title": "Tariffe",
@@ -698,6 +699,8 @@
     "titleOwn": "I miei voli",
     "descriptionOwn": "Il tuo registro voli personale, storico completo incluso.",
     "backToDashboard": "Torna alla dashboard",
+    "searchPlaceholder": "Cerca...",
+    "noResults": "Nessun risultato.",
     "form": {
       "title": "Registra volo",
       "aircraft": "Velivolo",
@@ -1074,8 +1077,9 @@
     "expiryDigest": {
       "subject": "Riepilogo alert scadenze",
       "intro": "Sono stati inviati i seguenti alert di scadenza:",
-      "itemLine": "- {name} — {typeName}: {daysPhrase} (il {date}){noEmailFlag}",
-      "noEmailFlag": " [senza email — contattare la persona direttamente]"
+      "itemLine": "- {name} — {typeName}: {daysPhrase} (il {date}){flag}",
+      "noEmailFlag": " [senza email — contattare la persona direttamente]",
+      "sendFailedFlag": " [invio email fallito — verificare l'indirizzo o riprovare]"
     }
   }
 }

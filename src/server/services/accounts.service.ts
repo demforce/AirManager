@@ -143,20 +143,23 @@ export async function getAccountOverview(actor: Actor, personId: string): Promis
  * committed and then a 403 on the response.
  */
 async function buildOverview(account: { id: string; createdAt: Date }): Promise<AccountOverview> {
-  const [aggregate, recent] = await prisma.$transaction([
-    prisma.accountMovement.aggregate({
+  // Interactive transaction (story TD-1, AC 3) — see `people.service.ts#listPeople`'s
+  // doc-comment for the batch-vs-interactive `pg` DeprecationWarning rationale.
+  const [aggregate, recent] = await prisma.$transaction(async (tx) => {
+    const aggregate = await tx.accountMovement.aggregate({
       where: { accountId: account.id },
       _sum: { amountCents: true },
-    }),
-    prisma.accountMovement.findMany({
+    });
+    const recent = await tx.accountMovement.findMany({
       where: { accountId: account.id },
       select: RECENT_MOVEMENT_SELECT,
       // `id` as tie-break: same-millisecond `createdAt` (batch imports/seeds)
       // must not make the preview order non-deterministic (review 3.1 F3).
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: RECENT_MOVEMENTS_LIMIT,
-    }),
-  ]);
+    });
+    return [aggregate, recent] as const;
+  });
 
   return {
     account,
@@ -347,17 +350,20 @@ export async function listAccountMovements(
 
   const includeActor = hasPermission(actor, 'people.read');
   const where = { accountId: account.id };
-  const [items, total] = await prisma.$transaction([
-    prisma.accountMovement.findMany({
+  // Interactive transaction (story TD-1, AC 3) — see `buildOverview`'s
+  // doc-comment above for the batch-vs-interactive `pg` DeprecationWarning rationale.
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.accountMovement.findMany({
       select: ACCOUNT_STATEMENT_SELECT,
       where,
       // `id` tie-break: same-millisecond rows (batch imports/seeds) must not
       // make the page order non-deterministic (same pattern as `buildOverview`, review 3.1 F3).
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       ...paginationOffset(query),
-    }),
-    prisma.accountMovement.count({ where }),
-  ]);
+    });
+    const total = await tx.accountMovement.count({ where });
+    return [items, total] as const;
+  });
 
   return paginate(
     items.map((item) => toStatementItem(item, includeActor)),
@@ -514,10 +520,17 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
     // different account is reported exactly like an unknown one.
     const original = await prisma.accountMovement.findUnique({
       where: { id: originalMovementId },
-      select: { id: true, accountId: true, reversal: { select: { id: true } } },
+      select: { id: true, accountId: true, type: true, reversal: { select: { id: true } } },
     });
     if (!original || original.accountId !== account.id) {
       throw new NotFoundError('Movement not found.');
+    }
+    if (original.type === 'PACKAGE_PURCHASE') {
+      // TD-1, AC 6: a PACKAGE_PURCHASE row is a zero-amount marker (story
+      // 4.4) — the real payment is external to the account, so there is
+      // nothing here for a rettifica to correct. Correcting a wrong sale
+      // goes through the cash register instead.
+      throw new ConflictError('A package purchase is a zero-amount marker — correct the sale on the cash register instead.');
     }
     if (original.reversal) {
       throw new ConflictError('This movement already has a linked adjustment.');

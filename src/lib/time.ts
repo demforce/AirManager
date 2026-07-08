@@ -70,3 +70,28 @@ export function formatDateTime(date: Date, locale: 'it' | 'en' = 'it'): string {
     hour12: false,
   }).format(date);
 }
+
+/**
+ * Formats a `YYYY-MM-DD` date-only string (the wire shape for `@db.Date`
+ * columns, e.g. `HourPackage.expiresAt`) as `DD/MM/YYYY`, locale-aware —
+ * story TD-1, AC 7: `PackagesPanel` was showing the raw ISO string. Parses
+ * the string as UTC-midnight (same `date-only.ts` discipline as the server
+ * side, review 3.5 F1's lesson) so no client timezone can shift the
+ * calendar day, then formats with `timeZone: 'UTC'` for the same reason —
+ * the numeric `2-digit`/`numeric` shape mirrors `formatDateTime`'s date
+ * portion, just without the time-of-day. Deviation note: no existing
+ * client-side date-only display helper was found to reuse (`ExpiriesPanel`/
+ * `AccountStatementTable` also render their date-only strings raw today) —
+ * this is a new, narrowly-scoped helper, not a retrofit of those other
+ * surfaces (out of this AC's list).
+ */
+export function formatDateOnly(dateOnly: string, locale: 'it' | 'en' = 'it'): string {
+  const [year, month, day] = dateOnly.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return new Intl.DateTimeFormat(locale === 'it' ? 'it-IT' : 'en-IE', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}

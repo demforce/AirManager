@@ -4,7 +4,7 @@ import type { AppLocale } from '@/i18n/routing';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listAircraft } from '@/server/services/aircraft.service';
-import { getEffectiveRate, todayDateOnlyUtc } from '@/server/services/rates.service';
+import { getEffectiveRates, todayDateOnlyUtc } from '@/server/services/rates.service';
 import { AircraftManager } from './aircraft-manager';
 
 type PageProps = {
@@ -41,13 +41,15 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
 
   const aircraftResult = await listAircraft(actor, { page, pageSize: PAGE_SIZE, q, includeArchived });
 
-  // Story 4.1, AD-4: the hourly rate in effect TODAY for each row of the
-  // current page — small (page size 20), so N `getEffectiveRate` calls (each
-  // just a permission check + a single indexed query) beats inventing a
-  // batch function the story's Dev Notes never asked for.
+  // Story 4.1, AD-4 (batched story TD-1, AC 4): the hourly rate in effect
+  // TODAY for every row of the current page — ONE query via
+  // `getEffectiveRates`, not N `getEffectiveRate` calls (the N+1 4.1's
+  // review flagged as a follow-up).
   const today = todayDateOnlyUtc();
-  const currentRates = await Promise.all(
-    aircraftResult.items.map((item) => getEffectiveRate(actor, item.id, today)),
+  const currentRatesById = await getEffectiveRates(
+    actor,
+    aircraftResult.items.map((item) => item.id),
+    today,
   );
 
   const t = await getTranslations('AircraftPage');
@@ -84,7 +86,7 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
 
         <div className="mt-10">
           <AircraftManager
-            aircraft={aircraftResult.items.map((aircraft, index) => ({
+            aircraft={aircraftResult.items.map((aircraft) => ({
               id: aircraft.id,
               registration: aircraft.registration,
               type: aircraft.type,
@@ -94,7 +96,7 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
               status: aircraft.status,
               statusReason: aircraft.statusReason,
               archivedAt: aircraft.archivedAt ? aircraft.archivedAt.toISOString() : null,
-              currentRatePriceCentsPerHour: currentRates[index]?.priceCentsPerHour ?? null,
+              currentRatePriceCentsPerHour: currentRatesById.get(aircraft.id)?.priceCentsPerHour ?? null,
             }))}
             initialQuery={q ?? ''}
             initialIncludeArchived={includeArchived}
@@ -183,6 +185,7 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
                 historyNew: t('hourMeterPanel.historyNew'),
                 historyDelta: t('hourMeterPanel.historyDelta'),
                 historyReason: t('hourMeterPanel.historyReason'),
+                loadMore: t('hourMeterPanel.loadMore'),
               },
               ratesPanel: {
                 title: t('ratesPanel.title'),

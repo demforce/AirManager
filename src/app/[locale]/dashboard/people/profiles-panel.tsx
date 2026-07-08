@@ -272,7 +272,11 @@ function PilotSection({ personId, profile, labels, onSaved, readOnly }: PilotSec
               {errors.licenseType ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errors.requiredField}</p> : null}
             </div>
           </div>
-          {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+          {formError ? (
+            <p role="alert" className="text-sm text-[#9F2F2D]">
+              {formError}
+            </p>
+          ) : null}
           <div className="flex gap-3">
             <button
               type="submit"
@@ -299,7 +303,11 @@ function PilotSection({ personId, profile, labels, onSaved, readOnly }: PilotSec
           ) : (
             <span />
           )}
-          {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+          {formError ? (
+            <p role="alert" className="text-sm text-[#9F2F2D]">
+              {formError}
+            </p>
+          ) : null}
           {confirmingDeactivate ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-[#787774]">{labels.actions.confirmDeactivate}</span>
@@ -432,7 +440,11 @@ function StudentSection({ personId, profile, labels, onSaved, readOnly }: Studen
             />
             {errors.courseStartDate ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errors.requiredField}</p> : null}
           </div>
-          {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+          {formError ? (
+            <p role="alert" className="text-sm text-[#9F2F2D]">
+              {formError}
+            </p>
+          ) : null}
           <div className="flex gap-3">
             <button
               type="submit"
@@ -459,7 +471,11 @@ function StudentSection({ personId, profile, labels, onSaved, readOnly }: Studen
           ) : (
             <span />
           )}
-          {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+          {formError ? (
+            <p role="alert" className="text-sm text-[#9F2F2D]">
+              {formError}
+            </p>
+          ) : null}
           {confirmingDeactivate ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-[#787774]">{labels.actions.confirmDeactivate}</span>
@@ -585,7 +601,11 @@ function InstructorSection({ personId, profile, labels, onSaved, readOnly }: Ins
             />
             {errors.ratings ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errors.requiredField}</p> : null}
           </div>
-          {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+          {formError ? (
+            <p role="alert" className="text-sm text-[#9F2F2D]">
+              {formError}
+            </p>
+          ) : null}
           <div className="flex gap-3">
             <button
               type="submit"
@@ -606,7 +626,11 @@ function InstructorSection({ personId, profile, labels, onSaved, readOnly }: Ins
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-4">
           {profile ? <p className="text-sm text-[#2F3437]">{profile.ratings}</p> : <span />}
-          {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+          {formError ? (
+            <p role="alert" className="text-sm text-[#9F2F2D]">
+              {formError}
+            </p>
+          ) : null}
           {confirmingDeactivate ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-[#787774]">{labels.actions.confirmDeactivate}</span>

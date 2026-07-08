@@ -164,15 +164,19 @@ export async function listAircraft(actor: Actor, query: ListAircraftQuery): Prom
       : {}),
   };
 
-  const [items, total] = await prisma.$transaction([
-    prisma.aircraft.findMany({
+  // Interactive transaction (story TD-1, AC 3) — see
+  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
+  // `pg` DeprecationWarning rationale.
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.aircraft.findMany({
       where,
       select: AIRCRAFT_SELECT,
       orderBy: [{ registration: 'asc' }],
       ...paginationOffset(query),
-    }),
-    prisma.aircraft.count({ where }),
-  ]);
+    });
+    const total = await tx.aircraft.count({ where });
+    return [items, total] as const;
+  });
 
   return paginate(items.map(toListItem), total, query);
 }
@@ -434,15 +438,19 @@ export async function listHourMeterAdjustments(
   }
 
   const where = { aircraftId };
-  const [items, total] = await prisma.$transaction([
-    prisma.hourMeterAdjustment.findMany({
+  // Interactive transaction (story TD-1, AC 3) — see
+  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
+  // `pg` DeprecationWarning rationale.
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.hourMeterAdjustment.findMany({
       where,
       select: HOUR_METER_ADJUSTMENT_SELECT,
       orderBy: [{ createdAt: 'desc' }],
       ...paginationOffset(query),
-    }),
-    prisma.hourMeterAdjustment.count({ where }),
-  ]);
+    });
+    const total = await tx.hourMeterAdjustment.count({ where });
+    return [items, total] as const;
+  });
 
   return paginate(items.map(toAdjustmentListItem), total, query);
 }

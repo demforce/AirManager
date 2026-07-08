@@ -124,6 +124,8 @@ type Labels = {
     historyNew: string;
     historyDelta: string;
     historyReason: string;
+    /** Story TD-1, AC 11 — "Carica altri", shown when more rows exist beyond the loaded page. */
+    loadMore: string;
   };
   ratesPanel: {
     title: string;
@@ -922,16 +924,25 @@ type HourMeterAdjustmentPanelProps = {
   onSuccess: (message: string) => void;
 };
 
+/** Page size for the adjustment history, and for each subsequent "Carica altri" page (story 2.5 default, "load more" story TD-1 AC 11). */
+const HOUR_METER_HISTORY_PAGE_SIZE = 50;
+
 /**
  * "Rettifica contaore" panel (story 2.5, AC 2): current value, a new-value
  * input with a live `H:MM`/delta preview, a mandatory reason, and — below
  * the form — the append-only adjustment history (fetched once per mount,
  * i.e. per `key={aircraft.id}` remount, same rationale as `EditAircraftForm`
- * — never a per-row fetch, only when this panel is actually open).
+ * — never a per-row fetch, only when this panel is actually open). Story
+ * TD-1, AC 11: the first page (50 rows) loads as before; a "Carica altri"
+ * button appears whenever more rows exist (`history.length < historyTotal`)
+ * and appends the next page on click — no virtualization, no redesign.
  */
 function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: HourMeterAdjustmentPanelProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [history, setHistory] = useState<HourMeterAdjustmentListItemDto[] | null>(null);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
   // Local mirror for the live H:MM/delta preview — same rationale as the
   // create/edit forms' `hourMeterMinutes` mirror (avoids a second React
   // Compiler "incompatible library" warning on top of data-table.tsx's).
@@ -952,20 +963,36 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
   useEffect(() => {
     let cancelled = false;
     async function loadHistory(): Promise<void> {
-      const response = await fetch(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments?pageSize=50`);
+      const response = await fetch(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments?pageSize=${HOUR_METER_HISTORY_PAGE_SIZE}`);
       if (cancelled) return;
       if (!response.ok) {
         setHistory([]);
         return;
       }
-      const body = (await response.json()) as { items: HourMeterAdjustmentListItemDto[] };
+      const body = (await response.json()) as { items: HourMeterAdjustmentListItemDto[]; total: number };
       setHistory(body.items);
+      setHistoryTotal(body.total);
+      setHistoryPage(1);
     }
     void loadHistory();
     return () => {
       cancelled = true;
     };
   }, [aircraft.id]);
+
+  async function handleLoadMore(): Promise<void> {
+    const nextPage = historyPage + 1;
+    setLoadingMore(true);
+    const response = await fetch(
+      `/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments?pageSize=${HOUR_METER_HISTORY_PAGE_SIZE}&page=${nextPage}`,
+    );
+    setLoadingMore(false);
+    if (!response.ok) return;
+    const body = (await response.json()) as { items: HourMeterAdjustmentListItemDto[]; total: number };
+    setHistory((current) => [...(current ?? []), ...body.items]);
+    setHistoryTotal(body.total);
+    setHistoryPage(nextPage);
+  }
 
   async function onSubmit(values: CreateHourMeterAdjustmentInput): Promise<void> {
     setFormError(null);
@@ -1089,6 +1116,17 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
                 ))}
               </tbody>
             </table>
+            {history.length < historyTotal ? (
+              <button
+                type="button"
+                onClick={() => void handleLoadMore()}
+                disabled={loadingMore}
+                data-testid="hour-meter-history-load-more"
+                className="mt-3 rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {labels.hourMeterPanel.loadMore}
+              </button>
+            ) : null}
           </div>
         )}
       </div>

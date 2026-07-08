@@ -656,7 +656,8 @@
       "historyPrevious": "Before",
       "historyNew": "After",
       "historyDelta": "Delta",
-      "historyReason": "Reason"
+      "historyReason": "Reason",
+      "loadMore": "Load more"
     },
     "ratesPanel": {
       "title": "Rates",
@@ -698,6 +699,8 @@
     "titleOwn": "My flights",
     "descriptionOwn": "Your personal flight log, including cancelled flights.",
     "backToDashboard": "Back to dashboard",
+    "searchPlaceholder": "Search...",
+    "noResults": "No matches.",
     "form": {
       "title": "Log a flight",
       "aircraft": "Aircraft",
@@ -1074,8 +1077,9 @@
     "expiryDigest": {
       "subject": "Expiry alert summary",
       "intro": "The following expiry alerts were sent:",
-      "itemLine": "- {name} — {typeName}: {daysPhrase} (on {date}){noEmailFlag}",
-      "noEmailFlag": " [no email on file — contact them directly]"
+      "itemLine": "- {name} — {typeName}: {daysPhrase} (on {date}){flag}",
+      "noEmailFlag": " [no email on file — contact them directly]",
+      "sendFailedFlag": " [email delivery failed — check the address or retry]"
     }
   }
 }

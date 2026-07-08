@@ -38,6 +38,18 @@ async function createPerson(page: Page, person: { firstName: string; lastName: s
   await page.getByLabel('Email', { exact: true }).fill(person.email);
   await page.getByRole('button', { name: 'Crea persona' }).click();
   await expect(page.getByTestId('people-feedback')).toBeVisible();
+  // T0 hardening: filter by this test's own run-unique lastName instead of
+  // assuming the row lands on the default page 1 — root-caused empirically
+  // (same class as `flights.spec.ts`'s aircraft-list fix): `/dashboard/people`
+  // is paginated 20/page ordered by `lastName asc`, and every test person's
+  // lastName embeds an ever-increasing timestamp (`Test-<Date.now()>-...`),
+  // so a freshly created person always sorts toward the END of that order
+  // and is reliably ABSENT from page 1 once enough accumulated test data
+  // exists — no amount of waiting fixes that, the row genuinely isn't on
+  // that page. Searching (`?q=`, `people.service.ts`'s server-side filter)
+  // guarantees it's the only row on the result page regardless of volume.
+  await page.goto(`/it/dashboard/people?q=${encodeURIComponent(person.lastName)}`);
+  await expect(page.getByRole('row', { name: new RegExp(person.lastName) })).toBeVisible();
 }
 
 test.describe('People CRUD with archiving (Story 2.1)', () => {
@@ -73,6 +85,12 @@ test.describe('People CRUD with archiving (Story 2.1)', () => {
     const person = uniquePerson('Sara');
     await createPerson(page, person);
 
+    // `createPerson` already left the page on `?q=<lastName>` (T0 hardening,
+    // see its own comment) — every navigation below preserves that filter
+    // (client state seeded from `initialQuery`, `people-manager.tsx`), so
+    // every row lookup that follows stays volume-independent: the search
+    // narrows the result to this test's own person regardless of how many
+    // OTHER people exist in the (unresettable, ever-growing) e2e database.
     const row = page.getByRole('row', { name: new RegExp(person.lastName) });
     await row.getByRole('button', { name: 'Archivia' }).click();
     await row.getByRole('button', { name: 'Conferma' }).click();
@@ -83,8 +101,8 @@ test.describe('People CRUD with archiving (Story 2.1)', () => {
     // before the request reaches the server.
     await expect(row).toHaveCount(0);
 
-    // Fresh navigation: still gone from the default list.
-    await page.goto('/it/dashboard/people');
+    // Fresh navigation, same `?q=` filter: still gone from the default list.
+    await page.goto(`/it/dashboard/people?q=${encodeURIComponent(person.lastName)}`);
     await expect(page.getByRole('row', { name: new RegExp(person.lastName) })).toHaveCount(0);
 
     // With the archived filter: still there, and shown as archived.

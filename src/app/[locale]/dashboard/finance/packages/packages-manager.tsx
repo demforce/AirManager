@@ -538,7 +538,11 @@ function PackageTypeForm({ packageType, activeAircraft, labels, onCancel, onSucc
         )}
       </fieldset>
 
-      {formError ? <p data-testid="package-type-form-error" className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+      {formError ? (
+        <p role="alert" data-testid="package-type-form-error" className="text-sm text-[#9F2F2D]">
+          {formError}
+        </p>
+      ) : null}
 
       <div className="flex gap-3">
         <button

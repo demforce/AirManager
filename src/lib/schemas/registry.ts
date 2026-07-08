@@ -149,6 +149,28 @@ const bearerAuth = registry.registerComponent('securitySchemes', 'bearerAuth', {
 
 const jobsSecurity = [{ [bearerAuth.name]: [] }];
 
+/**
+ * Reusable `Idempotency-Key` request header (story TD-2, AC 7) — registered
+ * once and referenced (`headers: [idempotencyKeyHeader]`) on the 5
+ * money-mutating POSTs `src/lib/api/handler.ts`'s `idempotency` option
+ * covers. Optional (opt-in, AC 3): a request without it behaves exactly as
+ * before.
+ */
+const idempotencyKeyHeader = registry.registerParameter(
+  'IdempotencyKey',
+  z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .openapi({
+      param: { name: 'Idempotency-Key', in: 'header' },
+      description:
+        'Opt-in replay-safe key for this request (1-200 chars, e.g. a UUID). A retry with the SAME key replays the first response (`Idempotency-Replayed: true`) instead of re-executing the mutation; a concurrent request with the same key gets 409 `IDEMPOTENCY_IN_PROGRESS`.',
+      example: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+    }),
+);
+
 // Named component schemas — nicer `$ref`s in the generated document than
 // inlining every shape at every path.
 registry.register('Error', errorEnvelopeSchema);
@@ -479,13 +501,13 @@ registry.registerPath({
   path: '/api/v1/people/{id}/account/top-ups',
   summary: 'Record a prepaid-account top-up',
   description:
-    'Append-only (AD-3, story 3.1, AC 2/3) — in one transaction, upserts the `Account`, creates an immutable `AccountMovement` (TOP_UP) and its automatic `CashMovement` twin under the seeded "Ricariche" category. There is no update/delete endpoint for either ledger. Requires `finance.manage` (staff/admin) — never "own".',
+    'Append-only (AD-3, story 3.1, AC 2/3) — in one transaction, upserts the `Account`, creates an immutable `AccountMovement` (TOP_UP) and its automatic `CashMovement` twin under the seeded "Ricariche" category. There is no update/delete endpoint for either ledger. Requires `finance.manage` (staff/admin) — never "own". Accepts the opt-in `Idempotency-Key` header (story TD-2).',
   tags: ['Accounts'],
   security,
-  request: { params: personIdParams, body: { content: jsonContent(recordTopUpSchema), required: true } },
+  request: { params: personIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(recordTopUpSchema), required: true } },
   responses: {
     200: { description: 'The account overview, refreshed after the top-up.', content: jsonContent(accountOverviewSchema) },
-    ...errorResponses(401, 403, 404, 422),
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 
@@ -509,10 +531,10 @@ registry.registerPath({
   path: '/api/v1/people/{id}/account/adjustments',
   summary: 'Record a motivated adjustment (rettifica) on a person\'s account',
   description:
-    'Append-only (AD-3, story 3.3, AC 1) — creates a NEW, independent `AccountMovement` (`ADJUSTMENT`); the original movement is never touched. `originalMovementId`, when given, links this adjustment to the movement it corrects and must belong to the same account (404 otherwise, never revealing another account\'s movement) and must not already have a linked adjustment (409). Triggers the negative-balance alert email (AC 2/3) when the balance band worsens. Requires `finance.manage` — never "own".',
+    'Append-only (AD-3, story 3.3, AC 1) — creates a NEW, independent `AccountMovement` (`ADJUSTMENT`); the original movement is never touched. `originalMovementId`, when given, links this adjustment to the movement it corrects and must belong to the same account (404 otherwise, never revealing another account\'s movement) and must not already have a linked adjustment (409). Triggers the negative-balance alert email (AC 2/3) when the balance band worsens. Requires `finance.manage` — never "own". Accepts the opt-in `Idempotency-Key` header (story TD-2).',
   tags: ['Accounts'],
   security,
-  request: { params: personIdParams, body: { content: jsonContent(recordAdjustmentSchema), required: true } },
+  request: { params: personIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(recordAdjustmentSchema), required: true } },
   responses: {
     200: { description: 'The account overview, refreshed after the adjustment.', content: jsonContent(accountOverviewSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
@@ -569,10 +591,10 @@ registry.registerPath({
   path: '/api/v1/people/{id}/packages',
   summary: 'Sell an hour package to a person (FR-13)',
   description:
-    'Story 4.4, AC 1 — in one transaction: upserts the `Account`, creates the `PACKAGE_PURCHASE` `AccountMovement` (always `amountCents: 0` — the payment is external to the account, see `HourPackage`\'s doc-comment), the `HourPackage` snapshot (`includedMinutes`/`pricePaidCents` copied from the type, `expiresAt` materialized from `validityMonths` when present) and the linked `CashMovement` under the seeded "Pacchetti" category (`amountCents: +priceCents`). `packageTypeId` must reference an ACTIVE type (409 otherwise); an archived person is also a 409. Requires `finance.manage` (staff/admin) — an operazione di sportello, never "own".',
+    'Story 4.4, AC 1 — in one transaction: upserts the `Account`, creates the `PACKAGE_PURCHASE` `AccountMovement` (always `amountCents: 0` — the payment is external to the account, see `HourPackage`\'s doc-comment), the `HourPackage` snapshot (`includedMinutes`/`pricePaidCents` copied from the type, `expiresAt` materialized from `validityMonths` when present) and the linked `CashMovement` under the seeded "Pacchetti" category (`amountCents: +priceCents`). `packageTypeId` must reference an ACTIVE type (409 otherwise); an archived person is also a 409. Requires `finance.manage` (staff/admin) — an operazione di sportello, never "own". Accepts the opt-in `Idempotency-Key` header (story TD-2).',
   tags: ['Finance'],
   security,
-  request: { params: personIdParams, body: { content: jsonContent(sellPackageSchema), required: true } },
+  request: { params: personIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(sellPackageSchema), required: true } },
   responses: {
     201: { description: 'The created package, plus the refreshed account overview.', content: jsonContent(sellPackageResponseSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
@@ -705,10 +727,10 @@ registry.registerPath({
   path: '/api/v1/cash-movements',
   summary: 'Record a manual cash movement (entrata or uscita)',
   description:
-    'Append-only (AD-3, story 3.4, AC 2): there is no update/delete endpoint — corrections go through `POST /api/v1/cash-movements/{id}/reverse`. The category must exist and be active (409 if deactivated). `amountCents` is SIGNED: positive = entrata, negative = uscita. Requires `finance.manage`.',
+    'Append-only (AD-3, story 3.4, AC 2): there is no update/delete endpoint — corrections go through `POST /api/v1/cash-movements/{id}/reverse` (NOT idempotency-key-protected, already covered by `reversalOfId`). The category must exist and be active (409 if deactivated). `amountCents` is SIGNED: positive = entrata, negative = uscita. Requires `finance.manage`. Accepts the opt-in `Idempotency-Key` header (story TD-2).',
   tags: ['Cash'],
   security,
-  request: { body: { content: jsonContent(recordCashMovementSchema), required: true } },
+  request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(recordCashMovementSchema), required: true } },
   responses: {
     201: { description: 'The recorded movement.', content: jsonContent(cashMovementItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
@@ -831,13 +853,13 @@ registry.registerPath({
   path: '/api/v1/flights',
   summary: 'Register a flight and its automatic charge (FR-9/FR-14/FR-15)',
   description:
-    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`), the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block), and advances `Aircraft.hourMeterMinutes` by the flight\'s minutes. Exactly one of `minutes` or the `hourMeterStart`/`hourMeterEnd` pair must be given. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid hour-meter pair, a SCHOOL flight without an instructor, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Requires `flights.manage` (FR-14: only staff/admin register a flight).',
+    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`), the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block), and advances `Aircraft.hourMeterMinutes` by the flight\'s minutes. Exactly one of `minutes` or the `hourMeterStart`/`hourMeterEnd` pair must be given. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid hour-meter pair, a SCHOOL flight without an instructor, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Requires `flights.manage` (FR-14: only staff/admin register a flight). Accepts the opt-in `Idempotency-Key` header (story TD-2) — NOT `/flights/{id}/cancel`/`/correct`, already protected by `reversalOfId`.',
   tags: ['Flights'],
   security,
-  request: { body: { content: jsonContent(registerFlightSchema), required: true } },
+  request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(registerFlightSchema), required: true } },
   responses: {
     201: { description: 'The registered flight, plus the refreshed account overview.', content: jsonContent(registerFlightResponseSchema) },
-    ...errorResponses(401, 403, 404, 422),
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 

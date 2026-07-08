@@ -22,7 +22,15 @@ type PageProps = {
   }>;
 };
 
-/** How many candidates the aircraft/person/instructor pickers load — same "small admin-managed list" cap as `packages/page.tsx`'s `activeAircraftResult`. */
+/**
+ * How many candidates the aircraft/person/instructor pickers SEED with —
+ * story TD-3 (AC 1): these are now only the `SearchCombobox`'s
+ * `initialOptions` (shown on focus with zero extra fetches, filtered
+ * client-side as an optimistic placeholder while typing), NOT the complete
+ * set — a query beyond this first page is answered by the pickers'
+ * server-side typeahead (`GET /api/v1/aircraft`/`GET /api/v1/people`'s `q`),
+ * never truncated silently (finding 5.4 D1, closed by this story).
+ */
 const OPTIONS_PAGE_SIZE = 100;
 
 /** The registry's own page size (story 5.4, NFR-6) — same convention as `FinancePage`'s cash register. */
@@ -106,12 +114,20 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
   let personFilterOptions: { id: string; firstName: string; lastName: string; archived: boolean }[] = [];
 
   if (canManage) {
-    // `includeArchived: true` on BOTH: the filter pickers need the full
-    // history (Dev Notes: "incl. archiviati per consultare lo storico") —
-    // the registration form's own pickers below filter back down to active
-    // only, so nothing archived is ever offered there (unchanged from 5.1).
+    // `includeArchived: true` on the FILTER sources: the filter pickers need
+    // the full history (Dev Notes: "incl. archiviati per consultare lo
+    // storico"). The FORM pickers' `initialOptions` instead come from the
+    // profile-filtered queries below (review TD-3 D2): deriving them from
+    // the first unfiltered page re-created the 5.4 D1 silent-miss class —
+    // if the first 100 people by lastName held zero active pilot/student,
+    // the person picker rendered disabled even though eligible people
+    // existed past the cap. With the profile-filtered query, page 1 is
+    // empty IFF the whole filtered set is empty, so the pickers' disabled
+    // gating (`options.length === 0`) is exact again.
     const aircraftResult = await listAircraft(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: true });
     const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: true });
+    const pilotStudentResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
+    const instructorResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'instructor', includeArchived: false });
 
     aircraftOptions = aircraftResult.items
       .filter((aircraft) => aircraft.archivedAt === null)
@@ -121,12 +137,8 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
       registration: aircraft.registration,
       archived: aircraft.archivedAt !== null,
     }));
-    personOptions = peopleResult.items
-      .filter((person) => person.archivedAt === null && (person.profiles.pilot || person.profiles.student))
-      .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
-    instructorOptions = peopleResult.items
-      .filter((person) => person.archivedAt === null && person.profiles.instructor)
-      .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+    personOptions = pilotStudentResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+    instructorOptions = instructorResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
     personFilterOptions = peopleResult.items.map((person) => ({
       id: person.id,
       firstName: person.firstName,
@@ -338,6 +350,10 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                 },
                 archivedSuffix: t('filters.archivedSuffix'),
                 reset: t('filters.reset'),
+              },
+              picker: {
+                placeholder: t('searchPlaceholder'),
+                noResults: t('noResults'),
               },
             }}
           />

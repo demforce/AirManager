@@ -210,7 +210,14 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     });
 
     it('excludes archived aircraft by default (AC 2)', async () => {
-      transaction.mockResolvedValue([[], 0]);
+      // Interactive-callback transaction (story TD-1, AC 3): opt into the
+      // interactive-callback stand-in (invokes the callback with `prisma`
+      // as `tx`, same as `adjustHourMeter`'s own tests already use) and mock
+      // `findMany`/`count` on their OWN mocks — a `transaction.mockResolvedValue(...)`
+      // override would skip invoking the callback entirely (never calling `findMany`).
+      mockInteractiveTransaction();
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
 
       await listAircraft(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
 
@@ -219,7 +226,9 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     });
 
     it('includes archived aircraft when includeArchived is true (AC 2)', async () => {
-      transaction.mockResolvedValue([[], 0]);
+      mockInteractiveTransaction();
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
 
       await listAircraft(staffActor(), { page: 1, pageSize: 20, includeArchived: true });
 
@@ -228,7 +237,9 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     });
 
     it('searches registration and model case-insensitively (AC 1)', async () => {
-      transaction.mockResolvedValue([[], 0]);
+      mockInteractiveTransaction();
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
 
       await listAircraft(staffActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'abcd' });
 
@@ -534,7 +545,16 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
     it('returns the AD-8 paginated shape, most recent first, with the joined actor email', async () => {
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
-      transaction.mockResolvedValue([[ADJUSTMENT], 1]);
+      // Interactive-callback transaction (story TD-1, AC 3): same
+      // `mockInteractiveTransaction()` stand-in `adjustHourMeter`'s own
+      // tests already use — invokes the callback with `prisma` as `tx`, so
+      // the underlying delegate mocks below must resolve directly (a
+      // `transaction.mockResolvedValue(...)` override would skip invoking
+      // the callback, so `hourMeterAdjustmentFindManyMock` would never be
+      // called).
+      mockInteractiveTransaction();
+      hourMeterAdjustmentFindManyMock.mockResolvedValue([ADJUSTMENT]);
+      hourMeterAdjustmentCountMock.mockResolvedValue(1);
 
       const result = await listHourMeterAdjustments(staffActor(), 'aircraft_1', { page: 1, pageSize: 20 });
 

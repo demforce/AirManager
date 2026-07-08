@@ -104,4 +104,33 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
   it('produces valid JSON (round-trips through JSON.stringify/parse)', () => {
     expect(() => JSON.parse(JSON.stringify(doc))).not.toThrow();
   });
+
+  describe('Idempotency-Key header (story TD-2, AC 7)', () => {
+    it('registers a reusable IdempotencyKey header component', () => {
+      const parameters = doc.components?.parameters as Record<string, { name?: string; in?: string }> | undefined;
+      expect(parameters?.['IdempotencyKey']).toMatchObject({ name: 'Idempotency-Key', in: 'header' });
+    });
+
+    it.each([
+      ['/api/v1/people/{id}/account/top-ups', 'post'],
+      ['/api/v1/people/{id}/account/adjustments', 'post'],
+      ['/api/v1/people/{id}/packages', 'post'],
+      ['/api/v1/flights', 'post'],
+      ['/api/v1/cash-movements', 'post'],
+    ] as const)('references the IdempotencyKey header on %s', (path, method) => {
+      const route = (doc.paths as Record<string, Record<string, { parameters?: Array<{ $ref?: string }> }>>)[path]?.[method];
+      const refs = (route?.parameters ?? []).map((param) => param.$ref);
+      expect(refs).toContain('#/components/parameters/IdempotencyKey');
+    });
+
+    it.each([
+      ['/api/v1/flights/{id}/cancel', 'post'],
+      ['/api/v1/flights/{id}/correct', 'post'],
+      ['/api/v1/cash-movements/{id}/reverse', 'post'],
+    ] as const)('does NOT reference it on the already-idempotent storno/correction endpoint %s (reversalOfId covers it)', (path, method) => {
+      const route = (doc.paths as Record<string, Record<string, { parameters?: Array<{ $ref?: string }> }>>)[path]?.[method];
+      const refs = (route?.parameters ?? []).map((param) => param.$ref);
+      expect(refs).not.toContain('#/components/parameters/IdempotencyKey');
+    });
+  });
 });
