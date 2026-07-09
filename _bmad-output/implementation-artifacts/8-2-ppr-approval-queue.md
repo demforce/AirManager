@@ -4,7 +4,7 @@ baseline_commit: e57e258
 
 # Story 8.2: Coda di approvazione PPR con email di esito
 
-Status: review
+Status: done
 
 ## Story
 
@@ -147,7 +147,23 @@ Sonnet 5 (single dev subagent, extra-high effort, via `bmad-dev-story`).
 - `messages/en.json`
 - `e2e/ppr-queue.spec.ts` (new)
 
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial via `bmad-code-review`, priorità zero sul full-suite e2e su DB fresco, lente `karpathy-guidelines` applicata. **Verdict: clean-pass — zero must-fix/should-fix, 1 nit lessicale.** Gate ri-eseguiti in proprio: lint 0 errori, typecheck pulito, **1033/1033 unit**, build verde, **e2e 145/145** su DB fresco — zero fail ambientali: i 10 fail aircraft/bookings del run del dev confermati come artefatti da inquinamento del DB di sessione, non regressioni.
+
+- **Matrice concorrenza provata dal vivo (cuore della story)**: doppia approvazione stesso id → un 200 + un 409 `PPR_ALREADY_DECIDED`, contatore +1 esatto (il perdente non brucia numeri); burst di 6 approvazioni parallele su id diversi → numeri distinti consecutivi senza buchi né duplicati (anche il curl caduto a livello harness ha lasciato la richiesta PENDING pulita, ri-approvata senza gap); approve-vs-reject stesso id → 1 vinto + 1 409; replay `Idempotency-Key` → stesso numero, contatore fermo, `Idempotency-Replayed: true`. Consistenza finale psql: `lastSeq` = numeri distinti = righe numerate = 13, 1:1 gapless.
+- **Boundary Capodanno pinnato**: 2026-12-31T23:30Z → `PPR-2027-0001` (anno Europe/Rome, non UTC).
+- **Email**: ogni placeholder ICU di `pprApproval`/`pprRejection` passato dai builder su ENTRAMBE le lingue (verifica programmatica — la classe di bug trovata dal dev è chiusa); approvazione IT con istruzioni IT nel body; approvazione EN con istruzioni EN vuote → sezione omessa pulita; motivo di rifiuto ostile (graffe letterali `{pprNumber}`, CRLF, `Bcc:`, `<script>`) → nessun crash ICU, nessuna header injection, testo inerte.
+- **Permessi**: GET senza cookie → 401 (il ragionamento sul bypass `PUBLIC_API_PATHS` regge: `apiRoute` + `authorize` sono i veri guardiani); pilota 403 su GET e approve; staff reale può decidere ma PUT istruzioni → 403; admin PUT → 200. DTO senza `submitterIp`/`website`.
+- **Clamp paginazione**: `?page=abc|-1|999|0|1.5` → sempre 200 (lezione F1 7.2); FIFO `createdAt asc`.
+- Migrazione zero drift; seed staff idempotente; i18n 989/989 simmetrica; tutti gli 81 call site esistenti di `ConflictError` invariati; widget e coda verificati anche mobile 375×812.
+- **Deviazioni ratificate entrambe** (paginazione = fix chirurgico di un bug reale oltre-pagina-1; e2e serial = root cause corretta su stato globale mutabile dei confini pagina FIFO).
+
+**Finding:**
+- **F1 (nit, nessun cambio codice)**: il claim "byte-identical" del dev sul replay idempotente è impreciso — il replay è servito dal `responseBody` jsonb che normalizza l'ordine delle chiavi: valori identici, ordine diverso. Garanzia sostanziale (stesso numero, nessuna seconda decisione) intatta. Precisazione qui registrata.
+
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session via bmad-create-story), ready-for-dev.
 - 2026-07-09: Implementation complete (Sonnet 5 dev subagent via `bmad-dev-story`) — all 8 tasks, all AC. Deviations: added pagination controls to `/dashboard/ppr` (not explicit in the task text, but the story's own declared UI model — `proposals-queue.tsx`/`expiries/page.tsx` — has them, and a real backlog-beyond-one-page bug surfaced during verification); `e2e/ppr-queue.spec.ts` runs `test.describe.configure({mode:'serial'})` (the shared FIFO PENDING queue's page boundaries are mutable global state that this file's own decisions shift under parallel execution). Status: review.
+- 2026-07-09: Review Opus 4.8 xhigh via `bmad-code-review` su DB fresco — clean pass (1 nit lessicale F1, zero cambi codice); matrice concorrenza, boundary Capodanno, placeholder ICU, injection e permessi provati empiricamente; e2e 145/145. Status -> done.
