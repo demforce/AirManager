@@ -4,7 +4,7 @@ baseline_commit: 7acc696
 
 # Story 8.3: Chiusura PPR e tassa di atterraggio
 
-Status: review
+Status: done
 
 ## Story
 
@@ -125,7 +125,25 @@ Sonnet 5 (single dev subagent, extra-high effort, via `bmad-dev-story`).
 - `messages/en.json`
 - `e2e/ppr-register.spec.ts` (new)
 
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial via `bmad-code-review` su DB fresco (26 migrazioni + seed), lente `karpathy-guidelines`. **Verdict: clean-pass — zero must-fix/should-fix; 1 finding rimediato + 3 nit.** Gate ri-eseguiti in proprio: lint 0 errori, typecheck pulito, **1068/1068 unit**, build verde, e2e **147/151** con TUTTI i 6 test nuovi verdi — i 4 fail sono flake da contention FUORI dal diff (2 documentati + 2 nuovi da load, entrambi ripassati in isolamento).
+
+- **Gap dichiarato dal dev CHIUSO dal vivo**: 2 POST `/complete` simultanee (chiavi idempotency diverse, fee 7777) → esattamente un 200 + un 409 `PPR_NOT_APPROVED`, psql conferma UN SOLO CashMovement; complete-vs-cancel stesso id → un vincitore, mai CANCELLED-con-movimento né COMPLETED-senza-movimento.
+- **Atomicità chiusura/movimento**: campi del movimento verificati a psql (importo positivo, categoria PPR per nome, `effectiveDate` = oggi Europe/Rome a mezzanotte UTC, `pprRequestId`, FK gemelle null); fee 0 → COMPLETED con fee stampata e ZERO movimenti; replay idempotente → header `idempotency-replayed` e UN SOLO movimento.
+- **Fallimento loud provato dal vivo** (mutazione sanzionata sul DB usa-e-getta): categoria "PPR" disattivata → complete 409 con messaggio esplicito, il PPR RESTA APPROVED (closedAt/fee null), zero movimenti — rollback transazionale reale; riattivata → complete 200.
+- **Matrice `PPR_NOT_APPROVED`** completa (PENDING/REJECTED/COMPLETED/CANCELLED → 409 per entrambi gli endpoint; id inesistente → 404); regressione 8.2 esclusa: approve-after-approve → ancora `PPR_ALREADY_DECIDED` (helper lock generalizzato senza cambi di comportamento).
+- **Confine periodo semi-aperto in zona**: ETA 23:30Z cade nel giorno di ROMA, non UTC; parametri hand-edited → 200; default del service PENDING intatto (contratto coda 8.2) e default APPROVED di pagina ratificato come scelta UX dichiarata.
+- Permessi/bound/valore corrotto (garbage → 0 + warn), email 8.1/8.2 ancora verdi post-refactor, i18n 1035/1035 simmetrica, UI (prefill 15,00, virgola `12,34` → 1234 cents, azioni solo su APPROVED, two-step annulla, editor solo admin, mobile 375×812) verificata via Playwright MCP.
+
+**Finding:**
+- **F1 (rimediato, `dc744a2`)**: timestamp della migrazione del dev (105806) ordinava PRIMA delle dipendenze 8.1/8.2 → deploy su DB fresco rotto. Fix della sessione principale (rename puro a 150000, 0 byte SQL cambiati) VERIFICATO sufficiente dal reviewer. Nota per il handoff: chi avesse applicato il vecchio nome deve `migrate resolve` o reset locale.
+- **F2 (nit)**: `closedByUserId` non esposto nel DTO (scelta literal-scope dichiarata; asimmetria con `decidedByUserId` — additivo quando servirà al client Flutter).
+- **F3 (nit)**: description del movimento in inglese (`PPR <n> landing fee`, template letterale della story) vs convenzione italiana di sellPackage — ratificato, invertibile su richiesta utente.
+- **F4 (nit)**: "Azzera filtri" visibile già al load di default del registro e resetta a Tutti anziché ad Approvati — cosmetico, semantica autoconsistente.
+
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session via bmad-create-story), ready-for-dev.
 - 2026-07-09: Implemented by the single Sonnet 5 dev subagent (schema + closure service + settings + API/registry + register UI + landing-fee settings field + unit/e2e tests); status -> review.
+- 2026-07-09: Review Opus 4.8 xhigh via `bmad-code-review` su DB fresco — clean pass; race concorrenti, atomicita tx, rollback loud, confini di zona e permessi provati empiricamente dal vivo; fix ordering migrazione (dc744a2) verificato. 3 nit ratificati. Status -> done. EPIC 8 COMPLETO.
