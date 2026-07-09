@@ -50,11 +50,13 @@ function instructorActor(personId: string | null = 'person_instructor'): Actor {
   return { userId: 'instructor_user_1', personId, roles: ['INSTRUCTOR'] };
 }
 
-const ACTIVE_STUDENT_PERSON = { studentProfile: { id: 'student_profile_1', deactivatedAt: null } };
-const DEACTIVATED_STUDENT_PERSON = { studentProfile: { id: 'student_profile_1', deactivatedAt: new Date('2026-01-01T00:00:00.000Z') } };
-const NO_STUDENT_PERSON = { studentProfile: null };
-const ACTIVE_INSTRUCTOR_PERSON = { instructorProfile: { id: 'instructor_profile_1', deactivatedAt: null } };
-const NO_INSTRUCTOR_PERSON = { instructorProfile: null };
+const ACTIVE_STUDENT_PERSON = { archivedAt: null, studentProfile: { id: 'student_profile_1', deactivatedAt: null } };
+const DEACTIVATED_STUDENT_PERSON = { archivedAt: null, studentProfile: { id: 'student_profile_1', deactivatedAt: new Date('2026-01-01T00:00:00.000Z') } };
+const ARCHIVED_STUDENT_PERSON = { archivedAt: new Date('2026-07-01T00:00:00.000Z'), studentProfile: { id: 'student_profile_1', deactivatedAt: null } };
+const NO_STUDENT_PERSON = { archivedAt: null, studentProfile: null };
+const ACTIVE_INSTRUCTOR_PERSON = { archivedAt: null, instructorProfile: { id: 'instructor_profile_1', deactivatedAt: null } };
+const ARCHIVED_INSTRUCTOR_PERSON = { archivedAt: new Date('2026-07-01T00:00:00.000Z'), instructorProfile: { id: 'instructor_profile_1', deactivatedAt: null } };
+const NO_INSTRUCTOR_PERSON = { archivedAt: null, instructorProfile: null };
 
 const ASSIGNMENT_FIXTURE = {
   createdAt: new Date('2026-07-09T08:00:00.000Z'),
@@ -121,6 +123,22 @@ describe('school.service (story 9.1 — student-instructor assignment, FR-32)', 
     it('throws ValidationError INSTRUCTOR_NOT_FOUND (folded) for an unknown OR inactive instructor', async () => {
       personFindUnique.mockResolvedValueOnce(ACTIVE_STUDENT_PERSON).mockResolvedValueOnce(null);
       const error = await assignInstructor(staffActor(), 'person_student', { instructorPersonId: 'missing' }).catch((e) => e);
+      expect(error).toBeInstanceOf(ValidationError);
+      expect((error as InstanceType<typeof ValidationError>).code).toBe('INSTRUCTOR_NOT_FOUND');
+      expect(assignmentCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('throws ValidationError STUDENT_NOT_FOUND for an ARCHIVED student person with an active profile (review 9.1 F1, TD-1/5.1 D1 convention)', async () => {
+      personFindUnique.mockResolvedValue(ARCHIVED_STUDENT_PERSON);
+      const error = await assignInstructor(staffActor(), 'person_student', { instructorPersonId: 'person_instructor' }).catch((e) => e);
+      expect(error).toBeInstanceOf(ValidationError);
+      expect((error as InstanceType<typeof ValidationError>).code).toBe('STUDENT_NOT_FOUND');
+      expect(assignmentCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('throws ValidationError INSTRUCTOR_NOT_FOUND (same folded code) for an ARCHIVED instructor person with an active profile (review 9.1 F1)', async () => {
+      personFindUnique.mockResolvedValueOnce(ACTIVE_STUDENT_PERSON).mockResolvedValueOnce(ARCHIVED_INSTRUCTOR_PERSON);
+      const error = await assignInstructor(staffActor(), 'person_student', { instructorPersonId: 'person_instructor' }).catch((e) => e);
       expect(error).toBeInstanceOf(ValidationError);
       expect((error as InstanceType<typeof ValidationError>).code).toBe('INSTRUCTOR_NOT_FOUND');
       expect(assignmentCreateMock).not.toHaveBeenCalled();
@@ -266,6 +284,19 @@ describe('school.service (story 9.1 — student-instructor assignment, FR-32)', 
       expect(result).toEqual([]);
       expect(flightGroupByMock).not.toHaveBeenCalled();
       expect(expiryFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('filters ARCHIVED students out of the roster query (review 9.1 F1)', async () => {
+      instructorProfileFindUnique.mockResolvedValue({ id: 'instructor_profile_1', deactivatedAt: null });
+      assignmentFindMany.mockResolvedValue([]);
+
+      await listOwnStudents(instructorActor());
+
+      expect(assignmentFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { instructorProfileId: 'instructor_profile_1', studentProfile: { person: { archivedAt: null } } },
+        }),
+      );
     });
 
     it('sums SCHOOL minutes ACROSS every instructor via ONE batched groupBy (never N+1), excluding CANCELLED', async () => {

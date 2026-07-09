@@ -334,7 +334,10 @@ export default async function PersonDetailPage({ params }: PageProps) {
           </div>
         ) : null}
 
-        {person.studentProfile !== null && canManageSchool ? (
+        {/* Active profile only (review 9.1 F2): on a deactivated student
+            profile the API answers 422 STUDENT_NOT_FOUND, so mounting the
+            panel would only render its generic load error. */}
+        {person.studentProfile !== null && person.studentProfile.deactivatedAt === null && canManageSchool ? (
           <div className="mt-6">
             <AssignedInstructorsPanel
               // Remount on person change — same rationale as

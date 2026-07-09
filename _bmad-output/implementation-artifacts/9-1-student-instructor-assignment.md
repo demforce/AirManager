@@ -4,7 +4,7 @@ baseline_commit: ec8ba7f
 
 # Story 9.1: Assegnazione allievi–istruttori
 
-Status: review
+Status: done
 
 ## Story
 
@@ -120,7 +120,22 @@ Sonnet 5 (single dev agent, xhigh).
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: fixes-required → fixed** (1 finding mandatory 91-F1 + 1 minor non-mandatory 91-F2, entrambi applicati dalla sessione principale nel commit di review e ri-verificati).
+
+- **Priorità zero — full suite e2e su DB fresco (gate autoritativo; il dev aveva girato su DB auto-sporcato)**: **156 test, 153/156** — tutti i 5 e2e nuovi di `school.spec.ts` verdi nel run completo; people-detail/nav/rbac verdi. I 3 fail tutti FUORI dal diff: `expiry-registration:221` e `package-sale:207` verdi in isolamento (contention), `ppr-register:292` = flake pre-esistente documentato nell'handoff (~1 rosso ogni 2-3 run, rosso anche isolato). Non-regressione per il criterio consolidato. Gates: lint/typecheck/1106 unit/build tutti PASS.
+- **Matrice permessi LIVE (curl, 5 sessioni seed + unauth) su tutte le route nuove**: esiti esatti (401 unauth ovunque; instructor/pilot/student → 403 su GET/POST/**DELETE** `people/{id}/instructors*` — chiuso il gap (a) del dev: il DELETE 403 è ora provato live; staff/admin passano; `school/students`: instructor 200, staff 403, admin 422 profilo mancante, MAI 500; profilo istruttore disattivato → 422 `INSTRUCTOR_PROFILE_REQUIRED`). Error codes esatti: 404 persona ignota, 422 `STUDENT_NOT_FOUND`/`INSTRUCTOR_NOT_FOUND` (folded anti-enumeration coerente col precedente flights, nessun leak), 422 `VALIDATION_ERROR` su body vuoto.
+- **Race provate vive**: doppio POST assign concorrente → un 201 + un 409, 1 sola riga a DB; doppio DELETE → un 204 + un 404, 0 righe; mai 500.
+- **Ore e badge provati end-to-end**: volo SCHOOL 60' + PRIVATE 30' + SCHOOL 45' stornato → `totalMinutes=60` ("1:00" in UI): PRIVATE e CANCELLED esclusi, filtro identico alla convenzione storno; batching confermato (1 groupBy + 1 findMany per l'intero roster, short-circuit su roster vuoto); badge worst-status coerente con `computeExpiryStatus` (e2e "Scaduta"), em-dash senza scadenze.
+- **Cross-tenant**: istruttore B non vede MAI gli allievi di A (self-scoped per costruzione, provato live). UI verificata con Playwright MCP (scheda persona add/remove two-step, `/dashboard/school` tabella + empty state, nav "Scuola volo" solo all'istruttore, mobile 375×812 usabile, stile minimalist-ui coerente). OpenAPI live con i 3 path nuovi; i18n 33/33 chiavi simmetriche IT/EN; churn `schema.prisma` = solo whitespace di prisma format; File List = diff esatto.
+- **91-F1 (major, mandatory, FIXATO)** — persone ARCHIVIATE assegnabili e visibili nei roster: i resolver di `school.service.ts` controllavano solo `deactivatedAt` del profilo e MAI `Person.archivedAt`, contraddicendo il precedente `flights.service.ts:462-474` (TD-1/5.1 D1) che il doc-comment dichiarava di riusare "verbatim". Provato live dal reviewer (archived instructor → 201; archived student visibile in "I miei allievi"). **Fix applicato**: `archivedAt` nei select + reject folded negli stessi code 422 in entrambi i resolver (convenzione anti-enumeration), filtro `studentProfile.person.archivedAt: null` nella query roster di `listOwnStudents` (l'assignment row resta: `unassignInstructor` continua a funzionare), doc-comment corretti. +3 unit test (archived student→422, archived instructor→422, filtro roster). Ri-verificato live dalla sessione principale: 422/422 sui due lati, roster senza l'archiviato, unassign 204.
+- **91-F2 (minor, non-mandatory, FIXATO)** — panel "Istruttori assegnati" montato su ESISTENZA del profilo allievo (letterale da story): su profilo disattivato il GET risponde 422 e il panel mostrava il loadError generico. Gating corretto a `deactivatedAt === null` in `page.tsx` (stessa semantica dell'API).
+
+### Final gates (post-fix, sessione principale)
+
+`npm run gates` PASS (lint 0 errori, typecheck pulito, **1109/1109 unit** (+3), build verde); e2e mirati `school` + `people-management` **11/11** in isolamento; fix F1 ri-provato live via curl su dev server (output nel commit di review).
+
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session) — prima story dell'Epic 9, ricognizione Explore completata (epics/PRD/spine/schema/rbac/UI/seed).
 - 2026-07-09: Implemented (Sonnet 5 single dev agent, xhigh). Gates: lint/typecheck/build green, 1106/1106 unit (+28 new), e2e 152/156 on the session's own accumulated DB (5/5 new tests green; 4 fails outside the diff, re-verified as isolation-green or the pre-existing documented `ppr-register:292` flake). Status → review.
+- 2026-07-09: Review Opus 4.8 xhigh — fixes-required: 91-F1 major (persone archiviate assegnabili/visibili nei roster — mancava il check `archivedAt` del precedente flights/TD-1) + 91-F2 minor (gating panel su esistenza anziché stato attivo del profilo). Full suite autoritativa su DB fresco 153/156 (3 fail fuori diff non-regressione); matrice permessi live completa (incluso DELETE 403), race 201+409/204+404, ore/badge provati end-to-end, UI Playwright MCP ok. Fix applicati dalla sessione principale (+3 unit, 1109/1109; e2e mirati 11/11; F1 ri-provato live). Status → done.

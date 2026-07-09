@@ -45,17 +45,19 @@ export type OwnStudentItem = {
  * `instructor-rates.service.ts#resolveInstructorProfile` for a `{id}` route
  * param the caller already knows exists via `people.read`; 422
  * `STUDENT_NOT_FOUND` — same naming style as `flights.service.ts`'s
- * `INSTRUCTOR_NOT_FOUND` — when the profile is missing or deactivated).
+ * `INSTRUCTOR_NOT_FOUND` — when the person is archived or the profile is
+ * missing or deactivated: an archived person is treated exactly like a
+ * deactivated profile, same folded code, per the TD-1/5.1 D1 convention).
  */
 async function resolveActiveStudentProfile(personId: string): Promise<{ id: string }> {
   const person = await prisma.person.findUnique({
     where: { id: personId },
-    select: { studentProfile: { select: { id: true, deactivatedAt: true } } },
+    select: { archivedAt: true, studentProfile: { select: { id: true, deactivatedAt: true } } },
   });
   if (!person) {
     throw new NotFoundError('Person not found.');
   }
-  if (!person.studentProfile || person.studentProfile.deactivatedAt !== null) {
+  if (person.archivedAt !== null || !person.studentProfile || person.studentProfile.deactivatedAt !== null) {
     throw new ValidationError('This person has no active student profile.', undefined, 'STUDENT_NOT_FOUND');
   }
   return { id: person.studentProfile.id };
@@ -63,18 +65,19 @@ async function resolveActiveStudentProfile(personId: string): Promise<{ id: stri
 
 /**
  * Resolves the INSTRUCTOR side of a body-supplied `Person.id` to its ACTIVE
- * `InstructorProfile.id` — unknown person OR no active profile are FOLDED
- * into the same 422 `INSTRUCTOR_NOT_FOUND` (anti-enumeration, identical
- * pattern/code to `flights.service.ts#resolveFlightInput`'s instructor
- * check, reused verbatim per the Dev Notes).
+ * `InstructorProfile.id` — unknown person, ARCHIVED person, or no active
+ * profile are FOLDED into the same 422 `INSTRUCTOR_NOT_FOUND`
+ * (anti-enumeration, identical pattern/code to
+ * `flights.service.ts#resolveFlightInput`'s instructor check, `archivedAt`
+ * included per TD-1 AC 9 / decision 5.1 D1).
  */
 async function resolveActiveInstructorProfile(personId: string): Promise<{ id: string }> {
   const person = await prisma.person.findUnique({
     where: { id: personId },
-    select: { instructorProfile: { select: { id: true, deactivatedAt: true } } },
+    select: { archivedAt: true, instructorProfile: { select: { id: true, deactivatedAt: true } } },
   });
   const profile = person?.instructorProfile ?? null;
-  if (!profile || profile.deactivatedAt !== null) {
+  if (!person || person.archivedAt !== null || !profile || profile.deactivatedAt !== null) {
     throw new ValidationError('Instructor has no active instructor profile.', undefined, 'INSTRUCTOR_NOT_FOUND');
   }
   return { id: profile.id };
@@ -245,8 +248,12 @@ export async function listOwnStudents(actor: Actor): Promise<OwnStudentItem[]> {
     throw new ValidationError('Actor has no active instructor profile.', undefined, 'INSTRUCTOR_PROFILE_REQUIRED');
   }
 
+  // Archived students drop out of the roster (91-F1): everywhere else the
+  // app hides archived persons by default, and a lingering archived student
+  // in an active roster is exactly the post-archival leftover this filters.
+  // The assignment row itself is kept — unassignInstructor still works.
   const assignments = await prisma.studentInstructorAssignment.findMany({
-    where: { instructorProfileId: ownProfile.id },
+    where: { instructorProfileId: ownProfile.id, studentProfile: { person: { archivedAt: null } } },
     select: {
       studentProfile: {
         select: { courseStartDate: true, person: { select: { id: true, firstName: true, lastName: true } } },
