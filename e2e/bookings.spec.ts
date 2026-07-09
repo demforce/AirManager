@@ -444,6 +444,44 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(nextBox?.height).toBeGreaterThanOrEqual(44);
   });
 
+  test('review 7.2 fixes: an extreme ?date falls back to today without a 500 (F1); a bottom-clamped short block pins INSIDE the grid (F2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+
+    // F1: a hand-edited year-9999 date must sanitize to today and render the
+    // calendar — before the fix, addDaysDateOnly(date, 1) overflowed into a
+    // 5-digit ISO year and zonedMidnightUtc crashed the page with a 500.
+    await page.goto('/it/dashboard/bookings?date=9999-12-31');
+    await expect(page.getByTestId('bookings-calendar-section')).toBeVisible();
+    await expect(page.getByTestId('calendar-heading')).not.toBeEmpty();
+
+    // F2: a 20:45Z–21:45Z booking lands at/after the 22:00 Europe/Rome window
+    // edge in BOTH DST regimes (22:45 CEST / 21:45 CET start), forcing the
+    // min-height inflation near the bottom edge — the block must pin AT the
+    // grid's bottom border, never render below it.
+    const nextHref = await page.getByTestId('calendar-next').getAttribute('href');
+    const tomorrow = nextHref?.match(/date=(\d{4}-\d{2}-\d{2})/)?.[1];
+    if (!tomorrow) throw new Error(`Could not extract tomorrow's date from calendar-next href: ${nextHref}`);
+
+    const response = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${tomorrow}T20:45:00.000Z`, endsAt: `${tomorrow}T21:45:00.000Z` },
+    });
+    expect(response.status()).toBe(201);
+
+    await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
+    const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft.registration });
+    const block = column.getByTestId('calendar-block').filter({ hasText: pilot.lastName });
+    await expect(block).toBeVisible();
+
+    const blockBox = await block.boundingBox();
+    const columnBox = await column.boundingBox();
+    if (!blockBox || !columnBox) throw new Error('Missing bounding boxes for the clamped block/column');
+    expect(blockBox.y + blockBox.height).toBeLessThanOrEqual(columnBox.y + columnBox.height + 1);
+  });
+
   test('concurrency (AC 2): two parallel POSTs for the same run-unique aircraft/interval yield exactly one 201 and one 409', async ({
     page,
   }) => {

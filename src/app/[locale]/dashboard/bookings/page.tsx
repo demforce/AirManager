@@ -42,10 +42,20 @@ function sanitizeView(value: string | undefined): BookingCalendarView {
   return value && (CALENDAR_VIEWS as readonly string[]).includes(value) ? (value as BookingCalendarView) : 'day';
 }
 
-/** Accepts only a REAL calendar date in `YYYY-MM-DD` form (rejects e.g. `2026-02-30` via a round-trip check) — anything else falls back to "today" in `APP_TIMEZONE`. */
+/**
+ * Accepts only a REAL calendar date in `YYYY-MM-DD` form (rejects e.g.
+ * `2026-02-30` via a round-trip check) — anything else falls back to "today"
+ * in `APP_TIMEZONE`. The year is additionally bounded to 1900–9000 (review
+ * 7.2 F1): the downstream `addDaysDateOnly(date, 1)`/`+7` arithmetic must
+ * never overflow into a 5-digit ISO year, whose expanded `+010000-…`
+ * `toISOString()` form would corrupt the date-only round-trip and crash
+ * `zonedMidnightUtc` — the Contesto's contract is "invalid → default, MAI
+ * errore".
+ */
 function sanitizeDate(value: string | undefined, today: string): string {
   if (!value || !DATE_ONLY_PATTERN.test(value)) return today;
   const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+  if (year < 1900 || year > 9000) return today;
   const roundTrip = new Date(Date.UTC(year, month - 1, day));
   const isRealDate = roundTrip.getUTCFullYear() === year && roundTrip.getUTCMonth() === month - 1 && roundTrip.getUTCDate() === day;
   return isRealDate ? value : today;
@@ -114,11 +124,16 @@ function projectDayBlocks(bookings: BookingListItem[], dateOnly: string): Calend
     const top = clampToWindowPercent(rawTop);
     const bottom = clampToWindowPercent(rawBottom);
 
+    // Review 7.2 F2: after the min-height inflation, re-anchor the top so
+    // `top + height` never exceeds 100% — a bottom-clamped short block must
+    // pin AT the bottom edge (the ▼ indicator shows), never render below the
+    // grid (the exact mirror of the before-06:00 min-height case above).
+    const height = Math.max(bottom - top, MIN_BLOCK_HEIGHT_PERCENT);
     blocks.push({
       id: booking.id,
       aircraftId: booking.aircraftId,
-      top,
-      height: Math.max(bottom - top, MIN_BLOCK_HEIGHT_PERCENT),
+      top: Math.min(top, 100 - height),
+      height,
       clampedTop: rawTop < 0,
       clampedBottom: rawBottom > WINDOW_SPAN_MINUTES,
       timeLabel: `${formatWallClock(startsAt)}–${formatWallClock(endsAt)}`,

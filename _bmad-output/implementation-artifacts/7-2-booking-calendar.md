@@ -4,7 +4,7 @@ baseline_commit: e857b13
 
 # Story 7.2: Vista calendario
 
-Status: review
+Status: done
 
 ## Story
 
@@ -121,7 +121,22 @@ Sonnet 5 (single dev agent)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial via `bmad-code-review`, priorità zero sull'analisi regressione e2e su DB fresco. **Verdict: fixes-required** — 2 should-fix (F1, F2, entrambi FIXATI in sessione con test e2e di regressione), 1 deferred (M1), 1 nit accettato (N1).
+
+- **Analisi regressione e2e (priorità zero)**: full suite su DB fresco = **109/115**, `bookings.spec.ts` 8/8 verdi (incluso il contratto allievo aggiornato e la concorrenza). I 6 fail (flights:165/:210, flight-reversal:151, package-consumption:134, people-management:44/:69) classificati TUTTI classe flaky/volume pre-esistente: flights:210 (baseline documentata) è addirittura PASSATO nel re-run isolato (flake, non regressione); people-management root-caused via psql a 73 Person accumulate (la persona run-unique finisce oltre pageSize 20 senza ricerca — stesso meccanismo documentato da 7.1); zero overlap tra il diff 7.2 e il codice applicativo delle spec fallite. **Nessuna regressione da 7.2.**
+- **Verifiche empiriche chiave**: matematica DST riprodotta indipendentemente in Node (CET 23:00Z, CEST 22:00Z, 23h/25h esatte nei giorni di transizione 2026, ora saltata gestita correttamente: 01:00Z→03:00 wall); rendering wall-clock live corretto (07:00Z estivo → blocco "09:00–10:00" nella colonna giusta); proiezione solo server-side (nessun 'use client'); boundary API calendario (8 giorni esatti 200, +1 minuto 422 RANGE_TOO_WIDE, from==to 422, precision mista 200 — lezione N1 rispettata, auth prima della validazione); sanitizzazione live (13 input malformati → fallback today, unica eccezione F1); mobile 375×812 (body senza overflow orizzontale, touch target 44px); contratto allievo dal vivo (nav+calendario+nomi visibili, form assente, POST 403); niente N+1 (1 findMany calendario + 1 listBookableAircraft + lista paginata); palette riusata, nessun colore nuovo; i18n 874/874.
+- **F1 (should-fix, FIXATO)**: `?date=9999-12-31` → 500 (`addDaysDateOnly` overflow nell'anno a 5 cifre → `toISOString()` espansa `+010000-…` → `zonedMidnightUtc` RangeError), violando il contratto "sanitize → default, MAI errore". Fix: bound anni 1900–9000 in `sanitizeDate` (page.tsx) con doc-comment; e2e di regressione (la pagina renderizza il calendario con fallback a oggi).
+- **F2 (should-fix, FIXATO)**: blocchi clampati sul bordo INFERIORE della finestra 06–22 sforavano sotto la griglia (min-height 8% applicata senza ri-ancorare il top: booking 21:30–23:30 → top 96.9% + height 8% = 37px fuori dalla card; il fix del dev copriva solo il bordo superiore). Fix: `top = Math.min(top, 100 - height)` in `projectDayBlocks` — il blocco si appunta AL bordo (l'indicatore ▼ già c'è); e2e di regressione con assert su boundingBox (booking 20:45Z–21:45Z, patologico in entrambi i regimi DST).
+- **M1 (deferred)**: manca un'assert e2e automatica sul crosstalk href COMBINATO (lista a pagina 2 + calendario week su data non-default) — le due direzioni sono corrette per ispezione e verificate a mano da dev e reviewer, ma è esattamente la superficie della lezione 6.4 M1 e 7.3/7.4 continueranno a toccare questa pagina. Da aggiungere con 7.3.
+- **N1 (nit, accettato)**: due prenotazioni brevi adiacenti sullo stesso velivolo possono sovrapporsi visivamente per la min-height 8% (artefatto puramente cosmetico, analitico, non riprodotto live).
+- Deviazioni del dev tutte ratificate: helper extra `addDaysDateOnly`/`todayDateOnlyInZone` (puri, testati), riuso display-only di `parseDateOnlyUtc` per le intestazioni, helper e2e anti-hydration-race (`gotoBookingsAndWaitForHydration`, test-only, da tenere presente per 7.3/7.4).
+
+### Final gates (reviewer + re-run post-fix in sessione)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **848/848 unit**, `env -u NODE_ENV npx next build` verde, e2e: full suite 109/115 dal reviewer su DB fresco (6 fail = classe flaky/volume pre-esistente, zero regressioni), `bookings.spec.ts` **9/9** post-fix (8 del dev + il nuovo test di regressione F1+F2).
+
 ## Change Log
 
 - 2026-07-08: Story file created (Fable 5 main session via bmad-create-story), ready-for-dev.
 - 2026-07-08: Implemented (Sonnet 5 single dev agent) — zoned-time helpers (DST double-correction), calendar service/API, day/week calendar UI, nav self.read extension, i18n, tests (unit + e2e); status → review.
+- 2026-07-09: Review Opus 4.8 xhigh via bmad-code-review (priorità zero regressione e2e su DB fresco) — fixes-required: F1 (500 su data estrema) e F2 (blocco bottom-clamped fuori griglia) fixati in sessione con e2e di regressione; M1 (e2e crosstalk href combinato) deferred a 7.3; N1 accettato. Status → done.
