@@ -35,5 +35,11 @@ L'utente vuole best practice aggiornate via Context7 (https://context7.com). In 
 ## Compaction
 
 Alla compaction preservare SEMPRE: story id corrente, file modificati non ancora committati, esito dell'ultimo `npm run gates`, branch e PR correnti.
+
+## Manutenzione di questo file (automatica — l'utente non lo aggiorna a mano)
+
+- Se durante la sessione un fatto o una regola qui dentro risulta sbagliato/stale, correggerlo SUBITO nello stesso commit del lavoro in corso.
+- Un hook SessionStart (`.claude/hooks/claude-md-drift.sh`) verifica i fatti controllabili (versioni, path, npm script, niente branch); se segnala drift, il fix va fatto in sessione.
+- A fine epic la skill `/handoff` include la revisione di questo file: aggiornare fatti e convenzioni durevoli, rimuovere regole ormai superflue, tenerlo snello.
 - **Playwright MCP** (`.mcp.json`, server `playwright` = `@playwright/mcp` headless sul Chromium preinstallato `/opt/pw-browsers/chromium`): usarlo per la verifica UI interattiva durante dev e review (navigare l'app reale, screenshot, driving dei form) — complementare agli e2e Playwright (`e2e/`), che restano il gate automatico. I tool MCP (`mcp__playwright__*`) sono disponibili dalle sessioni avviate dopo il commit di `.mcp.json`. MAI `playwright install`.
 - **CodeGraph MCP** (trial, server `codegraph` in `.mcp.json`; indice locale `.codegraph/` ricostruito dall'hook SessionStart): per domande STRUTTURALI sul codice (chi chiama X, impatto di una modifica, dove è definito Y) preferire il tool `codegraph_explore` all'esplorazione manuale grep/glob/read — risparmia contesto.
