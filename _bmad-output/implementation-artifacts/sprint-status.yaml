@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-09 (stories 8.1, 8.2 done — review clean pass)
+last_updated: 2026-07-09 (8.1, 8.2 done; 8.3 ready-for-dev)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -96,7 +96,7 @@ development_status:
   epic-8: in-progress
   8-1-ppr-public-form: done
   8-2-ppr-approval-queue: done
-  8-3-ppr-closure-fee: backlog
+  8-3-ppr-closure-fee: ready-for-dev
   epic-8-retrospective: optional
 
   epic-9: backlog
