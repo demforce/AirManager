@@ -80,17 +80,33 @@ export type PprStatusDto = z.infer<typeof pprStatusSchema>;
  * `GET /api/v1/ppr-requests` query (AC 1/2). `status` defaults to `PENDING`
  * — the actionable queue, FIFO (`createdAt asc`) — same
  * `paginationQuerySchema.extend` + `.optional().default(...)` pattern as
- * `listExpiryProposalsQuerySchema`.
+ * `listExpiryProposalsQuerySchema`. `'ALL'` (story 8.3, AC 2) means no
+ * status filter at all — an explicit, separate literal rather than
+ * `status` becoming optional-and-absent-means-all, so the queue's own
+ * default (`PENDING`, the 8.2 contract, unchanged) and the register's
+ * "every status" both stay expressible with one required-with-default
+ * field. `from`/`to` (`z.iso.date()`, date-only) bound `eta` — the register
+ * is a register of ARRIVALS — resolved to a semi-open Europe/Rome instant
+ * range service-side (`ppr.service.ts#listPprRequests`, same
+ * `zonedMidnightUtc`/`addDaysDateOnly` pattern as story 7.2's calendar),
+ * never compared as raw strings.
  */
-export const listPprRequestsQuerySchema = paginationQuerySchema.extend({
-  status: pprStatusSchema.optional().default('PENDING'),
-});
+export const listPprRequestsQuerySchema = paginationQuerySchema
+  .extend({
+    status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED', 'ALL']).optional().default('PENDING'),
+    from: z.iso.date().optional(),
+    to: z.iso.date().optional(),
+  })
+  .refine((value) => !value.from || !value.to || value.from <= value.to, {
+    message: 'from must not be after to',
+    path: ['to'],
+  });
 
 export type ListPprRequestsQuery = z.infer<typeof listPprRequestsQuerySchema>;
 
 /**
- * One queue entry, ALL detail fields (Contesto: "vede le richieste in
- * attesa, il dettaglio") EXCEPT `submitterIp` — a technical anti-abuse
+ * One queue/register entry, ALL detail fields (Contesto: "vede le richieste
+ * in attesa, il dettaglio") EXCEPT `submitterIp` — a technical anti-abuse
  * datum (GDPR/NFR-3, see the `PprRequest` model doc-comment), never exposed
  * to staff. Mirrors `ppr.service.ts`'s `PprRequestListItem`.
  */
@@ -116,6 +132,10 @@ export const pprRequestItemSchema = z.object({
   rejectionReason: z.string().nullable(),
   decidedAt: z.iso.datetime().nullable(),
   decidedByUserId: z.string().nullable(),
+  /** Landing fee charged at completion (story 8.3, AC 1), integer euro cents (AD-2) — `null` unless `COMPLETED`. 0 is a valid, distinct value (a waived fee is still a recorded decision), never confused with `null` (not yet closed, or closed via cancel). */
+  landingFeeCents: z.number().int().nullable(),
+  /** When this request was closed — completed or cancelled (story 8.3, AC 1/2). `null` while still `PENDING`/`APPROVED`/`REJECTED`. */
+  closedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
 });
 
@@ -136,6 +156,25 @@ export const rejectPprRequestSchema = z.object({
 
 export type RejectPprRequestInput = z.infer<typeof rejectPprRequestSchema>;
 
+// --- Closure (epic 8, story 8.3, FR-24) --------------------------------------
+// `authorize(actor, 'ppr.manage')` gates both — see `ppr.service.ts#completePprRequest`/
+// `cancelPprRequest`'s doc-comments.
+
+/**
+ * `POST /api/v1/ppr-requests/{id}/complete` body (AC 1). `landingFeeCents`
+ * is the fee actually charged — 0 included (Contesto: "tassa zero nessun
+ * movimento" is a service-side branch, not a schema one; 0 is a fully valid
+ * input here). Same `.int().min(0).max(2_147_483_647)` bound as
+ * `recordCashMovementSchema.amountCents` (AD-2's `Int` ceiling). No default:
+ * the caller (the register's completion panel) always sends a value,
+ * prefilled from `GET /api/v1/settings/ppr-landing-fee` but editable.
+ */
+export const completePprRequestSchema = z.object({
+  landingFeeCents: z.number().int().min(0).max(2_147_483_647),
+});
+
+export type CompletePprRequestInput = z.infer<typeof completePprRequestSchema>;
+
 // --- Operating instructions (epic 8, story 8.2, AC 1) ------------------------
 // First real use of `AppSetting` — see `app-settings.service.ts`. GET is
 // gated `ppr.manage` (staff sees them in the queue's email preview context),
@@ -154,3 +193,23 @@ export const pprOperatingInstructionsSchema = z.object({
 });
 
 export type PprOperatingInstructionsDto = z.infer<typeof pprOperatingInstructionsSchema>;
+
+// --- Default landing fee (epic 8, story 8.3, AC 1) ---------------------------
+// Exact mirror of the operating-instructions pair above: GET is
+// `ppr.manage` (the completion panel prefills from it), PUT is
+// `settings.manage` (admin-only edit) — see
+// `app-settings.service.ts#getPprLandingFeeDefaultCents`/
+// `setPprLandingFeeDefaultCents`.
+
+/**
+ * `{ landingFeeCents }` — the admin-configured default landing fee, integer
+ * euro cents (AD-2), used to BOTH `GET`/`PUT
+ * /api/v1/settings/ppr-landing-fee` (symmetric request/response shape, same
+ * pattern as `pprOperatingInstructionsSchema`). Absent/never-configured
+ * reads as `0` (`app-settings.service.ts`), never a missing field.
+ */
+export const pprLandingFeeDefaultSchema = z.object({
+  landingFeeCents: z.number().int().min(0).max(2_147_483_647),
+});
+
+export type PprLandingFeeDefaultDto = z.infer<typeof pprLandingFeeDefaultSchema>;

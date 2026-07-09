@@ -4,7 +4,7 @@ import type { AppLocale } from '@/i18n/routing';
 import type { PprRequestItemDto } from '@/lib/schemas/ppr';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import { getPprOperatingInstructions } from '@/server/services/app-settings.service';
+import { getPprLandingFeeDefaultCents, getPprOperatingInstructions } from '@/server/services/app-settings.service';
 import { listPprRequests, type PprRequestListItem } from '@/server/services/ppr.service';
 import { PprQueue } from './ppr-queue';
 
@@ -34,6 +34,7 @@ function toPprRequestDto(item: PprRequestListItem): PprRequestItemDto {
     eta: item.eta.toISOString(),
     etd: item.etd ? item.etd.toISOString() : null,
     decidedAt: item.decidedAt ? item.decidedAt.toISOString() : null,
+    closedAt: item.closedAt ? item.closedAt.toISOString() : null,
     createdAt: item.createdAt.toISOString(),
   };
 }
@@ -69,9 +70,13 @@ export default async function PprQueuePage({ params, searchParams }: PageProps) 
   const results = await Promise.all([
     listPprRequests(actor, { status: 'PENDING', page, pageSize: QUEUE_PAGE_SIZE }),
     canEditInstructions ? getPprOperatingInstructions(actor) : Promise.resolve(null),
+    // Story 8.3, AC 1: the SAME settings section (gated `settings.manage`,
+    // same as the instructions editor) also gains the default landing fee.
+    canEditInstructions ? getPprLandingFeeDefaultCents(actor) : Promise.resolve(null),
   ]);
   let queueResult = results[0];
   const instructions = results[1];
+  const landingFeeDefaultCents = results[2];
   // Clamp an out-of-range ?page to the last real page (same pattern as `FinancePage`/`FlightsPage`).
   const lastPage = Math.max(1, Math.ceil(queueResult.total / QUEUE_PAGE_SIZE));
   if (page > lastPage) {
@@ -96,13 +101,22 @@ export default async function PprQueuePage({ params, searchParams }: PageProps) 
             </h1>
             <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
           </div>
-          <Link
-            href="/dashboard"
-            locale={locale as AppLocale}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-          >
-            {t('backToDashboard')}
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/dashboard/ppr/register"
+              locale={locale as AppLocale}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {t('registerLink')}
+            </Link>
+            <Link
+              href="/dashboard"
+              locale={locale as AppLocale}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {t('backToDashboard')}
+            </Link>
+          </div>
         </div>
 
         <div className="mt-10">
@@ -154,7 +168,7 @@ export default async function PprQueuePage({ params, searchParams }: PageProps) 
               empty: t('empty'),
             }}
             instructionsEditor={
-              canEditInstructions && instructions
+              canEditInstructions && instructions && landingFeeDefaultCents !== null
                 ? {
                     initial: instructions,
                     labels: {
@@ -165,6 +179,18 @@ export default async function PprQueuePage({ params, searchParams }: PageProps) 
                       save: t('instructions.save'),
                       saved: t('instructions.saved'),
                       error: t('instructions.error'),
+                    },
+                    landingFee: {
+                      initialCents: landingFeeDefaultCents,
+                      labels: {
+                        heading: t('landingFee.heading'),
+                        description: t('landingFee.description'),
+                        amountLabel: t('landingFee.amountLabel'),
+                        invalidAmount: t('landingFee.invalidAmount'),
+                        save: t('landingFee.save'),
+                        saved: t('landingFee.saved'),
+                        error: t('landingFee.error'),
+                      },
                     },
                   }
                 : null

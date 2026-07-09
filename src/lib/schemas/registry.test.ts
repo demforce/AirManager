@@ -73,7 +73,10 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/ppr-requests',
         '/api/v1/ppr-requests/{id}/approve',
         '/api/v1/ppr-requests/{id}/reject',
+        '/api/v1/ppr-requests/{id}/complete',
+        '/api/v1/ppr-requests/{id}/cancel',
         '/api/v1/settings/ppr-operating-instructions',
+        '/api/v1/settings/ppr-landing-fee',
       ]),
     );
   });

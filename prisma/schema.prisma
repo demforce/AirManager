@@ -314,6 +314,8 @@ model User {
   bookingsForced         Booking[]              @relation("BookingForcedBy")
   /// PPR requests this user DECIDED — approve or reject (epic 8, story 8.2, AC 1/2) — `PprRequest.decidedByUserId`.
   pprRequestsDecided     PprRequest[]           @relation("PprRequestDecidedBy")
+  /// PPR requests this user CLOSED — completed or cancelled (epic 8, story 8.3, AC 1/2) — `PprRequest.closedByUserId`.
+  pprRequestsClosed      PprRequest[]           @relation("PprRequestClosedBy")
   /// Scadenze this user registered/last updated (epic 6, story 6.2) — `Expiry.actorUserId`.
   expiriesRecorded       Expiry[]
   /// Update proposals this user FILED, as the scadenza's titolare (epic 6, story 6.2) — `ExpiryUpdateProposal.proposedByUserId`.
@@ -489,7 +491,17 @@ model CashMovement {
   reversalOfId      String?          @unique
   reversalOf        CashMovement?    @relation("CashMovementReversal", fields: [reversalOfId], references: [id])
   reversal          CashMovement?    @relation("CashMovementReversal")
-  createdAt         DateTime         @default(now())
+  /// The `PprRequest` this movement is the landing-fee twin of (epic 8, story
+  /// 8.3, AC 1) — present only for the automatic "PPR" movement
+  /// `completePprRequest` creates when `landingFeeCents > 0`. NOT unique
+  /// (same precedent as `AccountMovement.flightId`, not the
+  /// `accountMovementId @unique` twin pattern above): more than one movement
+  /// could reference the same PPR request in the future (e.g. a storno).
+  pprRequestId String?
+  pprRequest   PprRequest? @relation(fields: [pprRequestId], references: [id])
+  createdAt    DateTime    @default(now())
+
+  @@index([pprRequestId])
 }
 
 /// Package-type catalogue (epic 4, story 4.3; FR-12). MUTABLE listino
@@ -1240,8 +1252,9 @@ enum PprStatus {
 /// collected SOLELY for anti-abuse rate limiting — it is never displayed,
 /// exported, or used for any other purpose.
 ///
-/// Deliberately NO FK to `CashMovement` in this story (the PPR landing fee
-/// arrives in story 8.3, on the `CashMovement` side per the ERD, not here).
+/// The PPR landing fee (epic 8, story 8.3, AC 1) links in from the
+/// `CashMovement` side, per the ERD (`PprRequest ||--o{ CashMovement`) —
+/// see `cashMovements` below.
 model PprRequest {
   id     String    @id @default(cuid())
   status PprStatus @default(PENDING)
@@ -1295,8 +1308,38 @@ model PprRequest {
   /// never cascade-delete the PPR history.
   decidedByUser User? @relation("PprRequestDecidedBy", fields: [decidedByUserId], references: [id])
 
+  /// When the request was CLOSED — completed or cancelled (epic 8, story
+  /// 8.3, AC 1/2). `null` while `PENDING`/`APPROVED`/`REJECTED`. A distinct
+  /// event from `decidedAt` (the 8.2 approve/reject decision): a request can
+  /// sit `APPROVED` for days before the flight actually happens and the PPR
+  /// is closed out — reusing `decidedAt` here would conflate two different
+  /// staff actions on the wire.
+  closedAt DateTime?
+
+  closedByUserId String?
+  /// The staff/admin `User` who completed or cancelled this request (story
+  /// 8.3) — `null` until closed. Same nullable-FK/`SetNull`-on-delete
+  /// pattern as `decidedByUser` above.
+  closedByUser User? @relation("PprRequestClosedBy", fields: [closedByUserId], references: [id])
+
+  /// The landing fee charged at completion, in integer euro cents (AD-2) —
+  /// stamped ONLY by `completePprRequest` (story 8.3, AC 1), 0 included (a
+  /// waived fee is still a recorded decision, not an absence of one).
+  /// `null` for every other status: still open, or closed via `cancelPprRequest`
+  /// (AC 2, no fee applies to a no-show). This is the register's own field —
+  /// the linked `CashMovement` (via `pprRequestId` below) exists only when
+  /// the fee is `> 0`.
+  landingFeeCents Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// The `CashMovement` this request's landing fee created (story 8.3, AC 1)
+  /// — present only when `landingFeeCents > 0`. NOT unique: same
+  /// "more than one movement could reference the same source in the future"
+  /// shape as `AccountMovement.flightId` (e.g. a future storno of the fee
+  /// would link back here too), even though today at most one exists.
+  cashMovements CashMovement[]
 
   /// Backs the per-IP hourly rate-limit count (`ppr.service.ts`, AC 2):
   /// `count` of rows with the same `submitterIp` and `createdAt` within the

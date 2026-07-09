@@ -1,15 +1,19 @@
 import type { Prisma, PprStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
-import type { CreatePprRequestInput, ListPprRequestsQuery } from '@/lib/schemas/ppr';
+import { parseDateOnlyUtc } from '@/lib/date-only';
+import type { CompletePprRequestInput, CreatePprRequestInput, ListPprRequestsQuery } from '@/lib/schemas/ppr';
 import { APP_TIMEZONE } from '@/lib/time';
-import { dateOnlyInZone } from '@/lib/zoned-time';
+import { addDaysDateOnly, dateOnlyInZone, zonedMidnightUtc } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildPprApprovalEmail, buildPprReceiptEmail, buildPprRejectionEmail } from '@/server/adapters/mail/templates';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { getPprOperatingInstructions } from './app-settings.service';
 import { ConflictError, NotFoundError, RateLimitError, ValidationError } from './errors';
+
+/** The seeded cash category (`prisma/seed.ts`) the landing-fee movement is recorded under (story 8.3, AC 1) — resolved BY NAME inside the closing transaction, same "fails loudly by design" contract as `accounts.service.ts#recordTopUp`'s "Ricariche"/`packages.service.ts#sellPackage`'s "Pacchetti". */
+const PPR_CASH_CATEGORY_NAME = 'PPR';
 
 /**
  * Public PPR request intake (epic 8, story 8.1; FR-22, UJ-3) — the FIRST
@@ -163,6 +167,11 @@ export type PprRequestListItem = {
   rejectionReason: string | null;
   decidedAt: Date | null;
   decidedByUserId: string | null;
+  /** When this request was closed — completed or cancelled (story 8.3, AC 1/2). `null` while still open. */
+  closedAt: Date | null;
+  closedByUserId: string | null;
+  /** Landing fee charged at completion (story 8.3, AC 1), integer euro cents. `null` unless `COMPLETED` — see `completePprRequest`. */
+  landingFeeCents: number | null;
   createdAt: Date;
 };
 
@@ -191,20 +200,42 @@ const PPR_REQUEST_SELECT = {
   rejectionReason: true,
   decidedAt: true,
   decidedByUserId: true,
+  closedAt: true,
+  closedByUserId: true,
+  landingFeeCents: true,
   createdAt: true,
 } as const;
 
 /**
- * Lists the staff approval queue (AC 1/2). `ppr.manage` only. Defaults to
- * `status=PENDING` (the actionable queue, FIFO `createdAt asc`, tie-broken
- * by `id` for stable pagination) — same pattern as
- * `expiries.service.ts#listExpiryProposals`; pass `APPROVED`/`REJECTED` to
- * review past decisions.
+ * Lists the staff approval queue (AC 1/2, story 8.2) AND the filterable
+ * register (AC 2, story 8.3) — ONE function, two callers (`/dashboard/ppr`'s
+ * queue and `/dashboard/ppr/register`), same `ppr.manage` gate. Defaults to
+ * `status=PENDING` (the actionable queue's own contract, unchanged, FIFO
+ * `createdAt asc`, tie-broken by `id` for stable pagination — same pattern
+ * as `expiries.service.ts#listExpiryProposals`); the register passes an
+ * explicit status (including `'ALL'`, no status filter at all) plus an
+ * optional `from`/`to` period bounding `eta` — the register is a register
+ * of ARRIVALS. The period is resolved to a semi-open
+ * `[zonedMidnightUtc(from), zonedMidnightUtc(to+1))` Europe/Rome instant
+ * range (same `zonedMidnightUtc`/`addDaysDateOnly` pattern as story 7.2's
+ * calendar day/week bounds) — an `eta` exactly at the `to+1` midnight
+ * belongs to the FOLLOWING day, never silently included.
  */
 export async function listPprRequests(actor: Actor, query: ListPprRequestsQuery): Promise<PaginatedResult<PprRequestListItem>> {
   authorize(actor, 'ppr.manage');
 
-  const where = { status: query.status };
+  const etaFilter: { gte?: Date; lt?: Date } = {};
+  if (query.from) {
+    etaFilter.gte = zonedMidnightUtc(query.from, APP_TIMEZONE);
+  }
+  if (query.to) {
+    etaFilter.lt = zonedMidnightUtc(addDaysDateOnly(query.to, 1), APP_TIMEZONE);
+  }
+
+  const where: Prisma.PprRequestWhereInput = {
+    ...(query.status === 'ALL' ? {} : { status: query.status }),
+    ...(Object.keys(etaFilter).length > 0 ? { eta: etaFilter } : {}),
+  };
 
   // Interactive transaction (story TD-1, AC 3 pattern) — see
   // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
@@ -223,41 +254,58 @@ export async function listPprRequests(actor: Actor, query: ListPprRequestsQuery)
   return paginate(items, total, query);
 }
 
+/** The `lockPprRequest` conflict shared by `approvePprRequest`/`rejectPprRequest` (story 8.2) — a request not `PENDING` when a decision is attempted. */
+const PPR_ALREADY_DECIDED_CONFLICT = { message: 'This PPR request has already been decided.', code: 'PPR_ALREADY_DECIDED' } as const;
+
+/** The `lockPprRequest` conflict shared by `completePprRequest`/`cancelPprRequest` (story 8.3) — a request not `APPROVED` when a closure is attempted (covers a still-`PENDING`/`REJECTED` request AND an already-closed one alike — the problem is the STATE, distinct from the 8.2 decision conflict above). */
+const PPR_NOT_APPROVED_CONFLICT = { message: 'This PPR request is not in APPROVED status.', code: 'PPR_NOT_APPROVED' } as const;
+
 /**
- * Locks and re-reads a `PprRequest` row for a decision (approve/reject),
- * shared by both functions below — `SELECT ... FOR UPDATE` as the FIRST
- * statement in the caller's transaction (precedent:
- * `bookings.service.ts#createBooking`'s aircraft lock), so the guard below
- * and whatever the caller does next (issuing a PPR number, on approve) are
- * serialized against a concurrent decision on the SAME row.
+ * Locks and re-reads a `PprRequest` row for a state-changing action —
+ * approve/reject (story 8.2) or complete/cancel (story 8.3) — shared by all
+ * four functions below — `SELECT ... FOR UPDATE` as the FIRST statement in
+ * the caller's transaction (precedent: `bookings.service.ts#createBooking`'s
+ * aircraft lock), so the guard below and whatever the caller does next
+ * (issuing a PPR number on approve; recording the landing-fee movement on
+ * complete) are serialized against a concurrent action on the SAME row.
+ * Generalized (story 8.3, Task 3) from the 8.2-only `lockPendingPprRequest`:
+ * `expectedStatus`/`conflict` are now parameters — the two 8.2 call sites
+ * (`'PENDING'`, `PPR_ALREADY_DECIDED_CONFLICT`) behave byte-identically to
+ * before this refactor.
  *
  * **Concurrency (Dev Notes, "la matrice 409-vs-numero è il cuore della
- * story")**: two decisions racing on the SAME request both reach this lock;
+ * story")**: two actions racing on the SAME request both reach this lock;
  * the second to acquire it re-reads a row the first already flipped away
- * from `PENDING` and throws the 409 here — BEFORE either the counter
- * upsert (approve) or the update (reject) runs, so a losing decision never
- * burns a PPR number and never overwrites the winner's outcome. Two
- * approvals on DIFFERENT requests never contend this lock at all (it is
- * scoped to one row by `id`) — they only ever meet at the `PprCounter` row
- * inside `approvePprRequest`, which is a separate, much narrower
- * bottleneck (see that model's doc-comment).
+ * from `expectedStatus` and throws the conflict here — BEFORE either side
+ * effect (a PPR number on approve; a cash movement on complete) runs, so a
+ * losing action never burns a PPR number, never records a duplicate
+ * movement, and never overwrites the winner's outcome. Two actions on
+ * DIFFERENT requests never contend this lock at all (it is scoped to one
+ * row by `id`) — they only ever meet at the `PprCounter` row inside
+ * `approvePprRequest`, a separate, much narrower bottleneck (see that
+ * model's doc-comment).
  */
-async function lockPendingPprRequest(tx: Prisma.TransactionClient, id: string): Promise<void> {
+async function lockPprRequest(
+  tx: Prisma.TransactionClient,
+  id: string,
+  expectedStatus: PprStatus,
+  conflict: { message: string; code: string },
+): Promise<void> {
   const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
     SELECT "id", "status" FROM "PprRequest" WHERE "id" = ${id} FOR UPDATE`;
   const row = locked[0];
   if (!row) {
     throw new NotFoundError('PPR request not found.');
   }
-  if (row.status !== 'PENDING') {
-    throw new ConflictError('This PPR request has already been decided.', undefined, 'PPR_ALREADY_DECIDED');
+  if (row.status !== expectedStatus) {
+    throw new ConflictError(conflict.message, undefined, conflict.code);
   }
 }
 
 /**
  * Approves a PENDING PPR request (AC 1) — `ppr.manage` only. Assigns the
  * next atomic per-year PPR number (`'PPR-<year>-NNNN'`, see
- * `lockPendingPprRequest`'s and `PprCounter`'s doc-comments for the full
+ * `lockPprRequest`'s and `PprCounter`'s doc-comments for the full
  * race analysis) and sends a best-effort outcome email AFTER the
  * transaction commits, in the requester's OWN form locale
  * (`PprRequest.locale`), including the admin-configured operating
@@ -277,7 +325,7 @@ export async function approvePprRequest(actor: Actor, id: string): Promise<PprRe
   const year = Number(dateOnlyInZone(decidedAt, APP_TIMEZONE).slice(0, 4));
 
   const updated = await prisma.$transaction(async (tx) => {
-    await lockPendingPprRequest(tx, id);
+    await lockPprRequest(tx, id, 'PENDING', PPR_ALREADY_DECIDED_CONFLICT);
 
     // Atomic per-year sequence (AC 1) — ONE statement; Postgres's own row
     // lock on the upserted `PprCounter` row is what makes two approvals in
@@ -319,7 +367,7 @@ export async function approvePprRequest(actor: Actor, id: string): Promise<PprRe
 /**
  * Rejects a PENDING PPR request with a mandatory reason (AC 2) —
  * `ppr.manage` only. Same lock-then-guard as `approvePprRequest` (via
- * `lockPendingPprRequest`) but never touches `PprCounter` (Contesto: "il
+ * `lockPprRequest`) but never touches `PprCounter` (Contesto: "il
  * contatore non si tocca"). Best-effort outcome email AFTER commit, same
  * failure-swallowing rule as the approval side.
  */
@@ -329,7 +377,7 @@ export async function rejectPprRequest(actor: Actor, id: string, reason: string)
   const decidedAt = new Date();
 
   const updated = await prisma.$transaction(async (tx) => {
-    await lockPendingPprRequest(tx, id);
+    await lockPprRequest(tx, id, 'PENDING', PPR_ALREADY_DECIDED_CONFLICT);
 
     return tx.pprRequest.update({
       where: { id },
@@ -352,4 +400,109 @@ export async function rejectPprRequest(actor: Actor, id: string, reason: string)
   }
 
   return updated;
+}
+
+// --- Closure (epic 8, story 8.3, FR-24) --------------------------------------
+// `authorize(actor, 'ppr.manage')` gates both — same module-wide contract as
+// every function above. Unlike approve/reject, NEITHER function here sends
+// an email (Dev Notes: "FR-24 non ne prevede nessuna in TUTTA la story").
+
+/**
+ * Completes an APPROVED PPR request (AC 1) — `ppr.manage` only. Records the
+ * closure AND the landing-fee `CashMovement` (when `landingFeeCents > 0`)
+ * in ONE `prisma.$transaction`: either both commit or neither does — a
+ * `COMPLETED` request with a positive fee and no linked movement would be a
+ * corrupted state this codebase never allows to exist, even transiently.
+ *
+ * Guard: `lockPprRequest(tx, id, 'APPROVED', PPR_NOT_APPROVED_CONFLICT)` —
+ * 404 on an unknown id, 409 `PPR_NOT_APPROVED` for any status other than
+ * `APPROVED` (still `PENDING`/`REJECTED`, OR already closed by a concurrent
+ * `complete`/`cancel` — the second racer to acquire the lock always loses
+ * here, BEFORE the category lookup or the movement create run, so at most
+ * one movement is ever created per request).
+ *
+ * `landingFeeCents === 0` (a waived fee) skips the movement entirely — the
+ * branch is checked BEFORE the "PPR" category is even looked up, so a
+ * missing/inactive category never blocks a zero-fee completion. When the
+ * fee is positive, the category is resolved BY NAME (`PPR_CASH_CATEGORY_NAME`)
+ * INSIDE this same transaction — missing or `isActive: false` throws
+ * (`NotFoundError`/`ConflictError` respectively), which rolls back the
+ * `COMPLETED` update too (same "fails loudly by design" contract as
+ * `cash.service.ts#recordCashMovement`'s doc-comment: an operational
+ * misconfiguration must never silently complete a PPR with an unrecorded
+ * fee). `effectiveDate` is the closure's OWN calendar day in Europe/Rome
+ * (`parseDateOnlyUtc(dateOnlyInZone(closedAt, APP_TIMEZONE))` — a
+ * `@db.Date` column, review 3.5's lesson: never a raw instant), computed
+ * from the SAME `closedAt` instant the row itself is stamped with, never a
+ * second independent `new Date()` call that could tick a millisecond apart.
+ */
+export async function completePprRequest(actor: Actor, id: string, input: CompletePprRequestInput): Promise<PprRequestListItem> {
+  authorize(actor, 'ppr.manage');
+
+  const closedAt = new Date();
+  const effectiveDate = parseDateOnlyUtc(dateOnlyInZone(closedAt, APP_TIMEZONE));
+
+  return prisma.$transaction(async (tx) => {
+    await lockPprRequest(tx, id, 'APPROVED', PPR_NOT_APPROVED_CONFLICT);
+
+    const closed = await tx.pprRequest.update({
+      where: { id },
+      data: { status: 'COMPLETED', closedAt, closedByUserId: actor.userId, landingFeeCents: input.landingFeeCents },
+      select: PPR_REQUEST_SELECT,
+    });
+
+    if (input.landingFeeCents > 0) {
+      const category = await tx.cashCategory.findUnique({
+        where: { name: PPR_CASH_CATEGORY_NAME },
+        select: { id: true, isActive: true },
+      });
+      if (!category) {
+        throw new NotFoundError(
+          `Cash category "${PPR_CASH_CATEGORY_NAME}" is missing — seed it before completing a PPR request with a landing fee.`,
+        );
+      }
+      if (!category.isActive) {
+        throw new ConflictError(
+          `Cash category "${PPR_CASH_CATEGORY_NAME}" is inactive — reactivate it before completing a PPR request with a landing fee.`,
+        );
+      }
+
+      await tx.cashMovement.create({
+        data: {
+          categoryId: category.id,
+          amountCents: input.landingFeeCents,
+          description: `PPR ${closed.pprNumber} landing fee`,
+          effectiveDate,
+          actorUserId: actor.userId,
+          pprRequestId: id,
+        },
+      });
+    }
+
+    return closed;
+  });
+}
+
+/**
+ * Cancels an APPROVED PPR request that never showed up (AC 2) — `ppr.manage`
+ * only. Same lock-then-guard as `completePprRequest`
+ * (`lockPprRequest(tx, id, 'APPROVED', PPR_NOT_APPROVED_CONFLICT)`) but
+ * records NEITHER a fee NOR a `CashMovement` NOR a reason (Contesto: "l'AC
+ * non lo chiede" — a withdrawn/no-show request is simply closed with no
+ * money involved, nothing speculative added beyond what AC 2 asks for).
+ */
+export async function cancelPprRequest(actor: Actor, id: string): Promise<PprRequestListItem> {
+  authorize(actor, 'ppr.manage');
+
+  const closedAt = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    await lockPprRequest(tx, id, 'APPROVED', PPR_NOT_APPROVED_CONFLICT);
+
+    return tx.pprRequest.update({
+      where: { id },
+      data: { status: 'CANCELLED', closedAt, closedByUserId: actor.userId },
+      select: PPR_REQUEST_SELECT,
+    });
+  });
 }

@@ -1251,7 +1251,67 @@
       "save": "Salva istruzioni",
       "saved": "Istruzioni salvate.",
       "error": "Non è stato possibile salvare le istruzioni. Riprova."
-    }
+    },
+    "landingFee": {
+      "heading": "Tassa di atterraggio predefinita",
+      "description": "Importo prefillato nel pannello di completamento del registro PPR (modificabile caso per caso). 0 ammesso.",
+      "amountLabel": "Importo",
+      "invalidAmount": "Inserisci un importo valido (anche 0,00).",
+      "save": "Salva tassa",
+      "saved": "Tassa salvata.",
+      "error": "Non è stato possibile salvare la tassa. Riprova."
+    },
+    "registerLink": "Registro PPR"
+  },
+  "PprRegisterPage": {
+    "kicker": "Registro PPR",
+    "title": "Registro PPR",
+    "description": "Chiudi i PPR approvati incassando la tassa di atterraggio, o consulta lo storico per stato e periodo.",
+    "backToDashboard": "Torna alla dashboard",
+    "backToQueue": "Vai alla coda approvazioni",
+    "filters": {
+      "status": "Stato",
+      "statusAll": "Tutti",
+      "statusOptions": {
+        "pending": "In attesa",
+        "approved": "Approvato",
+        "rejected": "Rifiutato",
+        "completed": "Completato",
+        "cancelled": "Annullato"
+      },
+      "from": "Dal",
+      "to": "Al",
+      "reset": "Azzera filtri"
+    },
+    "table": {
+      "pprNumber": "Numero PPR",
+      "requester": "Richiedente",
+      "aircraft": "Marche",
+      "eta": "ETA",
+      "status": "Stato",
+      "fee": "Tassa",
+      "actions": "Azioni",
+      "noValue": "—"
+    },
+    "actions": {
+      "complete": "Completa",
+      "cancel": "Annulla PPR",
+      "confirmCancelPrompt": "Confermi l'annullamento di questo PPR?",
+      "confirmYes": "Sì, annulla",
+      "confirmNo": "No",
+      "feeLabel": "Tassa di atterraggio",
+      "feeHint": "Importo in euro, prefillato dal default (modificabile). 0 ammesso.",
+      "invalidFee": "Inserisci un importo valido (anche 0,00).",
+      "submitComplete": "Conferma completamento",
+      "closePanel": "Annulla"
+    },
+    "feedback": {
+      "completed": "PPR completato.",
+      "cancelled": "PPR annullato.",
+      "conflictError": "Questo PPR non è più in stato Approvato (probabilmente già chiuso da un altro operatore).",
+      "genericError": "Non è stato possibile completare l'operazione. Riprova."
+    },
+    "empty": "Nessun PPR trovato per i filtri selezionati."
   },
   "Emails": {
     "invite": {

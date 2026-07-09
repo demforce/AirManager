@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useState } from 'react';
+import { parseCents } from '@/lib/money';
 import type { PprOperatingInstructionsDto, PprRequestItemDto } from '@/lib/schemas/ppr';
 import { formatDateTime } from '@/lib/time';
 
@@ -57,12 +58,28 @@ export type PprOperatingInstructionsLabels = {
   error: string;
 };
 
+/** Story 8.3, AC 1 — the default landing fee sub-block that joins the operating-instructions editor in the SAME settings section. */
+export type PprLandingFeeLabels = {
+  heading: string;
+  description: string;
+  amountLabel: string;
+  invalidAmount: string;
+  save: string;
+  saved: string;
+  error: string;
+};
+
 type PprQueueProps = {
   requests: PprRequestItemDto[];
   locale: 'it' | 'en';
   labels: PprQueueLabels;
   /** `settings.manage` only (Contesto: "l'editor ... visibile solo a chi ha settings.manage") — `null` hides the whole section. */
-  instructionsEditor: { initial: PprOperatingInstructionsDto; labels: PprOperatingInstructionsLabels } | null;
+  instructionsEditor: {
+    initial: PprOperatingInstructionsDto;
+    labels: PprOperatingInstructionsLabels;
+    /** Story 8.3, AC 1: default landing fee, same section, own independent save action. */
+    landingFee: { initialCents: number; labels: PprLandingFeeLabels };
+  } | null;
 };
 
 type PendingConfirm = { id: string; action: 'APPROVE' } | { id: string; action: 'REJECT' };
@@ -339,7 +356,11 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
       )}
 
       {instructionsEditor ? (
-        <PprOperatingInstructionsEditor initial={instructionsEditor.initial} labels={instructionsEditor.labels} />
+        <PprOperatingInstructionsEditor
+          initial={instructionsEditor.initial}
+          labels={instructionsEditor.labels}
+          landingFee={instructionsEditor.landingFee}
+        />
       ) : null}
     </div>
   );
@@ -348,6 +369,7 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
 type PprOperatingInstructionsEditorProps = {
   initial: PprOperatingInstructionsDto;
   labels: PprOperatingInstructionsLabels;
+  landingFee: { initialCents: number; labels: PprLandingFeeLabels };
 };
 
 /**
@@ -358,7 +380,7 @@ type PprOperatingInstructionsEditorProps = {
  * `ppr-queue.tsx` are new files) — same "one file, several sub-components"
  * shape as `finance/cash-register.tsx`'s `ReverseForm`.
  */
-function PprOperatingInstructionsEditor({ initial, labels }: PprOperatingInstructionsEditorProps) {
+function PprOperatingInstructionsEditor({ initial, labels, landingFee }: PprOperatingInstructionsEditorProps) {
   const [it, setIt] = useState(initial.it);
   const [en, setEn] = useState(initial.en);
   const [saving, setSaving] = useState(false);
@@ -435,6 +457,113 @@ function PprOperatingInstructionsEditor({ initial, labels }: PprOperatingInstruc
           {labels.save}
         </button>
       </div>
+
+      <div className="mt-8 border-t border-[#EAEAEA] pt-6">
+        <LandingFeeEditor initialCents={landingFee.initialCents} labels={landingFee.labels} />
+      </div>
     </section>
+  );
+}
+
+/** Euro string (comma decimal), the exact inverse of `parseCents` — same helper as `dashboard/ppr/register/ppr-register.tsx`'s `centsToEuroInput` (this file has no shared money-input module to import it from; the project keeps each dashboard route's client components self-contained, same as e.g. `sanitizeDateParam` being redefined per page). */
+function centsToEuroInput(cents: number): string {
+  return `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, '0')}`;
+}
+
+type LandingFeeEditorProps = {
+  initialCents: number;
+  labels: PprLandingFeeLabels;
+};
+
+/**
+ * Default landing fee editor (story 8.3, AC 1) — a second, INDEPENDENT
+ * save action within the same settings section as the operating
+ * instructions above (a different `AppSetting` key,
+ * `PUT /api/v1/settings/ppr-landing-fee`, own gate `settings.manage`,
+ * same as the instructions PUT). Euro-string input + `parseCents` at
+ * submit (AD-2 boundary), same pattern as `cash-register.tsx`'s
+ * `NewMovementForm`; 0 is a valid, distinct amount (Contesto: "0 ammesso").
+ */
+function LandingFeeEditor({ initialCents, labels }: LandingFeeEditorProps) {
+  const [amount, setAmount] = useState(centsToEuroInput(initialCents));
+  const [fieldError, setFieldError] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  async function save(): Promise<void> {
+    setFeedback(null);
+    let landingFeeCents: number;
+    try {
+      landingFeeCents = parseCents(amount);
+    } catch {
+      setFieldError(true);
+      return;
+    }
+    if (!Number.isInteger(landingFeeCents) || landingFeeCents < 0 || landingFeeCents > 2_147_483_647) {
+      setFieldError(true);
+      return;
+    }
+    setFieldError(false);
+
+    setSaving(true);
+    const response = await fetch('/api/v1/settings/ppr-landing-fee', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ landingFeeCents }),
+    });
+    setSaving(false);
+
+    if (!response.ok) {
+      setFeedback(labels.error);
+      return;
+    }
+
+    setFeedback(labels.saved);
+  }
+
+  return (
+    <div data-testid="ppr-landing-fee-editor">
+      <h3 className="font-[family-name:var(--font-serif)] text-lg font-medium tracking-[-0.02em] text-[#111111]">{labels.heading}</h3>
+      <p className="mt-1 text-sm text-[#787774]">{labels.description}</p>
+
+      <div className="mt-4">
+        <label htmlFor="ppr-landing-fee-amount" className="block text-sm font-medium text-[#2F3437]">
+          {labels.amountLabel}
+        </label>
+        <input
+          id="ppr-landing-fee-amount"
+          data-testid="ppr-landing-fee-amount"
+          inputMode="decimal"
+          placeholder="0,00"
+          aria-invalid={fieldError}
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          className="mt-2 w-full max-w-[200px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+        />
+        {fieldError ? (
+          <p role="alert" className="mt-1 text-xs text-[#9F2F2D]">
+            {labels.invalidAmount}
+          </p>
+        ) : null}
+      </div>
+
+      {feedback ? (
+        <p role="status" data-testid="ppr-landing-fee-feedback" className="mt-4 text-sm text-[#346538]">
+          {feedback}
+        </p>
+      ) : null}
+
+      <div className="mt-4">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void save()}
+          data-testid="ppr-landing-fee-save"
+          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {labels.save}
+        </button>
+      </div>
+    </div>
   );
 }

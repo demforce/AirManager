@@ -106,8 +106,10 @@ import {
   updatePersonSchema,
 } from './people';
 import {
+  completePprRequestSchema,
   createPprRequestSchema,
   listPprRequestsQuerySchema,
+  pprLandingFeeDefaultSchema,
   pprOperatingInstructionsSchema,
   pprRequestCreatedResponseSchema,
   pprRequestItemSchema,
@@ -278,7 +280,9 @@ registry.register('PprRequestCreatedResponse', pprRequestCreatedResponseSchema);
 registry.register('PprRequest', pprRequestItemSchema);
 registry.register('PprRequestList', pprRequestListResponseSchema);
 registry.register('RejectPprRequestRequest', rejectPprRequestSchema);
+registry.register('CompletePprRequestRequest', completePprRequestSchema);
 registry.register('PprOperatingInstructions', pprOperatingInstructionsSchema);
+registry.register('PprLandingFeeDefault', pprLandingFeeDefaultSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -1521,9 +1525,9 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/ppr-requests',
-  summary: 'List the staff PPR approval queue (AC 1/2)',
+  summary: 'List the staff PPR approval queue, or the filterable register (AC 1/2, story 8.3 AC 2)',
   description:
-    'Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED`/`COMPLETED`/`CANCELLED` to review past decisions. Every detail field EXCEPT `submitterIp` (never exposed — anti-abuse technical datum). Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `ppr.manage`.',
+    "Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED`/`COMPLETED`/`CANCELLED`, or `ALL` for no status filter (the register, story 8.3). Optional `from`/`to` (`YYYY-MM-DD`) bound `eta` — a semi-open Europe/Rome day range, since the register is a register of ARRIVALS. Every detail field EXCEPT `submitterIp` (never exposed — anti-abuse technical datum). Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `ppr.manage`.",
   tags: ['Ppr'],
   security,
   request: { query: listPprRequestsQuerySchema },
@@ -1563,6 +1567,38 @@ registry.registerPath({
   },
 });
 
+// --- PPR closure (epic 8, story 8.3, FR-24) ----------------------------------
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests/{id}/complete',
+  summary: 'Complete an APPROVED PPR request, charging the landing fee (AC 1)',
+  description:
+    'Body `{ landingFeeCents }` (integer euro cents, 0 admitted — a waived fee). When positive, records a `CashMovement` in the "PPR" cash category, linked to this request, in the SAME transaction as the closure (both commit or neither does). 404 on an unknown id; any status other than `APPROVED` (still open, or already closed) answers 409 `PPR_NOT_APPROVED`. Requires `ppr.manage`. Supports `Idempotency-Key`.',
+  tags: ['Ppr'],
+  security,
+  request: { params: pprRequestIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(completePprRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The completed request, with its recorded landingFeeCents.', content: jsonContent(pprRequestItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests/{id}/cancel',
+  summary: 'Cancel an APPROVED PPR request that never showed up (AC 2)',
+  description:
+    'No body — no fee, no cash movement. 404 on an unknown id; any status other than `APPROVED` answers 409 `PPR_NOT_APPROVED`. Requires `ppr.manage`. Supports `Idempotency-Key`.',
+  tags: ['Ppr'],
+  security,
+  request: { params: pprRequestIdParams, headers: [idempotencyKeyHeader] },
+  responses: {
+    200: { description: 'The cancelled request.', content: jsonContent(pprRequestItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
 registry.registerPath({
   method: 'get',
   path: '/api/v1/settings/ppr-operating-instructions',
@@ -1587,6 +1623,34 @@ registry.registerPath({
   request: { body: { content: jsonContent(pprOperatingInstructionsSchema), required: true } },
   responses: {
     200: { description: 'The saved instructions.', content: jsonContent(pprOperatingInstructionsSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/ppr-landing-fee',
+  summary: 'Read the default PPR landing fee (story 8.3, AC 1)',
+  description:
+    "`{ landingFeeCents }` — the admin-configured default landing fee (integer euro cents), used to prefill the completion panel. Absent/never-configured reads as `0`. Requires `ppr.manage` (staff sees it while completing a PPR; only `settings.manage` can edit it, see the PUT sibling below).",
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current default landing fee.', content: jsonContent(pprLandingFeeDefaultSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/ppr-landing-fee',
+  summary: 'Set the default PPR landing fee (story 8.3, AC 1)',
+  description: 'Body `{ landingFeeCents }` (integer euro cents, 0..2147483647). Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(pprLandingFeeDefaultSchema), required: true } },
+  responses: {
+    200: { description: 'The saved default landing fee.', content: jsonContent(pprLandingFeeDefaultSchema) },
     ...errorResponses(401, 403, 422),
   },
 });

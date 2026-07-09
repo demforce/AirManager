@@ -12,6 +12,12 @@ vi.mock('@/server/db/prisma', () => ({
     appSetting: {
       findMany: vi.fn(),
     },
+    cashCategory: {
+      findUnique: vi.fn(),
+    },
+    cashMovement: {
+      create: vi.fn(),
+    },
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
   },
@@ -30,8 +36,16 @@ vi.mock('@/server/adapters/mail/templates', () => ({
 
 const { prisma } = await import('@/server/db/prisma');
 const { buildPprReceiptEmail, buildPprApprovalEmail, buildPprRejectionEmail } = await import('@/server/adapters/mail/templates');
-const { createPprRequest, extractSubmitterIp, listPprRequests, approvePprRequest, rejectPprRequest, PPR_RATE_LIMIT_MAX } =
-  await import('./ppr.service');
+const {
+  createPprRequest,
+  extractSubmitterIp,
+  listPprRequests,
+  approvePprRequest,
+  rejectPprRequest,
+  completePprRequest,
+  cancelPprRequest,
+  PPR_RATE_LIMIT_MAX,
+} = await import('./ppr.service');
 const { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } = await import('./errors');
 
 const countMock = vi.mocked(prisma.pprRequest.count);
@@ -39,6 +53,8 @@ const createMock = vi.mocked(prisma.pprRequest.create);
 const findManyMock = vi.mocked(prisma.pprRequest.findMany);
 const updateMock = vi.mocked(prisma.pprRequest.update);
 const appSettingFindManyMock = vi.mocked(prisma.appSetting.findMany);
+const cashCategoryFindUniqueMock = vi.mocked(prisma.cashCategory.findUnique);
+const cashMovementCreateMock = vi.mocked(prisma.cashMovement.create);
 const transactionMock = vi.mocked(prisma.$transaction);
 const queryRawMock = vi.mocked(prisma.$queryRaw);
 
@@ -50,6 +66,8 @@ const pprCreate = createMock as unknown as { mockResolvedValue: (v: Fixture) => 
 const pprFindMany = findManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const pprUpdate = updateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const appSettingFindMany = appSettingFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture | null) => void };
+const cashMovementCreate = cashMovementCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 
 /** Same batch/interactive `$transaction` stand-in as `bookings.service.test.ts`. */
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
@@ -363,6 +381,16 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       await expect(rejectPprRequest(pilotActor(), 'ppr_1', 'Some reason')).rejects.toBeInstanceOf(ForbiddenError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
+
+    it('completePprRequest throws ForbiddenError before any query for an actor lacking ppr.manage', async () => {
+      await expect(completePprRequest(pilotActor(), 'ppr_1', { landingFeeCents: 1000 })).rejects.toBeInstanceOf(ForbiddenError);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('cancelPprRequest throws ForbiddenError before any query for an actor lacking ppr.manage', async () => {
+      await expect(cancelPprRequest(pilotActor(), 'ppr_1')).rejects.toBeInstanceOf(ForbiddenError);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('listPprRequests', () => {
@@ -392,6 +420,54 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       await listPprRequests(staffActor(), { status: 'APPROVED', page: 1, pageSize: 20 });
 
       expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'APPROVED' } }));
+    });
+
+    it('status=ALL (the register, story 8.3 AC 2) applies no status filter at all', async () => {
+      pprFindMany.mockResolvedValue([]);
+      const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
+      pprCountFn.mockResolvedValue(0);
+
+      await listPprRequests(staffActor(), { status: 'ALL', page: 1, pageSize: 20 });
+
+      const whereArg = findManyMock.mock.calls[0]?.[0]?.where as Record<string, unknown> | undefined;
+      expect(whereArg).not.toHaveProperty('status');
+    });
+
+    it('from/to bound eta to a semi-open Europe/Rome day range (story 8.3 AC 2)', async () => {
+      pprFindMany.mockResolvedValue([]);
+      const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
+      pprCountFn.mockResolvedValue(0);
+
+      await listPprRequests(staffActor(), { status: 'ALL', page: 1, pageSize: 20, from: '2026-03-01', to: '2026-03-02' });
+
+      const whereArg = findManyMock.mock.calls[0]?.[0]?.where as { eta?: { gte?: Date; lt?: Date } } | undefined;
+      // 2026-03-01/02 are outside any DST transition — plain CET (UTC+1).
+      expect(whereArg?.eta?.gte?.toISOString()).toBe('2026-02-28T23:00:00.000Z');
+      // `to` is INCLUSIVE of the whole day, so the upper bound is midnight of to+1 (semi-open).
+      expect(whereArg?.eta?.lt?.toISOString()).toBe('2026-03-02T23:00:00.000Z');
+    });
+
+    it('only from (no to) applies just a lower bound on eta', async () => {
+      pprFindMany.mockResolvedValue([]);
+      const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
+      pprCountFn.mockResolvedValue(0);
+
+      await listPprRequests(staffActor(), { status: 'ALL', page: 1, pageSize: 20, from: '2026-03-01' });
+
+      const whereArg = findManyMock.mock.calls[0]?.[0]?.where as { eta?: { gte?: Date; lt?: Date } } | undefined;
+      expect(whereArg?.eta?.gte).toBeInstanceOf(Date);
+      expect(whereArg?.eta?.lt).toBeUndefined();
+    });
+
+    it('no from/to omits the eta filter entirely', async () => {
+      pprFindMany.mockResolvedValue([]);
+      const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
+      pprCountFn.mockResolvedValue(0);
+
+      await listPprRequests(staffActor(), { status: 'PENDING', page: 1, pageSize: 20 });
+
+      const whereArg = findManyMock.mock.calls[0]?.[0]?.where as Record<string, unknown> | undefined;
+      expect(whereArg).not.toHaveProperty('eta');
     });
   });
 
@@ -558,6 +634,171 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       expect(result.status).toBe('REJECTED');
       expect(consoleErrorSpy).toHaveBeenCalled();
       consoleErrorSpy.mockRestore();
+    });
+  });
+});
+
+/**
+ * PPR closure — complete/cancel (epic 8, story 8.3, AC 1/2; FR-24). Focus:
+ * the lock-guard matrix (404/409 `PPR_NOT_APPROVED`, distinct from 8.2's
+ * `PPR_ALREADY_DECIDED`), the fee>0-creates-exactly-one-movement /
+ * fee===0-creates-none branch, and the category-by-name loud failure that
+ * must never leave a `COMPLETED` request with an unrecorded fee. Real
+ * cross-request transactional atomicity (two concurrent completes on the
+ * SAME id; an `Idempotency-Key` replay) is beyond what a mocked
+ * `prisma.$transaction` can prove — that is `e2e/ppr-register.spec.ts`'s
+ * job, against a real Postgres transaction.
+ */
+function closedRow(overrides: Fixture = {}): Fixture {
+  return {
+    id: 'ppr_1',
+    status: 'COMPLETED',
+    firstName: 'Mario',
+    lastName: 'Rossi',
+    email: 'mario@example.com',
+    phone: '+39 333 1234567',
+    aircraftRegistration: 'I-ABCD',
+    aircraftType: 'Cessna 172',
+    origin: 'LIRN',
+    destination: 'LIRU',
+    eta: new Date(Date.now() + 3_600_000),
+    etd: null,
+    personsOnBoard: 2,
+    notes: null,
+    locale: 'it',
+    pprNumber: 'PPR-2026-0001',
+    rejectionReason: null,
+    decidedAt: new Date(),
+    decidedByUserId: 'staff_1',
+    closedAt: new Date(),
+    closedByUserId: 'staff_1',
+    landingFeeCents: 1000,
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
+  beforeEach(() => {
+    updateMock.mockReset();
+    queryRawMock.mockReset();
+    transactionMock.mockReset();
+    cashCategoryFindUniqueMock.mockReset();
+    cashMovementCreateMock.mockReset();
+    mockTransaction();
+  });
+
+  describe('completePprRequest — lock guard (409 PPR_NOT_APPROVED, distinct from 8.2 PPR_ALREADY_DECIDED)', () => {
+    it('404 NotFoundError when the id does not exist (lock finds no row)', async () => {
+      mockLockedRow(undefined);
+
+      await expect(completePprRequest(staffActor(), 'missing', { landingFeeCents: 1000 })).rejects.toBeInstanceOf(NotFoundError);
+      expect(cashMovementCreateMock).not.toHaveBeenCalled();
+    });
+
+    it.each(['PENDING', 'REJECTED', 'COMPLETED', 'CANCELLED'])(
+      '409 ConflictError code PPR_NOT_APPROVED when status is %s (anything but APPROVED)',
+      async (status) => {
+        mockLockedRow(status);
+
+        const result = completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000 });
+        await expect(result).rejects.toBeInstanceOf(ConflictError);
+        await expect(result).rejects.toMatchObject({ code: 'PPR_NOT_APPROVED' });
+        expect(updateMock).not.toHaveBeenCalled();
+        expect(cashMovementCreateMock).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe('completePprRequest — landing fee movement (AC 1)', () => {
+    it('fee > 0: COMPLETED with the fee stamped, and exactly ONE cash movement with the exact expected fields', async () => {
+      mockLockedRow('APPROVED');
+      pprUpdate.mockResolvedValue(closedRow({ pprNumber: 'PPR-2026-0007', landingFeeCents: 2500 }));
+      cashCategoryFindUnique.mockResolvedValue({ id: 'category_ppr', isActive: true });
+      cashMovementCreate.mockResolvedValue({});
+
+      const result = await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 2500 });
+
+      expect(result.status).toBe('COMPLETED');
+      const updateArg = updateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
+      expect(updateArg?.data).toMatchObject({ status: 'COMPLETED', landingFeeCents: 2500, closedByUserId: 'staff_1' });
+      expect(updateArg?.data?.closedAt).toBeInstanceOf(Date);
+
+      expect(cashCategoryFindUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { name: 'PPR' } }));
+      expect(cashMovementCreateMock).toHaveBeenCalledTimes(1);
+      const movementArg = cashMovementCreateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
+      expect(movementArg?.data).toMatchObject({
+        categoryId: 'category_ppr',
+        amountCents: 2500,
+        description: 'PPR PPR-2026-0007 landing fee',
+        actorUserId: 'staff_1',
+        pprRequestId: 'ppr_1',
+      });
+      expect(movementArg?.data?.effectiveDate).toBeInstanceOf(Date);
+    });
+
+    it('fee === 0: COMPLETED with landingFeeCents:0 stamped, but NO cash movement created (branch checked BEFORE the category lookup)', async () => {
+      mockLockedRow('APPROVED');
+      pprUpdate.mockResolvedValue(closedRow({ landingFeeCents: 0 }));
+
+      const result = await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 0 });
+
+      expect(result.landingFeeCents).toBe(0);
+      const updateArg = updateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
+      expect(updateArg?.data).toMatchObject({ landingFeeCents: 0 });
+      expect(cashCategoryFindUniqueMock).not.toHaveBeenCalled();
+      expect(cashMovementCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('missing "PPR" cash category (fee > 0) fails LOUD with NotFoundError — no movement created', async () => {
+      mockLockedRow('APPROVED');
+      pprUpdate.mockResolvedValue(closedRow());
+      cashCategoryFindUnique.mockResolvedValue(null);
+
+      await expect(completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000 })).rejects.toBeInstanceOf(NotFoundError);
+      expect(cashMovementCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('inactive "PPR" cash category (fee > 0) fails LOUD with ConflictError — no movement created', async () => {
+      mockLockedRow('APPROVED');
+      pprUpdate.mockResolvedValue(closedRow());
+      cashCategoryFindUnique.mockResolvedValue({ id: 'category_ppr', isActive: false });
+
+      await expect(completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000 })).rejects.toBeInstanceOf(ConflictError);
+      expect(cashMovementCreateMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancelPprRequest (AC 2)', () => {
+    it('404 NotFoundError when the id does not exist', async () => {
+      mockLockedRow(undefined);
+
+      await expect(cancelPprRequest(staffActor(), 'missing')).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it.each(['PENDING', 'REJECTED', 'COMPLETED', 'CANCELLED'])(
+      '409 ConflictError code PPR_NOT_APPROVED when status is %s',
+      async (status) => {
+        mockLockedRow(status);
+
+        const result = cancelPprRequest(staffActor(), 'ppr_1');
+        await expect(result).rejects.toBeInstanceOf(ConflictError);
+        await expect(result).rejects.toMatchObject({ code: 'PPR_NOT_APPROVED' });
+      },
+    );
+
+    it('APPROVED -> CANCELLED: no fee, no reason, no cash movement (AC 2 asks for nothing more)', async () => {
+      mockLockedRow('APPROVED');
+      pprUpdate.mockResolvedValue(closedRow({ status: 'CANCELLED', landingFeeCents: null }));
+
+      const result = await cancelPprRequest(staffActor(), 'ppr_1');
+
+      expect(result.status).toBe('CANCELLED');
+      const updateArg = updateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
+      expect(updateArg?.data).toMatchObject({ status: 'CANCELLED', closedByUserId: 'staff_1' });
+      expect(updateArg?.data).not.toHaveProperty('landingFeeCents');
+      expect(cashCategoryFindUniqueMock).not.toHaveBeenCalled();
+      expect(cashMovementCreateMock).not.toHaveBeenCalled();
     });
   });
 });

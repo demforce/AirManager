@@ -1251,7 +1251,67 @@
       "save": "Save instructions",
       "saved": "Instructions saved.",
       "error": "We could not save the instructions. Please try again."
-    }
+    },
+    "landingFee": {
+      "heading": "Default landing fee",
+      "description": "Amount prefilled in the PPR register's completion panel (editable case by case). 0 is allowed.",
+      "amountLabel": "Amount",
+      "invalidAmount": "Enter a valid amount (0.00 is allowed).",
+      "save": "Save fee",
+      "saved": "Fee saved.",
+      "error": "We could not save the fee. Please try again."
+    },
+    "registerLink": "PPR register"
+  },
+  "PprRegisterPage": {
+    "kicker": "PPR register",
+    "title": "PPR register",
+    "description": "Complete approved PPR requests and charge the landing fee, or browse the history by status and period.",
+    "backToDashboard": "Back to dashboard",
+    "backToQueue": "Go to approval queue",
+    "filters": {
+      "status": "Status",
+      "statusAll": "All",
+      "statusOptions": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "completed": "Completed",
+        "cancelled": "Cancelled"
+      },
+      "from": "From",
+      "to": "To",
+      "reset": "Reset filters"
+    },
+    "table": {
+      "pprNumber": "PPR number",
+      "requester": "Requester",
+      "aircraft": "Registration",
+      "eta": "ETA",
+      "status": "Status",
+      "fee": "Fee",
+      "actions": "Actions",
+      "noValue": "—"
+    },
+    "actions": {
+      "complete": "Complete",
+      "cancel": "Cancel PPR",
+      "confirmCancelPrompt": "Confirm cancellation of this PPR?",
+      "confirmYes": "Yes, cancel",
+      "confirmNo": "No",
+      "feeLabel": "Landing fee",
+      "feeHint": "Amount in euros, prefilled from the default (editable). 0 is allowed.",
+      "invalidFee": "Enter a valid amount (0.00 is allowed).",
+      "submitComplete": "Confirm completion",
+      "closePanel": "Cancel"
+    },
+    "feedback": {
+      "completed": "PPR completed.",
+      "cancelled": "PPR cancelled.",
+      "conflictError": "This PPR is no longer in Approved status (likely already closed by another operator).",
+      "genericError": "We could not complete the operation. Please try again."
+    },
+    "empty": "No PPR requests match the selected filters."
   },
   "Emails": {
     "invite": {
