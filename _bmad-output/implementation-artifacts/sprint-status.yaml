@@ -94,7 +94,7 @@ development_status:
   epic-7-retrospective: optional
 
   epic-8: in-progress
-  8-1-ppr-public-form: backlog
+  8-1-ppr-public-form: ready-for-dev
   8-2-ppr-approval-queue: backlog
   8-3-ppr-closure-fee: backlog
   epic-8-retrospective: optional
