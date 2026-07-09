@@ -4,7 +4,7 @@ baseline_commit: 355547b
 
 # Story 8.1: Form PPR pubblico con email di ricevuta
 
-Status: review
+Status: done
 
 ## Story
 
@@ -130,7 +130,23 @@ Sonnet 5 (single dev subagent, extra-high effort, via `bmad-dev-story`).
 - `_bmad-output/implementation-artifacts/8-1-ppr-public-form.md` (this file)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial via `bmad-code-review`, priorità zero sul full-suite e2e su DB fresco. **Verdict: clean-pass — zero must-fix/should-fix.** Tutti e 5 i gate ri-eseguiti dal reviewer in proprio: lint 0 errori, typecheck pulito, **986/986 unit**, build verde, **e2e 141/141** su DB fresco (0 flake nel run, 5/5 superfici story verdi).
+
+- **Honeypot end-to-end provato dal vivo**: 201 byte-identico al successo, zero righe (psql), zero email (Mailpit), non conta nel rate limit; campo davvero off-screen/`aria-hidden`/fuori dal tab order (NON `display:none`); la tecnica e2e col setter nativo esercita davvero il path RHF.
+- **Rate limit sequenziale**: 5×201 poi 429 `RATE_LIMITED`; il 429 non crea righe; IP diverso isolato; header assente → skip documentato.
+- **Email**: locale segue il form (IT/EN dal vivo via Mailpit); ETA in ora di Roma corretta ANCHE su attraversamento di mezzanotte DST (22:30Z → 00:30 del giorno dopo); plurali ICU corretti; send fallita non fallisce la richiesta; **header injection via marche con CRLF+Bcc neutralizzata** (nodemailer folda il CRLF, nessun destinatario iniettato).
+- **Esposizione pubblica chirurgica**: `/it|en/ppr` 200 e POST 201 senza cookie; GET sullo stesso path 405 (nessuna lettura pubblica); spot-check users/people/bookings ancora 401; OpenAPI col solo nuovo path `security: []`, nessuna modifica collaterale alle altre route.
+- **Modello/migrazione zero drift** (`migrate diff` pulito), enum 5 valori, indice `(submitterIp, createdAt)`; risposta 201 esattamente `{"status":"PENDING"}` su ogni path; i18n simmetrica (key-diff rieseguito: 0 asimmetrie); confronti su istanti lato server, early-out client legittimo.
+- Entrambe le judgment call del dev ratificate (migrazione generata con zero drift; riuso `formatDateTime` = davvero data+ora Europe/Rome).
+
+**Finding (non bloccanti):**
+- **N1 (deferred-candidate)**: TOCTOU del rate limit — 20 POST concorrenti dallo stesso IP → 14 righe (solo 6 429): sotto burst l'overshoot scala con la concorrenza, e `x-forwarded-for` è client-trusted senza proxy davanti. ACCETTATO per contratto di story ("controllo soft, zero infrastruttura, honeypot = difesa primaria") — da riportare nel handoff come limite noto della postura anti-abuso PPR.
+- **N2 (nit)**: hero senza NOME dell'aviosuperficie (il claim c'è) — nessun nome configurato esiste nel progetto; inventarlo sarebbe stato peggio (anti-slop). Da rivisitare quando nascerà una config di sito.
+
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session via bmad-create-story), ready-for-dev.
 - 2026-07-09: Implemented (Sonnet 5 single dev subagent via `bmad-dev-story`): PprRequest model + migration, honeypot + DB-backed per-IP rate limit (`RateLimitError` -> 429), public `POST /api/v1/ppr-requests`, public `/[locale]/ppr` page + form, localized receipt email, full test coverage (unit + registry + e2e). All gates green: lint 0 errors, typecheck clean, vitest 986/986, `next build` clean, `playwright test` 141/141 (136 baseline + 5 new, zero regressions, zero flakes this run). Status -> review.
+- 2026-07-09: Review Opus 4.8 xhigh via `bmad-code-review` su DB fresco — clean pass, zero must/should-fix; honeypot, rate limit, locale email, DST, header injection e esposizione pubblica provati empiricamente dal vivo. N1 TOCTOU rate limit deferred (accettato da story), N2 nome aviosuperficie nit. Status -> done.
