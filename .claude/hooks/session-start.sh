@@ -73,7 +73,22 @@ else
   STATUS+=("mailpit MISSING (go install failed, see log)")
 fi
 
-# 6. Git identity (subagent commits are amended + reset-author per process).
+# 6. CodeGraph index (best-effort trial — never fails the bootstrap).
+#    Pinned version; the MCP server in .mcp.json runs `codegraph serve --mcp`.
+if ! command -v codegraph >/dev/null 2>&1; then
+  npm i -g @colbymchenry/codegraph@1.3.1 >>"$LOG" 2>&1 && codegraph telemetry off >>"$LOG" 2>&1
+fi
+if command -v codegraph >/dev/null 2>&1; then
+  if codegraph sync >>"$LOG" 2>&1 || codegraph init >>"$LOG" 2>&1; then
+    STATUS+=("codegraph OK")
+  else
+    STATUS+=("codegraph FAILED (non-blocking, see log)")
+  fi
+else
+  STATUS+=("codegraph MISSING (install failed, non-blocking)")
+fi
+
+# 7. Git identity (subagent commits are amended + reset-author per process).
 git config user.email >/dev/null 2>&1 || git config user.email noreply@anthropic.com
 git config user.name >/dev/null 2>&1 || git config user.name Claude
 

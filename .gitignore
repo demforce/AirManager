@@ -28,3 +28,6 @@ _bmad/custom/config.user.toml
 *.log
 .DS_Store
 __pycache__/
+
+# CodeGraph local index (rebuilt per session by the SessionStart hook)
+.codegraph/
