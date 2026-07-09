@@ -4,7 +4,7 @@ baseline_commit: be3b6f5
 
 # Story 7.3: Modifica e cancellazione
 
-Status: review
+Status: done
 
 ## Story
 
@@ -125,7 +125,23 @@ Sonnet 5 (single dev agent)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial via `bmad-code-review`, priorità zero sul full-suite e2e su DB fresco. **Verdict: clean-pass** — zero fix, 1 deferred (D1).
+
+- **Analisi regressione e2e (priorità zero)**: full suite su DB fresco = **117/123**, TUTTI i 16 test di `bookings.spec.ts` verdi (7/7 nuovi di 7.3 + i 3 test form di 7.1 che nella sessione dev fallivano per volume — il poisoning NON si è riprodotto su DB fresco). I 6 fail (people-management:44/:69, flights:165/:210, flight-reversal:151, package-consumption:134) riproducono in isolamento MA sono regressioni impossibili per costruzione: `git diff be3b6f5..75b0083` è BYTE-IDENTICO su tutto il codice e le spec flights/people/packages (il diff tocca solo file bookings + i18n + doc), e le firme corrispondono esattamente alle 3 classi baseline documentate (flight-result-panel race, flights:210-anche-da-solo, people-under-load con 72 persone attive). 117/123 è dentro la banda attesa.
+- **Race edit-vs-cancel (deviazione del dev RATIFICATA)**: la write atomica `updateMany WHERE status='ACTIVE'` chiude davvero la finestra TOCTOU — raced live ~20 volte: invariante sempre rispettata (mai una riga CANCELLED coi valori dell'edit persi/risorti, mai 5xx; ordini legittimi: edit-200-poi-cancel-200 oppure cancel-200-poi-edit-409).
+- **Deadlock spostamenti incrociati**: 12 iterazioni parallele A→B || B→A: 24/24 richieste 200, zero `40P01`, zero 5xx — il multi-lock dedupe + `ORDER BY id FOR UPDATE` (pattern `correctFlight`) regge.
+- **Matrice own/temporale via API reale**: pilota edit own 200 con `updatedByUserId` corretto (psql: NON il creatore); su altrui 403; own INIZIATA → 422 `BOOKING_ALREADY_STARTED` su edit E cancel; nuovo intervallo nel passato → 422 `BOOKING_IN_PAST`; staff su prenotazione iniziata di altri → 200 (anche spostandola nel PASSATO — asimmetria staff deliberata confermata); cancel staff con `cancelledByUserId`/`cancelledAt` giusti (psql); Zod strip: `personId` nel body ignorato (non 422), body vuoto 422, unauth 401, id inesistente 404.
+- **Slot liberato**: cancel → stessa combinazione velivolo/intervallo ricreabile (201); la cancellata sparisce da lista/calendario/overlap ma resta in DB col tracking (soft-cancel provato).
+- **Rename relazione `BookingActor`**: solo Prisma-client-level, constraint DB invariato (`\d Booking`), migrazione = solo enum + 4 ADD COLUMN + 2 FK SET NULL; `migrate diff` = zero drift.
+- **Debito 7.2 M1 SALDATO**: l'e2e crosstalk href combinato (:714) asserisce entrambe le direzioni e passa su DB fresco.
+- **D1 (deferred)**: i due 409 (overlap-on-move vs già-cancellata) condividono `code: 'CONFLICT'` senza discriminatore machine-readable — accettabile ora (precedente codebase-wide, la UI risolve con reload), ma il futuro client Flutter non può distinguerli (AD-8): fix minimo suggerito = `ConflictError` con code opzionale come `ValidationError`. Da riprendere coi deferred storici.
+
+### Final gates (re-run dal reviewer)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **893/893 unit**, `env -u NODE_ENV npx next build` verde, e2e full suite **117/123** su DB fresco (6 fail = classi baseline provate non-regressioni per costruzione), `bookings.spec.ts` 16/16, i18n 887/887, OpenAPI 2 path nuovi corretti.
+
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session via bmad-create-story), ready-for-dev.
 - 2026-07-09: Implemented (Sonnet 5 single dev agent) — model/migration, service (updateBooking/cancelBooking), API+OpenAPI, UI (bookings-list.tsx row actions), tests (unit + e2e incl. 7.2 M1 href-crosstalk debt); status → review.
+- 2026-07-09: Review Opus 4.8 xhigh via bmad-code-review (priorità zero full-suite su DB fresco) — clean pass, zero fix; race edit-vs-cancel e deadlock incrociato provati a posto; D1 (409 senza codice distintivo) deferred. Status → done.
