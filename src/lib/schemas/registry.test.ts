@@ -70,6 +70,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/bookings/calendar',
         '/api/v1/bookings/{id}',
         '/api/v1/bookings/{id}/cancel',
+        '/api/v1/ppr-requests',
       ]),
     );
   });
@@ -145,6 +146,21 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       '/api/v1/bookings/{id}/cancel'
     ]?.['post'];
     expect(Object.keys(cancelBooking?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
+  });
+
+  it('documents 201/422/429/500 responses and NO security requirement on the public PPR endpoint (story 8.1, AC 1/2)', () => {
+    const createPprRequest = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; security?: unknown[] }>>)[
+      '/api/v1/ppr-requests'
+    ]?.['post'];
+    expect(Object.keys(createPprRequest?.responses ?? {}).sort()).toEqual(['201', '422', '429', '500']);
+    expect(createPprRequest?.security).toEqual([]);
+  });
+
+  it('documents the CreatePprRequestRequest/PprRequestCreatedResponse schemas including the honeypot field (story 8.1, AC 2)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    expect(schemas?.['CreatePprRequestRequest']?.properties).toHaveProperty('website');
+    expect(schemas?.['CreatePprRequestRequest']?.properties).toHaveProperty('locale');
+    expect(schemas?.['PprRequestCreatedResponse']?.properties).toHaveProperty('status');
   });
 
   it('produces valid JSON (round-trips through JSON.stringify/parse)', () => {

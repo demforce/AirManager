@@ -1194,3 +1194,83 @@ model IdempotencyRecord {
 
   @@unique([userId, endpoint, key])
 }
+
+/// Lifecycle of a public PPR (prior permission to land) request (epic 8,
+/// story 8.1; FR-22). Declared COMPLETE from this story on (story 8.1 only
+/// ever sets `PENDING`) rather than growing across 8.2/8.3, to avoid a
+/// repeated enum-alter migration each story: `APPROVED`/`REJECTED` arrive
+/// with the staff decision queue (story 8.2), `COMPLETED` when the flight
+/// itself is closed out and `CANCELLED` for a withdrawn/no-show request
+/// (both story 8.3) — these later transitions are out of THIS story's
+/// scope, only the shape is reserved now.
+enum PprStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+/// A public PPR request submitted through the unauthenticated `/[locale]/ppr`
+/// form (epic 8, story 8.1; FR-22, UJ-3) — the first model in the schema
+/// with NO `actorUserId`/`Actor` at all: the submitter is a stranger, not an
+/// app user (AD-5 deroga, see `ppr.service.ts#createPprRequest`'s
+/// doc-comment). `firstName`/`lastName` mirror `Person`'s two-field name
+/// shape (PRD "nome e cognome") even though this is NOT a `Person` — a PPR
+/// requester is not necessarily ever registered in the anagrafica.
+/// `aircraftRegistration` is the "marche" (tail number) as free text, not an
+/// `Aircraft` FK: an external pilot's aircraft is not necessarily one of
+/// this aviosuperficie's own. `eta`/`etd` are full instants (ISO 8601 UTC on
+/// the wire, AD-8), `etd` optional (a request may omit its departure time).
+/// `personsOnBoard` is a plain integer headcount, no further structure.
+///
+/// `locale` (`'it'|'en'`, same convention as `User.locale` — a plain string,
+/// not a Prisma enum, so it maps 1:1 onto next-intl's `AppLocale`) is the
+/// language the FORM was submitted in (NFR-1: "lingua per richiedente PPR"),
+/// captured now even though story 8.1 only uses it for the receipt email
+/// (`buildPprReceiptEmail`) — story 8.2's ESITO (approve/reject) email reuses
+/// this same field rather than re-asking or guessing.
+///
+/// `submitterIp` (nullable: absent when no `x-forwarded-for` header was
+/// present on the request, see the service's IP-extraction helper) backs
+/// the DB-backed per-IP rate limit (AC 2) via the `(submitterIp, createdAt)`
+/// index below. GDPR/NFR-3 note: this is a narrowly-scoped technical datum
+/// collected SOLELY for anti-abuse rate limiting — it is never displayed,
+/// exported, or used for any other purpose.
+///
+/// Deliberately NO FK to `CashMovement` in this story (the PPR landing fee
+/// arrives in story 8.3, on the `CashMovement` side per the ERD, not here).
+model PprRequest {
+  id     String    @id @default(cuid())
+  status PprStatus @default(PENDING)
+
+  firstName String
+  lastName  String
+  email     String
+  phone     String
+
+  aircraftRegistration String
+  aircraftType         String
+
+  origin      String
+  destination String
+  eta         DateTime
+  etd         DateTime?
+
+  personsOnBoard Int
+  notes          String?
+
+  /// Language the form was submitted in ('it'|'en') — see model doc-comment.
+  locale String
+
+  /// Anti-abuse technical datum only (GDPR/NFR-3) — see model doc-comment.
+  submitterIp String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Backs the per-IP hourly rate-limit count (`ppr.service.ts`, AC 2):
+  /// `count` of rows with the same `submitterIp` and `createdAt` within the
+  /// last hour.
+  @@index([submitterIp, createdAt])
+}

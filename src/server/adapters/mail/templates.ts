@@ -1,6 +1,7 @@
 import { createTranslator } from 'next-intl';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
+import { formatDateTime } from '@/lib/time';
 
 /**
  * Loads a locale's message catalogue directly (not via `next-intl/server`'s
@@ -21,6 +22,7 @@ export type PasswordResetEmailContent = { subject: string; text: string };
 export type NegativeBalanceAlertEmailContent = { subject: string; text: string };
 export type ExpiryAlertEmailContent = { subject: string; text: string };
 export type ExpiryDigestEmailContent = { subject: string; text: string };
+export type PprReceiptEmailContent = { subject: string; text: string };
 
 /**
  * One row of the staff digest (story 6.3, tri-state hardened story TD-1 AC
@@ -192,5 +194,46 @@ export async function buildExpiryDigestEmail(
   return {
     subject: t('subject'),
     text: `${t('intro')}\n\n${lines.join('\n')}`,
+  };
+}
+
+/**
+ * Builds the public PPR request receipt email (epic 8, story 8.1, AC 1) —
+ * sent best-effort right after `ppr.service.ts#createPprRequest` commits
+ * the row (see that function's doc-comment: a send failure never fails the
+ * request). `locale` is `input.locale` — the language the FORM was
+ * submitted in (NFR-1), never a `User.locale` lookup (there is no `User`
+ * to look up: the submitter is an anonymous external pilot). `eta` is
+ * formatted date+time in `APP_TIMEZONE` (`formatDateTime`, `time.ts`) —
+ * deliberately NOT `formatExpiryDate` above, which is date-only UTC and
+ * would drop the time-of-day a pilot actually needs to plan around.
+ */
+export async function buildPprReceiptEmail(
+  locale: AppLocale,
+  params: {
+    firstName: string;
+    aircraftRegistration: string;
+    aircraftType: string;
+    origin: string;
+    destination: string;
+    eta: Date;
+    personsOnBoard: number;
+  },
+): Promise<PprReceiptEmailContent> {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.pprReceipt' });
+  const eta = formatDateTime(params.eta, locale);
+
+  return {
+    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
+    text: t('body', {
+      firstName: params.firstName,
+      aircraftRegistration: params.aircraftRegistration,
+      aircraftType: params.aircraftType,
+      origin: params.origin,
+      destination: params.destination,
+      eta,
+      personsOnBoard: params.personsOnBoard,
+    }),
   };
 }

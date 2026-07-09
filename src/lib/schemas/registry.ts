@@ -105,6 +105,7 @@ import {
   studentProfileSchema,
   updatePersonSchema,
 } from './people';
+import { createPprRequestSchema, pprRequestCreatedResponseSchema } from './ppr';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
 
 /**
@@ -264,6 +265,8 @@ registry.register('BookingList', bookingListResponseSchema);
 registry.register('CreateBookingRequest', createBookingSchema);
 registry.register('CreateBookingResponse', createBookingResponseSchema);
 registry.register('UpdateBookingRequest', updateBookingSchema);
+registry.register('CreatePprRequestRequest', createPprRequestSchema);
+registry.register('PprRequestCreatedResponse', pprRequestCreatedResponseSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -277,6 +280,7 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
   404: 'The requested resource does not exist.',
   409: 'The request conflicts with the current state of the resource.',
   422: 'Validation failed (Zod schema or domain-level).',
+  429: 'Too many requests from this source (story 8.1, AD-8 `RATE_LIMITED`).',
 };
 
 /**
@@ -285,7 +289,7 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
  * story 1.3 review F2: even unmapped errors now have a documented,
  * leak-free envelope).
  */
-function errorResponses(...statuses: Array<401 | 403 | 404 | 409 | 422>): Record<number, ResponseConfig> {
+function errorResponses(...statuses: Array<401 | 403 | 404 | 409 | 422 | 429>): Record<number, ResponseConfig> {
   const responses: Record<number, ResponseConfig> = {
     500: { description: 'Unexpected server error (AD-8 `INTERNAL_ERROR`).', content: jsonContent(errorEnvelopeSchema) },
   };
@@ -1469,6 +1473,27 @@ registry.registerPath({
   responses: {
     200: { description: 'The job ran (possibly with nothing to do — see `alertsCreated`).', content: jsonContent(expiryAlertsJobResultSchema) },
     ...errorResponses(401),
+  },
+});
+
+// --- PPR (epic 8, story 8.1, FR-22) -----------------------------------------
+// The first fully PUBLIC path (`security: []`, no `cookieAuth`/`bearerAuth`
+// at all — unlike `Jobs`, which is bearer-protected) reachable by anyone who
+// has the URL, anti-abuse protected only by the honeypot field and the
+// per-IP rate limit (see `ppr.service.ts`).
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests',
+  summary: 'Submit a public PPR (prior permission to land) request',
+  description:
+    'Story 8.1, AC 1/2 — no authentication, reachable from the public `/[locale]/ppr` form. Creates a `PENDING` PprRequest and best-effort sends a localized receipt email (never fails the request). A `website` field left non-empty is treated as a honeypot: the SAME 201 body is returned, but nothing is persisted, no email is sent, and the attempt does not count toward the rate limit (indistinguishable from success). Otherwise, more than 5 requests from the same IP within the last hour answer 429 `RATE_LIMITED`. `eta` in the past answers 422 `ETA_IN_PAST`; a present `etd` at or before `eta` answers 422 `ETD_NOT_AFTER_ETA`.',
+  tags: ['Ppr'],
+  security: [],
+  request: { body: { content: jsonContent(createPprRequestSchema), required: true } },
+  responses: {
+    201: { description: 'The request was recorded as PENDING (or silently accepted as a honeypot catch).', content: jsonContent(pprRequestCreatedResponseSchema) },
+    ...errorResponses(422, 429),
   },
 });
 

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { Prisma } from '@/generated/prisma/client';
 import { getSessionActor, type SessionActor } from '@/server/auth/session';
 import { prisma } from '@/server/db/prisma';
-import { ConflictError, DomainError, ForbiddenError, NotFoundError, ValidationError } from '@/server/services/errors';
+import { ConflictError, DomainError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } from '@/server/services/errors';
 
 /**
  * Shared API infrastructure (story 1.5, AD-8): every `/api/v1/*` route
@@ -31,6 +31,7 @@ function statusForDomainError(error: DomainError): number {
   if (error instanceof NotFoundError) return 404;
   if (error instanceof ValidationError) return 422;
   if (error instanceof ConflictError) return 409;
+  if (error instanceof RateLimitError) return 429;
   // Exhaustive for today's hierarchy. A future `DomainError` subclass added
   // without updating this mapping falls through to a safe 500 rather than
   // silently guessing a status code.

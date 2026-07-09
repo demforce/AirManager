@@ -4,7 +4,7 @@ baseline_commit: 355547b
 
 # Story 8.1: Form PPR pubblico con email di ricevuta
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -89,12 +89,48 @@ so that non debba telefonare e abbia una conferma scritta (FR-22).
 
 ### Agent Model Used
 
+Sonnet 5 (single dev subagent, extra-high effort, via `bmad-dev-story`).
+
 ### Debug Log References
+
+- **Interactive Playwright MCP verification, before the automated e2e run** (mandatory UI-skill instruction): drove the real dev server unauthenticated. Desktop (1280×900): filled and submitted the IT form end-to-end -> `role="status"` confirmation view, `PprRequest` row confirmed in psql (`status='PENDING'`, `locale='it'`, `submitterIp` = the real connection IP), Mailpit receipt with subject `Richiesta PPR ricevuta: I-XYZW` and ETA correctly presented in Europe/Rome (`01/08/2026, 12:00` for a 10:00 UTC input in August = CEST +2h), body plural "2 persone a bordo" correct. Same flow on `/en/ppr` -> Mailpit subject `PPR request received: G-ABCD`, singular "1 person on board" correct (ICU plural `one` branch). Honeypot: filled every visible field, then set the hidden `website` input via the native `HTMLInputElement.prototype.value` setter + a dispatched `input` event (bypassing React's own value tracker, the standard technique for a programmatic value change to be observed by a controlled/RHF-registered input) and submitted -> confirmation view shown (byte-identical to success), Mailpit search for that address returned 0 messages, DB row count unchanged. Verified via `document.querySelectorAll(...).tabIndex` that only the honeypot has `tabIndex={-1}` (excluded from the Tab order) and that the actual DOM node has `aria-hidden="true"` on its wrapper (confirmed the real rendered attributes, not just the JSX). Direct `curl`: 6 sequential POSTs with the same fake `x-forwarded-for` -> 1st-5th `201`, 6th `429 {"error":{"code":"RATE_LIMITED", ...}}`; psql confirmed exactly 5 rows for that IP (the 429 did not create a 6th). `ETA_IN_PAST` and `ETD_NOT_AFTER_ETA` (boundary `etd === eta`) both reproduced via direct `curl`. Mobile 375×812 screenshot: single-column, no horizontal overflow, header row (kicker + locale switch) stays on one line. Keyboard: Tab order reaches "Nome" first (after the locale-switch link) with a visible focus ring; empty-submit shows all nine "Campo obbligatorio." inline errors, red on white, matching the app's existing error palette.
+- **e2e honeypot test bug found and fixed during this session**: the first draft of `ppr-public.spec.ts`'s honeypot test set `el.value = '...'` directly inside `page.evaluate` before dispatching `input` — this goes through React's own tracked value setter (installed on the DOM node to detect out-of-band changes), which keeps React's internal tracker in sync and makes the subsequent `input` event look like a no-op to react-hook-form, so the honeypot value never reached the submitted body and the "negative" assertion (no email) failed loudly (an email WAS sent). Fixed by using the native prototype setter (`Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set`) before dispatching the event — the same technique already verified working in the interactive MCP pass above. Left a inline comment explaining the trick so a future editor does not "simplify" it back into the broken form.
+- Migration `20260709130000_add_ppr_requests` generated via `prisma migrate dev --create-only` (renamed to the project's fixed-hour-timestamp convention) then applied with `migrate deploy`; verified column-for-column against the Contesto via `psql \d "PprRequest"`.
 
 ### Completion Notes List
 
+- **Model + migration (Task 1)**: `PprStatus` enum declared COMPLETE now (`PENDING/APPROVED/REJECTED/COMPLETED/CANCELLED`, doc-commented that only `PENDING` is used until 8.2/8.3) to avoid a repeated enum-alter migration; `PprRequest` has no `actorUserId`/`Actor` FK at all (first such model) and no FK to `CashMovement` (arrives 8.3). Index `(submitterIp, createdAt)` backs the rate-limit count query.
+- **Service (Task 2)**: `ppr.service.ts#createPprRequest` takes `(input, meta: { ip })`, no `Actor` — doc-commented as a deliberate, narrow AD-5 deroga (no session to authorize against). Order exactly as prescribed: honeypot (return the identical `{status:'PENDING'}` with zero side effects) -> rate limit (count `submitterIp` rows with `createdAt` in the last hour, `>=5` throws `RateLimitError`) -> `ETA_IN_PAST`/`ETD_NOT_AFTER_ETA` (instant comparisons, `Date.getTime()`, never string comparisons — N1 lesson) -> create -> best-effort email (try/catch, `console.error`, never rethrows). `extractSubmitterIp` takes the first CSV value of `x-forwarded-for`, trimmed; `null` (no header, or header present-but-empty) skips the rate-limit query entirely rather than blocking or exempting silently — logged with `console.warn` for the empty-but-present case.
+- **Errors/handler/registry (Task 2/3)**: new `RateLimitError` (`code: 'RATE_LIMITED'`) in `errors.ts`; `statusForDomainError` gets a `429` branch in `handler.ts`; `registry.ts`'s `errorResponses` helper's status union now includes `429`, `ERROR_DESCRIPTIONS[429]` added. `POST /api/v1/ppr-requests` registered with `security: []` (explicit empty array, per Contesto — the codebase's OTHER public routes, e.g. `auth/set-password`, simply omit the `security` key since there is no global default requiring it either way; both render identically in the generated document, `security: []` was used here because the story asked for it explicitly).
+- **Schemas (Task 3)**: `src/lib/schemas/ppr.ts` — `createPprRequestSchema` (every free-text field `trim()` + `.max()`; `email` via the `z.string().trim().toLowerCase().pipe(z.email())` pattern from `auth-tokens.ts`; `eta`/`etd` as `z.iso.datetime()`, deliberately NO cross-field refine at the schema level — `ETA_IN_PAST`/`ETD_NOT_AFTER_ETA` are service-level stable codes, same reasoning as `createBookingSchema`'s "startsAt in the past" living service-side) and `pprRequestCreatedResponseSchema = { status: z.literal('PENDING') }`.
+- **Route + proxy (Task 3)**: `POST /api/v1/ppr-requests` via `apiRoute({ auth: 'public', successStatus: 201, ... })` — no `idempotency` option (would throw at module load for a public route per `handler.ts`'s own guard; not needed anyway, anti-abuse is honeypot+rate-limit). `src/proxy.ts`: `'/ppr'` added to `PUBLIC_WEB_PATHS`, `'/api/v1/ppr-requests'` added to `PUBLIC_API_PATHS` — no other proxy change (the existing matcher already covers both).
+- **Email (Task 4)**: `buildPprReceiptEmail` in `templates.ts` reuses `formatDateTime(date, locale)` from `src/lib/time.ts` (Europe/Rome, date+time — explicitly NOT the date-only UTC `formatExpiryDate` helper in the same file) rather than hand-rolling a new formatter; `locale` is `input.locale` (the form's own language), never a `User`/`Person` lookup (there usually is none — the submitter is a stranger to the anagrafica).
+- **Page/form (Task 5)**: `src/app/[locale]/ppr/{page.tsx,ppr-form.tsx}` — `page.tsx` is the FIRST page in the codebase with its own `generateMetadata` (doc-commented as a new, deliberate pattern: the first public, potentially-indexed page). `ppr-form.tsx`: react-hook-form + a dedicated client-side Zod schema (plain strings, `superRefine` producing `requiredField`/`invalidEmail`/`invalidRange`/`invalidPersons` message codes, same pattern as `new-booking-form.tsx`'s `buildFormSchema`) — NOT the server schema directly (datetime-local strings and a `personsOnBoard` text input need different shapes client-side). datetime-local -> UTC ISO via `new Date(value).toISOString()`. Honeypot: off-screen via inline `style` (not a Tailwind utility, so it can never be dropped by a class-purge/ordering change), `aria-hidden="true"`, `tabIndex={-1}`, `autoComplete="off"`, no `<label>`. IT/EN switcher via `Link` from `@/i18n/navigation`, same pattern as `HomePage`. Visual language: kept strictly within the existing `minimalist-ui` system already established by `HomePage`/`SetPasswordPage` (Geist + serif display, warm monochrome `#fbfbfa/#2f3437/#787774/#EAEAEA`, `bg-[#111111]` buttons, uppercase kicker pill, zero gradients/shadows) — this is a "redesign-preserve" extension of an established system, not a greenfield landing page, so `design-taste-frontend`'s generic marketing-page defaults (large imagery, bento grids, heavy motion) were deliberately NOT reached for; the skill's universal hygiene rules (no em-dash in visible copy, WCAG contrast, no icon-library dependency since none exists anywhere else in this codebase, real functional copy with no invented brand/facts) were applied.
+- **Tests (Task 6)**: `ppr.service.test.ts` (16 tests) covers the happy path (row + email with correct locale/IP), honeypot (no create/email/count, runs before rate limit even at the limit, whitespace-only `website` is NOT treated as filled), rate-limit boundary (5th allowed, 6th rejected) and window query shape, null-IP skip, both domain-validation codes with the `etd === eta` boundary, and SMTP-failure-does-not-fail-the-request. `registry.test.ts` +2 tests (`201/422/429/500` + `security: []` on the path; honeypot/locale fields present on the registered component schema). `e2e/ppr-public.spec.ts` (5 tests, all NOT authenticated): IT happy path with Mailpit assertion, EN happy path with Mailpit assertion (form locale drives email locale, not browser locale), honeypot negative (~3s wait, per Dev Notes — not the full 15s positive-poll timeout), rate-limit 6-POST boundary, `ETA_IN_PAST`. Every test uses a run-unique fake `x-forwarded-for` (`e2e-ppr-<timestamp>-<random>`, set via a per-test `browser.newContext({ extraHTTPHeaders, timezoneId: 'UTC' })` so both the page's own `fetch` calls AND `page.request.post` direct calls in the same test carry it) — the DB is never reset between runs, so this is the only way to keep the rate-limit test independent of every other test and of prior runs. `timezoneId: 'UTC'` pins the datetime-local -> UTC conversion so the test is deterministic regardless of the host's local timezone.
+
 ### File List
+
+- `prisma/schema.prisma`
+- `prisma/migrations/20260709130000_add_ppr_requests/migration.sql`
+- `src/server/services/errors.ts`
+- `src/lib/api/handler.ts`
+- `src/lib/schemas/registry.ts`
+- `src/lib/schemas/registry.test.ts`
+- `src/lib/schemas/ppr.ts`
+- `src/server/services/ppr.service.ts`
+- `src/server/services/ppr.service.test.ts`
+- `src/app/api/v1/ppr-requests/route.ts`
+- `src/proxy.ts`
+- `src/server/adapters/mail/templates.ts`
+- `src/app/[locale]/ppr/page.tsx`
+- `src/app/[locale]/ppr/ppr-form.tsx`
+- `messages/it.json`
+- `messages/en.json`
+- `e2e/ppr-public.spec.ts`
+- `_bmad-output/implementation-artifacts/8-1-ppr-public-form.md` (this file)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session via bmad-create-story), ready-for-dev.
+- 2026-07-09: Implemented (Sonnet 5 single dev subagent via `bmad-dev-story`): PprRequest model + migration, honeypot + DB-backed per-IP rate limit (`RateLimitError` -> 429), public `POST /api/v1/ppr-requests`, public `/[locale]/ppr` page + form, localized receipt email, full test coverage (unit + registry + e2e). All gates green: lint 0 errors, typecheck clean, vitest 986/986, `next build` clean, `playwright test` 141/141 (136 baseline + 5 new, zero regressions, zero flakes this run). Status -> review.

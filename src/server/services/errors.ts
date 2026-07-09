@@ -53,3 +53,15 @@ export class ValidationError extends DomainError {
 export class ConflictError extends DomainError {
   readonly code = 'CONFLICT';
 }
+
+/**
+ * Too many requests from the same source in a time window (story 8.1, AC 2)
+ * → HTTP 429. First (and, as of this story, only) caller is the public PPR
+ * form's per-IP DB-backed limit (`ppr.service.ts#createPprRequest`) — a
+ * generic domain error rather than a PPR-specific one, so any future public
+ * endpoint can reuse it. `code` is fixed (unlike `ValidationError`'s
+ * pluggable code) since there is exactly one reason this error exists today.
+ */
+export class RateLimitError extends DomainError {
+  readonly code = 'RATE_LIMITED';
+}
