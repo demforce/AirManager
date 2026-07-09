@@ -6,6 +6,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gates:
     runs-on: ubuntu-latest
@@ -70,6 +74,9 @@ jobs:
       AUTH_SECRET: ci-e2e-secret-not-used-anywhere-0123456789
       # Specs and seed both read this from env (see .env.example); dummy value.
       SEED_ADMIN_PASSWORD: ChangeMe123!
+      # Optional in envSchema but required by the jobs e2e suite: the route
+      # answers 500 when unset, and expiry-alerts.spec.ts exercises the guard.
+      JOBS_SECRET: ci-jobs-secret
     steps:
       - uses: actions/checkout@v4
 

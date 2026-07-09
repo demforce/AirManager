@@ -31,6 +31,7 @@ L'utente vuole best practice aggiornate via Context7 (https://context7.com). In 
 - Branch di lavoro: uno per epic. Lo stato branch/PR è per-sessione e vive SOLO in `docs/handoffs/HANDOFF.md` — mai registrarlo qui.
 - Codice, commenti e identificatori in inglese; UI bilingue IT/EN via next-intl; documenti BMAD in italiano.
 - Prima di ogni commit di una story: `npm run gates` deve passare (lint + typecheck + vitest + build in output compatto — stampa solo i fallimenti; MAI eseguire i 4 comandi verbosi separatamente nei gate).
+- I test nuovi entrano in CI da soli (glob: vitest `src/**/*.test.ts`, Playwright `e2e/`) — MAI elencare test in CI. Se una story introduce una env var, un servizio o uno step di setup, aggiornare NELLO STESSO commit `.env.example`, `.github/workflows/ci.yml` e gli hook/script (`.claude/hooks/session-start.sh`, `scripts/`): il test `src/lib/env.ci-sync.test.ts` fallisce se l'env contract e la CI divergono.
 - PostgreSQL 16 è disponibile nel container (`/usr/lib/postgresql/16`); Docker disponibile. Il bootstrap ambiente (deps, .env, Postgres, migrazioni, Mailpit) è automatico via hook SessionStart (`.claude/hooks/session-start.sh`, idempotente — rieseguibile a mano con `AIRMANAGER_BOOTSTRAP_FORCE=1`).
 
 ## Compaction
