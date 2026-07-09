@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # src/lib/env.ts validates these eagerly (Zod) at build/import time.
+      # Dummy values only — nothing in lint/typecheck/unit-test/build opens a
+      # real DB connection (verified: build passes with a dead port).
+      DATABASE_URL: postgresql://ci:ci@localhost:59999/ci?schema=public
+      AUTH_SECRET: ci-dummy-secret-not-used-anywhere
+      SEED_ADMIN_PASSWORD: ci-dummy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:quiet
+
+      # Unit tests run with environment 'node' and no DB (vitest.config.ts),
+      # so no Postgres service is needed. E2e (Playwright) stays local for now.
+      # No .env in CI, so NODE_ENV is unset and plain `next build` is correct.
+      - name: Build
+        run: npm run build
