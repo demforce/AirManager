@@ -72,6 +72,10 @@ model Person {
   /// `hourPackages`/`flights` (survives a student->pilot transition). See
   /// `Expiry` doc.
   expiries          Expiry[]
+  /// Bookings held FOR this person (epic 7, story 7.1, AD-11): belongs to
+  /// the PERSON, never a profile — same rationale as `flights` (survives a
+  /// student->pilot transition). See `Booking` doc.
+  bookings          Booking[]
 }
 
 /// Pilot profile (story 2.2, AC 1/2, AD-11): 1-to-0/1 with `Person`, never a
@@ -119,9 +123,11 @@ model InstructorProfile {
   updatedAt     DateTime  @updatedAt
 
   /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
-  rates   InstructorRate[]
+  rates    InstructorRate[]
   /// Flights where this profile was the instructor aboard (epic 5, story 5.1) — see `Flight` doc.
-  flights Flight[]
+  flights  Flight[]
+  /// Bookings where this profile is the indicated instructor (epic 7, story 7.1) — see `Booking` doc.
+  bookings Booking[]
 }
 
 /// Aircraft operational status (story 2.5, AC 1; FR-8). `OUT_OF_SERVICE` is
@@ -172,6 +178,8 @@ model Aircraft {
   packageTypes         PackageTypeAircraft[]
   /// Flights logged on this airframe (epic 5, story 5.1) — see `Flight` doc.
   flights              Flight[]
+  /// Bookings held on this airframe (epic 7, story 7.1) — see `Booking` doc.
+  bookings             Booking[]
 }
 
 /// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). Append-only
@@ -296,6 +304,14 @@ model User {
   hourPackagesSold       HourPackage[]
   /// Flights this user registered (epic 5, story 5.1) — `Flight.actorUserId`.
   flightsRecorded        Flight[]
+  /// Bookings this user created (epic 7, story 7.1) — `Booking.actorUserId`.
+  bookingsRecorded       Booking[]              @relation("BookingActor")
+  /// Bookings this user last EDITED (epic 7, story 7.3, AC 2) — `Booking.updatedByUserId`.
+  bookingsUpdated        Booking[]              @relation("BookingUpdatedBy")
+  /// Bookings this user CANCELLED (epic 7, story 7.3, AC 2) — `Booking.cancelledByUserId`.
+  bookingsCancelled      Booking[]              @relation("BookingCancelledBy")
+  /// Bookings this user FORCED past a blocking expired document (epic 7, story 7.4, AC 2) — `Booking.forcedByUserId`.
+  bookingsForced         Booking[]              @relation("BookingForcedBy")
   /// Scadenze this user registered/last updated (epic 6, story 6.2) — `Expiry.actorUserId`.
   expiriesRecorded       Expiry[]
   /// Update proposals this user FILED, as the scadenza's titolare (epic 6, story 6.2) — `ExpiryUpdateProposal.proposedByUserId`.
@@ -764,6 +780,116 @@ model Flight {
   @@index([flightDate])
 }
 
+/// Aircraft booking (epic 7, story 7.1; FR-18) — reserves a `[startsAt,
+/// endsAt)` interval on an `Aircraft` for a `Person`. Deliberately mirrors
+/// `Flight`'s shape (Contesto): `personId` is the person the aircraft is
+/// booked FOR (a pilot booking for themself, or an allievo in a school
+/// booking) — never the actor who created the row, tracked separately via
+/// `actorUserId` (same split as `Flight`). `instructorProfileId` is the
+/// instructor indicated on a school booking, `null` for a plain pilot
+/// booking — same optional-FK shape as `Flight.instructorProfileId`.
+///
+/// `[startsAt, endsAt)` is a SEMI-OPEN interval (Contesto): two bookings on
+/// the same aircraft where one ends exactly when the other starts are NOT
+/// overlapping — `startsAt`/`endsAt` are full instants (`DateTime`
+/// timestamptz), the first datetime fields in this codebase (wire format
+/// ISO 8601 UTC, AD-8). The concurrency guard against a double booking on
+/// the same aircraft (AC 2) is a `FOR UPDATE` lock on the `Aircraft` row
+/// inside `prisma.$transaction` (`bookings.service.ts#createBooking`, the
+/// exact pattern of `flights.service.ts#registerFlight`) — deliberately NOT
+/// a Postgres exclusion constraint (`btree_gist`): the lock already makes
+/// the pre-check-overlap + insert airtight, and story 7.3 reuses the same
+/// discipline (multi-aircraft lock) for a booking MOVE.
+///
+/// **Soft-cancel, never delete** (story 7.3, same `FlightStatus` pattern as
+/// `Flight`): `status` starts `ACTIVE`; cancelling flips it to `CANCELLED`
+/// (`cancelledAt`/`cancelledByUserId` set together, `updateBooking`/
+/// `cancelBooking` in `bookings.service.ts`) and FREES the slot — every
+/// overlap predicate (create AND edit) and both `listBookings`/
+/// `listCalendarBookings` filter `status: 'ACTIVE'`, so a cancelled booking
+/// disappears from every list/calendar while the row itself stays forever
+/// (the audit trail). `updatedByUserId` tracks the actor of the LAST edit
+/// (AC 2 "chi, quando"; `updatedAt` is automatic) — `actorUserId` stays the
+/// CREATOR forever, never reassigned by an edit.
+///
+/// **Expiry-based creation block (epic 7, story 7.4; FR-21)**: `createBooking`
+/// blocks a NEW booking (422 `EXPIRED_DOCUMENTS`) when the TARGET person
+/// (`personId`) has a registered `Expiry` past its `expiresAt` on the
+/// FLIGHT DAY (`startsAt`'s date in `APP_TIMEZONE`, not "today") whose
+/// `ExpiryType.blocksBooking` is `true`; a non-blocking expired document is
+/// only a `warnings` entry in the creation response, never persisted here.
+/// Staff (`bookings.manage.any`) may bypass a real block with `force` +
+/// `forceReason`, stamping `forcedAt`/`forcedByUserId`/`forceReason` — see
+/// those fields' own doc-comments and `bookings.service.ts#createBooking`.
+model Booking {
+  id                  String             @id @default(cuid())
+  aircraftId          String
+  aircraft            Aircraft           @relation(fields: [aircraftId], references: [id])
+  personId            String
+  person              Person             @relation(fields: [personId], references: [id])
+  instructorProfileId String?
+  instructorProfile   InstructorProfile? @relation(fields: [instructorProfileId], references: [id])
+
+  startsAt DateTime
+  endsAt   DateTime
+  notes    String?
+
+  status            BookingStatus @default(ACTIVE)
+  /// Set together with `cancelledByUserId`, exactly once, when this booking
+  /// transitions to `CANCELLED` (story 7.3) — `null` while `ACTIVE`.
+  cancelledAt       DateTime?
+  cancelledByUserId String?
+  cancelledByUser   User?         @relation("BookingCancelledBy", fields: [cancelledByUserId], references: [id])
+  /// The actor of the most recent `updateBooking` (story 7.3, AC 2) —
+  /// `null` until the first edit. Distinct from `actorUserId` (the
+  /// creator, immutable forever).
+  updatedByUserId   String?
+  updatedByUser     User?         @relation("BookingUpdatedBy", fields: [updatedByUserId], references: [id])
+
+  /// Staff force-bypass tracking (epic 7, story 7.4, AC 2) — set TOGETHER,
+  /// exactly once, ONLY when `createBooking` actually bypassed a blocking
+  /// expired document (`bookings.manage.any` + `force: true` +
+  /// `forceReason`); `null` on every normal booking, INCLUDING a
+  /// `force: true` request that had nothing to bypass (Contesto: the
+  /// tracking says "scavalcato un blocco", not "spuntato una checkbox").
+  /// Never touched by `updateBooking`/`cancelBooking` — the force decision
+  /// is a creation-time fact, not re-evaluated on edit (see `createBooking`'s
+  /// doc-comment for the deferred re-check rationale).
+  forcedAt          DateTime?
+  forcedByUserId    String?
+  forcedByUser      User?         @relation("BookingForcedBy", fields: [forcedByUserId], references: [id])
+  forceReason       String?
+
+  /// Who created this booking (`Actor.userId`, always present) — same
+  /// rationale as every other ledger's `actorUserId` (e.g. `Flight`).
+  /// Named (not the implicit default) because `User` now holds THREE
+  /// distinct relations to `Booking` (created/updated/cancelled).
+  actorUserId String
+  actorUser   User   @relation("BookingActor", fields: [actorUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Backs both the overlap scan (`aircraftId` + range on `startsAt`) and
+  /// the calendar view (story 7.2). No separate `@@index([status])`:
+  /// every query already filters on `aircraftId`/`startsAt` (this index) or
+  /// scans the whole (small) active set — `status` alone would not narrow
+  /// either access path enough to earn its own index (doc-comment per
+  /// story 7.3's Task 1, deliberately omitted).
+  @@index([aircraftId, startsAt])
+  @@index([personId])
+  @@index([instructorProfileId])
+}
+
+/// A booking's lifecycle state (story 7.3) — same soft-cancel shape as
+/// `FlightStatus`. `CANCELLED` frees the aircraft's slot (see `Booking`'s
+/// doc-comment); there is no third state (no "completed"/"no-show" — out of
+/// this PRD's scope).
+enum BookingStatus {
+  ACTIVE
+  CANCELLED
+}
+
 /// Per-flight package consumption ledger row (epic 5, story 5.2; AD-6). One
 /// row per (flight, package) pair that the FIFO allocation actually touched
 /// — `@@unique([flightId, hourPackageId])` guarantees a flight consumes a
@@ -835,8 +961,18 @@ model ExpiryType {
   name      String      @unique
   scope     ExpiryScope
   isActive  Boolean     @default(true)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  /// Whether an EXPIRED `Expiry` of this type blocks a NEW booking (epic 7,
+  /// story 7.4; FR-21 `[ASSUMPTION]`: medica/licenza block, ratings only
+  /// warn). Default `false` (a new/custom type never blocks until an admin
+  /// opts it in, `settings.manage`, `types-manager.tsx`'s checkbox) — the
+  /// migration backfills `true` on the 4 standard blocking types by exact
+  /// seed name (`prisma/migrations/20260709120000_add_booking_expiry_block`).
+  /// Consumed ONLY by `bookings.service.ts#createBooking` — see that
+  /// function's doc-comment for the flight-day comparison and force/warning
+  /// semantics.
+  blocksBooking Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   /// Scadenze registered against this type (epic 6, story 6.2) — a non-empty
   /// set is exactly what makes this type non-deletable (FK RESTRICT, story

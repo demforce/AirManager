@@ -158,6 +158,15 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
   test('cancel a school flight (package + instructor): balance/contaore/package residuo all revert, flight shows ANNULLATO with the reason; a second cancel is a 409; correcting a fresh flight links old->new and adjusts consumption', async ({
     page,
   }) => {
+    // The heaviest single test in the suite (~15 UI interactions across
+    // sale, flight, cancel, 409, correct, and three verification pages):
+    // functionally green with headroom (~16s on a warm server) but it can
+    // exceed the default per-test timeout when the dev server compiles its
+    // pages cold or under parallel-worker contention — the exact signature
+    // of every historical "failure" of this test. slow() triples the
+    // timeout without weakening a single assertion.
+    test.slow();
+
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const aircraft = await createAircraftWithRate(page, 15000); // 150,00 €/h

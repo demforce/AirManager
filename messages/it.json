@@ -923,6 +923,7 @@
       "name": "Nome",
       "scope": "Ambito",
       "status": "Stato",
+      "blocksBooking": "Blocca prenotazioni",
       "actions": "Azioni",
       "empty": "Nessun tipo di scadenza."
     },
@@ -935,6 +936,10 @@
     "status": {
       "active": "Attivo",
       "inactive": "Disattivato"
+    },
+    "blocksBooking": {
+      "yes": "Blocca prenotazioni",
+      "no": "—"
     },
     "actions": {
       "edit": "Modifica",
@@ -950,6 +955,8 @@
       "editTitle": "Modifica tipo di scadenza",
       "name": "Nome",
       "scope": "Ambito",
+      "blocksBooking": "Blocca prenotazioni",
+      "blocksBookingHint": "Una scadenza scaduta di questo tipo impedisce una nuova prenotazione (es. visita medica, licenza). Lo staff può comunque forzare la prenotazione motivandola.",
       "submitCreate": "Crea tipo",
       "submitSave": "Salva",
       "cancel": "Annulla",
@@ -965,6 +972,99 @@
       "deleted": "Tipo di scadenza eliminato.",
       "deleteInUseError": "Il tipo è in uso su una o più scadenze registrate e non può essere eliminato: disattivalo invece.",
       "genericError": "Operazione non riuscita. Riprova."
+    }
+  },
+  "BookingsPage": {
+    "kicker": "Prenotazioni",
+    "title": "Prenotazioni",
+    "description": "Prenota un velivolo per un intervallo di data e ora futuro.",
+    "backToDashboard": "Torna alla dashboard",
+    "form": {
+      "title": "Nuova prenotazione",
+      "selectPlaceholder": "Seleziona…",
+      "aircraft": "Velivolo",
+      "outOfServiceSuffix": "{reason} (fuori servizio)",
+      "person": "Pilota o allievo",
+      "noPersonAvailable": "Nessuna persona prenotabile disponibile.",
+      "instructorOptional": "Istruttore (opzionale)",
+      "noInstructor": "Nessuno",
+      "bookingTarget": "Prenota",
+      "bookForMe": "Per me",
+      "bookForStudent": "Per un allievo",
+      "student": "Allievo",
+      "noStudentAvailable": "Nessun allievo attivo disponibile.",
+      "startsAt": "Inizio",
+      "endsAt": "Fine",
+      "notes": "Note",
+      "submit": "Prenota",
+      "requiredField": "Campo obbligatorio.",
+      "invalidRange": "L'orario di fine deve essere successivo a quello di inizio.",
+      "errors": {
+        "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
+        "BOOKING_IN_PAST": "L'orario di inizio deve essere nel futuro.",
+        "PERSON_NOT_BOOKABLE": "Questa persona non ha un profilo attivo idoneo alla prenotazione.",
+        "EXPIRED_DOCUMENTS": "Impossibile creare la prenotazione: risultano scaduti i seguenti documenti: {documents}.",
+        "overlap": "Il velivolo è già prenotato per un intervallo che si sovrappone a questo.",
+        "generic": "Impossibile creare la prenotazione. Riprova."
+      },
+      "success": "Prenotazione creata.",
+      "successWithWarnings": "Prenotazione creata. Attenzione: i seguenti documenti risultano scaduti (non bloccanti):",
+      "force": {
+        "title": "Forza prenotazione",
+        "description": "Solo lo staff può creare comunque questa prenotazione, indicando un motivo. La forzatura resta tracciata.",
+        "reasonLabel": "Motivo",
+        "submit": "Forza prenotazione",
+        "cancel": "Annulla",
+        "requiredReason": "Il motivo è obbligatorio.",
+        "generic": "Impossibile forzare la prenotazione. Riprova."
+      }
+    },
+    "list": {
+      "heading": "Prossime prenotazioni",
+      "description": "Le prenotazioni future su tutti i velivoli.",
+      "empty": "Nessuna prenotazione futura.",
+      "table": {
+        "aircraft": "Velivolo",
+        "date": "Data",
+        "time": "Orario",
+        "person": "Prenotante",
+        "instructor": "Istruttore",
+        "noInstructor": "—",
+        "actions": "Azioni"
+      },
+      "actions": {
+        "move": "Sposta",
+        "cancel": "Cancella",
+        "cancelPrompt": "Confermi la cancellazione di questa prenotazione?",
+        "cancelConfirm": "Sì, cancella",
+        "dismiss": "Annulla",
+        "moveTitle": "Sposta prenotazione",
+        "save": "Salva",
+        "moveSuccess": "Prenotazione spostata.",
+        "cancelSuccess": "Prenotazione cancellata.",
+        "errors": {
+          "BOOKING_ALREADY_STARTED": "La prenotazione è già iniziata: non può più essere modificata o cancellata.",
+          "conflict": "Il velivolo è già prenotato per questo intervallo, oppure la prenotazione non è più valida. Ricarica la pagina e riprova.",
+          "generic": "Operazione non riuscita. Riprova."
+        }
+      }
+    },
+    "calendar": {
+      "toolbar": {
+        "prev": "Precedente",
+        "today": "Oggi",
+        "next": "Successivo",
+        "dayView": "Giorno",
+        "weekView": "Settimana",
+        "viewToggleLabel": "Vista calendario"
+      },
+      "outOfService": "Fuori servizio",
+      "dayEmpty": "Nessuna prenotazione in questo giorno.",
+      "weekEmpty": "Nessuna prenotazione in questa settimana.",
+      "noAircraft": "Nessun velivolo disponibile.",
+      "clampedStartHint": "Inizia prima di questa finestra oraria",
+      "clampedEndHint": "Continua oltre questa finestra oraria",
+      "weekdayColumnLabel": "Giorno"
     }
   },
   "UsersPage": {

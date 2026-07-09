@@ -24,6 +24,16 @@ import {
 } from './aircraft';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
 import {
+  bookingItemSchema,
+  bookingListResponseSchema,
+  calendarBookingsQuerySchema,
+  calendarBookingsResponseSchema,
+  createBookingResponseSchema,
+  createBookingSchema,
+  listBookingsQuerySchema,
+  updateBookingSchema,
+} from './bookings';
+import {
   cashCategoryItemSchema,
   cashCategoryListResponseSchema,
   cashMovementItemSchema,
@@ -249,11 +259,17 @@ registry.register('DecideProposalRequest', decideProposalSchema);
 registry.register('ExpiryAlertsJobResult', expiryAlertsJobResultSchema);
 registry.register('ExpiryDashboardItem', expiryDashboardItemSchema);
 registry.register('ExpiryDashboardList', expiryDashboardListResponseSchema);
+registry.register('Booking', bookingItemSchema);
+registry.register('BookingList', bookingListResponseSchema);
+registry.register('CreateBookingRequest', createBookingSchema);
+registry.register('CreateBookingResponse', createBookingResponseSchema);
+registry.register('UpdateBookingRequest', updateBookingSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const aircraftIdParams = z.object({ id: z.string().meta({ description: 'Aircraft id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const flightIdParams = z.object({ id: z.string().meta({ description: 'Flight id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const bookingIdParams = z.object({ id: z.string().meta({ description: 'Booking id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
   401: 'Not authenticated (AD-8 `UNAUTHENTICATED`).',
@@ -1347,6 +1363,92 @@ registry.registerPath({
   request: { params: expiryProposalIdParams, body: { content: jsonContent(decideProposalSchema), required: true } },
   responses: {
     200: { description: 'The decided proposal.', content: jsonContent(expiryProposalItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- Bookings (epic 7, story 7.1, FR-18) ------------------------------------
+// Reserves a `[startsAt, endsAt)` interval on an aircraft for a person — see
+// `bookings.service.ts`'s module doc-comment for the full creation matrix.
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/bookings',
+  summary: 'List bookings (paginated, filterable by period/aircraft/person, AC 1)',
+  description:
+    'Ordered by `startsAt asc, id asc` (soonest-first, tie-broken for stable pagination). `from`/`to` use the SAME semi-open `[startsAt, endsAt)` semantics as the overlap guard (`endsAt > from`, `startsAt < to`). Readable with `self.read` — every authenticated role holds it (FR-19, anticipated to its minimum for this story).',
+  tags: ['Bookings'],
+  security,
+  request: { query: listBookingsQuerySchema },
+  responses: {
+    200: { description: 'A page of bookings.', content: jsonContent(bookingListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/bookings',
+  summary: 'Book an aircraft for a person over a future interval (AC 1/2/3, FR-18; story 7.4 AC 1/2: expiry block + staff force)',
+  description:
+    "`bookings.manage.any` (staff/admin) books for anyone, with an optional instructor. `bookings.manage.own` books for the actor's own person (an active pilot or instructor only, no instructor may be indicated — 403 otherwise) OR, for an instructor, on behalf of an allievo with an active student profile (mandatory `instructorProfileId` matching the actor's own profile, 403 checked BEFORE any query on the target person). Concurrency (AC 2): a `FOR UPDATE` lock on the `Aircraft` row inside one transaction serializes the overlap pre-check against every concurrent request on the same aircraft — two overlapping concurrent POSTs always yield exactly one 201 and one 409. `[startsAt, endsAt)` is semi-open: back-to-back bookings do not overlap. Domain failures answer 422 with a stable code: `AIRCRAFT_OUT_OF_SERVICE` (with the reason), `BOOKING_IN_PAST`, `PERSON_NOT_BOOKABLE`. Story 7.4 (FR-21): the target person's registered scadenze are checked against the FLIGHT DAY — an expired document of a `blocksBooking` type answers 422 `EXPIRED_DOCUMENTS` (`details.documents` lists the blocking types); a non-blocking expired document is only a `warnings` entry in the 201 body. `force: true` (only usable with `bookings.manage.any` — 403 otherwise, checked before any further query) plus a mandatory `forceReason` bypasses a real block and is tracked (`forcedAt`/`forcedByUserId`/`forceReason`, only when something was actually bypassed).",
+  tags: ['Bookings'],
+  security,
+  request: { body: { content: jsonContent(createBookingSchema), required: true } },
+  responses: {
+    201: {
+      description: 'The created booking, plus any non-blocking expired-document warnings (`{ booking, warnings }`).',
+      content: jsonContent(createBookingResponseSchema),
+    },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/bookings/calendar',
+  summary: 'List every booking overlapping a bounded date/time range, for the calendar view (AC 1, FR-19)',
+  description:
+    'Deliberately UNPAGINATED (a calendar renders a bounded window, never "page 2") — see `bookings.service.ts#listCalendarBookings`\'s doc-comment. `from`/`to` are BOTH required and compared as instants; `to` must be strictly after `from` and the range cannot exceed 8 days (`RANGE_TOO_WIDE`). Same semi-open overlap predicate and ordering as `GET /api/v1/bookings`. Readable with `self.read` (every authenticated role, FR-19).',
+  tags: ['Bookings'],
+  security,
+  request: { query: calendarBookingsQuerySchema },
+  responses: {
+    200: { description: 'Every booking overlapping the range.', content: jsonContent(calendarBookingsResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+// --- Booking edit/cancel (epic 7, story 7.3, FR-20) -------------------------
+// Soft-cancel + tracked edit — see `bookings.service.ts#updateBooking`/
+// `#cancelBooking`'s doc-comments for the full matrix.
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/bookings/{id}',
+  summary: 'Move a booking: change its aircraft/interval/notes (AC 1/2, FR-20)',
+  description:
+    "Partial PATCH — `aircraftId`/`startsAt`/`endsAt`/`notes` only (`personId`/`instructorProfileId` are immutable, absent from the schema); the resulting merged interval is what gets validated. `bookings.manage.any` (staff/admin) may move ANY booking, with NO temporal constraint (can even correct one already in progress). `bookings.manage.own` may move only a booking where `personId`/`instructorProfileId` matches the actor's own person/active instructor profile, and only while it has not yet started (422 `BOOKING_ALREADY_STARTED`) — the NEW interval must also be future (422 `BOOKING_IN_PAST`). Concurrency (same discipline as `POST /api/v1/bookings`): the destination aircraft AND the current one (if different) are locked together (`ORDER BY id FOR UPDATE`) inside one transaction; the destination is re-validated (404/409 archived/422 `AIRCRAFT_OUT_OF_SERVICE`, even for staff) and the overlap pre-check excludes this booking and every CANCELLED row. An already-cancelled booking answers 409.",
+  tags: ['Bookings'],
+  security,
+  request: { params: bookingIdParams, body: { content: jsonContent(updateBookingSchema), required: true } },
+  responses: {
+    200: { description: 'The updated booking.', content: jsonContent(bookingItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/bookings/{id}/cancel',
+  summary: 'Cancel (soft) a booking, freeing its slot (AC 1/2, FR-20)',
+  description:
+    "No body — FR-20 tracks who/when (`cancelledAt`/`cancelledByUserId`), not why (mirrors `POST /api/v1/flights/{id}/cancel`'s shape, minus its mandatory `reason`). Same permission/temporal matrix as `PATCH /api/v1/bookings/{id}` (`bookings.manage.any` always allowed; `bookings.manage.own` only before the booking starts, 422 `BOOKING_ALREADY_STARTED` otherwise). Never locks any `Aircraft` row (cancelling can only free a slot, never create a conflict) — an atomic `updateMany` guard makes a double-cancel race answer 409 for the loser.",
+  tags: ['Bookings'],
+  security,
+  request: { params: bookingIdParams },
+  responses: {
+    200: { description: 'The cancelled booking.', content: jsonContent(bookingItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });

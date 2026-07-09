@@ -66,6 +66,10 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/expiry-proposals',
         '/api/v1/expiry-proposals/{id}/decision',
         '/api/v1/jobs/expiry-alerts',
+        '/api/v1/bookings',
+        '/api/v1/bookings/calendar',
+        '/api/v1/bookings/{id}',
+        '/api/v1/bookings/{id}/cancel',
       ]),
     );
   });
@@ -99,6 +103,48 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       'get'
     ];
     expect(Object.keys(listExpiries?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+  });
+
+  it('documents 401/403/404/409/422/500 error responses on the booking creation endpoint (story 7.1, AC 1/2/3)', () => {
+    const createBooking = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)['/api/v1/bookings']?.[
+      'post'
+    ];
+    expect(Object.keys(createBooking?.responses ?? {}).sort()).toEqual(['201', '401', '403', '404', '409', '422', '500']);
+  });
+
+  it('documents the CreateBookingResponse envelope { booking, warnings } on the 201 (story 7.4, AC 1/2)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    const createBookingResponse = schemas?.['CreateBookingResponse'];
+    expect(createBookingResponse?.properties).toHaveProperty('booking');
+    expect(createBookingResponse?.properties).toHaveProperty('warnings');
+  });
+
+  it('documents blocksBooking on the ExpiryType schema (story 7.4)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    expect(schemas?.['ExpiryType']?.properties).toHaveProperty('blocksBooking');
+    expect(schemas?.['CreateExpiryTypeRequest']?.properties).toHaveProperty('blocksBooking');
+    expect(schemas?.['UpdateExpiryTypeRequest']?.properties).toHaveProperty('blocksBooking');
+  });
+
+  it('documents 401/403/422/500 error responses on the booking calendar endpoint (story 7.2, AC 1)', () => {
+    const calendarBookings = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)[
+      '/api/v1/bookings/calendar'
+    ]?.['get'];
+    expect(Object.keys(calendarBookings?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+  });
+
+  it('documents 401/403/404/409/422/500 error responses on the booking edit endpoint (story 7.3, AC 1/2)', () => {
+    const updateBooking = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)[
+      '/api/v1/bookings/{id}'
+    ]?.['patch'];
+    expect(Object.keys(updateBooking?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
+  });
+
+  it('documents 401/403/404/409/422/500 error responses on the booking cancel endpoint (story 7.3, AC 1/2)', () => {
+    const cancelBooking = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)[
+      '/api/v1/bookings/{id}/cancel'
+    ]?.['post'];
+    expect(Object.keys(cancelBooking?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
   });
 
   it('produces valid JSON (round-trips through JSON.stringify/parse)', () => {

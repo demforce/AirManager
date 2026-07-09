@@ -20,11 +20,15 @@ export type ExpiryScopeDto = z.infer<typeof expiryScopeSchema>;
  * `POST /api/v1/expiry-types` body (AC 1/2). `name` unique (enforced in the
  * service, P2002 → `Conflict`), trimmed, capped at 100 chars — same
  * defense-in-depth as `createCashCategorySchema.name`/
- * `createPackageTypeSchema.name`.
+ * `createPackageTypeSchema.name`. `blocksBooking` (epic 7, story 7.4;
+ * FR-21) defaults `false` — a brand-new/custom type never blocks a booking
+ * until an admin (`settings.manage`) opts it in from `types-manager.tsx`'s
+ * checkbox.
  */
 export const createExpiryTypeSchema = z.object({
   name: z.string().trim().min(1).max(100),
   scope: expiryScopeSchema,
+  blocksBooking: z.boolean().default(false),
 });
 
 export type CreateExpiryTypeInput = z.infer<typeof createExpiryTypeSchema>;
@@ -35,13 +39,16 @@ export type CreateExpiryTypeInput = z.infer<typeof createExpiryTypeSchema>;
  * through here (no dedicated deactivate/reactivate endpoints, following
  * `package-types.service.ts`'s pattern, NOT `cash.service.ts`'s). `.refine`:
  * an empty body is a 422, not a silent no-op PATCH (same pattern as
- * `updatePackageTypeSchema`).
+ * `updatePackageTypeSchema`). `blocksBooking` (story 7.4) is patchable
+ * independently of every other field — the admin can toggle "Blocca
+ * prenotazioni" on an existing type without touching its name/scope.
  */
 export const updateExpiryTypeSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     scope: expiryScopeSchema.optional(),
     isActive: z.boolean().optional(),
+    blocksBooking: z.boolean().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: 'At least one field must be provided.' });
 
@@ -62,13 +69,16 @@ export type ListExpiryTypesQuery = z.infer<typeof listExpiryTypesQuerySchema>;
 
 /**
  * One entry of `GET /api/v1/expiry-types` (AC 1/2). Documentation only,
- * mirroring `expiry-types.service.ts`'s `ExpiryTypeListItem`.
+ * mirroring `expiry-types.service.ts`'s `ExpiryTypeListItem`. `blocksBooking`
+ * (story 7.4) is additive — every 6.1/6.2 consumer of this DTO already
+ * ignores unknown fields.
  */
 export const expiryTypeItemSchema = z.object({
   id: z.string(),
   name: z.string(),
   scope: expiryScopeSchema,
   isActive: z.boolean(),
+  blocksBooking: z.boolean(),
   createdAt: z.iso.datetime(),
 });
 

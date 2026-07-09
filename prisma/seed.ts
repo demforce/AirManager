@@ -167,21 +167,25 @@ async function seedPilotAccount(): Promise<void> {
  * NEVER overwrites an admin's rename/re-scope/deactivation of a standard
  * type (same principle as `seedCashCategories`/`seedAircraft`).
  */
-const STANDARD_EXPIRY_TYPES: Array<{ name: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL' }> = [
-  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS' },
-  { name: 'Visita medica classe 2', scope: 'PILOTS' },
-  { name: 'Visita medica LAPL', scope: 'STUDENTS' },
-  { name: 'Licenza', scope: 'PILOTS' },
-  { name: 'Rating SEP', scope: 'PILOTS' },
-  { name: 'Inglese ICAO', scope: 'PILOTS' },
+// Story 7.4 (FR-21): `blocksBooking` marks the 4 critical (medica/licenza)
+// types — the migration's own backfill UPDATE uses these EXACT same names.
+// `update: {}` stays untouched below (existing seed pattern): an admin's own
+// `blocksBooking` toggle (`types-manager.tsx`) is never overwritten by a re-seed.
+const STANDARD_EXPIRY_TYPES: Array<{ name: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL'; blocksBooking: boolean }> = [
+  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true },
+  { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true },
+  { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true },
+  { name: 'Licenza', scope: 'PILOTS', blocksBooking: true },
+  { name: 'Rating SEP', scope: 'PILOTS', blocksBooking: false },
+  { name: 'Inglese ICAO', scope: 'PILOTS', blocksBooking: false },
 ];
 
 async function seedExpiryTypes(): Promise<void> {
-  for (const { name, scope } of STANDARD_EXPIRY_TYPES) {
+  for (const { name, scope, blocksBooking } of STANDARD_EXPIRY_TYPES) {
     await prisma.expiryType.upsert({
       where: { name },
       update: {},
-      create: { name, scope },
+      create: { name, scope, blocksBooking },
     });
   }
 

@@ -39,6 +39,8 @@ export type ExpiryTypeListItem = {
   name: string;
   scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
   isActive: boolean;
+  /** Whether an expired `Expiry` of this type blocks a new booking (epic 7, story 7.4; FR-21). */
+  blocksBooking: boolean;
   createdAt: Date;
 };
 
@@ -47,6 +49,7 @@ const EXPIRY_TYPE_SELECT = {
   name: true,
   scope: true,
   isActive: true,
+  blocksBooking: true,
   createdAt: true,
 } as const;
 
@@ -90,7 +93,7 @@ export async function createExpiryType(actor: Actor, input: CreateExpiryTypeInpu
 
   try {
     return await prisma.expiryType.create({
-      data: { name, scope: input.scope },
+      data: { name, scope: input.scope, blocksBooking: input.blocksBooking },
       select: EXPIRY_TYPE_SELECT,
     });
   } catch (error) {
@@ -136,6 +139,7 @@ export async function updateExpiryType(actor: Actor, id: string, input: UpdateEx
         ...(name !== undefined ? { name } : {}),
         ...(input.scope !== undefined ? { scope: input.scope } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.blocksBooking !== undefined ? { blocksBooking: input.blocksBooking } : {}),
       },
       select: EXPIRY_TYPE_SELECT,
     });

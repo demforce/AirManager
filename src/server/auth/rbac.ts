@@ -62,8 +62,14 @@ const ALL_PERMISSIONS: Permission[] = [
  *   administration (FR-3 reserves user management to admin).
  * - `instructor`: self-service plus their own students/school notes and
  *   their own bookings (FR-2 "istruttore: propri allievi").
- * - `pilot`/`student`: pure self-service — their own data, bookings, account,
- *   expiries (FR-2 "pilota/allievo: i propri dati").
+ * - `pilot`: pure self-service — their own data, bookings, account,
+ *   expiries (FR-2 "pilota: i propri dati").
+ * - `student`: self-service on their own data/account/expiries — but NOT
+ *   `bookings.manage.own` (story 7.1, FR-18 `[ASSUMPTION]`): a school
+ *   booking is made by the instructor or staff on the allievo's behalf, an
+ *   allievo never books solo. A dual-role pilot+student keeps the
+ *   permission via the union with PILOT (`getPermissions`), same as any
+ *   other multi-role actor.
  */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ADMIN: ALL_PERMISSIONS,
@@ -83,7 +89,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   // instead, never through the proposal queue).
   INSTRUCTOR: ['self.read', 'bookings.manage.own', 'school.manage.own', 'expiries.propose.own'],
   PILOT: ['self.read', 'bookings.manage.own', 'expiries.propose.own'],
-  STUDENT: ['self.read', 'bookings.manage.own', 'expiries.propose.own'],
+  // Story 7.1: no `bookings.manage.own` — see the doc-comment above.
+  STUDENT: ['self.read', 'expiries.propose.own'],
 };
 
 /**

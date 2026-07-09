@@ -86,6 +86,23 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     );
   });
 
+  it('scopes a student to self-service only — NO bookings.manage.own (story 7.1: school bookings are made by the instructor/staff)', () => {
+    const student = actorWith(['STUDENT']);
+
+    expect(hasPermission(student, 'self.read')).toBe(true);
+    expect(hasPermission(student, 'expiries.propose.own')).toBe(true);
+
+    expect(hasPermission(student, 'bookings.manage.own')).toBe(false);
+    expect(hasPermission(student, 'bookings.manage.any')).toBe(false);
+    expect(() => authorize(student, 'bookings.manage.own')).toThrow(ForbiddenError);
+  });
+
+  it('a dual-role pilot+student actor keeps bookings.manage.own via the PILOT union (AC 2 of story 1.3)', () => {
+    const pilotStudent = actorWith(['PILOT', 'STUDENT']);
+
+    expect(hasPermission(pilotStudent, 'bookings.manage.own')).toBe(true);
+  });
+
   it('authorize() throws ForbiddenError (never a generic Error) when the permission is missing', () => {
     const student = actorWith(['STUDENT']);
 

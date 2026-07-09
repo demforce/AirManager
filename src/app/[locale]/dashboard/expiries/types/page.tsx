@@ -70,6 +70,7 @@ export default async function ExpiryTypesPage({ params }: PageProps) {
               name: expiryType.name,
               scope: expiryType.scope,
               isActive: expiryType.isActive,
+              blocksBooking: expiryType.blocksBooking,
             }))}
             canManage={canManage}
             labels={{
@@ -78,6 +79,7 @@ export default async function ExpiryTypesPage({ params }: PageProps) {
                 name: t('table.name'),
                 scope: t('table.scope'),
                 status: t('table.status'),
+                blocksBooking: t('table.blocksBooking'),
                 actions: t('table.actions'),
                 empty: t('table.empty'),
               },
@@ -90,6 +92,10 @@ export default async function ExpiryTypesPage({ params }: PageProps) {
               status: {
                 active: t('status.active'),
                 inactive: t('status.inactive'),
+              },
+              blocksBooking: {
+                yes: t('blocksBooking.yes'),
+                no: t('blocksBooking.no'),
               },
               actions: {
                 edit: t('actions.edit'),
@@ -105,6 +111,8 @@ export default async function ExpiryTypesPage({ params }: PageProps) {
                 editTitle: t('form.editTitle'),
                 name: t('form.name'),
                 scope: t('form.scope'),
+                blocksBooking: t('form.blocksBooking'),
+                blocksBookingHint: t('form.blocksBookingHint'),
                 submitCreate: t('form.submitCreate'),
                 submitSave: t('form.submitSave'),
                 cancel: t('form.cancel'),

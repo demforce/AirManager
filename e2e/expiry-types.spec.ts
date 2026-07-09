@@ -145,6 +145,35 @@ test.describe('Expiry-type catalogue (Story 6.1, AC 1/2, FR-35)', () => {
     await expect(page.getByRole('row', { name: new RegExp(name) })).toHaveCount(0);
   });
 
+  test('admin creates a type with "Blocca prenotazioni" checked (story 7.4, AC 1), sees the list badge, then unchecks it on edit and the badge disappears', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/expiries/types');
+
+    const name = uniqueTypeName('Tipo bloccante');
+
+    await page.getByRole('button', { name: 'Nuovo tipo' }).click();
+    await page.getByLabel('Nome').fill(name);
+    await page.getByLabel('Ambito').selectOption('ALL');
+    await page.getByLabel('Blocca prenotazioni').check();
+    await page.getByRole('button', { name: 'Crea tipo' }).click();
+    await expect(page.getByTestId('expiry-types-feedback')).toBeVisible();
+
+    const row = page.getByRole('row', { name: new RegExp(name) });
+    await expect(row).toContainText('Blocca prenotazioni');
+
+    // Edit: the checkbox reopens CHECKED (prefilled from the current value), unchecking clears the badge.
+    await row.getByRole('button', { name: 'Modifica' }).click();
+    await expect(page.getByLabel('Blocca prenotazioni')).toBeChecked();
+    await page.getByLabel('Blocca prenotazioni').uncheck();
+    await page.getByRole('button', { name: 'Salva' }).click();
+    await expect(page.getByTestId('expiry-types-feedback')).toBeVisible();
+
+    const rowAfterEdit = page.getByRole('row', { name: new RegExp(name) });
+    await expect(rowAfterEdit).not.toContainText('Blocca prenotazioni');
+  });
+
   test('a STAFF actor (expiries.manage) sees the read-only catalogue, a POST as staff gets a 403 AD-8 envelope, nav item visible', async ({
     page,
   }) => {

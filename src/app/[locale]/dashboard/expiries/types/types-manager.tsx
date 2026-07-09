@@ -15,14 +15,18 @@ export type ExpiryTypeRow = {
   name: string;
   scope: ExpiryScopeValue;
   isActive: boolean;
+  /** Whether an expired scadenza of this type blocks a new booking (epic 7, story 7.4; FR-21). */
+  blocksBooking: boolean;
 };
 
 export type TypesManagerLabels = {
   newType: string;
-  table: { name: string; scope: string; status: string; actions: string; empty: string };
+  table: { name: string; scope: string; status: string; blocksBooking: string; actions: string; empty: string };
   /** `scope → label` map (Dev Notes: MAI l'enum raw in UI). */
   scope: Record<ExpiryScopeValue, string>;
   status: { active: string; inactive: string };
+  /** "Blocca prenotazioni" list badge (story 7.4) — yes/no, same `Record`-map-not-raw-boolean convention as `status`. */
+  blocksBooking: { yes: string; no: string };
   actions: {
     edit: string;
     deactivate: string;
@@ -37,6 +41,9 @@ export type TypesManagerLabels = {
     editTitle: string;
     name: string;
     scope: string;
+    /** "Blocca prenotazioni" checkbox label (story 7.4). */
+    blocksBooking: string;
+    blocksBookingHint: string;
     submitCreate: string;
     submitSave: string;
     cancel: string;
@@ -152,6 +159,22 @@ export function TypesManager({ expiryTypes, canManage, labels }: TypesManagerPro
         </span>
       ),
     },
+    {
+      // Story 7.4 (FR-21): list badge — only a "Blocca prenotazioni" TRUE
+      // type gets a visible badge (amber, same palette as the "Disattivato"
+      // status badge above — both signal "pay attention"); `false` renders
+      // nothing rather than a second low-signal badge on every row.
+      id: 'blocksBooking',
+      header: labels.table.blocksBooking,
+      cell: ({ row }) =>
+        row.original.blocksBooking ? (
+          <span className="rounded-full bg-[#FBF3DB] px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] text-[#956400]">
+            {labels.blocksBooking.yes}
+          </span>
+        ) : (
+          <span className="text-xs text-[#787774]">{labels.blocksBooking.no}</span>
+        ),
+    },
     ...(canManage
       ? [
           {
@@ -264,6 +287,7 @@ export function TypesManager({ expiryTypes, canManage, labels }: TypesManagerPro
 const expiryTypeFormSchema = z.object({
   name: z.string().trim().min(1).max(100),
   scope: z.enum(['PILOTS', 'STUDENTS', 'INSTRUCTORS', 'ALL']),
+  blocksBooking: z.boolean(),
 });
 
 type ExpiryTypeFormValues = z.infer<typeof expiryTypeFormSchema>;
@@ -285,12 +309,12 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
     formState: { errors, isSubmitting },
   } = useForm<ExpiryTypeFormValues>({
     resolver: zodResolver(expiryTypeFormSchema),
-    defaultValues: { name: expiryType?.name ?? '', scope: expiryType?.scope ?? 'ALL' },
+    defaultValues: { name: expiryType?.name ?? '', scope: expiryType?.scope ?? 'ALL', blocksBooking: expiryType?.blocksBooking ?? false },
   });
 
   async function onSubmit(values: ExpiryTypeFormValues): Promise<void> {
     setFormError(null);
-    const body = { name: values.name.trim(), scope: values.scope };
+    const body = { name: values.name.trim(), scope: values.scope, blocksBooking: values.blocksBooking };
 
     const response = expiryType
       ? await fetch(`/api/v1/expiry-types/${expiryType.id}`, {
@@ -343,6 +367,23 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
             </option>
           ))}
         </select>
+      </div>
+
+      {/* "Blocca prenotazioni" (story 7.4, AC 1) — a plain checkbox, not
+          hidden behind an "advanced" toggle: this IS the field that decides
+          whether an expired scadenza of this type blocks a booking, so it
+          deserves the same visibility as name/scope. */}
+      <div className="flex items-start gap-3">
+        <input
+          id="expiry-type-blocks-booking"
+          type="checkbox"
+          className="mt-1 h-4 w-4 rounded-[4px] border-[#EAEAEA] text-[#111111] focus:ring-[#2F3437]"
+          {...register('blocksBooking')}
+        />
+        <label htmlFor="expiry-type-blocks-booking" className="text-sm text-[#2F3437]">
+          <span className="block font-medium">{labels.form.blocksBooking}</span>
+          <span className="block text-xs text-[#787774]">{labels.form.blocksBookingHint}</span>
+        </label>
       </div>
 
       {formError ? (
