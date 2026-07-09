@@ -4,7 +4,7 @@ baseline_commit: de2149b
 
 # Story TD-4: Logout affidabile su build di produzione (race signOut vs refresh JWT)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -37,11 +37,11 @@ so that nessuna sessione "risorga" dopo il logout (finding prioritario HANDOFF 2
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 2, 3)** — `src/proxy.ts`: middleware senza wrapper, gate via `getToken` (nome/salt cookie corretti per http/https), doc-comment aggiornato (root cause, equivalenza del gate, no-sliding); rimozione `auth-edge.ts`; unit test del proxy se esistono (verificare) o gate coperto dagli e2e.
-- [ ] **T2 (AC 5)** — doc-comment trade-off in `auth.config.ts`.
-- [ ] **T3 (AC 4)** — revert mirato `b95c066`: `playwright.config.ts` webServer CI → build+start (timeout 240s), `ci.yml` + `AUTH_TRUST_HOST`.
-- [ ] **T4 (AC 1, 6)** — estensione `e2e/login.spec.ts` (secondo ciclo logout); prova empirica ≥10 cicli su `next start` + prova curl no-Set-Cookie (Debug Log con output reali).
-- [ ] **T5 (AC 6)** — `npm run gates`; e2e login/logout in modalità CI su build locale (`CI=1 npx playwright test login` con build fatta); full suite dev-mode senza fail nuovi; story file (Dev Agent Record) + sprint-status.yaml (td-4 → review).
+- [x] **T1 (AC 2, 3)** — `src/proxy.ts`: middleware senza wrapper, gate via `getToken` (nome/salt cookie corretti per http/https), doc-comment aggiornato (root cause, equivalenza del gate, no-sliding); rimozione `auth-edge.ts`; unit test del proxy se esistono (verificare) o gate coperto dagli e2e.
+- [x] **T2 (AC 5)** — doc-comment trade-off in `auth.config.ts`.
+- [x] **T3 (AC 4)** — revert mirato `b95c066`: `playwright.config.ts` webServer CI → build+start (timeout 240s), `ci.yml` + `AUTH_TRUST_HOST`.
+- [x] **T4 (AC 1, 6)** — estensione `e2e/login.spec.ts` (secondo ciclo logout); prova empirica ≥10 cicli su `next start` + prova curl no-Set-Cookie (Debug Log con output reali).
+- [x] **T5 (AC 6)** — `npm run gates`; e2e login/logout in modalità CI su build locale (`CI=1 npx playwright test login` con build fatta); full suite dev-mode senza fail nuovi; story file (Dev Agent Record) + sprint-status.yaml (td-4 → review).
 
 ## Dev Notes
 
@@ -63,14 +63,98 @@ so that nessuna sessione "risorga" dopo il logout (finding prioritario HANDOFF 2
 
 ### Agent Model Used
 
+Sonnet 5 (single dev agent, xhigh)
+
 ### Debug Log References
+
+**Empirical investigation (before coding) — root cause confirmation and `secureCookie` derivation.**
+
+Started `npm run dev` and used curl to see what the *actual* login flow does on plain HTTP, since the story explicitly warned not to trust memory on this:
+
+```
+$ curl -s -i http://localhost:3000/api/auth/csrf
+HTTP/1.1 200 OK
+set-cookie: authjs.csrf-token=...; Path=/; HttpOnly; SameSite=Lax
+set-cookie: authjs.callback-url=...; Path=/; HttpOnly; SameSite=Lax
+```
+Unprefixed cookie names on http://localhost — confirms `secureCookie` resolves to `false` for the route handler that actually issues the cookie (it derives from the literal request protocol Next.js sees, `req.url`/`req.nextUrl.protocol`, not from `x-forwarded-proto`; traced in `node_modules/@auth/core/lib/init.js:69` vs. the route handler's direct `Auth(request, config)` call in `src/app/api/auth/[...nextauth]/route.ts`).
+
+Reproduced the pre-fix bug directly (still on the old `authEdge` middleware at this point): an **unauthenticated** GET to `/it/dashboard` (redirect to login) still carried `Set-Cookie: authjs.csrf-token=...` / `authjs.callback-url=...` — proof the wrapper propagates whatever `Set-Cookie` its internal `getSession()` call produces regardless of the response it's wrapping. A curl-based login (CSRF token → `POST /api/auth/callback/credentials`) followed by a plain `GET /it/dashboard` with the session cookie showed the session-refresh bug directly: `Set-Cookie: authjs.session-token=...` reissued on an ordinary authenticated navigation.
+
+**Post-fix verification on `next start` (production build), AUTH_TRUST_HOST=true (matches the restored CI env var):**
+
+Build: `env -u NODE_ENV npx next build` — succeeded, Edge (Proxy/Middleware) bundle stayed clean (no Prisma/argon2 leakage — `getToken` + `env.ts` are edge-safe, confirmed by the build not erroring).
+
+AC 2 — no session `Set-Cookie` on ordinary navigation, authenticated:
+```
+$ curl -s -i -b cookies.txt http://localhost:3000/it/dashboard
+HTTP/1.1 200 OK
+set-cookie: NEXT_LOCALE=it; Path=/; SameSite=lax
+... (no authjs.session-token Set-Cookie)
+
+$ curl -s -i -b cookies.txt http://localhost:3000/api/v1/flights
+HTTP/1.1 200 OK
+... (no authjs.session-token Set-Cookie)
+```
+grep for `set-cookie.*session-token` on both responses: NONE (correct) — previously (pre-fix, on `next start`) the same navigation always re-issued it.
+
+AC 3 — gate unchanged for unauthenticated requests:
+```
+$ curl -s -i http://localhost:3000/it/dashboard        # 307 -> /it/login?callbackUrl=%2Fit%2Fdashboard, no stray Set-Cookie
+$ curl -s -i http://localhost:3000/api/v1/flights      # 401 {"error":{"code":"UNAUTHENTICATED",...}}
+$ curl -s -o /dev/null -w "%{http_code}" .../api/v1/health   # 200
+$ curl -s -o /dev/null -w "%{http_code}" .../it/ppr           # 200 (public)
+```
+
+AC 1 — ≥10 consecutive login→(2 ordinary navigations)→logout→verify cycles on `next start`, via curl (CSRF-protected `POST /api/auth/callback/credentials` then `POST /api/auth/signout`, verifying the post-logout `GET /it/dashboard` is a 307 to `/it/login`):
+```
+cycle 1: PASS (logged-in=200, post-logout=307 location: /it/login?callbackUrl=%2Fit%2Fdashboard)
+...
+cycle 12: PASS (logged-in=200, post-logout=307 location: /it/login?callbackUrl=%2Fit%2Fdashboard)
+=== TOTAL: 12 passed, 0 failed (of 12) ===
+```
+(script: `/tmp/.../scratchpad/logout_cycles.sh`, not committed — throwaway verification tool)
+
+**Browser-driven e2e on the production build (AC 1/6, real `logoutAction` server-action flow, not raw curl):**
+```
+$ CI=1 npx playwright test login
+7 passed (40.6s)
+```
+Includes the extended `e2e/login.spec.ts` test with the second login/logout cycle (T4). Re-ran once more for reproducibility — 7/7 again.
+
+**Full e2e suite, dev mode — contention flakiness, not a regression (two full runs compared).** `npx playwright test` (`fullyParallel: true`, `next dev`) was run twice, back to back, same DB, same code:
+- Run 1 (cold dev-server cache): 90 passed, 61 failed.
+- Run 2 (warmer cache, right after): 141 passed, 10 failed.
+- Total collected both times: 151 (matches the session's established baseline count) — no test ever failed to be collected, only pass/fail assignment shifted.
+- The two failure sets are almost entirely **disjoint** (only 1 test, `bookings.spec.ts:406`, appears in both, out of 71 combined failure instances) and span unrelated business-logic specs (accounts, bookings, flights, aircraft-*, package-*, instructor-rates, idempotency, person-profiles...) — never `login.spec.ts`, never a 401/403/session-shaped assertion. Symptoms are 404s and body-shape mismatches consistent with a route not yet compiled when a parallel worker hits it.
+- Isolated re-run of 2 of run-1's failing spec files (`account-statement.spec.ts`, `accounts-topups.spec.ts`) against an already-warm server: 10/10 passed, 0 failed.
+
+This is the project's own previously-documented flaky class (commit `6c7f1d2`: "next dev's on-demand compilation under CI-runner contention causes timeout flakiness and hangs — known cold-compile flaky class") — the disjoint failure sets across two identical runs are the signature of resource contention (this sandbox runs Postgres, Mailpit, the dev server, and the Playwright browser workers together), not a deterministic bug: a real regression from this change would fail the *same* auth-shaped assertions every time. `login.spec.ts` — the only spec this story's business logic touches — was green in every single run, including inside both full-suite attempts. Treating the CI-mode production-build e2e run (below) as the authoritative AC 6 signal for this reason; flagged for the reviewer in `notesForReview`.
 
 ### Completion Notes List
 
+- T1: `src/proxy.ts` no longer wraps `authEdge`/`NextAuth(authConfig).auth` — plain `async function proxy(req: NextRequest)` reading the session with `getToken` (`next-auth/jwt`), which only decrypts the JWT and never appends `Set-Cookie`. `secureCookie` is derived from `req.nextUrl.protocol === 'https:'`, mirroring how the `/api/auth/*` route handler (the actual cookie issuer) derives it — verified empirically to match on `http://localhost` (unprefixed `authjs.session-token`). `src/server/auth/auth-edge.ts` deleted (no remaining consumer). Doc-comment on `proxy.ts` documents the root cause, the fix, gate-equivalence (no DB active-user recheck either before or after — that only ever ran in the Node instance), and the no-sliding-session trade-off. No proxy unit test existed before or was warranted here (Karpathy: no speculative test infra) — the gate is exercised by the e2e suite, which is the existing pattern for this file.
+- T2: added a trade-off doc-comment in `auth.config.ts` next to `session: { strategy: 'jwt' }` explaining the loss of de-facto sliding expiration and why it's accepted for the MVP.
+- T3: targeted revert of `b95c066` — `playwright.config.ts` and `.github/workflows/ci.yml` are now byte-identical to the pre-`b95c066` state (`git diff 6c7f1d2 -- playwright.config.ts` and `git diff b15fd37 -- .github/workflows/ci.yml` both empty). `docs/handoffs/HANDOFF.md` was deliberately left untouched — the finding-prioritario paragraph there is owned by the `/handoff` skill at epic close, not by this story.
+- T4: `e2e/login.spec.ts`'s existing logout test extended with a second full login→"Esci"→verify cycle in the same test, covering the handoff's "survives repeated clicks" repro without adding a new spec file. Empirical proof (≥10 cycles, curl no-Set-Cookie) recorded in the Debug Log above.
+- T5: gates green (see below). `CI=1 npx playwright test login` green twice in a row against the real production build. Full dev-mode suite run twice: 61 then 10 failures, almost entirely disjoint sets, none auth-related, `login.spec.ts` always green — see Debug Log for the full analysis. This is pre-existing sandbox contention flakiness (documented in the project's own commit history), not a regression from this story; could not get a fully clean dev-mode `fullyParallel` run in this session and am flagging it honestly rather than omitting it.
+- Stale `auth-edge.ts` references cleaned up in the same commit (surgical, caused directly by the file's removal): `src/server/auth/README.md`, `src/server/auth/auth.config.ts` (two comments), `src/server/auth/auth.ts`, `src/server/auth/jwt-active-check.ts`.
+
 ### File List
+
+- `src/proxy.ts` — modified (middleware rewritten: `getToken` instead of `authEdge` wrapper; doc-comment)
+- `src/server/auth/auth-edge.ts` — deleted
+- `src/server/auth/auth.config.ts` — modified (trade-off doc-comment; stale `auth-edge.ts` references updated)
+- `src/server/auth/auth.ts` — modified (stale `auth-edge.ts` comment reference updated)
+- `src/server/auth/jwt-active-check.ts` — modified (stale `auth-edge.ts` comment reference updated)
+- `src/server/auth/README.md` — modified (stale `auth-edge.ts` references updated)
+- `playwright.config.ts` — modified (targeted revert of `b95c066`: CI webServer command + timeout)
+- `.github/workflows/ci.yml` — modified (targeted revert of `b95c066`: `AUTH_TRUST_HOST`)
+- `e2e/login.spec.ts` — modified (second login/logout cycle added to the existing logout test)
 
 ## Review Record
 
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session) — finding prioritario dell'handoff post-Epic 8, ciclo dev+review completo come da regola utente.
+- 2026-07-09: Implemented (Sonnet 5 dev subagent, xhigh) — `src/proxy.ts` reads the session with `getToken` instead of the `authEdge` wrapper, eliminating the Set-Cookie source of the race; `auth-edge.ts` removed; sliding-session trade-off documented in `auth.config.ts`; targeted revert of `b95c066` (CI e2e back on production build + `AUTH_TRUST_HOST`); `e2e/login.spec.ts` extended with a second login/logout cycle. Status → review.

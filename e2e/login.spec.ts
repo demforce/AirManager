@@ -79,5 +79,22 @@ test.describe('login (AC 1, 2, 3)', () => {
     // The session cookie must actually be gone, not just a client-side redirect.
     await page.goto('/it/dashboard');
     await expect(page).toHaveURL(/\/it\/login\?callbackUrl=/);
+
+    // TD-4 regression guard: a second full login/logout cycle in the same
+    // test. The original bug (middleware re-issuing the session cookie on
+    // every navigation) could win the race against a single signOut but
+    // still lose it — or vice versa — across repeated cycles; the HANDOFF
+    // repro needed up to 4 "Esci" clicks on a hydrated page to surface.
+    await page.getByLabel('Email').fill(ADMIN_EMAIL);
+    await page.getByLabel('Password').fill(ADMIN_PASSWORD);
+    await page.getByRole('button', { name: 'Accedi' }).click();
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
+
+    await page.getByRole('button', { name: 'Esci' }).click();
+
+    await expect(page).toHaveURL(/\/it\/login$/);
+
+    await page.goto('/it/dashboard');
+    await expect(page).toHaveURL(/\/it\/login\?callbackUrl=/);
   });
 });
