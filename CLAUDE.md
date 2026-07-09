@@ -4,7 +4,7 @@ Software di gestione per un'aviosuperficie: piloti, velivoli, voli, PPR, finanze
 
 ## Stack (deciso con l'utente)
 
-- Next.js 15 (App Router, TypeScript) — API-first: le API REST (Zod + OpenAPI) saranno consumate anche da una futura app mobile Flutter
+- Next.js 16 (App Router, TypeScript) — API-first: le API REST (Zod + OpenAPI) saranno consumate anche da una futura app mobile Flutter
 - Prisma ORM + PostgreSQL 16
 - Auth.js (NextAuth v5) con RBAC — ruoli: admin, staff, istruttore, pilota, allievo
 - next-intl — UI in italiano + inglese
@@ -14,7 +14,7 @@ Software di gestione per un'aviosuperficie: piloti, velivoli, voli, PPR, finanze
 ## Processo di sviluppo (metodo BMAD, v6 in `_bmad/`)
 
 - Workflow: PRD → architettura → epics → stories → dev → review. Artefatti in `_bmad-output/`, conoscenza di progetto in `docs/`.
-- **Ruoli modello** (config approvata dall'utente 2026-07-07, in vigore dalla story 4.4): stories = sessione principale **Fable 5 extra-high**; dev = **UN SOLO subagent Sonnet 5 extra-high** per story (niente fan-out ultracode: la story file prescrittiva + la review Opus coprono la verifica); review = subagent **Opus 4.8 extra-high** adversarial (l'unico layer adversarial — mai abbassarlo). Un dev agent per story, 3 commit per story (story file → implementazione → fix review).
+- **Ruoli modello** (config utente 2026-07-07): stories = sessione principale **Fable 5 xhigh**; dev = **UN SOLO subagent Sonnet 5 xhigh** per story; review = subagent **Opus 4.8 xhigh** adversarial (l'unico layer adversarial — mai abbassarlo). Definizioni operative in `.claude/agents/` (`dev-story`, `adversarial-reviewer`); dettagli del ciclo corrente in `docs/handoffs/HANDOFF.md`.
 - **Regole PR/commit/sessione** (fissate dall'utente):
   - Ogni **epic** ha la sua **PR** (branch dedicato; PR stacked sulla precedente se non ancora merged).
   - Ogni **story** ha i suoi **commit** (story file → implementazione → fix di review).
@@ -27,8 +27,12 @@ L'utente vuole best practice aggiornate via Context7 (https://context7.com). In 
 
 ## Convenzioni
 
-- Branch di lavoro: uno per epic. Epic 4 = `claude/epic-4-rates-packages` (PR #5, stacked su PR #4 Epic 3 `claude/handoff-model-assignment-yyv1r1`); sessione corrente su `claude/epic-4-resume-pr-5-ambmfd`, push su entrambi. (Storici, merged: `claude/airfield-management-system-rh1y4r` epic 1-2, `claude/handoff-docs-6jz8ou` epic 3.1-3.4 via PR #3.)
+- Branch di lavoro: uno per epic. Lo stato branch/PR è per-sessione e vive SOLO in `docs/handoffs/HANDOFF.md` — mai registrarlo qui.
 - Codice, commenti e identificatori in inglese; UI bilingue IT/EN via next-intl; documenti BMAD in italiano.
-- Prima di ogni commit di una story: `lint`, `typecheck`, test Vitest e `next build` devono passare.
-- PostgreSQL 16 è disponibile nel container (`/usr/lib/postgresql/16`); Docker disponibile.
+- Prima di ogni commit di una story: `npm run gates` deve passare (lint + typecheck + vitest + build in output compatto — stampa solo i fallimenti; MAI eseguire i 4 comandi verbosi separatamente nei gate).
+- PostgreSQL 16 è disponibile nel container (`/usr/lib/postgresql/16`); Docker disponibile. Il bootstrap ambiente (deps, .env, Postgres, migrazioni, Mailpit) è automatico via hook SessionStart (`.claude/hooks/session-start.sh`, idempotente — rieseguibile a mano con `AIRMANAGER_BOOTSTRAP_FORCE=1`).
+
+## Compaction
+
+Alla compaction preservare SEMPRE: story id corrente, file modificati non ancora committati, esito dell'ultimo `npm run gates`, branch e PR correnti.
 - **Playwright MCP** (`.mcp.json`, server `playwright` = `@playwright/mcp` headless sul Chromium preinstallato `/opt/pw-browsers/chromium`): usarlo per la verifica UI interattiva durante dev e review (navigare l'app reale, screenshot, driving dei form) — complementare agli e2e Playwright (`e2e/`), che restano il gate automatico. I tool MCP (`mcp__playwright__*`) sono disponibili dalle sessioni avviate dopo il commit di `.mcp.json`. MAI `playwright install`.
