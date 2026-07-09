@@ -77,10 +77,6 @@ jobs:
       # Optional in envSchema but required by the jobs e2e suite: the route
       # answers 500 when unset, and expiry-alerts.spec.ts exercises the guard.
       JOBS_SECRET: ci-jobs-secret
-      # The e2e job tests the production build (next start): Auth.js v5 only
-      # auto-trusts the host in development, so localhost must be trusted
-      # explicitly here or every /api/auth call fails with UntrustedHost.
-      AUTH_TRUST_HOST: "true"
     steps:
       - uses: actions/checkout@v7
 
