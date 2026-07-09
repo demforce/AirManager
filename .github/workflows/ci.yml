@@ -22,9 +22,9 @@ jobs:
       AUTH_SECRET: ci-dummy-secret-not-used-anywhere
       SEED_ADMIN_PASSWORD: ci-dummy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -78,9 +78,9 @@ jobs:
       # answers 500 when unset, and expiry-alerts.spec.ts exercises the guard.
       JOBS_SECRET: ci-jobs-secret
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload traces on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results
           path: test-results/
