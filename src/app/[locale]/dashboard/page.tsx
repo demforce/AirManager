@@ -1,11 +1,13 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { ExpiryStatusDto } from '@/lib/schemas/expiries';
+import { formatDateTime } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { signOut } from '@/server/auth/auth';
 import { getSessionActor } from '@/server/auth/session';
 import { listPersonExpiries } from '@/server/services/expiries.service';
 import { getMe } from '@/server/services/me.service';
+import { listPprRequests } from '@/server/services/ppr.service';
 import { ExpiryStatusBadge } from './expiries/expiry-status-badge';
 import { visibleNavItems } from './nav-items';
 
@@ -81,6 +83,17 @@ export default async function DashboardPage({ params }: PageProps) {
     expiring: tExpiries('own.table.status.expiring'),
     expired: tExpiries('own.table.status.expired'),
   };
+
+  /**
+   * Story 8.2, Task 6 (AC 2; FR-41): "PPR in attesa" home widget for staff.
+   * INVERSE gate from `myExpiries` above (Contesto): this section renders
+   * even when the queue is EMPTY — the zero count is itself information for
+   * staff ("PPR in attesa" is a fixed panel of the role, not a
+   * conditionally-hidden tile) — so the widget is gated purely on
+   * `ppr.manage`, never on `pendingPprRequests.length`.
+   */
+  const canManagePpr = hasPermission(actor, 'ppr.manage');
+  const pendingPprRequests = canManagePpr ? await listPprRequests(actor, { status: 'PENDING', page: 1, pageSize: 5 }) : null;
 
   async function logoutAction() {
     'use server';
@@ -167,6 +180,41 @@ export default async function DashboardPage({ params }: PageProps) {
                 </div>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {canManagePpr && pendingPprRequests ? (
+          <section className="mt-10" data-testid="ppr-pending-widget">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+                {t('pprPendingWidget.heading')} &middot; {t('pprPendingWidget.count', { count: pendingPprRequests.total })}
+              </p>
+              <Link href="/dashboard/ppr" className="text-sm font-medium text-[#2F3437] underline-offset-4 hover:underline">
+                {t('pprPendingWidget.link')}
+              </Link>
+            </div>
+            {pendingPprRequests.items.length === 0 ? (
+              <p className="mt-4 text-sm text-[#787774]" data-testid="ppr-pending-widget-empty">
+                {t('pprPendingWidget.empty')}
+              </p>
+            ) : (
+              <div className="mt-4 divide-y divide-[#EAEAEA] rounded-[8px] border border-[#EAEAEA] bg-white">
+                {pendingPprRequests.items.map((request) => (
+                  <div
+                    key={request.id}
+                    data-testid="ppr-pending-widget-row"
+                    className="flex items-center justify-between gap-4 px-4 py-3"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-[#111111]">
+                        {request.firstName} {request.lastName} &middot; {request.aircraftRegistration}
+                      </p>
+                      <p className="text-xs text-[#787774]">{formatDateTime(request.eta, locale as 'it' | 'en')}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         ) : null}
       </div>

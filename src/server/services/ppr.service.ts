@@ -1,9 +1,15 @@
+import type { Prisma, PprStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
-import type { CreatePprRequestInput } from '@/lib/schemas/ppr';
+import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
+import type { CreatePprRequestInput, ListPprRequestsQuery } from '@/lib/schemas/ppr';
+import { APP_TIMEZONE } from '@/lib/time';
+import { dateOnlyInZone } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
-import { buildPprReceiptEmail } from '@/server/adapters/mail/templates';
+import { buildPprApprovalEmail, buildPprReceiptEmail, buildPprRejectionEmail } from '@/server/adapters/mail/templates';
+import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { RateLimitError, ValidationError } from './errors';
+import { getPprOperatingInstructions } from './app-settings.service';
+import { ConflictError, NotFoundError, RateLimitError, ValidationError } from './errors';
 
 /**
  * Public PPR request intake (epic 8, story 8.1; FR-22, UJ-3) — the FIRST
@@ -127,4 +133,223 @@ export async function createPprRequest(input: CreatePprRequestInput, meta: { ip:
   }
 
   return { status: 'PENDING' };
+}
+
+// --- Staff approval queue (epic 8, story 8.2; FR-23, FR-41) -----------------
+// Unlike `createPprRequest` above (the public, no-`Actor` deroga), EVERY
+// function below takes an `Actor` and calls `authorize(actor, 'ppr.manage')`
+// as its FIRST statement, before any query (AD-5) — the precedent for this
+// module is `expiry-types.service.ts`, not `createPprRequest`'s own deroga.
+
+export type PprRequestListItem = {
+  id: string;
+  status: PprStatus;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  aircraftRegistration: string;
+  aircraftType: string;
+  origin: string;
+  destination: string;
+  eta: Date;
+  etd: Date | null;
+  personsOnBoard: number;
+  notes: string | null;
+  locale: string;
+  /** `null` while `PENDING`; assigned atomically on approval — see `approvePprRequest`. */
+  pprNumber: string | null;
+  /** `null` unless `REJECTED` (AC 2). */
+  rejectionReason: string | null;
+  decidedAt: Date | null;
+  decidedByUserId: string | null;
+  createdAt: Date;
+};
+
+/**
+ * Every detail field EXCEPT `submitterIp` (Contesto: "MAI submitterIp" — an
+ * anti-abuse technical datum, never shown to staff, see the model's
+ * doc-comment).
+ */
+const PPR_REQUEST_SELECT = {
+  id: true,
+  status: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  phone: true,
+  aircraftRegistration: true,
+  aircraftType: true,
+  origin: true,
+  destination: true,
+  eta: true,
+  etd: true,
+  personsOnBoard: true,
+  notes: true,
+  locale: true,
+  pprNumber: true,
+  rejectionReason: true,
+  decidedAt: true,
+  decidedByUserId: true,
+  createdAt: true,
+} as const;
+
+/**
+ * Lists the staff approval queue (AC 1/2). `ppr.manage` only. Defaults to
+ * `status=PENDING` (the actionable queue, FIFO `createdAt asc`, tie-broken
+ * by `id` for stable pagination) — same pattern as
+ * `expiries.service.ts#listExpiryProposals`; pass `APPROVED`/`REJECTED` to
+ * review past decisions.
+ */
+export async function listPprRequests(actor: Actor, query: ListPprRequestsQuery): Promise<PaginatedResult<PprRequestListItem>> {
+  authorize(actor, 'ppr.manage');
+
+  const where = { status: query.status };
+
+  // Interactive transaction (story TD-1, AC 3 pattern) — see
+  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
+  // `pg` DeprecationWarning rationale.
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.pprRequest.findMany({
+      select: PPR_REQUEST_SELECT,
+      where,
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      ...paginationOffset(query),
+    });
+    const total = await tx.pprRequest.count({ where });
+    return [items, total] as const;
+  });
+
+  return paginate(items, total, query);
+}
+
+/**
+ * Locks and re-reads a `PprRequest` row for a decision (approve/reject),
+ * shared by both functions below — `SELECT ... FOR UPDATE` as the FIRST
+ * statement in the caller's transaction (precedent:
+ * `bookings.service.ts#createBooking`'s aircraft lock), so the guard below
+ * and whatever the caller does next (issuing a PPR number, on approve) are
+ * serialized against a concurrent decision on the SAME row.
+ *
+ * **Concurrency (Dev Notes, "la matrice 409-vs-numero è il cuore della
+ * story")**: two decisions racing on the SAME request both reach this lock;
+ * the second to acquire it re-reads a row the first already flipped away
+ * from `PENDING` and throws the 409 here — BEFORE either the counter
+ * upsert (approve) or the update (reject) runs, so a losing decision never
+ * burns a PPR number and never overwrites the winner's outcome. Two
+ * approvals on DIFFERENT requests never contend this lock at all (it is
+ * scoped to one row by `id`) — they only ever meet at the `PprCounter` row
+ * inside `approvePprRequest`, which is a separate, much narrower
+ * bottleneck (see that model's doc-comment).
+ */
+async function lockPendingPprRequest(tx: Prisma.TransactionClient, id: string): Promise<void> {
+  const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+    SELECT "id", "status" FROM "PprRequest" WHERE "id" = ${id} FOR UPDATE`;
+  const row = locked[0];
+  if (!row) {
+    throw new NotFoundError('PPR request not found.');
+  }
+  if (row.status !== 'PENDING') {
+    throw new ConflictError('This PPR request has already been decided.', undefined, 'PPR_ALREADY_DECIDED');
+  }
+}
+
+/**
+ * Approves a PENDING PPR request (AC 1) — `ppr.manage` only. Assigns the
+ * next atomic per-year PPR number (`'PPR-<year>-NNNN'`, see
+ * `lockPendingPprRequest`'s and `PprCounter`'s doc-comments for the full
+ * race analysis) and sends a best-effort outcome email AFTER the
+ * transaction commits, in the requester's OWN form locale
+ * (`PprRequest.locale`), including the admin-configured operating
+ * instructions for that locale ONLY when non-empty
+ * (`app-settings.service.ts#getPprOperatingInstructions`,
+ * `templates.ts#buildPprApprovalEmail`). A send failure is logged and
+ * swallowed — the decision itself already committed and stays valid
+ * (NFR-7 deferral: no retry queue).
+ */
+export async function approvePprRequest(actor: Actor, id: string): Promise<PprRequestListItem> {
+  authorize(actor, 'ppr.manage');
+
+  const decidedAt = new Date();
+  // Europe/Rome calendar year of THIS instant (Dev Notes: NEVER
+  // `getUTCFullYear` — an approval right around New Year's Eve must land in
+  // the year Rome's wall clock says, not UTC's).
+  const year = Number(dateOnlyInZone(decidedAt, APP_TIMEZONE).slice(0, 4));
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await lockPendingPprRequest(tx, id);
+
+    // Atomic per-year sequence (AC 1) — ONE statement; Postgres's own row
+    // lock on the upserted `PprCounter` row is what makes two approvals in
+    // the SAME year serialize into distinct, consecutive numbers instead of
+    // racing a read-then-write gap (`PprCounter`'s doc-comment).
+    const counterRows = await tx.$queryRaw<Array<{ lastSeq: number }>>`
+      INSERT INTO "PprCounter" ("year", "lastSeq") VALUES (${year}, 1)
+      ON CONFLICT ("year") DO UPDATE SET "lastSeq" = "PprCounter"."lastSeq" + 1
+      RETURNING "lastSeq"`;
+    const seq = counterRows[0]!.lastSeq;
+    const pprNumber = `PPR-${year}-${String(seq).padStart(4, '0')}`;
+
+    return tx.pprRequest.update({
+      where: { id },
+      data: { status: 'APPROVED', pprNumber, decidedAt, decidedByUserId: actor.userId },
+      select: PPR_REQUEST_SELECT,
+    });
+  });
+
+  try {
+    const instructions = await getPprOperatingInstructions(actor);
+    const operatingInstructions = updated.locale === 'en' ? instructions.en : instructions.it;
+    const { subject, text } = await buildPprApprovalEmail(updated.locale as AppLocale, {
+      firstName: updated.firstName,
+      // Set unconditionally by the transaction above — safe to assert.
+      pprNumber: updated.pprNumber!,
+      aircraftRegistration: updated.aircraftRegistration,
+      eta: updated.eta,
+      operatingInstructions,
+    });
+    await getMailSender().send({ to: updated.email, subject, text });
+  } catch (error) {
+    console.error('approvePprRequest: failed to send approval email', error);
+  }
+
+  return updated;
+}
+
+/**
+ * Rejects a PENDING PPR request with a mandatory reason (AC 2) —
+ * `ppr.manage` only. Same lock-then-guard as `approvePprRequest` (via
+ * `lockPendingPprRequest`) but never touches `PprCounter` (Contesto: "il
+ * contatore non si tocca"). Best-effort outcome email AFTER commit, same
+ * failure-swallowing rule as the approval side.
+ */
+export async function rejectPprRequest(actor: Actor, id: string, reason: string): Promise<PprRequestListItem> {
+  authorize(actor, 'ppr.manage');
+
+  const decidedAt = new Date();
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await lockPendingPprRequest(tx, id);
+
+    return tx.pprRequest.update({
+      where: { id },
+      data: { status: 'REJECTED', rejectionReason: reason, decidedAt, decidedByUserId: actor.userId },
+      select: PPR_REQUEST_SELECT,
+    });
+  });
+
+  try {
+    const { subject, text } = await buildPprRejectionEmail(updated.locale as AppLocale, {
+      firstName: updated.firstName,
+      aircraftRegistration: updated.aircraftRegistration,
+      eta: updated.eta,
+      // Just written above by this same transaction — safe to assert.
+      reason: updated.rejectionReason!,
+    });
+    await getMailSender().send({ to: updated.email, subject, text });
+  } catch (error) {
+    console.error('rejectPprRequest: failed to send rejection email', error);
+  }
+
+  return updated;
 }

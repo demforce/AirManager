@@ -1,3 +1,4 @@
+import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { z } from './zod-with-openapi';
 
 // --- Public PPR request (epic 8, story 8.1, FR-22) --------------------------
@@ -64,3 +65,92 @@ export const pprRequestCreatedResponseSchema = z.object({
 });
 
 export type PprRequestCreatedResponseDto = z.infer<typeof pprRequestCreatedResponseSchema>;
+
+// --- Staff approval queue (epic 8, story 8.2, FR-23) -------------------------
+// `authorize(actor, 'ppr.manage')` gates every function below — see
+// `ppr.service.ts`'s module doc-comment (AD-5, unlike the public schemas
+// above).
+
+/** Mirrors the Prisma `PprStatus` enum. */
+export const pprStatusSchema = z.enum(['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED']);
+
+export type PprStatusDto = z.infer<typeof pprStatusSchema>;
+
+/**
+ * `GET /api/v1/ppr-requests` query (AC 1/2). `status` defaults to `PENDING`
+ * — the actionable queue, FIFO (`createdAt asc`) — same
+ * `paginationQuerySchema.extend` + `.optional().default(...)` pattern as
+ * `listExpiryProposalsQuerySchema`.
+ */
+export const listPprRequestsQuerySchema = paginationQuerySchema.extend({
+  status: pprStatusSchema.optional().default('PENDING'),
+});
+
+export type ListPprRequestsQuery = z.infer<typeof listPprRequestsQuerySchema>;
+
+/**
+ * One queue entry, ALL detail fields (Contesto: "vede le richieste in
+ * attesa, il dettaglio") EXCEPT `submitterIp` — a technical anti-abuse
+ * datum (GDPR/NFR-3, see the `PprRequest` model doc-comment), never exposed
+ * to staff. Mirrors `ppr.service.ts`'s `PprRequestListItem`.
+ */
+export const pprRequestItemSchema = z.object({
+  id: z.string(),
+  status: pprStatusSchema,
+  firstName: z.string(),
+  lastName: z.string(),
+  email: z.string(),
+  phone: z.string(),
+  aircraftRegistration: z.string(),
+  aircraftType: z.string(),
+  origin: z.string(),
+  destination: z.string(),
+  eta: z.iso.datetime(),
+  etd: z.iso.datetime().nullable(),
+  personsOnBoard: z.number().int(),
+  notes: z.string().nullable(),
+  locale: z.enum(['it', 'en']),
+  /** `'PPR-<year>-NNNN'` (AC 1) — `null` while `PENDING` and stays `null` forever on a `REJECTED` request. */
+  pprNumber: z.string().nullable(),
+  /** Mandatory on REJECT (AC 2) — `null` on every other status. */
+  rejectionReason: z.string().nullable(),
+  decidedAt: z.iso.datetime().nullable(),
+  decidedByUserId: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+});
+
+export type PprRequestItemDto = z.infer<typeof pprRequestItemSchema>;
+
+/** `GET /api/v1/ppr-requests` response — the AD-8 paginated envelope. */
+export const pprRequestListResponseSchema = paginatedResponseSchema(pprRequestItemSchema);
+
+export type PprRequestListResponseDto = z.infer<typeof pprRequestListResponseSchema>;
+
+/**
+ * `POST /api/v1/ppr-requests/{id}/reject` body (AC 2) — `reason` mandatory,
+ * same `.trim().min(1).max(500)` bound as `reverseCashMovementSchema`.
+ */
+export const rejectPprRequestSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+
+export type RejectPprRequestInput = z.infer<typeof rejectPprRequestSchema>;
+
+// --- Operating instructions (epic 8, story 8.2, AC 1) ------------------------
+// First real use of `AppSetting` — see `app-settings.service.ts`. GET is
+// gated `ppr.manage` (staff sees them in the queue's email preview context),
+// PUT is `settings.manage` (admin-only edit).
+
+/**
+ * `{ it, en }` — an admin-edited operational note appended to the approval
+ * email in the requester's OWN form locale, ONLY when non-empty for that
+ * locale (`templates.ts#buildPprApprovalEmail`). Absent/never-set reads as
+ * `''` for both languages (`app-settings.service.ts`), never `null` — a
+ * bare textarea default, not a tri-state.
+ */
+export const pprOperatingInstructionsSchema = z.object({
+  it: z.string().trim().max(2000),
+  en: z.string().trim().max(2000),
+});
+
+export type PprOperatingInstructionsDto = z.infer<typeof pprOperatingInstructionsSchema>;

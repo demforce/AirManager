@@ -1,0 +1,106 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { Actor } from '@/server/auth/rbac';
+import { ForbiddenError } from './errors';
+
+vi.mock('@/server/db/prisma', () => ({
+  prisma: {
+    appSetting: {
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+    },
+    $transaction: vi.fn(),
+  },
+}));
+
+const { prisma } = await import('@/server/db/prisma');
+const { getPprOperatingInstructions, setPprOperatingInstructions } = await import('./app-settings.service');
+
+const findManyMock = vi.mocked(prisma.appSetting.findMany);
+const upsertMock = vi.mocked(prisma.appSetting.upsert);
+const transactionMock = vi.mocked(prisma.$transaction);
+
+type Fixture = Record<string, unknown>;
+const findMany = findManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const upsert = upsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void };
+
+function adminActor(): Actor {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
+}
+
+function staffActor(): Actor {
+  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
+}
+
+function pilotActor(): Actor {
+  return { userId: 'pilot_1', personId: 'person_1', roles: ['PILOT'] };
+}
+
+/**
+ * First real plumbing around `AppSetting` (story 8.2, AC 1) — minimal
+ * targeted coverage: get/set gating asymmetry, the `''` default (never
+ * `null`), and that both locales are always written together.
+ */
+describe('app-settings.service (story 8.2, AC 1)', () => {
+  describe('getPprOperatingInstructions', () => {
+    it('is gated ppr.manage — a pilot is forbidden, no query runs', async () => {
+      await expect(getPprOperatingInstructions(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
+      expect(findManyMock).not.toHaveBeenCalled();
+    });
+
+    it('staff (ppr.manage, not settings.manage) CAN read', async () => {
+      findMany.mockResolvedValue([]);
+      await expect(getPprOperatingInstructions(staffActor())).resolves.toEqual({ it: '', en: '' });
+    });
+
+    it('defaults BOTH locales to the empty string when no AppSetting rows exist yet (never null)', async () => {
+      findMany.mockResolvedValue([]);
+
+      const result = await getPprOperatingInstructions(adminActor());
+
+      expect(result).toEqual({ it: '', en: '' });
+    });
+
+    it('reads each locale from its own AppSetting key', async () => {
+      findMany.mockResolvedValue([
+        { key: 'ppr.operatingInstructions.it', value: 'Presentarsi in torre.' },
+        { key: 'ppr.operatingInstructions.en', value: 'Report to the tower.' },
+      ]);
+
+      const result = await getPprOperatingInstructions(adminActor());
+
+      expect(result).toEqual({ it: 'Presentarsi in torre.', en: 'Report to the tower.' });
+      expect(findManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { key: { in: ['ppr.operatingInstructions.it', 'ppr.operatingInstructions.en'] } } }),
+      );
+    });
+
+    it('a value present only for one locale leaves the other at the empty-string default', async () => {
+      findMany.mockResolvedValue([{ key: 'ppr.operatingInstructions.it', value: 'Solo italiano.' }]);
+
+      const result = await getPprOperatingInstructions(adminActor());
+
+      expect(result).toEqual({ it: 'Solo italiano.', en: '' });
+    });
+  });
+
+  describe('setPprOperatingInstructions', () => {
+    it('is gated settings.manage — staff (ppr.manage only) is forbidden, no write runs', async () => {
+      await expect(setPprOperatingInstructions(staffActor(), { it: 'x', en: 'y' })).rejects.toBeInstanceOf(ForbiddenError);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('admin (settings.manage) can write both locales together in one transaction', async () => {
+      upsert.mockResolvedValue({});
+      transaction.mockResolvedValue([{}, {}]);
+
+      const result = await setPprOperatingInstructions(adminActor(), { it: 'Italiano nuovo.', en: 'New English.' });
+
+      expect(result).toEqual({ it: 'Italiano nuovo.', en: 'New English.' });
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      // Both upserts submitted together (AC 1: "entrambi i campi ... insieme").
+      const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
+      expect(batch).toHaveLength(2);
+    });
+  });
+});

@@ -34,6 +34,12 @@
       "heading": "Le mie scadenze",
       "link": "Tutte le mie scadenze"
     },
+    "pprPendingWidget": {
+      "heading": "PPR in attesa",
+      "link": "Vai alla coda PPR",
+      "empty": "Nessuna richiesta PPR in attesa.",
+      "count": "{count} in attesa"
+    },
     "nav": {
       "people": "Persone",
       "aircraft": "Velivoli",
@@ -1193,6 +1199,60 @@
       "message": "Abbiamo ricevuto la tua richiesta di PPR. Riceverai a breve un'email di conferma con il riepilogo, seguita da un'altra email con l'esito della richiesta."
     }
   },
+  "PprQueuePage": {
+    "kicker": "Coda PPR",
+    "title": "Richieste PPR",
+    "description": "Approva o rifiuta le richieste di permesso di atterraggio in attesa.",
+    "backToDashboard": "Torna alla dashboard",
+    "table": {
+      "requester": "Richiedente",
+      "aircraft": "Marche / Tipo",
+      "route": "Provenienza → Destinazione",
+      "eta": "ETA",
+      "persons": "Persone",
+      "actions": "Azioni"
+    },
+    "detail": {
+      "show": "Dettagli",
+      "hide": "Nascondi dettagli",
+      "email": "Email",
+      "phone": "Telefono",
+      "etd": "ETD",
+      "noEtd": "Non indicato",
+      "notes": "Note",
+      "noNotes": "Nessuna nota",
+      "locale": "Lingua della richiesta",
+      "localeIt": "Italiano",
+      "localeEn": "Inglese"
+    },
+    "actions": {
+      "approve": "Approva",
+      "reject": "Rifiuta",
+      "confirmApprove": "Confermi l'approvazione?",
+      "confirmYes": "Sì, approva",
+      "confirmCancel": "Annulla",
+      "reasonLabel": "Motivo del rifiuto",
+      "reasonRequired": "Il motivo è obbligatorio.",
+      "submitReject": "Conferma rifiuto",
+      "cancelReject": "Annulla"
+    },
+    "feedback": {
+      "approved": "Richiesta approvata: numero PPR {pprNumber}.",
+      "rejected": "Richiesta rifiutata.",
+      "conflictError": "Questa richiesta è già stata decisa da un altro operatore.",
+      "genericError": "Non è stato possibile completare l'operazione. Riprova."
+    },
+    "empty": "Nessuna richiesta PPR in attesa.",
+    "instructions": {
+      "heading": "Istruzioni operative",
+      "description": "Testo incluso nell'email di approvazione, nella lingua del richiedente. Lascia vuoto un campo per omettere la sezione in quella lingua.",
+      "it": "Italiano",
+      "en": "Inglese",
+      "save": "Salva istruzioni",
+      "saved": "Istruzioni salvate.",
+      "error": "Non è stato possibile salvare le istruzioni. Riprova."
+    }
+  },
   "Emails": {
     "invite": {
       "subject": "Sei stato invitato ad AirManager",
@@ -1225,6 +1285,15 @@
     "pprReceipt": {
       "subject": "Richiesta PPR ricevuta: {aircraftRegistration}",
       "body": "Ciao {firstName},\n\nAbbiamo ricevuto la tua richiesta di PPR per {aircraftRegistration} ({aircraftType}), da {origin} a {destination}.\n\nETA: {eta}\n{personsOnBoard, plural, one {# persona a bordo} other {# persone a bordo}}.\n\nRiceverai un'altra email con l'esito della richiesta."
+    },
+    "pprApproval": {
+      "subject": "PPR {pprNumber} approvato: {aircraftRegistration}",
+      "body": "Ciao {firstName},\n\nLa tua richiesta di PPR per {aircraftRegistration} è stata approvata.\n\nNumero PPR: {pprNumber}\nETA: {eta}",
+      "instructions": "Istruzioni operative:\n{instructions}"
+    },
+    "pprRejection": {
+      "subject": "Richiesta PPR non accolta: {aircraftRegistration}",
+      "body": "Ciao {firstName},\n\nLa tua richiesta di PPR per {aircraftRegistration} (ETA: {eta}) non è stata accolta.\n\nMotivo: {reason}"
     }
   }
 }

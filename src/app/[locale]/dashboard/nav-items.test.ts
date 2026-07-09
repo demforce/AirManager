@@ -39,6 +39,17 @@ describe('visibleNavItems (Story 1.3 AC 2 — dashboard navigation by role)', ()
     expect(keys).not.toContain('settings');
   });
 
+  it('shows the ppr item to staff (story 8.2: ppr.manage) but not to pilot/student', () => {
+    expect(visibleNavItems(actorWith(['STAFF'])).map((item) => item.key)).toContain('ppr');
+    expect(visibleNavItems(actorWith(['PILOT'])).map((item) => item.key)).not.toContain('ppr');
+    expect(visibleNavItems(actorWith(['STUDENT'])).map((item) => item.key)).not.toContain('ppr');
+  });
+
+  it('points the ppr nav item at /dashboard/ppr (story 8.2 — the old /ppr-queue placeholder is gone)', () => {
+    const item = visibleNavItems(actorWith(['ADMIN'])).find((entry) => entry.key === 'ppr');
+    expect(item?.href).toBe('/dashboard/ppr');
+  });
+
   // CONTRACT CHANGE (story 7.2, FR-19): `bookings` gained `self.read`
   // (calendar view for every authenticated role) — a student alone now
   // SEES the item again, same pattern as story 6.2 did for 6.1's nav test

@@ -105,7 +105,15 @@ import {
   studentProfileSchema,
   updatePersonSchema,
 } from './people';
-import { createPprRequestSchema, pprRequestCreatedResponseSchema } from './ppr';
+import {
+  createPprRequestSchema,
+  listPprRequestsQuerySchema,
+  pprOperatingInstructionsSchema,
+  pprRequestCreatedResponseSchema,
+  pprRequestItemSchema,
+  pprRequestListResponseSchema,
+  rejectPprRequestSchema,
+} from './ppr';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
 
 /**
@@ -267,12 +275,17 @@ registry.register('CreateBookingResponse', createBookingResponseSchema);
 registry.register('UpdateBookingRequest', updateBookingSchema);
 registry.register('CreatePprRequestRequest', createPprRequestSchema);
 registry.register('PprRequestCreatedResponse', pprRequestCreatedResponseSchema);
+registry.register('PprRequest', pprRequestItemSchema);
+registry.register('PprRequestList', pprRequestListResponseSchema);
+registry.register('RejectPprRequestRequest', rejectPprRequestSchema);
+registry.register('PprOperatingInstructions', pprOperatingInstructionsSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const aircraftIdParams = z.object({ id: z.string().meta({ description: 'Aircraft id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const flightIdParams = z.object({ id: z.string().meta({ description: 'Flight id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const bookingIdParams = z.object({ id: z.string().meta({ description: 'Booking id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const pprRequestIdParams = z.object({ id: z.string().meta({ description: 'PPR request id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
   401: 'Not authenticated (AD-8 `UNAUTHENTICATED`).',
@@ -1494,6 +1507,87 @@ registry.registerPath({
   responses: {
     201: { description: 'The request was recorded as PENDING (or silently accepted as a honeypot catch).', content: jsonContent(pprRequestCreatedResponseSchema) },
     ...errorResponses(422, 429),
+  },
+});
+
+// --- PPR staff approval queue (epic 8, story 8.2, FR-23) --------------------
+// Authenticated, `ppr.manage`-gated. The GET below shares its pathname with
+// the public POST above (`PUBLIC_API_PATHS` in `src/proxy.ts` bypasses the
+// middleware's OWN session check for that exact path, every method) — see
+// the route file's doc-comment: `apiRoute`'s own default (`auth: 'required'`)
+// plus `authorize()` inside the service are what actually guard it (AD-5).
+// The approve/reject/settings paths below are NOT in `PUBLIC_API_PATHS`.
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/ppr-requests',
+  summary: 'List the staff PPR approval queue (AC 1/2)',
+  description:
+    'Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED`/`COMPLETED`/`CANCELLED` to review past decisions. Every detail field EXCEPT `submitterIp` (never exposed — anti-abuse technical datum). Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `ppr.manage`.',
+  tags: ['Ppr'],
+  security,
+  request: { query: listPprRequestsQuerySchema },
+  responses: {
+    200: { description: 'A page of PPR requests.', content: jsonContent(pprRequestListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests/{id}/approve',
+  summary: 'Approve a pending PPR request (AC 1)',
+  description:
+    "No body. Assigns the next atomic per-year PPR number ('PPR-<year>-NNNN', Europe/Rome calendar year) and sends a best-effort outcome email to the requester (their OWN form locale), including the admin-configured operating instructions when non-empty for that locale. 404 on an unknown id; already-decided (by ANY outcome, including a concurrent decision) answers 409 `PPR_ALREADY_DECIDED` and never consumes a PPR number. Requires `ppr.manage`. Supports `Idempotency-Key`.",
+  tags: ['Ppr'],
+  security,
+  request: { params: pprRequestIdParams, headers: [idempotencyKeyHeader] },
+  responses: {
+    200: { description: 'The approved request, with its assigned pprNumber.', content: jsonContent(pprRequestItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests/{id}/reject',
+  summary: 'Reject a pending PPR request with a mandatory reason (AC 2)',
+  description:
+    'Body `{ reason }` (1-500 chars, mandatory). Never touches the PPR number counter. Sends a best-effort outcome email including the reason, in the requester\'s own form locale. 404 on an unknown id; already-decided answers 409 `PPR_ALREADY_DECIDED`. Requires `ppr.manage`. Supports `Idempotency-Key`.',
+  tags: ['Ppr'],
+  security,
+  request: { params: pprRequestIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(rejectPprRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The rejected request.', content: jsonContent(pprRequestItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/ppr-operating-instructions',
+  summary: 'Read the PPR approval-email operating instructions (AC 1)',
+  description:
+    "`{ it, en }` — the free-text note appended (per-locale, only when non-empty) to the PPR approval email. Absent/never-configured reads as `''` for both languages, never `null`. Requires `ppr.manage` (staff sees these from the queue page; only `settings.manage` can edit them, see the PUT sibling below). First real use of the `AppSetting` K/V store.",
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current instructions.', content: jsonContent(pprOperatingInstructionsSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/ppr-operating-instructions',
+  summary: 'Set the PPR approval-email operating instructions (AC 1)',
+  description: 'Body `{ it, en }` (max 2000 chars each) — both locales are always written together. Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(pprOperatingInstructionsSchema), required: true } },
+  responses: {
+    200: { description: 'The saved instructions.', content: jsonContent(pprOperatingInstructionsSchema) },
+    ...errorResponses(401, 403, 422),
   },
 });
 

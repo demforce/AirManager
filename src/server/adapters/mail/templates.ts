@@ -23,6 +23,8 @@ export type NegativeBalanceAlertEmailContent = { subject: string; text: string }
 export type ExpiryAlertEmailContent = { subject: string; text: string };
 export type ExpiryDigestEmailContent = { subject: string; text: string };
 export type PprReceiptEmailContent = { subject: string; text: string };
+export type PprApprovalEmailContent = { subject: string; text: string };
+export type PprRejectionEmailContent = { subject: string; text: string };
 
 /**
  * One row of the staff digest (story 6.3, tri-state hardened story TD-1 AC
@@ -234,6 +236,78 @@ export async function buildPprReceiptEmail(
       destination: params.destination,
       eta,
       personsOnBoard: params.personsOnBoard,
+    }),
+  };
+}
+
+/**
+ * Builds the PPR approval outcome email (epic 8, story 8.2, AC 1) —
+ * sent best-effort AFTER `ppr.service.ts#approvePprRequest`'s transaction
+ * commits (same "row already exists, a send failure must never undo the
+ * decision" rule as `accounts.service.ts#sendNegativeBalanceAlert` and
+ * `createPprRequest`'s own receipt email). `locale` is `PprRequest.locale`
+ * — the language the FORM was submitted in (NFR-1), reused rather than
+ * re-asked (see the model's doc-comment). The `pprNumber` is in the
+ * SUBJECT (so it survives an inbox preview) as well as the body.
+ * `operatingInstructions` (already resolved to the recipient's OWN locale by
+ * the caller, `app-settings.service.ts#getPprOperatingInstructions`) is
+ * appended as its own paragraph ONLY when non-empty (AC 1: "l'email ...
+ * include le istruzioni ... SOLO se non vuote") — an empty/unset string
+ * omits the section entirely rather than emitting a blank line.
+ */
+export async function buildPprApprovalEmail(
+  locale: AppLocale,
+  params: {
+    firstName: string;
+    pprNumber: string;
+    aircraftRegistration: string;
+    eta: Date;
+    operatingInstructions?: string;
+  },
+): Promise<PprApprovalEmailContent> {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.pprApproval' });
+  const eta = formatDateTime(params.eta, locale);
+
+  const body = t('body', {
+    firstName: params.firstName,
+    pprNumber: params.pprNumber,
+    aircraftRegistration: params.aircraftRegistration,
+    eta,
+  });
+  const instructions =
+    params.operatingInstructions && params.operatingInstructions.trim().length > 0
+      ? t('instructions', { instructions: params.operatingInstructions.trim() })
+      : null;
+
+  return {
+    subject: t('subject', { pprNumber: params.pprNumber, aircraftRegistration: params.aircraftRegistration }),
+    text: instructions ? `${body}\n\n${instructions}` : body,
+  };
+}
+
+/**
+ * Builds the PPR rejection outcome email (epic 8, story 8.2, AC 2) — same
+ * best-effort-after-commit rule as {@link buildPprApprovalEmail}. `reason`
+ * is the staff-entered mandatory motivation
+ * (`ppr.service.ts#rejectPprRequest`'s `rejectionReason`), included
+ * verbatim in the body (AC 2: "ed email con il motivo").
+ */
+export async function buildPprRejectionEmail(
+  locale: AppLocale,
+  params: { firstName: string; aircraftRegistration: string; eta: Date; reason: string },
+): Promise<PprRejectionEmailContent> {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.pprRejection' });
+  const eta = formatDateTime(params.eta, locale);
+
+  return {
+    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
+    text: t('body', {
+      firstName: params.firstName,
+      aircraftRegistration: params.aircraftRegistration,
+      eta,
+      reason: params.reason,
     }),
   };
 }

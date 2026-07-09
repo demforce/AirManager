@@ -1,6 +1,6 @@
 import { apiRoute } from '@/lib/api/handler';
-import { createPprRequestSchema } from '@/lib/schemas/ppr';
-import { createPprRequest, extractSubmitterIp } from '@/server/services/ppr.service';
+import { createPprRequestSchema, listPprRequestsQuerySchema } from '@/lib/schemas/ppr';
+import { createPprRequest, extractSubmitterIp, listPprRequests } from '@/server/services/ppr.service';
 
 /**
  * Public route (`src/proxy.ts` `PUBLIC_API_PATHS`) — the first
@@ -20,4 +20,22 @@ export const POST = apiRoute({
     const ip = extractSubmitterIp(request.headers.get('x-forwarded-for'));
     return createPprRequest(body, { ip });
   },
+});
+
+/**
+ * `GET /api/v1/ppr-requests` — the staff approval queue (epic 8, story 8.2,
+ * AC 1/2). ATTENTION: this pathname is ALSO in `src/proxy.ts`'s
+ * `PUBLIC_API_PATHS` (added in 8.1 for the public POST above) — the
+ * middleware skips its own session check for EVERY method on this exact
+ * path, this GET included. That is fine BY DESIGN, not a hole: `apiRoute`'s
+ * own default (`auth: 'required'`, no override here) resolves the session
+ * itself and answers 401 with no cookie, and `listPprRequests`
+ * (`ppr.service.ts`) calls `authorize(actor, 'ppr.manage')` before any
+ * query — AD-5's "the middleware is never the only guardian" applies here
+ * literally: this route has ZERO help from the middleware and still ends up
+ * fully guarded by `apiRoute` + the service.
+ */
+export const GET = apiRoute({
+  querySchema: listPprRequestsQuerySchema,
+  handle: async ({ actor, query }) => listPprRequests(actor, query),
 });

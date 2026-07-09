@@ -49,9 +49,28 @@ export class ValidationError extends DomainError {
   }
 }
 
-/** Action conflicts with the current state of the resource → HTTP 409. */
+/**
+ * Action conflicts with the current state of the resource → HTTP 409.
+ * `code` defaults to the generic `CONFLICT` (every existing caller keeps
+ * that behavior unchanged — none of them pass a second/third argument) but,
+ * same shape as `ValidationError` above, a caller can pass a stable
+ * SCREAMING_SNAKE code instead (story 8.2, AC 1/2, closing handoff deferral
+ * 7.3 D1) so a 409 caused by e.g. a PPR request already decided by another
+ * staff member is distinguishable, on the wire, from a generic conflict —
+ * `ppr.service.ts#approvePprRequest`/`rejectPprRequest` (`PPR_ALREADY_DECIDED`)
+ * are the first callers to do so. `details` mirrors `ValidationError`'s
+ * shape too, even though no caller populates it yet — kept for the same
+ * "one error hierarchy, one constructor shape" reason.
+ */
 export class ConflictError extends DomainError {
-  readonly code = 'CONFLICT';
+  readonly code: string;
+  readonly details?: Record<string, unknown>;
+
+  constructor(message: string, details?: Record<string, unknown>, code: string = 'CONFLICT') {
+    super(message);
+    this.code = code;
+    this.details = details;
+  }
 }
 
 /**

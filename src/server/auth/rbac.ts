@@ -32,6 +32,7 @@ export type Permission =
   | 'school.manage.own'
   | 'expiries.manage'
   | 'expiries.propose.own'
+  | 'ppr.manage'
   | 'settings.manage'
   | 'users.manage'
   | 'self.read';
@@ -47,6 +48,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'school.manage.own',
   'expiries.manage',
   'expiries.propose.own',
+  'ppr.manage',
   'settings.manage',
   'users.manage',
   'self.read',
@@ -81,6 +83,11 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'flights.manage',
     'bookings.manage.any',
     'expiries.manage',
+    // Story 8.2 (FR-23): staff approves/rejects PPR requests — the queue at
+    // `/dashboard/ppr` and the operating-instructions GET (edit stays
+    // `settings.manage`, admin-only). ADMIN inherits it via `ALL_PERMISSIONS`
+    // above; instructor/pilot/student never hold it.
+    'ppr.manage',
     'self.read',
   ],
   // `expiries.propose.own` (story 6.2, FR-36): the titolare proposes a
