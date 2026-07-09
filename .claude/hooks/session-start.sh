@@ -49,7 +49,10 @@ if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='airman
 fi
 STATUS+=("postgres OK")
 
-# 4. Migrations; seed only when the DB was just created.
+# 4. Prisma client + migrations; seed only when the DB was just created.
+#    generate runs unconditionally: node_modules may predate a branch switch
+#    that changed schema.prisma (stale client = undefined model delegates).
+npx prisma generate >>"$LOG" 2>&1 || fail prisma-generate
 npx prisma migrate deploy >>"$LOG" 2>&1 || fail migrations
 if [ "$FRESH_DB" = 1 ]; then
   npx prisma db seed >>"$LOG" 2>&1 || fail seed
