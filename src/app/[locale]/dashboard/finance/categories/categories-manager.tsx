@@ -307,7 +307,11 @@ function CategoryForm({ category, labels, onCancel, onSuccess }: CategoryFormPro
         {errors.name ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
       </div>
 
-      {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+      {formError ? (
+        <p role="alert" className="text-sm text-[#9F2F2D]">
+          {formError}
+        </p>
+      ) : null}
 
       <div className="flex gap-3">
         <button

@@ -65,15 +65,19 @@ function emailLocale(locale: string): 'it' | 'en' {
 export async function listUsers(actor: Actor, query: PaginationQuery): Promise<UserListResult> {
   authorize(actor, 'users.manage');
 
-  const [items, total] = await prisma.$transaction([
-    prisma.user.findMany({
+  // Interactive transaction (story TD-1, AC 3) — see
+  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
+  // `pg` DeprecationWarning rationale.
+  const [items, total] = await prisma.$transaction(async (tx) => {
+    const items = await tx.user.findMany({
       select: USER_SELECT,
       // Newest first: keeps freshly invited users on page 1 for the admin.
       orderBy: { createdAt: 'desc' },
       ...paginationOffset(query),
-    }),
-    prisma.user.count(),
-  ]);
+    });
+    const total = await tx.user.count();
+    return [items, total] as const;
+  });
 
   return paginate(items.map(toListItem), total, query);
 }

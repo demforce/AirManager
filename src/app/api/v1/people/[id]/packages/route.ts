@@ -14,8 +14,10 @@ export const GET = apiRoute<undefined, undefined, RouteParams>({
   handle: async ({ actor, params }) => listPersonPackages(actor, params.id),
 });
 
+// Story TD-2 (AC 5): opt-in `Idempotency-Key` header — see account/top-ups/route.ts.
 export const POST = apiRoute<undefined, SellPackageInput, RouteParams>({
   bodySchema: sellPackageSchema,
   successStatus: 201,
+  idempotency: { endpoint: 'package-sale' },
   handle: async ({ actor, params, body }) => sellPackage(actor, params.id, body),
 });

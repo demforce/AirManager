@@ -9,6 +9,7 @@ import { DataTable } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
 import { formatSignedCents, parseCents } from '@/lib/money';
 import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
+import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
 export type AccountStatementRow = {
   id: string;
@@ -205,7 +206,12 @@ export function AccountStatementTable({
             id: 'actions',
             header: labels.actions,
             cell: ({ row }) =>
-              row.original.hasReversal ? null : (
+              // TD-1, AC 6: a PACKAGE_PURCHASE row is a zero-amount marker
+              // (the real payment is external to the account, story 4.4) —
+              // the service rejects linking a rettifica to it, same
+              // mechanism that already hides the action on rows that have
+              // one (`hasReversal`).
+              row.original.hasReversal || row.original.type === 'PACKAGE_PURCHASE' ? null : (
                 <button
                   type="button"
                   onClick={() => setPanel({ originalMovement: row.original })}
@@ -307,6 +313,7 @@ type AdjustmentFormProps = {
  */
 function AdjustmentForm({ personId, originalMovement, labels, onCancel, onSuccess }: AdjustmentFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
 
   const {
     register,
@@ -321,17 +328,26 @@ function AdjustmentForm({ personId, originalMovement, labels, onCancel, onSucces
     setFormError(null);
     // Boundary conversion (AD-2): euros in the input, integer cents on the wire.
     const amountCents = parseCents(values.amount);
-    const response = await fetch(`/api/v1/people/${personId}/account/adjustments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        amountCents,
-        reason: values.reason.trim(),
-        // The optional link is null unless the panel was opened from a row —
-        // never an empty string on the wire.
-        originalMovementId: originalMovement?.id ?? null,
-      }),
-    });
+    // Story TD-2 (AC 6): the key survives a network failure (the retry this
+    // protects) but is regenerated once ANY HTTP response arrives.
+    let response: Response;
+    try {
+      response = await fetch(`/api/v1/people/${personId}/account/adjustments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+        body: JSON.stringify({
+          amountCents,
+          reason: values.reason.trim(),
+          // The optional link is null unless the panel was opened from a row —
+          // never an empty string on the wire.
+          originalMovementId: originalMovement?.id ?? null,
+        }),
+      });
+    } catch {
+      setFormError(labels.genericError);
+      return;
+    }
+    regenerateIdempotencyKey();
 
     if (!response.ok) {
       setFormError(response.status === 409 ? labels.conflictError : labels.genericError);
@@ -377,6 +393,7 @@ function AdjustmentForm({ personId, originalMovement, labels, onCancel, onSucces
           <input
             id="adjustment-reason"
             aria-invalid={Boolean(errors.reason)}
+            maxLength={500}
             className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
             {...register('reason')}
           />
@@ -384,7 +401,11 @@ function AdjustmentForm({ personId, originalMovement, labels, onCancel, onSucces
         </div>
       </div>
 
-      {formError ? <p className="text-sm text-[#9F2F2D]">{formError}</p> : null}
+      {formError ? (
+        <p role="alert" className="text-sm text-[#9F2F2D]">
+          {formError}
+        </p>
+      ) : null}
 
       <div className="flex gap-3">
         <button

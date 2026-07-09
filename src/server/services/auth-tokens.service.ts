@@ -38,15 +38,18 @@ async function issueAuthToken(userId: string, type: AuthTokenType, ttlMs: number
   const tokenHash = hashToken(rawToken);
   const expiresAt = new Date(Date.now() + ttlMs);
 
-  await prisma.$transaction([
-    prisma.authToken.updateMany({
+  // Interactive transaction (story TD-1, AC 3) — see
+  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
+  // `pg` DeprecationWarning rationale.
+  await prisma.$transaction(async (tx) => {
+    await tx.authToken.updateMany({
       where: { userId, type, usedAt: null },
       data: { usedAt: new Date() },
-    }),
-    prisma.authToken.create({
+    });
+    await tx.authToken.create({
       data: { userId, type, tokenHash, expiresAt },
-    }),
-  ]);
+    });
+  });
 
   return rawToken;
 }

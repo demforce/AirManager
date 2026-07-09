@@ -21,6 +21,19 @@ function isForeignKeyViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2003';
 }
 
+/**
+ * Prisma "record not found" on write (story TD-1, AC 1) — the loser of a
+ * concurrent double-DELETE race: both requests pass the `findUnique`
+ * pre-check (the row still exists at that instant), one wins the `DELETE`,
+ * and the other's `DELETE` then hits a row that is already gone. Maps to the
+ * SAME 404 the pre-check itself would have produced, never a raw 500 (this
+ * was the exact gap 6.1's review deferred as D1, for parity with
+ * `cash.service.ts`/`package-types.service.ts` — now hardened uniformly).
+ */
+function isRecordNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2025';
+}
+
 export type ExpiryTypeListItem = {
   id: string;
   name: string;
@@ -168,6 +181,10 @@ export async function deleteExpiryType(actor: Actor, id: string): Promise<void> 
   } catch (error) {
     if (isForeignKeyViolation(error)) {
       throw new ConflictError('This expiry type is in use — deactivate it instead.');
+    }
+    if (isRecordNotFound(error)) {
+      // Concurrent double-DELETE race (TD-1, AC 1): the other request won.
+      throw new NotFoundError('Expiry type not found.');
     }
     throw error;
   }

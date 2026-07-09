@@ -279,6 +279,13 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       await expect(deleteCashCategory(adminActor(), 'cat_1')).rejects.toThrow(ConflictError);
     });
 
+    it('a concurrent double-DELETE race (P2025 — the loser of the race) is mapped to NotFoundError, not a raw 500 (TD-1, AC 1)', async () => {
+      categoryFindUnique.mockResolvedValue({ id: 'cat_1', _count: { movements: 0 } });
+      categoryDelete.mockRejectedValue(prismaError('P2025'));
+
+      await expect(deleteCashCategory(adminActor(), 'cat_1')).rejects.toThrow(NotFoundError);
+    });
+
     it('a system category ("Ricariche") is never deletable, even when unused (review 3.4 F2)', async () => {
       categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name: 'Ricariche', _count: { movements: 0 } });
 

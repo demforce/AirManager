@@ -148,7 +148,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
     });
   });
 
-  describe('buildExpiryDigestEmail (story 6.3, AC 1 — one line per alert, flags holders without email)', () => {
+  describe('buildExpiryDigestEmail (story 6.3, AC 1; tri-state hardened story TD-1, AC 2 — one line per alert, NO_EMAIL/SEND_FAILED flagged distinctly)', () => {
     it('renders one line per item, in Italian, with the no-email flag only on the flagged item', async () => {
       const email = await buildExpiryDigestEmail('it', {
         items: [
@@ -157,14 +157,14 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
             typeName: 'Visita medica classe 2',
             expiresAt: new Date(Date.UTC(2026, 6, 8)),
             daysLeft: 0,
-            holderEmailed: true,
+            holderStatus: 'EMAILED',
           },
           {
             personName: 'Chiara Bianchi',
             typeName: 'Licenza PPL',
             expiresAt: new Date(Date.UTC(2026, 6, 5)),
             daysLeft: -3,
-            holderEmailed: false,
+            holderStatus: 'NO_EMAIL',
           },
         ],
       });
@@ -179,6 +179,34 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
       expect(email.text.split('\n').find((line) => line.includes('Mario Rossi'))).not.toContain('senza email');
     });
 
+    it('flags a SEND_FAILED item distinctly from a NO_EMAIL item (TD-1, AC 2)', async () => {
+      const email = await buildExpiryDigestEmail('it', {
+        items: [
+          {
+            personName: 'Chiara Bianchi',
+            typeName: 'Licenza PPL',
+            expiresAt: new Date(Date.UTC(2026, 6, 5)),
+            daysLeft: -3,
+            holderStatus: 'NO_EMAIL',
+          },
+          {
+            personName: 'Luca Neri',
+            typeName: 'Visita medica classe 2',
+            expiresAt: new Date(Date.UTC(2026, 6, 8)),
+            daysLeft: 0,
+            holderStatus: 'SEND_FAILED',
+          },
+        ],
+      });
+
+      const lucaLine = email.text.split('\n').find((line) => line.includes('Luca Neri'));
+      const chiaraLine = email.text.split('\n').find((line) => line.includes('Chiara Bianchi'));
+      expect(lucaLine).toContain('invio email fallito');
+      expect(lucaLine).not.toContain('senza email');
+      expect(chiaraLine).toContain('senza email');
+      expect(chiaraLine).not.toContain('invio email fallito');
+    });
+
     it('renders the English digest with symmetric structure', async () => {
       const email = await buildExpiryDigestEmail('en', {
         items: [
@@ -187,7 +215,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
             typeName: 'Class 2 medical',
             expiresAt: new Date(Date.UTC(2026, 6, 15)),
             daysLeft: 7,
-            holderEmailed: true,
+            holderStatus: 'EMAILED',
           },
         ],
       });
@@ -195,6 +223,23 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
       expect(email.subject).toBe('Expiry alert summary');
       expect(email.text).toContain('John Smith');
       expect(email.text).toContain('expires in 7 days');
+      expect(email.text).not.toContain('no email on file');
+    });
+
+    it('renders the English SEND_FAILED flag symmetric to the Italian one', async () => {
+      const email = await buildExpiryDigestEmail('en', {
+        items: [
+          {
+            personName: 'John Smith',
+            typeName: 'Class 2 medical',
+            expiresAt: new Date(Date.UTC(2026, 6, 15)),
+            daysLeft: 7,
+            holderStatus: 'SEND_FAILED',
+          },
+        ],
+      });
+
+      expect(email.text).toContain('email delivery failed');
       expect(email.text).not.toContain('no email on file');
     });
   });

@@ -387,7 +387,7 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
       </div>
 
       {formError ? (
-        <p data-testid="expiry-type-form-error" className="text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="expiry-type-form-error" className="text-sm text-[#9F2F2D]">
           {formError}
         </p>
       ) : null}

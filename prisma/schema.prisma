@@ -318,6 +318,8 @@ model User {
   expiryProposalsFiled   ExpiryUpdateProposal[] @relation("ExpiryProposalProposedBy")
   /// Update proposals this user DECIDED, as staff (epic 6, story 6.2) — `ExpiryUpdateProposal.decidedByUserId`.
   expiryProposalsDecided ExpiryUpdateProposal[] @relation("ExpiryProposalDecidedBy")
+  /// Idempotency-key ledger for this user's money-mutating POSTs (story TD-2) — `IdempotencyRecord.userId`.
+  idempotencyRecords     IdempotencyRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1136,4 +1138,59 @@ model ExpiryUpdateProposal {
 
   @@index([expiryId])
   @@index([status])
+}
+
+/// Story TD-2 (closes the 3.1 review deferral O2, evaluated epic-wide as
+/// promised): backs the opt-in `Idempotency-Key` header on the 5
+/// money-mutating POSTs (top-up, rettifica, vendita pacchetto, registrazione
+/// volo, movimento cassa manuale — `src/lib/api/handler.ts`'s `idempotency`
+/// option on `apiRoute`). A network retry that repeats the same header
+/// replays the FIRST response instead of re-executing the mutation.
+///
+/// PER-USER: `@@unique([userId, endpoint, key])` — the same key value from
+/// two DIFFERENT users never collides (no cross-user replay/DoS; a
+/// malicious/careless client cannot make its key deterministic and thereby
+/// probe or block another user's request).
+///
+/// `responseStatus`/`responseBody` are BOTH `null` while the request is
+/// PENDING (the row is inserted before `handle` runs) — a concurrent second
+/// attempt with the same key hitting the still-PENDING row gets 409
+/// `IDEMPOTENCY_IN_PROGRESS`, never a stale/partial replay. Both fields (plus
+/// `completedAt`) are set TOGETHER, exactly once, immediately after `handle`
+/// succeeds — same "set together exactly once" convention as
+/// `Flight.cancelledAt`/`cancelReason`. A request that FAILS (any `DomainError`
+/// or unknown error) DELETES its row instead, so the key is immediately
+/// reusable (AC 4) — the user corrects the input and retries with the same
+/// key without ever being stuck.
+///
+/// **Crash window (documented trade-off, same shape as AD-9's `SentAlert`
+/// insert-before-send)**: a process crash between the mutation's COMMIT and
+/// this row's completion update leaves an orphaned PENDING row — every
+/// future retry with that exact key gets 409 forever. Accepted: the client
+/// resolves by using a NEW key after manually verifying whether the original
+/// mutation went through. NO auto-expiry job in this story (deliberate:
+/// auto-expiring a PENDING row risks letting a second attempt execute the
+/// mutation twice, which is exactly what this table exists to prevent —
+/// strictly worse than a permanently-stuck key). NO cleanup job either
+/// (deliberate: only 5 endpoints are covered, one row per IN-FLIGHT or
+/// FAILED-to-complete attempt at most survives — completed/replayed rows do
+/// accumulate slowly, but the table stays small; revisit if that ever
+/// changes).
+///
+/// `userId`'s FK is the DEFAULT (`RESTRICT`, same as every other required
+/// `User` FK in this schema, e.g. `AccountMovement.actorUserId`) — a `User`
+/// with idempotency history cannot be hard-deleted (there is no hard-delete
+/// path for `User` in this codebase anyway, only deactivation).
+model IdempotencyRecord {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  endpoint       String
+  key            String
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@unique([userId, endpoint, key])
 }

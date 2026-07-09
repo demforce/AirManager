@@ -183,3 +183,43 @@ export async function getEffectiveRate(actor: Actor, aircraftId: string, onDate:
 
   return rate ? toListItem(rate) : null;
 }
+
+/**
+ * Batched effective-rate lookup (story TD-1, AC 4 — the fleet table's
+ * "current rate" column used to run `getEffectiveRate` once per row, an N+1
+ * flagged in 4.1's review as a follow-up). Same AD-4 semantics as
+ * `getEffectiveRate` (the row with the MAXIMUM `validFrom <= onDate`), same
+ * `authorize`, same TZ-safe typed query on `@db.Date` (review 3.5 F1 — never
+ * raw SQL here) — but ONE query for the whole page instead of N: rows are
+ * ordered `aircraftId asc, validFrom desc` and `distinct: ['aircraftId']`
+ * keeps only the first (most-recent-qualifying) row per aircraft, which is
+ * exactly what `getEffectiveRate` would return per id. The result `Map`
+ * always has an entry for every requested id — an aircraft with no
+ * qualifying rate maps to `null`, never an absent key, so callers never have
+ * to special-case a missing entry.
+ */
+export async function getEffectiveRates(
+  actor: Actor,
+  aircraftIds: string[],
+  onDate: Date,
+): Promise<Map<string, AircraftRateListItem | null>> {
+  authorize(actor, 'aircraft.manage');
+
+  const result = new Map<string, AircraftRateListItem | null>(aircraftIds.map((id) => [id, null]));
+  if (aircraftIds.length === 0) {
+    return result;
+  }
+
+  const rates = await prisma.aircraftRate.findMany({
+    where: { aircraftId: { in: aircraftIds }, validFrom: { lte: onDate } },
+    select: RATE_SELECT,
+    orderBy: [{ aircraftId: 'asc' }, { validFrom: 'desc' }],
+    distinct: ['aircraftId'],
+  });
+
+  for (const rate of rates) {
+    result.set(rate.aircraftId, toListItem(rate));
+  }
+
+  return result;
+}

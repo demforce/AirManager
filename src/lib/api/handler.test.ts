@@ -7,11 +7,35 @@ vi.mock('@/server/auth/session', () => ({
   getSessionActor: vi.fn(),
 }));
 
+// Story TD-2: `apiRoute` now talks to `IdempotencyRecord` — mocked the same
+// way every service test mocks `@/server/db/prisma` (the real module eagerly
+// validates `env.ts`, which has no `DATABASE_URL` in the unit-test process).
+vi.mock('@/server/db/prisma', () => ({
+  prisma: {
+    idempotencyRecord: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+  },
+}));
+
 const { getSessionActor } = await import('@/server/auth/session');
-const { apiRoute } = await import('./handler');
+const { prisma } = await import('@/server/db/prisma');
+const { apiRoute, IDEMPOTENCY_KEY_HEADER } = await import('./handler');
 const { ConflictError, ForbiddenError, NotFoundError, ValidationError } = await import('@/server/services/errors');
 
 const getSessionActorMock = vi.mocked(getSessionActor);
+const idempotencyCreateMock = vi.mocked(prisma.idempotencyRecord.create);
+const idempotencyFindUniqueMock = vi.mocked(prisma.idempotencyRecord.findUnique);
+const idempotencyUpdateMock = vi.mocked(prisma.idempotencyRecord.update);
+const idempotencyDeleteMock = vi.mocked(prisma.idempotencyRecord.delete);
+
+/** Shape-compatible with a Prisma `P2002` unique-constraint violation error. */
+function uniqueViolation(): { code: string } {
+  return { code: 'P2002' };
+}
 
 const ACTOR: SessionActor = { userId: 'user_1', roles: ['ADMIN'], personId: null, email: 'admin@airmanager.local' };
 
@@ -26,6 +50,10 @@ async function readJson(response: Response): Promise<unknown> {
 describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
   beforeEach(() => {
     getSessionActorMock.mockReset();
+    idempotencyCreateMock.mockReset();
+    idempotencyFindUniqueMock.mockReset();
+    idempotencyUpdateMock.mockReset();
+    idempotencyDeleteMock.mockReset();
   });
 
   describe('authentication', () => {
@@ -276,6 +304,204 @@ describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
       expect(response.status).toBe(500);
       const body = (await readJson(response)) as { error: { code: string } };
       expect(body.error.code).toBe('INTERNAL_ERROR');
+    });
+  });
+
+  describe('idempotency (story TD-2, AC 1-4)', () => {
+    beforeEach(() => {
+      getSessionActorMock.mockResolvedValue(ACTOR);
+      idempotencyUpdateMock.mockResolvedValue(undefined as never);
+      idempotencyDeleteMock.mockResolvedValue(undefined as never);
+    });
+
+    describe('construction-time guards (programming errors, thrown before any request)', () => {
+      it('throws when combined with auth: "public" (no userId to key the record on)', () => {
+        expect(() =>
+          apiRoute({
+            auth: 'public',
+            idempotency: { endpoint: 'x' },
+            handle: async () => ({ ok: true }),
+          }),
+        ).toThrow(/idempotency/i);
+      });
+
+      it('throws when combined with successStatus: 204 (no body to replay)', () => {
+        expect(() =>
+          apiRoute({
+            successStatus: 204,
+            idempotency: { endpoint: 'x' },
+            handle: async () => undefined,
+          }),
+        ).toThrow(/idempotency/i);
+      });
+    });
+
+    it('is a complete pass-through when `idempotency` is not configured, even if the header is sent (AC 3, "ignored on an unconfigured route")', async () => {
+      const handle = vi.fn().mockResolvedValue({ hello: 'world' });
+      const POST = apiRoute({ handle });
+
+      const response = await POST(req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'k-1' } }));
+
+      expect(response.status).toBe(200);
+      expect(idempotencyCreateMock).not.toHaveBeenCalled();
+      expect(handle).toHaveBeenCalledTimes(1);
+    });
+
+    it('is a complete pass-through when `idempotency` IS configured but no header is sent (AC 3, byte-identical to no header)', async () => {
+      const handle = vi.fn().mockResolvedValue({ hello: 'world' });
+      const POST = apiRoute({ idempotency: { endpoint: 'x' }, handle });
+
+      const response = await POST(req('http://localhost/api/v1/x', { method: 'POST' }));
+
+      expect(response.status).toBe(200);
+      await expect(readJson(response)).resolves.toEqual({ hello: 'world' });
+      expect(idempotencyCreateMock).not.toHaveBeenCalled();
+      expect(idempotencyFindUniqueMock).not.toHaveBeenCalled();
+      expect(handle).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers 422 VALIDATION_ERROR without calling `handle` when the header is present but out of the 1-200 char range', async () => {
+      const handle = vi.fn();
+      const POST = apiRoute({ idempotency: { endpoint: 'x' }, handle });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'a'.repeat(201) } }),
+      );
+
+      expect(response.status).toBe(422);
+      const body = (await readJson(response)) as { error: { code: string } };
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+      expect(handle).not.toHaveBeenCalled();
+      expect(idempotencyCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('creates a PENDING record, calls `handle` once, then completes the record with the response on success', async () => {
+      idempotencyCreateMock.mockResolvedValue({ id: 'idem_1' } as never);
+      const handle = vi.fn().mockResolvedValue({ id: 'created_1' });
+      const POST = apiRoute({ successStatus: 201, idempotency: { endpoint: 'account-topup' }, handle });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'k-1' } }),
+      );
+
+      expect(idempotencyCreateMock).toHaveBeenCalledWith({
+        data: { userId: ACTOR.userId, endpoint: 'account-topup', key: 'k-1' },
+        select: { id: true },
+      });
+      expect(handle).toHaveBeenCalledTimes(1);
+      expect(response.status).toBe(201);
+      expect(response.headers.get('Idempotency-Replayed')).toBeNull();
+      await expect(readJson(response)).resolves.toEqual({ id: 'created_1' });
+      expect(idempotencyUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'idem_1' },
+        data: expect.objectContaining({ responseStatus: 201, responseBody: { id: 'created_1' } }),
+      });
+    });
+
+    it('replays the exact stored response (same status/body) with `Idempotency-Replayed: true` when the record already completed (AC 1)', async () => {
+      idempotencyCreateMock.mockRejectedValue(uniqueViolation());
+      idempotencyFindUniqueMock.mockResolvedValue({
+        id: 'idem_1',
+        responseStatus: 201,
+        responseBody: { id: 'created_1' },
+      } as never);
+      const handle = vi.fn();
+      const POST = apiRoute({ successStatus: 201, idempotency: { endpoint: 'account-topup' }, handle });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'k-1' } }),
+      );
+
+      expect(response.status).toBe(201);
+      expect(response.headers.get('Idempotency-Replayed')).toBe('true');
+      await expect(readJson(response)).resolves.toEqual({ id: 'created_1' });
+      expect(handle).not.toHaveBeenCalled();
+      expect(idempotencyUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 IDEMPOTENCY_IN_PROGRESS without calling `handle` when the conflicting record is still PENDING (AC 2)', async () => {
+      idempotencyCreateMock.mockRejectedValue(uniqueViolation());
+      idempotencyFindUniqueMock.mockResolvedValue({
+        id: 'idem_1',
+        responseStatus: null,
+        responseBody: null,
+      } as never);
+      const handle = vi.fn();
+      const POST = apiRoute({ idempotency: { endpoint: 'account-topup' }, handle });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'k-1' } }),
+      );
+
+      expect(response.status).toBe(409);
+      const body = (await readJson(response)) as { error: { code: string } };
+      expect(body.error.code).toBe('IDEMPOTENCY_IN_PROGRESS');
+      expect(handle).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 IDEMPOTENCY_IN_PROGRESS (never proceeds) on the extremely rare race where the conflicting row vanished before the reread', async () => {
+      idempotencyCreateMock.mockRejectedValue(uniqueViolation());
+      idempotencyFindUniqueMock.mockResolvedValue(null);
+      const handle = vi.fn();
+      const POST = apiRoute({ idempotency: { endpoint: 'account-topup' }, handle });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'k-1' } }),
+      );
+
+      expect(response.status).toBe(409);
+      expect(handle).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [new ConflictError('conflict'), 409],
+      [new ValidationError('bad input'), 422],
+    ] as const)('frees (deletes) the PENDING record when `handle` throws %o, so the key is reusable (AC 4)', async (error, expectedStatus) => {
+      idempotencyCreateMock.mockResolvedValue({ id: 'idem_1' } as never);
+      const handle = vi.fn().mockRejectedValue(error);
+      const POST = apiRoute({ idempotency: { endpoint: 'account-topup' }, handle });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'k-1' } }),
+      );
+
+      expect(response.status).toBe(expectedStatus);
+      expect(idempotencyDeleteMock).toHaveBeenCalledWith({ where: { id: 'idem_1' } });
+      expect(idempotencyUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('still answers the normal 500 envelope (and frees the key) when `handle` throws an unknown error', async () => {
+      idempotencyCreateMock.mockResolvedValue({ id: 'idem_1' } as never);
+      const handle = vi.fn().mockRejectedValue(new Error('boom'));
+      const POST = apiRoute({ idempotency: { endpoint: 'account-topup' }, handle });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'k-1' } }),
+      );
+
+      expect(response.status).toBe(500);
+      expect(idempotencyDeleteMock).toHaveBeenCalledWith({ where: { id: 'idem_1' } });
+    });
+
+    it('never creates/reads an idempotency record for a request that fails Zod body validation (key stays fully available)', async () => {
+      const handle = vi.fn();
+      const POST = apiRoute({
+        bodySchema: z.object({ email: z.email() }),
+        idempotency: { endpoint: 'account-topup' },
+        handle,
+      });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: 'k-1' },
+          body: JSON.stringify({ email: 'not-an-email' }),
+        }),
+      );
+
+      expect(response.status).toBe(422);
+      expect(handle).not.toHaveBeenCalled();
+      expect(idempotencyCreateMock).not.toHaveBeenCalled();
     });
   });
 });

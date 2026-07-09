@@ -22,13 +22,22 @@ export type NegativeBalanceAlertEmailContent = { subject: string; text: string }
 export type ExpiryAlertEmailContent = { subject: string; text: string };
 export type ExpiryDigestEmailContent = { subject: string; text: string };
 
-/** One row of the staff digest (story 6.3) — mirrors `expiry-alerts.service.ts`'s per-candidate loop state. */
+/**
+ * One row of the staff digest (story 6.3, tri-state hardened story TD-1 AC
+ * 2) — mirrors `expiry-alerts.service.ts`'s per-candidate loop state.
+ * `holderStatus` distinguishes the three outcomes a candidate can land in:
+ * `EMAILED` (no flag), `NO_EMAIL` (no `Person.email` on file — the
+ * recovery-net flag), and `SEND_FAILED` (an email exists but SMTP send
+ * failed — a DIFFERENT flag, since the staff recovery action differs:
+ * "contact them directly" vs "retry/verify the address"). Replaces the
+ * earlier boolean `holderEmailed`, which conflated the latter two cases.
+ */
 export type ExpiryDigestItem = {
   personName: string;
   typeName: string;
   expiresAt: Date;
   daysLeft: number;
-  holderEmailed: boolean;
+  holderStatus: 'EMAILED' | 'NO_EMAIL' | 'SEND_FAILED';
 };
 
 /**
@@ -155,12 +164,16 @@ export async function buildExpiryAlertEmail(
 }
 
 /**
- * Builds the staff digest email (story 6.3, AC 1) — one per active
- * admin/staff user per run, sent ONLY when the run consumed at least one
- * alert (the caller, `expiry-alerts.service.ts`, never invokes this
- * otherwise). Lists every alert consumed this run, flagging holders with no
- * `Person.email` on file — the recovery net for the "thresholds are
- * consumed regardless" rule (Contesto).
+ * Builds the staff digest email (story 6.3, AC 1; tri-state flag hardened
+ * story TD-1, AC 2) — one per active admin/staff user per run, sent ONLY
+ * when the run consumed at least one alert (the caller,
+ * `expiry-alerts.service.ts`, never invokes this otherwise). Lists every
+ * alert consumed this run, flagging `NO_EMAIL` holders (no `Person.email` on
+ * file — the recovery net for the "thresholds are consumed regardless" rule,
+ * Contesto) DISTINCTLY from `SEND_FAILED` holders (an email exists but the
+ * SMTP send itself failed — the staff recovery action differs: verify the
+ * address or retry, not "contact them directly"). `EMAILED` items carry no
+ * flag at all.
  */
 export async function buildExpiryDigestEmail(
   locale: AppLocale,
@@ -172,8 +185,8 @@ export async function buildExpiryDigestEmail(
   const lines = params.items.map((item) => {
     const daysPhrase = expiryDaysPhrase(locale, messages, item.daysLeft);
     const date = formatExpiryDate(item.expiresAt, locale);
-    const noEmailFlag = item.holderEmailed ? '' : t('noEmailFlag');
-    return t('itemLine', { name: item.personName, typeName: item.typeName, daysPhrase, date, noEmailFlag });
+    const flag = item.holderStatus === 'NO_EMAIL' ? t('noEmailFlag') : item.holderStatus === 'SEND_FAILED' ? t('sendFailedFlag') : '';
+    return t('itemLine', { name: item.personName, typeName: item.typeName, daysPhrase, date, flag });
   });
 
   return {

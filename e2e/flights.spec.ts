@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -17,6 +17,21 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Accedi' }).click();
   await expect(page).toHaveURL(/\/it\/dashboard$/);
+}
+
+/**
+ * Types into a `SearchCombobox` (story TD-3) and clicks the matching option
+ * — the typeahead replacement for the old `selectOption({ label })` on the
+ * flight pickers (velivolo/persona/istruttore/filter-bar). `combobox` must
+ * already resolve to the specific `<input>` (scoped the same way the old
+ * `selectOption` call sites were). Playwright's auto-waiting on the option
+ * locator absorbs both the ~250ms debounce and the server round-trip —
+ * no manual wait needed.
+ */
+async function selectFromCombobox(combobox: Locator, query: string, optionLabel: string): Promise<void> {
+  await combobox.click();
+  await combobox.fill(query);
+  await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
 /** Run-unique names (same pattern as the other specs, for the dirty DB). */
@@ -179,8 +194,12 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     await loginExpectingDashboard(page, staffEmail, staffPassword);
 
     await page.goto('/it/dashboard/flights');
-    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(
+      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
+      pilot.lastName,
+      `${pilot.lastName} ${pilot.firstName}`,
+    );
     await page.getByLabel('Minuti', { exact: true }).fill('80');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
@@ -196,7 +215,16 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     await expect(row).toContainText(/200,00\s€/);
 
     // Aircraft hour meter advanced by exactly the flight's minutes (100 + 80 = 180 -> 3:00).
-    await page.goto('/it/dashboard/aircraft');
+    // T0 hardening: filter by this test's own registration instead of relying
+    // on it landing on the default page 1 (root-caused empirically — under a
+    // fully-parallel e2e run, dozens of aircraft get created by OTHER specs;
+    // `/dashboard/aircraft` is paginated 20/page ordered by `registration asc`,
+    // so a freshly created, run-unique registration can sort well past page 1
+    // and never appear, which read as a flaky `toContainText` timeout even
+    // though the underlying data was correct all along). The list page
+    // already supports `?q=` server-side search (`aircraft.service.ts`),
+    // same mechanism `people-manager.tsx`'s search box drives.
+    await page.goto(`/it/dashboard/aircraft?q=${encodeURIComponent(aircraft.registration)}`);
     const aircraftRow = page.getByRole('row', { name: new RegExp(aircraft.registration) });
     await expect(aircraftRow).toContainText('3:00');
 
@@ -218,10 +246,18 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
 
     // Still authenticated as admin — creating the pilot/instructor logins above never touched this session cookie.
     await page.goto('/it/dashboard/flights');
-    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
-    await page.getByLabel('Istruttore').selectOption({ label: `${instructor.lastName} ${instructor.firstName}` });
-    await page.getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(
+      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
+      pilot.lastName,
+      `${pilot.lastName} ${pilot.firstName}`,
+    );
+    await selectFromCombobox(
+      page.getByTestId('flight-form').getByLabel('Istruttore'),
+      instructor.lastName,
+      `${instructor.lastName} ${instructor.firstName}`,
+    );
+    await page.getByTestId('flight-form').getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
     await page.getByRole('radio', { name: 'Contaore iniziale/finale' }).click();
     await page.getByLabel('Contaore iniziale', { exact: true }).fill('100');
     await page.getByLabel('Contaore finale', { exact: true }).fill('160'); // 60' derived.
@@ -246,8 +282,12 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     const pilot = await createPilotWithLogin(page, 'PilotFlights789!');
 
     await page.goto('/it/dashboard/flights');
-    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(
+      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
+      pilot.lastName,
+      `${pilot.lastName} ${pilot.firstName}`,
+    );
     await page.getByRole('radio', { name: 'Contaore iniziale/finale' }).click();
     await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
     await page.getByLabel('Contaore finale', { exact: true }).fill('200');
@@ -263,8 +303,12 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     const pilot = await createPilotWithLogin(page, 'PilotFlightsNoRate1!');
 
     await page.goto('/it/dashboard/flights');
-    await page.getByTestId('flight-form').getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await page.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(
+      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
+      pilot.lastName,
+      `${pilot.lastName} ${pilot.firstName}`,
+    );
     await page.getByLabel('Minuti', { exact: true }).fill('30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 

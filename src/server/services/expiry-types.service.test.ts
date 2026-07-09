@@ -254,6 +254,13 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
       await expect(deleteExpiryType(adminActor(), 'et_1')).rejects.toThrow(ConflictError);
     });
+
+    it('maps a concurrent double-DELETE race (P2025 — the loser of the race) to NotFoundError, not a raw 500 (TD-1, AC 1, was deferred 6.1 D1)', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1', _count: { expiries: 0 } });
+      del.mockRejectedValue(prismaError('P2025'));
+
+      await expect(deleteExpiryType(adminActor(), 'et_1')).rejects.toThrow(NotFoundError);
+    });
   });
 
   describe('schema validation (Task 3, AC 1/2)', () => {

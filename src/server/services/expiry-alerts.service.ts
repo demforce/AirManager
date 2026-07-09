@@ -147,7 +147,12 @@ export async function runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult> {
     alertsCreated += toConsume.length;
 
     const personName = `${candidate.person.firstName} ${candidate.person.lastName}`;
-    let holderEmailed = false;
+    // Tri-state (story TD-1, AC 2): `EMAILED`/`NO_EMAIL`/`SEND_FAILED` — the
+    // digest flag must distinguish "no email on file" (contact them
+    // directly) from "the send itself failed" (verify the address or
+    // retry). `holdersWithoutEmail` below counts ONLY the true `NO_EMAIL`
+    // case (semantics unchanged from story 6.3).
+    let holderStatus: 'EMAILED' | 'NO_EMAIL' | 'SEND_FAILED';
 
     if (candidate.person.email) {
       try {
@@ -161,15 +166,17 @@ export async function runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult> {
         });
         await getMailSender().send({ to: candidate.person.email, subject, text });
         holderEmailsSent += 1;
-        holderEmailed = true;
+        holderStatus = 'EMAILED';
       } catch (error) {
         // Never let a mail failure surface to the caller — the SentAlert
         // rows are already committed and must stay valid (same rationale as
         // `sendNegativeBalanceAlert`, story 3.3).
         console.error('runExpiryAlertsJob: failed to send holder alert email', error);
+        holderStatus = 'SEND_FAILED';
       }
     } else {
       holdersWithoutEmail += 1;
+      holderStatus = 'NO_EMAIL';
     }
 
     digestItems.push({
@@ -177,7 +184,7 @@ export async function runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult> {
       typeName: candidate.expiryType.name,
       expiresAt: candidate.expiresAt,
       daysLeft,
-      holderEmailed,
+      holderStatus,
     });
   }
 

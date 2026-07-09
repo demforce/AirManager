@@ -9,6 +9,7 @@ import { ForbiddenError, NotFoundError } from '@/server/services/errors';
 import { getEffectiveInstructorRate } from '@/server/services/instructor-rates.service';
 import { getPerson } from '@/server/services/people.service';
 import { AccountPanel } from '../account-panel';
+import { AccountRefreshProvider } from '../account-refresh-context';
 import { ExpiriesPanel } from '../expiries-panel';
 import { InstructorRatesPanel } from '../instructor-rates-panel';
 import { PackagesPanel } from '../packages-panel';
@@ -196,91 +197,98 @@ export default async function PersonDetailPage({ params }: PageProps) {
           />
         </div>
 
-        <div className="mt-6">
-          <AccountPanel
-            personId={person.id}
-            canManageFinance={canManageFinance}
-            labels={{
-              heading: t('accountPanel.heading'),
-              balanceLabel: t('accountPanel.balanceLabel'),
-              noAccount: t('accountPanel.noAccount'),
-              loadError: t('accountPanel.loadError'),
-              recentTitle: t('accountPanel.recentTitle'),
-              recentEmpty: t('accountPanel.recentEmpty'),
-              viewStatement: t('accountPanel.viewStatement'),
-              movementType: {
-                topUp: t('accountPanel.movementType.topUp'),
-                adjustment: t('accountPanel.movementType.adjustment'),
-                packagePurchase: t('accountPanel.movementType.packagePurchase'),
-                flightCharge: t('accountPanel.movementType.flightCharge'),
-                flightChargeReversal: t('accountPanel.movementType.flightChargeReversal'),
-              },
-              topUp: {
-                action: t('accountPanel.topUp.action'),
-                title: t('accountPanel.topUp.title'),
-                amount: t('accountPanel.topUp.amount'),
-                paymentMethod: t('accountPanel.topUp.paymentMethod'),
-                paymentMethods: {
-                  cash: t('accountPanel.topUp.paymentMethods.cash'),
-                  bankTransfer: t('accountPanel.topUp.paymentMethods.bankTransfer'),
-                  pos: t('accountPanel.topUp.paymentMethods.pos'),
+        {/* Story TD-1, AC 8: both sections share an `AccountRefreshProvider`
+            so a package sale (`PackagesPanel`) can bump the sibling
+            `AccountPanel`'s movements/balance preview without a full page
+            reload — the provider is a thin client wrapper around these two
+            SERVER-rendered sections (children stay RSC), no layout change. */}
+        <AccountRefreshProvider>
+          <div className="mt-6">
+            <AccountPanel
+              personId={person.id}
+              canManageFinance={canManageFinance}
+              labels={{
+                heading: t('accountPanel.heading'),
+                balanceLabel: t('accountPanel.balanceLabel'),
+                noAccount: t('accountPanel.noAccount'),
+                loadError: t('accountPanel.loadError'),
+                recentTitle: t('accountPanel.recentTitle'),
+                recentEmpty: t('accountPanel.recentEmpty'),
+                viewStatement: t('accountPanel.viewStatement'),
+                movementType: {
+                  topUp: t('accountPanel.movementType.topUp'),
+                  adjustment: t('accountPanel.movementType.adjustment'),
+                  packagePurchase: t('accountPanel.movementType.packagePurchase'),
+                  flightCharge: t('accountPanel.movementType.flightCharge'),
+                  flightChargeReversal: t('accountPanel.movementType.flightChargeReversal'),
                 },
-                effectiveDate: t('accountPanel.topUp.effectiveDate'),
-                description: t('accountPanel.topUp.description'),
-                submit: t('accountPanel.topUp.submit'),
-                cancel: t('accountPanel.topUp.cancel'),
-                invalidAmount: t('accountPanel.topUp.invalidAmount'),
-                requiredField: t('accountPanel.topUp.requiredField'),
-                genericError: t('accountPanel.topUp.genericError'),
-              },
-            }}
-          />
-        </div>
+                topUp: {
+                  action: t('accountPanel.topUp.action'),
+                  title: t('accountPanel.topUp.title'),
+                  amount: t('accountPanel.topUp.amount'),
+                  paymentMethod: t('accountPanel.topUp.paymentMethod'),
+                  paymentMethods: {
+                    cash: t('accountPanel.topUp.paymentMethods.cash'),
+                    bankTransfer: t('accountPanel.topUp.paymentMethods.bankTransfer'),
+                    pos: t('accountPanel.topUp.paymentMethods.pos'),
+                  },
+                  effectiveDate: t('accountPanel.topUp.effectiveDate'),
+                  description: t('accountPanel.topUp.description'),
+                  submit: t('accountPanel.topUp.submit'),
+                  cancel: t('accountPanel.topUp.cancel'),
+                  invalidAmount: t('accountPanel.topUp.invalidAmount'),
+                  requiredField: t('accountPanel.topUp.requiredField'),
+                  genericError: t('accountPanel.topUp.genericError'),
+                },
+              }}
+            />
+          </div>
 
-        <div className="mt-6">
-          <PackagesPanel
-            // Remount on person change — same rationale as
-            // `InstructorRatesPanel`'s `key={person.id}` (review 2.4 F1 pattern).
-            key={person.id}
-            personId={person.id}
-            canSell={canManageFinance}
-            labels={{
-              heading: tPackages('heading'),
-              loadError: tPackages('loadError'),
-              empty: tPackages('empty'),
-              addAction: tPackages('addAction'),
-              feedback: tPackages('feedback'),
-              table: {
-                remaining: tPackages('table.remaining'),
-                price: tPackages('table.price'),
-                expiresAt: tPackages('table.expiresAt'),
-                noExpiry: tPackages('table.noExpiry'),
-                expiredBadge: tPackages('table.expiredBadge'),
-                // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
-                // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).
-                consumedNote: tPackages.raw('table.consumedNote') as string,
-              },
-              form: {
-                title: tPackages('form.title'),
-                packageType: tPackages('form.packageType'),
-                noActiveTypes: tPackages('form.noActiveTypes'),
-                paymentMethod: tPackages('form.paymentMethod'),
-                paymentMethods: {
-                  cash: tPackages('form.paymentMethods.cash'),
-                  bankTransfer: tPackages('form.paymentMethods.bankTransfer'),
-                  pos: tPackages('form.paymentMethods.pos'),
+          <div className="mt-6">
+            <PackagesPanel
+              // Remount on person change — same rationale as
+              // `InstructorRatesPanel`'s `key={person.id}` (review 2.4 F1 pattern).
+              key={person.id}
+              personId={person.id}
+              canSell={canManageFinance}
+              labels={{
+                heading: tPackages('heading'),
+                loadError: tPackages('loadError'),
+                empty: tPackages('empty'),
+                addAction: tPackages('addAction'),
+                feedback: tPackages('feedback'),
+                table: {
+                  remaining: tPackages('table.remaining'),
+                  price: tPackages('table.price'),
+                  expiresAt: tPackages('table.expiresAt'),
+                  noExpiry: tPackages('table.noExpiry'),
+                  expiredBadge: tPackages('table.expiredBadge'),
+                  // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
+                  // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).
+                  consumedNote: tPackages.raw('table.consumedNote') as string,
                 },
-                effectiveDate: tPackages('form.effectiveDate'),
-                description: tPackages('form.description'),
-                submit: tPackages('form.submit'),
-                cancel: tPackages('form.cancel'),
-                requiredField: tPackages('form.requiredField'),
-                inactiveTypeError: tPackages('form.inactiveTypeError'),
-                genericError: tPackages('form.genericError'),
-              },
-            }}
-          />
-        </div>
+                form: {
+                  title: tPackages('form.title'),
+                  packageType: tPackages('form.packageType'),
+                  noActiveTypes: tPackages('form.noActiveTypes'),
+                  paymentMethod: tPackages('form.paymentMethod'),
+                  paymentMethods: {
+                    cash: tPackages('form.paymentMethods.cash'),
+                    bankTransfer: tPackages('form.paymentMethods.bankTransfer'),
+                    pos: tPackages('form.paymentMethods.pos'),
+                  },
+                  effectiveDate: tPackages('form.effectiveDate'),
+                  description: tPackages('form.description'),
+                  submit: tPackages('form.submit'),
+                  cancel: tPackages('form.cancel'),
+                  requiredField: tPackages('form.requiredField'),
+                  inactiveTypeError: tPackages('form.inactiveTypeError'),
+                  genericError: tPackages('form.genericError'),
+                },
+              }}
+            />
+          </div>
+        </AccountRefreshProvider>
 
         {person.instructorProfile !== null ? (
           <div className="mt-6">
