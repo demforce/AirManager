@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:quiet": "vitest run --reporter=dot --silent=passed-only",
     "test:e2e": "playwright test",
+    "gates": "bash scripts/gates.sh",
     "postinstall": "prisma generate"
   },
   "dependencies": {
