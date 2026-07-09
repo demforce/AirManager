@@ -4,7 +4,7 @@ baseline_commit: de2149b
 
 # Story TD-4: Logout affidabile su build di produzione (race signOut vs refresh JWT)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -154,7 +154,21 @@ This is the project's own previously-documented flaky class (commit `6c7f1d2`: "
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean-pass — zero finding mandatory.** 1 nit documentale (TD4-N1) applicato dalla sessione principale nel commit di review.
+
+- **Priorità zero (a) — full suite e2e dev-mode su DB fresco**: `npx playwright test` → **151/151 passed, run singolo pulito** (10.0m, exit 0), 33 file. Chiude il gap dichiarato dal dev (61 poi 10 fail disgiunti nei suoi run): l'ipotesi contention è corroborata — stesso codice+DB, sandbox meno carica, run completamente verde. Zero fail auth/session-shaped in qualunque run.
+- **Priorità zero (b) — CI-mode su build di produzione**: `CI=1 npx playwright test login` (build+start self-hosted dal webServer, `AUTH_TRUST_HOST`) → 7/7 in 41.9s, incluso il test logout esteso col secondo ciclo.
+- **Priorità zero (c) — morte della race provata viva**: 15/15 cicli curl login→2 navigazioni→signout→verify su `next start` (post-logout SEMPRE 307 → `/it/login`, zero sessioni risorte); AC 2 provato con grep sugli header: NESSUN `Set-Cookie` del session token su `/it/dashboard` né su `/api/v1/flights` autenticate; token manomesso/spazzatura/vuoto → 401/redirect, MAI 500.
+- **Priorità zero (d) — secureCookie**: tracciato in node_modules (emittente `Auth(reqWithEnvURL(req))` → `useSecureCookies = url.protocol === 'https:'`; lettore `getToken` con salt dal nome cookie): emittente e lettore concordano su entrambe le topologie provate empiricamente — http diretto (cookie unprefixed, 200/200) e reverse proxy TLS-terminating uniforme simulato con `X-Forwarded-Proto: https` su emissione E lettura (`__Secure-`, 200/200). L'unico mismatch costruibile è un caso misto artificiale che un proxy uniforme non produce.
+- **Gate matrix invariata**: unauth → 401 envelope su `/api/v1/*` e 307 con `callbackUrl` sulle pagine; `PUBLIC_API_PATHS`/`PUBLIC_WEB_PATHS`/`/api/auth/*` tutti passanti; equivalenza del recheck utente disattivato confermata per ispezione (solo Node, invariato); File List = diff reale; bundle Edge pulito (no argon2/prisma); `env.ci-sync.test.ts` verde senza `AUTH_TRUST_HOST` in `.env.example` (var raw @auth/core, mai nel Zod envSchema — claim del dev verificato).
+- **TD4-N1 (nit, fixato)** — il doc-comment di `proxy.ts` motivava la correttezza di `secureCookie` con "not from x-forwarded-proto": empiricamente FALSO (l'emittente con `X-Forwarded-Proto: https` setta `__Secure-`; Next.js risolve il protocollo forwarded in `req.nextUrl.protocol` per ENTRAMBI, ed è proprio per questo che il codice è corretto). Riformulato il commento; nessun cambio di codice.
+
+### Final gates (review run, DB fresco)
+
+`npm run gates` exit 0 (lint/typecheck/1078 unit/build); build di produzione con bundle Edge pulito; e2e full suite **151/151**; CI-mode login 7/7; 15/15 cicli logout. Server killati, porta 3000 libera a fine review.
+
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session) — finding prioritario dell'handoff post-Epic 8, ciclo dev+review completo come da regola utente.
 - 2026-07-09: Implemented (Sonnet 5 dev subagent, xhigh) — `src/proxy.ts` reads the session with `getToken` instead of the `authEdge` wrapper, eliminating the Set-Cookie source of the race; `auth-edge.ts` removed; sliding-session trade-off documented in `auth.config.ts`; targeted revert of `b95c066` (CI e2e back on production build + `AUTH_TRUST_HOST`); `e2e/login.spec.ts` extended with a second login/logout cycle. Status → review.
+- 2026-07-09: Review Opus 4.8 xhigh — clean pass, zero mandatory. Full suite 151/151 su DB fresco (chiude il gap del dev), 7/7 CI-mode su build di produzione, 15/15 cicli logout, secureCookie provato coerente su http e dietro proxy TLS uniforme. TD4-N1 (doc-comment) fixato dalla sessione principale. Status → done.

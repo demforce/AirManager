@@ -79,12 +79,13 @@ function unauthenticatedApiResponse(): NextResponse {
  *
  * `secureCookie` must mirror how the cookie was actually set: the
  * `/api/auth/*` route handler (`auth.ts`'s `handlers`) derives it from the
- * literal request protocol Next.js sees for that connection, not from
- * `x-forwarded-proto` — so `getToken` here uses the same source
- * (`req.nextUrl.protocol`) to look up the matching cookie name/salt
- * (`authjs.session-token` over http, `__Secure-authjs.session-token` over
- * https). Verified empirically on `next start`/http: unprefixed cookie,
- * correctly read back (see story TD-4 Debug Log).
+ * request protocol Next.js resolves for that connection — which folds in
+ * `x-forwarded-proto` when the proxy is trusted — and `getToken` here reads
+ * the same resolved source (`req.nextUrl.protocol`), so issuer and reader
+ * agree on the cookie name/salt (`authjs.session-token` over http,
+ * `__Secure-authjs.session-token` over https) both on direct http and
+ * behind a uniform TLS-terminating reverse proxy. Verified empirically on
+ * `next start` in both topologies (review TD-4; dev Debug Log for http).
  */
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
