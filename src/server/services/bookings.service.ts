@@ -1,6 +1,6 @@
-import type { AircraftStatus } from '@/generated/prisma/client';
+import { Prisma, type AircraftStatus, type BookingStatus } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
-import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery } from '@/lib/schemas/bookings';
+import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, UpdateBookingInput } from '@/lib/schemas/bookings';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -54,7 +54,15 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  * airtight against two concurrent requests both seeing "no overlap" and
  * both inserting. No Postgres exclusion constraint (`btree_gist`) is used —
  * a deliberate choice (Contesto): the lock alone is sufficient, and story
- * 7.3 will reuse the same discipline for booking moves.
+ * 7.3 reuses the same discipline for booking moves.
+ *
+ * **Soft-cancel and edit tracking (story 7.3, AC 1/2)**: see `Booking`'s
+ * Prisma doc-comment for the `status`/`cancelledAt`/`cancelledByUserId`/
+ * `updatedByUserId` shape. `updateBooking`/`cancelBooking` are documented at
+ * their own definitions below; every overlap predicate in this file
+ * (`createBooking`'s pre-check, `updateBooking`'s pre-check, `listBookings`,
+ * `listCalendarBookings`) filters `status: 'ACTIVE'` — a cancelled booking
+ * frees its slot and disappears from every list/calendar.
  */
 
 export type BookingListItem = {
@@ -68,6 +76,8 @@ export type BookingListItem = {
   startsAt: Date;
   endsAt: Date;
   notes: string | null;
+  status: BookingStatus;
+  cancelledAt: Date | null;
   createdAt: Date;
 };
 
@@ -82,6 +92,8 @@ const BOOKING_SELECT = {
   startsAt: true,
   endsAt: true,
   notes: true,
+  status: true,
+  cancelledAt: true,
   createdAt: true,
 } as const;
 
@@ -96,6 +108,8 @@ type SelectedBooking = {
   startsAt: Date;
   endsAt: Date;
   notes: string | null;
+  status: BookingStatus;
+  cancelledAt: Date | null;
   createdAt: Date;
 };
 
@@ -113,6 +127,8 @@ function toListItem(booking: SelectedBooking): BookingListItem {
     startsAt: booking.startsAt,
     endsAt: booking.endsAt,
     notes: booking.notes,
+    status: booking.status,
+    cancelledAt: booking.cancelledAt,
     createdAt: booking.createdAt,
   };
 }
@@ -272,9 +288,11 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
 
     // Overlap pre-check (AC 2): semi-open `[startsAt, endsAt)` — two
     // bookings that merely touch at the boundary (one's `endsAt` equals the
-    // other's `startsAt`) do NOT overlap (Dev Notes).
+    // other's `startsAt`) do NOT overlap (Dev Notes). `status: 'ACTIVE'`
+    // (story 7.3): a CANCELLED booking freed its slot — creating on top of
+    // one is allowed.
     const overlapping = await tx.booking.findFirst({
-      where: { aircraftId: input.aircraftId, startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },
+      where: { aircraftId: input.aircraftId, status: 'ACTIVE', startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },
       select: { id: true },
     });
     if (overlapping) {
@@ -312,6 +330,10 @@ export async function listBookings(actor: Actor, query: ListBookingsQuery): Prom
   authorize(actor, 'self.read');
 
   const where = {
+    // `status: 'ACTIVE'` (story 7.3): a cancelled booking frees its slot and
+    // disappears from this list — the row itself is never deleted (Booking's
+    // doc-comment), just excluded from every read here.
+    status: 'ACTIVE' as const,
     ...(query.from ? { endsAt: { gt: new Date(query.from) } } : {}),
     ...(query.to ? { startsAt: { lt: new Date(query.to) } } : {}),
     ...(query.aircraftId ? { aircraftId: query.aircraftId } : {}),
@@ -374,12 +396,254 @@ export async function listCalendarBookings(actor: Actor, query: CalendarBookings
 
   const bookings = await prisma.booking.findMany({
     select: BOOKING_SELECT,
-    where: { startsAt: { lt: to }, endsAt: { gt: from } },
+    // `status: 'ACTIVE'` (story 7.3): same rationale as `listBookings` above
+    // — a cancelled booking frees its slot and disappears from the calendar.
+    where: { status: 'ACTIVE', startsAt: { lt: to }, endsAt: { gt: from } },
     orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
     take: 1000,
   });
 
   return bookings.map(toListItem);
+}
+
+// --- Booking edit/cancel (story 7.3, AC 1/2) --------------------------------
+// Soft-cancel + tracked edit — see `Booking`'s Prisma doc-comment for the
+// `status`/`cancelledAt`/`cancelledByUserId`/`updatedByUserId` shape.
+
+const EDITABLE_BOOKING_SELECT = {
+  id: true,
+  personId: true,
+  instructorProfileId: true,
+  aircraftId: true,
+  startsAt: true,
+  endsAt: true,
+  notes: true,
+  status: true,
+} as const;
+
+type EditableBooking = {
+  id: string;
+  personId: string;
+  instructorProfileId: string | null;
+  aircraftId: string;
+  startsAt: Date;
+  endsAt: Date;
+  notes: string | null;
+  status: BookingStatus;
+};
+
+/**
+ * Own-access + temporal gate shared by `updateBooking`/`cancelBooking`
+ * (Contesto): "own" = the booking's `personId` matches the actor's own
+ * person, OR its `instructorProfileId` matches the actor's own ACTIVE
+ * `InstructorProfile` (an instructor manages the school bookings they are
+ * involved in — the allievo never holds `bookings.manage.own` at all, story
+ * 7.1). `bookings.manage.any` (staff/admin) skips BOTH checks entirely — no
+ * ownership gate AND, deliberately, NO temporal constraint ("lo staff può
+ * sempre" — the asymmetry with the own-path below is intentional).
+ *
+ * The own-path additionally requires the booking to still be FUTURE
+ * (`startsAt > now`), for both edit and cancel — an already-started booking
+ * answers 422 `BOOKING_ALREADY_STARTED`. This runs AFTER the caller's own
+ * fetch (404) and already-cancelled check (409): bookings are visible to
+ * every authenticated actor via `self.read` (Contesto: unlike the
+ * cross-person case in `createBooking`, there is no existence-oracle to
+ * protect here — fetching first to decide 404-vs-403 is safe).
+ */
+async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, booking: EditableBooking): Promise<void> {
+  if (canManageAny) return;
+
+  const isOwnPerson = booking.personId === actor.personId;
+  let isOwnInstructor = false;
+  if (!isOwnPerson && booking.instructorProfileId !== null) {
+    const ownInstructorProfileId = await getOwnInstructorProfileId(actor);
+    isOwnInstructor = ownInstructorProfileId !== null && ownInstructorProfileId === booking.instructorProfileId;
+  }
+  if (!isOwnPerson && !isOwnInstructor) {
+    throw new ForbiddenError('Actor may only modify or cancel their own bookings.');
+  }
+
+  if (booking.startsAt.getTime() <= Date.now()) {
+    throw new ValidationError(
+      'This booking has already started and can no longer be modified or cancelled.',
+      undefined,
+      'BOOKING_ALREADY_STARTED',
+    );
+  }
+}
+
+/**
+ * Edits a booking's `aircraftId`/`startsAt`/`endsAt`/`notes` (AC 1/2) — a
+ * partial PATCH, merge-validated against the RESULTING values (Contesto:
+ * `personId`/`instructorProfileId` are immutable, stripped by Zod — never
+ * accepted here at all). Own-path: only a future booking may be edited
+ * (`BOOKING_ALREADY_STARTED`, 422, `assertOwnAccessAndTiming`) and the NEW
+ * interval must itself be future (`BOOKING_IN_PAST`, 422) — staff
+ * (`bookings.manage.any`) is exempt from BOTH (deliberate asymmetry with
+ * `createBooking`'s own rules, Contesto: staff can correct an in-progress
+ * booking, e.g. shorten it).
+ *
+ * **Concurrency (same discipline as `createBooking`, AC 2)**: inside
+ * `prisma.$transaction`, ALL involved `Aircraft` rows — the destination and,
+ * if different, the CURRENT one — are locked in ONE
+ * `WHERE id IN (...) ORDER BY id FOR UPDATE` query (the exact multi-lock
+ * pattern of `flights.service.ts#correctFlight`, anti-deadlock against two
+ * concurrent moves crossing aircraft; a same-aircraft edit collapses to the
+ * 1-element set `createBooking` already uses). Only the DESTINATION
+ * aircraft's state is validated (404/409 archived/422
+ * `AIRCRAFT_OUT_OF_SERVICE`, even for staff) — the booking is LEAVING the
+ * current aircraft, not landing on it, so that aircraft's own state is
+ * irrelevant to this write. The overlap pre-check excludes this booking
+ * itself (`id: { not: bookingId }`) and every CANCELLED row.
+ *
+ * The final write is ONE atomic `updateMany({ where: { id, status: 'ACTIVE' },
+ * ... })` — folding the "is this still active" guard INTO the write, rather
+ * than a separate re-fetch followed by a plain `.update()`. That distinction
+ * matters: a concurrent `cancelBooking` racing between a re-fetch and a
+ * later unconditional `.update()` could land its write in between, and while
+ * this edit's `data` never touches `status` (so it would not literally
+ * resurrect a cancelled booking), it WOULD still silently rewrite
+ * aircraft/times/notes on a row that is supposed to be frozen the instant it
+ * is cancelled. The single guarded `updateMany` (same pattern as
+ * `expiries.service.ts#decideExpiryProposal`) closes that window entirely —
+ * `count === 0` means a concurrent cancel won the race, 409, same
+ * `ConflictError` message as the fast pre-check below.
+ */
+export async function updateBooking(actor: Actor, bookingId: string, input: UpdateBookingInput): Promise<BookingListItem> {
+  const canManageAny = hasPermission(actor, 'bookings.manage.any');
+  if (!canManageAny) {
+    authorize(actor, 'bookings.manage.own');
+  }
+
+  const existing = await prisma.booking.findUnique({ where: { id: bookingId }, select: EDITABLE_BOOKING_SELECT });
+  if (!existing) {
+    throw new NotFoundError('Booking not found.');
+  }
+  if (existing.status !== 'ACTIVE') {
+    throw new ConflictError('This booking has already been cancelled.');
+  }
+
+  await assertOwnAccessAndTiming(actor, canManageAny, existing);
+
+  const nextAircraftId = input.aircraftId ?? existing.aircraftId;
+  const nextStartsAt = input.startsAt !== undefined ? new Date(input.startsAt) : existing.startsAt;
+  const nextEndsAt = input.endsAt !== undefined ? new Date(input.endsAt) : existing.endsAt;
+  const nextNotes = input.notes !== undefined ? input.notes : existing.notes;
+
+  if (nextEndsAt.getTime() <= nextStartsAt.getTime()) {
+    throw new ValidationError('endsAt must be strictly after startsAt.');
+  }
+  if (!canManageAny && nextStartsAt.getTime() <= Date.now()) {
+    throw new ValidationError('startsAt must be in the future.', undefined, 'BOOKING_IN_PAST');
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    // ALL Aircraft ids first, ONE query, ORDER BY id FOR UPDATE — same
+    // multi-lock pattern as `flights.service.ts#correctFlight` (module
+    // doc-comment above): the destination aircraft, plus the CURRENT one if
+    // different (a 1-element set covers the common "same aircraft" edit).
+    const aircraftIds = Array.from(new Set([existing.aircraftId, nextAircraftId]));
+    const lockedAircraftRows = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; archivedAt: Date | null }>>`
+      SELECT "id", "status", "statusReason", "archivedAt" FROM "Aircraft" WHERE "id" IN (${Prisma.join(aircraftIds)}) ORDER BY "id" FOR UPDATE`;
+
+    const destinationAircraft = lockedAircraftRows.find((row) => row.id === nextAircraftId);
+    if (!destinationAircraft) {
+      throw new NotFoundError('Aircraft not found.');
+    }
+    if (destinationAircraft.archivedAt !== null) {
+      throw new ConflictError('Aircraft is archived.');
+    }
+    if (destinationAircraft.status === 'OUT_OF_SERVICE') {
+      throw new ValidationError(
+        `Aircraft is out of service: ${destinationAircraft.statusReason}.`,
+        { reason: destinationAircraft.statusReason },
+        'AIRCRAFT_OUT_OF_SERVICE',
+      );
+    }
+
+    // Overlap pre-check (AC 2, same semi-open semantics as `createBooking`):
+    // excludes THIS booking (it is moving, not colliding with itself) and
+    // every CANCELLED row (they already freed their slot).
+    const overlapping = await tx.booking.findFirst({
+      where: {
+        aircraftId: nextAircraftId,
+        id: { not: bookingId },
+        status: 'ACTIVE',
+        startsAt: { lt: nextEndsAt },
+        endsAt: { gt: nextStartsAt },
+      },
+      select: { id: true },
+    });
+    if (overlapping) {
+      throw new ConflictError('This aircraft is already booked for an overlapping interval.');
+    }
+
+    // The atomic guard+write (module doc-comment above): folds the "still
+    // ACTIVE" precondition INTO the update itself — no separate re-fetch, no
+    // TOCTOU window between checking and writing.
+    const guard = await tx.booking.updateMany({
+      where: { id: bookingId, status: 'ACTIVE' },
+      data: {
+        aircraftId: nextAircraftId,
+        startsAt: nextStartsAt,
+        endsAt: nextEndsAt,
+        notes: nextNotes,
+        updatedByUserId: actor.userId,
+      },
+    });
+    if (guard.count === 0) {
+      throw new ConflictError('This booking has already been cancelled.');
+    }
+
+    return tx.booking.findUniqueOrThrow({ where: { id: bookingId }, select: BOOKING_SELECT });
+  });
+
+  return toListItem(updated);
+}
+
+/**
+ * Cancels a booking (soft, AC 1/2) — flips `status` to `CANCELLED`
+ * (`cancelledAt`/`cancelledByUserId` set together), which FREES the slot
+ * (Booking's doc-comment). Own/temporal rules are IDENTICAL to
+ * `updateBooking`'s (`assertOwnAccessAndTiming`, shared) — an own-path actor
+ * cannot cancel a booking that already started (`BOOKING_ALREADY_STARTED`,
+ * 422); staff always can ("lo staff può sempre").
+ *
+ * **No aircraft lock** (Contesto, unlike `updateBooking`/`createBooking`):
+ * cancelling never touches the overlap invariant — it can only ever FREE a
+ * slot, never create a conflict — so there is nothing to serialize against.
+ * The guard against a double-cancel race is the SAME atomic
+ * `updateMany({ where: { id, status: 'ACTIVE' }, ... })` pattern as
+ * `updateBooking` (and `expiries.service.ts#decideExpiryProposal`) —
+ * `count === 0` means a concurrent cancel (or an edit-vs-cancel race) already
+ * flipped this booking's status first, 409, race-safe.
+ */
+export async function cancelBooking(actor: Actor, bookingId: string): Promise<BookingListItem> {
+  const canManageAny = hasPermission(actor, 'bookings.manage.any');
+  if (!canManageAny) {
+    authorize(actor, 'bookings.manage.own');
+  }
+
+  const existing = await prisma.booking.findUnique({ where: { id: bookingId }, select: EDITABLE_BOOKING_SELECT });
+  if (!existing) {
+    throw new NotFoundError('Booking not found.');
+  }
+  if (existing.status !== 'ACTIVE') {
+    throw new ConflictError('This booking has already been cancelled.');
+  }
+
+  await assertOwnAccessAndTiming(actor, canManageAny, existing);
+
+  const guard = await prisma.booking.updateMany({
+    where: { id: bookingId, status: 'ACTIVE' },
+    data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledByUserId: actor.userId },
+  });
+  if (guard.count === 0) {
+    throw new ConflictError('This booking has already been cancelled.');
+  }
+
+  const cancelled = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId }, select: BOOKING_SELECT });
+  return toListItem(cancelled);
 }
 
 // --- Booking-form picker data (Task 5) --------------------------------------

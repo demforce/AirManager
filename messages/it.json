@@ -1008,7 +1008,24 @@
         "time": "Orario",
         "person": "Prenotante",
         "instructor": "Istruttore",
-        "noInstructor": "—"
+        "noInstructor": "—",
+        "actions": "Azioni"
+      },
+      "actions": {
+        "move": "Sposta",
+        "cancel": "Cancella",
+        "cancelPrompt": "Confermi la cancellazione di questa prenotazione?",
+        "cancelConfirm": "Sì, cancella",
+        "dismiss": "Annulla",
+        "moveTitle": "Sposta prenotazione",
+        "save": "Salva",
+        "moveSuccess": "Prenotazione spostata.",
+        "cancelSuccess": "Prenotazione cancellata.",
+        "errors": {
+          "BOOKING_ALREADY_STARTED": "La prenotazione è già iniziata: non può più essere modificata o cancellata.",
+          "conflict": "Il velivolo è già prenotato per questo intervallo, oppure la prenotazione non è più valida. Ricarica la pagina e riprova.",
+          "generic": "Operazione non riuscita. Riprova."
+        }
       }
     },
     "calendar": {

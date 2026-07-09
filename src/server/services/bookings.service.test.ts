@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { calendarBookingsQuerySchema, createBookingSchema, listBookingsQuerySchema } from '@/lib/schemas/bookings';
+import { calendarBookingsQuerySchema, createBookingSchema, listBookingsQuerySchema, updateBookingSchema } from '@/lib/schemas/bookings';
 import type { Actor } from '@/server/auth/rbac';
 
 vi.mock('@/server/db/prisma', () => ({
@@ -19,7 +19,10 @@ vi.mock('@/server/db/prisma', () => ({
       create: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       count: vi.fn(),
+      updateMany: vi.fn(),
     },
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
@@ -31,6 +34,8 @@ const {
   createBooking,
   listBookings,
   listCalendarBookings,
+  updateBooking,
+  cancelBooking,
   listBookableAircraft,
   listBookableStudents,
   listActiveInstructors,
@@ -46,7 +51,10 @@ const aircraftFindManyMock = vi.mocked(prisma.aircraft.findMany);
 const bookingCreateMock = vi.mocked(prisma.booking.create);
 const bookingFindFirstMock = vi.mocked(prisma.booking.findFirst);
 const bookingFindManyMock = vi.mocked(prisma.booking.findMany);
+const bookingFindUniqueMock = vi.mocked(prisma.booking.findUnique);
+const bookingFindUniqueOrThrowMock = vi.mocked(prisma.booking.findUniqueOrThrow);
 const bookingCountMock = vi.mocked(prisma.booking.count);
+const bookingUpdateManyMock = vi.mocked(prisma.booking.updateMany);
 const transactionMock = vi.mocked(prisma.$transaction);
 const queryRawMock = vi.mocked(prisma.$queryRaw);
 
@@ -60,7 +68,13 @@ const personFindUnique = personFindUniqueMock as unknown as {
 const bookingCreate = bookingCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const bookingFindFirst = bookingFindFirstMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const bookingFindMany = bookingFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const bookingFindUnique = bookingFindUniqueMock as unknown as {
+  mockResolvedValue: (v: Fixture) => void;
+  mockImplementation: (fn: (args: { where: { id: string } }) => Promise<Fixture>) => void;
+};
+const bookingFindUniqueOrThrow = bookingFindUniqueOrThrowMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const bookingCount = bookingCountMock as unknown as { mockResolvedValue: (v: number) => void };
+const bookingUpdateMany = bookingUpdateManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
 const instructorProfileFindUnique = instructorProfileFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void };
 const aircraftFindMany = aircraftFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
@@ -156,6 +170,10 @@ const CREATED_BOOKING_ROW = {
   startsAt: new Date(FUTURE_STARTS_AT),
   endsAt: new Date(FUTURE_ENDS_AT),
   notes: null,
+  // Story 7.3: `BOOKING_SELECT` now includes `status`/`cancelledAt` — every
+  // fixture that stands in for a `booking.create`/`findMany` row needs them.
+  status: 'ACTIVE' as 'ACTIVE' | 'CANCELLED',
+  cancelledAt: null as Date | null,
   createdAt: new Date('2026-07-01T00:00:00.000Z'),
 };
 
@@ -165,6 +183,10 @@ beforeEach(() => {
   queryRaw.mockResolvedValue(LOCKED_OPERATIONAL_AIRCRAFT);
   bookingFindFirst.mockResolvedValue(null);
   bookingCreate.mockResolvedValue(CREATED_BOOKING_ROW);
+  // Story 7.3: `updateBooking`/`cancelBooking`'s atomic guard+write default to
+  // "succeeded, one row" — individual race/already-cancelled tests override.
+  bookingUpdateMany.mockResolvedValue({ count: 1 });
+  bookingFindUniqueOrThrow.mockResolvedValue(CREATED_BOOKING_ROW);
 });
 
 describe('createBooking (Story 7.1, AC 1/2/3)', () => {
@@ -393,6 +415,7 @@ describe('createBooking (Story 7.1, AC 1/2/3)', () => {
       expect.objectContaining({
         where: {
           aircraftId: 'aircraft_1',
+          status: 'ACTIVE',
           startsAt: { lt: new Date(FUTURE_ENDS_AT) },
           endsAt: { gt: new Date(FUTURE_STARTS_AT) },
         },
@@ -429,6 +452,7 @@ describe('listBookings (Story 7.1, AC 1, FR-19)', () => {
     expect(bookingFindManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
+          status: 'ACTIVE',
           endsAt: { gt: new Date('2026-08-01T00:00:00.000Z') },
           startsAt: { lt: new Date('2026-08-02T00:00:00.000Z') },
         },
@@ -443,8 +467,17 @@ describe('listBookings (Story 7.1, AC 1, FR-19)', () => {
     await listBookings(staffActor(), { page: 1, pageSize: 20, aircraftId: 'aircraft_9', personId: 'person_9' });
 
     expect(bookingFindManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { aircraftId: 'aircraft_9', personId: 'person_9' } }),
+      expect.objectContaining({ where: { status: 'ACTIVE', aircraftId: 'aircraft_9', personId: 'person_9' } }),
     );
+  });
+
+  it('excludes CANCELLED bookings (story 7.3: a cancelled booking frees its slot and disappears from the list)', async () => {
+    bookingFindMany.mockResolvedValue([]);
+    bookingCount.mockResolvedValue(0);
+
+    await listBookings(staffActor(), { page: 1, pageSize: 20 });
+
+    expect(bookingFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'ACTIVE' }) }));
   });
 
   it('orders by startsAt asc, id asc', async () => {
@@ -541,9 +574,17 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
 
     expect(bookingFindManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { startsAt: { lt: new Date(TO) }, endsAt: { gt: new Date(FROM) } },
+        where: { status: 'ACTIVE', startsAt: { lt: new Date(TO) }, endsAt: { gt: new Date(FROM) } },
       }),
     );
+  });
+
+  it('excludes CANCELLED bookings (story 7.3: a cancelled booking frees its slot and disappears from the calendar)', async () => {
+    bookingFindMany.mockResolvedValue([]);
+
+    await listCalendarBookings(staffActor(), { from: FROM, to: TO });
+
+    expect(bookingFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'ACTIVE' }) }));
   });
 
   it('a booking that ENDS exactly at `from` is EXCLUDED (semi-open)', async () => {
@@ -578,6 +619,331 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
     const result = await listCalendarBookings(staffActor(), { from: FROM, to: TO });
 
     expect(result[0]).toMatchObject({ personName: 'Mario Rossi', instructorName: 'Livia Bernasconi', aircraftRegistration: 'I-ABCD' });
+  });
+});
+
+// --- Booking edit/cancel (Story 7.3, AC 1/2) --------------------------------
+
+const EXISTING_OWN_BOOKING = {
+  id: 'booking_1',
+  personId: 'person_pilot',
+  instructorProfileId: null as string | null,
+  aircraftId: 'aircraft_1',
+  startsAt: new Date(FUTURE_STARTS_AT),
+  endsAt: new Date(FUTURE_ENDS_AT),
+  notes: null as string | null,
+  status: 'ACTIVE' as 'ACTIVE' | 'CANCELLED',
+};
+
+describe('updateBooking (Story 7.3, AC 1/2)', () => {
+  it('a student (no bookings.manage.own) gets 403 straight from authorize() — no queries at all', async () => {
+    await expect(updateBooking(studentActor(), 'booking_1', { notes: 'x' })).rejects.toThrow(ForbiddenError);
+    expect(bookingFindUniqueMock).not.toHaveBeenCalled();
+  });
+
+  it('an unknown booking id answers 404', async () => {
+    bookingFindUnique.mockResolvedValue(null);
+
+    await expect(updateBooking(staffActor(), 'ghost', { notes: 'x' })).rejects.toThrow(NotFoundError);
+  });
+
+  it('an already-cancelled booking answers 409 from the fast pre-check (before own/temporal checks)', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, status: 'CANCELLED' });
+
+    await expect(updateBooking(pilotActor('person_pilot'), 'booking_1', { notes: 'x' })).rejects.toThrow(ConflictError);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('a pilot editing their own future booking succeeds, with updatedByUserId set to the actor', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    const result = await updateBooking(pilotActor('person_pilot'), 'booking_1', { notes: 'Updated note' });
+
+    expect(result.id).toBe('booking_1');
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: 'booking_1', status: 'ACTIVE' },
+      data: {
+        aircraftId: 'aircraft_1',
+        startsAt: new Date(FUTURE_STARTS_AT),
+        endsAt: new Date(FUTURE_ENDS_AT),
+        notes: 'Updated note',
+        updatedByUserId: 'pilot_1',
+      },
+    });
+  });
+
+  it('a pilot editing someone else\'s booking gets 403', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'someone_else' });
+
+    await expect(updateBooking(pilotActor('person_pilot'), 'booking_1', { notes: 'x' })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('a pilot editing their own ALREADY-STARTED booking gets 422 BOOKING_ALREADY_STARTED', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, startsAt: new Date(PAST_STARTS_AT), endsAt: new Date(PAST_ENDS_AT) });
+
+    const error = await updateBooking(pilotActor('person_pilot'), 'booking_1', { notes: 'x' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_ALREADY_STARTED');
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('an instructor editing a booking via a matching instructorProfileId succeeds', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'person_student', instructorProfileId: 'instr_profile_1' });
+    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: null });
+
+    const result = await updateBooking(instructorActor('person_instructor'), 'booking_1', { notes: 'x' });
+
+    expect(result.id).toBe('booking_1');
+  });
+
+  it('an instructor whose OWN instructor profile is deactivated gets 403 even when instructorProfileId matches', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'person_student', instructorProfileId: 'instr_profile_1' });
+    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: new Date('2025-01-01T00:00:00.000Z') });
+
+    await expect(updateBooking(instructorActor('person_instructor'), 'booking_1', { notes: 'x' })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('staff editing someone else\'s ALREADY-STARTED booking succeeds — no BOOKING_ALREADY_STARTED for staff ("lo staff può sempre")', async () => {
+    bookingFindUnique.mockResolvedValue({
+      ...EXISTING_OWN_BOOKING,
+      personId: 'someone_else',
+      startsAt: new Date(PAST_STARTS_AT),
+      endsAt: new Date(PAST_ENDS_AT),
+    });
+
+    const result = await updateBooking(staffActor(), 'booking_1', { notes: 'x' });
+
+    expect(result.id).toBe('booking_1');
+  });
+
+  it('staff\'s edit is exempt from BOOKING_IN_PAST on the new interval (deliberate asymmetry with own-path/create)', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    const result = await updateBooking(staffActor(), 'booking_1', { startsAt: PAST_STARTS_AT, endsAt: PAST_ENDS_AT });
+
+    expect(result.id).toBe('booking_1');
+  });
+
+  it('an own-path actor with no linked personId (and no instructorProfileId on the booking) gets 403', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    await expect(updateBooking(pilotActor(null), 'booking_1', { notes: 'x' })).rejects.toThrow(ForbiddenError);
+  });
+
+  it('partial merge: only notes provided keeps the existing aircraft/interval', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    await updateBooking(staffActor(), 'booking_1', { notes: 'Solo una nota' });
+
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          aircraftId: 'aircraft_1',
+          startsAt: new Date(FUTURE_STARTS_AT),
+          endsAt: new Date(FUTURE_ENDS_AT),
+          notes: 'Solo una nota',
+        }),
+      }),
+    );
+  });
+
+  it('partial merge: only startsAt provided validates against the CURRENT endsAt', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    const afterCurrentEndsAt = new Date(EXISTING_OWN_BOOKING.endsAt.getTime() + 60_000).toISOString();
+
+    const error = await updateBooking(staffActor(), 'booking_1', { startsAt: afterCurrentEndsAt }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('notes: null explicitly clears the field', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, notes: 'Nota precedente' });
+
+    await updateBooking(staffActor(), 'booking_1', { notes: null });
+
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ notes: null }) }));
+  });
+
+  it('a resulting endsAt <= startsAt answers 422 (merged values, not the raw patch)', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    const error = await updateBooking(staffActor(), 'booking_1', { endsAt: FUTURE_STARTS_AT }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+  });
+
+  it('an unknown destination aircraft (empty lock result) answers 404', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    queryRaw.mockResolvedValue([]);
+
+    await expect(updateBooking(staffActor(), 'booking_1', { notes: 'x' })).rejects.toThrow(NotFoundError);
+  });
+
+  it('an archived destination aircraft answers 409', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    queryRaw.mockResolvedValue([{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, archivedAt: new Date('2025-01-01T00:00:00.000Z') }]);
+
+    await expect(updateBooking(staffActor(), 'booking_1', { notes: 'x' })).rejects.toThrow(ConflictError);
+  });
+
+  it('an OUT_OF_SERVICE destination aircraft answers 422 AIRCRAFT_OUT_OF_SERVICE, even for staff', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    queryRaw.mockResolvedValue([{ id: 'aircraft_2', status: 'OUT_OF_SERVICE', statusReason: 'Revisione motore', archivedAt: null }]);
+
+    const error = await updateBooking(staffActor(), 'booking_1', { aircraftId: 'aircraft_2' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('AIRCRAFT_OUT_OF_SERVICE');
+  });
+
+  it('changing aircraft locks BOTH the current and destination Aircraft ids in ONE ordered IN (...) query', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING); // current aircraft_1
+    queryRaw.mockResolvedValue([
+      { id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, archivedAt: null },
+      { id: 'aircraft_2', status: 'OPERATIONAL', statusReason: null, archivedAt: null },
+    ]);
+
+    await updateBooking(staffActor(), 'booking_1', { aircraftId: 'aircraft_2' });
+
+    expect(queryRawMock).toHaveBeenCalledTimes(1);
+    const [strings, joined] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray, { values: string[] }];
+    expect(strings.join('?')).toContain('FOR UPDATE');
+    expect(strings.join('?')).toContain('IN');
+    expect(strings.join('?')).toContain('ORDER BY');
+    expect(joined.values.slice().sort()).toEqual(['aircraft_1', 'aircraft_2']);
+  });
+
+  it('a same-aircraft edit locks only ONE id (the 1-element set collapses, same as createBooking)', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    await updateBooking(staffActor(), 'booking_1', { notes: 'x' });
+
+    const [, joined] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray, { values: string[] }];
+    expect(joined.values).toEqual(['aircraft_1']);
+  });
+
+  it('the overlap pre-check excludes THIS booking and every CANCELLED row', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    await updateBooking(staffActor(), 'booking_1', { notes: 'x' });
+
+    expect(bookingFindFirstMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { not: 'booking_1' }, status: 'ACTIVE' }),
+      }),
+    );
+  });
+
+  it('an overlapping destination interval answers 409', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    bookingFindFirst.mockResolvedValue({ id: 'other_booking' });
+
+    await expect(updateBooking(staffActor(), 'booking_1', { notes: 'x' })).rejects.toThrow(ConflictError);
+  });
+
+  it('a concurrent cancel racing the atomic guard (updateMany count 0) answers 409', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    bookingUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(updateBooking(staffActor(), 'booking_1', { notes: 'x' })).rejects.toThrow(ConflictError);
+  });
+});
+
+describe('cancelBooking (Story 7.3, AC 1/2)', () => {
+  it('a student (no bookings.manage.own) gets 403 straight from authorize() — no queries at all', async () => {
+    await expect(cancelBooking(studentActor(), 'booking_1')).rejects.toThrow(ForbiddenError);
+    expect(bookingFindUniqueMock).not.toHaveBeenCalled();
+  });
+
+  it('an unknown booking id answers 404', async () => {
+    bookingFindUnique.mockResolvedValue(null);
+
+    await expect(cancelBooking(staffActor(), 'ghost')).rejects.toThrow(NotFoundError);
+  });
+
+  it('an already-cancelled booking answers 409 from the fast pre-check', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, status: 'CANCELLED' });
+
+    await expect(cancelBooking(pilotActor('person_pilot'), 'booking_1')).rejects.toThrow(ConflictError);
+    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
+  });
+
+  it('a pilot cancelling their own future booking succeeds — no Aircraft lock at all ($queryRaw never called)', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    const result = await cancelBooking(pilotActor('person_pilot'), 'booking_1');
+
+    expect(result.id).toBe('booking_1');
+    expect(queryRawMock).not.toHaveBeenCalled();
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('cancels with status/cancelledAt/cancelledByUserId set via the atomic updateMany guard', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    await cancelBooking(pilotActor('person_pilot'), 'booking_1');
+
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: 'booking_1', status: 'ACTIVE' },
+      data: { status: 'CANCELLED', cancelledAt: expect.any(Date), cancelledByUserId: 'pilot_1' },
+    });
+  });
+
+  it('a pilot cancelling someone else\'s booking gets 403', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'someone_else' });
+
+    await expect(cancelBooking(pilotActor('person_pilot'), 'booking_1')).rejects.toThrow(ForbiddenError);
+  });
+
+  it('a pilot cancelling their own ALREADY-STARTED booking gets 422 BOOKING_ALREADY_STARTED', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, startsAt: new Date(PAST_STARTS_AT), endsAt: new Date(PAST_ENDS_AT) });
+
+    const error = await cancelBooking(pilotActor('person_pilot'), 'booking_1').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_ALREADY_STARTED');
+    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
+  });
+
+  it('staff cancelling an ALREADY-STARTED booking succeeds ("lo staff può sempre")', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, startsAt: new Date(PAST_STARTS_AT), endsAt: new Date(PAST_ENDS_AT) });
+
+    const result = await cancelBooking(staffActor(), 'booking_1');
+
+    expect(result.id).toBe('booking_1');
+  });
+
+  it('an instructor cancelling a booking via a matching instructorProfileId succeeds', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'person_student', instructorProfileId: 'instr_profile_1' });
+    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: null });
+
+    const result = await cancelBooking(instructorActor('person_instructor'), 'booking_1');
+
+    expect(result.id).toBe('booking_1');
+  });
+
+  it('a double-cancel race (updateMany count 0) answers 409, safe against a concurrent cancel', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    bookingUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(cancelBooking(staffActor(), 'booking_1')).rejects.toThrow(ConflictError);
+  });
+});
+
+describe('createBooking on top of a CANCELLED booking (Story 7.3)', () => {
+  it('creating over the exact interval of a CANCELLED booking succeeds (the slot was freed)', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+    // The overlap pre-check's own `where` already filters `status: 'ACTIVE'`
+    // (asserted above) — mocking `findFirst` to resolve `null` here models a
+    // DB that holds a CANCELLED row at this exact interval and correctly
+    // excludes it.
+    bookingFindFirst.mockResolvedValue(null);
+
+    const result = await createBooking(staffActor(), baseInput({ personId: 'person_student' }));
+
+    expect(result.id).toBe('booking_1');
   });
 });
 
@@ -700,6 +1066,47 @@ describe('createBookingSchema (Story 7.1, Task 4)', () => {
   it('rejects a missing aircraftId/personId', () => {
     expect(createBookingSchema.safeParse({ ...VALID, aircraftId: '' }).success).toBe(false);
     expect(createBookingSchema.safeParse({ ...VALID, personId: '' }).success).toBe(false);
+  });
+});
+
+describe('updateBookingSchema (Story 7.3, Task 3)', () => {
+  it('accepts a single-field patch (aircraftId only)', () => {
+    expect(updateBookingSchema.safeParse({ aircraftId: 'aircraft_2' }).success).toBe(true);
+  });
+
+  it('accepts every field combined', () => {
+    expect(
+      updateBookingSchema.safeParse({ aircraftId: 'aircraft_2', startsAt: FUTURE_STARTS_AT, endsAt: FUTURE_ENDS_AT, notes: 'x' }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a completely empty body', () => {
+    expect(updateBookingSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('strips personId/instructorProfileId — they are not part of the schema at all', () => {
+    const result = updateBookingSchema.safeParse({ personId: 'someone_else', instructorProfileId: 'instr_1', notes: 'x' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('personId');
+      expect(result.data).not.toHaveProperty('instructorProfileId');
+    }
+  });
+
+  it('notes: null explicitly clears it (nullable, distinct from omitted/undefined)', () => {
+    const result = updateBookingSchema.safeParse({ notes: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.notes).toBeNull();
+    }
+  });
+
+  it('rejects malformed startsAt/endsAt', () => {
+    expect(updateBookingSchema.safeParse({ startsAt: '2026-08-01' }).success).toBe(false);
+  });
+
+  it('rejects notes over 500 chars', () => {
+    expect(updateBookingSchema.safeParse({ notes: 'x'.repeat(501) }).success).toBe(false);
   });
 });
 

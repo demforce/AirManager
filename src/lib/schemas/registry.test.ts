@@ -68,6 +68,8 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/jobs/expiry-alerts',
         '/api/v1/bookings',
         '/api/v1/bookings/calendar',
+        '/api/v1/bookings/{id}',
+        '/api/v1/bookings/{id}/cancel',
       ]),
     );
   });
@@ -115,6 +117,20 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       '/api/v1/bookings/calendar'
     ]?.['get'];
     expect(Object.keys(calendarBookings?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+  });
+
+  it('documents 401/403/404/409/422/500 error responses on the booking edit endpoint (story 7.3, AC 1/2)', () => {
+    const updateBooking = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)[
+      '/api/v1/bookings/{id}'
+    ]?.['patch'];
+    expect(Object.keys(updateBooking?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
+  });
+
+  it('documents 401/403/404/409/422/500 error responses on the booking cancel endpoint (story 7.3, AC 1/2)', () => {
+    const cancelBooking = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)[
+      '/api/v1/bookings/{id}/cancel'
+    ]?.['post'];
+    expect(Object.keys(cancelBooking?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
   });
 
   it('produces valid JSON (round-trips through JSON.stringify/parse)', () => {

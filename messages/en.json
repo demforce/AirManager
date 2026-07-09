@@ -1008,7 +1008,24 @@
         "time": "Time",
         "person": "Booked by",
         "instructor": "Instructor",
-        "noInstructor": "—"
+        "noInstructor": "—",
+        "actions": "Actions"
+      },
+      "actions": {
+        "move": "Move",
+        "cancel": "Cancel",
+        "cancelPrompt": "Confirm cancelling this booking?",
+        "cancelConfirm": "Yes, cancel",
+        "dismiss": "Dismiss",
+        "moveTitle": "Move booking",
+        "save": "Save",
+        "moveSuccess": "Booking moved.",
+        "cancelSuccess": "Booking cancelled.",
+        "errors": {
+          "BOOKING_ALREADY_STARTED": "This booking has already started and can no longer be modified or cancelled.",
+          "conflict": "The aircraft is already booked for that interval, or this booking is no longer valid. Reload the page and try again.",
+          "generic": "The operation failed. Please try again."
+        }
       }
     },
     "calendar": {

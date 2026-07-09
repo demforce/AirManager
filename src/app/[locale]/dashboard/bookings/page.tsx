@@ -1,7 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { APP_TIMEZONE, formatDateTime, formatTimeOfDay } from '@/lib/time';
+import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
@@ -16,6 +16,7 @@ import {
 } from '@/server/services/bookings.service';
 import { listPeople } from '@/server/services/people.service';
 import { BookingCalendar, type BookingCalendarView, type CalendarDayBlock, type CalendarNav, type CalendarWeekChip } from './booking-calendar';
+import { BookingsList, type BookingRowDto } from './bookings-list';
 import { NewBookingForm, type AircraftOption, type InstructorOption, type NewBookingFormMode, type PersonOption } from './new-booking-form';
 
 type PageProps = {
@@ -230,11 +231,18 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   // viewer (Task 3: "ORA serve anche ai non-creator").
   const aircraftOptions: AircraftOption[] = await listBookableAircraft(actor);
 
+  // Story 7.3: needed for BOTH the create form's instructor "per me"/"per
+  // un allievo" toggle AND the "Prossime prenotazioni" row actions'
+  // ownership check (an instructor manages the school bookings involving
+  // their own profile, `BookingsList`'s `ownInstructorProfileId` prop) —
+  // called unconditionally (`self.read`-gated, cheap) for every viewer,
+  // same rationale as `listBookableAircraft` above.
+  const ownInstructorProfileId = await getOwnInstructorProfileId(actor);
+
   let formMode: NewBookingFormMode = 'pilot';
   let personOptions: PersonOption[] = [];
   let instructorOptions: InstructorOption[] = [];
   let studentOptions: PersonOption[] = [];
-  let ownInstructorProfileId: string | null = null;
 
   if (canCreate) {
     if (canManageAny) {
@@ -244,14 +252,11 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         .filter((person) => person.archivedAt === null && (person.profiles.pilot || person.profiles.student || person.profiles.instructor))
         .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
       instructorOptions = await listActiveInstructors(actor);
+    } else if (ownInstructorProfileId) {
+      formMode = 'instructor';
+      studentOptions = await listBookableStudents(actor);
     } else {
-      ownInstructorProfileId = await getOwnInstructorProfileId(actor);
-      if (ownInstructorProfileId) {
-        formMode = 'instructor';
-        studentOptions = await listBookableStudents(actor);
-      } else {
-        formMode = 'pilot';
-      }
+      formMode = 'pilot';
     }
   }
 
@@ -324,6 +329,24 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   const t = await getTranslations('BookingsPage');
   const dateLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
+
+  // Story 7.3: serialize the (already `status: 'ACTIVE'`-filtered, service-
+  // side) rows into plain wire DTOs before crossing the server -> client
+  // boundary (`bookings-list.tsx`) — the established codebase convention
+  // (`aircraft-manager.tsx`'s own doc-comment: "ISO 8601 string, server Date
+  // already serialized") rather than passing raw `Date` instances as props.
+  const bookingRows: BookingRowDto[] = bookingsResult.items.map((booking) => ({
+    id: booking.id,
+    aircraftId: booking.aircraftId,
+    aircraftRegistration: booking.aircraftRegistration,
+    personId: booking.personId,
+    personName: booking.personName,
+    instructorProfileId: booking.instructorProfileId,
+    instructorName: booking.instructorName,
+    startsAt: booking.startsAt.toISOString(),
+    endsAt: booking.endsAt.toISOString(),
+    notes: booking.notes,
+  }));
 
   return (
     <main className="flex-1 px-6 py-16 sm:px-16">
@@ -418,47 +441,57 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
           <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{t('list.heading')}</h2>
           <p className="mt-1 text-sm text-[#787774]">{t('list.description')}</p>
 
-          <div className="mt-6 overflow-x-auto rounded-[12px] border border-[#EAEAEA]">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
-                  <th className="px-5 py-3">{t('list.table.aircraft')}</th>
-                  <th className="px-5 py-3">{t('list.table.date')}</th>
-                  <th className="px-5 py-3">{t('list.table.time')}</th>
-                  <th className="px-5 py-3">{t('list.table.person')}</th>
-                  <th className="px-5 py-3">{t('list.table.instructor')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bookingsResult.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-5 py-8 text-center text-[#787774]">
-                      {t('list.empty')}
-                    </td>
-                  </tr>
-                ) : (
-                  bookingsResult.items.map((booking) => {
-                    const startsAt = new Date(booking.startsAt);
-                    const endsAt = new Date(booking.endsAt);
-                    return (
-                      <tr key={booking.id} className="border-b border-[#EAEAEA] last:border-b-0" data-testid="booking-row">
-                        <td className="px-5 py-3 align-middle font-medium text-[#111111]">{booking.aircraftRegistration}</td>
-                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">
-                          {/* `formatDateTime` is "DD/MM/YYYY, HH:MM" (Intl's it-IT/en-IE locale separator) — split on the comma, not a bare space. */}
-                          {formatDateTime(startsAt, dateLocale).split(',')[0]}
-                        </td>
-                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">
-                          {formatTimeOfDay(startsAt, dateLocale)}–{formatTimeOfDay(endsAt, dateLocale)}
-                        </td>
-                        <td className="px-5 py-3 align-middle text-[#2F3437]">{booking.personName}</td>
-                        <td className="px-5 py-3 align-middle text-[#787774]">{booking.instructorName ?? t('list.table.noInstructor')}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <BookingsList
+            items={bookingRows}
+            aircraftOptions={aircraftOptions}
+            canManageAny={canManageAny}
+            canManageOwn={canManageOwn}
+            ownPersonId={actor.personId}
+            ownInstructorProfileId={ownInstructorProfileId}
+            locale={dateLocale}
+            labels={{
+              table: {
+                aircraft: t('list.table.aircraft'),
+                date: t('list.table.date'),
+                time: t('list.table.time'),
+                person: t('list.table.person'),
+                instructor: t('list.table.instructor'),
+                noInstructor: t('list.table.noInstructor'),
+                actions: t('list.table.actions'),
+              },
+              empty: t('list.empty'),
+              form: {
+                selectPlaceholder: t('form.selectPlaceholder'),
+                aircraft: t('form.aircraft'),
+                outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
+                startsAt: t('form.startsAt'),
+                endsAt: t('form.endsAt'),
+                notes: t('form.notes'),
+                requiredField: t('form.requiredField'),
+                invalidRange: t('form.invalidRange'),
+                errors: {
+                  AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
+                  BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
+                },
+              },
+              actions: {
+                move: t('list.actions.move'),
+                cancel: t('list.actions.cancel'),
+                cancelPrompt: t('list.actions.cancelPrompt'),
+                cancelConfirm: t('list.actions.cancelConfirm'),
+                dismiss: t('list.actions.dismiss'),
+                moveTitle: t('list.actions.moveTitle'),
+                save: t('list.actions.save'),
+                moveSuccess: t('list.actions.moveSuccess'),
+                cancelSuccess: t('list.actions.cancelSuccess'),
+                errors: {
+                  BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
+                  conflict: t('list.actions.errors.conflict'),
+                  generic: t('list.actions.errors.generic'),
+                },
+              },
+            }}
+          />
 
           {totalPages > 1 ? (
             <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
@@ -466,6 +499,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
                 href={pageHref(page - 1)}
                 locale={locale as AppLocale}
                 aria-disabled={page <= 1}
+                data-testid="booking-page-prev"
                 className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
                   page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
                 }`}
@@ -479,6 +513,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
                 href={pageHref(page + 1)}
                 locale={locale as AppLocale}
                 aria-disabled={page >= totalPages}
+                data-testid="booking-page-next"
                 className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
                   page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
                 }`}

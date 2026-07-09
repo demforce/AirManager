@@ -38,6 +38,35 @@ export const createBookingSchema = z
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 
 /**
+ * `PATCH /api/v1/bookings/{id}` body (story 7.3, AC 1/2). Every field is
+ * OPTIONAL (partial PATCH) — the refine below only rejects a completely
+ * empty body, same pattern as `updateExpirySchema`. `personId`/
+ * `instructorProfileId` are deliberately ABSENT (Contesto: immutable —
+ * changing the prenotante is a cancel + recreate, mirroring 6.2's person/
+ * type immutability). `startsAt`/`endsAt` are full instants
+ * (`z.iso.datetime()`, same N1-lesson caveat as `createBookingSchema`).
+ * `notes` is nullable (explicit `null` clears it, `undefined`/absent leaves
+ * it untouched) — same convention as `updateExpirySchema`'s `notes`.
+ *
+ * There is deliberately NO cross-field refine here (e.g. "if both startsAt
+ * and endsAt are given, endsAt > startsAt"): a partial PATCH can change just
+ * ONE of the two, so the only place that can validate the RESULTING interval
+ * is `bookings.service.ts#updateBooking`, after merging against the
+ * booking's current values (Dev Notes: "validazione sui valori RISULTANTI
+ * dal merge").
+ */
+export const updateBookingSchema = z
+  .object({
+    aircraftId: z.string().min(1).optional(),
+    startsAt: z.iso.datetime().optional(),
+    endsAt: z.iso.datetime().optional(),
+    notes: z.string().trim().max(500).nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, { message: 'At least one field must be provided.' });
+
+export type UpdateBookingInput = z.infer<typeof updateBookingSchema>;
+
+/**
  * `GET /api/v1/bookings` query (AC 1, FR-19 anticipated to its minimum).
  * `from`/`to` use the SAME semi-open semantics as the overlap check
  * (`bookings.service.ts#listBookings`'s doc-comment): `from` matches a
@@ -54,11 +83,19 @@ export const listBookingsQuerySchema = paginationQuerySchema.extend({
 
 export type ListBookingsQuery = z.infer<typeof listBookingsQuerySchema>;
 
+/** Mirrors the Prisma `BookingStatus` enum (story 7.3) — same soft-cancel shape as `flightStatusSchema`/`FlightStatus`. */
+export const bookingStatusSchema = z.enum(['ACTIVE', 'CANCELLED']);
+
+export type BookingStatusDto = z.infer<typeof bookingStatusSchema>;
+
 /**
  * One entry of `GET /api/v1/bookings` (AC 1). Mirrors
  * `bookings.service.ts`'s `BookingListItem` — `aircraftRegistration`/
  * `personName`/`instructorName` are denormalized at read time (never
- * snapshotted, same choice as `expiryItemSchema`'s `typeName`).
+ * snapshotted, same choice as `expiryItemSchema`'s `typeName`). `status`/
+ * `cancelledAt` (story 7.3, AC 2) are additive — every 7.1/7.2 consumer of
+ * this DTO already ignores unknown fields, so the wire contract stays
+ * backward-compatible.
  */
 export const bookingItemSchema = z.object({
   id: z.string(),
@@ -71,6 +108,8 @@ export const bookingItemSchema = z.object({
   startsAt: z.iso.datetime(),
   endsAt: z.iso.datetime(),
   notes: z.string().nullable(),
+  status: bookingStatusSchema,
+  cancelledAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
 });
 

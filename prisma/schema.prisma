@@ -123,9 +123,9 @@ model InstructorProfile {
   updatedAt     DateTime  @updatedAt
 
   /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
-  rates   InstructorRate[]
+  rates    InstructorRate[]
   /// Flights where this profile was the instructor aboard (epic 5, story 5.1) — see `Flight` doc.
-  flights Flight[]
+  flights  Flight[]
   /// Bookings where this profile is the indicated instructor (epic 7, story 7.1) — see `Booking` doc.
   bookings Booking[]
 }
@@ -305,7 +305,11 @@ model User {
   /// Flights this user registered (epic 5, story 5.1) — `Flight.actorUserId`.
   flightsRecorded        Flight[]
   /// Bookings this user created (epic 7, story 7.1) — `Booking.actorUserId`.
-  bookingsRecorded       Booking[]
+  bookingsRecorded       Booking[]              @relation("BookingActor")
+  /// Bookings this user last EDITED (epic 7, story 7.3, AC 2) — `Booking.updatedByUserId`.
+  bookingsUpdated        Booking[]              @relation("BookingUpdatedBy")
+  /// Bookings this user CANCELLED (epic 7, story 7.3, AC 2) — `Booking.cancelledByUserId`.
+  bookingsCancelled      Booking[]              @relation("BookingCancelledBy")
   /// Scadenze this user registered/last updated (epic 6, story 6.2) — `Expiry.actorUserId`.
   expiriesRecorded       Expiry[]
   /// Update proposals this user FILED, as the scadenza's titolare (epic 6, story 6.2) — `ExpiryUpdateProposal.proposedByUserId`.
@@ -790,13 +794,19 @@ model Flight {
 /// inside `prisma.$transaction` (`bookings.service.ts#createBooking`, the
 /// exact pattern of `flights.service.ts#registerFlight`) — deliberately NOT
 /// a Postgres exclusion constraint (`btree_gist`): the lock already makes
-/// the pre-check-overlap + insert airtight, and story 7.3 (modification/
-/// cancellation) will reuse the same discipline.
+/// the pre-check-overlap + insert airtight, and story 7.3 reuses the same
+/// discipline (multi-aircraft lock) for a booking MOVE.
 ///
-/// Deliberately has NO status/cancellation field — a booking here is always
-/// "active" for the MVP of this story; story 7.3 decides its own shape for
-/// modifying/cancelling a booking (plus any cancellation tracking), never
-/// retrofitted onto this model.
+/// **Soft-cancel, never delete** (story 7.3, same `FlightStatus` pattern as
+/// `Flight`): `status` starts `ACTIVE`; cancelling flips it to `CANCELLED`
+/// (`cancelledAt`/`cancelledByUserId` set together, `updateBooking`/
+/// `cancelBooking` in `bookings.service.ts`) and FREES the slot — every
+/// overlap predicate (create AND edit) and both `listBookings`/
+/// `listCalendarBookings` filter `status: 'ACTIVE'`, so a cancelled booking
+/// disappears from every list/calendar while the row itself stays forever
+/// (the audit trail). `updatedByUserId` tracks the actor of the LAST edit
+/// (AC 2 "chi, quando"; `updatedAt` is automatic) — `actorUserId` stays the
+/// CREATOR forever, never reassigned by an edit.
 model Booking {
   id                  String             @id @default(cuid())
   aircraftId          String
@@ -810,19 +820,46 @@ model Booking {
   endsAt   DateTime
   notes    String?
 
+  status            BookingStatus @default(ACTIVE)
+  /// Set together with `cancelledByUserId`, exactly once, when this booking
+  /// transitions to `CANCELLED` (story 7.3) — `null` while `ACTIVE`.
+  cancelledAt       DateTime?
+  cancelledByUserId String?
+  cancelledByUser   User?         @relation("BookingCancelledBy", fields: [cancelledByUserId], references: [id])
+  /// The actor of the most recent `updateBooking` (story 7.3, AC 2) —
+  /// `null` until the first edit. Distinct from `actorUserId` (the
+  /// creator, immutable forever).
+  updatedByUserId   String?
+  updatedByUser     User?         @relation("BookingUpdatedBy", fields: [updatedByUserId], references: [id])
+
   /// Who created this booking (`Actor.userId`, always present) — same
   /// rationale as every other ledger's `actorUserId` (e.g. `Flight`).
+  /// Named (not the implicit default) because `User` now holds THREE
+  /// distinct relations to `Booking` (created/updated/cancelled).
   actorUserId String
-  actorUser   User   @relation(fields: [actorUserId], references: [id])
+  actorUser   User   @relation("BookingActor", fields: [actorUserId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   /// Backs both the overlap scan (`aircraftId` + range on `startsAt`) and
-  /// the calendar view (story 7.2).
+  /// the calendar view (story 7.2). No separate `@@index([status])`:
+  /// every query already filters on `aircraftId`/`startsAt` (this index) or
+  /// scans the whole (small) active set — `status` alone would not narrow
+  /// either access path enough to earn its own index (doc-comment per
+  /// story 7.3's Task 1, deliberately omitted).
   @@index([aircraftId, startsAt])
   @@index([personId])
   @@index([instructorProfileId])
+}
+
+/// A booking's lifecycle state (story 7.3) — same soft-cancel shape as
+/// `FlightStatus`. `CANCELLED` frees the aircraft's slot (see `Booking`'s
+/// doc-comment); there is no third state (no "completed"/"no-show" — out of
+/// this PRD's scope).
+enum BookingStatus {
+  ACTIVE
+  CANCELLED
 }
 
 /// Per-flight package consumption ledger row (epic 5, story 5.2; AD-6). One
@@ -959,7 +996,7 @@ model Expiry {
   /// AC 2) — see `ExpiryUpdateProposal` doc. Cascades on delete (that
   /// model's `expiryId` FK) — deleting a scadenza (a staff correction tool,
   /// e.g. wrong type/person) drops its proposals too, pending included.
-  proposals ExpiryUpdateProposal[]
+  proposals  ExpiryUpdateProposal[]
   /// Alert-threshold idempotence ledger (epic 6, story 6.3, AD-9) — see
   /// `SentAlert` doc. Cascades on delete, same rationale as `proposals`.
   /// Wiped (NOT cascaded-delete — a `deleteMany`) whenever `expiresAt`
@@ -996,9 +1033,9 @@ model Expiry {
 /// alert history too — nothing meaningful survives without the scadenza it
 /// alerted about.
 model SentAlert {
-  id       String @id @default(cuid())
-  expiryId String
-  expiry   Expiry @relation(fields: [expiryId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  expiryId  String
+  expiry    Expiry   @relation(fields: [expiryId], references: [id], onDelete: Cascade)
   /// The alert threshold consumed, in days (`EXPIRY_ALERT_THRESHOLDS` =
   /// `[60, 30, 7, 0]`, `src/lib/expiry-status.ts`) — a marker of cadence
   /// consumed, not a claim that the email literally mentioned this number.
