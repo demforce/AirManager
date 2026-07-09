@@ -105,6 +105,17 @@ import {
   studentProfileSchema,
   updatePersonSchema,
 } from './people';
+import {
+  completePprRequestSchema,
+  createPprRequestSchema,
+  listPprRequestsQuerySchema,
+  pprLandingFeeDefaultSchema,
+  pprOperatingInstructionsSchema,
+  pprRequestCreatedResponseSchema,
+  pprRequestItemSchema,
+  pprRequestListResponseSchema,
+  rejectPprRequestSchema,
+} from './ppr';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
 
 /**
@@ -264,12 +275,21 @@ registry.register('BookingList', bookingListResponseSchema);
 registry.register('CreateBookingRequest', createBookingSchema);
 registry.register('CreateBookingResponse', createBookingResponseSchema);
 registry.register('UpdateBookingRequest', updateBookingSchema);
+registry.register('CreatePprRequestRequest', createPprRequestSchema);
+registry.register('PprRequestCreatedResponse', pprRequestCreatedResponseSchema);
+registry.register('PprRequest', pprRequestItemSchema);
+registry.register('PprRequestList', pprRequestListResponseSchema);
+registry.register('RejectPprRequestRequest', rejectPprRequestSchema);
+registry.register('CompletePprRequestRequest', completePprRequestSchema);
+registry.register('PprOperatingInstructions', pprOperatingInstructionsSchema);
+registry.register('PprLandingFeeDefault', pprLandingFeeDefaultSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const aircraftIdParams = z.object({ id: z.string().meta({ description: 'Aircraft id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const flightIdParams = z.object({ id: z.string().meta({ description: 'Flight id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const bookingIdParams = z.object({ id: z.string().meta({ description: 'Booking id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
+const pprRequestIdParams = z.object({ id: z.string().meta({ description: 'PPR request id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
   401: 'Not authenticated (AD-8 `UNAUTHENTICATED`).',
@@ -277,6 +297,7 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
   404: 'The requested resource does not exist.',
   409: 'The request conflicts with the current state of the resource.',
   422: 'Validation failed (Zod schema or domain-level).',
+  429: 'Too many requests from this source (story 8.1, AD-8 `RATE_LIMITED`).',
 };
 
 /**
@@ -285,7 +306,7 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
  * story 1.3 review F2: even unmapped errors now have a documented,
  * leak-free envelope).
  */
-function errorResponses(...statuses: Array<401 | 403 | 404 | 409 | 422>): Record<number, ResponseConfig> {
+function errorResponses(...statuses: Array<401 | 403 | 404 | 409 | 422 | 429>): Record<number, ResponseConfig> {
   const responses: Record<number, ResponseConfig> = {
     500: { description: 'Unexpected server error (AD-8 `INTERNAL_ERROR`).', content: jsonContent(errorEnvelopeSchema) },
   };
@@ -1469,6 +1490,168 @@ registry.registerPath({
   responses: {
     200: { description: 'The job ran (possibly with nothing to do — see `alertsCreated`).', content: jsonContent(expiryAlertsJobResultSchema) },
     ...errorResponses(401),
+  },
+});
+
+// --- PPR (epic 8, story 8.1, FR-22) -----------------------------------------
+// The first fully PUBLIC path (`security: []`, no `cookieAuth`/`bearerAuth`
+// at all — unlike `Jobs`, which is bearer-protected) reachable by anyone who
+// has the URL, anti-abuse protected only by the honeypot field and the
+// per-IP rate limit (see `ppr.service.ts`).
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests',
+  summary: 'Submit a public PPR (prior permission to land) request',
+  description:
+    'Story 8.1, AC 1/2 — no authentication, reachable from the public `/[locale]/ppr` form. Creates a `PENDING` PprRequest and best-effort sends a localized receipt email (never fails the request). A `website` field left non-empty is treated as a honeypot: the SAME 201 body is returned, but nothing is persisted, no email is sent, and the attempt does not count toward the rate limit (indistinguishable from success). Otherwise, more than 5 requests from the same IP within the last hour answer 429 `RATE_LIMITED`. `eta` in the past answers 422 `ETA_IN_PAST`; a present `etd` at or before `eta` answers 422 `ETD_NOT_AFTER_ETA`.',
+  tags: ['Ppr'],
+  security: [],
+  request: { body: { content: jsonContent(createPprRequestSchema), required: true } },
+  responses: {
+    201: { description: 'The request was recorded as PENDING (or silently accepted as a honeypot catch).', content: jsonContent(pprRequestCreatedResponseSchema) },
+    ...errorResponses(422, 429),
+  },
+});
+
+// --- PPR staff approval queue (epic 8, story 8.2, FR-23) --------------------
+// Authenticated, `ppr.manage`-gated. The GET below shares its pathname with
+// the public POST above (`PUBLIC_API_PATHS` in `src/proxy.ts` bypasses the
+// middleware's OWN session check for that exact path, every method) — see
+// the route file's doc-comment: `apiRoute`'s own default (`auth: 'required'`)
+// plus `authorize()` inside the service are what actually guard it (AD-5).
+// The approve/reject/settings paths below are NOT in `PUBLIC_API_PATHS`.
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/ppr-requests',
+  summary: 'List the staff PPR approval queue, or the filterable register (AC 1/2, story 8.3 AC 2)',
+  description:
+    "Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED`/`COMPLETED`/`CANCELLED`, or `ALL` for no status filter (the register, story 8.3). Optional `from`/`to` (`YYYY-MM-DD`) bound `eta` — a semi-open Europe/Rome day range, since the register is a register of ARRIVALS. Every detail field EXCEPT `submitterIp` (never exposed — anti-abuse technical datum). Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `ppr.manage`.",
+  tags: ['Ppr'],
+  security,
+  request: { query: listPprRequestsQuerySchema },
+  responses: {
+    200: { description: 'A page of PPR requests.', content: jsonContent(pprRequestListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests/{id}/approve',
+  summary: 'Approve a pending PPR request (AC 1)',
+  description:
+    "No body. Assigns the next atomic per-year PPR number ('PPR-<year>-NNNN', Europe/Rome calendar year) and sends a best-effort outcome email to the requester (their OWN form locale), including the admin-configured operating instructions when non-empty for that locale. 404 on an unknown id; already-decided (by ANY outcome, including a concurrent decision) answers 409 `PPR_ALREADY_DECIDED` and never consumes a PPR number. Requires `ppr.manage`. Supports `Idempotency-Key`.",
+  tags: ['Ppr'],
+  security,
+  request: { params: pprRequestIdParams, headers: [idempotencyKeyHeader] },
+  responses: {
+    200: { description: 'The approved request, with its assigned pprNumber.', content: jsonContent(pprRequestItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests/{id}/reject',
+  summary: 'Reject a pending PPR request with a mandatory reason (AC 2)',
+  description:
+    'Body `{ reason }` (1-500 chars, mandatory). Never touches the PPR number counter. Sends a best-effort outcome email including the reason, in the requester\'s own form locale. 404 on an unknown id; already-decided answers 409 `PPR_ALREADY_DECIDED`. Requires `ppr.manage`. Supports `Idempotency-Key`.',
+  tags: ['Ppr'],
+  security,
+  request: { params: pprRequestIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(rejectPprRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The rejected request.', content: jsonContent(pprRequestItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- PPR closure (epic 8, story 8.3, FR-24) ----------------------------------
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests/{id}/complete',
+  summary: 'Complete an APPROVED PPR request, charging the landing fee (AC 1)',
+  description:
+    'Body `{ landingFeeCents }` (integer euro cents, 0 admitted — a waived fee). When positive, records a `CashMovement` in the "PPR" cash category, linked to this request, in the SAME transaction as the closure (both commit or neither does). 404 on an unknown id; any status other than `APPROVED` (still open, or already closed) answers 409 `PPR_NOT_APPROVED`. Requires `ppr.manage`. Supports `Idempotency-Key`.',
+  tags: ['Ppr'],
+  security,
+  request: { params: pprRequestIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(completePprRequestSchema), required: true } },
+  responses: {
+    200: { description: 'The completed request, with its recorded landingFeeCents.', content: jsonContent(pprRequestItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests/{id}/cancel',
+  summary: 'Cancel an APPROVED PPR request that never showed up (AC 2)',
+  description:
+    'No body — no fee, no cash movement. 404 on an unknown id; any status other than `APPROVED` answers 409 `PPR_NOT_APPROVED`. Requires `ppr.manage`. Supports `Idempotency-Key`.',
+  tags: ['Ppr'],
+  security,
+  request: { params: pprRequestIdParams, headers: [idempotencyKeyHeader] },
+  responses: {
+    200: { description: 'The cancelled request.', content: jsonContent(pprRequestItemSchema) },
+    ...errorResponses(401, 403, 404, 409),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/ppr-operating-instructions',
+  summary: 'Read the PPR approval-email operating instructions (AC 1)',
+  description:
+    "`{ it, en }` — the free-text note appended (per-locale, only when non-empty) to the PPR approval email. Absent/never-configured reads as `''` for both languages, never `null`. Requires `ppr.manage` (staff sees these from the queue page; only `settings.manage` can edit them, see the PUT sibling below). First real use of the `AppSetting` K/V store.",
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current instructions.', content: jsonContent(pprOperatingInstructionsSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/ppr-operating-instructions',
+  summary: 'Set the PPR approval-email operating instructions (AC 1)',
+  description: 'Body `{ it, en }` (max 2000 chars each) — both locales are always written together. Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(pprOperatingInstructionsSchema), required: true } },
+  responses: {
+    200: { description: 'The saved instructions.', content: jsonContent(pprOperatingInstructionsSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/ppr-landing-fee',
+  summary: 'Read the default PPR landing fee (story 8.3, AC 1)',
+  description:
+    "`{ landingFeeCents }` — the admin-configured default landing fee (integer euro cents), used to prefill the completion panel. Absent/never-configured reads as `0`. Requires `ppr.manage` (staff sees it while completing a PPR; only `settings.manage` can edit it, see the PUT sibling below).",
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current default landing fee.', content: jsonContent(pprLandingFeeDefaultSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/ppr-landing-fee',
+  summary: 'Set the default PPR landing fee (story 8.3, AC 1)',
+  description: 'Body `{ landingFeeCents }` (integer euro cents, 0..2147483647). Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(pprLandingFeeDefaultSchema), required: true } },
+  responses: {
+    200: { description: 'The saved default landing fee.', content: jsonContent(pprLandingFeeDefaultSchema) },
+    ...errorResponses(401, 403, 422),
   },
 });
 

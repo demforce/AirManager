@@ -34,6 +34,12 @@
       "heading": "My expiries",
       "link": "All my expiries"
     },
+    "pprPendingWidget": {
+      "heading": "Pending PPR",
+      "link": "Go to the PPR queue",
+      "empty": "No PPR requests pending.",
+      "count": "{count} pending"
+    },
     "nav": {
       "people": "People",
       "aircraft": "Aircraft",
@@ -1152,6 +1158,161 @@
     "confirmation": "If that email address matches an active account, you'll receive an email shortly with instructions to reset your password.",
     "backToLogin": "Back to sign in"
   },
+  "PprPage": {
+    "kicker": "PPR request",
+    "title": "Request landing permission",
+    "description": "Fill in the form to request PPR at this airfield. We will reply by email with the outcome of your request.",
+    "switchTo": "Italiano",
+    "footer": "The information you provide is used only to handle your PPR request.",
+    "metadata": {
+      "title": "PPR request",
+      "description": "Public form to request landing permission (PPR) at this airfield."
+    },
+    "form": {
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "phone": "Phone",
+      "aircraftRegistration": "Registration",
+      "aircraftType": "Aircraft type",
+      "origin": "Origin",
+      "destination": "Destination",
+      "eta": "ETA (estimated arrival)",
+      "etd": "ETD (estimated departure, optional)",
+      "personsOnBoard": "Persons on board",
+      "notes": "Notes (optional)",
+      "submit": "Send request",
+      "submitting": "Sending…",
+      "requiredField": "This field is required.",
+      "invalidEmail": "Enter a valid email address.",
+      "invalidRange": "ETD must be after ETA.",
+      "invalidPersons": "Enter a number of persons on board between 1 and 99.",
+      "errors": {
+        "ETA_IN_PAST": "ETA must be in the future.",
+        "ETD_NOT_AFTER_ETA": "ETD must be after ETA.",
+        "RATE_LIMITED": "Too many requests from this address. Try again later.",
+        "generic": "We could not send the request. Please try again."
+      }
+    },
+    "success": {
+      "title": "Request sent",
+      "message": "We received your PPR request. You will shortly get a confirmation email with a summary, followed by another email with the outcome of your request."
+    }
+  },
+  "PprQueuePage": {
+    "kicker": "PPR queue",
+    "title": "PPR requests",
+    "description": "Approve or reject pending prior-permission-to-land requests.",
+    "backToDashboard": "Back to dashboard",
+    "table": {
+      "requester": "Requester",
+      "aircraft": "Registration / Type",
+      "route": "Origin → Destination",
+      "eta": "ETA",
+      "persons": "Persons",
+      "actions": "Actions"
+    },
+    "detail": {
+      "show": "Details",
+      "hide": "Hide details",
+      "email": "Email",
+      "phone": "Phone",
+      "etd": "ETD",
+      "noEtd": "Not indicated",
+      "notes": "Notes",
+      "noNotes": "No notes",
+      "locale": "Request language",
+      "localeIt": "Italian",
+      "localeEn": "English"
+    },
+    "actions": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "confirmApprove": "Confirm approval?",
+      "confirmYes": "Yes, approve",
+      "confirmCancel": "Cancel",
+      "reasonLabel": "Rejection reason",
+      "reasonRequired": "The reason is required.",
+      "submitReject": "Confirm rejection",
+      "cancelReject": "Cancel"
+    },
+    "feedback": {
+      "approved": "Request approved: PPR number {pprNumber}.",
+      "rejected": "Request rejected.",
+      "conflictError": "This request has already been decided by another operator.",
+      "genericError": "We could not complete the operation. Please try again."
+    },
+    "empty": "No PPR requests pending.",
+    "instructions": {
+      "heading": "Operating instructions",
+      "description": "Text included in the approval email, in the requester's language. Leave a field empty to omit the section in that language.",
+      "it": "Italian",
+      "en": "English",
+      "save": "Save instructions",
+      "saved": "Instructions saved.",
+      "error": "We could not save the instructions. Please try again."
+    },
+    "landingFee": {
+      "heading": "Default landing fee",
+      "description": "Amount prefilled in the PPR register's completion panel (editable case by case). 0 is allowed.",
+      "amountLabel": "Amount",
+      "invalidAmount": "Enter a valid amount (0.00 is allowed).",
+      "save": "Save fee",
+      "saved": "Fee saved.",
+      "error": "We could not save the fee. Please try again."
+    },
+    "registerLink": "PPR register"
+  },
+  "PprRegisterPage": {
+    "kicker": "PPR register",
+    "title": "PPR register",
+    "description": "Complete approved PPR requests and charge the landing fee, or browse the history by status and period.",
+    "backToDashboard": "Back to dashboard",
+    "backToQueue": "Go to approval queue",
+    "filters": {
+      "status": "Status",
+      "statusAll": "All",
+      "statusOptions": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "completed": "Completed",
+        "cancelled": "Cancelled"
+      },
+      "from": "From",
+      "to": "To",
+      "reset": "Reset filters"
+    },
+    "table": {
+      "pprNumber": "PPR number",
+      "requester": "Requester",
+      "aircraft": "Registration",
+      "eta": "ETA",
+      "status": "Status",
+      "fee": "Fee",
+      "actions": "Actions",
+      "noValue": "—"
+    },
+    "actions": {
+      "complete": "Complete",
+      "cancel": "Cancel PPR",
+      "confirmCancelPrompt": "Confirm cancellation of this PPR?",
+      "confirmYes": "Yes, cancel",
+      "confirmNo": "No",
+      "feeLabel": "Landing fee",
+      "feeHint": "Amount in euros, prefilled from the default (editable). 0 is allowed.",
+      "invalidFee": "Enter a valid amount (0.00 is allowed).",
+      "submitComplete": "Confirm completion",
+      "closePanel": "Cancel"
+    },
+    "feedback": {
+      "completed": "PPR completed.",
+      "cancelled": "PPR cancelled.",
+      "conflictError": "This PPR is no longer in Approved status (likely already closed by another operator).",
+      "genericError": "We could not complete the operation. Please try again."
+    },
+    "empty": "No PPR requests match the selected filters."
+  },
   "Emails": {
     "invite": {
       "subject": "You've been invited to AirManager",
@@ -1180,6 +1341,19 @@
       "itemLine": "- {name} — {typeName}: {daysPhrase} (on {date}){flag}",
       "noEmailFlag": " [no email on file — contact them directly]",
       "sendFailedFlag": " [email delivery failed — check the address or retry]"
+    },
+    "pprReceipt": {
+      "subject": "PPR request received: {aircraftRegistration}",
+      "body": "Hello {firstName},\n\nWe received your PPR request for {aircraftRegistration} ({aircraftType}), from {origin} to {destination}.\n\nETA: {eta}\n{personsOnBoard, plural, one {# person on board} other {# persons on board}}.\n\nYou will receive another email with the outcome of your request."
+    },
+    "pprApproval": {
+      "subject": "PPR {pprNumber} approved: {aircraftRegistration}",
+      "body": "Hello {firstName},\n\nYour PPR request for {aircraftRegistration} has been approved.\n\nPPR number: {pprNumber}\nETA: {eta}",
+      "instructions": "Operating instructions:\n{instructions}"
+    },
+    "pprRejection": {
+      "subject": "PPR request not approved: {aircraftRegistration}",
+      "body": "Hello {firstName},\n\nYour PPR request for {aircraftRegistration} (ETA: {eta}) was not approved.\n\nReason: {reason}"
     }
   }
 }

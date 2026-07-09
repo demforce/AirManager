@@ -24,12 +24,6 @@ export type NavItem = {
  * real section in a later epic (see the architecture spine's Capability →
  * Architecture Map) — for now the links only exist to prove role-based
  * filtering end-to-end (AC 2).
- *
- * `ppr` has no dedicated permission yet: the initial permission set (Task 2)
- * doesn't include one, since the PPR domain itself doesn't exist until epic
- * 8. It is gated on `bookings.manage.any` as the closest existing proxy for
- * "staff/admin operational work" — revisit once epic 8 introduces a
- * `ppr.manage` permission.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
   // Story 2.1: the first real (non-placeholder) People sub-page.
@@ -58,7 +52,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // proposal queue vs "Le mie scadenze" own-access view) and the service
   // decide what each role sees.
   { key: 'expiries', href: '/dashboard/expiries', permissions: ['expiries.manage', 'self.read'] },
-  { key: 'ppr', href: '/ppr-queue', permissions: ['bookings.manage.any'] },
+  // Story 8.2 (FR-23): the real staff PPR approval queue — `ppr.manage`
+  // (staff + admin only, `rbac.ts`).
+  { key: 'ppr', href: '/dashboard/ppr', permissions: ['ppr.manage'] },
   // Story 1.4: the first real (non-placeholder) dashboard sub-page.
   { key: 'users', href: '/dashboard/users', permissions: ['users.manage'] },
   { key: 'settings', href: '/settings', permissions: ['settings.manage'] },

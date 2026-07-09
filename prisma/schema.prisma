@@ -312,6 +312,10 @@ model User {
   bookingsCancelled      Booking[]              @relation("BookingCancelledBy")
   /// Bookings this user FORCED past a blocking expired document (epic 7, story 7.4, AC 2) — `Booking.forcedByUserId`.
   bookingsForced         Booking[]              @relation("BookingForcedBy")
+  /// PPR requests this user DECIDED — approve or reject (epic 8, story 8.2, AC 1/2) — `PprRequest.decidedByUserId`.
+  pprRequestsDecided     PprRequest[]           @relation("PprRequestDecidedBy")
+  /// PPR requests this user CLOSED — completed or cancelled (epic 8, story 8.3, AC 1/2) — `PprRequest.closedByUserId`.
+  pprRequestsClosed      PprRequest[]           @relation("PprRequestClosedBy")
   /// Scadenze this user registered/last updated (epic 6, story 6.2) — `Expiry.actorUserId`.
   expiriesRecorded       Expiry[]
   /// Update proposals this user FILED, as the scadenza's titolare (epic 6, story 6.2) — `ExpiryUpdateProposal.proposedByUserId`.
@@ -487,7 +491,17 @@ model CashMovement {
   reversalOfId      String?          @unique
   reversalOf        CashMovement?    @relation("CashMovementReversal", fields: [reversalOfId], references: [id])
   reversal          CashMovement?    @relation("CashMovementReversal")
-  createdAt         DateTime         @default(now())
+  /// The `PprRequest` this movement is the landing-fee twin of (epic 8, story
+  /// 8.3, AC 1) — present only for the automatic "PPR" movement
+  /// `completePprRequest` creates when `landingFeeCents > 0`. NOT unique
+  /// (same precedent as `AccountMovement.flightId`, not the
+  /// `accountMovementId @unique` twin pattern above): more than one movement
+  /// could reference the same PPR request in the future (e.g. a storno).
+  pprRequestId String?
+  pprRequest   PprRequest? @relation(fields: [pprRequestId], references: [id])
+  createdAt    DateTime    @default(now())
+
+  @@index([pprRequestId])
 }
 
 /// Package-type catalogue (epic 4, story 4.3; FR-12). MUTABLE listino
@@ -1193,4 +1207,166 @@ model IdempotencyRecord {
   completedAt    DateTime?
 
   @@unique([userId, endpoint, key])
+}
+
+/// Lifecycle of a public PPR (prior permission to land) request (epic 8,
+/// story 8.1; FR-22). Declared COMPLETE from this story on (story 8.1 only
+/// ever sets `PENDING`) rather than growing across 8.2/8.3, to avoid a
+/// repeated enum-alter migration each story: `APPROVED`/`REJECTED` arrive
+/// with the staff decision queue (story 8.2), `COMPLETED` when the flight
+/// itself is closed out and `CANCELLED` for a withdrawn/no-show request
+/// (both story 8.3) — these later transitions are out of THIS story's
+/// scope, only the shape is reserved now.
+enum PprStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+/// A public PPR request submitted through the unauthenticated `/[locale]/ppr`
+/// form (epic 8, story 8.1; FR-22, UJ-3) — the first model in the schema
+/// with NO `actorUserId`/`Actor` at all: the submitter is a stranger, not an
+/// app user (AD-5 deroga, see `ppr.service.ts#createPprRequest`'s
+/// doc-comment). `firstName`/`lastName` mirror `Person`'s two-field name
+/// shape (PRD "nome e cognome") even though this is NOT a `Person` — a PPR
+/// requester is not necessarily ever registered in the anagrafica.
+/// `aircraftRegistration` is the "marche" (tail number) as free text, not an
+/// `Aircraft` FK: an external pilot's aircraft is not necessarily one of
+/// this aviosuperficie's own. `eta`/`etd` are full instants (ISO 8601 UTC on
+/// the wire, AD-8), `etd` optional (a request may omit its departure time).
+/// `personsOnBoard` is a plain integer headcount, no further structure.
+///
+/// `locale` (`'it'|'en'`, same convention as `User.locale` — a plain string,
+/// not a Prisma enum, so it maps 1:1 onto next-intl's `AppLocale`) is the
+/// language the FORM was submitted in (NFR-1: "lingua per richiedente PPR"),
+/// captured now even though story 8.1 only uses it for the receipt email
+/// (`buildPprReceiptEmail`) — story 8.2's ESITO (approve/reject) email reuses
+/// this same field rather than re-asking or guessing.
+///
+/// `submitterIp` (nullable: absent when no `x-forwarded-for` header was
+/// present on the request, see the service's IP-extraction helper) backs
+/// the DB-backed per-IP rate limit (AC 2) via the `(submitterIp, createdAt)`
+/// index below. GDPR/NFR-3 note: this is a narrowly-scoped technical datum
+/// collected SOLELY for anti-abuse rate limiting — it is never displayed,
+/// exported, or used for any other purpose.
+///
+/// The PPR landing fee (epic 8, story 8.3, AC 1) links in from the
+/// `CashMovement` side, per the ERD (`PprRequest ||--o{ CashMovement`) —
+/// see `cashMovements` below.
+model PprRequest {
+  id     String    @id @default(cuid())
+  status PprStatus @default(PENDING)
+
+  firstName String
+  lastName  String
+  email     String
+  phone     String
+
+  aircraftRegistration String
+  aircraftType         String
+
+  origin      String
+  destination String
+  eta         DateTime
+  etd         DateTime?
+
+  personsOnBoard Int
+  notes          String?
+
+  /// Language the form was submitted in ('it'|'en') — see model doc-comment.
+  locale String
+
+  /// Anti-abuse technical datum only (GDPR/NFR-3) — see model doc-comment.
+  submitterIp String?
+
+  /// Assigned ONLY on approval (epic 8, story 8.2, AC 1) — `'PPR-<year>-NNNN'`
+  /// (e.g. `PPR-2026-0042`), atomically issued from `PprCounter` (see that
+  /// model's doc-comment for the FOR-UPDATE-then-upsert race guard). `null`
+  /// while `PENDING`, and stays `null` forever on a `REJECTED` request — the
+  /// counter is never touched by a rejection. `@unique` as a hard DB-level
+  /// backstop against the numbering race, on top of the transactional
+  /// guarantee itself.
+  pprNumber String? @unique
+
+  /// Mandatory staff-entered motivation on a REJECT decision (AC 2) — `null`
+  /// on every other status, including a still-`PENDING` request.
+  rejectionReason String?
+
+  /// When the decision (approve or reject) was made — `null` while
+  /// `PENDING`. Distinct from `updatedAt` (which also changes on the
+  /// story 8.3 close-out) so the ESITO email's timestamp can rely on this
+  /// field specifically.
+  decidedAt DateTime?
+
+  decidedByUserId String?
+  /// The staff/admin `User` who approved or rejected this request (epic 8,
+  /// story 8.2) — `null` while `PENDING`. Nullable FK, same
+  /// implicit-`SetNull`-on-delete pattern as `Booking.forcedByUserId` /
+  /// `ExpiryUpdateProposal.decidedByUserId`: deleting the deciding user must
+  /// never cascade-delete the PPR history.
+  decidedByUser User? @relation("PprRequestDecidedBy", fields: [decidedByUserId], references: [id])
+
+  /// When the request was CLOSED — completed or cancelled (epic 8, story
+  /// 8.3, AC 1/2). `null` while `PENDING`/`APPROVED`/`REJECTED`. A distinct
+  /// event from `decidedAt` (the 8.2 approve/reject decision): a request can
+  /// sit `APPROVED` for days before the flight actually happens and the PPR
+  /// is closed out — reusing `decidedAt` here would conflate two different
+  /// staff actions on the wire.
+  closedAt DateTime?
+
+  closedByUserId String?
+  /// The staff/admin `User` who completed or cancelled this request (story
+  /// 8.3) — `null` until closed. Same nullable-FK/`SetNull`-on-delete
+  /// pattern as `decidedByUser` above.
+  closedByUser User? @relation("PprRequestClosedBy", fields: [closedByUserId], references: [id])
+
+  /// The landing fee charged at completion, in integer euro cents (AD-2) —
+  /// stamped ONLY by `completePprRequest` (story 8.3, AC 1), 0 included (a
+  /// waived fee is still a recorded decision, not an absence of one).
+  /// `null` for every other status: still open, or closed via `cancelPprRequest`
+  /// (AC 2, no fee applies to a no-show). This is the register's own field —
+  /// the linked `CashMovement` (via `pprRequestId` below) exists only when
+  /// the fee is `> 0`.
+  landingFeeCents Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The `CashMovement` this request's landing fee created (story 8.3, AC 1)
+  /// — present only when `landingFeeCents > 0`. NOT unique: same
+  /// "more than one movement could reference the same source in the future"
+  /// shape as `AccountMovement.flightId` (e.g. a future storno of the fee
+  /// would link back here too), even though today at most one exists.
+  cashMovements CashMovement[]
+
+  /// Backs the per-IP hourly rate-limit count (`ppr.service.ts`, AC 2):
+  /// `count` of rows with the same `submitterIp` and `createdAt` within the
+  /// last hour.
+  @@index([submitterIp, createdAt])
+}
+
+/// Per-calendar-year atomic sequence backing `PprRequest.pprNumber` (epic 8,
+/// story 8.2, AC 1) — `year` (`Europe/Rome`, `dateOnlyInZone`, NEVER
+/// `getUTCFullYear`: a request approved right around New Year's Eve must
+/// land in the year Rome's wall clock says, not UTC's) is the primary key,
+/// `lastSeq` the last sequence number issued for that year.
+///
+/// **Race-free by construction** (`ppr.service.ts#approvePprRequest`):
+/// issuing a number is a single
+/// `INSERT ... ON CONFLICT ("year") DO UPDATE SET "lastSeq" = "lastSeq" + 1
+/// RETURNING "lastSeq"` statement — Postgres's own row-level lock on the
+/// upserted/updated row makes two concurrent approvals in the SAME year
+/// serialize on this one row and come out with distinct, consecutive
+/// `lastSeq` values; there is no read-then-write window for two
+/// transactions to race into a duplicate. The row-level lock this upsert
+/// takes is scoped to this ONE `PprCounter` row, never contended by an
+/// approval/rejection of a DIFFERENT `PprRequest` — only the (rare)
+/// concurrent-approval-in-the-same-year case serializes here, and even then
+/// only for the instant of the upsert itself. A REJECT never touches this
+/// table at all (Contesto: "il contatore non si tocca").
+model PprCounter {
+  year    Int @id
+  lastSeq Int
 }

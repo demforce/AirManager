@@ -11,6 +11,7 @@ const prisma = new PrismaClient({ adapter });
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
+const STAFF_EMAIL = 'staff@airmanager.local';
 
 async function seedAdminUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
@@ -60,6 +61,34 @@ async function seedPilotUser(passwordHash: string): Promise<void> {
   });
 
   console.log(`Seed: demo pilot user ready (${PILOT_EMAIL}).`);
+}
+
+/**
+ * Story 8.2: a STAFF test user — needed so the e2e suite can exercise
+ * `ppr.manage` through a REAL staff role, not an ADMIN-who-has-everything
+ * (Contesto). Same idempotent upsert pattern, same seed password, as
+ * `seedPilotUser`; useful to the whole epic, not just this story.
+ */
+async function seedStaffUser(passwordHash: string): Promise<void> {
+  await prisma.user.upsert({
+    where: { email: STAFF_EMAIL },
+    update: { passwordHash, isActive: true, roles: ['STAFF'] },
+    create: {
+      email: STAFF_EMAIL,
+      passwordHash,
+      isActive: true,
+      roles: ['STAFF'],
+      person: {
+        create: {
+          firstName: 'Staff',
+          lastName: 'AirManager',
+          email: STAFF_EMAIL,
+        },
+      },
+    },
+  });
+
+  console.log(`Seed: demo staff user ready (${STAFF_EMAIL}).`);
 }
 
 /**
@@ -202,6 +231,7 @@ async function main() {
 
   await seedAdminUser(passwordHash);
   await seedPilotUser(passwordHash);
+  await seedStaffUser(passwordHash);
   await seedPilotProfile();
   await seedAircraft();
   await seedCashCategories();

@@ -18,6 +18,7 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     'school.manage.own',
     'expiries.manage',
     'expiries.propose.own',
+    'ppr.manage',
     'settings.manage',
     'users.manage',
     'self.read',
@@ -48,6 +49,9 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     // deliberately does NOT hold the titolare-facing propose permission.
     expect(hasPermission(staff, 'expiries.propose.own')).toBe(false);
 
+    // Story 8.2 (FR-23): staff decides the PPR approval queue.
+    expect(hasPermission(staff, 'ppr.manage')).toBe(true);
+
     expect(hasPermission(staff, 'users.manage')).toBe(false);
     expect(hasPermission(staff, 'settings.manage')).toBe(false);
     expect(() => authorize(staff, 'users.manage')).toThrow(ForbiddenError);
@@ -65,7 +69,10 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     expect(hasPermission(pilot, 'people.read')).toBe(false);
     expect(hasPermission(pilot, 'bookings.manage.any')).toBe(false);
     expect(hasPermission(pilot, 'finance.manage')).toBe(false);
+    // Story 8.2: PPR decisions are staff/admin-only.
+    expect(hasPermission(pilot, 'ppr.manage')).toBe(false);
     expect(() => authorize(pilot, 'people.read')).toThrow(ForbiddenError);
+    expect(() => authorize(pilot, 'ppr.manage')).toThrow(ForbiddenError);
   });
 
   it('unions permissions for a multi-role actor (pilot+instructor) instead of intersecting them (AC 2)', () => {
@@ -94,6 +101,8 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
 
     expect(hasPermission(student, 'bookings.manage.own')).toBe(false);
     expect(hasPermission(student, 'bookings.manage.any')).toBe(false);
+    // Story 8.2: PPR decisions are staff/admin-only.
+    expect(hasPermission(student, 'ppr.manage')).toBe(false);
     expect(() => authorize(student, 'bookings.manage.own')).toThrow(ForbiddenError);
   });
 
