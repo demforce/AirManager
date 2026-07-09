@@ -12,6 +12,7 @@
     "test:quiet": "vitest run --reporter=dot --silent=passed-only",
     "test:e2e": "playwright test",
     "gates": "bash scripts/gates.sh",
+    "db:reset": "bash scripts/reset-db.sh",
     "postinstall": "prisma generate"
   },
   "dependencies": {

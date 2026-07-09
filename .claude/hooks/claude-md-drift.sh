@@ -20,10 +20,11 @@ if [ -f package.json ]; then
 fi
 
 # 2. Backtick-quoted repo paths must exist (known prefixes only, to avoid
-#    false positives on GitHub slugs like `prisma/docs`).
+#    false positives on GitHub slugs like `prisma/docs`; tokens containing
+#    `*` are globs, not paths — skip them).
 while IFS= read -r p; do
   [ -e "$p" ] || DRIFT+=("path citato inesistente: $p")
-done < <(grep -oE '`[^` ]+`' "$MD" | tr -d '`' |
+done < <(grep -oE '`[^` ]+`' "$MD" | tr -d '`' | grep -v '\*' |
   grep -E '^(\.claude/|\.github/|\.mcp\.json|docs/|scripts/|_bmad|src/|e2e/|messages/)' | sort -u)
 
 # 3. Every `npm run <script>` mentioned must exist in package.json.

@@ -5,7 +5,7 @@ import { z } from 'zod';
  * misconfigured deployment fails fast at boot instead of surfacing as an
  * obscure runtime error deep inside a request handler.
  */
-const envSchema = z.object({
+export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.url({ error: 'DATABASE_URL must be a valid connection string' }),
   // Auth.js v5 — signs/encrypts the JWT session cookie. Generate with `npx auth secret`.
