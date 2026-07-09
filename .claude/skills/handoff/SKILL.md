@@ -16,4 +16,5 @@ Steps:
    - **Key Decisions**: Decisions made with the user (stack, domain rules, conventions) not yet captured in docs/
    - **Next Steps**: Clear action items for continuing, in order — including which BMAD story is next and which model runs it (stories: Fable; dev: Sonnet subagent; review: Opus subagent)
 4. Keep it factual: only what actually happened, no invented content.
-5. Commit the handoff file and push to the working branch, then tell the user the file path so the next session can start from it.
+5. **Maintain CLAUDE.md while context is fresh**: re-read `CLAUDE.md` and update it against what this session learned — fix facts that became stale (stack versions, paths, tool names), add durable conventions the user established this session, and REMOVE rules that no longer apply or that agents already follow without being told. Keep it lean: CLAUDE.md loads into every session and every subagent; session-specific state (branches, PRs, story progress) belongs in the handoff, never in CLAUDE.md. Also run `bash .claude/hooks/claude-md-drift.sh` and fix anything it reports. If nothing needs changing, skip the edit.
+6. Commit the handoff file (and the CLAUDE.md update, if any) and push to the working branch, then tell the user the file path so the next session can start from it.

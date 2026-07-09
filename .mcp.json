@@ -9,6 +9,11 @@
         "--executable-path",
         "/opt/pw-browsers/chromium"
       ]
+    },
+    "codegraph": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
     }
   }
 }

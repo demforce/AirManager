@@ -1,5 +1,7 @@
 # HANDOFF — AirManager (aggiornato: Epic 7 DONE + merge della bonifica TD-1/2/3; pronti per Epic 8)
 
+> **AGGIORNAMENTO HARNESS (2026-07-09, branch `claude/agent-performance-large-codebase-d2sz5a`)**: da quando quel branch è merged, il bootstrap ambiente è AUTOMATICO via hook SessionStart (`.claude/hooks/session-start.sh`: deps, .env, Postgres+ruolo/db, migrate deploy+seed su DB fresco, Mailpit, indice CodeGraph, git identity — la procedura manuale in fondo a questo file resta solo come fallback). I gate si eseguono con **`npm run gates`** (output compatto, build già con `env -u NODE_ENV`) — mai i 4 comandi verbosi. Nuovi: hook PostToolUse ESLint sul file editato; agent `.claude/agents/dev-story` e `adversarial-reviewer`; CI GitHub Actions su PR verso main; MCP `codegraph` (trial: domande strutturali via `codegraph_explore`, valutare dopo Epic 8 se tenerlo). Gli hook/settings hanno effetto dalle sessioni avviate DOPO il commit.
+
 ## Goal
 
 Costruire AirManager, il gestionale per un'aviosuperficie (piloti, velivoli, voli, PPR, finanze, scuola volo, tariffe, prenotazioni, scadenze, RBAC, export Excel/PDF) con il metodo BMAD v6: PRD → architettura → epics → stories → dev → review. Fase corrente: Fase 2, sviluppo story-by-story degli epic.
