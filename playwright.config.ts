@@ -1,8 +1,13 @@
 import 'dotenv/config';
+import fs from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 3000;
 const baseURL = `http://localhost:${PORT}`;
+
+// Preinstalled Chromium in the dev container; absent in CI, where Playwright's
+// own browser (npx playwright install) is used instead.
+const containerChromium = '/opt/pw-browsers/chromium';
 
 export default defineConfig({
   testDir: './e2e',
@@ -19,10 +24,10 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // Chromium is preinstalled in this environment — never run `playwright install`.
-        launchOptions: {
-          executablePath: '/opt/pw-browsers/chromium',
-        },
+        // In the dev container: never run `playwright install`, use the preinstalled binary.
+        ...(fs.existsSync(containerChromium)
+          ? { launchOptions: { executablePath: containerChromium } }
+          : {}),
       },
     },
   ],
