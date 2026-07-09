@@ -4,7 +4,7 @@ baseline_commit: 9d7442a
 
 # Story 7.4: Blocco prenotazione per scadenze critiche
 
-Status: review
+Status: done
 
 ## Story
 
@@ -138,7 +138,22 @@ Sonnet 5 (single dev subagent, extra-high effort, via `bmad-dev-story`). This ru
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial via `bmad-code-review`, priorità zero sul full-suite e2e su DB fresco (che ha eliminato alla radice il detrito della sessione pre-riavvio). **Verdict: clean-pass — ZERO finding.**
+
+- **Analisi regressione e2e (priorità zero)**: full suite su DB fresco = **121/129**, con TUTTE le 25 superfici della story verdi (`bookings.spec.ts` 21/21, `expiry-types.spec.ts` 4/4 — inclusi i 6 test 7.1/7.3 che nella sessione dev fallivano per il detrito del pilota seed, spariti col reset). Gli 8 fail (flights x3 incl. :210 baseline, flight-reversal, package x2, people-management x2) sono TUTTI in file fuori dal blast radius del diff (`git diff --stat` lo prova) e riconducibili alle classi baseline documentate: package-sale:112 passa in isolamento (load flake), people-management è il volume-pagination flake noto (71 persone accumulate DAL run stesso). **Nessuna regressione da 7.4.**
+- **Boundary giorno-volo provato empiricamente**: `dateOnlyInZone` corretto sui casi 22:30Z→giorno-dopo (CEST) / 21:30Z→stesso giorno, e inverno 23:30Z/22:30Z; scadenza NEL giorno del volo = valida, il giorno prima = scaduta — esattamente la regola del Contesto (convenzione 5.2).
+- **Matrice force ri-derivata dal sorgente e dai test**: force senza `manage.any` → 403 PRIMA di ogni query persona/scadenze (asserito sui mock); force staff senza motivo → 422 refine; force su blocco reale → 201 con `forcedAt/forcedByUserId/forceReason` stampati; **force senza nulla da scavalcare → 201 SENZA stamp** (la regola più sottile, confermata nel codice: stamp solo dentro `blockingDocuments.length > 0`); i warning restano anche nel force.
+- **422 `EXPIRED_DOCUMENTS`**: message e `details.documents` elencano SOLO i bloccanti anche in presenza di warning simultanei (unit: 'Licenza' presente, 'Rating SEP' assente).
+- **Migrazione risposta `{ booking, warnings }` verificata end-to-end**: wire body 201 corretto, form, fixture unit 7.1/7.3, 4 letture e2e dirette del blocco 7.3, `createBookingResponseSchema` nel registry + assert nel registry.test — nessun consumer dimenticato. `forcedAt` nel `BOOKING_SELECT` condiviso → sempre popolato su ogni DTO (lista/calendario/update/cancel).
+- **Migrazione/seed**: solo ADD COLUMN + backfill + colonne force + FK; `migrate diff` zero drift; seed `update: {}` intatto (scelte admin preservate).
+- Deviazioni del dev tutte ratificate: doc-comment stantio corretto (unico drift trovato nel lavoro ereditato dalla sessione interrotta — scrutinio pieno applicato comunque), helper e2e `soonestFutureSlot`/`lastNamePrefix` che RAFFORZANO le assert senza toccare gli altri call site; il tentativo di DELETE chirurgico del detrito (bloccato dal classifier) è stato gestito correttamente documentando invece di forzare.
+
+### Final gates (re-run dal reviewer)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **927/927 unit**, `env -u NODE_ENV npx next build` verde, e2e **121/129** su DB fresco (8 fail = classi baseline/volume fuori dal diff, zero regressioni; superfici story 25/25), i18n 901/901 simmetrica.
+
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session via bmad-create-story), ready-for-dev.
 - 2026-07-09: Implementation complete (resumed after a container restart interrupted the prior dev-agent run mid-story; verified and continued its correct partial work). Fixed a stale module doc-comment ordering description; hardened the new e2e tests against this long-lived dev DB's accumulated volume (soonest-slot booking placement, an opt-in early-sorting person name for the staff picker). Status: review.
+- 2026-07-09: Review Opus 4.8 xhigh via bmad-code-review su DB fresco — clean pass, ZERO finding; boundary giorno-volo, matrice force e migrazione risposta provati empiricamente; 8 fail e2e = classi baseline fuori dal diff. Status → done. EPIC 7 COMPLETO.
