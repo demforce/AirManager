@@ -4,7 +4,7 @@ baseline_commit: ec8ba7f
 
 # Story 9.1: Assegnazione allievi–istruttori
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -41,13 +41,13 @@ so that ogni istruttore veda l'elenco dei propri allievi con il quadro essenzial
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1, 5)** — Modello `StudentInstructorAssignment` + migrazione (timestamp dopo l'ultima, ordinamento verificato) + seed istruttore/allievo.
-- [ ] **T2 (AC 1, 2, 4)** — Permesso `school.manage.any` (rbac + test); `school.service.ts` con le 4 funzioni, error mapping completo (401/403/404/409/422) e query batched.
-- [ ] **T3 (AC 5)** — Route `people/{id}/instructors[/{instructorPersonId}]` + `school/students`, schema Zod `school.ts`, registrazione OpenAPI + test registry.
-- [ ] **T4 (AC 1, 2)** — Panel `assigned-instructors-panel.tsx` nella scheda persona (gated, add/remove, i18n IT/EN).
-- [ ] **T5 (AC 3)** — Pagina `/dashboard/school` (tabella quadro essenziale, empty state, badge scadenze condiviso, ore batched) + fix href nav; verifica Playwright MCP desktop+mobile.
-- [ ] **T6 (AC tutti)** — Unit (service: matrice permessi, duplicato, doppia rimozione, profili non attivi, aggregazione ore con volo stornato escluso) + e2e (staff assegna/rimuove dalla scheda persona; istruttore vede SOLO i propri allievi con ore e badge; istruttore→403 sulle API people/{id}/instructors; pilota→403 su school/students); osservabili run-unique.
-- [ ] **T7** — `npm run gates`; e2e nuovi + regressione mirata; story file (Dev Agent Record) + sprint-status.yaml (9-1 → review).
+- [x] **T1 (AC 1, 5)** — Modello `StudentInstructorAssignment` + migrazione (timestamp dopo l'ultima, ordinamento verificato) + seed istruttore/allievo.
+- [x] **T2 (AC 1, 2, 4)** — Permesso `school.manage.any` (rbac + test); `school.service.ts` con le 4 funzioni, error mapping completo (401/403/404/409/422) e query batched.
+- [x] **T3 (AC 5)** — Route `people/{id}/instructors[/{instructorPersonId}]` + `school/students`, schema Zod `school.ts`, registrazione OpenAPI + test registry.
+- [x] **T4 (AC 1, 2)** — Panel `assigned-instructors-panel.tsx` nella scheda persona (gated, add/remove, i18n IT/EN).
+- [x] **T5 (AC 3)** — Pagina `/dashboard/school` (tabella quadro essenziale, empty state, badge scadenze condiviso, ore batched) + fix href nav; verifica Playwright MCP desktop+mobile.
+- [x] **T6 (AC tutti)** — Unit (service: matrice permessi, duplicato, doppia rimozione, profili non attivi, aggregazione ore con volo stornato escluso) + e2e (staff assegna/rimuove dalla scheda persona; istruttore vede SOLO i propri allievi con ore e badge; istruttore→403 sulle API people/{id}/instructors; pilota→403 su school/students); osservabili run-unique.
+- [x] **T7** — `npm run gates`; e2e nuovi + regressione mirata; story file (Dev Agent Record) + sprint-status.yaml (9-1 → review).
 
 ## Dev Notes
 
@@ -71,14 +71,56 @@ so that ogni istruttore veda l'elenco dei propri allievi con il quadro essenzial
 
 ### Agent Model Used
 
+Sonnet 5 (single dev agent, xhigh).
+
 ### Debug Log References
+
+- `npx prisma migrate dev --name add_student_instructor_assignments` → `20260709220221_add_student_instructor_assignments` (sorts after `20260709150000_add_ppr_closure_fee`, verified with `ls prisma/migrations | tail`), applied cleanly on the fresh DB, `npx prisma generate` regenerated the client.
+- `npx prisma db seed` → instructor/student users + profiles created idempotently, no assignment seeded (per Dev Notes).
+- Unit: `npx vitest run` → 1106/1106 (28 new: 27 in `school.service.test.ts` + 1 new `it()` in `nav-items.test.ts`; `rbac.test.ts`/`registry.test.ts` only got new assertions inside EXISTING tests, no new test count from those two).
+- `npm run gates` (final, clean tree) → lint/typecheck/test/build all PASS.
+- Interactive Playwright MCP verification (desktop + mobile 375×812) BEFORE writing e2e: staff assign/remove flow on the scheda persona (empty state → assign → feedback+row → two-step remove → feedback+empty state again), column-header nit fixed (was reusing the panel heading, now a dedicated "Istruttore" column label), instructor's own `/dashboard/school` view (nav tile → table → empty-cell "—" for hours/status pre-flight), mobile screenshots of both surfaces confirmed the editorial-minimalist styling holds (deleted the local screenshot files afterward — Artifact-only, not for commit).
+- e2e: `e2e/school.spec.ts` (5 new tests) run in isolation on a fresh-enough DB → 5/5 green (workers=1, and again inside the full 156-test suite).
+- Full e2e suite (`npx playwright test`, default parallel workers, DB accumulated by this session's own interactive testing): **152/156** — all 5 new tests green; 4 fails, ALL outside this story's diff (`account-adjustments.spec.ts`, `expiry-dashboard.spec.ts:156`, `expiry-registration.spec.ts:221`, `ppr-register.spec.ts:292`). Re-verified in isolation (single file/worker): `account-adjustments.spec.ts` 4/4 green alone; `expiry-dashboard`/`expiry-registration` green when re-run together with the others at workers=1. `ppr-register.spec.ts:292` reproduced red twice even alone — this is the PRE-EXISTING, HANDOFF.md-documented flaky test ("classe flaky nota da contention (`ppr-register` filtri, ~1 rosso ogni 2-3 run)", predates this story) — not a regression from this diff (no file in this story touches PPR). Baseline note for the reviewer: session baseline was 151 (pre-existing suite) + 5 new = 156, matching.
 
 ### Completion Notes List
 
+- T1: `StudentInstructorAssignment` Prisma model (links `StudentProfile`/`InstructorProfile`, AD-11) + migration + seed (`instructor@airmanager.local`/`student@airmanager.local`, idempotent, no assignment seeded).
+- T2: `school.manage.any` permission (STAFF+ADMIN via `ALL_PERMISSIONS`) added to `rbac.ts`/`rbac.test.ts`. New `school.service.ts`: `listStudentInstructors`/`assignInstructor`/`unassignInstructor` (`school.manage.any`) + `listOwnStudents` (`school.manage.own`, self-scoped on `actor.personId`). Error mapping: 404 unknown person; 422 `STUDENT_NOT_FOUND` (new code, same naming style) / `INSTRUCTOR_NOT_FOUND` (reused verbatim from `flights.service.ts`, folded unknown+inactive for the body-supplied instructor id) for inactive profiles; 409 on a repeat assignment (pre-check + `P2002` catch); 404 on `unassignInstructor` via pre-check + `P2025` catch (TD-1 double-DELETE pattern); 422 `INSTRUCTOR_PROFILE_REQUIRED` (new code) when `school.manage.own` has no linked/active instructor profile. `listOwnStudents`'s hours (`flight.groupBy`, one query) and worst-scadenza-status (`expiry.findMany`, one query, reduced in JS with the existing `computeExpiryStatus`) are BOTH batched — no N+1.
+- T3: Routes `GET/POST /api/v1/people/{id}/instructors`, `DELETE /api/v1/people/{id}/instructors/{instructorPersonId}`, `GET /api/v1/school/students` (all thin, `apiRoute` pattern). New `src/lib/schemas/school.ts` (reuses `expiryStatusSchema` from `./expiries` rather than a second enum). OpenAPI: 4 paths registered (tag `People` for the nested paths, tag `School` for `school/students`), `registry.test.ts` path list updated.
+- T4: `assigned-instructors-panel.tsx` — twin structure of `ExpiriesPanel` (two-step remove, conditionally-mounted add form). Deliberately NOT a `SearchCombobox` (Dev Notes: instructor roster is small) — a plain `<select>` populated from `GET /api/v1/people?profile=instructor` (TD-3's filter, reused verbatim). Wired into `people/[id]/page.tsx`, gated on `person.studentProfile !== null && hasPermission(actor, 'school.manage.any')` — no read-only mode (every endpoint 403s without that permission, so there is nothing for a lesser-privileged viewer to see).
+- T5: `/dashboard/school/page.tsx` — server component, `school.manage.own` gated, degrades a `ValidationError` (422, no active instructor profile) to the same empty state rather than crashing. Nav fix: `nav-items.ts`'s `school` entry now points at `/dashboard/school` (was the never-implemented `/school` placeholder); added the missing href assertion to `nav-items.test.ts`.
+- T6: 27 new unit tests in `school.service.test.ts` (permission matrix, duplicate, double-removal race, inactive-profile 422s on both sides, batched-hours groupBy shape, worst-status reduction, empty roster short-circuits before any batched query) + 5 new e2e in `school.spec.ts` (see Debug Log). All run-unique (timestamp+random suffixes, no shared seeded person mutated).
+- T7: gates + e2e verified (see Debug Log); this record + sprint-status.yaml updated.
+
 ### File List
+
+- `prisma/schema.prisma` (M — `StudentInstructorAssignment` model + back-relations on `StudentProfile`/`InstructorProfile`/`User`)
+- `prisma/migrations/20260709220221_add_student_instructor_assignments/migration.sql` (new)
+- `prisma/seed.ts` (M — instructor/student demo users + profiles)
+- `src/server/auth/rbac.ts` (M — `school.manage.any` permission)
+- `src/server/auth/rbac.test.ts` (M)
+- `src/server/services/school.service.ts` (new)
+- `src/server/services/school.service.test.ts` (new)
+- `src/lib/schemas/school.ts` (new)
+- `src/lib/schemas/registry.ts` (M — School/instructors paths + component schemas)
+- `src/lib/schemas/registry.test.ts` (M — new paths in the expected-paths list)
+- `src/app/api/v1/people/[id]/instructors/route.ts` (new)
+- `src/app/api/v1/people/[id]/instructors/[instructorPersonId]/route.ts` (new)
+- `src/app/api/v1/school/students/route.ts` (new)
+- `src/app/[locale]/dashboard/people/assigned-instructors-panel.tsx` (new)
+- `src/app/[locale]/dashboard/people/[id]/page.tsx` (M — wires the new panel)
+- `src/app/[locale]/dashboard/school/page.tsx` (new)
+- `src/app/[locale]/dashboard/nav-items.ts` (M — `school` href fix)
+- `src/app/[locale]/dashboard/nav-items.test.ts` (M — new href assertion)
+- `messages/it.json` / `messages/en.json` (M — `AssignedInstructorsPanel`, `SchoolPage`)
+- `e2e/school.spec.ts` (new)
+- `_bmad-output/implementation-artifacts/9-1-student-instructor-assignment.md` (M — this record)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (M — 9-1 → review)
 
 ## Review Record
 
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session) — prima story dell'Epic 9, ricognizione Explore completata (epics/PRD/spine/schema/rbac/UI/seed).
+- 2026-07-09: Implemented (Sonnet 5 single dev agent, xhigh). Gates: lint/typecheck/build green, 1106/1106 unit (+28 new), e2e 152/156 on the session's own accumulated DB (5/5 new tests green; 4 fails outside the diff, re-verified as isolation-green or the pre-existing documented `ppr-register:292` flake). Status → review.

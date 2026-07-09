@@ -16,6 +16,7 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     'bookings.manage.own',
     'bookings.manage.any',
     'school.manage.own',
+    'school.manage.any',
     'expiries.manage',
     'expiries.propose.own',
     'ppr.manage',
@@ -43,6 +44,9 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     expect(hasPermission(staff, 'finance.manage')).toBe(true);
     expect(hasPermission(staff, 'flights.manage')).toBe(true);
     expect(hasPermission(staff, 'bookings.manage.any')).toBe(true);
+    // Story 9.1 (FR-32): staff manages ANY student's instructor assignments.
+    expect(hasPermission(staff, 'school.manage.any')).toBe(true);
+    expect(hasPermission(staff, 'school.manage.own')).toBe(false);
     expect(hasPermission(staff, 'expiries.manage')).toBe(true);
 
     // Story 6.2: staff edits scadenze directly (`expiries.manage`) — it

@@ -12,6 +12,8 @@ const prisma = new PrismaClient({ adapter });
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const STAFF_EMAIL = 'staff@airmanager.local';
+const INSTRUCTOR_EMAIL = 'instructor@airmanager.local';
+const STUDENT_EMAIL = 'student@airmanager.local';
 
 async function seedAdminUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
@@ -92,6 +94,61 @@ async function seedStaffUser(passwordHash: string): Promise<void> {
 }
 
 /**
+ * Story 9.1 (AC 5): an INSTRUCTOR test user with an active `InstructorProfile`
+ * so the "Scuola" own-access view (`/dashboard/school`) and the e2e suite
+ * have a real instructor to log in as. Same idempotent upsert pattern as
+ * `seedStaffUser`.
+ */
+async function seedInstructorUser(passwordHash: string): Promise<void> {
+  await prisma.user.upsert({
+    where: { email: INSTRUCTOR_EMAIL },
+    update: { passwordHash, isActive: true, roles: ['INSTRUCTOR'] },
+    create: {
+      email: INSTRUCTOR_EMAIL,
+      passwordHash,
+      isActive: true,
+      roles: ['INSTRUCTOR'],
+      person: {
+        create: {
+          firstName: 'Ines',
+          lastName: 'Istruttrice',
+          email: INSTRUCTOR_EMAIL,
+        },
+      },
+    },
+  });
+
+  console.log(`Seed: demo instructor user ready (${INSTRUCTOR_EMAIL}).`);
+}
+
+/**
+ * Story 9.1 (AC 5): a STUDENT test user with an active `StudentProfile`
+ * (`courseStartDate` valorizzata) — the demo allievo assignable to the demo
+ * instructor. Same idempotent upsert pattern as `seedStaffUser`.
+ */
+async function seedStudentUser(passwordHash: string): Promise<void> {
+  await prisma.user.upsert({
+    where: { email: STUDENT_EMAIL },
+    update: { passwordHash, isActive: true, roles: ['STUDENT'] },
+    create: {
+      email: STUDENT_EMAIL,
+      passwordHash,
+      isActive: true,
+      roles: ['STUDENT'],
+      person: {
+        create: {
+          firstName: 'Sara',
+          lastName: 'Allieva',
+          email: STUDENT_EMAIL,
+        },
+      },
+    },
+  });
+
+  console.log(`Seed: demo student user ready (${STUDENT_EMAIL}).`);
+}
+
+/**
  * Story 2.2: the demo pilot's `Person` gets an active `PilotProfile`
  * (AD-11: 1-to-0/1 with `Person`), so the profiles UI/e2e have real data.
  * Idempotent like the rest of the seed: upsert keyed on the unique
@@ -115,6 +172,55 @@ async function seedPilotProfile(): Promise<void> {
   });
 
   console.log(`Seed: pilot profile ready for ${PILOT_EMAIL}.`);
+}
+
+/**
+ * Story 9.1 (AC 5): the demo instructor's `Person` gets an active
+ * `InstructorProfile` — same idempotent upsert pattern as `seedPilotProfile`.
+ * NO `StudentInstructorAssignment` is seeded here (Dev Notes: "nessuna
+ * assegnazione seedata — la creano i test/lo staff").
+ */
+async function seedInstructorProfile(): Promise<void> {
+  const instructorUser = await prisma.user.findUnique({
+    where: { email: INSTRUCTOR_EMAIL },
+    select: { personId: true },
+  });
+  if (!instructorUser?.personId) {
+    console.warn(`Seed: no person linked to ${INSTRUCTOR_EMAIL}, skipping instructor profile.`);
+    return;
+  }
+
+  await prisma.instructorProfile.upsert({
+    where: { personId: instructorUser.personId },
+    update: { ratings: 'SEP(land), FI(A)', deactivatedAt: null },
+    create: { personId: instructorUser.personId, ratings: 'SEP(land), FI(A)' },
+  });
+
+  console.log(`Seed: instructor profile ready for ${INSTRUCTOR_EMAIL}.`);
+}
+
+/**
+ * Story 9.1 (AC 5): the demo student's `Person` gets an active
+ * `StudentProfile` with a `courseStartDate` — same idempotent upsert pattern
+ * as `seedPilotProfile`.
+ */
+async function seedStudentProfile(): Promise<void> {
+  const studentUser = await prisma.user.findUnique({
+    where: { email: STUDENT_EMAIL },
+    select: { personId: true },
+  });
+  if (!studentUser?.personId) {
+    console.warn(`Seed: no person linked to ${STUDENT_EMAIL}, skipping student profile.`);
+    return;
+  }
+
+  await prisma.studentProfile.upsert({
+    where: { personId: studentUser.personId },
+    update: { deactivatedAt: null },
+    create: { personId: studentUser.personId, courseStartDate: new Date('2026-01-15') },
+  });
+
+  console.log(`Seed: student profile ready for ${STUDENT_EMAIL}.`);
 }
 
 /**
@@ -232,7 +338,11 @@ async function main() {
   await seedAdminUser(passwordHash);
   await seedPilotUser(passwordHash);
   await seedStaffUser(passwordHash);
+  await seedInstructorUser(passwordHash);
+  await seedStudentUser(passwordHash);
   await seedPilotProfile();
+  await seedInstructorProfile();
+  await seedStudentProfile();
   await seedAircraft();
   await seedCashCategories();
   await seedPilotAccount();

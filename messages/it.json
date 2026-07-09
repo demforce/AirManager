@@ -263,6 +263,37 @@
       "genericError": "Impossibile registrare la vendita. Riprova."
     }
   },
+  "AssignedInstructorsPanel": {
+    "heading": "Istruttori assegnati",
+    "loadError": "Impossibile caricare gli istruttori assegnati.",
+    "empty": "Nessun istruttore assegnato.",
+    "addAction": "Assegna istruttore",
+    "feedback": {
+      "assigned": "Istruttore assegnato.",
+      "removed": "Istruttore rimosso."
+    },
+    "table": {
+      "name": "Istruttore",
+      "assignedAt": "Assegnato il",
+      "actions": "Azioni"
+    },
+    "form": {
+      "title": "Assegna istruttore",
+      "instructor": "Istruttore",
+      "noInstructors": "Nessun istruttore disponibile da assegnare.",
+      "submit": "Assegna",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "conflictError": "Questo istruttore è già assegnato a questo allievo.",
+      "genericError": "Si è verificato un errore. Riprova."
+    },
+    "actions": {
+      "remove": "Rimuovi",
+      "confirmRemove": "Confermi la rimozione?",
+      "confirmYes": "Sì, rimuovi",
+      "confirmCancel": "Annulla"
+    }
+  },
   "ExpiriesPanel": {
     "heading": "Scadenze",
     "loadError": "Impossibile caricare le scadenze.",
@@ -310,6 +341,24 @@
       "confirmDelete": "Eliminare questa scadenza?",
       "confirmYes": "Conferma",
       "confirmCancel": "Annulla"
+    }
+  },
+  "SchoolPage": {
+    "kicker": "Scuola volo",
+    "title": "I miei allievi",
+    "description": "L'elenco dei tuoi allievi assegnati, con ore di scuola totali e stato delle scadenze.",
+    "empty": "Nessun allievo assegnato.",
+    "table": {
+      "name": "Allievo",
+      "courseStartDate": "Inizio corso",
+      "totalHours": "Ore scuola totali",
+      "statusHeader": "Scadenze",
+      "noExpiries": "—",
+      "status": {
+        "ok": "In regola",
+        "expiring": "In scadenza",
+        "expired": "Scaduta"
+      }
     }
   },
   "AccountStatementPage": {

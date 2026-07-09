@@ -10,6 +10,7 @@ import { getEffectiveInstructorRate } from '@/server/services/instructor-rates.s
 import { getPerson } from '@/server/services/people.service';
 import { AccountPanel } from '../account-panel';
 import { AccountRefreshProvider } from '../account-refresh-context';
+import { AssignedInstructorsPanel } from '../assigned-instructors-panel';
 import { ExpiriesPanel } from '../expiries-panel';
 import { InstructorRatesPanel } from '../instructor-rates-panel';
 import { PackagesPanel } from '../packages-panel';
@@ -74,10 +75,16 @@ export default async function PersonDetailPage({ params }: PageProps) {
   const canManageFinance = hasPermission(actor, 'finance.manage');
   const canManageSettings = hasPermission(actor, 'settings.manage');
   const canManageExpiries = hasPermission(actor, 'expiries.manage');
+  // Story 9.1 (AC 1/4): the "Istruttori assegnati" panel is staff/admin-only
+  // (`school.manage.any`) — unlike the other panels above, there is no
+  // read-only mode for a lesser-privileged viewer (every one of this
+  // feature's endpoints answers 403 without this permission).
+  const canManageSchool = hasPermission(actor, 'school.manage.any');
   const t = await getTranslations('PersonDetailPage');
   const tPeople = await getTranslations('PeoplePage');
   const tPackages = await getTranslations('HourPackagesPanel');
   const tExpiries = await getTranslations('ExpiriesPanel');
+  const tSchool = await getTranslations('AssignedInstructorsPanel');
 
   // Story 4.2, AC 1/AD-4: the instructor-rate section is shown only when the
   // person has an instructor profile (active or deactivated — deactivated
@@ -322,6 +329,48 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 historyPrice: t('instructorRates.historyPrice'),
                 historyActor: t('instructorRates.historyActor'),
                 historyWhen: t('instructorRates.historyWhen'),
+              }}
+            />
+          </div>
+        ) : null}
+
+        {person.studentProfile !== null && canManageSchool ? (
+          <div className="mt-6">
+            <AssignedInstructorsPanel
+              // Remount on person change — same rationale as
+              // `InstructorRatesPanel`'s `key={person.id}` (review 2.4 F1).
+              key={person.id}
+              personId={person.id}
+              labels={{
+                heading: tSchool('heading'),
+                loadError: tSchool('loadError'),
+                empty: tSchool('empty'),
+                addAction: tSchool('addAction'),
+                feedback: {
+                  assigned: tSchool('feedback.assigned'),
+                  removed: tSchool('feedback.removed'),
+                },
+                table: {
+                  name: tSchool('table.name'),
+                  assignedAt: tSchool('table.assignedAt'),
+                  actions: tSchool('table.actions'),
+                },
+                form: {
+                  title: tSchool('form.title'),
+                  instructor: tSchool('form.instructor'),
+                  noInstructors: tSchool('form.noInstructors'),
+                  submit: tSchool('form.submit'),
+                  cancel: tSchool('form.cancel'),
+                  requiredField: tSchool('form.requiredField'),
+                  conflictError: tSchool('form.conflictError'),
+                  genericError: tSchool('form.genericError'),
+                },
+                actions: {
+                  remove: tSchool('actions.remove'),
+                  confirmRemove: tSchool('actions.confirmRemove'),
+                  confirmYes: tSchool('actions.confirmYes'),
+                  confirmCancel: tSchool('actions.confirmCancel'),
+                },
               }}
             />
           </div>

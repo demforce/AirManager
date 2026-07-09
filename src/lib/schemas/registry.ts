@@ -116,6 +116,13 @@ import {
   pprRequestListResponseSchema,
   rejectPprRequestSchema,
 } from './ppr';
+import {
+  assignInstructorSchema,
+  assignedInstructorItemSchema,
+  assignedInstructorListResponseSchema,
+  ownStudentItemSchema,
+  ownStudentListResponseSchema,
+} from './school';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
 
 /**
@@ -211,6 +218,11 @@ registry.register('InstructorProfile', instructorProfileSchema);
 registry.register('InstructorRate', instructorRateItemSchema);
 registry.register('InstructorRateList', instructorRateListResponseSchema);
 registry.register('CreateInstructorRateRequest', createInstructorRateSchema);
+registry.register('AssignInstructorRequest', assignInstructorSchema);
+registry.register('AssignedInstructor', assignedInstructorItemSchema);
+registry.register('AssignedInstructorList', assignedInstructorListResponseSchema);
+registry.register('OwnStudent', ownStudentItemSchema);
+registry.register('OwnStudentList', ownStudentListResponseSchema);
 registry.register('Aircraft', aircraftListItemSchema);
 registry.register('AircraftList', aircraftListResponseSchema);
 registry.register('CreateAircraftRequest', createAircraftSchema);
@@ -605,6 +617,72 @@ registry.registerPath({
   responses: {
     201: { description: 'The created rate.', content: jsonContent(instructorRateItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- School (epic 9, story 9.1, FR-32) --------------------------------------
+
+const studentInstructorParams = z.object({
+  id: z.string().meta({ description: "Student's Person id (cuid).", example: 'clx1a2b3c4d5e6f7g8h9' }),
+  instructorPersonId: z.string().meta({ description: "Instructor's Person id (cuid).", example: 'clx1a2b3c4d5e6f7g8h9' }),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/instructors',
+  summary: "List a student's assigned instructors",
+  description:
+    'Story 9.1, AC 1 — a plain array (no pagination). `{id}` is the STUDENT\'s `Person.id`. 404 on an unknown person; 422 `STUDENT_NOT_FOUND` if the person has no active student profile. Requires `school.manage.any` (staff/admin).',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams },
+  responses: {
+    200: { description: "The student's assigned instructors.", content: jsonContent(assignedInstructorListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/instructors',
+  summary: 'Assign an instructor to a student',
+  description:
+    "Story 9.1, AC 1 — many-to-many: a student may have several instructors, an instructor several students. Both sides must have an ACTIVE profile (422 `STUDENT_NOT_FOUND`/`INSTRUCTOR_NOT_FOUND`). A repeat assignment of the same pair is a 409. Requires `school.manage.any` (staff/admin).",
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(assignInstructorSchema), required: true } },
+  responses: {
+    201: { description: 'The created assignment.', content: jsonContent(assignedInstructorItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/v1/people/{id}/instructors/{instructorPersonId}',
+  summary: 'Remove a student-instructor assignment',
+  description:
+    'Story 9.1, AC 2 — hard delete (no history kept). A concurrent double-DELETE answers one 204 + one 404, never a 500. Requires `school.manage.any` (staff/admin).',
+  tags: ['People'],
+  security,
+  request: { params: studentInstructorParams },
+  responses: {
+    204: { description: 'The assignment was removed.' },
+    ...errorResponses(401, 403, 404),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/school/students',
+  summary: 'List the calling instructor\'s own students (essential overview)',
+  description:
+    "Story 9.1, AC 3/4 — ALWAYS self-scoped on the calling instructor (`actor.personId`); no query params, by construction an instructor can never enumerate another instructor's students. `totalMinutes` sums the student's non-cancelled SCHOOL flights ACROSS every instructor; `expiryStatus` is the worst status among the student's scadenze (`null` if none registered). 422 if the caller has `school.manage.own` but no active instructor profile. Requires `school.manage.own`.",
+  tags: ['School'],
+  security,
+  responses: {
+    200: { description: "The instructor's own students.", content: jsonContent(ownStudentListResponseSchema) },
+    ...errorResponses(401, 403, 422),
   },
 });
 

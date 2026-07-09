@@ -107,6 +107,9 @@ model StudentProfile {
   deactivatedAt   DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  /// Instructors assigned to this student (epic 9, story 9.1, FR-32) — see `StudentInstructorAssignment` doc.
+  instructorAssignments StudentInstructorAssignment[]
 }
 
 /// Instructor profile (story 2.2, AC 1/2, AD-11) — see `PilotProfile` doc for
@@ -123,11 +126,38 @@ model InstructorProfile {
   updatedAt     DateTime  @updatedAt
 
   /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
-  rates    InstructorRate[]
+  rates              InstructorRate[]
   /// Flights where this profile was the instructor aboard (epic 5, story 5.1) — see `Flight` doc.
-  flights  Flight[]
+  flights            Flight[]
   /// Bookings where this profile is the indicated instructor (epic 7, story 7.1) — see `Booking` doc.
-  bookings Booking[]
+  bookings           Booking[]
+  /// Students assigned to this instructor (epic 9, story 9.1, FR-32) — see `StudentInstructorAssignment` doc.
+  studentAssignments StudentInstructorAssignment[]
+}
+
+/// Many-to-many assignment between a student and their instructor(s) (epic 9,
+/// story 9.1, FR-32; AD-11: links the two existing PROFILES, never a new
+/// person-like table). A student may have several instructors and an
+/// instructor several students — `@@unique` only forbids assigning the SAME
+/// pair twice (a duplicate attempt is a 409 at the service layer). Hard
+/// -deleted on removal (Contesto: "hard delete, nessuno storico richiesto dal
+/// PRD") — `assignedByUserId`/`createdAt` are the only audit trail (who/when
+/// assigned it), same tracking pattern as `HourMeterAdjustment.actorUserId`;
+/// there is deliberately no "unassigned by/at" pair since the row is simply
+/// gone. FK RESTRICT (Prisma default, no `onDelete` set) — a profile can
+/// never be physically deleted anyway (AD-11's soft-deactivation-only rule),
+/// so this is purely defensive.
+model StudentInstructorAssignment {
+  id                  String            @id @default(cuid())
+  studentProfileId    String
+  studentProfile      StudentProfile    @relation(fields: [studentProfileId], references: [id])
+  instructorProfileId String
+  instructorProfile   InstructorProfile @relation(fields: [instructorProfileId], references: [id])
+  assignedByUserId    String
+  assignedByUser      User              @relation(fields: [assignedByUserId], references: [id])
+  createdAt           DateTime          @default(now())
+
+  @@unique([studentProfileId, instructorProfileId])
 }
 
 /// Aircraft operational status (story 2.5, AC 1; FR-8). `OUT_OF_SERVICE` is
@@ -288,42 +318,44 @@ model User {
   personId     String? @unique
   person       Person? @relation(fields: [personId], references: [id])
 
-  authTokens             AuthToken[]
+  authTokens                          AuthToken[]
   /// Hour-meter rectifications this user performed (story 2.5, AC 2) —
   /// `HourMeterAdjustment.actorUserId`.
-  hourMeterAdjustments   HourMeterAdjustment[]
+  hourMeterAdjustments                HourMeterAdjustment[]
   /// Aircraft rates this user recorded (story 4.1) — `AircraftRate.actorUserId`.
-  aircraftRates          AircraftRate[]
+  aircraftRates                       AircraftRate[]
   /// Instructor rates this user recorded (story 4.2) — `InstructorRate.actorUserId`.
-  instructorRates        InstructorRate[]
+  instructorRates                     InstructorRate[]
   /// Account ledger entries this user recorded (story 3.1) — `AccountMovement.actorUserId`.
-  accountMovements       AccountMovement[]
+  accountMovements                    AccountMovement[]
   /// Cash ledger entries this user recorded (story 3.1) — `CashMovement.actorUserId`.
-  cashMovements          CashMovement[]
+  cashMovements                       CashMovement[]
   /// Package sales this user recorded (story 4.4) — `HourPackage.actorUserId`.
-  hourPackagesSold       HourPackage[]
+  hourPackagesSold                    HourPackage[]
   /// Flights this user registered (epic 5, story 5.1) — `Flight.actorUserId`.
-  flightsRecorded        Flight[]
+  flightsRecorded                     Flight[]
   /// Bookings this user created (epic 7, story 7.1) — `Booking.actorUserId`.
-  bookingsRecorded       Booking[]              @relation("BookingActor")
+  bookingsRecorded                    Booking[]                     @relation("BookingActor")
   /// Bookings this user last EDITED (epic 7, story 7.3, AC 2) — `Booking.updatedByUserId`.
-  bookingsUpdated        Booking[]              @relation("BookingUpdatedBy")
+  bookingsUpdated                     Booking[]                     @relation("BookingUpdatedBy")
   /// Bookings this user CANCELLED (epic 7, story 7.3, AC 2) — `Booking.cancelledByUserId`.
-  bookingsCancelled      Booking[]              @relation("BookingCancelledBy")
+  bookingsCancelled                   Booking[]                     @relation("BookingCancelledBy")
   /// Bookings this user FORCED past a blocking expired document (epic 7, story 7.4, AC 2) — `Booking.forcedByUserId`.
-  bookingsForced         Booking[]              @relation("BookingForcedBy")
+  bookingsForced                      Booking[]                     @relation("BookingForcedBy")
   /// PPR requests this user DECIDED — approve or reject (epic 8, story 8.2, AC 1/2) — `PprRequest.decidedByUserId`.
-  pprRequestsDecided     PprRequest[]           @relation("PprRequestDecidedBy")
+  pprRequestsDecided                  PprRequest[]                  @relation("PprRequestDecidedBy")
   /// PPR requests this user CLOSED — completed or cancelled (epic 8, story 8.3, AC 1/2) — `PprRequest.closedByUserId`.
-  pprRequestsClosed      PprRequest[]           @relation("PprRequestClosedBy")
+  pprRequestsClosed                   PprRequest[]                  @relation("PprRequestClosedBy")
   /// Scadenze this user registered/last updated (epic 6, story 6.2) — `Expiry.actorUserId`.
-  expiriesRecorded       Expiry[]
+  expiriesRecorded                    Expiry[]
   /// Update proposals this user FILED, as the scadenza's titolare (epic 6, story 6.2) — `ExpiryUpdateProposal.proposedByUserId`.
-  expiryProposalsFiled   ExpiryUpdateProposal[] @relation("ExpiryProposalProposedBy")
+  expiryProposalsFiled                ExpiryUpdateProposal[]        @relation("ExpiryProposalProposedBy")
   /// Update proposals this user DECIDED, as staff (epic 6, story 6.2) — `ExpiryUpdateProposal.decidedByUserId`.
-  expiryProposalsDecided ExpiryUpdateProposal[] @relation("ExpiryProposalDecidedBy")
+  expiryProposalsDecided              ExpiryUpdateProposal[]        @relation("ExpiryProposalDecidedBy")
   /// Idempotency-key ledger for this user's money-mutating POSTs (story TD-2) — `IdempotencyRecord.userId`.
-  idempotencyRecords     IdempotencyRecord[]
+  idempotencyRecords                  IdempotencyRecord[]
+  /// Student-instructor assignments this user CREATED (epic 9, story 9.1) — `StudentInstructorAssignment.assignedByUserId`.
+  studentInstructorAssignmentsCreated StudentInstructorAssignment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -497,9 +529,9 @@ model CashMovement {
   /// (same precedent as `AccountMovement.flightId`, not the
   /// `accountMovementId @unique` twin pattern above): more than one movement
   /// could reference the same PPR request in the future (e.g. a storno).
-  pprRequestId String?
-  pprRequest   PprRequest? @relation(fields: [pprRequestId], references: [id])
-  createdAt    DateTime    @default(now())
+  pprRequestId      String?
+  pprRequest        PprRequest?      @relation(fields: [pprRequestId], references: [id])
+  createdAt         DateTime         @default(now())
 
   @@index([pprRequestId])
 }
@@ -869,10 +901,10 @@ model Booking {
   /// Never touched by `updateBooking`/`cancelBooking` — the force decision
   /// is a creation-time fact, not re-evaluated on edit (see `createBooking`'s
   /// doc-comment for the deferred re-check rationale).
-  forcedAt          DateTime?
-  forcedByUserId    String?
-  forcedByUser      User?         @relation("BookingForcedBy", fields: [forcedByUserId], references: [id])
-  forceReason       String?
+  forcedAt       DateTime?
+  forcedByUserId String?
+  forcedByUser   User?     @relation("BookingForcedBy", fields: [forcedByUserId], references: [id])
+  forceReason    String?
 
   /// Who created this booking (`Actor.userId`, always present) — same
   /// rationale as every other ledger's `actorUserId` (e.g. `Flight`).
@@ -971,10 +1003,10 @@ enum ExpiryScope {
 /// change only affects FUTURE registration-time compatibility checks
 /// (story 6.2), never past ones.
 model ExpiryType {
-  id        String      @id @default(cuid())
-  name      String      @unique
-  scope     ExpiryScope
-  isActive  Boolean     @default(true)
+  id            String      @id @default(cuid())
+  name          String      @unique
+  scope         ExpiryScope
+  isActive      Boolean     @default(true)
   /// Whether an EXPIRED `Expiry` of this type blocks a NEW booking (epic 7,
   /// story 7.4; FR-21 `[ASSUMPTION]`: medica/licenza block, ratings only
   /// warn). Default `false` (a new/custom type never blocks until an admin
@@ -1306,7 +1338,7 @@ model PprRequest {
   /// implicit-`SetNull`-on-delete pattern as `Booking.forcedByUserId` /
   /// `ExpiryUpdateProposal.decidedByUserId`: deleting the deciding user must
   /// never cascade-delete the PPR history.
-  decidedByUser User? @relation("PprRequestDecidedBy", fields: [decidedByUserId], references: [id])
+  decidedByUser   User?   @relation("PprRequestDecidedBy", fields: [decidedByUserId], references: [id])
 
   /// When the request was CLOSED — completed or cancelled (epic 8, story
   /// 8.3, AC 1/2). `null` while `PENDING`/`APPROVED`/`REJECTED`. A distinct
@@ -1320,7 +1352,7 @@ model PprRequest {
   /// The staff/admin `User` who completed or cancelled this request (story
   /// 8.3) — `null` until closed. Same nullable-FK/`SetNull`-on-delete
   /// pattern as `decidedByUser` above.
-  closedByUser User? @relation("PprRequestClosedBy", fields: [closedByUserId], references: [id])
+  closedByUser   User?   @relation("PprRequestClosedBy", fields: [closedByUserId], references: [id])
 
   /// The landing fee charged at completion, in integer euro cents (AD-2) —
   /// stamped ONLY by `completePprRequest` (story 8.3, AC 1), 0 included (a

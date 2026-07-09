@@ -45,7 +45,11 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { key: 'bookings', href: '/dashboard/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any', 'self.read'] },
   // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4.
   { key: 'finance', href: '/dashboard/finance', permissions: ['finance.manage'] },
-  { key: 'school', href: '/school', permissions: ['school.manage.own'] },
+  // Story 9.1: repointed at the real "I miei allievi" page (the old '/school'
+  // placeholder was never implemented) — permissions unchanged, `school.manage.own`
+  // only: this is the INSTRUCTOR's own-students view, staff manages assignments
+  // from the scheda persona instead (`school.manage.any`, no nav item of its own).
+  { key: 'school', href: '/dashboard/school', permissions: ['school.manage.own'] },
   // Story 6.1: repointed the same way people/aircraft/finance/flights were
   // in 2.1/2.4/3.3/5.4. Story 6.2 (FR-36): reopened to every role via
   // `self.read` — same pattern as `flights` in 5.4: the page itself (staff
