@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-09 (epic-8 done: 8.1, 8.2, 8.3 tutte done con review clean-pass)
+last_updated: 2026-07-09 (td-4 logout-session-race creato, ready-for-dev)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -85,6 +85,9 @@ development_status:
   td-1-open-findings-hardening: done
   td-2-request-idempotency: done
   td-3-typeahead-pickers: done
+
+  # Tech-debt: finding prioritario post-epic-8 (logout race su build di produzione)
+  td-4-logout-session-race: ready-for-dev
 
   epic-7: done
   7-1-booking-creation: done
