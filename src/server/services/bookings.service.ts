@@ -1,6 +1,9 @@
 import { Prisma, type AircraftStatus, type BookingStatus } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
+import { toDateOnlyString } from '@/lib/date-only';
 import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, UpdateBookingInput } from '@/lib/schemas/bookings';
+import { APP_TIMEZONE } from '@/lib/time';
+import { dateOnlyInZone } from '@/lib/zoned-time';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -34,9 +37,12 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  *
  * **Verification order** (no state leak, pattern story 6.2/5.4): authorize
  * 403 → own-rules 403 (before any target-person query, where noted above)
- * → target person 404/409/422 `PERSON_NOT_BOOKABLE` → `startsAt` in the
- * past 422 `BOOKING_IN_PAST` → [transaction: aircraft lock + 404/409/422
- * `AIRCRAFT_OUT_OF_SERVICE` → overlap pre-check 409 → create]. Person/
+ * → `force` 403 without `bookings.manage.any` (story 7.4, AC 2 — before any
+ * further query) → target person 404/409/422 `PERSON_NOT_BOOKABLE` →
+ * expiry-based block 422 `EXPIRED_DOCUMENTS`/force bypass (story 7.4, AC 1/2)
+ * → `startsAt` in the past 422 `BOOKING_IN_PAST` → [transaction: aircraft
+ * lock + 404/409/422 `AIRCRAFT_OUT_OF_SERVICE` → overlap pre-check 409 →
+ * create]. Person/
  * instructor resolution runs OUTSIDE the transaction (Dev Notes: it never
  * participates in the overlap invariant, so it needs no lock) — the
  * aircraft is resolved and validated INSIDE the transaction, on the SAME
@@ -63,6 +69,15 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  * (`createBooking`'s pre-check, `updateBooking`'s pre-check, `listBookings`,
  * `listCalendarBookings`) filters `status: 'ACTIVE'` — a cancelled booking
  * frees its slot and disappears from every list/calendar.
+ *
+ * **Expiry-based creation block (story 7.4, AC 1/2; FR-21)**: `createBooking`
+ * ONLY (see its own doc-comment for the full rule, ordering and force/warning
+ * semantics) — `updateBooking` deliberately does NOT re-evaluate expiries on
+ * an edit (deferral accepted for the MVP, Contesto: no re-check exists today
+ * between creation and the actual flight either; the real enforcement at
+ * flight time belongs to flight registration/epic 5, not this booking
+ * domain). A moved booking keeps whatever block/force state it was created
+ * with.
  */
 
 export type BookingListItem = {
@@ -78,6 +93,8 @@ export type BookingListItem = {
   notes: string | null;
   status: BookingStatus;
   cancelledAt: Date | null;
+  /** Set only when staff bypassed a blocking expired document at creation time (story 7.4, AC 2) — see `Booking.forcedAt`'s doc-comment. */
+  forcedAt: Date | null;
   createdAt: Date;
 };
 
@@ -94,6 +111,7 @@ const BOOKING_SELECT = {
   notes: true,
   status: true,
   cancelledAt: true,
+  forcedAt: true,
   createdAt: true,
 } as const;
 
@@ -110,6 +128,7 @@ type SelectedBooking = {
   notes: string | null;
   status: BookingStatus;
   cancelledAt: Date | null;
+  forcedAt: Date | null;
   createdAt: Date;
 };
 
@@ -129,6 +148,7 @@ function toListItem(booking: SelectedBooking): BookingListItem {
     notes: booking.notes,
     status: booking.status,
     cancelledAt: booking.cancelledAt,
+    forcedAt: booking.forcedAt,
     createdAt: booking.createdAt,
   };
 }
@@ -153,11 +173,51 @@ function isActiveInstructor(person: TargetPerson): boolean {
   return person.instructorProfile !== null && person.instructorProfile.deactivatedAt === null;
 }
 
+/** One non-blocking expired document surfaced by a successful `createBooking` (story 7.4, AC 1) — see the function's own doc-comment. */
+export type BookingExpiryWarning = { typeName: string; expiresAt: string };
+
+/** `createBooking`'s return shape (story 7.4, AC 1/2) — REPLACES the bare `BookingListItem` this function returned before this story (see its doc-comment). */
+export type CreateBookingResult = { booking: BookingListItem; warnings: BookingExpiryWarning[] };
+
 /**
  * Creates a booking (AC 1/2/3) — see the module doc-comment for the full
  * matrix/ordering rationale.
+ *
+ * **Expiry-based block (story 7.4, AC 1/2; FR-21)**: after the target
+ * person's own checks pass, every `Expiry` REGISTERED for that person
+ * (`input.personId` — the person WHO FLIES: the allievo on a school
+ * booking, never the instructor/staff actor) is compared against the FLIGHT
+ * DAY, not "today" — `dateOnlyInZone(startsAt, APP_TIMEZONE)` — because a
+ * booking made now for a future day must be judged against THAT day's
+ * validity (Contesto: prenotare per dopodomani con la medica che scade
+ * stanotte DEVE bloccare). The expiry day itself is still valid (same
+ * boundary as `computeExpiryStatus`/package eligibility, story 5.2/6.2):
+ * `toDateOnlyString(expiry.expiresAt) < flightDateOnly` is "expired for this
+ * flight". A document with no registered `Expiry` row is NEVER blocking —
+ * only a REGISTERED, EXPIRED one is (missing-document enforcement is out of
+ * scope, Contesto: staff's own dashboard, story 6.4, carries that picture).
+ * Every expired document whose `ExpiryType.blocksBooking` is `true` is
+ * BLOCKING; every other expired document is a non-blocking `warnings` entry
+ * on the successful result — `details.documents`/the message list ONLY the
+ * blocking ones (Task 5's decision: warnings never appear in the 422).
+ *
+ * `force`/`forceReason` (AC 2): a plain `force: true` from a non-staff actor
+ * is REJECTED with 403 immediately after the own-rules block above — BEFORE
+ * the target-person query, let alone any expiry query (own-path booking
+ * never bypasses a block, full stop). For staff, a real block (≥1 blocking
+ * document) is bypassed ONLY when `force` is set — the schema's own refine
+ * already guarantees `forceReason` is present whenever `force` is `true` —
+ * and the bypass STAMPS `forcedAt`/`forcedByUserId`/`forceReason` on the
+ * created row. `force: true` with NOTHING to bypass (no blocking document)
+ * creates the booking normally, stamping NOTHING (Contesto: the tracking
+ * means "scavalcato un blocco", not "ha spuntato una checkbox").
+ *
+ * Runs AFTER every person check and BEFORE `BOOKING_IN_PAST` (module
+ * doc-comment's "ordine complessivo") — scadenze participate in NEITHER the
+ * overlap invariant NOR the aircraft lock, so this stays entirely outside
+ * `prisma.$transaction`, same rationale as the person checks above it.
  */
-export async function createBooking(actor: Actor, input: CreateBookingInput): Promise<BookingListItem> {
+export async function createBooking(actor: Actor, input: CreateBookingInput): Promise<CreateBookingResult> {
   const canManageAny = hasPermission(actor, 'bookings.manage.any');
   if (!canManageAny) {
     authorize(actor, 'bookings.manage.own');
@@ -201,6 +261,13 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
       }
       resolvedInstructorProfileId = actorInstructorProfile.id;
     }
+  }
+
+  // Story 7.4, AC 2: `force` without `bookings.manage.any` is rejected
+  // BEFORE any further query (persona, let alone scadenze) — own-path
+  // booking never bypasses a block.
+  if (input.force && !canManageAny) {
+    throw new ForbiddenError('Only staff can force a blocked booking.');
   }
 
   // Target person (404/409/422) — outside the transaction (Dev Notes: it
@@ -264,6 +331,41 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
 
   const startsAt = new Date(input.startsAt);
   const endsAt = new Date(input.endsAt);
+
+  // --- Expiry-based booking block (story 7.4, AC 1/2) — see this
+  // function's own doc-comment for the full rationale. Deliberately NOT
+  // `computeExpiryStatus` (Dev Notes: that helper is anchored to "today",
+  // this rule is anchored to the FLIGHT DAY) — a direct date-only compare,
+  // same convention as `packages.service.ts`'s `expiresAt >= flightDate`.
+  const flightDateOnly = dateOnlyInZone(startsAt, APP_TIMEZONE);
+  const expiries = await prisma.expiry.findMany({
+    where: { personId: input.personId },
+    select: { expiresAt: true, expiryType: { select: { name: true, blocksBooking: true } } },
+  });
+  const expiredDocuments = expiries
+    .filter((expiry) => toDateOnlyString(expiry.expiresAt) < flightDateOnly)
+    .map((expiry) => ({ typeName: expiry.expiryType.name, expiresAt: toDateOnlyString(expiry.expiresAt), blocksBooking: expiry.expiryType.blocksBooking }));
+  const blockingDocuments = expiredDocuments.filter((document) => document.blocksBooking);
+  const warnings: BookingExpiryWarning[] = expiredDocuments
+    .filter((document) => !document.blocksBooking)
+    .map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt }));
+
+  let forceStamp: { forcedAt: Date; forcedByUserId: string; forceReason: string } | null = null;
+  if (blockingDocuments.length > 0) {
+    if (input.force) {
+      // `force-403` above already guarantees `canManageAny` here, and the
+      // schema's own refine guarantees `forceReason` is a non-empty string
+      // whenever `force` is `true` — the `!` is safe.
+      forceStamp = { forcedAt: new Date(), forcedByUserId: actor.userId, forceReason: input.forceReason! };
+    } else {
+      throw new ValidationError(
+        `Cannot create this booking: the following documents are expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
+        { documents: blockingDocuments.map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt })) },
+        'EXPIRED_DOCUMENTS',
+      );
+    }
+  }
+
   if (startsAt.getTime() <= Date.now()) {
     throw new ValidationError('startsAt must be in the future.', undefined, 'BOOKING_IN_PAST');
   }
@@ -308,12 +410,15 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
         endsAt,
         notes: input.notes ?? null,
         actorUserId: actor.userId,
+        // Story 7.4, AC 2: stamped ONLY when a real block was bypassed
+        // (`forceStamp` above) — otherwise every field stays `null`.
+        ...(forceStamp ?? {}),
       },
       select: BOOKING_SELECT,
     });
   });
 
-  return toListItem(created);
+  return { booking: toListItem(created), warnings };
 }
 
 /**
@@ -482,6 +587,16 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * (`bookings.manage.any`) is exempt from BOTH (deliberate asymmetry with
  * `createBooking`'s own rules, Contesto: staff can correct an in-progress
  * booking, e.g. shorten it).
+ *
+ * **Deliberately does NOT re-evaluate expiries (story 7.4)**: FR-21 blocks
+ * the NEW booking, literally — moving an existing one (even onto a brand-new
+ * interval, even a MUCH later one) never re-runs `createBooking`'s
+ * expiry-block check, and moving/`force`ing past a document that expired
+ * AFTER creation is out of scope here. Accepted MVP loophole (Contesto): no
+ * re-check exists between creation and the actual flight today anyway —
+ * the real enforcement at flight time is flight registration's concern
+ * (epic 5/SM-3), not this booking domain. A future story could close this by
+ * running the same check on `updateBooking` too, if ever required.
  *
  * **Concurrency (same discipline as `createBooking`, AC 2)**: inside
  * `prisma.$transaction`, ALL involved `Aircraft` rows — the destination and,

@@ -150,12 +150,29 @@ export function addDaysDateOnly(dateOnly: string, days: number): string {
 }
 
 /**
+ * The `YYYY-MM-DD` WALL-CLOCK calendar date `instant` falls on in `timeZone`
+ * (story 7.4, Task 2) — the inverse direction of {@link zonedMidnightUtc}:
+ * that one turns a wall-clock date INTO a UTC instant, this one reads a UTC
+ * instant back OUT as a wall-clock date. Needed for the "flight day" the
+ * expiry-block rule compares against (Contesto: "il giorno del volo, non
+ * oggi" — `expiresAt < dateOnlyInZone(startsAt, APP_TIMEZONE)`), which is
+ * NOT always "today": a booking made now for the day after tomorrow must
+ * compare against THAT future day, not the current one. The en-CA locale is
+ * the standard `Intl` trick for a locale that always formats as
+ * `YYYY-MM-DD`, so this needs no manual part-assembly (same trick
+ * {@link todayDateOnlyInZone} used inline before this refactor).
+ */
+export function dateOnlyInZone(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
+}
+
+/**
  * "Today", as a `YYYY-MM-DD` string, in `timeZone` — the calendar page's
- * default `?date=` (Contesto: "default: oggi Europe/Rome"). Also not one of
- * Task 1's three named functions, but likewise minimal/necessary: the
- * en-CA locale is the standard `Intl` trick for a locale that always
- * formats as `YYYY-MM-DD`, so this needs no manual part-assembly.
+ * default `?date=` (Contesto: "default: oggi Europe/Rome"). Not one of Task
+ * 1's three named functions, but minimal/necessary (story 7.2). Story 7.4,
+ * Task 2: refactored to the `instant = now` special case of the more general
+ * {@link dateOnlyInZone} above — same output, single implementation.
  */
 export function todayDateOnlyInZone(timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  return dateOnlyInZone(new Date(), timeZone);
 }

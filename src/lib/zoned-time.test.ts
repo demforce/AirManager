@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDaysDateOnly, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from './zoned-time';
+import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from './zoned-time';
 
 const ROME = 'Europe/Rome';
 
@@ -124,6 +124,38 @@ describe('addDaysDateOnly', () => {
   it('handles a leap-day rollover', () => {
     expect(addDaysDateOnly('2028-02-28', 1)).toBe('2028-02-29');
     expect(addDaysDateOnly('2028-02-29', 1)).toBe('2028-03-01');
+  });
+});
+
+describe('dateOnlyInZone (story 7.4, Task 2 — the flight-day rule\'s reference date)', () => {
+  it('CET (January): a UTC instant that is still the same wall-clock day in Rome', () => {
+    expect(dateOnlyInZone(new Date('2026-01-15T09:30:00.000Z'), ROME)).toBe('2026-01-15');
+  });
+
+  it('CEST (July): a UTC instant that is still the same wall-clock day in Rome', () => {
+    expect(dateOnlyInZone(new Date('2026-07-15T09:30:00.000Z'), ROME)).toBe('2026-07-15');
+  });
+
+  it('an evening UTC instant that has ALREADY crossed into the next wall-clock day in Rome (CEST, +2)', () => {
+    // 21:30Z in July is 23:30 CEST — still the same day. 22:30Z is 00:30 CEST the NEXT day.
+    expect(dateOnlyInZone(new Date('2026-07-15T21:30:00.000Z'), ROME)).toBe('2026-07-15');
+    expect(dateOnlyInZone(new Date('2026-07-15T22:30:00.000Z'), ROME)).toBe('2026-07-16');
+  });
+
+  it('an evening UTC instant that has ALREADY crossed into the next wall-clock day in Rome (CET, +1)', () => {
+    // 22:30Z in January is 23:30 CET — still the same day. 23:30Z is 00:30 CET the NEXT day.
+    expect(dateOnlyInZone(new Date('2026-01-15T22:30:00.000Z'), ROME)).toBe('2026-01-15');
+    expect(dateOnlyInZone(new Date('2026-01-15T23:30:00.000Z'), ROME)).toBe('2026-01-16');
+  });
+
+  it('round-trips with zonedMidnightUtc: the date-only of a day-start instant is that same day', () => {
+    expect(dateOnlyInZone(zonedMidnightUtc('2026-01-15', ROME), ROME)).toBe('2026-01-15');
+    expect(dateOnlyInZone(zonedMidnightUtc('2026-07-15', ROME), ROME)).toBe('2026-07-15');
+  });
+
+  it('is the instant = now special case todayDateOnlyInZone delegates to (behavior-preserving refactor)', () => {
+    const now = new Date();
+    expect(todayDateOnlyInZone(ROME)).toBe(dateOnlyInZone(now, ROME));
   });
 });
 

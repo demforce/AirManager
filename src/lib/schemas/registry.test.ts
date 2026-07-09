@@ -112,6 +112,20 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(Object.keys(createBooking?.responses ?? {}).sort()).toEqual(['201', '401', '403', '404', '409', '422', '500']);
   });
 
+  it('documents the CreateBookingResponse envelope { booking, warnings } on the 201 (story 7.4, AC 1/2)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    const createBookingResponse = schemas?.['CreateBookingResponse'];
+    expect(createBookingResponse?.properties).toHaveProperty('booking');
+    expect(createBookingResponse?.properties).toHaveProperty('warnings');
+  });
+
+  it('documents blocksBooking on the ExpiryType schema (story 7.4)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    expect(schemas?.['ExpiryType']?.properties).toHaveProperty('blocksBooking');
+    expect(schemas?.['CreateExpiryTypeRequest']?.properties).toHaveProperty('blocksBooking');
+    expect(schemas?.['UpdateExpiryTypeRequest']?.properties).toHaveProperty('blocksBooking');
+  });
+
   it('documents 401/403/422/500 error responses on the booking calendar endpoint (story 7.2, AC 1)', () => {
     const calendarBookings = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)[
       '/api/v1/bookings/calendar'

@@ -60,6 +60,9 @@ function fixture(overrides: Partial<Record<string, unknown>> = {}): Record<strin
     name: 'Visita medica classe 2',
     scope: 'PILOTS',
     isActive: true,
+    // Story 7.4: `EXPIRY_TYPE_SELECT` now includes `blocksBooking` — every
+    // fixture that stands in for a `create`/`update`/`findMany` row needs it.
+    blocksBooking: false,
     createdAt: new Date('2026-01-01'),
     ...overrides,
   };
@@ -122,7 +125,7 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       expect(createMock).not.toHaveBeenCalled();
     });
 
-    it('trims the name before persisting', async () => {
+    it('trims the name before persisting (blocksBooking defaults to false, story 7.4)', async () => {
       findFirst.mockResolvedValue(null);
       create.mockResolvedValue(fixture({ name: 'Nuovo tipo' }));
       const input = createExpiryTypeSchema.parse({ name: '  Nuovo tipo  ', scope: 'ALL' });
@@ -131,7 +134,19 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
       expect(findFirstMock).toHaveBeenCalledWith(expect.objectContaining({ where: { name: 'Nuovo tipo' } }));
       expect(createMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { name: 'Nuovo tipo', scope: 'ALL' } }),
+        expect.objectContaining({ data: { name: 'Nuovo tipo', scope: 'ALL', blocksBooking: false } }),
+      );
+    });
+
+    it('creates with blocksBooking: true when the request opts in (story 7.4)', async () => {
+      findFirst.mockResolvedValue(null);
+      create.mockResolvedValue(fixture({ name: 'Tipo critico', blocksBooking: true }));
+      const input = createExpiryTypeSchema.parse({ name: 'Tipo critico', scope: 'PILOTS', blocksBooking: true });
+
+      await createExpiryType(adminActor(), input);
+
+      expect(createMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { name: 'Tipo critico', scope: 'PILOTS', blocksBooking: true } }),
       );
     });
 
@@ -193,6 +208,17 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
     it('an update with an empty body → 422 at the schema layer (never reaches the service)', () => {
       expect(updateExpiryTypeSchema.safeParse({}).success).toBe(false);
     });
+
+    it('patches blocksBooking independently of name/scope/isActive (story 7.4)', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      update.mockResolvedValue(fixture({ blocksBooking: true }));
+      const input = updateExpiryTypeSchema.parse({ blocksBooking: true });
+
+      await updateExpiryType(adminActor(), 'et_1', input);
+
+      expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { blocksBooking: true }, select: expect.anything() });
+      expect(findFirstMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteExpiryType (Task 2, AC 2 — P2003 backstop ready for 6.2)', () => {
@@ -251,6 +277,26 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
     it('accepts a partial update body with just isActive', () => {
       expect(updateExpiryTypeSchema.safeParse({ isActive: true }).success).toBe(true);
+    });
+
+    it('blocksBooking defaults to false on create when omitted (story 7.4)', () => {
+      const result = createExpiryTypeSchema.safeParse({ name: 'X', scope: 'ALL' });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.blocksBooking).toBe(false);
+      }
+    });
+
+    it('accepts an explicit blocksBooking: true on create', () => {
+      const result = createExpiryTypeSchema.safeParse({ name: 'X', scope: 'ALL', blocksBooking: true });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.blocksBooking).toBe(true);
+      }
+    });
+
+    it('accepts a partial update body with just blocksBooking', () => {
+      expect(updateExpiryTypeSchema.safeParse({ blocksBooking: true }).success).toBe(true);
     });
   });
 });

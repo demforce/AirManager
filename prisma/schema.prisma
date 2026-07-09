@@ -310,6 +310,8 @@ model User {
   bookingsUpdated        Booking[]              @relation("BookingUpdatedBy")
   /// Bookings this user CANCELLED (epic 7, story 7.3, AC 2) — `Booking.cancelledByUserId`.
   bookingsCancelled      Booking[]              @relation("BookingCancelledBy")
+  /// Bookings this user FORCED past a blocking expired document (epic 7, story 7.4, AC 2) — `Booking.forcedByUserId`.
+  bookingsForced         Booking[]              @relation("BookingForcedBy")
   /// Scadenze this user registered/last updated (epic 6, story 6.2) — `Expiry.actorUserId`.
   expiriesRecorded       Expiry[]
   /// Update proposals this user FILED, as the scadenza's titolare (epic 6, story 6.2) — `ExpiryUpdateProposal.proposedByUserId`.
@@ -807,6 +809,16 @@ model Flight {
 /// (the audit trail). `updatedByUserId` tracks the actor of the LAST edit
 /// (AC 2 "chi, quando"; `updatedAt` is automatic) — `actorUserId` stays the
 /// CREATOR forever, never reassigned by an edit.
+///
+/// **Expiry-based creation block (epic 7, story 7.4; FR-21)**: `createBooking`
+/// blocks a NEW booking (422 `EXPIRED_DOCUMENTS`) when the TARGET person
+/// (`personId`) has a registered `Expiry` past its `expiresAt` on the
+/// FLIGHT DAY (`startsAt`'s date in `APP_TIMEZONE`, not "today") whose
+/// `ExpiryType.blocksBooking` is `true`; a non-blocking expired document is
+/// only a `warnings` entry in the creation response, never persisted here.
+/// Staff (`bookings.manage.any`) may bypass a real block with `force` +
+/// `forceReason`, stamping `forcedAt`/`forcedByUserId`/`forceReason` — see
+/// those fields' own doc-comments and `bookings.service.ts#createBooking`.
 model Booking {
   id                  String             @id @default(cuid())
   aircraftId          String
@@ -831,6 +843,20 @@ model Booking {
   /// creator, immutable forever).
   updatedByUserId   String?
   updatedByUser     User?         @relation("BookingUpdatedBy", fields: [updatedByUserId], references: [id])
+
+  /// Staff force-bypass tracking (epic 7, story 7.4, AC 2) — set TOGETHER,
+  /// exactly once, ONLY when `createBooking` actually bypassed a blocking
+  /// expired document (`bookings.manage.any` + `force: true` +
+  /// `forceReason`); `null` on every normal booking, INCLUDING a
+  /// `force: true` request that had nothing to bypass (Contesto: the
+  /// tracking says "scavalcato un blocco", not "spuntato una checkbox").
+  /// Never touched by `updateBooking`/`cancelBooking` — the force decision
+  /// is a creation-time fact, not re-evaluated on edit (see `createBooking`'s
+  /// doc-comment for the deferred re-check rationale).
+  forcedAt          DateTime?
+  forcedByUserId    String?
+  forcedByUser      User?         @relation("BookingForcedBy", fields: [forcedByUserId], references: [id])
+  forceReason       String?
 
   /// Who created this booking (`Actor.userId`, always present) — same
   /// rationale as every other ledger's `actorUserId` (e.g. `Flight`).
@@ -933,8 +959,18 @@ model ExpiryType {
   name      String      @unique
   scope     ExpiryScope
   isActive  Boolean     @default(true)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  /// Whether an EXPIRED `Expiry` of this type blocks a NEW booking (epic 7,
+  /// story 7.4; FR-21 `[ASSUMPTION]`: medica/licenza block, ratings only
+  /// warn). Default `false` (a new/custom type never blocks until an admin
+  /// opts it in, `settings.manage`, `types-manager.tsx`'s checkbox) — the
+  /// migration backfills `true` on the 4 standard blocking types by exact
+  /// seed name (`prisma/migrations/20260709120000_add_booking_expiry_block`).
+  /// Consumed ONLY by `bookings.service.ts#createBooking` — see that
+  /// function's doc-comment for the flight-day comparison and force/warning
+  /// semantics.
+  blocksBooking Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   /// Scadenze registered against this type (epic 6, story 6.2) — a non-empty
   /// set is exactly what makes this type non-deletable (FK RESTRICT, story

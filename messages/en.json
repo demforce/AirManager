@@ -920,6 +920,7 @@
       "name": "Name",
       "scope": "Scope",
       "status": "Status",
+      "blocksBooking": "Blocks bookings",
       "actions": "Actions",
       "empty": "No expiry types."
     },
@@ -932,6 +933,10 @@
     "status": {
       "active": "Active",
       "inactive": "Deactivated"
+    },
+    "blocksBooking": {
+      "yes": "Blocks bookings",
+      "no": "—"
     },
     "actions": {
       "edit": "Edit",
@@ -947,6 +952,8 @@
       "editTitle": "Edit expiry type",
       "name": "Name",
       "scope": "Scope",
+      "blocksBooking": "Blocks bookings",
+      "blocksBookingHint": "An expired scadenza of this type prevents a new booking (e.g. medical, license). Staff can still force the booking with a reason.",
       "submitCreate": "Create type",
       "submitSave": "Save",
       "cancel": "Cancel",
@@ -993,10 +1000,21 @@
         "AIRCRAFT_OUT_OF_SERVICE": "The aircraft is out of service: {reason}.",
         "BOOKING_IN_PAST": "The start time must be in the future.",
         "PERSON_NOT_BOOKABLE": "This person has no active profile eligible for a booking.",
+        "EXPIRED_DOCUMENTS": "Cannot create this booking: the following documents are expired: {documents}.",
         "overlap": "The aircraft is already booked for an overlapping interval.",
         "generic": "Could not create the booking. Please try again."
       },
-      "success": "Booking created."
+      "success": "Booking created.",
+      "successWithWarnings": "Booking created. Warning: the following documents are expired (non-blocking):",
+      "force": {
+        "title": "Force booking",
+        "description": "Only staff can still create this booking, with a reason. The override stays tracked.",
+        "reasonLabel": "Reason",
+        "submit": "Force booking",
+        "cancel": "Cancel",
+        "requiredReason": "A reason is required.",
+        "generic": "Could not force the booking. Please try again."
+      }
     },
     "list": {
       "heading": "Upcoming bookings",

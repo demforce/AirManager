@@ -45,10 +45,24 @@ export type NewBookingFormLabels = {
     AIRCRAFT_OUT_OF_SERVICE: string;
     BOOKING_IN_PAST: string;
     PERSON_NOT_BOOKABLE: string;
+    /** `{documents}` placeholder, client-filled with the comma-joined blocking document type names (story 7.4, AC 1) — same `t.raw` pattern as `outOfServiceSuffix`. */
+    EXPIRED_DOCUMENTS: string;
     overlap: string;
     generic: string;
   };
   success: string;
+  /** Success banner text when the booking was created but non-blocking documents are expiring (story 7.4, AC 1) — the list itself renders separately, this is just the intro line. */
+  successWithWarnings: string;
+  /** "Forza prenotazione" (story 7.4, AC 2) — only ever rendered for `mode === 'staff'`. */
+  force: {
+    title: string;
+    description: string;
+    reasonLabel: string;
+    submit: string;
+    cancel: string;
+    requiredReason: string;
+    generic: string;
+  };
 };
 
 type NewBookingFormProps = {
@@ -131,7 +145,13 @@ function buildFormSchema(mode: NewBookingFormMode, bookingTarget: 'self' | 'stud
   });
 }
 
-type ApiErrorBody = { error?: { code?: string; message?: string; details?: { reason?: string } } };
+/** Story 7.4: `details` also carries `documents` on an `EXPIRED_DOCUMENTS` 422 (`{ typeName, expiresAt }[]`, `bookings.service.ts#createBooking`'s doc-comment). */
+type ApiErrorBody = {
+  error?: { code?: string; message?: string; details?: { reason?: string; documents?: Array<{ typeName: string; expiresAt: string }> } };
+};
+
+/** `POST /api/v1/bookings`'s success envelope (story 7.4, AC 1) — `{ booking, warnings }`, replacing the bare item this route answered before this story. */
+type CreateBookingResponseBody = { booking: { id: string }; warnings: Array<{ typeName: string; expiresAt: string }> };
 
 /**
  * "Nuova prenotazione" (AC 1/2/3, Task 5) — one form, three role-scoped
@@ -144,6 +164,16 @@ type ApiErrorBody = { error?: { code?: string; message?: string; details?: { rea
  * feedback, form reset, and `router.refresh()` so the server-rendered
  * "Prossime prenotazioni" table (page.tsx) re-fetches — no local list
  * reconciliation here (AD-1: the list stays a plain server read).
+ *
+ * **Expiry block / staff force (story 7.4, AC 1/2)**: a 422
+ * `EXPIRED_DOCUMENTS` response shows the blocking document names in the
+ * error banner for EVERYONE; for `mode === 'staff'` ONLY, it also opens the
+ * "Forza prenotazione" section (amber, mandatory motivo) — submitting it
+ * resends the EXACT same body plus `force`/`forceReason`, so the user never
+ * re-fills the form. A 201 whose body carries non-empty `warnings` (a
+ * non-blocking expired document) renders the amber warning banner instead
+ * of the plain green success one — both are `role="status"`, mutually
+ * exclusive, driven by `warnings.length`.
  */
 export function NewBookingForm({
   mode,
@@ -158,7 +188,21 @@ export function NewBookingForm({
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [warnings, setWarnings] = useState<Array<{ typeName: string; expiresAt: string }>>([]);
   const [bookingTarget, setBookingTarget] = useState<'self' | 'student'>('self');
+
+  // --- Expiry block / staff force (story 7.4, AC 1/2) ---------------------
+  // `blockedDocuments` is non-null ONLY right after a 422 `EXPIRED_DOCUMENTS`
+  // — its presence (for `mode === 'staff'`) is what renders the "Forza
+  // prenotazione" section below. `pendingForceBody` is the EXACT body that
+  // just got rejected, kept so "Forza prenotazione" can resend it unchanged
+  // plus `force`/`forceReason` — the user never re-fills the form.
+  const [blockedDocuments, setBlockedDocuments] = useState<string[] | null>(null);
+  const [pendingForceBody, setPendingForceBody] = useState<Record<string, unknown> | null>(null);
+  const [forceReason, setForceReason] = useState('');
+  const [forceReasonTouched, setForceReasonTouched] = useState(false);
+  const [forceSubmitting, setForceSubmitting] = useState(false);
+  const [forceError, setForceError] = useState<string | null>(null);
 
   const resolver = useMemo(() => zodResolver(buildFormSchema(mode, bookingTarget)), [mode, bookingTarget]);
 
@@ -176,9 +220,19 @@ export function NewBookingForm({
     return fieldError.message === 'invalidRange' ? labels.invalidRange : labels.requiredField;
   }
 
+  /** Clears every force-related state — used both on a successful bypass and on "Annulla" (Task 4: "annulla che torna al form pulito dallo stato force"). */
+  function resetForceState(): void {
+    setBlockedDocuments(null);
+    setPendingForceBody(null);
+    setForceReason('');
+    setForceReasonTouched(false);
+    setForceError(null);
+  }
+
   async function onSubmit(values: FormValues): Promise<void> {
     setFormError(null);
     setSuccess(false);
+    resetForceState();
 
     let personId: string;
     let instructorProfileId: string | undefined;
@@ -223,15 +277,69 @@ export function NewBookingForm({
         setFormError(labels.errors.BOOKING_IN_PAST);
       } else if (code === 'PERSON_NOT_BOOKABLE') {
         setFormError(labels.errors.PERSON_NOT_BOOKABLE);
+      } else if (code === 'EXPIRED_DOCUMENTS') {
+        // Story 7.4, AC 1/2: the message lists the blocking document names
+        // (from `details.documents`, never the server's English-only
+        // message — AD-8: messages are for logs, codes+details drive the UI).
+        const documentNames = (errorBody?.error?.details?.documents ?? []).map((document) => document.typeName);
+        setFormError(labels.errors.EXPIRED_DOCUMENTS.replace('{documents}', documentNames.join(', ')));
+        // Only staff (`mode === 'staff'`, Contesto's exact gate) ever gets a
+        // bypass affordance — everyone else just sees the message above.
+        if (mode === 'staff') {
+          setBlockedDocuments(documentNames);
+          setPendingForceBody(body);
+        }
       } else {
         setFormError(labels.errors.generic);
       }
       return;
     }
 
+    const created = (await response.json()) as CreateBookingResponseBody;
     reset(DEFAULT_VALUES);
     setBookingTarget('self');
     setSuccess(true);
+    setWarnings(created.warnings);
+    router.refresh();
+  }
+
+  async function onForceSubmit(): Promise<void> {
+    const trimmedReason = forceReason.trim();
+    setForceReasonTouched(true);
+    if (trimmedReason.length === 0) {
+      setForceError(labels.force.requiredReason);
+      return;
+    }
+    if (!pendingForceBody) {
+      return;
+    }
+
+    setForceSubmitting(true);
+    setForceError(null);
+
+    const response = await fetch('/api/v1/bookings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...pendingForceBody, force: true, forceReason: trimmedReason }),
+    });
+
+    setForceSubmitting(false);
+
+    if (!response.ok) {
+      // A concurrent change (e.g. the slot got taken, or the reason was
+      // rejected as too long) — the generic message is enough here, the
+      // primary error path above already covers every other domain code.
+      setForceError(labels.force.generic);
+      return;
+    }
+
+    const created = (await response.json()) as CreateBookingResponseBody;
+    reset(DEFAULT_VALUES);
+    setBookingTarget('self');
+    setFormError(null);
+    resetForceState();
+    setSuccess(true);
+    setWarnings(created.warnings);
     router.refresh();
   }
 
@@ -387,10 +495,83 @@ export function NewBookingForm({
         </p>
       ) : null}
 
-      {success ? (
+      {/* "Forza prenotazione" (story 7.4, AC 2) — staff-only bypass of a real
+          blocking-expiry check; the actual `bookings.manage.any` gate is
+          server-side (AD-5), `mode === 'staff'` is this component's own
+          mirror of that permission (page.tsx only sets it for staff/admin). */}
+      {blockedDocuments && mode === 'staff' ? (
+        <div
+          data-testid="force-booking-section"
+          className="space-y-3 rounded-[8px] border border-[#EADFAE] bg-[#FBF3DB] px-4 py-4"
+        >
+          <div>
+            <h4 className="text-sm font-medium text-[#7A5A00]">{labels.force.title}</h4>
+            <p className="mt-1 text-sm text-[#956400]">{labels.force.description}</p>
+          </div>
+          <div>
+            <label htmlFor="booking-force-reason" className="block text-sm font-medium text-[#7A5A00]">
+              {labels.force.reasonLabel}
+            </label>
+            <textarea
+              id="booking-force-reason"
+              rows={2}
+              maxLength={500}
+              value={forceReason}
+              onChange={(event) => setForceReason(event.target.value)}
+              aria-invalid={forceReasonTouched && forceReason.trim().length === 0}
+              data-testid="force-booking-reason"
+              className="mt-2 w-full rounded-[6px] border border-[#EADFAE] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#956400]"
+            />
+          </div>
+          {forceError ? (
+            <p role="alert" data-testid="force-booking-error" className="text-xs text-[#9F2F2D]">
+              {forceError}
+            </p>
+          ) : null}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              disabled={forceSubmitting}
+              onClick={() => void onForceSubmit()}
+              data-testid="force-booking-submit"
+              className="min-h-[40px] rounded-[6px] bg-[#956400] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#7A5300] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {labels.force.submit}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetForceState();
+                setFormError(null);
+              }}
+              data-testid="force-booking-cancel"
+              className="min-h-[40px] rounded-[6px] border border-[#EADFAE] bg-white px-4 py-2 text-sm font-medium text-[#7A5A00] transition-colors hover:bg-[#F7F1DC]"
+            >
+              {labels.force.cancel}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {success && warnings.length === 0 ? (
         <p role="status" data-testid="booking-form-success" className="rounded-[8px] bg-[#EEF3EC] px-4 py-3 text-sm text-[#346538]">
           {labels.success}
         </p>
+      ) : null}
+
+      {/* Success-with-warnings (story 7.4, AC 1) — amber, distinct from both
+          the green plain-success banner above and the red error banner:
+          the booking WAS created, but the person has non-blocking documents
+          already expired for this flight day. */}
+      {success && warnings.length > 0 ? (
+        <div role="status" data-testid="booking-form-warning" className="rounded-[8px] bg-[#FBF3DB] px-4 py-3 text-sm text-[#956400]">
+          <p className="font-medium">{labels.successWithWarnings}</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {warnings.map((warning) => (
+              <li key={warning.typeName}>{warning.typeName}</li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       <button

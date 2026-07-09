@@ -28,6 +28,7 @@ import {
   bookingListResponseSchema,
   calendarBookingsQuerySchema,
   calendarBookingsResponseSchema,
+  createBookingResponseSchema,
   createBookingSchema,
   listBookingsQuerySchema,
   updateBookingSchema,
@@ -239,6 +240,7 @@ registry.register('ExpiryDashboardList', expiryDashboardListResponseSchema);
 registry.register('Booking', bookingItemSchema);
 registry.register('BookingList', bookingListResponseSchema);
 registry.register('CreateBookingRequest', createBookingSchema);
+registry.register('CreateBookingResponse', createBookingResponseSchema);
 registry.register('UpdateBookingRequest', updateBookingSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -1365,14 +1367,17 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/v1/bookings',
-  summary: 'Book an aircraft for a person over a future interval (AC 1/2/3, FR-18)',
+  summary: 'Book an aircraft for a person over a future interval (AC 1/2/3, FR-18; story 7.4 AC 1/2: expiry block + staff force)',
   description:
-    "`bookings.manage.any` (staff/admin) books for anyone, with an optional instructor. `bookings.manage.own` books for the actor's own person (an active pilot or instructor only, no instructor may be indicated — 403 otherwise) OR, for an instructor, on behalf of an allievo with an active student profile (mandatory `instructorProfileId` matching the actor's own profile, 403 checked BEFORE any query on the target person). Concurrency (AC 2): a `FOR UPDATE` lock on the `Aircraft` row inside one transaction serializes the overlap pre-check against every concurrent request on the same aircraft — two overlapping concurrent POSTs always yield exactly one 201 and one 409. `[startsAt, endsAt)` is semi-open: back-to-back bookings do not overlap. Domain failures answer 422 with a stable code: `AIRCRAFT_OUT_OF_SERVICE` (with the reason), `BOOKING_IN_PAST`, `PERSON_NOT_BOOKABLE`.",
+    "`bookings.manage.any` (staff/admin) books for anyone, with an optional instructor. `bookings.manage.own` books for the actor's own person (an active pilot or instructor only, no instructor may be indicated — 403 otherwise) OR, for an instructor, on behalf of an allievo with an active student profile (mandatory `instructorProfileId` matching the actor's own profile, 403 checked BEFORE any query on the target person). Concurrency (AC 2): a `FOR UPDATE` lock on the `Aircraft` row inside one transaction serializes the overlap pre-check against every concurrent request on the same aircraft — two overlapping concurrent POSTs always yield exactly one 201 and one 409. `[startsAt, endsAt)` is semi-open: back-to-back bookings do not overlap. Domain failures answer 422 with a stable code: `AIRCRAFT_OUT_OF_SERVICE` (with the reason), `BOOKING_IN_PAST`, `PERSON_NOT_BOOKABLE`. Story 7.4 (FR-21): the target person's registered scadenze are checked against the FLIGHT DAY — an expired document of a `blocksBooking` type answers 422 `EXPIRED_DOCUMENTS` (`details.documents` lists the blocking types); a non-blocking expired document is only a `warnings` entry in the 201 body. `force: true` (only usable with `bookings.manage.any` — 403 otherwise, checked before any further query) plus a mandatory `forceReason` bypasses a real block and is tracked (`forcedAt`/`forcedByUserId`/`forceReason`, only when something was actually bypassed).",
   tags: ['Bookings'],
   security,
   request: { body: { content: jsonContent(createBookingSchema), required: true } },
   responses: {
-    201: { description: 'The created booking.', content: jsonContent(bookingItemSchema) },
+    201: {
+      description: 'The created booking, plus any non-blocking expired-document warnings (`{ booking, warnings }`).',
+      content: jsonContent(createBookingResponseSchema),
+    },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });

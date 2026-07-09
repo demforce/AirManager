@@ -98,10 +98,23 @@ async function createAircraft(page: Page): Promise<{ id: string; registration: s
 }
 
 /** Creates a run-unique person with an active pilot profile, no login (used as the staff form's "for" target). */
-async function createPilotPerson(page: Page): Promise<{ personId: string; firstName: string; lastName: string }> {
+async function createPilotPerson(
+  page: Page,
+  // Story 7.4: an optional lastName PREFIX, defaulting to the exact
+  // pre-existing "Pilota-" (every other caller in this file is unaffected,
+  // byte-for-byte). A caller whose test picks this person from the
+  // `<select>`-based "Pilota o allievo" picker (a plain native select, no
+  // search — `listPeople`'s own `orderBy: lastName asc` + its
+  // `OPTIONS_PAGE_SIZE` cap, page.tsx, is unrelated to and out of scope for
+  // this story) can pass an alphabetically-EARLY prefix so the option is
+  // guaranteed to render regardless of how many OTHER people this
+  // long-lived, never-reset dev DB has accumulated (Dev Notes: this file's
+  // own row-visibility lesson, applied to a second paginated surface).
+  lastNamePrefix = 'Pilota',
+): Promise<{ personId: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const firstName = 'Prenota';
-  const lastName = `Pilota-${suffix}`;
+  const lastName = `${lastNamePrefix}-${suffix}`;
 
   const personResponse = await page.request.post('/api/v1/people', { data: { firstName, lastName } });
   expect(personResponse.status()).toBe(201);
@@ -181,8 +194,90 @@ async function createStudentWithLogin(
   return { personId: person.id, email, firstName, lastName };
 }
 
+/** Creates a run-unique pilot person plus a linked login user (story 7.4: a non-staff actor is needed to exercise the expiry-block from the OWN-path form, unlike `createPilotPerson` which has no login). */
+async function createPilotWithLogin(page: Page, password: string): Promise<{ personId: string; email: string; firstName: string; lastName: string }> {
+  const suffix = uniqueSuffix();
+  const firstName = 'Pilota';
+  const lastName = `Scadenze-${suffix}`;
+
+  const personResponse = await page.request.post('/api/v1/people', { data: { firstName, lastName } });
+  expect(personResponse.status()).toBe(201);
+  const person = (await personResponse.json()) as { id: string };
+
+  const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/pilot`, {
+    data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
+  });
+  expect(profileResponse.status()).toBe(200);
+
+  const email = uniqueEmail('pilot-expiry-bookings');
+  const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
+  expect(userResponse.status()).toBe(201);
+
+  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const url = extractSetPasswordUrl(inviteEmail.Text);
+  await page.goto(url.pathname + url.search);
+  await page.getByLabel('Nuova password').fill(password);
+  await page.getByLabel('Conferma password').fill(password);
+  await page.getByRole('button', { name: 'Imposta password' }).click();
+  await expect(page.getByTestId('set-password-success')).toBeVisible();
+
+  return { personId: person.id, email, firstName, lastName };
+}
+
+/**
+ * Creates a run-unique expiry TYPE via the admin API (story 7.4, Dev Notes:
+ * "MAI riusare 'Licenza' del seed nei test, si inquinerebbero a vicenda" —
+ * the catalogue is shared and tests run in parallel). `scope: 'ALL'` for
+ * simplicity (any person is eligible), matching the Contesto's own e2e plan.
+ */
+async function createExpiryTypeForBooking(page: Page, blocksBooking: boolean): Promise<{ id: string; name: string }> {
+  const name = `Tipo prenotazioni ${uniqueSuffix()}`;
+  const response = await page.request.post('/api/v1/expiry-types', { data: { name, scope: 'ALL', blocksBooking } });
+  expect(response.status()).toBe(201);
+  const body = (await response.json()) as { id: string };
+  return { id: body.id, name };
+}
+
+/** Registers a scadenza for a person via the staff API (story 7.4; `expiries` API of story 6.2). */
+async function registerExpiry(page: Page, personId: string, expiryTypeId: string, issuedAt: string, expiresAt: string): Promise<void> {
+  const response = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId, issuedAt, expiresAt } });
+  expect(response.status()).toBe(201);
+}
+
 /** Far enough in the future to never collide with "today" no matter when this suite runs. */
 const FUTURE_DAY = '2031-03-10';
+
+// Story 7.4: an expiry dated well before FUTURE_DAY — genuinely expired for
+// any booking made on FUTURE_DAY, regardless of DST/timezone edge cases.
+const EXPIRED_ISSUED_AT = '2020-01-01';
+const EXPIRED_EXPIRES_AT = '2020-06-01';
+
+/**
+ * The SOONEST valid future slot (`startsAt`/`endsAt`, `YYYY-MM-DDTHH:mm` —
+ * this environment's browser/server timezone is UTC, matching the
+ * datetime-local `Inizio`/`Fine` inputs directly) — story 7.4, Dev Notes
+ * lesson learned, after TWO failed attempts at picking a "day that sorts
+ * early enough": `listBookings`/"Prossime prenotazioni" orders `startsAt
+ * asc` GLOBALLY (not per-day) and shows only page 1
+ * (`BOOKINGS_PAGE_SIZE`) — a test asserting a just-created row is VISIBLE
+ * there (unlike a plain API status/count assertion) needs a slot that
+ * outranks EVERY other booking currently in the table, not merely one that
+ * avoids the shared, heavily-reused `FUTURE_DAY` pile (2031-03-10, dozens
+ * of accumulated bookings across every session this long-lived, never-reset
+ * dev DB has ever run). A random FUTURE date/day is not enough — this
+ * session's own repeated re-runs alone scattered enough near-term bookings
+ * to blow past `BOOKINGS_PAGE_SIZE` again. Minutes-from-now is the only
+ * slot that beats literally everything else EXCEPT other genuinely-imminent
+ * bookings, AND it self-cleans: `from: nowIso` drops it from the list on
+ * its own once it is in the past, unlike a fixed/far future date that
+ * accumulates forever.
+ */
+function soonestFutureSlot(): { startsAt: string; endsAt: string } {
+  const toDatetimeLocal = (d: Date): string => d.toISOString().slice(0, 16);
+  const start = new Date(Date.now() + 10 * 60 * 1000);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return { startsAt: toDatetimeLocal(start), endsAt: toDatetimeLocal(end) };
+}
 
 test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
   test('pilot books via UI for a future interval; an overlap shows 409 in the form; back-to-back (semi-open) succeeds', async ({ page }) => {
@@ -614,7 +709,9 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
       data: { aircraftId: aircraft.id, personId: pilotPersonId, startsAt, endsAt },
     });
     expect(created.status()).toBe(201);
-    const { id } = (await created.json()) as { id: string };
+    // Story 7.4: the POST response envelope is now `{ booking, warnings }`.
+    const { booking } = (await created.json()) as { booking: { id: string } };
+    const { id } = booking;
 
     while (Date.now() < new Date(startsAt).getTime()) {
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -645,7 +742,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
       data: { aircraftId: aircraft.id, personId: other.personId, startsAt: `${FUTURE_DAY}T07:00:00.000Z`, endsAt: `${FUTURE_DAY}T08:00:00.000Z` },
     });
     expect(created.status()).toBe(201);
-    const { id } = (await created.json()) as { id: string };
+    const { booking } = (await created.json()) as { booking: { id: string } };
+    const { id } = booking;
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
@@ -674,8 +772,10 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     });
     expect(bookingA.status()).toBe(201);
     expect(bookingB.status()).toBe(201);
-    const { id: idA } = (await bookingA.json()) as { id: string };
-    const { id: idB } = (await bookingB.json()) as { id: string };
+    const { booking: createdA } = (await bookingA.json()) as { booking: { id: string } };
+    const { booking: createdB } = (await bookingB.json()) as { booking: { id: string } };
+    const idA = createdA.id;
+    const idB = createdB.id;
 
     const targetInterval = { startsAt: `${FUTURE_DAY}T20:00:00.000Z`, endsAt: `${FUTURE_DAY}T21:00:00.000Z` };
     const [respA, respB] = await Promise.all([
@@ -696,7 +796,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
       data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T22:00:00.000Z`, endsAt: `${FUTURE_DAY}T23:00:00.000Z` },
     });
     expect(created.status()).toBe(201);
-    const { id } = (await created.json()) as { id: string };
+    const { booking } = (await created.json()) as { booking: { id: string } };
+    const { id } = booking;
 
     const [first, second] = await Promise.all([
       page.request.post(`/api/v1/bookings/${id}/cancel`),
@@ -749,5 +850,158 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
       expect(href, `${testId} href should preserve view=week`).toMatch(/[?&]view=week(&|$)/);
       expect(href, `${testId} href should preserve date=${FUTURE_DAY}`).toContain(`date=${FUTURE_DAY}`);
     }
+  });
+});
+
+test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
+  test('a pilot with a run-unique BLOCKING expired document sees an error naming it, and no force section (staff-only)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const blockingType = await createExpiryTypeForBooking(page, true);
+    const pilotPassword = 'PilotaBloccato123!';
+    const pilot = await createPilotWithLogin(page, pilotPassword);
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_ISSUED_AT, EXPIRED_EXPIRES_AT);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
+
+    await gotoBookingsAndWaitForHydration(page);
+    const form = page.getByTestId('new-booking-form');
+    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T06:00`);
+    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T07:00`);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+
+    await expect(page.getByTestId('booking-form-error')).toContainText(blockingType.name);
+    await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
+    await expect(page.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
+  });
+
+  test('a pilot with ONLY a run-unique NON-blocking (warning) expired document: the booking is created, with an amber warning banner naming it', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const warningType = await createExpiryTypeForBooking(page, false);
+    const pilotPassword = 'PilotaWarning123!';
+    const pilot = await createPilotWithLogin(page, pilotPassword);
+    await registerExpiry(page, pilot.personId, warningType.id, EXPIRED_ISSUED_AT, EXPIRED_EXPIRES_AT);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
+
+    await gotoBookingsAndWaitForHydration(page);
+    const form = page.getByTestId('new-booking-form');
+    // `soonestFutureSlot()`, not `FUTURE_DAY` (Dev Notes): this test asserts
+    // the created row is VISIBLE in the paginated "Prossime prenotazioni"
+    // list, so it needs a slot that outranks EVERYTHING else in it, not
+    // merely a day that avoids `FUTURE_DAY`'s own accumulated volume.
+    const slot = soonestFutureSlot();
+    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await form.getByLabel('Inizio').fill(slot.startsAt);
+    await form.getByLabel('Fine').fill(slot.endsAt);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+
+    await expect(page.getByTestId('booking-form-warning')).toBeVisible();
+    await expect(page.getByTestId('booking-form-warning')).toContainText(warningType.name);
+    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    await expect(row).toBeVisible();
+  });
+
+  test('staff: a blocked person triggers 422 with the document name, "Forza prenotazione" appears, and a motivated force succeeds (201) with forcedAt tracked', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const blockingType = await createExpiryTypeForBooking(page, true);
+    // Alphabetically-EARLY prefix (Dev Notes): this test picks the person
+    // from the "Pilota o allievo" `<select>` by label, which only renders
+    // `listPeople`'s FIRST `OPTIONS_PAGE_SIZE` (100) people ordered by
+    // lastName — with 169+ active people accumulated in this never-reset
+    // dev DB, a "Pilota-..." (mid-alphabet) name is no longer a safe bet.
+    const pilot = await createPilotPerson(page, '0Pilota');
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_ISSUED_AT, EXPIRED_EXPIRES_AT);
+
+    await gotoBookingsAndWaitForHydration(page);
+    const form = page.getByTestId('new-booking-form');
+    // `soonestFutureSlot()`, not `FUTURE_DAY` — see the other row-visibility
+    // assertion above for the rationale (only "outranks everything else in
+    // the globally-sorted list" survives this DB's accumulated volume).
+    const slot = soonestFutureSlot();
+    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await form.getByLabel('Inizio').fill(slot.startsAt);
+    await form.getByLabel('Fine').fill(slot.endsAt);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+
+    await expect(page.getByTestId('booking-form-error')).toContainText(blockingType.name);
+    const forceSection = page.getByTestId('force-booking-section');
+    await expect(forceSection).toBeVisible();
+
+    // Submitting without a motivo is rejected client-side first.
+    await forceSection.getByTestId('force-booking-submit').click();
+    await expect(forceSection.getByTestId('force-booking-error')).toBeVisible();
+
+    await forceSection.getByTestId('force-booking-reason').fill('Autorizzato dal direttore per volo urgente');
+    await forceSection.getByTestId('force-booking-submit').click();
+
+    await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
+    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    await expect(row).toBeVisible();
+
+    // The tracking (AC 2 "chi, quando") is exposed read-side on the item DTO
+    // (`bookingItemSchema.forcedAt`) — assert it is non-null on the row just created.
+    const listResponse = await page.request.get(`/api/v1/bookings?personId=${pilot.personId}&pageSize=50`);
+    expect(listResponse.status()).toBe(200);
+    const listBody = (await listResponse.json()) as { items: Array<{ aircraftId: string; forcedAt: string | null }> };
+    const forcedBooking = listBody.items.find((item) => item.aircraftId === aircraft.id);
+    expect(forcedBooking?.forcedAt).not.toBeNull();
+  });
+
+  test('a pilot attempting force:true directly via the API gets 403 (own-path never bypasses a block, checked before any expiry query)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    const me = await (await page.request.get('/api/v1/me')).json();
+    const pilotPersonId = me.person.id as string;
+
+    const response = await page.request.post('/api/v1/bookings', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilotPersonId,
+        startsAt: `${FUTURE_DAY}T19:30:00.000Z`,
+        endsAt: `${FUTURE_DAY}T20:30:00.000Z`,
+        force: true,
+        forceReason: 'Tentativo non autorizzato',
+      },
+    });
+    expect(response.status()).toBe(403);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  test('boundary: an expiry whose expiresAt equals the flight day itself is still valid — the booking succeeds with no error and no warning', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const blockingType = await createExpiryTypeForBooking(page, true);
+    const pilot = await createPilotPerson(page);
+    // FUTURE_DAY's own date, in Europe/Rome: a 09:00Z start on 2031-03-10 is
+    // 10:00 CET (before that year's DST transition) — same calendar day.
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_ISSUED_AT, FUTURE_DAY);
+
+    const response = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` },
+    });
+
+    expect(response.status()).toBe(201);
+    const body = (await response.json()) as { booking: { id: string }; warnings: unknown[] };
+    expect(body.warnings).toEqual([]);
   });
 });

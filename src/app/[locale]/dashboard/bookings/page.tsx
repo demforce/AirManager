@@ -428,10 +428,21 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
                   AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
                   BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
                   PERSON_NOT_BOOKABLE: t('form.errors.PERSON_NOT_BOOKABLE'),
+                  EXPIRED_DOCUMENTS: t.raw('form.errors.EXPIRED_DOCUMENTS') as string,
                   overlap: t('form.errors.overlap'),
                   generic: t('form.errors.generic'),
                 },
                 success: t('form.success'),
+                successWithWarnings: t('form.successWithWarnings'),
+                force: {
+                  title: t('form.force.title'),
+                  description: t('form.force.description'),
+                  reasonLabel: t('form.force.reasonLabel'),
+                  submit: t('form.force.submit'),
+                  cancel: t('form.force.cancel'),
+                  requiredReason: t('form.force.requiredReason'),
+                  generic: t('form.force.generic'),
+                },
               }}
             />
           </div>

@@ -920,6 +920,7 @@
       "name": "Nome",
       "scope": "Ambito",
       "status": "Stato",
+      "blocksBooking": "Blocca prenotazioni",
       "actions": "Azioni",
       "empty": "Nessun tipo di scadenza."
     },
@@ -932,6 +933,10 @@
     "status": {
       "active": "Attivo",
       "inactive": "Disattivato"
+    },
+    "blocksBooking": {
+      "yes": "Blocca prenotazioni",
+      "no": "—"
     },
     "actions": {
       "edit": "Modifica",
@@ -947,6 +952,8 @@
       "editTitle": "Modifica tipo di scadenza",
       "name": "Nome",
       "scope": "Ambito",
+      "blocksBooking": "Blocca prenotazioni",
+      "blocksBookingHint": "Una scadenza scaduta di questo tipo impedisce una nuova prenotazione (es. visita medica, licenza). Lo staff può comunque forzare la prenotazione motivandola.",
       "submitCreate": "Crea tipo",
       "submitSave": "Salva",
       "cancel": "Annulla",
@@ -993,10 +1000,21 @@
         "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
         "BOOKING_IN_PAST": "L'orario di inizio deve essere nel futuro.",
         "PERSON_NOT_BOOKABLE": "Questa persona non ha un profilo attivo idoneo alla prenotazione.",
+        "EXPIRED_DOCUMENTS": "Impossibile creare la prenotazione: risultano scaduti i seguenti documenti: {documents}.",
         "overlap": "Il velivolo è già prenotato per un intervallo che si sovrappone a questo.",
         "generic": "Impossibile creare la prenotazione. Riprova."
       },
-      "success": "Prenotazione creata."
+      "success": "Prenotazione creata.",
+      "successWithWarnings": "Prenotazione creata. Attenzione: i seguenti documenti risultano scaduti (non bloccanti):",
+      "force": {
+        "title": "Forza prenotazione",
+        "description": "Solo lo staff può creare comunque questa prenotazione, indicando un motivo. La forzatura resta tracciata.",
+        "reasonLabel": "Motivo",
+        "submit": "Forza prenotazione",
+        "cancel": "Annulla",
+        "requiredReason": "Il motivo è obbligatorio.",
+        "generic": "Impossibile forzare la prenotazione. Riprova."
+      }
     },
     "list": {
       "heading": "Prossime prenotazioni",
