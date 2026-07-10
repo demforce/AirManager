@@ -11,6 +11,8 @@ export type MeResult = {
     id: string;
     firstName: string;
     lastName: string;
+    /** Story 9.2 (FR-33): whether this person has an ACTIVE `StudentProfile` — gates the "Il mio diario" home tile (`dashboard/page.tsx`). Not part of the wider scheda persona (`people.service.ts#getPerson`), just the minimal flag the home page needs. */
+    hasActiveStudentProfile: boolean;
   } | null;
 };
 
@@ -30,7 +32,14 @@ export async function getMe(actor: Actor): Promise<MeResult> {
       id: true,
       email: true,
       roles: true,
-      person: { select: { id: true, firstName: true, lastName: true } },
+      person: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          studentProfile: { select: { deactivatedAt: true } },
+        },
+      },
     },
   });
 
@@ -45,6 +54,13 @@ export async function getMe(actor: Actor): Promise<MeResult> {
     userId: user.id,
     email: user.email,
     roles: user.roles,
-    person: user.person,
+    person: user.person
+      ? {
+          id: user.person.id,
+          firstName: user.person.firstName,
+          lastName: user.person.lastName,
+          hasActiveStudentProfile: user.person.studentProfile !== null && user.person.studentProfile.deactivatedAt === null,
+        }
+      : null,
   };
 }

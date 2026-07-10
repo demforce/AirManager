@@ -17,6 +17,7 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     'bookings.manage.any',
     'school.manage.own',
     'school.manage.any',
+    'school.notes.manage.any',
     'expiries.manage',
     'expiries.propose.own',
     'ppr.manage',
@@ -47,6 +48,10 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     // Story 9.1 (FR-32): staff manages ANY student's instructor assignments.
     expect(hasPermission(staff, 'school.manage.any')).toBe(true);
     expect(hasPermission(staff, 'school.manage.own')).toBe(false);
+    // Story 9.2 (FR-33): the admin-only override to edit a training note past
+    // its 7-day window is reserved to ADMIN — staff never holds it, even
+    // though it holds the broader `school.manage.any`.
+    expect(hasPermission(staff, 'school.notes.manage.any')).toBe(false);
     expect(hasPermission(staff, 'expiries.manage')).toBe(true);
 
     // Story 6.2: staff edits scadenze directly (`expiries.manage`) — it
@@ -90,6 +95,8 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     // Still nothing granted by neither role:
     expect(hasPermission(pilotInstructor, 'people.read')).toBe(false);
     expect(hasPermission(pilotInstructor, 'users.manage')).toBe(false);
+    // Story 9.2: an instructor never holds the admin-only training-note override.
+    expect(hasPermission(pilotInstructor, 'school.notes.manage.any')).toBe(false);
 
     const permissions = getPermissions(pilotInstructor);
     expect(permissions).toEqual(

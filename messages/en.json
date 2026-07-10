@@ -30,6 +30,7 @@
     "navHeading": "Operational areas",
     "myProfile": "My profile",
     "myAccount": "My account",
+    "myDiary": "My training diary",
     "myExpiries": {
       "heading": "My expiries",
       "link": "All my expiries"
@@ -352,6 +353,8 @@
       "name": "Student",
       "courseStartDate": "Course start",
       "totalHours": "Total school hours",
+      "lastNote": "Last note",
+      "noNotes": "—",
       "statusHeader": "Expiries",
       "noExpiries": "—",
       "status": {
@@ -359,6 +362,47 @@
         "expiring": "Expiring",
         "expired": "Expired"
       }
+    }
+  },
+  "TrainingDiaryPage": {
+    "kicker": "Training diary",
+    "courseStartDate": "Course start",
+    "back": "Back",
+    "empty": "No note recorded yet.",
+    "row": {
+      "author": "Instructor",
+      "edited": "edited",
+      "exercises": "Exercises",
+      "assessment": "Assessment",
+      "nextSteps": "Next steps",
+      "linkedFlight": "Linked flight",
+      "edit": "Edit"
+    },
+    "newNoteForm": {
+      "title": "New note",
+      "addAction": "New note",
+      "noteDate": "Training date",
+      "exercises": "Exercises",
+      "assessment": "Assessment",
+      "nextSteps": "Next steps",
+      "flight": "Linked flight",
+      "noFlight": "No linked flight",
+      "submit": "Save note",
+      "cancel": "Cancel",
+      "requiredField": "Required field.",
+      "flightError": "The selected flight cannot be linked to this note.",
+      "genericError": "Could not save the note. Try again."
+    },
+    "editForm": {
+      "noteDate": "Training date",
+      "exercises": "Exercises",
+      "assessment": "Assessment",
+      "nextSteps": "Next steps",
+      "save": "Save",
+      "cancel": "Cancel",
+      "requiredField": "Required field.",
+      "immutableError": "This note can no longer be edited (7-day window elapsed).",
+      "genericError": "Could not save the changes. Try again."
     }
   },
   "AccountStatementPage": {

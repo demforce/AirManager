@@ -15,6 +15,7 @@ export const meResponseSchema = z.object({
       id: z.string(),
       firstName: z.string(),
       lastName: z.string(),
+      hasActiveStudentProfile: z.boolean(),
     })
     .nullable(),
 });

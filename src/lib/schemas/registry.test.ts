@@ -33,6 +33,8 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/people/{id}/instructors',
         '/api/v1/people/{id}/instructors/{instructorPersonId}',
         '/api/v1/school/students',
+        '/api/v1/people/{id}/training-notes',
+        '/api/v1/people/{id}/training-notes/{noteId}',
         '/api/v1/people/{id}/packages',
         '/api/v1/accounts/negative-balances',
         '/api/v1/cash-categories',

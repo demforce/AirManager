@@ -30,6 +30,7 @@
     "navHeading": "Aree operative",
     "myProfile": "La mia scheda",
     "myAccount": "Il mio conto",
+    "myDiary": "Il mio diario",
     "myExpiries": {
       "heading": "Le mie scadenze",
       "link": "Tutte le mie scadenze"
@@ -352,6 +353,8 @@
       "name": "Allievo",
       "courseStartDate": "Inizio corso",
       "totalHours": "Ore scuola totali",
+      "lastNote": "Ultima annotazione",
+      "noNotes": "—",
       "statusHeader": "Scadenze",
       "noExpiries": "—",
       "status": {
@@ -359,6 +362,47 @@
         "expiring": "In scadenza",
         "expired": "Scaduta"
       }
+    }
+  },
+  "TrainingDiaryPage": {
+    "kicker": "Diario di addestramento",
+    "courseStartDate": "Inizio corso",
+    "back": "Indietro",
+    "empty": "Nessuna annotazione registrata.",
+    "row": {
+      "author": "Istruttore",
+      "edited": "modificata",
+      "exercises": "Esercizi svolti",
+      "assessment": "Giudizio",
+      "nextSteps": "Prossimi passi",
+      "linkedFlight": "Volo collegato",
+      "edit": "Modifica"
+    },
+    "newNoteForm": {
+      "title": "Nuova annotazione",
+      "addAction": "Nuova annotazione",
+      "noteDate": "Data addestramento",
+      "exercises": "Esercizi svolti",
+      "assessment": "Giudizio",
+      "nextSteps": "Prossimi passi",
+      "flight": "Volo collegato",
+      "noFlight": "Nessun volo collegato",
+      "submit": "Salva annotazione",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "flightError": "Il volo selezionato non è collegabile a questa annotazione.",
+      "genericError": "Impossibile salvare l'annotazione. Riprova."
+    },
+    "editForm": {
+      "noteDate": "Data addestramento",
+      "exercises": "Esercizi svolti",
+      "assessment": "Giudizio",
+      "nextSteps": "Prossimi passi",
+      "save": "Salva",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "immutableError": "Questa annotazione non è più modificabile (finestra di 7 giorni scaduta).",
+      "genericError": "Impossibile salvare le modifiche. Riprova."
     }
   },
   "AccountStatementPage": {

@@ -120,8 +120,12 @@ import {
   assignInstructorSchema,
   assignedInstructorItemSchema,
   assignedInstructorListResponseSchema,
+  listTrainingNotesQuerySchema,
   ownStudentItemSchema,
   ownStudentListResponseSchema,
+  trainingNoteInputSchema,
+  trainingNoteItemSchema,
+  trainingNoteListResponseSchema,
 } from './school';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
 
@@ -223,6 +227,9 @@ registry.register('AssignedInstructor', assignedInstructorItemSchema);
 registry.register('AssignedInstructorList', assignedInstructorListResponseSchema);
 registry.register('OwnStudent', ownStudentItemSchema);
 registry.register('OwnStudentList', ownStudentListResponseSchema);
+registry.register('TrainingNoteRequest', trainingNoteInputSchema);
+registry.register('TrainingNote', trainingNoteItemSchema);
+registry.register('TrainingNoteList', trainingNoteListResponseSchema);
 registry.register('Aircraft', aircraftListItemSchema);
 registry.register('AircraftList', aircraftListResponseSchema);
 registry.register('CreateAircraftRequest', createAircraftSchema);
@@ -683,6 +690,56 @@ registry.registerPath({
   responses: {
     200: { description: "The instructor's own students.", content: jsonContent(ownStudentListResponseSchema) },
     ...errorResponses(401, 403, 422),
+  },
+});
+
+const studentNoteParams = z.object({
+  id: z.string().meta({ description: "Student's Person id (cuid).", example: 'clx1a2b3c4d5e6f7g8h9' }),
+  noteId: z.string().meta({ description: 'TrainingNote id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/training-notes',
+  summary: "List a student's training diary (paginated)",
+  description:
+    "Story 9.2, AC 2/4 — the training diary. `{id}` is the STUDENT's `Person.id`. Access: `school.manage.any` (staff/admin, any student) OR `school.manage.own` plus an existing assignment to this student (the diary is the allievo's — an assigned instructor sees EVERY author's entries) OR own-access (`self.read` and a matching `personId`, the allievo reading their OWN diary read-only, even on a deactivated profile). 422 `STUDENT_NOT_FOUND` on the management paths if the student profile is inactive/archived.",
+  tags: ['School'],
+  security,
+  request: { params: personIdParams, query: listTrainingNotesQuerySchema },
+  responses: {
+    200: { description: "The student's training diary, paginated.", content: jsonContent(trainingNoteListResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/training-notes',
+  summary: 'Add a training-diary entry',
+  description:
+    "Story 9.2, AC 1 — requires `school.manage.own` (staff never authors — it holds `school.manage.any` instead, a 403). The caller's own ACTIVE `InstructorProfile` becomes the author (422 `INSTRUCTOR_PROFILE_REQUIRED` if absent); the student must be explicitly assigned to this instructor (403 otherwise); an optional `flightId` must be a `SCHOOL` flight of THIS student (422 `FLIGHT_NOT_LINKABLE` otherwise).",
+  tags: ['School'],
+  security,
+  request: { params: personIdParams, body: { content: jsonContent(trainingNoteInputSchema), required: true } },
+  responses: {
+    201: { description: 'The created training note.', content: jsonContent(trainingNoteItemSchema) },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/people/{id}/training-notes/{noteId}',
+  summary: 'Edit a training-diary entry',
+  description:
+    "Story 9.2, AC 3 — editable fields are noteDate/flightId/exercises/assessment/nextSteps ONLY (never the author or the student), a full replace of that set. Only the AUTHOR (`school.manage.own` and a matching `InstructorProfile`) or `school.notes.manage.any` (admin only) may edit, and ONLY within 7 days of `createdAt` — past that, 409 `NOTE_IMMUTABLE` for EVERYONE, admin included. 404 if `noteId` does not belong to `{id}`'s diary.",
+  tags: ['School'],
+  security,
+  request: { params: studentNoteParams, body: { content: jsonContent(trainingNoteInputSchema), required: true } },
+  responses: {
+    200: { description: 'The updated training note.', content: jsonContent(trainingNoteItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 

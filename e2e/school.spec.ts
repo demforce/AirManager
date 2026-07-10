@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { Client } from 'pg';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -113,6 +114,46 @@ async function createStudentPerson(page: Page, tag: string, courseStartDate = PA
   expect(profileResponse.status()).toBe(200);
 
   return { personId: person.id, firstName, lastName };
+}
+
+/** Same as `createInstructorWithLogin`, but for a STUDENT (pattern `bookings.spec.ts#createStudentWithLogin`). */
+async function createStudentWithLogin(
+  page: Page,
+  password: string,
+  tag: string,
+): Promise<{ personId: string; email: string; firstName: string; lastName: string }> {
+  const student = await createStudentPerson(page, tag);
+
+  const email = uniqueEmail('student-school');
+  const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['STUDENT'], personId: student.personId } });
+  expect(userResponse.status()).toBe(201);
+
+  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const url = extractSetPasswordUrl(inviteEmail.Text);
+  await page.goto(url.pathname + url.search);
+  await page.getByLabel('Nuova password').fill(password);
+  await page.getByLabel('Conferma password').fill(password);
+  await page.getByRole('button', { name: 'Imposta password' }).click();
+  await expect(page.getByTestId('set-password-success')).toBeVisible();
+
+  return { ...student, email };
+}
+
+/**
+ * Backdates a `TrainingNote.createdAt` directly in the DB (Story 9.2, AC 3
+ * — the only way to test the 7-day immutability window without waiting 7
+ * real days; sanctioned by the story's Dev Notes). Raw `pg`, same connection
+ * string the app itself uses (`DATABASE_URL`, loaded by `playwright.config.ts`'s
+ * `dotenv/config`).
+ */
+async function backdateTrainingNote(noteId: string, daysAgo: number): Promise<void> {
+  const client = new Client({ connectionString: process.env['DATABASE_URL'] });
+  await client.connect();
+  try {
+    await client.query('UPDATE "TrainingNote" SET "createdAt" = now() - ($1 || \' days\')::interval WHERE id = $2', [daysAgo, noteId]);
+  } finally {
+    await client.end();
+  }
 }
 
 async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string }> {
@@ -282,5 +323,182 @@ test.describe('Student-instructor assignment (Story 9.1, FR-32)', () => {
     expect(response.status()).toBe(403);
     const body = await response.json();
     expect(body.error.code).toBe('FORBIDDEN');
+  });
+});
+
+test.describe('Training notes (Story 9.2, FR-33)', () => {
+  test('an assigned instructor creates a note with a linked SCHOOL flight; it appears in the diary (AC 1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorWithLogin(page, 'TrainingNotes123!', 'Crea');
+    const student = await createStudentPerson(page, 'Crea');
+    const aircraft = await createAircraftWithRate(page, 15000);
+    await createInstructorRate(page, instructor.personId, 4000);
+    const flight = await registerSchoolFlight(page, {
+      aircraftId: aircraft.id,
+      personId: student.personId,
+      instructorPersonId: instructor.personId,
+      flightDate: '2020-02-01',
+      minutes: 60,
+    });
+
+    const assignResponse = await page.request.post(`/api/v1/people/${student.personId}/instructors`, {
+      data: { instructorPersonId: instructor.personId },
+    });
+    expect(assignResponse.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, 'TrainingNotes123!');
+    await page.goto(`/it/dashboard/school/${student.personId}`);
+
+    await page.getByTestId('new-training-note-action').click();
+    await page.getByLabel('Data addestramento').fill('2020-02-05');
+    await page.getByLabel('Volo collegato').selectOption(flight.id);
+    await page.getByLabel('Esercizi svolti').fill('Circuiti, decolli e atterraggi');
+    await page.getByLabel('Giudizio').fill('Buon controllo direzionale');
+    await page.getByRole('button', { name: 'Salva annotazione' }).click();
+
+    const row = page.getByTestId('training-note-row');
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText('Circuiti, decolli e atterraggi');
+    await expect(row).toContainText('Buon controllo direzionale');
+    await expect(row).toContainText('Volo collegato');
+    await expect(row.getByTestId('edit-training-note-action')).toBeVisible();
+  });
+
+  test('rejects a flightId that is not a SCHOOL flight of this student (AC 1, 422 FLIGHT_NOT_LINKABLE)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorWithLogin(page, 'TrainingNotesFlight123!', 'Volo');
+    const student = await createStudentPerson(page, 'Volo');
+    const otherStudent = await createStudentPerson(page, 'VoloAltro');
+    const aircraft = await createAircraftWithRate(page, 15000);
+    await createInstructorRate(page, instructor.personId, 4000);
+    // A SCHOOL flight belonging to a DIFFERENT student.
+    const otherFlight = await registerSchoolFlight(page, {
+      aircraftId: aircraft.id,
+      personId: otherStudent.personId,
+      instructorPersonId: instructor.personId,
+      flightDate: '2020-02-01',
+      minutes: 60,
+    });
+
+    const assignResponse = await page.request.post(`/api/v1/people/${student.personId}/instructors`, {
+      data: { instructorPersonId: instructor.personId },
+    });
+    expect(assignResponse.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, 'TrainingNotesFlight123!');
+
+    const createResponse = await page.request.post(`/api/v1/people/${student.personId}/training-notes`, {
+      data: { noteDate: '2020-02-05', exercises: 'x', flightId: otherFlight.id },
+    });
+    expect(createResponse.status()).toBe(422);
+    const body = await createResponse.json();
+    expect(body.error.code).toBe('FLIGHT_NOT_LINKABLE');
+  });
+
+  test('a student reads their OWN diary read-only (no new-note action) but a DIFFERENT student\'s diary is 403 (AC 2)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorWithLogin(page, 'TrainingNotesRead123!', 'Lettura');
+    const student = await createStudentWithLogin(page, 'AllievoDiario123!', 'Lettura');
+    const otherStudent = await createStudentPerson(page, 'LetturaAltro');
+
+    const assignResponse = await page.request.post(`/api/v1/people/${student.personId}/instructors`, {
+      data: { instructorPersonId: instructor.personId },
+    });
+    expect(assignResponse.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, 'TrainingNotesRead123!');
+    const createResponse = await page.request.post(`/api/v1/people/${student.personId}/training-notes`, {
+      data: { noteDate: '2026-07-05', exercises: 'Esercizi di navigazione' },
+    });
+    expect(createResponse.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, student.email, 'AllievoDiario123!');
+    await page.goto(`/it/dashboard/school/${student.personId}`);
+
+    await expect(page.getByTestId('training-note-row')).toContainText('Esercizi di navigazione');
+    await expect(page.getByTestId('new-training-note-action')).toHaveCount(0);
+    await expect(page.getByTestId('edit-training-note-action')).toHaveCount(0);
+
+    // AC 2: another student's diary is a 403, degraded to the dashboard redirect.
+    await page.goto(`/it/dashboard/school/${otherStudent.personId}`);
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
+  });
+
+  test('the author edits their own note within the 7-day window (AC 3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorWithLogin(page, 'TrainingNotesEdit123!', 'Modifica');
+    const student = await createStudentPerson(page, 'Modifica');
+
+    const assignResponse = await page.request.post(`/api/v1/people/${student.personId}/instructors`, {
+      data: { instructorPersonId: instructor.personId },
+    });
+    expect(assignResponse.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, 'TrainingNotesEdit123!');
+    await page.goto(`/it/dashboard/school/${student.personId}`);
+
+    await page.getByTestId('new-training-note-action').click();
+    await page.getByLabel('Data addestramento').fill('2026-07-05');
+    await page.getByLabel('Esercizi svolti').fill('Circuiti iniziali');
+    await page.getByRole('button', { name: 'Salva annotazione' }).click();
+
+    await page.getByTestId('edit-training-note-action').click();
+    await page.getByLabel('Esercizi svolti').fill('Circuiti iniziali (rivisto)');
+    await page.getByRole('button', { name: 'Salva' }).click();
+
+    const row = page.getByTestId('training-note-row');
+    await expect(row).toContainText('Circuiti iniziali (rivisto)');
+    await expect(row).toContainText('modificata');
+  });
+
+  test('a note older than 7 days is immutable for EVERYONE, admin included (AC 3, 409 NOTE_IMMUTABLE)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorWithLogin(page, 'TrainingNotesImmutable123!', 'Scaduta');
+    const student = await createStudentPerson(page, 'Scaduta');
+
+    const assignResponse = await page.request.post(`/api/v1/people/${student.personId}/instructors`, {
+      data: { instructorPersonId: instructor.personId },
+    });
+    expect(assignResponse.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, 'TrainingNotesImmutable123!');
+    const createResponse = await page.request.post(`/api/v1/people/${student.personId}/training-notes`, {
+      data: { noteDate: '2026-06-01', exercises: 'Esercizio vecchio' },
+    });
+    expect(createResponse.status()).toBe(201);
+    const created = (await createResponse.json()) as { id: string };
+
+    await backdateTrainingNote(created.id, 8);
+
+    const authorEditResponse = await page.request.patch(`/api/v1/people/${student.personId}/training-notes/${created.id}`, {
+      data: { noteDate: '2026-06-01', exercises: 'Tentativo di modifica' },
+    });
+    expect(authorEditResponse.status()).toBe(409);
+    const authorEditBody = await authorEditResponse.json();
+    expect(authorEditBody.error.code).toBe('NOTE_IMMUTABLE');
+
+    // The UI hides the edit action once the window has elapsed.
+    await page.goto(`/it/dashboard/school/${student.personId}`);
+    await expect(page.getByTestId('edit-training-note-action')).toHaveCount(0);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const adminEditResponse = await page.request.patch(`/api/v1/people/${student.personId}/training-notes/${created.id}`, {
+      data: { noteDate: '2026-06-01', exercises: 'Tentativo admin' },
+    });
+    expect(adminEditResponse.status()).toBe(409);
+    const adminEditBody = await adminEditResponse.json();
+    expect(adminEditBody.error.code).toBe('NOTE_IMMUTABLE');
   });
 });

@@ -1,7 +1,8 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { redirect } from '@/i18n/navigation';
+import { Link, redirect } from '@/i18n/navigation';
+import type { AppLocale } from '@/i18n/routing';
 import type { ExpiryStatusDto } from '@/lib/schemas/expiries';
-import { formatMinutes } from '@/lib/time';
+import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { ValidationError } from '@/server/services/errors';
@@ -19,6 +20,11 @@ type PageProps = {
  * enumerate another instructor's students by construction). Gated
  * `school.manage.own` (the redirect here only hides navigation, AD-5 — the
  * service re-checks the same permission).
+ *
+ * Story 9.2 (FR-33): the student's name row-links to their training diary
+ * (`/dashboard/school/{personId}`) and the "ultima annotazione" column
+ * closes the 9.1 deferral — both come from `listOwnStudents`'s ALREADY
+ * batched `lastNoteDate` (no extra query here).
  */
 export default async function SchoolPage({ params }: PageProps) {
   const { locale } = await params;
@@ -70,12 +76,13 @@ export default async function SchoolPage({ params }: PageProps) {
             <p className="text-sm text-[#787774]">{t('empty')}</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left text-sm">
+              <table className="w-full min-w-[680px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
                     <th className="py-2 pr-4 font-medium">{t('table.name')}</th>
                     <th className="py-2 pr-4 font-medium">{t('table.courseStartDate')}</th>
                     <th className="py-2 pr-4 font-medium">{t('table.totalHours')}</th>
+                    <th className="py-2 pr-4 font-medium">{t('table.lastNote')}</th>
                     <th className="py-2 font-medium">{t('table.statusHeader')}</th>
                   </tr>
                 </thead>
@@ -83,10 +90,19 @@ export default async function SchoolPage({ params }: PageProps) {
                   {students.map((student) => (
                     <tr key={student.personId} data-testid="own-student-row" className="border-b border-[#EAEAEA] text-[#111111]">
                       <td className="py-3 pr-4 font-medium">
-                        {student.lastName} {student.firstName}
+                        <Link
+                          href={`/dashboard/school/${student.personId}`}
+                          locale={locale as AppLocale}
+                          className="underline-offset-4 hover:underline"
+                        >
+                          {student.lastName} {student.firstName}
+                        </Link>
                       </td>
                       <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">{student.courseStartDate}</td>
                       <td className="py-3 pr-4 whitespace-nowrap">{formatMinutes(student.totalMinutes)}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">
+                        {student.lastNoteDate ? formatDateOnly(student.lastNoteDate, locale as 'it' | 'en') : t('table.noNotes')}
+                      </td>
                       <td className="py-3">
                         {student.expiryStatus ? (
                           <ExpiryStatusBadge

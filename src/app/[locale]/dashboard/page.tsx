@@ -64,6 +64,18 @@ export default async function DashboardPage({ params }: PageProps) {
   const ownAccountHref = ownPersonHref ? `${ownPersonHref}/account` : null;
 
   /**
+   * Story 9.2 (FR-33): "Il mio diario" — the allievo's read-only entry point
+   * into their own training diary. Same asymmetric-tile rule as
+   * `ownPersonHref`/`ownAccountHref` above, gated on `me.person.hasActiveStudentProfile`
+   * (the minimal flag `getMe` now exposes, Dev Notes) rather than on
+   * `people.read`/`school.manage.*`: it targets whoever HAS a student
+   * profile, regardless of role (e.g. a pilot+student dual role also sees
+   * it) — the nav "Scuola" entry stays gated `school.manage.own` (the
+   * istruttore's index page), unrelated to this tile.
+   */
+  const ownDiaryHref = me.person?.hasActiveStudentProfile ? `/dashboard/school/${me.person.id}` : null;
+
+  /**
    * Story 6.4, Task 4 (Contesto): "Le mie scadenze" home widget — same
    * asymmetric-tile rule as `ownPersonHref`/`ownAccountHref` above: staff
    * has the real `/dashboard/expiries` dashboard, so this widget is
@@ -148,6 +160,14 @@ export default async function DashboardPage({ params }: PageProps) {
                 className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {t('myAccount')}
+              </Link>
+            ) : null}
+            {ownDiaryHref ? (
+              <Link
+                href={ownDiaryHref}
+                className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              >
+                {t('myDiary')}
               </Link>
             ) : null}
           </div>

@@ -28,7 +28,7 @@ type MeSelectResult = {
   id: string;
   email: string;
   roles: Actor['roles'];
-  person: { id: string; firstName: string; lastName: string } | null;
+  person: { id: string; firstName: string; lastName: string; studentProfile: { deactivatedAt: Date | null } | null } | null;
 } | null;
 const findUnique = findUniqueMock as unknown as {
   mockResolvedValue: (value: MeSelectResult) => void;
@@ -44,7 +44,7 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
       id: 'user_1',
       email: 'pilot@airmanager.local',
       roles: ['PILOT'],
-      person: { id: 'person_1', firstName: 'Piero', lastName: 'Volante' },
+      person: { id: 'person_1', firstName: 'Piero', lastName: 'Volante', studentProfile: null },
     });
 
     const result = await getMe(actorWith(['PILOT']));
@@ -53,7 +53,7 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
       userId: 'user_1',
       email: 'pilot@airmanager.local',
       roles: ['PILOT'],
-      person: { id: 'person_1', firstName: 'Piero', lastName: 'Volante' },
+      person: { id: 'person_1', firstName: 'Piero', lastName: 'Volante', hasActiveStudentProfile: false },
     });
     expect(findUniqueMock).toHaveBeenCalledWith({
       where: { id: 'user_1' },
@@ -61,7 +61,9 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
         id: true,
         email: true,
         roles: true,
-        person: { select: { id: true, firstName: true, lastName: true } },
+        person: {
+          select: { id: true, firstName: true, lastName: true, studentProfile: { select: { deactivatedAt: true } } },
+        },
       },
     });
   });
@@ -77,6 +79,30 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
     const result = await getMe(actorWith(['STAFF']));
 
     expect(result.person).toBeNull();
+  });
+
+  it('sets hasActiveStudentProfile = true only for an ACTIVE (non-deactivated) student profile (story 9.2)', async () => {
+    findUnique.mockResolvedValue({
+      id: 'user_1',
+      email: 'student@airmanager.local',
+      roles: ['STUDENT'],
+      person: { id: 'person_1', firstName: 'Sara', lastName: 'Allieva', studentProfile: { deactivatedAt: null } },
+    });
+
+    const result = await getMe(actorWith(['STUDENT']));
+    expect(result.person?.hasActiveStudentProfile).toBe(true);
+  });
+
+  it('sets hasActiveStudentProfile = false for a DEACTIVATED student profile', async () => {
+    findUnique.mockResolvedValue({
+      id: 'user_1',
+      email: 'student@airmanager.local',
+      roles: ['STUDENT'],
+      person: { id: 'person_1', firstName: 'Sara', lastName: 'Allieva', studentProfile: { deactivatedAt: new Date('2026-01-01T00:00:00.000Z') } },
+    });
+
+    const result = await getMe(actorWith(['STUDENT']));
+    expect(result.person?.hasActiveStudentProfile).toBe(false);
   });
 
   it('throws NotFoundError when the session references a user that no longer exists', async () => {

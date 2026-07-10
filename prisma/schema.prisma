@@ -110,6 +110,8 @@ model StudentProfile {
 
   /// Instructors assigned to this student (epic 9, story 9.1, FR-32) — see `StudentInstructorAssignment` doc.
   instructorAssignments StudentInstructorAssignment[]
+  /// Training diary entries about this student (epic 9, story 9.2, FR-33) — see `TrainingNote` doc.
+  trainingNotes         TrainingNote[]
 }
 
 /// Instructor profile (story 2.2, AC 1/2, AD-11) — see `PilotProfile` doc for
@@ -126,13 +128,15 @@ model InstructorProfile {
   updatedAt     DateTime  @updatedAt
 
   /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
-  rates              InstructorRate[]
+  rates                 InstructorRate[]
   /// Flights where this profile was the instructor aboard (epic 5, story 5.1) — see `Flight` doc.
-  flights            Flight[]
+  flights               Flight[]
   /// Bookings where this profile is the indicated instructor (epic 7, story 7.1) — see `Booking` doc.
-  bookings           Booking[]
+  bookings              Booking[]
   /// Students assigned to this instructor (epic 9, story 9.1, FR-32) — see `StudentInstructorAssignment` doc.
-  studentAssignments StudentInstructorAssignment[]
+  studentAssignments    StudentInstructorAssignment[]
+  /// Training diary entries authored by this instructor (epic 9, story 9.2, FR-33) — see `TrainingNote` doc.
+  trainingNotesAuthored TrainingNote[]
 }
 
 /// Many-to-many assignment between a student and their instructor(s) (epic 9,
@@ -158,6 +162,42 @@ model StudentInstructorAssignment {
   createdAt           DateTime          @default(now())
 
   @@unique([studentProfileId, instructorProfileId])
+}
+
+/// Training diary entry (epic 9, story 9.2, FR-33) — an instructor's
+/// progress note about an assigned student. `instructorProfileId` is the
+/// AUTHOR and is immutable (never reassigned by an edit). `noteDate` is the
+/// calendar date of the TRAINING SESSION (`@db.Date`) — deliberately
+/// distinct from `createdAt`: an instructor may log a note days after the
+/// lesson. `flightId` is an OPTIONAL, NON-unique link to a `SCHOOL` flight of
+/// this student (`school.service.ts` validates flightType/personId at write
+/// time) — several notes may reference the same flight, and the flight's own
+/// status is NOT re-validated on read (Contesto: "la nota è cronaca, non
+/// contabilità" — a note stays valid even if the linked flight is later
+/// stornato). `exercises` is mandatory; `assessment`/`nextSteps` are free-text
+/// and optional. Immutable after 7 days from `createdAt` (`school.service.ts`,
+/// AC 3) — enforced in the service, not at the DB level; there is
+/// deliberately no delete endpoint (Contesto: immutability, no history
+/// requirement beyond `updatedAt`). FK RESTRICT (Prisma default, no
+/// `onDelete` set) on the two required profile FKs, same defensive rationale
+/// as `StudentInstructorAssignment` — neither profile is ever physically
+/// deleted (AD-11).
+model TrainingNote {
+  id                  String            @id @default(cuid())
+  studentProfileId    String
+  studentProfile      StudentProfile    @relation(fields: [studentProfileId], references: [id])
+  instructorProfileId String
+  instructorProfile   InstructorProfile @relation(fields: [instructorProfileId], references: [id])
+  noteDate            DateTime          @db.Date
+  flightId            String?
+  flight              Flight?           @relation(fields: [flightId], references: [id])
+  exercises           String
+  assessment          String?
+  nextSteps           String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([studentProfileId, noteDate])
 }
 
 /// Aircraft operational status (story 2.5, AC 1; FR-8). `OUT_OF_SERVICE` is
@@ -819,6 +859,8 @@ model Flight {
   /// `PackageConsumption` doc. Empty when no eligible package existed at
   /// registration time (the pre-5.2 case: `packageCoveredMinutes == 0`).
   packageConsumptions PackageConsumption[]
+  /// Training diary entries that link to THIS flight (epic 9, story 9.2) — see `TrainingNote` doc. Several notes may reference the same flight.
+  trainingNotes       TrainingNote[]
 
   @@index([aircraftId])
   @@index([personId])
