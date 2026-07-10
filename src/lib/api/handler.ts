@@ -321,6 +321,18 @@ export function apiRoute<
         throw error;
       }
 
+      // Story 10.1 (AC 1): a `handle` that already built its own `Response`
+      // (the binary xlsx export) is returned as-is, bypassing the JSON/204
+      // envelope below entirely — same pass-through `NextResponse` already
+      // gets from `routeHandler`'s own return type. Idempotency replay only
+      // ever wraps a JSON-serializable `responseBody` (TD-2) and is opt-in
+      // per-route via `idempotency: {...}`; no export route sets it (GET-only,
+      // idempotency covers mutating POSTs), so the two never combine — no
+      // runtime guard needed here.
+      if (result instanceof Response) {
+        return result as NextResponse;
+      }
+
       if (successStatus === 204) {
         // A 204 is a "null body status" per the Fetch spec (the WHATWG
         // Response constructor throws if a body is set alongside it) —

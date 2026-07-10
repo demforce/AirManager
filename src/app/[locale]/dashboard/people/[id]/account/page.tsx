@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { ExportButton } from '@/components/export-button';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { buildExportHref } from '@/lib/export-href';
 import { formatCents } from '@/lib/money';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
@@ -87,7 +89,12 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
   const moneyLocale = locale === 'en' ? ('en' as const) : ('it' as const);
   const t = await getTranslations('AccountStatementPage');
   const tPackages = await getTranslations('HourPackagesPanel');
+  const tExport = await getTranslations('Export');
   const totalPages = Math.max(1, Math.ceil(statement.total / PAGE_SIZE));
+
+  // Story 10.1 (AC 1/5) — this view has no filters beyond pagination
+  // (ignored by the export), so the href is just the endpoint + format/locale.
+  const exportHref = buildExportHref(`/api/v1/people/${id}/account/movements`, {}, locale);
 
   function pageHref(targetPage: number) {
     return { pathname: `/dashboard/people/${id}/account`, query: { page: targetPage } };
@@ -159,7 +166,11 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
           />
         </div>
 
-        <div className="mt-10">
+        <div className="mt-10 flex justify-end">
+          <ExportButton href={exportHref} label={tExport('button')} testId="account-statement-export-button" />
+        </div>
+
+        <div className="mt-4">
           <AccountStatementTable
             personId={id}
             rows={statement.items}

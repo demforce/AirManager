@@ -1453,6 +1453,9 @@
     },
     "empty": "No PPR requests match the selected filters."
   },
+  "Export": {
+    "button": "Export Excel"
+  },
   "Emails": {
     "invite": {
       "subject": "You've been invited to AirManager",

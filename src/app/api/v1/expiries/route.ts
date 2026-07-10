@@ -1,6 +1,8 @@
 import { apiRoute } from '@/lib/api/handler';
 import { listAllExpiriesQuerySchema, registerExpirySchema, type RegisterExpiryInput } from '@/lib/schemas/expiries';
+import { xlsxResponse } from '@/server/adapters/excel/response';
 import { listAllExpiries, registerExpiry } from '@/server/services/expiries.service';
+import { exportExpiriesXlsx } from '@/server/services/exports.service';
 
 /**
  * Thin routes (AD-1): `expiries.manage` (staff+admin) — real authorization
@@ -9,7 +11,14 @@ import { listAllExpiries, registerExpiry } from '@/server/services/expiries.serv
  */
 export const GET = apiRoute({
   querySchema: listAllExpiriesQuerySchema,
-  handle: async ({ actor, query }) => listAllExpiries(actor, query),
+  // Story 10.1 (AC 1): `?format=xlsx` is the SAME endpoint, not a dedicated route.
+  handle: async ({ actor, query }) => {
+    if (query.format === 'xlsx') {
+      const { buffer, filename } = await exportExpiriesXlsx(actor, query);
+      return xlsxResponse(buffer, filename);
+    }
+    return listAllExpiries(actor, query);
+  },
 });
 
 export const POST = apiRoute<undefined, RegisterExpiryInput>({

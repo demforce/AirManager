@@ -1,5 +1,7 @@
 import { apiRoute } from '@/lib/api/handler';
 import { listFlightsQuerySchema, registerFlightSchema } from '@/lib/schemas/flights';
+import { xlsxResponse } from '@/server/adapters/excel/response';
+import { exportFlightsXlsx } from '@/server/services/exports.service';
 import { listFlights, registerFlight } from '@/server/services/flights.service';
 
 /**
@@ -8,7 +10,14 @@ import { listFlights, registerFlight } from '@/server/services/flights.service';
  */
 export const GET = apiRoute({
   querySchema: listFlightsQuerySchema,
-  handle: async ({ actor, query }) => listFlights(actor, query),
+  // Story 10.1 (AC 1): `?format=xlsx` is the SAME endpoint, not a dedicated route.
+  handle: async ({ actor, query }) => {
+    if (query.format === 'xlsx') {
+      const { buffer, filename } = await exportFlightsXlsx(actor, query);
+      return xlsxResponse(buffer, filename);
+    }
+    return listFlights(actor, query);
+  },
 });
 
 // Story TD-2 (AC 5): opt-in `Idempotency-Key` header on the registration

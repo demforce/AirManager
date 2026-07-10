@@ -1,6 +1,8 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { ExportButton } from '@/components/export-button';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { buildExportHref } from '@/lib/export-href';
 import type { ExpiryScopeDto } from '@/lib/schemas/expiry-types';
 import type { ExpiryItemDto, ExpiryProposalItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { hasPermission } from '@/server/auth/rbac';
@@ -179,6 +181,10 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
       status: status ?? '',
     };
 
+    // Story 10.1 (AC 5) — server-driven view, same `expiryTypeId`/`scope`/`status` the dashboard table above was fetched with.
+    const tExport = await getTranslations('Export');
+    const exportHref = buildExportHref('/api/v1/expiries', { expiryTypeId, scope, status }, locale);
+
     // Ambito/stato labels are REUSED (Dev Notes), never redefined: `ExpiryTypesPage.scope` (story 6.1) and this same page's own `own.table.status` (story 6.2).
     const tTypes = await getTranslations('ExpiryTypesPage');
     const scopeLabels: Record<ExpiryScopeDto, string> = {
@@ -227,10 +233,15 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           </div>
 
           <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="expiry-dashboard-section">
-            <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
-              {t('dashboard.heading')}
-            </h2>
-            <p className="mt-1 text-sm text-[#787774]">{t('dashboard.description')}</p>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+                  {t('dashboard.heading')}
+                </h2>
+                <p className="mt-1 text-sm text-[#787774]">{t('dashboard.description')}</p>
+              </div>
+              <ExportButton href={exportHref} label={tExport('button')} testId="expiries-export-button" />
+            </div>
 
             <div className="mt-6 border-b border-[#EAEAEA] pb-6">
               <ExpiryDashboardFilters

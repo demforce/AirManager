@@ -344,6 +344,16 @@ function jsonContent(schema: z.ZodTypeAny) {
   return { 'application/json': { schema } };
 }
 
+/**
+ * Story 10.1 (AC 1/6): the xlsx counterpart of `jsonContent` — documents
+ * the binary `?format=xlsx` branch alongside the unchanged JSON one on the
+ * SAME 200 response (`content: { ...jsonContent(schema), ...xlsxContent() }`),
+ * one entry per of the 10 covered list endpoints.
+ */
+function xlsxContent() {
+  return { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { schema: z.string().openapi({ format: 'binary' }) } };
+}
+
 // --- Paths ----------------------------------------------------------------
 
 registry.registerPath({
@@ -377,7 +387,7 @@ registry.registerPath({
   security,
   request: { query: listPeopleQuerySchema },
   responses: {
-    200: { description: 'A page of persons.', content: jsonContent(personListResponseSchema) },
+    200: { description: 'A page of persons, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).', content: { ...jsonContent(personListResponseSchema), ...xlsxContent() } },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -582,7 +592,10 @@ registry.registerPath({
   security,
   request: { params: personIdParams, query: listAccountMovementsQuerySchema },
   responses: {
-    200: { description: "A page of the person's account statement.", content: jsonContent(accountStatementResponseSchema) },
+    200: {
+      description: "A page of the person's account statement, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).",
+      content: { ...jsonContent(accountStatementResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 404, 422),
   },
 });
@@ -708,7 +721,10 @@ registry.registerPath({
   security,
   request: { query: schoolSummaryQuerySchema },
   responses: {
-    200: { description: 'The per-student hour summary for the requested period.', content: jsonContent(studentHourSummaryListResponseSchema) },
+    200: {
+      description: 'The per-student hour summary for the requested period, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(studentHourSummaryListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -724,8 +740,8 @@ registry.registerPath({
   request: { query: schoolSummaryQuerySchema },
   responses: {
     200: {
-      description: "The instructor(s)' SCHOOL hour summary for the requested period.",
-      content: jsonContent(instructorHourSummaryListResponseSchema),
+      description: "The instructor(s)' SCHOOL hour summary for the requested period, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).",
+      content: { ...jsonContent(instructorHourSummaryListResponseSchema), ...xlsxContent() },
     },
     ...errorResponses(401, 403, 422),
   },
@@ -927,7 +943,10 @@ registry.registerPath({
   security,
   request: { query: listCashMovementsQuerySchema },
   responses: {
-    200: { description: 'A page of cash movements.', content: jsonContent(cashMovementListResponseSchema) },
+    200: {
+      description: 'A page of cash movements, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(cashMovementListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1053,7 +1072,10 @@ registry.registerPath({
   security,
   request: { query: listFlightsQuerySchema },
   responses: {
-    200: { description: 'A page of registered flights.', content: jsonContent(flightListResponseSchema) },
+    200: {
+      description: 'A page of registered flights, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(flightListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1113,7 +1135,10 @@ registry.registerPath({
   security,
   request: { query: listAircraftQuerySchema },
   responses: {
-    200: { description: 'A page of aircraft.', content: jsonContent(aircraftListResponseSchema) },
+    200: {
+      description: 'A page of aircraft, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(aircraftListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1466,7 +1491,10 @@ registry.registerPath({
   security,
   request: { query: listAllExpiriesQuerySchema },
   responses: {
-    200: { description: 'A page of scadenze, ordered by urgency.', content: jsonContent(expiryDashboardListResponseSchema) },
+    200: {
+      description: 'A page of scadenze, ordered by urgency, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(expiryDashboardListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1575,7 +1603,10 @@ registry.registerPath({
   security,
   request: { query: listBookingsQuerySchema },
   responses: {
-    200: { description: 'A page of bookings.', content: jsonContent(bookingListResponseSchema) },
+    200: {
+      description: 'A page of bookings, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(bookingListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1705,7 +1736,10 @@ registry.registerPath({
   security,
   request: { query: listPprRequestsQuerySchema },
   responses: {
-    200: { description: 'A page of PPR requests.', content: jsonContent(pprRequestListResponseSchema) },
+    200: {
+      description: 'A page of PPR requests, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(pprRequestListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });

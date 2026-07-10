@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type { SessionActor } from '@/server/auth/session';
@@ -194,6 +194,37 @@ describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
       const response = await POST(req('http://localhost/api/v1/x', { method: 'POST' }));
 
       expect(response.status).toBe(201);
+    });
+  });
+
+  describe('Response pass-through (story 10.1, AC 1 — binary xlsx export)', () => {
+    it('returns a `Response` built by `handle` untouched, instead of wrapping it in the JSON envelope', async () => {
+      getSessionActorMock.mockResolvedValue(ACTOR);
+      const binaryResponse = new NextResponse(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+      });
+      const GET = apiRoute({ handle: async () => binaryResponse });
+
+      const response = await GET(req('http://localhost/api/v1/x'));
+
+      expect(response).toBe(binaryResponse);
+      expect(response.headers.get('Content-Type')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      await expect(response.arrayBuffer()).resolves.toEqual(new Uint8Array([1, 2, 3]).buffer);
+    });
+
+    it('skips the idempotency-completion write for a `Response` result (pass-through runs before it) — no export route sets `idempotency` today, this only proves the ordering is safe', async () => {
+      getSessionActorMock.mockResolvedValue(ACTOR);
+      idempotencyCreateMock.mockResolvedValue({ id: 'idem_1' } as never);
+      const binaryResponse = new NextResponse(new Uint8Array([9]), { status: 200 });
+      const POST = apiRoute({ idempotency: { endpoint: 'irrelevant' }, handle: async () => binaryResponse });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'k-1' } }),
+      );
+
+      expect(response).toBe(binaryResponse);
+      expect(idempotencyUpdateMock).not.toHaveBeenCalled();
     });
   });
 

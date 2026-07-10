@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DataTable } from '@/components/data-table';
+import { ExportButton } from '@/components/export-button';
 import { useRouter } from '@/i18n/navigation';
 import {
   createAircraftSchema,
@@ -174,6 +175,9 @@ type AircraftManagerProps = {
    * remains the real guardian (AD-5).
    */
   canManageSettings: boolean;
+  /** Story 10.1 (AC 5) — the SAME `q`/`includeArchived` this page was fetched with, `?format=xlsx` appended. */
+  exportHref: string;
+  exportLabel: string;
   labels: Labels;
 };
 
@@ -245,7 +249,15 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
   };
 }
 
-export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived, canManageSettings, labels }: AircraftManagerProps) {
+export function AircraftManager({
+  aircraft,
+  initialQuery,
+  initialIncludeArchived,
+  canManageSettings,
+  exportHref,
+  exportLabel,
+  labels,
+}: AircraftManagerProps) {
   const router = useRouter();
   // Money must follow the page locale (review 3.1 F1 — mandatory, same
   // pattern as `account-panel.tsx`): without this, `formatCents`' default
@@ -463,13 +475,16 @@ export function AircraftManager({ aircraft, initialQuery, initialIncludeArchived
         ) : (
           <span />
         )}
-        <button
-          type="button"
-          onClick={() => setPanel({ mode: 'create' })}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
-        >
-          {labels.newAircraft}
-        </button>
+        <div className="flex gap-3">
+          <ExportButton href={exportHref} label={exportLabel} testId="aircraft-export-button" />
+          <button
+            type="button"
+            onClick={() => setPanel({ mode: 'create' })}
+            className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
+          >
+            {labels.newAircraft}
+          </button>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-4">

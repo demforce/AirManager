@@ -1,5 +1,7 @@
 import { apiRoute } from '@/lib/api/handler';
 import { createPprRequestSchema, listPprRequestsQuerySchema } from '@/lib/schemas/ppr';
+import { xlsxResponse } from '@/server/adapters/excel/response';
+import { exportPprRequestsXlsx } from '@/server/services/exports.service';
 import { createPprRequest, extractSubmitterIp, listPprRequests } from '@/server/services/ppr.service';
 
 /**
@@ -37,5 +39,12 @@ export const POST = apiRoute({
  */
 export const GET = apiRoute({
   querySchema: listPprRequestsQuerySchema,
-  handle: async ({ actor, query }) => listPprRequests(actor, query),
+  // Story 10.1 (AC 1): `?format=xlsx` is the SAME endpoint, not a dedicated route.
+  handle: async ({ actor, query }) => {
+    if (query.format === 'xlsx') {
+      const { buffer, filename } = await exportPprRequestsXlsx(actor, query);
+      return xlsxResponse(buffer, filename);
+    }
+    return listPprRequests(actor, query);
+  },
 });

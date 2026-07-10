@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { exportQuerySchema } from './common';
 import { expiryStatusSchema } from './expiries';
 import { z } from './zod-with-openapi';
 
@@ -145,7 +146,7 @@ export type TrainingNoteListResponseDto = z.infer<typeof trainingNoteListRespons
  * format.
  */
 export const schoolSummaryQuerySchema = z
-  .object({ from: z.iso.date(), to: z.iso.date() })
+  .object({ from: z.iso.date(), to: z.iso.date(), ...exportQuerySchema.shape })
   .refine((value) => value.from <= value.to, { message: 'from must not be after to', path: ['to'] });
 
 export type SchoolSummaryQuery = z.infer<typeof schoolSummaryQuerySchema>;

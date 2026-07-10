@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 // --- Categories (story 3.4, Task 1, AC 1) ----------------------------------
@@ -111,6 +112,7 @@ export const listCashMovementsQuerySchema = paginationQuerySchema.extend({
   to: z.iso.date().optional(),
   categoryId: z.string().trim().min(1).optional(),
   sign: z.enum(['in', 'out']).optional(),
+  ...exportQuerySchema.shape,
 });
 
 export type ListCashMovementsQuery = z.infer<typeof listCashMovementsQuerySchema>;

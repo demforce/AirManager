@@ -1453,6 +1453,9 @@
     },
     "empty": "Nessun PPR trovato per i filtri selezionati."
   },
+  "Export": {
+    "button": "Esporta Excel"
+  },
   "Emails": {
     "invite": {
       "subject": "Sei stato invitato ad AirManager",

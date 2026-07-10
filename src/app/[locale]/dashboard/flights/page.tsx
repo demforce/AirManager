@@ -205,6 +205,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
   }
 
   const t = await getTranslations('FlightsPage');
+  const tExport = await getTranslations('Export');
 
   return (
     <main className="flex-1 px-6 py-16 sm:px-16">
@@ -264,6 +265,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
             initialFlights={initialFlights}
             moneyLocale={locale === 'en' ? 'en' : 'it'}
             filters={filters}
+            exportLabel={tExport('button')}
             labels={{
               form: {
                 title: t('form.title'),
