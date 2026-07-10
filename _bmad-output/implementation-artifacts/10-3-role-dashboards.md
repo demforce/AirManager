@@ -4,7 +4,7 @@ baseline_commit: c56b362
 
 # Story 10.3: Dashboard per ruolo complete
 
-Status: review
+Status: done
 
 ## Story
 
@@ -113,7 +113,21 @@ Claude Sonnet 5 (dev subagent, xhigh).
 - `messages/it.json`, `messages/en.json` (+ new `DashboardPage` widget translation keys; `myExpiries.empty` added)
 - `e2e/home-dashboard.spec.ts` (new — 13 tests: role-visibility matrix, data-driven widget content, link navigation)
 
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: fixes-required → FIXED dalla sessione principale.** 1 finding mandatory (nel TEST, non nel prodotto) + 1 nit.
+
+- **Priorità zero — full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI** (chiude il gap del dev, che aveva fatto solo regressione mirata): **190 passed / 1 FAILED / 1 flaky** al primo run. Il fail è il finding 103-F1 (sotto); il flaky è il noto `ppr-register:206` retry-green (baseline). Gates ri-eseguiti: lint/typecheck/build verdi, **1207/1207 unit**. Verifica statica completa: 57 chiavi i18n IT/EN risolte, tutti i campi DTO letti esistono, gating per-widget PRIMA di ogni query (nessuna query destinata al 403); seed ispezionato via psql (matrice ruoli reale).
+- **103-F1 (major, mandatory, FIXATO)** — il nuovo link "Vai alle finanze" del widget saldi negativi rende ambiguo il selettore page-level non-scoped `getByRole('link', { name: 'Finanze' })` di `account-adjustments.spec.ts:116` (il name-match di Playwright è substring): strict mode violation 2 elementi, 3/3 tentativi falliti — regressione reale che la regressione mirata del dev non poteva vedere. Il comportamento del PRODOTTO è corretto e voluto (AC 1): fix nel test. **Fix applicato (sessione principale)**: selettore scoped al landmark nav `Aree operative` (convenzione già usata da rbac/expiry-types/bookings/flight-log) + doc-comment. **Re-run full suite post-fix: 192/192 passed (4.0m), zero flaky.**
+- **103-N1 (nit, ACCETTATO)** — lo stesso hazard substring esiste latente per gli altri label widget ("Vai alle scadenze"/"Scadenze", ecc.): oggi nessun test lo innesca (gli altri usano selettori scoped o goto). Nessun cambio richiesto; convenzione per il futuro: selettori nav-scoped o `exact: true`.
+- **Decisione istruttore-vede-blocco-personale**: nessun finding del reviewer sul gate `manca finance.manage` (istruttore puro vede anche saldo/pacchetti/prenotazioni/scadenze/voli propri) — **RATIFICATA dalla sessione principale**: l'istruttore ha conto, scadenze, prenotazioni e voli propri; il blocco personale è informazione sua a tutti gli effetti (superset coerente con FR-41 "il sistema mi anticipa"). Il degrado admin del blocco istruttore replica il precedente 93-N1 (ratificato, con e2e esplicito).
+
+### Final gates (post-fix, DB fresco, prod build)
+
+lint/typecheck/build verdi, **1207/1207 unit**, full suite CI-mode **192/192 passed, 0 flaky**. Fix di review: 1 (solo e2e selector).
+
 ## Change Log
 
 - 2026-07-10: Story file created (Fable 5 main session) — terza e ultima story Epic 10. Decisioni chiave: policy widget sempre-visibili con empty state (ratificata, incluso il cambio del widget scadenze esistente); scadenze staff = expired+expiring (due chiamate); prenotazioni oggi/domani via listCalendarBookings su range zoned Europe/Rome; unica funzione service nuova `listOutOfServiceAircraft`; fan-out Promise.all gated lato pagina; nessuna API nuova.
 - 2026-07-10: Dev (Sonnet 5 subagent) — implementazione completa. Home page riscritta con 12 widget in bento grid dietro `Promise.all` gated; `listOutOfServiceAircraft` + `todayTomorrowRangeUtc` nuove; e2e `home-dashboard.spec.ts` (13 test) + regressione su ppr-queue/expiry-dashboard verificata; gates verdi. Nessuna deviazione dal design vincolante del story file.
+- 2026-07-10: Review Opus 4.8 xhigh — fixes-required: 103-F1 (selettore e2e page-level reso ambiguo dal nuovo link widget, regressione trovata SOLO dalla full suite su prod build). Fix applicato dalla sessione principale (selettore nav-scoped); re-run full suite 192/192. 103-N1 accettato (hazard latente, convenzione futura). Decisione istruttore/blocco personale ratificata. Status → done. EPIC 10 COMPLETO — piano MVP terminato.
