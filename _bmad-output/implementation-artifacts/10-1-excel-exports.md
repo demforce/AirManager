@@ -4,7 +4,7 @@ baseline_commit: 38d5be2
 
 # Story 10.1: Export Excel delle viste elenco
 
-Status: review
+Status: done
 
 ## Story
 
@@ -114,7 +114,21 @@ Sonnet 5 (dev subagent, xhigh)
 - `e2e/exports.spec.ts` — e2e nuovi (8 test).
 - `package.json`, `package-lock.json` — dependency `exceljs@4.4.0`.
 
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean-pass — zero finding mandatory.** 1 nit non-mandatory ratificato come accettato (nessun cambio di codice).
+
+- **Priorità zero — full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI**: **172/172 passed, 0 fail** (2.8m, 164 baseline + 8 nuovi `exports.spec.ts`), stavolta senza nemmeno i flaky storici (ppr-register e cash-report verdi al primo colpo). Gates ri-eseguiti indipendentemente: lint/typecheck/build verdi, **1175/1175 unit**. Le righe `[WebServer]` CredentialsSignin/UntrustedHost nei log sono dei test di rifiuto login, attese.
+- **Gap del dev chiusi dal reviewer**: (a) full regression che il dev non aveva completato → 172/172 sopra; (b) verifica del bottone export che il dev non aveva fatto → provata empiricamente dall'e2e `exports.spec.ts:230` che clicca il bottone su Chromium reale, cattura l'evento download e PARSA il workbook risultante (più forte del click manuale MCP, bloccato solo dal credential guard dell'ambiente sul password seed); (c) verificato via grep che NESSUNO dei 10 list service ri-cappa `pageSize` (paginationOffset diretto → `take:10_000` arriva a Prisma, nessun troncamento silenzioso).
+- **AC provati empiricamente sul server di produzione**: 4 workbook reali scaricati e parsati (flights, estratto conto admin, estratto conto own del pilota, school students) — celle money NUMERICHE con numFmt euro, date DD/MM/YYYY, durate H:MM, intestazioni localizzate bold+frozen; colonna "Registrato da" presente per `people.read` e assente per own-access (parità DTO). Matrice permessi live 5 ruoli × 10 endpoint: staff-only 403, own-scoping flights/estratto conto esatto, bookings condiviso come da vista, 401 unauth, 422 filtri invalidi identico al ramo JSON.
+- **101-N1 (nit, ACCETTATO)** — lo `exportQuerySchema` condiviso rende il ramo JSON 422 su valori invalidi di `locale`/`format` che prima venivano ignorati come chiavi sconosciute (es. `?locale=fr` → 422; `?wibble=fr` → 200). Contrattualmente è un restringimento dell'input accettato dai 10 endpoint, ma i param sono documentati in OpenAPI da questa story e nessun consumer li invia oggi: comportamento ratificato come corretto. Da annotare nell'handoff.
+
+### Final gates (review run, DB fresco, prod build)
+
+lint/typecheck/build verdi, **1175/1175 unit**, full suite CI-mode **172/172**. Nessun fix richiesto: nessun commit di fix post-review.
+
 ## Change Log
 
 - 2026-07-10: Story file created (Fable 5 main session) — prima story Epic 10. Decisioni chiave: `?format=xlsx` sullo stesso endpoint via pass-through `Response` in `apiRoute`; parità di scoping export=vista col riuso diretto dei list service (bookings resta condiviso — ratificato, da handoff); cap 10k con 422 `EXPORT_TOO_LARGE`; locale via query param col pattern dei mail template.
 - 2026-07-10: Implementazione (Sonnet 5 dev subagent) — adapter `excel/`, `exports.service.ts` (10 viste), pass-through binario in `apiRoute`, wiring dei 10 endpoint + UI, e2e `exports.spec.ts`. Deviazione: `exportQuerySchema.locale` senza `.default('it')` a livello Zod (rompeva i call-site server-side che costruiscono la query a mano) — default applicato al punto d'uso nel service.
+- 2026-07-10: Review Opus 4.8 xhigh — clean pass, zero mandatory. Full suite prod-build CI-mode 172/172; matrice permessi live completa; workbook parsati; gap del dev chiusi dal reviewer. 101-N1 accettato (422 su locale/format invalidi nel ramo JSON — param ora documentati). Nessun fix. Status → done.

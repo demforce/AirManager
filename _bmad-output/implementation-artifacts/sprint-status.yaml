@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-10 (story 10.1 implementata: in-progress -> review)
+last_updated: 2026-07-10 (10.1 done clean-pass; 10.2 e 10.3 ready-for-dev)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -111,7 +111,7 @@ development_status:
   epic-9-retrospective: optional
 
   epic-10: in-progress
-  10-1-excel-exports: review
+  10-1-excel-exports: done
   10-2-pdf-exports: ready-for-dev
   10-3-role-dashboards: ready-for-dev
   epic-10-retrospective: optional
