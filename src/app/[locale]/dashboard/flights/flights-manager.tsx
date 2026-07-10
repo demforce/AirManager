@@ -1018,8 +1018,8 @@ function flightFormDefaults(correctingFlight: FlightListItemDto | null, airfield
       landingTime: '',
       hourMeterStart: '',
       hourMeterEnd: '',
-      takeoffs: '',
-      landings: '',
+      takeoffs: '1',
+      landings: '1',
       notes: '',
     };
   }

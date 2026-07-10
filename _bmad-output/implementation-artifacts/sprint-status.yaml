@@ -118,7 +118,7 @@ development_status:
 
   # Epic 11: post-MVP change request 2026-07-10 (registro voli logbook)
   epic-11: in-progress
-  11-1-logbook-fields-derived-duration: review
+  11-1-logbook-fields-derived-duration: done
   11-2-logbook-registry-pic-person-access: backlog
   11-3-italian-dates-logbook-exports: backlog
   epic-11-retrospective: optional

@@ -44,7 +44,7 @@ so that il sistema parli la lingua del campo volo (FR-44, FR-45; epics.md «Epic
 
 - [ ] **T1 (AC 4)** — Helper PIC condiviso `src/lib/flight-pic.ts` (estrazione da 11.2 se module-scope, altrimenti riuso diretto) + unit test se mancanti.
 - [ ] **T2 (AC 1)** — Retrofit `formatDateOnly` sulle superfici dell'audit CHIUSO; nessun cambio a form/wire.
-- [ ] **T3 (AC 2, 3, 6)** — Colonne export xlsx (separate) e PDF (compatte) + i18n header keys; verifica leggibilità PDF su export reale con dati di prova (decode/screenshot, come review 10.2).
+- [ ] **T3 (AC 2, 3, 6)** — Colonne export xlsx (separate) e PDF (compatte) + i18n header keys; verifica leggibilità PDF su export reale con dati di prova (decode/screenshot, come review 10.2). Nel passaggio: pulire il ramo morto `row.landings === null` in `exportFlightsPdf` (review 11.1, nit 111-N2 — il DTO è non-null dal 11.1).
 - [ ] **T4 (AC 5)** — `exports.service.test.ts` (mock post-11.1 + ramo PIC-istruttore) e `e2e/exports.spec.ts` (header array + indici); run mirato anche di `pdf-exports.spec.ts` e delle superfici retrofittate (expiries, cash-report, account-statement e2e).
 - [ ] **T5** — `npm run gates`; Dev Agent Record + File List; sprint-status `11-3` → `review`.
 
