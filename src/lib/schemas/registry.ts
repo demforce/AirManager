@@ -120,9 +120,12 @@ import {
   assignInstructorSchema,
   assignedInstructorItemSchema,
   assignedInstructorListResponseSchema,
+  instructorHourSummaryListResponseSchema,
   listTrainingNotesQuerySchema,
   ownStudentItemSchema,
   ownStudentListResponseSchema,
+  schoolSummaryQuerySchema,
+  studentHourSummaryListResponseSchema,
   trainingNoteInputSchema,
   trainingNoteItemSchema,
   trainingNoteListResponseSchema,
@@ -227,6 +230,8 @@ registry.register('AssignedInstructor', assignedInstructorItemSchema);
 registry.register('AssignedInstructorList', assignedInstructorListResponseSchema);
 registry.register('OwnStudent', ownStudentItemSchema);
 registry.register('OwnStudentList', ownStudentListResponseSchema);
+registry.register('StudentHourSummaryList', studentHourSummaryListResponseSchema);
+registry.register('InstructorHourSummaryList', instructorHourSummaryListResponseSchema);
 registry.register('TrainingNoteRequest', trainingNoteInputSchema);
 registry.register('TrainingNote', trainingNoteItemSchema);
 registry.register('TrainingNoteList', trainingNoteListResponseSchema);
@@ -693,6 +698,39 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/school/summaries/students',
+  summary: 'Per-student hour summary (dual-command/solo split, period + all-time)',
+  description:
+    "Story 9.3, AC 1/3/5 — staff/admin only (`school.manage.any`). Platea: every ACTIVE student (active profile, non-archived person). `dualMinutes`/`soloMinutes` are derived from existing `Flight` columns, no schema change (see `school.service.ts#getStudentHourSummaries`'s doc-comment for the exact derivation and its declared checkride edge case); `totalMinutes` is their period sum, `totalMinutesAllTime` the same sum with no period bound. CANCELLED flights are always excluded. `from`/`to` mandatory (`YYYY-MM-DD`, inclusive on `flightDate`), rejected with 422 if inverted.",
+  tags: ['School'],
+  security,
+  request: { query: schoolSummaryQuerySchema },
+  responses: {
+    200: { description: 'The per-student hour summary for the requested period.', content: jsonContent(studentHourSummaryListResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/school/summaries/instructors',
+  summary: 'Per-instructor SCHOOL-flight hour summary for a period',
+  description:
+    "Story 9.3, AC 2/3/5 — two access paths: `school.manage.any` sees every ACTIVE instructor; `school.manage.own` sees ONLY the caller's own row (FR-2 \"proprie ore\"). `minutes` sums non-cancelled SCHOOL flights in the period — no compensi/tariffe (calculated outside the system). `from`/`to` mandatory, rejected with 422 if inverted.",
+  tags: ['School'],
+  security,
+  request: { query: schoolSummaryQuerySchema },
+  responses: {
+    200: {
+      description: "The instructor(s)' SCHOOL hour summary for the requested period.",
+      content: jsonContent(instructorHourSummaryListResponseSchema),
+    },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
 const studentNoteParams = z.object({
   id: z.string().meta({ description: "Student's Person id (cuid).", example: 'clx1a2b3c4d5e6f7g8h9' }),
   noteId: z.string().meta({ description: 'TrainingNote id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }),
@@ -1010,7 +1048,7 @@ registry.registerPath({
   path: '/api/v1/flights',
   summary: 'List flights (paginated, most recent first, own-access or all with filters)',
   description:
-    'Story 5.1/5.4, AC 1/2/3/4 — `flights.manage` (staff/admin) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`flightType`/`status`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard (CANCELLED included). A non-staff `personId` filter for anyone else answers 403. `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for staff.',
+    'Story 5.1/5.4, AC 1/2/3/4; story 9.3, AC 4 — `flights.manage` (staff/admin) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`instructorPersonId`/`flightType`/`status`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard (CANCELLED included). A non-staff `personId`/`instructorPersonId` filter for anyone but themselves answers 403 (this is how the school hour-summary drill-down reaches the registry as a non-staff instructor). `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for staff.',
   tags: ['Flights'],
   security,
   request: { query: listFlightsQuerySchema },

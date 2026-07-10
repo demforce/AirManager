@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Actor } from '@/server/auth/rbac';
+import { parseDateOnlyUtc } from '@/lib/date-only';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
-    person: { findUnique: vi.fn() },
+    person: { findUnique: vi.fn(), findMany: vi.fn() },
     instructorProfile: { findUnique: vi.fn() },
     studentInstructorAssignment: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
     flight: { groupBy: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
@@ -17,6 +18,8 @@ const { prisma } = await import('@/server/db/prisma');
 const {
   assignInstructor,
   createTrainingNote,
+  getInstructorHourSummaries,
+  getStudentHourSummaries,
   listOwnStudents,
   listStudentInstructors,
   listStudentSchoolFlights,
@@ -27,6 +30,7 @@ const {
 const { ConflictError, ForbiddenError, NotFoundError, ValidationError } = await import('./errors');
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
+const personFindManyMock = vi.mocked(prisma.person.findMany);
 const instructorProfileFindUniqueMock = vi.mocked(prisma.instructorProfile.findUnique);
 const assignmentFindUniqueMock = vi.mocked(prisma.studentInstructorAssignment.findUnique);
 const assignmentFindManyMock = vi.mocked(prisma.studentInstructorAssignment.findMany);
@@ -51,6 +55,7 @@ const personFindUnique = personFindUniqueMock as unknown as {
   mockResolvedValue: (v: Fixture) => void;
   mockResolvedValueOnce: (v: Fixture) => { mockResolvedValueOnce: (v: Fixture) => void };
 };
+const personFindMany = personFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const instructorProfileFindUnique = instructorProfileFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const assignmentFindUnique = assignmentFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const assignmentFindMany = assignmentFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
@@ -104,6 +109,7 @@ const ASSIGNMENT_FIXTURE = {
 describe('school.service (story 9.1 — student-instructor assignment, FR-32; story 9.2 — training notes, FR-33)', () => {
   beforeEach(() => {
     personFindUniqueMock.mockReset();
+    personFindManyMock.mockReset();
     instructorProfileFindUniqueMock.mockReset();
     assignmentFindUniqueMock.mockReset();
     assignmentFindManyMock.mockReset();
@@ -462,6 +468,187 @@ describe('school.service (story 9.1 — student-instructor assignment, FR-32; st
 
       const result = await listOwnStudents(instructorActor());
       expect(result[0]?.lastNoteDate).toBeNull();
+    });
+  });
+
+  describe('hour summaries (story 9.3, FR-34)', () => {
+    /** Queues N sequential `flight.groupBy` results, in call order (`flightGroupBy`'s wrapper only exposes `mockResolvedValue`, story 9.3's functions issue several SEQUENTIAL groupBy calls per invocation). */
+    function queueGroupByResults(...results: Fixture[][]): void {
+      const mock = flightGroupByMock as unknown as { mockResolvedValueOnce: (v: Fixture[]) => void };
+      for (const result of results) {
+        mock.mockResolvedValueOnce(result);
+      }
+    }
+
+    const STUDENT_A = { id: 'student_a', firstName: 'Anna', lastName: 'Allieva' };
+    const STUDENT_B = { id: 'student_b', firstName: 'Bruno', lastName: 'Barone' };
+
+    describe('getStudentHourSummaries (AC 1, AC 3 bounds, AC 5)', () => {
+      it('rejects an actor without school.manage.any (e.g. an instructor with only .own)', async () => {
+        await expect(getStudentHourSummaries(instructorActor(), { from: '2026-01-01', to: '2026-01-31' })).rejects.toThrow(ForbiddenError);
+        expect(personFindManyMock).not.toHaveBeenCalled();
+      });
+
+      it('scopes the platea to non-archived persons with an active (non-deactivated) student profile', async () => {
+        personFindMany.mockResolvedValue([]);
+
+        await getStudentHourSummaries(staffActor(), { from: '2026-01-01', to: '2026-01-31' });
+
+        expect(personFindManyMock).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { archivedAt: null, studentProfile: { deactivatedAt: null } } }),
+        );
+      });
+
+      it('returns an empty array (no groupBy at all) when there are no active students', async () => {
+        personFindMany.mockResolvedValue([]);
+
+        const result = await getStudentHourSummaries(staffActor(), { from: '2026-01-01', to: '2026-01-31' });
+
+        expect(result).toEqual([]);
+        expect(flightGroupByMock).not.toHaveBeenCalled();
+      });
+
+      it('issues exactly 4 batched groupBy calls (dual/solo x period/all-time), all on personId IN (...)', async () => {
+        personFindMany.mockResolvedValue([STUDENT_A]);
+        queueGroupByResults([], [], [], []);
+
+        await getStudentHourSummaries(staffActor(), { from: '2026-01-01', to: '2026-01-31' });
+
+        expect(flightGroupByMock).toHaveBeenCalledTimes(4);
+        const calls = flightGroupByMock.mock.calls.map((call) => call[0]);
+        expect(calls[0]).toMatchObject({
+          by: ['personId'],
+          where: {
+            personId: { in: ['student_a'] },
+            status: { not: 'CANCELLED' },
+            flightType: 'SCHOOL',
+            flightDate: { gte: parseDateOnlyUtc('2026-01-01'), lte: parseDateOnlyUtc('2026-01-31') },
+          },
+        });
+        expect(calls[1]).toMatchObject({
+          where: {
+            personId: { in: ['student_a'] },
+            status: { not: 'CANCELLED' },
+            instructorProfileId: null,
+            flightDate: { gte: parseDateOnlyUtc('2026-01-01'), lte: parseDateOnlyUtc('2026-01-31') },
+          },
+        });
+        // All-time: same shape, NO flightDate bound.
+        expect(calls[2]).toMatchObject({ where: { personId: { in: ['student_a'] }, status: { not: 'CANCELLED' }, flightType: 'SCHOOL' } });
+        expect((calls[2] as { where: Record<string, unknown> }).where).not.toHaveProperty('flightDate');
+        expect(calls[3]).toMatchObject({ where: { personId: { in: ['student_a'] }, status: { not: 'CANCELLED' }, instructorProfileId: null } });
+        expect((calls[3] as { where: Record<string, unknown> }).where).not.toHaveProperty('flightDate');
+      });
+
+      it('derives dual/solo/total/all-time correctly from the 4 batched sums, per student', async () => {
+        personFindMany.mockResolvedValue([STUDENT_A, STUDENT_B]);
+        // dual period, solo period, dual all-time, solo all-time.
+        queueGroupByResults(
+          [{ personId: 'student_a', _sum: { minutes: 90 } }],
+          [{ personId: 'student_a', _sum: { minutes: 30 } }],
+          [{ personId: 'student_a', _sum: { minutes: 300 } }, { personId: 'student_b', _sum: { minutes: 60 } }],
+          [{ personId: 'student_a', _sum: { minutes: 30 } }],
+        );
+
+        const result = await getStudentHourSummaries(staffActor(), { from: '2026-01-01', to: '2026-01-31' });
+
+        expect(result).toEqual([
+          {
+            personId: 'student_a',
+            firstName: 'Anna',
+            lastName: 'Allieva',
+            dualMinutes: 90,
+            soloMinutes: 30,
+            totalMinutes: 120,
+            totalMinutesAllTime: 330,
+          },
+          {
+            personId: 'student_b',
+            firstName: 'Bruno',
+            lastName: 'Barone',
+            dualMinutes: 0,
+            soloMinutes: 0,
+            totalMinutes: 0,
+            totalMinutesAllTime: 60,
+          },
+        ]);
+      });
+    });
+
+    describe('getInstructorHourSummaries (AC 2, AC 3 bounds, AC 5 — two-way permission matrix)', () => {
+      it('rejects an actor with neither school.manage.any nor .own', async () => {
+        await expect(getInstructorHourSummaries(pilotActor(), { from: '2026-01-01', to: '2026-01-31' })).rejects.toThrow(ForbiddenError);
+        expect(personFindManyMock).not.toHaveBeenCalled();
+        expect(flightGroupByMock).not.toHaveBeenCalled();
+      });
+
+      it('school.manage.any: lists every ACTIVE instructor (non-archived person, non-deactivated profile)', async () => {
+        personFindMany.mockResolvedValue([
+          { id: 'instructor_a', firstName: 'Ines', lastName: 'Istruttrice', instructorProfile: { id: 'profile_a' } },
+        ]);
+        flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_a', _sum: { minutes: 45 } }]);
+
+        const result = await getInstructorHourSummaries(staffActor(), { from: '2026-01-01', to: '2026-01-31' });
+
+        expect(personFindManyMock).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { archivedAt: null, instructorProfile: { deactivatedAt: null } } }),
+        );
+        expect(result).toEqual([{ personId: 'instructor_a', firstName: 'Ines', lastName: 'Istruttrice', minutes: 45 }]);
+      });
+
+      it('school.manage.own: returns ONLY the caller\'s own row, never touching person.findMany (the platea query)', async () => {
+        instructorProfileFindUnique.mockResolvedValue({ id: 'instructor_profile_1', deactivatedAt: null });
+        personFindUnique.mockResolvedValue({ firstName: 'Ines', lastName: 'Istruttrice' });
+        flightGroupBy.mockResolvedValue([{ instructorProfileId: 'instructor_profile_1', _sum: { minutes: 45 } }]);
+
+        const result = await getInstructorHourSummaries(instructorActor(), { from: '2026-01-01', to: '2026-01-31' });
+
+        expect(personFindManyMock).not.toHaveBeenCalled();
+        expect(flightGroupByMock).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ instructorProfileId: { in: ['instructor_profile_1'] } }) }),
+        );
+        expect(result).toEqual([{ personId: 'person_instructor', firstName: 'Ines', lastName: 'Istruttrice', minutes: 45 }]);
+      });
+
+      it('school.manage.own: throws ValidationError INSTRUCTOR_PROFILE_REQUIRED when the actor has no active instructor profile', async () => {
+        instructorProfileFindUnique.mockResolvedValue(null);
+
+        const error = await getInstructorHourSummaries(instructorActor(), { from: '2026-01-01', to: '2026-01-31' }).catch((e) => e);
+        expect(error).toBeInstanceOf(ValidationError);
+        expect((error as InstanceType<typeof ValidationError>).code).toBe('INSTRUCTOR_PROFILE_REQUIRED');
+      });
+
+      it('a student aboard a SCHOOL flight with no matching groupBy row defaults to 0 minutes', async () => {
+        personFindMany.mockResolvedValue([
+          { id: 'instructor_a', firstName: 'Ines', lastName: 'Istruttrice', instructorProfile: { id: 'profile_a' } },
+        ]);
+        flightGroupBy.mockResolvedValue([]);
+
+        const result = await getInstructorHourSummaries(staffActor(), { from: '2026-01-01', to: '2026-01-31' });
+
+        expect(result[0]?.minutes).toBe(0);
+      });
+
+      it('period bounds are inclusive date-only via parseDateOnlyUtc, flightType SCHOOL, CANCELLED excluded', async () => {
+        personFindMany.mockResolvedValue([
+          { id: 'instructor_a', firstName: 'Ines', lastName: 'Istruttrice', instructorProfile: { id: 'profile_a' } },
+        ]);
+        flightGroupBy.mockResolvedValue([]);
+
+        await getInstructorHourSummaries(staffActor(), { from: '2026-02-01', to: '2026-02-28' });
+
+        expect(flightGroupByMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            by: ['instructorProfileId'],
+            where: {
+              instructorProfileId: { in: ['profile_a'] },
+              flightType: 'SCHOOL',
+              status: { not: 'CANCELLED' },
+              flightDate: { gte: parseDateOnlyUtc('2026-02-01'), lte: parseDateOnlyUtc('2026-02-28') },
+            },
+          }),
+        );
+      });
     });
   });
 

@@ -4,7 +4,7 @@ baseline_commit: 20e8907
 
 # Story 9.3: Riepiloghi ore scuola
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -43,12 +43,12 @@ so that monitori il percorso degli allievi e le ore da retribuire agli istruttor
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1, 2, 3, 5)** — Service: `getStudentHourSummaries` + `getInstructorHourSummaries` (batched, bounds inclusivi, platee attive/non-archiviate, doc-comment della derivazione DC/solista e dell'edge checkride) + schemi Zod `from`/`to`.
-- [ ] **T2 (AC 4)** — Filtro `instructorPersonId` in `listFlights` (schema+service, guardia own per non-staff) + pagina flights (param, drop non-staff salvo own, pageHref, indicazione filtro attivo) + OpenAPI.
-- [ ] **T3 (AC 5)** — Route `school/summaries/students` + `school/summaries/instructors`, registry + test.
-- [ ] **T4 (AC 1, 2, 3)** — UI landing school due-facce: sezione Riepiloghi gestore (filtri periodo, tabella allievi, tabella istruttori con drill-down), card "Le mie ore scuola" istruttore; nav + test nav; i18n; verifica Playwright MCP desktop+mobile.
-- [ ] **T5 (AC tutti)** — Unit (matrice permessi due-vie, derivazione DC/solista con fixture miste incl. CANCELLED e checkride escluso, bounds periodo inclusivi, batching, guardia instructorPersonId own/non-own) + e2e (gestore vede DC/solista corretti con voli costruiti; istruttore vede solo la propria riga e il drill-down apre il registro filtrato; pilota 403; param instructorPersonId altrui da non-staff → 403).
-- [ ] **T6** — `npm run gates`; e2e nuovi + regressione school + flights; story file (Dev Agent Record) + sprint-status.yaml (9-3 → review).
+- [x] **T1 (AC 1, 2, 3, 5)** — Service: `getStudentHourSummaries` + `getInstructorHourSummaries` (batched, bounds inclusivi, platee attive/non-archiviate, doc-comment della derivazione DC/solista e dell'edge checkride) + schemi Zod `from`/`to`.
+- [x] **T2 (AC 4)** — Filtro `instructorPersonId` in `listFlights` (schema+service, guardia own per non-staff) + pagina flights (param, drop non-staff salvo own, pageHref, indicazione filtro attivo) + OpenAPI.
+- [x] **T3 (AC 5)** — Route `school/summaries/students` + `school/summaries/instructors`, registry + test.
+- [x] **T4 (AC 1, 2, 3)** — UI landing school due-facce: sezione Riepiloghi gestore (filtri periodo, tabella allievi, tabella istruttori con drill-down), card "Le mie ore scuola" istruttore; nav + test nav; i18n; verifica Playwright MCP desktop+mobile.
+- [x] **T5 (AC tutti)** — Unit (matrice permessi due-vie, derivazione DC/solista con fixture miste incl. CANCELLED e checkride escluso, bounds periodo inclusivi, batching, guardia instructorPersonId own/non-own) + e2e (gestore vede DC/solista corretti con voli costruiti; istruttore vede solo la propria riga e il drill-down apre il registro filtrato; pilota 403; param instructorPersonId altrui da non-staff → 403).
+- [x] **T6** — `npm run gates`; e2e nuovi + regressione school + flights; story file (Dev Agent Record) + sprint-status.yaml (9-3 → review).
 
 ## Dev Notes
 
@@ -71,14 +71,50 @@ so that monitori il percorso degli allievi e le ore da retribuire agli istruttor
 
 ### Agent Model Used
 
+Sonnet 5 (single dev agent, xhigh)
+
 ### Debug Log References
+
+- `npm run gates` (compact): PASS lint, PASS typecheck, PASS test (1156 passed, 40 files — 76 new: 6 unit for `getStudentHourSummaries`/`getInstructorHourSummaries` in `school.service.test.ts`, 4 unit for the `instructorPersonId` filter/guard in `flights.service.test.ts`), PASS build (`env -u NODE_ENV npx next build`).
+- e2e targeted regression (not the full 161-baseline suite — see notesForReview): `e2e/school.spec.ts` (25 tests incl. 3 new for story 9.3), `e2e/flights.spec.ts`, `e2e/flight-log.spec.ts`, `e2e/flight-reversal.spec.ts` — all green, one pre-existing hydration console warning in `flights-manager.tsx` (money formatting `1.900,00 €` vs `1900,00 €`, file untouched by this story) observed but not a test failure.
+- Interactive Playwright MCP verification: logged in as seeded admin, created fixtures via `fetch` (instructor, student, aircraft+rate, instructor rate, SCHOOL + solo flights spanning in/out of a fixed period), confirmed `/dashboard/school` desktop screenshot (gestore Riepiloghi tables with correct dual/solo/total/all-time values, "Le mie ore scuola" card, unchanged "I miei allievi" roster — admin holds `school.manage.any` AND `school.manage.own` via `ALL_PERMISSIONS`, confirming the "both faces" case is the ADMIN default, not just theoretical), the "Apri nel registro" drill-down (URL params, filter chip, exactly the expected flight row), the chip's "Rimuovi filtro istruttore" clear action, mobile 375×812 layout (chip wraps, tables scroll horizontally in their own `overflow-x-auto`, same pattern as the existing report/flights tables), and the EN locale.
 
 ### Completion Notes List
 
+- Domain decision (Contesto, unchanged from the story file): dual-command = non-cancelled `SCHOOL` flights; solo = non-cancelled flights with no instructor, any `flightType`; a `PRIVATE`/`OTHER` flight WITH an instructor (checkride) falls in neither bucket — implemented exactly as specified and covered by both unit and e2e fixtures (e2e explicitly constructs and excludes the checkride + a CANCELLED SCHOOL flight).
+- `getStudentHourSummaries`/`getInstructorHourSummaries` (`school.service.ts`): 4 batched `groupBy`s for the student summary (dual/solo × period/all-time, all on `personId IN (...)`), 1 batched `groupBy` for the instructor summary — no N+1 anywhere. `getInstructorHourSummaries` decides `school.manage.any` vs `.own` once at the top (AD-5); the "own" branch reuses `resolveOwnActiveInstructorProfile` (same 422 `INSTRUCTOR_PROFILE_REQUIRED` as `listOwnStudents`).
+- `listFlights`'s `instructorPersonId` filter (`flights.service.ts`) mirrors the existing `personId` guard exactly (staff free, non-staff only their own id, checked before any query) — the where clause adds `instructorProfile: { personId }`, no change to cost calculation or the other filters (surgical per the Dev Notes' "canary" warning).
+- `/dashboard/school` (`page.tsx`) now branches on `school.manage.any`/`school.manage.own` independently (previously `school.manage.own`-only): the gestore's Riepiloghi section, the instructor's unchanged roster, and a new "Le mie ore scuola" card. `getInstructorHourSummaries` is called exactly ONCE regardless of which permission(s) the actor holds — the own-row card is derived by filtering the `any`-branch's full result by `actor.personId` rather than issuing a second query (verified live: the seeded ADMIN account genuinely holds both permissions via `ALL_PERMISSIONS`, so this dual-permission path is exercised by every admin, not just a theoretical instructor-admin).
+- `/dashboard/flights` (`page.tsx`) accepts `?instructorPersonId=`, drops it for non-staff unless it equals their own `personId` (same pattern as `aircraftId`/`personId`), keeps it in `pageHref`/the `FlightsManager` remount `key`, and shows a plain chip + "Rimuovi filtro istruttore" link when active — no new picker component (per Dev Notes), `FlightsManager`/`flights-manager.tsx` itself untouched.
+- Nav: `school` now shows for `school.manage.own` OR `school.manage.any` (staff/admin gain the "Scuola" item); `nav-items.test.ts` updated.
+- New client component `summary-filters.tsx` is an intentional near-duplicate of `finance/report/report-filters.tsx#ReportFilters` retargeted at `/dashboard/school` (Dev Notes: "riuso ESATTO del pattern") — not extracted into a shared component since the two report pages' filter state, target route and testids differ and neither existing component is a natural host for a third caller (kept surgical, no speculative shared abstraction).
+- OpenAPI: 2 new paths (`/api/v1/school/summaries/students`, `/api/v1/school/summaries/instructors`) + 2 new component schemas registered; the `/api/v1/flights` path description updated to mention `instructorPersonId`; `registry.test.ts`'s path list updated.
+- No Prisma migration — confirmed no `schema.prisma` changes.
+
 ### File List
+
+- `src/lib/schemas/school.ts` — `schoolSummaryQuerySchema`, `studentHourSummaryItemSchema`/list, `instructorHourSummaryItemSchema`/list.
+- `src/lib/schemas/flights.ts` — `instructorPersonId` added to `listFlightsQuerySchema`.
+- `src/server/services/school.service.ts` — `getStudentHourSummaries`, `getInstructorHourSummaries` + private batched-sum helpers.
+- `src/server/services/flights.service.ts` — `instructorPersonId` filter + non-staff guard in `listFlights`.
+- `src/app/api/v1/school/summaries/students/route.ts` — new route.
+- `src/app/api/v1/school/summaries/instructors/route.ts` — new route.
+- `src/lib/schemas/registry.ts` — new schema registrations + 2 new paths; flights path description updated.
+- `src/app/[locale]/dashboard/flights/page.tsx` — `instructorPersonId` param handling + active-filter chip.
+- `src/app/[locale]/dashboard/school/page.tsx` — rewritten two-faced landing (Riepiloghi gestore, "Le mie ore scuola" card, unchanged roster).
+- `src/app/[locale]/dashboard/school/summary-filters.tsx` — new client component (period filter).
+- `src/app/[locale]/dashboard/nav-items.ts` — `school` nav item permissions extended to `school.manage.any`.
+- `messages/it.json`, `messages/en.json` — new `SchoolPage.titleManage`/`descriptionManage`/`summaries`/`myHours` keys; `FlightsPage.filters.instructorActive`/`instructorClear`.
+- `src/server/services/school.service.test.ts` — new `hour summaries (story 9.3, FR-34)` describe block (permission matrix, derivation, batching, bounds); `person.findMany` added to the prisma mock.
+- `src/server/services/flights.service.test.ts` — `instructorPersonId` filter/guard tests; schema test updated.
+- `src/lib/schemas/registry.test.ts` — 2 new paths added to the endpoint list.
+- `src/app/[locale]/dashboard/nav-items.test.ts` — new test for `school`'s extended visibility.
+- `e2e/school.spec.ts` — new `School hour summaries (Story 9.3, FR-34)` describe block (3 tests) + 2 new fixture helpers (`registerFlightNoInstructor`, `registerPrivateFlightWithInstructor`, `cancelFlight`).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 9-3 → review.
 
 ## Review Record
 
 ## Change Log
 
 - 2026-07-10: Story file created (Fable 5 main session) — terza e ultima story Epic 9. Decisione di dominio DC/solista derivata dai dati esistenti (assumption da ratificare, segnalata nell'handoff); nessuna migrazione.
+- 2026-07-10: Implementazione completa (Sonnet 5 dev agent, xhigh) — T1-T6. Nessuna deviazione dal contratto della story; nessuna migrazione. Status → review.

@@ -70,4 +70,11 @@ describe('visibleNavItems (Story 1.3 AC 2 — dashboard navigation by role)', ()
     const item = visibleNavItems(actorWith(['INSTRUCTOR'])).find((entry) => entry.key === 'school');
     expect(item?.href).toBe('/dashboard/school');
   });
+
+  it('shows the school item to staff too (story 9.3: school.manage.any gestore riepiloghi), still not to pilot/student', () => {
+    expect(visibleNavItems(actorWith(['STAFF'])).map((item) => item.key)).toContain('school');
+    expect(visibleNavItems(actorWith(['INSTRUCTOR'])).map((item) => item.key)).toContain('school');
+    expect(visibleNavItems(actorWith(['PILOT'])).map((item) => item.key)).not.toContain('school');
+    expect(visibleNavItems(actorWith(['STUDENT'])).map((item) => item.key)).not.toContain('school');
+  });
 });

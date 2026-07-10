@@ -1,7 +1,7 @@
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
 import { computeExpiryStatus, type ExpiryStatus } from '@/lib/expiry-status';
-import type { AssignInstructorInput, TrainingNoteInput } from '@/lib/schemas/school';
+import type { AssignInstructorInput, SchoolSummaryQuery, TrainingNoteInput } from '@/lib/schemas/school';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -676,4 +676,185 @@ export async function listStudentSchoolFlights(actor: Actor, studentPersonId: st
   });
 
   return flights.map((flight) => ({ id: flight.id, flightDate: toDateOnlyString(flight.flightDate), minutes: flight.minutes }));
+}
+
+// --- Hour summaries (epic 9, story 9.3, FR-34) ------------------------------
+// Read-only aggregations over `Flight` — NO new model, NO schema change.
+
+export type StudentHourSummaryItem = {
+  personId: string;
+  firstName: string;
+  lastName: string;
+  /** Non-cancelled SCHOOL flight minutes in [from, to] (an instructor is guaranteed by SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR). */
+  dualMinutes: number;
+  /** Non-cancelled flight minutes with NO instructor in [from, to], any flightType — see this module's derivation below. */
+  soloMinutes: number;
+  /** dualMinutes + soloMinutes, this period. */
+  totalMinutes: number;
+  /** Same sum, all-time (no period bound) — distinct from the 9.1 roster's SCHOOL-only "ore scuola totali" (`OwnStudentItem.totalMinutes`), which is unchanged. */
+  totalMinutesAllTime: number;
+};
+
+/** SUM(minutes) of non-cancelled SCHOOL flights per `personId`, batched over the whole platea in ONE query — `periodBounds` omitted sums all-time. */
+async function sumDualMinutesByPerson(personIds: string[], periodBounds?: { gte: Date; lte: Date }): Promise<Map<string, number>> {
+  if (personIds.length === 0) return new Map();
+  const grouped = await prisma.flight.groupBy({
+    by: ['personId'],
+    where: {
+      personId: { in: personIds },
+      status: { not: 'CANCELLED' },
+      flightType: 'SCHOOL',
+      ...(periodBounds ? { flightDate: periodBounds } : {}),
+    },
+    _sum: { minutes: true },
+  });
+  return sumsByPersonId(grouped);
+}
+
+/** SUM(minutes) of non-cancelled flights with NO instructor (any flightType) per `personId` — the "solista" derivation (story's ratified domain decision). Same batched shape as `sumDualMinutesByPerson`. */
+async function sumSoloMinutesByPerson(personIds: string[], periodBounds?: { gte: Date; lte: Date }): Promise<Map<string, number>> {
+  if (personIds.length === 0) return new Map();
+  const grouped = await prisma.flight.groupBy({
+    by: ['personId'],
+    where: {
+      personId: { in: personIds },
+      status: { not: 'CANCELLED' },
+      instructorProfileId: null,
+      ...(periodBounds ? { flightDate: periodBounds } : {}),
+    },
+    _sum: { minutes: true },
+  });
+  return sumsByPersonId(grouped);
+}
+
+function sumsByPersonId(grouped: { personId: string; _sum: { minutes: number | null } }[]): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const group of grouped) {
+    result.set(group.personId, group._sum.minutes ?? 0);
+  }
+  return result;
+}
+
+/**
+ * Per-student hour summary (AC 1, AC 3 bounds, AC 5; FR-34) —
+ * `school.manage.any` only (staff/admin). The platea is every ACTIVE student
+ * (active profile, non-archived person — same convention as the 9.1
+ * roster). DERIVATION (ratified domain decision, no schema change — the
+ * story's Dev Notes flags it for PM confirmation via the handoff):
+ *  - "doppio comando" = non-cancelled `SCHOOL` flights (an instructor is
+ *    guaranteed by the `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR` domain rule,
+ *    `flights.service.ts`).
+ *  - "solista" = non-cancelled flights with NO instructor, of ANY
+ *    `flightType` (today always registered `PRIVATE`/`OTHER`) — by
+ *    definition of the allievo role, a flight they flew with no instructor
+ *    aboard IS their solo.
+ *  - EDGE (declared, not a bug): a `PRIVATE`/`OTHER` flight of the student
+ *    WITH an instructor (e.g. a checkride, story 5.1) falls in NEITHER
+ *    bucket — it is neither school-flight training nor a solo, so it never
+ *    contributes to `dualMinutes`/`soloMinutes`/`totalMinutes`.
+ *  - `totalMinutesAllTime` is a DIFFERENT view from the 9.1 roster's "ore
+ *    scuola totali" (SCHOOL-only, unchanged) — this is dual+solo, all-time.
+ * Four `groupBy`s (dual/solo x period/all-time), ALL batched on
+ * `personId IN (...)` — never one query per student.
+ */
+export async function getStudentHourSummaries(actor: Actor, query: SchoolSummaryQuery): Promise<StudentHourSummaryItem[]> {
+  authorize(actor, 'school.manage.any');
+
+  const students = await prisma.person.findMany({
+    where: { archivedAt: null, studentProfile: { deactivatedAt: null } },
+    select: { id: true, firstName: true, lastName: true },
+    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+  });
+  if (students.length === 0) return [];
+
+  const personIds = students.map((student) => student.id);
+  const periodBounds = { gte: parseDateOnlyUtc(query.from), lte: parseDateOnlyUtc(query.to) };
+
+  const dualPeriod = await sumDualMinutesByPerson(personIds, periodBounds);
+  const soloPeriod = await sumSoloMinutesByPerson(personIds, periodBounds);
+  const dualAllTime = await sumDualMinutesByPerson(personIds);
+  const soloAllTime = await sumSoloMinutesByPerson(personIds);
+
+  return students.map((student) => {
+    const dual = dualPeriod.get(student.id) ?? 0;
+    const solo = soloPeriod.get(student.id) ?? 0;
+    return {
+      personId: student.id,
+      firstName: student.firstName,
+      lastName: student.lastName,
+      dualMinutes: dual,
+      soloMinutes: solo,
+      totalMinutes: dual + solo,
+      totalMinutesAllTime: (dualAllTime.get(student.id) ?? 0) + (soloAllTime.get(student.id) ?? 0),
+    };
+  });
+}
+
+export type InstructorHourSummaryItem = {
+  personId: string;
+  firstName: string;
+  lastName: string;
+  /** Non-cancelled SCHOOL flight minutes in [from, to] as the instructor aboard. */
+  minutes: number;
+};
+
+/**
+ * Per-instructor hour summary (AC 2, AC 3 bounds, AC 5; FR-34; FR-2 "propria
+ * ore") — two access paths, decided ONCE at the top (never trusted from the
+ * UI, AD-5 — same shape as `listFlights`'s `canManage` branch):
+ *  - `school.manage.any` (staff/admin): every ACTIVE instructor.
+ *  - otherwise `school.manage.own`: ONLY the caller's own row, resolved via
+ *    the same `resolveOwnActiveInstructorProfile` helper `listOwnStudents`
+ *    uses (422 `INSTRUCTOR_PROFILE_REQUIRED` if absent/deactivated).
+ * SUM(minutes) of non-cancelled `SCHOOL` flights per instructor in the
+ * period, ONE batched `groupBy` regardless of platea size — no compensi/
+ * tariffe here (Contesto: "il compenso è calcolato FUORI dal sistema").
+ */
+export async function getInstructorHourSummaries(actor: Actor, query: SchoolSummaryQuery): Promise<InstructorHourSummaryItem[]> {
+  type InstructorRow = { personId: string; firstName: string; lastName: string; instructorProfileId: string };
+  let instructors: InstructorRow[];
+
+  if (hasPermission(actor, 'school.manage.any')) {
+    const rows = await prisma.person.findMany({
+      where: { archivedAt: null, instructorProfile: { deactivatedAt: null } },
+      select: { id: true, firstName: true, lastName: true, instructorProfile: { select: { id: true } } },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+    instructors = rows.map((row) => ({
+      personId: row.id,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      instructorProfileId: row.instructorProfile!.id,
+    }));
+  } else {
+    authorize(actor, 'school.manage.own');
+    const ownProfile = await resolveOwnActiveInstructorProfile(actor);
+    const person = await prisma.person.findUnique({ where: { id: actor.personId! }, select: { firstName: true, lastName: true } });
+    instructors = [{ personId: actor.personId!, firstName: person!.firstName, lastName: person!.lastName, instructorProfileId: ownProfile.id }];
+  }
+  if (instructors.length === 0) return [];
+
+  const grouped = await prisma.flight.groupBy({
+    by: ['instructorProfileId'],
+    where: {
+      instructorProfileId: { in: instructors.map((instructor) => instructor.instructorProfileId) },
+      flightType: 'SCHOOL',
+      status: { not: 'CANCELLED' },
+      flightDate: { gte: parseDateOnlyUtc(query.from), lte: parseDateOnlyUtc(query.to) },
+    },
+    _sum: { minutes: true },
+  });
+  const minutesByProfile = new Map<string, number>();
+  for (const group of grouped) {
+    if (group.instructorProfileId) {
+      minutesByProfile.set(group.instructorProfileId, group._sum.minutes ?? 0);
+    }
+  }
+
+  return instructors.map((instructor) => ({
+    personId: instructor.personId,
+    firstName: instructor.firstName,
+    lastName: instructor.lastName,
+    minutes: minutesByProfile.get(instructor.instructorProfileId) ?? 0,
+  }));
 }

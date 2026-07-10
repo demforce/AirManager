@@ -189,6 +189,33 @@ async function registerSchoolFlight(
   return body.flight;
 }
 
+/** Registers a flight with NO instructor (any flightType other than SCHOOL, which always requires one) — story 9.3's "solista" fixture. */
+async function registerFlightNoInstructor(
+  page: Page,
+  params: { aircraftId: string; personId: string; flightDate: string; minutes: number },
+): Promise<{ id: string }> {
+  const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'PRIVATE' } });
+  expect(response.status()).toBe(201);
+  const body = (await response.json()) as { flight: { id: string } };
+  return body.flight;
+}
+
+/** Registers a PRIVATE flight WITH an instructor (e.g. a checkride) — story 9.3's declared "neither dual nor solo" edge-case fixture. */
+async function registerPrivateFlightWithInstructor(
+  page: Page,
+  params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number },
+): Promise<{ id: string }> {
+  const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'PRIVATE' } });
+  expect(response.status()).toBe(201);
+  const body = (await response.json()) as { flight: { id: string } };
+  return body.flight;
+}
+
+async function cancelFlight(page: Page, flightId: string, reason: string): Promise<void> {
+  const response = await page.request.post(`/api/v1/flights/${flightId}/cancel`, { data: { reason } });
+  expect(response.status()).toBe(200);
+}
+
 /** Registers an EXPIRED "Visita medica LAPL" scadenza (seeded type, scope STUDENTS) for a student — the worst-status badge fixture. */
 async function registerExpiredExpiry(page: Page, personId: string): Promise<void> {
   const typesResponse = await page.request.get('/api/v1/expiry-types');
@@ -500,5 +527,148 @@ test.describe('Training notes (Story 9.2, FR-33)', () => {
     expect(adminEditResponse.status()).toBe(409);
     const adminEditBody = await adminEditResponse.json();
     expect(adminEditBody.error.code).toBe('NOTE_IMMUTABLE');
+  });
+});
+
+test.describe('School hour summaries (Story 9.3, FR-34)', () => {
+  // A fixed, out-of-the-way period — deterministic regardless of "today"
+  // (unlike the page's own default of "current month") and safely isolated
+  // from every other spec's PAST_DATE (2020-01-01) fixtures registered on
+  // OTHER days of that same month.
+  const PERIOD_FROM = '2021-03-01';
+  const PERIOD_TO = '2021-03-31';
+  // After PAST_DATE (the aircraft/instructor rates' validFrom, 2020-01-01) but
+  // before PERIOD_FROM — otherwise a flight this early has no rate in effect (422).
+  const OUTSIDE_PERIOD_DATE = '2020-06-01';
+
+  test('gestore riepiloghi: doppio comando/solista/totale periodo e storico corretti, checkride e CANCELLED esclusi (AC 1/3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorPerson(page, 'Riepilogo');
+    const student = await createStudentPerson(page, 'Riepilogo');
+    const aircraft = await createAircraftWithRate(page, 15000);
+    await createInstructorRate(page, instructor.personId, 4000);
+
+    // Dual command, in period: 90' -> "1:30".
+    await registerSchoolFlight(page, {
+      aircraftId: aircraft.id,
+      personId: student.personId,
+      instructorPersonId: instructor.personId,
+      flightDate: '2021-03-05',
+      minutes: 90,
+    });
+    // Solo (no instructor), in period: 60' -> "1:00".
+    await registerFlightNoInstructor(page, { aircraftId: aircraft.id, personId: student.personId, flightDate: '2021-03-06', minutes: 60 });
+    // Checkride (PRIVATE WITH an instructor) — declared edge case, neither bucket: 45', must NOT count anywhere.
+    await registerPrivateFlightWithInstructor(page, {
+      aircraftId: aircraft.id,
+      personId: student.personId,
+      instructorPersonId: instructor.personId,
+      flightDate: '2021-03-07',
+      minutes: 45,
+    });
+    // A SCHOOL flight in period that gets CANCELLED — must NOT count anywhere.
+    const cancelled = await registerSchoolFlight(page, {
+      aircraftId: aircraft.id,
+      personId: student.personId,
+      instructorPersonId: instructor.personId,
+      flightDate: '2021-03-08',
+      minutes: 30,
+    });
+    await cancelFlight(page, cancelled.id, 'Test 9.3 — deve essere escluso dal riepilogo');
+    // A SCHOOL flight OUTSIDE the period — counts in totalMinutesAllTime only: 20'.
+    await registerSchoolFlight(page, {
+      aircraftId: aircraft.id,
+      personId: student.personId,
+      instructorPersonId: instructor.personId,
+      flightDate: OUTSIDE_PERIOD_DATE,
+      minutes: 20,
+    });
+
+    await page.goto(`/it/dashboard/school?from=${PERIOD_FROM}&to=${PERIOD_TO}`);
+
+    const row = page.getByTestId('school-summary-student-row').filter({ hasText: `${student.lastName} ${student.firstName}` });
+    await expect(row).toHaveCount(1);
+    // dual 1:30, solo 1:00, totalPeriod 2:30 (90+60, checkride/CANCELLED excluded), totalAllTime 2:50 (110 dual + 60 solo).
+    await expect(row).toContainText('1:30');
+    await expect(row).toContainText('1:00');
+    await expect(row).toContainText('2:30');
+    await expect(row).toContainText('2:50');
+
+    // The instructor table (AC 2) — SCHOOL only, period only: just the 90'
+    // flight (the CANCELLED one is excluded, the checkride was never SCHOOL).
+    const instructorRow = page.getByTestId('school-summary-instructor-row').filter({ hasText: `${instructor.lastName} ${instructor.firstName}` });
+    await expect(instructorRow).toHaveCount(1);
+    await expect(instructorRow).toContainText('1:30');
+    await expect(instructorRow.getByTestId('school-summary-open-register')).toBeVisible();
+  });
+
+  test('istruttore vede solo la propria riga in "Le mie ore scuola"; il drill-down apre il registro voli filtrato (AC 2/4)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructorA = await createInstructorWithLogin(page, 'HourSummary123!', 'A');
+    const instructorB = await createInstructorPerson(page, 'B');
+    const student = await createStudentPerson(page, 'Ore');
+    const aircraft = await createAircraftWithRate(page, 15000);
+    await createInstructorRate(page, instructorA.personId, 4000);
+    await createInstructorRate(page, instructorB.personId, 4000);
+
+    await registerSchoolFlight(page, {
+      aircraftId: aircraft.id,
+      personId: student.personId,
+      instructorPersonId: instructorA.personId,
+      flightDate: '2021-03-05',
+      minutes: 45,
+    });
+    // A much larger total for a DIFFERENT instructor — must never leak into A's card.
+    await registerSchoolFlight(page, {
+      aircraftId: aircraft.id,
+      personId: student.personId,
+      instructorPersonId: instructorB.personId,
+      flightDate: '2021-03-06',
+      minutes: 600,
+    });
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructorA.email, 'HourSummary123!');
+    await page.goto(`/it/dashboard/school?from=${PERIOD_FROM}&to=${PERIOD_TO}`);
+
+    await expect(page.getByTestId('school-summaries-panel')).toHaveCount(0);
+    await expect(page.getByTestId('own-hours-panel')).toBeVisible();
+    await expect(page.getByTestId('own-hours-minutes')).toHaveText('0:45');
+
+    await page.getByTestId('own-hours-open-register').click();
+    await expect(page).toHaveURL(/\/it\/dashboard\/flights\?/);
+    await expect(page).toHaveURL(new RegExp(`instructorPersonId=${instructorA.personId}`));
+    await expect(page.getByTestId('flight-instructor-filter-banner')).toBeVisible();
+
+    const rows = page.getByTestId('flight-row');
+    await expect(rows).toHaveCount(1);
+    await expect(rows).toContainText('0:45');
+  });
+
+  test('pilota riceve 403 dalle API riepiloghi; un istruttore non può filtrare il registro voli per un instructorPersonId altrui (AC 2/4)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const otherInstructor = await createInstructorPerson(page, 'Altrui');
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+
+    const studentsResponse = await page.request.get(`/api/v1/school/summaries/students?from=${PERIOD_FROM}&to=${PERIOD_TO}`);
+    expect(studentsResponse.status()).toBe(403);
+    expect((await studentsResponse.json()).error.code).toBe('FORBIDDEN');
+
+    const instructorsResponse = await page.request.get(`/api/v1/school/summaries/instructors?from=${PERIOD_FROM}&to=${PERIOD_TO}`);
+    expect(instructorsResponse.status()).toBe(403);
+    expect((await instructorsResponse.json()).error.code).toBe('FORBIDDEN');
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, INSTRUCTOR_EMAIL);
+
+    const flightsResponse = await page.request.get(`/api/v1/flights?instructorPersonId=${otherInstructor.personId}`);
+    expect(flightsResponse.status()).toBe(403);
+    expect((await flightsResponse.json()).error.code).toBe('FORBIDDEN');
   });
 });

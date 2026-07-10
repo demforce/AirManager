@@ -1393,6 +1393,44 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       );
     });
 
+    // Story 9.3, AC 4 — `instructorPersonId` gets the exact same guard shape
+    // as `personId` above (the "Le mie ore scuola" drill-down).
+    it('staff: instructorPersonId is a plain exact-match filter via the instructorProfile relation', async () => {
+      flightFindMany.mockResolvedValue([]);
+      flightCount.mockResolvedValue(0);
+
+      await listFlights(staffActor(), baseQuery({ instructorPersonId: 'person_instructor_9' }));
+
+      expect(flightFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { instructorProfile: { personId: 'person_instructor_9' } },
+        }),
+      );
+    });
+
+    it('non-staff filtering by someone else\'s instructorPersonId -> Forbidden, no query issued (AC 4)', async () => {
+      await expect(
+        listFlights(instructorActor(), baseQuery({ instructorPersonId: 'person_someone_else' })),
+      ).rejects.toThrow(ForbiddenError);
+      expect(flightFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('non-staff filtering by their OWN instructorPersonId is allowed (the school-summary drill-down)', async () => {
+      flightFindMany.mockResolvedValue([]);
+      flightCount.mockResolvedValue(0);
+
+      await listFlights(instructorActor(), baseQuery({ instructorPersonId: 'person_instructor' }));
+
+      expect(flightFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [{ personId: 'person_instructor' }, { instructorProfile: { personId: 'person_instructor' } }],
+            instructorProfile: { personId: 'person_instructor' },
+          },
+        }),
+      );
+    });
+
     it('non-staff with no linked person (personId null) gets an empty page, no query at all', async () => {
       const result = await listFlights(pilotActor(null), baseQuery());
 
@@ -1494,6 +1532,7 @@ describe('listFlightsQuerySchema (story 5.4, Task 1 — all six filters optional
       dateTo: '2026-01-31',
       aircraftId: 'aircraft_1',
       personId: 'person_1',
+      instructorPersonId: 'person_2',
       flightType: 'SCHOOL',
       status: 'CANCELLED',
     });

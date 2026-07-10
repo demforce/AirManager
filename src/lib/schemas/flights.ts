@@ -15,17 +15,21 @@ export const flightStatusSchema = z.enum(['REGISTERED', 'CANCELLED']);
 export type FlightStatusDto = z.infer<typeof flightStatusSchema>;
 
 /**
- * `GET /api/v1/flights` query (story 5.4, AC 1/2/3/4): every filter is
- * optional and AND-combinable. `dateFrom`/`dateTo` bound `flightDate`
- * (`@db.Date`, date-only string comparison is safe here because `z.iso.date()`
- * guarantees the fixed-width `YYYY-MM-DD` shape — same reasoning as
- * `cashReportQuerySchema`); the `.refine` below rejects an inverted range with
- * a plain 422 `VALIDATION_ERROR` (Contesto: no custom code needed for this
- * one). `aircraftId`/`personId`/`flightType`/`status` are exact-match filters
- * — an id that does not exist simply yields zero results (a filter, never a
- * lookup, so never a 404). A non-staff actor's `personId` filter is further
- * constrained server-side (`flights.service.ts#listFlights`, AC 4): providing
- * anyone else's id is a 403, never silently ignored or narrowed.
+ * `GET /api/v1/flights` query (story 5.4, AC 1/2/3/4; story 9.3, AC 4):
+ * every filter is optional and AND-combinable. `dateFrom`/`dateTo` bound
+ * `flightDate` (`@db.Date`, date-only string comparison is safe here because
+ * `z.iso.date()` guarantees the fixed-width `YYYY-MM-DD` shape — same
+ * reasoning as `cashReportQuerySchema`); the `.refine` below rejects an
+ * inverted range with a plain 422 `VALIDATION_ERROR` (Contesto: no custom
+ * code needed for this one). `aircraftId`/`personId`/`instructorPersonId`/
+ * `flightType`/`status` are exact-match filters — an id that does not exist
+ * simply yields zero results (a filter, never a lookup, so never a 404).
+ * `instructorPersonId` is a `Person.id`, resolved server-side to the
+ * `instructorProfile` relation (story 9.3's `/dashboard/flights?instructorPersonId=…`
+ * drill-down from the school hour summaries). A non-staff actor's `personId`/
+ * `instructorPersonId` filter is further constrained server-side
+ * (`flights.service.ts#listFlights`, AC 4): providing anyone else's id is a
+ * 403, never silently ignored or narrowed.
  */
 export const listFlightsQuerySchema = paginationQuerySchema
   .extend({
@@ -33,6 +37,7 @@ export const listFlightsQuerySchema = paginationQuerySchema
     dateTo: z.iso.date().optional(),
     aircraftId: z.string().trim().min(1).optional(),
     personId: z.string().trim().min(1).optional(),
+    instructorPersonId: z.string().trim().min(1).optional(),
     flightType: flightTypeSchema.optional(),
     status: flightStatusSchema.optional(),
   })

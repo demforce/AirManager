@@ -362,6 +362,44 @@
         "expiring": "Expiring",
         "expired": "Expired"
       }
+    },
+    "titleManage": "School summaries",
+    "descriptionManage": "Dual-command and solo hours for every active student, SCHOOL flight hours per instructor: filter by period.",
+    "summaries": {
+      "heading": "Summaries",
+      "filters": {
+        "heading": "Period",
+        "month": "Current month",
+        "quarter": "Current quarter",
+        "year": "Current year",
+        "custom": "Custom range",
+        "from": "From",
+        "to": "To"
+      },
+      "students": {
+        "heading": "Student hours",
+        "empty": "No active students.",
+        "table": {
+          "name": "Student",
+          "dual": "Dual command (period)",
+          "solo": "Solo (period)",
+          "totalPeriod": "Period total",
+          "totalAllTime": "All-time total"
+        }
+      },
+      "instructors": {
+        "heading": "Instructor hours",
+        "empty": "No active instructors.",
+        "table": {
+          "name": "Instructor",
+          "hours": "School hours (period)",
+          "action": "Open in register"
+        }
+      }
+    },
+    "myHours": {
+      "heading": "My school hours",
+      "openRegister": "Open in register"
     }
   },
   "TrainingDiaryPage": {
@@ -914,7 +952,9 @@
         "cancelled": "Cancelled"
       },
       "archivedSuffix": " (Archived)",
-      "reset": "Clear filters"
+      "reset": "Clear filters",
+      "instructorActive": "Instructor filter active",
+      "instructorClear": "Remove instructor filter"
     }
   },
   "ExpiriesPage": {

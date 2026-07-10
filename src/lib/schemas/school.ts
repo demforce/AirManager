@@ -130,3 +130,70 @@ export type ListTrainingNotesQuery = z.infer<typeof listTrainingNotesQuerySchema
 export const trainingNoteListResponseSchema = paginatedResponseSchema(trainingNoteItemSchema);
 
 export type TrainingNoteListResponseDto = z.infer<typeof trainingNoteListResponseSchema>;
+
+// --- Hour summaries (epic 9, story 9.3, FR-34) ------------------------------
+// Read-only aggregations over `Flight` (NO new model, NO schema change) —
+// see `school.service.ts#getStudentHourSummaries`/`getInstructorHourSummaries`
+// for the dual-command/solo derivation.
+
+/**
+ * `GET /api/v1/school/summaries/students` and `.../summaries/instructors`
+ * query — BOTH bounds mandatory (pattern `cashReportQuerySchema`, story 3.5:
+ * there is no "all time" summary endpoint, only the derived `totalMinutesAllTime`
+ * field on the student summary). Plain `YYYY-MM-DD` string comparison in the
+ * `.refine` is safe because `z.iso.date()` guarantees the fixed-width ISO
+ * format.
+ */
+export const schoolSummaryQuerySchema = z
+  .object({ from: z.iso.date(), to: z.iso.date() })
+  .refine((value) => value.from <= value.to, { message: 'from must not be after to', path: ['to'] });
+
+export type SchoolSummaryQuery = z.infer<typeof schoolSummaryQuerySchema>;
+
+/**
+ * One row of `GET /api/v1/school/summaries/students` (AC 1) —
+ * `school.service.ts#StudentHourSummaryItem`'s wire shape. `dualMinutes`/
+ * `soloMinutes` are the derived doppio-comando/solista split for the
+ * requested period (see the service doc-comment for the exact derivation and
+ * its declared checkride edge case); `totalMinutes = dualMinutes +
+ * soloMinutes` for the period; `totalMinutesAllTime` is the same sum with NO
+ * period bound — distinct from the 9.1 roster's SCHOOL-only "ore scuola
+ * totali" column (`OwnStudentItemDto.totalMinutes`), which stays unchanged.
+ */
+export const studentHourSummaryItemSchema = z.object({
+  personId: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
+  dualMinutes: z.number().int().nonnegative(),
+  soloMinutes: z.number().int().nonnegative(),
+  totalMinutes: z.number().int().nonnegative(),
+  totalMinutesAllTime: z.number().int().nonnegative(),
+});
+
+export type StudentHourSummaryItemDto = z.infer<typeof studentHourSummaryItemSchema>;
+
+/** A plain array (same no-pagination choice as `ownStudentListResponseSchema` — the active-student platea is always small). */
+export const studentHourSummaryListResponseSchema = z.array(studentHourSummaryItemSchema);
+
+export type StudentHourSummaryListResponseDto = z.infer<typeof studentHourSummaryListResponseSchema>;
+
+/**
+ * One row of `GET /api/v1/school/summaries/instructors` (AC 2) —
+ * `school.service.ts#InstructorHourSummaryItem`'s wire shape. `minutes` is
+ * non-cancelled SCHOOL flight time delivered in the requested period only —
+ * NO compensi/tariffe (Contesto: "il compenso è calcolato FUORI dal
+ * sistema", FR-34).
+ */
+export const instructorHourSummaryItemSchema = z.object({
+  personId: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
+  minutes: z.number().int().nonnegative(),
+});
+
+export type InstructorHourSummaryItemDto = z.infer<typeof instructorHourSummaryItemSchema>;
+
+/** A plain array — self-scoped to a single row for an instructor, the full active platea for staff (Dev Notes: always small either way). */
+export const instructorHourSummaryListResponseSchema = z.array(instructorHourSummaryItemSchema);
+
+export type InstructorHourSummaryListResponseDto = z.infer<typeof instructorHourSummaryListResponseSchema>;

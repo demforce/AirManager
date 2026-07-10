@@ -362,6 +362,44 @@
         "expiring": "In scadenza",
         "expired": "Scaduta"
       }
+    },
+    "titleManage": "Riepiloghi scuola",
+    "descriptionManage": "Ore doppio comando e solista di ogni allievo attivo, ore volo scuola per istruttore: filtra per periodo.",
+    "summaries": {
+      "heading": "Riepiloghi",
+      "filters": {
+        "heading": "Periodo",
+        "month": "Mese corrente",
+        "quarter": "Trimestre corrente",
+        "year": "Anno corrente",
+        "custom": "Intervallo libero",
+        "from": "Dal",
+        "to": "Al"
+      },
+      "students": {
+        "heading": "Ore allievi",
+        "empty": "Nessun allievo attivo.",
+        "table": {
+          "name": "Allievo",
+          "dual": "Doppio comando (periodo)",
+          "solo": "Solista (periodo)",
+          "totalPeriod": "Totale periodo",
+          "totalAllTime": "Totale storico"
+        }
+      },
+      "instructors": {
+        "heading": "Ore istruttori",
+        "empty": "Nessun istruttore attivo.",
+        "table": {
+          "name": "Istruttore",
+          "hours": "Ore scuola (periodo)",
+          "action": "Apri nel registro"
+        }
+      }
+    },
+    "myHours": {
+      "heading": "Le mie ore scuola",
+      "openRegister": "Apri nel registro"
     }
   },
   "TrainingDiaryPage": {
@@ -914,7 +952,9 @@
         "cancelled": "Annullato"
       },
       "archivedSuffix": " (Archiviato)",
-      "reset": "Azzera filtri"
+      "reset": "Azzera filtri",
+      "instructorActive": "Filtro istruttore attivo",
+      "instructorClear": "Rimuovi filtro istruttore"
     }
   },
   "ExpiriesPage": {
