@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-10 (epic-9 retro done; td-5 deferred pass in review)
+last_updated: 2026-07-10 (epic-9 retro done; td-5 deferred pass done, review clean-pass)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -111,7 +111,7 @@ development_status:
   epic-9-retrospective: done
 
   # Tech-debt pass sui deferred (post-retro epic 9, sessione 2026-07-10)
-  td-5-deferred-pass: review
+  td-5-deferred-pass: done
 
   epic-10: backlog
   10-1-excel-exports: backlog
@@ -123,7 +123,7 @@ action_items:
   - epic: 9
     action: "AI-1: eseguire il TD-5 (deferred pass: hydration money-format, from<=to pagina school, locale diario, azzera-filtri PPR, ricontrollo scadenze updateBooking, pg.Pool warning) col ciclo story->dev->review"
     owner: "sessione corrente 2026-07-10"
-    status: open
+    status: done
   - epic: 9
     action: "AI-2: ratificare le assumption di dominio con l'utente (AskUserQuestion) PRIMA di implementare la story, mai spedirle 'da confermare'"
     owner: "sessione principale (da Epic 10)"

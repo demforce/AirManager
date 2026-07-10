@@ -4,7 +4,7 @@ baseline_commit: cd2db85
 
 # Story TD-5: Tech-debt pass sui deferred (post-retro Epic 9)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -148,7 +148,7 @@ Sonnet 5 (single dev agent, xhigh)
 
 ### Completion Notes List
 
-- **AC 1**: `formatCents` pinna `useGrouping: 'always'` — separatore delle migliaia sempre presente in it (anche sotto 10.000), deterministico tra Node/browser ICU. Type augmentation locale in `src/lib/money.d.ts` (file ambient globale, nessun `declare global`/`namespace` in un `.ts` normale — evita `@typescript-eslint/no-namespace`, che esenta i file `.d.ts` di default). Doc-comment di `money.ts` riscritto; `money.test.ts` aggiornato (1 assert: `1500,00` → `1.500,00`). Grep esaustivo su tutto il repo (ts/tsx): NESSUN altro literal money nella fascia 1.000-9.999 fuori da `money.ts`/`money.test.ts`. Verifica empirica su build di produzione: console pulita (vedi Debug Log).
+- **AC 1**: `formatCents` pinna `useGrouping: 'always'` — separatore delle migliaia sempre presente in it (anche sotto 10.000), deterministico tra Node/browser ICU. Type augmentation locale in `src/lib/money.d.ts` (file ambient globale, nessun `declare global`/`namespace` in un `.ts` normale — evita `@typescript-eslint/no-namespace`, che esenta i file `.d.ts` di default). Doc-comment di `money.ts` riscritto; `money.test.ts` aggiornato (1 assert: `1500,00` → `1.500,00`). Grep esaustivo su tutto il repo (ts/tsx): nessun altro literal money nella fascia 1.000-9.999 da AGGIORNARE fuori da `money.ts`/`money.test.ts` (precisazione TD5-N1 del reviewer: `e2e/package-types.spec.ts:97-126` contiene literal in fascia, ma con regex tolleranti pre-esistenti `1\.?400,00` che accettano entrambi i formati — nessun cambio necessario). Verifica empirica su build di produzione: console pulita (vedi Debug Log).
 - **AC 2**: guardia `from > to` in `school/page.tsx` — SOLO quando ENTRAMBI i param sono ben formati ma invertiti si applica il default su ENTRAMBI; un singolo param malformato mantiene il comportamento preesistente (default indipendente per campo). Nuovo test e2e in `school.spec.ts`.
 - **AC 3**: `useLocale()` in `NewTrainingNoteForm` e `TrainingNoteRow` (i due componenti che chiamano `formatDateOnly`), stesso pattern di `people/account-panel.tsx`. Nessun nuovo test: `formatDateOnly` per `it-IT`/`en-IE` con opzioni `2-digit/2-digit/numeric` produce la STESSA stringa `DD/MM/YYYY` in entrambi i locale (verificato via Node) — il fix è architetturale (locale ora correttamente threaded, non hardcoded), non produce una differenza visibile testabile con questo formato specifico; regressione zero per IT confermata dalla suite `Training notes` esistente (10/10 PASS, invariata).
 - **AC 4**: `hasActiveFilter` confronta ora `!== 'APPROVED'` (il default di pagina) invece di `!== 'ALL'`; `handleResetFilters` naviga a `{status:'APPROVED', from:'', to:''}`. "Tutti" resta un valore filtro selezionabile che ATTIVA il bottone. Nuovo test e2e mirato (nessun e2e preesistente asserisce il vecchio comportamento, verificato via grep sul testid).
@@ -177,7 +177,24 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean-pass — zero finding mandatory.** 1 osservazione informativa (TD5-N1) applicata dalla sessione principale come precisazione nelle Completion Notes (nessun cambio di codice).
+
+- **Priorità zero — full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI**: **167 test (164 baseline + 3 nuovi), 166 passed + 1 flaky retry-verde, exit 0** — l'unico rosso transitorio è `ppr-register.spec.ts:206` ("fee cleared to 0,00"), PRE-esistente e fuori dal diff (e l'assert `/0,00\s€/` non ha separatore migliaia: non è una regressione di AC 1). I 3 e2e nuovi (bookings:1008, school:693, ppr-register:318) tutti verdi. Gates ri-eseguiti indipendentemente: lint/typecheck/**1163/1163 unit**/build PASS.
+- **AC 1 provato vivo su prod build**: `/it/dashboard/flights` con importi in fascia (`1.250,00 €`, `1.900,00 €` — proprio il valore del mismatch originale) → `browser_console_messages` **0 errori, 0 warning**; diff di `money.ts` letto riga per riga: unica modifica funzionale = `useGrouping: 'always'`, zero rami monetari; `money.d.ts` augmentation minimale (unico uso di `useGrouping` nel repo).
+- **AC 2 provato vivo**: range invertito ben formato → degrada al default month range (200, contenuto presente); range valido preservato invariato.
+- **AC 3**: byte-identità it-IT/en-IE di `formatDateOnly` confermata via node; threading `useLocale()` nei 2 componenti/3 call-site verificato a diff; suite Training notes intatta.
+- **AC 4 provato vivo**: load fresh → nessun "Azzera filtri"; "Tutti" → `?status=ALL` + bottone; reset → URL pulito, Approvati, bottone sparito.
+- **AC 5 verificato a fondo**: helper `findBlockingExpiredDocuments` = copia byte-identica della logica del create (ramo force e warnings del create INVARIATI); `EDITABLE_BOOKING_SELECT` includeva già `personId`/`startsAt`; recheck posizionato dopo own-access/date-validation e prima della `$transaction`; unit 4/4 (incl. `expiryFindMany` NON chiamato su cambio solo-orario) + e2e end-to-end (422 col nome documento su cambio giorno, success su cambio orario); i18n `EXPIRED_DOCUMENTS` simmetrica IT/EN, testo distinto dal create ("spostare" vs "creare"); fix `response.clone()` in `bookings-list.tsx` corretto (originale mai consumato, cloni indipendenti per helper).
+- **AC 6 — analisi del dev CONFERMATA in prima persona**: warning riprodotta live durante il browsing prod (`Calling client.query() when the client is already executing a query` — `queryQueueLengthDeprecationNotice`, `pg/lib/client.js:34-36`, concern di query-overlap runtime); letto `@prisma/adapter-pg/dist/index.mjs:736-752`: forma stringa e `{connectionString}` producono config identico prima di `new pg.Pool(...)` → non-fixabile-a-call-site SOUND, esito esplicitamente permesso dall'AC.
+- **Anti-regressione**: File List = diff reale (`git diff --name-only`); grep money-literal esaustivo (uniche occorrenze in fascia fuori diff: regex tolleranti pre-esistenti in `package-types.spec.ts` → TD5-N1, sola precisazione documentale); nessun cambio OpenAPI; nessuna migrazione; porta 3000 libera a fine review.
+- **TD5-N1 (info, non-mandatory, APPLICATA)** — frase "NESSUN altro literal money" nelle Completion Notes imprecisa: riformulata (v. sopra), nessuna conseguenza funzionale.
+
+### Final gates (review run, DB fresco, prod build)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **1163/1163 unit**, build verde, full suite CI-mode **167 test / 0 fail veri** (1 flaky pre-esistente retry-verde). Nessun fix di codice richiesto.
+
 ## Change Log
 
 - 2026-07-10: Story file created (Fable 5 main session) — TD-pass sui deferred triati dalla retrospettiva Epic 9 (AI-1). Ricognizione Explore completata su tutte e 6 le superfici.
 - 2026-07-10: Implementazione completa (Sonnet 5, single dev agent) — 6 AC chirurgici (money hydration, from>to school, locale journal, ppr-register reset, expiry recheck updateBooking, pg DeprecationWarning non-fixabile-a-call-site) + gates/e2e mirati verdi. Vedi Dev Agent Record per dettagli ed esiti osservati.
+- 2026-07-10: Review Opus 4.8 xhigh — clean pass, zero mandatory. Full suite prod-build CI-mode 167 test / 0 fail veri (1 flaky pre-esistente retry-verde); tutti gli AC riprovati vivi dal reviewer (hydration console pulita su prod build, semantica recheck scadenze, reset PPR, from>to, analisi indipendente AC 6 confermata). TD5-N1 (precisazione documentale) applicata dalla sessione principale. Status → done.
