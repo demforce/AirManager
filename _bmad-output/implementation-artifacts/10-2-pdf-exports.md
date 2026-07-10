@@ -4,7 +4,7 @@ baseline_commit: eff9bf4
 
 # Story 10.2: Export PDF dei report
 
-Status: review
+Status: done
 
 ## Story
 
@@ -139,7 +139,21 @@ Sonnet 5 (claude-sonnet-5), xhigh — dev subagent.
 - `messages/it.json`, `messages/en.json` — `Export.buttonPdf`, `PdfExport.*`, `SettingsPage.*`, `AccountStatementPage.pdf.balance`, `FlightsPage.pdf.*`.
 - `e2e/pdf-exports.spec.ts` — nuovo: 7 scenari e2e (T6).
 
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean-pass — zero finding mandatory.** 1 nit non-mandatory registrato come nota di miglioramento futuro (nessun cambio di codice).
+
+- **Priorità zero — full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI**: **179/179 passed, 0 flaky** (3.9m; 172 baseline + 7 nuovi `pdf-exports.spec.ts`); ppr-register e cash-report verdi senza retry. Gates ri-eseguiti da tree pulito: lint/typecheck/build verdi, **1200/1200 unit**, `env.ci-sync.test.ts` verde (nessuna env var nuova); confermato che `serverExternalPackages` NON è servito (il build bundla @react-pdf pulito). Nessun edit del reviewer (working tree pulito a fine review).
+- **Gap del dev chiusi dal reviewer**: (a) contenuti PDF verificati EMPIRICAMENTE oltre il livello unit — branding impostato con nome accentato ("Aviosuperficie Però città") + PNG reale, i 4 PDF scaricati dal server di produzione e i content stream FlateDecode decodificati a mano: accenti WinAnsi corretti, logo embedded (`/I1 Do`), totali esatti (flights "Durata totale 45:40" / "Totale addebiti 6593,33"; cash "Saldo del periodo +2827,20"), simbolo € reso correttamente, colori stato expiry esatti (#346538/#956400/#9F2F2D = badge component); (b) PDF multi-pagina reale generato (4 pagine): rendering corretto, footer `fixed` con "Pag. 4 di 4" ripetuto su ogni pagina; (c) matrice RBAC completa 5 ruoli live sulle 4 route PDF + settings PUT + unauth — tutto esatto (own-account, cash/expiries staff-only, flights own-scoped, PUT solo admin, 401 unauth); (d) persistenza branding provata a DB con psql dopo PUT live; (e) settings UI guidata via Playwright MCP (form pre-popolato dalla GET, stile editoriale coerente).
+- **102-N1 (nit, ACCETTATO)** — il PDF multi-pagina non ripete la riga di intestazione colonne sulle pagine 2+ (`document.tsx:95-102`, manca `fixed` sull'header row; il footer invece lo ha). Provato su PDF 4 pagine reale: leggibile, numerazione presente — non viola AC 2 (che chiede colonne della vista + numerazione pagine, non header per-pagina); la stessa Completion Notes del dev lo dichiarava. Nota di miglioramento futuro.
+- NOTA ambiente: la review ha lasciato nel DB seed il branding di test — il `db:reset` pre-dev della sessione principale lo pulisce.
+
+### Final gates (review run, DB fresco, prod build)
+
+lint/typecheck/build verdi, **1200/1200 unit**, full suite CI-mode **179/179, 0 flaky**. Nessun fix richiesto: nessun commit di fix post-review.
+
 ## Change Log
 
 - 2026-07-10: Story file created (Fable 5 main session) — seconda story Epic 10. Decisioni chiave: branding su AppSetting K/V (nessuna migrazione, logo data-URL senza storage), lettura branding senza gate / scrittura settings.manage, route PDF dedicate con riuso del plumbing 10.1 (pass-through, exports.service, ExportButton), cap PDF 2000 righe, test contenuti a livello unit + magic bytes negli e2e (niente pdf-parse).
 - 2026-07-10: Implementation (Sonnet 5 dev subagent) — tutti i task T1-T7 completati. Gates verdi (lint/typecheck/test/build), 1200/1200 unit, 7/7 e2e nuovi + 35/35 e2e di regressione. Deviazioni dichiarate: header tabella non ripetuto su multi-pagina PDF; palette stato scadenze duplicata come costanti hex (no import cross-boundary da modulo `'use client'`); `flights/pdf` ed `expiries/pdf` riusano il query schema della vista JSON invece di un fragment dedicato; sottotitolo periodo omesso su `flights/pdf` quando i filtri data non sono entrambi presenti.
+- 2026-07-10: Review Opus 4.8 xhigh — clean pass, zero mandatory. Full suite prod-build CI-mode 179/179 senza flaky; contenuti PDF decodificati e provati (branding accentato, logo, totali, €, colori); matrice RBAC 5 ruoli completa; multi-pagina verificato. 102-N1 accettato (header colonne non ripetuto pagine 2+ — miglioramento futuro). Nessun fix. Status → done.
