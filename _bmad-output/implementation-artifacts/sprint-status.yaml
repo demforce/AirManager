@@ -120,5 +120,5 @@ development_status:
   epic-11: in-progress
   11-1-logbook-fields-derived-duration: done
   11-2-logbook-registry-pic-person-access: done
-  11-3-italian-dates-logbook-exports: backlog
+  11-3-italian-dates-logbook-exports: ready-for-dev
   epic-11-retrospective: optional

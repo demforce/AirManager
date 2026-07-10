@@ -1,5 +1,5 @@
 ---
-baseline_commit: TBD-set-at-dispatch
+baseline_commit: a0abb71
 ---
 
 # Story 11.3: Date italiane ovunque ed export logbook
