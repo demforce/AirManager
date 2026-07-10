@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 // --- Public PPR request (epic 8, story 8.1, FR-22) --------------------------
@@ -96,6 +97,7 @@ export const listPprRequestsQuerySchema = paginationQuerySchema
     status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED', 'ALL']).optional().default('PENDING'),
     from: z.iso.date().optional(),
     to: z.iso.date().optional(),
+    ...exportQuerySchema.shape,
   })
   .refine((value) => !value.from || !value.to || value.from <= value.to, {
     message: 'from must not be after to',

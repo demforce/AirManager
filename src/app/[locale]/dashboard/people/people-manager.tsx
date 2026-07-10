@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 import { DataTable } from '@/components/data-table';
+import { ExportButton } from '@/components/export-button';
 import { Link, useRouter } from '@/i18n/navigation';
 import { createPersonSchema, updatePersonSchema, type CreatePersonInput, type UpdatePersonInput } from '@/lib/schemas/people';
 import { ProfilesPanel, type ProfilesPanelLabels } from './profiles-panel';
@@ -64,6 +65,9 @@ type PeopleManagerProps = {
   people: PersonRow[];
   initialQuery: string;
   initialIncludeArchived: boolean;
+  /** Story 10.1 (AC 5) — the SAME `q`/`includeArchived` this page was fetched with, `?format=xlsx` appended. */
+  exportHref: string;
+  exportLabel: string;
   labels: Labels;
 };
 
@@ -98,7 +102,7 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
   };
 }
 
-export function PeopleManager({ people, initialQuery, initialIncludeArchived, labels }: PeopleManagerProps) {
+export function PeopleManager({ people, initialQuery, initialIncludeArchived, exportHref, exportLabel, labels }: PeopleManagerProps) {
   const router = useRouter();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -286,13 +290,16 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, la
         ) : (
           <span />
         )}
-        <button
-          type="button"
-          onClick={() => setPanel({ mode: 'create' })}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
-        >
-          {labels.newPerson}
-        </button>
+        <div className="flex gap-3">
+          <ExportButton href={exportHref} label={exportLabel} testId="people-export-button" />
+          <button
+            type="button"
+            onClick={() => setPanel({ mode: 'create' })}
+            className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
+          >
+            {labels.newPerson}
+          </button>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-4">

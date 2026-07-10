@@ -1,6 +1,8 @@
 import { apiRoute } from '@/lib/api/handler';
 import { listCashMovementsQuerySchema, recordCashMovementSchema } from '@/lib/schemas/cash';
+import { xlsxResponse } from '@/server/adapters/excel/response';
 import { listCashMovements, recordCashMovement } from '@/server/services/cash.service';
+import { exportCashMovementsXlsx } from '@/server/services/exports.service';
 
 /**
  * Thin routes (AD-1): `finance.manage` (staff+admin) for both — the cash
@@ -9,7 +11,14 @@ import { listCashMovements, recordCashMovement } from '@/server/services/cash.se
  */
 export const GET = apiRoute({
   querySchema: listCashMovementsQuerySchema,
-  handle: async ({ actor, query }) => listCashMovements(actor, query),
+  // Story 10.1 (AC 1): `?format=xlsx` is the SAME endpoint, not a dedicated route.
+  handle: async ({ actor, query }) => {
+    if (query.format === 'xlsx') {
+      const { buffer, filename } = await exportCashMovementsXlsx(actor, query);
+      return xlsxResponse(buffer, filename);
+    }
+    return listCashMovements(actor, query);
+  },
 });
 
 // Story TD-2 (AC 5): opt-in `Idempotency-Key` header — see

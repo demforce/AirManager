@@ -1,5 +1,7 @@
 import { apiRoute } from '@/lib/api/handler';
 import { schoolSummaryQuerySchema } from '@/lib/schemas/school';
+import { xlsxResponse } from '@/server/adapters/excel/response';
+import { exportInstructorHourSummariesXlsx } from '@/server/services/exports.service';
 import { getInstructorHourSummaries } from '@/server/services/school.service';
 
 /**
@@ -9,5 +11,12 @@ import { getInstructorHourSummaries } from '@/server/services/school.service';
  */
 export const GET = apiRoute({
   querySchema: schoolSummaryQuerySchema,
-  handle: async ({ actor, query }) => getInstructorHourSummaries(actor, query),
+  // Story 10.1 (AC 1): `?format=xlsx` is the SAME endpoint, not a dedicated route.
+  handle: async ({ actor, query }) => {
+    if (query.format === 'xlsx') {
+      const { buffer, filename } = await exportInstructorHourSummariesXlsx(actor, query);
+      return xlsxResponse(buffer, filename);
+    }
+    return getInstructorHourSummaries(actor, query);
+  },
 });

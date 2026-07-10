@@ -1,6 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { buildExportHref } from '@/lib/export-href';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listPeople } from '@/server/services/people.service';
@@ -39,7 +40,13 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
   const peopleResult = await listPeople(actor, { page, pageSize: PAGE_SIZE, q, includeArchived });
 
   const t = await getTranslations('PeoplePage');
+  const tExport = await getTranslations('Export');
   const totalPages = Math.max(1, Math.ceil(peopleResult.total / PAGE_SIZE));
+
+  // Story 10.1 (AC 5): the SAME filters the list above was fetched with — a
+  // server-driven view, so `searchParams` (not a client-side state snapshot)
+  // is the live filter state (Dev Notes).
+  const exportHref = buildExportHref('/api/v1/people', { q, includeArchived: includeArchived ? 'true' : undefined }, locale);
 
   function pageHref(targetPage: number) {
     return {
@@ -85,6 +92,8 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
             }))}
             initialQuery={q ?? ''}
             initialIncludeArchived={includeArchived}
+            exportHref={exportHref}
+            exportLabel={tExport('button')}
             labels={{
               newPerson: t('newPerson'),
               searchPlaceholder: t('searchPlaceholder'),

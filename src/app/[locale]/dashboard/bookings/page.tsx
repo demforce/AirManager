@@ -1,6 +1,8 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { ExportButton } from '@/components/export-button';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { buildExportHref } from '@/lib/export-href';
 import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
@@ -328,7 +330,14 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   }
 
   const t = await getTranslations('BookingsPage');
+  const tExport = await getTranslations('Export');
   const dateLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
+
+  // Story 10.1 (AC 3/5): the "Prossime prenotazioni" list is deliberately
+  // shared (calendario comune, `self.read`) — the export mirrors the SAME
+  // `from: nowIso` filter the list above was fetched with, no restriction
+  // beyond what `listBookings` already enforces.
+  const exportHref = buildExportHref('/api/v1/bookings', { from: nowIso }, locale);
 
   // Story 7.3: serialize the (already `status: 'ACTIVE'`-filtered, service-
   // side) rows into plain wire DTOs before crossing the server -> client
@@ -449,8 +458,13 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         ) : null}
 
         <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="bookings-list-section">
-          <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{t('list.heading')}</h2>
-          <p className="mt-1 text-sm text-[#787774]">{t('list.description')}</p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{t('list.heading')}</h2>
+              <p className="mt-1 text-sm text-[#787774]">{t('list.description')}</p>
+            </div>
+            <ExportButton href={exportHref} label={tExport('button')} testId="bookings-export-button" />
+          </div>
 
           <BookingsList
             items={bookingRows}

@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 /**
@@ -109,6 +110,7 @@ export const listAircraftQuerySchema = paginationQuerySchema.extend({
   // `z.coerce.boolean()` would treat the *string* `"false"` as truthy
   // (`Boolean("false")` is `true`) — same footgun avoided in `listPeopleQuerySchema`.
   includeArchived: z.preprocess((value) => value === 'true' || value === true, z.boolean()).default(false),
+  ...exportQuerySchema.shape,
 });
 
 export type ListAircraftQuery = z.infer<typeof listAircraftQuerySchema>;

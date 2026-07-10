@@ -38,6 +38,7 @@ import {
   cashCategoryListResponseSchema,
   cashMovementItemSchema,
   cashMovementListResponseSchema,
+  cashReportPdfQuerySchema,
   cashReportQuerySchema,
   cashReportResponseSchema,
   createCashCategorySchema,
@@ -47,7 +48,7 @@ import {
   renameCashCategorySchema,
   reverseCashMovementSchema,
 } from './cash';
-import { errorEnvelopeSchema, okResponseSchema } from './common';
+import { errorEnvelopeSchema, okResponseSchema, pdfQuerySchema } from './common';
 import { expiryAlertsJobResultSchema } from './expiry-alerts';
 import {
   decideProposalSchema,
@@ -130,6 +131,7 @@ import {
   trainingNoteItemSchema,
   trainingNoteListResponseSchema,
 } from './school';
+import { airfieldBrandingSchema } from './settings';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
 
 /**
@@ -307,6 +309,7 @@ registry.register('RejectPprRequestRequest', rejectPprRequestSchema);
 registry.register('CompletePprRequestRequest', completePprRequestSchema);
 registry.register('PprOperatingInstructions', pprOperatingInstructionsSchema);
 registry.register('PprLandingFeeDefault', pprLandingFeeDefaultSchema);
+registry.register('AirfieldBranding', airfieldBrandingSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -344,6 +347,21 @@ function jsonContent(schema: z.ZodTypeAny) {
   return { 'application/json': { schema } };
 }
 
+/**
+ * Story 10.1 (AC 1/6): the xlsx counterpart of `jsonContent` — documents
+ * the binary `?format=xlsx` branch alongside the unchanged JSON one on the
+ * SAME 200 response (`content: { ...jsonContent(schema), ...xlsxContent() }`),
+ * one entry per of the 10 covered list endpoints.
+ */
+function xlsxContent() {
+  return { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { schema: z.string().openapi({ format: 'binary' }) } };
+}
+
+/** Story 10.2 (AC 2/6): the `application/pdf` counterpart of `xlsxContent` — a dedicated PDF export route's ONLY response content type (unlike the xlsx branch, there is no sibling JSON content on these paths). */
+function pdfContent() {
+  return { 'application/pdf': { schema: z.string().openapi({ format: 'binary' }) } };
+}
+
 // --- Paths ----------------------------------------------------------------
 
 registry.registerPath({
@@ -377,7 +395,7 @@ registry.registerPath({
   security,
   request: { query: listPeopleQuerySchema },
   responses: {
-    200: { description: 'A page of persons.', content: jsonContent(personListResponseSchema) },
+    200: { description: 'A page of persons, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).', content: { ...jsonContent(personListResponseSchema), ...xlsxContent() } },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -582,7 +600,25 @@ registry.registerPath({
   security,
   request: { params: personIdParams, query: listAccountMovementsQuerySchema },
   responses: {
-    200: { description: "A page of the person's account statement.", content: jsonContent(accountStatementResponseSchema) },
+    200: {
+      description: "A page of the person's account statement, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).",
+      content: { ...jsonContent(accountStatementResponseSchema), ...xlsxContent() },
+    },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/people/{id}/account/pdf',
+  summary: "PDF export of a person's full account statement (story 10.2, AC 2)",
+  description:
+    'Dedicated PDF route (spine :105), NOT `?format=pdf` on the movements endpoint above. The statement has no period filter — this is always the COMPLETE history, plus the final balance as a totals line. Same own/`people.read` access rule as `GET /api/v1/people/{id}/account/movements`. Above `2000` rows: 422 `EXPORT_TOO_LARGE` (use the xlsx export instead).',
+  tags: ['Accounts'],
+  security,
+  request: { params: personIdParams, query: pdfQuerySchema },
+  responses: {
+    200: { description: 'The account statement as a PDF document.', content: pdfContent() },
     ...errorResponses(401, 403, 404, 422),
   },
 });
@@ -708,7 +744,10 @@ registry.registerPath({
   security,
   request: { query: schoolSummaryQuerySchema },
   responses: {
-    200: { description: 'The per-student hour summary for the requested period.', content: jsonContent(studentHourSummaryListResponseSchema) },
+    200: {
+      description: 'The per-student hour summary for the requested period, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(studentHourSummaryListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -724,8 +763,8 @@ registry.registerPath({
   request: { query: schoolSummaryQuerySchema },
   responses: {
     200: {
-      description: "The instructor(s)' SCHOOL hour summary for the requested period.",
-      content: jsonContent(instructorHourSummaryListResponseSchema),
+      description: "The instructor(s)' SCHOOL hour summary for the requested period, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).",
+      content: { ...jsonContent(instructorHourSummaryListResponseSchema), ...xlsxContent() },
     },
     ...errorResponses(401, 403, 422),
   },
@@ -927,7 +966,10 @@ registry.registerPath({
   security,
   request: { query: listCashMovementsQuerySchema },
   responses: {
-    200: { description: 'A page of cash movements.', content: jsonContent(cashMovementListResponseSchema) },
+    200: {
+      description: 'A page of cash movements, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(cashMovementListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -958,6 +1000,21 @@ registry.registerPath({
   request: { query: cashReportQuerySchema },
   responses: {
     200: { description: 'The financial report for the requested period.', content: jsonContent(cashReportResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/cash-report/pdf',
+  summary: 'PDF export of the period financial report (story 10.2, AC 2)',
+  description:
+    'Dedicated PDF route (spine :105), same mandatory `from`/`to` as `GET /api/v1/cash-report` above, plus `locale`. The categories table mirrors the JSON `categories` array; the totals line carries `totalInCents`/`totalOutCents`/`netCents`. Requires `finance.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { query: cashReportPdfQuerySchema },
+  responses: {
+    200: { description: 'The financial report as a PDF document.', content: pdfContent() },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1053,7 +1110,25 @@ registry.registerPath({
   security,
   request: { query: listFlightsQuerySchema },
   responses: {
-    200: { description: 'A page of registered flights.', content: jsonContent(flightListResponseSchema) },
+    200: {
+      description: 'A page of registered flights, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(flightListResponseSchema), ...xlsxContent() },
+    },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/flights/pdf',
+  summary: 'PDF export of the flight log (story 10.2, AC 2)',
+  description:
+    'Dedicated PDF route (spine :105), same query schema and own/staff scoping as `GET /api/v1/flights` above (`page`/`pageSize`/`format` are accepted but ignored — this always re-pages internally up to the PDF cap). Totals line: sum of `minutes` (`H:MM`) and sum of `breakdown.totalAmountCents`, computed here, never in `flights.service.ts`. Above `2000` filtered rows: 422 `EXPORT_TOO_LARGE`.',
+  tags: ['Flights'],
+  security,
+  request: { query: listFlightsQuerySchema },
+  responses: {
+    200: { description: 'The flight log as a PDF document.', content: pdfContent() },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1113,7 +1188,10 @@ registry.registerPath({
   security,
   request: { query: listAircraftQuerySchema },
   responses: {
-    200: { description: 'A page of aircraft.', content: jsonContent(aircraftListResponseSchema) },
+    200: {
+      description: 'A page of aircraft, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(aircraftListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1466,7 +1544,25 @@ registry.registerPath({
   security,
   request: { query: listAllExpiriesQuerySchema },
   responses: {
-    200: { description: 'A page of scadenze, ordered by urgency.', content: jsonContent(expiryDashboardListResponseSchema) },
+    200: {
+      description: 'A page of scadenze, ordered by urgency, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(expiryDashboardListResponseSchema), ...xlsxContent() },
+    },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/expiries/pdf',
+  summary: 'PDF export of the urgency dashboard (story 10.2, AC 2)',
+  description:
+    'Dedicated PDF route (spine :105), same query schema as `GET /api/v1/expiries` above. The status column is colored with the SAME red/yellow/green palette as the dashboard badge. No totals (a status list has nothing summable). Requires `expiries.manage`.',
+  tags: ['Expiries'],
+  security,
+  request: { query: listAllExpiriesQuerySchema },
+  responses: {
+    200: { description: 'The urgency dashboard as a PDF document.', content: pdfContent() },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1575,7 +1671,10 @@ registry.registerPath({
   security,
   request: { query: listBookingsQuerySchema },
   responses: {
-    200: { description: 'A page of bookings.', content: jsonContent(bookingListResponseSchema) },
+    200: {
+      description: 'A page of bookings, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(bookingListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1705,7 +1804,10 @@ registry.registerPath({
   security,
   request: { query: listPprRequestsQuerySchema },
   responses: {
-    200: { description: 'A page of PPR requests.', content: jsonContent(pprRequestListResponseSchema) },
+    200: {
+      description: 'A page of PPR requests, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(pprRequestListResponseSchema), ...xlsxContent() },
+    },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1824,6 +1926,35 @@ registry.registerPath({
   request: { body: { content: jsonContent(pprLandingFeeDefaultSchema), required: true } },
   responses: {
     200: { description: 'The saved default landing fee.', content: jsonContent(pprLandingFeeDefaultSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/airfield',
+  summary: 'Read the airfield branding used in exported PDFs (story 10.2, AC 1)',
+  description:
+    "`{ name, logoDataUrl }` — the name/logo shown in every exported PDF's header. Absent/never-configured reads as `{ name: 'AirManager', logoDataUrl: null }`. NO permission gate beyond an authenticated session: every role that can export a PDF needs the header, and the branding itself is not sensitive.",
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current airfield branding.', content: jsonContent(airfieldBrandingSchema) },
+    ...errorResponses(401),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/airfield',
+  summary: 'Set the airfield branding (story 10.2, AC 1)',
+  description:
+    "Body `{ name, logoDataUrl }` — `name` 1..200 chars; `logoDataUrl` a PNG/JPEG base64 data URL (~200KB cap) or `null` to remove the logo. Admin-only (`settings.manage`).",
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(airfieldBrandingSchema), required: true } },
+  responses: {
+    200: { description: 'The saved airfield branding.', content: jsonContent(airfieldBrandingSchema) },
     ...errorResponses(401, 403, 422),
   },
 });

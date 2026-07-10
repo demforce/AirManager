@@ -1,6 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { buildExportHref } from '@/lib/export-href';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listAircraft } from '@/server/services/aircraft.service';
@@ -53,7 +54,11 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
   );
 
   const t = await getTranslations('AircraftPage');
+  const tExport = await getTranslations('Export');
   const totalPages = Math.max(1, Math.ceil(aircraftResult.total / PAGE_SIZE));
+
+  // Story 10.1 (AC 5) — server-driven view, same rationale as `people/page.tsx`.
+  const exportHref = buildExportHref('/api/v1/aircraft', { q, includeArchived: includeArchived ? 'true' : undefined }, locale);
 
   function pageHref(targetPage: number) {
     return {
@@ -101,6 +106,8 @@ export default async function AircraftPage({ params, searchParams }: PageProps) 
             initialQuery={q ?? ''}
             initialIncludeArchived={includeArchived}
             canManageSettings={hasPermission(actor, 'settings.manage')}
+            exportHref={exportHref}
+            exportLabel={tExport('button')}
             labels={{
               newAircraft: t('newAircraft'),
               searchPlaceholder: t('searchPlaceholder'),

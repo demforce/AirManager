@@ -32,6 +32,7 @@ const {
   getAircraft,
   listAircraft,
   listHourMeterAdjustments,
+  listOutOfServiceAircraft,
   returnToService,
   setOutOfService,
   unarchiveAircraft,
@@ -62,6 +63,8 @@ const aircraftFindFirst = findFirstMock as unknown as { mockResolvedValue: (v: A
 const aircraftCreate = createMock as unknown as { mockResolvedValue: (v: AircraftFixture) => void };
 const aircraftUpdate = updateMock as unknown as { mockResolvedValue: (v: AircraftFixture) => void };
 const aircraftUpdateMany = updateManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
+// Same workaround, array-shaped — `listOutOfServiceAircraft` (story 10.3) is the first direct (non-transaction) `findMany` fixture in this file.
+const aircraftFindMany = findManyMock as unknown as { mockResolvedValue: (v: AircraftFixture[]) => void };
 // The FOR UPDATE locked read in `adjustHourMeter` (review 2.5 F1) — returns rows.
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: Array<{ hourMeterMinutes: number }>) => void };
 const hourMeterAdjustmentCreate = hourMeterAdjustmentCreateMock as unknown as { mockResolvedValue: (v: unknown) => void };
@@ -180,6 +183,11 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       ).rejects.toThrow(ForbiddenError);
       expect(findUniqueMock).not.toHaveBeenCalled();
     });
+
+    it('listOutOfServiceAircraft rejects an actor without aircraft.manage', async () => {
+      await expect(listOutOfServiceAircraft(pilotActor())).rejects.toThrow(ForbiddenError);
+      expect(findManyMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('listAircraft', () => {
@@ -250,6 +258,29 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
           { model: { contains: 'abcd', mode: 'insensitive' } },
         ],
       });
+    });
+  });
+
+  describe('listOutOfServiceAircraft (story 10.3, AC 1 — home dashboard widget)', () => {
+    it('filters to OUT_OF_SERVICE, non-archived aircraft (unpaginated)', async () => {
+      aircraftFindMany.mockResolvedValue([
+        { ...SELECTED_AIRCRAFT, status: 'OUT_OF_SERVICE', statusReason: 'Engine inspection' },
+      ]);
+
+      const result = await listOutOfServiceAircraft(staffActor());
+
+      expect(findManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { status: 'OUT_OF_SERVICE', archivedAt: null } }),
+      );
+      expect(result).toEqual([{ ...SELECTED_AIRCRAFT, status: 'OUT_OF_SERVICE', statusReason: 'Engine inspection' }]);
+    });
+
+    it('returns an empty array when nothing is out of service', async () => {
+      aircraftFindMany.mockResolvedValue([]);
+
+      const result = await listOutOfServiceAircraft(staffActor());
+
+      expect(result).toEqual([]);
     });
   });
 

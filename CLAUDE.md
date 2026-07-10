@@ -33,6 +33,7 @@ L'utente vuole best practice aggiornate via Context7 (https://context7.com). In 
 - Codice, commenti e identificatori in inglese; UI bilingue IT/EN via next-intl; documenti BMAD in italiano.
 - Prima di ogni commit di una story: `npm run gates` deve passare (lint + typecheck + vitest + build in output compatto — stampa solo i fallimenti; MAI eseguire i 4 comandi verbosi separatamente nei gate).
 - I test nuovi entrano in CI da soli (glob: vitest `src/**/*.test.ts`, Playwright `e2e/`) — MAI elencare test in CI. Se una story introduce una env var, un servizio o uno step di setup, aggiornare NELLO STESSO commit `.env.example`, `.github/workflows/ci.yml` e gli hook/script (`.claude/hooks/session-start.sh`, `scripts/`): il test `src/lib/env.ci-sync.test.ts` fallisce se l'env contract e la CI divergono.
+- e2e: i click di navigazione usano selettori scoped al landmark (`getByRole('navigation', { name: 'Aree operative' })`) o `exact: true` — MAI un `getByRole('link', { name: ... })` page-level: il name-match di Playwright è substring, ogni nuovo link che contiene il label rompe il test (lezione 103-F1, epic 10).
 - PostgreSQL 16 è disponibile nel container (`/usr/lib/postgresql/16`); Docker disponibile. Il bootstrap ambiente (deps, .env, Postgres, migrazioni, Mailpit) è automatico via hook SessionStart (`.claude/hooks/session-start.sh`, idempotente — rieseguibile a mano con `AIRMANAGER_BOOTSTRAP_FORCE=1`).
 
 ## Compaction

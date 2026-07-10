@@ -1,7 +1,9 @@
 'use client';
 
 import { Fragment, useEffect, useState } from 'react';
+import { ExportButton } from '@/components/export-button';
 import { useRouter } from '@/i18n/navigation';
+import { buildExportHref } from '@/lib/export-href';
 import { formatCents, parseCents } from '@/lib/money';
 import type { PprRequestItemDto, PprStatusDto } from '@/lib/schemas/ppr';
 import { formatDateTime } from '@/lib/time';
@@ -53,6 +55,8 @@ type PprRegisterProps = {
   requests: PprRequestItemDto[];
   locale: 'it' | 'en';
   filters: PprRegisterFilters;
+  /** Story 10.1 (AC 5) — "Esporta Excel" label; the href is built here from the LIVE `filters` state. */
+  exportLabel: string;
   labels: PprRegisterLabels;
 };
 
@@ -111,7 +115,7 @@ const inputClasses =
  * render ONLY on `APPROVED` rows (Dev Notes: every other status is
  * read-only history here).
  */
-export function PprRegister({ requests, locale, filters, labels }: PprRegisterProps) {
+export function PprRegister({ requests, locale, filters, exportLabel, labels }: PprRegisterProps) {
   const router = useRouter();
   const [rowAction, setRowAction] = useState<{ id: string; mode: 'complete' | 'cancelConfirm' } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -175,58 +179,66 @@ export function PprRegister({ requests, locale, filters, labels }: PprRegisterPr
 
   const columnCount = 7;
 
+  // Story 10.1 (AC 5): built from the LIVE filter-bar state (`filters`) on
+  // every render — reflects a hand-edited URL or a just-changed filter the
+  // same way `flights-manager.tsx`'s own export button does.
+  const exportHref = buildExportHref('/api/v1/ppr-requests', { status: filters.status, from: filters.from, to: filters.to }, locale);
+
   return (
     <div data-testid="ppr-register">
-      <div className="flex flex-wrap items-end gap-4 border-b border-[#EAEAEA] pb-6" data-testid="ppr-register-filter-bar">
-        <div className="flex flex-col text-sm text-[#2F3437]">
-          <label htmlFor="ppr-register-filter-status">{labels.filters.status}</label>
-          <select
-            id="ppr-register-filter-status"
-            value={filters.status}
-            onChange={(event) => handleFilterChange({ status: event.target.value })}
-            className={inputClasses}
-            data-testid="ppr-register-filter-status"
-          >
-            <option value="ALL">{labels.filters.statusAll}</option>
-            <option value="PENDING">{labels.filters.statusOptions.pending}</option>
-            <option value="APPROVED">{labels.filters.statusOptions.approved}</option>
-            <option value="REJECTED">{labels.filters.statusOptions.rejected}</option>
-            <option value="COMPLETED">{labels.filters.statusOptions.completed}</option>
-            <option value="CANCELLED">{labels.filters.statusOptions.cancelled}</option>
-          </select>
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#EAEAEA] pb-6">
+        <div className="flex flex-wrap items-end gap-4" data-testid="ppr-register-filter-bar">
+          <div className="flex flex-col text-sm text-[#2F3437]">
+            <label htmlFor="ppr-register-filter-status">{labels.filters.status}</label>
+            <select
+              id="ppr-register-filter-status"
+              value={filters.status}
+              onChange={(event) => handleFilterChange({ status: event.target.value })}
+              className={inputClasses}
+              data-testid="ppr-register-filter-status"
+            >
+              <option value="ALL">{labels.filters.statusAll}</option>
+              <option value="PENDING">{labels.filters.statusOptions.pending}</option>
+              <option value="APPROVED">{labels.filters.statusOptions.approved}</option>
+              <option value="REJECTED">{labels.filters.statusOptions.rejected}</option>
+              <option value="COMPLETED">{labels.filters.statusOptions.completed}</option>
+              <option value="CANCELLED">{labels.filters.statusOptions.cancelled}</option>
+            </select>
+          </div>
+          <div className="flex flex-col text-sm text-[#2F3437]">
+            <label htmlFor="ppr-register-filter-from">{labels.filters.from}</label>
+            <input
+              id="ppr-register-filter-from"
+              type="date"
+              value={filters.from}
+              onChange={(event) => handleFilterChange({ from: event.target.value })}
+              className={inputClasses}
+              data-testid="ppr-register-filter-from"
+            />
+          </div>
+          <div className="flex flex-col text-sm text-[#2F3437]">
+            <label htmlFor="ppr-register-filter-to">{labels.filters.to}</label>
+            <input
+              id="ppr-register-filter-to"
+              type="date"
+              value={filters.to}
+              onChange={(event) => handleFilterChange({ to: event.target.value })}
+              className={inputClasses}
+              data-testid="ppr-register-filter-to"
+            />
+          </div>
+          {hasActiveFilter ? (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              data-testid="ppr-register-filter-reset"
+              className="min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {labels.filters.reset}
+            </button>
+          ) : null}
         </div>
-        <div className="flex flex-col text-sm text-[#2F3437]">
-          <label htmlFor="ppr-register-filter-from">{labels.filters.from}</label>
-          <input
-            id="ppr-register-filter-from"
-            type="date"
-            value={filters.from}
-            onChange={(event) => handleFilterChange({ from: event.target.value })}
-            className={inputClasses}
-            data-testid="ppr-register-filter-from"
-          />
-        </div>
-        <div className="flex flex-col text-sm text-[#2F3437]">
-          <label htmlFor="ppr-register-filter-to">{labels.filters.to}</label>
-          <input
-            id="ppr-register-filter-to"
-            type="date"
-            value={filters.to}
-            onChange={(event) => handleFilterChange({ to: event.target.value })}
-            className={inputClasses}
-            data-testid="ppr-register-filter-to"
-          />
-        </div>
-        {hasActiveFilter ? (
-          <button
-            type="button"
-            onClick={handleResetFilters}
-            data-testid="ppr-register-filter-reset"
-            className="min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-          >
-            {labels.filters.reset}
-          </button>
-        ) : null}
+        <ExportButton href={exportHref} label={exportLabel} testId="ppr-register-export-button" />
       </div>
 
       {feedback ? (

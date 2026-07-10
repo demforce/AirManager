@@ -39,6 +39,11 @@ describe('visibleNavItems (Story 1.3 AC 2 — dashboard navigation by role)', ()
     expect(keys).not.toContain('settings');
   });
 
+  it('points the settings nav item at /dashboard/settings (story 10.2 — the old /settings placeholder is gone)', () => {
+    const item = visibleNavItems(actorWith(['ADMIN'])).find((entry) => entry.key === 'settings');
+    expect(item?.href).toBe('/dashboard/settings');
+  });
+
   it('shows the ppr item to staff (story 8.2: ppr.manage) but not to pilot/student', () => {
     expect(visibleNavItems(actorWith(['STAFF'])).map((item) => item.key)).toContain('ppr');
     expect(visibleNavItems(actorWith(['PILOT'])).map((item) => item.key)).not.toContain('ppr');

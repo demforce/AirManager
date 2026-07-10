@@ -33,13 +33,68 @@
     "myDiary": "My training diary",
     "myExpiries": {
       "heading": "My expiries",
-      "link": "All my expiries"
+      "link": "All my expiries",
+      "empty": "No expiry registered."
     },
     "pprPendingWidget": {
       "heading": "Pending PPR",
       "link": "Go to the PPR queue",
       "empty": "No PPR requests pending.",
       "count": "{count} pending"
+    },
+    "negativeBalancesWidget": {
+      "heading": "Negative balances",
+      "link": "Go to finance",
+      "empty": "No account in the red.",
+      "count": "{count} in the red"
+    },
+    "expiriesWidget": {
+      "heading": "Expiries",
+      "link": "Go to expiries",
+      "empty": "No expired or expiring document.",
+      "count": "{count} to review"
+    },
+    "bookingsTodayWidget": {
+      "heading": "Today and tomorrow's bookings",
+      "link": "Go to bookings",
+      "empty": "No booking for today or tomorrow."
+    },
+    "aircraftOutOfServiceWidget": {
+      "heading": "Aircraft out of service",
+      "link": "Go to aircraft",
+      "empty": "No aircraft out of service."
+    },
+    "accountWidget": {
+      "heading": "My balance",
+      "link": "Go to my account",
+      "empty": "No active account."
+    },
+    "packagesWidget": {
+      "heading": "Remaining package hours",
+      "link": "Go to my account"
+    },
+    "upcomingBookingsWidget": {
+      "heading": "Upcoming bookings",
+      "link": "Go to bookings",
+      "empty": "No upcoming booking."
+    },
+    "recentFlightsWidget": {
+      "heading": "Recent flights",
+      "link": "Go to the flight log",
+      "empty": "No flight registered."
+    },
+    "studentsWidget": {
+      "heading": "My students",
+      "link": "Go to flight school",
+      "empty": "No student assigned."
+    },
+    "schoolFlightsWidget": {
+      "heading": "Recent school flights",
+      "link": "Go to the flight log",
+      "empty": "No school flight registered."
+    },
+    "monthlyHoursWidget": {
+      "heading": "This month's school hours"
     },
     "nav": {
       "people": "People",
@@ -487,6 +542,9 @@
       "conflictError": "This movement already has a linked adjustment.",
       "genericError": "Could not record the adjustment. Please try again.",
       "success": "Adjustment recorded."
+    },
+    "pdf": {
+      "balance": "Final balance"
     }
   },
   "FinancePage": {
@@ -962,6 +1020,10 @@
       "reset": "Clear filters",
       "instructorActive": "Instructor filter active",
       "instructorClear": "Remove instructor filter"
+    },
+    "pdf": {
+      "totalDuration": "Total duration",
+      "totalAmount": "Total charges"
     }
   },
   "ExpiriesPage": {
@@ -1453,6 +1515,33 @@
       "genericError": "We could not complete the operation. Please try again."
     },
     "empty": "No PPR requests match the selected filters."
+  },
+  "Export": {
+    "button": "Export Excel",
+    "buttonPdf": "Export PDF"
+  },
+  "PdfExport": {
+    "generatedAt": "Generated on {date}",
+    "page": "Page {page} of {total}"
+  },
+  "SettingsPage": {
+    "kicker": "Administration",
+    "title": "Settings",
+    "description": "Configure the airfield's name and logo, used in the header of exported PDFs.",
+    "backToDashboard": "Back to dashboard",
+    "form": {
+      "nameLabel": "Airfield name",
+      "logoLabel": "Logo",
+      "logoHint": "PNG or JPEG, max 200 KB. Used in the header of exported PDFs.",
+      "logoUpload": "Upload logo",
+      "logoRemove": "Remove logo",
+      "logoPreviewAlt": "Logo preview",
+      "logoTooLarge": "The file exceeds 200 KB.",
+      "logoInvalidType": "Unsupported format: use PNG or JPEG.",
+      "save": "Save",
+      "saved": "Settings saved.",
+      "error": "Could not save the settings. Please try again."
+    }
   },
   "Emails": {
     "invite": {

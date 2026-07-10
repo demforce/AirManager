@@ -1,6 +1,8 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { ExportButton } from '@/components/export-button';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { buildPdfExportHref } from '@/lib/export-href';
 import { formatCents, formatSignedCents } from '@/lib/money';
 import { currentMonthRange } from '@/lib/period-presets';
 import { hasPermission } from '@/server/auth/rbac';
@@ -53,11 +55,14 @@ export default async function FinancialReportPage({ params, searchParams }: Page
   const report = await getCashReport(actor, { from, to });
 
   const t = await getTranslations('CashReportPage');
+  const tExport = await getTranslations('Export');
   // Money must follow the page locale (review 3.1 M1 — mandatory), same
   // pattern as the finance/account-statement pages.
   const moneyLocale = locale === 'en' ? ('en' as const) : ('it' as const);
 
   const registerHref = { pathname: '/dashboard/finance', query: { from, to } };
+  // Story 10.2 (AC 5) — dedicated PDF route, same mandatory from/to period as the JSON view.
+  const exportPdfHref = buildPdfExportHref('/api/v1/cash-report/pdf', { from, to }, locale);
 
   return (
     <main className="flex-1 px-6 py-16 sm:px-16">
@@ -72,13 +77,16 @@ export default async function FinancialReportPage({ params, searchParams }: Page
             </h1>
             <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
           </div>
-          <Link
-            href="/dashboard/finance"
-            locale={locale as AppLocale}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-          >
-            {t('backToFinance')}
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <ExportButton href={exportPdfHref} label={tExport('buttonPdf')} testId="cash-report-export-pdf-button" />
+            <Link
+              href="/dashboard/finance"
+              locale={locale as AppLocale}
+              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            >
+              {t('backToFinance')}
+            </Link>
+          </div>
         </div>
 
         <section className="mt-10">

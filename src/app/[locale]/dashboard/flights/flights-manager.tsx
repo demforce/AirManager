@@ -4,7 +4,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { ExportButton } from '@/components/export-button';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
+import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { useRouter } from '@/i18n/navigation';
 import { formatCents } from '@/lib/money';
 import {
@@ -237,6 +239,10 @@ type FlightsManagerProps = {
   moneyLocale: 'it' | 'en';
   /** The filter values the current page was rendered with (from the URL, story 5.4) — the bar's initial/controlled state. */
   filters: FlightsFilters;
+  /** Story 10.1 (AC 5) — "Esporta Excel" label; the href is built here from the LIVE `filters` state, not this initial snapshot. */
+  exportLabel: string;
+  /** Story 10.2 (AC 5) — "Esporta PDF" label, same live-filters href-building as `exportLabel`. */
+  exportPdfLabel: string;
   labels: FlightsManagerLabels;
 };
 
@@ -311,6 +317,8 @@ export function FlightsManager({
   initialFlights,
   moneyLocale,
   filters: initialFilters,
+  exportLabel,
+  exportPdfLabel,
   labels,
 }: FlightsManagerProps) {
   const router = useRouter();
@@ -502,11 +510,48 @@ export function FlightsManager({
           <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
             {labels.list.heading}
           </h3>
-          {cancelFeedback ? (
-            <p role="status" data-testid="flight-cancel-feedback" className="text-sm text-[#346538]">
-              {cancelFeedback}
-            </p>
-          ) : null}
+          <div className="flex items-center gap-4">
+            {cancelFeedback ? (
+              <p role="status" data-testid="flight-cancel-feedback" className="text-sm text-[#346538]">
+                {cancelFeedback}
+              </p>
+            ) : null}
+            <ExportButton
+              // Story 10.1 (AC 5): built from the LIVE filter-bar state (`filters`), not `initialFilters` — reflects
+              // whatever the registry is currently showing, including a hand-edited URL or a just-changed filter.
+              href={buildExportHref(
+                '/api/v1/flights',
+                {
+                  dateFrom: filters.dateFrom,
+                  dateTo: filters.dateTo,
+                  aircraftId: filters.aircraftId,
+                  personId: filters.personId,
+                  flightType: filters.flightType,
+                  status: filters.status,
+                },
+                moneyLocale,
+              )}
+              label={exportLabel}
+              testId="flights-export-button"
+            />
+            <ExportButton
+              // Story 10.2 (AC 5): same live-filters href-building, dedicated PDF route.
+              href={buildPdfExportHref(
+                '/api/v1/flights/pdf',
+                {
+                  dateFrom: filters.dateFrom,
+                  dateTo: filters.dateTo,
+                  aircraftId: filters.aircraftId,
+                  personId: filters.personId,
+                  flightType: filters.flightType,
+                  status: filters.status,
+                },
+                moneyLocale,
+              )}
+              label={exportPdfLabel}
+              testId="flights-export-pdf-button"
+            />
+          </div>
         </div>
         {flights.length === 0 ? (
           <p className="mt-4 text-sm text-[#787774]">{labels.list.empty}</p>

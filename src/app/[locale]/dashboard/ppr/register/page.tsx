@@ -102,6 +102,7 @@ export default async function PprRegisterPage({ params, searchParams }: PageProp
   }
 
   const t = await getTranslations('PprRegisterPage');
+  const tExport = await getTranslations('Export');
 
   return (
     <main className="flex-1 px-6 py-16 sm:px-16">
@@ -144,6 +145,7 @@ export default async function PprRegisterPage({ params, searchParams }: PageProp
             requests={result.items.map(toPprRequestDto)}
             locale={locale as 'it' | 'en'}
             filters={filters}
+            exportLabel={tExport('button')}
             labels={{
               filters: {
                 status: t('filters.status'),
