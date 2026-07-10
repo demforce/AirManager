@@ -42,6 +42,13 @@ function uniqueName(prefix: string): string {
 /** A safely-in-the-past date, before any run-unique aircraft/package/rate created below. */
 const PAST_DATE = '2020-01-01';
 
+/** Story 11.1: composes `{ takeoffAt, landingAt }` for a direct `POST /api/v1/flights`/`.../correct` call — `10:00Z` stays clear of the Europe/Rome midnight boundary. */
+function flightTimes(dateOnly: string, minutes: number): { takeoffAt: string; landingAt: string } {
+  const takeoffAt = `${dateOnly}T10:00:00.000Z`;
+  const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
+  return { takeoffAt, landingAt };
+}
+
 type MailpitMessageSummary = { ID: string; Subject: string };
 type MailpitFullMessage = { Text: string; Subject: string };
 
@@ -196,7 +203,8 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
     await page.getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
     await page.getByLabel('Data volo').fill(PAST_DATE);
-    await page.getByLabel('Minuti', { exact: true }).fill('60');
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     // Aircraft fully covered by the package (0,00 €) + instructor 40,00 € full charge -> total 40,00 €.
@@ -283,15 +291,16 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-02');
-    await page.getByLabel('Minuti', { exact: true }).fill('60');
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
     await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/0,00\s€/);
 
-    // Correct it: 60' -> 30' (a genuine "dati sbagliati" fix).
+    // Correct it: 60' -> 30' (a genuine "dati sbagliati" fix) — same takeoff (prefilled from the original), landing moved an hour earlier.
     const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: '2020-01-02' }).first();
     await secondFlightRow.getByTestId('flight-correct-action').click();
     await expect(page.getByRole('heading', { name: 'Correggi volo' })).toBeVisible();
-    await page.getByLabel('Minuti', { exact: true }).fill('30');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByLabel('Motivo della correzione').fill('Durata inserita per errore');
     await page.getByRole('button', { name: 'Conferma correzione' }).click();
 
@@ -321,7 +330,14 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     const pilot = await createPilotWithLogin(page, 'PilotStornoForbidden1!');
 
     const flightResponse = await page.request.post('/api/v1/flights', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, flightDate: PAST_DATE, flightType: 'TOURISM', minutes: 30 },
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        ...flightTimes(PAST_DATE, 30),
+      },
     });
     expect(flightResponse.status()).toBe(201);
     const flightBody = (await flightResponse.json()) as { flight: { id: string } };
@@ -335,7 +351,15 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     expect(((await cancelResponse.json()) as { error: { code: string } }).error.code).toBe('FORBIDDEN');
 
     const correctResponse = await page.request.post(`/api/v1/flights/${flightId}/correct`, {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, flightDate: PAST_DATE, flightType: 'TOURISM', minutes: 45, reason: 'tentativo pilota' },
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        ...flightTimes(PAST_DATE, 45),
+        reason: 'tentativo pilota',
+      },
     });
     expect(correctResponse.status()).toBe(403);
     expect(((await correctResponse.json()) as { error: { code: string } }).error.code).toBe('FORBIDDEN');

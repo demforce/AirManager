@@ -136,7 +136,8 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     await targetOption.click();
     await expect(personCombobox).toHaveValue(targetOptionLabel);
 
-    await page.getByLabel('Minuti', { exact: true }).fill('45');
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:45');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     // 45' @ 90,00 €/h -> 67,50 €.

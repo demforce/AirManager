@@ -2,7 +2,8 @@ import { Prisma, type FlightStatus, type FlightType } from '@/generated/prisma/c
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
 import type { CancelFlightInput, CorrectFlightInput, ListFlightsQuery, RegisterFlightInput } from '@/lib/schemas/flights';
-import { formatMinutes } from '@/lib/time';
+import { APP_TIMEZONE, formatMinutes } from '@/lib/time';
+import { dateOnlyInZone } from '@/lib/zoned-time';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import {
@@ -191,10 +192,18 @@ export type FlightListItem = {
   /** Story 9.4 — dual/solo distinction, meaningful only when `flightType === 'SCHOOL'`. */
   isSolo: boolean;
   status: FlightStatus;
+  /** Story 11.1 — `null` on a historical (pre-11.1) flight only. */
+  departureAirfield: string | null;
+  arrivalAirfield: string | null;
+  takeoffAt: Date | null;
+  landingAt: Date | null;
   minutes: number;
+  /** Story 11.1 — NOT NULL DEFAULT 1. */
+  takeoffs: number;
   hourMeterStart: number | null;
   hourMeterEnd: number | null;
-  landings: number | null;
+  /** Story 11.1 — NOT NULL DEFAULT 1 (backfilled from historical NULL). */
+  landings: number;
   notes: string | null;
   aircraft: { id: string; registration: string };
   person: { id: string; firstName: string; lastName: string };
@@ -226,7 +235,12 @@ const FLIGHT_SELECT = {
   flightType: true,
   isSolo: true,
   status: true,
+  departureAirfield: true,
+  arrivalAirfield: true,
+  takeoffAt: true,
+  landingAt: true,
   minutes: true,
+  takeoffs: true,
   hourMeterStart: true,
   hourMeterEnd: true,
   landings: true,
@@ -268,10 +282,15 @@ type SelectedFlight = {
   flightType: FlightType;
   isSolo: boolean;
   status: FlightStatus;
+  departureAirfield: string | null;
+  arrivalAirfield: string | null;
+  takeoffAt: Date | null;
+  landingAt: Date | null;
   minutes: number;
+  takeoffs: number;
   hourMeterStart: number | null;
   hourMeterEnd: number | null;
-  landings: number | null;
+  landings: number;
   notes: string | null;
   aircraftRateCentsPerHour: number;
   aircraftAmountCents: number;
@@ -307,7 +326,12 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightL
     flightType: flight.flightType,
     isSolo: flight.isSolo,
     status: flight.status,
+    departureAirfield: flight.departureAirfield,
+    arrivalAirfield: flight.arrivalAirfield,
+    takeoffAt: flight.takeoffAt,
+    landingAt: flight.landingAt,
     minutes: flight.minutes,
+    takeoffs: flight.takeoffs,
     hourMeterStart: flight.hourMeterStart,
     hourMeterEnd: flight.hourMeterEnd,
     landings: flight.landings,
@@ -352,6 +376,10 @@ type ResolvedFlightInput = {
   aircraft: { id: string; registration: string };
   person: { id: string; firstName: string; lastName: string; email: string | null };
   instructorProfileId: string | null;
+  departureAirfield: string;
+  arrivalAirfield: string;
+  takeoffAt: Date;
+  landingAt: Date;
   flightDate: Date;
   minutes: number;
   hourMeterStart: number | null;
@@ -371,19 +399,24 @@ type ResolvedFlightInput = {
  * exists -> 404; person exists -> 404; aircraft archived ->
  * `AIRCRAFT_ARCHIVED`; person archived -> `PERSON_ARCHIVED`; person missing
  * an active pilot/student profile -> `PERSON_NOT_PILOT_OR_STUDENT`;
- * `flightDate` in the future (server-clock UTC "today") ->
- * `FLIGHT_DATE_IN_FUTURE`; minutes resolution (direct, or
- * `hourMeterEnd - hourMeterStart` — the Zod schema's superRefine already
- * covers the structural cases, this re-verifies the inequality, Dev Notes)
- * -> `HOUR_METER_INVALID`; `SCHOOL` without an instructor ->
- * `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`; instructor === pilot/student ->
- * `INSTRUCTOR_SAME_AS_PILOT`; instructor person unknown OR without an
- * active `InstructorProfile` -> `INSTRUCTOR_NOT_FOUND` (deliberately folded
- * into one code — Dev Notes: never reveal whether an unknown id belongs to
- * nobody or to a non-instructor). Then, BEFORE any transaction (rates are
- * append-only, no meaningful race): `getEffectiveRate` -> null ->
- * `NO_AIRCRAFT_RATE`; with an instructor, `getEffectiveInstructorRate` ->
- * null -> `NO_INSTRUCTOR_RATE`. The instructor amount (unaffected by package
+ * `takeoffAt`/`landingAt` resolution (story 11.1, AC 2/3 — the ONLY source
+ * of `minutes`/`flightDate` now) -> `FLIGHT_TIMES_INVALID` if
+ * `landingAt <= takeoffAt` or the derived duration exceeds 1440 minutes;
+ * the derived `flightDate` (the Europe/Rome CALENDAR day of `takeoffAt`,
+ * Dev Notes: "il giorno ROMA, non UTC") in the future (server-clock UTC
+ * "today") -> `FLIGHT_DATE_IN_FUTURE` (unchanged code/check, now applied to
+ * the derived date); `hourMeterStart`/`hourMeterEnd` (informational only
+ * since story 11.1, NEVER the duration source) validated as a
+ * self-consistent pair when either is given -> `HOUR_METER_INVALID`;
+ * `SCHOOL` without an instructor -> `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`;
+ * instructor === pilot/student -> `INSTRUCTOR_SAME_AS_PILOT`; instructor
+ * person unknown OR without an active `InstructorProfile` ->
+ * `INSTRUCTOR_NOT_FOUND` (deliberately folded into one code — Dev Notes:
+ * never reveal whether an unknown id belongs to nobody or to a
+ * non-instructor). Then, BEFORE any transaction (rates are append-only, no
+ * meaningful race): `getEffectiveRate` -> null -> `NO_AIRCRAFT_RATE`; with
+ * an instructor, `getEffectiveInstructorRate` -> null ->
+ * `NO_INSTRUCTOR_RATE`. The instructor amount (unaffected by package
  * consumption, AD-6) is rounded here, `Math.round(rate * minutes / 60)` on
  * the FULL duration (AD-2/NFR-5) — the aircraft amount is NOT computed here:
  * it depends on the concurrent package residuo, resolved INSIDE the
@@ -432,25 +465,43 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Pro
     );
   }
 
-  const flightDate = parseDateOnlyUtc(input.flightDate);
+  // Story 11.1 (AC 2/3): `takeoffAt`/`landingAt` are the SOURCE of both
+  // `minutes` and `flightDate` — never independent inputs anymore.
+  const takeoffAt = new Date(input.takeoffAt);
+  const landingAt = new Date(input.landingAt);
+  if (landingAt.getTime() <= takeoffAt.getTime()) {
+    throw new ValidationError('landingAt must be strictly after takeoffAt.', undefined, 'FLIGHT_TIMES_INVALID');
+  }
+  const minutes = Math.max(1, Math.round((landingAt.getTime() - takeoffAt.getTime()) / 60_000));
+  if (minutes > 1440) {
+    throw new ValidationError('Flight duration must not exceed 1440 minutes (24h).', undefined, 'FLIGHT_TIMES_INVALID');
+  }
+
+  // The Europe/Rome CALENDAR day the flight is logged under (Dev Notes:
+  // "il giorno ROMA, non UTC" — a 00:30 Roma takeoff is 22:30Z the day
+  // before, and must still log as that Roma day).
+  const flightDate = parseDateOnlyUtc(dateOnlyInZone(takeoffAt, APP_TIMEZONE));
   if (flightDate.getTime() > todayDateOnlyUtc().getTime()) {
     throw new ValidationError('Flight date cannot be in the future.', undefined, 'FLIGHT_DATE_IN_FUTURE');
   }
 
-  let minutes: number;
+  // `hourMeterStart`/`hourMeterEnd` (story 11.1): informational only —
+  // NEVER the source of `minutes` anymore, just validated as a
+  // self-consistent pair when either is given (a legitimate reading may
+  // diverge from `minutes`: engine time vs block time).
   let hourMeterStart: number | null = null;
   let hourMeterEnd: number | null = null;
-  if (input.minutes !== undefined) {
-    minutes = input.minutes;
-  } else {
-    // The Zod superRefine already guarantees both are present and structurally
-    // sound (>= 0) here — this re-verifies the actual inequality (Dev Notes).
+  const hasHourMeterStart = input.hourMeterStart !== undefined;
+  const hasHourMeterEnd = input.hourMeterEnd !== undefined;
+  if (hasHourMeterStart || hasHourMeterEnd) {
+    if (!hasHourMeterStart || !hasHourMeterEnd) {
+      throw new ValidationError('hourMeterStart and hourMeterEnd must both be provided together.', undefined, 'HOUR_METER_INVALID');
+    }
     hourMeterStart = input.hourMeterStart!;
     hourMeterEnd = input.hourMeterEnd!;
     if (hourMeterEnd <= hourMeterStart) {
       throw new ValidationError('hourMeterEnd must be strictly after hourMeterStart.', undefined, 'HOUR_METER_INVALID');
     }
-    minutes = hourMeterEnd - hourMeterStart;
   }
 
   if (input.flightType === 'SCHOOL' && !input.instructorPersonId) {
@@ -508,6 +559,10 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Pro
     aircraft: { id: aircraft.id, registration: aircraft.registration },
     person: { id: person.id, firstName: person.firstName, lastName: person.lastName, email: person.email },
     instructorProfileId,
+    departureAirfield: input.departureAirfield,
+    arrivalAirfield: input.arrivalAirfield,
+    takeoffAt,
+    landingAt,
     flightDate,
     minutes,
     hourMeterStart,
@@ -534,8 +589,12 @@ type RegisterFlightCoreInput = {
   accountId: string;
   personId: string;
   instructorProfileId: string | null;
+  departureAirfield: string;
+  arrivalAirfield: string;
+  takeoffAt: Date;
+  landingAt: Date;
   flightDate: Date;
-  /** `YYYY-MM-DD`, exactly `input.flightDate` — for the auto-generated movement description. */
+  /** `YYYY-MM-DD`, exactly `toDateOnlyString(flightDate)` — for the auto-generated movement description. */
   flightDateDisplay: string;
   flightType: FlightType;
   /** Story 9.4 — dual/solo distinction, already validated by `resolveFlightInput` against `flightType`. */
@@ -543,7 +602,8 @@ type RegisterFlightCoreInput = {
   minutes: number;
   hourMeterStart: number | null;
   hourMeterEnd: number | null;
-  landings: number | null;
+  takeoffs: number;
+  landings: number;
   notes: string | null;
   aircraftRateCentsPerHour: number;
   instructorRateCentsPerHour: number | null;
@@ -662,12 +722,17 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
       aircraftId: params.aircraftId,
       personId: params.personId,
       instructorProfileId: params.instructorProfileId,
+      departureAirfield: params.departureAirfield,
+      arrivalAirfield: params.arrivalAirfield,
+      takeoffAt: params.takeoffAt,
+      landingAt: params.landingAt,
       flightDate: params.flightDate,
       flightType: params.flightType,
       isSolo: params.isSolo,
       minutes: params.minutes,
       hourMeterStart: params.hourMeterStart,
       hourMeterEnd: params.hourMeterEnd,
+      takeoffs: params.takeoffs,
       landings: params.landings,
       notes: params.notes,
       aircraftRateCentsPerHour: params.aircraftRateCentsPerHour,
@@ -815,14 +880,19 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       accountId: account.id,
       personId: resolved.person.id,
       instructorProfileId: resolved.instructorProfileId,
+      departureAirfield: resolved.departureAirfield,
+      arrivalAirfield: resolved.arrivalAirfield,
+      takeoffAt: resolved.takeoffAt,
+      landingAt: resolved.landingAt,
       flightDate: resolved.flightDate,
-      flightDateDisplay: input.flightDate,
+      flightDateDisplay: toDateOnlyString(resolved.flightDate),
       flightType: input.flightType,
       isSolo: input.isSolo,
       minutes: resolved.minutes,
       hourMeterStart: resolved.hourMeterStart,
       hourMeterEnd: resolved.hourMeterEnd,
-      landings: input.landings ?? null,
+      takeoffs: input.takeoffs ?? 1,
+      landings: input.landings ?? 1,
       notes: input.notes ?? null,
       aircraftRateCentsPerHour: resolved.aircraftRateCentsPerHour,
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
@@ -1141,14 +1211,19 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       accountId: newAccount.id,
       personId: resolved.person.id,
       instructorProfileId: resolved.instructorProfileId,
+      departureAirfield: resolved.departureAirfield,
+      arrivalAirfield: resolved.arrivalAirfield,
+      takeoffAt: resolved.takeoffAt,
+      landingAt: resolved.landingAt,
       flightDate: resolved.flightDate,
-      flightDateDisplay: input.flightDate,
+      flightDateDisplay: toDateOnlyString(resolved.flightDate),
       flightType: input.flightType,
       isSolo: input.isSolo,
       minutes: resolved.minutes,
       hourMeterStart: resolved.hourMeterStart,
       hourMeterEnd: resolved.hourMeterEnd,
-      landings: input.landings ?? null,
+      takeoffs: input.takeoffs ?? 1,
+      landings: input.landings ?? 1,
       notes: input.notes ?? null,
       aircraftRateCentsPerHour: resolved.aircraftRateCentsPerHour,
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,

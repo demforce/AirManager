@@ -51,83 +51,44 @@ export const listFlightsQuerySchema = paginationQuerySchema
 export type ListFlightsQuery = z.infer<typeof listFlightsQuerySchema>;
 
 /**
- * `POST /api/v1/flights` body (story 5.1, AC 1/2/3). EXACTLY ONE of
- * `minutes` (a direct duration) or the `hourMeterStart`/`hourMeterEnd` pair
- * (observed readings — the service derives `minutes = end - start`) must be
- * given; Zod has no native XOR so the `superRefine` below enforces it with
- * targeted messages. `instructorPersonId` is resolved server-side to an
- * ACTIVE `InstructorProfile` (`flights.service.ts`) — never trusted as an
+ * `POST /api/v1/flights` body (story 11.1, AC 1/2/3 — replaces story 5.1's
+ * minutes/hourMeter-only shape). `departureAirfield`/`arrivalAirfield`
+ * (free text, AC 1 defaults them to the airfield's own name for a local
+ * flight) and `takeoffAt`/`landingAt` (full instants, `z.iso.datetime()`,
+ * wire format ISO 8601 UTC — AD-8, same pattern as `createBookingSchema`)
+ * are the SOURCE of both `minutes` and `flightDate`, derived server-side
+ * (`flights.service.ts#resolveFlightInput`) — neither is an input anymore.
+ * `hourMeterStart`/`hourMeterEnd` are now informational-only (never the
+ * duration source): both optional, validated as a self-consistent PAIR by
+ * the service (422 `HOUR_METER_INVALID` if incomplete or
+ * `end <= start`) — no schema-level cross-field refine needed since a
+ * malformed pair is just as easily checked once the service has resolved
+ * everything else. `takeoffs`/`landings` default to 1 AT THE SERVICE CALL
+ * SITE, never via Zod's own `.default()` (lesson 10.1: a `.default()`
+ * masks a caller that forgot to pass the field, `?? 1` at the point of use
+ * does not). `instructorPersonId` is resolved server-side to an ACTIVE
+ * `InstructorProfile` (`flights.service.ts`) — never trusted as an
  * `InstructorProfile.id` directly (consistent with
- * `.../people/{id}/instructor-rates`). `landings`/`notes` are optional.
+ * `.../people/{id}/instructor-rates`). `notes` is optional.
  */
-export const registerFlightSchema = z
-  .object({
-    aircraftId: z.string().min(1),
-    personId: z.string().min(1),
-    instructorPersonId: z.string().min(1).nullish(),
-    flightDate: z.iso.date(),
-    flightType: flightTypeSchema,
-    // Dual/solo distinction on SCHOOL flights (story 9.4) — the service
-    // rejects `true` on a non-SCHOOL flightType (422 `SOLO_REQUIRES_SCHOOL`).
-    isSolo: z.boolean().optional().default(false),
-    // Capped at 1440 (24h) — a single flight cannot plausibly last longer
-    // (same defense-in-depth cap philosophy as `hourMeterMinutes`).
-    minutes: z.number().int().min(1).max(1440).optional(),
-    hourMeterStart: z.number().int().min(0).max(2_147_483_647).optional(),
-    hourMeterEnd: z.number().int().min(0).max(2_147_483_647).optional(),
-    landings: z.number().int().min(0).max(500).nullish(),
-    notes: z.string().trim().min(1).max(1000).nullish(),
-  })
-  .superRefine((value, ctx) => {
-    const hasMinutes = value.minutes !== undefined;
-    const hasStart = value.hourMeterStart !== undefined;
-    const hasEnd = value.hourMeterEnd !== undefined;
-    const hasAnyHourMeter = hasStart || hasEnd;
-
-    if (hasMinutes && hasAnyHourMeter) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Provide either minutes or the hourMeterStart/hourMeterEnd pair, not both.',
-        path: ['minutes'],
-      });
-      return;
-    }
-
-    if (!hasMinutes && !hasAnyHourMeter) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Provide either minutes or the hourMeterStart/hourMeterEnd pair.',
-        path: ['minutes'],
-      });
-      return;
-    }
-
-    if (hasAnyHourMeter) {
-      if (!hasStart || !hasEnd) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'hourMeterStart and hourMeterEnd must both be provided together.',
-          path: ['hourMeterEnd'],
-        });
-        return;
-      }
-      if (value.hourMeterEnd! <= value.hourMeterStart!) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'hourMeterEnd must be strictly greater than hourMeterStart.',
-          path: ['hourMeterEnd'],
-        });
-        return;
-      }
-      if (value.hourMeterEnd! - value.hourMeterStart! > 1440) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'The duration derived from hourMeterStart/hourMeterEnd must not exceed 1440 minutes (24h).',
-          path: ['hourMeterEnd'],
-        });
-      }
-    }
-  });
+export const registerFlightSchema = z.object({
+  aircraftId: z.string().min(1),
+  personId: z.string().min(1),
+  instructorPersonId: z.string().min(1).nullish(),
+  departureAirfield: z.string().trim().min(1).max(120),
+  arrivalAirfield: z.string().trim().min(1).max(120),
+  takeoffAt: z.iso.datetime(),
+  landingAt: z.iso.datetime(),
+  flightType: flightTypeSchema,
+  // Dual/solo distinction on SCHOOL flights (story 9.4) — the service
+  // rejects `true` on a non-SCHOOL flightType (422 `SOLO_REQUIRES_SCHOOL`).
+  isSolo: z.boolean().optional().default(false),
+  hourMeterStart: z.number().int().min(0).max(2_147_483_647).optional(),
+  hourMeterEnd: z.number().int().min(0).max(2_147_483_647).optional(),
+  takeoffs: z.number().int().min(0).max(500).optional(),
+  landings: z.number().int().min(0).max(500).optional(),
+  notes: z.string().trim().min(1).max(1000).nullish(),
+});
 
 export type RegisterFlightInput = z.infer<typeof registerFlightSchema>;
 
@@ -186,10 +147,18 @@ export const flightListItemSchema = z.object({
   /** Story 9.4 — dual/solo distinction, meaningful only when `flightType === 'SCHOOL'`. */
   isSolo: z.boolean(),
   status: flightStatusSchema,
+  /** Story 11.1 — `null` on a historical (pre-11.1) flight only; required on every new registration/correction. */
+  departureAirfield: z.string().nullable(),
+  arrivalAirfield: z.string().nullable(),
+  takeoffAt: z.iso.datetime().nullable(),
+  landingAt: z.iso.datetime().nullable(),
   minutes: z.number().int().positive(),
+  /** Story 11.1 — NOT NULL DEFAULT 1 on the DB; never null on the wire. */
+  takeoffs: z.number().int(),
   hourMeterStart: z.number().int().nullable(),
   hourMeterEnd: z.number().int().nullable(),
-  landings: z.number().int().nullable(),
+  /** Story 11.1 — NOT NULL DEFAULT 1 on the DB (backfilled from historical NULL); never null on the wire anymore. */
+  landings: z.number().int(),
   notes: z.string().nullable(),
   aircraft: z.object({ id: z.string(), registration: z.string() }),
   person: z.object({ id: z.string(), firstName: z.string(), lastName: z.string() }),
@@ -243,10 +212,10 @@ export type CancelFlightInput = z.infer<typeof cancelFlightSchema>;
  * `POST /api/v1/flights/{id}/correct` body (story 5.3, AC 2): exactly the
  * same fields as `registerFlightSchema` (Dev Notes: `registerFlightSchema`
  * itself is NEVER changed for `registerFlight`'s own input) plus the
- * mandatory `reason` — `.extend()` on a `superRefine`-wrapped `ZodObject`
- * preserves the underlying exactly-one-of-minutes-or-hourMeter refinement
- * (verified: zod v4's `.superRefine()` still returns an extendable
- * `ZodObject`, not a separate wrapper type).
+ * mandatory `reason` — plain `.extend()`. Story 11.1 removed the former
+ * minutes/hourMeter XOR `superRefine`; the only remaining cross-field
+ * check on this shape (`HOUR_METER_INVALID`) lives in
+ * `resolveFlightInput`, shared by both `registerFlight`/`correctFlight`.
  */
 export const correctFlightSchema = registerFlightSchema.extend({
   reason: z.string().trim().min(1).max(500),

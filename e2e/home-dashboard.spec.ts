@@ -248,8 +248,18 @@ test.describe('Home dashboard — data-driven widget content (Story 10.3, AC 1/2
     const password = 'PilotHomeData123!';
     const pilot = await createPilotWithLogin(page, password, 'DatiHome');
 
+    // Story 11.1: `takeoffAt`/`landingAt` replace `flightDate`/`minutes` — `10:00Z` stays clear of the Europe/Rome midnight boundary, so the derived flightDate is still "today".
+    const todayTakeoffAt = `${addDaysUtc(0)}T10:00:00.000Z`;
     const flightResponse = await page.request.post('/api/v1/flights', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, flightDate: addDaysUtc(0), flightType: 'TOURISM', minutes: 45 },
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        takeoffAt: todayTakeoffAt,
+        landingAt: new Date(new Date(todayTakeoffAt).getTime() + 45 * 60_000).toISOString(),
+      },
     });
     expect(flightResponse.status()).toBe(201);
 

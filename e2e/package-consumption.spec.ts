@@ -172,7 +172,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill(PAST_DATE);
-    await page.getByLabel('Minuti', { exact: true }).fill('70');
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('11:10');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     // Da pacchetto 1:00, minuti addebitati 0:10, costo velivolo/totale 25,00 € (round(150*10/60)).
@@ -203,7 +204,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-02');
-    await page.getByLabel('Minuti', { exact: true }).fill('10');
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:10');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     const secondResultPanel = page.getByTestId('flight-result-panel');
@@ -233,7 +235,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), otherAircraft.registration, otherAircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-04');
-    await page.getByLabel('Minuti', { exact: true }).fill('30');
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     // 30' x 100,00 €/h = 50,00 € (full rate, otherAircraft is not eligible for the fresh package).

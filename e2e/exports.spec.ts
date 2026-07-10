@@ -73,8 +73,14 @@ type RegisterFlightParams = {
   minutes: number;
 };
 
+/** Story 11.1: composes `{ takeoffAt, landingAt }` from the OLD `{ flightDate, minutes }` shape so every call site below stays unchanged. `10:00Z` stays clear of the Europe/Rome midnight boundary. */
 async function registerFlight(page: Page, params: RegisterFlightParams): Promise<{ id: string }> {
-  const response = await page.request.post('/api/v1/flights', { data: params });
+  const { flightDate, minutes, ...rest } = params;
+  const takeoffAt = `${flightDate}T10:00:00.000Z`;
+  const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
+  const response = await page.request.post('/api/v1/flights', {
+    data: { ...rest, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', takeoffAt, landingAt },
+  });
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { flight: { id: string } };
   return body.flight;

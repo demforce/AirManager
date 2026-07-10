@@ -181,10 +181,15 @@ const CREATED_FLIGHT_ROW = {
   flightType: 'TOURISM' as const,
   isSolo: false,
   status: 'REGISTERED' as const,
+  departureAirfield: 'Base Airfield',
+  arrivalAirfield: 'Base Airfield',
+  takeoffAt: new Date('2020-01-15T10:00:00.000Z'),
+  landingAt: new Date('2020-01-15T11:20:00.000Z'),
   minutes: 80,
+  takeoffs: 1,
   hourMeterStart: null,
   hourMeterEnd: null,
-  landings: null,
+  landings: 1,
   notes: null,
   aircraftRateCentsPerHour: 15000,
   aircraftAmountCents: 20000,
@@ -222,6 +227,19 @@ const ORIGINAL_FLIGHT_ROW = {
   movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: null }],
 };
 
+/**
+ * Composes `takeoffAt`/`landingAt` ISO instants (story 11.1) that derive
+ * EXACTLY `minutes` on the given `dateOnly` (UTC calendar day) — `10:00Z`
+ * is comfortably clear of the Europe/Rome midnight boundary in both CET
+ * (+1h) and CEST (+2h), so the derived Roma-zone `flightDate` always equals
+ * `dateOnly` unless a test deliberately picks a boundary-crossing time.
+ */
+function buildTimes(dateOnly: string, minutes: number, takeoffTimeUtc = '10:00'): { takeoffAt: string; landingAt: string } {
+  const takeoffAt = `${dateOnly}T${takeoffTimeUtc}:00.000Z`;
+  const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
+  return { takeoffAt, landingAt };
+}
+
 // Safely in the past no matter when this suite runs (same `PAST_DATE`
 // convention as the e2e specs) — `registerFlight`'s `FLIGHT_DATE_IN_FUTURE`
 // guard compares against the REAL server clock, so a fixed past date keeps
@@ -229,9 +247,10 @@ const ORIGINAL_FLIGHT_ROW = {
 const BASE_INPUT = registerFlightSchema.parse({
   aircraftId: 'aircraft_1',
   personId: 'person_1',
-  flightDate: '2020-01-15',
+  departureAirfield: 'Base Airfield',
+  arrivalAirfield: 'Base Airfield',
   flightType: 'TOURISM',
-  minutes: 80,
+  ...buildTimes('2020-01-15', 80),
 });
 
 describe('flights.service (story 5.1 — flight logging with automatic charges, FR-9/FR-14/FR-15)', () => {
@@ -351,7 +370,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       // Always in the future, regardless of when this suite runs.
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightDate: '9999-12-31' });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('9999-12-31', 80) });
 
       await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_DATE_IN_FUTURE' });
       expect(transactionMock).not.toHaveBeenCalled();
@@ -365,32 +384,47 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightDate: toDateOnlyString(todayDateOnlyUtc()) });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes(toDateOnlyString(todayDateOnlyUtc()), 80) });
 
       await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
     });
 
-    it('throws a 422 HOUR_METER_INVALID when hourMeterEnd <= hourMeterStart (service re-verifies the inequality, even though Zod already rejects this shape at the boundary)', async () => {
+    it('throws a 422 FLIGHT_TIMES_INVALID when landingAt <= takeoffAt', async () => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
-      // Bypasses `registerFlightSchema.parse` on purpose (Zod's own
-      // superRefine already rejects `end <= start` — this test targets the
-      // SERVICE's independent re-verification of the inequality, Dev Notes).
-      const input: RegisterFlightInput = {
-        aircraftId: 'aircraft_1',
-        personId: 'person_1',
-        flightDate: '2020-01-15',
-        flightType: 'TOURISM',
-        isSolo: false,
-        hourMeterStart: 1050,
-        hourMeterEnd: 1050,
-      };
+      const input = registerFlightSchema.parse({
+        ...BASE_INPUT,
+        takeoffAt: '2020-01-15T10:00:00.000Z',
+        landingAt: '2020-01-15T10:00:00.000Z',
+      });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
+      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_TIMES_INVALID' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    it('derives minutes as hourMeterEnd - hourMeterStart', async () => {
+    it('throws a 422 FLIGHT_TIMES_INVALID when the derived duration exceeds 1440 minutes (24h)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 1441) });
+
+      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_TIMES_INVALID' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('accepts a derived duration of exactly 1440 minutes (the boundary itself is valid)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 1440 });
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 1440) });
+
+      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+    });
+
+    it('derives minutes as round((landingAt - takeoffAt) / 60000), never from hourMeterStart/hourMeterEnd', async () => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
@@ -399,10 +433,8 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, hourMeterStart: 1000, hourMeterEnd: 1050, minutes: 50 });
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({
-        aircraftId: 'aircraft_1',
-        personId: 'person_1',
-        flightDate: '2020-01-15',
-        flightType: 'TOURISM',
+        ...BASE_INPUT,
+        ...buildTimes('2020-01-15', 50),
         hourMeterStart: 1000,
         hourMeterEnd: 1050,
       });
@@ -416,6 +448,75 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       );
       expect(aircraftUpdateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: { hourMeterMinutes: 550 } }),
+      );
+    });
+
+    it('a legitimate hourMeterStart/hourMeterEnd pair whose OWN difference diverges from minutes is accepted as-is (engine time vs block time, story 11.1)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, hourMeterStart: 1000, hourMeterEnd: 1200, minutes: 80 });
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      // 80' from takeoffAt/landingAt, but a 200-unit hourMeter reading — no cross-validation anymore.
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, hourMeterStart: 1000, hourMeterEnd: 1200 });
+
+      await registerFlight(staffActor(), input);
+
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ minutes: 80, hourMeterStart: 1000, hourMeterEnd: 1200 }) }),
+      );
+      // The aircraft's own hour meter advances by MINUTES, never by the hourMeter reading's own delta.
+      expect(aircraftUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { hourMeterMinutes: 580 } }));
+    });
+
+    it('throws a 422 HOUR_METER_INVALID when only hourMeterStart is given (incomplete pair)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, hourMeterStart: 1000 });
+
+      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('throws a 422 HOUR_METER_INVALID when only hourMeterEnd is given (incomplete pair)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, hourMeterEnd: 1050 });
+
+      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('throws a 422 HOUR_METER_INVALID when hourMeterEnd <= hourMeterStart', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input: RegisterFlightInput = { ...BASE_INPUT, hourMeterStart: 1050, hourMeterEnd: 1050 };
+
+      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('derives flightDate as the Europe/Rome calendar day of takeoffAt, not the UTC day (a 00:30 Roma takeoff is 23:30Z the day before)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 40 });
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      // 2020-01-15T23:30Z is 2020-01-16T00:30 in Europe/Rome (CET, +1h in January).
+      const input = registerFlightSchema.parse({
+        ...BASE_INPUT,
+        takeoffAt: '2020-01-15T23:30:00.000Z',
+        landingAt: '2020-01-16T00:10:00.000Z',
+      });
+
+      await registerFlight(staffActor(), input);
+
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ flightDate: new Date('2020-01-16'), minutes: 40 }) }),
       );
     });
 
@@ -545,7 +646,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('30 minutes at 333 cents/h -> Math.round(166.5) = 167 (half-up)', async () => {
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 333 });
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, minutes: 30 });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 30) });
 
       await registerFlight(staffActor(), input);
 
@@ -560,7 +661,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 100 });
       getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 101 });
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, minutes: 50, instructorPersonId: 'person_instructor' });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 50), instructorPersonId: 'person_instructor' });
 
       await registerFlight(staffActor(), input);
 
@@ -658,7 +759,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     it('effectiveDate on the movement equals the flight date', async () => {
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightDate: '2020-02-01' });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-02-01', 80) });
       await registerFlight(staffActor(), input);
 
       expect(accountMovementCreateMock).toHaveBeenCalledWith(
@@ -819,7 +920,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it("exact package (60' residuo on a 60' flight): covered 60, charged 0, aircraft amount 0, movement -(0) with no instructor", async () => {
       hourPackageFindMany.mockResolvedValue([{ id: 'hp_1', includedMinutes: 60, packageType: { name: 'Pacchetto 10 ore' } }]);
       packageConsumptionGroupBy.mockResolvedValue([]);
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, minutes: 60 });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 60) });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 60, aircraftAmountCents: 0, packageCoveredMinutes: 60 });
 
       const result = await registerFlight(staffActor(), input);
@@ -839,7 +940,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it("excess (70' flight, 60' package residuo): covered 60, charged 10, pro-rata aircraft amount round(rate*10/60)", async () => {
       hourPackageFindMany.mockResolvedValue([{ id: 'hp_1', includedMinutes: 60, packageType: { name: 'Pacchetto 10 ore' } }]);
       packageConsumptionGroupBy.mockResolvedValue([]);
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, minutes: 70 });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 70) });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 70, aircraftAmountCents: 2500, packageCoveredMinutes: 60 });
 
       await registerFlight(staffActor(), input);
@@ -1129,9 +1230,10 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     const CORRECT_INPUT = correctFlightSchema.parse({
       aircraftId: 'aircraft_1',
       personId: 'person_1',
-      flightDate: '2020-01-15',
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
       flightType: 'TOURISM',
-      minutes: 30,
+      ...buildTimes('2020-01-15', 30),
       reason: 'Errore minuti',
     });
 
@@ -1263,7 +1365,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 5000 } });
       getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: -15000 });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 200, aircraftAmountCents: 50000 });
-      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, minutes: 200 });
+      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, ...buildTimes('2020-01-15', 200) });
 
       await correctFlight(staffActor(), 'flight_orig', input);
 
@@ -1503,73 +1605,68 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
   });
 });
 
-describe('registerFlightSchema (story 5.1, Task 4, AC 1/2/3; AD-2)', () => {
+describe('registerFlightSchema (story 11.1, AC 1/2/3 — logbook fields, no more minutes/flightDate input)', () => {
   const VALID = {
     aircraftId: 'aircraft_1',
     personId: 'person_1',
-    flightDate: '2026-07-08',
+    departureAirfield: 'Base Airfield',
+    arrivalAirfield: 'Base Airfield',
+    takeoffAt: '2026-07-08T10:00:00.000Z',
+    landingAt: '2026-07-08T11:20:00.000Z',
     flightType: 'TOURISM' as const,
   };
 
-  it('accepts minutes alone', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80 }).success).toBe(true);
+  it('accepts a fully valid registration body', () => {
+    expect(registerFlightSchema.safeParse(VALID).success).toBe(true);
   });
 
-  it('accepts the hourMeterStart/hourMeterEnd pair alone', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 100, hourMeterEnd: 180 }).success).toBe(true);
+  it('rejects an empty departureAirfield or arrivalAirfield', () => {
+    expect(registerFlightSchema.safeParse({ ...VALID, departureAirfield: '' }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, arrivalAirfield: '   ' }).success).toBe(false);
   });
 
-  it('rejects neither minutes nor the hourMeter pair', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID }).success).toBe(false);
+  it('rejects a departureAirfield/arrivalAirfield over 120 chars', () => {
+    expect(registerFlightSchema.safeParse({ ...VALID, departureAirfield: 'x'.repeat(121) }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, departureAirfield: 'x'.repeat(120) }).success).toBe(true);
   });
 
-  it('rejects BOTH minutes and the hourMeter pair at once', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, hourMeterStart: 100, hourMeterEnd: 180 }).success).toBe(false);
+  it('rejects a missing or malformed takeoffAt/landingAt (not z.iso.datetime())', () => {
+    expect(registerFlightSchema.safeParse({ ...VALID, takeoffAt: undefined }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, takeoffAt: '2026-07-08' }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, landingAt: 'not-a-date' }).success).toBe(false);
   });
 
-  it('rejects hourMeterStart without hourMeterEnd', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 100 }).success).toBe(false);
+  it('no longer accepts flightDate or minutes as input (dropped, story 11.1) — an extra flightDate/minutes key is simply ignored', () => {
+    expect(registerFlightSchema.safeParse({ ...VALID, flightDate: '2026-07-08', minutes: 80 }).success).toBe(true);
+    const parsed = registerFlightSchema.parse({ ...VALID, flightDate: '2026-07-08', minutes: 80 });
+    expect(parsed).not.toHaveProperty('flightDate');
+    expect(parsed).not.toHaveProperty('minutes');
   });
 
-  it('rejects hourMeterEnd <= hourMeterStart', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 100, hourMeterEnd: 100 }).success).toBe(false);
-    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 100, hourMeterEnd: 90 }).success).toBe(false);
-  });
-
-  it('rejects a derived duration over 1440 minutes (24h)', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 0, hourMeterEnd: 1441 }).success).toBe(false);
-    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 0, hourMeterEnd: 1440 }).success).toBe(true);
-  });
-
-  it('rejects minutes over 1440 or below 1', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 1441 }).success).toBe(false);
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 0 }).success).toBe(false);
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 1 }).success).toBe(true);
+  it('accepts an optional hourMeterStart/hourMeterEnd pair, with NO schema-level cross-field check anymore (moved to the service)', () => {
+    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 100, hourMeterEnd: 90 }).success).toBe(true);
+    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 100 }).success).toBe(true);
   });
 
   it('rejects an invalid flightType', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, flightType: 'JOYRIDE' }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, flightType: 'JOYRIDE' }).success).toBe(false);
   });
 
-  it('rejects a malformed flightDate', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, flightDate: '08/07/2026' }).success).toBe(false);
-  });
-
-  it('accepts an omitted or null instructorPersonId/landings/notes', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80 }).success).toBe(true);
-    expect(
-      registerFlightSchema.safeParse({ ...VALID, minutes: 80, instructorPersonId: null, landings: null, notes: null }).success,
-    ).toBe(true);
+  it('accepts an omitted or null instructorPersonId/notes; omitted takeoffs/landings', () => {
+    expect(registerFlightSchema.safeParse(VALID).success).toBe(true);
+    expect(registerFlightSchema.safeParse({ ...VALID, instructorPersonId: null, notes: null }).success).toBe(true);
   });
 
   it('rejects a notes string over 1000 chars', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, notes: 'x'.repeat(1001) }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, notes: 'x'.repeat(1001) }).success).toBe(false);
   });
 
-  it('rejects landings outside [0, 500]', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, landings: -1 }).success).toBe(false);
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, landings: 501 }).success).toBe(false);
-    expect(registerFlightSchema.safeParse({ ...VALID, minutes: 80, landings: 0 }).success).toBe(true);
+  it('rejects takeoffs/landings outside [0, 500]', () => {
+    expect(registerFlightSchema.safeParse({ ...VALID, landings: -1 }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, landings: 501 }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, landings: 0 }).success).toBe(true);
+    expect(registerFlightSchema.safeParse({ ...VALID, takeoffs: -1 }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, takeoffs: 501 }).success).toBe(false);
   });
 });
 
