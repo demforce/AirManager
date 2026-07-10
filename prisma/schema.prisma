@@ -711,17 +711,19 @@ model HourPackage {
   @@index([packageTypeId])
 }
 
-/// A logged flight's purpose (epic 5, story 5.1). The PRD does not enumerate
-/// these — `PRIVATE` is a private/tourism flight, `SCHOOL` is a training
-/// flight WITH an instructor (epic 9 will sum school hours per instructor
-/// off this), `OTHER` covers everything else. `SCHOOL` mandates an
-/// instructor (422 `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`); an instructor is
-/// also allowed (never required) on `PRIVATE`/`OTHER` (e.g. a checkride) and
-/// always generates their own charge either way.
+/// A logged flight's purpose (epic 5, story 5.1; renamed to the real-world
+/// taxonomy in story 9.4). `TOURISM` is a tourism/private flight, `SCHOOL`
+/// is a training flight WITH an instructor (epic 9 sums school hours per
+/// instructor off this), `AERIAL_WORK` covers everything else (aerial
+/// work). `SCHOOL` mandates an instructor (422
+/// `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`); an instructor is also allowed
+/// (never required) on `TOURISM`/`AERIAL_WORK` (e.g. a checkride) and
+/// always generates their own charge either way. See `Flight.isSolo` for
+/// the dual/solo distinction within `SCHOOL`.
 enum FlightType {
-  PRIVATE
+  TOURISM
   SCHOOL
-  OTHER
+  AERIAL_WORK
 }
 
 /// A logged flight's lifecycle state (epic 5, story 5.1). Story 5.1 never
@@ -796,6 +798,15 @@ model Flight {
   /// (enforced in the service against the server-clock UTC "today").
   flightDate     DateTime     @db.Date
   flightType     FlightType
+  /// Dual/solo distinction on `SCHOOL` flights (story 9.4) — only
+  /// meaningful when `flightType == SCHOOL` (422 `SOLO_REQUIRES_SCHOOL`
+  /// otherwise). A solo flight still carries (and bills) the instructor —
+  /// the student is PIC; on dual the instructor is PIC. PIC is DERIVED
+  /// (solo → student, dual → instructor), not stored — future logbook/QTB
+  /// stories will read it from here. `@default(false)`: pre-9.4 history
+  /// becomes all-dual, the correct assumption since solos were not
+  /// representable before.
+  isSolo         Boolean      @default(false)
   status         FlightStatus @default(REGISTERED)
   /// Set together with `cancelReason`, exactly once, when this flight
   /// transitions to `CANCELLED` (story 5.3) — `null` while `REGISTERED`.

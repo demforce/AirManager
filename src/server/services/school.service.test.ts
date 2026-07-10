@@ -508,7 +508,7 @@ describe('school.service (story 9.1 — student-instructor assignment, FR-32; st
         expect(flightGroupByMock).not.toHaveBeenCalled();
       });
 
-      it('issues exactly 4 batched groupBy calls (dual/solo x period/all-time), all on personId IN (...)', async () => {
+      it('issues exactly 4 batched groupBy calls (dual/solo x period/all-time), all on personId IN (...), keyed off isSolo (story 9.4)', async () => {
         personFindMany.mockResolvedValue([STUDENT_A]);
         queueGroupByResults([], [], [], []);
 
@@ -522,6 +522,7 @@ describe('school.service (story 9.1 — student-instructor assignment, FR-32; st
             personId: { in: ['student_a'] },
             status: { not: 'CANCELLED' },
             flightType: 'SCHOOL',
+            isSolo: false,
             flightDate: { gte: parseDateOnlyUtc('2026-01-01'), lte: parseDateOnlyUtc('2026-01-31') },
           },
         });
@@ -529,14 +530,19 @@ describe('school.service (story 9.1 — student-instructor assignment, FR-32; st
           where: {
             personId: { in: ['student_a'] },
             status: { not: 'CANCELLED' },
-            instructorProfileId: null,
+            flightType: 'SCHOOL',
+            isSolo: true,
             flightDate: { gte: parseDateOnlyUtc('2026-01-01'), lte: parseDateOnlyUtc('2026-01-31') },
           },
         });
         // All-time: same shape, NO flightDate bound.
-        expect(calls[2]).toMatchObject({ where: { personId: { in: ['student_a'] }, status: { not: 'CANCELLED' }, flightType: 'SCHOOL' } });
+        expect(calls[2]).toMatchObject({
+          where: { personId: { in: ['student_a'] }, status: { not: 'CANCELLED' }, flightType: 'SCHOOL', isSolo: false },
+        });
         expect((calls[2] as { where: Record<string, unknown> }).where).not.toHaveProperty('flightDate');
-        expect(calls[3]).toMatchObject({ where: { personId: { in: ['student_a'] }, status: { not: 'CANCELLED' }, instructorProfileId: null } });
+        expect(calls[3]).toMatchObject({
+          where: { personId: { in: ['student_a'] }, status: { not: 'CANCELLED' }, flightType: 'SCHOOL', isSolo: true },
+        });
         expect((calls[3] as { where: Record<string, unknown> }).where).not.toHaveProperty('flightDate');
       });
 
@@ -740,7 +746,7 @@ describe('school.service (story 9.1 — student-instructor assignment, FR-32; st
         instructorProfileFindUnique.mockResolvedValue({ id: 'instructor_profile_1', deactivatedAt: null });
         personFindUnique.mockResolvedValue(ACTIVE_STUDENT_PERSON);
         assignmentFindUnique.mockResolvedValue(ASSIGNED_STUDENT_PROFILE);
-        flightFindUnique.mockResolvedValue({ flightType: 'PRIVATE', personId: 'person_student' });
+        flightFindUnique.mockResolvedValue({ flightType: 'TOURISM', personId: 'person_student' });
 
         await expect(
           createTrainingNote(instructorActor(), 'person_student', { noteDate: '2026-07-05', exercises: 'x', flightId: 'flight_1' }),

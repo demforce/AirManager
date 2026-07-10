@@ -160,7 +160,7 @@ type RegisterFlightParams = {
   aircraftId: string;
   personId: string;
   flightDate: string;
-  flightType: 'PRIVATE' | 'SCHOOL' | 'OTHER';
+  flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
   minutes: number;
 };
 
@@ -182,19 +182,19 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     const otherPerson = await createPilotPerson(page, 'AltroTitolare');
 
     // The pilot's own flight (stays REGISTERED).
-    await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, flightDate: '2020-02-01', flightType: 'PRIVATE', minutes: 30 });
+    await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, flightDate: '2020-02-01', flightType: 'TOURISM', minutes: 30 });
     // A second flight for the pilot, later cancelled — AC 1: "storia completa", cancelled flights stay visible in own-access scope.
     const toCancel = await registerFlight(page, {
       aircraftId: aircraft.id,
       personId: pilot.personId,
       flightDate: '2020-03-01',
-      flightType: 'OTHER',
+      flightType: 'AERIAL_WORK',
       minutes: 50,
     });
     const cancelResponse = await page.request.post(`/api/v1/flights/${toCancel.id}/cancel`, { data: { reason: 'Errore di prova' } });
     expect(cancelResponse.status()).toBe(200);
     // Someone else's flight on the SAME aircraft — must NEVER show up in the pilot's own registry.
-    await registerFlight(page, { aircraftId: aircraft.id, personId: otherPerson.personId, flightDate: '2020-02-01', flightType: 'PRIVATE', minutes: 40 });
+    await registerFlight(page, { aircraftId: aircraft.id, personId: otherPerson.personId, flightDate: '2020-02-01', flightType: 'TOURISM', minutes: 40 });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, 'PilotOwnView123!');
@@ -226,9 +226,9 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await page.getByTestId('flight-filter-reset').click();
     await expect(page.getByTestId('flight-row')).toHaveCount(2);
 
-    await page.getByTestId('flight-filter-type').selectOption('PRIVATE');
+    await page.getByTestId('flight-filter-type').selectOption('TOURISM');
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
-    await expect(page.getByTestId('flight-row').first()).toContainText('Privato');
+    await expect(page.getByTestId('flight-row').first()).toContainText('Turismo');
   });
 
   test('a non-staff actor filtering GET /api/v1/flights by someone else\'s personId gets a 403 envelope (AC 4)', async ({ page }) => {
@@ -258,8 +258,8 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     const personB = await createPilotPerson(page, 'FiltroB');
 
     // Four flights spanning two aircraft, two people, two types, two periods.
-    await registerFlight(page, { aircraftId: aircraftA.id, personId: personA.personId, flightDate: '2020-05-01', flightType: 'PRIVATE', minutes: 30 });
-    await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'OTHER', minutes: 45 });
+    await registerFlight(page, { aircraftId: aircraftA.id, personId: personA.personId, flightDate: '2020-05-01', flightType: 'TOURISM', minutes: 30 });
+    await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'AERIAL_WORK', minutes: 45 });
 
     await page.goto('/it/dashboard/flights');
 
@@ -285,9 +285,9 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-person'), `${personB.lastName} ${personB.firstName}`);
 
     // Combined persona + periodo + tipo: the RUN-UNIQUE person keyed with
-    // dateFrom/dateTo bracketing only the June flight and tipo OTHER -> that
+    // dateFrom/dateTo bracketing only the June flight and tipo AERIAL_WORK -> that
     // one flight. The person filter is what keeps the assertion run-unique
-    // (lesson 6.3 F1): periodo+tipo alone match the June/OTHER flights EVERY
+    // (lesson 6.3 F1): periodo+tipo alone match the June/AERIAL_WORK flights EVERY
     // past execution of this very test left in an accumulated DB.
     await selectFromCombobox(
       page.getByTestId('flight-filter-person'),
@@ -303,12 +303,12 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page).toHaveURL(/dateFrom=2020-06-01/);
     await page.getByTestId('flight-filter-date-to').fill('2020-06-30');
     await expect(page).toHaveURL(/dateTo=2020-06-30/);
-    await page.getByTestId('flight-filter-type').selectOption('OTHER');
-    await expect(page).toHaveURL(/flightType=OTHER/);
+    await page.getByTestId('flight-filter-type').selectOption('AERIAL_WORK');
+    await expect(page).toHaveURL(/flightType=AERIAL_WORK/);
     rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(personB.lastName);
-    await expect(rows.first()).toContainText('Altro');
+    await expect(rows.first()).toContainText('Lavoro aereo');
 
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-date-from'), '2020-06-01');
     // Both flights still reachable after the reset — each located through its
@@ -334,7 +334,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // 21 flights (the registry's page size is 20) for the SAME run-unique person — distinct dates so nothing collides.
     for (let day = 1; day <= 21; day += 1) {
       const flightDate = `2020-04-${String(day).padStart(2, '0')}`;
-      await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate, flightType: 'PRIVATE', minutes: 10 });
+      await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate, flightType: 'TOURISM', minutes: 10 });
     }
 
     await page.goto(`/it/dashboard/flights?personId=${person.personId}`);

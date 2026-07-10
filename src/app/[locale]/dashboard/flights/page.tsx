@@ -38,7 +38,7 @@ const OPTIONS_PAGE_SIZE = 100;
 const FLIGHTS_PAGE_SIZE = 20;
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const FLIGHT_TYPES: readonly FlightTypeDto[] = ['PRIVATE', 'SCHOOL', 'OTHER'];
+const FLIGHT_TYPES: readonly FlightTypeDto[] = ['TOURISM', 'SCHOOL', 'AERIAL_WORK'];
 const FLIGHT_STATUSES: readonly FlightStatusDto[] = ['REGISTERED', 'CANCELLED'];
 
 /** Hand-edited URL defense: only a well-formed `YYYY-MM-DD` reaches the service (same pattern as `FinancePage`'s `sanitizeDateParam`). */
@@ -280,6 +280,11 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   school: t('form.flightTypes.school'),
                   other: t('form.flightTypes.other'),
                 },
+                soloMode: t('form.soloMode'),
+                soloModes: {
+                  dual: t('form.soloModes.dual'),
+                  solo: t('form.soloModes.solo'),
+                },
                 durationMode: t('form.durationMode'),
                 durationModes: {
                   minutes: t('form.durationModes.minutes'),
@@ -299,6 +304,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   NO_AIRCRAFT_RATE: t('form.errors.NO_AIRCRAFT_RATE'),
                   NO_INSTRUCTOR_RATE: t('form.errors.NO_INSTRUCTOR_RATE'),
                   SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR: t('form.errors.SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR'),
+                  SOLO_REQUIRES_SCHOOL: t('form.errors.SOLO_REQUIRES_SCHOOL'),
                   AIRCRAFT_ARCHIVED: t('form.errors.AIRCRAFT_ARCHIVED'),
                   PERSON_ARCHIVED: t('form.errors.PERSON_ARCHIVED'),
                   PERSON_NOT_PILOT_OR_STUDENT: t('form.errors.PERSON_NOT_PILOT_OR_STUDENT'),
@@ -330,6 +336,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   instructor: t('list.table.instructor'),
                   noInstructor: t('list.table.noInstructor'),
                   type: t('list.table.type'),
+                  soloSuffix: t('list.table.soloSuffix'),
                   duration: t('list.table.duration'),
                   amount: t('list.table.amount'),
                   landings: t('list.table.landings'),

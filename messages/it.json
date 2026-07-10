@@ -849,9 +849,14 @@
       "flightDate": "Data volo",
       "flightType": "Tipo di volo",
       "flightTypes": {
-        "private": "Privato",
+        "private": "Turismo",
         "school": "Scuola",
-        "other": "Altro"
+        "other": "Lavoro aereo"
+      },
+      "soloMode": "Doppio comando o solista?",
+      "soloModes": {
+        "dual": "Doppio comando",
+        "solo": "Solista"
       },
       "durationMode": "Come indichi la durata?",
       "durationModes": {
@@ -872,6 +877,7 @@
         "NO_AIRCRAFT_RATE": "Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.",
         "NO_INSTRUCTOR_RATE": "Nessuna tariffa oraria è in vigore per questo istruttore alla data del volo.",
         "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "Un volo scuola richiede un istruttore.",
+        "SOLO_REQUIRES_SCHOOL": "Doppio comando/solista è valido solo per i voli scuola.",
         "AIRCRAFT_ARCHIVED": "Il velivolo selezionato è archiviato.",
         "PERSON_ARCHIVED": "La persona selezionata è archiviata.",
         "PERSON_NOT_PILOT_OR_STUDENT": "La persona deve avere un profilo pilota o allievo attivo.",
@@ -903,6 +909,7 @@
         "instructor": "Istruttore",
         "noInstructor": "—",
         "type": "Tipo",
+        "soloSuffix": "solista",
         "duration": "Durata",
         "amount": "Addebito",
         "landings": "Atterraggi",

@@ -4,8 +4,8 @@ import { z } from './zod-with-openapi';
 
 // --- Flight logging with automatic charges (story 5.1, Task 4, AC 1/2/3/4) --
 
-/** Mirrors the Prisma `FlightType` enum (story 5.1) — see the Prisma model doc for what each value means. */
-export const flightTypeSchema = z.enum(['PRIVATE', 'SCHOOL', 'OTHER']);
+/** Mirrors the Prisma `FlightType` enum (story 5.1; values renamed to the real-world taxonomy in story 9.4) — see the Prisma model doc for what each value means. */
+export const flightTypeSchema = z.enum(['TOURISM', 'SCHOOL', 'AERIAL_WORK']);
 
 export type FlightTypeDto = z.infer<typeof flightTypeSchema>;
 
@@ -65,6 +65,9 @@ export const registerFlightSchema = z
     instructorPersonId: z.string().min(1).nullish(),
     flightDate: z.iso.date(),
     flightType: flightTypeSchema,
+    // Dual/solo distinction on SCHOOL flights (story 9.4) — the service
+    // rejects `true` on a non-SCHOOL flightType (422 `SOLO_REQUIRES_SCHOOL`).
+    isSolo: z.boolean().optional().default(false),
     // Capped at 1440 (24h) — a single flight cannot plausibly last longer
     // (same defense-in-depth cap philosophy as `hourMeterMinutes`).
     minutes: z.number().int().min(1).max(1440).optional(),
@@ -178,6 +181,8 @@ export const flightListItemSchema = z.object({
   id: z.string(),
   flightDate: z.iso.date(),
   flightType: flightTypeSchema,
+  /** Story 9.4 — dual/solo distinction, meaningful only when `flightType === 'SCHOOL'`. */
+  isSolo: z.boolean(),
   status: flightStatusSchema,
   minutes: z.number().int().positive(),
   hourMeterStart: z.number().int().nullable(),

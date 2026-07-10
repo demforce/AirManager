@@ -321,7 +321,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     const pilot = await createPilotWithLogin(page, 'PilotStornoForbidden1!');
 
     const flightResponse = await page.request.post('/api/v1/flights', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, flightDate: PAST_DATE, flightType: 'PRIVATE', minutes: 30 },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, flightDate: PAST_DATE, flightType: 'TOURISM', minutes: 30 },
     });
     expect(flightResponse.status()).toBe(201);
     const flightBody = (await flightResponse.json()) as { flight: { id: string } };
@@ -335,7 +335,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     expect(((await cancelResponse.json()) as { error: { code: string } }).error.code).toBe('FORBIDDEN');
 
     const correctResponse = await page.request.post(`/api/v1/flights/${flightId}/correct`, {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, flightDate: PAST_DATE, flightType: 'PRIVATE', minutes: 45, reason: 'tentativo pilota' },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, flightDate: PAST_DATE, flightType: 'TOURISM', minutes: 45, reason: 'tentativo pilota' },
     });
     expect(correctResponse.status()).toBe(403);
     expect(((await correctResponse.json()) as { error: { code: string } }).error.code).toBe('FORBIDDEN');

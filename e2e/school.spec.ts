@@ -179,9 +179,10 @@ async function createInstructorRate(page: Page, instructorPersonId: string, pric
   expect(rateResponse.status()).toBe(201);
 }
 
+/** `isSolo` (story 9.4) defaults to `false` (dual) when omitted — pass `true` for the "solista" fixture (still SCHOOL, still carries the instructor, only the PIC differs). */
 async function registerSchoolFlight(
   page: Page,
-  params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number },
+  params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number; isSolo?: boolean },
 ): Promise<{ id: string }> {
   const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'SCHOOL' } });
   expect(response.status()).toBe(201);
@@ -189,23 +190,23 @@ async function registerSchoolFlight(
   return body.flight;
 }
 
-/** Registers a flight with NO instructor (any flightType other than SCHOOL, which always requires one) — story 9.3's "solista" fixture. */
+/** Registers a TOURISM flight with NO instructor — story 9.4 regression fixture: this must NOT count as "solista" (the 9.3 "no instructor" derivation was wrong; a real solista is a SCHOOL flight, see `registerSchoolFlight`). */
 async function registerFlightNoInstructor(
   page: Page,
   params: { aircraftId: string; personId: string; flightDate: string; minutes: number },
 ): Promise<{ id: string }> {
-  const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'PRIVATE' } });
+  const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'TOURISM' } });
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { flight: { id: string } };
   return body.flight;
 }
 
-/** Registers a PRIVATE flight WITH an instructor (e.g. a checkride) — story 9.3's declared "neither dual nor solo" edge-case fixture. */
+/** Registers a TOURISM flight WITH an instructor (e.g. a checkride) — never a SCHOOL flight, so it matches neither the dual nor the solo bucket (not a declared "edge case" anymore, story 9.4: it simply is not `flightType: 'SCHOOL'`). */
 async function registerPrivateFlightWithInstructor(
   page: Page,
   params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number },
 ): Promise<{ id: string }> {
-  const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'PRIVATE' } });
+  const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'TOURISM' } });
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { flight: { id: string } };
   return body.flight;
@@ -541,7 +542,9 @@ test.describe('School hour summaries (Story 9.3, FR-34)', () => {
   // before PERIOD_FROM — otherwise a flight this early has no rate in effect (422).
   const OUTSIDE_PERIOD_DATE = '2020-06-01';
 
-  test('gestore riepiloghi: doppio comando/solista/totale periodo e storico corretti, checkride e CANCELLED esclusi (AC 1/3)', async ({ page }) => {
+  test('gestore riepiloghi: doppio comando/solista/totale periodo e storico corretti, checkride e volo TOURISM senza istruttore esclusi (AC 1/3; story 9.4: solista = SCHOOL con istruttore pagato, isSolo=true)', async ({
+    page,
+  }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const instructor = await createInstructorPerson(page, 'Riepilogo');
@@ -557,9 +560,18 @@ test.describe('School hour summaries (Story 9.3, FR-34)', () => {
       flightDate: '2021-03-05',
       minutes: 90,
     });
-    // Solo (no instructor), in period: 60' -> "1:00".
-    await registerFlightNoInstructor(page, { aircraftId: aircraft.id, personId: student.personId, flightDate: '2021-03-06', minutes: 60 });
-    // Checkride (PRIVATE WITH an instructor) — declared edge case, neither bucket: 45', must NOT count anywhere.
+    // Solo (story 9.4 domain correction: STILL a SCHOOL flight WITH the paid
+    // instructor — the student is PIC, `isSolo: true`), in period: 60' -> "1:00".
+    await registerSchoolFlight(page, {
+      aircraftId: aircraft.id,
+      personId: student.personId,
+      instructorPersonId: instructor.personId,
+      flightDate: '2021-03-06',
+      minutes: 60,
+      isSolo: true,
+    });
+    // Checkride (TOURISM WITH an instructor) — never SCHOOL, so it matches
+    // neither bucket: 45', must NOT count anywhere.
     await registerPrivateFlightWithInstructor(page, {
       aircraftId: aircraft.id,
       personId: student.personId,
@@ -567,6 +579,11 @@ test.describe('School hour summaries (Story 9.3, FR-34)', () => {
       flightDate: '2021-03-07',
       minutes: 45,
     });
+    // Story 9.4 regression fixture: a TOURISM flight with NO instructor is no
+    // longer a "solista" (the 9.3 "no instructor" derivation was wrong) — a
+    // large value here would inflate the totals below if it were still
+    // (wrongly) counted as solo.
+    await registerFlightNoInstructor(page, { aircraftId: aircraft.id, personId: student.personId, flightDate: '2021-03-09', minutes: 500 });
     // A SCHOOL flight in period that gets CANCELLED — must NOT count anywhere.
     const cancelled = await registerSchoolFlight(page, {
       aircraftId: aircraft.id,
@@ -589,17 +606,18 @@ test.describe('School hour summaries (Story 9.3, FR-34)', () => {
 
     const row = page.getByTestId('school-summary-student-row').filter({ hasText: `${student.lastName} ${student.firstName}` });
     await expect(row).toHaveCount(1);
-    // dual 1:30, solo 1:00, totalPeriod 2:30 (90+60, checkride/CANCELLED excluded), totalAllTime 2:50 (110 dual + 60 solo).
+    // dual 1:30, solo 1:00, totalPeriod 2:30 (90+60; checkride/TOURISM-no-instructor/CANCELLED excluded), totalAllTime 2:50 (110 dual + 60 solo).
     await expect(row).toContainText('1:30');
     await expect(row).toContainText('1:00');
     await expect(row).toContainText('2:30');
     await expect(row).toContainText('2:50');
 
-    // The instructor table (AC 2) — SCHOOL only, period only: just the 90'
-    // flight (the CANCELLED one is excluded, the checkride was never SCHOOL).
+    // The instructor table (AC 2; story 9.4: dual + supervised solo both bill
+    // the instructor) — period only: 90' dual + 60' solo = 2:30 (the CANCELLED
+    // flight is excluded, the checkride was never SCHOOL).
     const instructorRow = page.getByTestId('school-summary-instructor-row').filter({ hasText: `${instructor.lastName} ${instructor.firstName}` });
     await expect(instructorRow).toHaveCount(1);
-    await expect(instructorRow).toContainText('1:30');
+    await expect(instructorRow).toContainText('2:30');
     await expect(instructorRow.getByTestId('school-summary-open-register')).toBeVisible();
   });
 

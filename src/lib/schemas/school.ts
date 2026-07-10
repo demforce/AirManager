@@ -153,11 +153,13 @@ export type SchoolSummaryQuery = z.infer<typeof schoolSummaryQuerySchema>;
 /**
  * One row of `GET /api/v1/school/summaries/students` (AC 1) —
  * `school.service.ts#StudentHourSummaryItem`'s wire shape. `dualMinutes`/
- * `soloMinutes` are the derived doppio-comando/solista split for the
- * requested period (see the service doc-comment for the exact derivation and
- * its declared checkride edge case); `totalMinutes = dualMinutes +
- * soloMinutes` for the period; `totalMinutesAllTime` is the same sum with NO
- * period bound — distinct from the 9.1 roster's SCHOOL-only "ore scuola
+ * `soloMinutes` are the `Flight.isSolo`-derived doppio-comando/solista split
+ * for the requested period (story 9.4 domain correction: a solista is a
+ * `SCHOOL` flight with a paid instructor where the student is PIC — see the
+ * service doc-comment for the exact derivation); `totalMinutes = dualMinutes
+ * + soloMinutes` for the period, which by construction equals all
+ * non-cancelled `SCHOOL` minutes; `totalMinutesAllTime` is the same sum with
+ * NO period bound — distinct from the 9.1 roster's SCHOOL-only "ore scuola
  * totali" column (`OwnStudentItemDto.totalMinutes`), which stays unchanged.
  */
 export const studentHourSummaryItemSchema = z.object({

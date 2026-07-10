@@ -849,9 +849,14 @@
       "flightDate": "Flight date",
       "flightType": "Flight type",
       "flightTypes": {
-        "private": "Private",
+        "private": "Tourism",
         "school": "School",
-        "other": "Other"
+        "other": "Aerial work"
+      },
+      "soloMode": "Dual or solo?",
+      "soloModes": {
+        "dual": "Dual",
+        "solo": "Solo"
       },
       "durationMode": "How do you want to enter the duration?",
       "durationModes": {
@@ -872,6 +877,7 @@
         "NO_AIRCRAFT_RATE": "No hourly rate is in effect for this aircraft on the flight date.",
         "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
         "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "A school flight requires an instructor.",
+        "SOLO_REQUIRES_SCHOOL": "Dual/solo is only valid for school flights.",
         "AIRCRAFT_ARCHIVED": "The selected aircraft is archived.",
         "PERSON_ARCHIVED": "The selected person is archived.",
         "PERSON_NOT_PILOT_OR_STUDENT": "The person must have an active pilot or student profile.",
@@ -903,6 +909,7 @@
         "instructor": "Instructor",
         "noInstructor": "—",
         "type": "Type",
+        "soloSuffix": "solo",
         "duration": "Duration",
         "amount": "Charge",
         "landings": "Landings",

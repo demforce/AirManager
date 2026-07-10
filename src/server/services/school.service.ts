@@ -685,9 +685,9 @@ export type StudentHourSummaryItem = {
   personId: string;
   firstName: string;
   lastName: string;
-  /** Non-cancelled SCHOOL flight minutes in [from, to] (an instructor is guaranteed by SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR). */
+  /** Non-cancelled `SCHOOL` flight minutes with `isSolo=false` in [from, to] (an instructor is guaranteed by SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR, and is PIC — story 9.4). */
   dualMinutes: number;
-  /** Non-cancelled flight minutes with NO instructor in [from, to], any flightType — see this module's derivation below. */
+  /** Non-cancelled `SCHOOL` flight minutes with `isSolo=true` in [from, to] — the student is PIC, but still pays a (mandatory) instructor (story 9.4 domain correction, replaces the 9.3 "no instructor" derivation). */
   soloMinutes: number;
   /** dualMinutes + soloMinutes, this period. */
   totalMinutes: number;
@@ -695,7 +695,7 @@ export type StudentHourSummaryItem = {
   totalMinutesAllTime: number;
 };
 
-/** SUM(minutes) of non-cancelled SCHOOL flights per `personId`, batched over the whole platea in ONE query — `periodBounds` omitted sums all-time. */
+/** SUM(minutes) of non-cancelled `SCHOOL` flights with `isSolo=false` per `personId` — "doppio comando" (story 9.4). Batched over the whole platea in ONE query — `periodBounds` omitted sums all-time. */
 async function sumDualMinutesByPerson(personIds: string[], periodBounds?: { gte: Date; lte: Date }): Promise<Map<string, number>> {
   if (personIds.length === 0) return new Map();
   const grouped = await prisma.flight.groupBy({
@@ -704,6 +704,7 @@ async function sumDualMinutesByPerson(personIds: string[], periodBounds?: { gte:
       personId: { in: personIds },
       status: { not: 'CANCELLED' },
       flightType: 'SCHOOL',
+      isSolo: false,
       ...(periodBounds ? { flightDate: periodBounds } : {}),
     },
     _sum: { minutes: true },
@@ -711,7 +712,7 @@ async function sumDualMinutesByPerson(personIds: string[], periodBounds?: { gte:
   return sumsByPersonId(grouped);
 }
 
-/** SUM(minutes) of non-cancelled flights with NO instructor (any flightType) per `personId` — the "solista" derivation (story's ratified domain decision). Same batched shape as `sumDualMinutesByPerson`. */
+/** SUM(minutes) of non-cancelled `SCHOOL` flights with `isSolo=true` per `personId` — "solista" (story 9.4 domain correction: a solo is a SCHOOL flight with a paid instructor aboard, the student is PIC; replaces the 9.3 "no instructor" derivation, which wrongly counted a TOURISM/AERIAL_WORK flight of a student flying alone). Same batched shape as `sumDualMinutesByPerson`. */
 async function sumSoloMinutesByPerson(personIds: string[], periodBounds?: { gte: Date; lte: Date }): Promise<Map<string, number>> {
   if (personIds.length === 0) return new Map();
   const grouped = await prisma.flight.groupBy({
@@ -719,7 +720,8 @@ async function sumSoloMinutesByPerson(personIds: string[], periodBounds?: { gte:
     where: {
       personId: { in: personIds },
       status: { not: 'CANCELLED' },
-      instructorProfileId: null,
+      flightType: 'SCHOOL',
+      isSolo: true,
       ...(periodBounds ? { flightDate: periodBounds } : {}),
     },
     _sum: { minutes: true },
@@ -739,21 +741,23 @@ function sumsByPersonId(grouped: { personId: string; _sum: { minutes: number | n
  * Per-student hour summary (AC 1, AC 3 bounds, AC 5; FR-34) —
  * `school.manage.any` only (staff/admin). The platea is every ACTIVE student
  * (active profile, non-archived person — same convention as the 9.1
- * roster). DERIVATION (ratified domain decision, no schema change — the
- * story's Dev Notes flags it for PM confirmation via the handoff):
- *  - "doppio comando" = non-cancelled `SCHOOL` flights (an instructor is
- *    guaranteed by the `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR` domain rule,
- *    `flights.service.ts`).
- *  - "solista" = non-cancelled flights with NO instructor, of ANY
- *    `flightType` (today always registered `PRIVATE`/`OTHER`) — by
- *    definition of the allievo role, a flight they flew with no instructor
- *    aboard IS their solo.
- *  - EDGE (declared, not a bug): a `PRIVATE`/`OTHER` flight of the student
- *    WITH an instructor (e.g. a checkride, story 5.1) falls in NEITHER
- *    bucket — it is neither school-flight training nor a solo, so it never
- *    contributes to `dualMinutes`/`soloMinutes`/`totalMinutes`.
+ * roster). DERIVATION (story 9.4 domain correction — user clarification
+ * 2026-07-10, REPLACES the 9.3 "no instructor" derivation, which was wrong:
+ * a solista is still a SCHOOL flight with a paid instructor aboard, only the
+ * PIC changes):
+ *  - "doppio comando" = non-cancelled `SCHOOL` flights with `isSolo=false`
+ *    (an instructor is guaranteed by `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`,
+ *    `flights.service.ts`, and is PIC).
+ *  - "solista" = non-cancelled `SCHOOL` flights with `isSolo=true` (same
+ *    mandatory paid instructor, but the STUDENT is PIC — `isSolo` is the
+ *    single source of truth, no longer inferred from `instructorProfileId`).
+ *  - There is no longer a "neither bucket" edge case: a `TOURISM`/
+ *    `AERIAL_WORK` flight of the student (e.g. a checkride, story 5.1) was
+ *    NEVER a solo to begin with and simply does not match `flightType:
+ *    'SCHOOL'` — it contributes to neither `dualMinutes` nor `soloMinutes`.
  *  - `totalMinutesAllTime` is a DIFFERENT view from the 9.1 roster's "ore
- *    scuola totali" (SCHOOL-only, unchanged) — this is dual+solo, all-time.
+ *    scuola totali" (SCHOOL-only, unchanged) — this is dual+solo, all-time,
+ *    and by construction now equals ALL non-cancelled SCHOOL minutes.
  * Four `groupBy`s (dual/solo x period/all-time), ALL batched on
  * `personId IN (...)` — never one query per student.
  */
@@ -809,6 +813,11 @@ export type InstructorHourSummaryItem = {
  * SUM(minutes) of non-cancelled `SCHOOL` flights per instructor in the
  * period, ONE batched `groupBy` regardless of platea size — no compensi/
  * tariffe here (Contesto: "il compenso è calcolato FUORI dal sistema").
+ * Deliberately NOT filtered by `isSolo` (story 9.4 domain clarification,
+ * user decision 2026-07-10): dual AND supervised solo both bill the
+ * instructor (the student pays them in either case), so an instructor's
+ * payable hours are ALL their `SCHOOL` flights, dual + solo alike — this
+ * logic is UNCHANGED from 9.3, only re-documented.
  */
 export async function getInstructorHourSummaries(actor: Actor, query: SchoolSummaryQuery): Promise<InstructorHourSummaryItem[]> {
   type InstructorRow = { personId: string; firstName: string; lastName: string; instructorProfileId: string };
