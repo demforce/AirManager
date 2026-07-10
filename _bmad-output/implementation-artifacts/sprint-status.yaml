@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-10 (9-4 implementazione completa — correzione dominio solista, in review)
+last_updated: 2026-07-10 (epic-9 DONE incl. 9.4 correzione dominio; TD-4 done)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -102,12 +102,12 @@ development_status:
   8-3-ppr-closure-fee: done
   epic-8-retrospective: optional
 
-  epic-9: in-progress
+  epic-9: done
   9-1-student-instructor-assignment: done
   9-2-training-notes: done
   9-3-school-hour-summaries: done
   # 9.4: correzione di dominio DC/solista + tassonomia tipi volo (chiarimento utente 2026-07-10)
-  9-4-solo-flag-flight-types: review
+  9-4-solo-flag-flight-types: done
   epic-9-retrospective: optional
 
   epic-10: backlog

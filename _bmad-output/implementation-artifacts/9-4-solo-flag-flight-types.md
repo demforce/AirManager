@@ -4,7 +4,7 @@ baseline_commit: a74d978
 
 # Story 9.4: Doppio comando/solista esplicito e tassonomia tipi volo (correzione di dominio FR-34)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -119,7 +119,21 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean-pass — zero finding mandatory.** 2 osservazioni non-mandatory (94-OBS1 hydration error pre-esistente su formatCents, provato FUORI da questo diff — tracciato nei deferred; 94-OBS2 mobile 375×812 non ri-guidato dal reviewer per assenza del tool resize nell'MCP — mitigato da markup identico al fieldset già verificato + screenshot del dev).
+
+- **Full suite e2e su DB fresco, build di produzione modalità CI**: **164/164 passed (3.3m, exit 0)** — più pulito del run del dev (i 2 flake login non si sono ripresentati). Unit 1159/1159. Zero regressioni flights/school/nav.
+- **Audit migrazione (replay indipendente)**: `migration.sql` = ESATTAMENTE 2×`ALTER TYPE ... RENAME VALUE` + 1×`ADD COLUMN isSolo` (nessuna ricreazione enum); su DB usa-e-getta: 28 migrazioni, insert con valori VECCHI, deploy della 29ª → rename in-place provato (stessi id, TOURISM/AERIAL_WORK, isSolo false); `prisma migrate diff` = empty (no drift); DB di sessione coerente (pg_enum + colonna verificati via psql).
+- **Rinomina esaustiva (grep indipendente)**: zero occorrenze `'PRIVATE'`/`'OTHER'` in src/ ed e2e/ (residui bare-word = parola inglese generica, verificati uno a uno); client Prisma rigenerato con l'enum nuovo; OpenAPI live con TOURISM/AERIAL_WORK + isSolo; UI "Turismo/Scuola/Lavoro aereo" (IT) e "Tourism/School/Aerial work" (EN) su form, filtro e registro.
+- **Dominio solista provato vivo (il cuore del chiarimento utente)**: TOURISM/AERIAL_WORK con isSolo → 422 `SOLO_REQUIRES_SCHOOL`; SCHOOL isSolo senza istruttore → 422 `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR` (ordine guardie corretto); SCHOOL isSolo con istruttore → 201. **PARITÀ DI ADDEBITO**: DC e solista gemelli (45', stesse tariffe) → `instructorAmountCents=3000` e `aircraftAmountCents=11250` IDENTICI a DB — l'allievo paga l'istruttore in entrambi i casi, zero rami monetari toccati (diff verificato riga per riga). **Correzione**: un solista corretto resta solista; un DC corretto a solista flippa il flag (la guardia vive in `resolveFlightInput`, condivisa dai due path).
+- **Riepiloghi provati su dataset costruito + ground truth psql**: dual=105/solo=75/totale=180 esatti; il TOURISM 530' (incl. 500' SENZA istruttore — il vecchio bucket) non conta DA NESSUNA PARTE; istruttore=180 (DC+solisti, stornato escluso); dopo una correzione DC→solista i 60' si spostano di bucket end-to-end (UI school 0:45/2:20/3:05 = psql).
+- **UI Playwright MCP su build di produzione**: radio "Doppio comando o solista?" appare SOLO con tipo Scuola, default DC, sparisce e si RESETTA cambiando tipo; registro con "Scuola — solista"; i18n IT/EN simmetrici; File List = diff reale.
+
+### Final gates (review run, DB fresco, prod build)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **1159/1159 unit**, build verde, full suite CI-mode **164/164**. Nessun fix richiesto.
+
 ## Change Log
 
 - 2026-07-10: Story file created (Fable 5 main session) — correzione di dominio dal chiarimento utente (solista = volo scuola con istruttore pagato, PIC derivato; tassonomia Turismo/Scuola/Lavoro aereo). Sostituisce l'assumption DC/solista della 9.3.
 - 2026-07-10: Implementazione completa (Sonnet 5 dev agent) — T1-T6, `npm run gates` verde, e2e mirati verificati, verifica interattiva Playwright MCP (desktop+mobile). Status → review.
+- 2026-07-10: Review Opus 4.8 xhigh — clean pass, zero mandatory. Full suite prod-build 164/164; migrazione replayata su dati con valori vecchi (rename in-place); parità addebito DC/solista provata a DB; il vecchio bucket senza-istruttore provato morto; correzione volo sposta i bucket correttamente. 94-OBS1 (hydration pre-esistente) e 94-OBS2 (mobile resize assente) non-mandatory, ratificati. Status → done. EPIC 9 COMPLETO (per la seconda volta, ora col dominio giusto).
