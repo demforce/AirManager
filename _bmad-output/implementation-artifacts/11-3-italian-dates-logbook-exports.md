@@ -4,7 +4,7 @@ baseline_commit: a0abb71
 
 # Story 11.3: Date italiane ovunque ed export logbook
 
-Status: review
+Status: done
 
 ## Story
 
@@ -118,3 +118,16 @@ Claude Sonnet 5 (dev subagent, xhigh)
 - `e2e/person-profiles.spec.ts` — `courseStartDate` display assertions converted to `DD/MM/YYYY`.
 - `e2e/school.spec.ts` — own-student roster `courseStartDate` assertion converted to `DD/MM/YYYY`.
 - `e2e/expiry-registration.spec.ts` — new `addDaysDisplay()` helper; 8 display assertions across the propose/approve/reject flow converted to `DD/MM/YYYY` (API payload and `<input type="date">` fills stay on `addDaysUtc()`, unchanged).
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (xhigh)**, adversarial. **Verdict: clean-pass.** 3 nit, nessun fix richiesto.
+
+- **Priorità zero — full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI**: **195 passed / 1 flaky noto (`ppr-register:206`, retry-green) / 1 failed `ppr-register:292`** — quest'ultimo PROVATO pre-esistente e NON regressione: flake dipendente dall'ora del giorno (il test costruisce la finestra ETA in UTC, il registro PPR bucketizza in Europe/Rome → fallisce SOLO nella fascia 22:00–24:00 UTC; riprodotto in isolamento e fallirebbe anche sul baseline a0abb71 a quell'ora). Zero codice PPR nel diff. Gates: **1218/1218 unit**, lint/typecheck/build verdi.
+- **Verifica PDF in prima persona** (richiesta dal dev): 4 voli reali via API (TOURISM, SCHOOL dual, SCHOOL solo, annullato), render in Chromium: 12 colonne leggibili, DD/MM/YYYY, orari a trattino spaziato, freccia ASCII, PIC corretto per ramo, dec./att. `1 / 1`, totali intatti, riga annullata OK. Spot-check PDF scadenze (report a larghezze default): retro-compatibilità di `PdfColumn.width` CONFERMATA (colonna colore stato intatta).
+- **Matrice xlsx**: 15 colonne, header IT+EN, PIC per ramo, numFmt importi intatto, parità permessi export=vista (pilota: flights 200, people 403). Volo storico pre-11.1 via psql: celle logbook vuote come da unit test.
+- **Audit date CHIUSO confermato**: sweep live + grep — nessuna superficie raw-ISO residua; nessun form/request-body toccato.
+- **Root-cause aircraft-rates del dev VERIFICATO** su DB fresco: verdi (era accumulo dati di sessione, non regressione).
+- **113-N1 (nit, accettato)**: l'overflow PDF da token lunghi non spezzabili colpisce anche la colonna Velivolo (marche senza max-length in `aircraft.ts:16`) — con dati realistici il PDF è pulito (AC 3 rispettata); follow-up suggerito: cap lunghezza marche o ellipsis nelle celle PDF larghe.
+- **113-N2 (nit, accettato)**: nome variabile `moneyLocale` riusato per il locale date in 4 componenti — rename opzionale.
+- **113-N3 (nit, accettato — pattern pre-esistente)**: mock exports ancora `as never` — factory tipizzata opzionale.
