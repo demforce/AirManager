@@ -632,6 +632,14 @@ describe('school.service (story 9.1 — student-instructor assignment, FR-32; st
         expect(result.items).toHaveLength(1);
       });
 
+      it('own-access without any student profile: diary-appropriate 404, not the unassign message (review 9.2 N1)', async () => {
+        personFindUnique.mockResolvedValue({ studentProfile: null });
+
+        const error = await listTrainingNotes(pilotActor(), 'person_pilot', { page: 1, pageSize: 20 }).catch((e) => e);
+        expect(error).toBeInstanceOf(NotFoundError);
+        expect((error as Error).message).toBe('Training diary not found.');
+      });
+
       it('403 for a student reading ANOTHER student\'s diary', async () => {
         await expect(listTrainingNotes(studentActor('person_student_A'), 'person_student_B', { page: 1, pageSize: 20 })).rejects.toThrow(
           ForbiddenError,

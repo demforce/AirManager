@@ -4,7 +4,7 @@ baseline_commit: 555f683
 
 # Story 9.2: Annotazioni di avanzamento (diario di addestramento)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -116,7 +116,24 @@ Sonnet 5 (single dev agent, xhigh).
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean-pass — zero finding mandatory.** 2 osservazioni non-mandatory: 92-N1 (minor) fixata dalla sessione principale nel commit di review, 92-N2 (nit) ratificata come deferred.
+
+- **Priorità zero — full suite e2e autoritativa su BUILD DI PRODUZIONE** (build+start con `AUTH_TRUST_HOST`, come la CI; workers=2): **156/161 con l'unico fail (`ppr-register:206`) + 4 did-not-run tutti dentro `ppr-register.spec.ts`** — fuori dal diff 9.2, 6/6 verde in isolamento (flake noto documentato). Tutti i 10 test school (5 di 9.1 + 5 nuovi 9.2) verdi NEL run parallelo completo, incluso il test 9.1 concurrent-DELETE che il dev aveva visto rosso sotto contention. Confermato che i 145/161 del dev erano pura contention del dev server: sulla build di produzione la suite è pulita. Gates: lint/typecheck/1140 unit/build PASS.
+- **Matrice permessi LIVE completa** (curl, 2° istruttore reale creato e assegnato): GET diario admin/staff/istruttore-assegnato/allievo-proprio 200, istruttore NON assegnato/allievo altrui/pilota 403, unauth 401; POST istruttore assegnato 201, non assegnato 403, staff 403 (non crea: non è autore), admin 422 `INSTRUCTOR_PROFILE_REQUIRED`; PATCH autore 200, admin override 200, staff/pilota/allievo/istruttore non-autore 403 ('Only the author or an admin'). MAI 500, sempre envelope AD-8.
+- **Finestra 7 giorni provata con backdate psql**: a 8 giorni → 409 `NOTE_IMMUTABLE` per autore E admin; a 6 giorni → autore 200; boundary a esattamente-7-giorni editabile (confronto UTC esatto come da story); updatedAt≠createdAt → "· modificata" in UI e il bottone Modifica sparisce a finestra scaduta.
+- **Flight linking**: flightId inesistente/PRIVATE dell'allievo/SCHOOL di ALTRO allievo → 422 `FLIGHT_NOT_LINKABLE`; SCHOOL valido → 201 con DTO {id, flightDate, minutes} senza dati contabili; stato del volo deliberatamente non ri-validato (cronaca, non contabilità). **Deviazione 2 del dev provata live**: l'edit reinvia flightId verbatim e il link sopravvive; il PATCH che lo omette lo azzera (full-replace) — è esattamente il motivo per cui il reinvio verbatim è corretto.
+- **Gap del dev chiusi**: (a) cross-author live con 2 istruttori: l'assegnato vede le note di ENTRAMBI, A non modifica la nota di B (403, e la UI non offre Modifica); (b) own-access con profilo allievo DISATTIVATO legge ancora il diario (200) mentre il tile home sparisce e il path staff risponde 422 — provato live via psql; (c) gli helper page-only (`getTrainingDiaryHeader`, `listStudentSchoolFlights`) fanno authorize in proprio via lo STESSO resolver del service: nessuna divergenza page/API; (e) pilota su proprio id → 404 mai 500 (accettato; solo il messaggio era fuorviante → 92-N1).
+- **UI Playwright MCP su build di produzione**: form istruttore con select voli popolata, card con volo collegato, Modifica solo su note proprie in finestra, vista allievo senza alcuna azione, redirect su diario altrui, tile "Il mio diario" solo all'allievo, colonna "ULTIMA ANNOTAZIONE" (max cross-autore, groupBy batched, em-dash senza note), zero errori console. Mobile 375×812 non ri-guidato dal reviewer (tool resize assente nell'MCP): markup responsive verificato + screenshot mobile del dev.
+- **Contorno**: 28 migrazioni pulite (FK RESTRICT sui profili, SET NULL su flightId, index presente); OpenAPI live con i 3 path (e gli helper page-only correttamente NON esposti); i18n 1104/1104 chiavi simmetriche; `/me` espone solo `hasActiveStudentProfile`; File List = diff esatto; paginazione envelope con ordine `noteDate desc, createdAt desc` verificato a parità di data.
+- **92-N1 (minor, FIXATO)** — own-access senza profilo allievo rispondeva 404 col messaggio "Assignment not found." (leftover del resolver di `unassignInstructor`): ramo own-access ora risolve inline con 404 "Training diary not found."; +1 unit test che pinna il messaggio. Status/semantica invariati.
+- **92-N2 (nit, DEFERRED)** — il journal client formatta le date senza locale esplicito (default 'it'): nessuna differenza visibile (it-IT e en-IE formattano identico il date-only); da threadare solo se/quando i formati divergeranno.
+
+### Final gates (post-fix, sessione principale)
+
+`npm run gates` PASS (lint 0 errori, typecheck pulito, **1141/1141 unit** (+1), build verde); e2e `school.spec.ts` **10/10** su DB fresco (resettato dopo le mutazioni del reviewer).
+
 ## Change Log
 
 - 2026-07-09: Story file created (Fable 5 main session) — seconda story Epic 9, ricognizione Explore su stato post-9.1. Include la chiusura del deferral 9.1 "ultima annotazione" nella tabella I miei allievi.
 - 2026-07-10: Implemented (Sonnet 5 single dev agent, xhigh). Gates: lint/typecheck/build green, 1140/1140 unit (+31: 30 new tests authored + 1 auto-generated env-contract guard case, see Debug Log). e2e: 5 new tests in `e2e/school.spec.ts`, all green both in isolation (10/10 with the 5 existing 9.1 tests) and in the full suite (145/161, 16 failures all sharing one login-timeout contention signature outside this diff — see Debug Log for the full breakdown). Two documented deviations from the Dev Notes' literal suggestions (both scoped, both because the literal approach would 403 the exact scenario the AC requires): a page-only `listStudentSchoolFlights` helper replaces the suggested `GET /api/v1/flights?personId=...` reuse; the inline edit form does not expose flight reassignment. Status → review.
+- 2026-07-10: Review Opus 4.8 xhigh — clean pass, zero mandatory. Full suite autoritativa su BUILD DI PRODUZIONE 156/161 (unico fail + 4 cascata = ppr-register fuori diff, 6/6 isolato; i 145/161 del dev confermati contention del dev server); matrice permessi live completa, finestra 7 giorni backdatata (409 anche admin), flight-linking, cross-author con 2 istruttori, own-access con profilo disattivato, audit deviazioni — tutto provato vivo. 92-N1 (messaggio 404 fuorviante) fixato dalla sessione principale (+1 unit, 1141/1141; school e2e 10/10 su DB fresco); 92-N2 (locale formatter client) deferred. Status → done.

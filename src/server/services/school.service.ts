@@ -455,8 +455,14 @@ async function resolveTrainingDiaryAccess(actor: Actor, studentPersonId: string)
   }
 
   if (isOwnAccess) {
-    const studentProfileId = await resolveStudentProfileId(studentPersonId);
-    return { studentProfileId, isAssignedInstructor: false };
+    // Non-strict resolver, but with a diary-appropriate 404: its default
+    // "Assignment not found." belongs to `unassignInstructor` and would be
+    // misleading for a self.read caller with no student profile (92-N1).
+    const person = await prisma.person.findUnique({ where: { id: studentPersonId }, select: { studentProfile: { select: { id: true } } } });
+    if (!person?.studentProfile) {
+      throw new NotFoundError('Training diary not found.');
+    }
+    return { studentProfileId: person.studentProfile.id, isAssignedInstructor: false };
   }
 
   if (!hasPermission(actor, 'school.manage.own')) {
