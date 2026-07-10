@@ -4,7 +4,7 @@ baseline_commit: eff9bf4
 
 # Story 10.2: Export PDF dei report
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -38,13 +38,13 @@ so that li archivi e li giri a soci e commercialista (FR-40; epics.md:793-803).
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1)** — Settings: `getAirfieldBranding`/`setAirfieldBranding` in app-settings.service (+ unit: default, upsert, gate scrittura, validazione logo); schema Zod `airfieldBrandingSchema`; route `GET/PUT /api/v1/settings/airfield`; OpenAPI + registry.test.
-- [ ] **T2 (AC 1, 5)** — Pagina `/dashboard/settings` admin-only (form nome + upload/preview/rimozione logo, client-side base64) + nav item + nav test; i18n IT/EN; stile minimalist-ui; verifica Playwright MCP.
-- [ ] **T3 (AC 2)** — Adapter pdf: layout condiviso (header branding, titolo, periodo, tabella, totali, footer data+pagine), `renderPdfBuffer`, `pdfResponse` (+ unit smoke: buffer inizia con `%PDF-`, filename); dependency @react-pdf/renderer.
-- [ ] **T4 (AC 2, 3, 4)** — Le 4 funzioni `export<Report>Pdf` in exports.service (+ unit: parità argomenti ai list service, cap 2000 → 422, colonne/totali/localizzazione per estratto conto con saldo, cash report con totali DTO, flights con totali calcolati, expiries con stati) + le 4 route pdf.
-- [ ] **T5 (AC 5)** — Bottoni "Esporta PDF" nelle 4 viste (filtri live, locale corrente); i18n.
-- [ ] **T6 (AC tutti)** — e2e `e2e/pdf-exports.spec.ts`: admin esporta i 4 PDF → 200, content-type/disposition, magic bytes `%PDF-`; branding configurato via settings page → (unit copre l'intestazione; e2e: PUT settings + export 200); pilota: proprio estratto conto 200 / altrui 403 / cash-report e expiries 403; unauth 401; filtri invalidi 422; settings page: admin configura nome+logo, staff/pilota redirect da /dashboard/settings e 403 su PUT; click bottone UI → download (una vista). Regressione: e2e exports (10.1) + report/statement/expiries esistenti.
-- [ ] **T7** — `npm run gates`; story file (Dev Agent Record) + sprint-status (10-2 → review).
+- [x] **T1 (AC 1)** — Settings: `getAirfieldBranding`/`setAirfieldBranding` in app-settings.service (+ unit: default, upsert, gate scrittura, validazione logo); schema Zod `airfieldBrandingSchema`; route `GET/PUT /api/v1/settings/airfield`; OpenAPI + registry.test.
+- [x] **T2 (AC 1, 5)** — Pagina `/dashboard/settings` admin-only (form nome + upload/preview/rimozione logo, client-side base64) + nav item + nav test; i18n IT/EN; stile minimalist-ui; verifica Playwright MCP.
+- [x] **T3 (AC 2)** — Adapter pdf: layout condiviso (header branding, titolo, periodo, tabella, totali, footer data+pagine), `renderPdfBuffer`, `pdfResponse` (+ unit smoke: buffer inizia con `%PDF-`, filename); dependency @react-pdf/renderer.
+- [x] **T4 (AC 2, 3, 4)** — Le 4 funzioni `export<Report>Pdf` in exports.service (+ unit: parità argomenti ai list service, cap 2000 → 422, colonne/totali/localizzazione per estratto conto con saldo, cash report con totali DTO, flights con totali calcolati, expiries con stati) + le 4 route pdf.
+- [x] **T5 (AC 5)** — Bottoni "Esporta PDF" nelle 4 viste (filtri live, locale corrente); i18n.
+- [x] **T6 (AC tutti)** — e2e `e2e/pdf-exports.spec.ts`: admin esporta i 4 PDF → 200, content-type/disposition, magic bytes `%PDF-`; branding configurato via settings page → (unit copre l'intestazione; e2e: PUT settings + export 200); pilota: proprio estratto conto 200 / altrui 403 / cash-report e expiries 403; unauth 401; filtri invalidi 422; settings page: admin configura nome+logo, staff/pilota redirect da /dashboard/settings e 403 su PUT; click bottone UI → download (una vista). Regressione: e2e exports (10.1) + report/statement/expiries esistenti.
+- [x] **T7** — `npm run gates`; story file (Dev Agent Record) + sprint-status (10-2 → review).
 
 ## Dev Notes
 
@@ -78,12 +78,68 @@ so that li archivi e li giri a soci e commercialista (FR-40; epics.md:793-803).
 
 ### Agent Model Used
 
+Sonnet 5 (claude-sonnet-5), xhigh — dev subagent.
+
 ### Debug Log References
+
+- `npx tsc --noEmit -p tsconfig.json` — clean after every implementation batch.
+- `npx vitest run` — 1200/1200 passed (baseline 1159 + this story's new/extended unit tests).
+- `npm run gates` — lint/typecheck/test/build all PASS (build via `env -u NODE_ENV npx next build`, no `serverExternalPackages` needed — `@react-pdf/renderer` bundled cleanly).
+- `npx playwright test e2e/pdf-exports.spec.ts` — 7/7 passed (dev server).
+- Regression e2e: `exports.spec.ts` (10.1), `cash-report.spec.ts`, `expiry-dashboard.spec.ts`, `expiry-registration.spec.ts`, `expiry-types.spec.ts`, `flight-log.spec.ts`, `flights.spec.ts`, `account-statement.spec.ts` — 35/35 passed.
+- Playwright MCP interactive verification (dev server): `/dashboard/settings` desktop + mobile 375×812 (`browser_resize` available this session), logo upload via `document.querySelector('input[type=file]').click()` + `browser_file_upload` (the label→hidden-input click needed a JS-triggered click to surface the file-chooser modal to the MCP tool), save feedback "Impostazioni salvate.", logo removal; "Esporta PDF" buttons on `/dashboard/flights`, `/dashboard/expiries`, `/dashboard/finance/report` (desktop + mobile, no wrap/overflow); clicked "Esporta PDF" on the cash report and confirmed a real, valid single-page PDF downloaded (`file` reports "PDF document, version 1.3, 1 page(s)").
 
 ### Completion Notes List
 
+- **Adapter PDF** (`src/server/adapters/pdf/`): `document.tsx` — `PdfColumn<T>`/`PdfTotal` types (gemelli di `ExportColumn` dell'adapter excel, ma testuali: niente `numFmt`, un money value è già una stringa formattata da `formatCents`/`formatSignedCents`), `PdfReportDocument` (header branding + titolo + sottotitolo opzionale + tabella + totali opzionali + footer con data generazione e numerazione pagina via `Text render` + `fixed`, react-pdf), `renderPdfBuffer` (generico, `ReactElement → Buffer`) e `renderReportPdf` (props → Buffer, usato da exports.service — tiene il JSX fuori dal file `.ts` del service). `response.ts#pdfResponse` simmetrico a `xlsxResponse`. Font Helvetica built-in (nessun `Font.register`), verificato con un logo PNG reale (data-URL) e senza — nessun warning.
+- **Semplificazione dichiarata** (Dev Notes lasciava discrezione): l'header di colonna della tabella PDF NON è ripetuto su ogni pagina per un report multi-pagina (nessun uso di `fixed` sulla riga header) — limitazione MVP onesta piuttosto che un tentativo di posizionamento `fixed` non verificabile visivamente in questo ambiente (niente `pdf-parse`).
+- **exports.service.ts**: 4 funzioni `export<Report>Pdf` che seguono lo stesso shape a 3 passi del 10.1 (riuso list/aggregate service → cap `PDF_EXPORT_MAX_ROWS=2000` → mappatura a colonne localizzate), `assertWithinCap` refattorizzato per condividere la logica fra il cap xlsx (10.1) e quello PDF senza duplicazione. `toPdfExport` centralizza branding + footer labels (`PdfExport.generatedAt`/`.page`, nuovo namespace i18n condiviso).
+  - Estratto conto: titolo = `t('kicker')` ("Estratto conto"), sottotitolo = nome persona (via `getPerson`, stesso own-access rule già applicato da `listAccountMovements`), totale = saldo finale (`getAccountOverview`). Colonna "Registrato da" solo con `people.read`, come l'export Excel.
+  - Report finanziario: riuso ESATTO delle chiavi i18n `CashReportPage` già usate dalla pagina (nessuna chiave nuova necessaria), sottotitolo = periodo, totali = entrate/uscite/saldo.
+  - Registro voli: totali (durata totale, importo totale) calcolati nell'export service sulle righe effettivamente esportate, MAI in `flights.service.ts`; sottotitolo = periodo SOLO se `dateFrom`/`dateTo` entrambi presenti nei filtri (altrimenti omesso — scelta di semplicità, non richiesta esplicitamente dall'AC).
+  - Scadenze: palette stato duplicata come costanti hex locali (`EXPIRY_STATUS_PDF_COLOR`) invece di importata da `expiry-status-badge.tsx` — quel modulo è `'use client'`, importarlo in un service server-only sarebbe un attraversamento di boundary rischioso; i 3 valori sono commentati come "kept in exact sync by hand" con puntatore alla fonte.
+- **Route PDF dedicate**: `flights/pdf` ed `expiries/pdf` riusano LETTERALMENTE lo stesso query schema della vista JSON (`listFlightsQuerySchema`/`listAllExpiriesQuerySchema`, che già include `page`/`pageSize`/`format` oltre ai filtri) invece di ritagliare un fragment ad hoc — semplificazione dichiarata: i campi extra sono innocui (ignorati dal branch PDF), ed evita di duplicare la definizione dei filtri in un secondo schema. `account/pdf` usa il nuovo `pdfQuerySchema` (solo `locale`, nessun filtro — la vista non ne ha). `cash-report/pdf` ha un nuovo `cashReportPdfQuerySchema` (stesso `from`/`to` obbligatorio + `locale`, base condivisa con `cashReportQuerySchema` via un oggetto Zod estratto prima del `.refine`).
+- **Settings**: `getAirfieldBranding()` non prende un `actor` (a differenza di ogni altro getter del modulo) — non ha alcun controllo di permesso da fare, quindi non ha bisogno del parametro; la route lo richiama senza passare `actor`. `setAirfieldBranding` resta gated `settings.manage` come da Dev Notes.
+- **Pagina `/dashboard/settings`**: nav item `settings` (esistente dalla story 1.3 ma mai implementato, puntava a `/settings` placeholder) ripuntato a `/dashboard/settings` — stesso pattern di ogni altro nav item "placeholder → pagina reale" delle epic precedenti (2.1, 2.4, ecc.), test nav aggiornato. Upload logo client-side (`FileReader.readAsDataURL`), preview/rimozione, validazione client (tipo + ~200KB) con guardiano server reale in Zod (AD-5).
+- **UI**: `buildExportHref` (10.1) lasciato invariato; nuovo `buildPdfExportHref` gemello (nessun `format` in query, la route è già dedicata). `ExportButton` riusato senza modifiche (è già generico href+label). Bottone "Esporta PDF" aggiunto accanto a "Esporta Excel" in 3 viste (estratto conto, registro voli, scadenze); il report finanziario non aveva un export Excel (10.1 non lo copriva) quindi ha SOLO il bottone PDF, posizionato nella barra azioni in alto.
+- **OpenAPI**: 4 route PDF (`content: pdfContent()`, nuovo helper gemello di `xlsxContent()`) + `GET/PUT settings/airfield` registrate; `registry.test.ts` esteso con path e response-shape assertions.
+- **Test**: adapter PDF (`document.test.ts`) — smoke binario (`%PDF-`, con/senza logo, righe vuote); `exports.service.test.ts` esteso mockando `renderReportPdf` (mai il vero rendering) e ispezionando le `props` passate (colonne/valori/totali/titolo/sottotitolo) — la strategia di test prescritta dalle Dev Notes ("niente pdf-parse"); `app-settings.service.test.ts` esteso per branding get/set. e2e nuovo `e2e/pdf-exports.spec.ts` (7 scenari, T6 completo) + regressione (10.1 e viste toccate) verificata verde.
+- **Nessuna migrazione, nessuna env var nuova** — confermato: `env.ci-sync.test.ts` incluso nei 1200 unit verdi.
+
 ### File List
+
+- `package.json`, `package-lock.json` — nuova dependency `@react-pdf/renderer@^4.5.1`.
+- `src/lib/schemas/settings.ts` — nuovo: `airfieldBrandingSchema`/`AirfieldBrandingDto`.
+- `src/lib/schemas/common.ts` — nuovo `pdfQuerySchema`/`PdfQuery`.
+- `src/lib/schemas/cash.ts` — nuovo `cashReportPdfQuerySchema`/`CashReportPdfQuery` (base condivisa `cashReportPeriodSchema` estratta).
+- `src/lib/schemas/registry.ts` — `pdfContent()`, 4 route PDF + `GET/PUT settings/airfield` registrate, componente `AirfieldBranding`.
+- `src/lib/schemas/registry.test.ts` — assertion sui nuovi path/response shape.
+- `src/lib/export-href.ts` — nuovo `buildPdfExportHref`.
+- `src/server/adapters/pdf/document.tsx` — nuovo: `PdfColumn`/`PdfTotal`/`PdfReportDocument`/`renderPdfBuffer`/`renderReportPdf`.
+- `src/server/adapters/pdf/document.test.ts` — nuovo: smoke test binario.
+- `src/server/adapters/pdf/response.ts` — nuovo: `pdfResponse`.
+- `src/server/services/app-settings.service.ts` — `getAirfieldBranding`/`setAirfieldBranding`; doc-comment del modulo aggiornato (non più "PPR-specific").
+- `src/server/services/app-settings.service.test.ts` — test branding get/set.
+- `src/server/services/exports.service.ts` — `PDF_EXPORT_MAX_ROWS`, `assertWithinPdfExportCap`, `toPdfExport`, 4 funzioni `export<Report>Pdf`.
+- `src/server/services/exports.service.test.ts` — test dei 4 export PDF (mock `renderReportPdf`).
+- `src/app/api/v1/settings/airfield/route.ts` — nuovo: GET/PUT.
+- `src/app/api/v1/people/[id]/account/pdf/route.ts` — nuovo.
+- `src/app/api/v1/cash-report/pdf/route.ts` — nuovo.
+- `src/app/api/v1/flights/pdf/route.ts` — nuovo.
+- `src/app/api/v1/expiries/pdf/route.ts` — nuovo.
+- `src/app/[locale]/dashboard/settings/page.tsx` — nuovo: pagina admin-only.
+- `src/app/[locale]/dashboard/settings/settings-form.tsx` — nuovo: form client (nome + logo upload/preview/rimozione).
+- `src/app/[locale]/dashboard/nav-items.ts` — `settings` ripuntato a `/dashboard/settings`.
+- `src/app/[locale]/dashboard/nav-items.test.ts` — assertion href aggiornata.
+- `src/app/[locale]/dashboard/people/[id]/account/page.tsx` — bottone "Esporta PDF".
+- `src/app/[locale]/dashboard/expiries/page.tsx` — bottone "Esporta PDF".
+- `src/app/[locale]/dashboard/flights/flights-manager.tsx` — bottone "Esporta PDF" (prop `exportPdfLabel`).
+- `src/app/[locale]/dashboard/flights/page.tsx` — prop `exportPdfLabel` passata.
+- `src/app/[locale]/dashboard/finance/report/page.tsx` — bottone "Esporta PDF" (nessun export Excel preesistente su questa vista).
+- `messages/it.json`, `messages/en.json` — `Export.buttonPdf`, `PdfExport.*`, `SettingsPage.*`, `AccountStatementPage.pdf.balance`, `FlightsPage.pdf.*`.
+- `e2e/pdf-exports.spec.ts` — nuovo: 7 scenari e2e (T6).
 
 ## Change Log
 
 - 2026-07-10: Story file created (Fable 5 main session) — seconda story Epic 10. Decisioni chiave: branding su AppSetting K/V (nessuna migrazione, logo data-URL senza storage), lettura branding senza gate / scrittura settings.manage, route PDF dedicate con riuso del plumbing 10.1 (pass-through, exports.service, ExportButton), cap PDF 2000 righe, test contenuti a livello unit + magic bytes negli e2e (niente pdf-parse).
+- 2026-07-10: Implementation (Sonnet 5 dev subagent) — tutti i task T1-T7 completati. Gates verdi (lint/typecheck/test/build), 1200/1200 unit, 7/7 e2e nuovi + 35/35 e2e di regressione. Deviazioni dichiarate: header tabella non ripetuto su multi-pagina PDF; palette stato scadenze duplicata come costanti hex (no import cross-boundary da modulo `'use client'`); `flights/pdf` ed `expiries/pdf` riusano il query schema della vista JSON invece di un fragment dedicato; sottotitolo periodo omesso su `flights/pdf` quando i filtri data non sono entrambi presenti.

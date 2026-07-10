@@ -17,3 +17,20 @@ export function buildExportHref(endpoint: string, filters: Record<string, string
   params.set('locale', locale);
   return `${endpoint}?${params.toString()}`;
 }
+
+/**
+ * Builds a PDF export URL (story 10.2, AC 2/5) for one of the 4 covered
+ * report endpoints — SAME filter/locale-appending logic as
+ * {@link buildExportHref}, but no `format` param: a PDF export lives on its
+ * OWN dedicated route (`endpoint` is already e.g. `/api/v1/flights/pdf`,
+ * spine :105), never `?format=pdf` on the list endpoint (that convention is
+ * xlsx-only, story 10.1).
+ */
+export function buildPdfExportHref(endpoint: string, filters: Record<string, string | undefined>, locale: string): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== '') params.set(key, value);
+  }
+  params.set('locale', locale);
+  return `${endpoint}?${params.toString()}`;
+}

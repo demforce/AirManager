@@ -84,6 +84,11 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/ppr-requests/{id}/cancel',
         '/api/v1/settings/ppr-operating-instructions',
         '/api/v1/settings/ppr-landing-fee',
+        '/api/v1/people/{id}/account/pdf',
+        '/api/v1/cash-report/pdf',
+        '/api/v1/flights/pdf',
+        '/api/v1/expiries/pdf',
+        '/api/v1/settings/airfield',
       ]),
     );
   });
@@ -223,6 +228,37 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
       expect(schemas?.['PprOperatingInstructions']?.properties).toHaveProperty('it');
       expect(schemas?.['PprOperatingInstructions']?.properties).toHaveProperty('en');
+    });
+  });
+
+  describe('PDF exports (story 10.2, FR-40)', () => {
+    const paths = doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; security?: unknown[] }>>;
+
+    it('documents 200/401/403/404/422/500 on the account statement PDF route', () => {
+      const route = paths['/api/v1/people/{id}/account/pdf']?.['get'];
+      expect(Object.keys(route?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '422', '500']);
+      expect(route?.responses?.['200']).toMatchObject({ content: { 'application/pdf': {} } });
+    });
+
+    it('documents 200/401/403/422/500 on the cash report, flights, and expiries PDF routes', () => {
+      for (const path of ['/api/v1/cash-report/pdf', '/api/v1/flights/pdf', '/api/v1/expiries/pdf'] as const) {
+        const route = paths[path]?.['get'];
+        expect(Object.keys(route?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+      }
+    });
+
+    it('documents 200/401/500 GET (no permission gate) and 200/401/403/422/500 PUT on the airfield settings endpoint', () => {
+      const get = paths['/api/v1/settings/airfield']?.['get'];
+      const put = paths['/api/v1/settings/airfield']?.['put'];
+      expect(Object.keys(get?.responses ?? {}).sort()).toEqual(['200', '401', '500']);
+      expect(Object.keys(put?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+      expect(get?.security).toEqual([{ cookieAuth: [] }]);
+    });
+
+    it('documents the AirfieldBranding schema with name/logoDataUrl', () => {
+      const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+      expect(schemas?.['AirfieldBranding']?.properties).toHaveProperty('name');
+      expect(schemas?.['AirfieldBranding']?.properties).toHaveProperty('logoDataUrl');
     });
   });
 

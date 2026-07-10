@@ -487,6 +487,9 @@
       "conflictError": "Questo movimento ha già una rettifica collegata.",
       "genericError": "Impossibile registrare la rettifica. Riprova.",
       "success": "Rettifica registrata."
+    },
+    "pdf": {
+      "balance": "Saldo finale"
     }
   },
   "FinancePage": {
@@ -962,6 +965,10 @@
       "reset": "Azzera filtri",
       "instructorActive": "Filtro istruttore attivo",
       "instructorClear": "Rimuovi filtro istruttore"
+    },
+    "pdf": {
+      "totalDuration": "Durata totale",
+      "totalAmount": "Totale addebiti"
     }
   },
   "ExpiriesPage": {
@@ -1454,7 +1461,31 @@
     "empty": "Nessun PPR trovato per i filtri selezionati."
   },
   "Export": {
-    "button": "Esporta Excel"
+    "button": "Esporta Excel",
+    "buttonPdf": "Esporta PDF"
+  },
+  "PdfExport": {
+    "generatedAt": "Generato il {date}",
+    "page": "Pag. {page} di {total}"
+  },
+  "SettingsPage": {
+    "kicker": "Amministrazione",
+    "title": "Impostazioni",
+    "description": "Configura il nome e il logo dell'aviosuperficie, usati nell'intestazione dei PDF esportati.",
+    "backToDashboard": "Torna alla dashboard",
+    "form": {
+      "nameLabel": "Nome aviosuperficie",
+      "logoLabel": "Logo",
+      "logoHint": "PNG o JPEG, max 200 KB. Usato nell'intestazione dei PDF esportati.",
+      "logoUpload": "Carica logo",
+      "logoRemove": "Rimuovi logo",
+      "logoPreviewAlt": "Anteprima logo",
+      "logoTooLarge": "Il file supera i 200 KB.",
+      "logoInvalidType": "Formato non supportato: usa PNG o JPEG.",
+      "save": "Salva",
+      "saved": "Impostazioni salvate.",
+      "error": "Non è stato possibile salvare le impostazioni. Riprova."
+    }
   },
   "Emails": {
     "invite": {

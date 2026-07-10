@@ -1,5 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
-import { exportQuerySchema } from './common';
+import { exportQuerySchema, pdfQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 // --- Categories (story 3.4, Task 1, AC 1) ----------------------------------
@@ -161,14 +161,33 @@ export type CashMovementListResponseDto = z.infer<typeof cashMovementListRespons
  * presets (mese/trimestre/anno correnti) are UI-only (`period-presets.ts`)
  * — the service always receives explicit bounds, never calendar logic.
  */
-export const cashReportQuerySchema = z
-  .object({
-    from: z.iso.date(),
-    to: z.iso.date(),
-  })
-  .refine((value) => value.from <= value.to, { message: 'from must not be after to', path: ['to'] });
+const cashReportPeriodSchema = z.object({
+  from: z.iso.date(),
+  to: z.iso.date(),
+});
+
+export const cashReportQuerySchema = cashReportPeriodSchema.refine((value) => value.from <= value.to, {
+  message: 'from must not be after to',
+  path: ['to'],
+});
 
 export type CashReportQuery = z.infer<typeof cashReportQuerySchema>;
+
+/**
+ * `GET /api/v1/cash-report/pdf` query (story 10.2, AC 2) — the SAME
+ * mandatory `from`/`to` period as {@link cashReportQuerySchema}, plus
+ * `locale` ({@link pdfQuerySchema}'s shape) for the PDF's localized labels.
+ * Built from the shared `cashReportPeriodSchema` base (not
+ * `cashReportQuerySchema.extend`, which is unavailable once `.refine` turns
+ * it into a `ZodEffects`) — same "extend before refine" reasoning as
+ * `listFlightsQuerySchema`'s `...exportQuerySchema.shape`.
+ */
+export const cashReportPdfQuerySchema = cashReportPeriodSchema.extend({ ...pdfQuerySchema.shape }).refine((value) => value.from <= value.to, {
+  message: 'from must not be after to',
+  path: ['to'],
+});
+
+export type CashReportPdfQuery = z.infer<typeof cashReportPdfQuerySchema>;
 
 /**
  * One category row of the report (AC 1). Documentation only, mirroring

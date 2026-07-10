@@ -1,11 +1,14 @@
 import { createTranslator } from 'next-intl';
 import type { AppLocale } from '@/i18n/routing';
 import { buildWorkbook, type ExportColumn } from '@/server/adapters/excel/workbook';
+import { renderReportPdf, type PdfColumn, type PdfTotal } from '@/server/adapters/pdf/document';
+import { formatCents, formatSignedCents } from '@/lib/money';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
 import type { ListAccountMovementsQuery } from '@/lib/schemas/accounts';
 import type { ListAircraftQuery } from '@/lib/schemas/aircraft';
 import type { ListBookingsQuery } from '@/lib/schemas/bookings';
-import type { ListCashMovementsQuery } from '@/lib/schemas/cash';
+import type { CashReportPdfQuery, ListCashMovementsQuery } from '@/lib/schemas/cash';
+import type { PdfQuery } from '@/lib/schemas/common';
 import type { ListAllExpiriesQuery } from '@/lib/schemas/expiries';
 import type { ListFlightsQuery } from '@/lib/schemas/flights';
 import type { ListPeopleQuery } from '@/lib/schemas/people';
@@ -13,14 +16,15 @@ import type { ListPprRequestsQuery } from '@/lib/schemas/ppr';
 import type { SchoolSummaryQuery } from '@/lib/schemas/school';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
-import { listAccountMovements } from './accounts.service';
+import { getAccountOverview, listAccountMovements } from './accounts.service';
 import { listAircraft } from './aircraft.service';
+import { getAirfieldBranding } from './app-settings.service';
 import { listBookings } from './bookings.service';
-import { listCashMovements } from './cash.service';
+import { getCashReport, listCashMovements } from './cash.service';
 import { ValidationError } from './errors';
 import { listAllExpiries } from './expiries.service';
 import { listFlights } from './flights.service';
-import { listPeople } from './people.service';
+import { getPerson, listPeople } from './people.service';
 import { listPprRequests } from './ppr.service';
 import { getInstructorHourSummaries, getStudentHourSummaries } from './school.service';
 
@@ -56,22 +60,40 @@ import { getInstructorHourSummaries, getStudentHourSummaries } from './school.se
 /** Above this many filtered rows, every export rejects with 422 `EXPORT_TOO_LARGE` (AC 4) rather than silently truncating. */
 export const EXPORT_MAX_ROWS = 10_000;
 
+/** Story 10.2 (AC 4): a PDF is not a data tool — its cap is far tighter than the xlsx one; above it, use the Excel export instead. */
+export const PDF_EXPORT_MAX_ROWS = 2_000;
+
 type Messages = typeof import('../../../messages/it.json');
 
 async function loadMessages(locale: AppLocale): Promise<Messages> {
   return (await import(`../../../messages/${locale}.json`)).default as Messages;
 }
 
-/** Shared AC 4 guard — a plain, directly testable predicate (unit T2) rather than duplicated inline per export function. */
-export function assertWithinExportCap(total: number): void {
-  if (total > EXPORT_MAX_ROWS) {
+/** Shared by both caps below — a plain, directly testable predicate (unit T2/T4) rather than duplicated inline per export function. */
+function assertWithinCap(total: number, cap: number): void {
+  if (total > cap) {
     throw new ValidationError('Too many rows match the current filters for an export — narrow them and try again.', undefined, 'EXPORT_TOO_LARGE');
   }
+}
+
+/** AC 4 guard for every `export<View>Xlsx` function. */
+export function assertWithinExportCap(total: number): void {
+  assertWithinCap(total, EXPORT_MAX_ROWS);
+}
+
+/** AC 4 guard for every `export<Report>Pdf` function (story 10.2) — same `EXPORT_TOO_LARGE` code, tighter cap. */
+export function assertWithinPdfExportCap(total: number): void {
+  assertWithinCap(total, PDF_EXPORT_MAX_ROWS);
 }
 
 /** `airmanager-<vista>-<YYYY-MM-DD>.xlsx` (AC 1) — the date is "today" in `APP_TIMEZONE`, matching the app's own calendar-day convention (`zoned-time.ts`) rather than a raw UTC date that could be off by one near midnight. */
 function exportFilename(view: string): string {
   return `airmanager-${view}-${todayDateOnlyInZone(APP_TIMEZONE)}.xlsx`;
+}
+
+/** Same convention as {@link exportFilename}, `.pdf` extension (story 10.2, AC 2). */
+function pdfFilename(view: string): string {
+  return `airmanager-${view}-${todayDateOnlyInZone(APP_TIMEZONE)}.pdf`;
 }
 
 /** `locale`'s `'it'` default (AC 2) — applied here, not in the schema, see `exportQuerySchema`'s doc-comment. */
@@ -87,6 +109,43 @@ async function toXlsxExport<T>(view: string, sheetName: string, columns: ExportC
 }
 
 const MONEY_NUM_FMT = '#,##0.00 "€"';
+
+export type PdfExport = { buffer: Buffer; filename: string };
+
+/**
+ * Shared by every `export<Report>Pdf` function (story 10.2, AC 2): resolves
+ * the `PdfExport.generatedAt`/`.page` footer labels from the SAME
+ * off-request `locale` as the report's own columns (never a second,
+ * independent translator instance per report), renders the document, and
+ * wraps it with the `.pdf` filename — the PDF counterpart of
+ * {@link toXlsxExport}.
+ */
+async function toPdfExport<T>(
+  view: string,
+  locale: AppLocale,
+  branding: { name: string; logoDataUrl: string | null },
+  title: string,
+  subtitle: string | null,
+  columns: PdfColumn<T>[],
+  rows: T[],
+  totals: PdfTotal[] | undefined,
+): Promise<PdfExport> {
+  const messages = await loadMessages(locale);
+  const tPdf = createTranslator({ locale, messages, namespace: 'PdfExport' });
+
+  const buffer = await renderReportPdf({
+    branding,
+    title,
+    subtitle,
+    columns,
+    rows,
+    totals,
+    generatedAtLabel: tPdf('generatedAt', { date: formatDateTime(new Date(), locale) }),
+    pageLabel: (pageNumber: number, totalPages: number) => tPdf('page', { page: pageNumber, total: totalPages }),
+  });
+
+  return { buffer, filename: pdfFilename(view) };
+}
 
 // --- People (`GET /api/v1/people`) -----------------------------------------
 
@@ -358,4 +417,175 @@ export async function exportInstructorHourSummariesXlsx(actor: Actor, query: Sch
   ];
 
   return toXlsxExport('school-summaries-instructors', t('heading'), columns, items);
+}
+
+// =============================================================================
+// PDF exports (story 10.2, AC 1-6; FR-40; `adapters/pdf` — spine :227). One
+// `export<Report>Pdf` function per covered report — the SAME three-step
+// shape as the xlsx exports above (reuse the list/aggregate service with the
+// SAME actor/filters -> reject over `PDF_EXPORT_MAX_ROWS` -> map to
+// LOCALIZED `PdfColumn`s), plus two things no xlsx export needs: the
+// admin-configured airfield branding (`getAirfieldBranding`) for the
+// header, and a `totals` line where the report has one. Only 4 reports are
+// covered (Dev Notes, deliberately NOT every xlsx-covered view): the
+// account statement, the period financial report, the flight log, and the
+// expiry dashboard.
+// =============================================================================
+
+/**
+ * Localizes a mandatory `from`/`to` period into the report subtitle (AC 2:
+ * "periodo/filtri applicati") — shared by every PDF report that has one
+ * (cash report, flights when both bounds are given). `formatDateOnly` keeps
+ * the SAME `DD/MM/YYYY` presentation as every other date-only field in the
+ * domain.
+ */
+function periodSubtitle(from: string, to: string, locale: AppLocale): string {
+  return `${formatDateOnly(from, locale)} – ${formatDateOnly(to, locale)}`;
+}
+
+// --- Account statement (`GET /api/v1/people/{id}/account/pdf`) -------------
+// The view has NO period filter (Dev Notes: "il PDF è l'estratto COMPLETO,
+// niente from/to inventati") — `query` only ever carries `locale`.
+
+export async function exportAccountStatementPdf(actor: Actor, personId: string, query: PdfQuery): Promise<PdfExport> {
+  const movements = await listAccountMovements(actor, personId, { page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+  assertWithinPdfExportCap(movements.total);
+
+  // Same own-access rule as `listAccountMovements` (`accounts.service.ts#assertReadAccess`)
+  // — already enforced above; these two reads never widen access, only add
+  // the person's name (title) and final balance (totals) to the PDF.
+  const [overview, person, branding] = await Promise.all([getAccountOverview(actor, personId), getPerson(actor, personId), getAirfieldBranding()]);
+
+  const locale = resolveLocale(query);
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'AccountStatementPage' });
+  // Same conditional column as the xlsx export / `account-statement-table.tsx`'s `showActor`.
+  const includeActor = hasPermission(actor, 'people.read');
+
+  const columns: PdfColumn<(typeof movements.items)[number]>[] = [
+    { header: t('table.date'), value: (row) => formatDateOnly(row.effectiveDate, locale) },
+    { header: t('table.type'), value: (row) => t(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[row.type]}`) },
+    { header: t('table.description'), value: (row) => row.description ?? '' },
+    { header: t('table.amount'), value: (row) => formatSignedCents(row.amountCents, locale) },
+    ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail ?? '' } satisfies PdfColumn<(typeof movements.items)[number]>] : []),
+  ];
+
+  return toPdfExport(
+    'account-statement',
+    locale,
+    branding,
+    t('kicker'),
+    `${person.lastName} ${person.firstName}`,
+    columns,
+    movements.items,
+    [{ label: t('pdf.balance'), value: formatCents(overview.balanceCents, locale) }],
+  );
+}
+
+// --- Period financial report (`GET /api/v1/cash-report/pdf`) ---------------
+
+export async function exportCashReportPdf(actor: Actor, query: CashReportPdfQuery): Promise<PdfExport> {
+  // `getCashReport` is a read-only aggregation with no pagination/cap of its
+  // own (story 3.5) — its `categories` array is bounded by the number of
+  // cash categories in the system (never a filtered row count), so there is
+  // no `assertWithinPdfExportCap` call here, same as the xlsx exports never
+  // cap the (also unpaginated) school summaries by anything but `.length`.
+  const report = await getCashReport(actor, query);
+  const branding = await getAirfieldBranding();
+
+  const locale = resolveLocale(query);
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'CashReportPage' });
+
+  const columns: PdfColumn<(typeof report.categories)[number]>[] = [
+    { header: t('categories.name'), value: (row) => row.categoryName },
+    { header: t('categories.in'), value: (row) => formatCents(row.inCents, locale) },
+    { header: t('categories.out'), value: (row) => formatCents(row.outCents, locale) },
+    { header: t('categories.net'), value: (row) => formatSignedCents(row.netCents, locale) },
+  ];
+
+  return toPdfExport('cash-report', locale, branding, t('title'), periodSubtitle(report.from, report.to, locale), columns, report.categories, [
+    { label: t('summary.totalIn'), value: formatCents(report.totalInCents, locale) },
+    { label: t('summary.totalOut'), value: formatCents(report.totalOutCents, locale) },
+    { label: t('summary.net'), value: formatSignedCents(report.netCents, locale) },
+  ]);
+}
+
+// --- Flight log (`GET /api/v1/flights/pdf`) ---------------------------------
+
+export async function exportFlightsPdf(actor: Actor, query: ListFlightsQuery): Promise<PdfExport> {
+  const result = await listFlights(actor, { ...query, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+  assertWithinPdfExportCap(result.total);
+  const branding = await getAirfieldBranding();
+
+  const locale = resolveLocale(query);
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'FlightsPage' });
+  const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school'), other: t('form.flightTypes.other') };
+
+  const columns: PdfColumn<(typeof result.items)[number]>[] = [
+    { header: t('list.table.date'), value: (row) => formatDateOnly(row.flightDate, locale) },
+    { header: t('list.table.aircraft'), value: (row) => row.aircraft.registration },
+    { header: t('list.table.person'), value: (row) => `${row.person.lastName} ${row.person.firstName}` },
+    { header: t('list.table.instructor'), value: (row) => (row.instructor ? `${row.instructor.lastName} ${row.instructor.firstName}` : '') },
+    {
+      header: t('list.table.type'),
+      value: (row) => flightTypeLabel(row.flightType, flightTypeLabels) + (row.isSolo ? ` — ${t('list.table.soloSuffix')}` : ''),
+    },
+    { header: t('list.table.duration'), value: (row) => formatMinutes(row.minutes) },
+    { header: t('list.table.amount'), value: (row) => formatCents(row.breakdown.totalAmountCents, locale) },
+    { header: t('list.table.landings'), value: (row) => (row.landings === null ? '' : String(row.landings)) },
+    {
+      header: t('list.table.status'),
+      value: (row) => (row.status === 'CANCELLED' ? t('filters.statusOptions.cancelled') : t('filters.statusOptions.registered')),
+    },
+  ];
+
+  // Totals over EVERY row this export actually carries (AC 2, Dev Notes:
+  // "totali NUOVI calcolati nell'export service") — computed here, never in
+  // `flights.service.ts` (Dev Notes: "NON toccare flights.service").
+  const totalMinutes = result.items.reduce((sum, row) => sum + row.minutes, 0);
+  const totalAmountCents = result.items.reduce((sum, row) => sum + row.breakdown.totalAmountCents, 0);
+
+  const subtitle = query.dateFrom && query.dateTo ? periodSubtitle(query.dateFrom, query.dateTo, locale) : null;
+
+  return toPdfExport('flights', locale, branding, t('title'), subtitle, columns, result.items, [
+    { label: t('pdf.totalDuration'), value: formatMinutes(totalMinutes) },
+    { label: t('pdf.totalAmount'), value: formatCents(totalAmountCents, locale) },
+  ]);
+}
+
+// --- Expiry dashboard (`GET /api/v1/expiries/pdf`) --------------------------
+// Same palette as `expiries/expiry-status-badge.tsx`'s `EXPIRY_STATUS_BADGE_CLASSES` —
+// duplicated as plain hex constants (rather than imported) since that
+// module is `'use client'` and this service must stay server-only; 3
+// constants, low churn, kept in exact sync by hand (Dev Notes: "riusando
+// ESATTAMENTE la palette").
+const EXPIRY_STATUS_PDF_COLOR = { ok: '#346538', expiring: '#956400', expired: '#9F2F2D' } as const;
+
+export async function exportExpiriesPdf(actor: Actor, query: ListAllExpiriesQuery): Promise<PdfExport> {
+  const result = await listAllExpiries(actor, { ...query, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+  assertWithinPdfExportCap(result.total);
+  const branding = await getAirfieldBranding();
+
+  const locale = resolveLocale(query);
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'ExpiriesPage' });
+  const tScope = createTranslator({ locale, messages, namespace: 'ExpiryTypesPage' });
+
+  const columns: PdfColumn<(typeof result.items)[number]>[] = [
+    { header: t('dashboard.table.person'), value: (row) => `${row.personLastName} ${row.personFirstName}` },
+    { header: t('dashboard.table.type'), value: (row) => row.typeName },
+    { header: t('dashboard.table.scope'), value: (row) => tScope(`scope.${row.typeScope}`) },
+    { header: t('dashboard.table.issuedAt'), value: (row) => formatDateOnly(row.issuedAt, locale) },
+    { header: t('dashboard.table.expiresAt'), value: (row) => formatDateOnly(row.expiresAt, locale) },
+    {
+      header: t('dashboard.table.status'),
+      value: (row) => t(`own.table.status.${row.status}`),
+      color: (row) => EXPIRY_STATUS_PDF_COLOR[row.status],
+    },
+  ];
+
+  // No `totals` (Dev Notes: "nessun totale, non pertinente" — a status list has nothing summable).
+  return toPdfExport('expiries', locale, branding, t('dashboard.heading'), null, columns, result.items, undefined);
 }

@@ -50,3 +50,20 @@ export const exportQuerySchema = z.object({
 });
 
 export type ExportQuery = z.infer<typeof exportQuerySchema>;
+
+/**
+ * Story 10.2 (AC 2, FR-40) — the ONE query param a dedicated PDF export
+ * route needs beyond its view's own filters: `locale`. Unlike
+ * {@link exportQuerySchema}, there is no `format` field — a PDF export lives
+ * on its OWN route (`/api/v1/**\/pdf`, spine :105), never behind
+ * `?format=pdf` on the list endpoint (that convention is xlsx-only, AC 1 of
+ * story 10.1). Used standalone by routes with no other filters (the account
+ * statement); routes that also need the view's own filters (flights,
+ * expiries) reuse that view's OWN list query schema directly instead
+ * (already carries `locale` via `exportQuerySchema.shape`).
+ */
+export const pdfQuerySchema = z.object({
+  locale: z.enum(['it', 'en']).optional(),
+});
+
+export type PdfQuery = z.infer<typeof pdfQuerySchema>;

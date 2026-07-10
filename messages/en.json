@@ -487,6 +487,9 @@
       "conflictError": "This movement already has a linked adjustment.",
       "genericError": "Could not record the adjustment. Please try again.",
       "success": "Adjustment recorded."
+    },
+    "pdf": {
+      "balance": "Final balance"
     }
   },
   "FinancePage": {
@@ -962,6 +965,10 @@
       "reset": "Clear filters",
       "instructorActive": "Instructor filter active",
       "instructorClear": "Remove instructor filter"
+    },
+    "pdf": {
+      "totalDuration": "Total duration",
+      "totalAmount": "Total charges"
     }
   },
   "ExpiriesPage": {
@@ -1454,7 +1461,31 @@
     "empty": "No PPR requests match the selected filters."
   },
   "Export": {
-    "button": "Export Excel"
+    "button": "Export Excel",
+    "buttonPdf": "Export PDF"
+  },
+  "PdfExport": {
+    "generatedAt": "Generated on {date}",
+    "page": "Page {page} of {total}"
+  },
+  "SettingsPage": {
+    "kicker": "Administration",
+    "title": "Settings",
+    "description": "Configure the airfield's name and logo, used in the header of exported PDFs.",
+    "backToDashboard": "Back to dashboard",
+    "form": {
+      "nameLabel": "Airfield name",
+      "logoLabel": "Logo",
+      "logoHint": "PNG or JPEG, max 200 KB. Used in the header of exported PDFs.",
+      "logoUpload": "Upload logo",
+      "logoRemove": "Remove logo",
+      "logoPreviewAlt": "Logo preview",
+      "logoTooLarge": "The file exceeds 200 KB.",
+      "logoInvalidType": "Unsupported format: use PNG or JPEG.",
+      "save": "Save",
+      "saved": "Settings saved.",
+      "error": "Could not save the settings. Please try again."
+    }
   },
   "Emails": {
     "invite": {

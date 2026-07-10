@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ExportButton } from '@/components/export-button';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
-import { buildExportHref } from '@/lib/export-href';
+import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { useRouter } from '@/i18n/navigation';
 import { formatCents } from '@/lib/money';
 import {
@@ -241,6 +241,8 @@ type FlightsManagerProps = {
   filters: FlightsFilters;
   /** Story 10.1 (AC 5) — "Esporta Excel" label; the href is built here from the LIVE `filters` state, not this initial snapshot. */
   exportLabel: string;
+  /** Story 10.2 (AC 5) — "Esporta PDF" label, same live-filters href-building as `exportLabel`. */
+  exportPdfLabel: string;
   labels: FlightsManagerLabels;
 };
 
@@ -316,6 +318,7 @@ export function FlightsManager({
   moneyLocale,
   filters: initialFilters,
   exportLabel,
+  exportPdfLabel,
   labels,
 }: FlightsManagerProps) {
   const router = useRouter();
@@ -530,6 +533,23 @@ export function FlightsManager({
               )}
               label={exportLabel}
               testId="flights-export-button"
+            />
+            <ExportButton
+              // Story 10.2 (AC 5): same live-filters href-building, dedicated PDF route.
+              href={buildPdfExportHref(
+                '/api/v1/flights/pdf',
+                {
+                  dateFrom: filters.dateFrom,
+                  dateTo: filters.dateTo,
+                  aircraftId: filters.aircraftId,
+                  personId: filters.personId,
+                  flightType: filters.flightType,
+                  status: filters.status,
+                },
+                moneyLocale,
+              )}
+              label={exportPdfLabel}
+              testId="flights-export-pdf-button"
             />
           </div>
         </div>

@@ -21,6 +21,7 @@
     "@node-rs/argon2": "2.0.2",
     "@prisma/adapter-pg": "7.8.0",
     "@prisma/client": "7.8.0",
+    "@react-pdf/renderer": "^4.5.1",
     "@tanstack/react-table": "8.21.3",
     "exceljs": "^4.4.0",
     "geist": "^1.7.2",

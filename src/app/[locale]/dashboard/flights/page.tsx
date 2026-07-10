@@ -266,6 +266,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
             moneyLocale={locale === 'en' ? 'en' : 'it'}
             filters={filters}
             exportLabel={tExport('button')}
+            exportPdfLabel={tExport('buttonPdf')}
             labels={{
               form: {
                 title: t('form.title'),
