@@ -1,6 +1,6 @@
 ---
 date: 2026-07-10
-status: proposal — in attesa delle risposte dell'utente alle domande aperte
+status: ratificato — domande aperte risolte dall'utente (v. sezione in fondo); implementazione = Epic 11 in epics.md
 source: feedback utente post-MVP (branch claude/flight-log-schema-design-9tmjqn)
 inputDocuments:
   - prisma/schema.prisma (model Flight)
@@ -97,15 +97,22 @@ poi `NOT NULL DEFAULT 1`. Il PIC resta derivato (nessuna colonna).
 4. **Durata auto-calcolata** da atterraggio−decollo nel form, con possibilità di
    rettifica staff (v. domanda 1 — la fatturazione oggi usa `minutes`).
 
-## Domande aperte (bloccanti per epic/stories)
+## Domande aperte — RISOLTE dall'utente (2026-07-10)
 
-1. **Durata vs orari**: la durata hh:mm è SEMPRE atterraggio−decollo, o può
-   divergere (tempo contaore/blocchi vs tempo volo)? Oggi `minutes` guida la
-   fatturazione: se può divergere, gli orari sono informativi e `minutes` resta
-   sovrano; se coincide sempre, `minutes` diventa derivato.
-2. **Aeroporti**: testo libero (proposta) o lista/codici ICAO?
-3. **Obbligatorietà**: orari e aeroporti obbligatori per i voli NUOVI? (La
-   storia pre-migrazione resterà comunque senza.)
-4. **PIC**: la derivazione attuale (non scuola → pilota titolare; scuola solo →
-   allievo; scuola dual → istruttore) copre tutti i casi reali, o serve poter
-   indicare un PIC diverso dal titolare addebitato?
+1. **Durata vs orari**: la durata è SEMPRE atterraggio−decollo → **`minutes`
+   diventa DERIVATO** dagli orari (auto-calcolato); resta la colonna snapshot
+   che guida la fatturazione, ma non è più un input.
+2. **Aeroporti**: testo libero (proposta accettata implicitamente — nessuna
+   lista/ICAO richiesta).
+3. **Obbligatorietà**: **sì** — orari e aeroporti obbligatori per i voli nuovi;
+   la storia pre-migrazione resta senza.
+4. **PIC**: la derivazione attuale copre tutti i casi ("the pilot is either the
+   pilot/student/instructor") → **nessuna colonna PIC**, solo esposizione
+   calcolata.
+
+## Esito
+
+Il change request diventa l'**Epic 11 — Registro voli logbook** (3 stories) in
+`epics.md`; branch `claude/flight-log-schema-design-9tmjqn`. Il suggerimento 1
+(libretto voli pilota / QTB velivolo in PDF) resta FUORI dall'epic: candidato
+follow-up, non richiesto esplicitamente dall'utente.
