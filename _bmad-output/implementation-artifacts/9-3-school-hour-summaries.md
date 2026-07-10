@@ -4,7 +4,7 @@ baseline_commit: 20e8907
 
 # Story 9.3: Riepiloghi ore scuola
 
-Status: review
+Status: done
 
 ## Story
 
@@ -114,7 +114,23 @@ Sonnet 5 (single dev agent, xhigh)
 
 ## Review Record
 
+Reviewer: subagent **Opus 4.8 (extra-high)**, adversarial. **Verdict: clean-pass — zero finding mandatory.** 2 nit non-mandatory ratificati come accettati/deferred (nessun cambio di codice).
+
+- **Priorità zero — full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI** (workers=4): **164 test, 0 fail veri** — 162 passed + 2 flaky pre-esistenti fuori diff verdi al retry (`cash-report:123` ECONNRESET sotto load, `ppr-register:206` flake documentato). I 3 e2e nuovi 9.3 (`school.spec.ts:544/:606/:650`) verdi. Zero regressioni school/flights/nav. Gates ri-eseguiti indipendentemente: lint 0 errori, typecheck pulito, **1156/1156 unit**, build verde. Nessuna migrazione (schema intatto, confermato nel diff).
+- **Correttezza dei numeri provata su dataset costruito a mano via API** (allievo+istruttore nuovi): SCHOOL 60' + solista 45' + checkride PRIVATE-con-istruttore 30' + SCHOOL 50' STORNATO + SCHOOL 20' fuori periodo → `dualMinutes=60, soloMinutes=45, totalMinutes=105, totalMinutesAllTime=125`; riepilogo istruttore = 60 (stornato e checkride esclusi, fuori-periodo escluso); cross-check psql delle righe raw. **Bounds inclusivi esatti**: voli su from e to inclusi (25=10+15 sugli endpoint), giorno prima/dopo solo negli storici. Reattività del filtro periodo verificata in UI (preset anno → periodo 0:00, storico invariato).
+- **Matrice permessi live**: `summaries/students` solo `school.manage.any` (istruttore/pilota/allievo 403, unauth 401); `summaries/instructors` any→tutti / own→ESATTAMENTE la propria riga; from/to mancanti/invertite/malformate → 422; istruttore con profilo disattivato → 422 `INSTRUCTOR_PROFILE_REQUIRED`, mai 500; platee: profili disattivati e persone archiviate spariscono dai riepiloghi (psql).
+- **Audit del filtro `instructorPersonId` (superficie epic-5)**: guardia speculare a `personId`, pre-query; staff libero, non-staff solo self (403 su altrui per istruttore/pilota/allievo, provato live); where aggiunge SOLO `instructorProfile:{personId}` — calcolo costi, ordinamento, paginazione e altri filtri intatti (diff letto + canary flights e2e verde); id inesistente → lista vuota sana.
+- **Gap del dev chiusi**: (a) drill-down STAFF provato live via Playwright MCP (registro filtrato con esattamente i voli giusti, banner "Filtro istruttore attivo", "Rimuovi filtro istruttore" funzionante); (b) full suite (sopra); (c) il ramo own puro NON esegue la query full-platea (findUnique + groupBy a 1 riga, verificato codice+API) e l'admin senza profilo degrada a card 0:00 senza crash; (d) nomi DTO coerenti con gli schema OpenAPI live (`StudentHourSummaryList`/`InstructorHourSummaryList`).
+- **UI Playwright MCP su build di produzione**: staff → card nav "Scuola volo", tabelle riepiloghi coi numeri giusti, preset e drill-down funzionanti; istruttore → roster + "Le mie ore scuola" (solo propria riga); pilota/allievo → nav assente e 307 da `/dashboard/school`; i18n simmetrici; File List = diff reale.
+- **93-N1 (nit, ACCETTATO)** — admin con entrambi i permessi ma senza profilo istruttore vede la card "Le mie ore scuola: 0:00" e il roster vuoto: è il comportamento due-facce ratificato dalla story (degrada senza errori); eventuale hiding = decisione di prodotto futura.
+- **93-N2 (nit, DEFERRED)** — la pagina non impone `from <= to` (l'API sì, 422): range invertito da URL manuale → 200 con tabelle vuote (sano); la UI dei filtri non può produrlo. Da allineare solo per coerenza, se mai.
+
+### Final gates (review run, DB fresco, prod build)
+
+lint 0 errori (warning benigno noto), typecheck pulito, **1156/1156 unit**, build verde, full suite CI-mode **164 test / 0 fail veri**. Nessun fix richiesto: nessun commit di fix post-review.
+
 ## Change Log
 
 - 2026-07-10: Story file created (Fable 5 main session) — terza e ultima story Epic 9. Decisione di dominio DC/solista derivata dai dati esistenti (assumption da ratificare, segnalata nell'handoff); nessuna migrazione.
 - 2026-07-10: Implementazione completa (Sonnet 5 dev agent, xhigh) — T1-T6. Nessuna deviazione dal contratto della story; nessuna migrazione. Status → review.
+- 2026-07-10: Review Opus 4.8 xhigh — clean pass, zero mandatory. Full suite prod-build CI-mode 164/164 senza fail veri (2 flaky pre-esistenti retry-green); numeri provati su dataset costruito (checkride/stornati esclusi, bounds inclusivi); matrice permessi e audit chirurgico del filtro instructorPersonId; gap del dev chiusi. 93-N1 accettato (comportamento ratificato), 93-N2 deferred. Nessun fix richiesto. Status → done. EPIC 9 COMPLETO.
