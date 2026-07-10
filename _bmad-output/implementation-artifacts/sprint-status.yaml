@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-10 (epic-9 DONE incl. 9.4 correzione dominio; TD-4 done)
+last_updated: 2026-07-10 (EPIC 10 DONE: 10.1, 10.2, 10.3 done — piano MVP completo)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -110,8 +110,8 @@ development_status:
   9-4-solo-flag-flight-types: done
   epic-9-retrospective: optional
 
-  epic-10: backlog
-  10-1-excel-exports: backlog
-  10-2-pdf-exports: backlog
-  10-3-role-dashboards: backlog
+  epic-10: done
+  10-1-excel-exports: done
+  10-2-pdf-exports: done
+  10-3-role-dashboards: done
   epic-10-retrospective: optional

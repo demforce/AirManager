@@ -1,5 +1,7 @@
 import { apiRoute } from '@/lib/api/handler';
 import { createPersonSchema, listPeopleQuerySchema } from '@/lib/schemas/people';
+import { xlsxResponse } from '@/server/adapters/excel/response';
+import { exportPeopleXlsx } from '@/server/services/exports.service';
 import { createPerson, listPeople } from '@/server/services/people.service';
 
 /**
@@ -9,7 +11,16 @@ import { createPerson, listPeople } from '@/server/services/people.service';
  */
 export const GET = apiRoute({
   querySchema: listPeopleQuerySchema,
-  handle: async ({ actor, query }) => listPeople(actor, query),
+  // Story 10.1 (AC 1): `?format=xlsx` is the SAME endpoint, not a dedicated
+  // route — `exportPeopleXlsx` reuses `listPeople` internally (AC 3's
+  // permission parity). The JSON branch below is UNCHANGED.
+  handle: async ({ actor, query }) => {
+    if (query.format === 'xlsx') {
+      const { buffer, filename } = await exportPeopleXlsx(actor, query);
+      return xlsxResponse(buffer, filename);
+    }
+    return listPeople(actor, query);
+  },
 });
 
 export const POST = apiRoute({

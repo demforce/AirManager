@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { exportQuerySchema } from './common';
 import { expiryScopeSchema } from './expiry-types';
 import { z } from './zod-with-openapi';
 
@@ -204,6 +205,7 @@ export const listAllExpiriesQuerySchema = paginationQuerySchema.extend({
   expiryTypeId: z.string().trim().min(1).optional(),
   scope: expiryScopeSchema.optional(),
   status: expiryStatusSchema.optional(),
+  ...exportQuerySchema.shape,
 });
 
 export type ListAllExpiriesQuery = z.infer<typeof listAllExpiriesQuerySchema>;

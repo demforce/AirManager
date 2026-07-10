@@ -62,7 +62,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { key: 'ppr', href: '/dashboard/ppr', permissions: ['ppr.manage'] },
   // Story 1.4: the first real (non-placeholder) dashboard sub-page.
   { key: 'users', href: '/dashboard/users', permissions: ['users.manage'] },
-  { key: 'settings', href: '/settings', permissions: ['settings.manage'] },
+  // Story 10.2 (AC 1): the real settings page (airfield PDF branding) —
+  // the old `/settings` placeholder (story 1.3) was never implemented.
+  { key: 'settings', href: '/dashboard/settings', permissions: ['settings.manage'] },
 ];
 
 /**

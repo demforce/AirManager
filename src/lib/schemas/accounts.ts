@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 /** Mirrors the Prisma `PaymentMethod` enum (story 3.1, AC 2). */
@@ -94,9 +95,10 @@ export type AccountOverviewDto = z.infer<typeof accountOverviewSchema>;
 
 /**
  * `GET /api/v1/people/{id}/account/movements` query (story 3.2) — the shared
- * pagination shape (story 1.5), same reuse as `listHourMeterAdjustmentsQuerySchema`.
+ * pagination shape (story 1.5), same reuse as `listHourMeterAdjustmentsQuerySchema`,
+ * plus the `?format=xlsx` export params (story 10.1, AC 1).
  */
-export const listAccountMovementsQuerySchema = paginationQuerySchema;
+export const listAccountMovementsQuerySchema = paginationQuerySchema.extend({ ...exportQuerySchema.shape });
 
 export type ListAccountMovementsQuery = z.infer<typeof listAccountMovementsQuerySchema>;
 

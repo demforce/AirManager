@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from './zoned-time';
+import {
+  addDaysDateOnly,
+  dateOnlyInZone,
+  todayDateOnlyInZone,
+  todayTomorrowRangeUtc,
+  weekStartDateOnly,
+  zonedMidnightUtc,
+  zonedWallTime,
+} from './zoned-time';
 
 const ROME = 'Europe/Rome';
 
@@ -156,6 +164,36 @@ describe('dateOnlyInZone (story 7.4, Task 2 — the flight-day rule\'s reference
   it('is the instant = now special case todayDateOnlyInZone delegates to (behavior-preserving refactor)', () => {
     const now = new Date();
     expect(todayDateOnlyInZone(ROME)).toBe(dateOnlyInZone(now, ROME));
+  });
+});
+
+describe('todayTomorrowRangeUtc (story 10.3, AC 1 — home dashboard "oggi/domani" bookings widget)', () => {
+  it('spans exactly today midnight to the day-after-tomorrow midnight, CET (ordinary days)', () => {
+    const now = new Date('2026-01-15T10:00:00.000Z'); // 11:00 CET, still 2026-01-15 in Rome
+    const { from, to } = todayTomorrowRangeUtc(ROME, now);
+    expect(from.toISOString()).toBe(zonedMidnightUtc('2026-01-15', ROME).toISOString());
+    expect(to.toISOString()).toBe(zonedMidnightUtc('2026-01-17', ROME).toISOString());
+  });
+
+  it('covers exactly 48 hours on an ordinary (non-DST-transition) pair of days', () => {
+    const now = new Date('2026-01-15T10:00:00.000Z');
+    const { from, to } = todayTomorrowRangeUtc(ROME, now);
+    expect((to.getTime() - from.getTime()) / (60 * 60 * 1000)).toBe(48);
+  });
+
+  it('is DST-aware: today = the 23-hour spring-forward day, tomorrow ordinary -> 47-hour span', () => {
+    // 2026-03-29T10:00:00Z is already CEST (transition at 01:00Z) -> still wall-clock 2026-03-29 in Rome.
+    const now = new Date('2026-03-29T10:00:00.000Z');
+    const { from, to } = todayTomorrowRangeUtc(ROME, now);
+    expect(from.toISOString()).toBe('2026-03-28T23:00:00.000Z'); // zonedMidnightUtc('2026-03-29', ROME)
+    expect((to.getTime() - from.getTime()) / (60 * 60 * 1000)).toBe(23 + 24);
+  });
+
+  it('defaults `now` to the real clock when omitted', () => {
+    const { from, to } = todayTomorrowRangeUtc(ROME);
+    const today = todayDateOnlyInZone(ROME);
+    expect(from.toISOString()).toBe(zonedMidnightUtc(today, ROME).toISOString());
+    expect(to.toISOString()).toBe(zonedMidnightUtc(addDaysDateOnly(today, 2), ROME).toISOString());
   });
 });
 

@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 // --- Aircraft bookings (epic 7, story 7.1, FR-18) ---------------------------
@@ -93,6 +94,7 @@ export const listBookingsQuerySchema = paginationQuerySchema.extend({
   to: z.iso.datetime().optional(),
   aircraftId: z.string().trim().min(1).optional(),
   personId: z.string().trim().min(1).optional(),
+  ...exportQuerySchema.shape,
 });
 
 export type ListBookingsQuery = z.infer<typeof listBookingsQuerySchema>;

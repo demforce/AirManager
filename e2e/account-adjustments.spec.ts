@@ -111,9 +111,11 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     await waitForMailpitCount(person.email, 1);
 
     // AC 2: the account shows up in the staff "saldi negativi" list, reached
-    // via the repointed "Finanze" nav item.
+    // via the repointed "Finanze" nav item. Scoped to the nav landmark (suite
+    // convention, see rbac.spec.ts): since story 10.3 the home also has a
+    // "Vai alle finanze" widget link that a bare substring match would hit.
     await page.goto('/it/dashboard');
-    await page.getByRole('link', { name: 'Finanze' }).click();
+    await page.getByRole('navigation', { name: 'Aree operative' }).getByRole('link', { name: 'Finanze' }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/finance$/);
     const negativeRow = page.getByTestId('negative-balance-row').filter({ hasText: person.lastName });
     await expect(negativeRow).toHaveCount(1);

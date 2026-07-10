@@ -1,6 +1,8 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { ExportButton } from '@/components/export-button';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { buildExportHref } from '@/lib/export-href';
 import type { ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { currentMonthRange } from '@/lib/period-presets';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
@@ -98,6 +100,10 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
   const ownInstructorSummary = canManageOwn ? instructorSummaries.find((item) => item.personId === actor.personId) : undefined;
 
   const t = await getTranslations('SchoolPage');
+  const tExport = await getTranslations('Export');
+  // Story 10.1 (AC 5) — both summary exports share the SAME `from`/`to` period filter the tables above were fetched with.
+  const studentsExportHref = buildExportHref('/api/v1/school/summaries/students', { from, to }, locale);
+  const instructorsExportHref = buildExportHref('/api/v1/school/summaries/instructors', { from, to }, locale);
   const statusLabels: Record<ExpiryStatusDto, string> = {
     ok: t('table.status.ok'),
     expiring: t('table.status.expiring'),
@@ -139,7 +145,10 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
             </h2>
 
             <div className="mt-6">
-              <h3 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summaries.students.heading')}</h3>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <h3 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summaries.students.heading')}</h3>
+                <ExportButton href={studentsExportHref} label={tExport('button')} testId="school-students-export-button" />
+              </div>
               {studentSummaries.length === 0 ? (
                 <p className="mt-3 text-sm text-[#787774]">{t('summaries.students.empty')}</p>
               ) : (
@@ -183,7 +192,10 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
             </div>
 
             <div className="mt-10">
-              <h3 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summaries.instructors.heading')}</h3>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <h3 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summaries.instructors.heading')}</h3>
+                <ExportButton href={instructorsExportHref} label={tExport('button')} testId="school-instructors-export-button" />
+              </div>
               {instructorSummaries.length === 0 ? (
                 <p className="mt-3 text-sm text-[#787774]">{t('summaries.instructors.empty')}</p>
               ) : (

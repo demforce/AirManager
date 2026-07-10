@@ -1,5 +1,6 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { accountOverviewSchema } from './accounts';
+import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 // --- Flight logging with automatic charges (story 5.1, Task 4, AC 1/2/3/4) --
@@ -40,6 +41,7 @@ export const listFlightsQuerySchema = paginationQuerySchema
     instructorPersonId: z.string().trim().min(1).optional(),
     flightType: flightTypeSchema.optional(),
     status: flightStatusSchema.optional(),
+    ...exportQuerySchema.shape,
   })
   .refine((value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, {
     message: 'dateFrom must not be after dateTo',

@@ -75,6 +75,7 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
 
   const canManageSettings = hasPermission(actor, 'settings.manage');
   const t = await getTranslations('FinancePage');
+  const tExport = await getTranslations('Export');
   // Money must follow the page locale (review 3.1 M1 — mandatory), same
   // pattern as the account statement page.
   const moneyLocale = locale === 'en' ? ('en' as const) : ('it' as const);
@@ -213,6 +214,7 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
               }))}
               initialFilters={initialFilters}
               moneyLocale={moneyLocale}
+              exportLabel={tExport('button')}
               labels={{
                 newMovement: t('cashRegister.newMovement'),
                 filters: {

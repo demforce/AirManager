@@ -6,7 +6,9 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DataTable } from '@/components/data-table';
+import { ExportButton } from '@/components/export-button';
 import { useRouter } from '@/i18n/navigation';
+import { buildExportHref } from '@/lib/export-href';
 import { formatSignedCents, parseCents } from '@/lib/money';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
@@ -96,6 +98,8 @@ type CashRegisterProps = {
   categories: CashCategoryOption[];
   initialFilters: CashRegisterFilters;
   moneyLocale: 'it' | 'en';
+  /** Story 10.1 (AC 5) — "Esporta Excel" label; the href is built here from the LIVE `filters` state. */
+  exportLabel: string;
   labels: CashRegisterLabels;
 };
 
@@ -112,7 +116,7 @@ type CashRegisterProps = {
  * correction goes through the account rettifica, story 3.3, never the cash
  * register); `reverseCashMovement` re-enforces all three server-side (AD-5).
  */
-export function CashRegister({ rows, categories, initialFilters, moneyLocale, labels }: CashRegisterProps) {
+export function CashRegister({ rows, categories, initialFilters, moneyLocale, exportLabel, labels }: CashRegisterProps) {
   const router = useRouter();
   const [filters, setFilters] = useState<CashRegisterFilters>(initialFilters);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -223,6 +227,13 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, la
   const selectClasses =
     'rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
 
+  // Story 10.1 (AC 5): built from the LIVE filter state (`filters`) on every render.
+  const exportHref = buildExportHref(
+    '/api/v1/cash-movements',
+    { from: filters.from, to: filters.to, categoryId: filters.categoryId, sign: filters.sign },
+    moneyLocale,
+  );
+
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -233,16 +244,19 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, la
         ) : (
           <span />
         )}
-        <button
-          type="button"
-          onClick={() => {
-            setPanelOpen(true);
-            setReversing(null);
-          }}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
-        >
-          {labels.newMovement}
-        </button>
+        <div className="flex gap-3">
+          <ExportButton href={exportHref} label={exportLabel} testId="cash-export-button" />
+          <button
+            type="button"
+            onClick={() => {
+              setPanelOpen(true);
+              setReversing(null);
+            }}
+            className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
+          >
+            {labels.newMovement}
+          </button>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-end gap-4">

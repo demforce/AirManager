@@ -33,13 +33,68 @@
     "myDiary": "Il mio diario",
     "myExpiries": {
       "heading": "Le mie scadenze",
-      "link": "Tutte le mie scadenze"
+      "link": "Tutte le mie scadenze",
+      "empty": "Nessuna scadenza registrata."
     },
     "pprPendingWidget": {
       "heading": "PPR in attesa",
       "link": "Vai alla coda PPR",
       "empty": "Nessuna richiesta PPR in attesa.",
       "count": "{count} in attesa"
+    },
+    "negativeBalancesWidget": {
+      "heading": "Saldi negativi",
+      "link": "Vai alle finanze",
+      "empty": "Nessun conto in negativo.",
+      "count": "{count} in negativo"
+    },
+    "expiriesWidget": {
+      "heading": "Scadenze",
+      "link": "Vai alle scadenze",
+      "empty": "Nessuna scadenza scaduta o in scadenza.",
+      "count": "{count} da verificare"
+    },
+    "bookingsTodayWidget": {
+      "heading": "Prenotazioni di oggi e domani",
+      "link": "Vai alle prenotazioni",
+      "empty": "Nessuna prenotazione per oggi o domani."
+    },
+    "aircraftOutOfServiceWidget": {
+      "heading": "Velivoli fuori servizio",
+      "link": "Vai ai velivoli",
+      "empty": "Nessun velivolo fuori servizio."
+    },
+    "accountWidget": {
+      "heading": "Il mio saldo",
+      "link": "Vai al mio conto",
+      "empty": "Nessun conto attivo."
+    },
+    "packagesWidget": {
+      "heading": "Pacchetti residui",
+      "link": "Vai al mio conto"
+    },
+    "upcomingBookingsWidget": {
+      "heading": "Prossime prenotazioni",
+      "link": "Vai alle prenotazioni",
+      "empty": "Nessuna prenotazione futura."
+    },
+    "recentFlightsWidget": {
+      "heading": "Ultimi voli",
+      "link": "Vai al registro voli",
+      "empty": "Nessun volo registrato."
+    },
+    "studentsWidget": {
+      "heading": "I miei allievi",
+      "link": "Vai alla scuola volo",
+      "empty": "Nessun allievo assegnato."
+    },
+    "schoolFlightsWidget": {
+      "heading": "Voli scuola recenti",
+      "link": "Vai al registro voli",
+      "empty": "Nessun volo scuola registrato."
+    },
+    "monthlyHoursWidget": {
+      "heading": "Ore scuola del mese"
     },
     "nav": {
       "people": "Persone",
@@ -487,6 +542,9 @@
       "conflictError": "Questo movimento ha già una rettifica collegata.",
       "genericError": "Impossibile registrare la rettifica. Riprova.",
       "success": "Rettifica registrata."
+    },
+    "pdf": {
+      "balance": "Saldo finale"
     }
   },
   "FinancePage": {
@@ -962,6 +1020,10 @@
       "reset": "Azzera filtri",
       "instructorActive": "Filtro istruttore attivo",
       "instructorClear": "Rimuovi filtro istruttore"
+    },
+    "pdf": {
+      "totalDuration": "Durata totale",
+      "totalAmount": "Totale addebiti"
     }
   },
   "ExpiriesPage": {
@@ -1452,6 +1514,33 @@
       "genericError": "Non è stato possibile completare l'operazione. Riprova."
     },
     "empty": "Nessun PPR trovato per i filtri selezionati."
+  },
+  "Export": {
+    "button": "Esporta Excel",
+    "buttonPdf": "Esporta PDF"
+  },
+  "PdfExport": {
+    "generatedAt": "Generato il {date}",
+    "page": "Pag. {page} di {total}"
+  },
+  "SettingsPage": {
+    "kicker": "Amministrazione",
+    "title": "Impostazioni",
+    "description": "Configura il nome e il logo dell'aviosuperficie, usati nell'intestazione dei PDF esportati.",
+    "backToDashboard": "Torna alla dashboard",
+    "form": {
+      "nameLabel": "Nome aviosuperficie",
+      "logoLabel": "Logo",
+      "logoHint": "PNG o JPEG, max 200 KB. Usato nell'intestazione dei PDF esportati.",
+      "logoUpload": "Carica logo",
+      "logoRemove": "Rimuovi logo",
+      "logoPreviewAlt": "Anteprima logo",
+      "logoTooLarge": "Il file supera i 200 KB.",
+      "logoInvalidType": "Formato non supportato: usa PNG o JPEG.",
+      "save": "Salva",
+      "saved": "Impostazioni salvate.",
+      "error": "Non è stato possibile salvare le impostazioni. Riprova."
+    }
   },
   "Emails": {
     "invite": {

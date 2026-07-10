@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 /**
@@ -58,6 +59,7 @@ export const listPeopleQuerySchema = paginationQuerySchema.extend({
   // / `person.profiles.instructor`). Omitted entirely for the filter bar
   // (Dev Notes: "la barra filtri non filtra per profilo, com'è oggi").
   profile: z.enum(['pilot-or-student', 'instructor']).optional(),
+  ...exportQuerySchema.shape,
 });
 
 export type ListPeopleQuery = z.infer<typeof listPeopleQuerySchema>;
