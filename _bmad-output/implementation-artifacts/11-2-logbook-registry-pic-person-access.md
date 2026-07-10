@@ -1,5 +1,5 @@
 ---
-baseline_commit: TBD-set-at-dispatch
+baseline_commit: dfe6056
 ---
 
 # Story 11.2: Registro logbook, PIC e voli dalla scheda persona
