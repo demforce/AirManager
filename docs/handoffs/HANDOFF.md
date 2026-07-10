@@ -69,6 +69,8 @@ Costruire AirManager, il gestionale per un'aviosuperficie (piloti, velivoli, vol
 
 ## Verifica post-merge (questa sessione, dopo il merge di main nel branch PR #15)
 
-- (compilata dopo l'esecuzione — v. ultimo commit del branch)
+- **Un solo conflitto semantico** tra Epic 10 e TD-5, trovato dai gates e fixato (`7dcdd7b`): l'unit test 10.2 `exports.service.test.ts` pinnava `'1000,00 €'` (formato pre-TD-5) → `'1.000,00 €'`. Grep esaustivo sugli altri literal money in fascia: solo input/placeholder (parsing, non display) e regex già tolleranti — nessun altro cambio.
+- **Gates sul tree fuso**: lint PASS, typecheck PASS, **1211/1211 unit** (1207 Epic 10 + 4 TD-5), build PASS.
+- **Full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI**: **195/195 passed (3.5m, exit 0), zero flaky nel run** — 192 Epic 10 + 3 TD-5. Baseline confermata per le prossime sessioni: **195 e2e / 1211 unit / 29 migrazioni**.
 
 Ambiente (fallback manuale se l'hook SessionStart non gira): `service postgresql start`; ruolo/db airmanager; `.env` da `.env.example` (AUTH_SECRET random, JOBS_SECRET); `npm install`; `npx prisma migrate deploy && npx prisma db seed` (**29 migrazioni**; se il seed fallisce su SEED_ADMIN_PASSWORD: `set -a && . ./.env && set +a`); Mailpit `/root/go/bin/mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025` in background. Reset DB (SOLO sessione principale): `npm run db:reset` PRIMA di dev E review. Prima di ogni run e2e: `curl localhost:3000` deve FALLIRE (`fuser -k 3000/tcp`). Build SEMPRE via `npm run gates`. MAI `playwright install`. Utenti seed: admin@ / staff@ / pilot@ / instructor@ / student@airmanager.local (password = SEED_ADMIN_PASSWORD).
