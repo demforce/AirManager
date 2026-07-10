@@ -1,5 +1,5 @@
 ---
-baseline_commit: b679f80
+baseline_commit: c56b362
 ---
 
 # Story 10.3: Dashboard per ruolo complete
