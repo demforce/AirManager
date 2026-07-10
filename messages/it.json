@@ -33,13 +33,68 @@
     "myDiary": "Il mio diario",
     "myExpiries": {
       "heading": "Le mie scadenze",
-      "link": "Tutte le mie scadenze"
+      "link": "Tutte le mie scadenze",
+      "empty": "Nessuna scadenza registrata."
     },
     "pprPendingWidget": {
       "heading": "PPR in attesa",
       "link": "Vai alla coda PPR",
       "empty": "Nessuna richiesta PPR in attesa.",
       "count": "{count} in attesa"
+    },
+    "negativeBalancesWidget": {
+      "heading": "Saldi negativi",
+      "link": "Vai alle finanze",
+      "empty": "Nessun conto in negativo.",
+      "count": "{count} in negativo"
+    },
+    "expiriesWidget": {
+      "heading": "Scadenze",
+      "link": "Vai alle scadenze",
+      "empty": "Nessuna scadenza scaduta o in scadenza.",
+      "count": "{count} da verificare"
+    },
+    "bookingsTodayWidget": {
+      "heading": "Prenotazioni di oggi e domani",
+      "link": "Vai alle prenotazioni",
+      "empty": "Nessuna prenotazione per oggi o domani."
+    },
+    "aircraftOutOfServiceWidget": {
+      "heading": "Velivoli fuori servizio",
+      "link": "Vai ai velivoli",
+      "empty": "Nessun velivolo fuori servizio."
+    },
+    "accountWidget": {
+      "heading": "Il mio saldo",
+      "link": "Vai al mio conto",
+      "empty": "Nessun conto attivo."
+    },
+    "packagesWidget": {
+      "heading": "Pacchetti residui",
+      "link": "Vai al mio conto"
+    },
+    "upcomingBookingsWidget": {
+      "heading": "Prossime prenotazioni",
+      "link": "Vai alle prenotazioni",
+      "empty": "Nessuna prenotazione futura."
+    },
+    "recentFlightsWidget": {
+      "heading": "Ultimi voli",
+      "link": "Vai al registro voli",
+      "empty": "Nessun volo registrato."
+    },
+    "studentsWidget": {
+      "heading": "I miei allievi",
+      "link": "Vai alla scuola volo",
+      "empty": "Nessun allievo assegnato."
+    },
+    "schoolFlightsWidget": {
+      "heading": "Voli scuola recenti",
+      "link": "Vai al registro voli",
+      "empty": "Nessun volo scuola registrato."
+    },
+    "monthlyHoursWidget": {
+      "heading": "Ore scuola del mese"
     },
     "nav": {
       "people": "Persone",

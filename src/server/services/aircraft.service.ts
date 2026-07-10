@@ -181,6 +181,28 @@ export async function listAircraft(actor: Actor, query: ListAircraftQuery): Prom
   return paginate(items.map(toListItem), total, query);
 }
 
+/**
+ * Lists every aircraft currently OUT_OF_SERVICE (story 10.3, AC 1) — the
+ * staff home dashboard's "velivoli fuori servizio" widget (FR-41).
+ * `aircraft.manage` only, same gate as every other aircraft operation.
+ * Unlike `listAircraft`, this is unpaginated and filters on `status` (a
+ * filter `listAircraft` does not expose) — a fleet realistically has few
+ * aircraft grounded at once, and the home widget needs the full set, not a
+ * page. Archived aircraft are excluded, same default convention as
+ * `listAircraft`.
+ */
+export async function listOutOfServiceAircraft(actor: Actor): Promise<AircraftListItem[]> {
+  authorize(actor, 'aircraft.manage');
+
+  const aircraft = await prisma.aircraft.findMany({
+    where: { status: 'OUT_OF_SERVICE', archivedAt: null },
+    select: AIRCRAFT_SELECT,
+    orderBy: [{ registration: 'asc' }],
+  });
+
+  return aircraft.map(toListItem);
+}
+
 /** Returns a single aircraft. Access: `aircraft.manage`. */
 export async function getAircraft(actor: Actor, id: string): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
