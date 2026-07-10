@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useLocale } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
@@ -11,6 +12,7 @@ import {
   type PilotProfileRequestInput,
   type StudentProfileRequestInput,
 } from '@/lib/schemas/people';
+import { formatDateOnly } from '@/lib/time';
 
 /**
  * The three profiles a `Person` may activate (story 2.2, AC 1/2, AD-11).
@@ -362,6 +364,7 @@ type StudentSectionProps = {
 };
 
 function StudentSection({ personId, profile, labels, onSaved, readOnly }: StudentSectionProps) {
+  const moneyLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [editing, setEditing] = useState(false);
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -420,7 +423,7 @@ function StudentSection({ personId, profile, labels, onSaved, readOnly }: Studen
       {readOnly ? (
         profile ? (
           <p className="text-sm text-[#2F3437]">
-            {labels.student.courseStartDate}: {profile.courseStartDate}
+            {labels.student.courseStartDate}: {formatDateOnly(profile.courseStartDate, moneyLocale)}
           </p>
         ) : (
           <span />
@@ -466,7 +469,7 @@ function StudentSection({ personId, profile, labels, onSaved, readOnly }: Studen
         <div className="flex flex-wrap items-center justify-between gap-4">
           {profile ? (
             <p className="text-sm text-[#2F3437]">
-              {labels.student.courseStartDate}: {profile.courseStartDate}
+              {labels.student.courseStartDate}: {formatDateOnly(profile.courseStartDate, moneyLocale)}
             </p>
           ) : (
             <span />

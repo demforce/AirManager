@@ -2,6 +2,7 @@ import { createTranslator } from 'next-intl';
 import type { AppLocale } from '@/i18n/routing';
 import { buildWorkbook, type ExportColumn } from '@/server/adapters/excel/workbook';
 import { renderReportPdf, type PdfColumn, type PdfTotal } from '@/server/adapters/pdf/document';
+import { flightPicPerson } from '@/lib/flight-pic';
 import { formatCents, formatSignedCents } from '@/lib/money';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
 import type { ListAccountMovementsQuery } from '@/lib/schemas/accounts';
@@ -236,9 +237,27 @@ export async function exportFlightsXlsx(actor: Actor, query: ListFlightsQuery): 
       header: t('list.table.type'),
       value: (row) => flightTypeLabel(row.flightType, flightTypeLabels) + (row.isSolo ? ` — ${t('list.table.soloSuffix')}` : ''),
     },
+    // Story 11.3 (AC 2): partenza/arrivo/orari as SEPARATE columns (unlike
+    // the PDF's compact `tratta`/`orari`) — `null` on a historical
+    // (pre-11.1) flight, same as the DTO itself.
+    { header: t('list.table.departure'), value: (row) => row.departureAirfield },
+    { header: t('list.table.arrival'), value: (row) => row.arrivalAirfield },
+    { header: t('list.table.takeoffTime'), value: (row) => (row.takeoffAt ? formatTimeOfDay(row.takeoffAt, locale) : null) },
+    { header: t('list.table.landingTime'), value: (row) => (row.landingAt ? formatTimeOfDay(row.landingAt, locale) : null) },
     { header: t('list.table.duration'), value: (row) => formatMinutes(row.minutes) },
-    { header: t('list.table.amount'), value: (row) => row.breakdown.totalAmountCents / 100, numFmt: MONEY_NUM_FMT },
+    { header: t('list.table.takeoffs'), value: (row) => row.takeoffs },
     { header: t('list.table.landings'), value: (row) => row.landings },
+    {
+      // Story 11.3 (AC 4): the SAME shared `flightPicPerson` derivation as
+      // the registry (story 11.2) — `null` on the anomalous historical
+      // fallback (a dual SCHOOL flight with no instructor on record).
+      header: t('list.table.pic'),
+      value: (row) => {
+        const pic = flightPicPerson(row);
+        return pic ? `${pic.lastName} ${pic.firstName}` : null;
+      },
+    },
+    { header: t('list.table.amount'), value: (row) => row.breakdown.totalAmountCents / 100, numFmt: MONEY_NUM_FMT },
     {
       header: t('list.table.status'),
       value: (row) => (row.status === 'CANCELLED' ? t('filters.statusOptions.cancelled') : t('filters.statusOptions.registered')),
@@ -523,21 +542,70 @@ export async function exportFlightsPdf(actor: Actor, query: ListFlightsQuery): P
   const t = createTranslator({ locale, messages, namespace: 'FlightsPage' });
   const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school'), other: t('form.flightTypes.other') };
 
+  // Story 11.3 (AC 3): relative `width` weights, NOT equal `flex:1` anymore —
+  // found via the real-PDF render check (Dev Notes, T3): with 12 equal
+  // columns (up from 9 pre-11.3) an unbreakable token wider than its column
+  // — a bare `DD/MM/YYYY` date, an aircraft registration, react-pdf cannot
+  // hyphenate either — silently overflows into the next column instead of
+  // wrapping. Weights below give the widest content (date, aircraft, route,
+  // person/instructor/PIC names) more room, borrowed from columns that are
+  // always short (duration `H:MM`, movements `N / N`); declared deviation
+  // from equal-flex (Dev Notes explicitly allows this "SOLO se la verifica
+  // leggibilità lo impone").
   const columns: PdfColumn<(typeof result.items)[number]>[] = [
-    { header: t('list.table.date'), value: (row) => formatDateOnly(row.flightDate, locale) },
-    { header: t('list.table.aircraft'), value: (row) => row.aircraft.registration },
-    { header: t('list.table.person'), value: (row) => `${row.person.lastName} ${row.person.firstName}` },
-    { header: t('list.table.instructor'), value: (row) => (row.instructor ? `${row.instructor.lastName} ${row.instructor.firstName}` : '') },
+    { header: t('list.table.date'), value: (row) => formatDateOnly(row.flightDate, locale), width: 1.4 },
+    { header: t('list.table.aircraft'), value: (row) => row.aircraft.registration, width: 1.3 },
+    { header: t('list.table.person'), value: (row) => `${row.person.lastName} ${row.person.firstName}`, width: 1.1 },
+    {
+      header: t('list.table.instructor'),
+      value: (row) => (row.instructor ? `${row.instructor.lastName} ${row.instructor.firstName}` : ''),
+      width: 1.1,
+    },
     {
       header: t('list.table.type'),
       value: (row) => flightTypeLabel(row.flightType, flightTypeLabels) + (row.isSolo ? ` — ${t('list.table.soloSuffix')}` : ''),
     },
-    { header: t('list.table.duration'), value: (row) => formatMinutes(row.minutes) },
-    { header: t('list.table.amount'), value: (row) => formatCents(row.breakdown.totalAmountCents, locale) },
-    { header: t('list.table.landings'), value: (row) => (row.landings === null ? '' : String(row.landings)) },
+    // Compact columns (equal-flex A4 columns leave no room for the xlsx
+    // export's separate partenza/arrivo/orari) — SAME keys/format as the
+    // registry's own compact columns (story 11.2), EXCEPT the separator:
+    // the registry's `→` (U+2192) is outside the PDF's built-in Helvetica /
+    // WinAnsiEncoding repertoire (story 10.2: no `Font.register`, no new
+    // assets) — verified on a real render it comes out as a stray `'`, not
+    // an arrow. `->` is plain ASCII, renders correctly in any Latin-1 font.
+    // Empty string, never `null` (a PDF cell is always plain text) on a
+    // historical flight with no logbook data.
+    {
+      header: t('list.table.route'),
+      value: (row) => (row.departureAirfield && row.arrivalAirfield ? `${row.departureAirfield} -> ${row.arrivalAirfield}` : ''),
+      width: 1.3,
+    },
+    {
+      // Space around the en-dash (unlike the registry's bare `–`, story 11.2's
+      // format): "11:00–12:00" has no wrap point and overflowed the column
+      // even at the increased `width` — the space gives react-pdf's
+      // word-wrap a break point.
+      header: t('list.table.times'),
+      value: (row) =>
+        row.takeoffAt && row.landingAt ? `${formatTimeOfDay(row.takeoffAt, locale)} – ${formatTimeOfDay(row.landingAt, locale)}` : '',
+      width: 1.1,
+    },
+    { header: t('list.table.duration'), value: (row) => formatMinutes(row.minutes), width: 0.6 },
+    // `takeoffs`/`landings` are NEVER null on the wire (story 11.1) — replaces the old `landings`-only column.
+    { header: t('list.table.movements'), value: (row) => `${row.takeoffs} / ${row.landings}`, width: 0.7 },
+    {
+      // Story 11.3 (AC 4): SAME shared `flightPicPerson` derivation as the xlsx export/registry.
+      header: t('list.table.pic'),
+      value: (row) => {
+        const pic = flightPicPerson(row);
+        return pic ? `${pic.lastName} ${pic.firstName}` : '';
+      },
+      width: 1.1,
+    },
+    { header: t('list.table.amount'), value: (row) => formatCents(row.breakdown.totalAmountCents, locale), width: 1.1 },
     {
       header: t('list.table.status'),
       value: (row) => (row.status === 'CANCELLED' ? t('filters.statusOptions.cancelled') : t('filters.statusOptions.registered')),
+      width: 0.9,
     },
   ];
 

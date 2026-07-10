@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
 import { formatCents, parseCents } from '@/lib/money';
 import type { InstructorRateItemDto } from '@/lib/schemas/people';
-import { formatDateTime } from '@/lib/time';
+import { formatDateOnly, formatDateTime } from '@/lib/time';
 
 export type InstructorRatesPanelLabels = {
   heading: string;
@@ -301,7 +301,7 @@ export function InstructorRatesPanel({ personId, currentRatePriceCentsPerHour, c
               <tbody>
                 {history.map((entry) => (
                   <tr key={entry.id} data-testid="instructor-rate-history-row" className="border-b border-[#EAEAEA] text-[#111111]">
-                    <td className="py-2 pr-4 whitespace-nowrap">{entry.validFrom}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{formatDateOnly(entry.validFrom, moneyLocale)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatCents(entry.priceCentsPerHour, moneyLocale)}/h</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{entry.actorEmail}</td>
                     <td className="py-2 whitespace-nowrap text-[#787774]">{formatDateTime(new Date(entry.createdAt))}</td>

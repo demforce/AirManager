@@ -49,6 +49,12 @@ function todayDateOnly(): string {
 /** A safely-in-the-past date — always earlier than any run-unique aircraft's creation time. */
 const PAST_DATE = '2020-01-01';
 
+/** `YYYY-MM-DD` -> `DD/MM/YYYY`, the registry's own `formatDateOnly` presentation (story 11.3). */
+function ddmmyyyy(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
 }
@@ -148,9 +154,9 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2)', () => {
     await expect(page.getByTestId('rates-current')).toContainText(/160,00\s€/);
     const historyRows = page.getByTestId('rate-history-row');
     await expect(historyRows).toHaveCount(2);
-    await expect(historyRows.nth(0)).toContainText(today);
+    await expect(historyRows.nth(0)).toContainText(ddmmyyyy(today));
     await expect(historyRows.nth(0)).toContainText(/160,00\s€/);
-    await expect(historyRows.nth(1)).toContainText(PAST_DATE);
+    await expect(historyRows.nth(1)).toContainText(ddmmyyyy(PAST_DATE));
     await expect(historyRows.nth(1)).toContainText(/150,00\s€/);
   });
 

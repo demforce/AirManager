@@ -350,7 +350,7 @@ test.describe('Student-instructor assignment (Story 9.1, FR-32)', () => {
     const rows = page.getByTestId('own-student-row');
     await expect(rows).toHaveCount(1);
     await expect(rows).toContainText(`${studentX.lastName} ${studentX.firstName}`);
-    await expect(rows).toContainText('2026-01-15');
+    await expect(rows).toContainText('15/01/2026');
     await expect(rows).toContainText('1:30');
     await expect(rows.getByTestId('own-student-status-badge')).toContainText('Scaduta');
     await expect(page.getByText(`${studentY.lastName} ${studentY.firstName}`)).toHaveCount(0);

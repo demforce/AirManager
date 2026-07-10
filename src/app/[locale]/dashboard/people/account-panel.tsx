@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Link } from '@/i18n/navigation';
 import { formatCents, formatSignedCents, parseCents } from '@/lib/money';
+import { formatDateOnly } from '@/lib/time';
 import { paymentMethodSchema, type AccountMovementListItemDto, type AccountOverviewDto } from '@/lib/schemas/accounts';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { useAccountRefresh } from './account-refresh-context';
@@ -183,7 +184,7 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
                   >
                     <div>
                       <p className="text-[#111111]">{movementTypeLabel(movement.type, labels.movementType)}</p>
-                      <p className="text-xs text-[#787774]">{movement.effectiveDate}</p>
+                      <p className="text-xs text-[#787774]">{formatDateOnly(movement.effectiveDate, moneyLocale)}</p>
                     </div>
                     <span
                       className={`font-[family-name:var(--font-mono,monospace)] ${

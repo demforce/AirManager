@@ -290,7 +290,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                             {student.lastName} {student.firstName}
                           </Link>
                         </td>
-                        <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">{student.courseStartDate}</td>
+                        <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">{formatDateOnly(student.courseStartDate, locale as 'it' | 'en')}</td>
                         <td className="py-3 pr-4 whitespace-nowrap">{formatMinutes(student.totalMinutes)}</td>
                         <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">
                           {student.lastNoteDate ? formatDateOnly(student.lastNoteDate, locale as 'it' | 'en') : t('table.noNotes')}

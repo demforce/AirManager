@@ -1,7 +1,9 @@
 'use client';
 
+import { useLocale } from 'next-intl';
 import { useState } from 'react';
 import type { ExpiryProposalItemDto } from '@/lib/schemas/expiries';
+import { formatDateOnly } from '@/lib/time';
 
 export type ProposalsQueueLabels = {
   empty: string;
@@ -43,6 +45,7 @@ type PendingConfirm = { proposalId: string; decision: 'APPROVE' | 'REJECT' };
  * link) picks up the authoritative server count.
  */
 export function ProposalsQueue({ proposals: initialProposals, labels }: ProposalsQueueProps) {
+  const moneyLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [proposals, setProposals] = useState(initialProposals);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -108,12 +111,14 @@ export function ProposalsQueue({ proposals: initialProposals, labels }: Proposal
                 <td className="py-3 pr-4 font-medium whitespace-nowrap">{proposal.personName}</td>
                 <td className="py-3 pr-4 whitespace-nowrap">{proposal.typeName}</td>
                 <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">
-                  <span className="block">{proposal.currentIssuedAt} &rarr; {proposal.currentExpiresAt}</span>
+                  <span className="block">
+                    {formatDateOnly(proposal.currentIssuedAt, moneyLocale)} &rarr; {formatDateOnly(proposal.currentExpiresAt, moneyLocale)}
+                  </span>
                   {proposal.currentNotes ? <span className="block text-xs">{proposal.currentNotes}</span> : null}
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
                   <span className="block font-medium">
-                    {proposal.proposedIssuedAt} &rarr; {proposal.proposedExpiresAt}
+                    {formatDateOnly(proposal.proposedIssuedAt, moneyLocale)} &rarr; {formatDateOnly(proposal.proposedExpiresAt, moneyLocale)}
                   </span>
                   {proposal.proposedNotes ? <span className="block text-xs text-[#787774]">{proposal.proposedNotes}</span> : null}
                 </td>

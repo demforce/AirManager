@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-10 (11.2 dev — registro logbook, PIC e voli dalla scheda persona)
+last_updated: 2026-07-10 (11.3 dev — date italiane ovunque ed export logbook)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -120,5 +120,5 @@ development_status:
   epic-11: in-progress
   11-1-logbook-fields-derived-duration: done
   11-2-logbook-registry-pic-person-access: done
-  11-3-italian-dates-logbook-exports: ready-for-dev
+  11-3-italian-dates-logbook-exports: review
   epic-11-retrospective: optional

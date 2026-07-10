@@ -9,6 +9,7 @@ import { DataTable } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
 import { formatSignedCents, parseCents } from '@/lib/money';
 import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
+import { formatDateOnly } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
 export type AccountStatementRow = {
@@ -128,13 +129,13 @@ export function AccountStatementTable({
 
   function adjustmentBadgeText(row: AccountStatementRow): string {
     const original = row.reversalOfId ? rowById.get(row.reversalOfId) : undefined;
-    return original ? labels.adjustmentOfDate.replace('{date}', original.effectiveDate) : labels.adjustmentLinked;
+    return original ? labels.adjustmentOfDate.replace('{date}', formatDateOnly(original.effectiveDate, moneyLocale)) : labels.adjustmentLinked;
   }
 
   /** Story 5.3: the `reversalOfId` badge, generalized from `ADJUSTMENT` (story 3.3) to also cover a flight's `FLIGHT_CHARGE_REVERSAL` storno row. */
   function reversalBadgeText(row: AccountStatementRow): string {
     const original = row.reversalOfId ? rowById.get(row.reversalOfId) : undefined;
-    return original ? labels.reversalOfDate.replace('{date}', original.effectiveDate) : labels.reversalLinked;
+    return original ? labels.reversalOfDate.replace('{date}', formatDateOnly(original.effectiveDate, moneyLocale)) : labels.reversalLinked;
   }
 
   function handleSuccess(): void {
@@ -150,7 +151,7 @@ export function AccountStatementTable({
     {
       id: 'date',
       header: labels.date,
-      cell: ({ row }) => row.original.effectiveDate,
+      cell: ({ row }) => formatDateOnly(row.original.effectiveDate, moneyLocale),
     },
     {
       id: 'type',
@@ -256,6 +257,7 @@ export function AccountStatementTable({
             key={panel.originalMovement?.id ?? 'standalone'}
             personId={personId}
             originalMovement={panel.originalMovement}
+            moneyLocale={moneyLocale}
             labels={adjustmentLabels}
             onCancel={() => setPanel(null)}
             onSuccess={handleSuccess}
@@ -300,6 +302,7 @@ type AdjustmentFormProps = {
   personId: string;
   /** The movement this adjustment corrects (pre-fills `originalMovementId`), or `null` for a standalone rettifica. */
   originalMovement: AccountStatementRow | null;
+  moneyLocale: 'it' | 'en';
   labels: AdjustmentLabels;
   onCancel: () => void;
   onSuccess: () => void;
@@ -311,7 +314,7 @@ type AdjustmentFormProps = {
  * never typed. A 409 (the original gained a linked adjustment in the
  * meantime) gets its own clear message instead of the generic error.
  */
-function AdjustmentForm({ personId, originalMovement, labels, onCancel, onSuccess }: AdjustmentFormProps) {
+function AdjustmentForm({ personId, originalMovement, moneyLocale, labels, onCancel, onSuccess }: AdjustmentFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
 
@@ -367,7 +370,7 @@ function AdjustmentForm({ personId, originalMovement, labels, onCancel, onSucces
       <div>
         <h4 className="text-base font-medium text-[#111111]">{labels.title}</h4>
         {originalMovement ? (
-          <p className="mt-1 text-sm text-[#787774]">{labels.linkedTo.replace('{date}', originalMovement.effectiveDate)}</p>
+          <p className="mt-1 text-sm text-[#787774]">{labels.linkedTo.replace('{date}', formatDateOnly(originalMovement.effectiveDate, moneyLocale))}</p>
         ) : null}
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

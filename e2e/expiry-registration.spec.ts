@@ -36,9 +36,15 @@ function uniqueEmail(prefix: string): string {
   return `${prefix}-${uniqueSuffix()}@airmanager.local`;
 }
 
-/** A day `days` from NOW (can be negative), `YYYY-MM-DD` UTC — dates stay relative to actual test-run time (Dev Notes: computed status depends on real "today"). */
+/** A day `days` from NOW (can be negative), `YYYY-MM-DD` UTC — dates stay relative to actual test-run time (Dev Notes: computed status depends on real "today"). Used for API payloads and `<input type="date">` values, which stay ISO (AC 1). */
 function addDaysUtc(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Display counterpart of {@link addDaysUtc} — `DD/MM/YYYY`, the registry's own `formatDateOnly` presentation (story 11.3) — for `toContainText` assertions against rendered rows. */
+function addDaysDisplay(days: number): string {
+  const [y, m, d] = addDaysUtc(days).split('-');
+  return `${d}/${m}/${y}`;
 }
 
 type MailpitMessageSummary = { ID: string; Subject: string };
@@ -260,8 +266,8 @@ test.describe('Person expiries with computed status and proposal validation queu
     await expect(myRowAfterPropose.getByTestId('my-expiry-pending-badge')).toBeVisible();
     // The current row still shows the ORIGINAL expiresAt (AC 2: value stays
     // authoritative until staff decides) — the proposed date must not leak in.
-    await expect(myRowAfterPropose).toContainText(addDaysUtc(10));
-    await expect(myRowAfterPropose).not.toContainText(addDaysUtc(500));
+    await expect(myRowAfterPropose).toContainText(addDaysDisplay(10));
+    await expect(myRowAfterPropose).not.toContainText(addDaysDisplay(500));
 
     // A second proposal is blocked while one is pending.
     await expect(myRowAfterPropose).toContainText('Una proposta è già in attesa di validazione.');
@@ -272,8 +278,8 @@ test.describe('Person expiries with computed status and proposal validation queu
     await page.goto('/it/dashboard/expiries');
 
     const queueRow = page.getByTestId('proposal-row').filter({ hasText: expiryType.name });
-    await expect(queueRow).toContainText(addDaysUtc(10));
-    await expect(queueRow).toContainText(addDaysUtc(500));
+    await expect(queueRow).toContainText(addDaysDisplay(10));
+    await expect(queueRow).toContainText(addDaysDisplay(500));
     await queueRow.getByRole('button', { name: 'Approva' }).click();
     await queueRow.getByRole('button', { name: 'Conferma' }).click();
     await expect(page.getByTestId('proposals-queue-feedback')).toBeVisible();
@@ -281,7 +287,7 @@ test.describe('Person expiries with computed status and proposal validation queu
     // The scheda persona now reflects the approved values, pending badge gone.
     await page.goto(`/it/dashboard/people/${personId}`);
     const approvedRow = page.getByTestId('expiry-row').filter({ hasText: expiryType.name });
-    await expect(approvedRow).toContainText(addDaysUtc(500));
+    await expect(approvedRow).toContainText(addDaysDisplay(500));
     await expect(approvedRow.getByTestId('expiry-pending-badge')).toHaveCount(0);
 
     // A second proposal (now legal again, the first is decided) followed by
@@ -310,7 +316,7 @@ test.describe('Person expiries with computed status and proposal validation queu
     const finalRow = page.getByTestId('expiry-row').filter({ hasText: expiryType.name });
     // Still the APPROVED (first proposal's) value — the rejected second
     // proposal's date must never have been applied.
-    await expect(finalRow).toContainText(addDaysUtc(500));
-    await expect(finalRow).not.toContainText(addDaysUtc(900));
+    await expect(finalRow).toContainText(addDaysDisplay(500));
+    await expect(finalRow).not.toContainText(addDaysDisplay(900));
   });
 });

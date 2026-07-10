@@ -54,6 +54,12 @@ function todayDateOnly(): string {
 /** A safely-in-the-past date — always earlier than any run-unique person's creation time. */
 const PAST_DATE = '2020-01-01';
 
+/** `YYYY-MM-DD` -> `DD/MM/YYYY`, the registry's own `formatDateOnly` presentation (story 11.3). */
+function ddmmyyyy(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
 }
@@ -148,9 +154,9 @@ test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4
     await expect(panel.getByTestId('instructor-rates-current')).toContainText(/45,00\s€/);
     const historyRows = panel.getByTestId('instructor-rate-history-row');
     await expect(historyRows).toHaveCount(2);
-    await expect(historyRows.nth(0)).toContainText(today);
+    await expect(historyRows.nth(0)).toContainText(ddmmyyyy(today));
     await expect(historyRows.nth(0)).toContainText(/45,00\s€/);
-    await expect(historyRows.nth(1)).toContainText(PAST_DATE);
+    await expect(historyRows.nth(1)).toContainText(ddmmyyyy(PAST_DATE));
     await expect(historyRows.nth(1)).toContainText(/40,00\s€/);
   });
 

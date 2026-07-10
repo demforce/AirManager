@@ -130,24 +130,41 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
       'Persona',
       'Istruttore',
       'Tipo',
+      'Partenza',
+      'Arrivo',
+      'Ora decollo',
+      'Ora atterraggio',
       'Durata',
-      'Addebito',
+      'Decolli',
       'Atterraggi',
+      'PIC',
+      'Addebito',
       'Stato',
     ]);
     // Header + 2 data rows, matching the JSON total for the SAME filter (AC 1: "TUTTE le pagine").
     expect(sheet.rowCount).toBe(3);
 
     const rows = [sheet.getRow(2), sheet.getRow(3)];
-    const durations = rows.map((row) => row.getCell(6).value);
+    const durations = rows.map((row) => row.getCell(10).value);
     expect(durations).toEqual(expect.arrayContaining(['1:30', '0:30']));
     // Money cell: a real NUMERIC value (225,00 € for 90 min @ 150 €/h), not a formatted string.
-    const amountCell = rows.find((row) => row.getCell(6).value === '1:30')!.getCell(7);
+    const amountCell = rows.find((row) => row.getCell(10).value === '1:30')!.getCell(14);
     expect(amountCell.value).toBe(225);
     expect(amountCell.numFmt).toBe('#,##0.00 "€"');
     // Date cell: DD/MM/YYYY string (formatDateOnly), never the raw ISO date.
     expect(rows.map((row) => row.getCell(1).value)).toEqual(expect.arrayContaining(['10/03/2020', '11/03/2020']));
-    expect(rows.every((row) => row.getCell(9).value === 'Registrato')).toBe(true);
+    expect(rows.every((row) => row.getCell(15).value === 'Registrato')).toBe(true);
+
+    // New logbook columns (story 11.3, AC 2): partenza/arrivo/orari SEPARATE, decolli/atterraggi
+    // (default 1, `registerFlight` never sets them), PIC — all deterministic given the
+    // 'Base Airfield'/10:00Z fixture `registerFlight` composes (Dev Notes).
+    expect(rows.every((row) => row.getCell(6).value === 'Base Airfield')).toBe(true); // partenza
+    expect(rows.every((row) => row.getCell(7).value === 'Base Airfield')).toBe(true); // arrivo
+    expect(rows.every((row) => row.getCell(8).value === '11:00')).toBe(true); // ora decollo (10:00Z -> CET +1, March)
+    expect(rows.every((row) => row.getCell(11).value === 1)).toBe(true); // decolli (default)
+    expect(rows.every((row) => row.getCell(12).value === 1)).toBe(true); // atterraggi (default)
+    // PIC: TOURISM (non-SCHOOL) -> the flight's own person (story 11.2's derivation, AC 4's shared helper).
+    expect(rows.every((row) => row.getCell(13).value === `${pilot.lastName} ${pilot.firstName}`)).toBe(true);
   });
 
   test('locale=en renders English column headers on the same export (AC 2)', async ({ page }) => {
