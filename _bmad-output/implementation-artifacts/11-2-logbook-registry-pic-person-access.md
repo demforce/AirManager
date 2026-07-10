@@ -4,7 +4,7 @@ baseline_commit: dfe6056
 
 # Story 11.2: Registro logbook, PIC e voli dalla scheda persona
 
-Status: review
+Status: done
 
 ## Story
 
@@ -110,3 +110,15 @@ Claude Sonnet 5 (dev subagent, xhigh)
 - **Column placement order** (data, tratta, orari, [existing columns], decolli/atterraggi, PIC, stato, azioni) is my own literal reading of AC 1's enumeration order — the story's Contesto only pins the date column first and states the 4 new fields as "colonne COMPATTE", without prescribing exact interleaving. Flagging the ordering choice for the reviewer's eyes even though it's not a deviation from any explicit instruction.
 - **Registry `min-w-[860px]` → `min-w-[1280px]`** — the story says "va allargato con misura" without a number; 1280px is empirically measured (Playwright screenshots at 1440px show all 13 columns readable without the table's own horizontal scrollbar engaging, while 375px still correctly triggers `overflow-x-auto` exactly as pre-story).
 - **No coverage (unit OR e2e) of the `noValue` ("—") fallback for the tratta/orari cells on a historical, pre-11.1 flight with null logbook fields.** Dev Notes offered two explicit options — a direct psql `INSERT` in a test, or "accettare la copertura solo-unit del rendering null (dichiarare la scelta)" — and required declaring whichever was chosen. I did NEITHER: the fresh DB genuinely has zero such flights (confirmed, per the environment setup) and I did not add a psql-backed test, nor did I extract the inline ternary (`flight.departureAirfield && flight.arrivalAirfield ? ... : noValue`) into a separately unit-testable pure function (that extraction wasn't asked for by any task and would have been a speculative refactor of otherwise-simple JSX). This is a genuine gap, not a considered trade-off — flagging it plainly for the reviewer rather than retroactively dressing it up as a deliberate choice. The logic itself is a one-line ternary with low complexity/risk, but it is unverified by this story's test suite.
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (xhigh)**, adversarial. **Verdict: clean-pass.** 3 nit, nessun fix richiesto.
+
+- **Priorità zero — full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI**: **197 passed / 0 failed / 0 flaky** (194 baseline + 3 nuovi: logbook/PIC in flights.spec, 2 pannello scheda in person-detail.spec). Gates: lint/typecheck/build verdi, **1215/1215 unit**. Ban rispettato: zero file schema/service/API/migrazioni nel diff.
+- **Gap del dev chiusi dal reviewer**: (a) fallback `—` per voli storici pre-11.1 — INSERT psql di un volo con campi logbook NULL e verifica LIVE su prod build (registro IT/EN + pannello scheda: tratta/orari `—`, nessun crash; esercitato per la prima volta anche il ramo PIC non-SCHOOL→person); (b) ramo "non staff, non titolare" del pannello — RATIFICATO come defensive code irraggiungibile: in rbac.ts `people.read` e `flights.manage` sono co-concessi (solo ADMIN/STAFF), chi supera il gate della pagina ha sempre `flights.manage`.
+- **Verifica indipendente del fix regex del dev**: analisi \b-anchoring per durate 0:00–99:59 vs colonna orari + run verde di `package-consumption:141` — nessuna collisione residua.
+- **Verifica live (prod, admin + pilota titolare, IT/EN)**: header 13 colonne (12 per il pilota, senza Azioni), DD/MM/YYYY ovunque, PIC corretto sui 3 rami, link "Vedi tutti" per-ruolo (`?personId=` staff, nudo per titolare), mobile 375px: body MAI in scroll orizzontale, overflow interno alla tabella.
+- **112-N1 (nit, accettato)**: colonna PIC lontana da Persona/Istruttore — lettura letterale dell'AC, nessun churn richiesto; eventuale pass di leggibilità futuro.
+- **112-N2 (nit, accettato — PRE-esistente)**: `<th>` senza `scope="col"` e tabella senza `<caption>` — gap a11y dell'intera tabella hand-written, da pass a11y dedicato (deferred).
+- **112-N3 (nit, accettato)**: fallback tratta del pannello scheda riusa `personalData.noValue` invece di una chiave locale — borrow innocuo nello stesso namespace.
