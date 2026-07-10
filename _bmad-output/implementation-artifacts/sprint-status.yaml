@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-10 (9-2 done con review clean-pass; prossima: 9-3)
+last_updated: 2026-07-10 (9-3 story file creato, ready-for-dev)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -105,7 +105,7 @@ development_status:
   epic-9: in-progress
   9-1-student-instructor-assignment: done
   9-2-training-notes: done
-  9-3-school-hour-summaries: backlog
+  9-3-school-hour-summaries: ready-for-dev
   epic-9-retrospective: optional
 
   epic-10: backlog
