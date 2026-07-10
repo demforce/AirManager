@@ -4,8 +4,8 @@ import { z } from './zod-with-openapi';
 
 // --- Flight logging with automatic charges (story 5.1, Task 4, AC 1/2/3/4) --
 
-/** Mirrors the Prisma `FlightType` enum (story 5.1) — see the Prisma model doc for what each value means. */
-export const flightTypeSchema = z.enum(['PRIVATE', 'SCHOOL', 'OTHER']);
+/** Mirrors the Prisma `FlightType` enum (story 5.1; values renamed to the real-world taxonomy in story 9.4) — see the Prisma model doc for what each value means. */
+export const flightTypeSchema = z.enum(['TOURISM', 'SCHOOL', 'AERIAL_WORK']);
 
 export type FlightTypeDto = z.infer<typeof flightTypeSchema>;
 
@@ -15,17 +15,21 @@ export const flightStatusSchema = z.enum(['REGISTERED', 'CANCELLED']);
 export type FlightStatusDto = z.infer<typeof flightStatusSchema>;
 
 /**
- * `GET /api/v1/flights` query (story 5.4, AC 1/2/3/4): every filter is
- * optional and AND-combinable. `dateFrom`/`dateTo` bound `flightDate`
- * (`@db.Date`, date-only string comparison is safe here because `z.iso.date()`
- * guarantees the fixed-width `YYYY-MM-DD` shape — same reasoning as
- * `cashReportQuerySchema`); the `.refine` below rejects an inverted range with
- * a plain 422 `VALIDATION_ERROR` (Contesto: no custom code needed for this
- * one). `aircraftId`/`personId`/`flightType`/`status` are exact-match filters
- * — an id that does not exist simply yields zero results (a filter, never a
- * lookup, so never a 404). A non-staff actor's `personId` filter is further
- * constrained server-side (`flights.service.ts#listFlights`, AC 4): providing
- * anyone else's id is a 403, never silently ignored or narrowed.
+ * `GET /api/v1/flights` query (story 5.4, AC 1/2/3/4; story 9.3, AC 4):
+ * every filter is optional and AND-combinable. `dateFrom`/`dateTo` bound
+ * `flightDate` (`@db.Date`, date-only string comparison is safe here because
+ * `z.iso.date()` guarantees the fixed-width `YYYY-MM-DD` shape — same
+ * reasoning as `cashReportQuerySchema`); the `.refine` below rejects an
+ * inverted range with a plain 422 `VALIDATION_ERROR` (Contesto: no custom
+ * code needed for this one). `aircraftId`/`personId`/`instructorPersonId`/
+ * `flightType`/`status` are exact-match filters — an id that does not exist
+ * simply yields zero results (a filter, never a lookup, so never a 404).
+ * `instructorPersonId` is a `Person.id`, resolved server-side to the
+ * `instructorProfile` relation (story 9.3's `/dashboard/flights?instructorPersonId=…`
+ * drill-down from the school hour summaries). A non-staff actor's `personId`/
+ * `instructorPersonId` filter is further constrained server-side
+ * (`flights.service.ts#listFlights`, AC 4): providing anyone else's id is a
+ * 403, never silently ignored or narrowed.
  */
 export const listFlightsQuerySchema = paginationQuerySchema
   .extend({
@@ -33,6 +37,7 @@ export const listFlightsQuerySchema = paginationQuerySchema
     dateTo: z.iso.date().optional(),
     aircraftId: z.string().trim().min(1).optional(),
     personId: z.string().trim().min(1).optional(),
+    instructorPersonId: z.string().trim().min(1).optional(),
     flightType: flightTypeSchema.optional(),
     status: flightStatusSchema.optional(),
   })
@@ -60,6 +65,9 @@ export const registerFlightSchema = z
     instructorPersonId: z.string().min(1).nullish(),
     flightDate: z.iso.date(),
     flightType: flightTypeSchema,
+    // Dual/solo distinction on SCHOOL flights (story 9.4) — the service
+    // rejects `true` on a non-SCHOOL flightType (422 `SOLO_REQUIRES_SCHOOL`).
+    isSolo: z.boolean().optional().default(false),
     // Capped at 1440 (24h) — a single flight cannot plausibly last longer
     // (same defense-in-depth cap philosophy as `hourMeterMinutes`).
     minutes: z.number().int().min(1).max(1440).optional(),
@@ -173,6 +181,8 @@ export const flightListItemSchema = z.object({
   id: z.string(),
   flightDate: z.iso.date(),
   flightType: flightTypeSchema,
+  /** Story 9.4 — dual/solo distinction, meaningful only when `flightType === 'SCHOOL'`. */
+  isSolo: z.boolean(),
   status: flightStatusSchema,
   minutes: z.number().int().positive(),
   hourMeterStart: z.number().int().nullable(),

@@ -30,6 +30,8 @@ export type Permission =
   | 'bookings.manage.own'
   | 'bookings.manage.any'
   | 'school.manage.own'
+  | 'school.manage.any'
+  | 'school.notes.manage.any'
   | 'expiries.manage'
   | 'expiries.propose.own'
   | 'ppr.manage'
@@ -46,6 +48,8 @@ const ALL_PERMISSIONS: Permission[] = [
   'bookings.manage.own',
   'bookings.manage.any',
   'school.manage.own',
+  'school.manage.any',
+  'school.notes.manage.any',
   'expiries.manage',
   'expiries.propose.own',
   'ppr.manage',
@@ -82,6 +86,14 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'finance.manage',
     'flights.manage',
     'bookings.manage.any',
+    // Story 9.1 (FR-32): staff assigns/removes a student's instructor(s)
+    // from the scheda persona — the "any" counterpart to the instructor's
+    // own `school.manage.own` (their own students' view at `/dashboard/school`).
+    'school.manage.any',
+    // Story 9.2 (FR-33): deliberately NO `school.notes.manage.any` here — an
+    // admin's override to edit ANY training note past its 7-day window is
+    // reserved to ADMIN alone (via `ALL_PERMISSIONS` above), never staff,
+    // per the story's literal AC 3 ("solo l'autore o l'admin").
     'expiries.manage',
     // Story 8.2 (FR-23): staff approves/rejects PPR requests — the queue at
     // `/dashboard/ppr` and the operating-instructions GET (edit stays

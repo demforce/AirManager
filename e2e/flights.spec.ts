@@ -323,7 +323,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     await loginExpectingDashboard(page, pilot.email, 'PilotFlightsForbidden1!');
 
     const response = await page.request.post('/api/v1/flights', {
-      data: { aircraftId: 'whatever', personId: pilot.personId, flightDate: PAST_DATE, flightType: 'PRIVATE', minutes: 30 },
+      data: { aircraftId: 'whatever', personId: pilot.personId, flightDate: PAST_DATE, flightType: 'TOURISM', minutes: 30 },
     });
     expect(response.status()).toBe(403);
     const body = (await response.json()) as { error: { code: string } };

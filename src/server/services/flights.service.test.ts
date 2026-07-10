@@ -178,7 +178,8 @@ const ACCOUNT_OVERVIEW = { account: { id: 'account_1', createdAt: new Date('2026
 const CREATED_FLIGHT_ROW = {
   id: 'flight_1',
   flightDate: new Date('2020-01-15T00:00:00.000Z'),
-  flightType: 'PRIVATE' as const,
+  flightType: 'TOURISM' as const,
+  isSolo: false,
   status: 'REGISTERED' as const,
   minutes: 80,
   hourMeterStart: null,
@@ -229,7 +230,7 @@ const BASE_INPUT = registerFlightSchema.parse({
   aircraftId: 'aircraft_1',
   personId: 'person_1',
   flightDate: '2020-01-15',
-  flightType: 'PRIVATE',
+  flightType: 'TOURISM',
   minutes: 80,
 });
 
@@ -379,7 +380,8 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         aircraftId: 'aircraft_1',
         personId: 'person_1',
         flightDate: '2020-01-15',
-        flightType: 'PRIVATE',
+        flightType: 'TOURISM',
+        isSolo: false,
         hourMeterStart: 1050,
         hourMeterEnd: 1050,
       };
@@ -400,7 +402,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         aircraftId: 'aircraft_1',
         personId: 'person_1',
         flightDate: '2020-01-15',
-        flightType: 'PRIVATE',
+        flightType: 'TOURISM',
         hourMeterStart: 1000,
         hourMeterEnd: 1050,
       });
@@ -424,6 +426,31 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
       await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR' });
       expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    // Story 9.4 (AC 1): isSolo is only meaningful on a SCHOOL flight.
+    it('throws a 422 SOLO_REQUIRES_SCHOOL when isSolo=true on a non-SCHOOL flight', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'TOURISM', isSolo: true });
+
+      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'SOLO_REQUIRES_SCHOOL' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('accepts isSolo=true on a SCHOOL flight WITH an instructor (the student is PIC, but the instructor is still required)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL', isSolo: true });
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: true, instructorPersonId: 'person_instructor' });
+
+      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ isSolo: true }) }));
     });
 
     it('throws a 422 INSTRUCTOR_SAME_AS_PILOT when instructorPersonId === personId', async () => {
@@ -569,7 +596,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
             aircraftId: 'aircraft_1',
             personId: 'person_1',
             instructorProfileId: null,
-            flightType: 'PRIVATE',
+            flightType: 'TOURISM',
             minutes: 80,
             aircraftRateCentsPerHour: 15000,
             aircraftAmountCents: 20000,
@@ -691,11 +718,36 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
     });
 
-    it('an instructor is allowed (never required) on a PRIVATE flight (e.g. a checkride)', async () => {
+    // Story 9.4 (AC 1): "stesso importo istruttore su DC e solista a parità di
+    // durata/tariffa" — isSolo is metadata only, never a monetary branch.
+    it('charges the SAME aircraft/instructor amounts for a dual and a solo SCHOOL flight at the same rate/duration', async () => {
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL', isSolo: false });
+      const dualInput = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: false, instructorPersonId: 'person_instructor' });
+      await registerFlight(staffActor(), dualInput);
+
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL', isSolo: true });
+      const soloInput = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: true, instructorPersonId: 'person_instructor' });
+      await registerFlight(staffActor(), soloInput);
+
+      expect(flightCreateMock).toHaveBeenCalledTimes(2);
+      const dualData = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+      const soloData = (flightCreateMock.mock.calls[1]?.[0] as { data: Record<string, unknown> }).data;
+      expect(dualData['isSolo']).toBe(false);
+      expect(soloData['isSolo']).toBe(true);
+      expect(dualData['instructorAmountCents']).toBe(soloData['instructorAmountCents']);
+      expect(dualData['aircraftAmountCents']).toBe(soloData['aircraftAmountCents']);
+    });
+
+    it('an instructor is allowed (never required) on a TOURISM flight (e.g. a checkride)', async () => {
       personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
       getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, instructorRateCentsPerHour: 10000, instructorAmountCents: 13333 });
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'PRIVATE', instructorPersonId: 'person_instructor' });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'TOURISM', instructorPersonId: 'person_instructor' });
 
       await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
     });
@@ -1078,7 +1130,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftId: 'aircraft_1',
       personId: 'person_1',
       flightDate: '2020-01-15',
-      flightType: 'PRIVATE',
+      flightType: 'TOURISM',
       minutes: 30,
       reason: 'Errore minuti',
     });
@@ -1393,6 +1445,44 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       );
     });
 
+    // Story 9.3, AC 4 — `instructorPersonId` gets the exact same guard shape
+    // as `personId` above (the "Le mie ore scuola" drill-down).
+    it('staff: instructorPersonId is a plain exact-match filter via the instructorProfile relation', async () => {
+      flightFindMany.mockResolvedValue([]);
+      flightCount.mockResolvedValue(0);
+
+      await listFlights(staffActor(), baseQuery({ instructorPersonId: 'person_instructor_9' }));
+
+      expect(flightFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { instructorProfile: { personId: 'person_instructor_9' } },
+        }),
+      );
+    });
+
+    it('non-staff filtering by someone else\'s instructorPersonId -> Forbidden, no query issued (AC 4)', async () => {
+      await expect(
+        listFlights(instructorActor(), baseQuery({ instructorPersonId: 'person_someone_else' })),
+      ).rejects.toThrow(ForbiddenError);
+      expect(flightFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('non-staff filtering by their OWN instructorPersonId is allowed (the school-summary drill-down)', async () => {
+      flightFindMany.mockResolvedValue([]);
+      flightCount.mockResolvedValue(0);
+
+      await listFlights(instructorActor(), baseQuery({ instructorPersonId: 'person_instructor' }));
+
+      expect(flightFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [{ personId: 'person_instructor' }, { instructorProfile: { personId: 'person_instructor' } }],
+            instructorProfile: { personId: 'person_instructor' },
+          },
+        }),
+      );
+    });
+
     it('non-staff with no linked person (personId null) gets an empty page, no query at all', async () => {
       const result = await listFlights(pilotActor(null), baseQuery());
 
@@ -1418,7 +1508,7 @@ describe('registerFlightSchema (story 5.1, Task 4, AC 1/2/3; AD-2)', () => {
     aircraftId: 'aircraft_1',
     personId: 'person_1',
     flightDate: '2026-07-08',
-    flightType: 'PRIVATE' as const,
+    flightType: 'TOURISM' as const,
   };
 
   it('accepts minutes alone', () => {
@@ -1494,6 +1584,7 @@ describe('listFlightsQuerySchema (story 5.4, Task 1 — all six filters optional
       dateTo: '2026-01-31',
       aircraftId: 'aircraft_1',
       personId: 'person_1',
+      instructorPersonId: 'person_2',
       flightType: 'SCHOOL',
       status: 'CANCELLED',
     });

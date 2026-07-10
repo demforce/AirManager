@@ -33,7 +33,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     ...authConfig.callbacks,
     // Overrides the edge-safe `jwt` above: same sign-in field assignment,
     // plus the `isActive` DB recheck (AC 2) — Node runtime only, since this
-    // instance (unlike `auth-edge.ts`) has Prisma available.
+    // instance (unlike `src/proxy.ts`'s `getToken` read) has Prisma available.
     async jwt(params) {
       const token = authConfig.callbacks.jwt(params);
       if (params.user) {

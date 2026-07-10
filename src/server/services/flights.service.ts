@@ -188,6 +188,8 @@ export type FlightListItem = {
   /** Calendar-only date (`YYYY-MM-DD`) — see `toDateOnlyString`. */
   flightDate: string;
   flightType: FlightType;
+  /** Story 9.4 — dual/solo distinction, meaningful only when `flightType === 'SCHOOL'`. */
+  isSolo: boolean;
   status: FlightStatus;
   minutes: number;
   hourMeterStart: number | null;
@@ -222,6 +224,7 @@ const FLIGHT_SELECT = {
   id: true,
   flightDate: true,
   flightType: true,
+  isSolo: true,
   status: true,
   minutes: true,
   hourMeterStart: true,
@@ -263,6 +266,7 @@ type SelectedFlight = {
   id: string;
   flightDate: Date;
   flightType: FlightType;
+  isSolo: boolean;
   status: FlightStatus;
   minutes: number;
   hourMeterStart: number | null;
@@ -301,6 +305,7 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightL
     id: flight.id,
     flightDate: toDateOnlyString(flight.flightDate),
     flightType: flight.flightType,
+    isSolo: flight.isSolo,
     status: flight.status,
     minutes: flight.minutes,
     hourMeterStart: flight.hourMeterStart,
@@ -452,6 +457,13 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Pro
     throw new ValidationError('A SCHOOL flight requires an instructor.', undefined, 'SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR');
   }
 
+  // Story 9.4: the dual/solo distinction only makes sense on a SCHOOL
+  // flight — a solo carries (and bills) the instructor exactly like dual,
+  // it only flips who is PIC (derived, never stored).
+  if (input.isSolo && input.flightType !== 'SCHOOL') {
+    throw new ValidationError('isSolo is only valid on a SCHOOL flight.', undefined, 'SOLO_REQUIRES_SCHOOL');
+  }
+
   const instructorPersonId = input.instructorPersonId ?? null;
   let instructorProfileId: string | null = null;
   if (instructorPersonId) {
@@ -526,6 +538,8 @@ type RegisterFlightCoreInput = {
   /** `YYYY-MM-DD`, exactly `input.flightDate` — for the auto-generated movement description. */
   flightDateDisplay: string;
   flightType: FlightType;
+  /** Story 9.4 — dual/solo distinction, already validated by `resolveFlightInput` against `flightType`. */
+  isSolo: boolean;
   minutes: number;
   hourMeterStart: number | null;
   hourMeterEnd: number | null;
@@ -650,6 +664,7 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
       instructorProfileId: params.instructorProfileId,
       flightDate: params.flightDate,
       flightType: params.flightType,
+      isSolo: params.isSolo,
       minutes: params.minutes,
       hourMeterStart: params.hourMeterStart,
       hourMeterEnd: params.hourMeterEnd,
@@ -803,6 +818,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       flightDate: resolved.flightDate,
       flightDateDisplay: input.flightDate,
       flightType: input.flightType,
+      isSolo: input.isSolo,
       minutes: resolved.minutes,
       hourMeterStart: resolved.hourMeterStart,
       hourMeterEnd: resolved.hourMeterEnd,
@@ -1128,6 +1144,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       flightDate: resolved.flightDate,
       flightDateDisplay: input.flightDate,
       flightType: input.flightType,
+      isSolo: input.isSolo,
       minutes: resolved.minutes,
       hourMeterStart: resolved.hourMeterStart,
       hourMeterEnd: resolved.hourMeterEnd,
@@ -1173,10 +1190,13 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
  *   still narrow it down on request). `actorEmail` is omitted (Contesto: a
  *   titolare never learns who registered the movement).
  *
- * `personId` filter guard (AC 4, Contesto): for a non-staff actor, providing
- * anyone else's id is a 403 — checked BEFORE any query, never silently
- * ignored or narrowed (never enumerate/filter another person's data via a
- * filter). Providing exactly the actor's own id is redundant but harmless.
+ * `personId`/`instructorPersonId` filter guard (AC 4, Contesto; story 9.3
+ * extends the SAME guard to `instructorPersonId`): for a non-staff actor,
+ * providing anyone else's id is a 403 — checked BEFORE any query, never
+ * silently ignored or narrowed (never enumerate/filter another person's data
+ * via a filter). Providing exactly the actor's own id is redundant but
+ * harmless — this is exactly how the 9.3 school-summary "Le mie ore"
+ * drill-down reaches the registry as a non-staff instructor.
  *
  * `actor.personId === null` with only `self.read` (AC 1, Contesto): nothing
  * is "theirs" — an EMPTY page, without ever touching `Flight`, not a 403
@@ -1186,8 +1206,10 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
  * Filters (all optional, AND-combined): `dateFrom`/`dateTo` bound
  * `flightDate` via `parseDateOnlyUtc` (`@db.Date`, review 3.5 F1's lesson —
  * NEVER a raw timestamp comparison); `aircraftId`/`personId`/`flightType`/
- * `status` are plain exact matches. Order/pagination unchanged from 5.1
- * (`flightDate desc, createdAt desc, id desc`; `paginate`/`paginationOffset`).
+ * `status` are plain exact matches; `instructorPersonId` (story 9.3, AC 4)
+ * matches via the `instructorProfile` relation. Order/pagination unchanged
+ * from 5.1 (`flightDate desc, createdAt desc, id desc`; `paginate`/
+ * `paginationOffset`).
  */
 export async function listFlights(actor: Actor, query: ListFlightsQuery): Promise<FlightListResult> {
   const canManage = hasPermission(actor, 'flights.manage');
@@ -1199,6 +1221,11 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
   // personId).
   if (!canManage && query.personId && query.personId !== actor.personId) {
     throw new ForbiddenError('Actor may only filter their own flights.');
+  }
+
+  // Story 9.3, AC 4 — same guard shape as `personId` above.
+  if (!canManage && query.instructorPersonId && query.instructorPersonId !== actor.personId) {
+    throw new ForbiddenError('Actor may only filter flights by their own instructorPersonId.');
   }
 
   // AC 1/Contesto — an own-access actor with no linked person has nothing of
@@ -1219,6 +1246,7 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
       : {}),
     ...(query.aircraftId ? { aircraftId: query.aircraftId } : {}),
     ...(query.personId ? { personId: query.personId } : {}),
+    ...(query.instructorPersonId ? { instructorProfile: { personId: query.instructorPersonId } } : {}),
     ...(query.flightType ? { flightType: query.flightType } : {}),
     ...(query.status ? { status: query.status } : {}),
   };

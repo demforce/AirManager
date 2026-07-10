@@ -17,6 +17,7 @@ type PageProps = {
     dateTo?: string;
     aircraftId?: string;
     personId?: string;
+    instructorPersonId?: string;
     flightType?: string;
     status?: string;
   }>;
@@ -37,7 +38,7 @@ const OPTIONS_PAGE_SIZE = 100;
 const FLIGHTS_PAGE_SIZE = 20;
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const FLIGHT_TYPES: readonly FlightTypeDto[] = ['PRIVATE', 'SCHOOL', 'OTHER'];
+const FLIGHT_TYPES: readonly FlightTypeDto[] = ['TOURISM', 'SCHOOL', 'AERIAL_WORK'];
 const FLIGHT_STATUSES: readonly FlightStatusDto[] = ['REGISTERED', 'CANCELLED'];
 
 /** Hand-edited URL defense: only a well-formed `YYYY-MM-DD` reaches the service (same pattern as `FinancePage`'s `sanitizeDateParam`). */
@@ -102,6 +103,18 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
   // accident).
   const aircraftId = canManage ? (sp.aircraftId || undefined) : undefined;
   const personId = canManage ? (sp.personId || undefined) : undefined;
+  // Story 9.3 (AC 4): UNLIKE aircraftId/personId above (staff-only), a
+  // non-staff actor MAY use this filter — but only on their OWN personId
+  // (the "Le mie ore scuola"/"Apri nel registro" drill-down from the school
+  // hour summaries). Anyone else's id is dropped here, never forwarded —
+  // `listFlights` would 403 it anyway, but a non-staff actor who never asked
+  // for someone else's data should never see that 403 surface.
+  const instructorPersonIdParam = sp.instructorPersonId || undefined;
+  const instructorPersonId = canManage
+    ? instructorPersonIdParam
+    : instructorPersonIdParam && instructorPersonIdParam === actor.personId
+      ? instructorPersonIdParam
+      : undefined;
 
   // Sequential, not `Promise.all` (5.1 Debug Log: concurrent `$transaction`s
   // on the shared driver-adapter Prisma client trigger a `pg` "client is
@@ -147,7 +160,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
     }));
   }
 
-  const flightsQuery = { pageSize: FLIGHTS_PAGE_SIZE, dateFrom, dateTo, aircraftId, personId, flightType, status };
+  const flightsQuery = { pageSize: FLIGHTS_PAGE_SIZE, dateFrom, dateTo, aircraftId, personId, instructorPersonId, flightType, status };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   let flightsResult = await listFlights(actor, { ...flightsQuery, page });
   // Clamp an out-of-range ?page to the last real page (same pattern as `FinancePage`).
@@ -175,7 +188,9 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
     status: status ?? '',
   };
 
-  const filterQuery = {
+  // Shared by every filter/pagination link EXCEPT the instructor chip's own
+  // "Rimuovi" action below (AC 4's "azione di rimozione").
+  const baseFilterQuery = {
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
     ...(aircraftId ? { aircraftId } : {}),
@@ -183,6 +198,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
     ...(flightType ? { flightType } : {}),
     ...(status ? { status } : {}),
   };
+  const filterQuery = { ...baseFilterQuery, ...(instructorPersonId ? { instructorPersonId } : {}) };
 
   function pageHref(targetPage: number) {
     return { pathname: '/dashboard/flights', query: { page: targetPage, ...filterQuery } };
@@ -211,6 +227,23 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
             {t('backToDashboard')}
           </Link>
         </div>
+
+        {instructorPersonId ? (
+          <div
+            className="mt-6 flex flex-wrap items-center gap-3 rounded-[8px] border border-[#EAEAEA] bg-[#F7F6F3] px-4 py-2 text-sm text-[#2F3437]"
+            data-testid="flight-instructor-filter-banner"
+          >
+            <span>{t('filters.instructorActive')}</span>
+            <Link
+              href={{ pathname: '/dashboard/flights', query: baseFilterQuery }}
+              locale={locale as AppLocale}
+              data-testid="flight-instructor-filter-clear"
+              className="font-medium underline-offset-4 hover:underline"
+            >
+              {t('filters.instructorClear')}
+            </Link>
+          </div>
+        ) : null}
 
         <div className="mt-10">
           <FlightsManager
@@ -247,6 +280,11 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   school: t('form.flightTypes.school'),
                   other: t('form.flightTypes.other'),
                 },
+                soloMode: t('form.soloMode'),
+                soloModes: {
+                  dual: t('form.soloModes.dual'),
+                  solo: t('form.soloModes.solo'),
+                },
                 durationMode: t('form.durationMode'),
                 durationModes: {
                   minutes: t('form.durationModes.minutes'),
@@ -266,6 +304,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   NO_AIRCRAFT_RATE: t('form.errors.NO_AIRCRAFT_RATE'),
                   NO_INSTRUCTOR_RATE: t('form.errors.NO_INSTRUCTOR_RATE'),
                   SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR: t('form.errors.SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR'),
+                  SOLO_REQUIRES_SCHOOL: t('form.errors.SOLO_REQUIRES_SCHOOL'),
                   AIRCRAFT_ARCHIVED: t('form.errors.AIRCRAFT_ARCHIVED'),
                   PERSON_ARCHIVED: t('form.errors.PERSON_ARCHIVED'),
                   PERSON_NOT_PILOT_OR_STUDENT: t('form.errors.PERSON_NOT_PILOT_OR_STUDENT'),
@@ -297,6 +336,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   instructor: t('list.table.instructor'),
                   noInstructor: t('list.table.noInstructor'),
                   type: t('list.table.type'),
+                  soloSuffix: t('list.table.soloSuffix'),
                   duration: t('list.table.duration'),
                   amount: t('list.table.amount'),
                   landings: t('list.table.landings'),

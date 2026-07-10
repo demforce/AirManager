@@ -30,6 +30,7 @@
     "navHeading": "Aree operative",
     "myProfile": "La mia scheda",
     "myAccount": "Il mio conto",
+    "myDiary": "Il mio diario",
     "myExpiries": {
       "heading": "Le mie scadenze",
       "link": "Tutte le mie scadenze"
@@ -263,6 +264,37 @@
       "genericError": "Impossibile registrare la vendita. Riprova."
     }
   },
+  "AssignedInstructorsPanel": {
+    "heading": "Istruttori assegnati",
+    "loadError": "Impossibile caricare gli istruttori assegnati.",
+    "empty": "Nessun istruttore assegnato.",
+    "addAction": "Assegna istruttore",
+    "feedback": {
+      "assigned": "Istruttore assegnato.",
+      "removed": "Istruttore rimosso."
+    },
+    "table": {
+      "name": "Istruttore",
+      "assignedAt": "Assegnato il",
+      "actions": "Azioni"
+    },
+    "form": {
+      "title": "Assegna istruttore",
+      "instructor": "Istruttore",
+      "noInstructors": "Nessun istruttore disponibile da assegnare.",
+      "submit": "Assegna",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "conflictError": "Questo istruttore è già assegnato a questo allievo.",
+      "genericError": "Si è verificato un errore. Riprova."
+    },
+    "actions": {
+      "remove": "Rimuovi",
+      "confirmRemove": "Confermi la rimozione?",
+      "confirmYes": "Sì, rimuovi",
+      "confirmCancel": "Annulla"
+    }
+  },
   "ExpiriesPanel": {
     "heading": "Scadenze",
     "loadError": "Impossibile caricare le scadenze.",
@@ -310,6 +342,105 @@
       "confirmDelete": "Eliminare questa scadenza?",
       "confirmYes": "Conferma",
       "confirmCancel": "Annulla"
+    }
+  },
+  "SchoolPage": {
+    "kicker": "Scuola volo",
+    "title": "I miei allievi",
+    "description": "L'elenco dei tuoi allievi assegnati, con ore di scuola totali e stato delle scadenze.",
+    "empty": "Nessun allievo assegnato.",
+    "table": {
+      "name": "Allievo",
+      "courseStartDate": "Inizio corso",
+      "totalHours": "Ore scuola totali",
+      "lastNote": "Ultima annotazione",
+      "noNotes": "—",
+      "statusHeader": "Scadenze",
+      "noExpiries": "—",
+      "status": {
+        "ok": "In regola",
+        "expiring": "In scadenza",
+        "expired": "Scaduta"
+      }
+    },
+    "titleManage": "Riepiloghi scuola",
+    "descriptionManage": "Ore doppio comando e solista di ogni allievo attivo, ore volo scuola per istruttore: filtra per periodo.",
+    "summaries": {
+      "heading": "Riepiloghi",
+      "filters": {
+        "heading": "Periodo",
+        "month": "Mese corrente",
+        "quarter": "Trimestre corrente",
+        "year": "Anno corrente",
+        "custom": "Intervallo libero",
+        "from": "Dal",
+        "to": "Al"
+      },
+      "students": {
+        "heading": "Ore allievi",
+        "empty": "Nessun allievo attivo.",
+        "table": {
+          "name": "Allievo",
+          "dual": "Doppio comando (periodo)",
+          "solo": "Solista (periodo)",
+          "totalPeriod": "Totale periodo",
+          "totalAllTime": "Totale storico"
+        }
+      },
+      "instructors": {
+        "heading": "Ore istruttori",
+        "empty": "Nessun istruttore attivo.",
+        "table": {
+          "name": "Istruttore",
+          "hours": "Ore scuola (periodo)",
+          "action": "Apri nel registro"
+        }
+      }
+    },
+    "myHours": {
+      "heading": "Le mie ore scuola",
+      "openRegister": "Apri nel registro"
+    }
+  },
+  "TrainingDiaryPage": {
+    "kicker": "Diario di addestramento",
+    "courseStartDate": "Inizio corso",
+    "back": "Indietro",
+    "empty": "Nessuna annotazione registrata.",
+    "row": {
+      "author": "Istruttore",
+      "edited": "modificata",
+      "exercises": "Esercizi svolti",
+      "assessment": "Giudizio",
+      "nextSteps": "Prossimi passi",
+      "linkedFlight": "Volo collegato",
+      "edit": "Modifica"
+    },
+    "newNoteForm": {
+      "title": "Nuova annotazione",
+      "addAction": "Nuova annotazione",
+      "noteDate": "Data addestramento",
+      "exercises": "Esercizi svolti",
+      "assessment": "Giudizio",
+      "nextSteps": "Prossimi passi",
+      "flight": "Volo collegato",
+      "noFlight": "Nessun volo collegato",
+      "submit": "Salva annotazione",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "flightError": "Il volo selezionato non è collegabile a questa annotazione.",
+      "genericError": "Impossibile salvare l'annotazione. Riprova."
+    },
+    "editForm": {
+      "noteDate": "Data addestramento",
+      "exercises": "Esercizi svolti",
+      "assessment": "Giudizio",
+      "nextSteps": "Prossimi passi",
+      "save": "Salva",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "immutableError": "Questa annotazione non è più modificabile (finestra di 7 giorni scaduta).",
+      "genericError": "Impossibile salvare le modifiche. Riprova."
     }
   },
   "AccountStatementPage": {
@@ -718,9 +849,14 @@
       "flightDate": "Data volo",
       "flightType": "Tipo di volo",
       "flightTypes": {
-        "private": "Privato",
+        "private": "Turismo",
         "school": "Scuola",
-        "other": "Altro"
+        "other": "Lavoro aereo"
+      },
+      "soloMode": "Doppio comando o solista?",
+      "soloModes": {
+        "dual": "Doppio comando",
+        "solo": "Solista"
       },
       "durationMode": "Come indichi la durata?",
       "durationModes": {
@@ -741,6 +877,7 @@
         "NO_AIRCRAFT_RATE": "Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.",
         "NO_INSTRUCTOR_RATE": "Nessuna tariffa oraria è in vigore per questo istruttore alla data del volo.",
         "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "Un volo scuola richiede un istruttore.",
+        "SOLO_REQUIRES_SCHOOL": "Doppio comando/solista è valido solo per i voli scuola.",
         "AIRCRAFT_ARCHIVED": "Il velivolo selezionato è archiviato.",
         "PERSON_ARCHIVED": "La persona selezionata è archiviata.",
         "PERSON_NOT_PILOT_OR_STUDENT": "La persona deve avere un profilo pilota o allievo attivo.",
@@ -772,6 +909,7 @@
         "instructor": "Istruttore",
         "noInstructor": "—",
         "type": "Tipo",
+        "soloSuffix": "solista",
         "duration": "Durata",
         "amount": "Addebito",
         "landings": "Atterraggi",
@@ -821,7 +959,9 @@
         "cancelled": "Annullato"
       },
       "archivedSuffix": " (Archiviato)",
-      "reset": "Azzera filtri"
+      "reset": "Azzera filtri",
+      "instructorActive": "Filtro istruttore attivo",
+      "instructorClear": "Rimuovi filtro istruttore"
     }
   },
   "ExpiriesPage": {

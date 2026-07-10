@@ -45,7 +45,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { key: 'bookings', href: '/dashboard/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any', 'self.read'] },
   // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4.
   { key: 'finance', href: '/dashboard/finance', permissions: ['finance.manage'] },
-  { key: 'school', href: '/school', permissions: ['school.manage.own'] },
+  // Story 9.1: repointed at the real "I miei allievi" page (the old '/school'
+  // placeholder was never implemented) — the INSTRUCTOR's own-students view.
+  // Story 9.3 (FR-34): the SAME page grows a "Riepiloghi" face for the
+  // gestore (student/instructor hour summaries) — `school.manage.any` joins
+  // the permission set, so staff/admin now see "Scuola" too.
+  { key: 'school', href: '/dashboard/school', permissions: ['school.manage.own', 'school.manage.any'] },
   // Story 6.1: repointed the same way people/aircraft/finance/flights were
   // in 2.1/2.4/3.3/5.4. Story 6.2 (FR-36): reopened to every role via
   // `self.read` — same pattern as `flights` in 5.4: the page itself (staff

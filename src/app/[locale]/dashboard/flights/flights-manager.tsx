@@ -106,6 +106,9 @@ export type FlightsManagerLabels = {
     flightDate: string;
     flightType: string;
     flightTypes: { private: string; school: string; other: string };
+    /** Story 9.4 (AC 1) — dual/solo radio, rendered only when `flightType === 'SCHOOL'`. */
+    soloMode: string;
+    soloModes: { dual: string; solo: string };
     durationMode: string;
     durationModes: { minutes: string; hourMeter: string };
     minutes: string;
@@ -122,6 +125,7 @@ export type FlightsManagerLabels = {
       NO_AIRCRAFT_RATE: string;
       NO_INSTRUCTOR_RATE: string;
       SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR: string;
+      SOLO_REQUIRES_SCHOOL: string;
       AIRCRAFT_ARCHIVED: string;
       PERSON_ARCHIVED: string;
       PERSON_NOT_PILOT_OR_STUDENT: string;
@@ -155,6 +159,8 @@ export type FlightsManagerLabels = {
       instructor: string;
       noInstructor: string;
       type: string;
+      /** Story 9.4 (AC 1) — suffix appended to the type label when `flight.isSolo` ("Scuola — solista" / "School — solo"). */
+      soloSuffix: string;
       duration: string;
       amount: string;
       landings: string;
@@ -245,11 +251,11 @@ function personLabel(person: { firstName: string; lastName: string }): string {
 
 function flightTypeLabel(type: FlightListItemDto['flightType'], labels: FlightsManagerLabels['form']['flightTypes']): string {
   switch (type) {
-    case 'PRIVATE':
+    case 'TOURISM':
       return labels.private;
     case 'SCHOOL':
       return labels.school;
-    case 'OTHER':
+    case 'AERIAL_WORK':
       return labels.other;
     default:
       return type;
@@ -530,7 +536,10 @@ export function FlightsManager({
                     <td className="py-2 pr-4 whitespace-nowrap">
                       {flight.instructor ? personLabel(flight.instructor) : labels.list.table.noInstructor}
                     </td>
-                    <td className="py-2 pr-4 whitespace-nowrap">{flightTypeLabel(flight.flightType, labels.form.flightTypes)}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {flightTypeLabel(flight.flightType, labels.form.flightTypes)}
+                      {flight.isSolo ? ` — ${labels.list.table.soloSuffix}` : ''}
+                    </td>
                     <td className="py-2 pr-4 whitespace-nowrap">
                       <span className="font-[family-name:var(--font-mono,monospace)]">{formatMinutes(flight.minutes)}</span>
                       {flight.breakdown.packageCoveredMinutes > 0 ? (
@@ -743,9 +752,9 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
           data-testid="flight-filter-type"
         >
           <option value="">{labels.allTypes}</option>
-          <option value="PRIVATE">{flightTypeLabels.private}</option>
+          <option value="TOURISM">{flightTypeLabels.private}</option>
           <option value="SCHOOL">{flightTypeLabels.school}</option>
-          <option value="OTHER">{flightTypeLabels.other}</option>
+          <option value="AERIAL_WORK">{flightTypeLabels.other}</option>
         </select>
       </div>
       <div className="flex flex-col text-sm text-[#2F3437]">
@@ -909,7 +918,7 @@ function flightFormDefaults(correctingFlight: FlightListItemDto | null): FlightF
   if (!correctingFlight) {
     return {
       flightDate: todayDateOnly(),
-      flightType: 'PRIVATE',
+      flightType: 'TOURISM',
       minutes: '',
       hourMeterStart: '',
       hourMeterEnd: '',
@@ -976,6 +985,14 @@ function RegisterFlightForm({
   const [durationMode, setDurationMode] = useState<'minutes' | 'hourMeter'>(
     correctingFlight?.hourMeterStart != null ? 'hourMeter' : 'minutes',
   );
+  // Story 9.4 (AC 1): `flightType` stays `register`-only (RHF reads it from
+  // the DOM at submit, same as before) — this mirrors it into plain state,
+  // via `register`'s own `onChange` option (NOT `watch()`, same React
+  // Compiler exception as `durationMode` above), purely so the dual/solo
+  // radio below can decide whether to render. `isSolo` itself is likewise
+  // plain state, never an RHF field — same rationale as `durationMode`.
+  const [selectedFlightType, setSelectedFlightType] = useState<FlightTypeDto>(flightFormDefaults(correctingFlight).flightType);
+  const [isSolo, setIsSolo] = useState(correctingFlight?.isSolo ?? false);
   // Story 5.3 (AC 2): the mandatory motivo, only rendered/required in
   // correction mode — same "plain local state, not a schema field" pattern
   // as `durationMode` (the field only exists in one of the two modes).
@@ -1095,6 +1112,10 @@ function RegisterFlightForm({
           instructorPersonId: instructorPersonId === '' ? undefined : instructorPersonId,
           flightDate: values.flightDate,
           flightType: values.flightType,
+          // Story 9.4 (AC 1) — meaningful only on SCHOOL; the same body is
+          // used for both registration and correction (correctFlight
+          // re-validates/re-persists it exactly like every other field).
+          isSolo,
           ...durationPayload,
           landings,
           notes,
@@ -1137,6 +1158,8 @@ function RegisterFlightForm({
     setPersonId(blankPickerValues.personId);
     setInstructorPersonId(blankPickerValues.instructorPersonId);
     setDurationMode('minutes');
+    setSelectedFlightType('TOURISM');
+    setIsSolo(false);
     setReason('');
   }
 
@@ -1223,11 +1246,19 @@ function RegisterFlightForm({
           <select
             id="flight-type"
             className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-            {...register('flightType')}
+            {...register('flightType', {
+              onChange: (event: { target: { value: string } }) => {
+                const next = event.target.value as FlightTypeDto;
+                setSelectedFlightType(next);
+                // AC 1: isSolo is only meaningful on SCHOOL — leaving SCHOOL
+                // resets it back to the dual default.
+                if (next !== 'SCHOOL') setIsSolo(false);
+              },
+            })}
           >
-            <option value="PRIVATE">{labels.flightTypes.private}</option>
+            <option value="TOURISM">{labels.flightTypes.private}</option>
             <option value="SCHOOL">{labels.flightTypes.school}</option>
-            <option value="OTHER">{labels.flightTypes.other}</option>
+            <option value="AERIAL_WORK">{labels.flightTypes.other}</option>
           </select>
         </div>
 
@@ -1246,6 +1277,36 @@ function RegisterFlightForm({
           />
         </div>
       </div>
+
+      {selectedFlightType === 'SCHOOL' ? (
+        <fieldset>
+          <legend className="block text-sm font-medium text-[#2F3437]">{labels.soloMode}</legend>
+          <div className="mt-2 flex flex-wrap gap-4">
+            <label htmlFor="flight-solo-dual" className="flex items-center gap-2 text-sm text-[#2F3437]">
+              <input
+                id="flight-solo-dual"
+                type="radio"
+                name="flight-solo-mode"
+                value="dual"
+                checked={!isSolo}
+                onChange={() => setIsSolo(false)}
+              />
+              {labels.soloModes.dual}
+            </label>
+            <label htmlFor="flight-solo-solo" className="flex items-center gap-2 text-sm text-[#2F3437]">
+              <input
+                id="flight-solo-solo"
+                type="radio"
+                name="flight-solo-mode"
+                value="solo"
+                checked={isSolo}
+                onChange={() => setIsSolo(true)}
+              />
+              {labels.soloModes.solo}
+            </label>
+          </div>
+        </fieldset>
+      ) : null}
 
       <fieldset>
         <legend className="block text-sm font-medium text-[#2F3437]">{labels.durationMode}</legend>

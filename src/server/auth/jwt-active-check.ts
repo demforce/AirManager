@@ -7,8 +7,8 @@ export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
 /**
  * Re-verifies `User.isActive` against the DB at most once every
  * `ACTIVE_RECHECK_INTERVAL_MS`, using `token.lastActiveCheck` as the
- * watermark. Node runtime only (`auth.ts`) — never called from the Edge
- * instance (`auth-edge.ts`/`src/proxy.ts`), which has no Prisma access.
+ * watermark. Node runtime only (`auth.ts`) — never called from
+ * `src/proxy.ts`'s `getToken` read, which has no Prisma access.
  *
  * Returns the token unchanged (refreshing `lastActiveCheck`) when the check
  * is not due yet, or the user is still active. Returns `null` when the

@@ -1,7 +1,8 @@
 import createIntlMiddleware from 'next-intl/middleware';
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
+import { env } from '@/lib/env';
 import { routing } from './i18n/routing';
-import { authEdge } from './server/auth/auth-edge';
 
 const intlMiddleware = createIntlMiddleware(routing);
 
@@ -55,22 +56,55 @@ function unauthenticatedApiResponse(): NextResponse {
  * next-intl's locale middleware and the Auth.js session gate are composed
  * here rather than living in two files.
  *
- * `authEdge` (from `auth-edge.ts`, no providers) decorates the request with
- * `.auth` by decoding the JWT session cookie — no database or
- * `@node-rs/argon2` call happens in this Edge-runtime function.
+ * TD-4 root cause: the previous implementation used the `authEdge` wrapper
+ * (`NextAuth(authConfig).auth`, formerly `auth-edge.ts`), which internally
+ * re-signs the session JWT and PROPAGATES a `Set-Cookie` on every request it
+ * lets through (`@auth/core`'s JWT strategy has no `updateAge` throttle —
+ * that only applies to database sessions). RSC reads via `auth()` discard
+ * this Set-Cookie, but the middleware wrapper does not: every ordinary
+ * navigation re-issued the session cookie with a fresh +30-day expiry. That
+ * refresh could race and beat the deletion `Set-Cookie` from `signOut()`
+ * (`logoutAction`, `src/app/[locale]/dashboard/page.tsx`), leaving a "resurrected"
+ * session after logout on `next start` builds (invisible in `next dev`).
+ *
+ * Fix: read the token with `getToken` (`next-auth/jwt`) instead — pure JWE
+ * decryption, no side effects, no Set-Cookie ever leaves this function. This
+ * is gate-equivalent to the old wrapper: neither one ran the DB
+ * active-user recheck (`applyActiveRecheck`, Node-only, lives in `auth.ts`)
+ * — a deactivated user's session still decays via the Node-runtime page
+ * reads (`getSessionActor`, `src/server/auth/session.ts`), same as before.
+ * Trade-off: with no middleware-side refresh, the session now expires
+ * `maxAge` (30 days, Auth.js default) after login rather than sliding on
+ * activity — see `auth.config.ts` for the accepted-for-MVP note.
+ *
+ * `secureCookie` must mirror how the cookie was actually set: the
+ * `/api/auth/*` route handler (`auth.ts`'s `handlers`) derives it from the
+ * request protocol Next.js resolves for that connection — which folds in
+ * `x-forwarded-proto` when the proxy is trusted — and `getToken` here reads
+ * the same resolved source (`req.nextUrl.protocol`), so issuer and reader
+ * agree on the cookie name/salt (`authjs.session-token` over http,
+ * `__Secure-authjs.session-token` over https) both on direct http and
+ * behind a uniform TLS-terminating reverse proxy. Verified empirically on
+ * `next start` in both topologies (review TD-4; dev Debug Log for http).
  */
-export default authEdge((req) => {
+export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (pathname.startsWith(AUTH_API_PREFIX)) {
     return NextResponse.next();
   }
 
+  const token = await getToken({
+    req,
+    secret: env.AUTH_SECRET,
+    secureCookie: req.nextUrl.protocol === 'https:',
+  });
+
   if (pathname.startsWith('/api/v1')) {
     if (PUBLIC_API_PATHS.has(pathname)) {
       return NextResponse.next();
     }
-    if (!req.auth?.user) {
+    if (!token) {
       return unauthenticatedApiResponse();
     }
     return NextResponse.next();
@@ -86,14 +120,14 @@ export default authEdge((req) => {
   const [, locale, rest] = localeMatch;
   const restPath = rest ?? '';
 
-  if (!PUBLIC_WEB_PATHS.has(restPath) && !req.auth?.user) {
+  if (!PUBLIC_WEB_PATHS.has(restPath) && !token) {
     const loginUrl = new URL(`/${locale}/login`, req.url);
     loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   return intlMiddleware(req);
-});
+}
 
 export const config = {
   // First pattern: every path except Next.js internals and files with an

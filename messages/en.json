@@ -30,6 +30,7 @@
     "navHeading": "Operational areas",
     "myProfile": "My profile",
     "myAccount": "My account",
+    "myDiary": "My training diary",
     "myExpiries": {
       "heading": "My expiries",
       "link": "All my expiries"
@@ -263,6 +264,37 @@
       "genericError": "Could not record the sale. Please try again."
     }
   },
+  "AssignedInstructorsPanel": {
+    "heading": "Assigned instructors",
+    "loadError": "Could not load the assigned instructors.",
+    "empty": "No instructor assigned.",
+    "addAction": "Assign instructor",
+    "feedback": {
+      "assigned": "Instructor assigned.",
+      "removed": "Instructor removed."
+    },
+    "table": {
+      "name": "Instructor",
+      "assignedAt": "Assigned on",
+      "actions": "Actions"
+    },
+    "form": {
+      "title": "Assign instructor",
+      "instructor": "Instructor",
+      "noInstructors": "No instructor available to assign.",
+      "submit": "Assign",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "conflictError": "This instructor is already assigned to this student.",
+      "genericError": "Something went wrong. Please try again."
+    },
+    "actions": {
+      "remove": "Remove",
+      "confirmRemove": "Confirm removal?",
+      "confirmYes": "Yes, remove",
+      "confirmCancel": "Cancel"
+    }
+  },
   "ExpiriesPanel": {
     "heading": "Expiries",
     "loadError": "Could not load the expiries.",
@@ -310,6 +342,105 @@
       "confirmDelete": "Delete this expiry?",
       "confirmYes": "Confirm",
       "confirmCancel": "Cancel"
+    }
+  },
+  "SchoolPage": {
+    "kicker": "Flight school",
+    "title": "My students",
+    "description": "The list of your assigned students, with total school hours and expiry status.",
+    "empty": "No student assigned.",
+    "table": {
+      "name": "Student",
+      "courseStartDate": "Course start",
+      "totalHours": "Total school hours",
+      "lastNote": "Last note",
+      "noNotes": "—",
+      "statusHeader": "Expiries",
+      "noExpiries": "—",
+      "status": {
+        "ok": "OK",
+        "expiring": "Expiring",
+        "expired": "Expired"
+      }
+    },
+    "titleManage": "School summaries",
+    "descriptionManage": "Dual-command and solo hours for every active student, SCHOOL flight hours per instructor: filter by period.",
+    "summaries": {
+      "heading": "Summaries",
+      "filters": {
+        "heading": "Period",
+        "month": "Current month",
+        "quarter": "Current quarter",
+        "year": "Current year",
+        "custom": "Custom range",
+        "from": "From",
+        "to": "To"
+      },
+      "students": {
+        "heading": "Student hours",
+        "empty": "No active students.",
+        "table": {
+          "name": "Student",
+          "dual": "Dual command (period)",
+          "solo": "Solo (period)",
+          "totalPeriod": "Period total",
+          "totalAllTime": "All-time total"
+        }
+      },
+      "instructors": {
+        "heading": "Instructor hours",
+        "empty": "No active instructors.",
+        "table": {
+          "name": "Instructor",
+          "hours": "School hours (period)",
+          "action": "Open in register"
+        }
+      }
+    },
+    "myHours": {
+      "heading": "My school hours",
+      "openRegister": "Open in register"
+    }
+  },
+  "TrainingDiaryPage": {
+    "kicker": "Training diary",
+    "courseStartDate": "Course start",
+    "back": "Back",
+    "empty": "No note recorded yet.",
+    "row": {
+      "author": "Instructor",
+      "edited": "edited",
+      "exercises": "Exercises",
+      "assessment": "Assessment",
+      "nextSteps": "Next steps",
+      "linkedFlight": "Linked flight",
+      "edit": "Edit"
+    },
+    "newNoteForm": {
+      "title": "New note",
+      "addAction": "New note",
+      "noteDate": "Training date",
+      "exercises": "Exercises",
+      "assessment": "Assessment",
+      "nextSteps": "Next steps",
+      "flight": "Linked flight",
+      "noFlight": "No linked flight",
+      "submit": "Save note",
+      "cancel": "Cancel",
+      "requiredField": "Required field.",
+      "flightError": "The selected flight cannot be linked to this note.",
+      "genericError": "Could not save the note. Try again."
+    },
+    "editForm": {
+      "noteDate": "Training date",
+      "exercises": "Exercises",
+      "assessment": "Assessment",
+      "nextSteps": "Next steps",
+      "save": "Save",
+      "cancel": "Cancel",
+      "requiredField": "Required field.",
+      "immutableError": "This note can no longer be edited (7-day window elapsed).",
+      "genericError": "Could not save the changes. Try again."
     }
   },
   "AccountStatementPage": {
@@ -718,9 +849,14 @@
       "flightDate": "Flight date",
       "flightType": "Flight type",
       "flightTypes": {
-        "private": "Private",
+        "private": "Tourism",
         "school": "School",
-        "other": "Other"
+        "other": "Aerial work"
+      },
+      "soloMode": "Dual or solo?",
+      "soloModes": {
+        "dual": "Dual",
+        "solo": "Solo"
       },
       "durationMode": "How do you want to enter the duration?",
       "durationModes": {
@@ -741,6 +877,7 @@
         "NO_AIRCRAFT_RATE": "No hourly rate is in effect for this aircraft on the flight date.",
         "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
         "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "A school flight requires an instructor.",
+        "SOLO_REQUIRES_SCHOOL": "Dual/solo is only valid for school flights.",
         "AIRCRAFT_ARCHIVED": "The selected aircraft is archived.",
         "PERSON_ARCHIVED": "The selected person is archived.",
         "PERSON_NOT_PILOT_OR_STUDENT": "The person must have an active pilot or student profile.",
@@ -772,6 +909,7 @@
         "instructor": "Instructor",
         "noInstructor": "—",
         "type": "Type",
+        "soloSuffix": "solo",
         "duration": "Duration",
         "amount": "Charge",
         "landings": "Landings",
@@ -821,7 +959,9 @@
         "cancelled": "Cancelled"
       },
       "archivedSuffix": " (Archived)",
-      "reset": "Clear filters"
+      "reset": "Clear filters",
+      "instructorActive": "Instructor filter active",
+      "instructorClear": "Remove instructor filter"
     }
   },
   "ExpiriesPage": {
