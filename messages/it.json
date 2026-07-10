@@ -224,8 +224,16 @@
     },
     "placeholders": {
       "comingSoon": "Disponibile prossimamente.",
-      "recentFlights": "Ultimi voli",
       "upcomingBookings": "Prossime prenotazioni"
+    },
+    "recentFlightsPanel": {
+      "heading": "Ultimi voli",
+      "empty": "Nessun volo registrato.",
+      "viewAll": "Vedi tutti",
+      "status": {
+        "registered": "Registrato",
+        "cancelled": "Annullato"
+      }
     },
     "accountPanel": {
       "heading": "Saldo conto",
@@ -962,6 +970,8 @@
       "empty": "Nessun volo registrato.",
       "table": {
         "date": "Data",
+        "route": "Tratta",
+        "times": "Orari",
         "aircraft": "Velivolo",
         "person": "Persona",
         "instructor": "Istruttore",
@@ -971,6 +981,8 @@
         "duration": "Durata",
         "amount": "Addebito",
         "landings": "Atterraggi",
+        "movements": "Decolli/Atterraggi",
+        "pic": "PIC",
         "noValue": "—",
         "packageNote": "di cui {duration} da pacchetto",
         "status": "Stato",

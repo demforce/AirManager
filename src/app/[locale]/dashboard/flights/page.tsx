@@ -344,6 +344,8 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                 empty: t('list.empty'),
                 table: {
                   date: t('list.table.date'),
+                  route: t('list.table.route'),
+                  times: t('list.table.times'),
                   aircraft: t('list.table.aircraft'),
                   person: t('list.table.person'),
                   instructor: t('list.table.instructor'),
@@ -352,7 +354,8 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   soloSuffix: t('list.table.soloSuffix'),
                   duration: t('list.table.duration'),
                   amount: t('list.table.amount'),
-                  landings: t('list.table.landings'),
+                  movements: t('list.table.movements'),
+                  pic: t('list.table.pic'),
                   noValue: t('list.table.noValue'),
                   // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
                   // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).

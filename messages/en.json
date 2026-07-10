@@ -224,8 +224,16 @@
     },
     "placeholders": {
       "comingSoon": "Coming soon.",
-      "recentFlights": "Recent flights",
       "upcomingBookings": "Upcoming bookings"
+    },
+    "recentFlightsPanel": {
+      "heading": "Recent flights",
+      "empty": "No flights recorded.",
+      "viewAll": "View all",
+      "status": {
+        "registered": "Registered",
+        "cancelled": "Cancelled"
+      }
     },
     "accountPanel": {
       "heading": "Account balance",
@@ -962,6 +970,8 @@
       "empty": "No flights logged yet.",
       "table": {
         "date": "Date",
+        "route": "Route",
+        "times": "Times",
         "aircraft": "Aircraft",
         "person": "Person",
         "instructor": "Instructor",
@@ -971,6 +981,8 @@
         "duration": "Duration",
         "amount": "Charge",
         "landings": "Landings",
+        "movements": "Takeoffs/Landings",
+        "pic": "PIC",
         "noValue": "—",
         "packageNote": "of which {duration} from package",
         "status": "Status",

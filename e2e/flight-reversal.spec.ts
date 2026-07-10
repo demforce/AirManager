@@ -297,7 +297,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/0,00\s€/);
 
     // Correct it: 60' -> 30' (a genuine "dati sbagliati" fix) — same takeoff (prefilled from the original), landing moved an hour earlier.
-    const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: '2020-01-02' }).first();
+    const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).first();
     await secondFlightRow.getByTestId('flight-correct-action').click();
     await expect(page.getByRole('heading', { name: 'Correggi volo' })).toBeVisible();
     await page.getByLabel('Ora atterraggio').fill('10:30');
@@ -305,10 +305,15 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.getByRole('button', { name: 'Conferma correzione' }).click();
 
     // The new (30') flight is REGISTERED and marked as a correction; the old (60') is ANNULLATO and marked as corrected.
+    // Word-boundary regex (story 11.2): the new "orari" column renders
+    // `11:00–11:30`/`11:00–12:00`, and a plain `hasText: '1:00'` substring
+    // match now ALSO hits inside "11:00" — `\b` anchors exclude that (a
+    // digit right before "1" is not a word boundary), matching only the
+    // standalone duration cell.
     await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/0,00\s€/);
-    const correctedRow = page.getByTestId('flight-row').filter({ hasText: '2020-01-02' }).filter({ hasText: '0:30' });
+    const correctedRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ hasText: /\b0:30\b/ });
     await expect(correctedRow).toContainText('Correzione di un volo precedente');
-    const oldRow = page.getByTestId('flight-row').filter({ hasText: '2020-01-02' }).filter({ hasText: '1:00' });
+    const oldRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ hasText: /\b1:00\b/ });
     await expect(oldRow.getByTestId('flight-status-badge')).toContainText('Annullato');
     await expect(oldRow).toContainText('Corretto da un volo successivo');
     await expect(oldRow).toContainText('Durata inserita per errore');

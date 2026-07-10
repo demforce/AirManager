@@ -8,6 +8,7 @@ import { ExportButton } from '@/components/export-button';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { useRouter } from '@/i18n/navigation';
+import { flightPicPerson } from '@/lib/flight-pic';
 import { formatCents } from '@/lib/money';
 import {
   flightTypeSchema,
@@ -16,7 +17,7 @@ import {
   type FlightTypeDto,
   type RegisterFlightResponseDto,
 } from '@/lib/schemas/flights';
-import { formatMinutes } from '@/lib/time';
+import { formatDateOnly, formatMinutes, formatTimeOfDay } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
@@ -161,6 +162,10 @@ export type FlightsManagerLabels = {
     empty: string;
     table: {
       date: string;
+      /** Story 11.2 (AC 1) — `partenza → arrivo`; `noValue` on a historical (pre-11.1) flight without logbook fields. */
+      route: string;
+      /** Story 11.2 (AC 1) — `HH:MM–HH:MM` (decollo–atterraggio, Europe/Rome); same `noValue` fallback as `route`. */
+      times: string;
       aircraft: string;
       person: string;
       instructor: string;
@@ -170,7 +175,10 @@ export type FlightsManagerLabels = {
       soloSuffix: string;
       duration: string;
       amount: string;
-      landings: string;
+      /** Story 11.2 (AC 1) — `takeoffs / landings`, replaces the old standalone "Atterraggi" column (that i18n key stays, still used by `exports.service.ts`'s own column — story 11.3 scope). */
+      movements: string;
+      /** Story 11.2 (AC 2) — the derived PIC (pilota al comando, `flight-pic.ts`). */
+      pic: string;
       noValue: string;
       /** Story 5.2 (AC 1) — literal `{duration}` placeholder, CLIENT-filled (t.raw, same pattern as `account-statement-table.tsx`'s `adjustmentOfDate`). */
       packageNote: string;
@@ -566,25 +574,40 @@ export function FlightsManager({
           <p className="mt-4 text-sm text-[#787774]">{labels.list.empty}</p>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[860px] text-left text-sm">
+            <table className="w-full min-w-[1280px] text-left text-sm">
               <thead>
                 <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
                   <th className="py-2 pr-4 font-medium">{labels.list.table.date}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.route}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.times}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.aircraft}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.person}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.instructor}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.type}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.duration}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.amount}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.landings}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.movements}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.pic}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.status}</th>
                   {canManage ? <th className="py-2 font-medium">{labels.list.table.actions}</th> : null}
                 </tr>
               </thead>
               <tbody>
-                {flights.map((flight) => (
+                {flights.map((flight) => {
+                  const pic = flightPicPerson(flight);
+                  return (
                   <tr key={flight.id} data-testid="flight-row" className="border-b border-[#EAEAEA] text-[#111111]">
-                    <td className="py-2 pr-4 whitespace-nowrap text-[#787774]">{flight.flightDate}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap text-[#787774]">{formatDateOnly(flight.flightDate, moneyLocale)}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {flight.departureAirfield && flight.arrivalAirfield
+                        ? `${flight.departureAirfield} → ${flight.arrivalAirfield}`
+                        : labels.list.table.noValue}
+                    </td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {flight.takeoffAt && flight.landingAt
+                        ? `${formatTimeOfDay(new Date(flight.takeoffAt), moneyLocale)}–${formatTimeOfDay(new Date(flight.landingAt), moneyLocale)}`
+                        : labels.list.table.noValue}
+                    </td>
                     <td className="py-2 pr-4 whitespace-nowrap">{flight.aircraft.registration}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{personLabel(flight.person)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">
@@ -603,9 +626,14 @@ export function FlightsManager({
                       ) : null}
                     </td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatCents(flight.breakdown.totalAmountCents, moneyLocale)}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap">{flight.landings ?? labels.list.table.noValue}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {flight.takeoffs} / {flight.landings}
+                    </td>
+                    <td data-testid="flight-pic-cell" className="py-2 pr-4 whitespace-nowrap">
+                      {pic ? personLabel(pic) : labels.list.table.noValue}
+                    </td>
                     <td className="py-2 pr-4">
-                      <FlightStatusCell flight={flight} labels={labels.list.table} />
+                      <FlightStatusCell flight={flight} labels={labels.list.table} locale={moneyLocale} />
                     </td>
                     {canManage ? (
                       <td className="py-2 whitespace-nowrap">
@@ -635,7 +663,8 @@ export function FlightsManager({
                       </td>
                     ) : null}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -655,7 +684,16 @@ export function FlightsManager({
  * — a REGISTERED flight can itself be a correction of an earlier ANNULLATO
  * one.
  */
-function FlightStatusCell({ flight, labels }: { flight: FlightListItemDto; labels: FlightsManagerLabels['list']['table'] }) {
+function FlightStatusCell({
+  flight,
+  labels,
+  locale,
+}: {
+  flight: FlightListItemDto;
+  labels: FlightsManagerLabels['list']['table'];
+  /** Story 11.2 (AC 3) — same `moneyLocale` source the caller already threads through the rest of the row. */
+  locale: 'it' | 'en';
+}) {
   if (flight.status !== 'CANCELLED' && !flight.correctionOfId && !flight.correctedByFlightId) {
     return null;
   }
@@ -672,7 +710,7 @@ function FlightStatusCell({ flight, labels }: { flight: FlightListItemDto; label
           </span>
           {flight.cancelledAt && flight.cancelReason ? (
             <p className="text-xs text-[#787774]" title={flight.cancelReason}>
-              {labels.cancelledDetail.replace('{date}', flight.cancelledAt.slice(0, 10)).replace('{reason}', flight.cancelReason)}
+              {labels.cancelledDetail.replace('{date}', formatDateOnly(flight.cancelledAt.slice(0, 10), locale)).replace('{reason}', flight.cancelReason)}
             </p>
           ) : null}
         </>
@@ -891,7 +929,7 @@ function CancelFlightPanel({ flight, moneyLocale, labels, onClose, onCancelled }
     <div data-testid="flight-cancel-panel" className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
       <h4 className="font-[family-name:var(--font-serif)] text-xl font-medium tracking-[-0.02em] text-[#111111]">{labels.title}</h4>
       <p className="mt-2 text-sm text-[#787774]">
-        {flight.aircraft.registration} — {flight.flightDate} — {formatCents(flight.breakdown.totalAmountCents, moneyLocale)}
+        {flight.aircraft.registration} — {formatDateOnly(flight.flightDate, moneyLocale)} — {formatCents(flight.breakdown.totalAmountCents, moneyLocale)}
       </p>
 
       <div className="mt-4 max-w-md">

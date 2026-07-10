@@ -462,4 +462,80 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const pilotNav = page.getByRole('navigation', { name: 'Aree operative' });
     await expect(pilotNav.getByRole('link', { name: 'Voli', exact: true })).toHaveAttribute('href', '/it/dashboard/flights');
   });
+
+  test('the registry shows the new logbook columns (data DD/MM/YYYY, tratta, orari, decolli/atterraggi) and derives the PIC for a dual SCHOOL flight as the instructor (story 11.2, AC 1/2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 10000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsLogbook1!');
+    const instructor = await createInstructorWithRate(page, 4000);
+
+    const departure = `Campo-${uniqueSuffix()}`;
+    const arrival = `Base-${uniqueSuffix()}`;
+    const takeoffAt = `${PAST_DATE}T10:00:00.000Z`;
+    const landingAt = `${PAST_DATE}T11:00:00.000Z`;
+
+    // Direct API registration (not the form): the tratta/orari assertions
+    // below need EXACT, run-deterministic values — the form composes
+    // `takeoffAt`/`landingAt` from the BROWSER's local timezone, which this
+    // suite never pins (Playwright inherits the container's `Etc/UTC`), so a
+    // form-filled '10:00' would not reliably equal `10:00:00.000Z`.
+    const response = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        instructorPersonId: instructor.personId,
+        departureAirfield: departure,
+        arrivalAirfield: arrival,
+        flightType: 'SCHOOL',
+        isSolo: false,
+        takeoffAt,
+        landingAt,
+        takeoffs: 2,
+        landings: 3,
+      },
+    });
+    expect(response.status()).toBe(201);
+
+    // Same Europe/Rome conversion the registry's `formatTimeOfDay` applies
+    // (Node's `Intl` supports any IANA zone regardless of the host/browser
+    // TZ) — computed here instead of hardcoded, so it holds across the
+    // CET/CEST boundary too.
+    const romeTimeFormatter = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false });
+    const expectedTimes = `${romeTimeFormatter.format(new Date(takeoffAt))}–${romeTimeFormatter.format(new Date(landingAt))}`;
+
+    await page.goto('/it/dashboard/flights');
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await expect(page).toHaveURL(/aircraftId=/);
+
+    const row = page.getByTestId('flight-row').first();
+    await expect(row).toContainText('01/01/2020');
+    await expect(row).toContainText(`${departure} → ${arrival}`);
+    await expect(row).toContainText(expectedTimes);
+    await expect(row).toContainText('2 / 3');
+    // Dual SCHOOL flight (AC 2): the PIC is the INSTRUCTOR, distinctly from
+    // the existing "Istruttore" column (same name, different cell).
+    await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${instructor.lastName} ${instructor.firstName}`);
+
+    // A SOLO SCHOOL flight on the same pilot: the PIC is the pilot (allievo), not the instructor.
+    const soloResponse = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        instructorPersonId: instructor.personId,
+        departureAirfield: departure,
+        arrivalAirfield: arrival,
+        flightType: 'SCHOOL',
+        isSolo: true,
+        takeoffAt: `${PAST_DATE}T12:00:00.000Z`,
+        landingAt: `${PAST_DATE}T12:30:00.000Z`,
+      },
+    });
+    expect(soloResponse.status()).toBe(201);
+    await page.reload();
+    const soloRow = page.getByTestId('flight-row').filter({ hasText: 'solista' }).first();
+    await expect(soloRow.getByTestId('flight-pic-cell')).toHaveText(`${pilot.lastName} ${pilot.firstName}`);
+  });
 });
