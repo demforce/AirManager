@@ -4,7 +4,7 @@ baseline_commit: cd2db85
 
 # Story TD-5: Tech-debt pass sui deferred (post-retro Epic 9)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -77,13 +77,13 @@ Sei fix indipendenti e chirurgici, NESSUNA migrazione, NESSUN cambio di dominio.
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1)** — Fix `formatCents` (grouping deterministico) + doc-comment + `money.test.ts` + grep literal money in unit/e2e; verifica empirica hydration su prod build (console pulita, Playwright MCP).
-- [ ] **T2 (AC 2)** — Guardia `from > to` → default range in `school/page.tsx`.
-- [ ] **T3 (AC 3)** — `useLocale()` nel journal, threading nelle 3 `formatDateOnly`.
-- [ ] **T4 (AC 4)** — `hasActiveFilter`/reset/commento in `ppr-register.tsx`; check e2e col testid.
-- [ ] **T5 (AC 5)** — Helper expiry condiviso; ricontrollo su cambio giorno in `updateBooking`; verifica select `personId`; verifica messaggio UI edit; unit (4 casi) + eventuale e2e.
-- [ ] **T6 (AC 6)** — Riproduzione warning (testo+stack nel Debug Log) → fix `{ connectionString }` nei 2 call-site → riverifica; oppure esito documentato non-fixabile.
-- [ ] **T7 (AC 7)** — `npm run gates`; e2e mirati (flights + school + ppr-register + bookings); story file (Dev Agent Record) + sprint-status.yaml (td-5 → review).
+- [x] **T1 (AC 1)** — Fix `formatCents` (grouping deterministico) + doc-comment + `money.test.ts` + grep literal money in unit/e2e; verifica empirica hydration su prod build (console pulita, Playwright MCP).
+- [x] **T2 (AC 2)** — Guardia `from > to` → default range in `school/page.tsx`.
+- [x] **T3 (AC 3)** — `useLocale()` nel journal, threading nelle 3 `formatDateOnly`.
+- [x] **T4 (AC 4)** — `hasActiveFilter`/reset/commento in `ppr-register.tsx`; check e2e col testid.
+- [x] **T5 (AC 5)** — Helper expiry condiviso; ricontrollo su cambio giorno in `updateBooking`; verifica select `personId`; verifica messaggio UI edit; unit (4 casi) + eventuale e2e.
+- [x] **T6 (AC 6)** — Riproduzione warning (testo+stack nel Debug Log) → fix `{ connectionString }` nei 2 call-site → riverifica; oppure esito documentato non-fixabile.
+- [x] **T7 (AC 7)** — `npm run gates`; e2e mirati (flights + school + ppr-register + bookings); story file (Dev Agent Record) + sprint-status.yaml (td-5 → review).
 
 ## Dev Notes
 
@@ -108,14 +108,76 @@ Sei fix indipendenti e chirurgici, NESSUNA migrazione, NESSUN cambio di dominio.
 
 ### Agent Model Used
 
+Sonnet 5 (single dev agent, xhigh)
+
 ### Debug Log References
+
+**AC 1 — verifica empirica hydration (build di produzione)**
+
+- Build: `npm run gates` → `build (29s)` PASS (`env -u NODE_ENV npx next build` sotto il cofano).
+- Setup dati: tariffa velivolo I-ABCD impostata a 200,00 €/h via UI; volo registrato per Volante Piero (6:00, Turismo) → addebito **1.200,00 €** (fascia 1.000–9.999 € richiesta dall'AC).
+- Server avviato `env -u NODE_ENV AUTH_TRUST_HOST=true npm start` (porta 3000; `AUTH_TRUST_HOST=true` necessario per login su `next start` locale — Auth.js `UntrustedHost` altrimenti, stesso env var già usato da CI per l'e2e job).
+- Navigazione REALE (Playwright MCP) su `/it/dashboard/flights` dopo un fresh full-page load (SSR + hydration, non una mutazione client): riga registro mostra `1.200,00 €` (separatore migliaia presente, deterministico).
+- `browser_console_messages` (level `error` e `warning`, dopo il reload): **0 messaggi in entrambi i livelli** — nessun hydration warning/error. Esito osservato, non presunto.
+
+**AC 6 — riproduzione DeprecationWarning (PRIMA del fix)**
+
+- `NODE_OPTIONS=--trace-deprecation npx tsx prisma/seed.ts` (con env caricato da `.env`): **nessuna warning emessa**. Il seed è uno script sequenziale, mai query concorrenti sullo stesso client — non riproduce nulla.
+- `env -u NODE_ENV NODE_OPTIONS=--trace-deprecation npm run dev`, poi traffico applicativo reale via Playwright e2e (`bookings.spec.ts`, incluso il test di concorrenza "two parallel POSTs"): la warning compare SOLO sotto query concorrenti sullo stesso `pg.Client` pooled, testo e stack catturati:
+
+  ```
+  (node:14023) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+      at Client.query (/home/user/AirManager/node_modules/pg/lib/client.js:715:7)
+      at PgTransaction.performIO (/home/user/AirManager/.next/dev/server/chunks/ssr/[root-of-the-server]__1zshmj_._.js:7935:46)
+      at PgTransaction.queryRaw (/home/user/AirManager/.next/dev/server/chunks/ssr/[root-of-the-server]__1zshmj_._.js:7887:45)
+      at /home/user/AirManager/node_modules/@prisma/client/runtime/client.js:11:44665
+      ... (interno a @prisma/client/runtime/client.js, interpreter di query)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+  ```
+
+- **Analisi**: lo stack origina INTERAMENTE dentro `@prisma/client/runtime/client.js` (`PgTransaction.performIO`/`queryRaw`, l'interprete di query interno del client generato) che chiama `pg.Client.query()` — NON dal nostro call-site (`src/server/db/prisma.ts:18`, `prisma/seed.ts:9`), che si limita a costruire l'adapter una volta all'avvio. Confermato leggendo `node_modules/@prisma/adapter-pg/dist/index.mjs` (`PrismaPgAdapterFactory`): la forma stringa e la forma `{ connectionString }` producono ESATTAMENTE lo stesso `this.config` prima di `new pg.Pool(this.config)` — cambiare la forma del costruttore non può in alcun modo influenzare questa warning (comportamento runtime identico nei due rami). `pg@8.22.0`'s `client.js` ha 5 deprecation notice distinte (`activeQuery`, `queryQueue`, `pgpass`, `byoPromise`, `queryQueueLength`/questa) — nessuna riguarda la forma dell'argomento del costruttore `Pool`/`Client`.
+- **Conclusione (vincolante da Dev Notes)**: warning NON dipendente dal call-site → **non-fixabile-a-call-site**, nessun cambio di codice applicato a `prisma.ts`/`seed.ts` (sarebbe stato speculativo e senza effetto verificabile).
+
+**T7 — gates e e2e mirati**
+
+- `npm run gates`: lint/typecheck/test(1163)/build tutti PASS.
+- `flights.spec.ts`: 6/6 PASS.
+- `school.spec.ts`: 14/14 PASS (incl. nuovo test AC 2).
+- `ppr-register.spec.ts`: 1° run 6/7 (1 rosso, test PRE-ESISTENTE "fee cleared to 0,00", fuori diff) + suite serial abortita dopo il fallimento (il mio test AC 4 non ha girato); 2° run **7/7 PASS** — combacia col flake noto dichiarato nelle Dev Notes ("~1 rosso ogni 2-3 run anche isolato").
+- `bookings.spec.ts`: run pulito finale **22/22 PASS** (incl. nuovo test AC 5). Durante il debug di questo file ho causato un accumulo massivo di righe `Booking` sulla data fixture condivisa `FUTURE_DAY` (rieseguendo la suite più volte), che ha fatto uscire di pagina 1 di "Prossime prenotazioni" (`BOOKINGS_PAGE_SIZE=20`) sia il mio test sia diversi test PRE-ESISTENTI — meccanismo già documentato nel doc-comment di `soonestFutureSlot()` nel file stesso. Ripulito con `DELETE FROM "Booking" WHERE "createdAt" >= <timestamp di sessione>` (mai un `DELETE` non filtrato — bloccato una volta dal classifier di auto-mode, corretto con predicato temporale). Riscritto il mio test per usare due giorni "domani/dopodomani" run-fresh invece della `FUTURE_DAY` condivisa, per non ricadere nello stesso problema in futuro. Nello stesso giro ho anche trovato e corretto un bug reale nel mio codice: `MoveBookingForm.onSubmit` (bookings-list.tsx) leggeva `response.json()` più volte sulla stessa `Response` (secondo/terzo read silenziosamente vuoto) — fix con `response.clone()` per ogni lettura, colto dal mio stesso test e2e nuovo.
 
 ### Completion Notes List
 
+- **AC 1**: `formatCents` pinna `useGrouping: 'always'` — separatore delle migliaia sempre presente in it (anche sotto 10.000), deterministico tra Node/browser ICU. Type augmentation locale in `src/lib/money.d.ts` (file ambient globale, nessun `declare global`/`namespace` in un `.ts` normale — evita `@typescript-eslint/no-namespace`, che esenta i file `.d.ts` di default). Doc-comment di `money.ts` riscritto; `money.test.ts` aggiornato (1 assert: `1500,00` → `1.500,00`). Grep esaustivo su tutto il repo (ts/tsx): NESSUN altro literal money nella fascia 1.000-9.999 fuori da `money.ts`/`money.test.ts`. Verifica empirica su build di produzione: console pulita (vedi Debug Log).
+- **AC 2**: guardia `from > to` in `school/page.tsx` — SOLO quando ENTRAMBI i param sono ben formati ma invertiti si applica il default su ENTRAMBI; un singolo param malformato mantiene il comportamento preesistente (default indipendente per campo). Nuovo test e2e in `school.spec.ts`.
+- **AC 3**: `useLocale()` in `NewTrainingNoteForm` e `TrainingNoteRow` (i due componenti che chiamano `formatDateOnly`), stesso pattern di `people/account-panel.tsx`. Nessun nuovo test: `formatDateOnly` per `it-IT`/`en-IE` con opzioni `2-digit/2-digit/numeric` produce la STESSA stringa `DD/MM/YYYY` in entrambi i locale (verificato via Node) — il fix è architetturale (locale ora correttamente threaded, non hardcoded), non produce una differenza visibile testabile con questo formato specifico; regressione zero per IT confermata dalla suite `Training notes` esistente (10/10 PASS, invariata).
+- **AC 4**: `hasActiveFilter` confronta ora `!== 'APPROVED'` (il default di pagina) invece di `!== 'ALL'`; `handleResetFilters` naviga a `{status:'APPROVED', from:'', to:''}`. "Tutti" resta un valore filtro selezionabile che ATTIVA il bottone. Nuovo test e2e mirato (nessun e2e preesistente asserisce il vecchio comportamento, verificato via grep sul testid).
+- **AC 5**: estratto `findBlockingExpiredDocuments(personId, flightDateOnly)` da `createBooking` (stessa query, stesso filtro date-only, stessa partizione blocking/warnings — il ramo `force` resta SOLO nel create). `updateBooking` lo richiama DOPO le validazioni date/own-access e PRIMA di aircraft/overlap/transazione, SOLO quando `dateOnlyInZone` del nuovo `startsAt` differisce da quello esistente. Nessun `force` sull'update (deferral confermato, `updateBookingSchema` invariato). UI: `bookings-list.tsx`'s `MoveBookingForm` ora mappa `EXPIRED_DOCUMENTS` con un messaggio i18n NUOVO (`list.actions.errors.EXPIRED_DOCUMENTS`, IT/EN) — NON riusato il messaggio del create perché letteralmente dice "impossibile CREARE" (sbagliato in un contesto di move). 4 unit test nuovi (giorno cambiato+bloccante→422; giorno cambiato+valido sul nuovo giorno→ok; solo orario stesso giorno+doc scaduto→ok, no ricontrollo verificato via mock non chiamato; giorno cambiato+solo warning→ok) + 1 e2e end-to-end (stesso giorno ok, giorno diverso bloccato, messaggio col nome documento).
+- **AC 6**: nessun cambio di codice — warning non-fixabile-a-call-site, causa root interna a `@prisma/client/runtime` sotto query concorrenti sullo stesso client pooled (vedi Debug Log per stack completo e analisi).
+- **AC 7**: gates verdi; e2e mirati verdi su tutte e 4 le superfici (con un run di retry su `ppr-register.spec.ts` per un flake pre-esistente dichiarato, e pulizia dati di test propri su `bookings.spec.ts` — vedi Debug Log). DB `Booking` restituito nello stato pre-sessione (0 righe); la tariffa I-ABCD (200,00 €/h) e il volo di verifica AC 1 (Volante Piero, 1.200,00 €) sono stati lasciati nel DB deliberatamente come parte della verifica empirica richiesta dall'AC — non sono stati rimossi.
+- Nessuna migrazione. Nessun cambio OpenAPI (AC 5 non tocca lo schema `updateBookingSchema`).
+
 ### File List
+
+- `src/lib/money.ts` — AC 1: `useGrouping:'always'`, doc-comment riscritto.
+- `src/lib/money.d.ts` — AC 1: nuovo, ambient type augmentation per `Intl.NumberFormatOptionsUseGroupingRegistry`.
+- `src/lib/money.test.ts` — AC 1: assert aggiornato (separatore migliaia).
+- `src/app/[locale]/dashboard/school/page.tsx` — AC 2: guardia `from > to`.
+- `e2e/school.spec.ts` — AC 2: nuovo test range invertito.
+- `src/app/[locale]/dashboard/school/training-notes-journal.tsx` — AC 3: `useLocale()` threading.
+- `src/app/[locale]/dashboard/ppr/register/ppr-register.tsx` — AC 4: `hasActiveFilter`/`handleResetFilters`.
+- `e2e/ppr-register.spec.ts` — AC 4: nuovo test "Azzera filtri".
+- `src/server/services/bookings.service.ts` — AC 5: `findBlockingExpiredDocuments` helper condiviso, ricontrollo su cambio giorno in `updateBooking`, doc-comment aggiornati.
+- `src/server/services/bookings.service.test.ts` — AC 5: 4 nuovi unit test.
+- `src/app/[locale]/dashboard/bookings/bookings-list.tsx` — AC 5: mapping `EXPIRED_DOCUMENTS` in `MoveBookingForm`, fix `response.clone()` per letture multiple del body.
+- `src/app/[locale]/dashboard/bookings/page.tsx` — AC 5: wiring nuova label `EXPIRED_DOCUMENTS`.
+- `messages/it.json` — AC 5: nuova chiave `BookingsPage.list.actions.errors.EXPIRED_DOCUMENTS`.
+- `messages/en.json` — AC 5: idem, EN.
+- `e2e/bookings.spec.ts` — AC 5: nuovo test spostamento bloccato/non bloccato.
 
 ## Review Record
 
 ## Change Log
 
 - 2026-07-10: Story file created (Fable 5 main session) — TD-pass sui deferred triati dalla retrospettiva Epic 9 (AI-1). Ricognizione Explore completata su tutte e 6 le superfici.
+- 2026-07-10: Implementazione completa (Sonnet 5, single dev agent) — 6 AC chirurgici (money hydration, from>to school, locale journal, ppr-register reset, expiry recheck updateBooking, pg DeprecationWarning non-fixabile-a-call-site) + gates/e2e mirati verdi. Vedi Dev Agent Record per dettagli ed esiti osservati.

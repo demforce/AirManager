@@ -1190,6 +1190,7 @@
         "cancelSuccess": "Booking cancelled.",
         "errors": {
           "BOOKING_ALREADY_STARTED": "This booking has already started and can no longer be modified or cancelled.",
+          "EXPIRED_DOCUMENTS": "Cannot move this booking: the following documents are expired: {documents}.",
           "conflict": "The aircraft is already booked for that interval, or this booking is no longer valid. Reload the page and try again.",
           "generic": "The operation failed. Please try again."
         }

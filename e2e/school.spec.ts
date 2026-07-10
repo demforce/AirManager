@@ -689,4 +689,22 @@ test.describe('School hour summaries (Story 9.3, FR-34)', () => {
     expect(flightsResponse.status()).toBe(403);
     expect((await flightsResponse.json()).error.code).toBe('FORBIDDEN');
   });
+
+  test('un range from>to ben formato ma invertito (URL a mano) degrada al periodo di default, niente 500 (TD-5 AC 2, 93-N2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    // The page's own default period (current month) with no URL params.
+    await page.goto('/it/dashboard/school');
+    const defaultFrom = await page.getByTestId('school-summary-filter-from').inputValue();
+    const defaultTo = await page.getByTestId('school-summary-filter-to').inputValue();
+
+    // A well-formed but inverted range — only reachable via a hand-edited
+    // URL, the filter UI never produces `from > to`.
+    const response = await page.goto(`/it/dashboard/school?from=${PERIOD_TO}&to=${PERIOD_FROM}`);
+    expect(response?.status()).toBe(200);
+    await expect(page.getByTestId('school-summary-filter-from')).toHaveValue(defaultFrom);
+    await expect(page.getByTestId('school-summary-filter-to')).toHaveValue(defaultTo);
+  });
 });

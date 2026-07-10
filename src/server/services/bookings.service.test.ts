@@ -862,6 +862,76 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
   });
 });
 
+describe('updateBooking — expiry-based booking block on a DAY change (Story TD-5, AC 5)', () => {
+  // EXISTING_OWN_BOOKING's startsAt (FUTURE_STARTS_AT, 2099-06-01T10:00Z) is
+  // 12:00 CEST in Rome (June, +2h, no day shift) — its flight day is
+  // 2099-06-01, same convention as the create-expiry suite above.
+  const SAME_DAY_LATER_STARTS_AT = '2099-06-01T18:00:00.000Z'; // still 2099-06-01 in Rome
+  const SAME_DAY_LATER_ENDS_AT = '2099-06-01T19:00:00.000Z';
+  const NEXT_DAY_STARTS_AT = '2099-06-02T10:00:00.000Z'; // 2099-06-02 in Rome
+  const NEXT_DAY_ENDS_AT = '2099-06-02T11:00:00.000Z';
+
+  /** Expired relative to the NEW flight day (06-02) but valid on the ORIGINAL one (06-01) — proves the recheck uses the NEW day. */
+  function expiredBeforeNextDayRow() {
+    return { expiresAt: new Date('2099-06-01T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } };
+  }
+
+  function validOnNextDayRow() {
+    return { expiresAt: new Date('2099-06-02T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } };
+  }
+
+  function nonBlockingWarningRow() {
+    return { expiresAt: new Date('2099-06-01T00:00:00.000Z'), expiryType: { name: 'Rating SEP', blocksBooking: false } };
+  }
+
+  it('moving to a DIFFERENT flight day with a blocking expired document (relative to the NEW day) answers 422 EXPIRED_DOCUMENTS, same shape as create', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    expiryFindMany.mockResolvedValue([expiredBeforeNextDayRow()]);
+
+    const error = await updateBooking(staffActor(), 'booking_1', { startsAt: NEXT_DAY_STARTS_AT, endsAt: NEXT_DAY_ENDS_AT }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(ValidationError);
+    const validationError = error as InstanceType<typeof ValidationError>;
+    expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
+    expect(validationError.message).toContain('Licenza');
+    expect(validationError.details).toEqual({ documents: [{ typeName: 'Licenza', expiresAt: '2099-06-01' }] });
+    // Queried by the booking's OWN personId (`existing.personId`), not the staff actor's (null).
+    expect(expiryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_pilot' } }));
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('moving to a DIFFERENT flight day where the document expires AFTER the new day succeeds', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    expiryFindMany.mockResolvedValue([validOnNextDayRow()]);
+
+    const result = await updateBooking(staffActor(), 'booking_1', { startsAt: NEXT_DAY_STARTS_AT, endsAt: NEXT_DAY_ENDS_AT });
+
+    expect(result.id).toBe('booking_1');
+  });
+
+  it('changing ONLY the time within the SAME flight day never rechecks — a booking created with force past a blocking document stays editable that day', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    // A row that WOULD block if rechecked — proves this is a genuine skip, not a lucky empty result.
+    expiryFindMany.mockResolvedValue([expiredBeforeNextDayRow()]);
+
+    const result = await updateBooking(staffActor(), 'booking_1', { startsAt: SAME_DAY_LATER_STARTS_AT, endsAt: SAME_DAY_LATER_ENDS_AT });
+
+    expect(result.id).toBe('booking_1');
+    expect(expiryFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it('moving to a DIFFERENT flight day with only a non-blocking expired document never blocks', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    expiryFindMany.mockResolvedValue([nonBlockingWarningRow()]);
+
+    const result = await updateBooking(staffActor(), 'booking_1', { startsAt: NEXT_DAY_STARTS_AT, endsAt: NEXT_DAY_ENDS_AT });
+
+    expect(result.id).toBe('booking_1');
+  });
+});
+
 describe('cancelBooking (Story 7.3, AC 1/2)', () => {
   it('a student (no bookings.manage.own) gets 403 straight from authorize() — no queries at all', async () => {
     await expect(cancelBooking(studentActor(), 'booking_1')).rejects.toThrow(ForbiddenError);

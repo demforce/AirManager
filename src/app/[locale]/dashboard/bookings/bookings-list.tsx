@@ -61,6 +61,8 @@ export type BookingsListLabels = {
     cancelSuccess: string;
     errors: {
       BOOKING_ALREADY_STARTED: string;
+      /** TD-5, AC 5: the "moving to a different day" 422 — `{documents}` placeholder, same `details.documents` shape as the create form's own `EXPIRED_DOCUMENTS`. */
+      EXPIRED_DOCUMENTS: string;
       /** Covers BOTH 409 causes (overlap on move, already-cancelled race) — see module doc-comment. */
       conflict: string;
       generic: string;
@@ -81,7 +83,8 @@ type BookingsListProps = {
   labels: BookingsListLabels;
 };
 
-type ApiErrorBody = { error?: { code?: string; details?: { reason?: string } } };
+/** TD-5, AC 5: `details` also carries `documents` on an `EXPIRED_DOCUMENTS` 422 (`{ typeName, expiresAt }[]`, same shape as `createBooking`'s, `new-booking-form.tsx`'s own `ApiErrorBody`). */
+type ApiErrorBody = { error?: { code?: string; details?: { reason?: string; documents?: Array<{ typeName: string; expiresAt: string }> } } };
 
 async function errorCodeOf(response: Response): Promise<string | null> {
   const body: unknown = await response.json().catch(() => null);
@@ -91,6 +94,12 @@ async function errorCodeOf(response: Response): Promise<string | null> {
 async function errorReasonOf(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => null);
   return (body as ApiErrorBody | null)?.error?.details?.reason ?? '';
+}
+
+/** TD-5, AC 5 — the blocking document type names off an `EXPIRED_DOCUMENTS` 422, same extraction as `new-booking-form.tsx`. */
+async function errorDocumentNamesOf(response: Response): Promise<string[]> {
+  const body: unknown = await response.json().catch(() => null);
+  return ((body as ApiErrorBody | null)?.error?.details?.documents ?? []).map((document) => document.typeName);
 }
 
 /**
@@ -410,13 +419,22 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
         setFormError(labels.actions.errors.conflict);
         return;
       }
-      const code = await errorCodeOf(response);
+      // TD-5, AC 5: a `Response` body can only be read ONCE — with a 3rd
+      // possible follow-up read now added (`errorDocumentNamesOf`, alongside
+      // the pre-existing `errorReasonOf`), every helper below reads its OWN
+      // `.clone()` so each stays independently readable regardless of which
+      // branch fires.
+      const code = await errorCodeOf(response.clone());
       if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
-        setFormError(labels.form.errors.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', await errorReasonOf(response)));
+        setFormError(labels.form.errors.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', await errorReasonOf(response.clone())));
       } else if (code === 'BOOKING_IN_PAST') {
         setFormError(labels.form.errors.BOOKING_IN_PAST);
       } else if (code === 'BOOKING_ALREADY_STARTED') {
         setFormError(labels.actions.errors.BOOKING_ALREADY_STARTED);
+      } else if (code === 'EXPIRED_DOCUMENTS') {
+        // No `force` bypass on this endpoint (module doc-comment) — just the
+        // message, same document-names extraction as the create form.
+        setFormError(labels.actions.errors.EXPIRED_DOCUMENTS.replace('{documents}', (await errorDocumentNamesOf(response.clone())).join(', ')));
       } else {
         setFormError(labels.actions.errors.generic);
       }

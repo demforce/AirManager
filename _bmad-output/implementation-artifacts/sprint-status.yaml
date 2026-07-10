@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-10 (epic-9 retro done; td-5 deferred pass in corso)
+last_updated: 2026-07-10 (epic-9 retro done; td-5 deferred pass in review)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -111,7 +111,7 @@ development_status:
   epic-9-retrospective: done
 
   # Tech-debt pass sui deferred (post-retro epic 9, sessione 2026-07-10)
-  td-5-deferred-pass: in-progress
+  td-5-deferred-pass: review
 
   epic-10: backlog
   10-1-excel-exports: backlog
