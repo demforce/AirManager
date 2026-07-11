@@ -12,11 +12,22 @@ import type { ReactElement } from 'react';
  * is a pre-formatted string, never a numeric cell. `color`, when given,
  * sets ONLY that cell's text color per row — the one use case is the
  * expiries status column, reusing `expiry-status-badge.tsx`'s palette.
+ * `width` is a RELATIVE flex weight (mirrors the excel adapter's `width`,
+ * though that one is an absolute character count) — omitted, every column
+ * gets the SAME 1 (the story 10.2 behavior, unchanged for the 3 reports that
+ * never set it). Story 11.3 (AC 3): introduced because the flight log's 12
+ * equal-width columns left unbreakable tokens with no wrap point (a plain
+ * `DD/MM/YYYY` date, an aircraft registration) NARROWER than their own text —
+ * react-pdf cannot hyphenate a non-dictionary token, so it silently
+ * overflows into the next column instead of wrapping. Found via the AC 3
+ * real-PDF render check (a `flex:1` regression only visible once column
+ * count grew past ~9), not a hypothetical.
  */
 export type PdfColumn<T> = {
   header: string;
   value: (row: T) => string;
   color?: (row: T) => string | undefined;
+  width?: number;
 };
 
 /** One line of the optional totals block below the table (AC 2: "totali dove pertinenti"). */
@@ -57,8 +68,8 @@ const styles = StyleSheet.create({
   table: { borderTopWidth: 1, borderTopColor: COLOR.border, marginTop: 6 },
   row: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLOR.border, paddingVertical: 5 },
   headerRow: { backgroundColor: COLOR.headerBg },
-  headerCell: { flex: 1, paddingHorizontal: 4, fontWeight: 700 },
-  cell: { flex: 1, paddingHorizontal: 4 },
+  headerCell: { paddingHorizontal: 4, fontWeight: 700 },
+  cell: { paddingHorizontal: 4 },
   totals: { marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', columnGap: 20, rowGap: 6 },
   totalItem: { fontSize: 10, fontWeight: 700 },
   footer: { position: 'absolute', bottom: 20, left: 36, right: 36, fontSize: 8, color: COLOR.muted, textAlign: 'center' },
@@ -95,7 +106,7 @@ export function PdfReportDocument<T>(props: PdfReportDocumentProps<T>): ReactEle
         <View style={styles.table}>
           <View style={[styles.row, styles.headerRow]}>
             {props.columns.map((column, index) => (
-              <Text key={index} style={styles.headerCell}>
+              <Text key={index} style={[styles.headerCell, { flex: column.width ?? 1 }]}>
                 {column.header}
               </Text>
             ))}
@@ -108,7 +119,7 @@ export function PdfReportDocument<T>(props: PdfReportDocumentProps<T>): ReactEle
                 {props.columns.map((column, colIndex) => {
                   const color = column.color?.(row);
                   return (
-                    <Text key={colIndex} style={color ? [styles.cell, { color }] : styles.cell}>
+                    <Text key={colIndex} style={[styles.cell, { flex: column.width ?? 1, color }]}>
                       {column.value(row)}
                     </Text>
                   );

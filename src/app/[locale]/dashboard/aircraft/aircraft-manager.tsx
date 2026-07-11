@@ -22,7 +22,7 @@ import {
   type UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
 import { formatCents, parseCents } from '@/lib/money';
-import { formatDateTime, formatMinutes } from '@/lib/time';
+import { formatDateOnly, formatDateTime, formatMinutes } from '@/lib/time';
 
 export type AircraftRow = {
   id: string;
@@ -1345,7 +1345,7 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
               <tbody>
                 {history.map((entry) => (
                   <tr key={entry.id} data-testid="rate-history-row" className="border-b border-[#EAEAEA] text-[#111111]">
-                    <td className="py-2 pr-4 whitespace-nowrap">{entry.validFrom}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{formatDateOnly(entry.validFrom, moneyLocale)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatCents(entry.priceCentsPerHour, moneyLocale)}/h</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{entry.actorEmail}</td>
                     <td className="py-2 whitespace-nowrap text-[#787774]">{formatDateTime(new Date(entry.createdAt))}</td>

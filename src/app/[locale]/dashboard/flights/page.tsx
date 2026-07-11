@@ -5,6 +5,7 @@ import type { FlightStatusDto, FlightTypeDto } from '@/lib/schemas/flights';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listAircraft } from '@/server/services/aircraft.service';
+import { getAirfieldBranding } from '@/server/services/app-settings.service';
 import { listFlights } from '@/server/services/flights.service';
 import { listPeople } from '@/server/services/people.service';
 import { FlightsManager, type FlightsFilters } from './flights-manager';
@@ -116,6 +117,11 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
       ? instructorPersonIdParam
       : undefined;
 
+  // Story 11.1 (AC 1): the registration form's departure/arrival default —
+  // NO permission gate (`getAirfieldBranding`'s own doc-comment, same as the
+  // PDF exports already do).
+  const branding = await getAirfieldBranding();
+
   // Sequential, not `Promise.all` (5.1 Debug Log: concurrent `$transaction`s
   // on the shared driver-adapter Prisma client trigger a `pg` "client is
   // already executing a query" warning under load) — aircraft/people (staff
@@ -171,12 +177,15 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
   }
   const totalPages = Math.max(1, Math.ceil(flightsResult.total / FLIGHTS_PAGE_SIZE));
 
-  // `createdAt`/`cancelledAt` serialized to ISO (AD-8) — the service's `Date`
-  // cannot cross the server/client boundary as-is (same pattern as 5.1/5.3).
+  // `createdAt`/`cancelledAt`/`takeoffAt`/`landingAt` serialized to ISO
+  // (AD-8) — the service's `Date` cannot cross the server/client boundary
+  // as-is (same pattern as 5.1/5.3; `takeoffAt`/`landingAt` new in 11.1).
   const initialFlights = flightsResult.items.map((flight) => ({
     ...flight,
     createdAt: flight.createdAt.toISOString(),
     cancelledAt: flight.cancelledAt ? flight.cancelledAt.toISOString() : null,
+    takeoffAt: flight.takeoffAt ? flight.takeoffAt.toISOString() : null,
+    landingAt: flight.landingAt ? flight.landingAt.toISOString() : null,
   }));
 
   const filters: FlightsFilters = {
@@ -264,6 +273,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
             personFilterOptions={personFilterOptions}
             initialFlights={initialFlights}
             moneyLocale={locale === 'en' ? 'en' : 'it'}
+            airfieldName={branding.name}
             filters={filters}
             exportLabel={tExport('button')}
             exportPdfLabel={tExport('buttonPdf')}
@@ -288,22 +298,22 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   dual: t('form.soloModes.dual'),
                   solo: t('form.soloModes.solo'),
                 },
-                durationMode: t('form.durationMode'),
-                durationModes: {
-                  minutes: t('form.durationModes.minutes'),
-                  hourMeter: t('form.durationModes.hourMeter'),
-                },
-                minutes: t('form.minutes'),
+                departure: t('form.departure'),
+                arrival: t('form.arrival'),
+                takeoffTime: t('form.takeoffTime'),
+                landingTime: t('form.landingTime'),
+                computedDuration: t('form.computedDuration'),
+                takeoffs: t('form.takeoffs'),
                 hourMeterStart: t('form.hourMeterStart'),
                 hourMeterEnd: t('form.hourMeterEnd'),
                 landings: t('form.landings'),
                 notes: t('form.notes'),
                 submit: t('form.submit'),
                 requiredField: t('form.requiredField'),
-                invalidMinutes: t('form.invalidMinutes'),
                 invalidHourMeter: t('form.invalidHourMeter'),
                 errors: {
                   HOUR_METER_INVALID: t('form.errors.HOUR_METER_INVALID'),
+                  FLIGHT_TIMES_INVALID: t('form.errors.FLIGHT_TIMES_INVALID'),
                   NO_AIRCRAFT_RATE: t('form.errors.NO_AIRCRAFT_RATE'),
                   NO_INSTRUCTOR_RATE: t('form.errors.NO_INSTRUCTOR_RATE'),
                   SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR: t('form.errors.SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR'),
@@ -334,6 +344,8 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                 empty: t('list.empty'),
                 table: {
                   date: t('list.table.date'),
+                  route: t('list.table.route'),
+                  times: t('list.table.times'),
                   aircraft: t('list.table.aircraft'),
                   person: t('list.table.person'),
                   instructor: t('list.table.instructor'),
@@ -342,7 +354,8 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   soloSuffix: t('list.table.soloSuffix'),
                   duration: t('list.table.duration'),
                   amount: t('list.table.amount'),
-                  landings: t('list.table.landings'),
+                  movements: t('list.table.movements'),
+                  pic: t('list.table.pic'),
                   noValue: t('list.table.noValue'),
                   // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
                   // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).

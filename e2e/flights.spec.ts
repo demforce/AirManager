@@ -46,6 +46,13 @@ function uniqueEmail(prefix: string): string {
 /** A safely-in-the-past date, before any run-unique aircraft/rate created below. */
 const PAST_DATE = '2020-01-01';
 
+/** Story 11.1: composes `{ takeoffAt, landingAt }` for a direct `POST /api/v1/flights` call — `10:00Z` stays clear of the Europe/Rome midnight boundary. */
+function flightTimes(dateOnly: string, minutes: number): { takeoffAt: string; landingAt: string } {
+  const takeoffAt = `${dateOnly}T10:00:00.000Z`;
+  const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
+  return { takeoffAt, landingAt };
+}
+
 type MailpitMessageSummary = { ID: string; Subject: string };
 type MailpitFullMessage = { Text: string; Subject: string };
 
@@ -176,8 +183,8 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number | nu
   return { id: aircraft.id, registration };
 }
 
-test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', () => {
-  test('staff registers a flight with direct minutes: breakdown shown, balance drops in the estratto conto (FLIGHT_CHARGE, negative), aircraft hour meter advances', async ({
+test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Story 11.1, AC 1/2)', () => {
+  test('staff registers a flight with takeoff/landing times: duration auto-derived and shown live, breakdown shown, balance drops in the estratto conto (FLIGHT_CHARGE, negative), aircraft hour meter advances', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -200,7 +207,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
       pilot.lastName,
       `${pilot.lastName} ${pilot.firstName}`,
     );
-    await page.getByLabel('Minuti', { exact: true }).fill('80');
+    // 80' (1:20) via takeoff/landing times — story 11.1, AC 2: the duration is derived, never a direct input.
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('11:20');
+    await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:20');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     // 80' @ 150,00 €/h -> 200,00 € (the PRD-testable 80'x150 case).
@@ -235,7 +245,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     await expect(page.getByTestId('account-statement-balance')).toContainText(/-200,00\s€/);
   });
 
-  test('flight with hourMeterStart/hourMeterEnd derives minutes; a SCHOOL flight with an instructor charges both and sums the total', async ({
+  test('orari decollo/atterraggio derivano la durata (contaore ormai solo informativo); a SCHOOL flight with an instructor charges both and sums the total', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -258,9 +268,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
       `${instructor.lastName} ${instructor.firstName}`,
     );
     await page.getByTestId('flight-form').getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
-    await page.getByRole('radio', { name: 'Contaore iniziale/finale' }).click();
-    await page.getByLabel('Contaore iniziale', { exact: true }).fill('100');
-    await page.getByLabel('Contaore finale', { exact: true }).fill('160'); // 60' derived.
+    // 60' via takeoff/landing times — the (optional, purely informational) contaore pair is left blank.
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('11:00');
+    await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     // 60' @ 120,00 €/h -> 120,00 €; 60' @ 40,00 €/h -> 40,00 €; total 160,00 €.
@@ -275,7 +286,9 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     await expect(row).toContainText(/160,00\s€/);
   });
 
-  test('an invalid hour-meter pair (end <= start) shows the HOUR_METER_INVALID message in the form', async ({ page }) => {
+  test('an invalid hour-meter pair (end <= start) shows the HOUR_METER_INVALID message in the form (story 11.1: two independent optional fields, no radio/mode anymore)', async ({
+    page,
+  }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const aircraft = await createAircraftWithRate(page, 15000);
@@ -288,9 +301,31 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
       pilot.lastName,
       `${pilot.lastName} ${pilot.firstName}`,
     );
-    await page.getByRole('radio', { name: 'Contaore iniziale/finale' }).click();
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
     await page.getByLabel('Contaore finale', { exact: true }).fill('200');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+
+    await expect(page.getByTestId('flight-form-error')).toContainText("Il contaore finale deve essere maggiore dell'iniziale.");
+  });
+
+  test('an incomplete hour-meter pair (only the start filled) shows the HOUR_METER_INVALID message in the form', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 15000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsHM1!');
+
+    await page.goto('/it/dashboard/flights');
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(
+      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
+      pilot.lastName,
+      `${pilot.lastName} ${pilot.firstName}`,
+    );
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     await expect(page.getByTestId('flight-form-error')).toContainText("Il contaore finale deve essere maggiore dell'iniziale.");
@@ -309,7 +344,8 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
       pilot.lastName,
       `${pilot.lastName} ${pilot.firstName}`,
     );
-    await page.getByLabel('Minuti', { exact: true }).fill('30');
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     await expect(page.getByTestId('flight-form-error')).toContainText('Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.');
@@ -323,11 +359,94 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     await loginExpectingDashboard(page, pilot.email, 'PilotFlightsForbidden1!');
 
     const response = await page.request.post('/api/v1/flights', {
-      data: { aircraftId: 'whatever', personId: pilot.personId, flightDate: PAST_DATE, flightType: 'TOURISM', minutes: 30 },
+      data: {
+        aircraftId: 'whatever',
+        personId: pilot.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        ...flightTimes(PAST_DATE, 30),
+      },
     });
     expect(response.status()).toBe(403);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  test('a landing at/before takeoff or a duration over 1440 minutes is a 422 FLIGHT_TIMES_INVALID (story 11.1, AC 3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 10000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsTimesInvalid1!');
+
+    const sameInstantResponse = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        takeoffAt: `${PAST_DATE}T10:00:00.000Z`,
+        landingAt: `${PAST_DATE}T10:00:00.000Z`,
+      },
+    });
+    expect(sameInstantResponse.status()).toBe(422);
+    expect(((await sameInstantResponse.json()) as { error: { code: string } }).error.code).toBe('FLIGHT_TIMES_INVALID');
+
+    const tooLongResponse = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        ...flightTimes(PAST_DATE, 1441),
+      },
+    });
+    expect(tooLongResponse.status()).toBe(422);
+    expect(((await tooLongResponse.json()) as { error: { code: string } }).error.code).toBe('FLIGHT_TIMES_INVALID');
+  });
+
+  test('a landing past midnight (landingTime <= takeoffTime) is interpreted as the following day, both via the UI and the API (story 11.1, AC 2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000); // 120,00 €/h
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsMidnight1!');
+
+    await page.goto('/it/dashboard/flights');
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(
+      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
+      pilot.lastName,
+      `${pilot.lastName} ${pilot.firstName}`,
+    );
+    await page.getByLabel('Data volo').fill(PAST_DATE);
+    // 23:30 -> 00:10 the next day: 40', not a negative duration.
+    await page.getByLabel('Ora decollo').fill('23:30');
+    await page.getByLabel('Ora atterraggio').fill('00:10');
+    await expect(page.getByTestId('flight-computed-duration')).toHaveText('0:40');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+
+    const resultPanel = page.getByTestId('flight-result-panel');
+    await expect(resultPanel).toContainText('0:40');
+
+    // Same case directly via the API, with `landingAt` on the NEXT calendar
+    // day (the server never needs the UI's own +1-day rollover — it just
+    // compares the two given instants): no 422, minutes derives to 40.
+    const response = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        takeoffAt: `${PAST_DATE}T23:30:00.000Z`,
+        landingAt: '2020-01-02T00:10:00.000Z',
+      },
+    });
+    expect(response.status()).toBe(201);
+    const body = (await response.json()) as { flight: { minutes: number } };
+    expect(body.flight.minutes).toBe(40);
   });
 
   test('nav shows "Voli" for both staff and a pilot (story 5.4, FR-17: own-access registry)', async ({ page }) => {
@@ -342,5 +461,81 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4)', (
     await loginExpectingDashboard(page, pilot.email, 'PilotFlightsNav123!');
     const pilotNav = page.getByRole('navigation', { name: 'Aree operative' });
     await expect(pilotNav.getByRole('link', { name: 'Voli', exact: true })).toHaveAttribute('href', '/it/dashboard/flights');
+  });
+
+  test('the registry shows the new logbook columns (data DD/MM/YYYY, tratta, orari, decolli/atterraggi) and derives the PIC for a dual SCHOOL flight as the instructor (story 11.2, AC 1/2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 10000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsLogbook1!');
+    const instructor = await createInstructorWithRate(page, 4000);
+
+    const departure = `Campo-${uniqueSuffix()}`;
+    const arrival = `Base-${uniqueSuffix()}`;
+    const takeoffAt = `${PAST_DATE}T10:00:00.000Z`;
+    const landingAt = `${PAST_DATE}T11:00:00.000Z`;
+
+    // Direct API registration (not the form): the tratta/orari assertions
+    // below need EXACT, run-deterministic values — the form composes
+    // `takeoffAt`/`landingAt` from the BROWSER's local timezone, which this
+    // suite never pins (Playwright inherits the container's `Etc/UTC`), so a
+    // form-filled '10:00' would not reliably equal `10:00:00.000Z`.
+    const response = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        instructorPersonId: instructor.personId,
+        departureAirfield: departure,
+        arrivalAirfield: arrival,
+        flightType: 'SCHOOL',
+        isSolo: false,
+        takeoffAt,
+        landingAt,
+        takeoffs: 2,
+        landings: 3,
+      },
+    });
+    expect(response.status()).toBe(201);
+
+    // Same Europe/Rome conversion the registry's `formatTimeOfDay` applies
+    // (Node's `Intl` supports any IANA zone regardless of the host/browser
+    // TZ) — computed here instead of hardcoded, so it holds across the
+    // CET/CEST boundary too.
+    const romeTimeFormatter = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false });
+    const expectedTimes = `${romeTimeFormatter.format(new Date(takeoffAt))}–${romeTimeFormatter.format(new Date(landingAt))}`;
+
+    await page.goto('/it/dashboard/flights');
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await expect(page).toHaveURL(/aircraftId=/);
+
+    const row = page.getByTestId('flight-row').first();
+    await expect(row).toContainText('01/01/2020');
+    await expect(row).toContainText(`${departure} → ${arrival}`);
+    await expect(row).toContainText(expectedTimes);
+    await expect(row).toContainText('2 / 3');
+    // Dual SCHOOL flight (AC 2): the PIC is the INSTRUCTOR, distinctly from
+    // the existing "Istruttore" column (same name, different cell).
+    await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${instructor.lastName} ${instructor.firstName}`);
+
+    // A SOLO SCHOOL flight on the same pilot: the PIC is the pilot (allievo), not the instructor.
+    const soloResponse = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        instructorPersonId: instructor.personId,
+        departureAirfield: departure,
+        arrivalAirfield: arrival,
+        flightType: 'SCHOOL',
+        isSolo: true,
+        takeoffAt: `${PAST_DATE}T12:00:00.000Z`,
+        landingAt: `${PAST_DATE}T12:30:00.000Z`,
+      },
+    });
+    expect(soloResponse.status()).toBe(201);
+    await page.reload();
+    const soloRow = page.getByTestId('flight-row').filter({ hasText: 'solista' }).first();
+    await expect(soloRow.getByTestId('flight-pic-cell')).toHaveText(`${pilot.lastName} ${pilot.firstName}`);
   });
 });

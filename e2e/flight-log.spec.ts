@@ -164,8 +164,28 @@ type RegisterFlightParams = {
   minutes: number;
 };
 
+/**
+ * Story 11.1: `POST /api/v1/flights` now takes `takeoffAt`/`landingAt`
+ * (logbook instants) instead of `flightDate`/`minutes` — this helper keeps
+ * every call site's `{ flightDate, minutes }` shape (least churn) and
+ * composes the wire body itself. `10:00Z` is comfortably clear of the
+ * Europe/Rome midnight boundary, so the server-derived `flightDate` always
+ * equals `params.flightDate`.
+ */
 async function registerFlight(page: Page, params: RegisterFlightParams): Promise<{ id: string }> {
-  const response = await page.request.post('/api/v1/flights', { data: params });
+  const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
+  const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
+  const response = await page.request.post('/api/v1/flights', {
+    data: {
+      aircraftId: params.aircraftId,
+      personId: params.personId,
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      takeoffAt,
+      landingAt,
+      flightType: params.flightType,
+    },
+  });
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { flight: { id: string } };
   return body.flight;

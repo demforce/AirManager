@@ -830,11 +830,33 @@ model Flight {
   /// me" without a separate query.
   correctedBy    Flight?      @relation("FlightCorrection")
 
+  /// Logbook fields (story 11.1, FR-43) — the real departure/arrival
+  /// airports and takeoff/landing clock instants a flight actually
+  /// happened between. Nullable ONLY for historical flights (pre-11.1):
+  /// every NEW registration/correction requires all four
+  /// (`resolveFlightInput`, 422 `FLIGHT_TIMES_INVALID` on an invalid
+  /// pair) — `minutes`/`flightDate` are DERIVED from `takeoffAt`/
+  /// `landingAt`, never independent inputs after this story.
+  departureAirfield String?
+  arrivalAirfield   String?
+  takeoffAt         DateTime?
+  landingAt         DateTime?
+
   minutes        Int
+  /// Informational only since story 11.1 — `minutes` is ALWAYS derived from
+  /// `takeoffAt`/`landingAt`, never from this pair. Still validated as a
+  /// self-consistent pair when given (422 `HOUR_METER_INVALID` if
+  /// incomplete or `hourMeterEnd <= hourMeterStart`) — its own difference
+  /// may legitimately diverge from `minutes` (engine time vs block time).
   hourMeterStart Int?
   hourMeterEnd   Int?
-  landings       Int?
-  notes          String?
+  /// Story 11.1: `takeoffs` mirrors `landings` — both NOT NULL DEFAULT 1
+  /// (every flight has at least one of each; historical `landings`
+  /// backfilled NULL -> 1, `takeoffs` is a brand-new column so no backfill
+  /// is needed).
+  takeoffs Int @default(1)
+  landings Int @default(1)
+  notes    String?
 
   aircraftRateCentsPerHour   Int
   /// Snapshot (AD-4) of the amount ACTUALLY CHARGED for the aircraft

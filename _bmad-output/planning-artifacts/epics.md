@@ -57,6 +57,9 @@ Questo documento fornisce la scomposizione completa in epics e stories di AirMan
 - FR-40: Export PDF (estratto conto, report finanziario, registro voli, scadenze) con intestazione configurabile
 - FR-41: Dashboard per ruolo (staff/pilota-allievo/istruttore)
 - FR-42: API REST /api/v1 con Zod + spec OpenAPI pubblicata
+- FR-43: Campi logbook sul volo — aeroporto di partenza/arrivo, orario di decollo/atterraggio, n. decolli/atterraggi; durata DERIVATA (atterraggio−decollo); obbligatori per i voli nuovi (change request 2026-07-10)
+- FR-44: Registro voli in formato logbook con PIC derivato; export Excel/PDF aggiornati coi nuovi campi (change request 2026-07-10)
+- FR-45: Date in formato italiano (DD/MM/YYYY) su tutte le superfici UI; accesso diretto ai voli di una persona dalla sua scheda (change request 2026-07-10)
 
 ### NonFunctional Requirements
 
@@ -101,6 +104,7 @@ Nessun documento UX formale. Vincoli UI vincolanti per i dev agent: skill `minim
 | FR-22, FR-23, FR-24 | Epic 8 | PPR (tassa → cassa di Epic 3; export registro in Epic 10) |
 | FR-32, FR-33, FR-34 | Epic 9 | Scuola volo (export riepiloghi in Epic 10) |
 | FR-39, FR-40, FR-41 | Epic 10 | Export completi + dashboard per ruolo |
+| FR-43, FR-44, FR-45 | Epic 11 | Registro voli logbook (change request post-MVP 2026-07-10) |
 
 NFR trasversali: NFR-1/2/5/8 vincolano ogni story con UI/API; NFR-3 Epic 1/2/6; NFR-4 Epic 3/5; NFR-6 ogni lista; NFR-7 ogni story con email; NFR-9 nella Definition of Done di ogni story.
 
@@ -145,6 +149,10 @@ Assegnazione allievi-istruttori, annotazioni di avanzamento, riepiloghi ore.
 ### Epic 10: Export e dashboard
 Export Excel/PDF su tutte le viste e i report; dashboard per ruolo complete.
 **FRs covered:** FR-39, FR-40, FR-41
+
+### Epic 11: Registro voli logbook (post-MVP, change request 2026-07-10)
+Il volo registra aeroporti e orari reali con durata derivata; il registro diventa un logbook completo (PIC incluso), raggiungibile in un click dalla scheda persona; date italiane ovunque.
+**FRs covered:** FR-43, FR-44, FR-45
 
 **Dipendenze tra epics:** 1 → 2 → 3 → 4 → 5; 6 dopo 2; 7 dopo 6 e 2; 8 dopo 3; 9 dopo 5; 10 per ultimo. Ogni epic consegna valore completo senza richiedere epic futuri.
 
@@ -819,3 +827,71 @@ So that il sistema mi anticipi invece di farmi cercare (FR-41).
 **Given** un istruttore
 **When** apre la home
 **Then** vede: i propri allievi, i voli scuola recenti, le ore del mese
+
+## Epic 11: Registro voli logbook (post-MVP, change request 2026-07-10)
+
+Il volo registra aeroporti di partenza/arrivo e orari reali di decollo/atterraggio; la durata è derivata (atterraggio−decollo) e resta la base dell'addebito. Il registro voli diventa un logbook completo con PIC derivato, raggiungibile in un click dalla scheda persona; le date sono in formato italiano su tutte le superfici. Decisioni vincolanti in `change-request-flight-log-2026-07-10.md`.
+
+### Story 11.1: Campi logbook e durata derivata
+
+As a staff,
+I want registrare per ogni volo aeroporti e orari reali di decollo e atterraggio,
+So that il registro sia un logbook fedele e la durata non sia più un dato battuto a mano (FR-43).
+
+**Acceptance Criteria:**
+
+**Given** il form di registrazione volo
+**When** lo apro
+**Then** partenza e arrivo sono precompilati col nome dell'aviosuperficie (settings `airfield.name`, fallback stringa vuota) e decolli/atterraggi valgono 1
+
+**Given** data del volo, orario di decollo e orario di atterraggio (HH:MM, Europe/Rome)
+**When** compilo il form
+**Then** la durata hh:mm è calcolata automaticamente come atterraggio−decollo (atterraggio ≤ decollo → giorno successivo) e l'addebito usa ESATTAMENTE quella durata (pro-rata e pacchetti invariati)
+
+**Given** un volo nuovo
+**When** lo registro via API o UI
+**Then** aeroporti e orari sono OBBLIGATORI (422 se mancanti); sul wire gli orari sono `takeoffAt`/`landingAt` ISO 8601 UTC (AD-8); `flightDate` e `minutes` diventano DERIVATI lato server (giorno di decollo in Europe/Rome; differenza in minuti, minimo 1) e non sono più input
+
+**Given** i voli registrati prima della migrazione
+**When** la migrazione gira
+**Then** restano validi senza aeroporti/orari (colonne nullable); `landings` NULL è backfillato a 1 e la colonna diventa NOT NULL; nasce `takeoffs` NOT NULL default 1
+
+**Given** un volo annullato
+**When** lo correggo (`correctFlight`)
+**Then** il form/API di correzione richiede gli stessi campi logbook, prefillati dall'originale quando presenti
+
+### Story 11.2: Registro logbook, PIC e voli dalla scheda persona
+
+As a gestore o pilota,
+I want vedere nel registro tutti i campi logbook col PIC e raggiungere i voli di una persona in un click,
+So that consultare il logbook di chiunque sia immediato (FR-44, FR-45).
+
+**Acceptance Criteria:**
+
+**Given** il registro voli
+**When** lo apro
+**Then** le colonne includono: data (DD/MM/YYYY), partenza, arrivo, decollo e atterraggio (HH:MM Europe/Rome), durata hh:mm, decolli, atterraggi, PIC, istruttore (solo voli scuola); i voli storici senza dati logbook mostrano "—"
+
+**Given** un volo
+**When** ne derivo il PIC
+**Then** vale: volo non scuola → la persona del volo; volo scuola solista → l'allievo; volo scuola doppio comando → l'istruttore (regola già codificata su `isSolo`, story 9.4 — MAI memorizzata)
+
+**Given** la scheda di una persona (`people/[id]`)
+**When** la apro con permesso di vedere i voli
+**Then** un link/pannello "Voli" porta al registro pre-filtrato su quella persona; per il titolare senza `flights.manage` porta al proprio registro
+
+### Story 11.3: Date italiane ovunque ed export logbook
+
+As a utente,
+I want date in formato italiano su ogni schermata ed export allineati al logbook,
+So that il sistema parli la lingua del campo volo (FR-44, FR-45).
+
+**Acceptance Criteria:**
+
+**Given** ogni superficie UI che oggi mostra date-only ISO raw (registro voli, estratto conto, scadenze — audit completo nella story)
+**When** la apro
+**Then** le date sono DD/MM/YYYY via `formatDateOnly`/`formatDateTime` (nessun nuovo formatter)
+
+**Given** l'export Excel e PDF del registro voli
+**When** lo scarico
+**Then** contiene le nuove colonne logbook (partenza, arrivo, decollo, atterraggio, decolli, atterraggi, PIC) con date DD/MM/YYYY e orari HH:MM Europe/Rome, intestazioni localizzate IT/EN

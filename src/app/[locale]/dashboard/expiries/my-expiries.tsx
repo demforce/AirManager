@@ -1,10 +1,12 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useLocale } from 'next-intl';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { ExpiryItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
+import { formatDateOnly } from '@/lib/time';
 import { ExpiryStatusBadge } from './expiry-status-badge';
 
 export type MyExpiriesLabels = {
@@ -112,6 +114,8 @@ type MyExpiryRowProps = {
 };
 
 function MyExpiryRow({ expiry, isProposing, labels, onOpenPropose, onCancelPropose, onProposed }: MyExpiryRowProps) {
+  const moneyLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
+
   return (
     <>
       <tr data-testid="my-expiry-row" className="border-b border-[#EAEAEA] align-top text-[#111111]">
@@ -126,8 +130,8 @@ function MyExpiryRow({ expiry, isProposing, labels, onOpenPropose, onCancelPropo
             </span>
           ) : null}
         </td>
-        <td className="py-3 pr-4 whitespace-nowrap">{expiry.issuedAt}</td>
-        <td className="py-3 pr-4 whitespace-nowrap">{expiry.expiresAt}</td>
+        <td className="py-3 pr-4 whitespace-nowrap">{formatDateOnly(expiry.issuedAt, moneyLocale)}</td>
+        <td className="py-3 pr-4 whitespace-nowrap">{formatDateOnly(expiry.expiresAt, moneyLocale)}</td>
         <td className="py-3 pr-4">
           <ExpiryStatusBadge status={expiry.status} label={labels.table.status[expiry.status]} data-testid="my-expiry-status-badge" />
         </td>

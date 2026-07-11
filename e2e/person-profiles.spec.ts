@@ -82,7 +82,7 @@ test.describe('Person profiles (Story 2.2)', () => {
     await page.getByLabel('Data inizio corso').fill('2026-03-01');
     await page.getByRole('button', { name: 'Salva' }).click();
     await expect(studentSection.getByText('Attivo', { exact: true })).toBeVisible();
-    await expect(studentSection.getByText('Data inizio corso: 2026-03-01')).toBeVisible();
+    await expect(studentSection.getByText('Data inizio corso: 01/03/2026')).toBeVisible();
 
     const row = page.getByRole('row', { name: new RegExp(person.lastName) });
     await expect(row.getByText('A', { exact: true })).toBeVisible();
@@ -106,7 +106,7 @@ test.describe('Person profiles (Story 2.2)', () => {
     await expect(row.getByText('P', { exact: true })).toBeVisible();
     await expect(row.getByText('A', { exact: true })).toHaveCount(0);
     // The deactivated student data is retained in the panel, not deleted.
-    await expect(studentSection.getByText('Data inizio corso: 2026-03-01')).toBeVisible();
+    await expect(studentSection.getByText('Data inizio corso: 01/03/2026')).toBeVisible();
   });
 
   test('a pilot gets the 403 AD-8 envelope from PUT .../profiles/pilot (AC 3)', async ({ page }) => {

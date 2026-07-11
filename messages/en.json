@@ -224,8 +224,16 @@
     },
     "placeholders": {
       "comingSoon": "Coming soon.",
-      "recentFlights": "Recent flights",
       "upcomingBookings": "Upcoming bookings"
+    },
+    "recentFlightsPanel": {
+      "heading": "Recent flights",
+      "empty": "No flights recorded.",
+      "viewAll": "View all",
+      "status": {
+        "registered": "Registered",
+        "cancelled": "Cancelled"
+      }
     },
     "accountPanel": {
       "heading": "Account balance",
@@ -916,22 +924,22 @@
         "dual": "Dual",
         "solo": "Solo"
       },
-      "durationMode": "How do you want to enter the duration?",
-      "durationModes": {
-        "minutes": "Direct minutes",
-        "hourMeter": "Start/end hour meter"
-      },
-      "minutes": "Minutes",
+      "departure": "Departure airport",
+      "arrival": "Arrival airport",
+      "takeoffTime": "Takeoff time",
+      "landingTime": "Landing time",
+      "computedDuration": "Duration",
+      "takeoffs": "Takeoffs",
       "hourMeterStart": "Hour meter start",
       "hourMeterEnd": "Hour meter end",
       "landings": "Landings",
       "notes": "Notes",
       "submit": "Log flight",
       "requiredField": "Required field.",
-      "invalidMinutes": "Enter a valid duration of at least 1 minute.",
       "invalidHourMeter": "The end reading must be greater than the start reading.",
       "errors": {
         "HOUR_METER_INVALID": "The end reading must be greater than the start reading.",
+        "FLIGHT_TIMES_INVALID": "The landing time must be after takeoff and the duration cannot exceed 24 hours.",
         "NO_AIRCRAFT_RATE": "No hourly rate is in effect for this aircraft on the flight date.",
         "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
         "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "A school flight requires an instructor.",
@@ -962,15 +970,24 @@
       "empty": "No flights logged yet.",
       "table": {
         "date": "Date",
+        "route": "Route",
+        "times": "Times",
         "aircraft": "Aircraft",
         "person": "Person",
         "instructor": "Instructor",
         "noInstructor": "—",
         "type": "Type",
         "soloSuffix": "solo",
+        "departure": "Departure",
+        "arrival": "Arrival",
+        "takeoffTime": "Takeoff time",
+        "landingTime": "Landing time",
         "duration": "Duration",
         "amount": "Charge",
+        "takeoffs": "Takeoffs",
         "landings": "Landings",
+        "movements": "Takeoffs/Landings",
+        "pic": "PIC",
         "noValue": "—",
         "packageNote": "of which {duration} from package",
         "status": "Status",

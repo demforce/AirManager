@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-10 (EPIC 10 DONE — piano MVP completo; epic-9 retro done; td-5 deferred pass done)
+last_updated: 2026-07-11 (merge di main post-PR #15 nel branch Epic 11 — epic-11 done; retro epic-9 e td-5 inclusi da main)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -119,6 +119,13 @@ development_status:
   10-3-role-dashboards: done
   epic-10-retrospective: optional
 
+  # Epic 11: post-MVP change request 2026-07-10 (registro voli logbook)
+  epic-11: done
+  11-1-logbook-fields-derived-duration: done
+  11-2-logbook-registry-pic-person-access: done
+  11-3-italian-dates-logbook-exports: done
+  epic-11-retrospective: optional
+
 action_items:
   - epic: 9
     action: "AI-1: eseguire il TD-5 (deferred pass: hydration money-format, from<=to pagina school, locale diario, azzera-filtri PPR, ricontrollo scadenze updateBooking, pg.Pool warning) col ciclo story->dev->review"
@@ -140,3 +147,4 @@ action_items:
     action: "AI-5: story 10.2 include la config nome/logo aviosuperficie che chiude il deferred N2 8.1 (form PPR pubblico)"
     owner: "sessione Epic 10"
     status: open
+

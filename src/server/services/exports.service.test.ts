@@ -123,8 +123,8 @@ describe('exportPeopleXlsx (T2 — argument parity with the list service)', () =
   });
 });
 
-describe('exportFlightsXlsx (T2 — durations + money column mapping)', () => {
-  it('formats duration as H:MM, amount as a numeric euro cell, and the type column with the solo suffix', async () => {
+describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook column mapping)', () => {
+  it('formats duration as H:MM, amount as a numeric euro cell, the type column with the solo suffix, and the separate partenza/arrivo/orari/decolli/PIC columns', async () => {
     listFlightsMock.mockResolvedValue({
       total: 1,
       page: 1,
@@ -136,10 +136,15 @@ describe('exportFlightsXlsx (T2 — durations + money column mapping)', () => {
           flightType: 'SCHOOL',
           isSolo: true,
           status: 'CANCELLED',
+          departureAirfield: 'Campo Sud',
+          arrivalAirfield: 'Campo Nord',
+          takeoffAt: new Date('2026-07-10T09:00:00Z'),
+          landingAt: new Date('2026-07-10T10:35:00Z'),
           minutes: 95,
+          takeoffs: 2,
           hourMeterStart: null,
           hourMeterEnd: null,
-          landings: null,
+          landings: 3,
           notes: null,
           aircraft: { id: 'ac_1', registration: 'I-ABCD' },
           person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
@@ -169,10 +174,120 @@ describe('exportFlightsXlsx (T2 — durations + money column mapping)', () => {
     expect(row.getCell(3).value).toBe('Rossi Mario'); // person
     expect(row.getCell(4).value).toBeNull(); // no instructor
     expect(row.getCell(5).value).toBe('Scuola — solista'); // type + solo suffix
-    expect(row.getCell(6).value).toBe('1:35'); // duration H:MM
-    expect(row.getCell(7).value).toBe(123.45); // amount, numeric cents/100
-    expect(row.getCell(7).numFmt).toBe('#,##0.00 "€"');
-    expect(row.getCell(9).value).toBe('Annullato'); // status, IT
+    expect(row.getCell(6).value).toBe('Campo Sud'); // partenza
+    expect(row.getCell(7).value).toBe('Campo Nord'); // arrivo
+    expect(row.getCell(8).value).toBe('11:00'); // ora decollo (09:00Z -> CEST +2)
+    expect(row.getCell(9).value).toBe('12:35'); // ora atterraggio
+    expect(row.getCell(10).value).toBe('1:35'); // duration H:MM
+    expect(row.getCell(11).value).toBe(2); // decolli
+    expect(row.getCell(12).value).toBe(3); // atterraggi
+    expect(row.getCell(13).value).toBe('Rossi Mario'); // PIC: SCHOOL flown solo -> the flight's own person
+    expect(row.getCell(14).value).toBe(123.45); // amount, numeric cents/100
+    expect(row.getCell(14).numFmt).toBe('#,##0.00 "€"');
+    expect(row.getCell(15).value).toBe('Annullato'); // status, IT
+  });
+
+  it('exports null cells for the airfield/time columns on a historical (pre-11.1) flight, keeping takeoffs/landings as real numbers', async () => {
+    listFlightsMock.mockResolvedValue({
+      total: 1,
+      page: 1,
+      pageSize: EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'flight_hist',
+          flightDate: '2020-01-01',
+          flightType: 'TOURISM',
+          isSolo: false,
+          status: 'REGISTERED',
+          departureAirfield: null,
+          arrivalAirfield: null,
+          takeoffAt: null,
+          landingAt: null,
+          minutes: 30,
+          takeoffs: 1,
+          hourMeterStart: null,
+          hourMeterEnd: null,
+          landings: 1,
+          notes: null,
+          aircraft: { id: 'ac_1', registration: 'I-ABCD' },
+          person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
+          instructor: null,
+          breakdown: {
+            aircraftRateCentsPerHour: 10000,
+            aircraftAmountCents: 5000,
+            packageCoveredMinutes: 0,
+            chargedMinutes: 30,
+            packageConsumptions: [],
+            totalAmountCents: 5000,
+          },
+          createdAt: new Date('2020-01-01T10:00:00Z'),
+          cancelledAt: null,
+          cancelReason: null,
+          correctionOfId: null,
+          correctedByFlightId: null,
+        },
+      ],
+    } as never);
+
+    const { buffer } = await exportFlightsXlsx(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
+    const sheet = await readSheet(buffer);
+    const row = sheet.getRow(2);
+
+    expect(row.getCell(6).value).toBeNull(); // partenza
+    expect(row.getCell(7).value).toBeNull(); // arrivo
+    expect(row.getCell(8).value).toBeNull(); // ora decollo
+    expect(row.getCell(9).value).toBeNull(); // ora atterraggio
+    expect(row.getCell(11).value).toBe(1); // decolli — never null (story 11.1 default)
+    expect(row.getCell(12).value).toBe(1); // atterraggi — never null (story 11.1 default)
+  });
+
+  it('a SCHOOL flight flown dual (doppio comando): the PIC column resolves to the instructor', async () => {
+    listFlightsMock.mockResolvedValue({
+      total: 1,
+      page: 1,
+      pageSize: EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'flight_dual',
+          flightDate: '2026-07-03',
+          flightType: 'SCHOOL',
+          isSolo: false,
+          status: 'REGISTERED',
+          departureAirfield: 'Campo Sud',
+          arrivalAirfield: 'Campo Nord',
+          takeoffAt: new Date('2026-07-03T09:00:00Z'),
+          landingAt: new Date('2026-07-03T09:40:00Z'),
+          minutes: 40,
+          takeoffs: 1,
+          hourMeterStart: null,
+          hourMeterEnd: null,
+          landings: 1,
+          notes: null,
+          aircraft: { id: 'ac_1', registration: 'I-ABCD' },
+          person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
+          instructor: { personId: 'i_1', firstName: 'Anna', lastName: 'Bianchi' },
+          breakdown: {
+            aircraftRateCentsPerHour: 10000,
+            aircraftAmountCents: 4000,
+            packageCoveredMinutes: 0,
+            chargedMinutes: 40,
+            packageConsumptions: [],
+            totalAmountCents: 4000,
+          },
+          createdAt: new Date('2026-07-03T10:00:00Z'),
+          cancelledAt: null,
+          cancelReason: null,
+          correctionOfId: null,
+          correctedByFlightId: null,
+        },
+      ],
+    } as never);
+
+    const { buffer } = await exportFlightsXlsx(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
+    const sheet = await readSheet(buffer);
+    const row = sheet.getRow(2);
+
+    expect(row.getCell(13).value).toBe('Bianchi Anna'); // PIC: SCHOOL dual -> the instructor
   });
 
   it('reuses listFlights with the SAME actor/filters, overriding page/pageSize', async () => {
@@ -381,8 +496,8 @@ describe('exportCashReportPdf (story 10.2, AC 2/3)', () => {
   });
 });
 
-describe('exportFlightsPdf (story 10.2, AC 2/3/4)', () => {
-  it('reuses listFlights with page:1/pageSize:PDF_EXPORT_MAX_ROWS, rejects EXPORT_TOO_LARGE, and sums duration/amount into totals', async () => {
+describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact tratta/orari/dec.-att./PIC columns)', () => {
+  it('reuses listFlights with page:1/pageSize:PDF_EXPORT_MAX_ROWS, rejects EXPORT_TOO_LARGE, sums duration/amount into totals, and maps the compact logbook columns (tratta/orari/dec.-att./PIC), including the historical-null case', async () => {
     listFlightsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
     await expect(exportFlightsPdf(ACTOR, { page: 1, pageSize: 20 })).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
 
@@ -398,7 +513,12 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4)', () => {
           flightType: 'TOURISM',
           isSolo: false,
           status: 'REGISTERED',
+          departureAirfield: 'Campo Sud',
+          arrivalAirfield: 'Campo Nord',
+          takeoffAt: new Date('2026-07-01T09:00:00Z'),
+          landingAt: new Date('2026-07-01T10:00:00Z'),
           minutes: 60,
+          takeoffs: 1,
           landings: 2,
           aircraft: { id: 'ac_1', registration: 'I-ABCD' },
           person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
@@ -406,16 +526,22 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4)', () => {
           breakdown: { totalAmountCents: 10000 },
         },
         {
+          // Historical (pre-11.1) flight: no departure/arrival/takeoff/landing data.
           id: 'f2',
           flightDate: '2026-07-02',
           flightType: 'SCHOOL',
           isSolo: true,
           status: 'REGISTERED',
+          departureAirfield: null,
+          arrivalAirfield: null,
+          takeoffAt: null,
+          landingAt: null,
           minutes: 30,
-          landings: null,
+          takeoffs: 1,
+          landings: 1,
           aircraft: { id: 'ac_1', registration: 'I-ABCD' },
           person: { id: 'p_2', firstName: 'Luigi', lastName: 'Verdi' },
-          instructor: { id: 'i_1', firstName: 'Anna', lastName: 'Bianchi' },
+          instructor: { personId: 'i_1', firstName: 'Anna', lastName: 'Bianchi' },
           breakdown: { totalAmountCents: 5000 },
         },
       ],
@@ -438,10 +564,56 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4)', () => {
     expect(typeColumn.value(row2)).toBe('Scuola — solista');
     const durationColumn = props.columns.find((c) => c.header === 'Durata')!;
     expect(durationColumn.value(row1)).toBe('1:00');
+    const routeColumn = props.columns.find((c) => c.header === 'Tratta')!;
+    expect(routeColumn.value(row1)).toBe('Campo Sud -> Campo Nord'); // ASCII arrow: `→` is outside the PDF's WinAnsi font (AC 3)
+    expect(routeColumn.value(row2)).toBe(''); // historical, no logbook data — empty string, never null
+    const timesColumn = props.columns.find((c) => c.header === 'Orari')!;
+    expect(timesColumn.value(row1)).toBe('11:00 – 12:00'); // 09:00Z–10:00Z -> CEST +2 (spaced dash, AC 3: wrap point)
+    expect(timesColumn.value(row2)).toBe('');
+    const movementsColumn = props.columns.find((c) => c.header === 'Decolli/Atterraggi')!;
+    expect(movementsColumn.value(row1)).toBe('1 / 2');
+    expect(movementsColumn.value(row2)).toBe('1 / 1');
+    const picColumn = props.columns.find((c) => c.header === 'PIC')!;
+    expect(picColumn.value(row1)).toBe('Rossi Mario'); // non-SCHOOL -> the flight's own person
+    expect(picColumn.value(row2)).toBe('Verdi Luigi'); // SCHOOL flown solo -> the allievo, even with an instructor on record
     expect(props.totals).toEqual([
       { label: 'Durata totale', value: '1:30' },
       { label: 'Totale addebiti', value: '150,00 €' },
     ]);
+  });
+
+  it('a SCHOOL flight flown dual (doppio comando): the PIC column resolves to the instructor', async () => {
+    listFlightsMock.mockResolvedValue({
+      total: 1,
+      page: 1,
+      pageSize: PDF_EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'f3',
+          flightDate: '2026-07-03',
+          flightType: 'SCHOOL',
+          isSolo: false,
+          status: 'REGISTERED',
+          departureAirfield: 'Campo Sud',
+          arrivalAirfield: 'Campo Nord',
+          takeoffAt: new Date('2026-07-03T09:00:00Z'),
+          landingAt: new Date('2026-07-03T09:40:00Z'),
+          minutes: 40,
+          takeoffs: 1,
+          landings: 1,
+          aircraft: { id: 'ac_1', registration: 'I-ABCD' },
+          person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
+          instructor: { personId: 'i_1', firstName: 'Anna', lastName: 'Bianchi' },
+          breakdown: { totalAmountCents: 4000 },
+        },
+      ],
+    } as never);
+
+    await exportFlightsPdf(ACTOR, { page: 1, pageSize: 20 });
+
+    const props = lastPdfProps();
+    const picColumn = props.columns.find((c) => c.header === 'PIC')!;
+    expect(picColumn.value(props.rows[0])).toBe('Bianchi Anna');
   });
 
   it('omits the subtitle when no dateFrom/dateTo filter is applied', async () => {

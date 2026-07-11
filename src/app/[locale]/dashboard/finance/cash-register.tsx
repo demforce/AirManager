@@ -10,6 +10,7 @@ import { ExportButton } from '@/components/export-button';
 import { useRouter } from '@/i18n/navigation';
 import { buildExportHref } from '@/lib/export-href';
 import { formatSignedCents, parseCents } from '@/lib/money';
+import { formatDateOnly } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
 export type CashMovementRow = {
@@ -159,7 +160,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
     {
       id: 'date',
       header: labels.table.date,
-      cell: ({ row }) => row.original.effectiveDate,
+      cell: ({ row }) => formatDateOnly(row.original.effectiveDate, moneyLocale),
     },
     {
       id: 'category',
@@ -599,7 +600,7 @@ function ReverseForm({ movement, moneyLocale, labels, onCancel, onSuccess }: Rev
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4" data-testid="cash-reverse-form">
       <div>
         <h4 className="text-base font-medium text-[#111111]">
-          {labels.action} — {movement.effectiveDate}, {formatSignedCents(movement.amountCents, moneyLocale)}
+          {labels.action} — {formatDateOnly(movement.effectiveDate, moneyLocale)}, {formatSignedCents(movement.amountCents, moneyLocale)}
         </h4>
       </div>
       <div>

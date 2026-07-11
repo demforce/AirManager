@@ -179,12 +179,34 @@ async function createInstructorRate(page: Page, instructorPersonId: string, pric
   expect(rateResponse.status()).toBe(201);
 }
 
+/**
+ * Story 11.1: `POST /api/v1/flights` now takes `takeoffAt`/`landingAt`
+ * (logbook instants) plus `departureAirfield`/`arrivalAirfield`, instead of
+ * `flightDate`/`minutes` — this composes the new wire fields from the OLD
+ * `{ flightDate, minutes }` shape every helper below already takes, so none
+ * of the (many) call sites in this file need to change. `10:00Z` stays
+ * clear of the Europe/Rome midnight boundary.
+ */
+function toFlightApiBody(params: { flightDate: string; minutes: number }): {
+  departureAirfield: string;
+  arrivalAirfield: string;
+  takeoffAt: string;
+  landingAt: string;
+} {
+  const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
+  const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
+  return { departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', takeoffAt, landingAt };
+}
+
 /** `isSolo` (story 9.4) defaults to `false` (dual) when omitted — pass `true` for the "solista" fixture (still SCHOOL, still carries the instructor, only the PIC differs). */
 async function registerSchoolFlight(
   page: Page,
   params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number; isSolo?: boolean },
 ): Promise<{ id: string }> {
-  const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'SCHOOL' } });
+  const { flightDate, minutes, ...rest } = params;
+  const response = await page.request.post('/api/v1/flights', {
+    data: { ...rest, ...toFlightApiBody({ flightDate, minutes }), flightType: 'SCHOOL' },
+  });
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { flight: { id: string } };
   return body.flight;
@@ -195,7 +217,10 @@ async function registerFlightNoInstructor(
   page: Page,
   params: { aircraftId: string; personId: string; flightDate: string; minutes: number },
 ): Promise<{ id: string }> {
-  const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'TOURISM' } });
+  const { flightDate, minutes, ...rest } = params;
+  const response = await page.request.post('/api/v1/flights', {
+    data: { ...rest, ...toFlightApiBody({ flightDate, minutes }), flightType: 'TOURISM' },
+  });
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { flight: { id: string } };
   return body.flight;
@@ -206,7 +231,10 @@ async function registerPrivateFlightWithInstructor(
   page: Page,
   params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number },
 ): Promise<{ id: string }> {
-  const response = await page.request.post('/api/v1/flights', { data: { ...params, flightType: 'TOURISM' } });
+  const { flightDate, minutes, ...rest } = params;
+  const response = await page.request.post('/api/v1/flights', {
+    data: { ...rest, ...toFlightApiBody({ flightDate, minutes }), flightType: 'TOURISM' },
+  });
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { flight: { id: string } };
   return body.flight;
@@ -322,7 +350,7 @@ test.describe('Student-instructor assignment (Story 9.1, FR-32)', () => {
     const rows = page.getByTestId('own-student-row');
     await expect(rows).toHaveCount(1);
     await expect(rows).toContainText(`${studentX.lastName} ${studentX.firstName}`);
-    await expect(rows).toContainText('2026-01-15');
+    await expect(rows).toContainText('15/01/2026');
     await expect(rows).toContainText('1:30');
     await expect(rows.getByTestId('own-student-status-badge')).toContainText('Scaduta');
     await expect(page.getByText(`${studentY.lastName} ${studentY.firstName}`)).toHaveCount(0);

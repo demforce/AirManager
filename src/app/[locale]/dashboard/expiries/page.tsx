@@ -5,6 +5,7 @@ import type { AppLocale } from '@/i18n/routing';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import type { ExpiryScopeDto } from '@/lib/schemas/expiry-types';
 import type { ExpiryItemDto, ExpiryProposalItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
+import { formatDateOnly } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import {
@@ -300,8 +301,8 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                         </td>
                         <td className="px-5 py-3 align-middle text-[#2F3437]">{item.typeName}</td>
                         <td className="px-5 py-3 align-middle text-[#2F3437]">{scopeLabels[item.typeScope]}</td>
-                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">{item.issuedAt}</td>
-                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">{item.expiresAt}</td>
+                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">{formatDateOnly(item.issuedAt, locale as 'it' | 'en')}</td>
+                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">{formatDateOnly(item.expiresAt, locale as 'it' | 'en')}</td>
                         <td className="px-5 py-3 align-middle">
                           <ExpiryStatusBadge status={item.status} label={statusLabels[item.status]} data-testid="expiry-dashboard-status-badge" />
                         </td>

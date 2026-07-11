@@ -3,9 +3,11 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { todayDateOnlyUtc } from '@/lib/date-only';
+import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { ForbiddenError, NotFoundError } from '@/server/services/errors';
+import { listFlights, type FlightListItem } from '@/server/services/flights.service';
 import { getEffectiveInstructorRate } from '@/server/services/instructor-rates.service';
 import { getPerson } from '@/server/services/people.service';
 import { AccountPanel } from '../account-panel';
@@ -25,9 +27,13 @@ type PageProps = {
  * restructuring the page. Story 3.1 turns "balance" into the real
  * `AccountPanel` below (removed from this list); story 4.4 does the same for
  * "hoursPackages" -> the real `PackagesPanel`; story 6.2 does the same for
- * "expiries" -> the real `ExpiriesPanel`.
+ * "expiries" -> the real `ExpiriesPanel`; story 11.2 does the same for
+ * "recentFlights" -> the real "Ultimi voli" panel below.
  */
-const PLACEHOLDER_SECTIONS = ['recentFlights', 'upcomingBookings'] as const;
+const PLACEHOLDER_SECTIONS = ['upcomingBookings'] as const;
+
+/** How many of the person's most recent flights the "Ultimi voli" panel shows (story 11.2, AC 4). */
+const RECENT_FLIGHTS_PAGE_SIZE = 5;
 
 /**
  * The "scheda persona" (story 2.3): anagrafica + profiles (read-only unless
@@ -80,6 +86,12 @@ export default async function PersonDetailPage({ params }: PageProps) {
   // read-only mode for a lesser-privileged viewer (every one of this
   // feature's endpoints answers 403 without this permission).
   const canManageSchool = hasPermission(actor, 'school.manage.any');
+  // Story 11.2 (AC 4): the "Ultimi voli" panel is real for staff
+  // (`flights.manage`) or the titolare's own scheda (`isOwnAccess`, computed
+  // above); everyone else keeps today's placeholder.
+  const canManageFlights = hasPermission(actor, 'flights.manage');
+  const showRecentFlights = canManageFlights || isOwnAccess;
+  const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const t = await getTranslations('PersonDetailPage');
   const tPeople = await getTranslations('PeoplePage');
   const tPackages = await getTranslations('HourPackagesPanel');
@@ -93,6 +105,20 @@ export default async function PersonDetailPage({ params }: PageProps) {
   // `aircraft/page.tsx#getEffectiveRate`).
   const currentInstructorRate =
     person.instructorProfile !== null ? await getEffectiveInstructorRate(actor, person.id, todayDateOnlyUtc()) : null;
+
+  // Story 11.2 (AC 4): AD-1 (consume the service directly, no new endpoint) —
+  // staff filters by this scheda's `personId`; the titolare gets NO
+  // `personId` at all (own-scope is automatic in `listFlights` for a
+  // non-`flights.manage` actor, same as the registry page itself).
+  let recentFlights: FlightListItem[] = [];
+  if (showRecentFlights) {
+    const recentFlightsResult = await listFlights(actor, {
+      page: 1,
+      pageSize: RECENT_FLIGHTS_PAGE_SIZE,
+      personId: canManageFlights ? person.id : undefined,
+    });
+    recentFlights = recentFlightsResult.items;
+  }
 
   const personalDataRows: Array<{ label: string; value: string }> = [
     { label: t('personalData.firstName'), value: person.firstName },
@@ -444,8 +470,52 @@ export default async function PersonDetailPage({ params }: PageProps) {
         </div>
 
         {/* Story 2.3, AC 1: structural placeholders — epics 4-7 replace the
-            content, never this layout. */}
+            content, never this layout. Story 11.2 turns "recentFlights" into
+            the real panel below (still the SAME grid cell, same heading). */}
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {showRecentFlights ? (
+            <section className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="recent-flights-panel">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-base font-medium text-[#111111]">{t('recentFlightsPanel.heading')}</h3>
+                <Link
+                  href={canManageFlights ? { pathname: '/dashboard/flights', query: { personId: person.id } } : '/dashboard/flights'}
+                  locale={locale as AppLocale}
+                  data-testid="recent-flights-view-all"
+                  className="text-xs font-medium text-[#2F3437] underline-offset-4 hover:underline"
+                >
+                  {t('recentFlightsPanel.viewAll')}
+                </Link>
+              </div>
+              {recentFlights.length === 0 ? (
+                <p className="mt-3 text-sm text-[#787774]">{t('recentFlightsPanel.empty')}</p>
+              ) : (
+                <ul className="mt-3 divide-y divide-[#EAEAEA]">
+                  {recentFlights.map((flight) => (
+                    <li key={flight.id} data-testid="recent-flight-row" className="flex items-center justify-between gap-4 py-2 text-sm">
+                      <div>
+                        <p className="text-[#111111]">
+                          {flight.departureAirfield && flight.arrivalAirfield
+                            ? `${flight.departureAirfield} → ${flight.arrivalAirfield}`
+                            : t('personalData.noValue')}
+                        </p>
+                        <p className="text-xs text-[#787774]">
+                          {formatDateOnly(flight.flightDate, displayLocale)} &middot; {formatMinutes(flight.minutes)}
+                        </p>
+                      </div>
+                      <span className="text-xs text-[#787774]">
+                        {flight.status === 'CANCELLED' ? t('recentFlightsPanel.status.cancelled') : t('recentFlightsPanel.status.registered')}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : (
+            <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+              <h3 className="text-base font-medium text-[#111111]">{t('recentFlightsPanel.heading')}</h3>
+              <p className="mt-2 text-sm text-[#787774]">{t('placeholders.comingSoon')}</p>
+            </div>
+          )}
           {PLACEHOLDER_SECTIONS.map((section) => (
             <div key={section} className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
               <h3 className="text-base font-medium text-[#111111]">{t(`placeholders.${section}`)}</h3>

@@ -1,76 +1,75 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-10 sera — **PIANO MVP COMPLETO** (epic 1–10) + retro Epic 9 + TD-5; documento FUSO da due sessioni parallele)
+# HANDOFF — AirManager (aggiornato: 2026-07-11, EPIC 11 DONE + merge di main con retro Epic 9 + TD-5 — documento FUSO)
 
 ## Goal
 
-Costruire AirManager, il gestionale per un'aviosuperficie (piloti, velivoli, voli, PPR, finanze, scuola volo, tariffe, prenotazioni, scadenze, RBAC, export Excel/PDF) con il metodo BMAD v6. **Il piano MVP è COMPLETO**: tutti i 10 epic + TD-1..5 sono done. Non esiste un "prossimo epic" pianificato — la prossima sessione parte dalle decisioni dell'utente (v. Next Steps).
+Costruire AirManager, il gestionale per un'aviosuperficie, col metodo BMAD v6. **MVP completo** (epics 1–10 + TD-1..5 + retro Epic 9, tutti merged). Questo branch contiene il **primo change request post-MVP dell'utente**: l'**Epic 11 — registro voli logbook** (FR-43..45), decisioni ratificate in `_bmad-output/planning-artifacts/change-request-flight-log-2026-07-10.md`. Epic 11 è DONE: 3/3 stories implementate e reviewate.
 
-**NOTA DI FUSIONE**: il 2026-07-10 hanno lavorato DUE sessioni in parallelo dalla stessa base (main post-PR #13): (a) Epic 10 (branch `claude/handoff-docs-tpn5f3`, PR #14, MERGED) e (b) retro Epic 9 + TD-5 (branch `claude/retrospective-td-pass-deferred-v9vw5a`, PR #15). Questo handoff fonde i due; il merge di main (con Epic 10) nel branch (b) è stato verificato con gates + full suite (esiti sotto).
+**NOTA DI FUSIONE (seconda in due giorni)**: il 2026-07-10 hanno lavorato di nuovo DUE sessioni in parallelo dalla stessa base (main post-PR #14): (a) retro Epic 9 + TD-5 (PR #15, MERGED l'11/07) e (b) Epic 11 (questo branch, PR #16). Questo handoff fonde i due; la ri-verifica del tree fuso è documentata sotto.
 
-## Ruoli modello e regole di processo (config utente 2026-07-07, confermata su epic 5–10 e TD-5)
+## Ruoli modello e regole di processo (config utente 2026-07-07, confermata su epic 5–11 e TD-5)
 
-- **Stories**: sessione principale **Fable 5 (xhigh)**, via `bmad-create-story` DOPO ricognizione Explore (lanciabile in parallelo ad altro lavoro).
+- **Stories**: sessione principale **Fable 5 (xhigh)**, via `bmad-create-story` DOPO ricognizione Explore (lanciata in parallelo al lavoro corrente).
 - **Dev**: **UN SOLO subagent Sonnet 5 (xhigh)** per story via Workflow tool con output strutturato (status/summary/commitSha/gates/filesChanged/notesForReview/deviations).
 - **Review**: subagent **Opus 4.8 (xhigh)** adversarial — unico layer adversarial, MAI abbassarlo (se temporaneamente indisponibile: riprovare, mai degradare); briefato coi notesForReview del dev e col mandato ESPLICITO di chiudere in prima persona i gap dichiarati; priorità zero: **full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI** (`CI=1 npx playwright test`). I fix li applica la sessione principale (il reviewer non ha Edit/Write).
-- **Regola dalla retro Epic 9 (AI-2, anche in CLAUDE.md)**: un'assumption di DOMINIO si ratifica con l'utente (AskUserQuestion) PRIMA di implementare — mai spedirla "da confermare" (il rework 9.4 nasceva da lì).
+- **Regola dalla retro Epic 9 (AI-2, anche in CLAUDE.md)**: un'assumption di DOMINIO si ratifica con l'utente (AskUserQuestion) PRIMA di implementare — mai spedirla "da confermare".
 - **Skill `karpathy-guidelines`** in ogni prompt di dev e review; **stories con UI**: dev DEVE usare `design-taste-frontend` + `ui-ux-pro-max` + verifica Playwright MCP. Note operative: `browser_resize` può mancare (mobile → markup review/e2e, dichiararlo); il credential guard può bloccare il login MCP interattivo dei subagent — workaround sanzionati: script Playwright throwaway che legge `process.env`, o la prova via e2e reale.
-- **Regole utente**: ogni **epic ha la sua PR**; ogni **story i suoi commit**; a fine lavoro: `/handoff`, push, PR, **STOP**. **Lezione di QUESTA giornata: MAI due sessioni di sviluppo in parallelo dalla stessa base senza coordinamento** — il merge è costato conflitti su handoff/sprint-status e una ri-verifica completa (andata bene, ma il rischio semantico era reale: il TD-5 ha cambiato il formato money mentre l'Epic 10 scriveva e2e nuovi che asseriscono importi).
+- **Regole utente**: ogni **epic ha la sua PR**; ogni **story i suoi commit** (story file → implementazione → review record/fix); a **epic finito**: `/handoff`, push, PR, **STOP**. **Lezione ripetuta DUE volte: MAI due sessioni di sviluppo in parallelo dalla stessa base senza coordinamento** — sia il 10/07 (Epic 10 ∥ TD-5) sia questa fusione (Epic 11 ∥ TD-5) sono costate conflitti su handoff/sprint-status e una ri-verifica completa; il rischio semantico è reale (TD-5 ha cambiato il formato money mentre gli epic scrivevano test che asseriscono importi).
 - **Identità git**: `git config user.email noreply@anthropic.com && git config user.name Claude`; dopo ogni commit di subagent `git commit --amend --no-edit --reset-author` PRIMA del push. Pushare SUBITO dopo ogni commit. MAI force-push di commit già pushati.
+- Reset DB (`npm run db:reset`, SOLO sessione principale) PRIMA di ogni dev E di ogni review.
 
 ## Current Progress
 
-- **Epic 1..10 DONE** (PR #2..#14, tutte MERGED) + TD-1..4 + harness. Dettagli negli handoff archiviati (`docs/handoffs/HANDOFF-*.md` — in particolare `HANDOFF-2026-07-10-0627.md` per il dettaglio completo dell'Epic 10: export xlsx sui 10 endpoint elenco, export PDF dei 4 report con branding da `/dashboard/settings`, dashboard per ruolo).
-- **Branch `claude/retrospective-td-pass-deferred-v9vw5a` (PR #15, aperta)** — retro + TD-5 + merge di main:
-  - **Retrospettiva Epic 9 DONE** (`epic-9-retro-2026-07-10.md`): prima retro formale; lezione principale = ratifica sincrona delle assumption (AI-2); action item in `sprint-status.yaml`.
-  - **TD-5 deferred pass DONE** (review **clean-pass, zero mandatory**): (1) hydration money-format KILLED — `formatCents` pinna `useGrouping:'always'`: separatore migliaia SEMPRE presente in it (anche sotto 10.000, cambio VISIBILE deliberato), deterministico tra ICU Node/browser; (2) `/dashboard/school` degrada al default su `from>to`; (3) locale threadato nel diario (92-N2 chiuso); (4) registro PPR: "Azzera filtri" nascosto al load, reset → default APPROVED (F4 8.3 chiuso); (5) **updateBooking ricontrolla le scadenze** SOLO se cambia il giorno di volo (loophole 7.4 chiuso; helper `findBlockingExpiredDocuments` condiviso col create; niente `force` sull'update — deferral); (6) pg DeprecationWarning analizzata = query-overlap dentro il runtime Prisma→pg, **non-fixabile-a-call-site** (chiusa senza codice, doppia verifica dev+reviewer).
-  - **Merge di origin/main (Epic 10) nel branch**: conflitti risolti (handoff, sprint-status — CLAUDE.md e tutto il codice auto-fusi); ri-verifica completa post-merge: v. gate sotto.
-- **Gate post-merge (stato autoritativo del branch PR #15)**: v. ultima sezione di questo handoff PRIMA del push (gates + full suite CI-mode su DB fresco).
-- Tracking: `sprint-status.yaml` — epic-1..10 done, td-1..5 done, epic-9-retrospective done; action_items: AI-1 done, AI-2/AI-3 open (valgono per ogni sessione futura), AI-4 v. sotto, AI-5 parzialmente assorbito dall'Epic 10 (v. Deferred).
+- **Epic 1..10 DONE e MERGED** (PR #2..#14) + TD-1..4 — dettagli negli handoff archiviati (`docs/handoffs/HANDOFF-*.md`).
+- **Retro Epic 9 + TD-5 MERGED (PR #15, 11/07)**: retro formale (`epic-9-retro-2026-07-10.md`, action item in sprint-status); TD-5 = 6 fix chirurgici (money-format deterministico `useGrouping:'always'` — separatore migliaia SEMPRE in it; school `from>to` degrada al default; locale diario threadato; "Azzera filtri" PPR nascosto al load e reset→APPROVED; updateBooking ricontrolla le scadenze al cambio giorno; pg DeprecationWarning chiusa come non-fixabile-a-call-site).
+- **Fix flake e2e (PR #17, branch `claude/epic-e2e-check-failures-nut6za`)**: `ppr-register:292` (il test derivava il giorno dell'ETA in UTC mentre il registro bucketizza in Europe/Rome — deterministico rosso tra le 22 e le 24 UTC in CEST; ora gli helper ritornano l'ETA inviata e il test la formatta col giorno di Roma) e `ppr-register:206` (race reale: il prefill async della tassa di default sovrascriveva un valore già digitato — ora riempie solo il campo vuoto).
+- **QUESTO branch `claude/flight-log-schema-design-9tmjqn` (PR #16) — EPIC 11 COMPLETO + merge di main:**
+  - **Change request ratificato** (3 risposte utente): durata SEMPRE derivata atterraggio−decollo; orari+aeroporti OBBLIGATORI sui voli nuovi (storia resta null); PIC copre sempre pilota/allievo/istruttore → MAI memorizzato, solo derivato. Suggerimento QTB/libretto PDF: NON richiesto, resta follow-up candidato.
+  - **11.1 campi logbook e durata derivata DONE** (review fixes-required → fixed): `Flight` + `departureAirfield`/`arrivalAirfield`/`takeoffAt`/`landingAt` (nullable, storia intatta), `takeoffs`/`landings` NOT NULL DEFAULT 1 (migrazione 30, hand-written con backfill), `minutes` e `flightDate` DERIVATI server-side (giorno ROMA via `dateOnlyInZone` — non UTC), 422 `FLIGHT_TIMES_INVALID`/`FLIGHT_DATE_IN_FUTURE`, contaore/pricing/pacchetti INVARIATI a parità di minutes, hourMeter coppia informativa opzionale. POST /flights contratto BREAKING deliberato (nessun consumer esterno). 111-F1 fixato; 111-N1 ratificato; 111-N2 delegato a 11.3 (fatto).
+  - **11.2 registro logbook, PIC e scheda persona DONE** (review **clean-pass**): colonne compatte tratta/orari/dec.-att./PIC (helper puro `src/lib/flight-pic.ts` — PIC MAI memorizzato), DD/MM/YYYY sulle superfici voli, pannello "Ultimi voli" REALE su `people/[id]` con link per-ruolo. Lezione: `hasText` substring — regex `\b`-anchored in flight-reversal.spec.
+  - **11.3 date italiane + export logbook DONE** (review **clean-pass**): retrofit `formatDateOnly` su 11 superfici (audit CHIUSO), xlsx voli a 15 colonne SEPARATE, PDF voli a 12 colonne COMPATTE; 3 bug PDF reali trovati coi render veri e fixati (`PdfColumn.width` pesi flex retro-compatibili, trattino spaziato, freccia ASCII solo nel PDF).
+  - **Merge di origin/main (post-PR #15) in questo branch**: conflitti solo documentali (handoff, sprint-status), codice auto-fuso; ri-verifica del tree fuso: v. gate sotto.
+- **Gate del tree fuso (Epic 11 + TD-5 + fix flake)**: v. descrizione PR #16 aggiornata — gates e full suite CI-mode su DB fresco rieseguiti dopo il merge. **Migrazioni: 30** (+1: `20260710130000_add_flight_logbook_fields`).
+- Commit Epic 11 (in ordine): `02e71b9` → `4a79b2a` → `a710d4a` → `d458a6c` → `c490bf3` → `6bf6ded` → `dfe6056` → `11005c1` → `455ead8` → `a0abb71` → `0a5d125` → `c7e1af3` → `94729bd` → `7e8af27` (handoff) → merge di main + questo handoff fuso. Tracking: `sprint-status.yaml` — epic-11 done; action_items retro Epic 9 preservati.
 
 ## What Worked
 
-- Il ciclo consolidato (Explore recon → story file → dev Sonnet via Workflow → review Opus chiudi-tu-i-gap → fix in sessione principale) ha retto anche su un TD-pass multi-item (6 fix chirurgici) e sull'intero Epic 10 (3 story) NELLO STESSO GIORNO, in sessioni separate.
-- La clausola di story "se non fixabile al call-site, documentare SENZA cambi speculativi" (TD-5 AC 6): chiusura onesta a zero codice, confermata indipendentemente dal reviewer.
-- Retro come input diretto del TD-pass: il triage È diventato il perimetro della story.
-- 103-F1 (Epic 10) trovato SOLO dalla full suite del reviewer su prod build: la priorità zero paga fino all'ultima story.
+- Il ciclo consolidato (Explore recon in parallelo → story file Fable → dev Sonnet via Workflow → review Opus col mandato chiudi-tu-i-gap → fix in sessione principale) ha chiuso 3/3 stories Epic 11 e il TD-pass multi-item.
+- **La verifica su artefatti REALI paga**: i 3 bug PDF di 11.3 erano invisibili a unit test e magic-byte check — trovati SOLO renderizzando il PDF vero. Idem 111-F1 (verifica UI live del reviewer).
+- I reviewer hanno chiuso in prima persona i gap dichiarati dai dev (INSERT psql di voli storici, simulazione backfill, root-cause del flake orario `ppr-register:292` — poi fixato in PR #17 esattamente su quella diagnosi).
+- Story file con "decisioni vincolanti" + elenco CHIUSO (audit date 11.3): deviazioni poche e SEMPRE dichiarate, tutte ratificate.
 
 ## What Didn't Work
 
-- **Due sessioni di sviluppo in parallelo dalla stessa base** (v. regole): funzionato per fortuna e ri-verifica, non per design. Coordinare sempre: o sequenziali, o su superfici disgiunte dichiarate.
-- Selettori Playwright page-level con name substring: fragili (103-F1) — convenzione nav-scoped/`exact:true` ora in CLAUDE.md.
-- `e2e/bookings.spec.ts` accumula righe Booking sulla fixture condivisa `FUTURE_DAY` (2031-03-10) se rieseguito ripetutamente sullo stesso DB (oltre `BOOKINGS_PAGE_SIZE=20` fallisce "Prossime prenotazioni" — meccanismo noto nel doc-comment di `soonestFutureSlot()`): resettare il DB, non inseguire.
-- `ppr-register:206` resta il flake noto (~1 rosso ogni 2-3 run, retry-verde); `cash-report` ECONNRESET sotto load.
+- **Due sessioni di sviluppo in parallelo dalla stessa base, DI NUOVO** (v. regole): seconda fusione handoff/sprint-status in due giorni. Coordinare sempre: o sequenziali, o su superfici disgiunte dichiarate.
+- **`hasText` con valori H:MM o date**: substring match → collisioni con colonne nuove (lezione 11.2, stessa classe di 103-F1). Convenzione: regex `\b`-anchored o assert esatti sulla cella.
+- **Accumulo dati negli e2e ripetuti in sessione**: righe oltre pagina 1 → falsi fail (aircraft-rates, bookings `FUTURE_DAY`). Il full-run su DB FRESCO resta l'arbitro.
+- **Giorni di calendario negli e2e**: MAI derivarli con `toISOString()` quando il backend bucketizza in Europe/Rome (`ppr-register:292`, fascia rossa 22–24 UTC) — usare il giorno di Roma dell'istante reale inviato (fix in PR #17, helper `romeDateOnly` nello spec).
 
 ## Key Decisions (oltre a quelle nei story file)
 
+- **Logbook**: durata = atterraggio−decollo SEMPRE (floor 1); `flightDate` = giorno di decollo in Europe/Rome; aeroporti testo libero prefillati dal nome base; PIC derivato (non-SCHOOL → person; SCHOOL solo → allievo; SCHOOL dual → istruttore), MAI colonna DB; contratto POST /flights breaking ratificato (Flutter non esiste ancora).
 - **Formato money (TD-5, cambio visibile)**: separatore migliaia SEMPRE presente in it anche sotto 10.000 € (`1.500,00 €`) — determinismo SSR/client. Ogni asserzione futura su stringhe money deve aspettarselo.
-- **Ricontrollo scadenze su spostamento prenotazione**: SOLO al cambio del GIORNO di volo; niente `force` sull'update (cancella e ricrea, deferral).
-- **Export (Epic 10)**: parità permessi export=vista via riuso diretto dei list service; cap 10k xlsx / 2k pdf → 422 `EXPORT_TOO_LARGE`; locale sempre query param esplicito su `/api/v1`.
-- **Branding (Epic 10)**: `AppSetting` K/V (`airfield.name`, `airfield.logo` data-URL), pagina `/dashboard/settings` admin-only; lettura senza gate (serve ai PDF), scrittura admin.
-- **Home per ruolo (Epic 10)**: widget sempre-visibili con empty state; istruttore vede anche il blocco personale; admin vede blocco istruttore degradato — **è l'estensione alla home del 93-N1, ratificata con e2e esplicito in 10.3**: la domanda AI-4 all'utente resta aperta solo come eventuale ripensamento estetico, il comportamento è ormai deliberato in due superfici.
-- **Deferred aperti** (lista RICONCILIATA post-TD-5 + Epic 10):
-  1. Nome aviosuperficie nel form PPR pubblico: la config ORA ESISTE (`airfield.name`, 10.2) — resta la micro-story di collegarla all'hero del form (residuo di AI-5).
+- **Export**: parità permessi export=vista via riuso dei list service; cap 10k xlsx / 2k pdf → 422 `EXPORT_TOO_LARGE`; xlsx colonne separate (15) vs PDF compatte (12) — divergenza sancita; separatori ASCII solo nel PDF (vincolo WinAnsi); email long-form date DELIBERATO (escluso dal retrofit DD/MM/YYYY).
+- **Ricontrollo scadenze su spostamento prenotazione (TD-5)**: SOLO al cambio del GIORNO di volo; niente `force` sull'update (deferral).
+- **Deferred aperti** (lista riconciliata post-TD-5 + Epic 10 + Epic 11):
+  1. Nome aviosuperficie nel form PPR pubblico (la config esiste da 10.2 — micro-story).
   2. TOCTOU rate-limit PPR + trust `x-forwarded-for` (scelte infra al go-live).
   3. `closedByUserId` non nel DTO (additivo, quando Flutter).
   4. Description movimento PPR in inglese (solo su richiesta utente).
   5. Coda retry email NFR-7 (infra post-MVP).
   6. `force` su updateBooking (TD-5, su richiesta).
-  7. 101-N1 e 102-N1 (Epic 10, accettati): 422 su locale/format invalidi nel ramo JSON; header colonne PDF non ripetuto sulle pagine 2+ (`fixed` sull'header row).
-  8. 103-N1: audit dei selettori nav non-scoped negli e2e esistenti (convenzione ora in CLAUDE.md, il debito è il pregresso).
-  9. Fixture design `FUTURE_DAY` in bookings.spec.ts (v. What Didn't Work).
+  7. 101-N1 / 102-N1 (accettati): 422 locale/format nel ramo JSON; header colonne PDF non ripetuto sulle pagine 2+.
+  8. 103-N1: audit selettori nav non-scoped negli e2e pregressi.
+  9. Fixture `FUTURE_DAY` in bookings.spec.ts (accumulo su DB non resettato).
   10. pg DeprecationWarning: non-fixabile-a-call-site (sparirà con upgrade pg/Prisma).
-  - CHIUSI da TD-5 (non più deferred): hydration money-format, 92-N2, 93-N2, "Azzera filtri" PPR, ricontrollo scadenze updateBooking.
+  11. Epic 11: 112-N1 a11y tabella voli (`scope="col"` + caption); 112-N3/113-N2 naming `moneyLocale`; 113-N1 overflow PDF token non spezzabili (marche senza max-length); 113-N3 mock exports `as never` → factory tipizzata; QTB/libretto pilota PDF (suggerito, mai richiesto).
+  - CHIUSI: hydration money-format, 92-N2, 93-N2, "Azzera filtri" PPR, ricontrollo scadenze updateBooking (TD-5); flake `ppr-register:292` e `:206` (PR #17).
 
 ## Next Steps (in ordine)
 
-1. **Merge della PR #15** (retro + TD-5 + merge main) — a valle della ri-verifica post-merge documentata sotto. È l'ultimo pezzo pendente: dopo, main = MVP completo + debito ripulito.
-2. **STOP: piano MVP completo.** La prossima sessione parte SOLO da una decisione dell'utente. Candidati naturali: (a) retrospettiva finale di progetto / epic-10-retrospective (`optional` in sprint-status); (b) micro-TD sui deferred residui più concreti (nome aviosuperficie nel form PPR, header PDF multi-pagina, audit selettori 103-N1); (c) preparazione go-live (hosting, provider email reale, rate limiting infra — v. ARCHITECTURE-SPINE «Deferred»; qui si decidono anche TOCTOU/x-forwarded-for); (d) v2 dal PRD §6.2: app Flutter sulle API v1 (OpenAPI completo), pagamenti online, notifiche push, statistiche avanzate, carburante a magazzino.
-3. A inizio prossima sessione: bootstrap via hook; baseline attesa post-merge PR #15: **195 e2e / 1211 unit / 29 migrazioni** su DB fresco (CI-mode/prod build).
+1. **Merge in main**: PR #17 (fix flake) e poi PR #16 (questo branch, Epic 11 + merge main) — sessione dell'11/07 su mandato utente "mergia e chiudi tutte le PR".
+2. **STOP.** La prossima sessione parte SOLO da una decisione dell'utente. Candidati naturali: (a) micro-TD sui deferred più concreti (nome aviosuperficie nel form PPR, header PDF multi-pagina, a11y tabella voli, max-length marche + ellipsis PDF, audit selettori 103-N1); (b) QTB/libretto pilota PDF (l'infrastruttura c'è tutta); (c) go-live prep (hosting, provider email, rate limiting — v. ARCHITECTURE-SPINE «Deferred»); (d) v2 dal PRD §6.2: app Flutter sulle API v1 (ATTENZIONE: contratto POST /flights cambiato in 11.1), pagamenti online, notifiche push.
+3. A inizio prossima sessione: bootstrap via hook; baseline attesa sul tree fuso: **200 e2e / 1222 unit / 30 migrazioni** su DB fresco (CI-mode/prod build). Flake residui noti: `cash-report` ECONNRESET sotto load, login-redirect su webServer freddo (i due `ppr-register` sono fixati).
 4. Se si sviluppa: ciclo per story INVARIATO (v. sezione ruoli); applicare AI-2 (ratifica assumption) e AI-3 (convenzioni cross-cutting negli story file).
 
-## Verifica post-merge (questa sessione, dopo il merge di main nel branch PR #15)
-
-- **Un solo conflitto semantico** tra Epic 10 e TD-5, trovato dai gates e fixato (`7dcdd7b`): l'unit test 10.2 `exports.service.test.ts` pinnava `'1000,00 €'` (formato pre-TD-5) → `'1.000,00 €'`. Grep esaustivo sugli altri literal money in fascia: solo input/placeholder (parsing, non display) e regex già tolleranti — nessun altro cambio.
-- **Gates sul tree fuso**: lint PASS, typecheck PASS, **1211/1211 unit** (1207 Epic 10 + 4 TD-5), build PASS.
-- **Full suite e2e su DB fresco, BUILD DI PRODUZIONE in modalità CI**: **195/195 passed (3.5m, exit 0), zero flaky nel run** — 192 Epic 10 + 3 TD-5. Baseline confermata per le prossime sessioni: **195 e2e / 1211 unit / 29 migrazioni**.
-
-Ambiente (fallback manuale se l'hook SessionStart non gira): `service postgresql start`; ruolo/db airmanager; `.env` da `.env.example` (AUTH_SECRET random, JOBS_SECRET); `npm install`; `npx prisma migrate deploy && npx prisma db seed` (**29 migrazioni**; se il seed fallisce su SEED_ADMIN_PASSWORD: `set -a && . ./.env && set +a`); Mailpit `/root/go/bin/mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025` in background. Reset DB (SOLO sessione principale): `npm run db:reset` PRIMA di dev E review. Prima di ogni run e2e: `curl localhost:3000` deve FALLIRE (`fuser -k 3000/tcp`). Build SEMPRE via `npm run gates`. MAI `playwright install`. Utenti seed: admin@ / staff@ / pilot@ / instructor@ / student@airmanager.local (password = SEED_ADMIN_PASSWORD).
+Ambiente (fallback manuale se l'hook SessionStart non gira): `service postgresql start`; ruolo/db airmanager; `.env` da `.env.example` (AUTH_SECRET random, JOBS_SECRET); `npm install`; `npx prisma migrate deploy && npx prisma db seed` (**30 migrazioni**; se il seed fallisce su SEED_ADMIN_PASSWORD: `set -a && . ./.env && set +a`); Mailpit `/root/go/bin/mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025` in background. Reset DB (SOLO sessione principale): `npm run db:reset` PRIMA di dev E review. Prima di ogni run e2e: `curl localhost:3000` deve FALLIRE (`fuser -k 3000/tcp`). Build SEMPRE via `npm run gates`. MAI `playwright install`. Utenti seed: admin@ / staff@ / pilot@ / instructor@ / student@airmanager.local (password = SEED_ADMIN_PASSWORD).

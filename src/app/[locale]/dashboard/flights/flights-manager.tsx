@@ -8,6 +8,7 @@ import { ExportButton } from '@/components/export-button';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { useRouter } from '@/i18n/navigation';
+import { flightPicPerson } from '@/lib/flight-pic';
 import { formatCents } from '@/lib/money';
 import {
   flightTypeSchema,
@@ -16,7 +17,7 @@ import {
   type FlightTypeDto,
   type RegisterFlightResponseDto,
 } from '@/lib/schemas/flights';
-import { formatMinutes } from '@/lib/time';
+import { formatDateOnly, formatMinutes, formatTimeOfDay } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
@@ -111,19 +112,24 @@ export type FlightsManagerLabels = {
     /** Story 9.4 (AC 1) — dual/solo radio, rendered only when `flightType === 'SCHOOL'`. */
     soloMode: string;
     soloModes: { dual: string; solo: string };
-    durationMode: string;
-    durationModes: { minutes: string; hourMeter: string };
-    minutes: string;
+    /** Story 11.1 (AC 1/2) — departure/arrival airport text fields, defaulted to the airfield's own name in registration mode. */
+    departure: string;
+    arrival: string;
+    takeoffTime: string;
+    landingTime: string;
+    /** Story 11.1 (AC 2) — the read-only, live-computed `landing - takeoff` duration. */
+    computedDuration: string;
+    takeoffs: string;
     hourMeterStart: string;
     hourMeterEnd: string;
     landings: string;
     notes: string;
     submit: string;
     requiredField: string;
-    invalidMinutes: string;
     invalidHourMeter: string;
     errors: {
       HOUR_METER_INVALID: string;
+      FLIGHT_TIMES_INVALID: string;
       NO_AIRCRAFT_RATE: string;
       NO_INSTRUCTOR_RATE: string;
       SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR: string;
@@ -156,6 +162,10 @@ export type FlightsManagerLabels = {
     empty: string;
     table: {
       date: string;
+      /** Story 11.2 (AC 1) — `partenza → arrivo`; `noValue` on a historical (pre-11.1) flight without logbook fields. */
+      route: string;
+      /** Story 11.2 (AC 1) — `HH:MM–HH:MM` (decollo–atterraggio, Europe/Rome); same `noValue` fallback as `route`. */
+      times: string;
       aircraft: string;
       person: string;
       instructor: string;
@@ -165,7 +175,10 @@ export type FlightsManagerLabels = {
       soloSuffix: string;
       duration: string;
       amount: string;
-      landings: string;
+      /** Story 11.2 (AC 1) — `takeoffs / landings`, replaces the old standalone "Atterraggi" column (that i18n key stays, still used by `exports.service.ts`'s own column — story 11.3 scope). */
+      movements: string;
+      /** Story 11.2 (AC 2) — the derived PIC (pilota al comando, `flight-pic.ts`). */
+      pic: string;
       noValue: string;
       /** Story 5.2 (AC 1) — literal `{duration}` placeholder, CLIENT-filled (t.raw, same pattern as `account-statement-table.tsx`'s `adjustmentOfDate`). */
       packageNote: string;
@@ -237,6 +250,8 @@ type FlightsManagerProps = {
   personFilterOptions: PersonFilterOption[];
   initialFlights: FlightListItemDto[];
   moneyLocale: 'it' | 'en';
+  /** Story 11.1 (AC 1) — `getAirfieldBranding().name`, the registration form's default for BOTH departure/arrival airport fields (a correction's prefill, when present, wins instead). */
+  airfieldName: string;
   /** The filter values the current page was rendered with (from the URL, story 5.4) — the bar's initial/controlled state. */
   filters: FlightsFilters;
   /** Story 10.1 (AC 5) — "Esporta Excel" label; the href is built here from the LIVE `filters` state, not this initial snapshot. */
@@ -316,6 +331,7 @@ export function FlightsManager({
   personFilterOptions,
   initialFlights,
   moneyLocale,
+  airfieldName,
   filters: initialFilters,
   exportLabel,
   exportPdfLabel,
@@ -399,6 +415,7 @@ export function FlightsManager({
             aircraftOptions={aircraftOptions}
             personOptions={personOptions}
             instructorOptions={instructorOptions}
+            airfieldName={airfieldName}
             labels={labels.form}
             correctLabels={labels.correctPanel}
             pickerLabels={labels.picker}
@@ -557,25 +574,40 @@ export function FlightsManager({
           <p className="mt-4 text-sm text-[#787774]">{labels.list.empty}</p>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[860px] text-left text-sm">
+            <table className="w-full min-w-[1280px] text-left text-sm">
               <thead>
                 <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
                   <th className="py-2 pr-4 font-medium">{labels.list.table.date}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.route}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.times}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.aircraft}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.person}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.instructor}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.type}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.duration}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.amount}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.landings}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.movements}</th>
+                  <th className="py-2 pr-4 font-medium">{labels.list.table.pic}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.status}</th>
                   {canManage ? <th className="py-2 font-medium">{labels.list.table.actions}</th> : null}
                 </tr>
               </thead>
               <tbody>
-                {flights.map((flight) => (
+                {flights.map((flight) => {
+                  const pic = flightPicPerson(flight);
+                  return (
                   <tr key={flight.id} data-testid="flight-row" className="border-b border-[#EAEAEA] text-[#111111]">
-                    <td className="py-2 pr-4 whitespace-nowrap text-[#787774]">{flight.flightDate}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap text-[#787774]">{formatDateOnly(flight.flightDate, moneyLocale)}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {flight.departureAirfield && flight.arrivalAirfield
+                        ? `${flight.departureAirfield} → ${flight.arrivalAirfield}`
+                        : labels.list.table.noValue}
+                    </td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {flight.takeoffAt && flight.landingAt
+                        ? `${formatTimeOfDay(new Date(flight.takeoffAt), moneyLocale)}–${formatTimeOfDay(new Date(flight.landingAt), moneyLocale)}`
+                        : labels.list.table.noValue}
+                    </td>
                     <td className="py-2 pr-4 whitespace-nowrap">{flight.aircraft.registration}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{personLabel(flight.person)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">
@@ -594,9 +626,14 @@ export function FlightsManager({
                       ) : null}
                     </td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatCents(flight.breakdown.totalAmountCents, moneyLocale)}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap">{flight.landings ?? labels.list.table.noValue}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {flight.takeoffs} / {flight.landings}
+                    </td>
+                    <td data-testid="flight-pic-cell" className="py-2 pr-4 whitespace-nowrap">
+                      {pic ? personLabel(pic) : labels.list.table.noValue}
+                    </td>
                     <td className="py-2 pr-4">
-                      <FlightStatusCell flight={flight} labels={labels.list.table} />
+                      <FlightStatusCell flight={flight} labels={labels.list.table} locale={moneyLocale} />
                     </td>
                     {canManage ? (
                       <td className="py-2 whitespace-nowrap">
@@ -626,7 +663,8 @@ export function FlightsManager({
                       </td>
                     ) : null}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -646,7 +684,16 @@ export function FlightsManager({
  * — a REGISTERED flight can itself be a correction of an earlier ANNULLATO
  * one.
  */
-function FlightStatusCell({ flight, labels }: { flight: FlightListItemDto; labels: FlightsManagerLabels['list']['table'] }) {
+function FlightStatusCell({
+  flight,
+  labels,
+  locale,
+}: {
+  flight: FlightListItemDto;
+  labels: FlightsManagerLabels['list']['table'];
+  /** Story 11.2 (AC 3) — same `moneyLocale` source the caller already threads through the rest of the row. */
+  locale: 'it' | 'en';
+}) {
   if (flight.status !== 'CANCELLED' && !flight.correctionOfId && !flight.correctedByFlightId) {
     return null;
   }
@@ -663,7 +710,7 @@ function FlightStatusCell({ flight, labels }: { flight: FlightListItemDto; label
           </span>
           {flight.cancelledAt && flight.cancelReason ? (
             <p className="text-xs text-[#787774]" title={flight.cancelReason}>
-              {labels.cancelledDetail.replace('{date}', flight.cancelledAt.slice(0, 10)).replace('{reason}', flight.cancelReason)}
+              {labels.cancelledDetail.replace('{date}', formatDateOnly(flight.cancelledAt.slice(0, 10), locale)).replace('{reason}', flight.cancelReason)}
             </p>
           ) : null}
         </>
@@ -882,7 +929,7 @@ function CancelFlightPanel({ flight, moneyLocale, labels, onClose, onCancelled }
     <div data-testid="flight-cancel-panel" className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
       <h4 className="font-[family-name:var(--font-serif)] text-xl font-medium tracking-[-0.02em] text-[#111111]">{labels.title}</h4>
       <p className="mt-2 text-sm text-[#787774]">
-        {flight.aircraft.registration} — {flight.flightDate} — {formatCents(flight.breakdown.totalAmountCents, moneyLocale)}
+        {flight.aircraft.registration} — {formatDateOnly(flight.flightDate, moneyLocale)} — {formatCents(flight.breakdown.totalAmountCents, moneyLocale)}
       </p>
 
       <div className="mt-4 max-w-md">
@@ -931,53 +978,100 @@ function CancelFlightPanel({ flight, moneyLocale, labels, onClose, onCancelled }
 /**
  * Local, UI-only schema (never sent over the wire as-is — same "convert only
  * at the boundary" pattern as `TopUpForm`): every numeric field stays a raw
- * string end to end while the user types. The `minutes`/`hourMeterStart`/
- * `hourMeterEnd` XOR (Dev Notes: "il valore inviato all'API è SEMPRE minuti
- * interi o la coppia contaore") is resolved by `durationMode` — a plain
- * toggle, not a Zod refine — and validated in `onSubmit`, not here: the
- * fields the current mode doesn't use are never required.
+ * string end to end while the user types. `hourMeterStart`/`hourMeterEnd`
+ * are two plain OPTIONAL fields since story 11.1 (no radio/mode anymore,
+ * Dev Notes) — validated as a self-consistent pair in `onSubmit`, not here.
  *
  * Story TD-3: `aircraftId`/`personId`/`instructorPersonId` are deliberately
  * NOT part of this schema anymore — they moved to plain component state
  * driven by `SearchCombobox` (same "plain local state, not an RHF field"
- * pattern already used here for `durationMode`/`reason`, for the identical
- * reason: a controlled value that isn't read via RHF's `watch()`). Their
- * "required" check moved from the Zod resolver to a manual pre-submit check
- * in `onSubmit`, reusing the SAME `labels.requiredField` message
- * `flightDate` already showed inline — see `onSubmit` below.
+ * pattern already used here for `reason`, for the identical reason: a
+ * controlled value that isn't read via RHF's `watch()`). Their "required"
+ * check moved from the Zod resolver to a manual pre-submit check in
+ * `onSubmit`, reusing the SAME `labels.requiredField` message `flightDate`
+ * already showed inline — see `onSubmit` below.
  */
 const flightFormSchema = z.object({
   flightDate: z.string().trim().min(1),
   flightType: flightTypeSchema,
-  minutes: z.string(),
+  // Story 11.1 (AC 1/2): the logbook fields — required non-empty (server
+  // mirrors the same non-empty/instant requirements, `registerFlightSchema`).
+  departureAirfield: z.string().trim().min(1),
+  arrivalAirfield: z.string().trim().min(1),
+  takeoffTime: z.string().trim().min(1),
+  landingTime: z.string().trim().min(1),
   hourMeterStart: z.string(),
   hourMeterEnd: z.string(),
+  takeoffs: z.string(),
   landings: z.string(),
   notes: z.string(),
 });
 
 type FlightFormValues = z.infer<typeof flightFormSchema>;
 
-/** Blank/registration defaults, or (story 5.3) pre-filled from the flight being corrected. */
-function flightFormDefaults(correctingFlight: FlightListItemDto | null): FlightFormValues {
+/**
+ * Composes `takeoffAt`/`landingAt` `Date`s from the form's date + two
+ * `type="time"` fields — the BOOKINGS pattern (`new-booking-form.tsx:255-256`:
+ * `new Date(...).toISOString()`, browser wall-time) extended for a second
+ * clock reading on the SAME calendar date. `null` when any of the three raw
+ * strings is empty/unparsable (Dev Notes/AC 2). If `landingTime <=
+ * takeoffTime`, the landing is interpreted as the FOLLOWING day (attraversamento
+ * mezzanotte) — added on the already-local `Date` object directly
+ * (`setDate`), never via `zoned-time.ts#addDaysDateOnly` (Dev Notes: that
+ * module is SERVER-side only, not importable from this client component).
+ */
+function composeFlightTimes(flightDate: string, takeoffTime: string, landingTime: string): { takeoffAt: Date; landingAt: Date } | null {
+  if (flightDate.trim() === '' || takeoffTime.trim() === '' || landingTime.trim() === '') return null;
+  const takeoffAt = new Date(`${flightDate}T${takeoffTime}`);
+  if (Number.isNaN(takeoffAt.getTime())) return null;
+  const landingAt = new Date(`${flightDate}T${landingTime}`);
+  if (Number.isNaN(landingAt.getTime())) return null;
+  if (landingAt.getTime() <= takeoffAt.getTime()) {
+    landingAt.setDate(landingAt.getDate() + 1);
+  }
+  return { takeoffAt, landingAt };
+}
+
+/** The `YYYY-MM-DD` LOCAL (browser) calendar date an ISO instant falls on — the inverse of the `${date}T${time}` composition above, for correction prefill (Dev Notes). */
+function localDateFromIso(iso: string): string {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** The `HH:MM` LOCAL (browser) time-of-day an ISO instant falls on — same rationale as {@link localDateFromIso}. */
+function localTimeFromIso(iso: string): string {
+  const date = new Date(iso);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Blank/registration defaults (departure/arrival default to the airfield's own name, AC 1), or (story 5.3/11.1) pre-filled from the flight being corrected — an original WITHOUT logbook fields (pre-11.1 history) leaves them blank for the user to fill (AC 5). */
+function flightFormDefaults(correctingFlight: FlightListItemDto | null, airfieldName: string): FlightFormValues {
   if (!correctingFlight) {
     return {
       flightDate: todayDateOnly(),
       flightType: 'TOURISM',
-      minutes: '',
+      departureAirfield: airfieldName,
+      arrivalAirfield: airfieldName,
+      takeoffTime: '',
+      landingTime: '',
       hourMeterStart: '',
       hourMeterEnd: '',
-      landings: '',
+      takeoffs: '1',
+      landings: '1',
       notes: '',
     };
   }
   return {
-    flightDate: correctingFlight.flightDate,
+    flightDate: correctingFlight.takeoffAt ? localDateFromIso(correctingFlight.takeoffAt) : correctingFlight.flightDate,
     flightType: correctingFlight.flightType,
-    minutes: correctingFlight.hourMeterStart === null ? String(correctingFlight.minutes) : '',
+    departureAirfield: correctingFlight.departureAirfield ?? '',
+    arrivalAirfield: correctingFlight.arrivalAirfield ?? '',
+    takeoffTime: correctingFlight.takeoffAt ? localTimeFromIso(correctingFlight.takeoffAt) : '',
+    landingTime: correctingFlight.landingAt ? localTimeFromIso(correctingFlight.landingAt) : '',
     hourMeterStart: correctingFlight.hourMeterStart !== null ? String(correctingFlight.hourMeterStart) : '',
     hourMeterEnd: correctingFlight.hourMeterEnd !== null ? String(correctingFlight.hourMeterEnd) : '',
-    landings: correctingFlight.landings !== null ? String(correctingFlight.landings) : '',
+    takeoffs: String(correctingFlight.takeoffs),
+    landings: String(correctingFlight.landings),
     notes: correctingFlight.notes ?? '',
   };
 }
@@ -998,6 +1092,8 @@ type RegisterFlightFormProps = {
   aircraftOptions: AircraftOption[];
   personOptions: PersonOption[];
   instructorOptions: PersonOption[];
+  /** Story 11.1 (AC 1) — the registration-mode default for departure/arrival. */
+  airfieldName: string;
   labels: FlightsManagerLabels['form'];
   correctLabels: FlightsManagerLabels['correctPanel'];
   pickerLabels: FlightsManagerLabels['picker'];
@@ -1012,6 +1108,7 @@ function RegisterFlightForm({
   aircraftOptions,
   personOptions,
   instructorOptions,
+  airfieldName,
   labels,
   correctLabels,
   pickerLabels,
@@ -1021,31 +1118,31 @@ function RegisterFlightForm({
   onCorrected,
 }: RegisterFlightFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
-  // Deliberately plain component state, NOT a react-hook-form field read via
-  // `watch()` (the React Compiler flags TanStack/RHF's `watch()`/table hooks
-  // as unmemoizable, same documented exception as `data-table.tsx` — a
-  // second one here would add a second lint warning beyond the one already
-  // accepted). `durationMode` only ever drives which inputs render and which
-  // branch `onSubmit` takes; it is never itself sent to the API.
-  const [durationMode, setDurationMode] = useState<'minutes' | 'hourMeter'>(
-    correctingFlight?.hourMeterStart != null ? 'hourMeter' : 'minutes',
-  );
+  const defaults = flightFormDefaults(correctingFlight, airfieldName);
   // Story 9.4 (AC 1): `flightType` stays `register`-only (RHF reads it from
   // the DOM at submit, same as before) — this mirrors it into plain state,
-  // via `register`'s own `onChange` option (NOT `watch()`, same React
-  // Compiler exception as `durationMode` above), purely so the dual/solo
-  // radio below can decide whether to render. `isSolo` itself is likewise
-  // plain state, never an RHF field — same rationale as `durationMode`.
-  const [selectedFlightType, setSelectedFlightType] = useState<FlightTypeDto>(flightFormDefaults(correctingFlight).flightType);
+  // via `register`'s own `onChange` option (NOT `watch()`, the React
+  // Compiler flags RHF's `watch()` as unmemoizable, same documented
+  // exception as `data-table.tsx`), purely so the dual/solo radio below can
+  // decide whether to render. `isSolo` itself is likewise plain state, never
+  // an RHF field — same rationale.
+  const [selectedFlightType, setSelectedFlightType] = useState<FlightTypeDto>(defaults.flightType);
   const [isSolo, setIsSolo] = useState(correctingFlight?.isSolo ?? false);
+  // Story 11.1 (AC 2): the live-computed duration display mirrors
+  // flightDate/takeoffTime/landingTime into plain state (same
+  // register-onChange, non-`watch()` pattern as `selectedFlightType` above)
+  // — RHF itself stays the single source of truth for what gets submitted.
+  const [flightDateValue, setFlightDateValue] = useState(defaults.flightDate);
+  const [takeoffTimeValue, setTakeoffTimeValue] = useState(defaults.takeoffTime);
+  const [landingTimeValue, setLandingTimeValue] = useState(defaults.landingTime);
   // Story 5.3 (AC 2): the mandatory motivo, only rendered/required in
   // correction mode — same "plain local state, not a schema field" pattern
-  // as `durationMode` (the field only exists in one of the two modes).
+  // as above (the field only exists in correction mode).
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState(false);
   // Story TD-3: the 3 picker fields, plain component state driven by
   // `SearchCombobox` instead of RHF-registered `<select>`s (same rationale
-  // as `durationMode`/`reason` above) — initialized from the SAME defaults
+  // as `reason` above) — initialized from the SAME defaults
   // `flightFormDefaults` used before the split (`pickerDefaults`).
   const initialPickerValues = pickerDefaults(aircraftOptions, correctingFlight);
   const [aircraftId, setAircraftId] = useState(initialPickerValues.aircraftId);
@@ -1065,7 +1162,7 @@ function RegisterFlightForm({
     formState: { errors, isSubmitting },
   } = useForm<FlightFormValues>({
     resolver: zodResolver(flightFormSchema),
-    defaultValues: flightFormDefaults(correctingFlight),
+    defaultValues: defaults,
   });
 
   const noAircraft = aircraftOptions.length === 0;
@@ -1117,24 +1214,39 @@ function RegisterFlightForm({
     }
     setReasonError(false);
 
-    let durationPayload: { minutes: number } | { hourMeterStart: number; hourMeterEnd: number };
-    if (durationMode === 'minutes') {
-      const minutes = Number(values.minutes);
-      if (!Number.isInteger(minutes) || minutes < 1) {
-        setFormError(labels.invalidMinutes);
-        return;
-      }
-      durationPayload = { minutes };
-    } else {
-      const hourMeterStart = Number(values.hourMeterStart);
-      const hourMeterEnd = Number(values.hourMeterEnd);
-      if (!Number.isInteger(hourMeterStart) || !Number.isInteger(hourMeterEnd) || hourMeterEnd <= hourMeterStart) {
+    // Story 11.1 (AC 2): the ONLY source of `takeoffAt`/`landingAt` — the
+    // resolver already guarantees the three raw strings are non-empty, so a
+    // `null` here only defends against an unparsable browser value.
+    const times = composeFlightTimes(values.flightDate, values.takeoffTime, values.landingTime);
+    if (!times) {
+      setFormError(labels.errors.FLIGHT_TIMES_INVALID);
+      return;
+    }
+
+    // Story 11.1 (AC 6): hourMeterStart/hourMeterEnd are two independent
+    // OPTIONAL fields now (no radio/mode) — validated as a self-consistent
+    // pair only when either is filled in, mirroring the server's own
+    // HOUR_METER_INVALID check.
+    const hourMeterStartRaw = values.hourMeterStart.trim();
+    const hourMeterEndRaw = values.hourMeterEnd.trim();
+    let hourMeterPayload: { hourMeterStart: number; hourMeterEnd: number } | Record<string, never> = {};
+    if (hourMeterStartRaw !== '' || hourMeterEndRaw !== '') {
+      const hourMeterStart = Number(hourMeterStartRaw);
+      const hourMeterEnd = Number(hourMeterEndRaw);
+      if (
+        hourMeterStartRaw === '' ||
+        hourMeterEndRaw === '' ||
+        !Number.isInteger(hourMeterStart) ||
+        !Number.isInteger(hourMeterEnd) ||
+        hourMeterEnd <= hourMeterStart
+      ) {
         setFormError(labels.invalidHourMeter);
         return;
       }
-      durationPayload = { hourMeterStart, hourMeterEnd };
+      hourMeterPayload = { hourMeterStart, hourMeterEnd };
     }
 
+    const takeoffs = values.takeoffs.trim() === '' ? undefined : Number(values.takeoffs);
     const landings = values.landings.trim() === '' ? undefined : Number(values.landings);
     const notes = values.notes.trim() === '' ? undefined : values.notes.trim();
     const trimmedReason = reason.trim();
@@ -1155,13 +1267,17 @@ function RegisterFlightForm({
           aircraftId,
           personId,
           instructorPersonId: instructorPersonId === '' ? undefined : instructorPersonId,
-          flightDate: values.flightDate,
+          departureAirfield: values.departureAirfield.trim(),
+          arrivalAirfield: values.arrivalAirfield.trim(),
+          takeoffAt: times.takeoffAt.toISOString(),
+          landingAt: times.landingAt.toISOString(),
           flightType: values.flightType,
           // Story 9.4 (AC 1) — meaningful only on SCHOOL; the same body is
           // used for both registration and correction (correctFlight
           // re-validates/re-persists it exactly like every other field).
           isSolo,
-          ...durationPayload,
+          ...hourMeterPayload,
+          takeoffs,
           landings,
           notes,
           ...(isCorrecting ? { reason: trimmedReason } : {}),
@@ -1193,7 +1309,8 @@ function RegisterFlightForm({
     } else {
       onSuccess(result);
     }
-    reset(flightFormDefaults(null));
+    const blankValues = flightFormDefaults(null, airfieldName);
+    reset(blankValues);
     // Story TD-3: the 3 picker fields reset alongside the RHF-managed ones
     // above — `SearchCombobox` is controlled, so setting these back to the
     // blank/first-active defaults is enough to re-sync its visible text (see
@@ -1202,11 +1319,21 @@ function RegisterFlightForm({
     setAircraftId(blankPickerValues.aircraftId);
     setPersonId(blankPickerValues.personId);
     setInstructorPersonId(blankPickerValues.instructorPersonId);
-    setDurationMode('minutes');
     setSelectedFlightType('TOURISM');
     setIsSolo(false);
     setReason('');
+    // Story 11.1: the live-duration mirror state resets alongside the
+    // RHF-managed fields above (`reset()` alone does not re-run our
+    // `register(..., { onChange })` side effects).
+    setFlightDateValue(blankValues.flightDate);
+    setTakeoffTimeValue(blankValues.takeoffTime);
+    setLandingTimeValue(blankValues.landingTime);
   }
+
+  // Story 11.1 (AC 2): the live-computed duration, `null` until both times
+  // (plus the date) are filled in and parse to a valid pair.
+  const liveTimes = composeFlightTimes(flightDateValue, takeoffTimeValue, landingTimeValue);
+  const computedMinutes = liveTimes ? Math.round((liveTimes.landingAt.getTime() - liveTimes.takeoffAt.getTime()) / 60_000) : null;
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5" data-testid="flight-form">
@@ -1279,7 +1406,7 @@ function RegisterFlightForm({
             type="date"
             aria-invalid={Boolean(errors.flightDate)}
             className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-            {...register('flightDate')}
+            {...register('flightDate', { onChange: (event: { target: { value: string } }) => setFlightDateValue(event.target.value) })}
           />
           {errors.flightDate ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
         </div>
@@ -1308,6 +1435,32 @@ function RegisterFlightForm({
         </div>
 
         <div>
+          <label htmlFor="flight-departure" className="block text-sm font-medium text-[#2F3437]">
+            {labels.departure}
+          </label>
+          <input
+            id="flight-departure"
+            aria-invalid={Boolean(errors.departureAirfield)}
+            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            {...register('departureAirfield')}
+          />
+          {errors.departureAirfield ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+        </div>
+
+        <div>
+          <label htmlFor="flight-arrival" className="block text-sm font-medium text-[#2F3437]">
+            {labels.arrival}
+          </label>
+          <input
+            id="flight-arrival"
+            aria-invalid={Boolean(errors.arrivalAirfield)}
+            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            {...register('arrivalAirfield')}
+          />
+          {errors.arrivalAirfield ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+        </div>
+
+        <div>
           <label htmlFor="flight-landings" className="block text-sm font-medium text-[#2F3437]">
             {labels.landings}
           </label>
@@ -1319,6 +1472,21 @@ function RegisterFlightForm({
             inputMode="numeric"
             className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
             {...register('landings')}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="flight-takeoffs" className="block text-sm font-medium text-[#2F3437]">
+            {labels.takeoffs}
+          </label>
+          <input
+            id="flight-takeoffs"
+            type="number"
+            step={1}
+            min={0}
+            inputMode="numeric"
+            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            {...register('takeoffs')}
           />
         </div>
       </div>
@@ -1353,81 +1521,73 @@ function RegisterFlightForm({
         </fieldset>
       ) : null}
 
-      <fieldset>
-        <legend className="block text-sm font-medium text-[#2F3437]">{labels.durationMode}</legend>
-        <div className="mt-2 flex flex-wrap gap-4">
-          <label htmlFor="flight-duration-mode-minutes" className="flex items-center gap-2 text-sm text-[#2F3437]">
-            <input
-              id="flight-duration-mode-minutes"
-              type="radio"
-              name="flight-duration-mode"
-              value="minutes"
-              checked={durationMode === 'minutes'}
-              onChange={() => setDurationMode('minutes')}
-            />
-            {labels.durationModes.minutes}
-          </label>
-          <label htmlFor="flight-duration-mode-hourMeter" className="flex items-center gap-2 text-sm text-[#2F3437]">
-            <input
-              id="flight-duration-mode-hourMeter"
-              type="radio"
-              name="flight-duration-mode"
-              value="hourMeter"
-              checked={durationMode === 'hourMeter'}
-              onChange={() => setDurationMode('hourMeter')}
-            />
-            {labels.durationModes.hourMeter}
-          </label>
-        </div>
-      </fieldset>
-
-      {durationMode === 'minutes' ? (
-        <div className="max-w-[200px]">
-          <label htmlFor="flight-minutes" className="block text-sm font-medium text-[#2F3437]">
-            {labels.minutes}
+      {/* Story 11.1 (AC 2): the durata is ALWAYS derived from these two clock
+          readings — the live display below is read-only, never an input. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:max-w-[660px]">
+        <div>
+          <label htmlFor="flight-takeoff-time" className="block text-sm font-medium text-[#2F3437]">
+            {labels.takeoffTime}
           </label>
           <input
-            id="flight-minutes"
+            id="flight-takeoff-time"
+            type="time"
+            aria-invalid={Boolean(errors.takeoffTime)}
+            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            {...register('takeoffTime', { onChange: (event: { target: { value: string } }) => setTakeoffTimeValue(event.target.value) })}
+          />
+          {errors.takeoffTime ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+        </div>
+        <div>
+          <label htmlFor="flight-landing-time" className="block text-sm font-medium text-[#2F3437]">
+            {labels.landingTime}
+          </label>
+          <input
+            id="flight-landing-time"
+            type="time"
+            aria-invalid={Boolean(errors.landingTime)}
+            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            {...register('landingTime', { onChange: (event: { target: { value: string } }) => setLandingTimeValue(event.target.value) })}
+          />
+          {errors.landingTime ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+        </div>
+        <div>
+          <span className="block text-sm font-medium text-[#2F3437]">{labels.computedDuration}</span>
+          <p data-testid="flight-computed-duration" className="mt-2 flex min-h-[44px] items-center font-[family-name:var(--font-mono,monospace)] text-base text-[#111111]">
+            {computedMinutes !== null ? formatMinutes(computedMinutes) : '—'}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-[440px]">
+        <div>
+          <label htmlFor="flight-hour-meter-start" className="block text-sm font-medium text-[#2F3437]">
+            {labels.hourMeterStart}
+          </label>
+          <input
+            id="flight-hour-meter-start"
             type="number"
             step={1}
-            min={1}
+            min={0}
             inputMode="numeric"
             className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-            {...register('minutes')}
+            {...register('hourMeterStart')}
           />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-[440px]">
-          <div>
-            <label htmlFor="flight-hour-meter-start" className="block text-sm font-medium text-[#2F3437]">
-              {labels.hourMeterStart}
-            </label>
-            <input
-              id="flight-hour-meter-start"
-              type="number"
-              step={1}
-              min={0}
-              inputMode="numeric"
-              className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-              {...register('hourMeterStart')}
-            />
-          </div>
-          <div>
-            <label htmlFor="flight-hour-meter-end" className="block text-sm font-medium text-[#2F3437]">
-              {labels.hourMeterEnd}
-            </label>
-            <input
-              id="flight-hour-meter-end"
-              type="number"
-              step={1}
-              min={0}
-              inputMode="numeric"
-              className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-              {...register('hourMeterEnd')}
-            />
-          </div>
+        <div>
+          <label htmlFor="flight-hour-meter-end" className="block text-sm font-medium text-[#2F3437]">
+            {labels.hourMeterEnd}
+          </label>
+          <input
+            id="flight-hour-meter-end"
+            type="number"
+            step={1}
+            min={0}
+            inputMode="numeric"
+            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            {...register('hourMeterEnd')}
+          />
         </div>
-      )}
+      </div>
 
       <div>
         <label htmlFor="flight-notes" className="block text-sm font-medium text-[#2F3437]">
