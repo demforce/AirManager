@@ -408,7 +408,9 @@ function CompleteForm({ id, pprNumber, labels, genericErrorLabel, onCancel, onSu
         const response = await fetch('/api/v1/settings/ppr-landing-fee');
         if (!response.ok) return;
         const body = (await response.json()) as { landingFeeCents: number };
-        if (!cancelled) setFeeInput(centsToEuroInput(body.landingFeeCents));
+        // Never clobber a value the user already typed while the fetch was in
+        // flight — the prefill only fills the still-untouched blank field.
+        if (!cancelled) setFeeInput((current) => (current === '' ? centsToEuroInput(body.landingFeeCents) : current));
       } catch {
         // Best-effort prefill only (Dev Notes) — the field stays editable either way.
       }
