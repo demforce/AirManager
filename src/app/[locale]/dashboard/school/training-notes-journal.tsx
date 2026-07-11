@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useLocale } from 'next-intl';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -120,6 +121,10 @@ export function NewTrainingNoteForm({
   labels: TrainingNotesJournalLabels['newNoteForm'];
 }) {
   const router = useRouter();
+  // Date formatting must follow the page locale (same pattern as
+  // `people/account-panel.tsx`'s `moneyLocale`) — without this,
+  // `formatDateOnly`'s default renders Italian dates on /en too.
+  const locale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [open, setOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -189,7 +194,7 @@ export function NewTrainingNoteForm({
             <option value="">{labels.noFlight}</option>
             {flightOptions.map((flight) => (
               <option key={flight.id} value={flight.id}>
-                {formatDateOnly(flight.flightDate)} · {formatMinutes(flight.minutes)}
+                {formatDateOnly(flight.flightDate, locale)} · {formatMinutes(flight.minutes)}
               </option>
             ))}
           </select>
@@ -405,6 +410,10 @@ export function TrainingNoteRow({
   labels: Pick<TrainingNotesJournalLabels, 'row' | 'editForm'>;
 }) {
   const router = useRouter();
+  // Date formatting must follow the page locale (same pattern as
+  // `people/account-panel.tsx`'s `moneyLocale`) — without this,
+  // `formatDateOnly`'s default renders Italian dates on /en too.
+  const locale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [isEditing, setIsEditing] = useState(false);
 
   function handleSaved(): void {
@@ -416,7 +425,7 @@ export function TrainingNoteRow({
     <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="training-note-row">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-[#111111]">{formatDateOnly(note.noteDate)}</p>
+          <p className="text-sm font-medium text-[#111111]">{formatDateOnly(note.noteDate, locale)}</p>
           <p className="mt-1 text-xs text-[#787774]">
             {labels.row.author}: {note.authorName}
             {note.edited ? ` · ${labels.row.edited}` : ''}
@@ -456,7 +465,7 @@ export function TrainingNoteRow({
           ) : null}
           {note.flight ? (
             <p className="text-xs text-[#787774]">
-              {labels.row.linkedFlight}: {formatDateOnly(note.flight.flightDate)} · {formatMinutes(note.flight.minutes)}
+              {labels.row.linkedFlight}: {formatDateOnly(note.flight.flightDate, locale)} · {formatMinutes(note.flight.minutes)}
             </p>
           ) : null}
         </div>

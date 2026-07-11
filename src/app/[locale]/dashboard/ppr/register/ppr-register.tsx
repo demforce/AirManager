@@ -135,13 +135,17 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
   }
 
   function handleResetFilters(): void {
-    // "Azzera filtri" -> the unfiltered view: EVERY status, no period bound
-    // (Dev Notes: `'ALL'` is the register's own "no status filter" value,
-    // distinct from the page's own `APPROVED` default on first load).
-    navigate({ status: 'ALL', from: '', to: '' });
+    // "Azzera filtri" -> back to the page's own default (`APPROVED`, no
+    // period bound), NOT the register's unfiltered `'ALL'` — `'ALL'` remains
+    // a selectable filter VALUE (TD-5 AC 4), just no longer the reset target.
+    navigate({ status: 'APPROVED', from: '', to: '' });
   }
 
-  const hasActiveFilter = filters.status !== 'ALL' || filters.from !== '' || filters.to !== '';
+  // TD-5 AC 4: `APPROVED` is the page's own default (`page.tsx`'s
+  // `sanitizeStatus(sp.status) ?? 'APPROVED'`), so it must NOT count as an
+  // "active filter" — otherwise the button shows on a freshly opened
+  // register with no URL params at all.
+  const hasActiveFilter = filters.status !== 'APPROVED' || filters.from !== '' || filters.to !== '';
 
   function startComplete(id: string): void {
     setFeedback(null);

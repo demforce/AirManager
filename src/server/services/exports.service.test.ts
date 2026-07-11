@@ -374,7 +374,7 @@ describe('exportCashReportPdf (story 10.2, AC 2/3)', () => {
     expect(props.columns.map((c) => c.header)).toEqual(['Categoria', 'Entrate', 'Uscite', 'Netto']);
     expect(props.columns.map((c) => c.value(props.rows[0]))).toEqual(['Carburante', '0,00 €', '-400,00 €', '-400,00 €']);
     expect(props.totals).toEqual([
-      { label: 'Entrate', value: '1000,00 €' },
+      { label: 'Entrate', value: '1.000,00 €' },
       { label: 'Uscite', value: '-400,00 €' },
       { label: 'Saldo del periodo', value: '+600,00 €' },
     ]);

@@ -337,4 +337,26 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
     await expect(page).toHaveURL(new RegExp(`to=${dayBefore}`));
     await expect(page.getByText(created.registration)).toHaveCount(0);
   });
+
+  test('"Azzera filtri" is hidden on the page default (APPROVED, no period) and appears on ANY chosen filter, incl. "Tutti" (TD-5 AC 4)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    // Fresh landing, no URL params at all: the page's own APPROVED default is NOT an "active filter".
+    await page.goto('/it/dashboard/ppr/register');
+    await expect(page.getByTestId('ppr-register-filter-status')).toHaveValue('APPROVED');
+    await expect(page.getByTestId('ppr-register-filter-reset')).toHaveCount(0);
+
+    // Choosing "Tutti" (ALL) is a deliberate filter choice -> the reset button appears.
+    await page.getByTestId('ppr-register-filter-status').selectOption('ALL');
+    await expect(page).toHaveURL(/status=ALL/);
+    await expect(page.getByTestId('ppr-register-filter-reset')).toBeVisible();
+
+    // Reset -> back to the page default: clean URL, APPROVED selected again, button gone.
+    await page.getByTestId('ppr-register-filter-reset').click();
+    await expect(page).toHaveURL(/\/it\/dashboard\/ppr\/register$/);
+    await expect(page.getByTestId('ppr-register-filter-status')).toHaveValue('APPROVED');
+    await expect(page.getByTestId('ppr-register-filter-reset')).toHaveCount(0);
+  });
 });

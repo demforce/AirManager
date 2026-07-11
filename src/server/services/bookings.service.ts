@@ -70,14 +70,17 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  * `listCalendarBookings`) filters `status: 'ACTIVE'` — a cancelled booking
  * frees its slot and disappears from every list/calendar.
  *
- * **Expiry-based creation block (story 7.4, AC 1/2; FR-21)**: `createBooking`
- * ONLY (see its own doc-comment for the full rule, ordering and force/warning
- * semantics) — `updateBooking` deliberately does NOT re-evaluate expiries on
- * an edit (deferral accepted for the MVP, Contesto: no re-check exists today
- * between creation and the actual flight either; the real enforcement at
- * flight time belongs to flight registration/epic 5, not this booking
- * domain). A moved booking keeps whatever block/force state it was created
- * with.
+ * **Expiry-based booking block (story 7.4, AC 1/2; FR-21; extended by TD-5,
+ * AC 5)**: `createBooking` runs the full rule unconditionally (see its own
+ * doc-comment for ordering/force/warning semantics). `updateBooking` reruns
+ * the SAME partition (`findBlockingExpiredDocuments`, the shared helper) but
+ * ONLY when the edit actually changes the flight DAY (`APP_TIMEZONE`
+ * date-only) — a same-day edit (time/aircraft/notes) never re-checks, so a
+ * booking created with `force` past a blocking document stays editable
+ * within that day. There is no `force` on `updateBooking` (deferred,
+ * Contesto: staff who must deliberately move past a scadenza cancels and
+ * recreates with `force`) — any blocking document on the NEW day is a hard
+ * 422, no bypass.
  */
 
 export type BookingListItem = {
@@ -178,6 +181,38 @@ export type BookingExpiryWarning = { typeName: string; expiresAt: string };
 
 /** `createBooking`'s return shape (story 7.4, AC 1/2) — REPLACES the bare `BookingListItem` this function returned before this story (see its doc-comment). */
 export type CreateBookingResult = { booking: BookingListItem; warnings: BookingExpiryWarning[] };
+
+type ExpiredDocument = { typeName: string; expiresAt: string };
+
+/**
+ * `personId`'s REGISTERED expiries, partitioned against `flightDateOnly`
+ * (`YYYY-MM-DD`, `APP_TIMEZONE`) into `blockingDocuments`
+ * (`ExpiryType.blocksBooking`) and non-blocking `warnings` — the shared core
+ * of `createBooking`'s expiry-based block (story 7.4, AC 1/2) and
+ * `updateBooking`'s day-change recheck (story TD-5, AC 5). Identical query
+ * and date-only filter as `createBooking`'s original inline logic (module
+ * doc-comment: "anchored to the flight day, not today"). Deciding what to DO
+ * with `blockingDocuments` — `createBooking`'s `force` bypass vs
+ * `updateBooking`'s unconditional 422 — is each caller's own concern; this
+ * helper never throws.
+ */
+async function findBlockingExpiredDocuments(
+  personId: string,
+  flightDateOnly: string,
+): Promise<{ blockingDocuments: ExpiredDocument[]; warnings: BookingExpiryWarning[] }> {
+  const expiries = await prisma.expiry.findMany({
+    where: { personId },
+    select: { expiresAt: true, expiryType: { select: { name: true, blocksBooking: true } } },
+  });
+  const expiredDocuments = expiries
+    .filter((expiry) => toDateOnlyString(expiry.expiresAt) < flightDateOnly)
+    .map((expiry) => ({ typeName: expiry.expiryType.name, expiresAt: toDateOnlyString(expiry.expiresAt), blocksBooking: expiry.expiryType.blocksBooking }));
+
+  return {
+    blockingDocuments: expiredDocuments.filter((document) => document.blocksBooking).map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt })),
+    warnings: expiredDocuments.filter((document) => !document.blocksBooking).map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt })),
+  };
+}
 
 /**
  * Creates a booking (AC 1/2/3) — see the module doc-comment for the full
@@ -338,17 +373,7 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
   // this rule is anchored to the FLIGHT DAY) — a direct date-only compare,
   // same convention as `packages.service.ts`'s `expiresAt >= flightDate`.
   const flightDateOnly = dateOnlyInZone(startsAt, APP_TIMEZONE);
-  const expiries = await prisma.expiry.findMany({
-    where: { personId: input.personId },
-    select: { expiresAt: true, expiryType: { select: { name: true, blocksBooking: true } } },
-  });
-  const expiredDocuments = expiries
-    .filter((expiry) => toDateOnlyString(expiry.expiresAt) < flightDateOnly)
-    .map((expiry) => ({ typeName: expiry.expiryType.name, expiresAt: toDateOnlyString(expiry.expiresAt), blocksBooking: expiry.expiryType.blocksBooking }));
-  const blockingDocuments = expiredDocuments.filter((document) => document.blocksBooking);
-  const warnings: BookingExpiryWarning[] = expiredDocuments
-    .filter((document) => !document.blocksBooking)
-    .map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt }));
+  const { blockingDocuments, warnings } = await findBlockingExpiredDocuments(input.personId, flightDateOnly);
 
   let forceStamp: { forcedAt: Date; forcedByUserId: string; forceReason: string } | null = null;
   if (blockingDocuments.length > 0) {
@@ -360,7 +385,7 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
     } else {
       throw new ValidationError(
         `Cannot create this booking: the following documents are expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
-        { documents: blockingDocuments.map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt })) },
+        { documents: blockingDocuments },
         'EXPIRED_DOCUMENTS',
       );
     }
@@ -588,15 +613,18 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * `createBooking`'s own rules, Contesto: staff can correct an in-progress
  * booking, e.g. shorten it).
  *
- * **Deliberately does NOT re-evaluate expiries (story 7.4)**: FR-21 blocks
- * the NEW booking, literally — moving an existing one (even onto a brand-new
- * interval, even a MUCH later one) never re-runs `createBooking`'s
- * expiry-block check, and moving/`force`ing past a document that expired
- * AFTER creation is out of scope here. Accepted MVP loophole (Contesto): no
- * re-check exists between creation and the actual flight today anyway —
- * the real enforcement at flight time is flight registration's concern
- * (epic 5/SM-3), not this booking domain. A future story could close this by
- * running the same check on `updateBooking` too, if ever required.
+ * **Re-evaluates expiries on a DAY change only (story 7.4 loophole closed by
+ * TD-5, AC 5)**: moving this booking to a DIFFERENT flight day reruns the
+ * SAME expiry-based block `createBooking` runs at creation
+ * (`findBlockingExpiredDocuments`, the shared helper) against `personId`
+ * (`existing.personId`, the person who flies) and the NEW day — a blocking
+ * document is a hard 422 `EXPIRED_DOCUMENTS`, same shape as the create path,
+ * with NO `force` bypass on this endpoint (staff who must deliberately move
+ * past a scadenza cancels and recreates with `force`). A same-day edit
+ * (time/aircraft/notes only) never re-checks — a booking created with
+ * `force` past a blocking document stays editable within that same day
+ * (Contesto: the loophole being closed is specifically the day-move, not
+ * ordinary same-day corrections).
  *
  * **Concurrency (same discipline as `createBooking`, AC 2)**: inside
  * `prisma.$transaction`, ALL involved `Aircraft` rows — the destination and,
@@ -650,6 +678,23 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
   }
   if (!canManageAny && nextStartsAt.getTime() <= Date.now()) {
     throw new ValidationError('startsAt must be in the future.', undefined, 'BOOKING_IN_PAST');
+  }
+
+  // TD-5, AC 5: rerun the create's expiry-based block, but ONLY when the
+  // flight DAY actually changes (see this function's own doc-comment) —
+  // scadenze participate in neither the overlap invariant nor the aircraft
+  // lock, so this stays outside `prisma.$transaction`, same rationale as
+  // `createBooking`'s own expiry check.
+  const nextFlightDateOnly = dateOnlyInZone(nextStartsAt, APP_TIMEZONE);
+  if (nextFlightDateOnly !== dateOnlyInZone(existing.startsAt, APP_TIMEZONE)) {
+    const { blockingDocuments } = await findBlockingExpiredDocuments(existing.personId, nextFlightDateOnly);
+    if (blockingDocuments.length > 0) {
+      throw new ValidationError(
+        `Cannot move this booking: the following documents are expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
+        { documents: blockingDocuments },
+        'EXPIRED_DOCUMENTS',
+      );
+    }
   }
 
   const updated = await prisma.$transaction(async (tx) => {
