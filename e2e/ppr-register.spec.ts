@@ -69,10 +69,31 @@ function futureIso(hoursFromNow: number): string {
   return new Date(Date.now() + hoursFromNow * 3_600_000).toISOString();
 }
 
+/**
+ * `YYYY-MM-DD` of an instant in Europe/Rome — the SAME calendar-day bucketing
+ * `listPprRequests` applies to the register's `from`/`to` filter
+ * (`zonedMidnightUtc(from, APP_TIMEZONE)`), via the same en-CA `Intl` trick as
+ * `src/lib/zoned-time.ts#dateOnlyInZone`. `toISOString().slice(0, 10)` (the UTC
+ * day) is WRONG here: between 22:00 and 24:00 UTC (CEST) the Rome day is
+ * already tomorrow, and the filter misses the row — the exact 22–24 UTC CI
+ * failure window this replaced.
+ */
+function romeDateOnly(instant: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
+}
+
+/** The calendar day before a `YYYY-MM-DD` date-only — plain date arithmetic in UTC, immune to DST-length Rome days. */
+function dayBeforeDateOnly(dateOnly: string): string {
+  const d = new Date(`${dateOnly}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Creates a PENDING PPR request via the public POST (story 8.1), a run-unique fake IP per call (never a fixed one, same rule as `ppr-queue.spec.ts`). */
-async function createPendingRequest(page: Page, hoursFromNow = 5): Promise<{ registration: string; email: string }> {
+async function createPendingRequest(page: Page, hoursFromNow = 5): Promise<{ registration: string; email: string; eta: string }> {
   const registration = uniqueRegistration('R');
   const email = uniqueEmail('ppr-register');
+  const eta = futureIso(hoursFromNow);
 
   const response = await page.request.post('/api/v1/ppr-requests', {
     headers: { 'x-forwarded-for': uniqueFakeIp() },
@@ -85,14 +106,14 @@ async function createPendingRequest(page: Page, hoursFromNow = 5): Promise<{ reg
       aircraftType: 'Cessna 172',
       origin: 'LIRN Napoli',
       destination: 'LIRU Urbe',
-      eta: futureIso(hoursFromNow),
+      eta,
       personsOnBoard: 1,
       locale: 'it',
     },
   });
   expect(response.status()).toBe(201);
 
-  return { registration, email };
+  return { registration, email, eta };
 }
 
 /** Looks up a PENDING request's id by its (unique) aircraft registration, via the staff/admin-authenticated list endpoint. */
@@ -108,15 +129,15 @@ async function findPendingId(page: Page, registration: string): Promise<string> 
 }
 
 /** Creates + approves a request in one call (caller must already be logged in as an actor with `ppr.manage`). */
-async function createApprovedRequest(page: Page, hoursFromNow = 5): Promise<{ id: string; pprNumber: string; registration: string }> {
-  const { registration } = await createPendingRequest(page, hoursFromNow);
+async function createApprovedRequest(page: Page, hoursFromNow = 5): Promise<{ id: string; pprNumber: string; registration: string; eta: string }> {
+  const { registration, eta } = await createPendingRequest(page, hoursFromNow);
   const id = await findPendingId(page, registration);
 
   const approveResponse = await page.request.post(`/api/v1/ppr-requests/${id}/approve`);
   expect(approveResponse.status()).toBe(200);
   const approveBody = (await approveResponse.json()) as { pprNumber: string };
 
-  return { id, pprNumber: approveBody.pprNumber, registration };
+  return { id, pprNumber: approveBody.pprNumber, registration, eta };
 }
 
 const UI_REGISTER_PAGE_SIZE = 20;
@@ -295,8 +316,10 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     // 96h out: a distinct calendar day from every other test's ~5h-ahead (today) ETA.
     const created = await createApprovedRequest(page, 96);
-    const etaDateOnly = new Date(Date.now() + 96 * 3_600_000).toISOString().slice(0, 10);
-    const dayBefore = new Date(Date.now() + 96 * 3_600_000 - 24 * 3_600_000).toISOString().slice(0, 10);
+    // Europe/Rome day of the ACTUAL eta sent — the register filter buckets by
+    // Rome calendar day, not UTC day (see `romeDateOnly`).
+    const etaDateOnly = romeDateOnly(new Date(created.eta));
+    const dayBefore = dayBeforeDateOnly(etaDateOnly);
 
     // --- Status + period match: visible ------------------------------------
     await page.goto(`/it/dashboard/ppr/register?status=APPROVED&from=${etaDateOnly}&to=${etaDateOnly}`);
