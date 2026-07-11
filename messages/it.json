@@ -1252,6 +1252,7 @@
         "cancelSuccess": "Prenotazione cancellata.",
         "errors": {
           "BOOKING_ALREADY_STARTED": "La prenotazione è già iniziata: non può più essere modificata o cancellata.",
+          "EXPIRED_DOCUMENTS": "Impossibile spostare la prenotazione: risultano scaduti i seguenti documenti: {documents}.",
           "conflict": "Il velivolo è già prenotato per questo intervallo, oppure la prenotazione non è più valida. Ricarica la pagina e riprova.",
           "generic": "Operazione non riuscita. Riprova."
         }

@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-10 (EPIC 10 DONE: 10.1, 10.2, 10.3 done — piano MVP completo)
+last_updated: 2026-07-10 (EPIC 10 DONE — piano MVP completo; epic-9 retro done; td-5 deferred pass done)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -108,10 +108,35 @@ development_status:
   9-3-school-hour-summaries: done
   # 9.4: correzione di dominio DC/solista + tassonomia tipi volo (chiarimento utente 2026-07-10)
   9-4-solo-flag-flight-types: done
-  epic-9-retrospective: optional
+  epic-9-retrospective: done
+
+  # Tech-debt pass sui deferred (post-retro epic 9, sessione 2026-07-10)
+  td-5-deferred-pass: done
 
   epic-10: done
   10-1-excel-exports: done
   10-2-pdf-exports: done
   10-3-role-dashboards: done
   epic-10-retrospective: optional
+
+action_items:
+  - epic: 9
+    action: "AI-1: eseguire il TD-5 (deferred pass: hydration money-format, from<=to pagina school, locale diario, azzera-filtri PPR, ricontrollo scadenze updateBooking, pg.Pool warning) col ciclo story->dev->review"
+    owner: "sessione corrente 2026-07-10"
+    status: done
+  - epic: 9
+    action: "AI-2: ratificare le assumption di dominio con l'utente (AskUserQuestion) PRIMA di implementare la story, mai spedirle 'da confermare'"
+    owner: "sessione principale (da Epic 10)"
+    status: open
+  - epic: 9
+    action: "AI-3: gli story file con resolver/service nuovi citano esplicitamente le convenzioni cross-cutting (persona attiva/non-archiviata, P2025->404, idempotenza)"
+    owner: "sessione principale (bmad-create-story)"
+    status: open
+  - epic: 9
+    action: "AI-4: sottoporre all'utente la decisione di prodotto 93-N1 (hiding card 'Le mie ore scuola' per admin senza profilo istruttore)"
+    owner: "prossima interazione utente"
+    status: open
+  - epic: 9
+    action: "AI-5: story 10.2 include la config nome/logo aviosuperficie che chiude il deferred N2 8.1 (form PPR pubblico)"
+    owner: "sessione Epic 10"
+    status: open

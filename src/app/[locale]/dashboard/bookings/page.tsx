@@ -511,6 +511,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
                 cancelSuccess: t('list.actions.cancelSuccess'),
                 errors: {
                   BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
+                  EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
                   conflict: t('list.actions.errors.conflict'),
                   generic: t('list.actions.errors.generic'),
                 },
