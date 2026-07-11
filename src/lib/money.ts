@@ -9,9 +9,15 @@ const AMOUNT_PATTERN = /^-?\d+([.,]\d{1,2})?$/;
 
 /**
  * Formats an integer amount of euro cents as a localized EUR currency
- * string, e.g. `formatCents(1500000, 'it')` -> `"15.000,00 €"` (note: per
- * CLDR `minimumGroupingDigits`, Italian omits the thousands separator below
- * 10.000, so `formatCents(150000, 'it')` -> `"1500,00 €"`).
+ * string, e.g. `formatCents(1500000, 'it')` -> `"15.000,00 €"`. Grouping is
+ * pinned with `useGrouping: 'always'` so the thousands separator is always
+ * present, including below 10.000 (e.g. `formatCents(150000, 'it')` ->
+ * `"1.500,00 €"`): the CLDR `minimumGroupingDigits: 2` rule that otherwise
+ * suppresses it for Italian below that threshold is applied inconsistently
+ * between Node's ICU (SSR) and the browser's ICU (client), which caused
+ * hydration mismatches on amounts in the 1.000–9.999 range. Pinning makes
+ * the output deterministic across both — the tradeoff being the separator
+ * now always shows, which is also the conventional Italian format.
  */
 export function formatCents(cents: number, locale: 'it' | 'en' = 'it'): string {
   if (!Number.isInteger(cents)) {
@@ -23,6 +29,7 @@ export function formatCents(cents: number, locale: 'it' | 'en' = 'it'): string {
   return new Intl.NumberFormat(intlLocale, {
     style: 'currency',
     currency: 'EUR',
+    useGrouping: 'always',
   }).format(cents / 100);
 }
 

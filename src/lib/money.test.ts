@@ -8,7 +8,9 @@ const NBSP = ' ';
 
 describe('formatCents', () => {
   it('formats a whole-euro amount in Italian locale', () => {
-    expect(formatCents(150000, 'it')).toBe(`1500,00${NBSP}€`);
+    // Grouping is pinned to 'always' (see money.ts doc-comment): the
+    // thousands separator shows even below 10.000, deterministically.
+    expect(formatCents(150000, 'it')).toBe(`1.500,00${NBSP}€`);
   });
 
   it('formats a whole-euro amount in English locale', () => {

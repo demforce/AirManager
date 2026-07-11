@@ -71,8 +71,15 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
   }
 
   const defaultRange = currentMonthRange();
-  const from = sanitizeDateParam(fromParam) ?? defaultRange.from;
-  const to = sanitizeDateParam(toParam) ?? defaultRange.to;
+  const sanitizedFrom = sanitizeDateParam(fromParam);
+  const sanitizedTo = sanitizeDateParam(toParam);
+  // AC 2 (93-N2): a hand-edited URL with a well-formed but inverted range
+  // (from > to) degrades to the default period on BOTH ends — same as a
+  // malformed param — rather than silently querying an empty/invalid range.
+  // Date-only strings (`YYYY-MM-DD`) compare correctly as plain strings.
+  const rangeInverted = sanitizedFrom !== undefined && sanitizedTo !== undefined && sanitizedFrom > sanitizedTo;
+  const from = rangeInverted ? defaultRange.from : (sanitizedFrom ?? defaultRange.from);
+  const to = rangeInverted ? defaultRange.to : (sanitizedTo ?? defaultRange.to);
 
   let ownStudents: OwnStudentItem[] = [];
   if (canManageOwn) {

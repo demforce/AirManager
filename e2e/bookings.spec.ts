@@ -1004,4 +1004,61 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const body = (await response.json()) as { booking: { id: string }; warnings: unknown[] };
     expect(body.warnings).toEqual([]);
   });
+
+  test('moving a booking to a DIFFERENT flight day past a blocking expired document answers 422 naming it; a same-day time-only move is unaffected (TD-5, AC 5)', async ({
+    page,
+  }) => {
+    // Deliberately NOT `FUTURE_DAY` (2031-03-10): "Prossime prenotazioni"
+    // orders `startsAt asc` GLOBALLY and shows only page 1
+    // (`BOOKINGS_PAGE_SIZE`, `soonestFutureSlot`'s own doc-comment above) —
+    // that shared, heavily-reused fixture day has accumulated far more rows
+    // across repeated runs than the page size, which would push THIS row off
+    // page 1. Two near-term, run-fresh calendar days (Europe/Rome, noon UTC —
+    // comfortably clear of any midnight/DST boundary) avoid that pile-up.
+    const romeDateOnly = (date: Date): string =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+    const DAY_1 = romeDateOnly(new Date(Date.now() + 24 * 3_600_000));
+    const DAY_2 = romeDateOnly(new Date(Date.now() + 48 * 3_600_000));
+
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const blockingType = await createExpiryTypeForBooking(page, true);
+    const pilotPassword = 'PilotaSpostaScaduto123!';
+    const pilot = await createPilotWithLogin(page, pilotPassword);
+    // Valid exactly ON DAY_1 (boundary), expired the day AFTER.
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_ISSUED_AT, DAY_1);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
+
+    await gotoBookingsAndWaitForHydration(page);
+    const form = page.getByTestId('new-booking-form');
+    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await form.getByLabel('Inizio').fill(`${DAY_1}T12:00`);
+    await form.getByLabel('Fine').fill(`${DAY_1}T13:00`);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+    await expect(page.getByTestId('booking-form-success')).toBeVisible();
+
+    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    await expect(row).toBeVisible();
+
+    // Same-day time-only move: never rechecked, succeeds even past the block.
+    await row.getByTestId('booking-move-action').click();
+    let moveForm = page.getByTestId('move-booking-form');
+    await moveForm.getByLabel('Inizio').fill(`${DAY_1}T14:00`);
+    await moveForm.getByLabel('Fine').fill(`${DAY_1}T15:00`);
+    await moveForm.getByTestId('move-booking-save').click();
+    await expect(page.getByTestId('bookings-list-feedback')).toHaveText('Prenotazione spostata.');
+    // Wait for the first form to fully close before reopening it — avoids a
+    // race between `handleMoved`'s `router.refresh()` and the next click.
+    await expect(page.getByTestId('move-booking-form')).toHaveCount(0);
+
+    // Moving to the NEXT day: the document is expired relative to THAT day -> 422, naming it.
+    await row.getByTestId('booking-move-action').click();
+    moveForm = page.getByTestId('move-booking-form');
+    await moveForm.getByLabel('Inizio').fill(`${DAY_2}T12:00`);
+    await moveForm.getByLabel('Fine').fill(`${DAY_2}T13:00`);
+    await moveForm.getByTestId('move-booking-save').click();
+    await expect(page.getByTestId('move-booking-form-error')).toContainText(blockingType.name);
+  });
 });
