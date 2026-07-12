@@ -130,7 +130,7 @@ development_status:
   epic-12: in-progress
   12-1-design-system-foundations: done
   12-2-desktop-app-shell: done
-  12-3-modal-forms-detail-sheets: backlog
+  12-3-modal-forms-detail-sheets: ready-for-dev
   12-4-flight-register-redesign: backlog
   12-5-detail-hygiene-pass: backlog
   12-6-command-palette: backlog
