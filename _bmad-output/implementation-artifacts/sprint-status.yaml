@@ -126,6 +126,16 @@ development_status:
   11-3-italian-dates-logbook-exports: done
   epic-11-retrospective: optional
 
+  # Epic 12: post-MVP refactor UI infra-grade (brainstorm 2026-07-12, stile Refero "Ui")
+  epic-12: in-progress
+  12-1-design-system-foundations: ready-for-dev
+  12-2-desktop-app-shell: backlog
+  12-3-modal-forms-detail-sheets: backlog
+  12-4-flight-register-redesign: backlog
+  12-5-detail-hygiene-pass: backlog
+  12-6-command-palette: backlog
+  epic-12-retrospective: optional
+
 action_items:
   - epic: 9
     action: "AI-1: eseguire il TD-5 (deferred pass: hydration money-format, from<=to pagina school, locale diario, azzera-filtri PPR, ricontrollo scadenze updateBooking, pg.Pool warning) col ciclo story->dev->review"
