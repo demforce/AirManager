@@ -17,10 +17,10 @@ Rules:
   must pass before the implementation commit.
 - Builds always go through the gates script (`env -u NODE_ENV npx next build`
   under the hood — NODE_ENV from .env breaks `next build`).
-- UI stories: you MUST use the `design-taste-frontend` and `ui-ux-pro-max`
-  skills, keep visual coherence with the app's established minimalist
-  editorial style (`minimalist-ui`), and verify interactively via the
-  Playwright MCP tools against the running app.
+- UI stories: you MUST use the `design-taste-frontend`, `ui-ux-pro-max` and
+  `impeccable` skills, keep visual coherence with the app's established
+  minimalist editorial style (`minimalist-ui`), and verify interactively via
+  the Playwright MCP tools against the running app.
 - Code, comments, and identifiers in English; UI strings bilingual IT/EN via
   next-intl.
 
