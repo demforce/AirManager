@@ -16,9 +16,10 @@ export default function DashboardLoading() {
   return (
     <main className="flex-1 px-6 py-16 sm:px-16" aria-hidden="true">
       <div className="mx-auto max-w-5xl">
-        <Skeleton className="h-5 w-32" />
-        <Skeleton className="mt-4 h-9 w-72" />
-        <Skeleton className="mt-3 h-4 w-96" />
+        {/* On the bare canvas the default bg-canvas fill is invisible — use hairline here (review 12.2, 122-F1) */}
+        <Skeleton className="h-5 w-32 bg-hairline" />
+        <Skeleton className="mt-4 h-9 w-72 bg-hairline" />
+        <Skeleton className="mt-3 h-4 w-96 bg-hairline" />
 
         <Card className="mt-10 p-6">
           <Skeleton className="h-5 w-40" />

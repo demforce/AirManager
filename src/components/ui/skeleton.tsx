@@ -9,5 +9,13 @@ import { cn } from './cn';
  * hairline-bordered container the AC calls for.
  */
 export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('animate-pulse rounded-nested bg-canvas', className)} {...props} />;
+  // cn() is a naive join: if the caller brings its own bg- utility (e.g. bg-hairline
+  // on the bare canvas, review 12.2 122-F1), skip the default so the two don't clash.
+  const hasBg = /(^|\s)bg-/.test(className ?? '');
+  return (
+    <div
+      className={cn('animate-pulse rounded-nested', hasBg ? undefined : 'bg-canvas', className)}
+      {...props}
+    />
+  );
 }

@@ -4,7 +4,7 @@ baseline_commit: fd49305
 
 # Story 12.2: App shell desktop-like
 
-Status: review
+Status: done
 
 ## Story
 
@@ -123,3 +123,13 @@ Claude Sonnet 5 (claude-sonnet-5), BMAD dev subagent.
 - `messages/it.json` (modified — new `DashboardShell.switchTo` key + orphaned `backToDashboard`/nav-grid-only keys removed)
 - `messages/en.json` (modified — same as above, EN)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified — `12-2-desktop-app-shell: review`)
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (xhigh)**, adversarial. **Verdetto: fixes-required → fixed.**
+
+- **Priorità zero — full e2e CI-mode su DB fresco, build di produzione**: **204 test → 199 passed + 4 flaky (verdi al retry, classi note) + 1 failed**. L'unico hard fail (`bookings.spec.ts:605`) è PROVATO non-regressione: difetto di isolamento preesistente della spec — la lista "Prossime prenotazioni" è globale e paginata (PAGE_SIZE 20, `startsAt asc`); a fine suite 47 prenotazioni ACTIVE spingono la riga del test oltre pagina 1. Il diff 12.2 su bookings/page.tsx è pura rimozione del back-link (0 righe aggiunte). Gates: 1222/1222.
+- **Verifiche empiriche del reviewer (build di produzione)**: shell persistente e landmark unici su 5 pagine (navCount/mainCount/headerCount=1); voce attiva corretta anche su sotto-route e senza doppi-accesi (ppr vs ppr/register); scroll SOLO nel pannello (scrollY=0, nessuna doppia scrollbar); gating reale come pilot (3 voci, URL diretti a route non permesse → redirect); logout da sotto-pagina e switch lingua path-preserving; zero `backToDashboard` residui, back-link locali intatti; 390px senza overflow col fix topbar del dev; route pubbliche senza shell; anonimo → login. Suspense boundary reale e funzionante, verificato live con navigazione ritardata.
+- **122-F1 (minore, FIXATO dalla sessione principale)**: i 3 skeleton kicker/titolo/descrizione di `dashboard/loading.tsx` erano `bg-canvas` su sfondo canvas → invisibili (fill == sfondo, provato con computed style). Fix: `bg-hairline` sui tre skeleton su canvas + guard nel primitivo `Skeleton` (salta il default `bg-canvas` se il chiamante porta un `bg-`, stesso pattern del guard padding di Card — `cn` è concat naive e due utility `bg-` in conflitto hanno esito imprevedibile). Gates post-fix verdi.
+- **Ipotesi query extra chiusa**: `getSessionActor`+`getMe` per navigazione nel layout giudicati non problematici (nessun finding NFR-6).
+- **Deferred registrato**: isolamento di `bookings.spec.ts:605` (filtrare per persona/testid la riga attesa, o registro paginato) — fix di spec, fuori scope 12.2.
