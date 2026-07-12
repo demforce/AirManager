@@ -4,7 +4,7 @@ baseline_commit: 3285505
 
 # Story 12.5: Igiene dei dettagli su tutte le superfici
 
-Status: review
+Status: done
 
 ## Story
 
@@ -167,3 +167,15 @@ Claude Sonnet 5 (dev subagent, xhigh), via `bmad-dev-story`.
 
 **Modified — tracking:**
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (12-5: in-progress -> review)
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (xhigh)**, adversarial. **Verdetto: fixes-required → fixed** (2 bloccanti + 2 nit fixati, 1 nit deferred).
+
+- **Priorità zero — full e2e CI-mode su DB fresco, build di produzione**: **209 passed + 4 flaky (retry-green) + 1 FAILED / 214**. Gates 1278/1278. **Disciplina wire PROMOSSA con verifica empirica**: filtro digitato `02/01/2020` → `?dateFrom=2020-01-02`; booking persistito in DB al datetime esatto; PPR pubblico anonimo end-to-end ok. Arbitraggio ambientale: le predizioni specifiche del dev NON si sono riprodotte sul run fresco (aircraft-rates verdi) — è emerso invece 125-F1.
+- **125-F1 (FIXATO)**: `bookings.spec.ts:397` deterministico sotto volume — prenotava `FUTURE_DAY T15:00` e assertava la riga su pagina 1 della lista paginata startsAt-ASC: con ~3 pagine di prenotazioni accumulate dalla suite parallela finiva a pagina 2 (fragilità di isolamento PREESISTENTE esposta dal full-run, non regressione — ma AC 7/CI rossa). Fix: passa a `soonestFutureSlot()` come gli altri test di visibilità-riga (ordina in testa e si auto-pulisce).
+- **125-F2 (FIXATO)**: DatePicker/DateTimeField SEMPRE in italiano su superfici EN (placeholder hardcoded `GG/MM/AAAA`, mesi/giorni `Intl` con default `'it'`, zero call-site con `locale=`) — visibile sul form PPR pubblico EN. Fix: il componente risolve il locale dal provider next-intl (`useLocale()`) quando la prop è assente + placeholder locale-aware; nessun churn sui ~30 call-site. Verificato live su `/en/ppr`: `DD/MM/YYYY`, `Mon..Sun`, `July 2026` (e IT invariato).
+- **125-N2 (FIXATO)**: `aria-controls` del trigger puntava all'id del label mese/anno — ora punta al `role="grid"` (id dedicato, solo mentre aperto). **125-N3 (FIXATO)**: i link prev/next del Pager ai bordi ora hanno `tabIndex={-1}` (il `pointer-events-none` non bloccava Enter da tastiera; il server già clampava).
+- **125-N1 (accettato/deferred)**: digitare testo invalido SOPRA un valore già committato lascia partire al submit il vecchio valore valido (il campo mostra aria-invalid ma `onChange` non scatta) — coerente con la convenzione `SearchCombobox`; valutare un blocco-submit su dirty-invalid come follow-up.
+- **Arbitrati a favore del dev**: fix `submitMovement` corretto; popover `position:fixed` verificato IN TOP LAYER dentro il Dialog nativo (non clippato, interattivo); keyboard-only walk-through completo promosso (roving tabindex corretto, ruoli grid/columnheader/gridcell); 11 tabelle in Card con row height 45px uniforme e 36 celle truncate+title; zero warm residui; zero input nativi residui.
+- **Verifica fix**: gates 1278/1278; e2e bookings+date-picker+ppr-public 26/26; localizzazione EN verificata live con script throwaway.

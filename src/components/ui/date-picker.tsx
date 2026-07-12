@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useLocale } from 'next-intl';
 import { cn } from './cn';
 import { inputBaseClasses } from './input';
 import { formatIsoDateToDisplay, parseDisplayDateToIso } from '@/lib/date-input';
@@ -29,7 +30,7 @@ export type DatePickerProps = {
   /** Fired with a valid ISO date (or `''` when cleared) — never with malformed input (Dev Notes: "value ISO in/out"). */
   onChange: (value: string) => void;
   labels: DatePickerLabels;
-  /** Month/weekday names in the popover only (`Intl`, zero-dep) — the DD/MM/YYYY display format itself is locale-invariant (AC 1). Defaults to `'it'`. */
+  /** Month/weekday names and placeholder in the popover only (`Intl`, zero-dep) — the DD/MM/YYYY display format itself is locale-invariant (AC 1). Defaults to the active next-intl locale (review 12.5, 125-F2: EN surfaces were stuck in Italian). */
   locale?: 'it' | 'en';
   disabled?: boolean;
   /** OR'd with the component's own internal parse-invalid state — lets a caller's RHF "required field" error also mark the input invalid. */
@@ -122,12 +123,14 @@ export function DatePicker({
   value,
   onChange,
   labels,
-  locale = 'it',
+  locale,
   disabled = false,
   ariaInvalid = false,
   testId,
   className,
 }: DatePickerProps) {
+  const activeLocale = useLocale();
+  const resolvedLocale: 'it' | 'en' = locale ?? (activeLocale === 'en' ? 'en' : 'it');
   const [text, setText] = useState(() => formatIsoDateToDisplay(value));
   const [reconciledValue, setReconciledValue] = useState(value);
   const [focused, setFocused] = useState(false);
@@ -262,11 +265,12 @@ export function DatePicker({
   }
 
   const weeks = buildWeeks(viewYear, viewMonth);
-  const weekdayLabels = weekdayHeaderLabels(locale);
-  const monthYearLabel = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+  const weekdayLabels = weekdayHeaderLabels(resolvedLocale);
+  const monthYearLabel = new Intl.DateTimeFormat(resolvedLocale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
     new Date(Date.UTC(viewYear, viewMonth, 1)),
   );
   const gridLabelId = `${id}-grid-label`;
+  const gridId = `${id}-grid`;
 
   return (
     <div ref={containerRef} className={cn('relative', className)}>
@@ -280,7 +284,7 @@ export function DatePicker({
           type="text"
           inputMode="numeric"
           autoComplete="off"
-          placeholder="GG/MM/AAAA"
+          placeholder={resolvedLocale === 'it' ? 'GG/MM/AAAA' : 'DD/MM/YYYY'}
           disabled={disabled}
           aria-invalid={ariaInvalid || invalid}
           data-testid={testId}
@@ -296,7 +300,7 @@ export function DatePicker({
           aria-label={labels.openCalendar}
           aria-haspopup="grid"
           aria-expanded={open}
-          aria-controls={gridLabelId}
+          aria-controls={open ? gridId : undefined}
           disabled={disabled}
           onClick={() => (open ? setOpen(false) : openPopover())}
           className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-inputs border border-transparent bg-canvas text-ink transition-colors hover:bg-hairline disabled:cursor-not-allowed disabled:opacity-60"
@@ -333,7 +337,7 @@ export function DatePicker({
             </button>
           </div>
 
-          <div role="grid" aria-labelledby={gridLabelId} onKeyDown={handleGridKeyDown} className="mt-2">
+          <div role="grid" id={gridId} aria-labelledby={gridLabelId} onKeyDown={handleGridKeyDown} className="mt-2">
             <div role="row" className="grid grid-cols-7">
               {weekdayLabels.map((weekday) => (
                 <span key={weekday} role="columnheader" className="flex h-8 items-center justify-center text-xs text-mid-gray">

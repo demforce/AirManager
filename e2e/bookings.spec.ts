@@ -410,8 +410,13 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('radio', { name: 'Per un allievo' }).click();
     // `{ exact: true }`: "Allievo" is otherwise ambiguous against the "Per un allievo" radio's accessible name.
     await form.getByLabel('Allievo', { exact: true }).selectOption({ label: `${student.lastName} ${student.firstName}` });
-    await fillStartsAt(form, `${FUTURE_DAY}T15:00`);
-    await fillEndsAt(form, `${FUTURE_DAY}T16:00`);
+    // `soonestFutureSlot()`, not `FUTURE_DAY` (review 12.5, 125-F1): this test
+    // asserts the ROW on page 1 of the startsAt-ASC paginated list — a fixed
+    // far-future 15:00 slot sinks past page 1 once the parallel suite has
+    // accumulated ~3 pages of `FUTURE_DAY` bookings.
+    const slot = soonestFutureSlot();
+    await fillStartsAt(form, slot.startsAt);
+    await fillEndsAt(form, slot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();

@@ -47,7 +47,7 @@ export function DateTimeField({
   value,
   onChange,
   labels,
-  locale = 'it',
+  locale,
   disabled = false,
   ariaInvalid = false,
   className,

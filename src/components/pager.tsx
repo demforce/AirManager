@@ -36,6 +36,7 @@ export function Pager({ page, totalPages, hrefBuilder, locale, navTestId, status
         href={hrefBuilder(page - 1)}
         locale={locale}
         aria-disabled={page <= 1}
+        tabIndex={page <= 1 ? -1 : undefined}
         data-testid={prevTestId}
         className={`flex min-h-[40px] min-w-[40px] items-center justify-center rounded-buttons border border-hairline bg-paper text-base text-ink transition-colors ${
           page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
@@ -50,6 +51,7 @@ export function Pager({ page, totalPages, hrefBuilder, locale, navTestId, status
         href={hrefBuilder(page + 1)}
         locale={locale}
         aria-disabled={page >= totalPages}
+        tabIndex={page >= totalPages ? -1 : undefined}
         data-testid={nextTestId}
         className={`flex min-h-[40px] min-w-[40px] items-center justify-center rounded-buttons border border-hairline bg-paper text-base text-ink transition-colors ${
           page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
