@@ -92,6 +92,22 @@ test.describe('Command palette (story 12.6)', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Volante Piero' })).toBeVisible();
   });
 
+  test('"Registra volo" from the palette while ALREADY on the flights page opens the dialog and cleans ?new=1 (review 12.6, 126-F1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/flights');
+    await page.getByTestId('flight-open-register').waitFor();
+
+    await page.keyboard.press('Control+k');
+    const palette = page.getByTestId('command-palette-dialog');
+    await palette.getByRole('textbox').fill('Registra');
+    await page.keyboard.press('Enter');
+
+    // Same route, no remount: the dialog must open anyway...
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+    // ...and the deep-link param must not linger in the URL.
+    await expect(page).not.toHaveURL(/new=1/);
+  });
+
   test('clicking the Search Trigger opens the palette', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 

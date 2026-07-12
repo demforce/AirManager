@@ -4,7 +4,7 @@ baseline_commit: 1359912
 
 # Story 12.6: Command palette ⌘K
 
-Status: review
+Status: done
 
 ## Story
 
@@ -102,3 +102,13 @@ Claude Sonnet 5 (dev subagent). Implementation was produced by a prior dev-subag
 - `messages/it.json`, `messages/en.json` (`DashboardShell.searchTrigger`/`DashboardShell.commandPalette`)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (`12-6-command-palette` → `review`)
 - `_bmad-output/implementation-artifacts/12-6-command-palette.md` (this file — tasks/Dev Agent Record)
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (xhigh)**, adversarial. **Verdetto: fixes-required → fixed** (1 bloccante fixato, 4 note).
+
+- **Priorità zero — full e2e CI-mode su DB fresco, build di produzione**: **212 passed + 5 flaky + 1 failed / 218**; i 4 e2e command-palette tutti verdi; gates 1278/1278. L'unico hard-fail (`bookings.spec.ts:636`) è PROVATO flake di isolamento pre-esistente della suite bookings (data fissa `FUTURE_DAY` condivisa, 37 prenotazioni accumulate sullo stesso giorno via psql; punto di fallimento variabile tra i retry; file mai toccato dalla story) — **tracciato come deferred**, stessa classe del già fixato :397.
+- **126-F1 (FIXATO)**: `?new=1` era un no-op silenzioso quando si è GIÀ sulla pagina di destinazione (lazy `useState` senza remount: il `key` del registro esclude deliberatamente `new`; PeopleManager non ha `key`) e l'URL restava sporco. Fix in entrambi i manager: pattern adjust-state-during-render sul fronte false→true della prop (il linter React vieta setState negli effect) + effect che fa solo `router.replace` coi filtri correnti (via `navigate(..., {replace:true})`) — dialog aperto, URL pulito, azione ripetibile. Nuovo scenario e2e dedicato (repro esatta del reviewer) in `command-palette.spec.ts`; verifica: gates verdi, 25/25 su command-palette+app-shell+flights+people-management.
+- **Arbitrati**: `canSearch = people.read AND aircraft.manage` CORRETTO contro la matrice reale (solo staff/admin le hanno; nessun ruolo a metà; AND fail-closed) — 126-N1 (accoppiamento fragile se i permessi divergeranno: gateare i due sub-fetch separatamente) accettato come nota; 126-N2 (`canCreatePerson=people.read` vs `people.manage` del service — oggi equivalenti, coerente col bottone esistente) accettato; 126-N3 (azione secondaria "Voli di …" senza affordance icona — difendibile stile Linear) accettato, candidato al pass grafico di fine epic; nessun pezzo a metà del primo dev (sweep TODO/import/i18n pulito).
+- **Verifiche live del reviewer**: guard ⌘K con dialog aperto e su route pubbliche; gating per 5 ruoli (10/8/4/3/3 voci); NFR-10 dal vivo (pilota: gruppo assente, 403 via curl, ZERO fetch di rete durante la digitazione); a11y activedescendant/tab-stop unico; EN completo; topbar 390px integra; debounce 1-fetch-per-pausa.
+- **Giudizio estetico**: "il feel Linear/desktop-app c'è" — palette top-aligned conforme, Search Trigger esattamente DESIGN.md, monocromo rispettato.

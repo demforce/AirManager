@@ -140,17 +140,36 @@ export function PeopleManager({
   // first render — a lazy initializer, not an effect, since this only ever
   // matters at mount.
   const [createDialogOpen, setCreateDialogOpen] = useState(() => Boolean(initialCreateOpen));
+
+  // Review 12.6, 126-F1: same-page `?new=1` never remounts this component,
+  // so the lazy initializer misses the transition. Adjust-state-during-
+  // render opens the dialog on the false->true edge (no setState in
+  // effects, per the React compiler lint); the effect only strips the param
+  // (`navigate` never emits `new`) so the deep-link stays repeatable and
+  // the URL clean.
+  const [prevCreateOpen, setPrevCreateOpen] = useState(() => Boolean(initialCreateOpen));
+  if (Boolean(initialCreateOpen) !== prevCreateOpen) {
+    setPrevCreateOpen(Boolean(initialCreateOpen));
+    if (initialCreateOpen) setCreateDialogOpen(true);
+  }
+  useEffect(() => {
+    if (!initialCreateOpen) return;
+    navigate({ q: queryInput, includeArchived }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- transition-triggered: only the prop matters
+  }, [initialCreateOpen]);
   // Story 12.3 (AC 4) — "Completa la scheda" link shown alongside `feedback`
   // after a successful creation; cleared by every OTHER feedback-setting
   // action below so it never lingers past its own creation.
   const [completeProfileHref, setCompleteProfileHref] = useState<string | null>(null);
 
-  function navigate(next: { q: string; includeArchived: boolean }): void {
+  function navigate(next: { q: string; includeArchived: boolean }, options?: { replace?: boolean }): void {
     const params = new URLSearchParams();
     if (next.q) params.set('q', next.q);
     if (next.includeArchived) params.set('includeArchived', 'true');
     const search = params.toString();
-    router.push(`/dashboard/people${search ? `?${search}` : ''}`);
+    const href = `/dashboard/people${search ? `?${search}` : ''}`;
+    if (options?.replace) router.replace(href);
+    else router.push(href);
   }
 
   const debouncedSearch = useDebouncedCallback((value: string) => {

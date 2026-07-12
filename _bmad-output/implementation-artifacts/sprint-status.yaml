@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-12 (story 12-5 done: review Opus fixes-required -> fixed 125-F1/F2+N2/N3)
+last_updated: 2026-07-12 (EPIC 12 DONE: 6/6 stories; 12-6 review fixes-required -> fixed 126-F1)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -127,13 +127,13 @@ development_status:
   epic-11-retrospective: optional
 
   # Epic 12: post-MVP refactor UI infra-grade (brainstorm 2026-07-12, stile Refero "Ui")
-  epic-12: in-progress
+  epic-12: done
   12-1-design-system-foundations: done
   12-2-desktop-app-shell: done
   12-3-modal-forms-detail-sheets: done
   12-4-flight-register-redesign: done
   12-5-detail-hygiene-pass: done
-  12-6-command-palette: review
+  12-6-command-palette: done
   epic-12-retrospective: optional
 
 action_items:

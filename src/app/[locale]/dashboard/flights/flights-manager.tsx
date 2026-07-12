@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ExportButton } from '@/components/export-button';
@@ -424,6 +424,25 @@ export function FlightsManager({
   // effect, since this only ever matters at mount (same assumption the
   // `key`-remount idiom above already relies on).
   const [dialogOpen, setDialogOpen] = useState(() => Boolean(initialCreateOpen));
+
+  // Review 12.6, 126-F1: reaching `?new=1` while ALREADY on this page
+  // re-renders the server page (the prop flips to true) but never remounts
+  // this component, so the lazy initializer above misses it and the
+  // deep-link was a silent no-op. Adjust-state-during-render (the React-
+  // sanctioned "derive from prop transition" pattern — no setState in
+  // effects) opens the dialog on the false->true edge; the effect below
+  // only strips the param (replace with the current filters — `navigate`
+  // never emits `new`) so the URL stays clean and the action repeatable.
+  const [prevCreateOpen, setPrevCreateOpen] = useState(() => Boolean(initialCreateOpen));
+  if (Boolean(initialCreateOpen) !== prevCreateOpen) {
+    setPrevCreateOpen(Boolean(initialCreateOpen));
+    if (initialCreateOpen) setDialogOpen(true);
+  }
+  useEffect(() => {
+    if (!initialCreateOpen) return;
+    navigate(filters, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- transition-triggered: only the prop matters
+  }, [initialCreateOpen]);
   // Story 12.3 (AC 5): the detail sheet — open iff non-null, driven by the
   // row's already-in-memory `FlightListItemDto` (same data the table itself
   // renders from, no extra round-trip; the new `GET /flights/{id}` endpoint,
@@ -443,7 +462,7 @@ export function FlightsManager({
    * `listFlights` with the new filters, and re-renders this component with a
    * fresh `key` (`page.tsx`), so there is nothing else to sync here.
    */
-  function navigate(next: FlightsFilters): void {
+  function navigate(next: FlightsFilters, options?: { replace?: boolean }): void {
     const params = new URLSearchParams();
     if (next.dateFrom) params.set('dateFrom', next.dateFrom);
     if (next.dateTo) params.set('dateTo', next.dateTo);
@@ -452,7 +471,9 @@ export function FlightsManager({
     if (next.flightType) params.set('flightType', next.flightType);
     if (next.status) params.set('status', next.status);
     const search = params.toString();
-    router.push(`/dashboard/flights${search ? `?${search}` : ''}`);
+    const href = `/dashboard/flights${search ? `?${search}` : ''}`;
+    if (options?.replace) router.replace(href);
+    else router.push(href);
   }
 
   function handleFilterChange(patch: Partial<FlightsFilters>): void {
