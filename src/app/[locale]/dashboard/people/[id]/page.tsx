@@ -156,15 +156,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
             >
               {t('backToList')}
             </Link>
-          ) : (
-            <Link
-              href="/dashboard"
-              locale={locale as AppLocale}
-              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
-            >
-              {t('backToDashboard')}
-            </Link>
-          )}
+          ) : null}
         </div>
 
         <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6">

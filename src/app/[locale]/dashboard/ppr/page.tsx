@@ -109,13 +109,6 @@ export default async function PprQueuePage({ params, searchParams }: PageProps) 
             >
               {t('registerLink')}
             </Link>
-            <Link
-              href="/dashboard"
-              locale={locale as AppLocale}
-              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
-            >
-              {t('backToDashboard')}
-            </Link>
           </div>
         </div>
 

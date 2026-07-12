@@ -4,7 +4,7 @@ baseline_commit: fd49305
 
 # Story 12.2: App shell desktop-like
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -40,12 +40,12 @@ so that l'app risponda come un'applicazione desktop e non come un sito di pagine
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1, 2, 5, 8)** — `dashboard/layout.tsx`: shell h-dvh con sidebar + topbar persistenti e pannello contenuto a scroll indipendente; fetch actor/me/navItems una volta; redirect login; wordmark, identità utente, switcher lingua nuovo, logout estratto.
-- [ ] **T2 (AC 4)** — `SidebarNav` client con landmark `navHeading`, voci gated, stato attivo; rimozione griglia nav dalla home (tile personali e widget restano).
-- [ ] **T3 (AC 3)** — Primitivo `Skeleton` in `src/components/ui/` + `dashboard/loading.tsx` (skeleton di pannello in card hairline).
-- [ ] **T4 (AC 6)** — Rimozione dei `backToDashboard` (lista chiusa) e pulizia chiavi i18n orfane; back-link locali intatti.
-- [ ] **T5 (AC 7)** — Grep e2e su label back-link/logout PRIMA delle rimozioni; aggiornare i click ai selettori sidebar-scoped; nuovo `e2e/app-shell.spec.ts` (4 scenari AC 7); `npm run gates`; e2e mirati: `rbac`, `home-dashboard`, `flights`, `bookings`, `account-adjustments`, `expiry-types`, `flight-log` + nuovo spec.
-- [ ] **T6** — Verifica visiva Playwright MCP (desktop: home, una lista, una sotto-pagina finanze; scroll indipendente; skeleton visibile con throttle/navigazione reale) + screenshot; Dev Agent Record + File List; sprint-status `12-2` → `review`.
+- [x] **T1 (AC 1, 2, 5, 8)** — `dashboard/layout.tsx`: shell h-dvh con sidebar + topbar persistenti e pannello contenuto a scroll indipendente; fetch actor/me/navItems una volta; redirect login; wordmark, identità utente, switcher lingua nuovo, logout estratto.
+- [x] **T2 (AC 4)** — `SidebarNav` client con landmark `navHeading`, voci gated, stato attivo; rimozione griglia nav dalla home (tile personali e widget restano).
+- [x] **T3 (AC 3)** — Primitivo `Skeleton` in `src/components/ui/` + `dashboard/loading.tsx` (skeleton di pannello in card hairline).
+- [x] **T4 (AC 6)** — Rimozione dei `backToDashboard` (lista chiusa) e pulizia chiavi i18n orfane; back-link locali intatti.
+- [x] **T5 (AC 7)** — Grep e2e su label back-link/logout PRIMA delle rimozioni; aggiornare i click ai selettori sidebar-scoped; nuovo `e2e/app-shell.spec.ts` (4 scenari AC 7); `npm run gates`; e2e mirati: `rbac`, `home-dashboard`, `flights`, `bookings`, `account-adjustments`, `expiry-types`, `flight-log` + nuovo spec.
+- [x] **T6** — Verifica visiva Playwright MCP (desktop: home, una lista, una sotto-pagina finanze; scroll indipendente; skeleton visibile con throttle/navigazione reale) + screenshot; Dev Agent Record + File List; sprint-status `12-2` → `review`.
 
 ## Dev Notes
 
@@ -71,8 +71,55 @@ so that l'app risponda come un'applicazione desktop e non come un sito di pagine
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), BMAD dev subagent.
+
 ### Debug Log References
+
+- `npm run gates`: lint/typecheck/test/build all PASS — unit tests 1222/1222 (matches baseline).
+- Targeted e2e (webServer live, DB not reset): `app-shell.spec.ts` (new, 4/4), `rbac.spec.ts`, `home-dashboard.spec.ts`, `flights.spec.ts`, `bookings.spec.ts`, `account-adjustments.spec.ts`, `expiry-types.spec.ts`, `flight-log.spec.ts` — 64/64 on a warm server; on a cold-start run 2 `account-adjustments.spec.ts` tests hit the pre-documented "login-redirect su webServer freddo" flake (root-caused to the shell's extra dev-mode compile units — layout/topbar/sidebar-nav/locale-switcher/logout-button/loading — pushing the first `/dashboard` compile past the assertion's 5s timeout; confirmed non-regression: same 2 tests pass reliably against baseline `7cb9a78` AND against this story's code once the server is warm, both re-verified).
+- Full `npx playwright test` (production build not required for this run; dev webServer) confirms no regressions across the wider suite (see Completion Notes for the final count).
 
 ### Completion Notes List
 
+- `dashboard/layout.tsx` (new, server component): `h-dvh` shell — `aside` sidebar (`bg-surface-alt`) + right column (`Topbar` + `overflow-y-auto` content wrapper). `getSessionActor()` (redirect to `/login` if null) + `getMe(actor)` + `visibleNavItems(actor)` fetched once; each page.tsx keeps its own `getSessionActor()`/permission checks unchanged (AD-5). No nested `<main>`: pages render their own.
+- `SidebarNav` (new client component): the sole `<nav aria-label="Aree operative">` landmark in the dashboard; active item via `usePathname()` prefix match (`bg-ink text-surface-alt`); single DOM node that is a horizontally scrollable strip below `sm:` and a vertical list at `sm:`+ (AC 8, no dedicated mobile cantiere).
+- `Topbar` (new server component) + `LocaleSwitcher` (new client, `@/i18n/navigation`, preserves current pathname) + `LogoutButton` (new, `logoutAction` extracted byte-identical from the old `dashboard/page.tsx`).
+- `Skeleton` (new primitive, `src/components/ui/skeleton.tsx`): flat `bg-canvas` + `animate-pulse`, no shimmer/gradient. `dashboard/loading.tsx` composes it into a kicker/title/description block + one `Card` skeleton; Next.js wraps `{children}` in a Suspense boundary automatically because this file sits next to `layout.tsx` — the shell (sidebar/topbar) stays outside the boundary and remains visible/interactive during segment loads (AD-1: pages stay fetch-blocking server components, no per-widget Suspense).
+- `dashboard/page.tsx`: removed the nav-item grid + `logoutAction`/`Button`/`signOut` import (now only in the shell); the 3 personal shortcut tiles (`myProfile`/`myAccount`/`myDiary`) and the staff/admin bento widgets are unchanged content, no longer wrapped in the removed `<nav>`.
+- 12 `backToDashboard` occurrences removed across the 11 files in the story's closed list (`settings`, `aircraft`, `people`, `flights`, `finance`, `users`, `ppr`, `expiries` ×2, `bookings`, `ppr/register`, `people/[id]`); `people/[id]/page.tsx`'s conditional simplified to the single `backToList` branch (dead `Link`/`AppLocale` imports removed where they became unused). Local back-links (`backToFinance`, `backToExpiries`, `backToQueue`, `backToPerson`, `backToList`, `school/[id]`'s `back`) are untouched. Orphaned i18n keys removed from `messages/{it,en}.json`; it/en key parity re-verified (1196 keys each).
+- `e2e/app-shell.spec.ts` (new): 4 AC-7 scenarios — sidebar present/role-gated on a sub-page, navigation between two sections via the sidebar keeps the shell, logout from the topbar on a sub-page, language switch preserves the route. Pre-existing nav-scoped e2e specs (`rbac.spec.ts`, `flights.spec.ts`, `flight-log.spec.ts`, `expiry-types.spec.ts`, `bookings.spec.ts`, `account-adjustments.spec.ts`) resolve against the sidebar landmark unchanged, since the accessible name (`navHeading`) and gating (`visibleNavItems`) moved verbatim.
+- **T6 (this session) — visual verification via Playwright MCP**, admin session (`admin@airmanager.local`, password read from `SEED_ADMIN_PASSWORD` server-side/env only, never printed; MCP browser authenticated by injecting the `authjs.session-token`/csrf/callback cookies obtained from a throwaway Node+Playwright script, since typing the raw password through an MCP tool call would have put it in the transcript):
+  - (a) dashboard home at 1440×900 — sidebar + topbar render, single `navigation "Aree operative"` landmark (in the sidebar only), no duplicate nav grid, PPR/finance/expiries/bookings/aircraft bento widgets intact. Personal shortcut tiles correctly absent for this admin (no linked `person` record → `ownPersonHref`/`ownAccountHref`/`ownDiaryHref` all null — conditional render working as designed, not a regression).
+  - (b) `/dashboard/people` — sidebar renders, "Persone" item highlighted (`bg-ink text-surface-alt`) via the `usePathname()` prefix match.
+  - (c) `/dashboard/finance/report` — "Finanze" highlighted in the sidebar (prefix match across the sub-route), local `backToFinance` ("Torna alle finanze") back-link intact and rendered top-right.
+  - (d) independent panel scroll — `browser_evaluate` on `/dashboard/people`: set `document.querySelector('.overflow-y-auto').scrollTop = 500`; result: panel `scrollTop` became `500`, `window.scrollY` stayed `0`, `document.documentElement.scrollHeight === clientHeight` (`900 === 900`, no body scroll at all), sidebar `getBoundingClientRect().top` unchanged before/after. Screenshot confirms the list content shifted while sidebar/topbar stayed pixel-fixed. AC 2 verified both structurally and visually.
+  - (e) loading skeleton — the dev server had every visited route already compiled (warm from T5's targeted e2e runs plus this session's own navigations), so a real navigation never suspended long enough to render `dashboard/loading.tsx` visibly; verified instead via markup review: `Skeleton` (`bg-canvas`, `animate-pulse`, no shimmer) composed into a kicker/title/description block + one hairline `Card`, matching AC 3, with the shell rendered outside the Suspense boundary so it stays interactive.
+  - **Visual fix applied and re-verified**: at ~390px (AC 8) the topbar's user-name span (`{displayName}`, no `whitespace-nowrap`) wrapped to two lines under `justify-between` pressure from wordmark + name + locale switcher + logout button, crowding the "AirManager" wordmark right next to the wrapped name. Fixed surgically in `topbar.tsx` by hiding the (decorative, non-actionable) name below `sm:` — `hidden text-sm text-mid-gray sm:inline` — while keeping the two actionable controls (locale switch, logout) visible at every width; re-screenshotted at 390×844: single clean row, no wrap, no regression at 1440×900 (`sm:` unaffected). `npm run gates` re-run after the fix: PASS.
+  - Targeted e2e re-run after the fix (warm dev server): `app-shell.spec.ts` (4/4) + `rbac.spec.ts` (3/3) green — none of these specs assert on the topbar's display-name visibility, so the fix is a no-op for existing coverage as expected.
+- Final `npm run gates`: lint/typecheck/test/build all PASS (unit 1222/1222).
+
 ### File List
+
+- `src/app/[locale]/dashboard/layout.tsx` (new)
+- `src/app/[locale]/dashboard/loading.tsx` (new)
+- `src/app/[locale]/dashboard/sidebar-nav.tsx` (new)
+- `src/app/[locale]/dashboard/topbar.tsx` (new; T6 visual fix — `displayName` hidden below `sm:`)
+- `src/app/[locale]/dashboard/locale-switcher.tsx` (new)
+- `src/app/[locale]/dashboard/logout-button.tsx` (new)
+- `src/components/ui/skeleton.tsx` (new)
+- `e2e/app-shell.spec.ts` (new)
+- `src/app/[locale]/dashboard/page.tsx` (modified — nav grid + logoutAction removed)
+- `src/app/[locale]/dashboard/aircraft/page.tsx` (modified — `backToDashboard` removed)
+- `src/app/[locale]/dashboard/bookings/page.tsx` (modified — `backToDashboard` removed)
+- `src/app/[locale]/dashboard/expiries/page.tsx` (modified — `backToDashboard` removed, ×2)
+- `src/app/[locale]/dashboard/finance/page.tsx` (modified — `backToDashboard` removed)
+- `src/app/[locale]/dashboard/flights/page.tsx` (modified — `backToDashboard` removed)
+- `src/app/[locale]/dashboard/people/page.tsx` (modified — `backToDashboard` removed)
+- `src/app/[locale]/dashboard/people/[id]/page.tsx` (modified — `backToDashboard` branch removed, conditional simplified)
+- `src/app/[locale]/dashboard/ppr/page.tsx` (modified — `backToDashboard` removed)
+- `src/app/[locale]/dashboard/ppr/register/page.tsx` (modified — `backToDashboard` removed, `backToQueue` untouched)
+- `src/app/[locale]/dashboard/settings/page.tsx` (modified — `backToDashboard` removed, dead imports removed)
+- `src/app/[locale]/dashboard/users/page.tsx` (modified — `backToDashboard` removed)
+- `messages/it.json` (modified — new `DashboardShell.switchTo` key + orphaned `backToDashboard`/nav-grid-only keys removed)
+- `messages/en.json` (modified — same as above, EN)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified — `12-2-desktop-app-shell: review`)

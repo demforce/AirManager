@@ -368,13 +368,6 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
             <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">{t('title')}</h1>
             <p className="mt-2 max-w-xl text-base leading-[1.6] text-mid-gray">{t('description')}</p>
           </div>
-          <Link
-            href="/dashboard"
-            locale={locale as AppLocale}
-            className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
-          >
-            {t('backToDashboard')}
-          </Link>
         </div>
 
         <BookingCalendar

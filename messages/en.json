@@ -109,11 +109,13 @@
       "settings": "Settings"
     }
   },
+  "DashboardShell": {
+    "switchTo": "Italiano"
+  },
   "PeoplePage": {
     "kicker": "Records",
     "title": "People",
     "description": "The single source of truth for pilots, students, instructors and staff: create, edit and archive people.",
-    "backToDashboard": "Back to dashboard",
     "newPerson": "New person",
     "searchPlaceholder": "Search by first name, last name or email…",
     "includeArchivedLabel": "Include archived",
@@ -210,7 +212,6 @@
   "PersonDetailPage": {
     "kicker": "Person record",
     "backToList": "Back to list",
-    "backToDashboard": "Back to dashboard",
     "personalData": {
       "heading": "Personal data",
       "firstName": "First name",
@@ -559,7 +560,6 @@
     "kicker": "Finance",
     "title": "Finance",
     "description": "The airfield's financial picture: prepaid accounts, negative balances and the cash register.",
-    "backToDashboard": "Back to dashboard",
     "manageCategories": "Manage categories",
     "viewPackages": "Package listing",
     "viewReport": "Financial report",
@@ -776,7 +776,6 @@
     "kicker": "Fleet",
     "title": "Aircraft",
     "description": "The fleet registry: create, edit and archive aircraft.",
-    "backToDashboard": "Back to dashboard",
     "newAircraft": "New aircraft",
     "searchPlaceholder": "Search by registration or model…",
     "includeArchivedLabel": "Include archived",
@@ -901,7 +900,6 @@
     "description": "Log a flight and see the aircraft charge, plus the instructor charge when there is one, generated automatically.",
     "titleOwn": "My flights",
     "descriptionOwn": "Your personal flight log, including cancelled flights.",
-    "backToDashboard": "Back to dashboard",
     "searchPlaceholder": "Search...",
     "noResults": "No matches.",
     "form": {
@@ -1050,7 +1048,6 @@
     "titleOwn": "My expiries",
     "descriptionOwn": "Your registered expiries, with the computed status. Propose an update whenever you renew.",
     "manageTypes": "Expiry types",
-    "backToDashboard": "Back to dashboard",
     "stat": {
       "label": "Active types",
       "hint": "In the catalogue, ready for expiry registration."
@@ -1203,7 +1200,6 @@
     "kicker": "Bookings",
     "title": "Bookings",
     "description": "Book an aircraft for a future date/time interval.",
-    "backToDashboard": "Back to dashboard",
     "form": {
       "title": "New booking",
       "selectPlaceholder": "Select…",
@@ -1297,7 +1293,6 @@
     "kicker": "Administration",
     "title": "Users",
     "description": "Create users, assign roles and manage access to the system.",
-    "backToDashboard": "Back to dashboard",
     "newUser": "New user",
     "table": {
       "email": "Email",
@@ -1423,7 +1418,6 @@
     "kicker": "PPR queue",
     "title": "PPR requests",
     "description": "Approve or reject pending prior-permission-to-land requests.",
-    "backToDashboard": "Back to dashboard",
     "table": {
       "requester": "Requester",
       "aircraft": "Registration / Type",
@@ -1487,7 +1481,6 @@
     "kicker": "PPR register",
     "title": "PPR register",
     "description": "Complete approved PPR requests and charge the landing fee, or browse the history by status and period.",
-    "backToDashboard": "Back to dashboard",
     "backToQueue": "Go to approval queue",
     "filters": {
       "status": "Status",
@@ -1545,7 +1538,6 @@
     "kicker": "Administration",
     "title": "Settings",
     "description": "Configure the airfield's name and logo, used in the header of exported PDFs.",
-    "backToDashboard": "Back to dashboard",
     "form": {
       "nameLabel": "Airfield name",
       "logoLabel": "Logo",

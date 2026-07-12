@@ -7,7 +7,6 @@ import type { ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
 import { todayTomorrowRangeUtc } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
-import { signOut } from '@/server/auth/auth';
 import { getSessionActor } from '@/server/auth/session';
 import { getAccountOverview, listNegativeBalances, type AccountOverview, type NegativeBalanceItem } from '@/server/services/accounts.service';
 import { listOutOfServiceAircraft, type AircraftListItem } from '@/server/services/aircraft.service';
@@ -25,8 +24,6 @@ import {
   type OwnStudentItem,
 } from '@/server/services/school.service';
 import { ExpiryStatusBadge } from './expiries/expiry-status-badge';
-import { visibleNavItems } from './nav-items';
-import { Button } from '@/components/ui/button';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -111,7 +108,6 @@ export default async function DashboardPage({ params }: PageProps) {
     : me.email;
 
   const t = await getTranslations('DashboardPage');
-  const navItems = visibleNavItems(actor);
 
   /**
    * Story 2.3, Task 2: a self-service actor (pilot/student/instructor —
@@ -239,11 +235,6 @@ export default async function DashboardPage({ params }: PageProps) {
     ? `/dashboard/flights?instructorPersonId=${personId}&flightType=SCHOOL`
     : '/dashboard/flights';
 
-  async function logoutAction() {
-    'use server';
-    await signOut({ redirectTo: `/${locale}/login` });
-  }
-
   return (
     <main className="flex-1 px-6 py-16 sm:px-16">
       <div className="mx-auto max-w-5xl">
@@ -251,13 +242,6 @@ export default async function DashboardPage({ params }: PageProps) {
           <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
             {t('kicker')}
           </span>
-          <form action={logoutAction}>
-            <Button variant="outline"
-              type="submit"
-            >
-              {t('logout')}
-            </Button>
-          </form>
         </div>
 
         <h1 className="mt-6 text-4xl font-semibold tracking-[-0.02em] text-ink">
@@ -265,18 +249,11 @@ export default async function DashboardPage({ params }: PageProps) {
         </h1>
         <p className="mt-4 max-w-xl text-base leading-[1.6] text-mid-gray">{t('subtitle')}</p>
 
-        <nav className="mt-10" aria-label={t('navHeading')}>
-          <p className="text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">{t('navHeading')}</p>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {navItems.map((item) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                className="rounded-nested border border-hairline bg-paper px-4 py-3 text-sm font-medium text-ink transition-colors hover:bg-canvas"
-              >
-                {t(`nav.${item.key}`)}
-              </Link>
-            ))}
+        {/* Personal shortcut tiles (story 12.2, AC 4: the operational-area nav
+            grid moved to the sidebar landmark; these three self-service
+            tiles are content, not chrome, and stay here). */}
+        {ownPersonHref || ownAccountHref || ownDiaryHref ? (
+          <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {ownPersonHref ? (
               <Link
                 href={ownPersonHref}
@@ -302,7 +279,7 @@ export default async function DashboardPage({ params }: PageProps) {
               </Link>
             ) : null}
           </div>
-        </nav>
+        ) : null}
 
         {/* Staff/admin widgets (AC 1) */}
         {canManagePpr || canManageFinance || canManageExpiries || canManageBookingsAny || canManageAircraft ? (

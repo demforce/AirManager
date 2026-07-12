@@ -1,6 +1,5 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { Link, redirect } from '@/i18n/navigation';
-import type { AppLocale } from '@/i18n/routing';
+import { redirect } from '@/i18n/navigation';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getAirfieldBranding } from '@/server/services/app-settings.service';
@@ -48,13 +47,6 @@ export default async function SettingsPage({ params }: PageProps) {
             </h1>
             <p className="mt-2 max-w-xl text-base leading-[1.6] text-mid-gray">{t('description')}</p>
           </div>
-          <Link
-            href="/dashboard"
-            locale={locale as AppLocale}
-            className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
-          >
-            {t('backToDashboard')}
-          </Link>
         </div>
 
         <div className="mt-10">

@@ -137,13 +137,6 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
                 {t('manageCategories')}
               </Link>
             ) : null}
-            <Link
-              href="/dashboard"
-              locale={locale as AppLocale}
-              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
-            >
-              {t('backToDashboard')}
-            </Link>
           </div>
         </div>
 

@@ -109,11 +109,13 @@
       "settings": "Impostazioni"
     }
   },
+  "DashboardShell": {
+    "switchTo": "English"
+  },
   "PeoplePage": {
     "kicker": "Anagrafiche",
     "title": "Persone",
     "description": "Anagrafica unica di piloti, allievi, istruttori e staff: crea, modifica e archivia le persone.",
-    "backToDashboard": "Torna alla dashboard",
     "newPerson": "Nuova persona",
     "searchPlaceholder": "Cerca per nome, cognome o email…",
     "includeArchivedLabel": "Includi archiviate",
@@ -210,7 +212,6 @@
   "PersonDetailPage": {
     "kicker": "Scheda persona",
     "backToList": "Torna all'elenco",
-    "backToDashboard": "Torna alla dashboard",
     "personalData": {
       "heading": "Dati anagrafici",
       "firstName": "Nome",
@@ -559,7 +560,6 @@
     "kicker": "Finanze",
     "title": "Finanze",
     "description": "La situazione finanziaria dell'aviosuperficie: conti prepagati, saldi negativi e registro cassa.",
-    "backToDashboard": "Torna alla dashboard",
     "manageCategories": "Gestisci categorie",
     "viewPackages": "Listino pacchetti",
     "viewReport": "Report finanziario",
@@ -776,7 +776,6 @@
     "kicker": "Flotta",
     "title": "Velivoli",
     "description": "Anagrafica della flotta: crea, modifica e archivia i velivoli.",
-    "backToDashboard": "Torna alla dashboard",
     "newAircraft": "Nuovo velivolo",
     "searchPlaceholder": "Cerca per marche o modello…",
     "includeArchivedLabel": "Includi archiviati",
@@ -901,7 +900,6 @@
     "description": "Registra un volo e vedi l'addebito su velivolo e, se presente, istruttore generato automaticamente.",
     "titleOwn": "I miei voli",
     "descriptionOwn": "Il tuo registro voli personale, storico completo incluso.",
-    "backToDashboard": "Torna alla dashboard",
     "searchPlaceholder": "Cerca...",
     "noResults": "Nessun risultato.",
     "form": {
@@ -1050,7 +1048,6 @@
     "titleOwn": "Le mie scadenze",
     "descriptionOwn": "Le tue scadenze registrate, con lo stato calcolato. Proponi un aggiornamento quando rinnovi.",
     "manageTypes": "Tipi di scadenza",
-    "backToDashboard": "Torna alla dashboard",
     "stat": {
       "label": "Tipi attivi",
       "hint": "Nel catalogo, pronti per la registrazione delle scadenze."
@@ -1203,7 +1200,6 @@
     "kicker": "Prenotazioni",
     "title": "Prenotazioni",
     "description": "Prenota un velivolo per un intervallo di data e ora futuro.",
-    "backToDashboard": "Torna alla dashboard",
     "form": {
       "title": "Nuova prenotazione",
       "selectPlaceholder": "Seleziona…",
@@ -1297,7 +1293,6 @@
     "kicker": "Amministrazione",
     "title": "Utenti",
     "description": "Crea utenti, assegna ruoli e gestisci l'accesso al sistema.",
-    "backToDashboard": "Torna alla dashboard",
     "newUser": "Nuovo utente",
     "table": {
       "email": "Email",
@@ -1423,7 +1418,6 @@
     "kicker": "Coda PPR",
     "title": "Richieste PPR",
     "description": "Approva o rifiuta le richieste di permesso di atterraggio in attesa.",
-    "backToDashboard": "Torna alla dashboard",
     "table": {
       "requester": "Richiedente",
       "aircraft": "Marche / Tipo",
@@ -1487,7 +1481,6 @@
     "kicker": "Registro PPR",
     "title": "Registro PPR",
     "description": "Chiudi i PPR approvati incassando la tassa di atterraggio, o consulta lo storico per stato e periodo.",
-    "backToDashboard": "Torna alla dashboard",
     "backToQueue": "Vai alla coda approvazioni",
     "filters": {
       "status": "Stato",
@@ -1545,7 +1538,6 @@
     "kicker": "Amministrazione",
     "title": "Impostazioni",
     "description": "Configura il nome e il logo dell'aviosuperficie, usati nell'intestazione dei PDF esportati.",
-    "backToDashboard": "Torna alla dashboard",
     "form": {
       "nameLabel": "Nome aviosuperficie",
       "logoLabel": "Logo",

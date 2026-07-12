@@ -226,13 +226,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                   {t('manageTypes')}
                 </Link>
               ) : null}
-              <Link
-                href="/dashboard"
-                locale={locale as AppLocale}
-                className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
-              >
-                {t('backToDashboard')}
-              </Link>
             </div>
           </div>
 
@@ -439,13 +432,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             </h1>
             <p className="mt-2 max-w-xl text-base leading-[1.6] text-mid-gray">{t('descriptionOwn')}</p>
           </div>
-          <Link
-            href="/dashboard"
-            locale={locale as AppLocale}
-            className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
-          >
-            {t('backToDashboard')}
-          </Link>
         </div>
 
         <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6">
