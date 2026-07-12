@@ -1,13 +1,14 @@
 import type { AppLocale } from '@/i18n/routing';
 import { LocaleSwitcher } from './locale-switcher';
 import { LogoutButton } from './logout-button';
+import { SearchTrigger, type SearchTriggerProps } from './search-trigger';
 
 type TopbarProps = {
   locale: AppLocale;
   displayName: string;
   logoutLabel: string;
   switchLocaleLabel: string;
-};
+} & SearchTriggerProps;
 
 /**
  * Persistent topbar (story 12.2, AC 5): app identity on the left (textual
@@ -22,11 +23,21 @@ type TopbarProps = {
  * lines and crowded the wordmark next to it. The switcher and logout button,
  * which ARE actions, stay visible at every width.
  */
-export function Topbar({ locale, displayName, logoutLabel, switchLocaleLabel }: TopbarProps) {
+export function Topbar({
+  locale,
+  displayName,
+  logoutLabel,
+  switchLocaleLabel,
+  navItems,
+  canRegisterFlight,
+  canCreatePerson,
+  canSearch,
+}: TopbarProps) {
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-hairline bg-paper px-6">
-      <span className="text-base font-semibold tracking-[-0.01em] text-ink">AirManager</span>
-      <div className="flex items-center gap-4">
+    <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-hairline bg-paper px-6">
+      <span className="shrink-0 text-base font-semibold tracking-[-0.01em] text-ink">AirManager</span>
+      <SearchTrigger navItems={navItems} canRegisterFlight={canRegisterFlight} canCreatePerson={canCreatePerson} canSearch={canSearch} />
+      <div className="flex shrink-0 items-center gap-4">
         <span className="hidden text-sm text-mid-gray sm:inline">{displayName}</span>
         <LocaleSwitcher currentLocale={locale} label={switchLocaleLabel} />
         <LogoutButton locale={locale} label={logoutLabel} />

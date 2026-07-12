@@ -110,7 +110,23 @@
     }
   },
   "DashboardShell": {
-    "switchTo": "Italiano"
+    "switchTo": "Italiano",
+    "searchTrigger": {
+      "label": "Search"
+    },
+    "commandPalette": {
+      "dialogLabel": "Commands",
+      "inputLabel": "Search commands, people or aircraft",
+      "placeholder": "Search or jump to…",
+      "navGroup": "Go to",
+      "createGroup": "Create",
+      "resultsGroup": "Results",
+      "createFlight": "Log flight",
+      "createPerson": "New person",
+      "resultsPersonFlights": "Flights of {name}",
+      "empty": "No results",
+      "footerHint": "↑↓ to navigate · Enter to open · Esc to close"
+    }
   },
   "PeoplePage": {
     "kicker": "Records",

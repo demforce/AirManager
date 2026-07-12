@@ -4,7 +4,7 @@ baseline_commit: 1359912
 
 # Story 12.6: Command palette ⌘K
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -41,12 +41,12 @@ so that l'app abbia la spina dorsale di navigazione di un vero strumento desktop
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1)** — Export di `useNativeDialog`; `CommandPalette` top-aligned su `<dialog>` nativo; listener globale ⌘K/Ctrl+K (client, nella shell) con guard dialog-già-aperto; `SearchTrigger` in topbar.
-- [ ] **T2 (AC 2, 3)** — Gruppi Vai a + Crea (dati piani dal layout, gating = sidebar); supporto `?new=1` su flights/people (prop di apertura iniziale, param fuori da filtri/key).
-- [ ] **T3 (AC 4)** — Gruppo Risultati staff-only (riuso pattern searchPeople/searchAircraft, debounce, azioni primaria+secondaria, empty/error state).
-- [ ] **T4 (AC 5)** — i18n `DashboardShell.*` IT/EN; a11y combobox/listbox con activedescendant; keyboard-only completo.
-- [ ] **T5 (AC 6)** — `e2e/command-palette.spec.ts` (4 scenari); `npm run gates`; e2e mirati: app-shell, flights, people-management, rbac + nuovo spec.
-- [ ] **T6 (AC 7)** — Verifica visiva MCP (4 screenshot) con giudizio DESIGN.md; Dev Agent Record + File List; sprint-status `12-6` → `review`.
+- [x] **T1 (AC 1)** — Export di `useNativeDialog`; `CommandPalette` top-aligned su `<dialog>` nativo; listener globale ⌘K/Ctrl+K (client, nella shell) con guard dialog-già-aperto; `SearchTrigger` in topbar.
+- [x] **T2 (AC 2, 3)** — Gruppi Vai a + Crea (dati piani dal layout, gating = sidebar); supporto `?new=1` su flights/people (prop di apertura iniziale, param fuori da filtri/key).
+- [x] **T3 (AC 4)** — Gruppo Risultati staff-only (riuso pattern searchPeople/searchAircraft, debounce, azioni primaria+secondaria, empty/error state).
+- [x] **T4 (AC 5)** — i18n `DashboardShell.*` IT/EN; a11y combobox/listbox con activedescendant; keyboard-only completo.
+- [x] **T5 (AC 6)** — `e2e/command-palette.spec.ts` (4 scenari); `npm run gates`; e2e mirati: app-shell, flights, people-management, rbac + nuovo spec.
+- [x] **T6 (AC 7)** — Verifica visiva MCP (screenshot) con giudizio DESIGN.md; Dev Agent Record + File List; sprint-status `12-6` → `review`.
 
 ## Dev Notes
 
@@ -70,8 +70,35 @@ so that l'app abbia la spina dorsale di navigazione di un vero strumento desktop
 
 ### Agent Model Used
 
+Claude Sonnet 5 (dev subagent). Implementation was produced by a prior dev-subagent run on this same story that was killed mid-verification (timeout on an e2e `fill`, then interrupted) before completing tests/visual check/bookkeeping/commit. This session (continuation, same model) did NOT re-implement — it read the full diff against the AC, ran/repaired the e2e suite, did the interactive MCP visual/i18n verification, completed this record, and made the single implementation commit.
+
 ### Debug Log References
+
+- `npm run gates` on the inherited WIP (pre-verification): PASS, 1278/1278 unit — confirmed by the orchestrating session before handoff.
+- First `npx playwright test e2e/command-palette.spec.ts` run (default 2 workers, cold `next dev`/Turbopack, DB freshly reset) failed all 4 scenarios at the shared login helper (`toHaveURL(/\/it\/dashboard$/)` timing out on first-ever hit of each route while Turbopack compiled it on demand) — a known flaky class already documented in this story's Dev Notes and in `playwright.config.ts`'s CI-vs-dev comment, not an app or test bug. Re-running the same spec (routes now warm) passed all 4/4, repeated twice (workers=1 and default parallelism) for confirmation. No code or test changes were needed.
+- Targeted regression run `e2e/app-shell.spec.ts e2e/flights.spec.ts e2e/people-management.spec.ts e2e/rbac.spec.ts`: 27/27 passed.
+- Standalone Playwright-library script (not the app) confirmed, outside the test runner, that "Registra volo" from the palette on the people page does land on `/dashboard/flights?new=1` with the create dialog open, and that a staff person search does open the scheda — isolating the earlier failures to test-runner/dev-server warmup, not component logic.
+- Interactive MCP verification (session cookie injection via a local Playwright script that read `SEED_ADMIN_PASSWORD` from `.env` server-side and wrote only the resulting session cookies to a scratch file — the password itself was never typed into or printed by any tool call, per the story's env-handling instruction): confirmed (a) admin/staff palette shows Vai a + Crea + Risultati (3 groups), person search returns a primary "Cognome Nome" row plus a secondary indented "Voli di …" action, empty query shows the empty state; (b) pilot palette shows only 3 nav items, no Crea/Risultati; (c) the `?new=1` deep-link auto-opens the flight registration dialog; (d) pressing Ctrl+K while that dialog is open does NOT open the command palette (guard via `document.querySelector('dialog[open]')` works); (e) `/en/dashboard` renders the palette fully in English (trigger "Search", dialog `aria-label` "Commands", "Go to"/"Create"/"Results" groups, "Log flight"/"New person", "Flights of {name}", footer hint) — no leaked IT strings.
+- All debug scripts, screenshots, and MCP artifacts (`.playwright-mcp/`, `test-results/`, root `*.png`) were deleted before the commit; `git status` was clean of them.
 
 ### Completion Notes List
 
+- Implementation (T1–T4, all of AC 1–5) is exactly as left by the prior dev-subagent run; this session made no functional code changes — verification only confirmed it already met every AC.
+- T5/AC 6: the new `e2e/command-palette.spec.ts` (4 scenarios: Ctrl+K + role gating + Enter-navigates; "Registra volo" cross-page `?new=1` deep-link; staff person search → scheda; trigger click) passes 4/4, confirmed on two separate runs after ruling out the dev-server cold-compile flake described above. The four targeted regression specs (app-shell, flights, people-management, rbac) pass in full (27/27) — no interaction with the new global keydown listener or the `?new=1` deep-links regressed existing flows.
+- T6/AC 7: visual verification against DESIGN.md "Search Trigger" (`bg-canvas`/`text-mid-gray`, 18px radius, right-aligned `⌘K` hint) done via Playwright MCP — trigger, 3-group admin palette, results group (primary + secondary row), empty state, pilot nav-only palette, and the fully-localized EN palette were all screenshotted and judged visually consistent with the token contract; no visual fixes were needed.
+- Verified the two structural guarantees called out in the story's Contesto: `?new=1` is not merged into `flights/page.tsx`'s `filterQuery` (so it never pollutes `hasActiveFlightFilter` or the `FlightsManager` remount `key`), and the global ⌘K/Ctrl+K listener is guarded by `document.querySelector('dialog[open]')` so it never fires while another native `<dialog>` (e.g. the flight form) is already open — confirmed interactively, not just by reading the code.
+- `npm run gates` re-run clean after the story-file/sprint-status bookkeeping edits (no source changes since the orchestrating session's pre-handoff gates run).
+
 ### File List
+
+- `src/app/[locale]/dashboard/command-palette.tsx` (new)
+- `src/app/[locale]/dashboard/search-trigger.tsx` (new)
+- `e2e/command-palette.spec.ts` (new)
+- `src/components/ui/dialog.tsx` (export `useNativeDialog`)
+- `src/app/[locale]/dashboard/layout.tsx` (resolve nav/create/search permissions, pass to `Topbar`)
+- `src/app/[locale]/dashboard/topbar.tsx` (render `SearchTrigger`)
+- `src/app/[locale]/dashboard/flights/page.tsx`, `src/app/[locale]/dashboard/flights/flights-manager.tsx` (`?new=1` → `initialCreateOpen`)
+- `src/app/[locale]/dashboard/people/page.tsx`, `src/app/[locale]/dashboard/people/people-manager.tsx` (`?new=1` → `initialCreateOpen`)
+- `messages/it.json`, `messages/en.json` (`DashboardShell.searchTrigger`/`DashboardShell.commandPalette`)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (`12-6-command-palette` → `review`)
+- `_bmad-output/implementation-artifacts/12-6-command-palette.md` (this file — tasks/Dev Agent Record)

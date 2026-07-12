@@ -78,6 +78,8 @@ type PeopleManagerProps = {
   people: PersonRow[];
   initialQuery: string;
   initialIncludeArchived: boolean;
+  /** Story 12.6 (AC 3) — the command palette's "Nuova persona" deep-link (`?new=1`): opens the create dialog from the very first render. */
+  initialCreateOpen?: boolean;
   /** Story 10.1 (AC 5) — the SAME `q`/`includeArchived` this page was fetched with, `?format=xlsx` appended. */
   exportHref: string;
   exportLabel: string;
@@ -116,7 +118,15 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
   };
 }
 
-export function PeopleManager({ people, initialQuery, initialIncludeArchived, exportHref, exportLabel, labels }: PeopleManagerProps) {
+export function PeopleManager({
+  people,
+  initialQuery,
+  initialIncludeArchived,
+  initialCreateOpen,
+  exportHref,
+  exportLabel,
+  labels,
+}: PeopleManagerProps) {
   const router = useRouter();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -124,8 +134,12 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
   const [confirming, setConfirming] = useState<ConfirmState | null>(null);
   const [queryInput, setQueryInput] = useState(initialQuery);
   const [includeArchived, setIncludeArchived] = useState(initialIncludeArchived);
-  // Story 12.3 (AC 4) — the create dialog, independent of `panel`'s inline edit/profiles mutual exclusion.
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // Story 12.3 (AC 4) — the create dialog, independent of `panel`'s inline
+  // edit/profiles mutual exclusion. Story 12.6 (AC 3): `initialCreateOpen`
+  // (the command palette's `?new=1` deep-link) seeds it open from the very
+  // first render — a lazy initializer, not an effect, since this only ever
+  // matters at mount.
+  const [createDialogOpen, setCreateDialogOpen] = useState(() => Boolean(initialCreateOpen));
   // Story 12.3 (AC 4) — "Completa la scheda" link shown alongside `feedback`
   // after a successful creation; cleared by every OTHER feedback-setting
   // action below so it never lingers past its own creation.

@@ -24,6 +24,11 @@ type PageProps = {
     instructorPersonId?: string;
     flightType?: string;
     status?: string;
+    // Story 12.6 (AC 3) — the command palette's "Registra volo" deep-link.
+    // Deliberately outside `filterQuery`/`hasActiveFlightFilter`/the
+    // `FlightsManager` `key`: it opens the create dialog once on mount, it
+    // is not a registry filter.
+    new?: string;
   }>;
 };
 
@@ -95,6 +100,11 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
     redirect({ href: '/dashboard', locale });
     return;
   }
+
+  // Story 12.6 (AC 3) — the command palette's "Registra volo" lands here
+  // via `?new=1`; `canManage` re-gates it (the palette already hides the
+  // item otherwise, this is the destination's own guard, AD-5).
+  const initialCreateOpen = canManage && sp.new === '1';
 
   const dateFrom = sanitizeDateParam(sp.dateFrom);
   const dateTo = sanitizeDateParam(sp.dateTo);
@@ -255,6 +265,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
             // `RegisterFlightForm`'s own `key`).
             key={JSON.stringify(filterQuery)}
             canManage={canManage}
+            initialCreateOpen={initialCreateOpen}
             aircraftOptions={aircraftOptions}
             personOptions={personOptions}
             instructorOptions={instructorOptions}

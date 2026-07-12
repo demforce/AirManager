@@ -110,7 +110,23 @@
     }
   },
   "DashboardShell": {
-    "switchTo": "English"
+    "switchTo": "English",
+    "searchTrigger": {
+      "label": "Cerca"
+    },
+    "commandPalette": {
+      "dialogLabel": "Comandi",
+      "inputLabel": "Cerca comandi, persone o velivoli",
+      "placeholder": "Cerca o vai a…",
+      "navGroup": "Vai a",
+      "createGroup": "Crea",
+      "resultsGroup": "Risultati",
+      "createFlight": "Registra volo",
+      "createPerson": "Nuova persona",
+      "resultsPersonFlights": "Voli di {name}",
+      "empty": "Nessun risultato",
+      "footerHint": "↑↓ per navigare · Invio per aprire · Esc per chiudere"
+    }
   },
   "PeoplePage": {
     "kicker": "Anagrafiche",

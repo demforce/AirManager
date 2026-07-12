@@ -45,7 +45,7 @@ export type DialogProps = {
  */
 const FOCUSABLE_SELECTOR = 'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
-function useNativeDialog(open: boolean) {
+export function useNativeDialog(open: boolean) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {

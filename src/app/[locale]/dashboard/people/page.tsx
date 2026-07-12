@@ -10,7 +10,9 @@ import { PeopleManager } from './people-manager';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; q?: string; includeArchived?: string }>;
+  // Story 12.6 (AC 3) — `new` is the command palette's "Nuova persona"
+  // deep-link, deliberately independent of `q`/`includeArchived`/`page`.
+  searchParams: Promise<{ page?: string; q?: string; includeArchived?: string; new?: string }>;
 };
 
 const PAGE_SIZE = 20;
@@ -22,7 +24,7 @@ const PAGE_SIZE = 20;
  */
 export default async function PeoplePage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { page: pageParam, q, includeArchived: includeArchivedParam } = await searchParams;
+  const { page: pageParam, q, includeArchived: includeArchivedParam, new: newParam } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -37,6 +39,12 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
 
   const page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
   const includeArchived = includeArchivedParam === 'true';
+  // Story 12.6 (AC 3) — the command palette's "Nuova persona" lands here via
+  // `?new=1`. No extra permission check needed: the `people.read` redirect
+  // above already gates every line past it (same permission the palette
+  // itself checks — the existing button has no gate of its own, see
+  // `people-manager.tsx`).
+  const initialCreateOpen = newParam === '1';
 
   const peopleResult = await listPeople(actor, { page, pageSize: PAGE_SIZE, q, includeArchived });
 
@@ -86,6 +94,7 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
             }))}
             initialQuery={q ?? ''}
             initialIncludeArchived={includeArchived}
+            initialCreateOpen={initialCreateOpen}
             exportHref={exportHref}
             exportLabel={tExport('button')}
             labels={{

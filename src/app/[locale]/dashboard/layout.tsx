@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getMe } from '@/server/services/me.service';
 import { visibleNavItems } from './nav-items';
@@ -49,6 +50,15 @@ export default async function DashboardLayout({ children, params }: DashboardLay
     label: t(`nav.${item.key}`),
   }));
 
+  // Story 12.6 (AC 2/3/4) — the command palette's "Vai a" group reuses the
+  // SAME resolved items/gating as the sidebar (identical data, passed
+  // plain); "Crea"/"Risultati" reuse the permissions that already gate the
+  // equivalent existing buttons/endpoints (see `command-palette.tsx`'s own
+  // prop doc-comments for exactly which ones and why).
+  const canRegisterFlight = hasPermission(actor, 'flights.manage');
+  const canCreatePerson = hasPermission(actor, 'people.read');
+  const canSearch = hasPermission(actor, 'people.read') && hasPermission(actor, 'aircraft.manage');
+
   return (
     <div className="flex h-dvh flex-col bg-canvas sm:flex-row">
       <aside className="shrink-0 border-b border-hairline bg-surface-alt px-3 py-2 sm:h-dvh sm:w-56 sm:border-b-0 sm:border-r sm:px-4 sm:py-8">
@@ -60,6 +70,10 @@ export default async function DashboardLayout({ children, params }: DashboardLay
           displayName={displayName}
           logoutLabel={t('logout')}
           switchLocaleLabel={tShell('switchTo')}
+          navItems={sidebarItems}
+          canRegisterFlight={canRegisterFlight}
+          canCreatePerson={canCreatePerson}
+          canSearch={canSearch}
         />
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>

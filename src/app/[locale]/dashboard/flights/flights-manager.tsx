@@ -268,6 +268,8 @@ export type FlightsManagerLabels = {
 type FlightsManagerProps = {
   /** Story 5.4 — `flights.manage`: full manager (form + actions + every filter). Otherwise: the own-access read-only registry (period/type/status only). */
   canManage: boolean;
+  /** Story 12.6 (AC 3) — the command palette's "Registra volo" deep-link (`?new=1`, already `canManage`-gated by the page): opens the registration dialog once on mount. */
+  initialCreateOpen?: boolean;
   aircraftOptions: AircraftOption[];
   personOptions: PersonOption[];
   instructorOptions: PersonOption[];
@@ -378,6 +380,7 @@ export function flightTypeLabel(type: FlightListItemDto['flightType'], labels: F
  */
 export function FlightsManager({
   canManage,
+  initialCreateOpen,
   aircraftOptions,
   personOptions,
   instructorOptions,
@@ -415,8 +418,12 @@ export function FlightsManager({
   // Story 12.3 (AC 1/2): the register/correct form now lives in a `Dialog`
   // instead of always being on-page — `dialogOpen` is the ONE switch that
   // controls it, orthogonal to `correctingFlight` (which decides WHICH mode
-  // the form renders in via its existing `key`-remount idiom).
-  const [dialogOpen, setDialogOpen] = useState(false);
+  // the form renders in via its existing `key`-remount idiom). Story 12.6
+  // (AC 3): `initialCreateOpen` (the command palette's `?new=1` deep-link)
+  // seeds it open from the very first render — a lazy initializer, not an
+  // effect, since this only ever matters at mount (same assumption the
+  // `key`-remount idiom above already relies on).
+  const [dialogOpen, setDialogOpen] = useState(() => Boolean(initialCreateOpen));
   // Story 12.3 (AC 5): the detail sheet — open iff non-null, driven by the
   // row's already-in-memory `FlightListItemDto` (same data the table itself
   // renders from, no extra round-trip; the new `GET /flights/{id}` endpoint,
