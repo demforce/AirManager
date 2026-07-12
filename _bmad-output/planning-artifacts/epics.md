@@ -3,6 +3,9 @@ stepsCompleted: [1, 2, 3, 4]
 inputDocuments:
   - _bmad-output/planning-artifacts/prds/prd-AirManager-2026-07-04/prd.md
   - _bmad-output/planning-artifacts/architecture/architecture-AirManager-2026-07-04/ARCHITECTURE-SPINE.md
+  - _bmad-output/planning-artifacts/change-request-flight-log-2026-07-10.md
+  - _bmad-output/brainstorming/brainstorm-ui-refactor-2026-07-12/brainstorm-intent.md
+  - _bmad-output/brainstorming/brainstorm-ui-refactor-2026-07-12/DESIGN.md
 ---
 
 # AirManager - Epic Breakdown
@@ -60,6 +63,13 @@ Questo documento fornisce la scomposizione completa in epics e stories di AirMan
 - FR-43: Campi logbook sul volo — aeroporto di partenza/arrivo, orario di decollo/atterraggio, n. decolli/atterraggi; durata DERIVATA (atterraggio−decollo); obbligatori per i voli nuovi (change request 2026-07-10)
 - FR-44: Registro voli in formato logbook con PIC derivato; export Excel/PDF aggiornati coi nuovi campi (change request 2026-07-10)
 - FR-45: Date in formato italiano (DD/MM/YYYY) su tutte le superfici UI; accesso diretto ai voli di una persona dalla sua scheda (change request 2026-07-10)
+- FR-46: Design system Refero "Ui" su tutta l'app: token `DESIGN.md` come fonte unica del tema (monocromo clinico, Geist, radius 18 interattivi / 24 card, densità compact), stack superfici a 3 toni (canvas `#f5f5f5` / sidebar `#fafafa` / card `#ffffff`), componenti base conformi — niente gradienti né ombre oltre `--shadow-subtle` (brainstorm 2026-07-12)
+- FR-47: Regola Ember — `#e7000b` SOLO per azioni distruttive ed error-state veri (es. visita medica SCADUTA); mai decorativo. Gli stati semantici non-error mantengono un accento colore minimo (deroga al monocromo ratificata 2026-07-12)
+- FR-48: App shell desktop-like: sidebar e topbar persistenti mai ricaricate, naviga solo il pannello contenuto con scroll indipendente; loading granulare per sezione con skeleton pulse piatto (niente shimmer) (brainstorm 2026-07-12)
+- FR-49: Creazione entità in dialog modale e dettaglio/modifica in sheet laterale; bersagli prioritari: volo (keyboard-first, durata derivata live) e persona (progressive disclosure) (brainstorm 2026-07-12)
+- FR-50: Registro voli ripensato: tabella in card paper, riga compatta tratta/velivolo/durata/costo/PIC (data solo nei contesti flat cross-giorno), raggruppamento per giorno Europe/Rome con header di giornata e load-more "carica giorni precedenti"; costo in riga gated per ruolo (brainstorm 2026-07-12)
+- FR-51: Igiene dettagli su tutte le superfici: date picker custom DD/MM/YYYY, ellipsis deliberata + tooltip sui testi lunghi, row height fissa, tabelle mai nude sul canvas, export in menu overflow singolo (brainstorm 2026-07-12)
+- FR-52: Command palette ⌘K: navigazione alle sezioni, azioni di creazione, ricerca cross-entity nel rispetto dei permessi per-oggetto (brainstorm 2026-07-12)
 
 ### NonFunctional Requirements
 
@@ -72,6 +82,7 @@ Questo documento fornisce la scomposizione completa in epics e stories di AirMan
 - NFR-7: Backup DB documentato; email fallite ritentate e visibili
 - NFR-8: WCAG 2.1 AA di base
 - NFR-9: Test unitari sui calcoli, e2e sui flussi critici
+- NFR-10: Sicurezza per-oggetto su ogni nuova superficie UI (sheet, ⌘K, modali, liste): pilota/allievo vede SOLO i propri voli/transazioni/prenotazioni e nessuna risorsa altrui è raggiungibile per ID diretto (anti-IDOR); autorizzazione sempre server-side per oggetto, mai solo filtro client (ratificata 2026-07-12)
 
 ### Additional Requirements (dall'architettura)
 
@@ -88,7 +99,9 @@ Questo documento fornisce la scomposizione completa in epics e stories di AirMan
 
 ### UX Design Requirements
 
-Nessun documento UX formale. Vincoli UI vincolanti per i dev agent: skill `minimalist-ui` per dashboard/tabelle/form interni; skill `design-taste-frontend` per il form PPR pubblico; shadcn/ui + TanStack Table; responsive mobile-first per le viste pilota/allievo.
+Epics 1–11 (storico): nessun documento UX formale; vincoli UI per i dev agent: skill `minimalist-ui` per dashboard/tabelle/form interni; skill `design-taste-frontend` per il form PPR pubblico; shadcn/ui + TanStack Table; responsive mobile-first per le viste pilota/allievo.
+
+Dall'Epic 12 (refactor UI, brainstorm 2026-07-12) il contratto di design vincolante è `_bmad-output/brainstorming/brainstorm-ui-refactor-2026-07-12/DESIGN.md` (token Refero "Ui") + le decisioni ratificate nell'intent doc nella stessa cartella. Vincolo di processo (by user): ogni story UI si sviluppa con le skill `impeccable`, `design-taste-frontend` e `ui-ux-pro-max`. Il refactor è web desktop-first: niente cantiere mobile dedicato (il mobile sarà un'app Flutter nativa su API v1, v2).
 
 ### FR Coverage Map
 
@@ -105,6 +118,7 @@ Nessun documento UX formale. Vincoli UI vincolanti per i dev agent: skill `minim
 | FR-32, FR-33, FR-34 | Epic 9 | Scuola volo (export riepiloghi in Epic 10) |
 | FR-39, FR-40, FR-41 | Epic 10 | Export completi + dashboard per ruolo |
 | FR-43, FR-44, FR-45 | Epic 11 | Registro voli logbook (change request post-MVP 2026-07-10) |
+| FR-46, FR-47, FR-48, FR-49, FR-50, FR-51, FR-52 | Epic 12 | Refactor UI "infra-grade" (brainstorm post-MVP 2026-07-12); NFR-10 vincola ogni story con nuove superfici |
 
 NFR trasversali: NFR-1/2/5/8 vincolano ogni story con UI/API; NFR-3 Epic 1/2/6; NFR-4 Epic 3/5; NFR-6 ogni lista; NFR-7 ogni story con email; NFR-9 nella Definition of Done di ogni story.
 
@@ -154,7 +168,11 @@ Export Excel/PDF su tutte le viste e i report; dashboard per ruolo complete.
 Il volo registra aeroporti e orari reali con durata derivata; il registro diventa un logbook completo (PIC incluso), raggiungibile in un click dalla scheda persona; date italiane ovunque.
 **FRs covered:** FR-43, FR-44, FR-45
 
-**Dipendenze tra epics:** 1 → 2 → 3 → 4 → 5; 6 dopo 2; 7 dopo 6 e 2; 8 dopo 3; 9 dopo 5; 10 per ultimo. Ogni epic consegna valore completo senza richiedere epic futuri.
+### Epic 12: Refactor UI "infra-grade" (post-MVP, brainstorm 2026-07-12)
+L'app passa da "sito web" a desktop-app nel browser: design system Refero "Ui" monocromo, app shell persistente, form a comparsa, registro voli da logbook e command palette — la credibilità di Linear/Vercel/Cal.com per piloti e staff.
+**FRs covered:** FR-46, FR-47, FR-48, FR-49, FR-50, FR-51, FR-52 (+ NFR-10 trasversale)
+
+**Dipendenze tra epics:** 1 → 2 → 3 → 4 → 5; 6 dopo 2; 7 dopo 6 e 2; 8 dopo 3; 9 dopo 5; 10 per ultimo; 12 dopo tutti (refactor su app completa). Ogni epic consegna valore completo senza richiedere epic futuri.
 
 ## Epic 1: Fondazione e accesso
 
@@ -895,3 +913,174 @@ So that il sistema parli la lingua del campo volo (FR-44, FR-45).
 **Given** l'export Excel e PDF del registro voli
 **When** lo scarico
 **Then** contiene le nuove colonne logbook (partenza, arrivo, decollo, atterraggio, decolli, atterraggi, PIC) con date DD/MM/YYYY e orari HH:MM Europe/Rome, intestazioni localizzate IT/EN
+
+## Epic 12: Refactor UI "infra-grade" (post-MVP, brainstorm 2026-07-12)
+
+L'app passa da "sito web" a desktop-app nel browser con lo stile Refero "Ui" (monocromo clinico shadcn-like): token e componenti dal contratto `DESIGN.md`, app shell persistente, form a comparsa, registro voli ripensato da logbook, igiene dei dettagli e command palette ⌘K. Contratto di design e decisioni vincolanti in `_bmad-output/brainstorming/brainstorm-ui-refactor-2026-07-12/` (intent doc + DESIGN.md), integrati dalle ratifiche utente del 2026-07-12 in questa sessione:
+
+- **Paginazione registro**: load-more per giorni (header di giornata, "carica giorni precedenti") — né pager né infinite scroll.
+- **Regola Ember ratificata; vocabolario status acromatico NO**: `#e7000b` solo distruttivo/error-state veri, mai decorativo; gli stati semantici non-error MANTENGONO un accento colore minimo (es. semaforo scadenze) — niente conversione acromatica forzata.
+- **Form a comparsa**: modale volo keyboard-first (autocomplete, parsing orari "1430", durata live), creazione persona con progressive disclosure, decolli/atterraggi fuori riga → sheet dettaglio.
+- **Un solo epic** con 6 stories in ordine A→B→C→D→E→F (una PR).
+
+Trasversali a ogni story: NFR-10 (sicurezza per-oggetto anti-IDOR su ogni nuova superficie, server-side); vincolo di processo skill `impeccable` + `design-taste-frontend` + `ui-ux-pro-max` per il dev; WON'T: dark mode, redesign per-pagina delle sezioni non citate (ricevono solo il nuovo sistema), mobile dedicato (futura app Flutter su API v1). COULD (solo se economico, mai a scapito del MUST): batch-entry "Invio e ripeti" nel modale volo; jump-to-date via ⌘K. Nessun cambiamento di API, permessi o logica di dominio: il refactor è UI-only salvo i nuovi endpoint richiesti da ⌘K e dal load-more.
+
+### Story 12.1: Fondamenta del design system
+
+As a pilota o membro dello staff,
+I want un'interfaccia con un linguaggio visivo coerente e professionale in ogni schermata,
+So that l'app trasmetta la credibilità di uno strumento infra-grade, non di un sito web (FR-46, FR-47).
+
+**Acceptance Criteria:**
+
+**Given** il tema dell'applicazione
+**When** una qualunque pagina è renderizzata
+**Then** i token di `DESIGN.md` sono la fonte unica del tema Tailwind: palette monocroma (canvas `#f5f5f5`, paper `#ffffff`, surface-alt `#fafafa`, ink `#0a0a0a`, mid-gray `#737373`, hairline `#e5e5e5`), font Geist (fallback Inter), radius 18px sugli elementi interattivi e 24px sui contenitori, densità compact — e nessuna superficie usa gradienti, colori brand extra o ombre oltre `--shadow-subtle`
+
+**Given** i componenti base condivisi (button, card, badge, input, select, tabella)
+**When** compaiono in una pagina esistente
+**Then** sono conformi alle spec `DESIGN.md`: bottoni pill (filled `#0a0a0a`, ghost `#f5f5f5`, outline hairline), card `#ffffff` radius 24 con bordo hairline + shadow subtle, input fill `#f5f5f5` con ring hairline al focus, badge capsula solid/soft/outline
+
+**Given** le superfici della pagina
+**When** convivono sidebar, contenuto e card
+**Then** lo stack a 3 toni (canvas → surface-alt → paper) crea la gerarchia senza bordi aggiuntivi
+
+**Given** un'azione distruttiva o un error-state vero (es. visita medica SCADUTA, errore di validazione)
+**When** è mostrato
+**Then** usa Ember `#e7000b`; nessun uso decorativo di Ember sopravvive; gli stati semantici non-error (es. "in scadenza", stati PPR) mantengono il loro accento colore minimo attuale
+
+**Given** le pagine esistenti e la suite e2e
+**When** il tema e i componenti base cambiano
+**Then** comportamento, route, API e testi restano invariati (refactor visivo puro) e `npm run gates` + e2e passano
+
+### Story 12.2: App shell desktop-like
+
+As a utente autenticato,
+I want una shell di navigazione persistente che non si ricarica mai,
+So that l'app risponda come un'applicazione desktop e non come un sito di pagine (FR-48).
+
+**Acceptance Criteria:**
+
+**Given** l'area autenticata
+**When** navigo tra le sezioni
+**Then** sidebar (`#fafafa`, full-height) e topbar NON vengono ricaricate: cambia solo il pannello contenuto (layout persistente App Router), con la voce di navigazione attiva evidenziata
+
+**Given** contenuto più alto del viewport
+**When** scorro
+**Then** scrolla SOLO il pannello contenuto: sidebar e topbar restano fisse (scroll indipendente)
+
+**Given** una sezione che carica dati
+**When** la apro
+**Then** il loading è granulare per-sezione/per-card: skeleton pulse piatto su `#f5f5f5` dentro card hairline (niente shimmer, niente blocco dell'intera pagina)
+
+**Given** i landmark di accessibilità e i selettori scoped degli e2e esistenti
+**When** la shell cambia
+**Then** i landmark di navigazione restano stabili (gli e2e scoped al landmark continuano a passare) e la navigazione da tastiera resta completa
+
+### Story 12.3: Form a comparsa — dialog di creazione e sheet di dettaglio
+
+As a membro dello staff,
+I want creare voli e persone in un modale e consultarne il dettaglio in uno sheet laterale senza lasciare la tabella,
+So that l'inserimento dati sia rapido e il contesto non vada mai perso (FR-49).
+
+**Acceptance Criteria:**
+
+**Given** la pagina del registro voli
+**When** clicco "Registra volo"
+**Then** il form si apre in un dialog modale (card paper radius 24) keyboard-first: autocomplete pilota/velivolo, parsing orari rapido ("1430" → 14:30), durata derivata mostrata live come pill — e il form sempre visibile in testa alla pagina non esiste più
+
+**Given** la pagina persone
+**When** clicco "Nuova persona"
+**Then** si apre un modale minimo con progressive disclosure (nome, ruolo, contatto) che crea subito; il resto dell'anagrafica (profili, visite, ratings) si completa nello sheet/scheda persona
+
+**Given** una riga di una tabella (voli in primis)
+**When** apro il dettaglio o la modifica
+**Then** si apre uno sheet laterale sopra la tabella senza perderla; per il volo lo sheet mostra anche i campi logbook completi, inclusi decolli/atterraggi (che escono dalla riga)
+
+**Given** un pilota/allievo autenticato
+**When** tenta di aprire via sheet/dialog una risorsa non sua (anche per ID diretto)
+**Then** l'autorizzazione per-oggetto server-side la nega (403/404) — NFR-10; nessun dato altrui transita nel client
+
+**Given** dialog e sheet
+**When** li uso da tastiera
+**Then** focus trap, Esc per chiudere e ritorno del focus all'elemento di origine funzionano (WCAG 2.1 AA)
+
+### Story 12.4: Registro voli ripensato — la story chiave di volta
+
+As a gestore o pilota,
+I want un registro voli che si legga come un logbook professionale,
+So that la pagina più usata (e oggi più "sito web") diventi la prova che il refactor funziona (FR-50, FR-51 per le regole applicate qui).
+
+**Acceptance Criteria:**
+
+**Given** il registro voli
+**When** lo apro
+**Then** la tabella vive in una card paper con header/footer nested (mai nuda sul canvas), righe compatte ad altezza fissa con colonne: tratta (partenza→arrivo), velivolo, durata, costo, PIC; decolli/atterraggi e gli altri dettagli vivono nello sheet (da 12.3)
+
+**Given** i voli di più giornate
+**When** scorro il registro
+**Then** sono raggruppati per giorno (bucket Europe/Rome esistente) con header di giornata (data DD/MM/YYYY scritta una sola volta) e un'azione "carica giorni precedenti" estende il registro — niente pager numerato, niente infinite scroll
+
+**Given** un contesto flat cross-giorno (risultati di ricerca/filtri, voli sulla scheda persona)
+**When** la stessa tabella è mostrata
+**Then** la colonna data È presente in riga e il raggruppamento per giorno non si applica
+
+**Given** il costo in riga
+**When** l'utente è staff/admin
+**Then** vede il costo di tutti i voli; un pilota/allievo lo vede SOLO sui propri (coerente coi permessi finanze esistenti, verificato server-side)
+
+**Given** i filtri e gli export del registro
+**When** uso la pagina
+**Then** i filtri sono una toolbar compatta (non un form enorme sempre aperto in testa) e i bottoni export Excel/PDF sono raccolti in un unico menu overflow
+
+**Given** testi lunghi (tratta, persona)
+**When** superano lo spazio colonna
+**Then** max-width + ellipsis deliberata + tooltip col valore completo — mai overflow o troncamento casuale
+
+### Story 12.5: Igiene dei dettagli su tutte le superfici
+
+As a utente,
+I want che ogni sezione dell'app riceva le stesse regole di qualità dei dettagli,
+So that nessuna schermata tradisca il nuovo sistema (FR-51).
+
+**Acceptance Criteria:**
+
+**Given** ogni input data dell'app
+**When** inserisco una data
+**Then** uso un date picker custom DD/MM/YYYY (stile DESIGN.md) — nessun input date nativo mm/dd/yyyy residuo
+
+**Given** tutte le tabelle elenco (persone, velivoli, conti, cassa, scadenze, prenotazioni, PPR, scuola)
+**When** le apro
+**Then** vivono in card paper con row height fissa da spec compact, testi lunghi con ellipsis + tooltip, e la paginazione esistente è restylata e leggibile (il load-more per giorni resta esclusivo del registro voli)
+
+**Given** ogni vista con doppio bottone export Excel/PDF
+**When** la apro
+**Then** gli export sono in un unico menu overflow (pattern di 12.4 esteso ovunque)
+
+**Given** le sezioni non citate dai cantieri
+**When** il pass di igiene le tocca
+**Then** ricevono SOLO l'applicazione del sistema (token, card, picker, ellipsis, export) — nessun redesign per-pagina (WON'T ratificato)
+
+### Story 12.6: Command palette ⌘K
+
+As a utente autenticato,
+I want una command palette per navigare, creare e cercare da tastiera,
+So that l'app abbia la spina dorsale di navigazione di un vero strumento desktop (FR-52).
+
+**Acceptance Criteria:**
+
+**Given** l'area autenticata
+**When** premo ⌘K/Ctrl+K o clicco il search trigger in topbar (stile DESIGN.md, scorciatoia visibile)
+**Then** si apre la palette con navigazione a tutte le sezioni permesse al mio ruolo, bilingue IT/EN e utilizzabile solo da tastiera
+
+**Given** la palette aperta
+**When** scelgo un'azione di creazione (es. "Registra volo", "Nuova persona")
+**Then** si apre il dialog corrispondente (da 12.3), nel rispetto dei permessi di ruolo
+
+**Given** una query di ricerca
+**When** cerco cross-entity (persone, velivoli, voli, prenotazioni, PPR)
+**Then** i risultati sono filtrati per-oggetto server-side (NFR-10): un pilota/allievo trova SOLO le proprie risorse; nessun endpoint di ricerca espone dati altrui
+
+**Given** un ruolo senza permesso su una sezione o azione
+**When** apre la palette
+**Then** le voci non permesse NON compaiono (e il server rifiuta comunque le chiamate dirette)
