@@ -31,7 +31,7 @@ Feel **infra-grade**: l'app deve trasmettere la credibilità professionale di Li
 | SHOULD | **E** Igiene dettagli (regole dagli "orrori", sotto) |
 | SHOULD | **F** Command palette ⌘K: navigazione, creazione, ricerca cross-entity |
 | COULD | Batch-entry "Invio e ripeti" nel modale volo; jump-to-date via ⌘K |
-| WON'T | Dark mode; redesign per-pagina delle altre sezioni (ricevono solo il nuovo sistema) |
+| WON'T | Dark mode; redesign per-pagina delle altre sezioni (ricevono solo il nuovo sistema); ottimizzazione mobile dedicata — il mobile sarà un'app Flutter nativa in futuro (v2 su API v1), il refactor è web desktop-first (by user) |
 
 ## Regole derivate (proposte dal coach, coerenti con le decisioni — non ratificate esplicitamente)
 
