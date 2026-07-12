@@ -7,6 +7,10 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
+import { Button } from '@/components/ui/button';
+import { inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
+import { Card } from '@/components/ui/card';
 
 export type TrainingNoteRowData = {
   id: string;
@@ -99,8 +103,7 @@ function toRequestBody(values: NoteInputValues): {
   };
 }
 
-const inputClasses =
-  'mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+const inputClasses = cn(inputBaseClasses, 'mt-2 w-full');
 
 /**
  * "Nuova annotazione" form (story 9.2, AC 1) — rendered by the page ONLY for
@@ -159,14 +162,14 @@ export function NewTrainingNoteForm({
 
   if (!open) {
     return (
-      <button
+      <Button
         type="button"
         onClick={() => setOpen(true)}
         data-testid="new-training-note-action"
-        className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
+        className="min-h-[44px]"
       >
         {labels.addAction}
-      </button>
+      </Button>
     );
   }
 
@@ -174,20 +177,20 @@ export function NewTrainingNoteForm({
     <form
       onSubmit={(event) => void handleSubmit(onSubmit)(event)}
       noValidate
-      className="space-y-4 rounded-[12px] border border-[#EAEAEA] bg-white p-6"
+      className="space-y-4 rounded-cards border border-hairline bg-paper shadow-subtle p-6"
       data-testid="new-training-note-form"
     >
-      <h3 className="font-[family-name:var(--font-serif)] text-xl font-medium tracking-[-0.02em] text-[#111111]">{labels.title}</h3>
+      <h3 className="text-xl font-semibold tracking-[-0.02em] text-ink">{labels.title}</h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="new-note-date" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="new-note-date" className="block text-sm font-medium text-ink">
             {labels.noteDate}
           </label>
           <input id="new-note-date" type="date" aria-invalid={Boolean(errors.noteDate)} className={inputClasses} {...register('noteDate')} />
-          {errors.noteDate ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.noteDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="new-note-flight" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="new-note-flight" className="block text-sm font-medium text-ink">
             {labels.flight}
           </label>
           <select id="new-note-flight" className={inputClasses} {...register('flightId')}>
@@ -201,7 +204,7 @@ export function NewTrainingNoteForm({
         </div>
       </div>
       <div>
-        <label htmlFor="new-note-exercises" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="new-note-exercises" className="block text-sm font-medium text-ink">
           {labels.exercises}
         </label>
         <textarea
@@ -212,42 +215,42 @@ export function NewTrainingNoteForm({
           className={inputClasses}
           {...register('exercises')}
         />
-        {errors.exercises ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+        {errors.exercises ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
       </div>
       <div>
-        <label htmlFor="new-note-assessment" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="new-note-assessment" className="block text-sm font-medium text-ink">
           {labels.assessment}
         </label>
         <textarea id="new-note-assessment" rows={3} maxLength={2000} className={inputClasses} {...register('assessment')} />
       </div>
       <div>
-        <label htmlFor="new-note-next-steps" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="new-note-next-steps" className="block text-sm font-medium text-ink">
           {labels.nextSteps}
         </label>
         <textarea id="new-note-next-steps" rows={3} maxLength={2000} className={inputClasses} {...register('nextSteps')} />
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="new-training-note-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="new-training-note-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[44px]"
         >
           {labels.submit}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={() => setOpen(false)}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[44px]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -329,7 +332,7 @@ function EditNoteForm({
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="mt-4 space-y-4" data-testid="edit-training-note-form">
       <div>
-        <label htmlFor={`edit-note-date-${note.id}`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`edit-note-date-${note.id}`} className="block text-sm font-medium text-ink">
           {labels.noteDate}
         </label>
         <input
@@ -341,7 +344,7 @@ function EditNoteForm({
         />
       </div>
       <div>
-        <label htmlFor={`edit-note-exercises-${note.id}`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`edit-note-exercises-${note.id}`} className="block text-sm font-medium text-ink">
           {labels.exercises}
         </label>
         <textarea
@@ -352,42 +355,42 @@ function EditNoteForm({
           className={inputClasses}
           {...register('exercises')}
         />
-        {errors.exercises ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+        {errors.exercises ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
       </div>
       <div>
-        <label htmlFor={`edit-note-assessment-${note.id}`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`edit-note-assessment-${note.id}`} className="block text-sm font-medium text-ink">
           {labels.assessment}
         </label>
         <textarea id={`edit-note-assessment-${note.id}`} rows={3} maxLength={2000} className={inputClasses} {...register('assessment')} />
       </div>
       <div>
-        <label htmlFor={`edit-note-next-steps-${note.id}`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`edit-note-next-steps-${note.id}`} className="block text-sm font-medium text-ink">
           {labels.nextSteps}
         </label>
         <textarea id={`edit-note-next-steps-${note.id}`} rows={3} maxLength={2000} className={inputClasses} {...register('nextSteps')} />
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="edit-training-note-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="edit-training-note-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[44px]"
         >
           {labels.save}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[44px]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -422,24 +425,23 @@ export function TrainingNoteRow({
   }
 
   return (
-    <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="training-note-row">
+    <Card className="p-6" data-testid="training-note-row">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-[#111111]">{formatDateOnly(note.noteDate, locale)}</p>
-          <p className="mt-1 text-xs text-[#787774]">
+          <p className="text-sm font-medium text-ink">{formatDateOnly(note.noteDate, locale)}</p>
+          <p className="mt-1 text-xs text-mid-gray">
             {labels.row.author}: {note.authorName}
             {note.edited ? ` · ${labels.row.edited}` : ''}
           </p>
         </div>
         {note.editable && !isEditing ? (
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={() => setIsEditing(true)}
             data-testid="edit-training-note-action"
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
           >
             {labels.row.edit}
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -448,28 +450,28 @@ export function TrainingNoteRow({
       ) : (
         <div className="mt-4 space-y-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.row.exercises}</p>
-            <p className="mt-1 text-sm whitespace-pre-wrap text-[#2F3437]">{note.exercises}</p>
+            <p className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.row.exercises}</p>
+            <p className="mt-1 text-sm whitespace-pre-wrap text-ink">{note.exercises}</p>
           </div>
           {note.assessment ? (
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.row.assessment}</p>
-              <p className="mt-1 text-sm whitespace-pre-wrap text-[#2F3437]">{note.assessment}</p>
+              <p className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.row.assessment}</p>
+              <p className="mt-1 text-sm whitespace-pre-wrap text-ink">{note.assessment}</p>
             </div>
           ) : null}
           {note.nextSteps ? (
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.row.nextSteps}</p>
-              <p className="mt-1 text-sm whitespace-pre-wrap text-[#2F3437]">{note.nextSteps}</p>
+              <p className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.row.nextSteps}</p>
+              <p className="mt-1 text-sm whitespace-pre-wrap text-ink">{note.nextSteps}</p>
             </div>
           ) : null}
           {note.flight ? (
-            <p className="text-xs text-[#787774]">
+            <p className="text-xs text-mid-gray">
               {labels.row.linkedFlight}: {formatDateOnly(note.flight.flightDate, locale)} · {formatMinutes(note.flight.minutes)}
             </p>
           ) : null}
         </div>
       )}
-    </div>
+    </Card>
   );
 }

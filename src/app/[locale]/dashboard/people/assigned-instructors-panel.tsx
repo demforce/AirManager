@@ -6,6 +6,8 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { AssignedInstructorItemDto } from '@/lib/schemas/school';
 import { formatDateTime } from '@/lib/time';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 export type AssignedInstructorsPanelLabels = {
   heading: string;
@@ -107,17 +109,17 @@ export function AssignedInstructorsPanel({ personId, labels }: AssignedInstructo
   }
 
   return (
-    <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="assigned-instructors-panel">
+    <Card className="p-6" data-testid="assigned-instructors-panel">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{labels.heading}</h3>
+        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">{labels.heading}</h3>
         {!formOpen ? (
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={() => setFormOpen(true)}
-            className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            className="min-h-[44px]"
           >
             {labels.addAction}
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -140,13 +142,13 @@ export function AssignedInstructorsPanel({ personId, labels }: AssignedInstructo
       ) : null}
 
       <div className="mt-6">
-        {loadError ? <p className="text-sm text-[#9F2F2D]">{labels.loadError}</p> : null}
-        {!loadError && instructors !== null && instructors.length === 0 ? <p className="text-sm text-[#787774]">{labels.empty}</p> : null}
+        {loadError ? <p className="text-sm text-ember">{labels.loadError}</p> : null}
+        {!loadError && instructors !== null && instructors.length === 0 ? <p className="text-sm text-mid-gray">{labels.empty}</p> : null}
         {!loadError && instructors !== null && instructors.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[420px] text-left text-sm">
               <thead>
-                <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+                <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
                   <th className="py-2 pr-4 font-medium">{labels.table.name}</th>
                   <th className="py-2 pr-4 font-medium">{labels.table.assignedAt}</th>
                   <th className="py-2 font-medium">{labels.table.actions}</th>
@@ -154,36 +156,33 @@ export function AssignedInstructorsPanel({ personId, labels }: AssignedInstructo
               </thead>
               <tbody>
                 {instructors.map((instructor) => (
-                  <tr key={instructor.personId} data-testid="assigned-instructor-row" className="border-b border-[#EAEAEA] text-[#111111]">
+                  <tr key={instructor.personId} data-testid="assigned-instructor-row" className="border-b border-hairline text-ink">
                     <td className="py-2 pr-4">{personLabel(instructor)}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap text-[#787774]">{formatDateTime(new Date(instructor.assignedAt))}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap text-mid-gray">{formatDateTime(new Date(instructor.assignedAt))}</td>
                     <td className="py-2">
                       {confirmingRemoveId === instructor.personId ? (
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs text-[#787774]">{labels.actions.confirmRemove}</span>
-                          <button
+                          <span className="text-xs text-mid-gray">{labels.actions.confirmRemove}</span>
+                          <Button size="sm"
                             type="button"
                             onClick={() => void handleRemove(instructor.personId)}
-                            className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333]"
                           >
                             {labels.actions.confirmYes}
-                          </button>
-                          <button
+                          </Button>
+                          <Button variant="outline" size="sm"
                             type="button"
                             onClick={() => setConfirmingRemoveId(null)}
-                            className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                           >
                             {labels.actions.confirmCancel}
-                          </button>
+                          </Button>
                         </div>
                       ) : (
-                        <button
+                        <Button variant="outline" size="sm"
                           type="button"
                           onClick={() => setConfirmingRemoveId(instructor.personId)}
-                          className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                         >
                           {labels.actions.remove}
-                        </button>
+                        </Button>
                       )}
                     </td>
                   </tr>
@@ -193,7 +192,7 @@ export function AssignedInstructorsPanel({ personId, labels }: AssignedInstructo
           </div>
         ) : null}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -270,19 +269,19 @@ function AssignInstructorForm({ personId, existingInstructorPersonIds, labels, o
     <form
       onSubmit={(event) => void handleSubmit(onSubmit)(event)}
       noValidate
-      className="space-y-4 rounded-[8px] border border-[#EAEAEA] p-4"
+      className="space-y-4 rounded-nested border border-hairline p-4"
       data-testid="assign-instructor-form"
     >
-      <h4 className="text-base font-medium text-[#111111]">{labels.title}</h4>
+      <h4 className="text-base font-medium text-ink">{labels.title}</h4>
       <div>
-        <label htmlFor="assign-instructor-select" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="assign-instructor-select" className="block text-sm font-medium text-ink">
           {labels.instructor}
         </label>
         <select
           id="assign-instructor-select"
           aria-invalid={Boolean(errors.instructorPersonId)}
           disabled={noneAvailable}
-          className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437] disabled:cursor-not-allowed disabled:bg-[#F7F6F3]"
+          className="mt-2 min-h-[44px] w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink disabled:cursor-not-allowed disabled:bg-canvas"
           {...register('instructorPersonId')}
         >
           <option value="" disabled>
@@ -294,31 +293,31 @@ function AssignInstructorForm({ personId, existingInstructorPersonIds, labels, o
             </option>
           ))}
         </select>
-        {noneAvailable ? <p className="mt-1 text-xs text-[#787774]">{labels.noInstructors}</p> : null}
-        {errors.instructorPersonId ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+        {noneAvailable ? <p className="mt-1 text-xs text-mid-gray">{labels.noInstructors}</p> : null}
+        {errors.instructorPersonId ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="assign-instructor-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="assign-instructor-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting || noneAvailable}
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[44px]"
         >
           {labels.submit}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[44px]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

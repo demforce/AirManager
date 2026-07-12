@@ -116,11 +116,11 @@ function formatDayMonth(dateOnly: string, locale: 'it' | 'en'): string {
 }
 
 const NAV_LINK_CLASSES =
-  'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[6px] border border-[#EAEAEA] bg-white px-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]';
+  'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-buttons border border-hairline bg-transparent px-3 text-sm font-medium text-ink transition-colors hover:bg-canvas';
 
 function viewToggleClasses(active: boolean): string {
-  return `flex min-h-[44px] items-center justify-center rounded-[6px] px-4 text-sm font-medium transition-colors ${
-    active ? 'bg-[#111111] text-white' : 'text-[#2F3437] hover:bg-[#F7F6F3]'
+  return `flex min-h-[44px] items-center justify-center rounded-buttons px-4 text-sm font-medium transition-colors ${
+    active ? 'bg-ink text-surface-alt' : 'text-ink hover:bg-canvas'
   }`;
 }
 
@@ -146,7 +146,7 @@ export function BookingCalendar({ view, date, weekDates, aircraft, dayBlocks, we
         : '';
 
   return (
-    <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="bookings-calendar-section">
+    <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="bookings-calendar-section">
       <div className="flex flex-wrap items-center justify-between gap-3" data-testid="calendar-toolbar">
         <div className="flex items-center gap-2">
           <Link href={nav.prevHref} locale={locale as AppLocale} aria-label={labels.prev} data-testid="calendar-prev" className={NAV_LINK_CLASSES}>
@@ -160,11 +160,11 @@ export function BookingCalendar({ view, date, weekDates, aircraft, dayBlocks, we
           </Link>
         </div>
 
-        <h3 className="text-center text-sm font-medium text-[#111111] capitalize" data-testid="calendar-heading">
+        <h3 className="text-center text-sm font-medium text-ink capitalize" data-testid="calendar-heading">
           {heading}
         </h3>
 
-        <div role="group" aria-label={labels.viewToggleLabel} className="flex items-center gap-1 rounded-[8px] border border-[#EAEAEA] p-1">
+        <div role="group" aria-label={labels.viewToggleLabel} className="flex items-center gap-1 rounded-nested border border-hairline p-1">
           <Link
             href={nav.dayViewHref}
             locale={locale as AppLocale}
@@ -187,18 +187,18 @@ export function BookingCalendar({ view, date, weekDates, aircraft, dayBlocks, we
       </div>
 
       {aircraft.length === 0 ? (
-        <p className="mt-6 text-center text-sm text-[#787774]">{labels.noAircraft}</p>
+        <p className="mt-6 text-center text-sm text-mid-gray">{labels.noAircraft}</p>
       ) : view === 'day' ? (
-        <div className="mt-6 overflow-x-auto rounded-[12px] border border-[#EAEAEA]">
+        <div className="mt-6 overflow-x-auto rounded-cards border border-hairline">
           <div className="flex min-w-fit">
             {/* Hours gutter — sticky so it stays visible while scrolling the aircraft columns horizontally (mobile usability, AC 1). */}
-            <div className="sticky left-0 z-10 w-12 shrink-0 border-r border-[#EAEAEA] bg-white">
-              <div className="h-12 border-b border-[#EAEAEA]" />
+            <div className="sticky left-0 z-10 w-12 shrink-0 border-r border-hairline bg-paper">
+              <div className="h-12 border-b border-hairline" />
               <div className="relative" style={{ height: `${DAY_GRID_HEIGHT_PX}px` }}>
                 {HOURS.map((hour) => (
                   <div
                     key={hour}
-                    className="absolute right-1 -translate-y-1/2 text-[10px] text-[#787774]"
+                    className="absolute right-1 -translate-y-1/2 text-[10px] text-mid-gray"
                     style={{ top: `${hourTopPercent(hour)}%` }}
                   >
                     {String(hour).padStart(2, '0')}
@@ -210,9 +210,9 @@ export function BookingCalendar({ view, date, weekDates, aircraft, dayBlocks, we
             {aircraft.map((ac) => {
               const blocks = dayBlocks.filter((block) => block.aircraftId === ac.id);
               return (
-                <div key={ac.id} className="w-[168px] shrink-0 border-r border-[#EAEAEA] last:border-r-0" data-testid="calendar-aircraft-column">
-                  <div className="flex h-12 flex-col items-center justify-center overflow-hidden border-b border-[#EAEAEA] px-2 text-center">
-                    <span className="text-sm font-medium text-[#111111]">{ac.registration}</span>
+                <div key={ac.id} className="w-[168px] shrink-0 border-r border-hairline last:border-r-0" data-testid="calendar-aircraft-column">
+                  <div className="flex h-12 flex-col items-center justify-center overflow-hidden border-b border-hairline px-2 text-center">
+                    <span className="text-sm font-medium text-ink">{ac.registration}</span>
                     {ac.status === 'OUT_OF_SERVICE' ? <OutOfServiceBadge reason={ac.statusReason} label={labels.outOfService} /> : null}
                   </div>
                   <div className="relative" style={{ height: `${DAY_GRID_HEIGHT_PX}px` }}>
@@ -223,19 +223,19 @@ export function BookingCalendar({ view, date, weekDates, aircraft, dayBlocks, we
                       <div
                         key={block.id}
                         data-testid="calendar-block"
-                        className="absolute left-1 right-1 overflow-hidden rounded-[6px] border border-[#EAEAEA] bg-[#F7F6F3] px-2 py-1 text-[11px] leading-tight text-[#2F3437]"
+                        className="absolute left-1 right-1 overflow-hidden rounded-buttons border border-hairline bg-canvas px-2 py-1 text-[11px] leading-tight text-ink"
                         style={{ top: `${block.top}%`, height: `${block.height}%` }}
                       >
                         {block.clampedTop ? (
-                          <span className="block text-[9px] text-[#787774]" aria-hidden="true">
+                          <span className="block text-[9px] text-mid-gray" aria-hidden="true">
                             &#9650; <span className="sr-only">{labels.clampedStartHint}</span>
                           </span>
                         ) : null}
                         <div className="font-medium">{block.timeLabel}</div>
                         <div className="truncate">{block.personName}</div>
-                        {block.instructorName ? <div className="truncate text-[#787774]">{block.instructorName}</div> : null}
+                        {block.instructorName ? <div className="truncate text-mid-gray">{block.instructorName}</div> : null}
                         {block.clampedBottom ? (
-                          <span className="block text-[9px] text-[#787774]" aria-hidden="true">
+                          <span className="block text-[9px] text-mid-gray" aria-hidden="true">
                             &#9660; <span className="sr-only">{labels.clampedEndHint}</span>
                           </span>
                         ) : null}
@@ -248,17 +248,17 @@ export function BookingCalendar({ view, date, weekDates, aircraft, dayBlocks, we
           </div>
         </div>
       ) : (
-        <div className="mt-6 overflow-x-auto rounded-[12px] border border-[#EAEAEA]">
+        <div className="mt-6 overflow-x-auto rounded-cards border border-hairline">
           <table className="w-full min-w-[720px] border-collapse text-left text-sm" data-testid="calendar-week-table">
             <thead>
-              <tr className="border-b border-[#EAEAEA]">
-                <th className="w-24 border-r border-[#EAEAEA] px-3 py-2 text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+              <tr className="border-b border-hairline">
+                <th className="w-24 border-r border-hairline px-3 py-2 text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
                   {labels.weekdayColumnLabel}
                 </th>
                 {aircraft.map((ac) => (
                   <th
                     key={ac.id}
-                    className="min-w-[160px] border-r border-[#EAEAEA] px-3 py-2 text-sm font-medium text-[#111111] last:border-r-0"
+                    className="min-w-[160px] border-r border-hairline px-3 py-2 text-sm font-medium text-ink last:border-r-0"
                     data-testid="calendar-aircraft-column"
                   >
                     {ac.registration}
@@ -269,27 +269,27 @@ export function BookingCalendar({ view, date, weekDates, aircraft, dayBlocks, we
             </thead>
             <tbody>
               {weekDates.map((dateOnly) => (
-                <tr key={dateOnly} className="border-b border-[#EAEAEA] last:border-b-0">
-                  <td className="border-r border-[#EAEAEA] px-3 py-2 align-top text-xs font-medium whitespace-nowrap text-[#2F3437] capitalize">
+                <tr key={dateOnly} className="border-b border-hairline last:border-b-0">
+                  <td className="border-r border-hairline px-3 py-2 align-top text-xs font-medium whitespace-nowrap text-ink capitalize">
                     {formatWeekdayShort(dateOnly, locale)}
                   </td>
                   {aircraft.map((ac) => {
                     const chips = weekChips.filter((chip) => chip.aircraftId === ac.id && chip.dateOnly === dateOnly);
                     return (
-                      <td key={ac.id} className="border-r border-[#EAEAEA] px-2 py-2 align-top last:border-r-0">
+                      <td key={ac.id} className="border-r border-hairline px-2 py-2 align-top last:border-r-0">
                         <div className="flex flex-col gap-1">
                           {chips.map((chip) => (
                             <div
                               key={chip.id}
                               data-testid="calendar-chip"
-                              className="rounded-[6px] border border-[#EAEAEA] bg-[#F7F6F3] px-2 py-1 text-[11px] leading-tight text-[#2F3437]"
+                              className="rounded-buttons border border-hairline bg-canvas px-2 py-1 text-[11px] leading-tight text-ink"
                             >
                               {chip.clampedStart ? <span aria-hidden="true">&#9650; </span> : null}
                               <span className="font-medium">{chip.timeLabel}</span> {chip.personName}
                               {chip.clampedEnd ? (
                                 <span aria-hidden="true"> &#9660;</span>
                               ) : null}
-                              {chip.instructorName ? <div className="text-[#787774]">{chip.instructorName}</div> : null}
+                              {chip.instructorName ? <div className="text-mid-gray">{chip.instructorName}</div> : null}
                             </div>
                           ))}
                         </div>
@@ -303,8 +303,8 @@ export function BookingCalendar({ view, date, weekDates, aircraft, dayBlocks, we
         </div>
       )}
 
-      {aircraft.length > 0 && view === 'day' && dayBlocks.length === 0 ? <p className="mt-4 text-sm text-[#787774]">{labels.dayEmpty}</p> : null}
-      {aircraft.length > 0 && view === 'week' && weekChips.length === 0 ? <p className="mt-4 text-sm text-[#787774]">{labels.weekEmpty}</p> : null}
+      {aircraft.length > 0 && view === 'day' && dayBlocks.length === 0 ? <p className="mt-4 text-sm text-mid-gray">{labels.dayEmpty}</p> : null}
+      {aircraft.length > 0 && view === 'week' && weekChips.length === 0 ? <p className="mt-4 text-sm text-mid-gray">{labels.weekEmpty}</p> : null}
     </section>
   );
 }

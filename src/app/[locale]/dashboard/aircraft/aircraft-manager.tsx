@@ -23,6 +23,11 @@ import {
 } from '@/lib/schemas/aircraft';
 import { formatCents, parseCents } from '@/lib/money';
 import { formatDateOnly, formatDateTime, formatMinutes } from '@/lib/time';
+import { Button } from '@/components/ui/button';
+import { Input, inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import { Card } from '@/components/ui/card';
 
 export type AircraftRow = {
   id: string;
@@ -193,8 +198,8 @@ function statusLabel(aircraft: AircraftRow, labels: Labels): string {
   return aircraft.archivedAt ? labels.status.archived : labels.status.active;
 }
 
-function statusBadgeClasses(aircraft: AircraftRow): string {
-  return aircraft.archivedAt ? 'bg-[#FBF3DB] text-[#956400]' : 'bg-[#EDF3EC] text-[#346538]';
+function statusBadgeTone(aircraft: AircraftRow): StatusTone {
+  return aircraft.archivedAt ? 'warning' : 'ok';
 }
 
 /** Operational status badge (story 2.5, AC 1) — distinct from the archive badge above. */
@@ -202,8 +207,8 @@ function operationalStatusLabel(aircraft: AircraftRow, labels: Labels): string {
   return aircraft.status === 'OUT_OF_SERVICE' ? labels.operationalStatus.outOfService : labels.operationalStatus.operational;
 }
 
-function operationalStatusBadgeClasses(aircraft: AircraftRow): string {
-  return aircraft.status === 'OUT_OF_SERVICE' ? 'bg-[#FBF3DB] text-[#956400]' : 'bg-[#EDF3EC] text-[#346538]';
+function operationalStatusBadgeTone(aircraft: AircraftRow): StatusTone {
+  return aircraft.status === 'OUT_OF_SERVICE' ? 'warning' : 'ok';
 }
 
 /** Signed `H:MM` delta preview (e.g. `+1:30`/`-0:45`) for the hour-meter adjustment form/history. */
@@ -319,7 +324,7 @@ export function AircraftManager({
     {
       id: 'registration',
       header: labels.table.registration,
-      cell: ({ row }) => <span className="font-medium text-[#111111]">{row.original.registration}</span>,
+      cell: ({ row }) => <span className="font-medium text-ink">{row.original.registration}</span>,
     },
     {
       id: 'type',
@@ -341,23 +346,19 @@ export function AircraftManager({
     {
       id: 'status',
       header: labels.table.status,
-      cell: ({ row }) => (
-        <span className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] ${statusBadgeClasses(row.original)}`}>
-          {statusLabel(row.original, labels)}
-        </span>
-      ),
+      cell: ({ row }) => <StatusPill tone={statusBadgeTone(row.original)}>{statusLabel(row.original, labels)}</StatusPill>,
     },
     {
       id: 'operationalStatus',
       header: labels.table.operationalStatus,
       cell: ({ row }) => (
-        <span
+        <StatusPill
+          tone={operationalStatusBadgeTone(row.original)}
           title={row.original.statusReason ?? undefined}
           data-testid={`operational-status-${row.original.id}`}
-          className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] ${operationalStatusBadgeClasses(row.original)}`}
         >
           {operationalStatusLabel(row.original, labels)}
-        </span>
+        </StatusPill>
       ),
     },
     {
@@ -390,75 +391,67 @@ export function AircraftManager({
 
           return (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[#787774]">{confirmLabel}</span>
-              <button
+              <span className="text-xs text-mid-gray">{confirmLabel}</span>
+              <Button size="sm"
                 type="button"
                 disabled={pendingActionId === item.id}
                 onClick={() => void handleStateAction(item, confirming.type)}
-                className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
               >
                 {labels.actions.confirmYes}
-              </button>
-              <button
+              </Button>
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setConfirming(null)}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.actions.confirmCancel}
-              </button>
+              </Button>
             </div>
           );
         }
 
         return (
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button variant="outline" size="sm"
               type="button"
               onClick={() => setPanel({ mode: 'edit', aircraft: item })}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.edit}
-            </button>
-            <button
+            </Button>
+            <Button variant="outline" size="sm"
               type="button"
               disabled={pendingActionId === item.id}
               onClick={() => setConfirming({ id: item.id, type: archiveActionType })}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
             >
               {isArchived ? labels.actions.unarchive : labels.actions.archive}
-            </button>
+            </Button>
             {isOutOfService ? (
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
                 disabled={pendingActionId === item.id}
                 onClick={() => setConfirming({ id: item.id, type: 'return-to-service' })}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
               >
                 {labels.actions.returnToService}
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setPanel({ mode: 'out-of-service', aircraft: item })}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.actions.setOutOfService}
-              </button>
+              </Button>
             )}
-            <button
+            <Button variant="outline" size="sm"
               type="button"
               onClick={() => setPanel({ mode: 'hour-meter', aircraft: item })}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.adjustHourMeter}
-            </button>
-            <button
+            </Button>
+            <Button variant="outline" size="sm"
               type="button"
               onClick={() => setPanel({ mode: 'rates', aircraft: item })}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.rates}
-            </button>
+            </Button>
           </div>
         );
       },
@@ -477,26 +470,25 @@ export function AircraftManager({
         )}
         <div className="flex gap-3">
           <ExportButton href={exportHref} label={exportLabel} testId="aircraft-export-button" />
-          <button
+          <Button
             type="button"
             onClick={() => setPanel({ mode: 'create' })}
-            className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
           >
             {labels.newAircraft}
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-4">
-        <input
+        <Input
           type="search"
           value={queryInput}
           onChange={(event) => handleQueryChange(event.target.value)}
           placeholder={labels.searchPlaceholder}
           aria-label={labels.searchPlaceholder}
-          className="w-full max-w-xs rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="w-full max-w-xs"
         />
-        <label className="flex items-center gap-2 text-sm text-[#2F3437]">
+        <label className="flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={includeArchived}
@@ -507,13 +499,13 @@ export function AircraftManager({
       </div>
 
       {panel?.mode === 'create' ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <CreateAircraftForm labels={labels} onCancel={() => setPanel(null)} onSuccess={handleFormSuccess} />
-        </div>
+        </Card>
       ) : null}
 
       {panel?.mode === 'edit' ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <EditAircraftForm
             // Remount when the edit target changes: react-hook-form reads
             // defaultValues only at mount, so without the key switching from
@@ -525,11 +517,11 @@ export function AircraftManager({
             onCancel={() => setPanel(null)}
             onSuccess={handleFormSuccess}
           />
-        </div>
+        </Card>
       ) : null}
 
       {panel?.mode === 'out-of-service' ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <OutOfServiceForm
             // Same remount rationale as EditAircraftForm above.
             key={panel.aircraft.id}
@@ -538,11 +530,11 @@ export function AircraftManager({
             onCancel={() => setPanel(null)}
             onSuccess={handleFormSuccess}
           />
-        </div>
+        </Card>
       ) : null}
 
       {panel?.mode === 'hour-meter' ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <HourMeterAdjustmentPanel
             // Same remount rationale as EditAircraftForm above.
             key={panel.aircraft.id}
@@ -551,11 +543,11 @@ export function AircraftManager({
             onCancel={() => setPanel(null)}
             onSuccess={handleFormSuccess}
           />
-        </div>
+        </Card>
       ) : null}
 
       {panel?.mode === 'rates' ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <RatesPanel
             // Same remount rationale as EditAircraftForm above.
             key={panel.aircraft.id}
@@ -566,7 +558,7 @@ export function AircraftManager({
             onCancel={() => setPanel(null)}
             onSuccess={handleFormSuccess}
           />
-        </div>
+        </Card>
       ) : null}
 
       <div className="mt-6">
@@ -584,7 +576,7 @@ export function AircraftManager({
  */
 function HourMeterHint({ minutes }: { minutes: number }): React.JSX.Element {
   if (!Number.isInteger(minutes) || minutes < 0) {
-    return <span className="text-[#9F2F2D]">—:—</span>;
+    return <span className="text-ember">—:—</span>;
   }
   return <span>{formatMinutes(minutes)}</span>;
 }
@@ -638,7 +630,7 @@ function CreateAircraftForm({ labels, onCancel, onSuccess }: CreateAircraftFormP
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-      <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
         {labels.form.createTitle}
       </h3>
 
@@ -651,18 +643,18 @@ function CreateAircraftForm({ labels, onCancel, onSuccess }: CreateAircraftFormP
        * field is deliberately absent from `EditAircraftForm`/`AircraftFields`.
        */}
       <div>
-        <label htmlFor="create-hourMeterMinutes" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="create-hourMeterMinutes" className="block text-sm font-medium text-ink">
           {labels.form.hourMeter}
         </label>
         <div className="mt-2 flex items-center gap-3">
-          <input
+          <Input
             id="create-hourMeterMinutes"
             type="number"
             step={1}
             min={0}
             inputMode="numeric"
             aria-invalid={Boolean(errors.hourMeterMinutes)}
-            className="mt-0 w-full max-w-[140px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-0 w-full max-w-[140px]"
             {...hourMeterField}
             onChange={(event) => {
               // Compose react-hook-form's own `onChange` (keeps the submitted
@@ -672,16 +664,16 @@ function CreateAircraftForm({ labels, onCancel, onSuccess }: CreateAircraftFormP
               setHourMeterMinutes(event.target.valueAsNumber);
             }}
           />
-          <span className="font-[family-name:var(--font-mono,monospace)] text-sm text-[#787774]" data-testid="create-hour-meter-hint">
+          <span className="font-[family-name:var(--font-mono,monospace)] text-sm text-mid-gray" data-testid="create-hour-meter-hint">
             (<HourMeterHint minutes={hourMeterMinutes} />)
           </span>
         </div>
-        <p className="mt-1 text-xs text-[#787774]">{labels.form.hourMeterHint}</p>
-        {errors.hourMeterMinutes ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.invalidHourMeter}</p> : null}
+        <p className="mt-1 text-xs text-mid-gray">{labels.form.hourMeterHint}</p>
+        {errors.hourMeterMinutes ? <p className="mt-1 text-xs text-ember">{labels.form.invalidHourMeter}</p> : null}
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="aircraft-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
@@ -735,14 +727,14 @@ function EditAircraftForm({ aircraft, labels, onCancel, onSuccess }: EditAircraf
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-      <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
         {labels.form.editTitle}
       </h3>
 
       <AircraftFields register={register} errors={errors} labels={labels} idPrefix="edit" />
 
       {formError ? (
-        <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="aircraft-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
@@ -774,14 +766,13 @@ function AircraftFields({
   labels: Labels;
   idPrefix: string;
 }) {
-  const inputClasses =
-    'mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 w-full');
 
   return (
     <>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div>
-          <label htmlFor={`${idPrefix}-registration`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`${idPrefix}-registration`} className="block text-sm font-medium text-ink">
             {labels.form.registration}
           </label>
           <input
@@ -790,27 +781,27 @@ function AircraftFields({
             aria-invalid={Boolean(errors.registration)}
             {...register('registration')}
           />
-          {errors.registration ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.requiredField}</p> : null}
+          {errors.registration ? <p className="mt-1 text-xs text-ember">{labels.form.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor={`${idPrefix}-type`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`${idPrefix}-type`} className="block text-sm font-medium text-ink">
             {labels.form.type}
           </label>
           <input id={`${idPrefix}-type`} className={inputClasses} aria-invalid={Boolean(errors.type)} {...register('type')} />
-          {errors.type ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.requiredField}</p> : null}
+          {errors.type ? <p className="mt-1 text-xs text-ember">{labels.form.requiredField}</p> : null}
         </div>
       </div>
 
       <div>
-        <label htmlFor={`${idPrefix}-model`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`${idPrefix}-model`} className="block text-sm font-medium text-ink">
           {labels.form.model}
         </label>
         <input id={`${idPrefix}-model`} className={inputClasses} aria-invalid={Boolean(errors.model)} {...register('model')} />
-        {errors.model ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.requiredField}</p> : null}
+        {errors.model ? <p className="mt-1 text-xs text-ember">{labels.form.requiredField}</p> : null}
       </div>
 
       <div>
-        <label htmlFor={`${idPrefix}-notes`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`${idPrefix}-notes`} className="block text-sm font-medium text-ink">
           {labels.form.notes}
         </label>
         <input
@@ -839,20 +830,18 @@ function FormActions({
 }) {
   return (
     <div className="flex gap-3">
-      <button
+      <Button
         type="submit"
         disabled={isSubmitting}
-        className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitLabel}
-      </button>
-      <button
+      </Button>
+      <Button variant="outline"
         type="button"
         onClick={onCancel}
-        className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
       >
         {cancelLabel}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -903,26 +892,26 @@ function OutOfServiceForm({ aircraft, labels, onCancel, onSuccess }: OutOfServic
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-      <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
         {labels.statusForm.title} — {aircraft.registration}
       </h3>
 
       <div>
-        <label htmlFor="out-of-service-reason" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="out-of-service-reason" className="block text-sm font-medium text-ink">
           {labels.statusForm.reason}
         </label>
         <textarea
           id="out-of-service-reason"
           rows={3}
           aria-invalid={Boolean(errors.reason)}
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink"
           {...register('reason')}
         />
-        {errors.reason ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.statusForm.reasonRequired}</p> : null}
+        {errors.reason ? <p className="mt-1 text-xs text-ember">{labels.statusForm.reasonRequired}</p> : null}
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="aircraft-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
@@ -1030,65 +1019,65 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
   return (
     <div className="space-y-8">
       <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
           {labels.hourMeterPanel.title} — {aircraft.registration}
         </h3>
 
-        <p className="text-sm text-[#787774]">
-          {labels.hourMeterPanel.current}: <span className="font-medium text-[#111111]">{safeFormatMinutes(aircraft.hourMeterMinutes)}</span>
+        <p className="text-sm text-mid-gray">
+          {labels.hourMeterPanel.current}: <span className="font-medium text-ink">{safeFormatMinutes(aircraft.hourMeterMinutes)}</span>
         </p>
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <div>
-            <label htmlFor="hour-meter-new-minutes" className="block text-sm font-medium text-[#2F3437]">
+            <label htmlFor="hour-meter-new-minutes" className="block text-sm font-medium text-ink">
               {labels.hourMeterPanel.newValue}
             </label>
             <div className="mt-2 flex items-center gap-3">
-              <input
+              <Input
                 id="hour-meter-new-minutes"
                 type="number"
                 step={1}
                 min={0}
                 inputMode="numeric"
                 aria-invalid={Boolean(errors.newMinutes)}
-                className="w-full max-w-[140px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                className="w-full max-w-[140px]"
                 {...newMinutesField}
                 onChange={(event) => {
                   void newMinutesField.onChange(event);
                   setNewMinutes(event.target.valueAsNumber);
                 }}
               />
-              <span className="font-[family-name:var(--font-mono,monospace)] text-sm text-[#787774]" data-testid="hour-meter-new-hint">
+              <span className="font-[family-name:var(--font-mono,monospace)] text-sm text-mid-gray" data-testid="hour-meter-new-hint">
                 (<HourMeterHint minutes={newMinutes} />)
               </span>
             </div>
-            <p className="mt-1 text-xs text-[#787774]">{labels.hourMeterPanel.hint}</p>
-            {errors.newMinutes ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.hourMeterPanel.invalidValue}</p> : null}
+            <p className="mt-1 text-xs text-mid-gray">{labels.hourMeterPanel.hint}</p>
+            {errors.newMinutes ? <p className="mt-1 text-xs text-ember">{labels.hourMeterPanel.invalidValue}</p> : null}
           </div>
           <div>
-            <span className="block text-sm font-medium text-[#2F3437]">{labels.hourMeterPanel.delta}</span>
-            <p data-testid="hour-meter-delta" className="mt-2 font-[family-name:var(--font-mono,monospace)] text-base text-[#111111]">
+            <span className="block text-sm font-medium text-ink">{labels.hourMeterPanel.delta}</span>
+            <p data-testid="hour-meter-delta" className="mt-2 font-[family-name:var(--font-mono,monospace)] text-base text-ink">
               {formatSignedMinutes(delta)}
             </p>
           </div>
         </div>
 
         <div>
-          <label htmlFor="hour-meter-reason" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="hour-meter-reason" className="block text-sm font-medium text-ink">
             {labels.hourMeterPanel.reason}
           </label>
           <textarea
             id="hour-meter-reason"
             rows={2}
             aria-invalid={Boolean(errors.reason)}
-            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink"
             {...register('reason')}
           />
-          {errors.reason ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.hourMeterPanel.requiredField}</p> : null}
+          {errors.reason ? <p className="mt-1 text-xs text-ember">{labels.hourMeterPanel.requiredField}</p> : null}
         </div>
 
         {formError ? (
-          <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+          <p role="alert" data-testid="aircraft-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
             {formError}
           </p>
         ) : null}
@@ -1102,14 +1091,14 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
       </form>
 
       <div>
-        <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.hourMeterPanel.historyTitle}</h4>
+        <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.hourMeterPanel.historyTitle}</h4>
         {history === null ? null : history.length === 0 ? (
-          <p className="mt-3 text-sm text-[#787774]">{labels.hourMeterPanel.historyEmpty}</p>
+          <p className="mt-3 text-sm text-mid-gray">{labels.hourMeterPanel.historyEmpty}</p>
         ) : (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
-                <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+                <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
                   <th className="py-2 pr-4 font-medium">{labels.hourMeterPanel.historyWhen}</th>
                   <th className="py-2 pr-4 font-medium">{labels.hourMeterPanel.historyActor}</th>
                   <th className="py-2 pr-4 font-medium">{labels.hourMeterPanel.historyPrevious}</th>
@@ -1120,8 +1109,8 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
               </thead>
               <tbody>
                 {history.map((entry) => (
-                  <tr key={entry.id} data-testid="hour-meter-history-row" className="border-b border-[#EAEAEA] text-[#111111]">
-                    <td className="py-2 pr-4 whitespace-nowrap text-[#787774]">{formatDateTime(new Date(entry.createdAt))}</td>
+                  <tr key={entry.id} data-testid="hour-meter-history-row" className="border-b border-hairline text-ink">
+                    <td className="py-2 pr-4 whitespace-nowrap text-mid-gray">{formatDateTime(new Date(entry.createdAt))}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{entry.actorEmail}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{safeFormatMinutes(entry.previousMinutes)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{safeFormatMinutes(entry.newMinutes)}</td>
@@ -1132,15 +1121,15 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
               </tbody>
             </table>
             {history.length < historyTotal ? (
-              <button
+              <Button variant="outline"
                 type="button"
                 onClick={() => void handleLoadMore()}
                 disabled={loadingMore}
                 data-testid="hour-meter-history-load-more"
-                className="mt-3 rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-3"
               >
                 {labels.hourMeterPanel.loadMore}
-              </button>
+              </Button>
             ) : null}
           </div>
         )}
@@ -1256,14 +1245,14 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
           {labels.ratesPanel.title} — {aircraft.registration}
         </h3>
       </div>
 
       <div>
-        <span className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.ratesPanel.current}</span>
-        <p data-testid="rates-current" className="mt-1 text-2xl font-medium text-[#111111]">
+        <span className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.ratesPanel.current}</span>
+        <p data-testid="rates-current" className="mt-1 text-2xl font-medium text-ink">
           {aircraft.currentRatePriceCentsPerHour === null
             ? labels.ratesPanel.noCurrentRate
             : `${formatCents(aircraft.currentRatePriceCentsPerHour, moneyLocale)}/h`}
@@ -1272,40 +1261,40 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
 
       {canManageSettings ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-          <h4 className="text-base font-medium text-[#111111]">{labels.ratesPanel.newRateTitle}</h4>
+          <h4 className="text-base font-medium text-ink">{labels.ratesPanel.newRateTitle}</h4>
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div>
-              <label htmlFor="rate-price" className="block text-sm font-medium text-[#2F3437]">
+              <label htmlFor="rate-price" className="block text-sm font-medium text-ink">
                 {labels.ratesPanel.price}
               </label>
-              <input
+              <Input
                 id="rate-price"
                 inputMode="decimal"
                 placeholder="0,00"
                 aria-invalid={Boolean(errors.price)}
-                className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                className="mt-2 w-full"
                 {...register('price')}
               />
-              {errors.price ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.ratesPanel.invalidPrice}</p> : null}
+              {errors.price ? <p className="mt-1 text-xs text-ember">{labels.ratesPanel.invalidPrice}</p> : null}
             </div>
             <div>
-              <label htmlFor="rate-valid-from" className="block text-sm font-medium text-[#2F3437]">
+              <label htmlFor="rate-valid-from" className="block text-sm font-medium text-ink">
                 {labels.ratesPanel.validFrom}
               </label>
-              <input
+              <Input
                 id="rate-valid-from"
                 type="date"
                 aria-invalid={Boolean(errors.validFrom)}
-                className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                className="mt-2 w-full"
                 {...register('validFrom')}
               />
-              {errors.validFrom ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.ratesPanel.invalidDate}</p> : null}
+              {errors.validFrom ? <p className="mt-1 text-xs text-ember">{labels.ratesPanel.invalidDate}</p> : null}
             </div>
           </div>
 
           {formError ? (
-            <p role="alert" data-testid="aircraft-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+            <p role="alert" data-testid="aircraft-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
               {formError}
             </p>
           ) : null}
@@ -1314,28 +1303,27 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
         </form>
       ) : (
         <div className="space-y-5">
-          <p className="text-sm text-[#787774]">{labels.ratesPanel.readOnlyHint}</p>
+          <p className="text-sm text-mid-gray">{labels.ratesPanel.readOnlyHint}</p>
           <div className="flex gap-3">
-            <button
+            <Button variant="outline"
               type="button"
               onClick={onCancel}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.ratesPanel.cancel}
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       <div>
-        <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.ratesPanel.historyTitle}</h4>
+        <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.ratesPanel.historyTitle}</h4>
         {history === null ? null : history.length === 0 ? (
-          <p className="mt-3 text-sm text-[#787774]">{labels.ratesPanel.historyEmpty}</p>
+          <p className="mt-3 text-sm text-mid-gray">{labels.ratesPanel.historyEmpty}</p>
         ) : (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[480px] text-left text-sm">
               <thead>
-                <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+                <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
                   <th className="py-2 pr-4 font-medium">{labels.ratesPanel.historyValidFrom}</th>
                   <th className="py-2 pr-4 font-medium">{labels.ratesPanel.historyPrice}</th>
                   <th className="py-2 pr-4 font-medium">{labels.ratesPanel.historyActor}</th>
@@ -1344,11 +1332,11 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
               </thead>
               <tbody>
                 {history.map((entry) => (
-                  <tr key={entry.id} data-testid="rate-history-row" className="border-b border-[#EAEAEA] text-[#111111]">
+                  <tr key={entry.id} data-testid="rate-history-row" className="border-b border-hairline text-ink">
                     <td className="py-2 pr-4 whitespace-nowrap">{formatDateOnly(entry.validFrom, moneyLocale)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatCents(entry.priceCentsPerHour, moneyLocale)}/h</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{entry.actorEmail}</td>
-                    <td className="py-2 whitespace-nowrap text-[#787774]">{formatDateTime(new Date(entry.createdAt))}</td>
+                    <td className="py-2 whitespace-nowrap text-mid-gray">{formatDateTime(new Date(entry.createdAt))}</td>
                   </tr>
                 ))}
               </tbody>

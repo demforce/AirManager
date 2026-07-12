@@ -4,6 +4,8 @@ import { Fragment, useState } from 'react';
 import { parseCents } from '@/lib/money';
 import type { PprOperatingInstructionsDto, PprRequestItemDto } from '@/lib/schemas/ppr';
 import { formatDateTime } from '@/lib/time';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export type PprQueueLabels = {
   table: {
@@ -181,14 +183,14 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
       {feedbackBanner}
 
       {requests.length === 0 ? (
-        <p className="text-sm text-[#787774]" data-testid="ppr-queue-empty">
+        <p className="text-sm text-mid-gray" data-testid="ppr-queue-empty">
           {labels.empty}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-[12px] border border-[#EAEAEA]">
+        <div className="overflow-x-auto rounded-cards border border-hairline">
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+              <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
                 <th className="px-5 py-3">{labels.table.requester}</th>
                 <th className="px-5 py-3">{labels.table.aircraft}</th>
                 <th className="px-5 py-3">{labels.table.route}</th>
@@ -205,7 +207,7 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
 
                 return (
                   <Fragment key={request.id}>
-                    <tr data-testid="ppr-row" className="border-b border-[#EAEAEA] align-top text-[#111111]">
+                    <tr data-testid="ppr-row" className="border-b border-hairline align-top text-ink">
                       <td className="px-5 py-3">
                         <button
                           type="button"
@@ -227,54 +229,50 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
                       <td className="px-5 py-3">
                         {confirming === 'APPROVE' ? (
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs text-[#787774]">{labels.actions.confirmApprove}</span>
-                            <button
+                            <span className="text-xs text-mid-gray">{labels.actions.confirmApprove}</span>
+                            <Button size="sm"
                               type="button"
                               disabled={isBusy}
                               onClick={() => void confirmApprove(request.id)}
                               data-testid="ppr-approve-confirm"
-                              className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
                             >
                               {labels.actions.confirmYes}
-                            </button>
-                            <button
+                            </Button>
+                            <Button variant="outline" size="sm"
                               type="button"
                               onClick={cancelConfirm}
                               data-testid="ppr-approve-cancel"
-                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                             >
                               {labels.actions.confirmCancel}
-                            </button>
+                            </Button>
                           </div>
                         ) : confirming === 'REJECT' ? null : (
                           <div className="flex flex-wrap gap-2">
-                            <button
+                            <Button size="sm"
                               type="button"
                               disabled={isBusy}
                               onClick={() => startConfirm(request.id, 'APPROVE')}
                               data-testid="ppr-approve-button"
-                              className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
                             >
                               {labels.actions.approve}
-                            </button>
-                            <button
+                            </Button>
+                            <Button variant="outline" size="sm"
                               type="button"
                               disabled={isBusy}
                               onClick={() => startConfirm(request.id, 'REJECT')}
                               data-testid="ppr-reject-button"
-                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
                             >
                               {labels.actions.reject}
-                            </button>
+                            </Button>
                           </div>
                         )}
                       </td>
                     </tr>
 
                     {confirming === 'REJECT' ? (
-                      <tr className="border-b border-[#EAEAEA] bg-[#F7F6F3]">
+                      <tr className="border-b border-hairline bg-canvas">
                         <td colSpan={6} className="px-5 py-4">
-                          <label htmlFor={`ppr-reject-reason-${request.id}`} className="block text-sm font-medium text-[#2F3437]">
+                          <label htmlFor={`ppr-reject-reason-${request.id}`} className="block text-sm font-medium text-ink">
                             {labels.actions.reasonLabel}
                           </label>
                           <textarea
@@ -287,61 +285,59 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
                             onChange={(event) =>
                               setReasonDrafts((current) => ({ ...current, [request.id]: event.target.value }))
                             }
-                            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                            className="mt-2 w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-ink"
                           />
                           {reasonErrors[request.id] ? (
-                            <p role="alert" className="mt-1 text-xs text-[#9F2F2D]">
+                            <p role="alert" className="mt-1 text-xs text-ember">
                               {labels.actions.reasonRequired}
                             </p>
                           ) : null}
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <button
+                            <Button size="sm"
                               type="button"
                               disabled={isBusy}
                               onClick={() => void submitReject(request.id)}
                               data-testid="ppr-reject-submit"
-                              className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
                             >
                               {labels.actions.submitReject}
-                            </button>
-                            <button
+                            </Button>
+                            <Button variant="outline" size="sm"
                               type="button"
                               onClick={cancelConfirm}
                               data-testid="ppr-reject-cancel"
-                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                             >
                               {labels.actions.cancelReject}
-                            </button>
+                            </Button>
                           </div>
                         </td>
                       </tr>
                     ) : null}
 
                     {isExpanded ? (
-                      <tr data-testid="ppr-row-detail" className="border-b border-[#EAEAEA] bg-[#FAFAF8]">
+                      <tr data-testid="ppr-row-detail" className="border-b border-hairline bg-[#FAFAF8]">
                         <td colSpan={6} className="px-5 py-4">
                           <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                             <div>
-                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.detail.email}</dt>
-                              <dd className="mt-1 text-[#111111]">{request.email}</dd>
+                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.detail.email}</dt>
+                              <dd className="mt-1 text-ink">{request.email}</dd>
                             </div>
                             <div>
-                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.detail.phone}</dt>
-                              <dd className="mt-1 text-[#111111]">{request.phone}</dd>
+                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.detail.phone}</dt>
+                              <dd className="mt-1 text-ink">{request.phone}</dd>
                             </div>
                             <div>
-                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.detail.etd}</dt>
-                              <dd className="mt-1 text-[#111111]">
+                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.detail.etd}</dt>
+                              <dd className="mt-1 text-ink">
                                 {request.etd ? formatDateTime(new Date(request.etd), locale) : labels.detail.noEtd}
                               </dd>
                             </div>
                             <div>
-                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.detail.locale}</dt>
-                              <dd className="mt-1 text-[#111111]">{request.locale === 'it' ? labels.detail.localeIt : labels.detail.localeEn}</dd>
+                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.detail.locale}</dt>
+                              <dd className="mt-1 text-ink">{request.locale === 'it' ? labels.detail.localeIt : labels.detail.localeEn}</dd>
                             </div>
                             <div className="sm:col-span-2">
-                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.detail.notes}</dt>
-                              <dd className="mt-1 text-[#111111]">{request.notes || labels.detail.noNotes}</dd>
+                              <dt className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.detail.notes}</dt>
+                              <dd className="mt-1 text-ink">{request.notes || labels.detail.noNotes}</dd>
                             </div>
                           </dl>
                         </td>
@@ -405,13 +401,13 @@ function PprOperatingInstructionsEditor({ initial, labels, landingFee }: PprOper
   }
 
   return (
-    <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="ppr-instructions-editor">
-      <h2 className="font-[family-name:var(--font-serif)] text-xl font-medium tracking-[-0.02em] text-[#111111]">{labels.heading}</h2>
-      <p className="mt-1 text-sm text-[#787774]">{labels.description}</p>
+    <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="ppr-instructions-editor">
+      <h2 className="text-xl font-semibold tracking-[-0.02em] text-ink">{labels.heading}</h2>
+      <p className="mt-1 text-sm text-mid-gray">{labels.description}</p>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="ppr-instructions-it" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-instructions-it" className="block text-sm font-medium text-ink">
             {labels.it}
           </label>
           <textarea
@@ -421,11 +417,11 @@ function PprOperatingInstructionsEditor({ initial, labels, landingFee }: PprOper
             maxLength={2000}
             value={it}
             onChange={(event) => setIt(event.target.value)}
-            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-ink"
           />
         </div>
         <div>
-          <label htmlFor="ppr-instructions-en" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-instructions-en" className="block text-sm font-medium text-ink">
             {labels.en}
           </label>
           <textarea
@@ -435,7 +431,7 @@ function PprOperatingInstructionsEditor({ initial, labels, landingFee }: PprOper
             maxLength={2000}
             value={en}
             onChange={(event) => setEn(event.target.value)}
-            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-ink"
           />
         </div>
       </div>
@@ -447,18 +443,17 @@ function PprOperatingInstructionsEditor({ initial, labels, landingFee }: PprOper
       ) : null}
 
       <div className="mt-4">
-        <button
+        <Button
           type="button"
           disabled={saving}
           onClick={() => void save()}
           data-testid="ppr-instructions-save"
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {labels.save}
-        </button>
+        </Button>
       </div>
 
-      <div className="mt-8 border-t border-[#EAEAEA] pt-6">
+      <div className="mt-8 border-t border-hairline pt-6">
         <LandingFeeEditor initialCents={landingFee.initialCents} labels={landingFee.labels} />
       </div>
     </section>
@@ -523,14 +518,14 @@ function LandingFeeEditor({ initialCents, labels }: LandingFeeEditorProps) {
 
   return (
     <div data-testid="ppr-landing-fee-editor">
-      <h3 className="font-[family-name:var(--font-serif)] text-lg font-medium tracking-[-0.02em] text-[#111111]">{labels.heading}</h3>
-      <p className="mt-1 text-sm text-[#787774]">{labels.description}</p>
+      <h3 className="text-lg font-semibold tracking-[-0.02em] text-ink">{labels.heading}</h3>
+      <p className="mt-1 text-sm text-mid-gray">{labels.description}</p>
 
       <div className="mt-4">
-        <label htmlFor="ppr-landing-fee-amount" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="ppr-landing-fee-amount" className="block text-sm font-medium text-ink">
           {labels.amountLabel}
         </label>
-        <input
+        <Input
           id="ppr-landing-fee-amount"
           data-testid="ppr-landing-fee-amount"
           inputMode="decimal"
@@ -538,10 +533,10 @@ function LandingFeeEditor({ initialCents, labels }: LandingFeeEditorProps) {
           aria-invalid={fieldError}
           value={amount}
           onChange={(event) => setAmount(event.target.value)}
-          className="mt-2 w-full max-w-[200px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full max-w-[200px]"
         />
         {fieldError ? (
-          <p role="alert" className="mt-1 text-xs text-[#9F2F2D]">
+          <p role="alert" className="mt-1 text-xs text-ember">
             {labels.invalidAmount}
           </p>
         ) : null}
@@ -554,15 +549,14 @@ function LandingFeeEditor({ initialCents, labels }: LandingFeeEditorProps) {
       ) : null}
 
       <div className="mt-4">
-        <button
+        <Button
           type="button"
           disabled={saving}
           onClick={() => void save()}
           data-testid="ppr-landing-fee-save"
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {labels.save}
-        </button>
+        </Button>
       </div>
     </div>
   );

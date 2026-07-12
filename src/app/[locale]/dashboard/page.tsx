@@ -26,6 +26,7 @@ import {
 } from '@/server/services/school.service';
 import { ExpiryStatusBadge } from './expiries/expiry-status-badge';
 import { visibleNavItems } from './nav-items';
+import { Button } from '@/components/ui/button';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -61,18 +62,18 @@ function WidgetCard({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid={testId}>
+    <section className="rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid={testId}>
       <div className="flex items-center justify-between gap-4">
-        <p className="text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
           {heading}
           {countLabel ? <> &middot; {countLabel}</> : null}
         </p>
-        <Link href={linkHref} className="text-sm font-medium text-[#2F3437] underline-offset-4 hover:underline">
+        <Link href={linkHref} className="text-sm font-medium text-ink underline-offset-4 hover:underline">
           {linkLabel}
         </Link>
       </div>
       {isEmpty && emptyLabel ? (
-        <p className="mt-4 text-sm text-[#787774]" data-testid={`${testId}-empty`}>
+        <p className="mt-4 text-sm text-mid-gray" data-testid={`${testId}-empty`}>
           {emptyLabel}
         </p>
       ) : (
@@ -247,32 +248,31 @@ export default async function DashboardPage({ params }: PageProps) {
     <main className="flex-1 px-6 py-16 sm:px-16">
       <div className="mx-auto max-w-5xl">
         <div className="flex items-center justify-between">
-          <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+          <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
             {t('kicker')}
           </span>
           <form action={logoutAction}>
-            <button
+            <Button variant="outline"
               type="submit"
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {t('logout')}
-            </button>
+            </Button>
           </form>
         </div>
 
-        <h1 className="mt-6 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+        <h1 className="mt-6 text-4xl font-semibold tracking-[-0.02em] text-ink">
           {t('welcome', { name: displayName })}
         </h1>
-        <p className="mt-4 max-w-xl text-base leading-[1.6] text-[#787774]">{t('subtitle')}</p>
+        <p className="mt-4 max-w-xl text-base leading-[1.6] text-mid-gray">{t('subtitle')}</p>
 
         <nav className="mt-10" aria-label={t('navHeading')}>
-          <p className="text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">{t('navHeading')}</p>
+          <p className="text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">{t('navHeading')}</p>
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {navItems.map((item) => (
               <Link
                 key={item.key}
                 href={item.href}
-                className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                className="rounded-nested border border-hairline bg-paper px-4 py-3 text-sm font-medium text-ink transition-colors hover:bg-canvas"
               >
                 {t(`nav.${item.key}`)}
               </Link>
@@ -280,7 +280,7 @@ export default async function DashboardPage({ params }: PageProps) {
             {ownPersonHref ? (
               <Link
                 href={ownPersonHref}
-                className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                className="rounded-nested border border-hairline bg-paper px-4 py-3 text-sm font-medium text-ink transition-colors hover:bg-canvas"
               >
                 {t('myProfile')}
               </Link>
@@ -288,7 +288,7 @@ export default async function DashboardPage({ params }: PageProps) {
             {ownAccountHref ? (
               <Link
                 href={ownAccountHref}
-                className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                className="rounded-nested border border-hairline bg-paper px-4 py-3 text-sm font-medium text-ink transition-colors hover:bg-canvas"
               >
                 {t('myAccount')}
               </Link>
@@ -296,7 +296,7 @@ export default async function DashboardPage({ params }: PageProps) {
             {ownDiaryHref ? (
               <Link
                 href={ownDiaryHref}
-                className="rounded-[8px] border border-[#EAEAEA] bg-white px-4 py-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                className="rounded-nested border border-hairline bg-paper px-4 py-3 text-sm font-medium text-ink transition-colors hover:bg-canvas"
               >
                 {t('myDiary')}
               </Link>
@@ -317,14 +317,14 @@ export default async function DashboardPage({ params }: PageProps) {
                 isEmpty={pendingPprRequests.items.length === 0}
                 emptyLabel={t('pprPendingWidget.empty')}
               >
-                <div className="divide-y divide-[#EAEAEA]">
+                <div className="divide-y divide-hairline">
                   {pendingPprRequests.items.map((request) => (
                     <div key={request.id} data-testid="ppr-pending-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
                       <div>
-                        <p className="text-sm font-medium text-[#111111]">
+                        <p className="text-sm font-medium text-ink">
                           {request.firstName} {request.lastName} &middot; {request.aircraftRegistration}
                         </p>
-                        <p className="text-xs text-[#787774]">{formatDateTime(request.eta, displayLocale)}</p>
+                        <p className="text-xs text-mid-gray">{formatDateTime(request.eta, displayLocale)}</p>
                       </div>
                     </div>
                   ))}
@@ -342,10 +342,10 @@ export default async function DashboardPage({ params }: PageProps) {
                 isEmpty={topNegativeBalances.length === 0}
                 emptyLabel={t('negativeBalancesWidget.empty')}
               >
-                <div className="divide-y divide-[#EAEAEA]">
+                <div className="divide-y divide-hairline">
                   {topNegativeBalances.map((item) => (
                     <div key={item.personId} data-testid="negative-balances-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                      <p className="text-sm font-medium text-[#111111]">
+                      <p className="text-sm font-medium text-ink">
                         {item.lastName} {item.firstName}
                       </p>
                       <p className="text-sm font-medium text-[#9F2F2D]">{formatCents(item.balanceCents, displayLocale)}</p>
@@ -365,14 +365,14 @@ export default async function DashboardPage({ params }: PageProps) {
                 isEmpty={staffExpiries.length === 0}
                 emptyLabel={t('expiriesWidget.empty')}
               >
-                <div className="divide-y divide-[#EAEAEA]">
+                <div className="divide-y divide-hairline">
                   {staffExpiries.map((expiry) => (
                     <div key={expiry.id} data-testid="staff-expiries-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
                       <div>
-                        <p className="text-sm font-medium text-[#111111]">
+                        <p className="text-sm font-medium text-ink">
                           {expiry.personLastName} {expiry.personFirstName} &middot; {expiry.typeName}
                         </p>
-                        <p className="text-xs text-[#787774]">{formatDateOnly(expiry.expiresAt, displayLocale)}</p>
+                        <p className="text-xs text-mid-gray">{formatDateOnly(expiry.expiresAt, displayLocale)}</p>
                       </div>
                       <ExpiryStatusBadge status={expiry.status} label={expiryStatusLabels[expiry.status]} />
                     </div>
@@ -390,14 +390,14 @@ export default async function DashboardPage({ params }: PageProps) {
                 isEmpty={todayTomorrowBookings.length === 0}
                 emptyLabel={t('bookingsTodayWidget.empty')}
               >
-                <div className="divide-y divide-[#EAEAEA]">
+                <div className="divide-y divide-hairline">
                   {todayTomorrowBookings.map((booking) => (
                     <div key={booking.id} data-testid="bookings-today-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
                       <div>
-                        <p className="text-sm font-medium text-[#111111]">
+                        <p className="text-sm font-medium text-ink">
                           {booking.personName} &middot; {booking.aircraftRegistration}
                         </p>
-                        <p className="text-xs text-[#787774]">
+                        <p className="text-xs text-mid-gray">
                           {formatDateTime(booking.startsAt, displayLocale)} &rarr; {formatTimeOfDay(booking.endsAt, displayLocale)}
                         </p>
                       </div>
@@ -416,14 +416,14 @@ export default async function DashboardPage({ params }: PageProps) {
                 isEmpty={outOfServiceAircraft.length === 0}
                 emptyLabel={t('aircraftOutOfServiceWidget.empty')}
               >
-                <div className="divide-y divide-[#EAEAEA]">
+                <div className="divide-y divide-hairline">
                   {outOfServiceAircraft.map((aircraft) => (
                     <div key={aircraft.id} data-testid="aircraft-out-of-service-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
                       <div>
-                        <p className="text-sm font-medium text-[#111111]">
+                        <p className="text-sm font-medium text-ink">
                           {aircraft.registration} &middot; {aircraft.model}
                         </p>
-                        <p className="text-xs text-[#787774]">{aircraft.statusReason}</p>
+                        <p className="text-xs text-mid-gray">{aircraft.statusReason}</p>
                       </div>
                     </div>
                   ))}
@@ -445,7 +445,7 @@ export default async function DashboardPage({ params }: PageProps) {
               emptyLabel={t('accountWidget.empty')}
             >
               <p
-                className={`text-2xl font-medium ${accountOverview && accountOverview.balanceCents < 0 ? 'text-[#9F2F2D]' : 'text-[#111111]'}`}
+                className={`text-2xl font-medium ${accountOverview && accountOverview.balanceCents < 0 ? 'text-[#9F2F2D]' : 'text-ink'}`}
                 data-testid="account-widget-balance"
               >
                 {formatCents(accountOverview?.balanceCents ?? 0, displayLocale)}
@@ -458,7 +458,7 @@ export default async function DashboardPage({ params }: PageProps) {
               linkHref={`/dashboard/people/${personId}/account`}
               linkLabel={t('packagesWidget.link')}
             >
-              <p className="text-2xl font-medium text-[#111111]" data-testid="packages-widget-remaining">
+              <p className="text-2xl font-medium text-ink" data-testid="packages-widget-remaining">
                 {formatMinutes(totalRemainingMinutes)}
               </p>
             </WidgetCard>
@@ -471,11 +471,11 @@ export default async function DashboardPage({ params }: PageProps) {
               isEmpty={(upcomingBookings?.items.length ?? 0) === 0}
               emptyLabel={t('upcomingBookingsWidget.empty')}
             >
-              <div className="divide-y divide-[#EAEAEA]">
+              <div className="divide-y divide-hairline">
                 {(upcomingBookings?.items ?? []).map((booking) => (
                   <div key={booking.id} data-testid="upcoming-bookings-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                    <p className="text-sm font-medium text-[#111111]">{booking.aircraftRegistration}</p>
-                    <p className="text-xs text-[#787774]">{formatDateTime(booking.startsAt, displayLocale)}</p>
+                    <p className="text-sm font-medium text-ink">{booking.aircraftRegistration}</p>
+                    <p className="text-xs text-mid-gray">{formatDateTime(booking.startsAt, displayLocale)}</p>
                   </div>
                 ))}
               </div>
@@ -489,12 +489,12 @@ export default async function DashboardPage({ params }: PageProps) {
               isEmpty={myExpiries.length === 0}
               emptyLabel={t('myExpiries.empty')}
             >
-              <div className="divide-y divide-[#EAEAEA]">
+              <div className="divide-y divide-hairline">
                 {myExpiries.map((expiry) => (
                   <div key={expiry.id} data-testid="my-expiries-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
                     <div>
-                      <p className="text-sm font-medium text-[#111111]">{expiry.typeName}</p>
-                      <p className="text-xs text-[#787774]">{formatDateOnly(expiry.expiresAt, displayLocale)}</p>
+                      <p className="text-sm font-medium text-ink">{expiry.typeName}</p>
+                      <p className="text-xs text-mid-gray">{formatDateOnly(expiry.expiresAt, displayLocale)}</p>
                     </div>
                     <ExpiryStatusBadge status={expiry.status} label={expiryStatusLabels[expiry.status]} data-testid="my-expiries-widget-badge" />
                   </div>
@@ -510,11 +510,11 @@ export default async function DashboardPage({ params }: PageProps) {
               isEmpty={(recentFlights?.items.length ?? 0) === 0}
               emptyLabel={t('recentFlightsWidget.empty')}
             >
-              <div className="divide-y divide-[#EAEAEA]">
+              <div className="divide-y divide-hairline">
                 {(recentFlights?.items ?? []).map((flight) => (
                   <div key={flight.id} data-testid="recent-flights-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                    <p className="text-sm font-medium text-[#111111]">{flight.aircraft.registration}</p>
-                    <p className="text-xs text-[#787774]">
+                    <p className="text-sm font-medium text-ink">{flight.aircraft.registration}</p>
+                    <p className="text-xs text-mid-gray">
                       {formatDateOnly(flight.flightDate, displayLocale)} &middot; {formatMinutes(flight.minutes)}
                     </p>
                   </div>
@@ -535,13 +535,13 @@ export default async function DashboardPage({ params }: PageProps) {
               isEmpty={ownStudents.length === 0}
               emptyLabel={t('studentsWidget.empty')}
             >
-              <div className="divide-y divide-[#EAEAEA]">
+              <div className="divide-y divide-hairline">
                 {ownStudents.map((student) => (
                   <div key={student.personId} data-testid="students-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                    <p className="text-sm font-medium text-[#111111]">
+                    <p className="text-sm font-medium text-ink">
                       {student.lastName} {student.firstName}
                     </p>
-                    <p className="text-xs text-[#787774]">{formatMinutes(student.totalMinutes)}</p>
+                    <p className="text-xs text-mid-gray">{formatMinutes(student.totalMinutes)}</p>
                   </div>
                 ))}
               </div>
@@ -555,13 +555,13 @@ export default async function DashboardPage({ params }: PageProps) {
               isEmpty={(schoolFlights?.items.length ?? 0) === 0}
               emptyLabel={t('schoolFlightsWidget.empty')}
             >
-              <div className="divide-y divide-[#EAEAEA]">
+              <div className="divide-y divide-hairline">
                 {(schoolFlights?.items ?? []).map((flight) => (
                   <div key={flight.id} data-testid="school-flights-widget-row" className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                    <p className="text-sm font-medium text-[#111111]">
+                    <p className="text-sm font-medium text-ink">
                       {flight.person.lastName} {flight.person.firstName}
                     </p>
-                    <p className="text-xs text-[#787774]">
+                    <p className="text-xs text-mid-gray">
                       {formatDateOnly(flight.flightDate, displayLocale)} &middot; {formatMinutes(flight.minutes)}
                     </p>
                   </div>
@@ -569,8 +569,8 @@ export default async function DashboardPage({ params }: PageProps) {
               </div>
             </WidgetCard>
 
-            <section className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="monthly-hours-widget">
-              <p className="text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">{t('monthlyHoursWidget.heading')}</p>
+            <section className="rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="monthly-hours-widget">
+              <p className="text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">{t('monthlyHoursWidget.heading')}</p>
               <p className="mt-4 text-2xl font-medium text-[#346538]" data-testid="monthly-hours-widget-value">
                 {formatMinutes(ownMonthlyMinutes)}
               </p>

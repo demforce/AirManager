@@ -1,6 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { AppLocale } from '@/i18n/routing';
 import { SetPasswordForm } from './set-password-form';
+import { Card } from '@/components/ui/card';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -23,16 +24,16 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
   return (
     <main className="flex flex-1 items-center justify-center px-6 py-24 sm:px-16">
       <div className="w-full max-w-md">
-        <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+        <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
           {t('kicker')}
         </span>
 
-        <h1 className="mt-6 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+        <h1 className="mt-6 text-4xl font-semibold tracking-[-0.02em] text-ink">
           {t('title')}
         </h1>
-        <p className="mt-3 text-base leading-[1.6] text-[#787774]">{t('description')}</p>
+        <p className="mt-3 text-base leading-[1.6] text-mid-gray">{t('description')}</p>
 
-        <div className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-8">
+        <Card className="mt-10 p-8">
           {token ? (
             <SetPasswordForm
               token={token}
@@ -53,12 +54,12 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
             <p
               role="alert"
               data-testid="set-password-missing-token"
-              className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]"
+              className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember"
             >
               {t('missingToken')}
             </p>
           )}
-        </div>
+        </Card>
       </div>
     </main>
   );

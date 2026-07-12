@@ -9,6 +9,10 @@ import type { ExpiryTypeItemDto } from '@/lib/schemas/expiry-types';
 import type { ExpiryItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { formatDateOnly } from '@/lib/time';
 import { ExpiryStatusBadge } from '../expiries/expiry-status-badge';
+import { Button } from '@/components/ui/button';
+import { inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
+import { Card } from '@/components/ui/card';
 
 export type ExpiriesPanelLabels = {
   heading: string;
@@ -156,17 +160,17 @@ export function ExpiriesPanel({ personId, canManage, activeProfiles, labels }: E
   }
 
   return (
-    <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="expiries-panel">
+    <Card className="p-6" data-testid="expiries-panel">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{labels.heading}</h3>
+        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">{labels.heading}</h3>
         {canManage && !formOpen ? (
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={() => setFormOpen(true)}
-            className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            className="min-h-[44px]"
           >
             {labels.addAction}
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -189,13 +193,13 @@ export function ExpiriesPanel({ personId, canManage, activeProfiles, labels }: E
       ) : null}
 
       <div className="mt-6">
-        {loadError ? <p className="text-sm text-[#9F2F2D]">{labels.loadError}</p> : null}
-        {!loadError && expiries !== null && expiries.length === 0 ? <p className="text-sm text-[#787774]">{labels.empty}</p> : null}
+        {loadError ? <p className="text-sm text-ember">{labels.loadError}</p> : null}
+        {!loadError && expiries !== null && expiries.length === 0 ? <p className="text-sm text-mid-gray">{labels.empty}</p> : null}
         {!loadError && expiries !== null && expiries.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
-                <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+                <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
                   <th className="py-2 pr-4 font-medium">{labels.table.type}</th>
                   <th className="py-2 pr-4 font-medium">{labels.table.issuedAt}</th>
                   <th className="py-2 pr-4 font-medium">{labels.table.expiresAt}</th>
@@ -226,7 +230,7 @@ export function ExpiriesPanel({ personId, canManage, activeProfiles, labels }: E
           </div>
         ) : null}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -261,7 +265,7 @@ function ExpiryRow({
 
   if (isEditing) {
     return (
-      <tr data-testid="expiry-row-editing" className="border-b border-[#EAEAEA]">
+      <tr data-testid="expiry-row-editing" className="border-b border-hairline">
         <td colSpan={canManage ? 6 : 5} className="py-4">
           <EditExpiryRowForm expiry={expiry} labels={labels.form} onCancel={onCancelEdit} onSuccess={onSaved} />
         </td>
@@ -270,7 +274,7 @@ function ExpiryRow({
   }
 
   return (
-    <tr data-testid="expiry-row" className="border-b border-[#EAEAEA] align-top text-[#111111]">
+    <tr data-testid="expiry-row" className="border-b border-hairline align-top text-ink">
       <td className="py-3 pr-4">
         <span className="font-medium">{expiry.typeName}</span>
         {expiry.pendingProposal ? (
@@ -287,43 +291,39 @@ function ExpiryRow({
       <td className="py-3 pr-4">
         <ExpiryStatusBadge status={expiry.status} label={labels.table.status[expiry.status]} data-testid="expiry-status-badge" />
       </td>
-      <td className="py-3 pr-4 text-[#787774]">{expiry.notes ?? labels.table.noNotes}</td>
+      <td className="py-3 pr-4 text-mid-gray">{expiry.notes ?? labels.table.noNotes}</td>
       {canManage ? (
         <td className="py-3">
           {isConfirmingDelete ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[#787774]">{labels.actions.confirmDelete}</span>
-              <button
+              <span className="text-xs text-mid-gray">{labels.actions.confirmDelete}</span>
+              <Button size="sm"
                 type="button"
                 onClick={onConfirmDelete}
-                className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333]"
               >
                 {labels.actions.confirmYes}
-              </button>
-              <button
+              </Button>
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={onCancelDelete}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.actions.confirmCancel}
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={onEdit}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.form.edit}
-              </button>
-              <button
+              </Button>
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={onRequestDelete}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.actions.delete}
-              </button>
+              </Button>
             </div>
           )}
         </td>
@@ -428,20 +428,19 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
   }
 
   const noCompatibleTypes = types !== null && types.length === 0;
-  const inputClasses =
-    'mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437] disabled:cursor-not-allowed disabled:bg-[#F7F6F3]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[44px] w-full');
 
   return (
     <form
       onSubmit={(event) => void handleSubmit(onSubmit)(event)}
       noValidate
-      className="space-y-4 rounded-[8px] border border-[#EAEAEA] p-4"
+      className="space-y-4 rounded-nested border border-hairline p-4"
       data-testid="register-expiry-form"
     >
-      <h4 className="text-base font-medium text-[#111111]">{labels.title}</h4>
+      <h4 className="text-base font-medium text-ink">{labels.title}</h4>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="expiry-type" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="expiry-type" className="block text-sm font-medium text-ink">
             {labels.type}
           </label>
           <select id="expiry-type" aria-invalid={Boolean(errors.expiryTypeId)} disabled={noCompatibleTypes} className={inputClasses} {...register('expiryTypeId')}>
@@ -454,25 +453,25 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
               </option>
             ))}
           </select>
-          {noCompatibleTypes ? <p className="mt-1 text-xs text-[#787774]">{labels.noCompatibleTypes}</p> : null}
-          {errors.expiryTypeId ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {noCompatibleTypes ? <p className="mt-1 text-xs text-mid-gray">{labels.noCompatibleTypes}</p> : null}
+          {errors.expiryTypeId ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="expiry-issued-at" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="expiry-issued-at" className="block text-sm font-medium text-ink">
             {labels.issuedAt}
           </label>
           <input id="expiry-issued-at" type="date" aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
-          {errors.issuedAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.issuedAt ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="expiry-expires-at" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="expiry-expires-at" className="block text-sm font-medium text-ink">
             {labels.expiresAt}
           </label>
           <input id="expiry-expires-at" type="date" aria-invalid={Boolean(errors.expiresAt)} className={inputClasses} {...register('expiresAt')} />
-          {errors.expiresAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidRange}</p> : null}
+          {errors.expiresAt ? <p className="mt-1 text-xs text-ember">{labels.invalidRange}</p> : null}
         </div>
         <div>
-          <label htmlFor="expiry-notes" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="expiry-notes" className="block text-sm font-medium text-ink">
             {labels.notes}
           </label>
           <input id="expiry-notes" maxLength={500} className={inputClasses} {...register('notes')} />
@@ -480,26 +479,26 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="register-expiry-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="register-expiry-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting || noCompatibleTypes}
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[44px]"
         >
           {labels.submit}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[44px]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -561,8 +560,7 @@ function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRo
     onSuccess();
   }
 
-  const inputClasses =
-    'mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[44px] w-full');
 
   return (
     <form
@@ -572,13 +570,13 @@ function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRo
       data-testid="edit-expiry-form"
     >
       <div>
-        <label htmlFor={`edit-issued-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`edit-issued-at-${expiry.id}`} className="block text-sm font-medium text-ink">
           {labels.issuedAt}
         </label>
         <input id={`edit-issued-at-${expiry.id}`} type="date" aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
       </div>
       <div>
-        <label htmlFor={`edit-expires-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`edit-expires-at-${expiry.id}`} className="block text-sm font-medium text-ink">
           {labels.expiresAt}
         </label>
         <input
@@ -588,36 +586,36 @@ function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRo
           className={inputClasses}
           {...register('expiresAt')}
         />
-        {errors.expiresAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidRange}</p> : null}
+        {errors.expiresAt ? <p className="mt-1 text-xs text-ember">{labels.invalidRange}</p> : null}
       </div>
       <div className="sm:col-span-2">
-        <label htmlFor={`edit-notes-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`edit-notes-${expiry.id}`} className="block text-sm font-medium text-ink">
           {labels.notes}
         </label>
         <input id={`edit-notes-${expiry.id}`} maxLength={500} className={inputClasses} {...register('notes')} />
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="edit-expiry-form-error" className="sm:col-span-2 rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="edit-expiry-form-error" className="sm:col-span-2 rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3 sm:col-span-2">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[44px]"
         >
           {labels.save}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[44px]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

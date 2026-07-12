@@ -11,6 +11,9 @@ import { formatDateOnly } from '@/lib/time';
 import { paymentMethodSchema, type AccountMovementListItemDto, type AccountOverviewDto } from '@/lib/schemas/accounts';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { useAccountRefresh } from './account-refresh-context';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
 
 export type AccountPanelLabels = {
   heading: string;
@@ -124,28 +127,27 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
   }, [personId, version]);
 
   return (
-    <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="account-panel">
+    <Card className="p-6" data-testid="account-panel">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{labels.heading}</h3>
+        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">{labels.heading}</h3>
         {canManageFinance && !formOpen ? (
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={() => setFormOpen(true)}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
           >
             {labels.topUp.action}
-          </button>
+          </Button>
         ) : null}
       </div>
 
-      {loading ? <p className="mt-6 text-sm text-[#787774]">…</p> : null}
-      {loadError ? <p className="mt-6 text-sm text-[#9F2F2D]">{labels.loadError}</p> : null}
+      {loading ? <p className="mt-6 text-sm text-mid-gray">…</p> : null}
+      {loadError ? <p className="mt-6 text-sm text-ember">{labels.loadError}</p> : null}
 
       {!loading && !loadError && overview ? (
         <div className="mt-6 space-y-6">
           <div>
-            <span className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.balanceLabel}</span>
-            <p data-testid="account-balance" className="mt-1 text-2xl font-medium text-[#111111]">
+            <span className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.balanceLabel}</span>
+            <p data-testid="account-balance" className="mt-1 text-2xl font-medium text-ink">
               {overview.account ? formatCents(overview.balanceCents, moneyLocale) : labels.noAccount}
             </p>
           </div>
@@ -164,18 +166,18 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
 
           <div>
             <div className="flex items-center justify-between gap-4">
-              <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.recentTitle}</h4>
+              <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.recentTitle}</h4>
               <Link
                 href={`/dashboard/people/${personId}/account`}
-                className="text-xs font-medium text-[#2F3437] underline-offset-4 hover:underline"
+                className="text-xs font-medium text-ink underline-offset-4 hover:underline"
               >
                 {labels.viewStatement}
               </Link>
             </div>
             {overview.recentMovements.length === 0 ? (
-              <p className="mt-3 text-sm text-[#787774]">{labels.recentEmpty}</p>
+              <p className="mt-3 text-sm text-mid-gray">{labels.recentEmpty}</p>
             ) : (
-              <ul className="mt-3 divide-y divide-[#EAEAEA]">
+              <ul className="mt-3 divide-y divide-hairline">
                 {overview.recentMovements.map((movement) => (
                   <li
                     key={movement.id}
@@ -183,8 +185,8 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
                     className="flex items-center justify-between gap-4 py-2 text-sm"
                   >
                     <div>
-                      <p className="text-[#111111]">{movementTypeLabel(movement.type, labels.movementType)}</p>
-                      <p className="text-xs text-[#787774]">{formatDateOnly(movement.effectiveDate, moneyLocale)}</p>
+                      <p className="text-ink">{movementTypeLabel(movement.type, labels.movementType)}</p>
+                      <p className="text-xs text-mid-gray">{formatDateOnly(movement.effectiveDate, moneyLocale)}</p>
                     </div>
                     <span
                       className={`font-[family-name:var(--font-mono,monospace)] ${
@@ -200,7 +202,7 @@ export function AccountPanel({ personId, canManageFinance, labels }: AccountPane
           </div>
         </div>
       ) : null}
-    </div>
+    </Card>
   );
 }
 
@@ -299,32 +301,32 @@ function TopUpForm({ personId, labels, onCancel, onSuccess }: TopUpFormProps) {
     <form
       onSubmit={(event) => void handleSubmit(onSubmit)(event)}
       noValidate
-      className="space-y-4 rounded-[8px] border border-[#EAEAEA] p-4"
+      className="space-y-4 rounded-nested border border-hairline p-4"
       data-testid="account-topup-form"
     >
-      <h4 className="text-base font-medium text-[#111111]">{labels.title}</h4>
+      <h4 className="text-base font-medium text-ink">{labels.title}</h4>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="topup-amount" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="topup-amount" className="block text-sm font-medium text-ink">
             {labels.amount}
           </label>
-          <input
+          <Input
             id="topup-amount"
             inputMode="decimal"
             placeholder="0,00"
             aria-invalid={Boolean(errors.amount)}
-            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-full"
             {...register('amount')}
           />
-          {errors.amount ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidAmount}</p> : null}
+          {errors.amount ? <p className="mt-1 text-xs text-ember">{labels.invalidAmount}</p> : null}
         </div>
         <div>
-          <label htmlFor="topup-payment-method" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="topup-payment-method" className="block text-sm font-medium text-ink">
             {labels.paymentMethod}
           </label>
           <select
             id="topup-payment-method"
-            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink"
             {...register('paymentMethod')}
           >
             <option value="CASH">{labels.paymentMethods.cash}</option>
@@ -333,52 +335,50 @@ function TopUpForm({ personId, labels, onCancel, onSuccess }: TopUpFormProps) {
           </select>
         </div>
         <div>
-          <label htmlFor="topup-effective-date" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="topup-effective-date" className="block text-sm font-medium text-ink">
             {labels.effectiveDate}
           </label>
-          <input
+          <Input
             id="topup-effective-date"
             type="date"
             aria-invalid={Boolean(errors.effectiveDate)}
-            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-full"
             {...register('effectiveDate')}
           />
-          {errors.effectiveDate ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.effectiveDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="topup-description" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="topup-description" className="block text-sm font-medium text-ink">
             {labels.description}
           </label>
-          <input
+          <Input
             id="topup-description"
             maxLength={500}
-            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-full"
             {...register('description')}
           />
         </div>
       </div>
 
       {formError ? (
-        <p role="alert" className="text-sm text-[#9F2F2D]">
+        <p role="alert" className="text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {labels.submit}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

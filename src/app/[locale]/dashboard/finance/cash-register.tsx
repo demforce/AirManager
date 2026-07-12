@@ -12,6 +12,10 @@ import { buildExportHref } from '@/lib/export-href';
 import { formatSignedCents, parseCents } from '@/lib/money';
 import { formatDateOnly } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { Button } from '@/components/ui/button';
+import { Input, inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
+import { Card } from '@/components/ui/card';
 
 export type CashMovementRow = {
   id: string;
@@ -211,22 +215,21 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
       header: labels.table.actions,
       cell: ({ row }) =>
         row.original.hasReversal || row.original.reversalOfId !== null || row.original.isAutomatic ? null : (
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={() => {
               setReversing(row.original);
               setPanelOpen(false);
             }}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
           >
             {labels.reverse.action}
-          </button>
+          </Button>
         ),
     },
   ];
 
   const selectClasses =
-    'rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+    'rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-ink';
 
   // Story 10.1 (AC 5): built from the LIVE filter state (`filters`) on every render.
   const exportHref = buildExportHref(
@@ -247,16 +250,15 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
         )}
         <div className="flex gap-3">
           <ExportButton href={exportHref} label={exportLabel} testId="cash-export-button" />
-          <button
+          <Button
             type="button"
             onClick={() => {
               setPanelOpen(true);
               setReversing(null);
             }}
-            className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
           >
             {labels.newMovement}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -271,7 +273,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
             file's `NewMovementForm`/`ReverseForm` below (`cash-category`
             etc.); the layout classes move to a wrapping `<div>` so the
             visual result stays identical. */}
-        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+        <div className="flex flex-col gap-2 text-sm text-ink">
           <label htmlFor="cash-filter-from">{labels.filters.from}</label>
           <input
             id="cash-filter-from"
@@ -282,7 +284,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
             data-testid="cash-filter-from"
           />
         </div>
-        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+        <div className="flex flex-col gap-2 text-sm text-ink">
           <label htmlFor="cash-filter-to">{labels.filters.to}</label>
           <input
             id="cash-filter-to"
@@ -293,7 +295,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
             data-testid="cash-filter-to"
           />
         </div>
-        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+        <div className="flex flex-col gap-2 text-sm text-ink">
           <label htmlFor="cash-filter-category">{labels.filters.category}</label>
           <select
             id="cash-filter-category"
@@ -310,7 +312,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
             ))}
           </select>
         </div>
-        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+        <div className="flex flex-col gap-2 text-sm text-ink">
           <label htmlFor="cash-filter-sign">{labels.filters.sign}</label>
           <select
             id="cash-filter-sign"
@@ -327,7 +329,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
       </div>
 
       {panelOpen ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <NewMovementForm
             // System categories (e.g. "Ricariche") are written only by their
             // automatic flow — the service rejects them anyway (review 3.4 F1).
@@ -336,11 +338,11 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
             onCancel={() => setPanelOpen(false)}
             onSuccess={() => handleSuccess(labels.form.success)}
           />
-        </div>
+        </Card>
       ) : null}
 
       {reversing ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <ReverseForm
             // Remount when the target row changes — react-hook-form reads
             // defaultValues only at mount (review 2.4 F1 pattern).
@@ -351,7 +353,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
             onCancel={() => setReversing(null)}
             onSuccess={() => handleSuccess(labels.reverse.success)}
           />
-        </div>
+        </Card>
       ) : null}
 
       <div className="mt-6" data-testid="cash-register-table">
@@ -457,15 +459,14 @@ function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovemen
     onSuccess();
   }
 
-  const inputClasses =
-    'mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 w-full');
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4" data-testid="cash-movement-form">
-      <h4 className="text-base font-medium text-[#111111]">{labels.title}</h4>
+      <h4 className="text-base font-medium text-ink">{labels.title}</h4>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="cash-direction" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="cash-direction" className="block text-sm font-medium text-ink">
             {labels.direction}
           </label>
           <select id="cash-direction" className={inputClasses} {...register('direction')}>
@@ -474,7 +475,7 @@ function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovemen
           </select>
         </div>
         <div>
-          <label htmlFor="cash-category" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="cash-category" className="block text-sm font-medium text-ink">
             {labels.category}
           </label>
           <select id="cash-category" aria-invalid={Boolean(errors.categoryId)} className={inputClasses} {...register('categoryId')}>
@@ -484,10 +485,10 @@ function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovemen
               </option>
             ))}
           </select>
-          {errors.categoryId ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.categoryId ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="cash-amount" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="cash-amount" className="block text-sm font-medium text-ink">
             {labels.amount}
           </label>
           <input
@@ -498,11 +499,11 @@ function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovemen
             className={inputClasses}
             {...register('amount')}
           />
-          <p className="mt-1 text-xs text-[#787774]">{labels.amountHint}</p>
-          {errors.amount ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidAmount}</p> : null}
+          <p className="mt-1 text-xs text-mid-gray">{labels.amountHint}</p>
+          {errors.amount ? <p className="mt-1 text-xs text-ember">{labels.invalidAmount}</p> : null}
         </div>
         <div>
-          <label htmlFor="cash-effective-date" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="cash-effective-date" className="block text-sm font-medium text-ink">
             {labels.effectiveDate}
           </label>
           <input
@@ -512,37 +513,35 @@ function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovemen
             className={inputClasses}
             {...register('effectiveDate')}
           />
-          {errors.effectiveDate ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.effectiveDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
       </div>
       <div>
-        <label htmlFor="cash-description" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="cash-description" className="block text-sm font-medium text-ink">
           {labels.description}
         </label>
         <input id="cash-description" maxLength={500} className={inputClasses} {...register('description')} />
       </div>
 
       {formError ? (
-        <p role="alert" className="text-sm text-[#9F2F2D]">
+        <p role="alert" className="text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {labels.submit}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -599,44 +598,42 @@ function ReverseForm({ movement, moneyLocale, labels, onCancel, onSuccess }: Rev
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4" data-testid="cash-reverse-form">
       <div>
-        <h4 className="text-base font-medium text-[#111111]">
+        <h4 className="text-base font-medium text-ink">
           {labels.action} — {formatDateOnly(movement.effectiveDate, moneyLocale)}, {formatSignedCents(movement.amountCents, moneyLocale)}
         </h4>
       </div>
       <div>
-        <label htmlFor="cash-reverse-reason" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="cash-reverse-reason" className="block text-sm font-medium text-ink">
           {labels.reason}
         </label>
-        <input
+        <Input
           id="cash-reverse-reason"
           aria-invalid={Boolean(errors.reason)}
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full"
           {...register('reason')}
         />
-        {errors.reason ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredReason}</p> : null}
+        {errors.reason ? <p className="mt-1 text-xs text-ember">{labels.requiredReason}</p> : null}
       </div>
 
       {formError ? (
-        <p role="alert" className="text-sm text-[#9F2F2D]">
+        <p role="alert" className="text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {labels.confirm}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

@@ -5,6 +5,10 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { AppLocale } from '@/i18n/routing';
+import { Button } from '@/components/ui/button';
+import { inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
+import { Card } from '@/components/ui/card';
 
 export type PprFormLabels = {
   firstName: string;
@@ -229,21 +233,20 @@ export function PprForm({ locale, labels }: PprFormProps) {
     setSuccess(true);
   }
 
-  const inputClasses =
-    'mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[44px] w-full');
 
   if (success) {
     return (
-      <div
+      <Card
         role="status"
         data-testid="ppr-success"
-        className="rounded-[12px] border border-[#EAEAEA] bg-white p-8"
+        className="p-8"
       >
-        <p className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+        <p className="text-2xl font-semibold tracking-[-0.02em] text-ink">
           {labels.success.title}
         </p>
-        <p className="mt-3 text-base leading-[1.6] text-[#787774]">{labels.success.message}</p>
-      </div>
+        <p className="mt-3 text-base leading-[1.6] text-mid-gray">{labels.success.message}</p>
+      </Card>
     );
   }
 
@@ -252,11 +255,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
       onSubmit={(event) => void handleSubmit(onSubmit)(event)}
       noValidate
       data-testid="ppr-form"
-      className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6 sm:p-8"
+      className="space-y-5 rounded-cards border border-hairline bg-paper shadow-subtle p-6 sm:p-8"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="ppr-first-name" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-first-name" className="block text-sm font-medium text-ink">
             {labels.firstName}
           </label>
           <input
@@ -266,11 +269,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
             className={inputClasses}
             {...register('firstName')}
           />
-          {fieldErrorLabel(errors.firstName) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.firstName)}</p> : null}
+          {fieldErrorLabel(errors.firstName) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.firstName)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-last-name" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-last-name" className="block text-sm font-medium text-ink">
             {labels.lastName}
           </label>
           <input
@@ -280,11 +283,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
             className={inputClasses}
             {...register('lastName')}
           />
-          {fieldErrorLabel(errors.lastName) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.lastName)}</p> : null}
+          {fieldErrorLabel(errors.lastName) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.lastName)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-email" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-email" className="block text-sm font-medium text-ink">
             {labels.email}
           </label>
           <input
@@ -295,11 +298,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
             className={inputClasses}
             {...register('email')}
           />
-          {fieldErrorLabel(errors.email) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.email)}</p> : null}
+          {fieldErrorLabel(errors.email) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.email)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-phone" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-phone" className="block text-sm font-medium text-ink">
             {labels.phone}
           </label>
           <input
@@ -310,11 +313,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
             className={inputClasses}
             {...register('phone')}
           />
-          {fieldErrorLabel(errors.phone) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.phone)}</p> : null}
+          {fieldErrorLabel(errors.phone) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.phone)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-aircraft-registration" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-aircraft-registration" className="block text-sm font-medium text-ink">
             {labels.aircraftRegistration}
           </label>
           <input
@@ -325,12 +328,12 @@ export function PprForm({ locale, labels }: PprFormProps) {
             {...register('aircraftRegistration')}
           />
           {fieldErrorLabel(errors.aircraftRegistration) ? (
-            <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.aircraftRegistration)}</p>
+            <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.aircraftRegistration)}</p>
           ) : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-aircraft-type" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-aircraft-type" className="block text-sm font-medium text-ink">
             {labels.aircraftType}
           </label>
           <input
@@ -340,11 +343,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
             className={inputClasses}
             {...register('aircraftType')}
           />
-          {fieldErrorLabel(errors.aircraftType) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.aircraftType)}</p> : null}
+          {fieldErrorLabel(errors.aircraftType) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.aircraftType)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-origin" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-origin" className="block text-sm font-medium text-ink">
             {labels.origin}
           </label>
           <input
@@ -354,11 +357,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
             className={inputClasses}
             {...register('origin')}
           />
-          {fieldErrorLabel(errors.origin) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.origin)}</p> : null}
+          {fieldErrorLabel(errors.origin) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.origin)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-destination" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-destination" className="block text-sm font-medium text-ink">
             {labels.destination}
           </label>
           <input
@@ -368,11 +371,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
             className={inputClasses}
             {...register('destination')}
           />
-          {fieldErrorLabel(errors.destination) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.destination)}</p> : null}
+          {fieldErrorLabel(errors.destination) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.destination)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-eta" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-eta" className="block text-sm font-medium text-ink">
             {labels.eta}
           </label>
           <input
@@ -383,11 +386,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
             className={inputClasses}
             {...register('eta')}
           />
-          {fieldErrorLabel(errors.eta) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.eta)}</p> : null}
+          {fieldErrorLabel(errors.eta) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.eta)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-etd" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-etd" className="block text-sm font-medium text-ink">
             {labels.etd}
           </label>
           <input
@@ -398,11 +401,11 @@ export function PprForm({ locale, labels }: PprFormProps) {
             className={inputClasses}
             {...register('etd')}
           />
-          {fieldErrorLabel(errors.etd) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.etd)}</p> : null}
+          {fieldErrorLabel(errors.etd) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.etd)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="ppr-persons" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-persons" className="block text-sm font-medium text-ink">
             {labels.personsOnBoard}
           </label>
           <input
@@ -416,12 +419,12 @@ export function PprForm({ locale, labels }: PprFormProps) {
             {...register('personsOnBoard')}
           />
           {fieldErrorLabel(errors.personsOnBoard) ? (
-            <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.personsOnBoard)}</p>
+            <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.personsOnBoard)}</p>
           ) : null}
         </div>
 
         <div className="sm:col-span-2">
-          <label htmlFor="ppr-notes" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="ppr-notes" className="block text-sm font-medium text-ink">
             {labels.notes}
           </label>
           <textarea
@@ -443,19 +446,19 @@ export function PprForm({ locale, labels }: PprFormProps) {
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="ppr-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="ppr-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
-      <button
+      <Button
         type="submit"
         disabled={isSubmitting}
         data-testid="ppr-submit"
-        className="min-h-[44px] w-full rounded-[6px] bg-[#111111] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+        className="min-h-[44px] w-full sm:w-auto"
       >
         {isSubmitting ? labels.submitting : labels.submit}
-      </button>
+      </Button>
     </form>
   );
 }

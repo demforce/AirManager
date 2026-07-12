@@ -107,20 +107,20 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+            <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
               {t('kicker')}
             </span>
-            <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">
               {person.lastName} {person.firstName}
             </h1>
-            <p data-testid="account-statement-balance" className="mt-3 text-2xl font-medium text-[#111111]">
+            <p data-testid="account-statement-balance" className="mt-3 text-2xl font-medium text-ink">
               {overview.account ? formatCents(overview.balanceCents, moneyLocale) : t('noAccount')}
             </p>
           </div>
           <Link
             href={`/dashboard/people/${id}`}
             locale={locale as AppLocale}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
           >
             {t('backToPerson')}
           </Link>
@@ -225,13 +225,13 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
         </div>
 
         {totalPages > 1 ? (
-          <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
+          <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
             <Link
               href={pageHref(page - 1)}
               locale={locale as AppLocale}
               aria-disabled={page <= 1}
-              className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
               }`}
             >
               ←
@@ -243,8 +243,8 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
               href={pageHref(page + 1)}
               locale={locale as AppLocale}
               aria-disabled={page >= totalPages}
-              className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
               }`}
             >
               →

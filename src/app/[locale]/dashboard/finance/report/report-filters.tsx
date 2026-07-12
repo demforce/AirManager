@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from '@/i18n/navigation';
 import { currentMonthRange, currentQuarterRange, currentYearRange, type DateRange } from '@/lib/period-presets';
+import { inputBaseClasses } from '@/components/ui/input';
 
 export type ReportFiltersLabels = {
   month: string;
@@ -38,9 +39,8 @@ export function ReportFilters({ initialFilters, labels }: ReportFiltersProps) {
   }
 
   const presetButtonClasses =
-    'rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]';
-  const inputClasses =
-    'rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+    'rounded-buttons border border-hairline bg-paper px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas';
+  const inputClasses = inputBaseClasses;
 
   return (
     <div className="flex flex-wrap items-end gap-4">
@@ -61,11 +61,11 @@ export function ReportFilters({ initialFilters, labels }: ReportFiltersProps) {
         </button>
       </div>
       <fieldset className="flex flex-wrap items-end gap-4 border-0 p-0">
-        <legend className="mb-2 w-full text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.custom}</legend>
+        <legend className="mb-2 w-full text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.custom}</legend>
         {/* `<label htmlFor>` as a SIBLING of its control, never wrapping it
             (TD-1, AC 5 label-wrapper sweep — same footgun as `CashRegister`'s
             filter bar, story 5.4's `FilterBar`). */}
-        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+        <div className="flex flex-col gap-2 text-sm text-ink">
           <label htmlFor="cash-report-filter-from">{labels.from}</label>
           <input
             id="cash-report-filter-from"
@@ -76,7 +76,7 @@ export function ReportFilters({ initialFilters, labels }: ReportFiltersProps) {
             data-testid="cash-report-filter-from"
           />
         </div>
-        <div className="flex flex-col gap-2 text-sm text-[#2F3437]">
+        <div className="flex flex-col gap-2 text-sm text-ink">
           <label htmlFor="cash-report-filter-to">{labels.to}</label>
           <input
             id="cash-report-filter-to"

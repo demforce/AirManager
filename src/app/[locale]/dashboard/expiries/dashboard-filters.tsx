@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from '@/i18n/navigation';
 import type { ExpiryScopeDto } from '@/lib/schemas/expiry-types';
 import type { ExpiryStatusDto } from '@/lib/schemas/expiries';
+import { inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
 
 export type ExpiryDashboardFiltersValue = {
   expiryTypeId: string;
@@ -72,13 +74,12 @@ export function ExpiryDashboardFilters({ types, initialFilters, labels }: Expiry
   }
 
   const hasActiveFilter = filters.expiryTypeId !== '' || filters.scope !== '' || filters.status !== '';
-  const inputClasses =
-    'mt-2 min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[40px]');
 
   return (
     <div className="flex flex-wrap items-end gap-4" data-testid="expiry-dashboard-filters">
       {/* `<label htmlFor>` as a sibling of its control, never wrapping it — same footgun fix as `flights-manager.tsx`'s `FilterBar` (a wrapping label folds every dynamic option's text into its accessible name). */}
-      <div className="flex flex-col text-sm text-[#2F3437]">
+      <div className="flex flex-col text-sm text-ink">
         <label htmlFor="expiry-dashboard-filter-type">{labels.type}</label>
         <select
           id="expiry-dashboard-filter-type"
@@ -96,7 +97,7 @@ export function ExpiryDashboardFilters({ types, initialFilters, labels }: Expiry
           ))}
         </select>
       </div>
-      <div className="flex flex-col text-sm text-[#2F3437]">
+      <div className="flex flex-col text-sm text-ink">
         <label htmlFor="expiry-dashboard-filter-scope">{labels.scope}</label>
         <select
           id="expiry-dashboard-filter-scope"
@@ -113,7 +114,7 @@ export function ExpiryDashboardFilters({ types, initialFilters, labels }: Expiry
           ))}
         </select>
       </div>
-      <div className="flex flex-col text-sm text-[#2F3437]">
+      <div className="flex flex-col text-sm text-ink">
         <label htmlFor="expiry-dashboard-filter-status">{labels.status}</label>
         <select
           id="expiry-dashboard-filter-status"
@@ -135,7 +136,7 @@ export function ExpiryDashboardFilters({ types, initialFilters, labels }: Expiry
           type="button"
           onClick={handleReset}
           data-testid="expiry-dashboard-filter-reset"
-          className="min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[40px] rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
         >
           {labels.reset}
         </button>

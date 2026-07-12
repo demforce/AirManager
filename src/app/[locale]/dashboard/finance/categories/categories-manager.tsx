@@ -7,6 +7,10 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DataTable } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { StatusPill } from '@/components/ui/status-pill';
+import { Card } from '@/components/ui/card';
 
 export type CashCategoryRow = {
   id: string;
@@ -123,19 +127,15 @@ export function CategoriesManager({ categories, labels }: CategoriesManagerProps
     {
       id: 'name',
       header: labels.table.name,
-      cell: ({ row }) => <span className="font-medium text-[#111111]">{row.original.name}</span>,
+      cell: ({ row }) => <span className="font-medium text-ink">{row.original.name}</span>,
     },
     {
       id: 'status',
       header: labels.table.status,
       cell: ({ row }) => (
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] ${
-            row.original.isActive ? 'bg-[#EDF3EC] text-[#346538]' : 'bg-[#FBF3DB] text-[#956400]'
-          }`}
-        >
+        <StatusPill tone={row.original.isActive ? 'ok' : 'warning'}>
           {row.original.isActive ? labels.status.active : labels.status.inactive}
-        </span>
+        </StatusPill>
       ),
     },
     {
@@ -152,51 +152,48 @@ export function CategoriesManager({ categories, labels }: CategoriesManagerProps
         if (confirmingDeleteId === category.id) {
           return (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[#787774]">{labels.actions.confirmDelete}</span>
-              <button
+              <span className="text-xs text-mid-gray">{labels.actions.confirmDelete}</span>
+              <Button size="sm"
                 type="button"
                 disabled={pendingActionId === category.id}
                 onClick={() => void handleDelete(category)}
-                className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
               >
                 {labels.actions.confirmYes}
-              </button>
-              <button
+              </Button>
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setConfirmingDeleteId(null)}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.actions.confirmCancel}
-              </button>
+              </Button>
             </div>
           );
         }
 
-        const secondaryButton =
-          'rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50';
-
         return (
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => setPanel({ mode: 'rename', category })} className={secondaryButton}>
+            <Button variant="outline" size="sm" type="button" onClick={() => setPanel({ mode: 'rename', category })}>
               {labels.actions.rename}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               type="button"
               disabled={pendingActionId === category.id}
               onClick={() => void handleLifecycleAction(category, category.isActive ? 'deactivate' : 'reactivate')}
-              className={secondaryButton}
             >
               {category.isActive ? labels.actions.deactivate : labels.actions.reactivate}
-            </button>
+            </Button>
             {category.isSystem ? null : (
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 type="button"
                 disabled={pendingActionId === category.id}
                 onClick={() => setConfirmingDeleteId(category.id)}
-                className={secondaryButton}
               >
                 {labels.actions.delete}
-              </button>
+              </Button>
             )}
           </div>
         );
@@ -218,17 +215,16 @@ export function CategoriesManager({ categories, labels }: CategoriesManagerProps
         ) : (
           <span />
         )}
-        <button
+        <Button
           type="button"
           onClick={() => setPanel({ mode: 'create' })}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
         >
           {labels.newCategory}
-        </button>
+        </Button>
       </div>
 
       {panel ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <CategoryForm
             // Remount when the target changes (create ↔ rename A ↔ rename B):
             // react-hook-form reads defaultValues only at mount (review 2.4 F1).
@@ -238,7 +234,7 @@ export function CategoriesManager({ categories, labels }: CategoriesManagerProps
             onCancel={() => setPanel(null)}
             onSuccess={(mode) => handleSuccess(mode === 'create' ? labels.feedback.created : labels.feedback.renamed)}
           />
-        </div>
+        </Card>
       ) : null}
 
       <div className="mt-6" data-testid="cash-categories-table">
@@ -292,42 +288,40 @@ function CategoryForm({ category, labels, onCancel, onSuccess }: CategoryFormPro
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4" data-testid="cash-category-form">
-      <h4 className="text-base font-medium text-[#111111]">{category ? labels.renameTitle : labels.createTitle}</h4>
+      <h4 className="text-base font-medium text-ink">{category ? labels.renameTitle : labels.createTitle}</h4>
       <div>
-        <label htmlFor="category-name" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="category-name" className="block text-sm font-medium text-ink">
           {labels.name}
         </label>
-        <input
+        <Input
           id="category-name"
           maxLength={100}
           aria-invalid={Boolean(errors.name)}
-          className="mt-2 w-full max-w-md rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full max-w-md"
           {...register('name')}
         />
-        {errors.name ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+        {errors.name ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
       </div>
 
       {formError ? (
-        <p role="alert" className="text-sm text-[#9F2F2D]">
+        <p role="alert" className="text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {category ? labels.submitRename : labels.submitCreate}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

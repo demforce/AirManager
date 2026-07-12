@@ -19,6 +19,7 @@ import {
 } from '@/server/services/school.service';
 import { ExpiryStatusBadge } from '../expiries/expiry-status-badge';
 import { SummaryFilters } from './summary-filters';
+import { Card } from '@/components/ui/card';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -120,16 +121,16 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
   return (
     <main className="flex-1 px-6 py-16 sm:px-16">
       <div className="mx-auto max-w-5xl">
-        <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+        <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
           {t('kicker')}
         </span>
-        <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+        <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">
           {canManageOwn ? t('title') : t('titleManage')}
         </h1>
-        <p className="mt-4 max-w-xl text-base leading-[1.6] text-[#787774]">{canManageOwn ? t('description') : t('descriptionManage')}</p>
+        <p className="mt-4 max-w-xl text-base leading-[1.6] text-mid-gray">{canManageOwn ? t('description') : t('descriptionManage')}</p>
 
         <section className="mt-10">
-          <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summaries.filters.heading')}</h2>
+          <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{t('summaries.filters.heading')}</h2>
           <div className="mt-4">
             <SummaryFilters
               initialFilters={{ from, to }}
@@ -147,22 +148,22 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
 
         {canManageAny ? (
           <section className="mt-10" data-testid="school-summaries-panel">
-            <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+            <h2 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
               {t('summaries.heading')}
             </h2>
 
             <div className="mt-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
-                <h3 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summaries.students.heading')}</h3>
+                <h3 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{t('summaries.students.heading')}</h3>
                 <ExportButton href={studentsExportHref} label={tExport('button')} testId="school-students-export-button" />
               </div>
               {studentSummaries.length === 0 ? (
-                <p className="mt-3 text-sm text-[#787774]">{t('summaries.students.empty')}</p>
+                <p className="mt-3 text-sm text-mid-gray">{t('summaries.students.empty')}</p>
               ) : (
-                <div className="mt-3 overflow-x-auto rounded-[12px] border border-[#EAEAEA] bg-white">
+                <Card className="mt-3 overflow-x-auto p-0">
                   <table className="w-full min-w-[680px] text-left text-sm">
                     <thead>
-                      <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+                      <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
                         <th className="px-5 py-3">{t('summaries.students.table.name')}</th>
                         <th className="px-5 py-3">{t('summaries.students.table.dual')}</th>
                         <th className="px-5 py-3">{t('summaries.students.table.solo')}</th>
@@ -175,7 +176,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                         <tr
                           key={student.personId}
                           data-testid="school-summary-student-row"
-                          className="border-b border-[#EAEAEA] text-[#111111] last:border-b-0"
+                          className="border-b border-hairline text-ink last:border-b-0"
                         >
                           <td className="px-5 py-3 align-middle font-medium">
                             <Link
@@ -189,27 +190,27 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                           <td className="px-5 py-3 align-middle">{formatMinutes(student.dualMinutes)}</td>
                           <td className="px-5 py-3 align-middle">{formatMinutes(student.soloMinutes)}</td>
                           <td className="px-5 py-3 align-middle font-medium">{formatMinutes(student.totalMinutes)}</td>
-                          <td className="px-5 py-3 align-middle text-[#787774]">{formatMinutes(student.totalMinutesAllTime)}</td>
+                          <td className="px-5 py-3 align-middle text-mid-gray">{formatMinutes(student.totalMinutesAllTime)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </Card>
               )}
             </div>
 
             <div className="mt-10">
               <div className="flex flex-wrap items-center justify-between gap-4">
-                <h3 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summaries.instructors.heading')}</h3>
+                <h3 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{t('summaries.instructors.heading')}</h3>
                 <ExportButton href={instructorsExportHref} label={tExport('button')} testId="school-instructors-export-button" />
               </div>
               {instructorSummaries.length === 0 ? (
-                <p className="mt-3 text-sm text-[#787774]">{t('summaries.instructors.empty')}</p>
+                <p className="mt-3 text-sm text-mid-gray">{t('summaries.instructors.empty')}</p>
               ) : (
-                <div className="mt-3 overflow-x-auto rounded-[12px] border border-[#EAEAEA] bg-white">
+                <Card className="mt-3 overflow-x-auto p-0">
                   <table className="w-full min-w-[480px] text-left text-sm">
                     <thead>
-                      <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+                      <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
                         <th className="px-5 py-3">{t('summaries.instructors.table.name')}</th>
                         <th className="px-5 py-3">{t('summaries.instructors.table.hours')}</th>
                         <th className="px-5 py-3">{t('summaries.instructors.table.action')}</th>
@@ -220,7 +221,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                         <tr
                           key={instructor.personId}
                           data-testid="school-summary-instructor-row"
-                          className="border-b border-[#EAEAEA] text-[#111111] last:border-b-0"
+                          className="border-b border-hairline text-ink last:border-b-0"
                         >
                           <td className="px-5 py-3 align-middle font-medium">
                             {instructor.lastName} {instructor.firstName}
@@ -231,7 +232,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                               href={flightsDrillDownHref(instructor.personId, from, to)}
                               locale={locale as AppLocale}
                               data-testid="school-summary-open-register"
-                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                              className="rounded-buttons border border-hairline bg-transparent px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-canvas"
                             >
                               {t('summaries.instructors.table.action')}
                             </Link>
@@ -240,15 +241,15 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </Card>
               )}
             </div>
           </section>
         ) : null}
 
         {canManageOwn ? (
-          <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="own-hours-panel">
-            <h2 className="font-[family-name:var(--font-serif)] text-xl font-medium tracking-[-0.02em] text-[#111111]">
+          <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="own-hours-panel">
+            <h2 className="text-xl font-semibold tracking-[-0.02em] text-ink">
               {t('myHours.heading')}
             </h2>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
@@ -260,7 +261,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                   href={flightsDrillDownHref(actor.personId, from, to)}
                   locale={locale as AppLocale}
                   data-testid="own-hours-open-register"
-                  className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                  className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
                 >
                   {t('myHours.openRegister')}
                 </Link>
@@ -270,14 +271,14 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
         ) : null}
 
         {canManageOwn ? (
-          <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="own-students-panel">
+          <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="own-students-panel">
             {ownStudents.length === 0 ? (
-              <p className="text-sm text-[#787774]">{t('empty')}</p>
+              <p className="text-sm text-mid-gray">{t('empty')}</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[680px] text-left text-sm">
                   <thead>
-                    <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+                    <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
                       <th className="py-2 pr-4 font-medium">{t('table.name')}</th>
                       <th className="py-2 pr-4 font-medium">{t('table.courseStartDate')}</th>
                       <th className="py-2 pr-4 font-medium">{t('table.totalHours')}</th>
@@ -287,7 +288,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                   </thead>
                   <tbody>
                     {ownStudents.map((student) => (
-                      <tr key={student.personId} data-testid="own-student-row" className="border-b border-[#EAEAEA] text-[#111111]">
+                      <tr key={student.personId} data-testid="own-student-row" className="border-b border-hairline text-ink">
                         <td className="py-3 pr-4 font-medium">
                           <Link
                             href={`/dashboard/school/${student.personId}`}
@@ -297,9 +298,9 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                             {student.lastName} {student.firstName}
                           </Link>
                         </td>
-                        <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">{formatDateOnly(student.courseStartDate, locale as 'it' | 'en')}</td>
+                        <td className="py-3 pr-4 whitespace-nowrap text-mid-gray">{formatDateOnly(student.courseStartDate, locale as 'it' | 'en')}</td>
                         <td className="py-3 pr-4 whitespace-nowrap">{formatMinutes(student.totalMinutes)}</td>
-                        <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">
+                        <td className="py-3 pr-4 whitespace-nowrap text-mid-gray">
                           {student.lastNoteDate ? formatDateOnly(student.lastNoteDate, locale as 'it' | 'en') : t('table.noNotes')}
                         </td>
                         <td className="py-3">
@@ -310,7 +311,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                               data-testid="own-student-status-badge"
                             />
                           ) : (
-                            <span className="text-xs text-[#787774]">{t('table.noExpiries')}</span>
+                            <span className="text-xs text-mid-gray">{t('table.noExpiries')}</span>
                           )}
                         </td>
                       </tr>

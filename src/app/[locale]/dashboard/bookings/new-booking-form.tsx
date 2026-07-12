@@ -5,6 +5,9 @@ import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
+import { Button } from '@/components/ui/button';
+import { inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
 
 export type NewBookingFormMode = 'staff' | 'instructor' | 'pilot';
 
@@ -343,21 +346,20 @@ export function NewBookingForm({
     router.refresh();
   }
 
-  const inputClasses =
-    'mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[44px] w-full');
 
   return (
     <form
       onSubmit={(event) => void handleSubmit(onSubmit)(event)}
       noValidate
       data-testid="new-booking-form"
-      className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6"
+      className="space-y-5 rounded-cards border border-hairline bg-paper shadow-subtle p-6"
     >
-      <h3 className="font-[family-name:var(--font-serif)] text-xl font-medium tracking-[-0.02em] text-[#111111]">{labels.title}</h3>
+      <h3 className="text-xl font-semibold tracking-[-0.02em] text-ink">{labels.title}</h3>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="booking-aircraft" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="booking-aircraft" className="block text-sm font-medium text-ink">
             {labels.aircraft}
           </label>
           <select id="booking-aircraft" aria-invalid={Boolean(errors.aircraftId)} className={inputClasses} {...register('aircraftId')}>
@@ -370,12 +372,12 @@ export function NewBookingForm({
               </option>
             ))}
           </select>
-          {fieldErrorLabel(errors.aircraftId) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.aircraftId)}</p> : null}
+          {fieldErrorLabel(errors.aircraftId) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.aircraftId)}</p> : null}
         </div>
 
         {mode === 'staff' ? (
           <div>
-            <label htmlFor="booking-person" className="block text-sm font-medium text-[#2F3437]">
+            <label htmlFor="booking-person" className="block text-sm font-medium text-ink">
               {labels.person}
             </label>
             <select id="booking-person" aria-invalid={Boolean(errors.personId)} className={inputClasses} {...register('personId')}>
@@ -386,14 +388,14 @@ export function NewBookingForm({
                 </option>
               ))}
             </select>
-            {personOptions.length === 0 ? <p className="mt-1 text-xs text-[#787774]">{labels.noPersonAvailable}</p> : null}
-            {fieldErrorLabel(errors.personId) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.personId)}</p> : null}
+            {personOptions.length === 0 ? <p className="mt-1 text-xs text-mid-gray">{labels.noPersonAvailable}</p> : null}
+            {fieldErrorLabel(errors.personId) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.personId)}</p> : null}
           </div>
         ) : null}
 
         {mode === 'staff' ? (
           <div>
-            <label htmlFor="booking-instructor" className="block text-sm font-medium text-[#2F3437]">
+            <label htmlFor="booking-instructor" className="block text-sm font-medium text-ink">
               {labels.instructorOptional}
             </label>
             <select id="booking-instructor" className={inputClasses} {...register('instructorProfileId')}>
@@ -409,9 +411,9 @@ export function NewBookingForm({
 
         {mode === 'instructor' ? (
           <fieldset className="sm:col-span-2">
-            <legend className="block text-sm font-medium text-[#2F3437]">{labels.bookingTarget}</legend>
+            <legend className="block text-sm font-medium text-ink">{labels.bookingTarget}</legend>
             <div className="mt-2 flex gap-6">
-              <label className="flex items-center gap-2 text-sm text-[#2F3437]">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="radio"
                   name="booking-target"
@@ -420,7 +422,7 @@ export function NewBookingForm({
                 />
                 {labels.bookForMe}
               </label>
-              <label className="flex items-center gap-2 text-sm text-[#2F3437]">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="radio"
                   name="booking-target"
@@ -435,7 +437,7 @@ export function NewBookingForm({
 
         {mode === 'instructor' && bookingTarget === 'student' ? (
           <div>
-            <label htmlFor="booking-student" className="block text-sm font-medium text-[#2F3437]">
+            <label htmlFor="booking-student" className="block text-sm font-medium text-ink">
               {labels.student}
             </label>
             <select id="booking-student" aria-invalid={Boolean(errors.studentId)} className={inputClasses} {...register('studentId')}>
@@ -446,13 +448,13 @@ export function NewBookingForm({
                 </option>
               ))}
             </select>
-            {studentOptions.length === 0 ? <p className="mt-1 text-xs text-[#787774]">{labels.noStudentAvailable}</p> : null}
-            {fieldErrorLabel(errors.studentId) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.studentId)}</p> : null}
+            {studentOptions.length === 0 ? <p className="mt-1 text-xs text-mid-gray">{labels.noStudentAvailable}</p> : null}
+            {fieldErrorLabel(errors.studentId) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.studentId)}</p> : null}
           </div>
         ) : null}
 
         <div>
-          <label htmlFor="booking-starts-at" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="booking-starts-at" className="block text-sm font-medium text-ink">
             {labels.startsAt}
           </label>
           <input
@@ -463,11 +465,11 @@ export function NewBookingForm({
             className={inputClasses}
             {...register('startsAt')}
           />
-          {fieldErrorLabel(errors.startsAt) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.startsAt)}</p> : null}
+          {fieldErrorLabel(errors.startsAt) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.startsAt)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="booking-ends-at" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="booking-ends-at" className="block text-sm font-medium text-ink">
             {labels.endsAt}
           </label>
           <input
@@ -478,11 +480,11 @@ export function NewBookingForm({
             className={inputClasses}
             {...register('endsAt')}
           />
-          {fieldErrorLabel(errors.endsAt) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.endsAt)}</p> : null}
+          {fieldErrorLabel(errors.endsAt) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.endsAt)}</p> : null}
         </div>
 
         <div className="sm:col-span-2">
-          <label htmlFor="booking-notes" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="booking-notes" className="block text-sm font-medium text-ink">
             {labels.notes}
           </label>
           <input id="booking-notes" maxLength={500} className={inputClasses} {...register('notes')} />
@@ -490,7 +492,7 @@ export function NewBookingForm({
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="booking-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="booking-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
@@ -502,7 +504,7 @@ export function NewBookingForm({
       {blockedDocuments && mode === 'staff' ? (
         <div
           data-testid="force-booking-section"
-          className="space-y-3 rounded-[8px] border border-[#EADFAE] bg-[#FBF3DB] px-4 py-4"
+          className="space-y-3 rounded-nested border border-[#EADFAE] bg-[#FBF3DB] px-4 py-4"
         >
           <div>
             <h4 className="text-sm font-medium text-[#7A5A00]">{labels.force.title}</h4>
@@ -520,7 +522,7 @@ export function NewBookingForm({
               onChange={(event) => setForceReason(event.target.value)}
               aria-invalid={forceReasonTouched && forceReason.trim().length === 0}
               data-testid="force-booking-reason"
-              className="mt-2 w-full rounded-[6px] border border-[#EADFAE] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#956400]"
+              className="mt-2 w-full rounded-buttons border border-[#EADFAE] bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-[#956400]"
             />
           </div>
           {forceError ? (
@@ -534,7 +536,7 @@ export function NewBookingForm({
               disabled={forceSubmitting}
               onClick={() => void onForceSubmit()}
               data-testid="force-booking-submit"
-              className="min-h-[40px] rounded-[6px] bg-[#956400] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#7A5300] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-[40px] rounded-buttons bg-[#956400] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#7A5300] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {labels.force.submit}
             </button>
@@ -545,7 +547,7 @@ export function NewBookingForm({
                 setFormError(null);
               }}
               data-testid="force-booking-cancel"
-              className="min-h-[40px] rounded-[6px] border border-[#EADFAE] bg-white px-4 py-2 text-sm font-medium text-[#7A5A00] transition-colors hover:bg-[#F7F1DC]"
+              className="min-h-[40px] rounded-buttons border border-[#EADFAE] bg-paper px-4 py-2 text-sm font-medium text-[#7A5A00] transition-colors hover:bg-[#F7F1DC]"
             >
               {labels.force.cancel}
             </button>
@@ -554,7 +556,7 @@ export function NewBookingForm({
       ) : null}
 
       {success && warnings.length === 0 ? (
-        <p role="status" data-testid="booking-form-success" className="rounded-[8px] bg-[#EEF3EC] px-4 py-3 text-sm text-[#346538]">
+        <p role="status" data-testid="booking-form-success" className="rounded-nested bg-[#EEF3EC] px-4 py-3 text-sm text-[#346538]">
           {labels.success}
         </p>
       ) : null}
@@ -564,7 +566,7 @@ export function NewBookingForm({
           the booking WAS created, but the person has non-blocking documents
           already expired for this flight day. */}
       {success && warnings.length > 0 ? (
-        <div role="status" data-testid="booking-form-warning" className="rounded-[8px] bg-[#FBF3DB] px-4 py-3 text-sm text-[#956400]">
+        <div role="status" data-testid="booking-form-warning" className="rounded-nested bg-[#FBF3DB] px-4 py-3 text-sm text-[#956400]">
           <p className="font-medium">{labels.successWithWarnings}</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
             {warnings.map((warning) => (
@@ -574,13 +576,13 @@ export function NewBookingForm({
         </div>
       ) : null}
 
-      <button
+      <Button
         type="submit"
         disabled={isSubmitting}
-        className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+        className="min-h-[44px]"
       >
         {labels.submit}
-      </button>
+      </Button>
     </form>
   );
 }

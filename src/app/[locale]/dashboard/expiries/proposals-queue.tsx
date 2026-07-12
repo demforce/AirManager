@@ -4,6 +4,7 @@ import { useLocale } from 'next-intl';
 import { useState } from 'react';
 import type { ExpiryProposalItemDto } from '@/lib/schemas/expiries';
 import { formatDateOnly } from '@/lib/time';
+import { Button } from '@/components/ui/button';
 
 export type ProposalsQueueLabels = {
   empty: string;
@@ -84,7 +85,7 @@ export function ProposalsQueue({ proposals: initialProposals, labels }: Proposal
     return (
       <div data-testid="proposals-queue">
         {feedbackBanner}
-        <p className="text-sm text-[#787774]">{labels.empty}</p>
+        <p className="text-sm text-mid-gray">{labels.empty}</p>
       </div>
     );
   }
@@ -96,7 +97,7 @@ export function ProposalsQueue({ proposals: initialProposals, labels }: Proposal
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
-            <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+            <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
               <th className="py-2 pr-4 font-medium">{labels.table.person}</th>
               <th className="py-2 pr-4 font-medium">{labels.table.type}</th>
               <th className="py-2 pr-4 font-medium">{labels.table.current}</th>
@@ -107,10 +108,10 @@ export function ProposalsQueue({ proposals: initialProposals, labels }: Proposal
           </thead>
           <tbody>
             {proposals.map((proposal) => (
-              <tr key={proposal.id} data-testid="proposal-row" className="border-b border-[#EAEAEA] align-top text-[#111111]">
+              <tr key={proposal.id} data-testid="proposal-row" className="border-b border-hairline align-top text-ink">
                 <td className="py-3 pr-4 font-medium whitespace-nowrap">{proposal.personName}</td>
                 <td className="py-3 pr-4 whitespace-nowrap">{proposal.typeName}</td>
-                <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">
+                <td className="py-3 pr-4 whitespace-nowrap text-mid-gray">
                   <span className="block">
                     {formatDateOnly(proposal.currentIssuedAt, moneyLocale)} &rarr; {formatDateOnly(proposal.currentExpiresAt, moneyLocale)}
                   </span>
@@ -120,49 +121,45 @@ export function ProposalsQueue({ proposals: initialProposals, labels }: Proposal
                   <span className="block font-medium">
                     {formatDateOnly(proposal.proposedIssuedAt, moneyLocale)} &rarr; {formatDateOnly(proposal.proposedExpiresAt, moneyLocale)}
                   </span>
-                  {proposal.proposedNotes ? <span className="block text-xs text-[#787774]">{proposal.proposedNotes}</span> : null}
+                  {proposal.proposedNotes ? <span className="block text-xs text-mid-gray">{proposal.proposedNotes}</span> : null}
                 </td>
-                <td className="py-3 pr-4 whitespace-nowrap text-[#787774]">{proposal.proposedByEmail}</td>
+                <td className="py-3 pr-4 whitespace-nowrap text-mid-gray">{proposal.proposedByEmail}</td>
                 <td className="py-3">
                   {pendingConfirm?.proposalId === proposal.id ? (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-[#787774]">
+                      <span className="text-xs text-mid-gray">
                         {pendingConfirm.decision === 'APPROVE' ? labels.actions.confirmApprove : labels.actions.confirmReject}
                       </span>
-                      <button
+                      <Button size="sm"
                         type="button"
                         disabled={busyId === proposal.id}
                         onClick={() => void decide(proposal.id, pendingConfirm.decision)}
-                        className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
                       >
                         {labels.actions.confirmYes}
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="outline" size="sm"
                         type="button"
                         onClick={() => setPendingConfirm(null)}
-                        className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                       >
                         {labels.actions.confirmCancel}
-                      </button>
+                      </Button>
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2">
-                      <button
+                      <Button size="sm"
                         type="button"
                         disabled={busyId === proposal.id}
                         onClick={() => setPendingConfirm({ proposalId: proposal.id, decision: 'APPROVE' })}
-                        className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
                       >
                         {labels.actions.approve}
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="outline" size="sm"
                         type="button"
                         disabled={busyId === proposal.id}
                         onClick={() => setPendingConfirm({ proposalId: proposal.id, decision: 'REJECT' })}
-                        className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
                       >
                         {labels.actions.reject}
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </td>

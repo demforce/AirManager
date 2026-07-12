@@ -47,22 +47,22 @@ export default async function PprPage({ params }: PageProps) {
     <main className="flex flex-1 justify-center px-6 py-16 sm:px-16 sm:py-24">
       <div className="w-full max-w-2xl">
         <div className="mb-10 flex items-center justify-between">
-          <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+          <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
             {t('kicker')}
           </span>
           <Link
             href="/ppr"
             locale={otherLocale}
-            className="text-sm font-medium text-[#2F3437] underline decoration-[#EAEAEA] underline-offset-4 transition-colors hover:decoration-[#2F3437]"
+            className="text-sm font-medium text-ink underline decoration-hairline underline-offset-4 transition-colors hover:decoration-ink"
           >
             {t('switchTo')}
           </Link>
         </div>
 
-        <h1 className="font-[family-name:var(--font-serif)] text-4xl font-medium leading-[1.15] tracking-[-0.02em] text-[#111111] sm:text-5xl">
+        <h1 className="text-4xl font-semibold leading-[1.15] tracking-[-0.02em] text-ink sm:text-5xl">
           {t('title')}
         </h1>
-        <p className="mt-4 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
+        <p className="mt-4 max-w-xl text-base leading-[1.6] text-mid-gray">{t('description')}</p>
 
         <div className="mt-10">
           <PprForm
@@ -100,7 +100,7 @@ export default async function PprPage({ params }: PageProps) {
           />
         </div>
 
-        <p className="mt-10 text-center text-xs text-[#787774]">{t('footer')}</p>
+        <p className="mt-10 text-center text-xs text-mid-gray">{t('footer')}</p>
       </div>
     </main>
   );

@@ -7,6 +7,10 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DataTable } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
+import { Button } from '@/components/ui/button';
+import { inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
+import { Card } from '@/components/ui/card';
 
 export type ExpiryScopeValue = 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
 
@@ -135,7 +139,7 @@ export function TypesManager({ expiryTypes, canManage, labels }: TypesManagerPro
     {
       id: 'name',
       header: labels.table.name,
-      cell: ({ row }) => <span className="font-medium text-[#111111]">{row.original.name}</span>,
+      cell: ({ row }) => <span className="font-medium text-ink">{row.original.name}</span>,
     },
     {
       id: 'scope',
@@ -172,7 +176,7 @@ export function TypesManager({ expiryTypes, canManage, labels }: TypesManagerPro
             {labels.blocksBooking.yes}
           </span>
         ) : (
-          <span className="text-xs text-[#787774]">{labels.blocksBooking.no}</span>
+          <span className="text-xs text-mid-gray">{labels.blocksBooking.no}</span>
         ),
     },
     ...(canManage
@@ -186,50 +190,47 @@ export function TypesManager({ expiryTypes, canManage, labels }: TypesManagerPro
               if (confirmingDeleteId === expiryType.id) {
                 return (
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-[#787774]">{labels.actions.confirmDelete}</span>
-                    <button
+                    <span className="text-xs text-mid-gray">{labels.actions.confirmDelete}</span>
+                    <Button size="sm"
                       type="button"
                       disabled={pendingActionId === expiryType.id}
                       onClick={() => void handleDelete(expiryType)}
-                      className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
                     >
                       {labels.actions.confirmYes}
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="outline" size="sm"
                       type="button"
                       onClick={() => setConfirmingDeleteId(null)}
-                      className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                     >
                       {labels.actions.confirmCancel}
-                    </button>
+                    </Button>
                   </div>
                 );
               }
 
-              const secondaryButton =
-                'rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50';
-
               return (
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => setPanel({ mode: 'edit', expiryType })} className={secondaryButton}>
+                  <Button variant="outline" size="sm" type="button" onClick={() => setPanel({ mode: 'edit', expiryType })}>
                     {labels.actions.edit}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     type="button"
                     disabled={pendingActionId === expiryType.id}
                     onClick={() => void handleToggleActive(expiryType)}
-                    className={secondaryButton}
                   >
                     {expiryType.isActive ? labels.actions.deactivate : labels.actions.reactivate}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     type="button"
                     disabled={pendingActionId === expiryType.id}
                     onClick={() => setConfirmingDeleteId(expiryType.id)}
-                    className={secondaryButton}
                   >
                     {labels.actions.delete}
-                  </button>
+                  </Button>
                 </div>
               );
             },
@@ -253,18 +254,17 @@ export function TypesManager({ expiryTypes, canManage, labels }: TypesManagerPro
           <span />
         )}
         {canManage ? (
-          <button
+          <Button
             type="button"
             onClick={() => setPanel({ mode: 'create' })}
-            className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
           >
             {labels.newType}
-          </button>
+          </Button>
         ) : null}
       </div>
 
       {panel ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <ExpiryTypeForm
             // Remount when the target changes (create ↔ edit A ↔ edit B):
             // react-hook-form reads defaultValues only at mount (review 2.4 F1 pattern).
@@ -274,7 +274,7 @@ export function TypesManager({ expiryTypes, canManage, labels }: TypesManagerPro
             onCancel={() => setPanel(null)}
             onSuccess={(mode) => handleSuccess(mode === 'create' ? labels.feedback.created : labels.feedback.updated)}
           />
-        </div>
+        </Card>
       ) : null}
 
       <div className="mt-6" data-testid="expiry-types-table">
@@ -336,14 +336,13 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
     onSuccess(expiryType ? 'edit' : 'create');
   }
 
-  const inputClasses =
-    'mt-2 w-full max-w-md rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 w-full max-w-md');
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4" data-testid="expiry-type-form">
-      <h4 className="text-base font-medium text-[#111111]">{expiryType ? labels.form.editTitle : labels.form.createTitle}</h4>
+      <h4 className="text-base font-medium text-ink">{expiryType ? labels.form.editTitle : labels.form.createTitle}</h4>
       <div>
-        <label htmlFor="expiry-type-name" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="expiry-type-name" className="block text-sm font-medium text-ink">
           {labels.form.name}
         </label>
         <input
@@ -353,11 +352,11 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
           className={inputClasses}
           {...register('name')}
         />
-        {errors.name ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.requiredField}</p> : null}
+        {errors.name ? <p className="mt-1 text-xs text-ember">{labels.form.requiredField}</p> : null}
       </div>
 
       <div>
-        <label htmlFor="expiry-type-scope" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="expiry-type-scope" className="block text-sm font-medium text-ink">
           {labels.form.scope}
         </label>
         <select id="expiry-type-scope" className={inputClasses} {...register('scope')}>
@@ -377,36 +376,34 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
         <input
           id="expiry-type-blocks-booking"
           type="checkbox"
-          className="mt-1 h-4 w-4 rounded-[4px] border-[#EAEAEA] text-[#111111] focus:ring-[#2F3437]"
+          className="mt-1 h-4 w-4 rounded-[4px] border-hairline text-ink focus:ring-ink"
           {...register('blocksBooking')}
         />
-        <label htmlFor="expiry-type-blocks-booking" className="text-sm text-[#2F3437]">
+        <label htmlFor="expiry-type-blocks-booking" className="text-sm text-ink">
           <span className="block font-medium">{labels.form.blocksBooking}</span>
-          <span className="block text-xs text-[#787774]">{labels.form.blocksBookingHint}</span>
+          <span className="block text-xs text-mid-gray">{labels.form.blocksBookingHint}</span>
         </label>
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="expiry-type-form-error" className="text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="expiry-type-form-error" className="text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {expiryType ? labels.form.submitSave : labels.form.submitCreate}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
         >
           {labels.form.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

@@ -7,6 +7,9 @@ import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
 import { formatDateTime, formatTimeOfDay } from '@/lib/time';
 import type { AircraftOption } from './new-booking-form';
+import { Button } from '@/components/ui/button';
+import { inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
 
 export type BookingRowDto = {
   id: string;
@@ -222,10 +225,10 @@ export function BookingsList({
         </p>
       ) : null}
 
-      <div className="mt-6 overflow-x-auto rounded-[12px] border border-[#EAEAEA]">
+      <div className="mt-6 overflow-x-auto rounded-cards border border-hairline">
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead>
-            <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+            <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
               <th className="px-5 py-3">{labels.table.aircraft}</th>
               <th className="px-5 py-3">{labels.table.date}</th>
               <th className="px-5 py-3">{labels.table.time}</th>
@@ -237,7 +240,7 @@ export function BookingsList({
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={columnCount} className="px-5 py-8 text-center text-[#787774]">
+                <td colSpan={columnCount} className="px-5 py-8 text-center text-mid-gray">
                   {labels.empty}
                 </td>
               </tr>
@@ -245,7 +248,7 @@ export function BookingsList({
               items.map((booking) => {
                 if (movingId === booking.id) {
                   return (
-                    <tr key={booking.id} data-testid="booking-row-moving" className="border-b border-[#EAEAEA] last:border-b-0">
+                    <tr key={booking.id} data-testid="booking-row-moving" className="border-b border-hairline last:border-b-0">
                       <td colSpan={columnCount} className="px-5 py-5">
                         <MoveBookingForm
                           booking={booking}
@@ -264,40 +267,40 @@ export function BookingsList({
                 const canManageRow = canManageAny || isOwnRow(booking);
 
                 return (
-                  <tr key={booking.id} className="border-b border-[#EAEAEA] last:border-b-0" data-testid="booking-row">
-                    <td className="px-5 py-3 align-middle font-medium text-[#111111]">{booking.aircraftRegistration}</td>
-                    <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">
+                  <tr key={booking.id} className="border-b border-hairline last:border-b-0" data-testid="booking-row">
+                    <td className="px-5 py-3 align-middle font-medium text-ink">{booking.aircraftRegistration}</td>
+                    <td className="px-5 py-3 align-middle whitespace-nowrap text-ink">
                       {/* `formatDateTime` is "DD/MM/YYYY, HH:MM" (Intl's it-IT/en-IE locale separator) — split on the comma, not a bare space. */}
                       {formatDateTime(startsAt, locale).split(',')[0]}
                     </td>
-                    <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">
+                    <td className="px-5 py-3 align-middle whitespace-nowrap text-ink">
                       {formatTimeOfDay(startsAt, locale)}–{formatTimeOfDay(endsAt, locale)}
                     </td>
-                    <td className="px-5 py-3 align-middle text-[#2F3437]">{booking.personName}</td>
-                    <td className="px-5 py-3 align-middle text-[#787774]">{booking.instructorName ?? labels.table.noInstructor}</td>
+                    <td className="px-5 py-3 align-middle text-ink">{booking.personName}</td>
+                    <td className="px-5 py-3 align-middle text-mid-gray">{booking.instructorName ?? labels.table.noInstructor}</td>
                     {showActionsColumn ? (
                       <td className="px-5 py-3 align-middle" data-testid="booking-row-actions">
                         {confirmingCancelId === booking.id ? (
                           <div className="flex flex-col gap-2">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs text-[#787774]">{labels.actions.cancelPrompt}</span>
+                              <span className="text-xs text-mid-gray">{labels.actions.cancelPrompt}</span>
                               <button
                                 type="button"
                                 onClick={() => void confirmCancel(booking.id)}
                                 disabled={cancelling}
                                 data-testid="booking-cancel-confirm"
-                                className="min-h-[36px] rounded-[6px] bg-[#9F2F2D] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#832522] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="min-h-[36px] rounded-buttons bg-[#9F2F2D] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#832522] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {labels.actions.cancelConfirm}
                               </button>
-                              <button
+                              <Button variant="outline" size="sm"
                                 type="button"
                                 onClick={() => setConfirmingCancelId(null)}
                                 disabled={cancelling}
-                                className="min-h-[36px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                                className="min-h-[36px]"
                               >
                                 {labels.actions.dismiss}
-                              </button>
+                              </Button>
                             </div>
                             {cancelError ? (
                               <p role="alert" data-testid="booking-cancel-error" className="text-xs text-[#9F2F2D]">
@@ -307,22 +310,22 @@ export function BookingsList({
                           </div>
                         ) : canManageRow ? (
                           <div className="flex flex-wrap gap-2">
-                            <button
+                            <Button variant="outline" size="sm"
                               type="button"
                               onClick={() => requestMove(booking.id)}
                               data-testid="booking-move-action"
-                              className="min-h-[36px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                              className="min-h-[36px]"
                             >
                               {labels.actions.move}
-                            </button>
-                            <button
+                            </Button>
+                            <Button variant="outline" size="sm"
                               type="button"
                               onClick={() => requestCancel(booking.id)}
                               data-testid="booking-cancel-action"
-                              className="min-h-[36px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                              className="min-h-[36px]"
                             >
                               {labels.actions.cancel}
-                            </button>
+                            </Button>
                           </div>
                         ) : null}
                       </td>
@@ -444,8 +447,7 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
     onSuccess();
   }
 
-  const inputClasses =
-    'mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[44px] w-full');
 
   return (
     <form
@@ -454,10 +456,10 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
       data-testid="move-booking-form"
       className="space-y-4"
     >
-      <h4 className="text-base font-medium text-[#111111]">{labels.actions.moveTitle}</h4>
+      <h4 className="text-base font-medium text-ink">{labels.actions.moveTitle}</h4>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor={`move-aircraft-${booking.id}`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`move-aircraft-${booking.id}`} className="block text-sm font-medium text-ink">
             {labels.form.aircraft}
           </label>
           <select
@@ -475,11 +477,11 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
               </option>
             ))}
           </select>
-          {fieldErrorLabel(errors.aircraftId) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.aircraftId)}</p> : null}
+          {fieldErrorLabel(errors.aircraftId) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.aircraftId)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor={`move-starts-at-${booking.id}`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`move-starts-at-${booking.id}`} className="block text-sm font-medium text-ink">
             {labels.form.startsAt}
           </label>
           <input
@@ -490,11 +492,11 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
             className={inputClasses}
             {...register('startsAt')}
           />
-          {fieldErrorLabel(errors.startsAt) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.startsAt)}</p> : null}
+          {fieldErrorLabel(errors.startsAt) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.startsAt)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor={`move-ends-at-${booking.id}`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`move-ends-at-${booking.id}`} className="block text-sm font-medium text-ink">
             {labels.form.endsAt}
           </label>
           <input
@@ -505,11 +507,11 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
             className={inputClasses}
             {...register('endsAt')}
           />
-          {fieldErrorLabel(errors.endsAt) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.endsAt)}</p> : null}
+          {fieldErrorLabel(errors.endsAt) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.endsAt)}</p> : null}
         </div>
 
         <div>
-          <label htmlFor={`move-notes-${booking.id}`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`move-notes-${booking.id}`} className="block text-sm font-medium text-ink">
             {labels.form.notes}
           </label>
           <input id={`move-notes-${booking.id}`} maxLength={500} className={inputClasses} {...register('notes')} />
@@ -517,27 +519,27 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="move-booking-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="move-booking-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
           data-testid="move-booking-save"
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[44px]"
         >
           {labels.actions.save}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[44px]"
         >
           {labels.actions.dismiss}
-        </button>
+        </Button>
       </div>
     </form>
   );

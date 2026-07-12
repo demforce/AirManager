@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent } from 'react';
+import { Input } from '@/components/ui/input';
 
 /**
  * One selectable entry (story TD-3, AC 1/2). `meta` is an optional secondary
@@ -241,10 +242,10 @@ export function SearchCombobox({
   // floor while staying correct in the grid.
   return (
     <div className="relative min-w-[200px]">
-      <label htmlFor={id} className="block text-sm font-medium text-[#2F3437]">
+      <label htmlFor={id} className="block text-sm font-medium text-ink">
         {label}
       </label>
-      <input
+      <Input
         id={id}
         type="text"
         role="combobox"
@@ -261,7 +262,7 @@ export function SearchCombobox({
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         data-testid={id}
-        className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437] disabled:cursor-not-allowed disabled:bg-[#F7F6F3]"
+        className="mt-2 min-h-[44px] w-full"
       />
       {open ? (
         <ul
@@ -278,10 +279,10 @@ export function SearchCombobox({
           // (mousedown fires before click) — without this, `onBlur` would
           // close the popup and revert the query before `onClick` ever runs.
           onMouseDown={(event) => event.preventDefault()}
-          className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-[6px] border border-[#EAEAEA] bg-white py-1 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+          className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-buttons border border-hairline bg-paper py-1 shadow-subtle"
         >
           {options.length === 0 ? (
-            <li role="option" aria-disabled="true" aria-selected="false" className="px-3 py-2 text-sm text-[#787774]">
+            <li role="option" aria-disabled="true" aria-selected="false" className="px-3 py-2 text-sm text-mid-gray">
               {emptyText}
             </li>
           ) : (
@@ -293,10 +294,10 @@ export function SearchCombobox({
                 aria-selected={option.id === value}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => selectOption(option)}
-                className={`cursor-pointer px-3 py-2 text-sm ${index === activeIndex ? 'bg-[#F7F6F3] text-[#111111]' : 'text-[#2F3437]'}`}
+                className={`cursor-pointer px-3 py-2 text-sm ${index === activeIndex ? 'bg-canvas text-ink' : 'text-ink'}`}
               >
                 {option.label}
-                {option.meta ? <span className="ml-2 text-xs text-[#787774]">{option.meta}</span> : null}
+                {option.meta ? <span className="ml-2 text-xs text-mid-gray">{option.meta}</span> : null}
               </li>
             ))
           )}

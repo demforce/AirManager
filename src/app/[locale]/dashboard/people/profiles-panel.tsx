@@ -13,6 +13,10 @@ import {
   type StudentProfileRequestInput,
 } from '@/lib/schemas/people';
 import { formatDateOnly } from '@/lib/time';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import { Card } from '@/components/ui/card';
 
 /**
  * The three profiles a `Person` may activate (story 2.2, AC 1/2, AD-11).
@@ -111,27 +115,26 @@ export function ProfilesPanel({ personId, personLabel, labels, onClose, onChange
   }
 
   return (
-    <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+    <Card className="p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+          <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
             {labels.heading}
           </h3>
-          <p className="mt-1 text-sm text-[#787774]">{personLabel}</p>
+          <p className="mt-1 text-sm text-mid-gray">{personLabel}</p>
         </div>
         {onClose ? (
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={onClose}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
           >
             {labels.close}
-          </button>
+          </Button>
         ) : null}
       </div>
 
-      {loading ? <p className="mt-6 text-sm text-[#787774]">…</p> : null}
-      {error ? <p className="mt-6 text-sm text-[#9F2F2D]">{labels.loadError}</p> : null}
+      {loading ? <p className="mt-6 text-sm text-mid-gray">…</p> : null}
+      {error ? <p className="mt-6 text-sm text-ember">{labels.loadError}</p> : null}
 
       {!loading && !error && detail ? (
         <div className="mt-6 space-y-6">
@@ -140,7 +143,7 @@ export function ProfilesPanel({ personId, personLabel, labels, onClose, onChange
           <InstructorSection personId={personId} profile={detail.instructorProfile} labels={labels} onSaved={refresh} readOnly={readOnly} />
         </div>
       ) : null}
-    </div>
+    </Card>
   );
 }
 
@@ -149,25 +152,25 @@ function sectionStatusLabel(profile: { deactivatedAt: string | null } | null, la
   return profile.deactivatedAt ? labels.status.inactive : labels.status.active;
 }
 
-function sectionBadgeClasses(profile: { deactivatedAt: string | null } | null): string {
-  if (!profile) return 'bg-[#F7F6F3] text-[#787774]';
-  return profile.deactivatedAt ? 'bg-[#FBF3DB] text-[#956400]' : 'bg-[#EDF3EC] text-[#346538]';
+function sectionBadgeTone(profile: { deactivatedAt: string | null } | null): StatusTone | string {
+  if (!profile) return 'bg-canvas text-mid-gray';
+  return profile.deactivatedAt ? 'warning' : 'ok';
 }
 
 type SectionShellProps = {
   title: string;
   status: string;
-  badgeClasses: string;
+  badgeTone: StatusTone | string;
   testId: string;
   children: React.ReactNode;
 };
 
-function SectionShell({ title, status, badgeClasses, testId, children }: SectionShellProps) {
+function SectionShell({ title, status, badgeTone, testId, children }: SectionShellProps) {
   return (
-    <div className="rounded-[8px] border border-[#EAEAEA] p-4" data-testid={testId}>
+    <div className="rounded-nested border border-hairline p-4" data-testid={testId}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-base font-medium text-[#111111]">{title}</h4>
-        <span className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] ${badgeClasses}`}>{status}</span>
+        <h4 className="text-base font-medium text-ink">{title}</h4>
+        <StatusPill tone={badgeTone}>{status}</StatusPill>
       </div>
       <div className="mt-4">{children}</div>
     </div>
@@ -235,12 +238,12 @@ function PilotSection({ personId, profile, labels, onSaved, readOnly }: PilotSec
     <SectionShell
       title={labels.pilot.title}
       status={sectionStatusLabel(profile, labels)}
-      badgeClasses={sectionBadgeClasses(profile)}
+      badgeTone={sectionBadgeTone(profile)}
       testId="profile-section-pilot"
     >
       {readOnly ? (
         profile ? (
-          <p className="text-sm text-[#2F3437]">
+          <p className="text-sm text-ink">
             {labels.pilot.licenseNumber}: {profile.licenseNumber} · {labels.pilot.licenseType}: {profile.licenseType}
           </p>
         ) : (
@@ -250,102 +253,97 @@ function PilotSection({ personId, profile, labels, onSaved, readOnly }: PilotSec
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="pilot-licenseNumber" className="block text-sm font-medium text-[#2F3437]">
+              <label htmlFor="pilot-licenseNumber" className="block text-sm font-medium text-ink">
                 {labels.pilot.licenseNumber}
               </label>
-              <input
+              <Input
                 id="pilot-licenseNumber"
-                className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                className="mt-2 w-full"
                 aria-invalid={Boolean(errors.licenseNumber)}
                 {...register('licenseNumber')}
               />
-              {errors.licenseNumber ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errors.requiredField}</p> : null}
+              {errors.licenseNumber ? <p className="mt-1 text-xs text-ember">{labels.errors.requiredField}</p> : null}
             </div>
             <div>
-              <label htmlFor="pilot-licenseType" className="block text-sm font-medium text-[#2F3437]">
+              <label htmlFor="pilot-licenseType" className="block text-sm font-medium text-ink">
                 {labels.pilot.licenseType}
               </label>
-              <input
+              <Input
                 id="pilot-licenseType"
-                className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                className="mt-2 w-full"
                 aria-invalid={Boolean(errors.licenseType)}
                 {...register('licenseType')}
               />
-              {errors.licenseType ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errors.requiredField}</p> : null}
+              {errors.licenseType ? <p className="mt-1 text-xs text-ember">{labels.errors.requiredField}</p> : null}
             </div>
           </div>
           {formError ? (
-            <p role="alert" className="text-sm text-[#9F2F2D]">
+            <p role="alert" className="text-sm text-ember">
               {formError}
             </p>
           ) : null}
           <div className="flex gap-3">
-            <button
+            <Button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-60"
+              className="disabled:opacity-60"
             >
               {labels.actions.save}
-            </button>
-            <button
+            </Button>
+            <Button variant="outline"
               type="button"
               onClick={() => setEditing(false)}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.cancel}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-4">
           {profile ? (
-            <p className="text-sm text-[#2F3437]">
+            <p className="text-sm text-ink">
               {labels.pilot.licenseNumber}: {profile.licenseNumber} · {labels.pilot.licenseType}: {profile.licenseType}
             </p>
           ) : (
             <span />
           )}
           {formError ? (
-            <p role="alert" className="text-sm text-[#9F2F2D]">
+            <p role="alert" className="text-sm text-ember">
               {formError}
             </p>
           ) : null}
           {confirmingDeactivate ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[#787774]">{labels.actions.confirmDeactivate}</span>
-              <button
+              <span className="text-xs text-mid-gray">{labels.actions.confirmDeactivate}</span>
+              <Button size="sm"
                 type="button"
                 disabled={pending}
                 onClick={() => void handleDeactivate()}
-                className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
               >
                 {labels.actions.confirmYes}
-              </button>
-              <button
+              </Button>
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setConfirmingDeactivate(false)}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.actions.confirmCancel}
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setEditing(true)}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {!profile ? labels.actions.activate : profile.deactivatedAt ? labels.actions.reactivate : labels.actions.edit}
-              </button>
+              </Button>
               {isActive ? (
-                <button
+                <Button variant="outline" size="sm"
                   type="button"
                   onClick={() => setConfirmingDeactivate(true)}
-                  className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                 >
                   {labels.actions.deactivate}
-                </button>
+                </Button>
               ) : null}
             </div>
           )}
@@ -417,12 +415,12 @@ function StudentSection({ personId, profile, labels, onSaved, readOnly }: Studen
     <SectionShell
       title={labels.student.title}
       status={sectionStatusLabel(profile, labels)}
-      badgeClasses={sectionBadgeClasses(profile)}
+      badgeTone={sectionBadgeTone(profile)}
       testId="profile-section-student"
     >
       {readOnly ? (
         profile ? (
-          <p className="text-sm text-[#2F3437]">
+          <p className="text-sm text-ink">
             {labels.student.courseStartDate}: {formatDateOnly(profile.courseStartDate, moneyLocale)}
           </p>
         ) : (
@@ -431,90 +429,85 @@ function StudentSection({ personId, profile, labels, onSaved, readOnly }: Studen
       ) : editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4">
           <div>
-            <label htmlFor="student-courseStartDate" className="block text-sm font-medium text-[#2F3437]">
+            <label htmlFor="student-courseStartDate" className="block text-sm font-medium text-ink">
               {labels.student.courseStartDate}
             </label>
-            <input
+            <Input
               id="student-courseStartDate"
               type="date"
-              className="mt-2 w-full max-w-xs rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+              className="mt-2 w-full max-w-xs"
               aria-invalid={Boolean(errors.courseStartDate)}
               {...register('courseStartDate')}
             />
-            {errors.courseStartDate ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errors.requiredField}</p> : null}
+            {errors.courseStartDate ? <p className="mt-1 text-xs text-ember">{labels.errors.requiredField}</p> : null}
           </div>
           {formError ? (
-            <p role="alert" className="text-sm text-[#9F2F2D]">
+            <p role="alert" className="text-sm text-ember">
               {formError}
             </p>
           ) : null}
           <div className="flex gap-3">
-            <button
+            <Button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-60"
+              className="disabled:opacity-60"
             >
               {labels.actions.save}
-            </button>
-            <button
+            </Button>
+            <Button variant="outline"
               type="button"
               onClick={() => setEditing(false)}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.cancel}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-4">
           {profile ? (
-            <p className="text-sm text-[#2F3437]">
+            <p className="text-sm text-ink">
               {labels.student.courseStartDate}: {formatDateOnly(profile.courseStartDate, moneyLocale)}
             </p>
           ) : (
             <span />
           )}
           {formError ? (
-            <p role="alert" className="text-sm text-[#9F2F2D]">
+            <p role="alert" className="text-sm text-ember">
               {formError}
             </p>
           ) : null}
           {confirmingDeactivate ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[#787774]">{labels.actions.confirmDeactivate}</span>
-              <button
+              <span className="text-xs text-mid-gray">{labels.actions.confirmDeactivate}</span>
+              <Button size="sm"
                 type="button"
                 disabled={pending}
                 onClick={() => void handleDeactivate()}
-                className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
               >
                 {labels.actions.confirmYes}
-              </button>
-              <button
+              </Button>
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setConfirmingDeactivate(false)}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.actions.confirmCancel}
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setEditing(true)}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {!profile ? labels.actions.activate : profile.deactivatedAt ? labels.actions.reactivate : labels.actions.edit}
-              </button>
+              </Button>
               {isActive ? (
-                <button
+                <Button variant="outline" size="sm"
                   type="button"
                   onClick={() => setConfirmingDeactivate(true)}
-                  className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                 >
                   {labels.actions.deactivate}
-                </button>
+                </Button>
               ) : null}
             </div>
           )}
@@ -585,91 +578,86 @@ function InstructorSection({ personId, profile, labels, onSaved, readOnly }: Ins
     <SectionShell
       title={labels.instructor.title}
       status={sectionStatusLabel(profile, labels)}
-      badgeClasses={sectionBadgeClasses(profile)}
+      badgeTone={sectionBadgeTone(profile)}
       testId="profile-section-instructor"
     >
       {readOnly ? (
-        profile ? <p className="text-sm text-[#2F3437]">{profile.ratings}</p> : <span />
+        profile ? <p className="text-sm text-ink">{profile.ratings}</p> : <span />
       ) : editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4">
           <div>
-            <label htmlFor="instructor-ratings" className="block text-sm font-medium text-[#2F3437]">
+            <label htmlFor="instructor-ratings" className="block text-sm font-medium text-ink">
               {labels.instructor.ratings}
             </label>
-            <input
+            <Input
               id="instructor-ratings"
-              className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+              className="mt-2 w-full"
               aria-invalid={Boolean(errors.ratings)}
               {...register('ratings')}
             />
-            {errors.ratings ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errors.requiredField}</p> : null}
+            {errors.ratings ? <p className="mt-1 text-xs text-ember">{labels.errors.requiredField}</p> : null}
           </div>
           {formError ? (
-            <p role="alert" className="text-sm text-[#9F2F2D]">
+            <p role="alert" className="text-sm text-ember">
               {formError}
             </p>
           ) : null}
           <div className="flex gap-3">
-            <button
+            <Button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-60"
+              className="disabled:opacity-60"
             >
               {labels.actions.save}
-            </button>
-            <button
+            </Button>
+            <Button variant="outline"
               type="button"
               onClick={() => setEditing(false)}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.cancel}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-4">
-          {profile ? <p className="text-sm text-[#2F3437]">{profile.ratings}</p> : <span />}
+          {profile ? <p className="text-sm text-ink">{profile.ratings}</p> : <span />}
           {formError ? (
-            <p role="alert" className="text-sm text-[#9F2F2D]">
+            <p role="alert" className="text-sm text-ember">
               {formError}
             </p>
           ) : null}
           {confirmingDeactivate ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[#787774]">{labels.actions.confirmDeactivate}</span>
-              <button
+              <span className="text-xs text-mid-gray">{labels.actions.confirmDeactivate}</span>
+              <Button size="sm"
                 type="button"
                 disabled={pending}
                 onClick={() => void handleDeactivate()}
-                className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
               >
                 {labels.actions.confirmYes}
-              </button>
-              <button
+              </Button>
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setConfirmingDeactivate(false)}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.actions.confirmCancel}
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setEditing(true)}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {!profile ? labels.actions.activate : profile.deactivatedAt ? labels.actions.reactivate : labels.actions.edit}
-              </button>
+              </Button>
               {isActive ? (
-                <button
+                <Button variant="outline" size="sm"
                   type="button"
                   onClick={() => setConfirmingDeactivate(true)}
-                  className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                 >
                   {labels.actions.deactivate}
-                </button>
+                </Button>
               ) : null}
             </div>
           )}

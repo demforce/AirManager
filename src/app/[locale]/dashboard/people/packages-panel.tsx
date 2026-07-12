@@ -12,6 +12,9 @@ import type { HourPackageItemDto } from '@/lib/schemas/packages';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { useAccountRefresh } from './account-refresh-context';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
 
 export type PackagesPanelLabels = {
   heading: string;
@@ -129,17 +132,17 @@ export function PackagesPanel({ personId, canSell, labels }: PackagesPanelProps)
   }
 
   return (
-    <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="packages-panel">
+    <Card className="p-6" data-testid="packages-panel">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{labels.heading}</h3>
+        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">{labels.heading}</h3>
         {canSell && !formOpen ? (
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={() => setFormOpen(true)}
-            className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            className="min-h-[44px]"
           >
             {labels.addAction}
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -156,37 +159,37 @@ export function PackagesPanel({ personId, canSell, labels }: PackagesPanelProps)
       ) : null}
 
       <div className="mt-6">
-        {loadError ? <p className="text-sm text-[#9F2F2D]">{labels.loadError}</p> : null}
+        {loadError ? <p className="text-sm text-ember">{labels.loadError}</p> : null}
         {!loadError && packages !== null && packages.length === 0 ? (
-          <p className="text-sm text-[#787774]">{labels.empty}</p>
+          <p className="text-sm text-mid-gray">{labels.empty}</p>
         ) : null}
         {!loadError && packages !== null && packages.length > 0 ? (
-          <ul className="divide-y divide-[#EAEAEA]">
+          <ul className="divide-y divide-hairline">
             {packages.map((pkg) => (
               <li key={pkg.id} data-testid="hour-package-row" className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
                 <div>
-                  <p className="font-medium text-[#111111]">{pkg.typeName}</p>
-                  <p className="text-xs text-[#787774]">
+                  <p className="font-medium text-ink">{pkg.typeName}</p>
+                  <p className="text-xs text-mid-gray">
                     {labels.table.price} {formatCents(pkg.pricePaidCents, moneyLocale)}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="text-right">
-                    <span className="block font-[family-name:var(--font-mono,monospace)] text-base text-[#111111]">
+                    <span className="block font-[family-name:var(--font-mono,monospace)] text-base text-ink">
                       {formatMinutes(pkg.remainingMinutes)}
                     </span>
-                    <span className="block text-xs text-[#787774]">{labels.table.remaining}</span>
+                    <span className="block text-xs text-mid-gray">{labels.table.remaining}</span>
                     {pkg.consumedMinutes > 0 ? (
-                      <span data-testid="hour-package-consumed-note" className="block text-xs text-[#787774]">
+                      <span data-testid="hour-package-consumed-note" className="block text-xs text-mid-gray">
                         {labels.table.consumedNote.replace('{duration}', formatMinutes(pkg.consumedMinutes))}
                       </span>
                     ) : null}
                   </span>
                   <span className="text-right">
-                    <span className="block text-sm text-[#2F3437]">
+                    <span className="block text-sm text-ink">
                       {pkg.expiresAt ? formatDateOnly(pkg.expiresAt, moneyLocale) : labels.table.noExpiry}
                     </span>
-                    <span className="block text-xs text-[#787774]">{labels.table.expiresAt}</span>
+                    <span className="block text-xs text-mid-gray">{labels.table.expiresAt}</span>
                   </span>
                   {pkg.isExpired ? (
                     <span
@@ -202,7 +205,7 @@ export function PackagesPanel({ personId, canSell, labels }: PackagesPanelProps)
           </ul>
         ) : null}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -305,20 +308,20 @@ function SellPackageForm({ personId, labels, onCancel, onSuccess }: SellPackageF
     <form
       onSubmit={(event) => void handleSubmit(onSubmit)(event)}
       noValidate
-      className="space-y-4 rounded-[8px] border border-[#EAEAEA] p-4"
+      className="space-y-4 rounded-nested border border-hairline p-4"
       data-testid="sell-package-form"
     >
-      <h4 className="text-base font-medium text-[#111111]">{labels.title}</h4>
+      <h4 className="text-base font-medium text-ink">{labels.title}</h4>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="sell-package-type" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="sell-package-type" className="block text-sm font-medium text-ink">
             {labels.packageType}
           </label>
           <select
             id="sell-package-type"
             aria-invalid={Boolean(errors.packageTypeId)}
             disabled={noActiveTypes}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437] disabled:cursor-not-allowed disabled:bg-[#F7F6F3]"
+            className="mt-2 min-h-[44px] w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink disabled:cursor-not-allowed disabled:bg-canvas"
             {...register('packageTypeId')}
           >
             <option value="" disabled>
@@ -330,16 +333,16 @@ function SellPackageForm({ personId, labels, onCancel, onSuccess }: SellPackageF
               </option>
             ))}
           </select>
-          {noActiveTypes ? <p className="mt-1 text-xs text-[#787774]">{labels.noActiveTypes}</p> : null}
-          {errors.packageTypeId ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {noActiveTypes ? <p className="mt-1 text-xs text-mid-gray">{labels.noActiveTypes}</p> : null}
+          {errors.packageTypeId ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="sell-package-payment-method" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="sell-package-payment-method" className="block text-sm font-medium text-ink">
             {labels.paymentMethod}
           </label>
           <select
             id="sell-package-payment-method"
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink"
             {...register('paymentMethod')}
           >
             <option value="CASH">{labels.paymentMethods.cash}</option>
@@ -348,52 +351,52 @@ function SellPackageForm({ personId, labels, onCancel, onSuccess }: SellPackageF
           </select>
         </div>
         <div>
-          <label htmlFor="sell-package-effective-date" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="sell-package-effective-date" className="block text-sm font-medium text-ink">
             {labels.effectiveDate}
           </label>
-          <input
+          <Input
             id="sell-package-effective-date"
             type="date"
             aria-invalid={Boolean(errors.effectiveDate)}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('effectiveDate')}
           />
-          {errors.effectiveDate ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.effectiveDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="sell-package-description" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="sell-package-description" className="block text-sm font-medium text-ink">
             {labels.description}
           </label>
-          <input
+          <Input
             id="sell-package-description"
             maxLength={500}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('description')}
           />
         </div>
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="sell-package-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="sell-package-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting || noActiveTypes}
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[44px]"
         >
           {labels.submit}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[44px]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

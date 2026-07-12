@@ -8,6 +8,10 @@ import { formatCents, parseCents } from '@/lib/money';
 import type { PprRequestItemDto, PprStatusDto } from '@/lib/schemas/ppr';
 import { formatDateTime } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { Button } from '@/components/ui/button';
+import { Input, inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 
 export type PprRegisterFilters = { status: string; from: string; to: string };
 
@@ -68,19 +72,17 @@ async function isConflict(response: Response): Promise<boolean> {
   return (body as ApiErrorBody | null)?.error?.code === 'PPR_NOT_APPROVED';
 }
 
-/** `PprStatusDto` -> the badge palette already established across the dashboard (`FlightStatusCell`, `types-manager.tsx`, `account-statement-table.tsx`) — no new colors introduced. */
-const STATUS_BADGE_CLASSES: Record<PprStatusDto, string> = {
+/** `PprStatusDto` -> the badge palette already established across the dashboard (`FlightStatusCell`, `types-manager.tsx`, `account-statement-table.tsx`) — no new colors introduced. PENDING/COMPLETED keep their own established tones (outside the shared ok/warning/danger tripletta, AC 4: invariant). */
+const STATUS_BADGE_TONE: Record<PprStatusDto, StatusTone | string> = {
   PENDING: 'bg-[#F0EEE6] text-[#5F5B53]',
-  APPROVED: 'bg-[#EDF3EC] text-[#346538]',
-  REJECTED: 'bg-[#FDEBEC] text-[#9F2F2D]',
+  APPROVED: 'ok',
+  REJECTED: 'danger',
   COMPLETED: 'bg-[#E1F3FE] text-[#1F6C9F]',
-  CANCELLED: 'bg-[#FBF3DB] text-[#956400]',
+  CANCELLED: 'warning',
 };
 
 function StatusBadge({ status, label }: { status: PprStatusDto; label: string }) {
-  return (
-    <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_BADGE_CLASSES[status]}`}>{label}</span>
-  );
+  return <StatusPill tone={STATUS_BADGE_TONE[status]}>{label}</StatusPill>;
 }
 
 function statusOptionLabel(status: PprStatusDto, labels: PprRegisterLabels['filters']['statusOptions']): string {
@@ -98,8 +100,7 @@ function statusOptionLabel(status: PprStatusDto, labels: PprRegisterLabels['filt
   }
 }
 
-const inputClasses =
-  'mt-2 min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[40px]');
 
 /**
  * PPR register (epic 8, story 8.3, AC 1/2). Model: `flights-manager.tsx`'s
@@ -186,9 +187,9 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
 
   return (
     <div data-testid="ppr-register">
-      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#EAEAEA] pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-hairline pb-6">
         <div className="flex flex-wrap items-end gap-4" data-testid="ppr-register-filter-bar">
-          <div className="flex flex-col text-sm text-[#2F3437]">
+          <div className="flex flex-col text-sm text-ink">
             <label htmlFor="ppr-register-filter-status">{labels.filters.status}</label>
             <select
               id="ppr-register-filter-status"
@@ -205,7 +206,7 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
               <option value="CANCELLED">{labels.filters.statusOptions.cancelled}</option>
             </select>
           </div>
-          <div className="flex flex-col text-sm text-[#2F3437]">
+          <div className="flex flex-col text-sm text-ink">
             <label htmlFor="ppr-register-filter-from">{labels.filters.from}</label>
             <input
               id="ppr-register-filter-from"
@@ -216,7 +217,7 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
               data-testid="ppr-register-filter-from"
             />
           </div>
-          <div className="flex flex-col text-sm text-[#2F3437]">
+          <div className="flex flex-col text-sm text-ink">
             <label htmlFor="ppr-register-filter-to">{labels.filters.to}</label>
             <input
               id="ppr-register-filter-to"
@@ -232,7 +233,7 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
               type="button"
               onClick={handleResetFilters}
               data-testid="ppr-register-filter-reset"
-              className="min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              className="min-h-[40px] rounded-buttons border border-hairline bg-paper px-3 text-sm font-medium text-ink transition-colors hover:bg-canvas"
             >
               {labels.filters.reset}
             </button>
@@ -248,14 +249,14 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
       ) : null}
 
       {requests.length === 0 ? (
-        <p className="mt-6 text-sm text-[#787774]" data-testid="ppr-register-empty">
+        <p className="mt-6 text-sm text-mid-gray" data-testid="ppr-register-empty">
           {labels.empty}
         </p>
       ) : (
-        <div className="mt-6 overflow-x-auto rounded-[12px] border border-[#EAEAEA]">
+        <div className="mt-6 overflow-x-auto rounded-cards border border-hairline">
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+              <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
                 <th className="px-5 py-3">{labels.table.pprNumber}</th>
                 <th className="px-5 py-3">{labels.table.requester}</th>
                 <th className="px-5 py-3">{labels.table.aircraft}</th>
@@ -272,7 +273,7 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
 
                 return (
                   <Fragment key={request.id}>
-                    <tr data-testid="ppr-register-row" className="border-b border-[#EAEAEA] align-top text-[#111111]">
+                    <tr data-testid="ppr-register-row" className="border-b border-hairline align-top text-ink">
                       <td className="px-5 py-3 whitespace-nowrap">{request.pprNumber ?? labels.table.noValue}</td>
                       <td className="px-5 py-3 whitespace-nowrap">
                         {request.firstName} {request.lastName}
@@ -288,52 +289,48 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
                       <td className="px-5 py-3">
                         {request.status !== 'APPROVED' ? null : action === 'cancelConfirm' ? (
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs text-[#787774]">{labels.actions.confirmCancelPrompt}</span>
-                            <button
+                            <span className="text-xs text-mid-gray">{labels.actions.confirmCancelPrompt}</span>
+                            <Button size="sm"
                               type="button"
                               disabled={isBusy}
                               onClick={() => void confirmCancel(request.id)}
                               data-testid="ppr-register-cancel-confirm"
-                              className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
                             >
                               {labels.actions.confirmYes}
-                            </button>
-                            <button
+                            </Button>
+                            <Button variant="outline" size="sm"
                               type="button"
                               onClick={closeRowAction}
                               data-testid="ppr-register-cancel-abort"
-                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                             >
                               {labels.actions.confirmNo}
-                            </button>
+                            </Button>
                           </div>
                         ) : action === 'complete' ? null : (
                           <div className="flex flex-wrap gap-2">
-                            <button
+                            <Button size="sm"
                               type="button"
                               disabled={isBusy}
                               onClick={() => startComplete(request.id)}
                               data-testid="ppr-register-complete-button"
-                              className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
                             >
                               {labels.actions.complete}
-                            </button>
-                            <button
+                            </Button>
+                            <Button variant="outline" size="sm"
                               type="button"
                               disabled={isBusy}
                               onClick={() => startCancelConfirm(request.id)}
                               data-testid="ppr-register-cancel-button"
-                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
                             >
                               {labels.actions.cancel}
-                            </button>
+                            </Button>
                           </div>
                         )}
                       </td>
                     </tr>
 
                     {action === 'complete' ? (
-                      <tr className="border-b border-[#EAEAEA] bg-[#F7F6F3]">
+                      <tr className="border-b border-hairline bg-canvas">
                         <td colSpan={columnCount} className="px-5 py-4">
                           <CompleteForm
                             // Remount per target row (review 2.4 F1 pattern,
@@ -472,15 +469,15 @@ function CompleteForm({ id, pprNumber, labels, genericErrorLabel, onCancel, onSu
 
   return (
     <form onSubmit={(event) => void handleSubmit(event)} noValidate className="space-y-4" data-testid="ppr-complete-form">
-      <h4 className="text-base font-medium text-[#111111]">
+      <h4 className="text-base font-medium text-ink">
         {labels.complete}
-        {pprNumber ? <span className="ml-2 font-normal text-[#787774]">{pprNumber}</span> : null}
+        {pprNumber ? <span className="ml-2 font-normal text-mid-gray">{pprNumber}</span> : null}
       </h4>
       <div>
-        <label htmlFor={`ppr-complete-fee-${id}`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`ppr-complete-fee-${id}`} className="block text-sm font-medium text-ink">
           {labels.feeLabel}
         </label>
-        <input
+        <Input
           id={`ppr-complete-fee-${id}`}
           data-testid="ppr-complete-fee-input"
           inputMode="decimal"
@@ -488,39 +485,37 @@ function CompleteForm({ id, pprNumber, labels, genericErrorLabel, onCancel, onSu
           aria-invalid={fieldError}
           value={feeInput}
           onChange={(event) => setFeeInput(event.target.value)}
-          className="mt-2 w-full max-w-[200px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full max-w-[200px]"
         />
-        <p className="mt-1 text-xs text-[#787774]">{labels.feeHint}</p>
+        <p className="mt-1 text-xs text-mid-gray">{labels.feeHint}</p>
         {fieldError ? (
-          <p role="alert" className="mt-1 text-xs text-[#9F2F2D]">
+          <p role="alert" className="mt-1 text-xs text-ember">
             {labels.invalidFee}
           </p>
         ) : null}
       </div>
 
       {formError ? (
-        <p role="alert" className="text-sm text-[#9F2F2D]">
+        <p role="alert" className="text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={submitting}
           data-testid="ppr-complete-submit"
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {labels.submitComplete}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
           data-testid="ppr-complete-close"
-          className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
         >
           {labels.closePanel}
-        </button>
+        </Button>
       </div>
     </form>
   );

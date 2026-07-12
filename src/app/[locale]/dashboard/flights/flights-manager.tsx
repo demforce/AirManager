@@ -19,6 +19,10 @@ import {
 } from '@/lib/schemas/flights';
 import { formatDateOnly, formatMinutes, formatTimeOfDay } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { Button } from '@/components/ui/button';
+import { Input, inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
+import { Card } from '@/components/ui/card';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type AircraftOption = { id: string; registration: string };
@@ -409,7 +413,7 @@ export function FlightsManager({
   return (
     <div className="space-y-10">
       {canManage ? (
-        <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="p-6">
           <RegisterFlightForm
             key={correctingFlight?.id ?? 'register'}
             aircraftOptions={aircraftOptions}
@@ -426,32 +430,32 @@ export function FlightsManager({
           />
 
           {lastResult ? (
-            <div data-testid="flight-result-panel" className="mt-6 rounded-[8px] border border-[#EAEAEA] bg-[#F7F6F3] p-4 text-sm">
-              <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.result.title}</h4>
+            <div data-testid="flight-result-panel" className="mt-6 rounded-nested border border-hairline bg-canvas p-4 text-sm">
+              <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.result.title}</h4>
               <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
                 <div className="flex justify-between gap-2 sm:justify-start">
-                  <dt className="text-[#787774]">{labels.result.minutes}</dt>
-                  <dd className="font-[family-name:var(--font-mono,monospace)] text-[#111111]">
+                  <dt className="text-mid-gray">{labels.result.minutes}</dt>
+                  <dd className="font-[family-name:var(--font-mono,monospace)] text-ink">
                     {formatMinutes(lastResult.flight.minutes)}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2 sm:justify-start">
-                  <dt className="text-[#787774]">{labels.result.aircraftRate}</dt>
-                  <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.aircraftRateCentsPerHour, moneyLocale)}/h</dd>
+                  <dt className="text-mid-gray">{labels.result.aircraftRate}</dt>
+                  <dd className="text-ink">{formatCents(lastResult.flight.breakdown.aircraftRateCentsPerHour, moneyLocale)}/h</dd>
                 </div>
                 {lastResult.flight.breakdown.packageCoveredMinutes > 0 ? (
                   <>
                     <div className="flex justify-between gap-2 sm:justify-start">
-                      <dt className="text-[#787774]">{labels.result.packageCovered}</dt>
-                      <dd className="text-[#111111]">{formatMinutes(lastResult.flight.breakdown.packageCoveredMinutes)}</dd>
+                      <dt className="text-mid-gray">{labels.result.packageCovered}</dt>
+                      <dd className="text-ink">{formatMinutes(lastResult.flight.breakdown.packageCoveredMinutes)}</dd>
                     </div>
                     <div className="flex justify-between gap-2 sm:justify-start">
-                      <dt className="text-[#787774]">{labels.result.chargedMinutes}</dt>
-                      <dd className="text-[#111111]">{formatMinutes(lastResult.flight.breakdown.chargedMinutes)}</dd>
+                      <dt className="text-mid-gray">{labels.result.chargedMinutes}</dt>
+                      <dd className="text-ink">{formatMinutes(lastResult.flight.breakdown.chargedMinutes)}</dd>
                     </div>
                     {lastResult.flight.breakdown.packageConsumptions.length > 1 ? (
                       <div className="sm:col-span-2">
-                        <ul data-testid="flight-result-packages" className="mt-1 space-y-1 border-t border-[#EAEAEA] pt-2 text-xs text-[#787774]">
+                        <ul data-testid="flight-result-packages" className="mt-1 space-y-1 border-t border-hairline pt-2 text-xs text-mid-gray">
                           {lastResult.flight.breakdown.packageConsumptions.map((consumption) => (
                             <li key={consumption.hourPackageId} className="flex justify-between gap-3">
                               <span>{consumption.typeName}</span>
@@ -464,40 +468,40 @@ export function FlightsManager({
                   </>
                 ) : null}
                 <div className="flex justify-between gap-2 sm:justify-start">
-                  <dt className="text-[#787774]">{labels.result.aircraftAmount}</dt>
-                  <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.aircraftAmountCents, moneyLocale)}</dd>
+                  <dt className="text-mid-gray">{labels.result.aircraftAmount}</dt>
+                  <dd className="text-ink">{formatCents(lastResult.flight.breakdown.aircraftAmountCents, moneyLocale)}</dd>
                 </div>
                 {lastResult.flight.breakdown.instructorAmountCents !== undefined &&
                 lastResult.flight.breakdown.instructorRateCentsPerHour !== undefined ? (
                   <>
                     <div className="flex justify-between gap-2 sm:justify-start">
-                      <dt className="text-[#787774]">{labels.result.instructorRate}</dt>
-                      <dd className="text-[#111111]">
+                      <dt className="text-mid-gray">{labels.result.instructorRate}</dt>
+                      <dd className="text-ink">
                         {formatCents(lastResult.flight.breakdown.instructorRateCentsPerHour, moneyLocale)}/h
                       </dd>
                     </div>
                     <div className="flex justify-between gap-2 sm:justify-start">
-                      <dt className="text-[#787774]">{labels.result.instructorAmount}</dt>
-                      <dd className="text-[#111111]">{formatCents(lastResult.flight.breakdown.instructorAmountCents, moneyLocale)}</dd>
+                      <dt className="text-mid-gray">{labels.result.instructorAmount}</dt>
+                      <dd className="text-ink">{formatCents(lastResult.flight.breakdown.instructorAmountCents, moneyLocale)}</dd>
                     </div>
                   </>
                 ) : null}
                 <div className="flex justify-between gap-2 sm:justify-start">
-                  <dt className="font-medium text-[#787774]">{labels.result.total}</dt>
-                  <dd data-testid="flight-result-total" className="font-medium text-[#111111]">
+                  <dt className="font-medium text-mid-gray">{labels.result.total}</dt>
+                  <dd data-testid="flight-result-total" className="font-medium text-ink">
                     {formatCents(lastResult.flight.breakdown.totalAmountCents, moneyLocale)}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2 sm:justify-start">
-                  <dt className="font-medium text-[#787774]">{labels.result.newBalance}</dt>
-                  <dd data-testid="flight-result-new-balance" className="font-medium text-[#111111]">
+                  <dt className="font-medium text-mid-gray">{labels.result.newBalance}</dt>
+                  <dd data-testid="flight-result-new-balance" className="font-medium text-ink">
                     {formatCents(lastResult.account.balanceCents, moneyLocale)}
                   </dd>
                 </div>
               </dl>
             </div>
           ) : null}
-        </div>
+        </Card>
       ) : null}
 
       {canManage && cancellingFlight ? (
@@ -524,7 +528,7 @@ export function FlightsManager({
         />
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
-          <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+          <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
             {labels.list.heading}
           </h3>
           <div className="flex items-center gap-4">
@@ -571,12 +575,12 @@ export function FlightsManager({
           </div>
         </div>
         {flights.length === 0 ? (
-          <p className="mt-4 text-sm text-[#787774]">{labels.list.empty}</p>
+          <p className="mt-4 text-sm text-mid-gray">{labels.list.empty}</p>
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[1280px] text-left text-sm">
               <thead>
-                <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+                <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
                   <th className="py-2 pr-4 font-medium">{labels.list.table.date}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.route}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.times}</th>
@@ -596,8 +600,8 @@ export function FlightsManager({
                 {flights.map((flight) => {
                   const pic = flightPicPerson(flight);
                   return (
-                  <tr key={flight.id} data-testid="flight-row" className="border-b border-[#EAEAEA] text-[#111111]">
-                    <td className="py-2 pr-4 whitespace-nowrap text-[#787774]">{formatDateOnly(flight.flightDate, moneyLocale)}</td>
+                  <tr key={flight.id} data-testid="flight-row" className="border-b border-hairline text-ink">
+                    <td className="py-2 pr-4 whitespace-nowrap text-mid-gray">{formatDateOnly(flight.flightDate, moneyLocale)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">
                       {flight.departureAirfield && flight.arrivalAirfield
                         ? `${flight.departureAirfield} → ${flight.arrivalAirfield}`
@@ -620,7 +624,7 @@ export function FlightsManager({
                     <td className="py-2 pr-4 whitespace-nowrap">
                       <span className="font-[family-name:var(--font-mono,monospace)]">{formatMinutes(flight.minutes)}</span>
                       {flight.breakdown.packageCoveredMinutes > 0 ? (
-                        <span className="block text-xs font-normal text-[#787774]">
+                        <span className="block text-xs font-normal text-mid-gray">
                           {labels.list.table.packageNote.replace('{duration}', formatMinutes(flight.breakdown.packageCoveredMinutes))}
                         </span>
                       ) : null}
@@ -646,7 +650,7 @@ export function FlightsManager({
                                 setCancelFeedback(null);
                                 setCancellingFlight(flight);
                               }}
-                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-2.5 py-1 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                              className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
                             >
                               {labels.list.table.cancelAction}
                             </button>
@@ -654,7 +658,7 @@ export function FlightsManager({
                               type="button"
                               data-testid="flight-correct-action"
                               onClick={() => setCorrectingFlight(flight)}
-                              className="rounded-[6px] border border-[#EAEAEA] bg-white px-2.5 py-1 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                              className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
                             >
                               {labels.list.table.correctAction}
                             </button>
@@ -709,14 +713,14 @@ function FlightStatusCell({
             {labels.statusCancelled}
           </span>
           {flight.cancelledAt && flight.cancelReason ? (
-            <p className="text-xs text-[#787774]" title={flight.cancelReason}>
+            <p className="text-xs text-mid-gray" title={flight.cancelReason}>
               {labels.cancelledDetail.replace('{date}', formatDateOnly(flight.cancelledAt.slice(0, 10), locale)).replace('{reason}', flight.cancelReason)}
             </p>
           ) : null}
         </>
       ) : null}
-      {flight.correctionOfId ? <p className="text-xs text-[#787774]">{labels.correctionOf}</p> : null}
-      {flight.correctedByFlightId ? <p className="text-xs text-[#787774]">{labels.correctedBy}</p> : null}
+      {flight.correctionOfId ? <p className="text-xs text-mid-gray">{labels.correctionOf}</p> : null}
+      {flight.correctedByFlightId ? <p className="text-xs text-mid-gray">{labels.correctedBy}</p> : null}
     </div>
   );
 }
@@ -747,8 +751,7 @@ type FilterBarProps = {
  * whole bar in one click.
  */
 function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, personOptions, labels, flightTypeLabels, pickerLabels }: FilterBarProps) {
-  const inputClasses =
-    'mt-2 min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[40px]');
   const hasActiveFilter = Object.values(filters).some((value) => value !== '');
 
   // The filter bar includes archived entities (Dev Notes: consulting the
@@ -780,7 +783,7 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
   );
 
   return (
-    <div className="flex flex-wrap items-end gap-4 border-b border-[#EAEAEA] pb-6" data-testid="flight-filter-bar">
+    <div className="flex flex-wrap items-end gap-4 border-b border-hairline pb-6" data-testid="flight-filter-bar">
       {/* `<label htmlFor>` as a SIBLING of its control, never wrapping it: a
           wrapping `<label>` around a `<select>` folds every `<option>`'s
           text into the label's own accessible name (browsers compute it from
@@ -788,7 +791,7 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
           label elsewhere on the page once option text is dynamic (e.g. a
           person's name) — the same footgun `CashRegister`'s filter bar has,
           fixed here instead of repeated. */}
-      <div className="flex flex-col text-sm text-[#2F3437]">
+      <div className="flex flex-col text-sm text-ink">
         <label htmlFor="flight-filter-date-from">{labels.dateFrom}</label>
         <input
           id="flight-filter-date-from"
@@ -799,7 +802,7 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
           data-testid="flight-filter-date-from"
         />
       </div>
-      <div className="flex flex-col text-sm text-[#2F3437]">
+      <div className="flex flex-col text-sm text-ink">
         <label htmlFor="flight-filter-date-to">{labels.dateTo}</label>
         <input
           id="flight-filter-date-to"
@@ -834,7 +837,7 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
           emptyText={pickerLabels.noResults}
         />
       ) : null}
-      <div className="flex flex-col text-sm text-[#2F3437]">
+      <div className="flex flex-col text-sm text-ink">
         <label htmlFor="flight-filter-type">{labels.flightType}</label>
         <select
           id="flight-filter-type"
@@ -849,7 +852,7 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
           <option value="AERIAL_WORK">{flightTypeLabels.other}</option>
         </select>
       </div>
-      <div className="flex flex-col text-sm text-[#2F3437]">
+      <div className="flex flex-col text-sm text-ink">
         <label htmlFor="flight-filter-status">{labels.status}</label>
         <select
           id="flight-filter-status"
@@ -868,7 +871,7 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
           type="button"
           onClick={onReset}
           data-testid="flight-filter-reset"
-          className="min-h-[40px] rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[40px] rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
         >
           {labels.reset}
         </button>
@@ -926,52 +929,52 @@ function CancelFlightPanel({ flight, moneyLocale, labels, onClose, onCancelled }
   }
 
   return (
-    <div data-testid="flight-cancel-panel" className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-      <h4 className="font-[family-name:var(--font-serif)] text-xl font-medium tracking-[-0.02em] text-[#111111]">{labels.title}</h4>
-      <p className="mt-2 text-sm text-[#787774]">
+    <Card data-testid="flight-cancel-panel" className="p-6">
+      <h4 className="text-xl font-semibold tracking-[-0.02em] text-ink">{labels.title}</h4>
+      <p className="mt-2 text-sm text-mid-gray">
         {flight.aircraft.registration} — {formatDateOnly(flight.flightDate, moneyLocale)} — {formatCents(flight.breakdown.totalAmountCents, moneyLocale)}
       </p>
 
       <div className="mt-4 max-w-md">
-        <label htmlFor="cancel-reason" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="cancel-reason" className="block text-sm font-medium text-ink">
           {labels.reason}
         </label>
-        <input
+        <Input
           id="cancel-reason"
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           aria-invalid={reasonError}
           maxLength={500}
-          className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 min-h-[44px] w-full"
         />
-        {reasonError ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredReason}</p> : null}
+        {reasonError ? <p className="mt-1 text-xs text-ember">{labels.requiredReason}</p> : null}
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="flight-cancel-error" className="mt-4 rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="flight-cancel-error" className="mt-4 rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="mt-5 flex gap-3">
-        <button
+        <Button
           type="button"
           data-testid="flight-cancel-confirm"
           disabled={submitting}
           onClick={() => void handleConfirm()}
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[44px]"
         >
           {labels.submit}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onClose}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[44px]"
         >
           {labels.close}
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -1338,7 +1341,7 @@ function RegisterFlightForm({
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5" data-testid="flight-form">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
           {isCorrecting ? correctLabels.title : labels.title}
         </h3>
         {isCorrecting ? (
@@ -1346,7 +1349,7 @@ function RegisterFlightForm({
             type="button"
             data-testid="flight-correct-exit"
             onClick={onExitCorrection}
-            className="text-xs font-medium text-[#787774] underline-offset-4 hover:underline"
+            className="text-xs font-medium text-mid-gray underline-offset-4 hover:underline"
           >
             {correctLabels.exit}
           </button>
@@ -1366,7 +1369,7 @@ function RegisterFlightForm({
             emptyText={pickerLabels.noResults}
             disabled={noAircraft}
           />
-          {noAircraft ? <p className="mt-1 text-xs text-[#787774]">{labels.noAircraftAvailable}</p> : null}
+          {noAircraft ? <p className="mt-1 text-xs text-mid-gray">{labels.noAircraftAvailable}</p> : null}
         </div>
 
         <div>
@@ -1381,7 +1384,7 @@ function RegisterFlightForm({
             emptyText={pickerLabels.noResults}
             disabled={noPerson}
           />
-          {noPerson ? <p className="mt-1 text-xs text-[#787774]">{labels.noPersonAvailable}</p> : null}
+          {noPerson ? <p className="mt-1 text-xs text-mid-gray">{labels.noPersonAvailable}</p> : null}
         </div>
 
         <div>
@@ -1398,26 +1401,26 @@ function RegisterFlightForm({
         </div>
 
         <div>
-          <label htmlFor="flight-date" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-date" className="block text-sm font-medium text-ink">
             {labels.flightDate}
           </label>
-          <input
+          <Input
             id="flight-date"
             type="date"
             aria-invalid={Boolean(errors.flightDate)}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('flightDate', { onChange: (event: { target: { value: string } }) => setFlightDateValue(event.target.value) })}
           />
-          {errors.flightDate ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.flightDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="flight-type" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-type" className="block text-sm font-medium text-ink">
             {labels.flightType}
           </label>
           <select
             id="flight-type"
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink"
             {...register('flightType', {
               onChange: (event: { target: { value: string } }) => {
                 const next = event.target.value as FlightTypeDto;
@@ -1435,57 +1438,57 @@ function RegisterFlightForm({
         </div>
 
         <div>
-          <label htmlFor="flight-departure" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-departure" className="block text-sm font-medium text-ink">
             {labels.departure}
           </label>
-          <input
+          <Input
             id="flight-departure"
             aria-invalid={Boolean(errors.departureAirfield)}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('departureAirfield')}
           />
-          {errors.departureAirfield ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.departureAirfield ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="flight-arrival" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-arrival" className="block text-sm font-medium text-ink">
             {labels.arrival}
           </label>
-          <input
+          <Input
             id="flight-arrival"
             aria-invalid={Boolean(errors.arrivalAirfield)}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('arrivalAirfield')}
           />
-          {errors.arrivalAirfield ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.arrivalAirfield ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="flight-landings" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-landings" className="block text-sm font-medium text-ink">
             {labels.landings}
           </label>
-          <input
+          <Input
             id="flight-landings"
             type="number"
             step={1}
             min={0}
             inputMode="numeric"
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('landings')}
           />
         </div>
 
         <div>
-          <label htmlFor="flight-takeoffs" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-takeoffs" className="block text-sm font-medium text-ink">
             {labels.takeoffs}
           </label>
-          <input
+          <Input
             id="flight-takeoffs"
             type="number"
             step={1}
             min={0}
             inputMode="numeric"
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('takeoffs')}
           />
         </div>
@@ -1493,9 +1496,9 @@ function RegisterFlightForm({
 
       {selectedFlightType === 'SCHOOL' ? (
         <fieldset>
-          <legend className="block text-sm font-medium text-[#2F3437]">{labels.soloMode}</legend>
+          <legend className="block text-sm font-medium text-ink">{labels.soloMode}</legend>
           <div className="mt-2 flex flex-wrap gap-4">
-            <label htmlFor="flight-solo-dual" className="flex items-center gap-2 text-sm text-[#2F3437]">
+            <label htmlFor="flight-solo-dual" className="flex items-center gap-2 text-sm text-ink">
               <input
                 id="flight-solo-dual"
                 type="radio"
@@ -1506,7 +1509,7 @@ function RegisterFlightForm({
               />
               {labels.soloModes.dual}
             </label>
-            <label htmlFor="flight-solo-solo" className="flex items-center gap-2 text-sm text-[#2F3437]">
+            <label htmlFor="flight-solo-solo" className="flex items-center gap-2 text-sm text-ink">
               <input
                 id="flight-solo-solo"
                 type="radio"
@@ -1525,34 +1528,34 @@ function RegisterFlightForm({
           readings — the live display below is read-only, never an input. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:max-w-[660px]">
         <div>
-          <label htmlFor="flight-takeoff-time" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-takeoff-time" className="block text-sm font-medium text-ink">
             {labels.takeoffTime}
           </label>
-          <input
+          <Input
             id="flight-takeoff-time"
             type="time"
             aria-invalid={Boolean(errors.takeoffTime)}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('takeoffTime', { onChange: (event: { target: { value: string } }) => setTakeoffTimeValue(event.target.value) })}
           />
-          {errors.takeoffTime ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.takeoffTime ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="flight-landing-time" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-landing-time" className="block text-sm font-medium text-ink">
             {labels.landingTime}
           </label>
-          <input
+          <Input
             id="flight-landing-time"
             type="time"
             aria-invalid={Boolean(errors.landingTime)}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('landingTime', { onChange: (event: { target: { value: string } }) => setLandingTimeValue(event.target.value) })}
           />
-          {errors.landingTime ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.landingTime ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <span className="block text-sm font-medium text-[#2F3437]">{labels.computedDuration}</span>
-          <p data-testid="flight-computed-duration" className="mt-2 flex min-h-[44px] items-center font-[family-name:var(--font-mono,monospace)] text-base text-[#111111]">
+          <span className="block text-sm font-medium text-ink">{labels.computedDuration}</span>
+          <p data-testid="flight-computed-duration" className="mt-2 flex min-h-[44px] items-center font-[family-name:var(--font-mono,monospace)] text-base text-ink">
             {computedMinutes !== null ? formatMinutes(computedMinutes) : '—'}
           </p>
         </div>
@@ -1560,77 +1563,77 @@ function RegisterFlightForm({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-[440px]">
         <div>
-          <label htmlFor="flight-hour-meter-start" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-hour-meter-start" className="block text-sm font-medium text-ink">
             {labels.hourMeterStart}
           </label>
-          <input
+          <Input
             id="flight-hour-meter-start"
             type="number"
             step={1}
             min={0}
             inputMode="numeric"
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('hourMeterStart')}
           />
         </div>
         <div>
-          <label htmlFor="flight-hour-meter-end" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-hour-meter-end" className="block text-sm font-medium text-ink">
             {labels.hourMeterEnd}
           </label>
-          <input
+          <Input
             id="flight-hour-meter-end"
             type="number"
             step={1}
             min={0}
             inputMode="numeric"
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
             {...register('hourMeterEnd')}
           />
         </div>
       </div>
 
       <div>
-        <label htmlFor="flight-notes" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="flight-notes" className="block text-sm font-medium text-ink">
           {labels.notes}
         </label>
-        <input
+        <Input
           id="flight-notes"
           maxLength={1000}
-          className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 min-h-[44px] w-full"
           {...register('notes')}
         />
       </div>
 
       {isCorrecting ? (
         <div className="max-w-md">
-          <label htmlFor="flight-correct-reason" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="flight-correct-reason" className="block text-sm font-medium text-ink">
             {correctLabels.reason}
           </label>
-          <input
+          <Input
             id="flight-correct-reason"
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             aria-invalid={reasonError}
             maxLength={500}
-            className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 min-h-[44px] w-full"
           />
-          {reasonError ? <p className="mt-1 text-xs text-[#9F2F2D]">{correctLabels.requiredReason}</p> : null}
+          {reasonError ? <p className="mt-1 text-xs text-ember">{correctLabels.requiredReason}</p> : null}
         </div>
       ) : null}
 
       {formError ? (
-        <p role="alert" data-testid="flight-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="flight-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
-      <button
+      <Button
         type="submit"
         disabled={isSubmitting || noAircraft || noPerson}
-        className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+        className="min-h-[44px]"
       >
         {isCorrecting ? correctLabels.submit : labels.submit}
-      </button>
+      </Button>
     </form>
   );
 }

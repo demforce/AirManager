@@ -8,6 +8,7 @@ import { getSessionActor } from '@/server/auth/session';
 import { listNegativeBalances } from '@/server/services/accounts.service';
 import { listCashCategories, listCashMovements } from '@/server/services/cash.service';
 import { CashRegister, type CashRegisterFilters } from './cash-register';
+import { Card } from '@/components/ui/card';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -104,26 +105,26 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+            <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
               {t('kicker')}
             </span>
-            <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">
               {t('title')}
             </h1>
-            <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
+            <p className="mt-2 max-w-xl text-base leading-[1.6] text-mid-gray">{t('description')}</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Link
               href="/dashboard/finance/report"
               locale={locale as AppLocale}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
             >
               {t('viewReport')}
             </Link>
             <Link
               href="/dashboard/finance/packages"
               locale={locale as AppLocale}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
             >
               {t('viewPackages')}
             </Link>
@@ -131,7 +132,7 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
               <Link
                 href="/dashboard/finance/categories"
                 locale={locale as AppLocale}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
               >
                 {t('manageCategories')}
               </Link>
@@ -139,7 +140,7 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
             <Link
               href="/dashboard"
               locale={locale as AppLocale}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
             >
               {t('backToDashboard')}
             </Link>
@@ -147,11 +148,11 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
         </div>
 
         <section className="mt-10">
-          <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('negativeBalances.heading')}</h2>
-          <div className="mt-4 overflow-x-auto rounded-[12px] border border-[#EAEAEA] bg-white">
+          <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{t('negativeBalances.heading')}</h2>
+          <Card className="mt-4 overflow-x-auto p-0">
             <table className="w-full min-w-[560px] text-left text-sm" data-testid="negative-balances-table">
               <thead>
-                <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+                <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
                   <th className="px-5 py-3">{t('negativeBalances.table.person')}</th>
                   <th className="px-5 py-3">{t('negativeBalances.table.balance')}</th>
                   <th className="px-5 py-3">{t('negativeBalances.table.lastMovement')}</th>
@@ -160,18 +161,18 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
               <tbody>
                 {negativeBalances.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-5 py-8 text-center text-[#787774]">
+                    <td colSpan={3} className="px-5 py-8 text-center text-mid-gray">
                       {t('negativeBalances.empty')}
                     </td>
                   </tr>
                 ) : (
                   negativeBalances.map((item) => (
-                    <tr key={item.personId} className="border-b border-[#EAEAEA] last:border-b-0" data-testid="negative-balance-row">
+                    <tr key={item.personId} className="border-b border-hairline last:border-b-0" data-testid="negative-balance-row">
                       <td className="px-5 py-3 align-middle">
                         <Link
                           href={`/dashboard/people/${item.personId}`}
                           locale={locale as AppLocale}
-                          className="font-medium text-[#111111] underline-offset-4 hover:underline"
+                          className="font-medium text-ink underline-offset-4 hover:underline"
                         >
                           {item.lastName} {item.firstName}
                         </Link>
@@ -179,7 +180,7 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
                       <td className="px-5 py-3 align-middle font-medium text-[#9F2F2D]">
                         {formatCents(item.balanceCents, moneyLocale)}
                       </td>
-                      <td className="px-5 py-3 align-middle text-[#2F3437]">
+                      <td className="px-5 py-3 align-middle text-ink">
                         {item.lastMovementAt ? formatDateTime(item.lastMovementAt, moneyLocale) : t('negativeBalances.table.noValue')}
                       </td>
                     </tr>
@@ -187,11 +188,11 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
                 )}
               </tbody>
             </table>
-          </div>
+          </Card>
         </section>
 
         <section className="mt-14">
-          <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('cashRegister.heading')}</h2>
+          <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{t('cashRegister.heading')}</h2>
           <div className="mt-4">
             <CashRegister
               rows={movements.items.map((item) => ({
@@ -275,13 +276,13 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
           </div>
 
           {totalPages > 1 ? (
-            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
+            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
               <Link
                 href={pageHref(page - 1)}
                 locale={locale as AppLocale}
                 aria-disabled={page <= 1}
-                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
                 }`}
               >
                 ←
@@ -293,8 +294,8 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
                 href={pageHref(page + 1)}
                 locale={locale as AppLocale}
                 aria-disabled={page >= totalPages}
-                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
                 }`}
               >
                 →

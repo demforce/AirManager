@@ -9,6 +9,10 @@ import { DataTable } from '@/components/data-table';
 import { formatCents, parseCents } from '@/lib/money';
 import { formatMinutes, parseMinutes } from '@/lib/time';
 import { useRouter } from '@/i18n/navigation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { StatusPill } from '@/components/ui/status-pill';
+import { Card } from '@/components/ui/card';
 
 export type PackageTypeAircraftOption = { id: string; registration: string };
 
@@ -163,7 +167,7 @@ export function PackagesManager({ packageTypes, activeAircraft, canManage, money
     {
       id: 'name',
       header: labels.table.name,
-      cell: ({ row }) => <span className="font-medium text-[#111111]">{row.original.name}</span>,
+      cell: ({ row }) => <span className="font-medium text-ink">{row.original.name}</span>,
     },
     {
       id: 'includedHours',
@@ -185,7 +189,7 @@ export function PackagesManager({ packageTypes, activeAircraft, canManage, money
       header: labels.table.aircraft,
       cell: ({ row }) =>
         row.original.eligibleAircraft.length === 0 ? (
-          <span className="text-[#787774]">{labels.table.noAircraft}</span>
+          <span className="text-mid-gray">{labels.table.noAircraft}</span>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {row.original.eligibleAircraft.map((aircraft) => (
@@ -211,13 +215,9 @@ export function PackagesManager({ packageTypes, activeAircraft, canManage, money
       id: 'status',
       header: labels.table.status,
       cell: ({ row }) => (
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] ${
-            row.original.isActive ? 'bg-[#EDF3EC] text-[#346538]' : 'bg-[#FBF3DB] text-[#956400]'
-          }`}
-        >
+        <StatusPill tone={row.original.isActive ? 'ok' : 'warning'}>
           {row.original.isActive ? labels.status.active : labels.status.inactive}
-        </span>
+        </StatusPill>
       ),
     },
     ...(canManage
@@ -231,50 +231,47 @@ export function PackagesManager({ packageTypes, activeAircraft, canManage, money
               if (confirmingDeleteId === packageType.id) {
                 return (
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-[#787774]">{labels.actions.confirmDelete}</span>
-                    <button
+                    <span className="text-xs text-mid-gray">{labels.actions.confirmDelete}</span>
+                    <Button size="sm"
                       type="button"
                       disabled={pendingActionId === packageType.id}
                       onClick={() => void handleDelete(packageType)}
-                      className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
                     >
                       {labels.actions.confirmYes}
-                    </button>
-                    <button
+                    </Button>
+                    <Button variant="outline" size="sm"
                       type="button"
                       onClick={() => setConfirmingDeleteId(null)}
-                      className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                     >
                       {labels.actions.confirmCancel}
-                    </button>
+                    </Button>
                   </div>
                 );
               }
 
-              const secondaryButton =
-                'rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50';
-
               return (
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => setPanel({ mode: 'edit', packageType })} className={secondaryButton}>
+                  <Button variant="outline" size="sm" type="button" onClick={() => setPanel({ mode: 'edit', packageType })}>
                     {labels.actions.edit}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     type="button"
                     disabled={pendingActionId === packageType.id}
                     onClick={() => void handleToggleActive(packageType)}
-                    className={secondaryButton}
                   >
                     {packageType.isActive ? labels.actions.deactivate : labels.actions.reactivate}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     type="button"
                     disabled={pendingActionId === packageType.id}
                     onClick={() => setConfirmingDeleteId(packageType.id)}
-                    className={secondaryButton}
                   >
                     {labels.actions.delete}
-                  </button>
+                  </Button>
                 </div>
               );
             },
@@ -298,18 +295,17 @@ export function PackagesManager({ packageTypes, activeAircraft, canManage, money
           <span />
         )}
         {canManage ? (
-          <button
+          <Button
             type="button"
             onClick={() => setPanel({ mode: 'create' })}
-            className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
           >
             {labels.newPackageType}
-          </button>
+          </Button>
         ) : null}
       </div>
 
       {panel ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <PackageTypeForm
             // Remount when the target changes (create ↔ edit A ↔ edit B):
             // react-hook-form reads defaultValues only at mount (review 2.4 F1 pattern).
@@ -320,7 +316,7 @@ export function PackagesManager({ packageTypes, activeAircraft, canManage, money
             onCancel={() => setPanel(null)}
             onSuccess={(mode) => handleSuccess(mode === 'create' ? labels.feedback.created : labels.feedback.updated)}
           />
-        </div>
+        </Card>
       ) : null}
 
       <div className="mt-6" data-testid="package-types-table">
@@ -456,76 +452,76 @@ function PackageTypeForm({ packageType, activeAircraft, labels, onCancel, onSucc
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5" data-testid="package-type-form">
-      <h4 className="text-base font-medium text-[#111111]">{packageType ? labels.editTitle : labels.createTitle}</h4>
+      <h4 className="text-base font-medium text-ink">{packageType ? labels.editTitle : labels.createTitle}</h4>
 
       <div>
-        <label htmlFor="package-type-name" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="package-type-name" className="block text-sm font-medium text-ink">
           {labels.name}
         </label>
-        <input
+        <Input
           id="package-type-name"
           maxLength={100}
           aria-invalid={Boolean(errors.name)}
-          className="mt-2 w-full max-w-md rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full max-w-md"
           {...register('name')}
         />
-        {errors.name ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+        {errors.name ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
       </div>
 
       <div className="flex flex-wrap gap-6">
         <div>
-          <label htmlFor="package-type-hours" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="package-type-hours" className="block text-sm font-medium text-ink">
             {labels.includedHours}
           </label>
-          <input
+          <Input
             id="package-type-hours"
             placeholder="10:00"
             aria-invalid={Boolean(errors.includedHours)}
-            className="mt-2 w-32 rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-32"
             {...register('includedHours')}
           />
-          <p className="mt-1 text-xs text-[#787774]">{labels.includedHoursHint}</p>
-          {errors.includedHours ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidDuration}</p> : null}
+          <p className="mt-1 text-xs text-mid-gray">{labels.includedHoursHint}</p>
+          {errors.includedHours ? <p className="mt-1 text-xs text-ember">{labels.invalidDuration}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="package-type-price" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="package-type-price" className="block text-sm font-medium text-ink">
             {labels.price}
           </label>
-          <input
+          <Input
             id="package-type-price"
             placeholder="1400,00"
             aria-invalid={Boolean(errors.price)}
-            className="mt-2 w-32 rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-32"
             {...register('price')}
           />
-          {errors.price ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidAmount}</p> : null}
+          {errors.price ? <p className="mt-1 text-xs text-ember">{labels.invalidAmount}</p> : null}
         </div>
 
         <div>
-          <label htmlFor="package-type-validity" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="package-type-validity" className="block text-sm font-medium text-ink">
             {labels.validityMonths}
           </label>
-          <input
+          <Input
             id="package-type-validity"
             placeholder="12"
             aria-invalid={Boolean(errors.validityMonths)}
-            className="mt-2 w-24 rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-24"
             {...register('validityMonths')}
           />
-          <p className="mt-1 text-xs text-[#787774]">{labels.validityMonthsHint}</p>
-          {errors.validityMonths ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidValidity}</p> : null}
+          <p className="mt-1 text-xs text-mid-gray">{labels.validityMonthsHint}</p>
+          {errors.validityMonths ? <p className="mt-1 text-xs text-ember">{labels.invalidValidity}</p> : null}
         </div>
       </div>
 
       <fieldset>
-        <legend className="block text-sm font-medium text-[#2F3437]">{labels.aircraft}</legend>
+        <legend className="block text-sm font-medium text-ink">{labels.aircraft}</legend>
         {aircraftOptions.length === 0 ? (
-          <p className="mt-2 text-sm text-[#787774]">{labels.noAircraftAvailable}</p>
+          <p className="mt-2 text-sm text-mid-gray">{labels.noAircraftAvailable}</p>
         ) : (
           <div className="mt-2 flex flex-wrap gap-4">
             {aircraftOptions.map((aircraft) => (
-              <label key={aircraft.id} className="flex items-center gap-2 text-sm text-[#2F3437]">
+              <label key={aircraft.id} className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
                   checked={aircraftIds.includes(aircraft.id)}
@@ -539,26 +535,24 @@ function PackageTypeForm({ packageType, activeAircraft, labels, onCancel, onSucc
       </fieldset>
 
       {formError ? (
-        <p role="alert" data-testid="package-type-form-error" className="text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="package-type-form-error" className="text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {packageType ? labels.submitSave : labels.submitCreate}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

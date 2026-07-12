@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { loginSchema, type LoginInput } from '@/lib/schemas/login';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 type LoginFormLabels = {
   email: string;
@@ -57,28 +59,28 @@ export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-6">
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="email" className="block text-sm font-medium text-ink">
           {labels.email}
         </label>
-        <input
+        <Input
           id="email"
           type="email"
           autoComplete="email"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full"
           aria-invalid={Boolean(errors.email)}
           {...register('email')}
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="password" className="block text-sm font-medium text-ink">
           {labels.password}
         </label>
-        <input
+        <Input
           id="password"
           type="password"
           autoComplete="current-password"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full"
           aria-invalid={Boolean(errors.password)}
           {...register('password')}
         />
@@ -88,19 +90,19 @@ export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
         <p
           role="alert"
           data-testid="login-error"
-          className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]"
+          className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember"
         >
           {formError}
         </p>
       ) : null}
 
-      <button
+      <Button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-[6px] bg-[#111111] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full"
       >
         {isSubmitting ? labels.submitting : labels.submit}
-      </button>
+      </Button>
     </form>
   );
 }

@@ -362,16 +362,16 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+            <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
               {t('kicker')}
             </span>
-            <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">{t('title')}</h1>
-            <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
+            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">{t('title')}</h1>
+            <p className="mt-2 max-w-xl text-base leading-[1.6] text-mid-gray">{t('description')}</p>
           </div>
           <Link
             href="/dashboard"
             locale={locale as AppLocale}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
           >
             {t('backToDashboard')}
           </Link>
@@ -457,11 +457,11 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
           </div>
         ) : null}
 
-        <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="bookings-list-section">
+        <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="bookings-list-section">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{t('list.heading')}</h2>
-              <p className="mt-1 text-sm text-[#787774]">{t('list.description')}</p>
+              <h2 className="text-2xl font-semibold tracking-[-0.02em] text-ink">{t('list.heading')}</h2>
+              <p className="mt-1 text-sm text-mid-gray">{t('list.description')}</p>
             </div>
             <ExportButton href={exportHref} label={tExport('button')} testId="bookings-export-button" />
           </div>
@@ -520,14 +520,14 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
           />
 
           {totalPages > 1 ? (
-            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
+            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
               <Link
                 href={pageHref(page - 1)}
                 locale={locale as AppLocale}
                 aria-disabled={page <= 1}
                 data-testid="booking-page-prev"
-                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
                 }`}
               >
                 &larr;
@@ -540,8 +540,8 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
                 locale={locale as AppLocale}
                 aria-disabled={page >= totalPages}
                 data-testid="booking-page-next"
-                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
                 }`}
               >
                 &rarr;

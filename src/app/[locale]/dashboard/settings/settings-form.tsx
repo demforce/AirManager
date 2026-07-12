@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import type { AirfieldBrandingDto } from '@/lib/schemas/settings';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export type SettingsFormLabels = {
   nameLabel: string;
@@ -93,25 +95,25 @@ export function SettingsForm({ initial, labels }: SettingsFormProps) {
   }
 
   return (
-    <section className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="airfield-settings-form">
+    <section className="rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="airfield-settings-form">
       <div>
-        <label htmlFor="airfield-name" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="airfield-name" className="block text-sm font-medium text-ink">
           {labels.nameLabel}
         </label>
-        <input
+        <Input
           id="airfield-name"
           data-testid="airfield-name-input"
           type="text"
           maxLength={200}
           value={name}
           onChange={(event) => setName(event.target.value)}
-          className="mt-2 w-full max-w-sm rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full max-w-sm"
         />
       </div>
 
-      <div className="mt-6 border-t border-[#EAEAEA] pt-6">
-        <p className="block text-sm font-medium text-[#2F3437]">{labels.logoLabel}</p>
-        <p className="mt-1 text-sm text-[#787774]">{labels.logoHint}</p>
+      <div className="mt-6 border-t border-hairline pt-6">
+        <p className="block text-sm font-medium text-ink">{labels.logoLabel}</p>
+        <p className="mt-1 text-sm text-mid-gray">{labels.logoHint}</p>
 
         <div className="mt-4 flex flex-wrap items-center gap-4">
           {logoDataUrl ? (
@@ -120,11 +122,11 @@ export function SettingsForm({ initial, labels }: SettingsFormProps) {
               src={logoDataUrl}
               alt={labels.logoPreviewAlt}
               data-testid="airfield-logo-preview"
-              className="h-16 w-16 rounded-[6px] border border-[#EAEAEA] object-contain"
+              className="h-16 w-16 rounded-buttons border border-hairline object-contain"
             />
           ) : null}
 
-          <label className="inline-flex min-h-[40px] cursor-pointer items-center rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]">
+          <label className="inline-flex min-h-[40px] cursor-pointer items-center rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas">
             {labels.logoUpload}
             <input
               type="file"
@@ -140,7 +142,7 @@ export function SettingsForm({ initial, labels }: SettingsFormProps) {
               type="button"
               onClick={removeLogo}
               data-testid="airfield-logo-remove"
-              className="text-sm font-medium text-[#9F2F2D] underline-offset-4 hover:underline"
+              className="text-sm font-medium text-ember underline-offset-4 hover:underline"
             >
               {labels.logoRemove}
             </button>
@@ -161,15 +163,14 @@ export function SettingsForm({ initial, labels }: SettingsFormProps) {
       ) : null}
 
       <div className="mt-6">
-        <button
+        <Button
           type="button"
           disabled={saving}
           onClick={() => void save()}
           data-testid="airfield-settings-save"
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {labels.save}
-        </button>
+        </Button>
       </div>
     </section>
   );

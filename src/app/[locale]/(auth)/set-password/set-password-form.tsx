@@ -7,6 +7,8 @@ import { z } from 'zod';
 import { Link } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { setPasswordSchema } from '@/lib/schemas/auth-tokens';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const setPasswordFormSchema = setPasswordSchema
   .omit({ token: true })
@@ -75,14 +77,14 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
         <p
           role="status"
           data-testid="set-password-success"
-          className="rounded-[8px] bg-[#EDF3EC] px-4 py-3 text-sm text-[#346538]"
+          className="rounded-nested bg-[#EDF3EC] px-4 py-3 text-sm text-[#346538]"
         >
           {labels.success}
         </p>
         <Link
           href="/login"
           locale={locale}
-          className="mt-6 inline-block text-sm font-medium text-[#2F3437] underline underline-offset-4"
+          className="mt-6 inline-block text-sm font-medium text-ink underline underline-offset-4"
         >
           {labels.goToLogin}
         </Link>
@@ -93,52 +95,52 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-6">
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="password" className="block text-sm font-medium text-ink">
           {labels.password}
         </label>
-        <input
+        <Input
           id="password"
           type="password"
           autoComplete="new-password"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full"
           aria-invalid={Boolean(errors.password)}
           {...register('password')}
         />
-        {errors.password ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errorTooShort}</p> : null}
+        {errors.password ? <p className="mt-1 text-xs text-ember">{labels.errorTooShort}</p> : null}
       </div>
 
       <div>
-        <label htmlFor="confirmPassword" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="confirmPassword" className="block text-sm font-medium text-ink">
           {labels.confirmPassword}
         </label>
-        <input
+        <Input
           id="confirmPassword"
           type="password"
           autoComplete="new-password"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full"
           aria-invalid={Boolean(errors.confirmPassword)}
           {...register('confirmPassword')}
         />
-        {errors.confirmPassword ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errorMismatch}</p> : null}
+        {errors.confirmPassword ? <p className="mt-1 text-xs text-ember">{labels.errorMismatch}</p> : null}
       </div>
 
       {formError ? (
         <p
           role="alert"
           data-testid="set-password-error"
-          className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]"
+          className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember"
         >
           {formError}
         </p>
       ) : null}
 
-      <button
+      <Button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-[6px] bg-[#111111] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full"
       >
         {isSubmitting ? labels.submitting : labels.submit}
-      </button>
+      </Button>
     </form>
   );
 }

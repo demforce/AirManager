@@ -9,6 +9,7 @@ import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getCashReport } from '@/server/services/cash.service';
 import { ReportFilters } from './report-filters';
+import { Card } from '@/components/ui/card';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -69,20 +70,20 @@ export default async function FinancialReportPage({ params, searchParams }: Page
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+            <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
               {t('kicker')}
             </span>
-            <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">
               {t('title')}
             </h1>
-            <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
+            <p className="mt-2 max-w-xl text-base leading-[1.6] text-mid-gray">{t('description')}</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <ExportButton href={exportPdfHref} label={tExport('buttonPdf')} testId="cash-report-export-pdf-button" />
             <Link
               href="/dashboard/finance"
               locale={locale as AppLocale}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
             >
               {t('backToFinance')}
             </Link>
@@ -90,7 +91,7 @@ export default async function FinancialReportPage({ params, searchParams }: Page
         </div>
 
         <section className="mt-10">
-          <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('filters.heading')}</h2>
+          <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{t('filters.heading')}</h2>
           <div className="mt-4">
             <ReportFilters
               initialFilters={{ from, to }}
@@ -107,48 +108,48 @@ export default async function FinancialReportPage({ params, searchParams }: Page
         </section>
 
         <section className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3" data-testid="cash-report-summary">
-          <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-            <p className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summary.totalIn')}</p>
+          <Card className="p-6">
+            <p className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{t('summary.totalIn')}</p>
             <p className="mt-2 text-2xl font-medium text-[#346538]" data-testid="cash-report-total-in">
               {formatCents(report.totalInCents, moneyLocale)}
             </p>
-          </div>
-          <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-            <p className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summary.totalOut')}</p>
+          </Card>
+          <Card className="p-6">
+            <p className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{t('summary.totalOut')}</p>
             <p className="mt-2 text-2xl font-medium text-[#9F2F2D]" data-testid="cash-report-total-out">
               {formatCents(report.totalOutCents, moneyLocale)}
             </p>
-          </div>
-          <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-            <p className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{t('summary.net')}</p>
+          </Card>
+          <Card className="p-6">
+            <p className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{t('summary.net')}</p>
             <p
               className={`mt-2 text-2xl font-medium ${report.netCents >= 0 ? 'text-[#346538]' : 'text-[#9F2F2D]'}`}
               data-testid="cash-report-net"
             >
               {formatSignedCents(report.netCents, moneyLocale)}
             </p>
-          </div>
-          <p className="text-sm text-[#787774] sm:col-span-3" data-testid="cash-report-movement-count">
+          </Card>
+          <p className="text-sm text-mid-gray sm:col-span-3" data-testid="cash-report-movement-count">
             {t('summary.movementCount')}: {report.movementCount}
           </p>
         </section>
 
         <section className="mt-10">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{t('categories.heading')}</h2>
+            <h2 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{t('categories.heading')}</h2>
             <Link
               href={registerHref}
               locale={locale as AppLocale}
               data-testid="cash-report-open-register"
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
             >
               {t('openInRegister')}
             </Link>
           </div>
-          <div className="mt-4 overflow-x-auto rounded-[12px] border border-[#EAEAEA] bg-white">
+          <Card className="mt-4 overflow-x-auto p-0">
             <table className="w-full min-w-[560px] text-left text-sm" data-testid="cash-report-categories-table">
               <thead>
-                <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+                <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
                   <th className="px-5 py-3">{t('categories.name')}</th>
                   <th className="px-5 py-3">{t('categories.in')}</th>
                   <th className="px-5 py-3">{t('categories.out')}</th>
@@ -158,14 +159,14 @@ export default async function FinancialReportPage({ params, searchParams }: Page
               <tbody>
                 {report.categories.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-5 py-8 text-center text-[#787774]">
+                    <td colSpan={4} className="px-5 py-8 text-center text-mid-gray">
                       {t('categories.empty')}
                     </td>
                   </tr>
                 ) : (
                   report.categories.map((category) => (
-                    <tr key={category.categoryId} className="border-b border-[#EAEAEA] last:border-b-0" data-testid="cash-report-category-row">
-                      <td className="px-5 py-3 align-middle font-medium text-[#111111]">{category.categoryName}</td>
+                    <tr key={category.categoryId} className="border-b border-hairline last:border-b-0" data-testid="cash-report-category-row">
+                      <td className="px-5 py-3 align-middle font-medium text-ink">{category.categoryName}</td>
                       <td className="px-5 py-3 align-middle text-[#346538]">{formatCents(category.inCents, moneyLocale)}</td>
                       <td className="px-5 py-3 align-middle text-[#9F2F2D]">{formatCents(category.outCents, moneyLocale)}</td>
                       <td
@@ -178,7 +179,7 @@ export default async function FinancialReportPage({ params, searchParams }: Page
                 )}
               </tbody>
             </table>
-          </div>
+          </Card>
         </section>
       </div>
     </main>

@@ -9,6 +9,9 @@ import { useRouter } from '@/i18n/navigation';
 import { formatCents, parseCents } from '@/lib/money';
 import type { InstructorRateItemDto } from '@/lib/schemas/people';
 import { formatDateOnly, formatDateTime } from '@/lib/time';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
 
 export type InstructorRatesPanelLabels = {
   heading: string;
@@ -189,17 +192,16 @@ export function InstructorRatesPanel({ personId, currentRatePriceCentsPerHour, c
   }
 
   return (
-    <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="instructor-rates-panel">
+    <Card className="p-6" data-testid="instructor-rates-panel">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{labels.heading}</h3>
+        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">{labels.heading}</h3>
         {canAddRate && !formOpen ? (
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={() => setFormOpen(true)}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
           >
             {labels.addAction}
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -210,88 +212,86 @@ export function InstructorRatesPanel({ personId, currentRatePriceCentsPerHour, c
       ) : null}
 
       <div className="mt-6">
-        <span className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.current}</span>
-        <p data-testid="instructor-rates-current" className="mt-1 text-2xl font-medium text-[#111111]">
+        <span className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.current}</span>
+        <p data-testid="instructor-rates-current" className="mt-1 text-2xl font-medium text-ink">
           {currentRatePriceCentsPerHour === null ? labels.noCurrentRate : `${formatCents(currentRatePriceCentsPerHour, moneyLocale)}/h`}
         </p>
       </div>
 
       {formOpen ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="mt-6 space-y-5">
-          <h4 className="text-base font-medium text-[#111111]">{labels.newRateTitle}</h4>
+          <h4 className="text-base font-medium text-ink">{labels.newRateTitle}</h4>
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div>
-              <label htmlFor="instructor-rate-price" className="block text-sm font-medium text-[#2F3437]">
+              <label htmlFor="instructor-rate-price" className="block text-sm font-medium text-ink">
                 {labels.price}
               </label>
-              <input
+              <Input
                 id="instructor-rate-price"
                 inputMode="decimal"
                 placeholder="0,00"
                 aria-invalid={Boolean(errors.price)}
-                className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                className="mt-2 w-full"
                 {...register('price')}
               />
-              {errors.price ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidPrice}</p> : null}
+              {errors.price ? <p className="mt-1 text-xs text-ember">{labels.invalidPrice}</p> : null}
             </div>
             <div>
-              <label htmlFor="instructor-rate-valid-from" className="block text-sm font-medium text-[#2F3437]">
+              <label htmlFor="instructor-rate-valid-from" className="block text-sm font-medium text-ink">
                 {labels.validFrom}
               </label>
-              <input
+              <Input
                 id="instructor-rate-valid-from"
                 type="date"
                 aria-invalid={Boolean(errors.validFrom)}
-                className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+                className="mt-2 w-full"
                 {...register('validFrom')}
               />
-              {errors.validFrom ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidDate}</p> : null}
+              {errors.validFrom ? <p className="mt-1 text-xs text-ember">{labels.invalidDate}</p> : null}
             </div>
           </div>
 
           {formError ? (
-            <p role="alert" data-testid="instructor-rates-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+            <p role="alert" data-testid="instructor-rates-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
               {formError}
             </p>
           ) : null}
 
           <div className="flex gap-3">
-            <button
+            <Button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {labels.submit}
-            </button>
-            <button
+            </Button>
+            <Button variant="outline"
               type="button"
               onClick={() => {
                 setFormOpen(false);
                 setFormError(null);
                 reset({ price: '', validFrom: todayDateOnly() });
               }}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.cancel}
-            </button>
+            </Button>
           </div>
         </form>
       ) : !canAddRate ? (
-        <p className="mt-6 text-sm text-[#787774]">{labels.readOnlyHint}</p>
+        <p className="mt-6 text-sm text-mid-gray">{labels.readOnlyHint}</p>
       ) : null}
 
       <div className="mt-8">
-        <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-[#787774]">{labels.historyTitle}</h4>
-        {loadError ? <p className="mt-3 text-sm text-[#9F2F2D]">{labels.loadError}</p> : null}
+        <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.historyTitle}</h4>
+        {loadError ? <p className="mt-3 text-sm text-ember">{labels.loadError}</p> : null}
         {!loadError && history !== null && history.length === 0 ? (
-          <p className="mt-3 text-sm text-[#787774]">{labels.historyEmpty}</p>
+          <p className="mt-3 text-sm text-mid-gray">{labels.historyEmpty}</p>
         ) : null}
         {!loadError && history !== null && history.length > 0 ? (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[480px] text-left text-sm">
               <thead>
-                <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+                <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
                   <th className="py-2 pr-4 font-medium">{labels.historyValidFrom}</th>
                   <th className="py-2 pr-4 font-medium">{labels.historyPrice}</th>
                   <th className="py-2 pr-4 font-medium">{labels.historyActor}</th>
@@ -300,11 +300,11 @@ export function InstructorRatesPanel({ personId, currentRatePriceCentsPerHour, c
               </thead>
               <tbody>
                 {history.map((entry) => (
-                  <tr key={entry.id} data-testid="instructor-rate-history-row" className="border-b border-[#EAEAEA] text-[#111111]">
+                  <tr key={entry.id} data-testid="instructor-rate-history-row" className="border-b border-hairline text-ink">
                     <td className="py-2 pr-4 whitespace-nowrap">{formatDateOnly(entry.validFrom, moneyLocale)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatCents(entry.priceCentsPerHour, moneyLocale)}/h</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{entry.actorEmail}</td>
-                    <td className="py-2 whitespace-nowrap text-[#787774]">{formatDateTime(new Date(entry.createdAt))}</td>
+                    <td className="py-2 whitespace-nowrap text-mid-gray">{formatDateTime(new Date(entry.createdAt))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -312,6 +312,6 @@ export function InstructorRatesPanel({ personId, currentRatePriceCentsPerHour, c
           </div>
         ) : null}
       </div>
-    </div>
+    </Card>
   );
 }

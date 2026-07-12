@@ -17,6 +17,8 @@ import { ExpiriesPanel } from '../expiries-panel';
 import { InstructorRatesPanel } from '../instructor-rates-panel';
 import { PackagesPanel } from '../packages-panel';
 import { ProfilesPanel } from '../profiles-panel';
+import { StatusPill } from '@/components/ui/status-pill';
+import { Card } from '@/components/ui/card';
 
 type PageProps = {
   params: Promise<{ locale: string; id: string }>;
@@ -134,23 +136,23 @@ export default async function PersonDetailPage({ params }: PageProps) {
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+            <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
               {t('kicker')}
             </span>
-            <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">
               {person.lastName} {person.firstName}
             </h1>
             {person.archivedAt ? (
-              <span className="mt-3 inline-block rounded-full bg-[#FBF3DB] px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] text-[#956400]">
+              <StatusPill tone="warning" className="mt-3 inline-block">
                 {t('personalData.archivedBadge')}
-              </span>
+              </StatusPill>
             ) : null}
           </div>
           {hasPermission(actor, 'people.read') ? (
             <Link
               href="/dashboard/people"
               locale={locale as AppLocale}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
             >
               {t('backToList')}
             </Link>
@@ -158,22 +160,22 @@ export default async function PersonDetailPage({ params }: PageProps) {
             <Link
               href="/dashboard"
               locale={locale as AppLocale}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+              className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
             >
               {t('backToDashboard')}
             </Link>
           )}
         </div>
 
-        <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-          <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+        <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6">
+          <h2 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
             {t('personalData.heading')}
           </h2>
           <dl className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
             {personalDataRows.map((row) => (
               <div key={row.label}>
-                <dt className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{row.label}</dt>
-                <dd className="mt-1 text-base text-[#2F3437]">{row.value}</dd>
+                <dt className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{row.label}</dt>
+                <dd className="mt-1 text-base text-ink">{row.value}</dd>
               </div>
             ))}
           </dl>
@@ -474,35 +476,35 @@ export default async function PersonDetailPage({ params }: PageProps) {
             the real panel below (still the SAME grid cell, same heading). */}
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {showRecentFlights ? (
-            <section className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="recent-flights-panel">
+            <section className="rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="recent-flights-panel">
               <div className="flex items-center justify-between gap-4">
-                <h3 className="text-base font-medium text-[#111111]">{t('recentFlightsPanel.heading')}</h3>
+                <h3 className="text-base font-medium text-ink">{t('recentFlightsPanel.heading')}</h3>
                 <Link
                   href={canManageFlights ? { pathname: '/dashboard/flights', query: { personId: person.id } } : '/dashboard/flights'}
                   locale={locale as AppLocale}
                   data-testid="recent-flights-view-all"
-                  className="text-xs font-medium text-[#2F3437] underline-offset-4 hover:underline"
+                  className="text-xs font-medium text-ink underline-offset-4 hover:underline"
                 >
                   {t('recentFlightsPanel.viewAll')}
                 </Link>
               </div>
               {recentFlights.length === 0 ? (
-                <p className="mt-3 text-sm text-[#787774]">{t('recentFlightsPanel.empty')}</p>
+                <p className="mt-3 text-sm text-mid-gray">{t('recentFlightsPanel.empty')}</p>
               ) : (
-                <ul className="mt-3 divide-y divide-[#EAEAEA]">
+                <ul className="mt-3 divide-y divide-hairline">
                   {recentFlights.map((flight) => (
                     <li key={flight.id} data-testid="recent-flight-row" className="flex items-center justify-between gap-4 py-2 text-sm">
                       <div>
-                        <p className="text-[#111111]">
+                        <p className="text-ink">
                           {flight.departureAirfield && flight.arrivalAirfield
                             ? `${flight.departureAirfield} → ${flight.arrivalAirfield}`
                             : t('personalData.noValue')}
                         </p>
-                        <p className="text-xs text-[#787774]">
+                        <p className="text-xs text-mid-gray">
                           {formatDateOnly(flight.flightDate, displayLocale)} &middot; {formatMinutes(flight.minutes)}
                         </p>
                       </div>
-                      <span className="text-xs text-[#787774]">
+                      <span className="text-xs text-mid-gray">
                         {flight.status === 'CANCELLED' ? t('recentFlightsPanel.status.cancelled') : t('recentFlightsPanel.status.registered')}
                       </span>
                     </li>
@@ -511,16 +513,16 @@ export default async function PersonDetailPage({ params }: PageProps) {
               )}
             </section>
           ) : (
-            <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-              <h3 className="text-base font-medium text-[#111111]">{t('recentFlightsPanel.heading')}</h3>
-              <p className="mt-2 text-sm text-[#787774]">{t('placeholders.comingSoon')}</p>
-            </div>
+            <Card className="p-6">
+              <h3 className="text-base font-medium text-ink">{t('recentFlightsPanel.heading')}</h3>
+              <p className="mt-2 text-sm text-mid-gray">{t('placeholders.comingSoon')}</p>
+            </Card>
           )}
           {PLACEHOLDER_SECTIONS.map((section) => (
-            <div key={section} className="rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-              <h3 className="text-base font-medium text-[#111111]">{t(`placeholders.${section}`)}</h3>
-              <p className="mt-2 text-sm text-[#787774]">{t('placeholders.comingSoon')}</p>
-            </div>
+            <Card key={section} className="p-6">
+              <h3 className="text-base font-medium text-ink">{t(`placeholders.${section}`)}</h3>
+              <p className="mt-2 text-sm text-mid-gray">{t('placeholders.comingSoon')}</p>
+            </Card>
           ))}
         </div>
       </div>

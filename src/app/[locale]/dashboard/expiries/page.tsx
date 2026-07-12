@@ -20,6 +20,7 @@ import { ExpiryDashboardFilters, type ExpiryDashboardFiltersValue } from './dash
 import { ExpiryStatusBadge } from './expiry-status-badge';
 import { MyExpiries } from './my-expiries';
 import { ProposalsQueue } from './proposals-queue';
+import { Card } from '@/components/ui/card';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -207,20 +208,20 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
         <div className="mx-auto max-w-5xl">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+              <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
                 {t('kicker')}
               </span>
-              <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+              <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">
                 {t('title')}
               </h1>
-              <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
+              <p className="mt-2 max-w-xl text-base leading-[1.6] text-mid-gray">{t('description')}</p>
             </div>
             <div className="flex flex-wrap gap-3">
               {canManageSettings ? (
                 <Link
                   href="/dashboard/expiries/types"
                   locale={locale as AppLocale}
-                  className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                  className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
                 >
                   {t('manageTypes')}
                 </Link>
@@ -228,20 +229,20 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               <Link
                 href="/dashboard"
                 locale={locale as AppLocale}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+                className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
               >
                 {t('backToDashboard')}
               </Link>
             </div>
           </div>
 
-          <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="expiry-dashboard-section">
+          <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="expiry-dashboard-section">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+                <h2 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
                   {t('dashboard.heading')}
                 </h2>
-                <p className="mt-1 text-sm text-[#787774]">{t('dashboard.description')}</p>
+                <p className="mt-1 text-sm text-mid-gray">{t('dashboard.description')}</p>
               </div>
               <div className="flex flex-wrap gap-3">
                 <ExportButton href={exportHref} label={tExport('button')} testId="expiries-export-button" />
@@ -249,7 +250,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               </div>
             </div>
 
-            <div className="mt-6 border-b border-[#EAEAEA] pb-6">
+            <div className="mt-6 border-b border-hairline pb-6">
               <ExpiryDashboardFilters
                 types={allTypes}
                 initialFilters={dashboardInitialFilters}
@@ -268,10 +269,10 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               />
             </div>
 
-            <div className="mt-6 overflow-x-auto rounded-[12px] border border-[#EAEAEA]">
+            <div className="mt-6 overflow-x-auto rounded-cards border border-hairline">
               <table className="w-full min-w-[720px] text-left text-sm" data-testid="expiry-dashboard-table">
                 <thead>
-                  <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+                  <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
                     <th className="px-5 py-3">{t('dashboard.table.person')}</th>
                     <th className="px-5 py-3">{t('dashboard.table.type')}</th>
                     <th className="px-5 py-3">{t('dashboard.table.scope')}</th>
@@ -283,26 +284,26 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                 <tbody>
                   {dashboardResult.items.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-5 py-8 text-center text-[#787774]">
+                      <td colSpan={6} className="px-5 py-8 text-center text-mid-gray">
                         {t('dashboard.table.empty')}
                       </td>
                     </tr>
                   ) : (
                     dashboardResult.items.map((item) => (
-                      <tr key={item.id} className="border-b border-[#EAEAEA] last:border-b-0" data-testid="expiry-dashboard-row">
+                      <tr key={item.id} className="border-b border-hairline last:border-b-0" data-testid="expiry-dashboard-row">
                         <td className="px-5 py-3 align-middle">
                           <Link
                             href={`/dashboard/people/${item.personId}`}
                             locale={locale as AppLocale}
-                            className="font-medium text-[#111111] underline-offset-4 hover:underline"
+                            className="font-medium text-ink underline-offset-4 hover:underline"
                           >
                             {item.personLastName} {item.personFirstName}
                           </Link>
                         </td>
-                        <td className="px-5 py-3 align-middle text-[#2F3437]">{item.typeName}</td>
-                        <td className="px-5 py-3 align-middle text-[#2F3437]">{scopeLabels[item.typeScope]}</td>
-                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">{formatDateOnly(item.issuedAt, locale as 'it' | 'en')}</td>
-                        <td className="px-5 py-3 align-middle whitespace-nowrap text-[#2F3437]">{formatDateOnly(item.expiresAt, locale as 'it' | 'en')}</td>
+                        <td className="px-5 py-3 align-middle text-ink">{item.typeName}</td>
+                        <td className="px-5 py-3 align-middle text-ink">{scopeLabels[item.typeScope]}</td>
+                        <td className="px-5 py-3 align-middle whitespace-nowrap text-ink">{formatDateOnly(item.issuedAt, locale as 'it' | 'en')}</td>
+                        <td className="px-5 py-3 align-middle whitespace-nowrap text-ink">{formatDateOnly(item.expiresAt, locale as 'it' | 'en')}</td>
                         <td className="px-5 py-3 align-middle">
                           <ExpiryStatusBadge status={item.status} label={statusLabels[item.status]} data-testid="expiry-dashboard-status-badge" />
                         </td>
@@ -314,13 +315,13 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             </div>
 
             {dashboardTotalPages > 1 ? (
-              <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
+              <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
                 <Link
                   href={dashboardPageHref(dashboardPage - 1)}
                   locale={locale as AppLocale}
                   aria-disabled={dashboardPage <= 1}
-                  className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                    dashboardPage <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                  className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                    dashboardPage <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
                   }`}
                 >
                   &larr;
@@ -332,8 +333,8 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                   href={dashboardPageHref(dashboardPage + 1)}
                   locale={locale as AppLocale}
                   aria-disabled={dashboardPage >= dashboardTotalPages}
-                  className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                    dashboardPage >= dashboardTotalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                  className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                    dashboardPage >= dashboardTotalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
                   }`}
                 >
                   &rarr;
@@ -342,11 +343,11 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             ) : null}
           </section>
 
-          <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-            <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+          <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6">
+            <h2 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
               {t('queue.heading')}
             </h2>
-            <p className="mt-1 text-sm text-[#787774]">{t('queue.description')}</p>
+            <p className="mt-1 text-sm text-mid-gray">{t('queue.description')}</p>
 
             <div className="mt-6">
               <ProposalsQueue
@@ -380,13 +381,13 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             </div>
 
             {totalPages > 1 ? (
-              <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
+              <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
                 <Link
                   href={proposalsPageHref(page - 1)}
                   locale={locale as AppLocale}
                   aria-disabled={page <= 1}
-                  className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                    page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                  className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                    page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
                   }`}
                 >
                   &larr;
@@ -398,8 +399,8 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                   href={proposalsPageHref(page + 1)}
                   locale={locale as AppLocale}
                   aria-disabled={page >= totalPages}
-                  className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                    page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+                  className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                    page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
                   }`}
                 >
                   &rarr;
@@ -409,11 +410,11 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           </section>
 
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-[12px] border border-[#EAEAEA] bg-white p-6 sm:col-span-1">
-              <p className="text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">{t('stat.label')}</p>
-              <p className="mt-3 font-[family-name:var(--font-serif)] text-4xl font-medium text-[#111111]">{activeTypesCount}</p>
-              <p className="mt-1 text-sm text-[#787774]">{t('stat.hint')}</p>
-            </div>
+            <Card className="p-6 sm:col-span-1">
+              <p className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{t('stat.label')}</p>
+              <p className="mt-3 text-4xl font-medium text-ink">{activeTypesCount}</p>
+              <p className="mt-1 text-sm text-mid-gray">{t('stat.hint')}</p>
+            </Card>
           </div>
         </div>
       </main>
@@ -430,24 +431,24 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+            <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
               {t('kicker')}
             </span>
-            <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">
               {t('titleOwn')}
             </h1>
-            <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('descriptionOwn')}</p>
+            <p className="mt-2 max-w-xl text-base leading-[1.6] text-mid-gray">{t('descriptionOwn')}</p>
           </div>
           <Link
             href="/dashboard"
             locale={locale as AppLocale}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
           >
             {t('backToDashboard')}
           </Link>
         </div>
 
-        <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6">
           <MyExpiries
             expiries={myExpiries.map(toExpiryDto)}
             labels={{

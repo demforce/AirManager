@@ -37,7 +37,7 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
 
   return (
     <html lang={locale} className={`${GeistSans.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col bg-[#FBFBFA] font-[family-name:var(--font-sans)] text-[#2F3437]">
+      <body className="flex min-h-full flex-col bg-canvas font-sans text-ink">
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
       </body>
     </html>

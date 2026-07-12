@@ -10,6 +10,11 @@ import { ExportButton } from '@/components/export-button';
 import { Link, useRouter } from '@/i18n/navigation';
 import { createPersonSchema, updatePersonSchema, type CreatePersonInput, type UpdatePersonInput } from '@/lib/schemas/people';
 import { ProfilesPanel, type ProfilesPanelLabels } from './profiles-panel';
+import { Button } from '@/components/ui/button';
+import { Input, inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import { Card } from '@/components/ui/card';
 
 export type PersonRow = {
   id: string;
@@ -78,8 +83,8 @@ function statusLabel(person: PersonRow, labels: Labels): string {
   return person.archivedAt ? labels.status.archived : labels.status.active;
 }
 
-function statusBadgeClasses(person: PersonRow): string {
-  return person.archivedAt ? 'bg-[#FBF3DB] text-[#956400]' : 'bg-[#EDF3EC] text-[#346538]';
+function statusBadgeTone(person: PersonRow): StatusTone {
+  return person.archivedAt ? 'warning' : 'ok';
 }
 
 /**
@@ -161,7 +166,7 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
       header: labels.table.name,
       cell: ({ row }) => (
         // Story 2.3: the name is the entry point into the scheda persona.
-        <Link href={`/dashboard/people/${row.original.id}`} className="font-medium text-[#111111] underline-offset-4 hover:underline">
+        <Link href={`/dashboard/people/${row.original.id}`} className="font-medium text-ink underline-offset-4 hover:underline">
           {row.original.lastName} {row.original.firstName}
         </Link>
       ),
@@ -179,11 +184,7 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
     {
       id: 'status',
       header: labels.table.status,
-      cell: ({ row }) => (
-        <span className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] ${statusBadgeClasses(row.original)}`}>
-          {statusLabel(row.original, labels)}
-        </span>
-      ),
+      cell: ({ row }) => <StatusPill tone={statusBadgeTone(row.original)}>{statusLabel(row.original, labels)}</StatusPill>,
     },
     {
       id: 'profiles',
@@ -228,52 +229,47 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
         if (confirming?.id === person.id) {
           return (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-[#787774]">
+              <span className="text-xs text-mid-gray">
                 {isArchived ? labels.actions.confirmUnarchive : labels.actions.confirmArchive}
               </span>
-              <button
+              <Button size="sm"
                 type="button"
                 disabled={pendingActionId === person.id}
                 onClick={() => void handleArchiveToggle(person, actionType)}
-                className="rounded-[6px] bg-[#111111] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-50"
               >
                 {labels.actions.confirmYes}
-              </button>
-              <button
+              </Button>
+              <Button variant="outline" size="sm"
                 type="button"
                 onClick={() => setConfirming(null)}
-                className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
               >
                 {labels.actions.confirmCancel}
-              </button>
+              </Button>
             </div>
           );
         }
 
         return (
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button variant="outline" size="sm"
               type="button"
               onClick={() => setPanel({ mode: 'edit', person })}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.edit}
-            </button>
-            <button
+            </Button>
+            <Button variant="outline" size="sm"
               type="button"
               onClick={() => setPanel({ mode: 'profiles', person })}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.actions.profiles}
-            </button>
-            <button
+            </Button>
+            <Button variant="outline" size="sm"
               type="button"
               disabled={pendingActionId === person.id}
               onClick={() => setConfirming({ id: person.id, type: actionType })}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
             >
               {isArchived ? labels.actions.unarchive : labels.actions.archive}
-            </button>
+            </Button>
           </div>
         );
       },
@@ -292,26 +288,25 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
         )}
         <div className="flex gap-3">
           <ExportButton href={exportHref} label={exportLabel} testId="people-export-button" />
-          <button
+          <Button
             type="button"
             onClick={() => setPanel({ mode: 'create' })}
-            className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
           >
             {labels.newPerson}
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-4">
-        <input
+        <Input
           type="search"
           value={queryInput}
           onChange={(event) => handleQueryChange(event.target.value)}
           placeholder={labels.searchPlaceholder}
           aria-label={labels.searchPlaceholder}
-          className="w-full max-w-xs rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="w-full max-w-xs"
         />
-        <label className="flex items-center gap-2 text-sm text-[#2F3437]">
+        <label className="flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={includeArchived}
@@ -322,13 +317,13 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
       </div>
 
       {panel?.mode === 'create' ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <CreatePersonForm labels={labels} onCancel={() => setPanel(null)} onSuccess={handleFormSuccess} />
-        </div>
+        </Card>
       ) : null}
 
       {panel?.mode === 'edit' ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <EditPersonForm
             // Remount when the edit target changes — same latent stale-form
             // bug found on the aircraft manager (review 2.4 F1): without the
@@ -339,7 +334,7 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
             onCancel={() => setPanel(null)}
             onSuccess={handleFormSuccess}
           />
-        </div>
+        </Card>
       ) : null}
 
       {panel?.mode === 'profiles' ? (
@@ -400,14 +395,14 @@ function CreatePersonForm({ labels, onCancel, onSuccess }: CreatePersonFormProps
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-      <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
         {labels.form.createTitle}
       </h3>
 
       <PersonFields register={register} errors={errors} labels={labels} idPrefix="create" />
 
       {formError ? (
-        <p role="alert" data-testid="person-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="person-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
@@ -463,14 +458,14 @@ function EditPersonForm({ person, labels, onCancel, onSuccess }: EditPersonFormP
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-      <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
         {labels.form.editTitle}
       </h3>
 
       <PersonFields register={register} errors={errors} labels={labels} idPrefix="edit" />
 
       {formError ? (
-        <p role="alert" data-testid="person-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="person-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
@@ -497,37 +492,36 @@ function PersonFields({
   labels: Labels;
   idPrefix: string;
 }) {
-  const inputClasses =
-    'mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 w-full');
 
   return (
     <>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div>
-          <label htmlFor={`${idPrefix}-firstName`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`${idPrefix}-firstName`} className="block text-sm font-medium text-ink">
             {labels.form.firstName}
           </label>
           <input id={`${idPrefix}-firstName`} className={inputClasses} aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
-          {errors.firstName ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.requiredField}</p> : null}
+          {errors.firstName ? <p className="mt-1 text-xs text-ember">{labels.form.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor={`${idPrefix}-lastName`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`${idPrefix}-lastName`} className="block text-sm font-medium text-ink">
             {labels.form.lastName}
           </label>
           <input id={`${idPrefix}-lastName`} className={inputClasses} aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
-          {errors.lastName ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.requiredField}</p> : null}
+          {errors.lastName ? <p className="mt-1 text-xs text-ember">{labels.form.requiredField}</p> : null}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div>
-          <label htmlFor={`${idPrefix}-email`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`${idPrefix}-email`} className="block text-sm font-medium text-ink">
             {labels.form.email}
           </label>
           <input id={`${idPrefix}-email`} type="email" autoComplete="off" className={inputClasses} {...register('email')} />
         </div>
         <div>
-          <label htmlFor={`${idPrefix}-phone`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`${idPrefix}-phone`} className="block text-sm font-medium text-ink">
             {labels.form.phone}
           </label>
           <input id={`${idPrefix}-phone`} type="tel" className={inputClasses} {...register('phone')} />
@@ -535,14 +529,14 @@ function PersonFields({
       </div>
 
       <div>
-        <label htmlFor={`${idPrefix}-address`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`${idPrefix}-address`} className="block text-sm font-medium text-ink">
           {labels.form.address}
         </label>
         <input id={`${idPrefix}-address`} className={inputClasses} {...register('address')} />
       </div>
 
       <div>
-        <label htmlFor={`${idPrefix}-fiscalCode`} className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor={`${idPrefix}-fiscalCode`} className="block text-sm font-medium text-ink">
           {labels.form.fiscalCode}
         </label>
         <input id={`${idPrefix}-fiscalCode`} className={inputClasses} {...register('fiscalCode')} />
@@ -564,20 +558,18 @@ function FormActions({
 }) {
   return (
     <div className="flex gap-3">
-      <button
+      <Button
         type="submit"
         disabled={isSubmitting}
-        className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitLabel}
-      </button>
-      <button
+      </Button>
+      <Button variant="outline"
         type="button"
         onClick={onCancel}
-        className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
       >
         {cancelLabel}
-      </button>
+      </Button>
     </div>
   );
 }

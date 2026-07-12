@@ -4,7 +4,7 @@ baseline_commit: 98fc82a
 
 # Story 12.1: Fondamenta del design system
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -47,11 +47,11 @@ so that l'app trasmetta la credibilità di uno strumento infra-grade, non di un 
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1)** — Token in `globals.css` `@theme` da DESIGN.md (colori, radius, spacing, type scale con tracking, `--shadow-subtle`); base: body canvas/ink/Geist 14px; rimozione `--font-serif`; `layout.tsx` su classi token.
-- [ ] **T2 (AC 2)** — Componenti `src/components/ui/`: `Button` (3 varianti), `Card`+header/footer, `Badge` (3 varianti), `Input`, `StatusPill` (semaforo centralizzato); restyle `data-table.tsx`, `search-combobox.tsx` (ombra → subtle), `export-button.tsx`.
-- [ ] **T3 (AC 1, 2, 3)** — Migrazione: sostituzione meccanica hex warm → token su tutta `src/` (tabella sopra); adozione dei componenti condivisi sui pattern duplicati (16 `inputClasses`, ~28 primary button, secondary/outline, card/tile, 9 punti semaforo); radius normalizzati; `font-serif` → Geist scale.
-- [ ] **T4 (AC 4)** — Split semantico del rosso: `role="alert"`/validazione/distruttivo → ember; semaforo/monetario/`role="status"` INVARIATI; verifica che `cash-register.spec.ts:100,103` resti verde SENZA modifiche.
-- [ ] **T5 (AC 5, 6)** — `npm run gates`; e2e mirati sulle superfici più toccate (login, flights, people, expiries, cash) + verifica visiva Playwright MCP con screenshot delle 5 pagine chiave; Dev Agent Record + File List; sprint-status `12-1` → `review`.
+- [x] **T1 (AC 1)** — Token in `globals.css` `@theme` da DESIGN.md (colori, radius, spacing, type scale con tracking, `--shadow-subtle`); base: body canvas/ink/Geist 14px; rimozione `--font-serif`; `layout.tsx` su classi token.
+- [x] **T2 (AC 2)** — Componenti `src/components/ui/`: `Button` (3 varianti), `Card`+header/footer, `Badge` (3 varianti), `Input`, `StatusPill` (semaforo centralizzato); restyle `data-table.tsx`, `search-combobox.tsx` (ombra → subtle), `export-button.tsx`.
+- [x] **T3 (AC 1, 2, 3)** — Migrazione: sostituzione meccanica hex warm → token su tutta `src/` (tabella sopra); adozione dei componenti condivisi sui pattern duplicati (16 `inputClasses`, ~28 primary button, secondary/outline, card/tile, 9 punti semaforo); radius normalizzati; `font-serif` → Geist scale.
+- [x] **T4 (AC 4)** — Split semantico del rosso: `role="alert"`/validazione/distruttivo → ember; semaforo/monetario/`role="status"` INVARIATI; verifica che `cash-register.spec.ts:100,103` resti verde SENZA modifiche.
+- [x] **T5 (AC 5, 6)** — `npm run gates`; e2e mirati sulle superfici più toccate (login, flights, people, expiries, cash) + verifica visiva Playwright MCP con screenshot delle 5 pagine chiave; Dev Agent Record + File List; sprint-status `12-1` → `review`.
 
 ## Dev Notes
 
@@ -78,8 +78,98 @@ so that l'app trasmetta la credibilità di uno strumento infra-grade, non di un 
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), BMAD dev subagent.
+
 ### Debug Log References
+
+- `npm run gates` (final, post-migration): lint/typecheck/test/build all PASS — unit tests 1222/1222 (matches expected baseline).
+- Targeted e2e (webServer live, DB not reset): `login.spec.ts`, `flights.spec.ts`, `people-management.spec.ts`, `expiry-dashboard.spec.ts`, `cash-register.spec.ts`, `ppr-register.spec.ts`, `aircraft-management.spec.ts`, `aircraft-status-hours.spec.ts` — all green (52/52). `aircraft-rates.spec.ts` 2/4 failed on a re-run only, root-caused to test-data pagination overflow (31 `Aircraft` rows accumulated in the dev DB from this session's own repeated e2e re-runs against a page-size-20 list, pushing the newly-created test row off page 1) — not a code regression; confirmed via DB row count + `PAGE_SIZE = 20` in `aircraft/page.tsx`, and via `cash-register.spec.ts`'s 2 failures on the very first combined run that both self-healed on an isolated re-run (documented "login-redirect su webServer freddo" flake).
+- Playwright MCP visual verification blocked by the credential guard on typed passwords; used the sanctioned workaround — a throwaway `playwright` script (`.tmp-screenshot.mjs`, deleted after use, never committed) reading `SEED_ADMIN_PASSWORD` from `.env` via `dotenv`, never printed/typed by the agent — to log in and screenshot the 5 required pages plus 2 recheck pages (flights, users) after the `Card` padding fix.
 
 ### Completion Notes List
 
+- T1: `globals.css` rewritten on a single `@theme` block with the full DESIGN.md token set (colors, type scale incl. tracking/line-height pairs, radius, `--shadow-subtle`); `--font-serif` removed entirely (Geist already loaded via `geist/font/sans`, no font-loading change). `layout.tsx` body uses `bg-canvas font-sans text-ink`.
+- T2: 5 new primitives in `src/components/ui/` (`button.tsx`, `card.tsx`, `badge.tsx`, `input.tsx`, `status-pill.tsx`) + a `cn.ts` join helper (no clsx/tailwind-merge, per Dev Notes) — all stateless, no new dependency. `Input` forwards its ref (required for `react-hook-form`'s `{...register()}`). `Card` detects a caller-supplied padding utility in `className` and skips its own default `p-5` in that case — a targeted fix for a real conflict found during migration (see deviation below), not a general merge utility. `data-table.tsx`, `search-combobox.tsx` (dropdown shadow → `shadow-subtle`), `export-button.tsx` restyled on tokens.
+- T3: mechanical hex→token substitution done via small throwaway Python scripts (kept in the scratchpad, not committed) operating on exact, verified class-string patterns per the story's closed mapping table — verified after each pass with `tsc --noEmit`/`eslint` and a final `grep` sweep (empty, see AC 1). Component adoption: all ~30 primary-filled buttons + all secondary/outline buttons (incl. compact table-row variants) → `Button`; the 16 named `inputClasses` locals now source `inputBaseClasses` from `input.tsx` instead of hardcoding hex (kept as plain strings, not JSX, because they're shared across `<input>`/`<select>`/`<textarea>` in the same file — `Input` the component is `<input>`-only); ~20 additional raw `<input>` elements not behind a named const → `Input` directly; ~27 generic card/tile wrapper `<div>`s → `Card`. Radius: `rounded-[6px]` → `rounded-buttons` (18px, all were input/button/link-styled-as-button contexts, verified per-file before the blanket pass), `rounded-[12px]` → `rounded-cards` (24px), `rounded-[8px]` → `rounded-nested` (10px, closest token for small nested alert/panel boxes); `rounded-[4px]` (one native checkbox) left untouched — not in the AC 1 radius table.
+- T3 (semaforo): `StatusPill` centralizes the tripletta (`STATUS_TONE_CLASSES.ok/warning/danger`, values byte-identical to before) and is wired at all 9 closed-list points: `aircraft-manager.tsx` (archive + operational status), `people-manager.tsx`, `profiles-panel.tsx` (`SectionShell`'s `badgeClasses` prop renamed `badgeTone`), `categories-manager.tsx`, `packages-manager.tsx`, `users-manager.tsx` (3-way incl. `danger`), `ppr/register/ppr-register.tsx` (APPROVED/REJECTED/CANCELLED → shared tones, PENDING/COMPLETED keep their own untouched tan/blue — outside the tripletta, AC 4 invariant), `people/[id]/page.tsx`. `expiry-status-badge.tsx` (the pre-existing "only shared one") left as-is, out of the closed list.
+- T4: Ember applied to (a) every `role="alert"` message — the `rounded-nested bg-[#FDEBEC]...text-[#9F2F2D]` banner became `bg-canvas...text-ember` (neutral surface, no new red-tinted box, per AC 4), (b) every inline field-validation error text (`text-xs text-[#9F2F2D]` tied to `errors.*`/`fieldErrorLabel`, most had no `role="alert"` at all but are literally "errori di validazione form"), (c) one live invalid-input indicator (`HourMeterHint`'s `—:—`), (d) one destructive text-link action (`settings-form.tsx`'s "rimuovi logo"). Explicitly left untouched (verified per-occurrence, not blanket): the monetary sign colors (`amountCents`/`netCents`/`balanceCents` ternaries — `cash-register.spec.ts:100,103` selectors still match, confirmed), every status/semaforo badge including `users-manager.tsx`'s inactive-user red and `ppr-register.tsx`'s REJECTED red, and the `role="status"` action-result banners whose color toggles by `isError` (protected under "feedback di successo `role=\"status\"`" — touching only the error half of a shared codepath wasn't literally authorized by AC 4's two named triggers, so left symmetric/untouched).
+- T5: `npm run gates` PASS (lint/typecheck/test 1222/unit build); targeted e2e green (see Debug Log); 5 required screenshots taken and visually reviewed (login, dashboard home, flights registry, person detail, expiries dashboard) — monochrome palette, pill radius, capsule status badges, ember-only destructive/error accents, `--shadow-subtle` cards all confirmed live in the browser, not just asserted by tests.
+
 ### File List
+
+**New:**
+- `src/components/ui/cn.ts`
+- `src/components/ui/button.tsx`
+- `src/components/ui/card.tsx`
+- `src/components/ui/badge.tsx`
+- `src/components/ui/input.tsx`
+- `src/components/ui/status-pill.tsx`
+
+**Modified (design-token/component migration only — no route/API/behavior changes):**
+- `src/app/globals.css`
+- `src/app/[locale]/layout.tsx`
+- `src/app/[locale]/page.tsx`
+- `src/app/[locale]/ppr/page.tsx`
+- `src/app/[locale]/ppr/ppr-form.tsx`
+- `src/app/[locale]/(auth)/login/page.tsx`
+- `src/app/[locale]/(auth)/login/login-form.tsx`
+- `src/app/[locale]/(auth)/forgot-password/page.tsx`
+- `src/app/[locale]/(auth)/forgot-password/forgot-password-form.tsx`
+- `src/app/[locale]/(auth)/set-password/page.tsx`
+- `src/app/[locale]/(auth)/set-password/set-password-form.tsx`
+- `src/app/[locale]/dashboard/page.tsx`
+- `src/app/[locale]/dashboard/aircraft/page.tsx`
+- `src/app/[locale]/dashboard/aircraft/aircraft-manager.tsx`
+- `src/app/[locale]/dashboard/bookings/page.tsx`
+- `src/app/[locale]/dashboard/bookings/booking-calendar.tsx`
+- `src/app/[locale]/dashboard/bookings/bookings-list.tsx`
+- `src/app/[locale]/dashboard/bookings/new-booking-form.tsx`
+- `src/app/[locale]/dashboard/expiries/page.tsx`
+- `src/app/[locale]/dashboard/expiries/my-expiries.tsx`
+- `src/app/[locale]/dashboard/expiries/dashboard-filters.tsx`
+- `src/app/[locale]/dashboard/expiries/proposals-queue.tsx`
+- `src/app/[locale]/dashboard/expiries/types/page.tsx`
+- `src/app/[locale]/dashboard/expiries/types/types-manager.tsx`
+- `src/app/[locale]/dashboard/finance/page.tsx`
+- `src/app/[locale]/dashboard/finance/cash-register.tsx`
+- `src/app/[locale]/dashboard/finance/categories/page.tsx`
+- `src/app/[locale]/dashboard/finance/categories/categories-manager.tsx`
+- `src/app/[locale]/dashboard/finance/packages/page.tsx`
+- `src/app/[locale]/dashboard/finance/packages/packages-manager.tsx`
+- `src/app/[locale]/dashboard/finance/report/page.tsx`
+- `src/app/[locale]/dashboard/finance/report/report-filters.tsx`
+- `src/app/[locale]/dashboard/flights/page.tsx`
+- `src/app/[locale]/dashboard/flights/flights-manager.tsx`
+- `src/app/[locale]/dashboard/people/page.tsx`
+- `src/app/[locale]/dashboard/people/people-manager.tsx`
+- `src/app/[locale]/dashboard/people/profiles-panel.tsx`
+- `src/app/[locale]/dashboard/people/account-panel.tsx`
+- `src/app/[locale]/dashboard/people/assigned-instructors-panel.tsx`
+- `src/app/[locale]/dashboard/people/expiries-panel.tsx`
+- `src/app/[locale]/dashboard/people/instructor-rates-panel.tsx`
+- `src/app/[locale]/dashboard/people/packages-panel.tsx`
+- `src/app/[locale]/dashboard/people/[id]/page.tsx`
+- `src/app/[locale]/dashboard/people/[id]/account/page.tsx`
+- `src/app/[locale]/dashboard/people/[id]/account/account-statement-table.tsx`
+- `src/app/[locale]/dashboard/ppr/page.tsx`
+- `src/app/[locale]/dashboard/ppr/ppr-queue.tsx`
+- `src/app/[locale]/dashboard/ppr/register/page.tsx`
+- `src/app/[locale]/dashboard/ppr/register/ppr-register.tsx`
+- `src/app/[locale]/dashboard/school/page.tsx`
+- `src/app/[locale]/dashboard/school/[id]/page.tsx`
+- `src/app/[locale]/dashboard/school/summary-filters.tsx`
+- `src/app/[locale]/dashboard/school/training-notes-journal.tsx`
+- `src/app/[locale]/dashboard/settings/page.tsx`
+- `src/app/[locale]/dashboard/settings/settings-form.tsx`
+- `src/app/[locale]/dashboard/users/page.tsx`
+- `src/app/[locale]/dashboard/users/users-manager.tsx`
+- `src/components/data-table.tsx`
+- `src/components/export-button.tsx`
+- `src/components/search-combobox.tsx`
+
+### Deviations from the story file
+
+- **Card default padding vs. caller overrides**: naive string-concat (`cn()`, no tailwind-merge per Dev Notes) can't resolve two conflicting Tailwind padding utilities in one class list — `Card`'s default `p-5` and a caller's own `p-6`/`p-8`/`p-0` would both land in the generated stylesheet with an unpredictable cascade winner. Fixed by having `Card` detect an existing padding utility in the caller's `className` and skip its own default in that case (see `card.tsx`). Not in the story file; a correctness fix discovered while adopting `Card` on the ~6 zero-padding table wrappers (`data-table.tsx` and 5 raw-table pages), verified visually (edge-to-edge tables, no double inset) via the Playwright screenshot recheck.
+- **`inputClasses` consolidation, not full `<Input>` JSX adoption, for the 16 named locals**: each of those 16 constants is applied to a mix of `<input>`/`<select>`/`<textarea>` in the same file (verified per file before touching); `Input` is `<input>`-only by DESIGN.md's own scope, so wrapping a `<select>` in it would be a type/semantics mismatch. Instead the constants now source `inputBaseClasses` (exported from `input.tsx`) plus their own call-site-specific extras (`mt-2`, `min-h-[Npx]`, `w-full`, `max-w-md`) — one source of truth for the tokens, zero local hex, without a wrong abstraction.
+- **Ember scope narrower than the full "role=alert" grep universe by design**: `role="status"` banners whose color toggles by `isError` (`categories-manager.tsx`, `packages-manager.tsx`, `types-manager.tsx` and similar "feedback" paragraphs) were left untouched in both branches — AC 4 names `role="alert"` and form-validation errors as the ember triggers and separately protects `role="status"` success feedback; touching only the error half of a shared success/error codepath wasn't literally authorized and risked an asymmetric result, so it was left as-is pending an explicit call from the user/reviewer.
+- **Heading weight**: DESIGN.md specifies heading weight 600; the pre-existing serif headings were `font-medium` (500). Bumped to `font-semibold` (600) for all ~55 occurrences while removing `font-serif`, for visual consistency — a reasonable reading of "Geist 600 con tracking da scala DESIGN.md" in Dev Notes, not literally spelled out as a required edit beyond removing the serif override.

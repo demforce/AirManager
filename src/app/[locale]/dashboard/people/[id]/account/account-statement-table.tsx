@@ -11,6 +11,9 @@ import { formatSignedCents, parseCents } from '@/lib/money';
 import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
 import { formatDateOnly } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
 
 export type AccountStatementRow = {
   id: string;
@@ -213,13 +216,12 @@ export function AccountStatementTable({
               // mechanism that already hides the action on rows that have
               // one (`hasReversal`).
               row.original.hasReversal || row.original.type === 'PACKAGE_PURCHASE' ? null : (
-                <button
+                <Button variant="outline" size="sm"
                   type="button"
                   onClick={() => setPanel({ originalMovement: row.original })}
-                  className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                 >
                   {adjustmentLabels.rowAction}
-                </button>
+                </Button>
               ),
           },
         ] as ColumnDef<AccountStatementRow, unknown>[])
@@ -237,18 +239,17 @@ export function AccountStatementTable({
           ) : (
             <span />
           )}
-          <button
+          <Button
             type="button"
             onClick={() => setPanel({ originalMovement: null })}
-            className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
           >
             {adjustmentLabels.action}
-          </button>
+          </Button>
         </div>
       ) : null}
 
       {panel ? (
-        <div className="mb-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mb-6 p-6">
           <AdjustmentForm
             // Remount when the target changes (header ↔ row A ↔ row B):
             // react-hook-form reads defaultValues only at mount (review 2.4
@@ -262,7 +263,7 @@ export function AccountStatementTable({
             onCancel={() => setPanel(null)}
             onSuccess={handleSuccess}
           />
-        </div>
+        </Card>
       ) : null}
 
       <DataTable columns={columns} data={rows} emptyMessage={labels.empty} />
@@ -368,63 +369,61 @@ function AdjustmentForm({ personId, originalMovement, moneyLocale, labels, onCan
       data-testid="account-adjustment-form"
     >
       <div>
-        <h4 className="text-base font-medium text-[#111111]">{labels.title}</h4>
+        <h4 className="text-base font-medium text-ink">{labels.title}</h4>
         {originalMovement ? (
-          <p className="mt-1 text-sm text-[#787774]">{labels.linkedTo.replace('{date}', formatDateOnly(originalMovement.effectiveDate, moneyLocale))}</p>
+          <p className="mt-1 text-sm text-mid-gray">{labels.linkedTo.replace('{date}', formatDateOnly(originalMovement.effectiveDate, moneyLocale))}</p>
         ) : null}
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="adjustment-amount" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="adjustment-amount" className="block text-sm font-medium text-ink">
             {labels.amount}
           </label>
-          <input
+          <Input
             id="adjustment-amount"
             inputMode="decimal"
             placeholder="-0,00"
             aria-invalid={Boolean(errors.amount)}
-            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-full"
             {...register('amount')}
           />
-          <p className="mt-1 text-xs text-[#787774]">{labels.amountHint}</p>
-          {errors.amount ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidAmount}</p> : null}
+          <p className="mt-1 text-xs text-mid-gray">{labels.amountHint}</p>
+          {errors.amount ? <p className="mt-1 text-xs text-ember">{labels.invalidAmount}</p> : null}
         </div>
         <div>
-          <label htmlFor="adjustment-reason" className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor="adjustment-reason" className="block text-sm font-medium text-ink">
             {labels.reason}
           </label>
-          <input
+          <Input
             id="adjustment-reason"
             aria-invalid={Boolean(errors.reason)}
             maxLength={500}
-            className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+            className="mt-2 w-full"
             {...register('reason')}
           />
-          {errors.reason ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredReason}</p> : null}
+          {errors.reason ? <p className="mt-1 text-xs text-ember">{labels.requiredReason}</p> : null}
         </div>
       </div>
 
       {formError ? (
-        <p role="alert" className="text-sm text-[#9F2F2D]">
+        <p role="alert" className="text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {labels.submit}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

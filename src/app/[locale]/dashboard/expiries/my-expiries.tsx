@@ -8,6 +8,9 @@ import { z } from 'zod';
 import type { ExpiryItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { formatDateOnly } from '@/lib/time';
 import { ExpiryStatusBadge } from './expiry-status-badge';
+import { Button } from '@/components/ui/button';
+import { inputBaseClasses } from '@/components/ui/input';
+import { cn } from '@/components/ui/cn';
 
 export type MyExpiriesLabels = {
   empty: string;
@@ -63,7 +66,7 @@ export function MyExpiries({ expiries: initialExpiries, labels }: MyExpiriesProp
   }
 
   if (expiries.length === 0) {
-    return <p className="text-sm text-[#787774]">{labels.empty}</p>;
+    return <p className="text-sm text-mid-gray">{labels.empty}</p>;
   }
 
   return (
@@ -76,7 +79,7 @@ export function MyExpiries({ expiries: initialExpiries, labels }: MyExpiriesProp
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] text-left text-sm">
           <thead>
-            <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
+            <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
               <th className="py-2 pr-4 font-medium">{labels.table.type}</th>
               <th className="py-2 pr-4 font-medium">{labels.table.issuedAt}</th>
               <th className="py-2 pr-4 font-medium">{labels.table.expiresAt}</th>
@@ -118,7 +121,7 @@ function MyExpiryRow({ expiry, isProposing, labels, onOpenPropose, onCancelPropo
 
   return (
     <>
-      <tr data-testid="my-expiry-row" className="border-b border-[#EAEAEA] align-top text-[#111111]">
+      <tr data-testid="my-expiry-row" className="border-b border-hairline align-top text-ink">
         <td className="py-3 pr-4">
           <span className="font-medium">{expiry.typeName}</span>
           {expiry.pendingProposal ? (
@@ -135,18 +138,17 @@ function MyExpiryRow({ expiry, isProposing, labels, onOpenPropose, onCancelPropo
         <td className="py-3 pr-4">
           <ExpiryStatusBadge status={expiry.status} label={labels.table.status[expiry.status]} data-testid="my-expiry-status-badge" />
         </td>
-        <td className="py-3 pr-4 text-[#787774]">{expiry.notes ?? labels.table.noNotes}</td>
+        <td className="py-3 pr-4 text-mid-gray">{expiry.notes ?? labels.table.noNotes}</td>
         <td className="py-3">
           {expiry.pendingProposal ? (
-            <span className="text-xs text-[#787774]">{labels.table.pendingHint}</span>
+            <span className="text-xs text-mid-gray">{labels.table.pendingHint}</span>
           ) : (
-            <button
+            <Button variant="outline" size="sm"
               type="button"
               onClick={onOpenPropose}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
             >
               {labels.proposeAction}
-            </button>
+            </Button>
           )}
         </td>
       </tr>
@@ -219,20 +221,19 @@ function ProposeExpiryForm({ expiry, labels, onCancel, onSuccess }: ProposeExpir
     onSuccess(created);
   }
 
-  const inputClasses =
-    'mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[44px] w-full');
 
   return (
     <form
       onSubmit={(event) => void handleSubmit(onSubmit)(event)}
       noValidate
-      className="space-y-4 rounded-[8px] border border-[#EAEAEA] p-4"
+      className="space-y-4 rounded-nested border border-hairline p-4"
       data-testid="propose-expiry-form"
     >
-      <h4 className="text-base font-medium text-[#111111]">{labels.title}</h4>
+      <h4 className="text-base font-medium text-ink">{labels.title}</h4>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
-          <label htmlFor={`propose-issued-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`propose-issued-at-${expiry.id}`} className="block text-sm font-medium text-ink">
             {labels.issuedAt}
           </label>
           <input
@@ -242,10 +243,10 @@ function ProposeExpiryForm({ expiry, labels, onCancel, onSuccess }: ProposeExpir
             className={inputClasses}
             {...register('issuedAt')}
           />
-          {errors.issuedAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
+          {errors.issuedAt ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor={`propose-expires-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`propose-expires-at-${expiry.id}`} className="block text-sm font-medium text-ink">
             {labels.expiresAt}
           </label>
           <input
@@ -255,10 +256,10 @@ function ProposeExpiryForm({ expiry, labels, onCancel, onSuccess }: ProposeExpir
             className={inputClasses}
             {...register('expiresAt')}
           />
-          {errors.expiresAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidRange}</p> : null}
+          {errors.expiresAt ? <p className="mt-1 text-xs text-ember">{labels.invalidRange}</p> : null}
         </div>
         <div>
-          <label htmlFor={`propose-notes-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
+          <label htmlFor={`propose-notes-${expiry.id}`} className="block text-sm font-medium text-ink">
             {labels.notes}
           </label>
           <input id={`propose-notes-${expiry.id}`} maxLength={500} className={inputClasses} {...register('notes')} />
@@ -266,26 +267,26 @@ function ProposeExpiryForm({ expiry, labels, onCancel, onSuccess }: ProposeExpir
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="propose-expiry-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="propose-expiry-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
 
       <div className="flex gap-3">
-        <button
+        <Button
           type="submit"
           disabled={isSubmitting}
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[44px]"
         >
           {labels.submit}
-        </button>
-        <button
+        </Button>
+        <Button variant="outline"
           type="button"
           onClick={onCancel}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+          className="min-h-[44px]"
         >
           {labels.cancel}
-        </button>
+        </Button>
       </div>
     </form>
   );

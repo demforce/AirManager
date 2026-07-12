@@ -1,6 +1,7 @@
 'use client';
 
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
+import { Card } from '@/components/ui/card';
 
 /**
  * Reusable table shell (story 2.1's first adoption of `@tanstack/react-table`
@@ -34,13 +35,13 @@ export function DataTable<TData extends { id: string }>({ columns, data, emptyMe
   });
 
   return (
-    <div className="overflow-x-auto rounded-[12px] border border-[#EAEAEA] bg-white">
+    <Card className="overflow-x-auto p-0">
       <table className="w-full min-w-[720px] text-left text-sm">
         <thead>
           {table.getHeaderGroups().map((headerGroup) => (
             <tr
               key={headerGroup.id}
-              className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]"
+              className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray"
             >
               {headerGroup.headers.map((header) => (
                 <th key={header.id} className="px-5 py-3">
@@ -53,15 +54,15 @@ export function DataTable<TData extends { id: string }>({ columns, data, emptyMe
         <tbody>
           {table.getRowModel().rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-5 py-8 text-center text-[#787774]">
+              <td colSpan={columns.length} className="px-5 py-8 text-center text-mid-gray">
                 {emptyMessage}
               </td>
             </tr>
           ) : (
             table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-b border-[#EAEAEA] last:border-b-0">
+              <tr key={row.id} className="border-b border-hairline last:border-b-0">
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-5 py-3 align-middle text-[#2F3437]">
+                  <td key={cell.id} className="px-5 py-3 align-middle text-ink">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}
@@ -70,6 +71,6 @@ export function DataTable<TData extends { id: string }>({ columns, data, emptyMe
           )}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }

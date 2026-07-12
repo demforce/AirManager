@@ -6,6 +6,10 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 import { createUserSchema, updateUserSchema, type CreateUserInput, type UpdateUserInput } from '@/lib/schemas/users';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import { Card } from '@/components/ui/card';
 
 type RoleKey = 'ADMIN' | 'STAFF' | 'INSTRUCTOR' | 'PILOT' | 'STUDENT';
 const ALL_ROLES: readonly RoleKey[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
@@ -71,10 +75,10 @@ function statusLabel(user: UserRow, labels: Labels): string {
   return labels.status.active;
 }
 
-function statusBadgeClasses(user: UserRow): string {
-  if (!user.isActive) return 'bg-[#FDEBEC] text-[#9F2F2D]';
-  if (!user.passwordSet) return 'bg-[#FBF3DB] text-[#956400]';
-  return 'bg-[#EDF3EC] text-[#346538]';
+function statusBadgeTone(user: UserRow): StatusTone {
+  if (!user.isActive) return 'danger';
+  if (!user.passwordSet) return 'warning';
+  return 'ok';
 }
 
 export function UsersManager({ users, persons, labels }: UsersManagerProps) {
@@ -123,23 +127,22 @@ export function UsersManager({ users, persons, labels }: UsersManagerProps) {
         ) : (
           <span />
         )}
-        <button
+        <Button
           type="button"
           onClick={() => setPanel({ mode: 'create' })}
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98]"
         >
           {labels.newUser}
-        </button>
+        </Button>
       </div>
 
       {panel?.mode === 'create' ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <CreateUserForm persons={persons} labels={labels} onCancel={() => setPanel(null)} onSuccess={handleFormSuccess} />
-        </div>
+        </Card>
       ) : null}
 
       {panel?.mode === 'edit' ? (
-        <div className="mt-6 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <Card className="mt-6 p-6">
           <EditUserForm
             user={panel.user}
             persons={persons}
@@ -147,13 +150,13 @@ export function UsersManager({ users, persons, labels }: UsersManagerProps) {
             onCancel={() => setPanel(null)}
             onSuccess={handleFormSuccess}
           />
-        </div>
+        </Card>
       ) : null}
 
-      <div className="mt-6 overflow-x-auto rounded-[12px] border border-[#EAEAEA] bg-white">
+      <Card className="mt-6 overflow-x-auto p-0">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead>
-            <tr className="border-b border-[#EAEAEA] text-xs font-medium uppercase tracking-[0.05em] text-[#787774]">
+            <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
               <th className="px-5 py-3">{labels.table.email}</th>
               <th className="px-5 py-3">{labels.table.roles}</th>
               <th className="px-5 py-3">{labels.table.status}</th>
@@ -165,54 +168,47 @@ export function UsersManager({ users, persons, labels }: UsersManagerProps) {
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-[#787774]">
+                <td colSpan={6} className="px-5 py-8 text-center text-mid-gray">
                   {labels.table.empty}
                 </td>
               </tr>
             ) : (
               users.map((user) => (
-                <tr key={user.id} className="border-b border-[#EAEAEA] last:border-b-0">
-                  <td className="px-5 py-3 text-[#111111]">{user.email}</td>
-                  <td className="px-5 py-3 text-[#2F3437]">
+                <tr key={user.id} className="border-b border-hairline last:border-b-0">
+                  <td className="px-5 py-3 text-ink">{user.email}</td>
+                  <td className="px-5 py-3 text-ink">
                     {user.roles.map((role) => labels.roles[role]).join(', ')}
                   </td>
                   <td className="px-5 py-3">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.05em] ${statusBadgeClasses(user)}`}
-                    >
-                      {statusLabel(user, labels)}
-                    </span>
+                    <StatusPill tone={statusBadgeTone(user)}>{statusLabel(user, labels)}</StatusPill>
                   </td>
-                  <td className="px-5 py-3 text-[#2F3437]">
+                  <td className="px-5 py-3 text-ink">
                     {user.person ? `${user.person.firstName} ${user.person.lastName}` : labels.table.noPerson}
                   </td>
-                  <td className="px-5 py-3 text-[#2F3437]">{labels.locales[user.locale === 'en' ? 'en' : 'it']}</td>
+                  <td className="px-5 py-3 text-ink">{labels.locales[user.locale === 'en' ? 'en' : 'it']}</td>
                   <td className="px-5 py-3">
                     <div className="flex flex-wrap gap-2">
-                      <button
+                      <Button variant="outline" size="sm"
                         type="button"
                         onClick={() => setPanel({ mode: 'edit', user })}
-                        className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
                       >
                         {labels.actions.edit}
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="outline" size="sm"
                         type="button"
                         disabled={pendingActionId === user.id}
                         onClick={() => void handleToggleActive(user)}
-                        className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
                       >
                         {user.isActive ? labels.actions.deactivate : labels.actions.activate}
-                      </button>
+                      </Button>
                       {!user.passwordSet ? (
-                        <button
+                        <Button variant="outline" size="sm"
                           type="button"
                           disabled={pendingActionId === user.id}
                           onClick={() => void handleResendInvite(user)}
-                          className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3] disabled:opacity-50"
                         >
                           {labels.actions.resendInvite}
-                        </button>
+                        </Button>
                       ) : null}
                     </div>
                   </td>
@@ -221,7 +217,7 @@ export function UsersManager({ users, persons, labels }: UsersManagerProps) {
             )}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -238,7 +234,7 @@ function RoleCheckboxes({
   return (
     <div className="mt-2 flex flex-wrap gap-4">
       {ALL_ROLES.map((role) => (
-        <label key={role} className="flex items-center gap-2 text-sm text-[#2F3437]">
+        <label key={role} className="flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={selected.includes(role)}
@@ -269,7 +265,7 @@ function PersonSelect({
       id={id}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+      className="mt-2 w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink"
     >
       <option value="">{labels.form.personNone}</option>
       {persons.map((person) => (
@@ -336,37 +332,37 @@ function CreateUserForm({ persons, labels, onCancel, onSuccess }: CreateUserForm
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-      <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
         {labels.form.createTitle}
       </h3>
 
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="email" className="block text-sm font-medium text-ink">
           {labels.form.email}
         </label>
-        <input
+        <Input
           id="email"
           type="email"
           autoComplete="off"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full"
           aria-invalid={Boolean(errors.email)}
           {...register('email')}
         />
       </div>
 
       <fieldset>
-        <legend className="block text-sm font-medium text-[#2F3437]">{labels.form.roles}</legend>
+        <legend className="block text-sm font-medium text-ink">{labels.form.roles}</legend>
         <RoleCheckboxes selected={roles} onToggle={toggleRole} labels={labels} />
-        {errors.roles ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.rolesRequired}</p> : null}
+        {errors.roles ? <p className="mt-1 text-xs text-ember">{labels.form.rolesRequired}</p> : null}
       </fieldset>
 
       <div>
-        <label htmlFor="locale" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="locale" className="block text-sm font-medium text-ink">
           {labels.form.locale}
         </label>
         <select
           id="locale"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink"
           {...register('locale')}
         >
           <option value="it">{labels.locales.it}</option>
@@ -375,14 +371,14 @@ function CreateUserForm({ persons, labels, onCancel, onSuccess }: CreateUserForm
       </div>
 
       <div>
-        <label htmlFor="personId" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="personId" className="block text-sm font-medium text-ink">
           {labels.form.person}
         </label>
         <PersonSelect id="personId" value={personId} onChange={changePerson} persons={persons} labels={labels} />
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="user-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="user-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
@@ -449,25 +445,25 @@ function EditUserForm({ user, persons, labels, onCancel, onSuccess }: EditUserFo
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-      <h3 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
+      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
         {labels.form.editTitle}
       </h3>
 
-      <p className="text-sm text-[#787774]">{user.email}</p>
+      <p className="text-sm text-mid-gray">{user.email}</p>
 
       <fieldset>
-        <legend className="block text-sm font-medium text-[#2F3437]">{labels.form.roles}</legend>
+        <legend className="block text-sm font-medium text-ink">{labels.form.roles}</legend>
         <RoleCheckboxes selected={roles} onToggle={toggleRole} labels={labels} />
-        {errors.roles ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.form.rolesRequired}</p> : null}
+        {errors.roles ? <p className="mt-1 text-xs text-ember">{labels.form.rolesRequired}</p> : null}
       </fieldset>
 
       <div>
-        <label htmlFor="locale" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="locale" className="block text-sm font-medium text-ink">
           {labels.form.locale}
         </label>
         <select
           id="locale"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full rounded-buttons border border-hairline bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-ink"
           {...register('locale')}
         >
           <option value="it">{labels.locales.it}</option>
@@ -476,19 +472,19 @@ function EditUserForm({ user, persons, labels, onCancel, onSuccess }: EditUserFo
       </div>
 
       <div>
-        <label htmlFor="personId" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="personId" className="block text-sm font-medium text-ink">
           {labels.form.person}
         </label>
         <PersonSelect id="personId" value={personId} onChange={changePerson} persons={persons} labels={labels} />
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-[#2F3437]">
+      <label className="flex items-center gap-2 text-sm text-ink">
         <input type="checkbox" {...register('isActive')} />
         {labels.form.isActive}
       </label>
 
       {formError ? (
-        <p role="alert" data-testid="user-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="user-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
       ) : null}
@@ -511,20 +507,18 @@ function FormActions({
 }) {
   return (
     <div className="flex gap-3">
-      <button
+      <Button
         type="submit"
         disabled={isSubmitting}
-        className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitLabel}
-      </button>
-      <button
+      </Button>
+      <Button variant="outline"
         type="button"
         onClick={onCancel}
-        className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
       >
         {cancelLabel}
-      </button>
+      </Button>
     </div>
   );
 }

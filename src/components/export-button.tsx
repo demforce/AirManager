@@ -27,7 +27,7 @@ export function ExportButton({ href, label, testId }: ExportButtonProps) {
       target="_blank"
       rel="noopener noreferrer"
       data-testid={testId}
-      className="inline-flex min-h-[40px] items-center rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+      className="inline-flex min-h-[40px] items-center rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
     >
       {label}
     </a>

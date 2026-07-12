@@ -115,20 +115,20 @@ export default async function TrainingDiaryPage({ params, searchParams }: PagePr
       <div className="mx-auto max-w-4xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
+            <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-mid-gray">
               {t('kicker')}
             </span>
-            <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
+            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">
               {header.lastName} {header.firstName}
             </h1>
-            <p className="mt-2 text-sm text-[#787774]">
+            <p className="mt-2 text-sm text-mid-gray">
               {t('courseStartDate')}: {formatDateOnly(header.courseStartDate, locale as 'it' | 'en')}
             </p>
           </div>
           <Link
             href={backHref}
             locale={locale as AppLocale}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
+            className="rounded-buttons border border-hairline bg-transparent px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
           >
             {t('back')}
           </Link>
@@ -160,7 +160,7 @@ export default async function TrainingDiaryPage({ params, searchParams }: PagePr
 
         <div className="mt-10 space-y-4" data-testid="training-notes-list">
           {rows.length === 0 ? (
-            <p className="text-sm text-[#787774]">{t('empty')}</p>
+            <p className="text-sm text-mid-gray">{t('empty')}</p>
           ) : (
             rows.map((note) => (
               <TrainingNoteRow
@@ -195,13 +195,13 @@ export default async function TrainingDiaryPage({ params, searchParams }: PagePr
         </div>
 
         {totalPages > 1 ? (
-          <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
+          <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
             <Link
               href={pageHref(page - 1)}
               locale={locale as AppLocale}
               aria-disabled={page <= 1}
-              className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
               }`}
             >
               &larr;
@@ -213,8 +213,8 @@ export default async function TrainingDiaryPage({ params, searchParams }: PagePr
               href={pageHref(page + 1)}
               locale={locale as AppLocale}
               aria-disabled={page >= totalPages}
-              className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
+              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
+                page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
               }`}
             >
               &rarr;

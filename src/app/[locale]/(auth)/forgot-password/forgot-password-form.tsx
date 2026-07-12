@@ -6,6 +6,8 @@ import { useForm } from 'react-hook-form';
 import { Link } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { forgotPasswordSchema, type ForgotPasswordInput } from '@/lib/schemas/auth-tokens';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 type Labels = {
   email: string;
@@ -52,14 +54,14 @@ export function ForgotPasswordForm({ locale, labels }: ForgotPasswordFormProps) 
         <p
           role="status"
           data-testid="forgot-password-confirmation"
-          className="rounded-[8px] bg-[#E1F3FE] px-4 py-3 text-sm leading-[1.6] text-[#1F6C9F]"
+          className="rounded-nested bg-[#E1F3FE] px-4 py-3 text-sm leading-[1.6] text-[#1F6C9F]"
         >
           {labels.confirmation}
         </p>
         <Link
           href="/login"
           locale={locale}
-          className="mt-6 inline-block text-sm font-medium text-[#2F3437] underline underline-offset-4"
+          className="mt-6 inline-block text-sm font-medium text-ink underline underline-offset-4"
         >
           {labels.backToLogin}
         </Link>
@@ -70,26 +72,26 @@ export function ForgotPasswordForm({ locale, labels }: ForgotPasswordFormProps) 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-6">
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-[#2F3437]">
+        <label htmlFor="email" className="block text-sm font-medium text-ink">
           {labels.email}
         </label>
-        <input
+        <Input
           id="email"
           type="email"
           autoComplete="email"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
+          className="mt-2 w-full"
           aria-invalid={Boolean(errors.email)}
           {...register('email')}
         />
       </div>
 
-      <button
+      <Button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-[6px] bg-[#111111] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full"
       >
         {isSubmitting ? labels.submitting : labels.submit}
-      </button>
+      </Button>
     </form>
   );
 }
