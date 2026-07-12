@@ -25,7 +25,7 @@
   "DashboardPage": {
     "kicker": "Area riservata",
     "welcome": "Bentornato, {name}",
-    "subtitle": "Le aree operative (piloti, velivoli, voli, prenotazioni...) arriveranno nelle prossime iterazioni.",
+    "subtitle": "Il colpo d'occhio sull'aviosuperficie: code PPR, saldi, scadenze e prenotazioni in un'unica vista.",
     "logout": "Esci",
     "navHeading": "Aree operative",
     "myProfile": "La mia scheda",

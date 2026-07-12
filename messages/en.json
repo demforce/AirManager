@@ -25,7 +25,7 @@
   "DashboardPage": {
     "kicker": "Dashboard",
     "welcome": "Welcome back, {name}",
-    "subtitle": "Operational areas (pilots, aircraft, flights, bookings...) arrive in upcoming iterations.",
+    "subtitle": "Your airfield at a glance: the PPR queue, balances, expiries and bookings in one view.",
     "logout": "Log out",
     "navHeading": "Operational areas",
     "myProfile": "My profile",
