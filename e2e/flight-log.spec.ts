@@ -250,8 +250,11 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page.getByTestId('flight-row')).toHaveCount(2);
 
     await page.getByTestId('flight-filter-type').selectOption('TOURISM');
-    await expect(page.getByTestId('flight-row')).toHaveCount(1);
-    await expect(page.getByTestId('flight-row').first()).toContainText('Turismo');
+    const tourismRow = page.getByTestId('flight-row');
+    await expect(tourismRow).toHaveCount(1);
+    // "Tipo" (Turismo) moved out of the row into the detail sheet (story 12.4, AC 1).
+    await tourismRow.first().getByTestId('flight-detail-action').click();
+    await expect(page.getByTestId('flight-detail-sheet')).toContainText('Turismo');
   });
 
   test('a non-staff actor filtering GET /api/v1/flights by someone else\'s personId gets a 403 envelope (AC 4)', async ({ page }) => {
@@ -331,7 +334,12 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(personB.lastName);
-    await expect(rows.first()).toContainText('Lavoro aereo');
+    // "Tipo" (Lavoro aereo) moved out of the row into the detail sheet (story 12.4, AC 1).
+    await rows.first().getByTestId('flight-detail-action').click();
+    const combinedSheet = page.getByTestId('flight-detail-sheet');
+    await expect(combinedSheet).toContainText('Lavoro aereo');
+    await combinedSheet.getByRole('button', { name: 'Chiudi' }).click();
+    await expect(combinedSheet).toBeHidden();
 
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-date-from'), '2020-06-01');
     // Both flights still reachable after the reset — each located through its
@@ -348,7 +356,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page.getByTestId('flight-row').first()).toContainText(aircraftB.registration);
   });
 
-  test('staff: pagination shows a second page once a filtered person has more than one page of flights (NFR-6)', async ({ page }) => {
+  test('staff: load-more accumulates a second page once a filtered person has more than one page of flights (story 12.4, AC 4/NFR-6)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const aircraft = await createAircraftWithRate(page, 6000);
@@ -360,17 +368,114 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
       await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate, flightType: 'TOURISM', minutes: 10 });
     }
 
+    // `personId` is an active filter — the flat context (AC 3), same one the
+    // load-more button's "Carica altri voli" label targets.
     await page.goto(`/it/dashboard/flights?personId=${person.personId}`);
 
     await expect(page.getByTestId('flight-row')).toHaveCount(20);
-    await expect(page.getByTestId('flight-pagination-status')).toHaveText('1 / 2');
+    const loadMore = page.getByTestId('flight-load-more');
+    await expect(loadMore).toHaveText('Carica altri voli');
+    await expect(page.getByTestId('flight-registry-count')).toHaveText('20 di 21 voli');
+    // The numbered pager is gone (story 12.4, AC 4).
+    await expect(page.getByTestId('flight-pagination-status')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: '→' })).toHaveCount(0);
 
-    await page.getByRole('link', { name: '→' }).click();
-    await expect(page).toHaveURL(/page=2/);
+    await loadMore.click();
+    await expect(page.getByTestId('flight-row')).toHaveCount(21);
+    await expect(page.getByTestId('flight-registry-count')).toHaveText('21 di 21 voli');
+    // Every row now loaded — the button disappears (`items.length === total`).
+    await expect(loadMore).toHaveCount(0);
+    // `?page` is never emitted by the UI anymore.
+    await expect(page).not.toHaveURL(/page=/);
+  });
+});
+
+test.describe('Registry rendering: day grouping, flat context, export menu (Story 12.4, AC 2/3/6)', () => {
+  test('grouped context (no filter): 2 flights the same day share ONE day header, a different day gets its own header, no date column (AC 2)', async ({
+    page,
+  }) => {
+    // The grouped (unfiltered) context has no run-unique scoping affordance
+    // by definition (ANY filter would switch it to flat) — on a heavily
+    // accumulated DB this run's 2020-dated flights can land past the FIRST
+    // page (empirically observed on the full-suite run), so this test pages
+    // through via load-more (exercising AC 4 too) instead of assuming page
+    // 1. slow(): the extra load-more round-trips this affords.
+    test.slow();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 9000);
+    const person = await createPilotPerson(page, 'Raggruppo');
+
+    // `flightDate` is the primary sort key server-side (`flightDate desc,
+    // createdAt desc, id desc`) — the two same-day flights are therefore
+    // GUARANTEED to sort adjacently to each other regardless of whatever
+    // else an accumulated/parallel-run DB holds, so the grouping below is
+    // deterministic even on a dirty DB (same reasoning documented in
+    // `flight-registry.ts#groupFlightsByDay`).
+    await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate: '2020-07-10', flightType: 'TOURISM', minutes: 20 });
+    await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate: '2020-07-10', flightType: 'TOURISM', minutes: 25 });
+    await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate: '2020-07-09', flightType: 'TOURISM', minutes: 30 });
+
+    // No UI filter applied anywhere below — the grouped context (AC 2).
+    await page.goto('/it/dashboard/flights');
+
+    const july10Header = page.getByTestId('flight-day-header').filter({ hasText: '10/07/2020' });
+    const july9Header = page.getByTestId('flight-day-header').filter({ hasText: '09/07/2020' });
+    const loadMore = page.getByTestId('flight-load-more');
+    // Load further pages until both headers are visible or there is nothing
+    // left to load — a generous bound (40 pages = up to 800 more flights).
+    for (let i = 0; i < 40; i += 1) {
+      if ((await july9Header.count()) > 0 && (await july10Header.count()) > 0) break;
+      if ((await loadMore.count()) === 0) break;
+      await loadMore.click();
+    }
+
+    await expect(july10Header).toHaveCount(1);
+    await expect(july9Header).toHaveCount(1);
+    // No "Data" column header at all in the grouped context.
+    await expect(page.getByRole('columnheader', { name: 'Data', exact: true })).toHaveCount(0);
+  });
+
+  test('flat context (any filter active): the date column is present in the row and there is no day header (AC 3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 9000);
+    const person = await createPilotPerson(page, 'ContestoFlat');
+    await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate: '2020-08-15', flightType: 'TOURISM', minutes: 20 });
+
+    await page.goto('/it/dashboard/flights');
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await expect(page).toHaveURL(/aircraftId=/);
+
+    await expect(page.getByTestId('flight-day-header')).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Data', exact: true })).toBeVisible();
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
-    await expect(page.getByTestId('flight-pagination-status')).toHaveText('2 / 2');
+    await expect(page.getByTestId('flight-row').first()).toContainText('15/08/2020');
+  });
 
-    await page.getByRole('link', { name: '←' }).click();
-    await expect(page.getByTestId('flight-pagination-status')).toHaveText('1 / 2');
+  test('export menu: items are reachable only once opened; clicking one downloads the file (AC 6)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 8000);
+    const person = await createPilotPerson(page, 'MenuExport');
+    await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate: '2020-09-01', flightType: 'TOURISM', minutes: 15 });
+
+    await page.goto(`/it/dashboard/flights?aircraftId=${aircraft.id}`);
+    await expect(page.getByTestId('flight-row')).toHaveCount(1);
+
+    // The menu items exist in the DOM (native `<details>`) but are not
+    // visible/reachable before the trigger opens the disclosure.
+    await expect(page.getByTestId('flights-export-button')).toBeHidden();
+    await expect(page.getByTestId('flights-export-pdf-button')).toBeHidden();
+
+    await page.getByTestId('flights-export-menu-trigger').click();
+    await expect(page.getByTestId('flights-export-button')).toBeVisible();
+    await expect(page.getByTestId('flights-export-pdf-button')).toBeVisible();
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByTestId('flights-export-button').click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/^airmanager-flights-\d{4}-\d{2}-\d{2}\.xlsx$/);
   });
 });

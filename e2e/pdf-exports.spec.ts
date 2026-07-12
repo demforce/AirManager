@@ -271,6 +271,8 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     await page.goto(`/it/dashboard/flights?aircraftId=${aircraft.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
 
+    // Story 12.4 (AC 6): Excel/PDF are collected into one overflow menu now.
+    await page.getByTestId('flights-export-menu-trigger').click();
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('flights-export-pdf-button').click()]);
 
     expect(download.suggestedFilename()).toMatch(/^airmanager-flights-\d{4}-\d{2}-\d{2}\.pdf$/);

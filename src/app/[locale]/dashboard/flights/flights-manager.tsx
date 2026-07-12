@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ExportButton } from '@/components/export-button';
@@ -9,6 +9,7 @@ import { SearchCombobox, type SearchComboboxOption } from '@/components/search-c
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { useRouter } from '@/i18n/navigation';
 import { flightPicPerson } from '@/lib/flight-pic';
+import { groupFlightsByDay, hasActiveFlightFilter } from '@/lib/flight-registry';
 import { formatCents } from '@/lib/money';
 import {
   flightTypeSchema,
@@ -17,15 +18,19 @@ import {
   type FlightTypeDto,
   type RegisterFlightResponseDto,
 } from '@/lib/schemas/flights';
-import { formatDateOnly, formatMinutes, formatTimeOfDay } from '@/lib/time';
+import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { parseTimeShorthand } from '@/lib/time-input';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { Button } from '@/components/ui/button';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
-import { Card } from '@/components/ui/card';
+import { Card, CardFooter, CardHeader } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
+import { Menu } from '@/components/ui/menu';
 import { FlightDetailSheet } from './flight-detail-sheet';
+
+/** The registry's own page size (story 5.4, NFR-6; unchanged by story 12.4) — mirrors `page.tsx`'s `FLIGHTS_PAGE_SIZE`, kept as a literal here since that file is server-only and cannot be imported into this client component. */
+const FLIGHTS_PAGE_SIZE = 20;
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type AircraftOption = { id: string; registration: string };
@@ -187,12 +192,10 @@ export type FlightsManagerLabels = {
       /** Story 11.2 (AC 2) — the derived PIC (pilota al comando, `flight-pic.ts`). */
       pic: string;
       noValue: string;
-      /** Story 5.2 (AC 1) — literal `{duration}` placeholder, CLIENT-filled (t.raw, same pattern as `account-statement-table.tsx`'s `adjustmentOfDate`). */
-      packageNote: string;
       /** Story 5.3 (AC 1) — the status column header; REGISTERED renders no badge at all (Contesto). */
       status: string;
       statusCancelled: string;
-      /** Literal `{date}`/`{reason}` placeholders, CLIENT-filled — same `t.raw` pattern as `packageNote`. */
+      /** Literal `{date}`/`{reason}` placeholders, CLIENT-filled — same `t.raw` pattern as `count` below. */
       cancelledDetail: string;
       correctionOf: string;
       correctedBy: string;
@@ -200,6 +203,13 @@ export type FlightsManagerLabels = {
       cancelAction: string;
       correctAction: string;
     };
+    /** Story 12.4 (AC 4) — load-more button label, context-dependent (`hasActiveFlightFilter`): grouped registry says "load earlier days", flat says "load more flights". */
+    loadMoreGrouped: string;
+    loadMoreFlat: string;
+    /** Story 12.4 (AC 4) — inline `role="alert"` on a failed load-more fetch; the SAME load-more button retries (no separate button, same pattern as `CancelFlightPanel`'s own error+retry). */
+    loadMoreError: string;
+    /** Story 12.4 (AC 4) — footer "N di M voli", literal `{loaded}`/`{total}` placeholders, CLIENT-filled (t.raw, same pattern as `cancelledDetail`). */
+    count: string;
   };
   /** Story 12.3, AC 5 — the per-row detail sheet. */
   detail: {
@@ -263,6 +273,10 @@ type FlightsManagerProps = {
   /** Filter-bar person picker (staff only) — includes archived people, same rationale. */
   personFilterOptions: PersonFilterOption[];
   initialFlights: FlightListItemDto[];
+  /** Story 12.4 (AC 4) — the query's grand total (server-rendered page 1) driving the load-more button's `items.length === total` stop condition and the footer count. */
+  initialTotal: number;
+  /** Story 9.3's school drill-down param (AC 2/4) — not a `FilterBar` control, but STILL counts toward `hasActiveFlightFilter` (AC 2/3's mechanical rule) and must ride along on every load-more fetch to keep pages 2+ scoped the same way page 1 was. `undefined` outside the drill-down. */
+  instructorPersonId?: string;
   moneyLocale: 'it' | 'en';
   /** Story 11.1 (AC 1) — `getAirfieldBranding().name`, the registration form's default for BOTH departure/arrival airport fields (a correction's prefill, when present, wins instead). */
   airfieldName: string;
@@ -272,6 +286,8 @@ type FlightsManagerProps = {
   exportLabel: string;
   /** Story 10.2 (AC 5) — "Esporta PDF" label, same live-filters href-building as `exportLabel`. */
   exportPdfLabel: string;
+  /** Story 12.4 (AC 6) — the export overflow menu's trigger label ("Esporta"/"Export"). */
+  exportMenuLabel: string;
   labels: FlightsManagerLabels;
 };
 
@@ -313,11 +329,27 @@ export function flightTypeLabel(type: FlightListItemDto['flightType'], labels: F
  * guardian of what data arrives here (AD-5, `listFlights`'s own-access
  * branch) — `canManage` only decides what to RENDER.
  *
- * The registry itself is paginated server-side (NFR-6) — the parent server
+ * The registry's FIRST page is server-rendered (NFR-6) — the parent server
  * component re-renders this whole client component with fresh `key`/props on
- * every filter or page change (a hand-edited URL, a filter select, or a
- * Prev/Next click all just navigate), so `flights`'s local state below always
- * starts from the CURRENT page's data.
+ * every filter change (a hand-edited URL or a filter select navigates), so
+ * `flights`'s local state below always starts clean from the CURRENT
+ * filters' page 1. Story 12.4 (AC 4): further pages are the client's own
+ * job now — `handleLoadMore` fetches `GET /api/v1/flights?page=N` directly
+ * and appends, no navigation, no numbered pager (removed).
+ *
+ * Story 12.4 (AC 1/2): the table below intentionally has NO `overflow-x-auto`
+ * wrapper — with the row cut down to its 5-7 compact columns it fits the
+ * Card's own content width at desktop sizes (this app is desktop-first,
+ * ratified brainstorm decision), and, more importantly, `overflow-x-auto`
+ * would silently break the day header's `position: sticky` (AC 2): per the
+ * CSS Overflow spec, setting ANY non-`visible` `overflow-x` forces the
+ * computed `overflow-y` to `auto` too, which turns that wrapper itself into
+ * the "nearest scrolling ancestor" sticky positions against — and since the
+ * wrapper's own height always exactly fits its content (nothing constrains
+ * it), its OWN scrollTop never moves, so a sticky child inside it would
+ * never visibly stick to the page. Removing the wrapper lets the day header
+ * stick against the real scrolling ancestor instead: the dashboard shell's
+ * `overflow-y-auto` panel (`dashboard/layout.tsx`).
  *
  * On a successful registration the form's response (`RegisterFlightResponseDto`)
  * drives BOTH the addebito breakdown panel and a prepend onto the list — no
@@ -346,15 +378,29 @@ export function FlightsManager({
   aircraftFilterOptions,
   personFilterOptions,
   initialFlights,
+  initialTotal,
+  instructorPersonId,
   moneyLocale,
   airfieldName,
   filters: initialFilters,
   exportLabel,
   exportPdfLabel,
+  exportMenuLabel,
   labels,
 }: FlightsManagerProps) {
   const router = useRouter();
   const [flights, setFlights] = useState<FlightListItemDto[]>(initialFlights);
+  // Story 12.4 (AC 4) — the query's grand total, kept in lockstep with every
+  // OPTIMISTIC row-count change this component already makes (register/
+  // correct each add one new row; cancel patches a row in place). This
+  // preserves the `flights.length === total` "no more pages" invariant
+  // without a second round-trip — see `handleRegistered`/`handleCorrected`.
+  const [total, setTotal] = useState(initialTotal);
+  // How many server pages (of `FLIGHTS_PAGE_SIZE`) are already loaded —
+  // starts at 1 (the server-rendered first page); load-more increments it.
+  const [loadedPages, setLoadedPages] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<RegisterFlightResponseDto | null>(null);
   const [correctingFlight, setCorrectingFlight] = useState<FlightListItemDto | null>(null);
   const [cancellingFlight, setCancellingFlight] = useState<FlightListItemDto | null>(null);
@@ -371,6 +417,11 @@ export function FlightsManager({
   // AC 6, is an independent additive API surface, not this sheet's data
   // source).
   const [detailFlight, setDetailFlight] = useState<FlightListItemDto | null>(null);
+
+  // Story 12.4 (AC 2/3) — the mechanical grouped-vs-flat rule, INCLUDING the
+  // school drill-down's `instructorPersonId` (not a `FilterBar` control, see
+  // its own prop doc-comment).
+  const activeFilter = hasActiveFlightFilter({ ...filters, instructorPersonId });
 
   /**
    * Pushes the new filter values into the URL (dropping `page` — any filter
@@ -406,6 +457,10 @@ export function FlightsManager({
   function handleRegistered(result: RegisterFlightResponseDto): void {
     setLastResult(result);
     setFlights((current) => [result.flight, ...current]);
+    // Story 12.4 (AC 4) — one new DB row, so the grand total grows by one
+    // too (keeps `flights.length === total` meaningful for the load-more
+    // button/footer count without a re-fetch).
+    setTotal((current) => current + 1);
     setDialogOpen(false);
   }
 
@@ -425,6 +480,9 @@ export function FlightsManager({
           : flight,
       ),
     ]);
+    // Story 12.4 (AC 4) — a correction ADDS a new row (the original stays,
+    // just re-statused), so the total grows by one, same as registration.
+    setTotal((current) => current + 1);
     setCorrectingFlight(null);
     setDialogOpen(false);
   }
@@ -467,6 +525,57 @@ export function FlightsManager({
     setDetailFlight(null);
     setCancelFeedback(null);
     setCancellingFlight(flight);
+  }
+
+  /** The per-row "Annulla" action (`FlightRow`) — same reset-feedback-then-open-panel sequence as `handleDetailCancel`, minus the sheet-close step (there is no sheet open here). */
+  function handleCancelClick(flight: FlightListItemDto): void {
+    setCancelFeedback(null);
+    setCancellingFlight(flight);
+  }
+
+  /**
+   * Fetches the next server page and appends it (story 12.4, AC 4) — the
+   * SAME endpoint/filters the page was rendered with, `page` incremented,
+   * `pageSize` omitted (the schema's own default is 20, same as
+   * `FLIGHTS_PAGE_SIZE`). `instructorPersonId` rides along so pages 2+ stay
+   * scoped exactly like page 1 (see its own prop doc-comment). A failed
+   * fetch leaves `flights`/`total`/`loadedPages` untouched and shows an
+   * inline `role="alert"` — the SAME load-more button below is the retry
+   * (no separate button, matching `CancelFlightPanel`'s error+retry).
+   */
+  async function handleLoadMore(): Promise<void> {
+    setLoadMoreError(null);
+    setLoadingMore(true);
+
+    const nextPage = loadedPages + 1;
+    const params = new URLSearchParams({ page: String(nextPage), pageSize: String(FLIGHTS_PAGE_SIZE) });
+    if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+    if (filters.dateTo) params.set('dateTo', filters.dateTo);
+    if (canManage && filters.aircraftId) params.set('aircraftId', filters.aircraftId);
+    if (canManage && filters.personId) params.set('personId', filters.personId);
+    if (filters.flightType) params.set('flightType', filters.flightType);
+    if (filters.status) params.set('status', filters.status);
+    if (instructorPersonId) params.set('instructorPersonId', instructorPersonId);
+
+    let response: Response;
+    try {
+      response = await fetch(`/api/v1/flights?${params.toString()}`);
+    } catch {
+      setLoadMoreError(labels.list.loadMoreError);
+      setLoadingMore(false);
+      return;
+    }
+    if (!response.ok) {
+      setLoadMoreError(labels.list.loadMoreError);
+      setLoadingMore(false);
+      return;
+    }
+
+    const body = (await response.json()) as { items: FlightListItemDto[]; total: number };
+    setFlights((current) => [...current, ...body.items]);
+    setTotal(body.total);
+    setLoadedPages(nextPage);
+    setLoadingMore(false);
   }
 
   return (
@@ -580,175 +689,167 @@ export function FlightsManager({
         />
       ) : null}
 
-      <div>
-        <FilterBar
-          canManage={canManage}
-          filters={filters}
-          onChange={handleFilterChange}
-          onReset={handleResetFilters}
-          aircraftOptions={aircraftFilterOptions}
-          personOptions={personFilterOptions}
-          labels={labels.filters}
-          flightTypeLabels={labels.form.flightTypes}
-          pickerLabels={labels.picker}
-        />
+      {/* Story 12.4 (AC 1) — the registry table lives in a Card (nested
+          CardHeader for title/filters/export, CardFooter for load-more +
+          count), never bare on the canvas. */}
+      <Card>
+        <CardHeader className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
+              {labels.list.heading}
+            </h3>
+            <div className="flex items-center gap-4">
+              {cancelFeedback ? (
+                <p role="status" data-testid="flight-cancel-feedback" className="text-sm text-[#346538]">
+                  {cancelFeedback}
+                </p>
+              ) : null}
+              {/* Story 12.4 (AC 6): the two export actions collected into one overflow menu — testids stay on the menu ITEMS, unchanged. */}
+              <Menu label={exportMenuLabel} triggerTestId="flights-export-menu-trigger">
+                <ExportButton
+                  variant="menuItem"
+                  // Story 10.1 (AC 5): built from the LIVE filter-bar state (`filters`), not `initialFilters` — reflects
+                  // whatever the registry is currently showing, including a hand-edited URL or a just-changed filter.
+                  href={buildExportHref(
+                    '/api/v1/flights',
+                    {
+                      dateFrom: filters.dateFrom,
+                      dateTo: filters.dateTo,
+                      aircraftId: filters.aircraftId,
+                      personId: filters.personId,
+                      flightType: filters.flightType,
+                      status: filters.status,
+                    },
+                    moneyLocale,
+                  )}
+                  label={exportLabel}
+                  testId="flights-export-button"
+                />
+                <ExportButton
+                  variant="menuItem"
+                  // Story 10.2 (AC 5): same live-filters href-building, dedicated PDF route.
+                  href={buildPdfExportHref(
+                    '/api/v1/flights/pdf',
+                    {
+                      dateFrom: filters.dateFrom,
+                      dateTo: filters.dateTo,
+                      aircraftId: filters.aircraftId,
+                      personId: filters.personId,
+                      flightType: filters.flightType,
+                      status: filters.status,
+                    },
+                    moneyLocale,
+                  )}
+                  label={exportPdfLabel}
+                  testId="flights-export-pdf-button"
+                />
+              </Menu>
+            </div>
+          </div>
+          <FilterBar
+            canManage={canManage}
+            filters={filters}
+            onChange={handleFilterChange}
+            onReset={handleResetFilters}
+            aircraftOptions={aircraftFilterOptions}
+            personOptions={personFilterOptions}
+            labels={labels.filters}
+            flightTypeLabels={labels.form.flightTypes}
+            pickerLabels={labels.picker}
+          />
+        </CardHeader>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
-          <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
-            {labels.list.heading}
-          </h3>
-          <div className="flex items-center gap-4">
-            {cancelFeedback ? (
-              <p role="status" data-testid="flight-cancel-feedback" className="text-sm text-[#346538]">
-                {cancelFeedback}
-              </p>
-            ) : null}
-            <ExportButton
-              // Story 10.1 (AC 5): built from the LIVE filter-bar state (`filters`), not `initialFilters` — reflects
-              // whatever the registry is currently showing, including a hand-edited URL or a just-changed filter.
-              href={buildExportHref(
-                '/api/v1/flights',
-                {
-                  dateFrom: filters.dateFrom,
-                  dateTo: filters.dateTo,
-                  aircraftId: filters.aircraftId,
-                  personId: filters.personId,
-                  flightType: filters.flightType,
-                  status: filters.status,
-                },
-                moneyLocale,
-              )}
-              label={exportLabel}
-              testId="flights-export-button"
-            />
-            <ExportButton
-              // Story 10.2 (AC 5): same live-filters href-building, dedicated PDF route.
-              href={buildPdfExportHref(
-                '/api/v1/flights/pdf',
-                {
-                  dateFrom: filters.dateFrom,
-                  dateTo: filters.dateTo,
-                  aircraftId: filters.aircraftId,
-                  personId: filters.personId,
-                  flightType: filters.flightType,
-                  status: filters.status,
-                },
-                moneyLocale,
-              )}
-              label={exportPdfLabel}
-              testId="flights-export-pdf-button"
-            />
-          </div>
-        </div>
         {flights.length === 0 ? (
-          <p className="mt-4 text-sm text-mid-gray">{labels.list.empty}</p>
+          <p className="text-sm text-mid-gray">{labels.list.empty}</p>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[1280px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.date}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.route}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.times}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.aircraft}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.person}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.instructor}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.type}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.duration}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.amount}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.movements}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.pic}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.list.table.status}</th>
-                  <th className="py-2 font-medium">{labels.list.table.actions}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {flights.map((flight) => {
-                  const pic = flightPicPerson(flight);
-                  return (
-                  <tr key={flight.id} data-testid="flight-row" className="border-b border-hairline text-ink">
-                    <td className="py-2 pr-4 whitespace-nowrap text-mid-gray">{formatDateOnly(flight.flightDate, moneyLocale)}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap">
-                      {flight.departureAirfield && flight.arrivalAirfield
-                        ? `${flight.departureAirfield} → ${flight.arrivalAirfield}`
-                        : labels.list.table.noValue}
-                    </td>
-                    <td className="py-2 pr-4 whitespace-nowrap">
-                      {flight.takeoffAt && flight.landingAt
-                        ? `${formatTimeOfDay(new Date(flight.takeoffAt), moneyLocale)}–${formatTimeOfDay(new Date(flight.landingAt), moneyLocale)}`
-                        : labels.list.table.noValue}
-                    </td>
-                    <td className="py-2 pr-4 whitespace-nowrap">{flight.aircraft.registration}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap">{personLabel(flight.person)}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap">
-                      {flight.instructor ? personLabel(flight.instructor) : labels.list.table.noInstructor}
-                    </td>
-                    <td className="py-2 pr-4 whitespace-nowrap">
-                      {flightTypeLabel(flight.flightType, labels.form.flightTypes)}
-                      {flight.isSolo ? ` — ${labels.list.table.soloSuffix}` : ''}
-                    </td>
-                    <td className="py-2 pr-4 whitespace-nowrap">
-                      <span className="font-[family-name:var(--font-mono,monospace)]">{formatMinutes(flight.minutes)}</span>
-                      {flight.breakdown.packageCoveredMinutes > 0 ? (
-                        <span className="block text-xs font-normal text-mid-gray">
-                          {labels.list.table.packageNote.replace('{duration}', formatMinutes(flight.breakdown.packageCoveredMinutes))}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="py-2 pr-4 whitespace-nowrap">{formatCents(flight.breakdown.totalAmountCents, moneyLocale)}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap">
-                      {flight.takeoffs} / {flight.landings}
-                    </td>
-                    <td data-testid="flight-pic-cell" className="py-2 pr-4 whitespace-nowrap">
-                      {pic ? personLabel(pic) : labels.list.table.noValue}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <FlightStatusCell flight={flight} labels={labels.list.table} locale={moneyLocale} />
-                    </td>
-                    <td className="py-2 whitespace-nowrap">
-                      <div className="flex gap-2">
-                        {/* Story 12.3 (AC 5) — available on EVERY row, own-access included (a per-row VIEW, not a management action). */}
-                        <button
-                          type="button"
-                          data-testid="flight-detail-action"
-                          onClick={() => setDetailFlight(flight)}
-                          className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
+                {/* Story 12.4 (AC 3): the date column exists ONLY in the flat (any filter active) context — the grouped context carries the date on its day header instead. */}
+                {activeFilter ? <th className="py-2 pr-4 font-medium">{labels.list.table.date}</th> : null}
+                <th className="py-2 pr-4 font-medium">{labels.list.table.route}</th>
+                <th className="py-2 pr-4 font-medium">{labels.list.table.aircraft}</th>
+                <th className="py-2 pr-4 font-medium">{labels.list.table.duration}</th>
+                <th className="py-2 pr-4 font-medium">{labels.list.table.amount}</th>
+                <th className="py-2 pr-4 font-medium">{labels.list.table.pic}</th>
+                <th className="py-2 pr-4 font-medium">{labels.list.table.status}</th>
+                <th className="py-2 font-medium">{labels.list.table.actions}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeFilter
+                ? flights.map((flight) => (
+                    <FlightRow
+                      key={flight.id}
+                      flight={flight}
+                      showDate
+                      canManage={canManage}
+                      moneyLocale={moneyLocale}
+                      labels={labels}
+                      onDetail={setDetailFlight}
+                      onCancel={handleCancelClick}
+                      onCorrect={handleOpenCorrect}
+                    />
+                  ))
+                : groupFlightsByDay(flights).map((group) => (
+                    <Fragment key={group.flightDate}>
+                      {/* Story 12.4 (AC 2) — day divider, `data-testid="flight-day-header"` (NEVER `flight-row`), sticky against the dashboard panel's own scroll (no `overflow-x-auto` ancestor on this table — see the module doc-comment). */}
+                      <tr>
+                        <th
+                          colSpan={GROUPED_COLUMN_COUNT}
+                          scope="colgroup"
+                          data-testid="flight-day-header"
+                          className="sticky top-0 z-10 border-b border-hairline bg-canvas px-2 py-2 text-left text-sm font-medium text-ink"
                         >
-                          {labels.detail.openAction}
-                        </button>
-                        {canManage && flight.status === 'REGISTERED' ? (
-                          <>
-                            <button
-                              type="button"
-                              data-testid="flight-cancel-action"
-                              onClick={() => {
-                                setCancelFeedback(null);
-                                setCancellingFlight(flight);
-                              }}
-                              className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
-                            >
-                              {labels.list.table.cancelAction}
-                            </button>
-                            <button
-                              type="button"
-                              data-testid="flight-correct-action"
-                              onClick={() => handleOpenCorrect(flight)}
-                              className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
-                            >
-                              {labels.list.table.correctAction}
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          {formatDateOnly(group.flightDate, moneyLocale)}
+                        </th>
+                      </tr>
+                      {group.flights.map((flight) => (
+                        <FlightRow
+                          key={flight.id}
+                          flight={flight}
+                          showDate={false}
+                          canManage={canManage}
+                          moneyLocale={moneyLocale}
+                          labels={labels}
+                          onDetail={setDetailFlight}
+                          onCancel={handleCancelClick}
+                          onCorrect={handleOpenCorrect}
+                        />
+                      ))}
+                    </Fragment>
+                  ))}
+            </tbody>
+          </table>
         )}
-      </div>
+
+        {flights.length > 0 ? (
+          <CardFooter className="flex flex-wrap items-center justify-between gap-4">
+            <p data-testid="flight-registry-count" className="text-sm text-mid-gray">
+              {labels.list.count.replace('{loaded}', String(flights.length)).replace('{total}', String(total))}
+            </p>
+            {flights.length < total ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  data-testid="flight-load-more"
+                  disabled={loadingMore}
+                  onClick={() => void handleLoadMore()}
+                >
+                  {activeFilter ? labels.list.loadMoreFlat : labels.list.loadMoreGrouped}
+                </Button>
+                {loadMoreError ? (
+                  <span role="alert" data-testid="flight-load-more-error" className="text-sm text-ember">
+                    {loadMoreError}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </CardFooter>
+        ) : null}
+      </Card>
 
       <FlightDetailSheet
         flight={detailFlight}
@@ -760,6 +861,95 @@ export function FlightsManager({
         moneyLocale={moneyLocale}
       />
     </div>
+  );
+}
+
+/** Column count of the GROUPED context's `<thead>` (tratta, velivolo, durata, costo, PIC, stato, azioni — no date column) — the day header's own `colSpan`. */
+const GROUPED_COLUMN_COUNT = 7;
+
+type FlightRowProps = {
+  flight: FlightListItemDto;
+  /** `true` in the flat context (AC 3): renders the leading date cell. `false` in the grouped context (AC 2): the day header carries the date instead. */
+  showDate: boolean;
+  canManage: boolean;
+  moneyLocale: 'it' | 'en';
+  labels: FlightsManagerLabels;
+  onDetail: (flight: FlightListItemDto) => void;
+  onCancel: (flight: FlightListItemDto) => void;
+  onCorrect: (flight: FlightListItemDto) => void;
+};
+
+/**
+ * One compact registry row (story 12.4, AC 1) — fixed height, a single line
+ * of text per cell (the status/lineage cell is the one declared exception:
+ * a CANCELLED/corrected flight's badge + reason legitimately wraps to a
+ * second line — "un registro contabile deve mostrare gli storni"). Tratta
+ * and PIC are the two fields that can run long (a free-text airfield name,
+ * a full person name) — `max-w-*` + `truncate` + a native `title` tooltip
+ * on both (FR-51), same ellipsis-with-tooltip convention used nowhere else
+ * on this page yet (12.4 is the first).
+ */
+function FlightRow({ flight, showDate, canManage, moneyLocale, labels, onDetail, onCancel, onCorrect }: FlightRowProps) {
+  const pic = flightPicPerson(flight);
+  const route =
+    flight.departureAirfield && flight.arrivalAirfield
+      ? `${flight.departureAirfield} → ${flight.arrivalAirfield}`
+      : labels.list.table.noValue;
+  const picLabel = pic ? personLabel(pic) : labels.list.table.noValue;
+
+  return (
+    <tr data-testid="flight-row" className="border-b border-hairline text-ink">
+      {showDate ? (
+        <td className="py-2 pr-4 whitespace-nowrap text-mid-gray">{formatDateOnly(flight.flightDate, moneyLocale)}</td>
+      ) : null}
+      <td className="max-w-[220px] truncate py-2 pr-4" title={route}>
+        {route}
+      </td>
+      <td className="py-2 pr-4 whitespace-nowrap">{flight.aircraft.registration}</td>
+      <td className="py-2 pr-4 whitespace-nowrap">
+        <span className="font-[family-name:var(--font-mono,monospace)]">{formatMinutes(flight.minutes)}</span>
+      </td>
+      <td className="py-2 pr-4 whitespace-nowrap">{formatCents(flight.breakdown.totalAmountCents, moneyLocale)}</td>
+      <td data-testid="flight-pic-cell" className="max-w-[160px] truncate py-2 pr-4" title={picLabel}>
+        {picLabel}
+      </td>
+      <td className="py-2 pr-4">
+        <FlightStatusCell flight={flight} labels={labels.list.table} locale={moneyLocale} />
+      </td>
+      <td className="py-2 whitespace-nowrap">
+        <div className="flex gap-2">
+          {/* Story 12.3 (AC 5) — available on EVERY row, own-access included (a per-row VIEW, not a management action). */}
+          <button
+            type="button"
+            data-testid="flight-detail-action"
+            onClick={() => onDetail(flight)}
+            className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
+          >
+            {labels.detail.openAction}
+          </button>
+          {canManage && flight.status === 'REGISTERED' ? (
+            <>
+              <button
+                type="button"
+                data-testid="flight-cancel-action"
+                onClick={() => onCancel(flight)}
+                className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
+              >
+                {labels.list.table.cancelAction}
+              </button>
+              <button
+                type="button"
+                data-testid="flight-correct-action"
+                onClick={() => onCorrect(flight)}
+                className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
+              >
+                {labels.list.table.correctAction}
+              </button>
+            </>
+          ) : null}
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -869,7 +1059,11 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
   );
 
   return (
-    <div className="flex flex-wrap items-end gap-4 border-b border-hairline pb-6" data-testid="flight-filter-bar">
+    // Story 12.4 (AC 6): no own bottom border/padding anymore — this bar is
+    // now the LAST element inside `CardHeader`, whose own `border-b` is the
+    // single divider between the header band and the table body (two close
+    // hairlines would otherwise stack here).
+    <div className="flex flex-wrap items-end gap-4" data-testid="flight-filter-bar">
       {/* `<label htmlFor>` as a SIBLING of its control, never wrapping it: a
           wrapping `<label>` around a `<select>` folds every `<option>`'s
           text into the label's own accessible name (browsers compute it from

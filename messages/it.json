@@ -991,7 +991,6 @@
         "movements": "Decolli/Atterraggi",
         "pic": "PIC",
         "noValue": "—",
-        "packageNote": "di cui {duration} da pacchetto",
         "status": "Stato",
         "statusCancelled": "Annullato",
         "cancelledDetail": "Annullato il {date} — {reason}",
@@ -1000,7 +999,11 @@
         "actions": "Azioni",
         "cancelAction": "Annulla",
         "correctAction": "Correggi"
-      }
+      },
+      "loadMoreGrouped": "Carica giorni precedenti",
+      "loadMoreFlat": "Carica altri voli",
+      "loadMoreError": "Impossibile caricare altri voli. Riprova.",
+      "count": "{loaded} di {total} voli"
     },
     "detail": {
       "title": "Dettaglio volo",
@@ -1537,7 +1540,8 @@
   },
   "Export": {
     "button": "Esporta Excel",
-    "buttonPdf": "Esporta PDF"
+    "buttonPdf": "Esporta PDF",
+    "menuLabel": "Esporta"
   },
   "PdfExport": {
     "generatedAt": "Generato il {date}",

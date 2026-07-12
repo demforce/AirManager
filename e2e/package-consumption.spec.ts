@@ -192,8 +192,18 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-25,00\s€/);
 
     const firstFlightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).first();
-    await expect(firstFlightRow).toContainText('di cui 1:00 da pacchetto');
     await expect(firstFlightRow).toContainText(/25,00\s€/);
+
+    // Story 12.4 (AC 1): the row-level "di cui X da pacchetto" note moved
+    // into the detail sheet's addebito breakdown (`dt`/`dd` pairs — scoped
+    // to the exact term to avoid any substring collision with the sheet's
+    // own orari, lesson 11.2).
+    await firstFlightRow.getByTestId('flight-detail-action').click();
+    const sheet = page.getByTestId('flight-detail-sheet');
+    await expect(sheet.locator('dt', { hasText: 'Da pacchetto' }).locator('xpath=following-sibling::dd[1]')).toHaveText('1:00');
+    await expect(sheet.locator('dt', { hasText: 'Minuti addebitati' }).locator('xpath=following-sibling::dd[1]')).toHaveText('0:10');
+    await sheet.getByRole('button', { name: 'Chiudi' }).click();
+    await expect(sheet).toBeHidden();
 
     // Estratto conto: the FLIGHT_CHARGE row shows only the eccedenza (25,00 €), never the full 70'x150€/h.
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
@@ -221,7 +231,15 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     // Total balance now -50,00 € (25,00 + 25,00) — no further package coverage.
     await expect(secondResultPanel.getByTestId('flight-result-new-balance')).toContainText(/-50,00\s€/);
     const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).filter({ hasText: '0:10' });
-    await expect(secondFlightRow).not.toContainText('da pacchetto');
+    // Story 12.4 (AC 1): the row itself no longer carries a "da pacchetto"
+    // note at all (moved to the sheet) — assert the ABSENCE there instead,
+    // proving the sheet's own conditional ("Da pacchetto" renders only when
+    // `packageCoveredMinutes > 0`) correctly skips it for this full-rate flight.
+    await secondFlightRow.getByTestId('flight-detail-action').click();
+    const secondSheet = page.getByTestId('flight-detail-sheet');
+    await expect(secondSheet).not.toContainText('Da pacchetto');
+    await secondSheet.getByRole('button', { name: 'Chiudi' }).click();
+    await expect(secondSheet).toBeHidden();
 
     // A flight on the NON-eligible aircraft: full rate, and the package (already exhausted anyway)
     // is never queried for this aircraft in the first place — verified via a FRESH package below.
@@ -252,7 +270,12 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     const thirdResultPanel = page.getByTestId('flight-result-panel');
     await expect(thirdResultPanel.getByTestId('flight-result-total')).toContainText(/50,00\s€/);
     const thirdFlightRow = page.getByTestId('flight-row').filter({ hasText: otherAircraft.registration });
-    await expect(thirdFlightRow).not.toContainText('da pacchetto');
+    // Same absence check as the second flight, on the non-eligible aircraft.
+    await thirdFlightRow.getByTestId('flight-detail-action').click();
+    const thirdSheet = page.getByTestId('flight-detail-sheet');
+    await expect(thirdSheet).not.toContainText('Da pacchetto');
+    await thirdSheet.getByRole('button', { name: 'Chiudi' }).click();
+    await expect(thirdSheet).toBeHidden();
 
     // The fresh package's residuo is untouched (still 0:30, no "Usati" note).
     await page.goto(`/it/dashboard/people/${pilot.personId}`);

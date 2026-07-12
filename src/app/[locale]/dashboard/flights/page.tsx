@@ -12,8 +12,11 @@ import { FlightsManager, type FlightsFilters } from './flights-manager';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
+  // Story 12.4 (AC 4): `page` is deliberately NOT a field here anymore — the
+  // server always renders page 1 now (the client accumulates further pages
+  // itself via load-more); a legacy `?page=N` on a bookmarked/hand-typed URL
+  // is simply never read, i.e. ignored.
   searchParams: Promise<{
-    page?: string;
     dateFrom?: string;
     dateTo?: string;
     aircraftId?: string;
@@ -166,16 +169,11 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
     }));
   }
 
+  // Story 12.4 (AC 4): always page 1 — the numbered pager is gone, the
+  // client accumulates further pages itself via load-more (`FlightsManager`
+  // fetches `GET /api/v1/flights?page=N` directly, same endpoint/filters).
   const flightsQuery = { pageSize: FLIGHTS_PAGE_SIZE, dateFrom, dateTo, aircraftId, personId, instructorPersonId, flightType, status };
-  let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
-  let flightsResult = await listFlights(actor, { ...flightsQuery, page });
-  // Clamp an out-of-range ?page to the last real page (same pattern as `FinancePage`).
-  const lastPage = Math.max(1, Math.ceil(flightsResult.total / FLIGHTS_PAGE_SIZE));
-  if (page > lastPage) {
-    page = lastPage;
-    flightsResult = await listFlights(actor, { ...flightsQuery, page });
-  }
-  const totalPages = Math.max(1, Math.ceil(flightsResult.total / FLIGHTS_PAGE_SIZE));
+  const flightsResult = await listFlights(actor, { ...flightsQuery, page: 1 });
 
   // `createdAt`/`cancelledAt`/`takeoffAt`/`landingAt` serialized to ISO
   // (AD-8) — the service's `Date` cannot cross the server/client boundary
@@ -208,10 +206,6 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
     ...(status ? { status } : {}),
   };
   const filterQuery = { ...baseFilterQuery, ...(instructorPersonId ? { instructorPersonId } : {}) };
-
-  function pageHref(targetPage: number) {
-    return { pathname: '/dashboard/flights', query: { page: targetPage, ...filterQuery } };
-  }
 
   const t = await getTranslations('FlightsPage');
   const tExport = await getTranslations('Export');
@@ -250,14 +244,16 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
 
         <div className="mt-10">
           <FlightsManager
-            // Remounts on every filter/page navigation (story 5.4): the
-            // parent server component re-queries and passes fresh
-            // `initialFlights`, and this `key` forces the client component's
-            // OWN local state (the optimistic register/cancel/correct
-            // patches) to start clean from it rather than keep stale rows
-            // from a previous filter/page (same remount-on-identity-change
-            // idiom already used by `RegisterFlightForm`'s own `key`).
-            key={JSON.stringify({ page, ...filterQuery })}
+            // Remounts on every filter navigation (story 5.4; `page` dropped
+            // from this key in story 12.4 — it is no longer emitted by the
+            // UI at all): the parent server component re-queries and passes
+            // fresh `initialFlights`, and this `key` forces the client
+            // component's OWN local state (the optimistic register/cancel/
+            // correct patches AND the load-more accumulation) to start clean
+            // from it rather than keep stale rows from a previous filter
+            // (same remount-on-identity-change idiom already used by
+            // `RegisterFlightForm`'s own `key`).
+            key={JSON.stringify(filterQuery)}
             canManage={canManage}
             aircraftOptions={aircraftOptions}
             personOptions={personOptions}
@@ -265,11 +261,14 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
             aircraftFilterOptions={aircraftFilterOptions}
             personFilterOptions={personFilterOptions}
             initialFlights={initialFlights}
+            initialTotal={flightsResult.total}
+            instructorPersonId={instructorPersonId}
             moneyLocale={locale === 'en' ? 'en' : 'it'}
             airfieldName={branding.name}
             filters={filters}
             exportLabel={tExport('button')}
             exportPdfLabel={tExport('buttonPdf')}
+            exportMenuLabel={tExport('menuLabel')}
             labels={{
               form: {
                 title: t('form.title'),
@@ -350,12 +349,9 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   movements: t('list.table.movements'),
                   pic: t('list.table.pic'),
                   noValue: t('list.table.noValue'),
-                  // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
-                  // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).
-                  packageNote: t.raw('list.table.packageNote') as string,
                   status: t('list.table.status'),
                   statusCancelled: t('list.table.statusCancelled'),
-                  // `t.raw`: literal `{date}`/`{reason}` placeholders, CLIENT-filled (same pattern as `packageNote`).
+                  // `t.raw`: literal `{date}`/`{reason}` placeholders, CLIENT-filled (same pattern as `count` below).
                   cancelledDetail: t.raw('list.table.cancelledDetail') as string,
                   correctionOf: t('list.table.correctionOf'),
                   correctedBy: t('list.table.correctedBy'),
@@ -363,6 +359,11 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   cancelAction: t('list.table.cancelAction'),
                   correctAction: t('list.table.correctAction'),
                 },
+                loadMoreGrouped: t('list.loadMoreGrouped'),
+                loadMoreFlat: t('list.loadMoreFlat'),
+                loadMoreError: t('list.loadMoreError'),
+                // `t.raw`: literal `{loaded}`/`{total}` placeholders, CLIENT-filled (same pattern as `cancelledDetail`).
+                count: t.raw('list.count') as string,
               },
               detail: {
                 title: t('detail.title'),
@@ -411,34 +412,6 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
               },
             }}
           />
-
-          {totalPages > 1 ? (
-            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
-              <Link
-                href={pageHref(page - 1)}
-                locale={locale as AppLocale}
-                aria-disabled={page <= 1}
-                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                }`}
-              >
-                ←
-              </Link>
-              <span data-testid="flight-pagination-status">
-                {page} / {totalPages}
-              </span>
-              <Link
-                href={pageHref(page + 1)}
-                locale={locale as AppLocale}
-                aria-disabled={page >= totalPages}
-                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                }`}
-              >
-                →
-              </Link>
-            </nav>
-          ) : null}
         </div>
       </div>
     </main>

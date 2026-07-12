@@ -991,7 +991,6 @@
         "movements": "Takeoffs/Landings",
         "pic": "PIC",
         "noValue": "—",
-        "packageNote": "of which {duration} from package",
         "status": "Status",
         "statusCancelled": "Cancelled",
         "cancelledDetail": "Cancelled on {date} — {reason}",
@@ -1000,7 +999,11 @@
         "actions": "Actions",
         "cancelAction": "Cancel",
         "correctAction": "Correct"
-      }
+      },
+      "loadMoreGrouped": "Load earlier days",
+      "loadMoreFlat": "Load more flights",
+      "loadMoreError": "Couldn't load more flights. Try again.",
+      "count": "{loaded} of {total} flights"
     },
     "detail": {
       "title": "Flight detail",
@@ -1537,7 +1540,8 @@
   },
   "Export": {
     "button": "Export Excel",
-    "buttonPdf": "Export PDF"
+    "buttonPdf": "Export PDF",
+    "menuLabel": "Export"
   },
   "PdfExport": {
     "generatedAt": "Generated on {date}",

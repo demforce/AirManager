@@ -313,17 +313,25 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.getByRole('button', { name: 'Conferma correzione' }).click();
 
     // The new (30') flight is REGISTERED and marked as a correction; the old (60') is ANNULLATO and marked as corrected.
-    // Word-boundary regex (story 11.2): the new "orari" column renders
-    // `11:00–11:30`/`11:00–12:00`, and a plain `hasText: '1:00'` substring
-    // match now ALSO hits inside "11:00" — `\b` anchors exclude that (a
-    // digit right before "1" is not a word boundary), matching only the
-    // standalone duration cell.
+    // Story 12.4 (AC 1) moved "orari"/"tipo" out of the row into the sheet —
+    // the durata cell is now DIRECTLY adjacent to the addebito cell with no
+    // separating text between them (the old packageNote span that used to
+    // sit there is gone too), so a fully-package-covered flight's rendered
+    // row reads "...0:300,00 €..." with NO word boundary between the two
+    // numbers — the OLD `\b0:30\b`/`\b1:00\b` disambiguation (lesson 11.2)
+    // breaks on exactly this data shape. Disambiguate via the two rows'
+    // MUTUALLY EXCLUSIVE lineage text instead (a correction is always
+    // EITHER "Correzione di..." OR "Corretto da...", never both) — simpler
+    // and collision-proof, then assert durata/date as plain (non-regex)
+    // containment on the now-uniquely-identified row.
     await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/0,00\s€/);
-    const correctedRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ hasText: /\b0:30\b/ });
-    await expect(correctedRow).toContainText('Correzione di un volo precedente');
-    const oldRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ hasText: /\b1:00\b/ });
+    const correctedRow = page.getByTestId('flight-row').filter({ hasText: 'Correzione di un volo precedente' });
+    await expect(correctedRow).toContainText('02/01/2020');
+    await expect(correctedRow).toContainText('0:30');
+    const oldRow = page.getByTestId('flight-row').filter({ hasText: 'Corretto da un volo successivo' });
+    await expect(oldRow).toContainText('02/01/2020');
+    await expect(oldRow).toContainText('1:00');
     await expect(oldRow.getByTestId('flight-status-badge')).toContainText('Annullato');
-    await expect(oldRow).toContainText('Corretto da un volo successivo');
     await expect(oldRow).toContainText('Durata inserita per errore');
 
     // Net balance stays 0,00 € (both the 60' and the corrected 30' fully covered by the restored/re-consumed package).

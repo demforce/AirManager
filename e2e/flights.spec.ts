@@ -287,11 +287,20 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(resultPanel).toContainText('1:00');
     await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/160,00\s€/);
 
+    // Story 12.4 (AC 1): dual SCHOOL flight -> PIC is the instructor, still
+    // the row's own PIC cell (the OLD standalone "Istruttore" column moved
+    // to the sheet).
     const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
-    await expect(row).toContainText(`${instructor.lastName} ${instructor.firstName}`);
-    await expect(row).toContainText('Scuola');
+    await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${instructor.lastName} ${instructor.firstName}`);
     await expect(row).toContainText('1:00');
     await expect(row).toContainText(/160,00\s€/);
+
+    // "Tipo" (Scuola) moved out of the row into the detail sheet (AC 1).
+    await row.getByTestId('flight-detail-action').click();
+    const sheet = page.getByTestId('flight-detail-sheet');
+    await expect(sheet).toContainText('Scuola');
+    await sheet.getByRole('button', { name: 'Chiudi' }).click();
+    await expect(sheet).toBeHidden();
   });
 
   test('an invalid hour-meter pair (end <= start) shows the HOUR_METER_INVALID message in the form (story 11.1: two independent optional fields, no radio/mode anymore)', async ({
@@ -475,7 +484,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(pilotNav.getByRole('link', { name: 'Voli', exact: true })).toHaveAttribute('href', '/it/dashboard/flights');
   });
 
-  test('the registry shows the new logbook columns (data DD/MM/YYYY, tratta, orari, decolli/atterraggi) and derives the PIC for a dual SCHOOL flight as the instructor (story 11.2, AC 1/2)', async ({
+  test('the registry (flat context) shows the row/sheet split of the logbook fields and derives the PIC for a dual SCHOOL flight as the instructor (story 11.2, AC 1/2; story 12.4, AC 1/3)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -522,14 +531,23 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(/aircraftId=/);
 
+    // The `aircraftId` filter above makes this the FLAT context (AC 3): the
+    // date column is present in the row (no day header here).
     const row = page.getByTestId('flight-row').first();
     await expect(row).toContainText('01/01/2020');
     await expect(row).toContainText(`${departure} → ${arrival}`);
-    await expect(row).toContainText(expectedTimes);
-    await expect(row).toContainText('2 / 3');
-    // Dual SCHOOL flight (AC 2): the PIC is the INSTRUCTOR, distinctly from
-    // the existing "Istruttore" column (same name, different cell).
+    // Dual SCHOOL flight (AC 2): the PIC is the INSTRUCTOR — the row's own
+    // PIC cell (story 12.4: the OLD standalone "Istruttore" column moved to
+    // the sheet, along with orari/decolli-atterraggi below).
     await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${instructor.lastName} ${instructor.firstName}`);
+
+    // Story 12.4 (AC 1): orari + decolli/atterraggi moved out of the row into the detail sheet.
+    await row.getByTestId('flight-detail-action').click();
+    const sheet = page.getByTestId('flight-detail-sheet');
+    await expect(sheet).toContainText(expectedTimes);
+    await expect(sheet).toContainText('2 / 3');
+    await sheet.getByRole('button', { name: 'Chiudi' }).click();
+    await expect(sheet).toBeHidden();
 
     // A SOLO SCHOOL flight on the same pilot: the PIC is the pilot (allievo), not the instructor.
     const soloResponse = await page.request.post('/api/v1/flights', {
@@ -547,7 +565,13 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     });
     expect(soloResponse.status()).toBe(201);
     await page.reload();
-    const soloRow = page.getByTestId('flight-row').filter({ hasText: 'solista' }).first();
+    // "solista" (the type-column suffix) no longer renders in the row —
+    // story 12.4 moved it to the sheet. Both flights share `aircraftId` and
+    // `flightDate`; the registry's documented order is `flightDate desc,
+    // createdAt desc` (`flights.service.ts#listFlights`), so the SOLO flight
+    // (registered later) sorts first.
+    await expect(page.getByTestId('flight-row')).toHaveCount(2);
+    const soloRow = page.getByTestId('flight-row').first();
     await expect(soloRow.getByTestId('flight-pic-cell')).toHaveText(`${pilot.lastName} ${pilot.firstName}`);
   });
 });
