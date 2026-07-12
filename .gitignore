@@ -31,3 +31,6 @@ __pycache__/
 
 # CodeGraph local index (rebuilt per session by the SessionStart hook)
 .codegraph/
+
+# Claude Code personal settings (impeccable installer writes hooks here by default; ours are merged in .claude/settings.json)
+.claude/settings.local.json
