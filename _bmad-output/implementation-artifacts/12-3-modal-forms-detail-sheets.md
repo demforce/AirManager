@@ -4,7 +4,7 @@ baseline_commit: be1e98a
 
 # Story 12.3: Form a comparsa — dialog di creazione e sheet di dettaglio
 
-Status: review
+Status: done
 
 ## Story
 
@@ -127,3 +127,14 @@ Claude Sonnet 5 (xhigh), single dev subagent.
 - `e2e/people-management.spec.ts` — new "Person create dialog with optional role" scenario.
 - `_bmad-output/implementation-artifacts/12-3-modal-forms-detail-sheets.md` — this story file (Tasks, Dev Agent Record, File List, Status).
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — `12-3` → `review`.
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (xhigh)**, adversarial. **Verdetto: clean-pass.** 3 nit, nessun fix richiesto.
+
+- **Priorità zero — full e2e CI-mode su DB fresco, build di produzione**: **208 test → 198 passed + 9 flaky (retry-green, file estranei) + 1 failed** = solo `bookings.spec.ts:605` (flake di isolamento deferred 12.2, file MAI toccato). Arbitraggio sul full-run sporco del dev: aircraft-rates/ppr-register verdi su DB fresco → erano artefatti dati, non regressioni. Gates: **1242/1242 unit**. I 4 e2e nuovi 12.3 tutti verdi.
+- **Verifiche live del reviewer**: matrice RBAC `GET /flights/{id}` via curl sui 5 ruoli seed (401/200/200/**404** su altrui — mai 403, mai 500 anche su id malformati/traversal); DTO no-leak (own-access = lista MENO `actorEmail`); psql conferma il profilo pilota creato dal dialog; MCP: focus su Velivolo (fix Chromium confermato), popup combobox non clippato, `1430`→pill `1:30` e `2500`→`—` senza errori console, sheet 16 campi con "—" sui null storici, Correggi→dialog prefillato, dialog persona 2 chiamate esatte (POST 201 → PUT 200) con link scheda, pilota vede solo Dettaglio e il proprio costo.
+- **6 punti arbitrati (tutti a favore del dev)**: fix focus corretto; Esc a due passi = nested-overlay corretto; niente unit test Dialog accettabile (vitest `environment:'node'`, jsdom = dep vietata); deviazione focus correction-mode accettata; colonna azioni sempre visibile senza leak admin; sweep completo (person-profiles/person-detail passano col dialog invariati).
+- **123-N1 (accettato)**: orario non parsabile → errore form-level `FLIGHT_TIMES_INVALID` senza `aria-invalid` sul campo colpevole (coerente col pre-12.3; con input free-text è più visibile — candidato igiene 12.5).
+- **123-N2 (accettato)**: backdrop-click/Esc scartano il form a metà senza conferma — UX standard di modale, da AC 1.
+- **123-N3 (accettato)**: imprecisione narrativa del Dev Record sullo sweep (person-profiles/person-detail esercitano il dialog ma non servivano modifiche).
