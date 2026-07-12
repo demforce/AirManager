@@ -68,6 +68,7 @@ export function Menu({ label, children, className, triggerTestId }: MenuProps) {
   return (
     <details ref={ref} className={cn('relative', className)}>
       <summary
+        ref={summaryRef}
         data-testid={triggerTestId}
         className="flex min-h-[40px] cursor-pointer list-none items-center rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas [&::-webkit-details-marker]:hidden"
       >

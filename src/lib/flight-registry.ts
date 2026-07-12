@@ -41,6 +41,43 @@ export function hasActiveFlightFilter(filters: FlightRegistryFilterState): boole
   );
 }
 
+/**
+ * Registry display order — the SAME order `listFlights` applies server-side
+ * (`flightDate desc, createdAt desc, id desc`). Client mutations (optimistic
+ * register/correct prepends) must re-establish this invariant before the list
+ * reaches `groupFlightsByDay`, otherwise a backdated flight lands on top and
+ * produces out-of-order/duplicate day headers (review 12.4, 124-F1).
+ */
+export function compareFlightsRegistryOrder(a: FlightListItemDto, b: FlightListItemDto): number {
+  if (a.flightDate !== b.flightDate) return a.flightDate < b.flightDate ? 1 : -1;
+  if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+  if (a.id !== b.id) return a.id < b.id ? 1 : -1;
+  return 0;
+}
+
+/**
+ * Inserts an optimistically mutated flight into an accumulated list keeping
+ * the registry order invariant and dropping any stale entry with the same id
+ * (review 12.4, 124-F1/F2).
+ */
+export function insertFlightSorted(flights: FlightListItemDto[], flight: FlightListItemDto): FlightListItemDto[] {
+  const next = flights.filter((existing) => existing.id !== flight.id);
+  next.push(flight);
+  next.sort(compareFlightsRegistryOrder);
+  return next;
+}
+
+/**
+ * Appends a freshly fetched load-more page, dropping rows already present —
+ * an optimistic insert shifts the server's page offsets, so the boundary row
+ * of the previous page can come back as the first row of the next one
+ * (review 12.4, 124-F2: duplicate React key + inflated footer count).
+ */
+export function appendFlightsPage(flights: FlightListItemDto[], page: FlightListItemDto[]): FlightListItemDto[] {
+  const seen = new Set(flights.map((flight) => flight.id));
+  return [...flights, ...page.filter((flight) => !seen.has(flight.id))];
+}
+
 /** One calendar day's worth of adjacent flights (grouped context, AC 2). */
 export type FlightDayGroup = { flightDate: string; flights: FlightListItemDto[] };
 

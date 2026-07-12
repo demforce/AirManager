@@ -9,7 +9,7 @@ import { SearchCombobox, type SearchComboboxOption } from '@/components/search-c
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { useRouter } from '@/i18n/navigation';
 import { flightPicPerson } from '@/lib/flight-pic';
-import { groupFlightsByDay, hasActiveFlightFilter } from '@/lib/flight-registry';
+import { appendFlightsPage, groupFlightsByDay, hasActiveFlightFilter, insertFlightSorted } from '@/lib/flight-registry';
 import { formatCents } from '@/lib/money';
 import {
   flightTypeSchema,
@@ -337,10 +337,13 @@ export function flightTypeLabel(type: FlightListItemDto['flightType'], labels: F
  * job now — `handleLoadMore` fetches `GET /api/v1/flights?page=N` directly
  * and appends, no navigation, no numbered pager (removed).
  *
- * Story 12.4 (AC 1/2): the table below intentionally has NO `overflow-x-auto`
- * wrapper — with the row cut down to its 5-7 compact columns it fits the
- * Card's own content width at desktop sizes (this app is desktop-first,
- * ratified brainstorm decision), and, more importantly, `overflow-x-auto`
+ * Story 12.4 (AC 1/2): in the GROUPED context the table below intentionally
+ * has NO `overflow-x-auto` wrapper — with the row cut down to its compact
+ * columns it fits the Card's content width at desktop sizes (desktop-first,
+ * ratified brainstorm decision); the FLAT context re-gains a scoped wrapper
+ * because its extra date column overflows the panel at the design's
+ * canonical 1280px width and it has no sticky day headers to break (review
+ * 12.4, 124-F3). In grouped mode `overflow-x-auto`
  * would silently break the day header's `position: sticky` (AC 2): per the
  * CSS Overflow spec, setting ANY non-`visible` `overflow-x` forces the
  * computed `overflow-y` to `auto` too, which turns that wrapper itself into
@@ -456,7 +459,10 @@ export function FlightsManager({
 
   function handleRegistered(result: RegisterFlightResponseDto): void {
     setLastResult(result);
-    setFlights((current) => [result.flight, ...current]);
+    // Sorted insert, not a bare prepend: a backdated flight prepended on top
+    // breaks the day grouping (out-of-order/duplicate day headers — review
+    // 12.4, 124-F1).
+    setFlights((current) => insertFlightSorted(current, result.flight));
     // Story 12.4 (AC 4) — one new DB row, so the grand total grows by one
     // too (keeps `flights.length === total` meaningful for the load-more
     // button/footer count without a re-fetch).
@@ -466,20 +472,22 @@ export function FlightsManager({
 
   function handleCorrected(result: RegisterFlightResponseDto, originalFlightId: string, reason: string): void {
     setLastResult(result);
-    setFlights((current) => [
-      result.flight,
-      ...current.map((flight) =>
-        flight.id === originalFlightId
-          ? {
-              ...flight,
-              status: 'CANCELLED' as const,
-              cancelledAt: new Date().toISOString(),
-              cancelReason: reason,
-              correctedByFlightId: result.flight.id,
-            }
-          : flight,
+    setFlights((current) =>
+      insertFlightSorted(
+        current.map((flight) =>
+          flight.id === originalFlightId
+            ? {
+                ...flight,
+                status: 'CANCELLED' as const,
+                cancelledAt: new Date().toISOString(),
+                cancelReason: reason,
+                correctedByFlightId: result.flight.id,
+              }
+            : flight,
+        ),
+        result.flight,
       ),
-    ]);
+    );
     // Story 12.4 (AC 4) — a correction ADDS a new row (the original stays,
     // just re-statused), so the total grows by one, same as registration.
     setTotal((current) => current + 1);
@@ -572,7 +580,10 @@ export function FlightsManager({
     }
 
     const body = (await response.json()) as { items: FlightListItemDto[]; total: number };
-    setFlights((current) => [...current, ...body.items]);
+    // Dedup by id: an optimistic insert shifts the server's page offsets, so
+    // the previous page's boundary row can come back as the next page's
+    // first row (review 12.4, 124-F2 — duplicate React key).
+    setFlights((current) => appendFlightsPage(current, body.items));
     setTotal(body.total);
     setLoadedPages(nextPage);
     setLoadingMore(false);
@@ -762,6 +773,11 @@ export function FlightsManager({
         {flights.length === 0 ? (
           <p className="text-sm text-mid-gray">{labels.list.empty}</p>
         ) : (
+          // Flat context only: the extra date column overflows the panel at
+          // the design's canonical 1280px width (review 12.4, 124-F3), and
+          // flat has no sticky day headers to break — so it gets a scoped
+          // horizontal scroll wrapper. Grouped stays wrapperless (sticky).
+          <div className={activeFilter ? 'overflow-x-auto' : undefined}>
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
@@ -821,6 +837,7 @@ export function FlightsManager({
                   ))}
             </tbody>
           </table>
+          </div>
         )}
 
         {flights.length > 0 ? (

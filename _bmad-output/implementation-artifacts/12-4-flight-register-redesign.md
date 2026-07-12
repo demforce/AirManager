@@ -4,7 +4,7 @@ baseline_commit: eb7d4fc
 
 # Story 12.4: Registro voli ripensato — la story chiave di volta
 
-Status: review
+Status: done
 
 ## Story
 
@@ -110,3 +110,17 @@ Sonnet 5 (dev subagent, xhigh).
 - `e2e/package-consumption.spec.ts` — row-level package-note assertions moved to sheet-level `dt`/`dd` checks (positive + 2 absence checks).
 - `_bmad-output/implementation-artifacts/12-4-flight-register-redesign.md` — this story file (Tasks, Dev Agent Record, File List, Status).
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — `12-4` → `review`.
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (xhigh)**, adversarial. **Verdetto: fixes-required → fixed** (3 finding funzionali + 1 nit, tutti chiusi dalla sessione principale).
+
+- **Priorità zero — full e2e CI-mode su DB fresco, build di produzione**: **204 passed + 6 flaky (retry-green) + 1 failed** (~211). L'hard-fail (`instructor-rates.spec.ts:123`) e i flaky sono TUTTI su file con diff 12.4 vuoto, riprodotti come accumulo dati — non imputabili. Gates: 1255/1255 (1260 dopo i fix). Tutti i test volo verdi.
+- **Giudizio estetico del reviewer (keystone)**: "la riga compatta a 43px, monocroma, con la banda giornata sticky, legge davvero come un logbook — gerarchia e densità giuste". Il problema era il comportamento POST-azione:
+- **124-F1 (FIXATO)**: il prepend ottimistico di registrazione/correzione ignorava la data → un volo retrodatato finiva in testa sopra "oggi" con header di giornata duplicato (riprodotto live dal reviewer). Fix: `insertFlightSorted` in `flight-registry.ts` — inserimento ordinato con lo STESSO ordine del server (`flightDate desc, createdAt desc, id desc`) usato da `handleRegistered`/`handleCorrected`; unit test dello scenario esatto (header strettamente decrescenti, gruppo unico).
+- **124-F2 (FIXATO)**: l'insert ottimistico sfasa gli offset delle pagine server → il load-more ri-serviva la riga di confine (key React duplicata, footer gonfiato; riprodotto con dati reali). Fix: `appendFlightsPage` — dedupe per id in append; unit test del caso boundary.
+- **124-F3 (FIXATO)**: il contesto FLAT (colonna data in più) sforava di 30px il pannello a 1280px — larghezza canonica del DESIGN — facendo scrollare orizzontalmente l'INTERO pannello. Fix: wrapper `overflow-x-auto` scoped al SOLO contesto flat (che non ha header sticky da rompere); grouped resta wrapperless (sticky verificato dal reviewer a top:64px). Doc-comment del modulo aggiornato.
+- **124-N1 (FIXATO)**: `summaryRef` del menu overflow mai collegato → il focus-return su Esc era un no-op. Fix: `ref` sul `<summary>`.
+- **124-N2 (accettato, dichiarato in AC 1)**: altezza riga 141px sui voli annullati (badge storno) vs 43px — eccezione contabile deliberata. **124-N3 (accettato)**: loop load-more bounded nel test grouped-context.
+- **Arbitrati a favore del dev**: AC 5 gating strutturale confermato (diff service vuoto, where-clause verificata); sticky corretto tecnicamente; deviazione colonna persona fedele alla riga ratificata (allievo dei voli dual visibile nello sheet, sempre); fix flight-reversal regex legittimo (non maschera regressioni); menu `<details>` accessibile.
+- **Verifica fix**: gates 1260/1260 (+5 unit sui nuovi helper, scenari del reviewer); e2e mirati flights/flight-log/flight-reversal/exports 30/30.
