@@ -34,3 +34,7 @@ __pycache__/
 
 # Claude Code personal settings (impeccable installer writes hooks here by default; ours are merged in .claude/settings.json)
 .claude/settings.local.json
+
+# Reviewer/MCP throwaway screenshots (never commit)
+/*.png
+.playwright-mcp/
