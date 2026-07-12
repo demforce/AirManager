@@ -150,7 +150,7 @@ export function SettingsForm({ initial, labels }: SettingsFormProps) {
         </div>
 
         {logoError ? (
-          <p role="alert" data-testid="airfield-logo-error" className="mt-2 text-xs text-[#9F2F2D]">
+          <p role="alert" data-testid="airfield-logo-error" className="mt-2 text-xs text-ember">
             {logoError}
           </p>
         ) : null}

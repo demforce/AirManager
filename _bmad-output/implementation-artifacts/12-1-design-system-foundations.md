@@ -4,7 +4,7 @@ baseline_commit: 98fc82a
 
 # Story 12.1: Fondamenta del design system
 
-Status: review
+Status: done
 
 ## Story
 
@@ -173,3 +173,17 @@ Claude Sonnet 5 (claude-sonnet-5), BMAD dev subagent.
 - **`inputClasses` consolidation, not full `<Input>` JSX adoption, for the 16 named locals**: each of those 16 constants is applied to a mix of `<input>`/`<select>`/`<textarea>` in the same file (verified per file before touching); `Input` is `<input>`-only by DESIGN.md's own scope, so wrapping a `<select>` in it would be a type/semantics mismatch. Instead the constants now source `inputBaseClasses` (exported from `input.tsx`) plus their own call-site-specific extras (`mt-2`, `min-h-[Npx]`, `w-full`, `max-w-md`) — one source of truth for the tokens, zero local hex, without a wrong abstraction.
 - **Ember scope narrower than the full "role=alert" grep universe by design**: `role="status"` banners whose color toggles by `isError` (`categories-manager.tsx`, `packages-manager.tsx`, `types-manager.tsx` and similar "feedback" paragraphs) were left untouched in both branches — AC 4 names `role="alert"` and form-validation errors as the ember triggers and separately protects `role="status"` success feedback; touching only the error half of a shared success/error codepath wasn't literally authorized and risked an asymmetric result, so it was left as-is pending an explicit call from the user/reviewer.
 - **Heading weight**: DESIGN.md specifies heading weight 600; the pre-existing serif headings were `font-medium` (500). Bumped to `font-semibold` (600) for all ~55 occurrences while removing `font-serif`, for visual consistency — a reasonable reading of "Geist 600 con tracking da scala DESIGN.md" in Dev Notes, not literally spelled out as a required edit beyond removing the serif override.
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (xhigh)**, adversarial. **Verdetto: fixes-required → fixed.**
+
+- **Priorità zero — full suite e2e su DB fresco, build di produzione CI-mode**: **200/200 passed (3.0m)**; `npm run gates` verde (**1222/1222 unit**). Caveat ambientale del dev CONFERMATO: aircraft-rates/cash-register verdi su DB fresco (era accumulo fixture dei re-run, non regressione).
+- **Gap del dev chiusi dal reviewer in prima persona**: 12 superfici non viste dal dev navigate via login reale e screenshottate (bookings, cash-register, report, categories, packages, ppr register+queue, school, settings, aircraft, users, expiries/types) — tutte pulite: nessun doppio padding, radius incoerenti, resti warm evidenti o Ember decorativo. Guard padding del Card TESTATA (regex robusto su tutti i ~40 call site reali); deviations 2/3/4 giudicate corrette; GAP 1 (Badge senza consumatori) = gap minore accettabile, follow-up sotto.
+- **121-F1 (bloccante, FIXATO dalla sessione principale)**: `bookings-list.tsx:292` — confirm "Cancella prenotazione" rimasto col fill rosso legacy `#9F2F2D`/`#832522` (buco dello sweep: il radius era stato migrato, il colore no) mentre tutti i confirm distruttivi fratelli erano già `<Button>` neutro. Fix: allineato a `<Button size="sm">`, testid e handler invariati. **Nel fix la sessione principale ha trovato e chiuso 3 occorrenze sorelle sfuggite anche al reviewer**: `role="alert"` ancora `text-[#9F2F2D]` → `text-ember` in `bookings-list.tsx:306` (booking-cancel-error), `new-booking-form.tsx:529` (force-booking-error), `settings-form.tsx:153` (airfield-logo-error). Verifica fix: gates verdi (1222 unit) + `bookings.spec.ts`+`settings.spec.ts` 17/17.
+- **121-N1 (aperto, decisione utente)**: bottone "forza prenotazione" (`new-booking-form.tsx:539`) resta ambra pieno (`#956400`) dentro il pannello warning — difendibile come semantica warning invariante (decisione "accento colore minimo sugli stati"), ma è una superficie riempita cromatica: da sottoporre all'utente (candidato: passaggio FABLE di fine epic).
+- **121-N2 (accettato)**: heading su `tracking-[-0.02em]` piatto invece dei tracking per-taglia di DESIGN.md (−0.025em / −0.05em display): size fedeli, tracking più lasco — visivamente ok; candidato al pass grafico di fine epic.
+- **121-N3 (accettato)**: neutri warm residui fuori tabella di migrazione (gridline calendario `#F2F1EC`, `#FAFAF8` ppr-queue, pill ambito `#F0EEE6`/`#5F5B53`) — quasi invisibili; consolidamento in 12.5.
+- **121-N4 (informativo, fuori scope)**: `mid-gray #737373` su canvas ≈ 4.36:1 < AA 4.5 per testo normale — è il token ratificato di DESIGN.md (su paper passa: 4.75:1).
+- **121-N5 (accettato)**: geometria `StatusPill` ≠ `Badge` (markup byte-identical al pre-12.1 per proteggere gli e2e) — consolidamento rimandabile.
+- **Follow-up registrati**: cablare `Badge` sui kicker raw (bassa priorità); N1 decisione utente; N2/N3/N5 nel pass di igiene 12.5 o nel passaggio grafico FABLE di fine epic.

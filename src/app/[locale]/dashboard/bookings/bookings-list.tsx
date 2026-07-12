@@ -284,15 +284,15 @@ export function BookingsList({
                           <div className="flex flex-col gap-2">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="text-xs text-mid-gray">{labels.actions.cancelPrompt}</span>
-                              <button
+                              <Button size="sm"
                                 type="button"
                                 onClick={() => void confirmCancel(booking.id)}
                                 disabled={cancelling}
                                 data-testid="booking-cancel-confirm"
-                                className="min-h-[36px] rounded-buttons bg-[#9F2F2D] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#832522] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="min-h-[36px]"
                               >
                                 {labels.actions.cancelConfirm}
-                              </button>
+                              </Button>
                               <Button variant="outline" size="sm"
                                 type="button"
                                 onClick={() => setConfirmingCancelId(null)}
@@ -303,7 +303,7 @@ export function BookingsList({
                               </Button>
                             </div>
                             {cancelError ? (
-                              <p role="alert" data-testid="booking-cancel-error" className="text-xs text-[#9F2F2D]">
+                              <p role="alert" data-testid="booking-cancel-error" className="text-xs text-ember">
                                 {cancelError}
                               </p>
                             ) : null}

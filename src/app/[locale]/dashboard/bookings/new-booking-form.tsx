@@ -526,7 +526,7 @@ export function NewBookingForm({
             />
           </div>
           {forceError ? (
-            <p role="alert" data-testid="force-booking-error" className="text-xs text-[#9F2F2D]">
+            <p role="alert" data-testid="force-booking-error" className="text-xs text-ember">
               {forceError}
             </p>
           ) : null}
