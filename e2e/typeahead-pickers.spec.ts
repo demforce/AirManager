@@ -115,6 +115,9 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     expect(rateResponse.status()).toBe(201);
 
     await page.goto('/it/dashboard/flights');
+    // Story 12.3 (AC 2): the registration form now lives in a Dialog.
+    await page.getByTestId('flight-open-register').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
 
     // Velivolo: a fresh aircraft, not part of the >100 story but exercised
     // via the SAME typeahead pattern for a realistic full submit.
@@ -138,7 +141,7 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
 
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:45');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     // 45' @ 90,00 €/h -> 67,50 €.
     const resultPanel = page.getByTestId('flight-result-panel');

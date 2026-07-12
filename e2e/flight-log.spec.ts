@@ -224,7 +224,10 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await nav.getByRole('link', { name: 'Voli', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'I miei voli' })).toBeVisible();
-    // No registration form, no per-row actions for a non-staff actor.
+    // No registration dialog trigger/form, no per-row cancel/correct actions
+    // for a non-staff actor (story 12.3: the whole canManage-gated block,
+    // open button included, is simply not rendered).
+    await expect(page.getByTestId('flight-open-register')).toHaveCount(0);
     await expect(page.getByTestId('flight-form')).toHaveCount(0);
     await expect(page.getByTestId('flight-cancel-action')).toHaveCount(0);
     await expect(page.getByTestId('flight-correct-action')).toHaveCount(0);

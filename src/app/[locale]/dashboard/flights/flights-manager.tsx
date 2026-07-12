@@ -18,11 +18,14 @@ import {
   type RegisterFlightResponseDto,
 } from '@/lib/schemas/flights';
 import { formatDateOnly, formatMinutes, formatTimeOfDay } from '@/lib/time';
+import { parseTimeShorthand } from '@/lib/time-input';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { Button } from '@/components/ui/button';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
+import { Dialog } from '@/components/ui/dialog';
+import { FlightDetailSheet } from './flight-detail-sheet';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type AircraftOption = { id: string; registration: string };
@@ -198,6 +201,13 @@ export type FlightsManagerLabels = {
       correctAction: string;
     };
   };
+  /** Story 12.3, AC 5 — the per-row detail sheet. */
+  detail: {
+    title: string;
+    /** Also doubles as the per-row `flight-detail-action` button's label — one string, two call sites. */
+    openAction: string;
+    close: string;
+  };
   /** Story 5.3, AC 1 — the inline "Annulla volo" confirmation panel. */
   cancelPanel: {
     title: string;
@@ -270,11 +280,13 @@ function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function personLabel(person: { firstName: string; lastName: string }): string {
+/** Exported for `flight-detail-sheet.tsx` (story 12.3, AC 5) — same "Cognome Nome" convention used everywhere on this page. */
+export function personLabel(person: { firstName: string; lastName: string }): string {
   return `${person.lastName} ${person.firstName}`;
 }
 
-function flightTypeLabel(type: FlightListItemDto['flightType'], labels: FlightsManagerLabels['form']['flightTypes']): string {
+/** Exported for `flight-detail-sheet.tsx` (story 12.3, AC 5). */
+export function flightTypeLabel(type: FlightListItemDto['flightType'], labels: FlightsManagerLabels['form']['flightTypes']): string {
   switch (type) {
     case 'TOURISM':
       return labels.private;
@@ -348,6 +360,17 @@ export function FlightsManager({
   const [cancellingFlight, setCancellingFlight] = useState<FlightListItemDto | null>(null);
   const [cancelFeedback, setCancelFeedback] = useState<string | null>(null);
   const [filters, setFilters] = useState<FlightsFilters>(initialFilters);
+  // Story 12.3 (AC 1/2): the register/correct form now lives in a `Dialog`
+  // instead of always being on-page — `dialogOpen` is the ONE switch that
+  // controls it, orthogonal to `correctingFlight` (which decides WHICH mode
+  // the form renders in via its existing `key`-remount idiom).
+  const [dialogOpen, setDialogOpen] = useState(false);
+  // Story 12.3 (AC 5): the detail sheet — open iff non-null, driven by the
+  // row's already-in-memory `FlightListItemDto` (same data the table itself
+  // renders from, no extra round-trip; the new `GET /flights/{id}` endpoint,
+  // AC 6, is an independent additive API surface, not this sheet's data
+  // source).
+  const [detailFlight, setDetailFlight] = useState<FlightListItemDto | null>(null);
 
   /**
    * Pushes the new filter values into the URL (dropping `page` — any filter
@@ -383,6 +406,7 @@ export function FlightsManager({
   function handleRegistered(result: RegisterFlightResponseDto): void {
     setLastResult(result);
     setFlights((current) => [result.flight, ...current]);
+    setDialogOpen(false);
   }
 
   function handleCorrected(result: RegisterFlightResponseDto, originalFlightId: string, reason: string): void {
@@ -402,6 +426,7 @@ export function FlightsManager({
       ),
     ]);
     setCorrectingFlight(null);
+    setDialogOpen(false);
   }
 
   function handleCancelled(result: RegisterFlightResponseDto): void {
@@ -410,27 +435,68 @@ export function FlightsManager({
     setCancelFeedback(labels.cancelPanel.success);
   }
 
+  /** Opens the dialog fresh, in registration mode (AC 2). */
+  function handleOpenRegister(): void {
+    setCorrectingFlight(null);
+    setDialogOpen(true);
+  }
+
+  /** Opens the SAME dialog, remounted (via `correctingFlight`'s existing `key`) in correction mode (AC 2). */
+  function handleOpenCorrect(flight: FlightListItemDto): void {
+    setCorrectingFlight(flight);
+    setDialogOpen(true);
+  }
+
+  function handleDialogClose(): void {
+    setDialogOpen(false);
+  }
+
+  /** "Esci dalla correzione" — nothing meaningful is left to show once correction mode is abandoned, so this closes the dialog outright rather than falling back to a blank register form underneath it. */
+  function handleExitCorrection(): void {
+    setCorrectingFlight(null);
+    setDialogOpen(false);
+  }
+
+  /** Story 12.3 (AC 5) — the sheet's Correggi/Annulla actions hand off to the SAME dialog/panel the row actions use; the sheet closes first so only one overlay is ever on screen. */
+  function handleDetailCorrect(flight: FlightListItemDto): void {
+    setDetailFlight(null);
+    handleOpenCorrect(flight);
+  }
+
+  function handleDetailCancel(flight: FlightListItemDto): void {
+    setDetailFlight(null);
+    setCancelFeedback(null);
+    setCancellingFlight(flight);
+  }
+
   return (
     <div className="space-y-10">
       {canManage ? (
-        <Card className="p-6">
-          <RegisterFlightForm
-            key={correctingFlight?.id ?? 'register'}
-            aircraftOptions={aircraftOptions}
-            personOptions={personOptions}
-            instructorOptions={instructorOptions}
-            airfieldName={airfieldName}
-            labels={labels.form}
-            correctLabels={labels.correctPanel}
-            pickerLabels={labels.picker}
-            correctingFlight={correctingFlight}
-            onExitCorrection={() => setCorrectingFlight(null)}
-            onSuccess={handleRegistered}
-            onCorrected={handleCorrected}
-          />
+        <div>
+          <Button type="button" data-testid="flight-open-register" onClick={handleOpenRegister}>
+            {labels.form.submit}
+          </Button>
+
+          {/* Story 12.3 (AC 1/2): unconditionally mounted (native `showModal()`/`close()` toggles visibility via `dialogOpen`) so `RegisterFlightForm`'s own `key`-remount idiom keeps working exactly as before. `labelledBy` points at the form's OWN `<h3>` (`flight-form-title`) — the dialog never renders a second, redundant title (AC 7). */}
+          <Dialog open={dialogOpen} onClose={handleDialogClose} labelledBy="flight-form-title">
+            <RegisterFlightForm
+              key={correctingFlight?.id ?? 'register'}
+              aircraftOptions={aircraftOptions}
+              personOptions={personOptions}
+              instructorOptions={instructorOptions}
+              airfieldName={airfieldName}
+              labels={labels.form}
+              correctLabels={labels.correctPanel}
+              pickerLabels={labels.picker}
+              correctingFlight={correctingFlight}
+              onExitCorrection={handleExitCorrection}
+              onSuccess={handleRegistered}
+              onCorrected={handleCorrected}
+            />
+          </Dialog>
 
           {lastResult ? (
-            <div data-testid="flight-result-panel" className="mt-6 rounded-nested border border-hairline bg-canvas p-4 text-sm">
+            <Card data-testid="flight-result-panel" className="mt-6 p-6">
               <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.result.title}</h4>
               <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
                 <div className="flex justify-between gap-2 sm:justify-start">
@@ -499,9 +565,9 @@ export function FlightsManager({
                   </dd>
                 </div>
               </dl>
-            </div>
+            </Card>
           ) : null}
-        </Card>
+        </div>
       ) : null}
 
       {canManage && cancellingFlight ? (
@@ -593,7 +659,7 @@ export function FlightsManager({
                   <th className="py-2 pr-4 font-medium">{labels.list.table.movements}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.pic}</th>
                   <th className="py-2 pr-4 font-medium">{labels.list.table.status}</th>
-                  {canManage ? <th className="py-2 font-medium">{labels.list.table.actions}</th> : null}
+                  <th className="py-2 font-medium">{labels.list.table.actions}</th>
                 </tr>
               </thead>
               <tbody>
@@ -639,10 +705,19 @@ export function FlightsManager({
                     <td className="py-2 pr-4">
                       <FlightStatusCell flight={flight} labels={labels.list.table} locale={moneyLocale} />
                     </td>
-                    {canManage ? (
-                      <td className="py-2 whitespace-nowrap">
-                        {flight.status === 'REGISTERED' ? (
-                          <div className="flex gap-2">
+                    <td className="py-2 whitespace-nowrap">
+                      <div className="flex gap-2">
+                        {/* Story 12.3 (AC 5) — available on EVERY row, own-access included (a per-row VIEW, not a management action). */}
+                        <button
+                          type="button"
+                          data-testid="flight-detail-action"
+                          onClick={() => setDetailFlight(flight)}
+                          className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
+                        >
+                          {labels.detail.openAction}
+                        </button>
+                        {canManage && flight.status === 'REGISTERED' ? (
+                          <>
                             <button
                               type="button"
                               data-testid="flight-cancel-action"
@@ -657,15 +732,15 @@ export function FlightsManager({
                             <button
                               type="button"
                               data-testid="flight-correct-action"
-                              onClick={() => setCorrectingFlight(flight)}
+                              onClick={() => handleOpenCorrect(flight)}
                               className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
                             >
                               {labels.list.table.correctAction}
                             </button>
-                          </div>
+                          </>
                         ) : null}
-                      </td>
-                    ) : null}
+                      </div>
+                    </td>
                   </tr>
                   );
                 })}
@@ -674,6 +749,16 @@ export function FlightsManager({
           </div>
         )}
       </div>
+
+      <FlightDetailSheet
+        flight={detailFlight}
+        onClose={() => setDetailFlight(null)}
+        canManage={canManage}
+        onCorrect={handleDetailCorrect}
+        onCancel={handleDetailCancel}
+        labels={labels}
+        moneyLocale={moneyLocale}
+      />
     </div>
   );
 }
@@ -688,7 +773,8 @@ export function FlightsManager({
  * — a REGISTERED flight can itself be a correction of an earlier ANNULLATO
  * one.
  */
-function FlightStatusCell({
+/** Exported for `flight-detail-sheet.tsx` (story 12.3, AC 5) — reused verbatim for the sheet's status/lineage line. */
+export function FlightStatusCell({
   flight,
   labels,
   locale,
@@ -1217,10 +1303,23 @@ function RegisterFlightForm({
     }
     setReasonError(false);
 
+    // Story 12.3 (AC 3): the takeoff/landing fields are free text now
+    // (shorthand entry: `1430`, `930`, `9:30`) — normalize to `HH:MM` before
+    // composing. `composeFlightTimes` itself is UNCHANGED and still only
+    // ever sees a valid `HH:MM` pair; an unparsable shorthand reuses the
+    // SAME `FLIGHT_TIMES_INVALID` message a bad `composeFlightTimes` result
+    // already showed pre-12.3 (Dev Notes: the wire semantics stay identical).
+    const parsedTakeoffTime = parseTimeShorthand(values.takeoffTime);
+    const parsedLandingTime = parseTimeShorthand(values.landingTime);
+    if (!parsedTakeoffTime || !parsedLandingTime) {
+      setFormError(labels.errors.FLIGHT_TIMES_INVALID);
+      return;
+    }
+
     // Story 11.1 (AC 2): the ONLY source of `takeoffAt`/`landingAt` — the
     // resolver already guarantees the three raw strings are non-empty, so a
     // `null` here only defends against an unparsable browser value.
-    const times = composeFlightTimes(values.flightDate, values.takeoffTime, values.landingTime);
+    const times = composeFlightTimes(values.flightDate, parsedTakeoffTime, parsedLandingTime);
     if (!times) {
       setFormError(labels.errors.FLIGHT_TIMES_INVALID);
       return;
@@ -1334,14 +1433,21 @@ function RegisterFlightForm({
   }
 
   // Story 11.1 (AC 2): the live-computed duration, `null` until both times
-  // (plus the date) are filled in and parse to a valid pair.
-  const liveTimes = composeFlightTimes(flightDateValue, takeoffTimeValue, landingTimeValue);
+  // (plus the date) are filled in and parse to a valid pair. Story 12.3
+  // (AC 3): the two mirrors are free-typed shorthand now — normalized
+  // through `parseTimeShorthand` before `composeFlightTimes` ever sees them,
+  // same as `onSubmit`.
+  const liveTakeoffTime = parseTimeShorthand(takeoffTimeValue);
+  const liveLandingTime = parseTimeShorthand(landingTimeValue);
+  const liveTimes =
+    liveTakeoffTime && liveLandingTime ? composeFlightTimes(flightDateValue, liveTakeoffTime, liveLandingTime) : null;
   const computedMinutes = liveTimes ? Math.round((liveTimes.landingAt.getTime() - liveTimes.takeoffAt.getTime()) / 60_000) : null;
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5" data-testid="flight-form">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
+        {/* Story 12.3 (AC 7): `id` is the Dialog's `aria-labelledby` target — the dialog renders no title of its own, this heading IS it. */}
+        <h3 id="flight-form-title" className="text-2xl font-semibold tracking-[-0.02em] text-ink">
           {isCorrecting ? correctLabels.title : labels.title}
         </h3>
         {isCorrecting ? (
@@ -1525,7 +1631,11 @@ function RegisterFlightForm({
       ) : null}
 
       {/* Story 11.1 (AC 2): the durata is ALWAYS derived from these two clock
-          readings — the live display below is read-only, never an input. */}
+          readings — the live display below is read-only, never an input.
+          Story 12.3 (AC 3): free-text shorthand entry (`1430`, `930`,
+          `9:30`) instead of the native time picker — `parseTimeShorthand`
+          normalizes to `HH:MM` at submit/live-calc time; the field itself
+          stays whatever the user typed. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:max-w-[660px]">
         <div>
           <label htmlFor="flight-takeoff-time" className="block text-sm font-medium text-ink">
@@ -1533,7 +1643,10 @@ function RegisterFlightForm({
           </label>
           <Input
             id="flight-takeoff-time"
-            type="time"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="14:30"
             aria-invalid={Boolean(errors.takeoffTime)}
             className="mt-2 min-h-[44px] w-full"
             {...register('takeoffTime', { onChange: (event: { target: { value: string } }) => setTakeoffTimeValue(event.target.value) })}
@@ -1546,7 +1659,10 @@ function RegisterFlightForm({
           </label>
           <Input
             id="flight-landing-time"
-            type="time"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="14:30"
             aria-invalid={Boolean(errors.landingTime)}
             className="mt-2 min-h-[44px] w-full"
             {...register('landingTime', { onChange: (event: { target: { value: string } }) => setLandingTimeValue(event.target.value) })}

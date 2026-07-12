@@ -146,3 +146,41 @@ test.describe('People CRUD with archiving (Story 2.1)', () => {
     });
   });
 });
+
+test.describe('Person create dialog with optional role (Story 12.3, AC 4)', () => {
+  test('selecting a role reveals its required fields (blocked client-side until filled); submit is a two-call flow (POST person, then PUT profile) and the activated profile shows on the scheda', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('Ruolo');
+
+    await page.goto('/it/dashboard/people');
+    await page.getByRole('button', { name: 'Nuova persona' }).click();
+    await page.getByLabel('Nome', { exact: true }).fill(person.firstName);
+    await page.getByLabel('Cognome', { exact: true }).fill(person.lastName);
+    await page.getByLabel('Ruolo').selectOption({ label: 'Pilota' });
+    await expect(page.getByLabel('Numero licenza')).toBeVisible();
+
+    // Submitting without the pilot profile's required fields is blocked
+    // client-side (per-field error) — no POST /people at all yet.
+    await page.getByRole('button', { name: 'Crea persona' }).click();
+    await expect(page.getByLabel('Numero licenza')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByRole('row', { name: new RegExp(person.lastName) })).toHaveCount(0);
+
+    await page.getByLabel('Numero licenza').fill(`IT-PPL-${person.lastName}`);
+    await page.getByLabel('Tipo licenza').fill('PPL(A)');
+    await page.getByRole('button', { name: 'Crea persona' }).click();
+
+    // Success: feedback + "Completa la scheda" link to the new person (AC 4).
+    const feedback = page.getByTestId('people-feedback');
+    await expect(feedback).toContainText('Persona creata.');
+    const link = feedback.getByRole('link', { name: 'Completa la scheda' });
+    await expect(link).toBeVisible();
+
+    // The pilot profile was genuinely activated by the SECOND call (PUT .../profiles/pilot).
+    await link.click();
+    await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
+    const pilotSection = page.getByTestId('profile-section-pilot');
+    await expect(pilotSection.getByText(`IT-PPL-${person.lastName}`, { exact: false })).toBeVisible();
+  });
+});

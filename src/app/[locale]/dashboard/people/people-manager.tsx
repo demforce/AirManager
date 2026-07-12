@@ -4,12 +4,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import type { z } from 'zod';
+import { updatePersonSchema, type UpdatePersonInput } from '@/lib/schemas/people';
+import { PersonCreateDialog } from './person-create-dialog';
+import { ProfilesPanel, type ProfilesPanelLabels } from './profiles-panel';
 import { DataTable } from '@/components/data-table';
 import { ExportButton } from '@/components/export-button';
 import { Link, useRouter } from '@/i18n/navigation';
-import { createPersonSchema, updatePersonSchema, type CreatePersonInput, type UpdatePersonInput } from '@/lib/schemas/people';
-import { ProfilesPanel, type ProfilesPanelLabels } from './profiles-panel';
 import { Button } from '@/components/ui/button';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
@@ -30,7 +30,8 @@ export type PersonRow = {
   profiles: { pilot: boolean; student: boolean; instructor: boolean };
 };
 
-type Labels = {
+/** Exported so `person-create-dialog.tsx` (story 12.3, AC 4) can share the exact same label shape — one source of truth passed down from `page.tsx`. */
+export type Labels = {
   newPerson: string;
   searchPlaceholder: string;
   includeArchivedLabel: string;
@@ -62,6 +63,13 @@ type Labels = {
     requiredField: string;
     genericError: string;
     conflictError: string;
+    /** Story 12.3 (AC 4) — the create dialog's OPTIONAL role select and its "no role" option. */
+    role: string;
+    roleNone: string;
+    /** Shown when the person was created but the second call (`PUT .../profiles/{type}`) failed — the person EXISTS, no rollback (AC 4). */
+    profileError: string;
+    /** Link text to the new person's scheda, shown both on full success and on the partial (`profileError`) case. */
+    completeProfile: string;
   };
   feedback: { created: string; updated: string; archived: string; unarchived: string };
 };
@@ -76,7 +84,8 @@ type PeopleManagerProps = {
   labels: Labels;
 };
 
-type Panel = { mode: 'create' } | { mode: 'edit'; person: PersonRow } | { mode: 'profiles'; person: PersonRow };
+/** Story 12.3 (AC 4) — 'create' moved out to `PersonCreateDialog`, a modal independent of this inline-panel mutual exclusion. */
+type Panel = { mode: 'edit'; person: PersonRow } | { mode: 'profiles'; person: PersonRow };
 type ConfirmState = { id: string; type: 'archive' | 'unarchive' };
 
 function statusLabel(person: PersonRow, labels: Labels): string {
@@ -115,6 +124,12 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
   const [confirming, setConfirming] = useState<ConfirmState | null>(null);
   const [queryInput, setQueryInput] = useState(initialQuery);
   const [includeArchived, setIncludeArchived] = useState(initialIncludeArchived);
+  // Story 12.3 (AC 4) — the create dialog, independent of `panel`'s inline edit/profiles mutual exclusion.
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // Story 12.3 (AC 4) — "Completa la scheda" link shown alongside `feedback`
+  // after a successful creation; cleared by every OTHER feedback-setting
+  // action below so it never lingers past its own creation.
+  const [completeProfileHref, setCompleteProfileHref] = useState<string | null>(null);
 
   function navigate(next: { q: string; includeArchived: boolean }): void {
     const params = new URLSearchParams();
@@ -143,6 +158,7 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
     const response = await fetch(`/api/v1/people/${person.id}/${type}`, { method: 'POST' });
     setPendingActionId(null);
     setConfirming(null);
+    setCompleteProfileHref(null);
     if (response.ok) {
       setFeedback(type === 'archive' ? labels.feedback.archived : labels.feedback.unarchived);
       router.refresh();
@@ -157,6 +173,15 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
   function handleFormSuccess(message: string): void {
     setPanel(null);
     setFeedback(message);
+    setCompleteProfileHref(null);
+    router.refresh();
+  }
+
+  /** Story 12.3 (AC 4) — POST /people (+ optional PUT profile) succeeded: close the dialog, show `people-feedback` plus a link to the new scheda. */
+  function handlePersonCreated(personId: string, message: string): void {
+    setCreateDialogOpen(false);
+    setFeedback(message);
+    setCompleteProfileHref(`/dashboard/people/${personId}`);
     router.refresh();
   }
 
@@ -282,6 +307,14 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
         {feedback ? (
           <p role="status" data-testid="people-feedback" className="text-sm text-[#346538]">
             {feedback}
+            {completeProfileHref ? (
+              <>
+                {' '}
+                <Link href={completeProfileHref} className="underline underline-offset-4">
+                  {labels.form.completeProfile}
+                </Link>
+              </>
+            ) : null}
           </p>
         ) : (
           <span />
@@ -290,12 +323,14 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
           <ExportButton href={exportHref} label={exportLabel} testId="people-export-button" />
           <Button
             type="button"
-            onClick={() => setPanel({ mode: 'create' })}
+            onClick={() => setCreateDialogOpen(true)}
           >
             {labels.newPerson}
           </Button>
         </div>
       </div>
+
+      <PersonCreateDialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} labels={labels} onCreated={handlePersonCreated} />
 
       <div className="mt-6 flex flex-wrap items-center gap-4">
         <Input
@@ -315,12 +350,6 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
           {labels.includeArchivedLabel}
         </label>
       </div>
-
-      {panel?.mode === 'create' ? (
-        <Card className="mt-6 p-6">
-          <CreatePersonForm labels={labels} onCancel={() => setPanel(null)} onSuccess={handleFormSuccess} />
-        </Card>
-      ) : null}
 
       {panel?.mode === 'edit' ? (
         <Card className="mt-6 p-6">
@@ -354,61 +383,6 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
         <DataTable columns={columns} data={people} emptyMessage={labels.table.empty} />
       </div>
     </div>
-  );
-}
-
-type CreatePersonFormProps = {
-  labels: Labels;
-  onCancel: () => void;
-  onSuccess: (message: string) => void;
-};
-
-function CreatePersonForm({ labels, onCancel, onSuccess }: CreatePersonFormProps) {
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<z.input<typeof createPersonSchema>, unknown, CreatePersonInput>({
-    resolver: zodResolver(createPersonSchema),
-    defaultValues: { firstName: '', lastName: '', email: null, phone: null, address: null, fiscalCode: null },
-  });
-
-  async function onSubmit(values: CreatePersonInput): Promise<void> {
-    setFormError(null);
-    const response = await fetch('/api/v1/people', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
-    });
-
-    if (!response.ok) {
-      const body: unknown = await response.json().catch(() => null);
-      const code = (body as { error?: { code?: string } } | null)?.error?.code;
-      setFormError(code === 'CONFLICT' ? labels.form.conflictError : labels.form.genericError);
-      return;
-    }
-
-    onSuccess(labels.feedback.created);
-  }
-
-  return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
-        {labels.form.createTitle}
-      </h3>
-
-      <PersonFields register={register} errors={errors} labels={labels} idPrefix="create" />
-
-      {formError ? (
-        <p role="alert" data-testid="person-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
-          {formError}
-        </p>
-      ) : null}
-
-      <FormActions submitLabel={labels.form.submitCreate} cancelLabel={labels.form.cancel} isSubmitting={isSubmitting} onCancel={onCancel} />
-    </form>
   );
 }
 

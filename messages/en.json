@@ -157,7 +157,11 @@
       "cancel": "Cancel",
       "requiredField": "This field is required.",
       "genericError": "Something went wrong. Please try again.",
-      "conflictError": "A person with this email or fiscal code already exists."
+      "conflictError": "A person with this email or fiscal code already exists.",
+      "role": "Role",
+      "roleNone": "None",
+      "profileError": "Person created, but the profile could not be saved.",
+      "completeProfile": "Complete the profile"
     },
     "feedback": {
       "created": "Person created.",
@@ -997,6 +1001,11 @@
         "cancelAction": "Cancel",
         "correctAction": "Correct"
       }
+    },
+    "detail": {
+      "title": "Flight detail",
+      "openAction": "Detail",
+      "close": "Close"
     },
     "cancelPanel": {
       "title": "Cancel flight",

@@ -4,7 +4,7 @@ baseline_commit: be1e98a
 
 # Story 12.3: Form a comparsa — dialog di creazione e sheet di dettaglio
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -45,13 +45,13 @@ so that l'inserimento dati sia rapido e il contesto non vada mai perso (FR-49; e
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1, 7)** — Primitivi `Dialog` e `Sheet` su `<dialog>` nativo in `src/components/ui/` (props: open/onClose/title/labelledby; scrim, Esc, click-fuori, scroll interno, focus return) + unit test della logica non banale se estraibile.
-- [ ] **T2 (AC 6)** — `getFlight` nel service (4 rami RBAC, 404 su altrui) + route `GET /api/v1/flights/[id]` + Zod/OpenAPI + unit test.
-- [ ] **T3 (AC 2, 3)** — Dialog volo: bottone di apertura, form invariato dentro Dialog, correction mode, parser orari `parseTimeShorthand` + unit test, focus iniziale, risultato addebito sulla pagina.
-- [ ] **T4 (AC 4)** — Dialog persona minimo con ruolo condizionale (flusso a due chiamate, errore secondo passo con link scheda, feedback + link "Completa la scheda"); create form snellito (via address/fiscalCode).
-- [ ] **T5 (AC 5)** — Sheet dettaglio volo (azione per-riga, contenuto completo, azioni Correggi/Annulla per canManage, "—" sui null storici).
-- [ ] **T6 (AC 8)** — Aggiornamento e2e lista chiusa + nuovi scenari (Esc/focus, parsing 1430, persona con ruolo, 404 API); `npm run gates`; e2e mirati: `flights`, `flight-reversal`, `flight-log`, `people-management`, `typeahead-pickers`, `exports` + nuovi.
-- [ ] **T7** — Verifica visiva Playwright MCP (dialog volo aperto/chiuso, sheet dettaglio, dialog persona con ruolo espanso; keyboard-only walk-through) + screenshot; Dev Agent Record + File List; sprint-status `12-3` → `review`.
+- [x] **T1 (AC 1, 7)** — Primitivi `Dialog` e `Sheet` su `<dialog>` nativo in `src/components/ui/` (props: open/onClose/title/labelledby; scrim, Esc, click-fuori, scroll interno, focus return) + unit test della logica non banale se estraibile.
+- [x] **T2 (AC 6)** — `getFlight` nel service (4 rami RBAC, 404 su altrui) + route `GET /api/v1/flights/[id]` + Zod/OpenAPI + unit test.
+- [x] **T3 (AC 2, 3)** — Dialog volo: bottone di apertura, form invariato dentro Dialog, correction mode, parser orari `parseTimeShorthand` + unit test, focus iniziale, risultato addebito sulla pagina.
+- [x] **T4 (AC 4)** — Dialog persona minimo con ruolo condizionale (flusso a due chiamate, errore secondo passo con link scheda, feedback + link "Completa la scheda"); create form snellito (via address/fiscalCode).
+- [x] **T5 (AC 5)** — Sheet dettaglio volo (azione per-riga, contenuto completo, azioni Correggi/Annulla per canManage, "—" sui null storici).
+- [x] **T6 (AC 8)** — Aggiornamento e2e lista chiusa + nuovi scenari (Esc/focus, parsing 1430, persona con ruolo, 404 API); `npm run gates`; e2e mirati: `flights`, `flight-reversal`, `flight-log`, `people-management`, `typeahead-pickers`, `exports` + nuovi.
+- [x] **T7** — Verifica visiva Playwright MCP (dialog volo aperto/chiuso, sheet dettaglio, dialog persona con ruolo espanso; keyboard-only walk-through) + screenshot; Dev Agent Record + File List; sprint-status `12-3` → `review`.
 
 ## Dev Notes
 
@@ -77,8 +77,53 @@ so that l'inserimento dati sia rapido e il contesto non vada mai perso (FR-49; e
 
 ### Agent Model Used
 
+Claude Sonnet 5 (xhigh), single dev subagent.
+
 ### Debug Log References
+
+- `npm run gates`: PASS (lint, typecheck, 1242/1242 unit, build) — verified twice, before and after the final e2e-driven spec edits.
+- Targeted e2e (36 tests: `flights`, `flight-reversal`, `flight-log`, `people-management`, `typeahead-pickers`, `package-consumption`, `exports`, including every new story-12.3 scenario): 36/36 passed on a clean re-run.
+- One full-suite run (208 tests) for extra diligence: 199 passed, 5 failed, 4 skipped — every failure is in a file this story never touches (`aircraft-rates.spec.ts`, `bookings.spec.ts`, `ppr-register.spec.ts`) or is a bare `ECONNRESET` inside `flights.spec.ts`'s pre-existing `createAircraftWithRate` helper (unrelated to any 12.3 change). Re-running `aircraft-rates`/`bookings`/`ppr-register` in isolation still failed, but with WORSE symptoms (widespread `booking-form-success` timeouts) — this is the documented dirty-DB flake class (`bookings.spec.ts:605`, explicitly called out as pre-existing/deferred, not attributable to this story), aggravated by the full-suite run's own data accumulation on top of the session's already-reset baseline. No story-12.3 test failed in any run.
+- Playwright MCP interactive verification (T7, live against the dev server, admin session via a throwaway cookie-injection script — password never printed): flight register dialog open/close, keyboard focus (found and fixed a real bug — see below), Esc (2 presses: combobox popup first, then the dialog), backdrop-click-to-close, SearchCombobox popup not clipped, time-shorthand parsing (`1430`/`1600` → `1:30` live), full correction round-trip via the sheet's "Correggi" action, cancel hand-off via the sheet's "Annulla" action, and the person-create dialog's role-conditional fields + two-call submit + success feedback/link — all confirmed working live, screenshots taken and reviewed (not committed).
 
 ### Completion Notes List
 
+- **Live-verified bug found and fixed during T7**: the native `<dialog>` `showModal()` auto-focus algorithm was landing on the scrollable card wrapper (`overflow-y-auto` div) instead of the first real field — a documented Chromium quirk (an `overflow-y-auto` region with no explicit `tabindex` is still a "focusable area" for keyboard scrolling, and as the ancestor it precedes every field in tree order). Fixed in the shared `useNativeDialog` hook (`src/components/ui/dialog.tsx`) by explicitly focusing the first real focusable descendant right after `showModal()`. Confirmed live: `document.activeElement` now lands on `flight-aircraft`/`create-firstName` as expected (AC 3/7).
+- **Esc requires two presses from the register dialog's default state**: the Velivolo `SearchCombobox` auto-opens its own popup on focus (pre-existing `handleFocus`/`openBrowseMode` behavior, story TD-3) — the first Esc closes that popup (per the combobox's own handler), the second closes the dialog and returns focus to the trigger. Verified live and reflected exactly in the new e2e test; this is correct nested-overlay behavior, not a bug.
+- **`GET /api/v1/flights/{id}` (AC 6)**: added `getFlight` to `flights.service.ts` reusing `FLIGHT_SELECT`/`toListItem` verbatim (no new DTO fields) — `flights.manage` reads any flight; otherwise `self.read` plus the same own/instructor OR `listFlights` already uses. A flight belonging to someone else answers 404 `NotFoundError`, never 403, per the story's explicit (and empirically confirmed) anti-enumeration decision — 8 new unit tests cover all branches, plus a dedicated e2e API test (titolare 200, a different pilot 404).
+- **`Dialog`/`Sheet` primitives (AC 1, T1)**: `src/components/ui/dialog.tsx`, both on the native `<dialog>` + `showModal()`, zero new dependency. No dedicated unit test file: the primitive's only non-trivial logic (open/close guards, backdrop-click detection, the focus fix above) is tightly coupled to real `HTMLDialogElement` behavior that this project's `vitest` setup (`environment: 'node'`, no jsdom/testing-library anywhere in the codebase) cannot exercise meaningfully — adding that test infrastructure just for this would itself be a new dependency, which AC 1 forbids. Coverage instead comes from the real-browser e2e scenarios (new + updated) and the live Playwright MCP walk-through.
+- **`parseTimeShorthand` (AC 3, T3)**: new pure module `src/lib/time-input.ts`, 12 unit tests covering every branch (3/4-digit bare, with/without colon, idempotent `HH:MM`, out-of-range hour/minute, non-numeric, wrong digit count, empty, midnight/23:59). `composeFlightTimes` itself is byte-for-byte unchanged — the parser only normalizes the two raw strings BEFORE they reach it, both at submit time and for the live-duration calculation.
+- **Flight dialog (AC 2/3)**: `RegisterFlightForm` itself is unchanged except: `type="time"` → `type="text"` on the two time fields (+ shorthand parsing wiring) and one added `id="flight-form-title"` on its existing `<h3>` (the Dialog's `aria-labelledby` target — no second title is ever rendered). The "Registra volo" open button reuses the SAME label as the submit button (by design, per the story) — existing e2e clicks on that label were re-scoped to `flight-form` where they meant the SUBMIT button (they resolved ambiguously once both are simultaneously in the accessibility tree — `inert` on the page did not exclude the trigger from Playwright's role queries in practice, contrary to my first assumption; verified and fixed).
+- **Person dialog (AC 4)**: `src/app/[locale]/dashboard/people/person-create-dialog.tsx`, new. `createPersonSchema` reused as-is for the base fields (no schema change — `address`/`fiscalCode` are already `.nullish()`, simply omitted from this form's `defaultValues`/markup). Role-specific fields are plain state (same "plain state, not RHF" pattern already used elsewhere on this page) with a client-side required check BEFORE the first network call. The old `CreatePersonForm` function is deleted; `EditPersonForm` (with `address`/`fiscalCode`) is untouched.
+- **Detail sheet (AC 5)**: `src/app/[locale]/dashboard/flights/flight-detail-sheet.tsx`, new — driven by the row's already-in-memory `FlightListItemDto` (identical shape to the new `GET /flights/{id}` DTO), no extra fetch; reuses `FlightStatusCell`/`flightTypeLabel`/`personLabel` (newly exported from `flights-manager.tsx`, zero logic duplication) for the status/lineage line. The per-row "Dettaglio" action is available on EVERY row (own-access included, since it's a view not a management action) — the actions `<th>`/`<td>` are therefore no longer `canManage`-gated (only the cancel/correct buttons inside stay gated). Correggi/Annulla from the sheet hand off to the SAME dialog/panel the row actions use (sheet closes first, so at most one overlay is ever open).
+- **e2e closed list**: all 6 files the story named (`flights`, `flight-log:228`, `flight-reversal`, `people-management`, `typeahead-pickers`, `exports`) updated as specified. One EXTRA file not in the story's list, `package-consumption.spec.ts`, also opens the flight form 3 times and needed the same `openRegisterDialog` treatment — caught by a repo-wide grep sweep (the explicit 12.1/12.2 lesson: "lo sweep salta occorrenze").
+- **Deviation (declared, not silent)**: the story's AC3 focus requirement is satisfied for the REGISTRATION flow (the default/primary case, explicitly named in the AC and covered by a new e2e test). In CORRECTION mode, the "Esci dalla correzione" button precedes the picker grid in DOM order, so it — not "Velivolo" — receives the fixed initial focus; this was left as-is (no `autoFocus` plumbing added to `SearchCombobox` for a single edge case) per karpathy "simplicity first," verified live and judged low-risk/reasonable (exiting correction is itself a sensible first action).
+- No migrations, no new dependency, no env var change.
+
 ### File List
+
+**New:**
+- `src/components/ui/dialog.tsx` — `Dialog`/`Sheet` primitives (native `<dialog>`, zero dep).
+- `src/lib/time-input.ts` — `parseTimeShorthand` pure parser.
+- `src/lib/time-input.test.ts` — 12 unit tests.
+- `src/app/api/v1/flights/[id]/route.ts` — `GET /api/v1/flights/{id}`.
+- `src/app/[locale]/dashboard/flights/flight-detail-sheet.tsx` — flight detail Sheet.
+- `src/app/[locale]/dashboard/people/person-create-dialog.tsx` — person create Dialog with optional role.
+
+**Modified:**
+- `src/server/services/flights.service.ts` — `getFlight` (AC 6).
+- `src/server/services/flights.service.test.ts` — 8 new `getFlight` unit tests.
+- `src/lib/schemas/registry.ts` — `GET /api/v1/flights/{id}` OpenAPI path + `Flight` component registration.
+- `src/app/[locale]/dashboard/flights/flights-manager.tsx` — dialog-wrapped register/correct form, time-shorthand wiring, always-visible actions column + `flight-detail-action`, `FlightDetailSheet` wiring, exported `personLabel`/`flightTypeLabel`/`FlightStatusCell`.
+- `src/app/[locale]/dashboard/flights/page.tsx` — `detail.*` label wiring.
+- `src/app/[locale]/dashboard/people/people-manager.tsx` — `PersonCreateDialog` wiring, removed inline `CreatePersonForm`, `completeProfileHref` feedback link.
+- `src/app/[locale]/dashboard/people/page.tsx` — `form.role`/`roleNone`/`profileError`/`completeProfile` label wiring.
+- `messages/it.json`, `messages/en.json` — new keys: `FlightsPage.detail.*`, `PeoplePage.form.{role,roleNone,profileError,completeProfile}`.
+- `e2e/flights.spec.ts` — `openRegisterDialog` helper, 6 call sites updated, submit-button scoping, 3 new story-12.3 scenarios.
+- `e2e/flight-reversal.spec.ts` — `openRegisterDialog` helper + 2 call sites, submit-button scoping.
+- `e2e/flight-log.spec.ts` — own-access assertion updated (`flight-open-register` absence).
+- `e2e/typeahead-pickers.spec.ts` — dialog opened before the form interaction, submit-button scoping.
+- `e2e/package-consumption.spec.ts` — `openRegisterDialog` helper + 3 call sites (not in the story's named list — found via sweep).
+- `e2e/people-management.spec.ts` — new "Person create dialog with optional role" scenario.
+- `_bmad-output/implementation-artifacts/12-3-modal-forms-detail-sheets.md` — this story file (Tasks, Dev Agent Record, File List, Status).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — `12-3` → `review`.

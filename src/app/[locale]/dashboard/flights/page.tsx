@@ -364,6 +364,11 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   correctAction: t('list.table.correctAction'),
                 },
               },
+              detail: {
+                title: t('detail.title'),
+                openAction: t('detail.openAction'),
+                close: t('detail.close'),
+              },
               cancelPanel: {
                 title: t('cancelPanel.title'),
                 reason: t('cancelPanel.reason'),

@@ -157,7 +157,11 @@
       "cancel": "Annulla",
       "requiredField": "Campo obbligatorio.",
       "genericError": "Si è verificato un errore. Riprova.",
-      "conflictError": "Esiste già una persona con questa email o codice fiscale."
+      "conflictError": "Esiste già una persona con questa email o codice fiscale.",
+      "role": "Ruolo",
+      "roleNone": "Nessuno",
+      "profileError": "Persona creata, ma non è stato possibile salvare il profilo.",
+      "completeProfile": "Completa la scheda"
     },
     "feedback": {
       "created": "Persona creata.",
@@ -997,6 +1001,11 @@
         "cancelAction": "Annulla",
         "correctAction": "Correggi"
       }
+    },
+    "detail": {
+      "title": "Dettaglio volo",
+      "openAction": "Dettaglio",
+      "close": "Chiudi"
     },
     "cancelPanel": {
       "title": "Annulla volo",

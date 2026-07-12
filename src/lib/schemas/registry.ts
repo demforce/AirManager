@@ -75,6 +75,7 @@ import {
 import {
   cancelFlightSchema,
   correctFlightSchema,
+  flightListItemSchema,
   flightListResponseSchema,
   listFlightsQuerySchema,
   registerFlightResponseSchema,
@@ -271,6 +272,7 @@ registry.register('SellPackageRequest', sellPackageSchema);
 registry.register('SellPackageResponse', sellPackageResponseSchema);
 registry.register('RegisterFlightRequest', registerFlightSchema);
 registry.register('RegisterFlightResponse', registerFlightResponseSchema);
+registry.register('Flight', flightListItemSchema);
 registry.register('FlightList', flightListResponseSchema);
 registry.register('CancelFlightRequest', cancelFlightSchema);
 registry.register('CorrectFlightRequest', correctFlightSchema);
@@ -1115,6 +1117,21 @@ registry.registerPath({
       content: { ...jsonContent(flightListResponseSchema), ...xlsxContent() },
     },
     ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/flights/{id}',
+  summary: 'Get a single flight (own-access anti-enumeration)',
+  description:
+    'Story 12.3, AC 6 — the flight detail sheet\'s data source, same DTO/serializer as `GET /api/v1/flights` (no new fields). `flights.manage` reads ANY flight; otherwise `self.read` plus own-access, the SAME OR as the list endpoint\'s own-access branch (the flight\'s person OR its instructor). A flight belonging to someone else answers 404, deliberately never 403 (anti-enumeration, NFR-10) — indistinguishable from an unknown id.',
+  tags: ['Flights'],
+  security,
+  request: { params: flightIdParams },
+  responses: {
+    200: { description: 'The flight.', content: jsonContent(flightListItemSchema) },
+    ...errorResponses(401, 403, 404),
   },
 });
 

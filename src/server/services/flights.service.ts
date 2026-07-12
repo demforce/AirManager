@@ -1350,3 +1350,37 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
     query,
   );
 }
+
+/**
+ * Single-flight lookup (story 12.3, AC 6 — the sheet's data source). Reuses
+ * `FLIGHT_SELECT`/`toListItem` verbatim (same DTO/serializer as
+ * `listFlights`, no new fields). `flights.manage` reads ANY flight;
+ * otherwise `self.read` plus own-access — the SAME OR as `listFlights`'s
+ * own-access branch (the flight's person OR its instructor). A flight that
+ * exists but belongs to someone else answers 404 `NotFoundError`, deliberately
+ * NOT 403 (anti-enumeration/NFR-10, same "never reveal a resource's
+ * existence to a non-owner" contract as `recordAdjustment`'s
+ * `originalMovementId` check) — indistinguishable on the wire from a
+ * genuinely unknown id.
+ */
+export async function getFlight(actor: Actor, id: string): Promise<FlightListItem> {
+  const canManage = hasPermission(actor, 'flights.manage');
+  if (!canManage) {
+    authorize(actor, 'self.read');
+  }
+
+  const flight = await prisma.flight.findUnique({ where: { id }, select: FLIGHT_SELECT });
+  if (!flight) {
+    throw new NotFoundError('Flight not found.');
+  }
+
+  if (!canManage) {
+    const isOwn = flight.person.id === actor.personId || flight.instructorProfile?.person.id === actor.personId;
+    if (!isOwn) {
+      throw new NotFoundError('Flight not found.');
+    }
+  }
+
+  const includeActorEmail = hasPermission(actor, 'people.read');
+  return toListItem(flight, includeActorEmail);
+}

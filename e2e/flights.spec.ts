@@ -34,6 +34,12 @@ async function selectFromCombobox(combobox: Locator, query: string, optionLabel:
   await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
+/** Story 12.3 (AC 2): the registration form now lives in a `Dialog` — opens it before any `flight-form` field interaction (`flight-open-register` disambiguates the SAME "Registra volo" label from the dialog's own submit button). */
+async function openRegisterDialog(page: Page): Promise<void> {
+  await page.getByTestId('flight-open-register').click();
+  await expect(page.getByTestId('flight-form')).toBeVisible();
+}
+
 /** Run-unique names (same pattern as the other specs, for the dirty DB). */
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -201,6 +207,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await loginExpectingDashboard(page, staffEmail, staffPassword);
 
     await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(
       page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
@@ -211,7 +218,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:20');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:20');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     // 80' @ 150,00 €/h -> 200,00 € (the PRD-testable 80'x150 case).
     const resultPanel = page.getByTestId('flight-result-panel');
@@ -256,6 +263,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
 
     // Still authenticated as admin — creating the pilot/instructor logins above never touched this session cookie.
     await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(
       page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
@@ -272,7 +280,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:00');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     // 60' @ 120,00 €/h -> 120,00 €; 60' @ 40,00 €/h -> 40,00 €; total 160,00 €.
     const resultPanel = page.getByTestId('flight-result-panel');
@@ -295,6 +303,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const pilot = await createPilotWithLogin(page, 'PilotFlights789!');
 
     await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(
       page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
@@ -305,7 +314,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
     await page.getByLabel('Contaore finale', { exact: true }).fill('200');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     await expect(page.getByTestId('flight-form-error')).toContainText("Il contaore finale deve essere maggiore dell'iniziale.");
   });
@@ -317,6 +326,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const pilot = await createPilotWithLogin(page, 'PilotFlightsHM1!');
 
     await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(
       page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
@@ -326,7 +336,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     await expect(page.getByTestId('flight-form-error')).toContainText("Il contaore finale deve essere maggiore dell'iniziale.");
   });
@@ -338,6 +348,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const pilot = await createPilotWithLogin(page, 'PilotFlightsNoRate1!');
 
     await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(
       page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
@@ -346,7 +357,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     );
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     await expect(page.getByTestId('flight-form-error')).toContainText('Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.');
   });
@@ -414,6 +425,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const pilot = await createPilotWithLogin(page, 'PilotFlightsMidnight1!');
 
     await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(
       page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
@@ -425,7 +437,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora decollo').fill('23:30');
     await page.getByLabel('Ora atterraggio').fill('00:10');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('0:40');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel).toContainText('0:40');
@@ -537,5 +549,75 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.reload();
     const soloRow = page.getByTestId('flight-row').filter({ hasText: 'solista' }).first();
     await expect(soloRow.getByTestId('flight-pic-cell')).toHaveText(`${pilot.lastName} ${pilot.firstName}`);
+  });
+});
+
+test.describe('Modal dialog for the flight form (Story 12.3, AC 1/2/3/6/7)', () => {
+  test('the register dialog is keyboard-first: focus lands on Velivolo on open, Esc closes it and returns focus to the trigger', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/flights');
+
+    await page.getByTestId('flight-open-register').click();
+    const dialog = page.getByTestId('flight-form');
+    await expect(dialog).toBeVisible();
+    // AC 3: native <dialog> showModal() focusing steps land on the first
+    // real field (Velivolo), NOT the scrollable card wrapper (verified live
+    // via Playwright MCP against a known Chromium quirk — an
+    // `overflow-y-auto` region with no explicit tabindex is otherwise
+    // "focusable" and wins, fixed in the shared `Dialog`/`Sheet` primitive).
+    await expect(page.getByTestId('flight-aircraft')).toBeFocused();
+
+    // First Esc dismisses the Velivolo combobox's OWN popup — it auto-opens
+    // in browse mode on focus (story TD-3's `handleFocus`) — the dialog
+    // itself stays open (verified live: a single Esc here does NOT close it).
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    // Second Esc closes the dialog (AC 1/7) and returns focus, natively, to
+    // the element that opened it.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId('flight-open-register')).toBeFocused();
+  });
+
+  test('typed time shorthand (1430/1600) normalizes and derives the duration live, without touching the wire semantics (AC 3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
+
+    await page.getByLabel('Ora decollo').fill('1430');
+    await page.getByLabel('Ora atterraggio').fill('1600');
+    await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:30');
+  });
+
+  test('GET /api/v1/flights/{id}: the titolare gets 200, a DIFFERENT pilot gets 404 — never 403 (anti-enumeration, AC 6)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 10000);
+    const pilotA = await createPilotWithLogin(page, 'PilotFlightsDetailA1!');
+    const pilotB = await createPilotWithLogin(page, 'PilotFlightsDetailB1!');
+
+    const registerResponse = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilotA.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        ...flightTimes(PAST_DATE, 30),
+      },
+    });
+    expect(registerResponse.status()).toBe(201);
+    const flight = (await registerResponse.json()) as { flight: { id: string } };
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilotA.email, 'PilotFlightsDetailA1!');
+    const ownResponse = await page.request.get(`/api/v1/flights/${flight.flight.id}`);
+    expect(ownResponse.status()).toBe(200);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilotB.email, 'PilotFlightsDetailB1!');
+    const otherResponse = await page.request.get(`/api/v1/flights/${flight.flight.id}`);
+    expect(otherResponse.status()).toBe(404);
+    const otherBody = (await otherResponse.json()) as { error: { code: string } };
+    expect(otherBody.error.code).toBe('NOT_FOUND');
   });
 });

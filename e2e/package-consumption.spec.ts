@@ -26,6 +26,12 @@ async function selectFromCombobox(combobox: Locator, query: string, optionLabel:
   await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
+/** Story 12.3 (AC 2): the registration form now lives in a `Dialog` — opens it before any `flight-form` field interaction (same helper as `flights.spec.ts`). */
+async function openRegisterDialog(page: Page): Promise<void> {
+  await page.getByTestId('flight-open-register').click();
+  await expect(page.getByTestId('flight-form')).toBeVisible();
+}
+
 /** Run-unique names (same pattern as the other specs, for the dirty DB). */
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -169,12 +175,13 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
 
     // Register a 70' flight on the eligible aircraft: 60' from the package, 10' pro-rata at full rate.
     await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:10');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     // Da pacchetto 1:00, minuti addebitati 0:10, costo velivolo/totale 25,00 € (round(150*10/60)).
     const resultPanel = page.getByTestId('flight-result-panel');
@@ -201,12 +208,13 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
 
     // A second flight on the SAME (now-exhausted) package: full rate, no coverage.
     await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-02');
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:10');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     const secondResultPanel = page.getByTestId('flight-result-panel');
     await expect(secondResultPanel.getByTestId('flight-result-total')).toContainText(/25,00\s€/); // 10' x 150€/h
@@ -232,12 +240,13 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(page.getByTestId('packages-panel-feedback')).toBeVisible();
 
     await page.goto('/it/dashboard/flights');
+    await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), otherAircraft.registration, otherAircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-04');
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
 
     // 30' x 100,00 €/h = 50,00 € (full rate, otherAircraft is not eligible for the fresh package).
     const thirdResultPanel = page.getByTestId('flight-result-panel');

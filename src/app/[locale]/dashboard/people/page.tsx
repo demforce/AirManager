@@ -173,6 +173,10 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
                 requiredField: t('form.requiredField'),
                 genericError: t('form.genericError'),
                 conflictError: t('form.conflictError'),
+                role: t('form.role'),
+                roleNone: t('form.roleNone'),
+                profileError: t('form.profileError'),
+                completeProfile: t('form.completeProfile'),
               },
               feedback: {
                 created: t('feedback.created'),

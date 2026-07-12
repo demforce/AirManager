@@ -84,7 +84,7 @@ vi.mock('./instructor-rates.service', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { listFlights, registerFlight, cancelFlight, correctFlight } = await import('./flights.service');
+const { listFlights, registerFlight, cancelFlight, correctFlight, getFlight } = await import('./flights.service');
 const { NotFoundError, ConflictError } = await import('./errors');
 
 const aircraftFindUniqueMock = vi.mocked(prisma.aircraft.findUnique);
@@ -1601,6 +1601,74 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       const result = await listFlights(pilotActor('person_1'), baseQuery());
 
       expect(result.items[0]?.actorEmail).toBeUndefined();
+    });
+  });
+
+  describe('getFlight (story 12.3, AC 6 — single-flight lookup, own-access anti-enumeration)', () => {
+    it('flights.manage: reads any flight regardless of person/instructor', async () => {
+      flightFindUnique.mockResolvedValue(CREATED_FLIGHT_ROW);
+
+      const result = await getFlight(staffActor(), 'flight_1');
+
+      expect(result.id).toBe('flight_1');
+      expect(flightFindUniqueMock).toHaveBeenCalledWith({ where: { id: 'flight_1' }, select: expect.anything() });
+    });
+
+    it('rejects an actor with neither flights.manage nor self.read, before any query', async () => {
+      await expect(getFlight({ userId: 'nobody_1', personId: null, roles: [] }, 'flight_1')).rejects.toThrow(ForbiddenError);
+      expect(flightFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('unknown id -> NotFoundError, even for flights.manage', async () => {
+      flightFindUnique.mockResolvedValue(null);
+
+      await expect(getFlight(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+    });
+
+    it('own-access: the flight\'s own person -> 200', async () => {
+      flightFindUnique.mockResolvedValue(CREATED_FLIGHT_ROW);
+
+      const result = await getFlight(pilotActor('person_1'), 'flight_1');
+
+      expect(result.id).toBe('flight_1');
+    });
+
+    it('own-access: the flight\'s instructor -> 200', async () => {
+      flightFindUnique.mockResolvedValue({
+        ...CREATED_FLIGHT_ROW,
+        person: { id: 'person_other', firstName: 'Someone', lastName: 'Else' },
+        instructorProfile: { person: { id: 'person_instructor', firstName: 'Luca', lastName: 'Verdi' } },
+      });
+
+      const result = await getFlight(instructorActor(), 'flight_1');
+
+      expect(result.id).toBe('flight_1');
+    });
+
+    it('own-access: someone else\'s flight -> NotFoundError, NOT ForbiddenError (anti-enumeration/NFR-10)', async () => {
+      flightFindUnique.mockResolvedValue({
+        ...CREATED_FLIGHT_ROW,
+        person: { id: 'person_other', firstName: 'Someone', lastName: 'Else' },
+        instructorProfile: null,
+      });
+
+      await expect(getFlight(pilotActor('person_1'), 'flight_1')).rejects.toThrow(NotFoundError);
+    });
+
+    it('own-access with no linked person (personId null) -> NotFoundError, never a match', async () => {
+      flightFindUnique.mockResolvedValue(CREATED_FLIGHT_ROW);
+
+      await expect(getFlight(pilotActor(null), 'flight_1')).rejects.toThrow(NotFoundError);
+    });
+
+    it('actorEmail is present for flights.manage, absent for own-access', async () => {
+      flightFindUnique.mockResolvedValue(CREATED_FLIGHT_ROW);
+
+      const staffResult = await getFlight(adminActor(), 'flight_1');
+      expect(staffResult.actorEmail).toBe('staff@airmanager.local');
+
+      const ownResult = await getFlight(pilotActor('person_1'), 'flight_1');
+      expect(ownResult.actorEmail).toBeUndefined();
     });
   });
 });
