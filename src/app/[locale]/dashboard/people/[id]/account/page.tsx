@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { ExportButton } from '@/components/export-button';
+import { Pager } from '@/components/pager';
+import { Menu } from '@/components/ui/menu';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
@@ -163,14 +165,23 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
                 requiredField: tPackages('form.requiredField'),
                 inactiveTypeError: tPackages('form.inactiveTypeError'),
                 genericError: tPackages('form.genericError'),
+                datePicker: {
+                  openCalendar: tPackages('datePicker.openCalendar'),
+                  previousMonth: tPackages('datePicker.previousMonth'),
+                  nextMonth: tPackages('datePicker.nextMonth'),
+                  invalidDate: tPackages('datePicker.invalidDate'),
+                },
               },
             }}
           />
         </div>
 
-        <div className="mt-10 flex justify-end gap-3">
-          <ExportButton href={exportHref} label={tExport('button')} testId="account-statement-export-button" />
-          <ExportButton href={exportPdfHref} label={tExport('buttonPdf')} testId="account-statement-export-pdf-button" />
+        <div className="mt-10 flex justify-end">
+          {/* Story 12.5 (AC 5): the two export actions collected into one overflow menu, same pattern as the flight registry (story 12.4, AC 6) — testids stay on the menu ITEMS, unchanged. */}
+          <Menu label={tExport('menuLabel')} triggerTestId="account-statement-export-menu-trigger">
+            <ExportButton variant="menuItem" href={exportHref} label={tExport('button')} testId="account-statement-export-button" />
+            <ExportButton variant="menuItem" href={exportPdfHref} label={tExport('buttonPdf')} testId="account-statement-export-pdf-button" />
+          </Menu>
         </div>
 
         <div className="mt-4">
@@ -224,33 +235,7 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
           />
         </div>
 
-        {totalPages > 1 ? (
-          <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
-            <Link
-              href={pageHref(page - 1)}
-              locale={locale as AppLocale}
-              aria-disabled={page <= 1}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              ←
-            </Link>
-            <span>
-              {page} / {totalPages}
-            </span>
-            <Link
-              href={pageHref(page + 1)}
-              locale={locale as AppLocale}
-              aria-disabled={page >= totalPages}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              →
-            </Link>
-          </nav>
-        ) : null}
+        <Pager page={page} totalPages={totalPages} hrefBuilder={pageHref} locale={locale as AppLocale} />
       </div>
     </main>
   );

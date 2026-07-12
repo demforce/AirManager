@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { AssignedInstructorItemDto } from '@/lib/schemas/school';
 import { formatDateTime } from '@/lib/time';
+import { TruncatedCell } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
@@ -145,7 +146,7 @@ export function AssignedInstructorsPanel({ personId, labels }: AssignedInstructo
         {loadError ? <p className="text-sm text-ember">{labels.loadError}</p> : null}
         {!loadError && instructors !== null && instructors.length === 0 ? <p className="text-sm text-mid-gray">{labels.empty}</p> : null}
         {!loadError && instructors !== null && instructors.length > 0 ? (
-          <div className="overflow-x-auto">
+          <Card className="overflow-x-auto p-0">
             <table className="w-full min-w-[420px] text-left text-sm">
               <thead>
                 <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
@@ -157,7 +158,7 @@ export function AssignedInstructorsPanel({ personId, labels }: AssignedInstructo
               <tbody>
                 {instructors.map((instructor) => (
                   <tr key={instructor.personId} data-testid="assigned-instructor-row" className="border-b border-hairline text-ink">
-                    <td className="py-2 pr-4">{personLabel(instructor)}</td>
+                    <td className="py-2 pr-4"><TruncatedCell value={personLabel(instructor)} className="max-w-[200px]" /></td>
                     <td className="py-2 pr-4 whitespace-nowrap text-mid-gray">{formatDateTime(new Date(instructor.assignedAt))}</td>
                     <td className="py-2">
                       {confirmingRemoveId === instructor.personId ? (
@@ -189,7 +190,7 @@ export function AssignedInstructorsPanel({ personId, labels }: AssignedInstructo
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
         ) : null}
       </div>
     </Card>

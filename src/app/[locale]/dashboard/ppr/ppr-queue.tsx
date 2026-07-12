@@ -5,6 +5,7 @@ import { parseCents } from '@/lib/money';
 import type { PprOperatingInstructionsDto, PprRequestItemDto } from '@/lib/schemas/ppr';
 import { formatDateTime } from '@/lib/time';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 
 export type PprQueueLabels = {
@@ -187,7 +188,7 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
           {labels.empty}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-cards border border-hairline">
+        <Card className="overflow-x-auto p-0">
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
@@ -213,7 +214,8 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
                           type="button"
                           onClick={() => toggleExpanded(request.id)}
                           data-testid="ppr-row-detail-toggle"
-                          className="block text-left font-medium underline-offset-4 hover:underline"
+                          title={`${request.firstName} ${request.lastName}`}
+                          className="block max-w-[200px] truncate text-left font-medium underline-offset-4 hover:underline"
                         >
                           {request.firstName} {request.lastName}
                         </button>
@@ -314,7 +316,7 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
                     ) : null}
 
                     {isExpanded ? (
-                      <tr data-testid="ppr-row-detail" className="border-b border-hairline bg-[#FAFAF8]">
+                      <tr data-testid="ppr-row-detail" className="border-b border-hairline bg-surface-alt">
                         <td colSpan={6} className="px-5 py-4">
                           <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                             <div>
@@ -348,7 +350,7 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
               })}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
 
       {instructionsEditor ? (

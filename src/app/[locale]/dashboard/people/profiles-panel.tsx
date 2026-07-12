@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Card } from '@/components/ui/card';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 
 /**
  * The three profiles a `Person` may activate (story 2.2, AC 1/2, AD-11).
@@ -56,6 +57,8 @@ export type ProfilesPanelLabels = {
   pilot: { title: string; licenseNumber: string; licenseType: string };
   student: { title: string; courseStartDate: string };
   instructor: { title: string; ratings: string };
+  /** Story 12.5 (AC 1) — shared `DatePicker` a11y/error strings for `courseStartDate` (this panel's edit form AND `PersonCreateDialog`'s "Nuova persona" form). */
+  datePicker: DatePickerLabels;
 };
 
 type ProfilesPanelProps = {
@@ -369,8 +372,8 @@ function StudentSection({ personId, profile, labels, onSaved, readOnly }: Studen
   const [pending, setPending] = useState(false);
 
   const {
-    register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<StudentProfileRequestInput>({
     resolver: zodResolver(studentProfileRequestSchema),
@@ -428,16 +431,14 @@ function StudentSection({ personId, profile, labels, onSaved, readOnly }: Studen
         )
       ) : editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4">
-          <div>
-            <label htmlFor="student-courseStartDate" className="block text-sm font-medium text-ink">
-              {labels.student.courseStartDate}
-            </label>
-            <Input
+          <div className="max-w-xs">
+            <DatePicker
               id="student-courseStartDate"
-              type="date"
-              className="mt-2 w-full max-w-xs"
-              aria-invalid={Boolean(errors.courseStartDate)}
-              {...register('courseStartDate')}
+              label={labels.student.courseStartDate}
+              value={profile?.courseStartDate ?? ''}
+              onChange={(next) => setValue('courseStartDate', next)}
+              labels={labels.datePicker}
+              ariaInvalid={Boolean(errors.courseStartDate)}
             />
             {errors.courseStartDate ? <p className="mt-1 text-xs text-ember">{labels.errors.requiredField}</p> : null}
           </div>

@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form';
 import { updatePersonSchema, type UpdatePersonInput } from '@/lib/schemas/people';
 import { PersonCreateDialog } from './person-create-dialog';
 import { ProfilesPanel, type ProfilesPanelLabels } from './profiles-panel';
-import { DataTable } from '@/components/data-table';
+import { DataTable, TruncatedCell } from '@/components/data-table';
 import { ExportButton } from '@/components/export-button';
 import { Link, useRouter } from '@/i18n/navigation';
 import { Button } from '@/components/ui/button';
@@ -189,17 +189,25 @@ export function PeopleManager({ people, initialQuery, initialIncludeArchived, ex
     {
       id: 'name',
       header: labels.table.name,
-      cell: ({ row }) => (
-        // Story 2.3: the name is the entry point into the scheda persona.
-        <Link href={`/dashboard/people/${row.original.id}`} className="font-medium text-ink underline-offset-4 hover:underline">
-          {row.original.lastName} {row.original.firstName}
-        </Link>
-      ),
+      cell: ({ row }) => {
+        const name = `${row.original.lastName} ${row.original.firstName}`;
+        return (
+          // Story 2.3: the name is the entry point into the scheda persona.
+          <Link
+            href={`/dashboard/people/${row.original.id}`}
+            title={name}
+            className="block max-w-[220px] truncate font-medium text-ink underline-offset-4 hover:underline"
+          >
+            {name}
+          </Link>
+        );
+      },
     },
     {
       id: 'email',
       header: labels.table.email,
-      cell: ({ row }) => row.original.email ?? labels.table.noValue,
+      cell: ({ row }) =>
+        row.original.email ? <TruncatedCell value={row.original.email} className="max-w-[220px]" /> : labels.table.noValue,
     },
     {
       id: 'phone',

@@ -217,7 +217,7 @@ export function BookingCalendar({ view, date, weekDates, aircraft, dayBlocks, we
                   </div>
                   <div className="relative" style={{ height: `${DAY_GRID_HEIGHT_PX}px` }}>
                     {HOURS.map((hour) => (
-                      <div key={hour} className="absolute left-0 right-0 border-t border-[#F2F1EC]" style={{ top: `${hourTopPercent(hour)}%` }} />
+                      <div key={hour} className="absolute left-0 right-0 border-t border-hairline" style={{ top: `${hourTopPercent(hour)}%` }} />
                     ))}
                     {blocks.map((block) => (
                       <div

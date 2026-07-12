@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -279,6 +279,32 @@ function soonestFutureSlot(): { startsAt: string; endsAt: string } {
   return { startsAt: toDatetimeLocal(start), endsAt: toDatetimeLocal(end) };
 }
 
+/**
+ * Story 12.5: the single `datetime-local` `Inizio`/`Fine` inputs became a
+ * `DateTimeField` pair (`DatePicker` DD/MM/YYYY text + a derived "Ora
+ * inizio"/"Ora fine" time field) — these two helpers split a
+ * `YYYY-MM-DDTHH:mm` value (the SAME shape `soonestFutureSlot`/every inline
+ * template literal below already produced for the old single input) across
+ * both fields, scoped to whichever form `Locator` the caller passes (the
+ * create form and a per-row move form share the SAME "Inizio"/"Fine"
+ * labels). `exact: true` on the date half — Playwright's `getByLabel` is a
+ * case-insensitive SUBSTRING match by default, and "Ora inizio"/"Ora fine"
+ * both literally contain "inizio"/"fine".
+ */
+async function fillStartsAt(scope: Locator, value: string): Promise<void> {
+  const [datePart, time] = value.split('T');
+  const [y, m, d] = datePart.split('-');
+  await scope.getByLabel('Inizio', { exact: true }).fill(`${d}/${m}/${y}`);
+  await scope.getByLabel('Ora inizio').fill(time);
+}
+
+async function fillEndsAt(scope: Locator, value: string): Promise<void> {
+  const [datePart, time] = value.split('T');
+  const [y, m, d] = datePart.split('-');
+  await scope.getByLabel('Fine', { exact: true }).fill(`${d}/${m}/${y}`);
+  await scope.getByLabel('Ora fine').fill(time);
+}
+
 test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
   test('pilot books via UI for a future interval; an overlap shows 409 in the form; back-to-back (semi-open) succeeds', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -290,8 +316,8 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T10:00`);
+    await fillStartsAt(form, `${FUTURE_DAY}T09:00`);
+    await fillEndsAt(form, `${FUTURE_DAY}T10:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
@@ -300,15 +326,15 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
 
     // Overlapping attempt on the SAME run-unique aircraft -> 409, never conflated with a 422.
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:30`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T10:30`);
+    await fillStartsAt(form, `${FUTURE_DAY}T09:30`);
+    await fillEndsAt(form, `${FUTURE_DAY}T10:30`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-error')).toContainText('già prenotato');
 
     // Back-to-back: starts exactly when the first booking ends -> semi-open, no overlap, 201.
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T10:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T11:00`);
+    await fillStartsAt(form, `${FUTURE_DAY}T10:00`);
+    await fillEndsAt(form, `${FUTURE_DAY}T11:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
@@ -325,8 +351,8 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T13:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T14:00`);
+    await fillStartsAt(form, `${FUTURE_DAY}T13:00`);
+    await fillEndsAt(form, `${FUTURE_DAY}T14:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
@@ -384,8 +410,8 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('radio', { name: 'Per un allievo' }).click();
     // `{ exact: true }`: "Allievo" is otherwise ambiguous against the "Per un allievo" radio's accessible name.
     await form.getByLabel('Allievo', { exact: true }).selectOption({ label: `${student.lastName} ${student.firstName}` });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T15:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T16:00`);
+    await fillStartsAt(form, `${FUTURE_DAY}T15:00`);
+    await fillEndsAt(form, `${FUTURE_DAY}T16:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
@@ -617,8 +643,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T03:00`);
+    await fillStartsAt(form, `${FUTURE_DAY}T02:00`);
+    await fillEndsAt(form, `${FUTURE_DAY}T03:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
@@ -629,8 +655,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await row.getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Velivolo').selectOption({ label: aircraft2.registration });
-    await moveForm.getByLabel('Inizio').fill(`${FUTURE_DAY}T13:00`);
-    await moveForm.getByLabel('Fine').fill(`${FUTURE_DAY}T14:00`);
+    await fillStartsAt(moveForm, `${FUTURE_DAY}T13:00`);
+    await fillEndsAt(moveForm, `${FUTURE_DAY}T14:00`);
     await moveForm.getByTestId('move-booking-save').click();
 
     await expect(page.getByTestId('bookings-list-feedback')).toHaveText('Prenotazione spostata.');
@@ -666,14 +692,14 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T03:00`);
+    await fillStartsAt(form, `${FUTURE_DAY}T02:00`);
+    await fillEndsAt(form, `${FUTURE_DAY}T03:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T05:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T06:00`);
+    await fillStartsAt(form, `${FUTURE_DAY}T05:00`);
+    await fillEndsAt(form, `${FUTURE_DAY}T06:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
@@ -683,8 +709,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // The second (later, 05:00-06:00Z) booking is ordered second (startsAt asc) — move it into the first's slot (02:00-03:00Z, same aircraft, prefilled).
     await rows.nth(1).getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
-    await moveForm.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
-    await moveForm.getByLabel('Fine').fill(`${FUTURE_DAY}T03:00`);
+    await fillStartsAt(moveForm, `${FUTURE_DAY}T02:00`);
+    await fillEndsAt(moveForm, `${FUTURE_DAY}T03:00`);
     await moveForm.getByTestId('move-booking-save').click();
 
     await expect(page.getByTestId('move-booking-form-error')).toContainText('già prenotato');
@@ -868,8 +894,8 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T06:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T07:00`);
+    await fillStartsAt(form, `${FUTURE_DAY}T06:00`);
+    await fillEndsAt(form, `${FUTURE_DAY}T07:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-error')).toContainText(blockingType.name);
@@ -898,8 +924,8 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // merely a day that avoids `FUTURE_DAY`'s own accumulated volume.
     const slot = soonestFutureSlot();
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(slot.startsAt);
-    await form.getByLabel('Fine').fill(slot.endsAt);
+    await fillStartsAt(form, slot.startsAt);
+    await fillEndsAt(form, slot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-warning')).toBeVisible();
@@ -930,8 +956,8 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const slot = soonestFutureSlot();
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
-    await form.getByLabel('Inizio').fill(slot.startsAt);
-    await form.getByLabel('Fine').fill(slot.endsAt);
+    await fillStartsAt(form, slot.startsAt);
+    await fillEndsAt(form, slot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-error')).toContainText(blockingType.name);
@@ -1034,8 +1060,8 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${DAY_1}T12:00`);
-    await form.getByLabel('Fine').fill(`${DAY_1}T13:00`);
+    await fillStartsAt(form, `${DAY_1}T12:00`);
+    await fillEndsAt(form, `${DAY_1}T13:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
@@ -1045,8 +1071,8 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // Same-day time-only move: never rechecked, succeeds even past the block.
     await row.getByTestId('booking-move-action').click();
     let moveForm = page.getByTestId('move-booking-form');
-    await moveForm.getByLabel('Inizio').fill(`${DAY_1}T14:00`);
-    await moveForm.getByLabel('Fine').fill(`${DAY_1}T15:00`);
+    await fillStartsAt(moveForm, `${DAY_1}T14:00`);
+    await fillEndsAt(moveForm, `${DAY_1}T15:00`);
     await moveForm.getByTestId('move-booking-save').click();
     await expect(page.getByTestId('bookings-list-feedback')).toHaveText('Prenotazione spostata.');
     // Wait for the first form to fully close before reopening it — avoids a
@@ -1056,8 +1082,8 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // Moving to the NEXT day: the document is expired relative to THAT day -> 422, naming it.
     await row.getByTestId('booking-move-action').click();
     moveForm = page.getByTestId('move-booking-form');
-    await moveForm.getByLabel('Inizio').fill(`${DAY_2}T12:00`);
-    await moveForm.getByLabel('Fine').fill(`${DAY_2}T13:00`);
+    await fillStartsAt(moveForm, `${DAY_2}T12:00`);
+    await fillEndsAt(moveForm, `${DAY_2}T13:00`);
     await moveForm.getByTestId('move-booking-save').click();
     await expect(page.getByTestId('move-booking-form-error')).toContainText(blockingType.name);
   });

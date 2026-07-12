@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from '@/i18n/navigation';
 import { currentMonthRange, currentQuarterRange, currentYearRange, type DateRange } from '@/lib/period-presets';
-import { inputBaseClasses } from '@/components/ui/input';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 
 export type ReportFiltersLabels = {
   month: string;
@@ -12,6 +12,8 @@ export type ReportFiltersLabels = {
   custom: string;
   from: string;
   to: string;
+  /** Story 12.5 (AC 1) — shared `DatePicker` a11y/error strings. */
+  datePicker: DatePickerLabels;
 };
 
 type ReportFiltersProps = {
@@ -40,7 +42,6 @@ export function ReportFilters({ initialFilters, labels }: ReportFiltersProps) {
 
   const presetButtonClasses =
     'rounded-buttons border border-hairline bg-paper px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas';
-  const inputClasses = inputBaseClasses;
 
   return (
     <div className="flex flex-wrap items-end gap-4">
@@ -65,28 +66,24 @@ export function ReportFilters({ initialFilters, labels }: ReportFiltersProps) {
         {/* `<label htmlFor>` as a SIBLING of its control, never wrapping it
             (TD-1, AC 5 label-wrapper sweep — same footgun as `CashRegister`'s
             filter bar, story 5.4's `FilterBar`). */}
-        <div className="flex flex-col gap-2 text-sm text-ink">
-          <label htmlFor="cash-report-filter-from">{labels.from}</label>
-          <input
-            id="cash-report-filter-from"
-            type="date"
-            value={range.from}
-            onChange={(event) => navigate({ ...range, from: event.target.value })}
-            className={inputClasses}
-            data-testid="cash-report-filter-from"
-          />
-        </div>
-        <div className="flex flex-col gap-2 text-sm text-ink">
-          <label htmlFor="cash-report-filter-to">{labels.to}</label>
-          <input
-            id="cash-report-filter-to"
-            type="date"
-            value={range.to}
-            onChange={(event) => navigate({ ...range, to: event.target.value })}
-            className={inputClasses}
-            data-testid="cash-report-filter-to"
-          />
-        </div>
+        <DatePicker
+          id="cash-report-filter-from"
+          label={labels.from}
+          value={range.from}
+          onChange={(next) => navigate({ ...range, from: next })}
+          labels={labels.datePicker}
+          testId="cash-report-filter-from"
+          className="min-w-[160px]"
+        />
+        <DatePicker
+          id="cash-report-filter-to"
+          label={labels.to}
+          value={range.to}
+          onChange={(next) => navigate({ ...range, to: next })}
+          labels={labels.datePicker}
+          testId="cash-report-filter-to"
+          className="min-w-[160px]"
+        />
       </fieldset>
     </div>
   );

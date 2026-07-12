@@ -89,6 +89,12 @@ function dayBeforeDateOnly(dateOnly: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Story 12.5: `DatePicker`'s text input takes DD/MM/YYYY, not ISO. */
+function toDisplayDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 /** Creates a PENDING PPR request via the public POST (story 8.1), a run-unique fake IP per call (never a fixed one, same rule as `ppr-queue.spec.ts`). */
 async function createPendingRequest(page: Page, hoursFromNow = 5): Promise<{ registration: string; email: string; eta: string }> {
   const registration = uniqueRegistration('R');
@@ -333,7 +339,7 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
     // --- Period filter: `to` set to the day BEFORE the eta excludes it -----
     await page.goto(`/it/dashboard/ppr/register?status=APPROVED&from=${etaDateOnly}&to=${etaDateOnly}`);
     await expect(page.getByText(created.registration)).toBeVisible();
-    await page.getByTestId('ppr-register-filter-to').fill(dayBefore);
+    await page.getByTestId('ppr-register-filter-to').fill(toDisplayDate(dayBefore));
     await expect(page).toHaveURL(new RegExp(`to=${dayBefore}`));
     await expect(page.getByText(created.registration)).toHaveCount(0);
   });

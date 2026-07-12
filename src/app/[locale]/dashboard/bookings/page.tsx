@@ -1,6 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { ExportButton } from '@/components/export-button';
-import { Link, redirect } from '@/i18n/navigation';
+import { Pager } from '@/components/pager';
+import { redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { buildExportHref } from '@/lib/export-href';
 import { APP_TIMEZONE } from '@/lib/time';
@@ -422,10 +423,19 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
                 noStudentAvailable: t('form.noStudentAvailable'),
                 startsAt: t('form.startsAt'),
                 endsAt: t('form.endsAt'),
+                startsAtTime: t('form.startsAtTime'),
+                endsAtTime: t('form.endsAtTime'),
                 notes: t('form.notes'),
                 submit: t('form.submit'),
                 requiredField: t('form.requiredField'),
                 invalidRange: t('form.invalidRange'),
+                dateTimeField: {
+                  openCalendar: t('datePicker.openCalendar'),
+                  previousMonth: t('datePicker.previousMonth'),
+                  nextMonth: t('datePicker.nextMonth'),
+                  invalidDate: t('datePicker.invalidDate'),
+                  invalidTime: t('datePicker.invalidTime'),
+                },
                 errors: {
                   AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
                   BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
@@ -484,12 +494,21 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
                 outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
                 startsAt: t('form.startsAt'),
                 endsAt: t('form.endsAt'),
+                startsAtTime: t('form.startsAtTime'),
+                endsAtTime: t('form.endsAtTime'),
                 notes: t('form.notes'),
                 requiredField: t('form.requiredField'),
                 invalidRange: t('form.invalidRange'),
                 errors: {
                   AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
                   BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
+                },
+                dateTimeField: {
+                  openCalendar: t('datePicker.openCalendar'),
+                  previousMonth: t('datePicker.previousMonth'),
+                  nextMonth: t('datePicker.nextMonth'),
+                  invalidDate: t('datePicker.invalidDate'),
+                  invalidTime: t('datePicker.invalidTime'),
                 },
               },
               actions: {
@@ -512,35 +531,15 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
             }}
           />
 
-          {totalPages > 1 ? (
-            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
-              <Link
-                href={pageHref(page - 1)}
-                locale={locale as AppLocale}
-                aria-disabled={page <= 1}
-                data-testid="booking-page-prev"
-                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                }`}
-              >
-                &larr;
-              </Link>
-              <span data-testid="booking-pagination-status">
-                {page} / {totalPages}
-              </span>
-              <Link
-                href={pageHref(page + 1)}
-                locale={locale as AppLocale}
-                aria-disabled={page >= totalPages}
-                data-testid="booking-page-next"
-                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                }`}
-              >
-                &rarr;
-              </Link>
-            </nav>
-          ) : null}
+          <Pager
+            page={page}
+            totalPages={totalPages}
+            hrefBuilder={pageHref}
+            locale={locale as AppLocale}
+            statusTestId="booking-pagination-status"
+            prevTestId="booking-page-prev"
+            nextTestId="booking-page-next"
+          />
         </section>
       </div>
     </main>

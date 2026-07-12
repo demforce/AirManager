@@ -8,9 +8,13 @@ import { z } from 'zod';
 import type { ExpiryItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { formatDateOnly } from '@/lib/time';
 import { ExpiryStatusBadge } from './expiry-status-badge';
+import { TruncatedCell } from '@/components/data-table';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 
 export type MyExpiriesLabels = {
   empty: string;
@@ -38,6 +42,7 @@ export type MyExpiriesLabels = {
     conflictError: string;
     genericError: string;
     success: string;
+    datePicker: DatePickerLabels;
   };
 };
 
@@ -76,7 +81,7 @@ export function MyExpiries({ expiries: initialExpiries, labels }: MyExpiriesProp
           {feedback}
         </p>
       ) : null}
-      <div className="overflow-x-auto">
+      <Card className="overflow-x-auto p-0">
         <table className="w-full min-w-[680px] text-left text-sm">
           <thead>
             <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
@@ -102,7 +107,7 @@ export function MyExpiries({ expiries: initialExpiries, labels }: MyExpiriesProp
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -123,14 +128,11 @@ function MyExpiryRow({ expiry, isProposing, labels, onOpenPropose, onCancelPropo
     <>
       <tr data-testid="my-expiry-row" className="border-b border-hairline align-top text-ink">
         <td className="py-3 pr-4">
-          <span className="font-medium">{expiry.typeName}</span>
+          <TruncatedCell value={expiry.typeName} className="max-w-[180px] font-medium" />
           {expiry.pendingProposal ? (
-            <span
-              data-testid="my-expiry-pending-badge"
-              className="mt-1 block w-fit rounded-full bg-[#F0EEE6] px-2.5 py-0.5 text-xs font-medium text-[#5F5B53]"
-            >
+            <Badge data-testid="my-expiry-pending-badge" className="mt-1">
               {labels.table.pendingBadge}
-            </span>
+            </Badge>
           ) : null}
         </td>
         <td className="py-3 pr-4 whitespace-nowrap">{formatDateOnly(expiry.issuedAt, moneyLocale)}</td>
@@ -190,10 +192,13 @@ type ProposeExpiryFormProps = {
  */
 function ProposeExpiryForm({ expiry, labels, onCancel, onSuccess }: ProposeExpiryFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const [issuedAtValue, setIssuedAtValue] = useState(expiry.issuedAt);
+  const [expiresAtValue, setExpiresAtValue] = useState(expiry.expiresAt);
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ProposeFormValues>({
     resolver: zodResolver(proposeFormSchema),
@@ -233,28 +238,30 @@ function ProposeExpiryForm({ expiry, labels, onCancel, onSuccess }: ProposeExpir
       <h4 className="text-base font-medium text-ink">{labels.title}</h4>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
-          <label htmlFor={`propose-issued-at-${expiry.id}`} className="block text-sm font-medium text-ink">
-            {labels.issuedAt}
-          </label>
-          <input
+          <DatePicker
             id={`propose-issued-at-${expiry.id}`}
-            type="date"
-            aria-invalid={Boolean(errors.issuedAt)}
-            className={inputClasses}
-            {...register('issuedAt')}
+            label={labels.issuedAt}
+            value={issuedAtValue}
+            onChange={(next) => {
+              setIssuedAtValue(next);
+              setValue('issuedAt', next);
+            }}
+            labels={labels.datePicker}
+            ariaInvalid={Boolean(errors.issuedAt)}
           />
           {errors.issuedAt ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor={`propose-expires-at-${expiry.id}`} className="block text-sm font-medium text-ink">
-            {labels.expiresAt}
-          </label>
-          <input
+          <DatePicker
             id={`propose-expires-at-${expiry.id}`}
-            type="date"
-            aria-invalid={Boolean(errors.expiresAt)}
-            className={inputClasses}
-            {...register('expiresAt')}
+            label={labels.expiresAt}
+            value={expiresAtValue}
+            onChange={(next) => {
+              setExpiresAtValue(next);
+              setValue('expiresAt', next);
+            }}
+            labels={labels.datePicker}
+            ariaInvalid={Boolean(errors.expiresAt)}
           />
           {errors.expiresAt ? <p className="mt-1 text-xs text-ember">{labels.invalidRange}</p> : null}
         </div>

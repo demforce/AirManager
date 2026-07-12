@@ -8,9 +8,12 @@ import { formatCents, parseCents } from '@/lib/money';
 import type { PprRequestItemDto, PprStatusDto } from '@/lib/schemas/ppr';
 import { formatDateTime } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { TruncatedCell } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 
 export type PprRegisterFilters = { status: string; from: string; to: string };
@@ -23,6 +26,8 @@ export type PprRegisterLabels = {
     from: string;
     to: string;
     reset: string;
+    /** Story 12.5 (AC 1) — shared `DatePicker` a11y/error strings. */
+    datePicker: DatePickerLabels;
   };
   table: {
     pprNumber: string;
@@ -74,7 +79,7 @@ async function isConflict(response: Response): Promise<boolean> {
 
 /** `PprStatusDto` -> the badge palette already established across the dashboard (`FlightStatusCell`, `types-manager.tsx`, `account-statement-table.tsx`) — no new colors introduced. PENDING/COMPLETED keep their own established tones (outside the shared ok/warning/danger tripletta, AC 4: invariant). */
 const STATUS_BADGE_TONE: Record<PprStatusDto, StatusTone | string> = {
-  PENDING: 'bg-[#F0EEE6] text-[#5F5B53]',
+  PENDING: 'bg-canvas text-ink-soft',
   APPROVED: 'ok',
   REJECTED: 'danger',
   COMPLETED: 'bg-[#E1F3FE] text-[#1F6C9F]',
@@ -206,28 +211,24 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
               <option value="CANCELLED">{labels.filters.statusOptions.cancelled}</option>
             </select>
           </div>
-          <div className="flex flex-col text-sm text-ink">
-            <label htmlFor="ppr-register-filter-from">{labels.filters.from}</label>
-            <input
-              id="ppr-register-filter-from"
-              type="date"
-              value={filters.from}
-              onChange={(event) => handleFilterChange({ from: event.target.value })}
-              className={inputClasses}
-              data-testid="ppr-register-filter-from"
-            />
-          </div>
-          <div className="flex flex-col text-sm text-ink">
-            <label htmlFor="ppr-register-filter-to">{labels.filters.to}</label>
-            <input
-              id="ppr-register-filter-to"
-              type="date"
-              value={filters.to}
-              onChange={(event) => handleFilterChange({ to: event.target.value })}
-              className={inputClasses}
-              data-testid="ppr-register-filter-to"
-            />
-          </div>
+          <DatePicker
+            id="ppr-register-filter-from"
+            label={labels.filters.from}
+            value={filters.from}
+            onChange={(next) => handleFilterChange({ from: next })}
+            labels={labels.filters.datePicker}
+            testId="ppr-register-filter-from"
+            className="min-w-[160px]"
+          />
+          <DatePicker
+            id="ppr-register-filter-to"
+            label={labels.filters.to}
+            value={filters.to}
+            onChange={(next) => handleFilterChange({ to: next })}
+            labels={labels.filters.datePicker}
+            testId="ppr-register-filter-to"
+            className="min-w-[160px]"
+          />
           {hasActiveFilter ? (
             <button
               type="button"
@@ -253,7 +254,7 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
           {labels.empty}
         </p>
       ) : (
-        <div className="mt-6 overflow-x-auto rounded-cards border border-hairline">
+        <Card className="mt-6 overflow-x-auto p-0">
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
@@ -275,8 +276,8 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
                   <Fragment key={request.id}>
                     <tr data-testid="ppr-register-row" className="border-b border-hairline align-top text-ink">
                       <td className="px-5 py-3 whitespace-nowrap">{request.pprNumber ?? labels.table.noValue}</td>
-                      <td className="px-5 py-3 whitespace-nowrap">
-                        {request.firstName} {request.lastName}
+                      <td className="px-5 py-3">
+                        <TruncatedCell value={`${request.firstName} ${request.lastName}`} className="max-w-[200px]" />
                       </td>
                       <td className="px-5 py-3 whitespace-nowrap">{request.aircraftRegistration}</td>
                       <td className="px-5 py-3 whitespace-nowrap">{formatDateTime(new Date(request.eta), locale)}</td>
@@ -361,7 +362,7 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
               })}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
     </div>
   );

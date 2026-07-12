@@ -14,6 +14,7 @@ import {
   type TrainingNoteItem,
 } from '@/server/services/school.service';
 import { NewTrainingNoteForm, TrainingNoteRow, type TrainingNoteRowData } from '../training-notes-journal';
+import { Pager } from '@/components/pager';
 
 type PageProps = {
   params: Promise<{ locale: string; id: string }>;
@@ -154,6 +155,12 @@ export default async function TrainingDiaryPage({ params, searchParams }: PagePr
                 flightError: t('newNoteForm.flightError'),
                 genericError: t('newNoteForm.genericError'),
               }}
+              datePickerLabels={{
+                openCalendar: t('datePicker.openCalendar'),
+                previousMonth: t('datePicker.previousMonth'),
+                nextMonth: t('datePicker.nextMonth'),
+                invalidDate: t('datePicker.invalidDate'),
+              }}
             />
           </div>
         ) : null}
@@ -188,39 +195,19 @@ export default async function TrainingDiaryPage({ params, searchParams }: PagePr
                     immutableError: t('editForm.immutableError'),
                     genericError: t('editForm.genericError'),
                   },
+                  datePicker: {
+                    openCalendar: t('datePicker.openCalendar'),
+                    previousMonth: t('datePicker.previousMonth'),
+                    nextMonth: t('datePicker.nextMonth'),
+                    invalidDate: t('datePicker.invalidDate'),
+                  },
                 }}
               />
             ))
           )}
         </div>
 
-        {totalPages > 1 ? (
-          <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
-            <Link
-              href={pageHref(page - 1)}
-              locale={locale as AppLocale}
-              aria-disabled={page <= 1}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              &larr;
-            </Link>
-            <span>
-              {page} / {totalPages}
-            </span>
-            <Link
-              href={pageHref(page + 1)}
-              locale={locale as AppLocale}
-              aria-disabled={page >= totalPages}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              &rarr;
-            </Link>
-          </nav>
-        ) : null}
+        <Pager page={page} totalPages={totalPages} hrefBuilder={pageHref} locale={locale as AppLocale} />
       </div>
     </main>
   );

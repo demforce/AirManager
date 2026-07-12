@@ -410,6 +410,12 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                 placeholder: t('searchPlaceholder'),
                 noResults: t('noResults'),
               },
+              datePicker: {
+                openCalendar: t('datePicker.openCalendar'),
+                previousMonth: t('datePicker.previousMonth'),
+                nextMonth: t('datePicker.nextMonth'),
+                invalidDate: t('datePicker.invalidDate'),
+              },
             }}
           />
         </div>

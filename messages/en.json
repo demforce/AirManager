@@ -210,6 +210,12 @@
       "instructor": {
         "title": "Instructor",
         "ratings": "Ratings"
+      },
+      "datePicker": {
+        "openCalendar": "Open calendar",
+        "previousMonth": "Previous month",
+        "nextMonth": "Next month",
+        "invalidDate": "Invalid date (use DD/MM/YYYY)."
       }
     }
   },
@@ -272,6 +278,12 @@
         "invalidAmount": "Enter a valid amount greater than zero.",
         "requiredField": "This field is required.",
         "genericError": "Could not record the top-up. Please try again."
+      },
+      "datePicker": {
+        "openCalendar": "Open calendar",
+        "previousMonth": "Previous month",
+        "nextMonth": "Next month",
+        "invalidDate": "Invalid date (use DD/MM/YYYY)."
       }
     },
     "instructorRates": {
@@ -296,7 +308,13 @@
       "historyValidFrom": "Effective from",
       "historyPrice": "Price",
       "historyActor": "Who",
-      "historyWhen": "Recorded on"
+      "historyWhen": "Recorded on",
+      "datePicker": {
+        "openCalendar": "Open calendar",
+        "previousMonth": "Previous month",
+        "nextMonth": "Next month",
+        "invalidDate": "Invalid date (use DD/MM/YYYY)."
+      }
     }
   },
   "HourPackagesPanel": {
@@ -330,6 +348,12 @@
       "requiredField": "This field is required.",
       "inactiveTypeError": "The selected package type is no longer active. Refresh the page and try again.",
       "genericError": "Could not record the sale. Please try again."
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
     }
   },
   "AssignedInstructorsPanel": {
@@ -410,6 +434,12 @@
       "confirmDelete": "Delete this expiry?",
       "confirmYes": "Confirm",
       "confirmCancel": "Cancel"
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
     }
   },
   "SchoolPage": {
@@ -468,6 +498,12 @@
     "myHours": {
       "heading": "My school hours",
       "openRegister": "Open in register"
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
     }
   },
   "TrainingDiaryPage": {
@@ -509,6 +545,12 @@
       "requiredField": "Required field.",
       "immutableError": "This note can no longer be edited (7-day window elapsed).",
       "genericError": "Could not save the changes. Try again."
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
     }
   },
   "AccountStatementPage": {
@@ -633,6 +675,12 @@
         "genericError": "Could not record the reversal. Try again.",
         "success": "Reversal recorded."
       }
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
     }
   },
   "CashReportPage": {
@@ -663,6 +711,12 @@
       "out": "Outflows",
       "net": "Net",
       "empty": "No movement in the selected period."
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
     }
   },
   "CashCategoriesPage": {
@@ -896,6 +950,12 @@
       "returnedToService": "Aircraft returned to service.",
       "hourMeterAdjusted": "Hour meter adjusted.",
       "rateAdded": "Rate added."
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
     }
   },
   "FlightsPage": {
@@ -1051,6 +1111,12 @@
     "pdf": {
       "totalDuration": "Total duration",
       "totalAmount": "Total charges"
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
     }
   },
   "ExpiriesPage": {
@@ -1145,6 +1211,12 @@
         "genericError": "Could not send the proposal. Please try again.",
         "success": "Proposal sent, pending validation by staff."
       }
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
     }
   },
   "ExpiryTypesPage": {
@@ -1227,7 +1299,9 @@
       "student": "Student",
       "noStudentAvailable": "No active student available.",
       "startsAt": "Starts",
+      "startsAtTime": "Start time",
       "endsAt": "Ends",
+      "endsAtTime": "End time",
       "notes": "Notes",
       "submit": "Book",
       "requiredField": "This field is required.",
@@ -1299,6 +1373,13 @@
       "clampedStartHint": "Starts before this time window",
       "clampedEndHint": "Continues past this time window",
       "weekdayColumnLabel": "Day"
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY).",
+      "invalidTime": "Invalid time (use HH:MM)."
     }
   },
   "UsersPage": {
@@ -1405,7 +1486,9 @@
       "origin": "Origin",
       "destination": "Destination",
       "eta": "ETA (estimated arrival)",
+      "etaTime": "ETA time",
       "etd": "ETD (estimated departure, optional)",
+      "etdTime": "ETD time",
       "personsOnBoard": "Persons on board",
       "notes": "Notes (optional)",
       "submit": "Send request",
@@ -1424,6 +1507,13 @@
     "success": {
       "title": "Request sent",
       "message": "We received your PPR request. You will shortly get a confirmation email with a summary, followed by another email with the outcome of your request."
+    },
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY).",
+      "invalidTime": "Invalid time (use HH:MM)."
     }
   },
   "PprQueuePage": {
@@ -1536,7 +1626,13 @@
       "conflictError": "This PPR is no longer in Approved status (likely already closed by another operator).",
       "genericError": "We could not complete the operation. Please try again."
     },
-    "empty": "No PPR requests match the selected filters."
+    "empty": "No PPR requests match the selected filters.",
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "previousMonth": "Previous month",
+      "nextMonth": "Next month",
+      "invalidDate": "Invalid date (use DD/MM/YYYY)."
+    }
   },
   "Export": {
     "button": "Export Excel",

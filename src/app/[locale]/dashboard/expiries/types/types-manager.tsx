@@ -5,8 +5,9 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { DataTable } from '@/components/data-table';
+import { DataTable, TruncatedCell } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
@@ -139,16 +140,12 @@ export function TypesManager({ expiryTypes, canManage, labels }: TypesManagerPro
     {
       id: 'name',
       header: labels.table.name,
-      cell: ({ row }) => <span className="font-medium text-ink">{row.original.name}</span>,
+      cell: ({ row }) => <TruncatedCell value={row.original.name} className="max-w-[220px] font-medium text-ink" />,
     },
     {
       id: 'scope',
       header: labels.table.scope,
-      cell: ({ row }) => (
-        <span className="rounded-full bg-[#F0EEE6] px-2.5 py-1 text-xs font-medium text-[#5F5B53]">
-          {labels.scope[row.original.scope]}
-        </span>
-      ),
+      cell: ({ row }) => <Badge>{labels.scope[row.original.scope]}</Badge>,
     },
     {
       id: 'status',

@@ -6,7 +6,7 @@ import { useLocale } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { DataTable } from '@/components/data-table';
+import { DataTable, TruncatedCell } from '@/components/data-table';
 import { ExportButton } from '@/components/export-button';
 import { useRouter } from '@/i18n/navigation';
 import {
@@ -28,6 +28,7 @@ import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Card } from '@/components/ui/card';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 
 export type AircraftRow = {
   id: string;
@@ -154,6 +155,8 @@ type Labels = {
     historyPrice: string;
     historyActor: string;
     historyWhen: string;
+    /** Story 12.5 (AC 1) — `DatePicker` a11y/error strings for `validFrom`. */
+    datePicker: DatePickerLabels;
   };
   feedback: {
     created: string;
@@ -334,7 +337,7 @@ export function AircraftManager({
     {
       id: 'model',
       header: labels.table.model,
-      cell: ({ row }) => row.original.model,
+      cell: ({ row }) => <TruncatedCell value={row.original.model} className="max-w-[200px]" />,
     },
     {
       id: 'hourMeter',
@@ -1095,7 +1098,7 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
         {history === null ? null : history.length === 0 ? (
           <p className="mt-3 text-sm text-mid-gray">{labels.hourMeterPanel.historyEmpty}</p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
+          <Card className="mt-3 overflow-x-auto p-3">
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
@@ -1111,11 +1114,11 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
                 {history.map((entry) => (
                   <tr key={entry.id} data-testid="hour-meter-history-row" className="border-b border-hairline text-ink">
                     <td className="py-2 pr-4 whitespace-nowrap text-mid-gray">{formatDateTime(new Date(entry.createdAt))}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap">{entry.actorEmail}</td>
+                    <td className="py-2 pr-4"><TruncatedCell value={entry.actorEmail} className="max-w-[180px]" /></td>
                     <td className="py-2 pr-4 whitespace-nowrap">{safeFormatMinutes(entry.previousMinutes)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{safeFormatMinutes(entry.newMinutes)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatSignedMinutes(entry.newMinutes - entry.previousMinutes)}</td>
-                    <td className="py-2">{entry.reason}</td>
+                    <td className="py-2"><TruncatedCell value={entry.reason} className="max-w-[220px]" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -1131,7 +1134,7 @@ function HourMeterAdjustmentPanel({ aircraft, labels, onCancel, onSuccess }: Hou
                 {labels.hourMeterPanel.loadMore}
               </Button>
             ) : null}
-          </div>
+          </Card>
         )}
       </div>
     </div>
@@ -1193,10 +1196,12 @@ type RatesPanelProps = {
 function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel, onSuccess }: RatesPanelProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [history, setHistory] = useState<AircraftRateItemDto[] | null>(null);
+  const [validFromValue, setValidFromValue] = useState(todayDateOnly());
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<NewRateFormValues>({
     resolver: zodResolver(newRateFormSchema),
@@ -1279,15 +1284,16 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
               {errors.price ? <p className="mt-1 text-xs text-ember">{labels.ratesPanel.invalidPrice}</p> : null}
             </div>
             <div>
-              <label htmlFor="rate-valid-from" className="block text-sm font-medium text-ink">
-                {labels.ratesPanel.validFrom}
-              </label>
-              <Input
+              <DatePicker
                 id="rate-valid-from"
-                type="date"
-                aria-invalid={Boolean(errors.validFrom)}
-                className="mt-2 w-full"
-                {...register('validFrom')}
+                label={labels.ratesPanel.validFrom}
+                value={validFromValue}
+                onChange={(next) => {
+                  setValidFromValue(next);
+                  setValue('validFrom', next);
+                }}
+                labels={labels.ratesPanel.datePicker}
+                ariaInvalid={Boolean(errors.validFrom)}
               />
               {errors.validFrom ? <p className="mt-1 text-xs text-ember">{labels.ratesPanel.invalidDate}</p> : null}
             </div>
@@ -1320,7 +1326,7 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
         {history === null ? null : history.length === 0 ? (
           <p className="mt-3 text-sm text-mid-gray">{labels.ratesPanel.historyEmpty}</p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
+          <Card className="mt-3 overflow-x-auto p-0">
             <table className="w-full min-w-[480px] text-left text-sm">
               <thead>
                 <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
@@ -1335,13 +1341,13 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
                   <tr key={entry.id} data-testid="rate-history-row" className="border-b border-hairline text-ink">
                     <td className="py-2 pr-4 whitespace-nowrap">{formatDateOnly(entry.validFrom, moneyLocale)}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">{formatCents(entry.priceCentsPerHour, moneyLocale)}/h</td>
-                    <td className="py-2 pr-4 whitespace-nowrap">{entry.actorEmail}</td>
+                    <td className="py-2 pr-4"><TruncatedCell value={entry.actorEmail} className="max-w-[180px]" /></td>
                     <td className="py-2 whitespace-nowrap text-mid-gray">{formatDateTime(new Date(entry.createdAt))}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
         )}
       </div>
     </div>

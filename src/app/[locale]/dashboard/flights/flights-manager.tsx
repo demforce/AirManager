@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card, CardFooter, CardHeader } from '@/components/ui/card';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 import { Dialog } from '@/components/ui/dialog';
 import { Menu } from '@/components/ui/menu';
 import { FlightDetailSheet } from './flight-detail-sheet';
@@ -260,6 +261,8 @@ export type FlightsManagerLabels = {
     placeholder: string;
     noResults: string;
   };
+  /** Story 12.5 (AC 1) — shared a11y/error strings for every `DatePicker` on this page (form's `flightDate` + the filter bar's `dateFrom`/`dateTo`). */
+  datePicker: DatePickerLabels;
 };
 
 type FlightsManagerProps = {
@@ -608,6 +611,7 @@ export function FlightsManager({
               labels={labels.form}
               correctLabels={labels.correctPanel}
               pickerLabels={labels.picker}
+              datePickerLabels={labels.datePicker}
               correctingFlight={correctingFlight}
               onExitCorrection={handleExitCorrection}
               onSuccess={handleRegistered}
@@ -767,6 +771,7 @@ export function FlightsManager({
             labels={labels.filters}
             flightTypeLabels={labels.form.flightTypes}
             pickerLabels={labels.picker}
+            datePickerLabels={labels.datePicker}
           />
         </CardHeader>
 
@@ -1029,6 +1034,7 @@ type FilterBarProps = {
   /** Reused verbatim from the registration form's labels (private/school/other) — no separate i18n keys for the same three values. */
   flightTypeLabels: FlightsManagerLabels['form']['flightTypes'];
   pickerLabels: FlightsManagerLabels['picker'];
+  datePickerLabels: FlightsManagerLabels['datePicker'];
 };
 
 /**
@@ -1043,7 +1049,18 @@ type FilterBarProps = {
  * "Applica" button, same as `CashRegister`) — "Azzera filtri" clears the
  * whole bar in one click.
  */
-function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, personOptions, labels, flightTypeLabels, pickerLabels }: FilterBarProps) {
+function FilterBar({
+  canManage,
+  filters,
+  onChange,
+  onReset,
+  aircraftOptions,
+  personOptions,
+  labels,
+  flightTypeLabels,
+  pickerLabels,
+  datePickerLabels,
+}: FilterBarProps) {
   const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[40px]');
   const hasActiveFilter = Object.values(filters).some((value) => value !== '');
 
@@ -1088,28 +1105,24 @@ function FilterBar({ canManage, filters, onChange, onReset, aircraftOptions, per
           label elsewhere on the page once option text is dynamic (e.g. a
           person's name) — the same footgun `CashRegister`'s filter bar has,
           fixed here instead of repeated. */}
-      <div className="flex flex-col text-sm text-ink">
-        <label htmlFor="flight-filter-date-from">{labels.dateFrom}</label>
-        <input
-          id="flight-filter-date-from"
-          type="date"
-          value={filters.dateFrom}
-          onChange={(event) => onChange({ dateFrom: event.target.value })}
-          className={inputClasses}
-          data-testid="flight-filter-date-from"
-        />
-      </div>
-      <div className="flex flex-col text-sm text-ink">
-        <label htmlFor="flight-filter-date-to">{labels.dateTo}</label>
-        <input
-          id="flight-filter-date-to"
-          type="date"
-          value={filters.dateTo}
-          onChange={(event) => onChange({ dateTo: event.target.value })}
-          className={inputClasses}
-          data-testid="flight-filter-date-to"
-        />
-      </div>
+      <DatePicker
+        id="flight-filter-date-from"
+        label={labels.dateFrom}
+        value={filters.dateFrom}
+        onChange={(next) => onChange({ dateFrom: next })}
+        labels={datePickerLabels}
+        testId="flight-filter-date-from"
+        className="min-w-[160px]"
+      />
+      <DatePicker
+        id="flight-filter-date-to"
+        label={labels.dateTo}
+        value={filters.dateTo}
+        onChange={(next) => onChange({ dateTo: next })}
+        labels={datePickerLabels}
+        testId="flight-filter-date-to"
+        className="min-w-[160px]"
+      />
       {canManage ? (
         <SearchCombobox
           id="flight-filter-aircraft"
@@ -1397,6 +1410,7 @@ type RegisterFlightFormProps = {
   labels: FlightsManagerLabels['form'];
   correctLabels: FlightsManagerLabels['correctPanel'];
   pickerLabels: FlightsManagerLabels['picker'];
+  datePickerLabels: FlightsManagerLabels['datePicker'];
   /** Story 5.3, AC 2 — non-null re-purposes this SAME form into the "Correggi volo" editor. */
   correctingFlight: FlightListItemDto | null;
   onExitCorrection: () => void;
@@ -1412,6 +1426,7 @@ function RegisterFlightForm({
   labels,
   correctLabels,
   pickerLabels,
+  datePickerLabels,
   correctingFlight,
   onExitCorrection,
   onSuccess,
@@ -1459,6 +1474,7 @@ function RegisterFlightForm({
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FlightFormValues>({
     resolver: zodResolver(flightFormSchema),
@@ -1718,15 +1734,16 @@ function RegisterFlightForm({
         </div>
 
         <div>
-          <label htmlFor="flight-date" className="block text-sm font-medium text-ink">
-            {labels.flightDate}
-          </label>
-          <Input
+          <DatePicker
             id="flight-date"
-            type="date"
-            aria-invalid={Boolean(errors.flightDate)}
-            className="mt-2 min-h-[44px] w-full"
-            {...register('flightDate', { onChange: (event: { target: { value: string } }) => setFlightDateValue(event.target.value) })}
+            label={labels.flightDate}
+            value={flightDateValue}
+            onChange={(next) => {
+              setFlightDateValue(next);
+              setValue('flightDate', next);
+            }}
+            labels={datePickerLabels}
+            ariaInvalid={Boolean(errors.flightDate)}
           />
           {errors.flightDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
@@ -1858,7 +1875,7 @@ function RegisterFlightForm({
             inputMode="numeric"
             autoComplete="off"
             placeholder="14:30"
-            aria-invalid={Boolean(errors.takeoffTime)}
+            aria-invalid={Boolean(errors.takeoffTime) || formError === labels.errors.FLIGHT_TIMES_INVALID}
             className="mt-2 min-h-[44px] w-full"
             {...register('takeoffTime', { onChange: (event: { target: { value: string } }) => setTakeoffTimeValue(event.target.value) })}
           />
@@ -1874,7 +1891,7 @@ function RegisterFlightForm({
             inputMode="numeric"
             autoComplete="off"
             placeholder="14:30"
-            aria-invalid={Boolean(errors.landingTime)}
+            aria-invalid={Boolean(errors.landingTime) || formError === labels.errors.FLIGHT_TIMES_INVALID}
             className="mt-2 min-h-[44px] w-full"
             {...register('landingTime', { onChange: (event: { target: { value: string } }) => setLandingTimeValue(event.target.value) })}
           />

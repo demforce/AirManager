@@ -79,7 +79,7 @@ test.describe('Person profiles (Story 2.2)', () => {
     // Activate the student profile.
     const studentSection = page.getByTestId('profile-section-student');
     await studentSection.getByRole('button', { name: 'Attiva' }).click();
-    await page.getByLabel('Data inizio corso').fill('2026-03-01');
+    await page.getByLabel('Data inizio corso').fill('01/03/2026');
     await page.getByRole('button', { name: 'Salva' }).click();
     await expect(studentSection.getByText('Attivo', { exact: true })).toBeVisible();
     await expect(studentSection.getByText('Data inizio corso: 01/03/2026')).toBeVisible();

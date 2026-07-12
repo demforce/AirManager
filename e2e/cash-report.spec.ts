@@ -46,6 +46,12 @@ function uniqueDatePair(): { day1: string; day2: string } {
   return { day1: dateAt(dayOffset), day2: dateAt(dayOffset + 1) };
 }
 
+/** Story 12.5: `DatePicker`'s text input takes DD/MM/YYYY, not ISO — `day1`/`day2` themselves stay ISO (used in URL/href assertions too). */
+function toDisplayDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 /** Creates a cash category via the API (admin session) and returns its id. */
 async function createCategory(page: Page, name: string): Promise<string> {
   const response = await page.request.post('/api/v1/cash-categories', { data: { name } });
@@ -98,7 +104,7 @@ test.describe('Financial report over the cash ledger (Story 3.5)', () => {
 
     // Narrow the range to exclude day2 (the uscita): totals stay coherent —
     // only the entrata remains, saldo becomes +100.
-    await page.getByTestId('cash-report-filter-to').fill(day1);
+    await page.getByTestId('cash-report-filter-to').fill(toDisplayDate(day1));
     await expect(page).toHaveURL(new RegExp(`to=${day1}`));
     await expect(page.getByTestId('cash-report-total-in')).toContainText(/100,00\s€/);
     await expect(page.getByTestId('cash-report-total-out')).toContainText(/0,00\s€/);

@@ -8,6 +8,7 @@ import { getSessionActor } from '@/server/auth/session';
 import { listNegativeBalances } from '@/server/services/accounts.service';
 import { listCashCategories, listCashMovements } from '@/server/services/cash.service';
 import { CashRegister, type CashRegisterFilters } from './cash-register';
+import { Pager } from '@/components/pager';
 import { Card } from '@/components/ui/card';
 
 type PageProps = {
@@ -221,6 +222,12 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
                   signIn: t('cashRegister.filters.signIn'),
                   signOut: t('cashRegister.filters.signOut'),
                 },
+                datePicker: {
+                  openCalendar: t('datePicker.openCalendar'),
+                  previousMonth: t('datePicker.previousMonth'),
+                  nextMonth: t('datePicker.nextMonth'),
+                  invalidDate: t('datePicker.invalidDate'),
+                },
                 table: {
                   date: t('cashRegister.table.date'),
                   category: t('cashRegister.table.category'),
@@ -268,33 +275,7 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
             />
           </div>
 
-          {totalPages > 1 ? (
-            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
-              <Link
-                href={pageHref(page - 1)}
-                locale={locale as AppLocale}
-                aria-disabled={page <= 1}
-                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                }`}
-              >
-                ←
-              </Link>
-              <span>
-                {page} / {totalPages}
-              </span>
-              <Link
-                href={pageHref(page + 1)}
-                locale={locale as AppLocale}
-                aria-disabled={page >= totalPages}
-                className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                }`}
-              >
-                →
-              </Link>
-            </nav>
-          ) : null}
+          <Pager page={page} totalPages={totalPages} hrefBuilder={pageHref} locale={locale as AppLocale} />
         </section>
       </div>
     </main>

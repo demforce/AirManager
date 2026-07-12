@@ -102,6 +102,12 @@ export default async function FinancialReportPage({ params, searchParams }: Page
                 custom: t('filters.custom'),
                 from: t('filters.from'),
                 to: t('filters.to'),
+                datePicker: {
+                  openCalendar: t('datePicker.openCalendar'),
+                  previousMonth: t('datePicker.previousMonth'),
+                  nextMonth: t('datePicker.nextMonth'),
+                  invalidDate: t('datePicker.invalidDate'),
+                },
               }}
             />
           </div>

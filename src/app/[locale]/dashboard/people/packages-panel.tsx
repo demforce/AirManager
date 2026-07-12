@@ -15,6 +15,7 @@ import { useAccountRefresh } from './account-refresh-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 
 export type PackagesPanelLabels = {
   heading: string;
@@ -44,6 +45,7 @@ export type PackagesPanelLabels = {
     requiredField: string;
     inactiveTypeError: string;
     genericError: string;
+    datePicker: DatePickerLabels;
   };
 };
 
@@ -243,6 +245,7 @@ type SellPackageFormProps = {
 function SellPackageForm({ personId, labels, onCancel, onSuccess }: SellPackageFormProps) {
   const [types, setTypes] = useState<PackageTypeItemDto[] | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [effectiveDateValue, setEffectiveDateValue] = useState(todayDateOnly());
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
 
   useEffect(() => {
@@ -266,6 +269,7 @@ function SellPackageForm({ personId, labels, onCancel, onSuccess }: SellPackageF
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<SellPackageFormValues>({
     resolver: zodResolver(sellPackageFormSchema),
@@ -351,15 +355,16 @@ function SellPackageForm({ personId, labels, onCancel, onSuccess }: SellPackageF
           </select>
         </div>
         <div>
-          <label htmlFor="sell-package-effective-date" className="block text-sm font-medium text-ink">
-            {labels.effectiveDate}
-          </label>
-          <Input
+          <DatePicker
             id="sell-package-effective-date"
-            type="date"
-            aria-invalid={Boolean(errors.effectiveDate)}
-            className="mt-2 min-h-[44px] w-full"
-            {...register('effectiveDate')}
+            label={labels.effectiveDate}
+            value={effectiveDateValue}
+            onChange={(next) => {
+              setEffectiveDateValue(next);
+              setValue('effectiveDate', next);
+            }}
+            labels={labels.datePicker}
+            ariaInvalid={Boolean(errors.effectiveDate)}
           />
           {errors.effectiveDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>

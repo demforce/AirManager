@@ -1,10 +1,11 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { Link, redirect } from '@/i18n/navigation';
+import { redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { buildExportHref } from '@/lib/export-href';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listPeople } from '@/server/services/people.service';
+import { Pager } from '@/components/pager';
 import { PeopleManager } from './people-manager';
 
 type PageProps = {
@@ -157,6 +158,12 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
                   title: t('profilesPanel.instructor.title'),
                   ratings: t('profilesPanel.instructor.ratings'),
                 },
+                datePicker: {
+                  openCalendar: t('profilesPanel.datePicker.openCalendar'),
+                  previousMonth: t('profilesPanel.datePicker.previousMonth'),
+                  nextMonth: t('profilesPanel.datePicker.nextMonth'),
+                  invalidDate: t('profilesPanel.datePicker.invalidDate'),
+                },
               },
               form: {
                 createTitle: t('form.createTitle'),
@@ -188,33 +195,7 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
           />
         </div>
 
-        {totalPages > 1 ? (
-          <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
-            <Link
-              href={pageHref(page - 1)}
-              locale={locale as AppLocale}
-              aria-disabled={page <= 1}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              ←
-            </Link>
-            <span>
-              {page} / {totalPages}
-            </span>
-            <Link
-              href={pageHref(page + 1)}
-              locale={locale as AppLocale}
-              aria-disabled={page >= totalPages}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              →
-            </Link>
-          </nav>
-        ) : null}
+        <Pager page={page} totalPages={totalPages} hrefBuilder={pageHref} locale={locale as AppLocale} />
       </div>
     </main>
   );

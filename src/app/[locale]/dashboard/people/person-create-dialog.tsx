@@ -10,6 +10,7 @@ import { Link } from '@/i18n/navigation';
 import { Button } from '@/components/ui/button';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Dialog } from '@/components/ui/dialog';
 
 type PersonRole = '' | 'pilot' | 'student' | 'instructor';
@@ -234,17 +235,14 @@ export function PersonCreateDialog({ open, onClose, labels, onCreated }: PersonC
         ) : null}
 
         {role === 'student' ? (
-          <div>
-            <label htmlFor="create-courseStartDate" className="block text-sm font-medium text-ink">
-              {labels.profilesPanel.student.courseStartDate}
-            </label>
-            <Input
+          <div className="max-w-xs">
+            <DatePicker
               id="create-courseStartDate"
-              type="date"
-              className="mt-2 w-full max-w-xs"
-              aria-invalid={Boolean(profileFieldErrors.courseStartDate)}
+              label={labels.profilesPanel.student.courseStartDate}
               value={profileFields.courseStartDate}
-              onChange={(event) => setProfileFields((current) => ({ ...current, courseStartDate: event.target.value }))}
+              onChange={(next) => setProfileFields((current) => ({ ...current, courseStartDate: next }))}
+              labels={labels.profilesPanel.datePicker}
+              ariaInvalid={Boolean(profileFieldErrors.courseStartDate)}
             />
             {profileFieldErrors.courseStartDate ? <p className="mt-1 text-xs text-ember">{labels.form.requiredField}</p> : null}
           </div>

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 
 export type CashMovementRow = {
   id: string;
@@ -51,6 +52,8 @@ export type CashRegisterFilters = {
 export type CashRegisterLabels = {
   newMovement: string;
   filters: { from: string; to: string; category: string; sign: string; allCategories: string; allSigns: string; signIn: string; signOut: string };
+  /** Story 12.5 (AC 1) — shared `DatePicker` a11y/error strings (filter bar's `from`/`to` AND the new-movement form's `effectiveDate`). */
+  datePicker: DatePickerLabels;
   table: {
     date: string;
     category: string;
@@ -273,28 +276,24 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
             file's `NewMovementForm`/`ReverseForm` below (`cash-category`
             etc.); the layout classes move to a wrapping `<div>` so the
             visual result stays identical. */}
-        <div className="flex flex-col gap-2 text-sm text-ink">
-          <label htmlFor="cash-filter-from">{labels.filters.from}</label>
-          <input
-            id="cash-filter-from"
-            type="date"
-            value={filters.from}
-            onChange={(event) => handleFilterChange({ from: event.target.value })}
-            className={selectClasses}
-            data-testid="cash-filter-from"
-          />
-        </div>
-        <div className="flex flex-col gap-2 text-sm text-ink">
-          <label htmlFor="cash-filter-to">{labels.filters.to}</label>
-          <input
-            id="cash-filter-to"
-            type="date"
-            value={filters.to}
-            onChange={(event) => handleFilterChange({ to: event.target.value })}
-            className={selectClasses}
-            data-testid="cash-filter-to"
-          />
-        </div>
+        <DatePicker
+          id="cash-filter-from"
+          label={labels.filters.from}
+          value={filters.from}
+          onChange={(next) => handleFilterChange({ from: next })}
+          labels={labels.datePicker}
+          testId="cash-filter-from"
+          className="min-w-[160px]"
+        />
+        <DatePicker
+          id="cash-filter-to"
+          label={labels.filters.to}
+          value={filters.to}
+          onChange={(next) => handleFilterChange({ to: next })}
+          labels={labels.datePicker}
+          testId="cash-filter-to"
+          className="min-w-[160px]"
+        />
         <div className="flex flex-col gap-2 text-sm text-ink">
           <label htmlFor="cash-filter-category">{labels.filters.category}</label>
           <select
@@ -335,6 +334,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
             // automatic flow — the service rejects them anyway (review 3.4 F1).
             categories={categories.filter((category) => category.isActive && !category.isSystem)}
             labels={labels.form}
+            datePickerLabels={labels.datePicker}
             onCancel={() => setPanelOpen(false)}
             onSuccess={() => handleSuccess(labels.form.success)}
           />
@@ -401,17 +401,20 @@ type NewMovementFormProps = {
   /** Active categories only — a deactivated category must not receive new movements (AC 1/2). */
   categories: CashCategoryOption[];
   labels: CashRegisterLabels['form'];
+  datePickerLabels: CashRegisterLabels['datePicker'];
   onCancel: () => void;
   onSuccess: () => void;
 };
 
-function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovementFormProps) {
+function NewMovementForm({ categories, labels, datePickerLabels, onCancel, onSuccess }: NewMovementFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const [effectiveDateValue, setEffectiveDateValue] = useState(todayDateOnly());
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<NewMovementFormValues>({
     resolver: zodResolver(newMovementFormSchema),
@@ -503,15 +506,16 @@ function NewMovementForm({ categories, labels, onCancel, onSuccess }: NewMovemen
           {errors.amount ? <p className="mt-1 text-xs text-ember">{labels.invalidAmount}</p> : null}
         </div>
         <div>
-          <label htmlFor="cash-effective-date" className="block text-sm font-medium text-ink">
-            {labels.effectiveDate}
-          </label>
-          <input
+          <DatePicker
             id="cash-effective-date"
-            type="date"
-            aria-invalid={Boolean(errors.effectiveDate)}
-            className={inputClasses}
-            {...register('effectiveDate')}
+            label={labels.effectiveDate}
+            value={effectiveDateValue}
+            onChange={(next) => {
+              setEffectiveDateValue(next);
+              setValue('effectiveDate', next);
+            }}
+            labels={datePickerLabels}
+            ariaInvalid={Boolean(errors.effectiveDate)}
           />
           {errors.effectiveDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>

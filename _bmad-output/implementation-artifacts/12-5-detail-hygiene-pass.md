@@ -4,7 +4,7 @@ baseline_commit: 3285505
 
 # Story 12.5: Igiene dei dettagli su tutte le superfici
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -43,12 +43,12 @@ so that nessuna schermata tradisca il nuovo sistema (FR-51; epics.md «Epic 12»
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1)** — `DatePicker` + variante datetime in `src/components/ui/` (+ unit test della logica pura estraibile: parsing/format/validazione DD/MM/YYYY↔ISO, composizione datetime).
-- [ ] **T2 (AC 2, 7)** — Adozione sui 13 date-form RHF + 12 filtri plain (wire invariato); conversione fill e2e correlati (helper prima).
-- [ ] **T3 (AC 2, 7)** — I 6 `datetime-local` → coppia data+ora (wire verificato PRIMA e replicato); e2e bookings/ppr-public convertiti; nuovi e2e picker (3 scenari AC 7).
-- [ ] **T4 (AC 3)** — Card ovunque (4 faux + 7 nude), row height fissa + ellipsis in `data-table.tsx` e sweep tabelle inline.
-- [ ] **T5 (AC 4, 5, 6)** — `Pager` condiviso sui ~9 nav; 2 coppie export → Menu; neutri warm → token; 123-N1 aria-invalid.
-- [ ] **T6 (AC 7, 8)** — `npm run gates`; e2e mirati: bookings, ppr-public, ppr-register, expiry-registration, expiry-dashboard, cash-register, cash-report, aircraft-rates, instructor-rates, person-profiles, school, flights, flight-log, flight-reversal, package-consumption, exports + nuovi; verifica visiva MCP (4 screenshot AC 8) + walk-through keyboard-only del DatePicker; Dev Agent Record + File List; sprint-status `12-5` → `review`.
+- [x] **T1 (AC 1)** — `DatePicker` + variante datetime in `src/components/ui/` (+ unit test della logica pura estraibile: parsing/format/validazione DD/MM/YYYY↔ISO, composizione datetime).
+- [x] **T2 (AC 2, 7)** — Adozione sui 13 date-form RHF + 12 filtri plain (wire invariato); conversione fill e2e correlati (helper prima).
+- [x] **T3 (AC 2, 7)** — I 6 `datetime-local` → coppia data+ora (wire verificato PRIMA e replicato); e2e bookings/ppr-public convertiti; nuovi e2e picker (3 scenari AC 7).
+- [x] **T4 (AC 3)** — Card ovunque (4 faux + 7 nude), row height fissa + ellipsis in `data-table.tsx` e sweep tabelle inline.
+- [x] **T5 (AC 4, 5, 6)** — `Pager` condiviso sui ~9 nav; 2 coppie export → Menu; neutri warm → token; 123-N1 aria-invalid.
+- [x] **T6 (AC 7, 8)** — `npm run gates`; e2e mirati: bookings, ppr-public, ppr-register, expiry-registration, expiry-dashboard, cash-register, cash-report, aircraft-rates, instructor-rates, person-profiles, school, flights, flight-log, flight-reversal, package-consumption, exports + nuovi; verifica visiva MCP (4 screenshot AC 8) + walk-through keyboard-only del DatePicker; Dev Agent Record + File List; sprint-status `12-5` → `review`.
 
 ## Dev Notes
 
@@ -72,8 +72,98 @@ so that nessuna schermata tradisca il nuovo sistema (FR-51; epics.md «Epic 12»
 
 ### Agent Model Used
 
+Claude Sonnet 5 (dev subagent, xhigh), via `bmad-dev-story`.
+
 ### Debug Log References
+
+- `npm run gates` (final, post-e2e-sweep): PASS lint (16s), PASS typecheck (3s), PASS test (7s, 1278/1278), PASS build (29s).
+- Targeted e2e (T6 list, run per-file/small-group — the reliable signal on this long-lived, never-reset dev DB; see notesForReview for the mega-batch caveat): date-picker.spec.ts (3/3), bookings.spec.ts, ppr-public.spec.ts (5/5), ppr-register.spec.ts (9/9), expiry-registration.spec.ts (2/2), expiry-dashboard.spec.ts (4/4), cash-register.spec.ts (5/5), cash-report.spec.ts (3/3), aircraft-rates.spec.ts (2 fail — pre-existing DB-volume pagination, see notes), instructor-rates.spec.ts (4/4), person-profiles.spec.ts (5/5), school.spec.ts (18/18), flights.spec.ts (13/13), flight-log.spec.ts (7/7), flight-reversal.spec.ts (3/3), package-consumption.spec.ts (1/1), exports.spec.ts (8/8), pdf-exports.spec.ts (8/8) — all green except the 2 documented aircraft-rates failures.
+- Playwright MCP live verification: DatePicker popover open in a form (bookings "Nuova prenotazione") and in a filter (finance "Dal"/"Al"), an ex-nude table in Card with ellipsis (expiries/types — also shows the Badge migration), the restyled Pager (aircraft list, "1 / 11"), the export Menu on scadenze ("Esporta" -> "Esporta Excel"/"Esporta PDF"); keyboard-only walkthrough (Tab to field, Tab to "Apri calendario", Enter to open, ArrowRight/ArrowDown to move the roving-tabindex focus day-by-day/week-by-week, Enter to commit and close) verified live against the flight-log "Dal" filter — confirmed the grid's roving tabindex, the commit-on-Enter, and the popover closing back to the field (NFR-8).
+- Live-diagnosed and fixed a DatePicker popover CSS-clipping regression: a nude/faux-card table wrapped in `overflow-x-auto` implicitly computes `overflow-y: auto` (CSS spec), clipping an `absolute`-positioned popover that extends past the ancestor's flow height — reproduced live inside `ExpiryRow`'s inline edit form, fixed by switching `DatePicker`'s popover to `position: fixed` with coordinates measured via `getBoundingClientRect()` at open time, plus close-on-scroll/resize (fixed positioning doesn't auto-track scroll); re-verified live (before/after screenshots, not committed).
 
 ### Completion Notes List
 
+- All 8 ACs implemented: `DatePicker`/`DateTimeField` primitives (`src/components/ui/date-picker.tsx`, `date-time-field.tsx`, pure logic in `src/lib/date-input.ts` + 18 unit tests) adopted on all 33 recon-listed inputs (13 RHF date-form, 12 plain filters, 6 `datetime-local` pairs, wire byte-identical — verified per-field before touching); all 11 tables (4 faux-card + 7 nude) now live in `Card`, `data-table.tsx` gained fixed row height + a `TruncatedCell` helper, applied across every inline table too; shared `Pager` component absorbed all ~9 server-side pagers (adopted on the 9 recon-listed pages plus `users/page.tsx`, an identical pre-existing pattern not in the recon list — same component, zero new semantics, declared as a deviation below); the 2 residual export pairs (account-statement, expiries) collapsed into the `Menu` overflow pattern; the 6 residual warm-token occurrences migrated to DESIGN.md tokens; 123-N1 `aria-invalid` fix applied to both flight-time inputs.
+- Wire discipline (AC 2, the story's central constraint): for each of the 6 `datetime-local` fields, read the exact pre-existing composition/submit code first and replicated the wire string byte-for-byte (`YYYY-MM-DDTHH:MM`, no seconds) in `composeDateTimeLocalValue`; for every `z.iso.date()` field the DD/MM/YYYY<->ISO conversion lives only in `date-input.ts`/the component — zero Zod schema or API changes anywhere in the diff.
+- e2e conversion (~50 `.fill()` call sites, 14 spec files + 1 new): converted helper-first then literals, per the story's own instruction, reusing each file's existing ISO->display helper where one already existed. Final sweep grep (`\.fill\([^)]*[0-9]{4}-[0-9]{2}-[0-9]{2}`) across all of `e2e/` returns only the 4 already-wrapped `toDisplayDate(...)` calls the story itself flags as legitimate.
+- Bug found and fixed during T6 verification (recon gap, not a deviation from the AC): `cash-register.spec.ts`'s `submitMovement` helper filled `#cash-effective-date` (converted to `DatePicker` by this same story) with a raw ISO literal — the recon's closed e2e-rewrite list (Dev Notes line 40) didn't flag this specific call site. A `DatePicker` silently rejects unparseable text (sets its own per-field invalid state, never calls `onChange`), so the field silently kept its default (today), corrupting 2 pre-existing AC 2 assertions. Fixed by converting the literal via a local `isoToDisplay()` helper, matching the pattern used everywhere else.
+- Environmental e2e noise on this specific dev DB, NOT caused by this story (each confirmed via a clean `git diff` on the affected file — only date-format conversions, no logic/data changes — and by reproducing/eliminating the failure in isolation): (1) 2 `aircraft-rates.spec.ts` tests time out finding a newly-created aircraft's row because this long-lived, never-reset dev DB has accumulated 200+ aircraft from this session's own heavy e2e usage against a 20-row page size (pure pagination/volume artifact, pre-dates and is unrelated to this story's changes); (2) a batch of 18 spec files run concurrently together produces additional login-rate-limit/navigation-race failures (`bookings.spec.ts:489`, `flights.spec.ts:337`, `ppr-register.spec.ts:278`) that all pass cleanly when run individually or in small groups — a shared-`next-dev`-server-under-load artifact, not a regression (confirmed via clean git diff on every touched file in the failing tests' call path). One further pollution row (a stray `Expiry` "Licenza" record left on the seed pilot by an unrelated earlier spec run, which does NOT reuse "Licenza" per its own documented Story 7.4 lesson) was deleted directly via SQL after confirming it was not `bookings.spec.ts`'s own doing, to unblock `date-picker.spec.ts`'s AC 7 booking-submission test; no other DB surgery was performed (per instruction, `db:reset` was not re-run).
+
 ### File List
+
+**New:**
+- `src/components/ui/date-picker.tsx`
+- `src/components/ui/date-time-field.tsx`
+- `src/components/pager.tsx`
+- `src/lib/date-input.ts`
+- `src/lib/date-input.test.ts`
+- `e2e/date-picker.spec.ts`
+
+**Modified — primitives:**
+- `src/components/data-table.tsx`
+
+**Modified — app pages/components (DatePicker/DateTimeField adoption, Card/ellipsis sweep, Pager adoption, Menu export collapse, warm-token migration, 123-N1):**
+- `src/app/[locale]/dashboard/aircraft/aircraft-manager.tsx`
+- `src/app/[locale]/dashboard/aircraft/page.tsx`
+- `src/app/[locale]/dashboard/bookings/booking-calendar.tsx`
+- `src/app/[locale]/dashboard/bookings/bookings-list.tsx`
+- `src/app/[locale]/dashboard/bookings/new-booking-form.tsx`
+- `src/app/[locale]/dashboard/bookings/page.tsx`
+- `src/app/[locale]/dashboard/expiries/my-expiries.tsx`
+- `src/app/[locale]/dashboard/expiries/page.tsx`
+- `src/app/[locale]/dashboard/expiries/proposals-queue.tsx`
+- `src/app/[locale]/dashboard/expiries/types/types-manager.tsx`
+- `src/app/[locale]/dashboard/finance/cash-register.tsx`
+- `src/app/[locale]/dashboard/finance/categories/categories-manager.tsx`
+- `src/app/[locale]/dashboard/finance/packages/packages-manager.tsx`
+- `src/app/[locale]/dashboard/finance/page.tsx`
+- `src/app/[locale]/dashboard/finance/report/page.tsx`
+- `src/app/[locale]/dashboard/finance/report/report-filters.tsx`
+- `src/app/[locale]/dashboard/flights/flights-manager.tsx`
+- `src/app/[locale]/dashboard/flights/page.tsx`
+- `src/app/[locale]/dashboard/people/[id]/account/account-statement-table.tsx`
+- `src/app/[locale]/dashboard/people/[id]/account/page.tsx`
+- `src/app/[locale]/dashboard/people/[id]/page.tsx`
+- `src/app/[locale]/dashboard/people/account-panel.tsx`
+- `src/app/[locale]/dashboard/people/assigned-instructors-panel.tsx`
+- `src/app/[locale]/dashboard/people/expiries-panel.tsx`
+- `src/app/[locale]/dashboard/people/instructor-rates-panel.tsx`
+- `src/app/[locale]/dashboard/people/packages-panel.tsx`
+- `src/app/[locale]/dashboard/people/page.tsx`
+- `src/app/[locale]/dashboard/people/people-manager.tsx`
+- `src/app/[locale]/dashboard/people/person-create-dialog.tsx`
+- `src/app/[locale]/dashboard/people/profiles-panel.tsx`
+- `src/app/[locale]/dashboard/ppr/page.tsx`
+- `src/app/[locale]/dashboard/ppr/ppr-queue.tsx`
+- `src/app/[locale]/dashboard/ppr/register/page.tsx`
+- `src/app/[locale]/dashboard/ppr/register/ppr-register.tsx`
+- `src/app/[locale]/dashboard/school/[id]/page.tsx`
+- `src/app/[locale]/dashboard/school/page.tsx`
+- `src/app/[locale]/dashboard/school/summary-filters.tsx`
+- `src/app/[locale]/dashboard/school/training-notes-journal.tsx`
+- `src/app/[locale]/dashboard/users/page.tsx` (deviation — see notesForReview)
+- `src/app/[locale]/ppr/page.tsx`
+- `src/app/[locale]/ppr/ppr-form.tsx`
+
+**Modified — i18n:**
+- `messages/it.json`
+- `messages/en.json`
+
+**Modified — e2e (fill-format conversion, T6):**
+- `e2e/aircraft-rates.spec.ts`
+- `e2e/bookings.spec.ts`
+- `e2e/cash-register.spec.ts`
+- `e2e/cash-report.spec.ts`
+- `e2e/expiry-registration.spec.ts`
+- `e2e/flight-log.spec.ts`
+- `e2e/flight-reversal.spec.ts`
+- `e2e/flights.spec.ts`
+- `e2e/instructor-rates.spec.ts`
+- `e2e/package-consumption.spec.ts`
+- `e2e/person-profiles.spec.ts`
+- `e2e/ppr-public.spec.ts`
+- `e2e/ppr-register.spec.ts`
+- `e2e/school.spec.ts`
+
+**Modified — tracking:**
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (12-5: in-progress -> review)

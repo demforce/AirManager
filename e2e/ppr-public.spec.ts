@@ -74,6 +74,14 @@ function futureDatetimeLocal(hoursFromNow: number): string {
   return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
 }
 
+/** Story 12.5: the single `datetime-local` ETA input became a `DateTimeField` pair — splits `futureDatetimeLocal`'s `YYYY-MM-DDTHH:mm` into the `DatePicker` DD/MM/YYYY text + the derived "Ora ETA"/"ETA time" field. */
+async function fillEta(page: Page, dateLabel: string, timeLabel: string, value: string): Promise<void> {
+  const [datePart, time] = value.split('T');
+  const [y, m, d] = datePart.split('-');
+  await page.getByLabel(dateLabel, { exact: true }).fill(`${d}/${m}/${y}`);
+  await page.getByLabel(timeLabel, { exact: true }).fill(time);
+}
+
 /** ISO 8601 UTC (AD-8 wire format) for `hoursFromNow` from now, for the direct-API tests. */
 function futureIso(hoursFromNow: number): string {
   return new Date(Date.now() + hoursFromNow * 3_600_000).toISOString();
@@ -90,6 +98,7 @@ const LABELS = {
     origin: 'Provenienza',
     destination: 'Destinazione',
     eta: 'ETA (arrivo previsto)',
+    etaTime: 'Ora ETA',
     personsOnBoard: 'Persone a bordo',
     submit: 'Invia richiesta',
     receiptSubject: 'Richiesta PPR ricevuta',
@@ -104,6 +113,7 @@ const LABELS = {
     origin: 'Origin',
     destination: 'Destination',
     eta: 'ETA (estimated arrival)',
+    etaTime: 'ETA time',
     personsOnBoard: 'Persons on board',
     submit: 'Send request',
     receiptSubject: 'PPR request received',
@@ -136,7 +146,7 @@ async function fillPprForm(page: Page, locale: PprLocale, data: PprFormData): Pr
   await page.getByLabel(labels.aircraftType, { exact: true }).fill(data.aircraftType);
   await page.getByLabel(labels.origin, { exact: true }).fill(data.origin);
   await page.getByLabel(labels.destination, { exact: true }).fill(data.destination);
-  await page.getByLabel(labels.eta, { exact: true }).fill(futureDatetimeLocal(data.etaHoursFromNow));
+  await fillEta(page, labels.eta, labels.etaTime, futureDatetimeLocal(data.etaHoursFromNow));
   await page.getByLabel(labels.personsOnBoard, { exact: true }).fill(data.personsOnBoard);
 }
 

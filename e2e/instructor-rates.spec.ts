@@ -137,7 +137,7 @@ test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4
     // First rate: 40 €/h from a past date.
     await panel.getByRole('button', { name: 'Nuova tariffa' }).click();
     await page.getByLabel('Prezzo (€/h)').fill('40,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
+    await page.getByLabel('In vigore da').fill(ddmmyyyy(PAST_DATE));
     await panel.getByRole('button', { name: 'Aggiungi tariffa' }).click();
     await expect(panel.getByTestId('instructor-rates-feedback')).toBeVisible();
     await expect(panel.getByTestId('instructor-rates-current')).toContainText(/40,00\s€/);
@@ -145,7 +145,7 @@ test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4
     // Second rate: 45 €/h from today.
     await panel.getByRole('button', { name: 'Nuova tariffa' }).click();
     await page.getByLabel('Prezzo (€/h)').fill('45,00');
-    await page.getByLabel('In vigore da').fill(today);
+    await page.getByLabel('In vigore da').fill(ddmmyyyy(today));
     await panel.getByRole('button', { name: 'Aggiungi tariffa' }).click();
     await expect(panel.getByTestId('instructor-rates-feedback')).toBeVisible();
 
@@ -170,7 +170,7 @@ test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4
 
     await panel.getByRole('button', { name: 'Nuova tariffa' }).click();
     await page.getByLabel('Prezzo (€/h)').fill('40,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
+    await page.getByLabel('In vigore da').fill(ddmmyyyy(PAST_DATE));
     await panel.getByRole('button', { name: 'Aggiungi tariffa' }).click();
     await expect(panel.getByTestId('instructor-rates-feedback')).toBeVisible();
     await expect(panel.getByTestId('instructor-rates-current')).toContainText(/40,00\s€/);
@@ -178,7 +178,7 @@ test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4
     // Re-insert a rate with the SAME validFrom (AC 2 — 409).
     await panel.getByRole('button', { name: 'Nuova tariffa' }).click();
     await page.getByLabel('Prezzo (€/h)').fill('999,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
+    await page.getByLabel('In vigore da').fill(ddmmyyyy(PAST_DATE));
     await panel.getByRole('button', { name: 'Aggiungi tariffa' }).click();
 
     await expect(panel.getByTestId('instructor-rates-form-error')).toContainText(

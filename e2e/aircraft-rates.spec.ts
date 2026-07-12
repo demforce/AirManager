@@ -129,7 +129,7 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2)', () => {
 
     // First rate: 150 €/h from a past date.
     await page.getByLabel('Prezzo (€/h)').fill('150,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
+    await page.getByLabel('In vigore da').fill(ddmmyyyy(PAST_DATE));
     await page.getByRole('button', { name: 'Aggiungi tariffa' }).click();
     await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
 
@@ -141,7 +141,7 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2)', () => {
     // Second rate: 160 €/h from today — reopen the panel.
     await rowAfterFirstRate.getByRole('button', { name: 'Tariffe' }).click();
     await page.getByLabel('Prezzo (€/h)').fill('160,00');
-    await page.getByLabel('In vigore da').fill(today);
+    await page.getByLabel('In vigore da').fill(ddmmyyyy(today));
     await page.getByRole('button', { name: 'Aggiungi tariffa' }).click();
     await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
 
@@ -169,7 +169,7 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2)', () => {
     await row.getByRole('button', { name: 'Tariffe' }).click();
 
     await page.getByLabel('Prezzo (€/h)').fill('150,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
+    await page.getByLabel('In vigore da').fill(ddmmyyyy(PAST_DATE));
     await page.getByRole('button', { name: 'Aggiungi tariffa' }).click();
     await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
 
@@ -182,7 +182,7 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2)', () => {
     // Re-open and re-insert a rate with the SAME validFrom (AC 2 — 409).
     await rowAfterFirstRate.getByRole('button', { name: 'Tariffe' }).click();
     await page.getByLabel('Prezzo (€/h)').fill('999,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
+    await page.getByLabel('In vigore da').fill(ddmmyyyy(PAST_DATE));
     await page.getByRole('button', { name: 'Aggiungi tariffa' }).click();
 
     await expect(page.getByTestId('aircraft-form-error')).toContainText('Esiste già una tariffa con questa data di decorrenza.');

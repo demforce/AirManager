@@ -5,7 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { DataTable } from '@/components/data-table';
+import { DataTable, TruncatedCell } from '@/components/data-table';
 import { formatCents, parseCents } from '@/lib/money';
 import { formatMinutes, parseMinutes } from '@/lib/time';
 import { useRouter } from '@/i18n/navigation';
@@ -167,7 +167,7 @@ export function PackagesManager({ packageTypes, activeAircraft, canManage, money
     {
       id: 'name',
       header: labels.table.name,
-      cell: ({ row }) => <span className="font-medium text-ink">{row.original.name}</span>,
+      cell: ({ row }) => <TruncatedCell value={row.original.name} className="max-w-[220px] font-medium text-ink" />,
     },
     {
       id: 'includedHours',

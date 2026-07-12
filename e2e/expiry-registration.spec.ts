@@ -41,10 +41,9 @@ function addDaysUtc(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** Display counterpart of {@link addDaysUtc} — `DD/MM/YYYY`, the registry's own `formatDateOnly` presentation (story 11.3) — for `toContainText` assertions against rendered rows. */
+/** Display counterpart of {@link addDaysUtc} — `DD/MM/YYYY`, the registry's own `formatDateOnly` presentation (story 11.3; also `DatePicker`'s `.fill()` format, story 12.5) — for `toContainText` assertions against rendered rows AND for `.fill()` calls against date fields. */
 function addDaysDisplay(days: number): string {
-  const [y, m, d] = addDaysUtc(days).split('-');
-  return `${d}/${m}/${y}`;
+  return isoToDisplay(addDaysUtc(days));
 }
 
 type MailpitMessageSummary = { ID: string; Subject: string };
@@ -132,6 +131,12 @@ async function getSeedPilotPersonId(page: Page): Promise<string> {
   return match.id;
 }
 
+/** ISO `YYYY-MM-DD` -> `DD/MM/YYYY`, `DatePicker`'s text-input format (story 12.5). */
+function isoToDisplay(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 /** Drives the "Registra scadenza" form on the scheda persona through the actual UI (AC 1). */
 async function registerExpiryViaUi(
   page: Page,
@@ -140,8 +145,8 @@ async function registerExpiryViaUi(
   await page.getByRole('button', { name: 'Registra scadenza' }).click();
   const form = page.getByTestId('register-expiry-form');
   await form.getByLabel('Tipo di scadenza').selectOption(values.typeName);
-  await form.getByLabel('Data rilascio').fill(values.issuedAt);
-  await form.getByLabel('Data scadenza').fill(values.expiresAt);
+  await form.getByLabel('Data rilascio').fill(isoToDisplay(values.issuedAt));
+  await form.getByLabel('Data scadenza').fill(isoToDisplay(values.expiresAt));
   await form.getByRole('button', { name: 'Registra' }).click();
 }
 
@@ -258,7 +263,7 @@ test.describe('Person expiries with computed status and proposal validation queu
     await myRow.getByRole('button', { name: 'Proponi aggiornamento' }).click();
 
     const proposeForm = page.getByTestId('propose-expiry-form');
-    await proposeForm.getByLabel('Data scadenza').fill(addDaysUtc(500));
+    await proposeForm.getByLabel('Data scadenza').fill(addDaysDisplay(500));
     await proposeForm.getByRole('button', { name: 'Invia proposta' }).click();
 
     await expect(page.getByTestId('my-expiries-feedback')).toBeVisible();
@@ -299,7 +304,7 @@ test.describe('Person expiries with computed status and proposal validation queu
     const myRowAgain = page.getByTestId('my-expiry-row').filter({ hasText: expiryType.name });
     await myRowAgain.getByRole('button', { name: 'Proponi aggiornamento' }).click();
     const secondProposeForm = page.getByTestId('propose-expiry-form');
-    await secondProposeForm.getByLabel('Data scadenza').fill(addDaysUtc(900));
+    await secondProposeForm.getByLabel('Data scadenza').fill(addDaysDisplay(900));
     await secondProposeForm.getByRole('button', { name: 'Invia proposta' }).click();
     await expect(page.getByTestId('my-expiry-row').filter({ hasText: expiryType.name }).getByTestId('my-expiry-pending-badge')).toBeVisible();
 

@@ -6,6 +6,7 @@ import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getPprLandingFeeDefaultCents, getPprOperatingInstructions } from '@/server/services/app-settings.service';
 import { listPprRequests, type PprRequestListItem } from '@/server/services/ppr.service';
+import { Pager } from '@/components/pager';
 import { PprQueue } from './ppr-queue';
 
 type PageProps = {
@@ -191,33 +192,14 @@ export default async function PprQueuePage({ params, searchParams }: PageProps) 
           />
         </div>
 
-        {totalPages > 1 ? (
-          <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray" data-testid="ppr-queue-pagination">
-            <Link
-              href={{ pathname: '/dashboard/ppr', query: { page: page - 1 } }}
-              locale={locale as AppLocale}
-              aria-disabled={page <= 1}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              &larr;
-            </Link>
-            <span data-testid="ppr-queue-pagination-status">
-              {page} / {totalPages}
-            </span>
-            <Link
-              href={{ pathname: '/dashboard/ppr', query: { page: page + 1 } }}
-              locale={locale as AppLocale}
-              aria-disabled={page >= totalPages}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              &rarr;
-            </Link>
-          </nav>
-        ) : null}
+        <Pager
+          page={page}
+          totalPages={totalPages}
+          hrefBuilder={(targetPage) => ({ pathname: '/dashboard/ppr', query: { page: targetPage } })}
+          locale={locale as AppLocale}
+          navTestId="ppr-queue-pagination"
+          statusTestId="ppr-queue-pagination-status"
+        />
       </div>
     </main>
   );

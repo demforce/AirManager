@@ -8,6 +8,7 @@ import { useRouter } from '@/i18n/navigation';
 import { Button } from '@/components/ui/button';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
+import { DateTimeField, type DateTimeFieldLabels } from '@/components/ui/date-time-field';
 
 export type NewBookingFormMode = 'staff' | 'instructor' | 'pilot';
 
@@ -39,10 +40,15 @@ export type NewBookingFormLabels = {
   noStudentAvailable: string;
   startsAt: string;
   endsAt: string;
+  /** Story 12.5 (AC 1) — derived label for the datetime variant's time half ("Ora inizio"), distinct from `startsAt` which stays on the DATE half. */
+  startsAtTime: string;
+  endsAtTime: string;
   notes: string;
   submit: string;
   requiredField: string;
   invalidRange: string;
+  /** Story 12.5 (AC 1) — shared `DateTimeField` a11y/error strings for `startsAt`/`endsAt`. */
+  dateTimeField: DateTimeFieldLabels;
   errors: {
     /** `{reason}` placeholder, client-filled. */
     AIRCRAFT_OUT_OF_SERVICE: string;
@@ -206,6 +212,8 @@ export function NewBookingForm({
   const [forceReasonTouched, setForceReasonTouched] = useState(false);
   const [forceSubmitting, setForceSubmitting] = useState(false);
   const [forceError, setForceError] = useState<string | null>(null);
+  const [startsAtValue, setStartsAtValue] = useState('');
+  const [endsAtValue, setEndsAtValue] = useState('');
 
   const resolver = useMemo(() => zodResolver(buildFormSchema(mode, bookingTarget)), [mode, bookingTarget]);
 
@@ -213,6 +221,7 @@ export function NewBookingForm({
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver, defaultValues: DEFAULT_VALUES });
 
@@ -300,6 +309,8 @@ export function NewBookingForm({
 
     const created = (await response.json()) as CreateBookingResponseBody;
     reset(DEFAULT_VALUES);
+    setStartsAtValue('');
+    setEndsAtValue('');
     setBookingTarget('self');
     setSuccess(true);
     setWarnings(created.warnings);
@@ -338,6 +349,8 @@ export function NewBookingForm({
 
     const created = (await response.json()) as CreateBookingResponseBody;
     reset(DEFAULT_VALUES);
+    setStartsAtValue('');
+    setEndsAtValue('');
     setBookingTarget('self');
     setFormError(null);
     resetForceState();
@@ -453,32 +466,34 @@ export function NewBookingForm({
           </div>
         ) : null}
 
-        <div>
-          <label htmlFor="booking-starts-at" className="block text-sm font-medium text-ink">
-            {labels.startsAt}
-          </label>
-          <input
+        <div className="sm:col-span-2">
+          <DateTimeField
             id="booking-starts-at"
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.startsAt)}
-            className={inputClasses}
-            {...register('startsAt')}
+            dateLabel={labels.startsAt}
+            timeLabel={labels.startsAtTime}
+            value={startsAtValue}
+            onChange={(next) => {
+              setStartsAtValue(next);
+              setValue('startsAt', next);
+            }}
+            labels={labels.dateTimeField}
+            ariaInvalid={Boolean(errors.startsAt)}
           />
           {fieldErrorLabel(errors.startsAt) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.startsAt)}</p> : null}
         </div>
 
-        <div>
-          <label htmlFor="booking-ends-at" className="block text-sm font-medium text-ink">
-            {labels.endsAt}
-          </label>
-          <input
+        <div className="sm:col-span-2">
+          <DateTimeField
             id="booking-ends-at"
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.endsAt)}
-            className={inputClasses}
-            {...register('endsAt')}
+            dateLabel={labels.endsAt}
+            timeLabel={labels.endsAtTime}
+            value={endsAtValue}
+            onChange={(next) => {
+              setEndsAtValue(next);
+              setValue('endsAt', next);
+            }}
+            labels={labels.dateTimeField}
+            ariaInvalid={Boolean(errors.endsAt)}
           />
           {fieldErrorLabel(errors.endsAt) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.endsAt)}</p> : null}
         </div>

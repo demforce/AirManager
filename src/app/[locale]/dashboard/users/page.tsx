@@ -1,9 +1,10 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { Link, redirect } from '@/i18n/navigation';
+import { redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listAvailablePersons, listUsers } from '@/server/services/users.service';
+import { Pager } from '@/components/pager';
 import { UsersManager } from './users-manager';
 
 type PageProps = {
@@ -130,33 +131,12 @@ export default async function UsersPage({ params, searchParams }: PageProps) {
           />
         </div>
 
-        {totalPages > 1 ? (
-          <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
-            <Link
-              href={{ pathname: '/dashboard/users', query: { page: page - 1 } }}
-              locale={locale as AppLocale}
-              aria-disabled={page <= 1}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              ←
-            </Link>
-            <span>
-              {page} / {totalPages}
-            </span>
-            <Link
-              href={{ pathname: '/dashboard/users', query: { page: page + 1 } }}
-              locale={locale as AppLocale}
-              aria-disabled={page >= totalPages}
-              className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-              }`}
-            >
-              →
-            </Link>
-          </nav>
-        ) : null}
+        <Pager
+          page={page}
+          totalPages={totalPages}
+          hrefBuilder={(targetPage) => ({ pathname: '/dashboard/users', query: { page: targetPage } })}
+          locale={locale as AppLocale}
+        />
       </div>
     </main>
   );

@@ -5,7 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { DataTable } from '@/components/data-table';
+import { DataTable, TruncatedCell } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
 import { formatSignedCents, parseCents } from '@/lib/money';
 import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
@@ -184,7 +184,7 @@ export function AccountStatementTable({
     {
       id: 'description',
       header: labels.description,
-      cell: ({ row }) => row.original.description ?? labels.noValue,
+      cell: ({ row }) => (row.original.description ? <TruncatedCell value={row.original.description} className="max-w-[260px]" /> : labels.noValue),
     },
     {
       id: 'amount',
@@ -200,7 +200,8 @@ export function AccountStatementTable({
           {
             id: 'actor',
             header: labels.recordedBy,
-            cell: ({ row }) => row.original.actorEmail ?? labels.noValue,
+            cell: ({ row }) =>
+              row.original.actorEmail ? <TruncatedCell value={row.original.actorEmail} className="max-w-[200px]" /> : labels.noValue,
           },
         ] as ColumnDef<AccountStatementRow, unknown>[])
       : []),

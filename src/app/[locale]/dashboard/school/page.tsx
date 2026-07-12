@@ -141,6 +141,12 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                 custom: t('summaries.filters.custom'),
                 from: t('summaries.filters.from'),
                 to: t('summaries.filters.to'),
+                datePicker: {
+                  openCalendar: t('datePicker.openCalendar'),
+                  previousMonth: t('datePicker.previousMonth'),
+                  nextMonth: t('datePicker.nextMonth'),
+                  invalidDate: t('datePicker.invalidDate'),
+                },
               }}
             />
           </div>
@@ -275,7 +281,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
             {ownStudents.length === 0 ? (
               <p className="text-sm text-mid-gray">{t('empty')}</p>
             ) : (
-              <div className="overflow-x-auto">
+              <Card className="overflow-x-auto p-0">
                 <table className="w-full min-w-[680px] text-left text-sm">
                   <thead>
                     <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
@@ -293,7 +299,8 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                           <Link
                             href={`/dashboard/school/${student.personId}`}
                             locale={locale as AppLocale}
-                            className="underline-offset-4 hover:underline"
+                            title={`${student.lastName} ${student.firstName}`}
+                            className="block max-w-[200px] truncate underline-offset-4 hover:underline"
                           >
                             {student.lastName} {student.firstName}
                           </Link>
@@ -318,7 +325,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </Card>
             )}
           </section>
         ) : null}

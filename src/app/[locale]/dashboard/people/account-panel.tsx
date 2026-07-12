@@ -14,6 +14,7 @@ import { useAccountRefresh } from './account-refresh-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 
 export type AccountPanelLabels = {
   heading: string;
@@ -38,6 +39,7 @@ export type AccountPanelLabels = {
     invalidAmount: string;
     requiredField: string;
     genericError: string;
+    datePicker: DatePickerLabels;
   };
 };
 
@@ -252,11 +254,13 @@ type TopUpFormProps = {
  */
 function TopUpForm({ personId, labels, onCancel, onSuccess }: TopUpFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const [effectiveDateValue, setEffectiveDateValue] = useState(todayDateOnly());
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<TopUpFormValues>({
     resolver: zodResolver(topUpFormSchema),
@@ -335,15 +339,16 @@ function TopUpForm({ personId, labels, onCancel, onSuccess }: TopUpFormProps) {
           </select>
         </div>
         <div>
-          <label htmlFor="topup-effective-date" className="block text-sm font-medium text-ink">
-            {labels.effectiveDate}
-          </label>
-          <Input
+          <DatePicker
             id="topup-effective-date"
-            type="date"
-            aria-invalid={Boolean(errors.effectiveDate)}
-            className="mt-2 w-full"
-            {...register('effectiveDate')}
+            label={labels.effectiveDate}
+            value={effectiveDateValue}
+            onChange={(next) => {
+              setEffectiveDateValue(next);
+              setValue('effectiveDate', next);
+            }}
+            labels={labels.datePicker}
+            ariaInvalid={Boolean(errors.effectiveDate)}
           />
           {errors.effectiveDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>

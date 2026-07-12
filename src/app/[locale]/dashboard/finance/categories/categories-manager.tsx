@@ -5,7 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { DataTable } from '@/components/data-table';
+import { DataTable, TruncatedCell } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -127,7 +127,7 @@ export function CategoriesManager({ categories, labels }: CategoriesManagerProps
     {
       id: 'name',
       header: labels.table.name,
-      cell: ({ row }) => <span className="font-medium text-ink">{row.original.name}</span>,
+      cell: ({ row }) => <TruncatedCell value={row.original.name} className="max-w-[220px] font-medium text-ink" />,
     },
     {
       id: 'status',

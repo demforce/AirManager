@@ -48,6 +48,12 @@ function uniqueName(prefix: string): string {
 /** A safely-in-the-past date, before any run-unique aircraft/package/rate created below. */
 const PAST_DATE = '2020-01-01';
 
+/** Story 12.5: `DatePicker`'s text input takes DD/MM/YYYY, not ISO. */
+function toDisplayDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 /** Story 11.1: composes `{ takeoffAt, landingAt }` for a direct `POST /api/v1/flights`/`.../correct` call — `10:00Z` stays clear of the Europe/Rome midnight boundary. */
 function flightTimes(dateOnly: string, minutes: number): { takeoffAt: string; landingAt: string } {
   const takeoffAt = `${dateOnly}T10:00:00.000Z`;
@@ -198,7 +204,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.goto(`/it/dashboard/people/${pilot.personId}`);
     await page.getByRole('button', { name: 'Vendi pacchetto' }).click();
     await page.getByLabel('Tipo di pacchetto').selectOption({ label: typeName });
-    await page.getByLabel('Data valuta').fill(PAST_DATE);
+    await page.getByLabel('Data valuta').fill(toDisplayDate(PAST_DATE));
     await page.getByRole('button', { name: 'Conferma vendita' }).click();
     await expect(page.getByTestId('packages-panel-feedback')).toBeVisible();
 
@@ -209,7 +215,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
     await page.getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
-    await page.getByLabel('Data volo').fill(PAST_DATE);
+    await page.getByLabel('Data volo').fill(toDisplayDate(PAST_DATE));
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();
@@ -298,7 +304,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await openRegisterDialog(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
-    await page.getByLabel('Data volo').fill('2020-01-02');
+    await page.getByLabel('Data volo').fill(toDisplayDate('2020-01-02'));
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByTestId('flight-form').getByRole('button', { name: 'Registra volo' }).click();

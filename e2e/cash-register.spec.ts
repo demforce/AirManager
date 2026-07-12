@@ -43,6 +43,12 @@ async function recordMovement(page: Page, categoryId: string, amountCents: numbe
   expect(response.status()).toBe(201);
 }
 
+/** Story 12.5: `#cash-effective-date` is a `DatePicker` now — `YYYY-MM-DD` -> `DD/MM/YYYY` for its typed-text input. */
+function isoToDisplay(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 /** Fills and submits the "Nuovo movimento" panel (assumes the finance page is open). */
 async function submitMovement(
   page: Page,
@@ -52,7 +58,7 @@ async function submitMovement(
   await page.locator('#cash-direction').selectOption({ label: input.direction });
   await page.locator('#cash-category').selectOption({ label: input.categoryName });
   await page.locator('#cash-amount').fill(input.amount);
-  await page.locator('#cash-effective-date').fill(input.date);
+  await page.locator('#cash-effective-date').fill(isoToDisplay(input.date));
   await page.locator('#cash-description').fill(input.description);
   await page.getByRole('button', { name: 'Registra movimento' }).click();
   // The panel closes only on success — a stronger completion signal than the
@@ -111,9 +117,9 @@ test.describe('Cash register with categories and reversals (Story 3.4)', () => {
     await expect(page).not.toHaveURL(/sign=/);
 
     // Period filter, INCLUSIVE boundaries: [2026-07-01, 2026-07-01] → only the entrata.
-    await page.getByTestId('cash-filter-from').fill('2026-07-01');
+    await page.getByTestId('cash-filter-from').fill('01/07/2026');
     await expect(page).toHaveURL(/from=2026-07-01/);
-    await page.getByTestId('cash-filter-to').fill('2026-07-01');
+    await page.getByTestId('cash-filter-to').fill('01/07/2026');
     await expect(page).toHaveURL(/to=2026-07-01/);
     await expect(registerRows(page)).toHaveCount(1);
     await expect(registerRows(page).first()).toContainText('Incasso piazzale');

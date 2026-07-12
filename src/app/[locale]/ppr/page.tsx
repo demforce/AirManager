@@ -78,6 +78,8 @@ export default async function PprPage({ params }: PageProps) {
               destination: t('form.destination'),
               eta: t('form.eta'),
               etd: t('form.etd'),
+              etaTime: t('form.etaTime'),
+              etdTime: t('form.etdTime'),
               personsOnBoard: t('form.personsOnBoard'),
               notes: t('form.notes'),
               submit: t('form.submit'),
@@ -95,6 +97,13 @@ export default async function PprPage({ params }: PageProps) {
               success: {
                 title: t('success.title'),
                 message: t('success.message'),
+              },
+              dateTimeField: {
+                openCalendar: t('datePicker.openCalendar'),
+                previousMonth: t('datePicker.previousMonth'),
+                nextMonth: t('datePicker.nextMonth'),
+                invalidDate: t('datePicker.invalidDate'),
+                invalidTime: t('datePicker.invalidTime'),
               },
             }}
           />

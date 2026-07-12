@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
+import { DateTimeField, type DateTimeFieldLabels } from '@/components/ui/date-time-field';
 
 export type PprFormLabels = {
   firstName: string;
@@ -21,6 +22,9 @@ export type PprFormLabels = {
   destination: string;
   eta: string;
   etd: string;
+  /** Story 12.5 (AC 1) — derived label for the datetime variant's time half ("Ora ETA"), distinct from `eta`/`etd` which stay on the DATE half. */
+  etaTime: string;
+  etdTime: string;
   personsOnBoard: string;
   notes: string;
   submit: string;
@@ -39,6 +43,8 @@ export type PprFormLabels = {
     title: string;
     message: string;
   };
+  /** Story 12.5 (AC 1) — shared `DateTimeField` a11y/error strings for `eta`/`etd`. */
+  dateTimeField: DateTimeFieldLabels;
 };
 
 type PprFormProps = {
@@ -168,10 +174,13 @@ type ApiErrorBody = { error?: { code?: string } };
 export function PprForm({ locale, labels }: PprFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [etaValue, setEtaValue] = useState('');
+  const [etdValue, setEtdValue] = useState('');
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(pprFormSchema), defaultValues: DEFAULT_VALUES });
 
@@ -374,32 +383,34 @@ export function PprForm({ locale, labels }: PprFormProps) {
           {fieldErrorLabel(errors.destination) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.destination)}</p> : null}
         </div>
 
-        <div>
-          <label htmlFor="ppr-eta" className="block text-sm font-medium text-ink">
-            {labels.eta}
-          </label>
-          <input
+        <div className="sm:col-span-2">
+          <DateTimeField
             id="ppr-eta"
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.eta)}
-            className={inputClasses}
-            {...register('eta')}
+            dateLabel={labels.eta}
+            timeLabel={labels.etaTime}
+            value={etaValue}
+            onChange={(next) => {
+              setEtaValue(next);
+              setValue('eta', next);
+            }}
+            labels={labels.dateTimeField}
+            ariaInvalid={Boolean(errors.eta)}
           />
           {fieldErrorLabel(errors.eta) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.eta)}</p> : null}
         </div>
 
-        <div>
-          <label htmlFor="ppr-etd" className="block text-sm font-medium text-ink">
-            {labels.etd}
-          </label>
-          <input
+        <div className="sm:col-span-2">
+          <DateTimeField
             id="ppr-etd"
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.etd)}
-            className={inputClasses}
-            {...register('etd')}
+            dateLabel={labels.etd}
+            timeLabel={labels.etdTime}
+            value={etdValue}
+            onChange={(next) => {
+              setEtdValue(next);
+              setValue('etd', next);
+            }}
+            labels={labels.dateTimeField}
+            ariaInvalid={Boolean(errors.etd)}
           />
           {fieldErrorLabel(errors.etd) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.etd)}</p> : null}
         </div>

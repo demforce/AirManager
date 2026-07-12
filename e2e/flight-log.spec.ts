@@ -325,9 +325,9 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // next control, or the next fill can land on the node the remount is
     // about to discard.
     await expect(page).toHaveURL(/personId=/);
-    await page.getByTestId('flight-filter-date-from').fill('2020-06-01');
+    await page.getByTestId('flight-filter-date-from').fill('01/06/2020');
     await expect(page).toHaveURL(/dateFrom=2020-06-01/);
-    await page.getByTestId('flight-filter-date-to').fill('2020-06-30');
+    await page.getByTestId('flight-filter-date-to').fill('30/06/2020');
     await expect(page).toHaveURL(/dateTo=2020-06-30/);
     await page.getByTestId('flight-filter-type').selectOption('AERIAL_WORK');
     await expect(page).toHaveURL(/flightType=AERIAL_WORK/);
@@ -341,7 +341,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await combinedSheet.getByRole('button', { name: 'Chiudi' }).click();
     await expect(combinedSheet).toBeHidden();
 
-    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-date-from'), '2020-06-01');
+    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-date-from'), '01/06/2020');
     // Both flights still reachable after the reset — each located through its
     // run-unique aircraft filter, NOT on the unfiltered page 1: the registry
     // orders by flightDate desc with a 20-row page, so on an accumulated DB

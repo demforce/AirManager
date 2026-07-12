@@ -210,6 +210,12 @@
       "instructor": {
         "title": "Istruttore",
         "ratings": "Abilitazioni"
+      },
+      "datePicker": {
+        "openCalendar": "Apri calendario",
+        "previousMonth": "Mese precedente",
+        "nextMonth": "Mese successivo",
+        "invalidDate": "Data non valida (usa GG/MM/AAAA)."
       }
     }
   },
@@ -272,6 +278,12 @@
         "invalidAmount": "Inserisci un importo valido maggiore di zero.",
         "requiredField": "Campo obbligatorio.",
         "genericError": "Impossibile registrare la ricarica. Riprova."
+      },
+      "datePicker": {
+        "openCalendar": "Apri calendario",
+        "previousMonth": "Mese precedente",
+        "nextMonth": "Mese successivo",
+        "invalidDate": "Data non valida (usa GG/MM/AAAA)."
       }
     },
     "instructorRates": {
@@ -296,7 +308,13 @@
       "historyValidFrom": "In vigore da",
       "historyPrice": "Prezzo",
       "historyActor": "Chi",
-      "historyWhen": "Registrata il"
+      "historyWhen": "Registrata il",
+      "datePicker": {
+        "openCalendar": "Apri calendario",
+        "previousMonth": "Mese precedente",
+        "nextMonth": "Mese successivo",
+        "invalidDate": "Data non valida (usa GG/MM/AAAA)."
+      }
     }
   },
   "HourPackagesPanel": {
@@ -330,6 +348,12 @@
       "requiredField": "Campo obbligatorio.",
       "inactiveTypeError": "Il tipo di pacchetto selezionato non è più attivo. Aggiorna la pagina e riprova.",
       "genericError": "Impossibile registrare la vendita. Riprova."
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
     }
   },
   "AssignedInstructorsPanel": {
@@ -410,6 +434,12 @@
       "confirmDelete": "Eliminare questa scadenza?",
       "confirmYes": "Conferma",
       "confirmCancel": "Annulla"
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
     }
   },
   "SchoolPage": {
@@ -468,6 +498,12 @@
     "myHours": {
       "heading": "Le mie ore scuola",
       "openRegister": "Apri nel registro"
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
     }
   },
   "TrainingDiaryPage": {
@@ -509,6 +545,12 @@
       "requiredField": "Campo obbligatorio.",
       "immutableError": "Questa annotazione non è più modificabile (finestra di 7 giorni scaduta).",
       "genericError": "Impossibile salvare le modifiche. Riprova."
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
     }
   },
   "AccountStatementPage": {
@@ -633,6 +675,12 @@
         "genericError": "Impossibile registrare lo storno. Riprova.",
         "success": "Storno registrato."
       }
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
     }
   },
   "CashReportPage": {
@@ -663,6 +711,12 @@
       "out": "Uscite",
       "net": "Netto",
       "empty": "Nessun movimento nel periodo selezionato."
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
     }
   },
   "CashCategoriesPage": {
@@ -896,6 +950,12 @@
       "returnedToService": "Velivolo rimesso in servizio.",
       "hourMeterAdjusted": "Contaore rettificato.",
       "rateAdded": "Tariffa aggiunta."
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
     }
   },
   "FlightsPage": {
@@ -1051,6 +1111,12 @@
     "pdf": {
       "totalDuration": "Durata totale",
       "totalAmount": "Totale addebiti"
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
     }
   },
   "ExpiriesPage": {
@@ -1145,6 +1211,12 @@
         "genericError": "Impossibile inviare la proposta. Riprova.",
         "success": "Proposta inviata, in attesa di validazione da parte dello staff."
       }
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
     }
   },
   "ExpiryTypesPage": {
@@ -1227,7 +1299,9 @@
       "student": "Allievo",
       "noStudentAvailable": "Nessun allievo attivo disponibile.",
       "startsAt": "Inizio",
+      "startsAtTime": "Ora inizio",
       "endsAt": "Fine",
+      "endsAtTime": "Ora fine",
       "notes": "Note",
       "submit": "Prenota",
       "requiredField": "Campo obbligatorio.",
@@ -1299,6 +1373,13 @@
       "clampedStartHint": "Inizia prima di questa finestra oraria",
       "clampedEndHint": "Continua oltre questa finestra oraria",
       "weekdayColumnLabel": "Giorno"
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA).",
+      "invalidTime": "Ora non valida (usa HH:MM)."
     }
   },
   "UsersPage": {
@@ -1405,7 +1486,9 @@
       "origin": "Provenienza",
       "destination": "Destinazione",
       "eta": "ETA (arrivo previsto)",
+      "etaTime": "Ora ETA",
       "etd": "ETD (partenza prevista, facoltativo)",
+      "etdTime": "Ora ETD",
       "personsOnBoard": "Persone a bordo",
       "notes": "Note (facoltative)",
       "submit": "Invia richiesta",
@@ -1424,6 +1507,13 @@
     "success": {
       "title": "Richiesta inviata",
       "message": "Abbiamo ricevuto la tua richiesta di PPR. Riceverai a breve un'email di conferma con il riepilogo, seguita da un'altra email con l'esito della richiesta."
+    },
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA).",
+      "invalidTime": "Ora non valida (usa HH:MM)."
     }
   },
   "PprQueuePage": {
@@ -1536,7 +1626,13 @@
       "conflictError": "Questo PPR non è più in stato Approvato (probabilmente già chiuso da un altro operatore).",
       "genericError": "Non è stato possibile completare l'operazione. Riprova."
     },
-    "empty": "Nessun PPR trovato per i filtri selezionati."
+    "empty": "Nessun PPR trovato per i filtri selezionati.",
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "previousMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "invalidDate": "Data non valida (usa GG/MM/AAAA)."
+    }
   },
   "Export": {
     "button": "Esporta Excel",

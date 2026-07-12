@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { ExportButton } from '@/components/export-button';
+import { Pager } from '@/components/pager';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
@@ -20,7 +21,9 @@ import { ExpiryDashboardFilters, type ExpiryDashboardFiltersValue } from './dash
 import { ExpiryStatusBadge } from './expiry-status-badge';
 import { MyExpiries } from './my-expiries';
 import { ProposalsQueue } from './proposals-queue';
+import { TruncatedCell } from '@/components/data-table';
 import { Card } from '@/components/ui/card';
+import { Menu } from '@/components/ui/menu';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -237,10 +240,11 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                 </h2>
                 <p className="mt-1 text-sm text-mid-gray">{t('dashboard.description')}</p>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <ExportButton href={exportHref} label={tExport('button')} testId="expiries-export-button" />
-                <ExportButton href={exportPdfHref} label={tExport('buttonPdf')} testId="expiries-export-pdf-button" />
-              </div>
+              {/* Story 12.5 (AC 5): the two export actions collected into one overflow menu, same pattern as the flight registry (story 12.4, AC 6) — testids stay on the menu ITEMS, unchanged. */}
+              <Menu label={tExport('menuLabel')} triggerTestId="expiries-export-menu-trigger">
+                <ExportButton variant="menuItem" href={exportHref} label={tExport('button')} testId="expiries-export-button" />
+                <ExportButton variant="menuItem" href={exportPdfHref} label={tExport('buttonPdf')} testId="expiries-export-pdf-button" />
+              </Menu>
             </div>
 
             <div className="mt-6 border-b border-hairline pb-6">
@@ -262,7 +266,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               />
             </div>
 
-            <div className="mt-6 overflow-x-auto rounded-cards border border-hairline">
+            <Card className="mt-6 overflow-x-auto p-0">
               <table className="w-full min-w-[720px] text-left text-sm" data-testid="expiry-dashboard-table">
                 <thead>
                   <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
@@ -288,12 +292,15 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                           <Link
                             href={`/dashboard/people/${item.personId}`}
                             locale={locale as AppLocale}
-                            className="font-medium text-ink underline-offset-4 hover:underline"
+                            title={`${item.personLastName} ${item.personFirstName}`}
+                            className="block max-w-[180px] truncate font-medium text-ink underline-offset-4 hover:underline"
                           >
                             {item.personLastName} {item.personFirstName}
                           </Link>
                         </td>
-                        <td className="px-5 py-3 align-middle text-ink">{item.typeName}</td>
+                        <td className="px-5 py-3 align-middle text-ink">
+                          <TruncatedCell value={item.typeName} className="max-w-[160px]" />
+                        </td>
                         <td className="px-5 py-3 align-middle text-ink">{scopeLabels[item.typeScope]}</td>
                         <td className="px-5 py-3 align-middle whitespace-nowrap text-ink">{formatDateOnly(item.issuedAt, locale as 'it' | 'en')}</td>
                         <td className="px-5 py-3 align-middle whitespace-nowrap text-ink">{formatDateOnly(item.expiresAt, locale as 'it' | 'en')}</td>
@@ -305,35 +312,15 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                   )}
                 </tbody>
               </table>
-            </div>
+            </Card>
 
-            {dashboardTotalPages > 1 ? (
-              <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
-                <Link
-                  href={dashboardPageHref(dashboardPage - 1)}
-                  locale={locale as AppLocale}
-                  aria-disabled={dashboardPage <= 1}
-                  className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                    dashboardPage <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                  }`}
-                >
-                  &larr;
-                </Link>
-                <span data-testid="expiry-dashboard-pagination-status">
-                  {dashboardPage} / {dashboardTotalPages}
-                </span>
-                <Link
-                  href={dashboardPageHref(dashboardPage + 1)}
-                  locale={locale as AppLocale}
-                  aria-disabled={dashboardPage >= dashboardTotalPages}
-                  className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                    dashboardPage >= dashboardTotalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                  }`}
-                >
-                  &rarr;
-                </Link>
-              </nav>
-            ) : null}
+            <Pager
+              page={dashboardPage}
+              totalPages={dashboardTotalPages}
+              hrefBuilder={dashboardPageHref}
+              locale={locale as AppLocale}
+              statusTestId="expiry-dashboard-pagination-status"
+            />
           </section>
 
           <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6">
@@ -373,33 +360,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               />
             </div>
 
-            {totalPages > 1 ? (
-              <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-mid-gray">
-                <Link
-                  href={proposalsPageHref(page - 1)}
-                  locale={locale as AppLocale}
-                  aria-disabled={page <= 1}
-                  className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                    page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                  }`}
-                >
-                  &larr;
-                </Link>
-                <span>
-                  {page} / {totalPages}
-                </span>
-                <Link
-                  href={proposalsPageHref(page + 1)}
-                  locale={locale as AppLocale}
-                  aria-disabled={page >= totalPages}
-                  className={`rounded-buttons border border-hairline bg-paper px-3 py-1.5 transition-colors ${
-                    page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-canvas'
-                  }`}
-                >
-                  &rarr;
-                </Link>
-              </nav>
-            ) : null}
+            <Pager page={page} totalPages={totalPages} hrefBuilder={proposalsPageHref} locale={locale as AppLocale} />
           </section>
 
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -467,6 +428,12 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                 conflictError: t('own.form.conflictError'),
                 genericError: t('own.form.genericError'),
                 success: t('own.form.success'),
+                datePicker: {
+                  openCalendar: t('datePicker.openCalendar'),
+                  previousMonth: t('datePicker.previousMonth'),
+                  nextMonth: t('datePicker.nextMonth'),
+                  invalidDate: t('datePicker.invalidDate'),
+                },
               },
             }}
           />

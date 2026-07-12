@@ -220,6 +220,12 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 title: tPeople('profilesPanel.instructor.title'),
                 ratings: tPeople('profilesPanel.instructor.ratings'),
               },
+              datePicker: {
+                openCalendar: tPeople('profilesPanel.datePicker.openCalendar'),
+                previousMonth: tPeople('profilesPanel.datePicker.previousMonth'),
+                nextMonth: tPeople('profilesPanel.datePicker.nextMonth'),
+                invalidDate: tPeople('profilesPanel.datePicker.invalidDate'),
+              },
             }}
           />
         </div>
@@ -266,6 +272,12 @@ export default async function PersonDetailPage({ params }: PageProps) {
                   invalidAmount: t('accountPanel.topUp.invalidAmount'),
                   requiredField: t('accountPanel.topUp.requiredField'),
                   genericError: t('accountPanel.topUp.genericError'),
+                  datePicker: {
+                    openCalendar: t('accountPanel.datePicker.openCalendar'),
+                    previousMonth: t('accountPanel.datePicker.previousMonth'),
+                    nextMonth: t('accountPanel.datePicker.nextMonth'),
+                    invalidDate: t('accountPanel.datePicker.invalidDate'),
+                  },
                 },
               }}
             />
@@ -311,6 +323,12 @@ export default async function PersonDetailPage({ params }: PageProps) {
                   requiredField: tPackages('form.requiredField'),
                   inactiveTypeError: tPackages('form.inactiveTypeError'),
                   genericError: tPackages('form.genericError'),
+                  datePicker: {
+                    openCalendar: tPackages('datePicker.openCalendar'),
+                    previousMonth: tPackages('datePicker.previousMonth'),
+                    nextMonth: tPackages('datePicker.nextMonth'),
+                    invalidDate: tPackages('datePicker.invalidDate'),
+                  },
                 },
               }}
             />
@@ -349,6 +367,12 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 historyPrice: t('instructorRates.historyPrice'),
                 historyActor: t('instructorRates.historyActor'),
                 historyWhen: t('instructorRates.historyWhen'),
+                datePicker: {
+                  openCalendar: t('instructorRates.datePicker.openCalendar'),
+                  previousMonth: t('instructorRates.datePicker.previousMonth'),
+                  nextMonth: t('instructorRates.datePicker.nextMonth'),
+                  invalidDate: t('instructorRates.datePicker.invalidDate'),
+                },
               }}
             />
           </div>
@@ -452,6 +476,12 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 scopeMismatchError: tExpiries('form.scopeMismatchError'),
                 conflictError: tExpiries('form.conflictError'),
                 genericError: tExpiries('form.genericError'),
+                datePicker: {
+                  openCalendar: tExpiries('datePicker.openCalendar'),
+                  previousMonth: tExpiries('datePicker.previousMonth'),
+                  nextMonth: tExpiries('datePicker.nextMonth'),
+                  invalidDate: tExpiries('datePicker.invalidDate'),
+                },
               },
               actions: {
                 delete: tExpiries('actions.delete'),

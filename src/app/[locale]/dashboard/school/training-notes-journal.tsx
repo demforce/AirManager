@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 
 export type TrainingNoteRowData = {
   id: string;
@@ -30,6 +31,8 @@ export type TrainingNoteRowData = {
 export type SchoolFlightOption = { id: string; flightDate: string; minutes: number };
 
 export type TrainingNotesJournalLabels = {
+  /** Story 12.5 (AC 1) — shared a11y/error strings for both forms' `DatePicker` (`newNoteForm.noteDate`/`editForm.noteDate`). */
+  datePicker: DatePickerLabels;
   row: {
     author: string;
     edited: string;
@@ -118,10 +121,12 @@ export function NewTrainingNoteForm({
   studentPersonId,
   flightOptions,
   labels,
+  datePickerLabels,
 }: {
   studentPersonId: string;
   flightOptions: SchoolFlightOption[];
   labels: TrainingNotesJournalLabels['newNoteForm'];
+  datePickerLabels: TrainingNotesJournalLabels['datePicker'];
 }) {
   const router = useRouter();
   // Date formatting must follow the page locale (same pattern as
@@ -130,11 +135,13 @@ export function NewTrainingNoteForm({
   const locale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [open, setOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [noteDateValue, setNoteDateValue] = useState(todayDateOnly());
 
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<NoteInputValues>({
     resolver: zodResolver(noteInputSchema),
@@ -156,6 +163,7 @@ export function NewTrainingNoteForm({
     }
 
     setOpen(false);
+    setNoteDateValue(todayDateOnly());
     reset({ noteDate: todayDateOnly(), flightId: '', exercises: '', assessment: '', nextSteps: '' });
     router.refresh();
   }
@@ -183,10 +191,17 @@ export function NewTrainingNoteForm({
       <h3 className="text-xl font-semibold tracking-[-0.02em] text-ink">{labels.title}</h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="new-note-date" className="block text-sm font-medium text-ink">
-            {labels.noteDate}
-          </label>
-          <input id="new-note-date" type="date" aria-invalid={Boolean(errors.noteDate)} className={inputClasses} {...register('noteDate')} />
+          <DatePicker
+            id="new-note-date"
+            label={labels.noteDate}
+            value={noteDateValue}
+            onChange={(next) => {
+              setNoteDateValue(next);
+              setValue('noteDate', next);
+            }}
+            labels={datePickerLabels}
+            ariaInvalid={Boolean(errors.noteDate)}
+          />
           {errors.noteDate ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
@@ -279,20 +294,24 @@ function EditNoteForm({
   studentPersonId,
   note,
   labels,
+  datePickerLabels,
   onCancel,
   onSaved,
 }: {
   studentPersonId: string;
   note: TrainingNoteRowData;
   labels: TrainingNotesJournalLabels['editForm'];
+  datePickerLabels: TrainingNotesJournalLabels['datePicker'];
   onCancel: () => void;
   onSaved: () => void;
 }) {
   const [formError, setFormError] = useState<string | null>(null);
+  const [noteDateValue, setNoteDateValue] = useState(note.noteDate);
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<EditFormValues>({
     resolver: zodResolver(editFormSchema),
@@ -331,16 +350,17 @@ function EditNoteForm({
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="mt-4 space-y-4" data-testid="edit-training-note-form">
-      <div>
-        <label htmlFor={`edit-note-date-${note.id}`} className="block text-sm font-medium text-ink">
-          {labels.noteDate}
-        </label>
-        <input
+      <div className="max-w-xs">
+        <DatePicker
           id={`edit-note-date-${note.id}`}
-          type="date"
-          aria-invalid={Boolean(errors.noteDate)}
-          className={`${inputClasses} max-w-xs`}
-          {...register('noteDate')}
+          label={labels.noteDate}
+          value={noteDateValue}
+          onChange={(next) => {
+            setNoteDateValue(next);
+            setValue('noteDate', next);
+          }}
+          labels={datePickerLabels}
+          ariaInvalid={Boolean(errors.noteDate)}
         />
       </div>
       <div>
@@ -410,7 +430,7 @@ export function TrainingNoteRow({
 }: {
   studentPersonId: string;
   note: TrainingNoteRowData;
-  labels: Pick<TrainingNotesJournalLabels, 'row' | 'editForm'>;
+  labels: Pick<TrainingNotesJournalLabels, 'row' | 'editForm' | 'datePicker'>;
 }) {
   const router = useRouter();
   // Date formatting must follow the page locale (same pattern as
@@ -446,7 +466,14 @@ export function TrainingNoteRow({
       </div>
 
       {isEditing ? (
-        <EditNoteForm studentPersonId={studentPersonId} note={note} labels={labels.editForm} onCancel={() => setIsEditing(false)} onSaved={handleSaved} />
+        <EditNoteForm
+          studentPersonId={studentPersonId}
+          note={note}
+          labels={labels.editForm}
+          datePickerLabels={labels.datePicker}
+          onCancel={() => setIsEditing(false)}
+          onSaved={handleSaved}
+        />
       ) : (
         <div className="mt-4 space-y-3">
           <div>

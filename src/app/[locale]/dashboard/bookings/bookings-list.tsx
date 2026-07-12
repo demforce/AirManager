@@ -7,9 +7,12 @@ import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
 import { formatDateTime, formatTimeOfDay } from '@/lib/time';
 import type { AircraftOption } from './new-booking-form';
+import { TruncatedCell } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
+import { DateTimeField, type DateTimeFieldLabels } from '@/components/ui/date-time-field';
 
 export type BookingRowDto = {
   id: string;
@@ -44,6 +47,8 @@ export type BookingsListLabels = {
     outOfServiceSuffix: string;
     startsAt: string;
     endsAt: string;
+    startsAtTime: string;
+    endsAtTime: string;
     notes: string;
     requiredField: string;
     invalidRange: string;
@@ -51,6 +56,8 @@ export type BookingsListLabels = {
       AIRCRAFT_OUT_OF_SERVICE: string;
       BOOKING_IN_PAST: string;
     };
+    /** Story 12.5 (AC 1) — shared `DateTimeField` a11y/error strings for `startsAt`/`endsAt`. */
+    dateTimeField: DateTimeFieldLabels;
   };
   actions: {
     move: string;
@@ -225,7 +232,7 @@ export function BookingsList({
         </p>
       ) : null}
 
-      <div className="mt-6 overflow-x-auto rounded-cards border border-hairline">
+      <Card className="mt-6 overflow-x-auto p-0">
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead>
             <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
@@ -276,8 +283,10 @@ export function BookingsList({
                     <td className="px-5 py-3 align-middle whitespace-nowrap text-ink">
                       {formatTimeOfDay(startsAt, locale)}–{formatTimeOfDay(endsAt, locale)}
                     </td>
-                    <td className="px-5 py-3 align-middle text-ink">{booking.personName}</td>
-                    <td className="px-5 py-3 align-middle text-mid-gray">{booking.instructorName ?? labels.table.noInstructor}</td>
+                    <td className="px-5 py-3 align-middle text-ink"><TruncatedCell value={booking.personName} className="max-w-[180px]" /></td>
+                    <td className="px-5 py-3 align-middle text-mid-gray">
+                      {booking.instructorName ? <TruncatedCell value={booking.instructorName} className="max-w-[180px]" /> : labels.table.noInstructor}
+                    </td>
                     {showActionsColumn ? (
                       <td className="px-5 py-3 align-middle" data-testid="booking-row-actions">
                         {confirmingCancelId === booking.id ? (
@@ -336,7 +345,7 @@ export function BookingsList({
             )}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -384,10 +393,13 @@ type MoveBookingFormProps = {
  */
 function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess }: MoveBookingFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const [startsAtValue, setStartsAtValue] = useState(toDatetimeLocalValue(booking.startsAt));
+  const [endsAtValue, setEndsAtValue] = useState(toDatetimeLocalValue(booking.endsAt));
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<MoveFormValues>({
     resolver: zodResolver(moveFormSchema),
@@ -480,32 +492,34 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
           {fieldErrorLabel(errors.aircraftId) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.aircraftId)}</p> : null}
         </div>
 
-        <div>
-          <label htmlFor={`move-starts-at-${booking.id}`} className="block text-sm font-medium text-ink">
-            {labels.form.startsAt}
-          </label>
-          <input
+        <div className="sm:col-span-2">
+          <DateTimeField
             id={`move-starts-at-${booking.id}`}
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.startsAt)}
-            className={inputClasses}
-            {...register('startsAt')}
+            dateLabel={labels.form.startsAt}
+            timeLabel={labels.form.startsAtTime}
+            value={startsAtValue}
+            onChange={(next) => {
+              setStartsAtValue(next);
+              setValue('startsAt', next);
+            }}
+            labels={labels.form.dateTimeField}
+            ariaInvalid={Boolean(errors.startsAt)}
           />
           {fieldErrorLabel(errors.startsAt) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.startsAt)}</p> : null}
         </div>
 
-        <div>
-          <label htmlFor={`move-ends-at-${booking.id}`} className="block text-sm font-medium text-ink">
-            {labels.form.endsAt}
-          </label>
-          <input
+        <div className="sm:col-span-2">
+          <DateTimeField
             id={`move-ends-at-${booking.id}`}
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.endsAt)}
-            className={inputClasses}
-            {...register('endsAt')}
+            dateLabel={labels.form.endsAt}
+            timeLabel={labels.form.endsAtTime}
+            value={endsAtValue}
+            onChange={(next) => {
+              setEndsAtValue(next);
+              setValue('endsAt', next);
+            }}
+            labels={labels.form.dateTimeField}
+            ariaInvalid={Boolean(errors.endsAt)}
           />
           {fieldErrorLabel(errors.endsAt) ? <p className="mt-1 text-xs text-ember">{fieldErrorLabel(errors.endsAt)}</p> : null}
         </div>

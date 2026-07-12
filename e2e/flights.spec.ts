@@ -52,6 +52,12 @@ function uniqueEmail(prefix: string): string {
 /** A safely-in-the-past date, before any run-unique aircraft/rate created below. */
 const PAST_DATE = '2020-01-01';
 
+/** Story 12.5: `DatePicker`'s text input takes DD/MM/YYYY, not ISO — this converts an ISO `YYYY-MM-DD` (e.g. `PAST_DATE`) for `.fill()` calls against date fields. */
+function toDisplayDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 /** Story 11.1: composes `{ takeoffAt, landingAt }` for a direct `POST /api/v1/flights` call — `10:00Z` stays clear of the Europe/Rome midnight boundary. */
 function flightTimes(dateOnly: string, minutes: number): { takeoffAt: string; landingAt: string } {
   const takeoffAt = `${dateOnly}T10:00:00.000Z`;
@@ -441,7 +447,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
       pilot.lastName,
       `${pilot.lastName} ${pilot.firstName}`,
     );
-    await page.getByLabel('Data volo').fill(PAST_DATE);
+    await page.getByLabel('Data volo').fill(toDisplayDate(PAST_DATE));
     // 23:30 -> 00:10 the next day: 40', not a negative duration.
     await page.getByLabel('Ora decollo').fill('23:30');
     await page.getByLabel('Ora atterraggio').fill('00:10');

@@ -4,7 +4,9 @@ import { useLocale } from 'next-intl';
 import { useState } from 'react';
 import type { ExpiryProposalItemDto } from '@/lib/schemas/expiries';
 import { formatDateOnly } from '@/lib/time';
+import { TruncatedCell } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 export type ProposalsQueueLabels = {
   empty: string;
@@ -94,7 +96,7 @@ export function ProposalsQueue({ proposals: initialProposals, labels }: Proposal
     <div data-testid="proposals-queue">
       {feedbackBanner}
 
-      <div className="overflow-x-auto">
+      <Card className="overflow-x-auto p-0">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
             <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
@@ -109,8 +111,8 @@ export function ProposalsQueue({ proposals: initialProposals, labels }: Proposal
           <tbody>
             {proposals.map((proposal) => (
               <tr key={proposal.id} data-testid="proposal-row" className="border-b border-hairline align-top text-ink">
-                <td className="py-3 pr-4 font-medium whitespace-nowrap">{proposal.personName}</td>
-                <td className="py-3 pr-4 whitespace-nowrap">{proposal.typeName}</td>
+                <td className="py-3 pr-4 font-medium"><TruncatedCell value={proposal.personName} className="max-w-[180px]" /></td>
+                <td className="py-3 pr-4"><TruncatedCell value={proposal.typeName} className="max-w-[160px]" /></td>
                 <td className="py-3 pr-4 whitespace-nowrap text-mid-gray">
                   <span className="block">
                     {formatDateOnly(proposal.currentIssuedAt, moneyLocale)} &rarr; {formatDateOnly(proposal.currentExpiresAt, moneyLocale)}
@@ -167,7 +169,7 @@ export function ProposalsQueue({ proposals: initialProposals, labels }: Proposal
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }

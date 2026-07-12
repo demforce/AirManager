@@ -9,10 +9,13 @@ import type { ExpiryTypeItemDto } from '@/lib/schemas/expiry-types';
 import type { ExpiryItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { formatDateOnly } from '@/lib/time';
 import { ExpiryStatusBadge } from '../expiries/expiry-status-badge';
+import { TruncatedCell } from '@/components/data-table';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
+import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 
 export type ExpiriesPanelLabels = {
   heading: string;
@@ -47,6 +50,7 @@ export type ExpiriesPanelLabels = {
     scopeMismatchError: string;
     conflictError: string;
     genericError: string;
+    datePicker: DatePickerLabels;
   };
   actions: {
     delete: string;
@@ -196,7 +200,7 @@ export function ExpiriesPanel({ personId, canManage, activeProfiles, labels }: E
         {loadError ? <p className="text-sm text-ember">{labels.loadError}</p> : null}
         {!loadError && expiries !== null && expiries.length === 0 ? <p className="text-sm text-mid-gray">{labels.empty}</p> : null}
         {!loadError && expiries !== null && expiries.length > 0 ? (
-          <div className="overflow-x-auto">
+          <Card className="overflow-x-auto p-0">
             <table className="w-full min-w-[680px] text-left text-sm">
               <thead>
                 <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">
@@ -227,7 +231,7 @@ export function ExpiriesPanel({ personId, canManage, activeProfiles, labels }: E
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
         ) : null}
       </div>
     </Card>
@@ -276,14 +280,11 @@ function ExpiryRow({
   return (
     <tr data-testid="expiry-row" className="border-b border-hairline align-top text-ink">
       <td className="py-3 pr-4">
-        <span className="font-medium">{expiry.typeName}</span>
+        <TruncatedCell value={expiry.typeName} className="max-w-[180px] font-medium" />
         {expiry.pendingProposal ? (
-          <span
-            data-testid="expiry-pending-badge"
-            className="mt-1 block w-fit rounded-full bg-[#F0EEE6] px-2.5 py-0.5 text-xs font-medium text-[#5F5B53]"
-          >
+          <Badge data-testid="expiry-pending-badge" className="mt-1">
             {labels.table.pendingBadge}
-          </span>
+          </Badge>
         ) : null}
       </td>
       <td className="py-3 pr-4 whitespace-nowrap">{formatDateOnly(expiry.issuedAt, moneyLocale)}</td>
@@ -393,9 +394,13 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `activeProfiles` is a fresh object each render (server-derived prop); only `personId`'s page identity should retrigger the fetch, same pattern as the other on-mount fetch effects in this file.
   }, []);
 
+  const [issuedAtValue, setIssuedAtValue] = useState(todayDateOnly());
+  const [expiresAtValue, setExpiresAtValue] = useState('');
+
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<RegisterExpiryFormValues>({
     resolver: zodResolver(registerExpiryFormSchema),
@@ -457,17 +462,31 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
           {errors.expiryTypeId ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="expiry-issued-at" className="block text-sm font-medium text-ink">
-            {labels.issuedAt}
-          </label>
-          <input id="expiry-issued-at" type="date" aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
+          <DatePicker
+            id="expiry-issued-at"
+            label={labels.issuedAt}
+            value={issuedAtValue}
+            onChange={(next) => {
+              setIssuedAtValue(next);
+              setValue('issuedAt', next);
+            }}
+            labels={labels.datePicker}
+            ariaInvalid={Boolean(errors.issuedAt)}
+          />
           {errors.issuedAt ? <p className="mt-1 text-xs text-ember">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="expiry-expires-at" className="block text-sm font-medium text-ink">
-            {labels.expiresAt}
-          </label>
-          <input id="expiry-expires-at" type="date" aria-invalid={Boolean(errors.expiresAt)} className={inputClasses} {...register('expiresAt')} />
+          <DatePicker
+            id="expiry-expires-at"
+            label={labels.expiresAt}
+            value={expiresAtValue}
+            onChange={(next) => {
+              setExpiresAtValue(next);
+              setValue('expiresAt', next);
+            }}
+            labels={labels.datePicker}
+            ariaInvalid={Boolean(errors.expiresAt)}
+          />
           {errors.expiresAt ? <p className="mt-1 text-xs text-ember">{labels.invalidRange}</p> : null}
         </div>
         <div>
@@ -530,10 +549,13 @@ type EditExpiryRowFormProps = {
  */
 function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRowFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const [issuedAtValue, setIssuedAtValue] = useState(expiry.issuedAt);
+  const [expiresAtValue, setExpiresAtValue] = useState(expiry.expiresAt);
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<EditExpiryFormValues>({
     resolver: zodResolver(editExpiryFormSchema),
@@ -570,21 +592,29 @@ function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRo
       data-testid="edit-expiry-form"
     >
       <div>
-        <label htmlFor={`edit-issued-at-${expiry.id}`} className="block text-sm font-medium text-ink">
-          {labels.issuedAt}
-        </label>
-        <input id={`edit-issued-at-${expiry.id}`} type="date" aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
+        <DatePicker
+          id={`edit-issued-at-${expiry.id}`}
+          label={labels.issuedAt}
+          value={issuedAtValue}
+          onChange={(next) => {
+            setIssuedAtValue(next);
+            setValue('issuedAt', next);
+          }}
+          labels={labels.datePicker}
+          ariaInvalid={Boolean(errors.issuedAt)}
+        />
       </div>
       <div>
-        <label htmlFor={`edit-expires-at-${expiry.id}`} className="block text-sm font-medium text-ink">
-          {labels.expiresAt}
-        </label>
-        <input
+        <DatePicker
           id={`edit-expires-at-${expiry.id}`}
-          type="date"
-          aria-invalid={Boolean(errors.expiresAt)}
-          className={inputClasses}
-          {...register('expiresAt')}
+          label={labels.expiresAt}
+          value={expiresAtValue}
+          onChange={(next) => {
+            setExpiresAtValue(next);
+            setValue('expiresAt', next);
+          }}
+          labels={labels.datePicker}
+          ariaInvalid={Boolean(errors.expiresAt)}
         />
         {errors.expiresAt ? <p className="mt-1 text-xs text-ember">{labels.invalidRange}</p> : null}
       </div>

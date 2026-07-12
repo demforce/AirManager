@@ -408,7 +408,7 @@ test.describe('Training notes (Story 9.2, FR-33)', () => {
     await page.goto(`/it/dashboard/school/${student.personId}`);
 
     await page.getByTestId('new-training-note-action').click();
-    await page.getByLabel('Data addestramento').fill('2020-02-05');
+    await page.getByLabel('Data addestramento').fill('05/02/2020');
     await page.getByLabel('Volo collegato').selectOption(flight.id);
     await page.getByLabel('Esercizi svolti').fill('Circuiti, decolli e atterraggi');
     await page.getByLabel('Giudizio').fill('Buon controllo direzionale');
@@ -503,7 +503,7 @@ test.describe('Training notes (Story 9.2, FR-33)', () => {
     await page.goto(`/it/dashboard/school/${student.personId}`);
 
     await page.getByTestId('new-training-note-action').click();
-    await page.getByLabel('Data addestramento').fill('2026-07-05');
+    await page.getByLabel('Data addestramento').fill('05/07/2026');
     await page.getByLabel('Esercizi svolti').fill('Circuiti iniziali');
     await page.getByRole('button', { name: 'Salva annotazione' }).click();
 
