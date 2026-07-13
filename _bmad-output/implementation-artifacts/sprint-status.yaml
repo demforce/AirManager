@@ -139,6 +139,9 @@ development_status:
   # TD post-epic-12: rifiniture UI da change request utente 2026-07-12 sera
   td-6-ui-refinements: done
 
+  # TD: fusione Piloti+Utenti (una pagina, un form) da change request utente 2026-07-13
+  td-7-people-users-merge: ready-for-dev
+
 action_items:
   - epic: 9
     action: "AI-1: eseguire il TD-5 (deferred pass: hydration money-format, from<=to pagina school, locale diario, azzera-filtri PPR, ricontrollo scadenze updateBooking, pg.Pool warning) col ciclo story->dev->review"
