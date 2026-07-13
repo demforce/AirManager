@@ -155,8 +155,22 @@ export type FlightsManagerLabels = {
       INSTRUCTOR_NOT_FOUND: string;
       INSTRUCTOR_SAME_AS_PILOT: string;
       FLIGHT_DATE_IN_FUTURE: string;
+      /** TD-8, AC 1/6 — `{balance}`/`{amount}` placeholders, client-filled with `formatCents`. */
+      INSUFFICIENT_BALANCE: string;
+      /** TD-8, AC 4-bis — `{reason}` placeholder, client-filled (same pattern as `BookingsPage`'s own `AIRCRAFT_OUT_OF_SERVICE`). */
+      AIRCRAFT_OUT_OF_SERVICE: string;
       generic: string;
     };
+  };
+  /** TD-8, AC 2/6 — "Forza registrazione", admin-only bypass of the insufficient-balance guard; STESSO pattern UI del "Forza prenotazione" di 7.4 (`NewBookingFormLabels['force']`), shared by both registration and correction. */
+  force: {
+    title: string;
+    description: string;
+    reasonLabel: string;
+    submit: string;
+    cancel: string;
+    requiredReason: string;
+    generic: string;
   };
   result: {
     title: string;
@@ -220,6 +234,8 @@ export type FlightsManagerLabels = {
     /** Also doubles as the per-row `flight-detail-action` button's label — one string, two call sites. */
     openAction: string;
     close: string;
+    /** TD-8, AC 6 — term for the balance-override motivazione, shown only on a forced flight, gated `flights.manage`. */
+    forcedReason: string;
   };
   /** Story 5.3, AC 1 — the inline "Annulla volo" confirmation panel. */
   cancelPanel: {
@@ -270,6 +286,8 @@ export type FlightsManagerLabels = {
 type FlightsManagerProps = {
   /** Story 5.4 — `flights.manage`: full manager (form + actions + every filter). Otherwise: the own-access read-only registry (period/type/status only). */
   canManage: boolean;
+  /** TD-8, AC 2/6 — `flights.force.balance` (admin-only, server-derived, pattern 2.3's `readOnly`): gates the "Forza registrazione" affordance in the registration/correction dialog. */
+  canForceBalance: boolean;
   /** Story 12.6 (AC 3) — the command palette's "Registra volo" deep-link (`?new=1`, already `canManage`-gated by the page): opens the registration dialog once on mount. */
   initialCreateOpen?: boolean;
   aircraftOptions: AircraftOption[];
@@ -388,6 +406,7 @@ export function flightTypeLabel(type: FlightListItemDto['flightType'], labels: F
  */
 export function FlightsManager({
   canManage,
+  canForceBalance,
   initialCreateOpen,
   aircraftOptions,
   personOptions,
@@ -648,8 +667,11 @@ export function FlightsManager({
               personOptions={personOptions}
               instructorOptions={instructorOptions}
               airfieldName={airfieldName}
+              moneyLocale={moneyLocale}
+              canForceBalance={canForceBalance}
               labels={labels.form}
               correctLabels={labels.correctPanel}
+              forceLabels={labels.force}
               pickerLabels={labels.picker}
               datePickerLabels={labels.datePicker}
               correctingFlight={correctingFlight}
@@ -1471,8 +1493,12 @@ type RegisterFlightFormProps = {
   instructorOptions: PersonOption[];
   /** Story 11.1 (AC 1) — the registration-mode default for departure/arrival. */
   airfieldName: string;
+  moneyLocale: 'it' | 'en';
+  /** TD-8, AC 2/6 — `flights.force.balance` (admin-only): gates the "Forza registrazione" section below. */
+  canForceBalance: boolean;
   labels: FlightsManagerLabels['form'];
   correctLabels: FlightsManagerLabels['correctPanel'];
+  forceLabels: FlightsManagerLabels['force'];
   pickerLabels: FlightsManagerLabels['picker'];
   datePickerLabels: FlightsManagerLabels['datePicker'];
   /** Story 5.3, AC 2 — non-null re-purposes this SAME form into the "Correggi volo" editor. */
@@ -1487,8 +1513,11 @@ function RegisterFlightForm({
   personOptions,
   instructorOptions,
   airfieldName,
+  moneyLocale,
+  canForceBalance,
   labels,
   correctLabels,
+  forceLabels,
   pickerLabels,
   datePickerLabels,
   correctingFlight,
@@ -1497,6 +1526,16 @@ function RegisterFlightForm({
   onCorrected,
 }: RegisterFlightFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  // TD-8, AC 2/6 — "Forza registrazione": `pendingForceBody` is the EXACT
+  // body that just got rejected with `INSUFFICIENT_BALANCE` (non-null only
+  // right after that 422, and only when `canForceBalance`) — resubmitting it
+  // plus `force`/`forceReason` never makes the user re-fill the form (same
+  // pattern as `new-booking-form.tsx`'s "Forza prenotazione", story 7.4).
+  const [pendingForceBody, setPendingForceBody] = useState<Record<string, unknown> | null>(null);
+  const [forceReason, setForceReason] = useState('');
+  const [forceReasonTouched, setForceReasonTouched] = useState(false);
+  const [forceSubmitting, setForceSubmitting] = useState(false);
+  const [forceError, setForceError] = useState<string | null>(null);
   const defaults = flightFormDefaults(correctingFlight, airfieldName);
   // Story 9.4 (AC 1): `flightType` stays `register`-only (RHF reads it from
   // the DOM at submit, same as before) — this mirrors it into plain state,
@@ -1580,8 +1619,17 @@ function RegisterFlightForm({
     return base;
   }, [instructorOptions, correctingFlight, labels.noInstructor]);
 
+  /** Clears every force-related state — used both on a successful bypass and on "Annulla" (TD-8, same idiom as `new-booking-form.tsx`'s `resetForceState`). */
+  function resetForceState(): void {
+    setPendingForceBody(null);
+    setForceReason('');
+    setForceReasonTouched(false);
+    setForceError(null);
+  }
+
   async function onSubmit(values: FlightFormValues): Promise<void> {
     setFormError(null);
+    resetForceState();
 
     if (aircraftId.trim() === '' || personId.trim() === '') {
       setFormError(labels.requiredField);
@@ -1644,6 +1692,29 @@ function RegisterFlightForm({
     const notes = values.notes.trim() === '' ? undefined : values.notes.trim();
     const trimmedReason = reason.trim();
 
+    // TD-8: named so a rejected `INSUFFICIENT_BALANCE` can be resubmitted
+    // unchanged plus `force`/`forceReason` from the "Forza registrazione"
+    // section below (`pendingForceBody`) — the user never re-fills the form.
+    const requestBody = {
+      aircraftId,
+      personId,
+      instructorPersonId: instructorPersonId === '' ? undefined : instructorPersonId,
+      departureAirfield: values.departureAirfield.trim(),
+      arrivalAirfield: values.arrivalAirfield.trim(),
+      takeoffAt: times.takeoffAt.toISOString(),
+      landingAt: times.landingAt.toISOString(),
+      flightType: values.flightType,
+      // Story 9.4 (AC 1) — meaningful only on SCHOOL; the same body is
+      // used for both registration and correction (correctFlight
+      // re-validates/re-persists it exactly like every other field).
+      isSolo,
+      ...hourMeterPayload,
+      takeoffs,
+      landings,
+      notes,
+      ...(isCorrecting ? { reason: trimmedReason } : {}),
+    };
+
     // Story TD-2 (AC 6): only the registration path sends the key (see the
     // hook's doc-comment above) — the key survives a network failure (the
     // retry this protects) but is regenerated once ANY HTTP response
@@ -1656,25 +1727,7 @@ function RegisterFlightForm({
           'Content-Type': 'application/json',
           ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
         },
-        body: JSON.stringify({
-          aircraftId,
-          personId,
-          instructorPersonId: instructorPersonId === '' ? undefined : instructorPersonId,
-          departureAirfield: values.departureAirfield.trim(),
-          arrivalAirfield: values.arrivalAirfield.trim(),
-          takeoffAt: times.takeoffAt.toISOString(),
-          landingAt: times.landingAt.toISOString(),
-          flightType: values.flightType,
-          // Story 9.4 (AC 1) — meaningful only on SCHOOL; the same body is
-          // used for both registration and correction (correctFlight
-          // re-validates/re-persists it exactly like every other field).
-          isSolo,
-          ...hourMeterPayload,
-          takeoffs,
-          landings,
-          notes,
-          ...(isCorrecting ? { reason: trimmedReason } : {}),
-        }),
+        body: JSON.stringify(requestBody),
       });
     } catch {
       setFormError(labels.errors.generic);
@@ -1690,7 +1743,31 @@ function RegisterFlightForm({
         return;
       }
       const body: unknown = await response.json().catch(() => null);
-      const code = (body as { error?: { code?: string } } | null)?.error?.code;
+      const errorBody = body as { error?: { code?: string; details?: { balanceCents?: number; amountCents?: number; reason?: string } } } | null;
+      const code = errorBody?.error?.code;
+      // TD-8, AC 1/6: names saldo/importo with the existing money formatting
+      // — never the server's English-only message (AD-8: codes+details drive
+      // the UI). Only `canForceBalance` (admin) also opens "Forza
+      // registrazione", resending `requestBody` unchanged.
+      if (code === 'INSUFFICIENT_BALANCE') {
+        const balanceCents = errorBody?.error?.details?.balanceCents ?? 0;
+        const amountCents = errorBody?.error?.details?.amountCents ?? 0;
+        setFormError(
+          labels.errors.INSUFFICIENT_BALANCE.replace('{balance}', formatCents(balanceCents, moneyLocale)).replace(
+            '{amount}',
+            formatCents(amountCents, moneyLocale),
+          ),
+        );
+        if (canForceBalance) {
+          setPendingForceBody(requestBody);
+        }
+        return;
+      }
+      // TD-8, AC 4-bis: never bypassable — no force affordance for this one.
+      if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
+        setFormError(labels.errors.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', errorBody?.error?.details?.reason ?? ''));
+        return;
+      }
       const knownErrors: Record<string, string> = labels.errors;
       setFormError((code && knownErrors[code]) ?? labels.errors.generic);
       return;
@@ -1702,6 +1779,11 @@ function RegisterFlightForm({
     } else {
       onSuccess(result);
     }
+    resetFormToBlank();
+  }
+
+  /** Blanks every field back to a fresh registration form — shared by `onSubmit`'s success path and `onForceSubmit`'s (TD-8), which never re-runs the RHF-driven reset above on its own. */
+  function resetFormToBlank(): void {
     const blankValues = flightFormDefaults(null, airfieldName);
     reset(blankValues);
     // Story TD-3: the 3 picker fields reset alongside the RHF-managed ones
@@ -1721,6 +1803,58 @@ function RegisterFlightForm({
     setFlightDateValue(blankValues.flightDate);
     setTakeoffTimeValue(blankValues.takeoffTime);
     setLandingTimeValue(blankValues.landingTime);
+  }
+
+  /**
+   * TD-8, AC 2/6 — "Forza registrazione": resubmits `pendingForceBody`
+   * (the EXACT body `onSubmit` just got rejected with `INSUFFICIENT_BALANCE`)
+   * plus `force`/`forceReason`, same endpoint/mode as the primary submit.
+   * Mirrors `new-booking-form.tsx#onForceSubmit` (story 7.4) — a failure here
+   * shows only the generic message (the primary path above already covers
+   * every other domain code, same simplification 7.4 made).
+   */
+  async function onForceSubmit(): Promise<void> {
+    const trimmedForceReason = forceReason.trim();
+    setForceReasonTouched(true);
+    if (trimmedForceReason.length === 0) {
+      setForceError(forceLabels.requiredReason);
+      return;
+    }
+    if (!pendingForceBody) {
+      return;
+    }
+
+    setForceSubmitting(true);
+    setForceError(null);
+
+    const response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight.id}/correct` : '/api/v1/flights', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
+      },
+      body: JSON.stringify({ ...pendingForceBody, force: true, forceReason: trimmedForceReason }),
+    });
+
+    setForceSubmitting(false);
+    if (!isCorrecting) {
+      regenerateIdempotencyKey();
+    }
+
+    if (!response.ok) {
+      setForceError(forceLabels.generic);
+      return;
+    }
+
+    const result = (await response.json()) as RegisterFlightResponseDto;
+    if (isCorrecting) {
+      onCorrected(result, correctingFlight.id, reason.trim());
+    } else {
+      onSuccess(result);
+    }
+    setFormError(null);
+    resetForceState();
+    resetFormToBlank();
   }
 
   // Story 11.1 (AC 2): the live-computed duration, `null` until both times
@@ -2033,6 +2167,67 @@ function RegisterFlightForm({
         <p role="alert" data-testid="flight-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
           {formError}
         </p>
+      ) : null}
+
+      {/* "Forza registrazione" (TD-8, AC 2/6) — admin-only bypass of the
+          insufficient-balance guard; the actual `flights.force.balance` gate
+          is server-side (AD-5), `canForceBalance` is this component's own
+          mirror of that permission (page.tsx only sets it for admin).
+          STESSO pattern UI del "Forza prenotazione" di 7.4, INCLUSA la
+          scelta visiva corrente (decisione 121-N1 ancora pendente — non
+          toccata qui): colori/classi copiati verbatim da `new-booking-form.tsx`. */}
+      {pendingForceBody && canForceBalance ? (
+        <div
+          data-testid="force-flight-section"
+          className="space-y-3 rounded-nested border border-[#EADFAE] bg-[#FBF3DB] px-4 py-4"
+        >
+          <div>
+            <h4 className="text-sm font-medium text-[#7A5A00]">{forceLabels.title}</h4>
+            <p className="mt-1 text-sm text-[#956400]">{forceLabels.description}</p>
+          </div>
+          <div>
+            <label htmlFor="flight-force-reason" className="block text-sm font-medium text-[#7A5A00]">
+              {forceLabels.reasonLabel}
+            </label>
+            <textarea
+              id="flight-force-reason"
+              rows={2}
+              maxLength={500}
+              value={forceReason}
+              onChange={(event) => setForceReason(event.target.value)}
+              aria-invalid={forceReasonTouched && forceReason.trim().length === 0}
+              data-testid="force-flight-reason"
+              className="mt-2 w-full rounded-buttons border border-[#EADFAE] bg-paper px-3 py-2 text-base text-ink outline-none transition-colors focus:border-[#956400]"
+            />
+          </div>
+          {forceError ? (
+            <p role="alert" data-testid="force-flight-error" className="text-xs text-ember">
+              {forceError}
+            </p>
+          ) : null}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              disabled={forceSubmitting}
+              onClick={() => void onForceSubmit()}
+              data-testid="force-flight-submit"
+              className="min-h-[40px] rounded-buttons bg-[#956400] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#7A5300] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {forceLabels.submit}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetForceState();
+                setFormError(null);
+              }}
+              data-testid="force-flight-cancel"
+              className="min-h-[40px] rounded-buttons border border-[#EADFAE] bg-paper px-4 py-2 text-sm font-medium text-[#7A5A00] transition-colors hover:bg-[#F7F1DC]"
+            >
+              {forceLabels.cancel}
+            </button>
+          </div>
+        </div>
       ) : null}
 
       <Button

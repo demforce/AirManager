@@ -206,6 +206,10 @@ const CREATED_FLIGHT_ROW = {
   cancelledAt: null as Date | null,
   cancelReason: null as string | null,
   correctionOfId: null as string | null,
+  // TD-8 — a plain fixture flight was never forced past an insufficient balance.
+  balanceForcedAt: null as Date | null,
+  balanceForcedByUserId: null as string | null,
+  balanceForceReason: null as string | null,
   correctedBy: null as { id: string } | null,
   aircraft: { id: 'aircraft_1', registration: 'I-ABCD' },
   person: { id: 'person_1', firstName: 'Mario', lastName: 'Rossi' },
@@ -358,7 +362,12 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         studentProfile: { deactivatedAt: null },
       });
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      // TD-8: a comfortably sufficient balance, here and at every other
+      // `accountMovementAggregate.mockResolvedValue` in this file that is
+      // NOT one of the dedicated insufficient-balance-guard tests below —
+      // `0` would spuriously trip the new `INSUFFICIENT_BALANCE` guard for
+      // any real (>0) charge these unrelated tests register.
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
@@ -380,7 +389,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
@@ -415,7 +424,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 1440 });
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
@@ -428,7 +437,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, hourMeterStart: 1000, hourMeterEnd: 1050, minutes: 50 });
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
@@ -455,7 +464,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, hourMeterStart: 1000, hourMeterEnd: 1200, minutes: 80 });
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
@@ -502,7 +511,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 40 });
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
@@ -543,7 +552,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL', isSolo: true });
@@ -623,7 +632,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     beforeEach(() => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
@@ -681,7 +690,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
@@ -772,7 +781,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     beforeEach(() => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
@@ -859,7 +868,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
@@ -879,7 +888,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
@@ -1084,8 +1093,12 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('ok -> negative (a 20000-cent charge crossing zero) sends the alert, post-commit', async () => {
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 5000 } });
       getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: -15000 });
+      // TD-8: a charge crossing zero is now BLOCKED unless forced by an
+      // admin (AC 1/2) — this scenario only remains reachable that way; the
+      // alert itself is unchanged by the force (AC 4).
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Autorizzato dal direttore' });
 
-      await registerFlight(staffActor(), BASE_INPUT);
+      await registerFlight(adminActor(), input);
 
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledTimes(1);
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledWith(
@@ -1244,7 +1257,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
       getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_x' });
       flightUpdate.mockResolvedValue({});
       hourPackageFindMany.mockResolvedValue([]);
@@ -1365,9 +1378,16 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 5000 } });
       getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: -15000 });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 200, aircraftAmountCents: 50000 });
-      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, ...buildTimes('2020-01-15', 200) });
+      // TD-8: same as registerFlight's own alert test — a charge crossing
+      // zero is now BLOCKED unless forced by an admin (AC 1/2/3).
+      const input = correctFlightSchema.parse({
+        ...CORRECT_INPUT,
+        ...buildTimes('2020-01-15', 200),
+        force: true,
+        forceReason: 'Autorizzato dal direttore',
+      });
 
-      await correctFlight(staffActor(), 'flight_orig', input);
+      await correctFlight(adminActor(), 'flight_orig', input);
 
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledTimes(1);
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledWith(
@@ -1427,6 +1447,194 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       // Both aircraft rows resolved to a hour-meter value (Map keyed by id) — the NEW aircraft's is used for the core's increment (100 + 30 minutes).
       expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_2' }, data: { hourMeterMinutes: 130 } });
       expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 420 } });
+    });
+  });
+
+  describe('flight balance guard on registerFlight (TD-8, AC 1/2) — insufficient balance blocks the charge, admin-only force bypasses it', () => {
+    // BASE_INPUT: 80' @ 150,00 €/h -> 20000 cents aircraft charge, no instructor (CREATED_FLIGHT_ROW's own default).
+    beforeEach(() => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+    });
+
+    it('blocks to the cent: balance one cent short of the charge -> 422 INSUFFICIENT_BALANCE with { balanceCents, amountCents }, NO writes', async () => {
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 19_999 } });
+
+      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({
+        code: 'INSUFFICIENT_BALANCE',
+        details: { balanceCents: 19_999, amountCents: 20_000 },
+      });
+      expect(flightCreateMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
+      expect(aircraftUpdateMock).not.toHaveBeenCalled();
+      expect(packageConsumptionCreateManyMock).not.toHaveBeenCalled();
+    });
+
+    it('passes at an EXACT balance match (saldo a zero esatto è lecito)', async () => {
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 20_000 } });
+
+      await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalled();
+    });
+
+    it('a flight entirely covered by packages (amountCents 0) ALWAYS passes, even at an already-negative balance', async () => {
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: -50_000 } });
+      hourPackageFindMany.mockResolvedValue([{ id: 'hp_1', includedMinutes: 80, packageType: { name: 'Pacchetto Full' } }]);
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, aircraftAmountCents: 0, packageCoveredMinutes: 80 });
+
+      await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amountCents: 0 }) }));
+    });
+
+    it('force:true without flights.force.balance (staff) -> 403, before any query at all', async () => {
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Tentativo non autorizzato' });
+
+      await expect(registerFlight(staffActor(), input)).rejects.toThrow(ForbiddenError);
+      expect(aircraftFindUniqueMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('admin force bypasses an insufficient balance, stamping balanceForcedAt/balanceForcedByUserId/balanceForceReason set-together on the created flight', async () => {
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Autorizzato dal direttore' });
+
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            balanceForcedAt: expect.any(Date),
+            balanceForcedByUserId: 'admin_1',
+            balanceForceReason: 'Autorizzato dal direttore',
+          }),
+        }),
+      );
+    });
+
+    it('force:true with a SUFFICIENT balance is a declared no-op — registers normally, WITHOUT stamping (nothing was actually bypassed)', async () => {
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10_000_000 } });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Non necessario' });
+
+      await registerFlight(adminActor(), input);
+
+      const createArgs = flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> };
+      expect(createArgs.data).not.toHaveProperty('balanceForcedAt');
+      expect(createArgs.data).not.toHaveProperty('balanceForcedByUserId');
+      expect(createArgs.data).not.toHaveProperty('balanceForceReason');
+    });
+  });
+
+  describe('flight balance guard on correctFlight (TD-8, AC 3) — the new charge is checked against the balance AS IT STANDS AFTER the storno', () => {
+    // 30' @ 150,00 €/h -> 7500 cents (matches `flightCreate`'s own aircraftAmountCents below).
+    const BALANCE_CORRECT_INPUT = correctFlightSchema.parse({
+      aircraftId: 'aircraft_1',
+      personId: 'person_1',
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      flightType: 'TOURISM',
+      ...buildTimes('2020-01-15', 30),
+      reason: 'Errore minuti',
+    });
+
+    beforeEach(() => {
+      flightFindUnique.mockResolvedValue(ORIGINAL_FLIGHT_ROW);
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_x' });
+      flightUpdate.mockResolvedValue({});
+      hourPackageFindMany.mockResolvedValue([]);
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 30, aircraftAmountCents: 7500 });
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
+    });
+
+    // `registerFlightCore`'s own "saldo-prima" aggregate read is called AFTER
+    // this function's storno write, in the SAME transaction (module
+    // doc-comment: read-your-own-writes) — the mocked value below stands in
+    // for that already-refunded SUM, exercising the guard against exactly
+    // the value production code would compute post-storno.
+    it('blocks to the cent against the POST-STORNO balance (one cent short of the new charge)', async () => {
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 7_499 } });
+
+      await expect(correctFlight(staffActor(), 'flight_orig', BALANCE_CORRECT_INPUT)).rejects.toMatchObject({
+        code: 'INSUFFICIENT_BALANCE',
+        details: { balanceCents: 7_499, amountCents: 7_500 },
+      });
+      expect(flightCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('passes at an EXACT post-storno balance match', async () => {
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 7_500 } });
+
+      await expect(correctFlight(staffActor(), 'flight_orig', BALANCE_CORRECT_INPUT)).resolves.toBeDefined();
+    });
+
+    it('force:true without flights.force.balance (staff) on a correction -> 403, before touching the original flight at all', async () => {
+      const input = correctFlightSchema.parse({ ...BALANCE_CORRECT_INPUT, force: true, forceReason: 'Tentativo non autorizzato' });
+
+      await expect(correctFlight(staffActor(), 'flight_orig', input)).rejects.toThrow(ForbiddenError);
+      expect(flightFindUniqueMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('admin force bypasses an insufficient POST-STORNO balance, stamping the NEW flight', async () => {
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      const input = correctFlightSchema.parse({ ...BALANCE_CORRECT_INPUT, force: true, forceReason: 'Autorizzato dal direttore' });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            balanceForcedAt: expect.any(Date),
+            balanceForcedByUserId: 'admin_1',
+            balanceForceReason: 'Autorizzato dal direttore',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('AOG guard (TD-8, AC 4-bis) — an out-of-service aircraft blocks registration AND correction, force NEVER bypasses it', () => {
+    const AOG_AIRCRAFT = { ...AIRCRAFT, status: 'OUT_OF_SERVICE', statusReason: 'Manutenzione programmata' };
+
+    it('registerFlight: 422 AIRCRAFT_OUT_OF_SERVICE with { reason }, even with force:true from an admin', async () => {
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Autorizzato dal direttore' });
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({
+        code: 'AIRCRAFT_OUT_OF_SERVICE',
+        details: { reason: 'Manutenzione programmata' },
+      });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('correctFlight: 422 AIRCRAFT_OUT_OF_SERVICE with { reason } on the CORRECTED data, even with force:true from an admin', async () => {
+      flightFindUnique.mockResolvedValue(ORIGINAL_FLIGHT_ROW);
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input = correctFlightSchema.parse({
+        aircraftId: 'aircraft_1',
+        personId: 'person_1',
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        ...buildTimes('2020-01-15', 30),
+        reason: 'Errore minuti',
+        force: true,
+        forceReason: 'Autorizzato dal direttore',
+      });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
+        code: 'AIRCRAFT_OUT_OF_SERVICE',
+        details: { reason: 'Manutenzione programmata' },
+      });
+      expect(transactionMock).not.toHaveBeenCalled();
     });
   });
 
@@ -1670,6 +1878,30 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       const ownResult = await getFlight(pilotActor('person_1'), 'flight_1');
       expect(ownResult.actorEmail).toBeUndefined();
     });
+
+    // TD-8, AC 5/Dev Notes risk n.2 — the balance-override fields are gated
+    // `flights.manage`, same conditional-field TECHNIQUE as `actorEmail`
+    // above (a DIFFERENT permission though: `people.read` for `actorEmail`
+    // vs `flights.manage` here, per the story's literal AC 5).
+    it('balanceForcedAt/balanceForcedByUserId/balanceForceReason are present (non-null on a forced flight) for flights.manage, absent entirely for own-access', async () => {
+      const forcedAt = new Date('2026-07-13T12:00:00.000Z');
+      flightFindUnique.mockResolvedValue({
+        ...CREATED_FLIGHT_ROW,
+        balanceForcedAt: forcedAt,
+        balanceForcedByUserId: 'admin_1',
+        balanceForceReason: 'Autorizzato dal direttore',
+      });
+
+      const staffResult = await getFlight(adminActor(), 'flight_1');
+      expect(staffResult.balanceForcedAt).toEqual(forcedAt);
+      expect(staffResult.balanceForcedByUserId).toBe('admin_1');
+      expect(staffResult.balanceForceReason).toBe('Autorizzato dal direttore');
+
+      const ownResult = await getFlight(pilotActor('person_1'), 'flight_1');
+      expect(ownResult.balanceForcedAt).toBeUndefined();
+      expect(ownResult.balanceForcedByUserId).toBeUndefined();
+      expect(ownResult.balanceForceReason).toBeUndefined();
+    });
   });
 });
 
@@ -1735,6 +1967,76 @@ describe('registerFlightSchema (story 11.1, AC 1/2/3 — logbook fields, no more
     expect(registerFlightSchema.safeParse({ ...VALID, landings: 0 }).success).toBe(true);
     expect(registerFlightSchema.safeParse({ ...VALID, takeoffs: -1 }).success).toBe(false);
     expect(registerFlightSchema.safeParse({ ...VALID, takeoffs: 501 }).success).toBe(false);
+  });
+
+  // --- force/forceReason (TD-8, AC 2) — same refine as `createBookingSchema` (story 7.4) ---
+  describe('force/forceReason refine', () => {
+    it('accepts a body with neither force nor forceReason (the common case)', () => {
+      expect(registerFlightSchema.safeParse(VALID).success).toBe(true);
+    });
+
+    it('accepts force: true WITH a non-empty forceReason', () => {
+      expect(registerFlightSchema.safeParse({ ...VALID, force: true, forceReason: 'Autorizzato dal direttore' }).success).toBe(true);
+    });
+
+    it('rejects force: true WITHOUT forceReason (422 refine)', () => {
+      const result = registerFlightSchema.safeParse({ ...VALID, force: true });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((issue) => issue.path.includes('forceReason'))).toBe(true);
+      }
+    });
+
+    it('rejects force: true with an empty/whitespace-only forceReason (422 refine)', () => {
+      expect(registerFlightSchema.safeParse({ ...VALID, force: true, forceReason: '' }).success).toBe(false);
+      expect(registerFlightSchema.safeParse({ ...VALID, force: true, forceReason: '   ' }).success).toBe(false);
+    });
+
+    it('rejects forceReason over 500 chars', () => {
+      expect(registerFlightSchema.safeParse({ ...VALID, force: true, forceReason: 'x'.repeat(501) }).success).toBe(false);
+    });
+
+    it('a forceReason WITHOUT force: true is accepted (harmless — the service never reads it unless force is also true)', () => {
+      expect(registerFlightSchema.safeParse({ ...VALID, forceReason: 'Non necessario' }).success).toBe(true);
+    });
+
+    it('force: false with no forceReason is accepted (the refine only fires when force is true)', () => {
+      expect(registerFlightSchema.safeParse({ ...VALID, force: false }).success).toBe(true);
+    });
+  });
+});
+
+describe('correctFlightSchema (story 5.3, AC 2; TD-8, AC 2/3) — registerFlightSchema fields plus a mandatory reason, SAME force/forceReason refine', () => {
+  const VALID_CORRECTION = {
+    aircraftId: 'aircraft_1',
+    personId: 'person_1',
+    departureAirfield: 'Base Airfield',
+    arrivalAirfield: 'Base Airfield',
+    takeoffAt: '2026-07-08T10:00:00.000Z',
+    landingAt: '2026-07-08T11:20:00.000Z',
+    flightType: 'TOURISM' as const,
+    reason: 'Errore minuti',
+  };
+
+  it('accepts a fully valid correction body', () => {
+    expect(correctFlightSchema.safeParse(VALID_CORRECTION).success).toBe(true);
+  });
+
+  it('rejects a missing/empty reason', () => {
+    expect(correctFlightSchema.safeParse({ ...VALID_CORRECTION, reason: undefined }).success).toBe(false);
+    expect(correctFlightSchema.safeParse({ ...VALID_CORRECTION, reason: '' }).success).toBe(false);
+  });
+
+  it('accepts force: true WITH a non-empty forceReason', () => {
+    expect(correctFlightSchema.safeParse({ ...VALID_CORRECTION, force: true, forceReason: 'Autorizzato dal direttore' }).success).toBe(true);
+  });
+
+  it('rejects force: true WITHOUT forceReason (422 refine)', () => {
+    const result = correctFlightSchema.safeParse({ ...VALID_CORRECTION, force: true });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.includes('forceReason'))).toBe(true);
+    }
   });
 });
 

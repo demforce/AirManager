@@ -220,6 +220,15 @@ export type FlightListItem = {
   correctionOfId: string | null;
   /** Story 5.3 — the NEW flight that replaced THIS one, from the inverse `correctedBy` relation. `null` unless this flight was corrected. */
   correctedByFlightId: string | null;
+  /**
+   * TD-8, AC 2/5 — the insufficient-balance override tracking. CONDITIONAL:
+   * present only when the caller has `flights.manage` (`toListItem`'s
+   * `includeForcedFields` gate, same pattern as `actorEmail` above); when
+   * present, `null` on every non-forced flight.
+   */
+  balanceForcedAt?: Date | null;
+  balanceForcedByUserId?: string | null;
+  balanceForceReason?: string | null;
 };
 
 export type FlightListResult = PaginatedResult<FlightListItem>;
@@ -254,6 +263,12 @@ const FLIGHT_SELECT = {
   cancelledAt: true,
   cancelReason: true,
   correctionOfId: true,
+  // TD-8, AC 2/5 — the insufficient-balance override tracking, gated in the
+  // DTO by `toListItem`'s `includeForcedFields` (same conditional pattern
+  // as `actorEmail`), never here (the SELECT always fetches all three).
+  balanceForcedAt: true,
+  balanceForcedByUserId: true,
+  balanceForceReason: true,
   // The inverse self-relation (story 5.3) — `id` only, just enough to
   // populate `correctedByFlightId` without an extra query.
   correctedBy: { select: { id: true } },
@@ -301,6 +316,9 @@ type SelectedFlight = {
   cancelledAt: Date | null;
   cancelReason: string | null;
   correctionOfId: string | null;
+  balanceForcedAt: Date | null;
+  balanceForcedByUserId: string | null;
+  balanceForceReason: string | null;
   correctedBy: { id: string } | null;
   aircraft: { id: string; registration: string };
   person: { id: string; firstName: string; lastName: string };
@@ -314,11 +332,16 @@ type SelectedFlight = {
  * own-access gate (`hasPermission(actor, 'people.read')` at the call site) —
  * a pilot/student reading their own registry never learns who registered the
  * movement (same conditional-field pattern as `accounts.service.ts`'s
- * `toStatementItem`). Every staff-only entrypoint in this file
+ * `toStatementItem`). `includeForcedFields` is TD-8's own gate
+ * (`hasPermission(actor, 'flights.manage')`) for the insufficient-balance
+ * override tracking — same conditional-field technique, DELIBERATELY a
+ * separate permission from `includeActorEmail`'s `people.read` (the story's
+ * literal AC 5: "stessa regola di actorEmail" means the SAME TECHNIQUE, not
+ * the same permission). Every staff-only entrypoint in this file
  * (`registerFlight`/`cancelFlight`/`correctFlight`, all gated on
- * `flights.manage`) always passes `true`.
+ * `flights.manage`) always passes `true` for both.
  */
-function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightListItem {
+function toListItem(flight: SelectedFlight, includeActorEmail: boolean, includeForcedFields: boolean): FlightListItem {
   const hasInstructor = flight.instructorRateCentsPerHour !== null && flight.instructorAmountCents !== null;
   return {
     id: flight.id,
@@ -369,6 +392,13 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightL
     cancelReason: flight.cancelReason,
     correctionOfId: flight.correctionOfId,
     correctedByFlightId: flight.correctedBy?.id ?? null,
+    ...(includeForcedFields
+      ? {
+          balanceForcedAt: flight.balanceForcedAt,
+          balanceForcedByUserId: flight.balanceForcedByUserId,
+          balanceForceReason: flight.balanceForceReason,
+        }
+      : {}),
   };
 }
 
@@ -425,7 +455,7 @@ type ResolvedFlightInput = {
 async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Promise<ResolvedFlightInput> {
   const aircraft = await prisma.aircraft.findUnique({
     where: { id: input.aircraftId },
-    select: { id: true, registration: true, archivedAt: true },
+    select: { id: true, registration: true, archivedAt: true, status: true, statusReason: true },
   });
   if (!aircraft) {
     throw new NotFoundError('Aircraft not found.');
@@ -449,6 +479,18 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Pro
 
   if (aircraft.archivedAt !== null) {
     throw new ValidationError('Cannot register a flight on an archived aircraft.', undefined, 'AIRCRAFT_ARCHIVED');
+  }
+  // TD-8, AC 4-bis: symmetric with `bookings.service.ts#createBooking`'s own
+  // AOG check (:412-413) — same code/shape. NEVER bypassable, not even by
+  // `force` (that flag only ever covers the insufficient-balance guard) —
+  // living here means it applies to BOTH `registerFlight`/`correctFlight`
+  // automatically (both call this function) with no separate check needed.
+  if (aircraft.status === 'OUT_OF_SERVICE') {
+    throw new ValidationError(
+      `Aircraft is out of service: ${aircraft.statusReason}.`,
+      { reason: aircraft.statusReason },
+      'AIRCRAFT_OUT_OF_SERVICE',
+    );
   }
   if (person.archivedAt !== null) {
     throw new ValidationError('Cannot register a flight for an archived person.', undefined, 'PERSON_ARCHIVED');
@@ -610,6 +652,10 @@ type RegisterFlightCoreInput = {
   instructorAmountCents: number | null;
   /** `Flight.correctionOfId` (story 5.3) — the ORIGINAL flight this one replaces, or `null` for a plain `registerFlight` call. */
   correctionOfId: string | null;
+  /** TD-8, AC 2/3 — admin-only bypass of the insufficient-balance guard below; the 403-for-non-admin check already ran in the caller. */
+  force: boolean;
+  /** Non-null whenever `force` is `true` (the schema's own refine guarantees it); ignored when `force` is `false`. */
+  forceReason: string | null;
 };
 
 type RegisterFlightCoreResult = {
@@ -711,6 +757,32 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
   const aircraftAmountCents = Math.round((params.aircraftRateCentsPerHour * chargedMinutes) / 60);
   const totalAmountCents = aircraftAmountCents + (params.instructorAmountCents ?? 0);
 
+  // TD-8, AC 1/2/3: the insufficient-balance guard — `balanceBeforeCents` is
+  // the SUM read above (for `correctFlight`, already post-storno:
+  // read-your-own-writes inside this same transaction, module doc-comment),
+  // so this is exactly "the balance the charge would apply against". Blocks
+  // iff the charge would push it below zero (`totalAmountCents >
+  // balanceBeforeCents`); `totalAmountCents === 0` (a fully package-covered
+  // flight) is EXPLICITLY exempt — it never blocks, even at an
+  // already-negative balance (Contesto: "passa SEMPRE"), which the plain
+  // `>` comparison alone would not guarantee (`0 > -500` is true). An exact
+  // match (`totalAmountCents === balanceBeforeCents`) is NOT a block (a
+  // zero-exact balance is legitimate).
+  let balanceForceStamp: { balanceForcedAt: Date; balanceForcedByUserId: string; balanceForceReason: string } | null = null;
+  if (totalAmountCents > 0 && totalAmountCents > balanceBeforeCents) {
+    if (!params.force) {
+      throw new ValidationError(
+        `Insufficient balance: charge ${totalAmountCents} exceeds available balance ${balanceBeforeCents}.`,
+        { balanceCents: balanceBeforeCents, amountCents: totalAmountCents },
+        'INSUFFICIENT_BALANCE',
+      );
+    }
+    // `force` guaranteed true here: `params.forceReason` is guaranteed
+    // non-empty by the schema's own refine plus the caller's 403 check —
+    // stamped set-together, same pattern as `Booking.forcedAt`.
+    balanceForceStamp = { balanceForcedAt: new Date(), balanceForcedByUserId: params.actorUserId, balanceForceReason: params.forceReason! };
+  }
+
   // Appends "(H:MM da pacchetto)" only when a package covered part of the
   // flight — the base description stays byte-identical to 5.1 otherwise.
   const description =
@@ -737,6 +809,7 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
       notes: params.notes,
       aircraftRateCentsPerHour: params.aircraftRateCentsPerHour,
       aircraftAmountCents,
+      ...(balanceForceStamp ?? {}),
       instructorRateCentsPerHour: params.instructorRateCentsPerHour,
       instructorAmountCents: params.instructorAmountCents,
       packageCoveredMinutes,
@@ -839,6 +912,14 @@ function isUniqueViolation(error: unknown): boolean {
 export async function registerFlight(actor: Actor, input: RegisterFlightInput): Promise<RegisterFlightResult> {
   authorize(actor, 'flights.manage');
 
+  // TD-8, AC 2: `force` without `flights.force.balance` is rejected BEFORE
+  // any further query (persona, rates, let alone the balance itself) — same
+  // order/unconditional-on-`force` shape as `bookings.service.ts#createBooking`'s
+  // own force-403 (story 7.4, :301-306).
+  if (input.force && !hasPermission(actor, 'flights.force.balance')) {
+    throw new ForbiddenError('Only an admin can force a flight past an insufficient balance.');
+  }
+
   const resolved = await resolveFlightInput(actor, input);
 
   // Threshold read BEFORE the transaction (same pattern as `recordAdjustment`).
@@ -898,6 +979,8 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
       instructorAmountCents: resolved.instructorAmountCents,
       correctionOfId: null,
+      force: input.force ?? false,
+      forceReason: input.forceReason ?? null,
     });
   });
 
@@ -919,7 +1002,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
   // `true`: registerFlight/cancelFlight/correctFlight are all staff-only
   // (`flights.manage`, story 5.4's own-access branch never reaches here) —
   // `actorEmail` is always shown to the staff actor who just acted.
-  return { flight: toListItem(createdFlight, true), account };
+  return { flight: toListItem(createdFlight, true, true), account };
 }
 
 /** The `FLIGHT_CHARGE` movement a `REGISTERED` flight must always have — loaded so `cancelFlight`/`correctFlight` can reverse it. */
@@ -1087,7 +1170,7 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
 
   const account = await getAccountOverview(actor, flight.personId);
 
-  return { flight: toListItem(updated, true), account };
+  return { flight: toListItem(updated, true, true), account };
 }
 
 /**
@@ -1129,6 +1212,12 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
  */
 export async function correctFlight(actor: Actor, flightId: string, input: CorrectFlightInput): Promise<RegisterFlightResult> {
   authorize(actor, 'flights.manage');
+
+  // TD-8, AC 2/3: same force-403, checked BEFORE any further query — see
+  // `registerFlight`'s identical guard for the full rationale.
+  if (input.force && !hasPermission(actor, 'flights.force.balance')) {
+    throw new ForbiddenError('Only an admin can force a flight past an insufficient balance.');
+  }
 
   const originalFlight = await loadRegisteredFlightForReversal(flightId);
   const reason = input.reason;
@@ -1229,6 +1318,8 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
       instructorAmountCents: resolved.instructorAmountCents,
       correctionOfId: originalFlight.id,
+      force: input.force ?? false,
+      forceReason: input.forceReason ?? null,
     });
   });
 
@@ -1244,7 +1335,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
     );
   }
 
-  return { flight: toListItem(createdFlight, true), account };
+  return { flight: toListItem(createdFlight, true, true), account };
 }
 
 /**
@@ -1345,7 +1436,7 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
   });
 
   return paginate(
-    items.map((item) => toListItem(item, includeActorEmail)),
+    items.map((item) => toListItem(item, includeActorEmail, canManage)),
     total,
     query,
   );
@@ -1382,5 +1473,5 @@ export async function getFlight(actor: Actor, id: string): Promise<FlightListIte
   }
 
   const includeActorEmail = hasPermission(actor, 'people.read');
-  return toListItem(flight, includeActorEmail);
+  return toListItem(flight, includeActorEmail, canManage);
 }

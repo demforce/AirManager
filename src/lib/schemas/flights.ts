@@ -51,12 +51,17 @@ export const listFlightsQuerySchema = paginationQuerySchema
 export type ListFlightsQuery = z.infer<typeof listFlightsQuerySchema>;
 
 /**
- * `POST /api/v1/flights` body (story 11.1, AC 1/2/3 — replaces story 5.1's
- * minutes/hourMeter-only shape). `departureAirfield`/`arrivalAirfield`
- * (free text, AC 1 defaults them to the airfield's own name for a local
- * flight) and `takeoffAt`/`landingAt` (full instants, `z.iso.datetime()`,
- * wire format ISO 8601 UTC — AD-8, same pattern as `createBookingSchema`)
- * are the SOURCE of both `minutes` and `flightDate`, derived server-side
+ * The field set shared by `registerFlightSchema` and `correctFlightSchema`
+ * (TD-8) — kept as an un-refined `ZodObject` so `correctFlightSchema` can
+ * `.extend()` it (Zod's `.extend()` is a `ZodObject`-only method, unavailable
+ * once `.refine()` wraps a schema in `ZodEffects`); each exported schema
+ * below applies its OWN `.refine()` on top.
+ *
+ * `departureAirfield`/`arrivalAirfield` (free text, story 11.1 AC 1 defaults
+ * them to the airfield's own name for a local flight) and `takeoffAt`/
+ * `landingAt` (full instants, `z.iso.datetime()`, wire format ISO 8601 UTC —
+ * AD-8, same pattern as `createBookingSchema`) are the SOURCE of both
+ * `minutes` and `flightDate`, derived server-side
  * (`flights.service.ts#resolveFlightInput`) — neither is an input anymore.
  * `hourMeterStart`/`hourMeterEnd` are now informational-only (never the
  * duration source): both optional, validated as a self-consistent PAIR by
@@ -70,8 +75,13 @@ export type ListFlightsQuery = z.infer<typeof listFlightsQuerySchema>;
  * `InstructorProfile` (`flights.service.ts`) — never trusted as an
  * `InstructorProfile.id` directly (consistent with
  * `.../people/{id}/instructor-rates`). `notes` is optional.
+ *
+ * `force`/`forceReason` (TD-8, AC 2/3): an ADMIN-only bypass
+ * (`flights.force.balance`, checked service-side — this schema only shapes
+ * the pair) of the insufficient-balance guard on BOTH registration and
+ * correction, mirroring `createBookingSchema`'s own force fields verbatim.
  */
-export const registerFlightSchema = z.object({
+const flightInputSchema = z.object({
   aircraftId: z.string().min(1),
   personId: z.string().min(1),
   instructorPersonId: z.string().min(1).nullish(),
@@ -88,6 +98,19 @@ export const registerFlightSchema = z.object({
   takeoffs: z.number().int().min(0).max(500).optional(),
   landings: z.number().int().min(0).max(500).optional(),
   notes: z.string().trim().min(1).max(1000).nullish(),
+  force: z.boolean().optional(),
+  forceReason: z.string().trim().min(1).max(500).optional(),
+});
+
+/** `force: true` requires a non-empty `forceReason`, UNCONDITIONALLY (not only when a real block exists) — same refine as `createBookingSchema` (story 7.4). */
+function requiresForceReasonWhenForced(value: { force?: boolean; forceReason?: string }): boolean {
+  return !value.force || (value.forceReason !== undefined && value.forceReason.length > 0);
+}
+
+/** `POST /api/v1/flights` body (story 11.1, AC 1/2/3; TD-8, AC 2 — see `flightInputSchema`'s doc-comment for the full field rationale). */
+export const registerFlightSchema = flightInputSchema.refine(requiresForceReasonWhenForced, {
+  message: 'forceReason is required when force is true',
+  path: ['forceReason'],
 });
 
 export type RegisterFlightInput = z.infer<typeof registerFlightSchema>;
@@ -173,6 +196,15 @@ export const flightListItemSchema = z.object({
   correctionOfId: z.string().nullable(),
   /** Story 5.3 — the NEW flight that replaced THIS one (inverse relation). `null` unless this flight was corrected. */
   correctedByFlightId: z.string().nullable(),
+  /**
+   * TD-8, AC 2/5 — the insufficient-balance override tracking. CONDITIONAL,
+   * same pattern as `actorEmail`: present only when the caller has
+   * `flights.manage` (`toListItem`'s own `includeForcedFields` gate); when
+   * present, `null` on every non-forced flight.
+   */
+  balanceForcedAt: z.iso.datetime().nullable().optional(),
+  balanceForcedByUserId: z.string().nullable().optional(),
+  balanceForceReason: z.string().nullable().optional(),
 });
 
 export type FlightListItemDto = z.infer<typeof flightListItemSchema>;
@@ -210,15 +242,20 @@ export type CancelFlightInput = z.infer<typeof cancelFlightSchema>;
 
 /**
  * `POST /api/v1/flights/{id}/correct` body (story 5.3, AC 2): exactly the
- * same fields as `registerFlightSchema` (Dev Notes: `registerFlightSchema`
- * itself is NEVER changed for `registerFlight`'s own input) plus the
- * mandatory `reason` — plain `.extend()`. Story 11.1 removed the former
- * minutes/hourMeter XOR `superRefine`; the only remaining cross-field
- * check on this shape (`HOUR_METER_INVALID`) lives in
- * `resolveFlightInput`, shared by both `registerFlight`/`correctFlight`.
+ * same fields as `registerFlightSchema` (extended from the SAME
+ * `flightInputSchema` base — `registerFlightSchema` itself is NEVER changed
+ * for `registerFlight`'s own input) plus the mandatory `reason`. Story 11.1
+ * removed the former minutes/hourMeter XOR `superRefine`; the only remaining
+ * cross-field check on this shape (`HOUR_METER_INVALID`) lives in
+ * `resolveFlightInput`, shared by both `registerFlight`/`correctFlight` —
+ * same split for the `force`/`forceReason` refine (TD-8), reapplied here
+ * since `.extend()` requires the un-refined base.
  */
-export const correctFlightSchema = registerFlightSchema.extend({
-  reason: z.string().trim().min(1).max(500),
-});
+export const correctFlightSchema = flightInputSchema
+  .extend({ reason: z.string().trim().min(1).max(500) })
+  .refine(requiresForceReasonWhenForced, {
+    message: 'forceReason is required when force is true',
+    path: ['forceReason'],
+  });
 
 export type CorrectFlightInput = z.infer<typeof correctFlightSchema>;

@@ -27,6 +27,7 @@ export type Permission =
   | 'aircraft.manage'
   | 'finance.manage'
   | 'flights.manage'
+  | 'flights.force.balance'
   | 'bookings.manage.own'
   | 'bookings.manage.any'
   | 'school.manage.own'
@@ -45,6 +46,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'aircraft.manage',
   'finance.manage',
   'flights.manage',
+  'flights.force.balance',
   'bookings.manage.own',
   'bookings.manage.any',
   'school.manage.own',
@@ -85,6 +87,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'aircraft.manage',
     'finance.manage',
     'flights.manage',
+    // TD-8 (ratifica utente): deliberately NO `flights.force.balance` here —
+    // the insufficient-balance override on flight registration is reserved
+    // to ADMIN alone (via `ALL_PERMISSIONS` above), never staff.
     'bookings.manage.any',
     // Story 9.1 (FR-32): staff assigns/removes a student's instructor(s)
     // from the scheda persona — the "any" counterpart to the instructor's

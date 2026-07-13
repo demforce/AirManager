@@ -153,6 +153,15 @@ async function createPilotWithLogin(page: Page, password: string): Promise<{ per
   await page.getByRole('button', { name: 'Imposta password' }).click();
   await expect(page.getByTestId('set-password-success')).toBeVisible();
 
+  // TD-8: a comfortably sufficient balance — still authenticated as ADMIN
+  // (the set-password page never touched the session cookie), and a fresh
+  // pilot otherwise starts at 0,00 €, which the new insufficient-balance
+  // guard (AC 1) would now block on any real charge this suite registers.
+  const topUpResponse = await page.request.post(`/api/v1/people/${person.id}/account/top-ups`, {
+    data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: PAST_DATE },
+  });
+  expect(topUpResponse.status()).toBe(200);
+
   return { personId: person.id, email, firstName, lastName };
 }
 
@@ -239,7 +248,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(resultPanel).toContainText('1:20');
     await expect(resultPanel).toContainText(/150,00\s€/);
     await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/200,00\s€/);
-    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-200,00\s€/);
+    // TD-8: `createPilotWithLogin` now tops up 50.000.000 cents so a REAL
+    // charge never trips the new insufficient-balance guard — the resulting
+    // balance is that top-up minus this flight's 200,00 € charge.
+    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/499\.800,00\s€/);
 
     const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
     await expect(row).toContainText('1:20');
@@ -259,11 +271,12 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const aircraftRow = page.getByRole('row', { name: new RegExp(aircraft.registration) });
     await expect(aircraftRow).toContainText('3:00');
 
-    // Estratto conto: a FLIGHT_CHARGE row, negative, same total.
+    // Estratto conto: a FLIGHT_CHARGE row, negative, same total (the
+    // movement's OWN amount — unaffected by the top-up's running balance).
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
     const statementRow = page.locator('tbody tr').filter({ hasText: 'Addebito volo' });
     await expect(statementRow).toContainText(/-200,00\s€/);
-    await expect(page.getByTestId('account-statement-balance')).toContainText(/-200,00\s€/);
+    await expect(page.getByTestId('account-statement-balance')).toContainText(/499\.800,00\s€/);
   });
 
   test('orari decollo/atterraggio derivano la durata (contaore ormai solo informativo); a SCHOOL flight with an instructor charges both and sums the total', async ({

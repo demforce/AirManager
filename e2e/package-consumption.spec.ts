@@ -117,6 +117,16 @@ async function createPilotWithLogin(page: Page, password: string): Promise<{ per
   await page.getByRole('button', { name: 'Imposta password' }).click();
   await expect(page.getByTestId('set-password-success')).toBeVisible();
 
+  // TD-8: a comfortably sufficient balance — still authenticated as ADMIN
+  // (the set-password page never touched the session cookie), and a fresh
+  // pilot otherwise starts at 0,00 €, which the new insufficient-balance
+  // guard (AC 1) would now block on any real (non-package-covered) charge
+  // this suite registers.
+  const topUpResponse = await page.request.post(`/api/v1/people/${person.id}/account/top-ups`, {
+    data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: PAST_DATE },
+  });
+  expect(topUpResponse.status()).toBe(200);
+
   return { personId: person.id, email, firstName, lastName };
 }
 
@@ -195,7 +205,9 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(resultPanel).toContainText('1:00'); // Da pacchetto
     await expect(resultPanel).toContainText('0:10'); // Minuti addebitati
     await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/25,00\s€/);
-    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-25,00\s€/);
+    // TD-8: `createPilotWithLogin` now tops up 50.000.000 cents — the
+    // resulting balance is that top-up minus this flight's 25,00 € charge.
+    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/499\.975,00\s€/);
 
     const firstFlightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).first();
     await expect(firstFlightRow).toContainText(/25,00\s€/);
@@ -215,7 +227,7 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
     const statementRow = page.locator('tbody tr').filter({ hasText: 'Addebito volo' }).first();
     await expect(statementRow).toContainText(/-25,00\s€/);
-    await expect(page.getByTestId('account-statement-balance')).toContainText(/-25,00\s€/);
+    await expect(page.getByTestId('account-statement-balance')).toContainText(/499\.975,00\s€/);
 
     // Packages panel: residuo sceso a 0 (esaurito).
     const exhaustedRow = page.getByTestId('hour-package-row').filter({ hasText: typeName });
@@ -234,8 +246,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
 
     const secondResultPanel = page.getByTestId('flight-result-panel');
     await expect(secondResultPanel.getByTestId('flight-result-total')).toContainText(/25,00\s€/); // 10' x 150€/h
-    // Total balance now -50,00 € (25,00 + 25,00) — no further package coverage.
-    await expect(secondResultPanel.getByTestId('flight-result-new-balance')).toContainText(/-50,00\s€/);
+    // Total charged against the top-up so far: 50,00 € (25,00 + 25,00) — no further package coverage.
+    await expect(secondResultPanel.getByTestId('flight-result-new-balance')).toContainText(/499\.950,00\s€/);
     const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).filter({ hasText: '0:10' });
     // Story 12.4 (AC 1): the row itself no longer carries a "da pacchetto"
     // note at all (moved to the sheet) — assert the ABSENCE there instead,

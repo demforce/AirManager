@@ -129,7 +129,23 @@ async function createPilotWithLogin(page: Page, password: string, tag: string): 
   await page.getByRole('button', { name: 'Imposta password' }).click();
   await expect(page.getByTestId('set-password-success')).toBeVisible();
 
+  await topUpAccount(page, person.id);
+
   return { personId: person.id, email, firstName, lastName };
+}
+
+/**
+ * TD-8: a comfortably sufficient balance (`finance.manage`, held by both
+ * staff and admin — every caller in this file is logged in as one of the
+ * two) — a fresh person otherwise starts at 0,00 €, which the new
+ * insufficient-balance guard (AC 1) would now block on any real charge this
+ * suite registers.
+ */
+async function topUpAccount(page: Page, personId: string): Promise<void> {
+  const response = await page.request.post(`/api/v1/people/${personId}/account/top-ups`, {
+    data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: PAST_DATE },
+  });
+  expect(response.status()).toBe(200);
 }
 
 /** A plain pilot/student person (active pilot profile, no login needed) — for the "another person" side of a filter/own-access assertion. */
@@ -146,6 +162,8 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+
+  await topUpAccount(page, person.id);
 
   return { personId: person.id, firstName, lastName };
 }

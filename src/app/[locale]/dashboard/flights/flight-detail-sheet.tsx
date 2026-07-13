@@ -85,6 +85,13 @@ export function FlightDetailSheet({ flight, onClose, canManage, onCorrect, onCan
             <FlightStatusCell flight={flight} labels={labels.list.table} locale={moneyLocale} />
           </div>
 
+          {/* TD-8, AC 6 — the insufficient-balance override, gated `flights.manage` like `actorEmail`: the DTO field itself is already server-omitted for a non-manager (`canManage` here is this component's own mirror of that same gate). */}
+          {canManage && flight.balanceForceReason ? (
+            <div data-testid="flight-detail-forced-reason">
+              <Field term={labels.detail.forcedReason} value={flight.balanceForceReason} />
+            </div>
+          ) : null}
+
           <div className="rounded-nested border border-hairline bg-canvas p-4">
             <h4 className="text-sm font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.result.title}</h4>
             <dl className="mt-3 space-y-2">

@@ -373,7 +373,9 @@ model User {
   /// Package sales this user recorded (story 4.4) — `HourPackage.actorUserId`.
   hourPackagesSold                    HourPackage[]
   /// Flights this user registered (epic 5, story 5.1) — `Flight.actorUserId`.
-  flightsRecorded                     Flight[]
+  flightsRecorded                     Flight[]                      @relation("FlightActor")
+  /// Flights this user FORCED past an insufficient balance (TD-8, AC 2) — `Flight.balanceForcedByUserId`.
+  flightsBalanceForced                Flight[]                      @relation("FlightBalanceForcedBy")
   /// Bookings this user created (epic 7, story 7.1) — `Booking.actorUserId`.
   bookingsRecorded                    Booking[]                     @relation("BookingActor")
   /// Bookings this user last EDITED (epic 7, story 7.3, AC 2) — `Booking.updatedByUserId`.
@@ -854,9 +856,9 @@ model Flight {
   /// (every flight has at least one of each; historical `landings`
   /// backfilled NULL -> 1, `takeoffs` is a brand-new column so no backfill
   /// is needed).
-  takeoffs Int @default(1)
-  landings Int @default(1)
-  notes    String?
+  takeoffs       Int     @default(1)
+  landings       Int     @default(1)
+  notes          String?
 
   aircraftRateCentsPerHour   Int
   /// Snapshot (AD-4) of the amount ACTUALLY CHARGED for the aircraft
@@ -876,9 +878,26 @@ model Flight {
   packageCoveredMinutes      Int  @default(0)
 
   /// Who recorded this flight (`Actor.userId`, always present) — same
-  /// rationale as every other ledger's `actorUserId`.
+  /// rationale as every other ledger's `actorUserId`. Named relation
+  /// (`FlightActor`, TD-8): `Flight` now carries a SECOND relation to
+  /// `User` (`balanceForcedByUser` below), so Prisma requires both to be
+  /// disambiguated — purely a schema-level rename, no SQL/column change.
   actorUserId String
-  actorUser   User   @relation(fields: [actorUserId], references: [id])
+  actorUser   User   @relation("FlightActor", fields: [actorUserId], references: [id])
+
+  /// Admin override tracking for the insufficient-balance guard (TD-8, AC
+  /// 2/3) — set TOGETHER, exactly once, ONLY when `registerFlight`/
+  /// `correctFlight` actually bypassed a real block (the charge would have
+  /// pushed the balance below zero); `null` on every normal flight,
+  /// INCLUDING a `force: true` request that had nothing to bypass (same
+  /// "scavalcato un blocco, non spuntato una checkbox" contract as
+  /// `Booking.forcedAt`). `balance` prefix (Contesto): `Flight` may grow
+  /// other forceable guards later. Never touched by `cancelFlight` — the
+  /// force decision is a registration-time fact.
+  balanceForcedAt       DateTime?
+  balanceForcedByUserId String?
+  balanceForcedByUser   User?     @relation("FlightBalanceForcedBy", fields: [balanceForcedByUserId], references: [id])
+  balanceForceReason    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

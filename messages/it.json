@@ -1055,8 +1055,19 @@
         "INSTRUCTOR_NOT_FOUND": "L'istruttore selezionato non ha un profilo istruttore attivo.",
         "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
         "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
+        "INSUFFICIENT_BALANCE": "Saldo insufficiente: saldo disponibile {balance}, importo del volo {amount}.",
+        "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
         "generic": "Impossibile registrare il volo. Riprova."
       }
+    },
+    "force": {
+      "title": "Forza registrazione",
+      "description": "Solo un admin può registrare comunque questo volo, indicando un motivo. La forzatura resta tracciata.",
+      "reasonLabel": "Motivo",
+      "submit": "Forza registrazione",
+      "cancel": "Annulla",
+      "requiredReason": "Il motivo è obbligatorio.",
+      "generic": "Impossibile forzare la registrazione. Riprova."
     },
     "result": {
       "title": "Addebito generato",
@@ -1111,7 +1122,8 @@
     "detail": {
       "title": "Dettaglio volo",
       "openAction": "Dettaglio",
-      "close": "Chiudi"
+      "close": "Chiudi",
+      "forcedReason": "Deroga saldo insufficiente"
     },
     "cancelPanel": {
       "title": "Annulla volo",

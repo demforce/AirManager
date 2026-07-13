@@ -127,6 +127,15 @@ async function createPilotWithLogin(page: Page, password: string): Promise<{ per
   await page.getByRole('button', { name: 'Imposta password' }).click();
   await expect(page.getByTestId('set-password-success')).toBeVisible();
 
+  // TD-8: a comfortably sufficient balance — still authenticated as ADMIN
+  // (the set-password page never touched the session cookie), and a fresh
+  // pilot otherwise starts at 0,00 €, which the new insufficient-balance
+  // guard (AC 1) would now block on any real charge this suite registers.
+  const topUpResponse = await page.request.post(`/api/v1/people/${person.id}/account/top-ups`, {
+    data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: PAST_DATE },
+  });
+  expect(topUpResponse.status()).toBe(200);
+
   return { personId: person.id, email, firstName, lastName };
 }
 
@@ -231,7 +240,9 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     // Aircraft fully covered by the package (0,00 €) + instructor 40,00 € full charge -> total 40,00 €.
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/40,00\s€/);
-    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-40,00\s€/);
+    // TD-8: `createPilotWithLogin` now tops up 50.000.000 cents — the
+    // resulting balance is that top-up minus this flight's 40,00 € charge.
+    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/499\.960,00\s€/);
 
     // Aircraft hour meter advanced by 60' (500 -> 560 = 9:20).
     // Search-scoped: the fleet list is paginated 20/page ordered by
@@ -266,9 +277,9 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(cancelledRow.getByTestId('flight-cancel-action')).toHaveCount(0);
     await expect(cancelledRow.getByTestId('flight-correct-action')).toHaveCount(0);
 
-    // Balance back to 0,00 € (pre-volo value) — estratto conto shows FLIGHT_CHARGE negative + linked STORNO positive.
+    // Balance back to 500.000,00 € (pre-volo value, i.e. the top-up alone) — estratto conto shows FLIGHT_CHARGE negative + linked STORNO positive.
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
-    await expect(page.getByTestId('account-statement-balance')).toContainText(/0,00\s€/);
+    await expect(page.getByTestId('account-statement-balance')).toContainText(/500\.000,00\s€/);
     const chargeRow = page.locator('tbody tr').filter({ hasText: 'Addebito volo' }).first();
     await expect(chargeRow).toContainText(/-40,00\s€/);
     const reversalRow = page.locator('tbody tr').filter({ hasText: 'Storno volo' }).first();
@@ -350,9 +361,9 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(oldRow.getByTestId('flight-status-badge')).toContainText('Annullato');
     await expect(oldRow).toContainText('Durata inserita per errore');
 
-    // Net balance stays 0,00 € (both the 60' and the corrected 30' fully covered by the restored/re-consumed package).
+    // Net balance stays at the top-up alone, 500.000,00 € (both the 60' and the corrected 30' fully covered by the restored/re-consumed package, and the earlier SCHOOL flight's charge was already reverted above).
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
-    await expect(page.getByTestId('account-statement-balance')).toContainText(/0,00\s€/);
+    await expect(page.getByTestId('account-statement-balance')).toContainText(/500\.000,00\s€/);
 
     // Package now shows 30' consumed (0:30 residuo of the 1:00 included).
     await page.goto(`/it/dashboard/people/${pilot.personId}`);

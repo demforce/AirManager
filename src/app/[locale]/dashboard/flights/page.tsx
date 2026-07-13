@@ -93,6 +93,10 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
     return;
   }
   const canManage = hasPermission(actor, 'flights.manage');
+  // TD-8, AC 2/6 — server-derived, admin-only (pattern 2.3's `readOnly`):
+  // gates the "Forza registrazione" affordance client-side; the real
+  // guardian is `flights.service.ts`'s own 403 (AD-5).
+  const canForceBalance = hasPermission(actor, 'flights.force.balance');
   // Defensive only (story 5.4: every role holds `self.read`) — an actor with
   // neither permission (e.g. no roles at all) never reaches `listFlights`,
   // which would otherwise answer 403 (AD-5 is the real guardian either way).
@@ -188,13 +192,21 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
   // `createdAt`/`cancelledAt`/`takeoffAt`/`landingAt` serialized to ISO
   // (AD-8) — the service's `Date` cannot cross the server/client boundary
   // as-is (same pattern as 5.1/5.3; `takeoffAt`/`landingAt` new in 11.1).
-  const initialFlights = flightsResult.items.map((flight) => ({
-    ...flight,
-    createdAt: flight.createdAt.toISOString(),
-    cancelledAt: flight.cancelledAt ? flight.cancelledAt.toISOString() : null,
-    takeoffAt: flight.takeoffAt ? flight.takeoffAt.toISOString() : null,
-    landingAt: flight.landingAt ? flight.landingAt.toISOString() : null,
-  }));
+  const initialFlights = flightsResult.items.map((flight) => {
+    // TD-8: `balanceForcedAt` is CONDITIONAL (own-access actors never get it
+    // at all) — destructured OUT of the `...rest` spread below so its `Date`
+    // type never merges into the plain `...flight` spread's inferred shape;
+    // the conditional re-adds it, ISO-converted, only when present.
+    const { balanceForcedAt, ...rest } = flight;
+    return {
+      ...rest,
+      createdAt: flight.createdAt.toISOString(),
+      cancelledAt: flight.cancelledAt ? flight.cancelledAt.toISOString() : null,
+      takeoffAt: flight.takeoffAt ? flight.takeoffAt.toISOString() : null,
+      landingAt: flight.landingAt ? flight.landingAt.toISOString() : null,
+      ...(balanceForcedAt !== undefined ? { balanceForcedAt: balanceForcedAt ? balanceForcedAt.toISOString() : null } : {}),
+    };
+  });
 
   const filters: FlightsFilters = {
     dateFrom: dateFrom ?? '',
@@ -265,6 +277,7 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
             // `RegisterFlightForm`'s own `key`).
             key={JSON.stringify(filterQuery)}
             canManage={canManage}
+            canForceBalance={canForceBalance}
             initialCreateOpen={initialCreateOpen}
             aircraftOptions={aircraftOptions}
             personOptions={personOptions}
@@ -327,8 +340,21 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                   INSTRUCTOR_NOT_FOUND: t('form.errors.INSTRUCTOR_NOT_FOUND'),
                   INSTRUCTOR_SAME_AS_PILOT: t('form.errors.INSTRUCTOR_SAME_AS_PILOT'),
                   FLIGHT_DATE_IN_FUTURE: t('form.errors.FLIGHT_DATE_IN_FUTURE'),
+                  // TD-8: `{balance}`/`{amount}` placeholders, client-filled with the existing money formatting (same `t.raw` pattern as `list.table.cancelledDetail`).
+                  INSUFFICIENT_BALANCE: t.raw('form.errors.INSUFFICIENT_BALANCE') as string,
+                  // TD-8, AC 4-bis — `{reason}` placeholder, same pattern as `BookingsPage.form.errors.AIRCRAFT_OUT_OF_SERVICE`.
+                  AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
                   generic: t('form.errors.generic'),
                 },
+              },
+              force: {
+                title: t('force.title'),
+                description: t('force.description'),
+                reasonLabel: t('force.reasonLabel'),
+                submit: t('force.submit'),
+                cancel: t('force.cancel'),
+                requiredReason: t('force.requiredReason'),
+                generic: t('force.generic'),
               },
               result: {
                 title: t('result.title'),
@@ -380,6 +406,8 @@ export default async function FlightsPage({ params, searchParams }: PageProps) {
                 title: t('detail.title'),
                 openAction: t('detail.openAction'),
                 close: t('detail.close'),
+                // TD-8, AC 6 — the balance-override motivazione, visible only to `flights.manage` (same gate as the DTO field itself).
+                forcedReason: t('detail.forcedReason'),
               },
               cancelPanel: {
                 title: t('cancelPanel.title'),

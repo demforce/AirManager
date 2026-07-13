@@ -13,6 +13,7 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     'aircraft.manage',
     'finance.manage',
     'flights.manage',
+    'flights.force.balance',
     'bookings.manage.own',
     'bookings.manage.any',
     'school.manage.own',
@@ -44,6 +45,9 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     expect(hasPermission(staff, 'aircraft.manage')).toBe(true);
     expect(hasPermission(staff, 'finance.manage')).toBe(true);
     expect(hasPermission(staff, 'flights.manage')).toBe(true);
+    // TD-8 (ratifica utente): the insufficient-balance override on flight
+    // registration is ADMIN-ONLY — staff holds flights.manage but never this.
+    expect(hasPermission(staff, 'flights.force.balance')).toBe(false);
     expect(hasPermission(staff, 'bookings.manage.any')).toBe(true);
     // Story 9.1 (FR-32): staff manages ANY student's instructor assignments.
     expect(hasPermission(staff, 'school.manage.any')).toBe(true);
