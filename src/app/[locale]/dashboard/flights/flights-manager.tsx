@@ -351,15 +351,21 @@ export function flightTypeLabel(type: FlightListItemDto['flightType'], labels: F
  * because its extra date column overflows the panel at the design's
  * canonical 1280px width and it has no sticky day headers to break (review
  * 12.4, 124-F3). In grouped mode `overflow-x-auto`
- * would silently break the day header's `position: sticky` (AC 2): per the
+ * silently breaks the day header's `position: sticky` (AC 2): per the
  * CSS Overflow spec, setting ANY non-`visible` `overflow-x` forces the
  * computed `overflow-y` to `auto` too, which turns that wrapper itself into
  * the "nearest scrolling ancestor" sticky positions against — and since the
  * wrapper's own height always exactly fits its content (nothing constrains
  * it), its OWN scrollTop never moves, so a sticky child inside it would
- * never visibly stick to the page. Removing the wrapper lets the day header
- * stick against the real scrolling ancestor instead: the dashboard shell's
- * `overflow-y-auto` panel (`dashboard/layout.tsx`).
+ * never visibly stick to the page. So the grouped wrapper is
+ * `lg:overflow-x-visible`: from `lg` up the day header sticks against the
+ * real scrolling ancestor (the dashboard shell's `overflow-y-auto` panel,
+ * `dashboard/layout.tsx`). Below `lg` the grouped table physically cannot
+ * fit the panel (UI audit 2026-07-13 measured ~256px of bleed at 768), and
+ * CSS offers no vertical sticky inside a horizontal scroller — so there
+ * horizontal containment deliberately WINS over sticky (declared tradeoff,
+ * ratified by the audit's adversarial review; the header is `lg:sticky` to
+ * make the intent explicit).
  *
  * On a successful registration the form's response (`RegisterFlightResponseDto`)
  * drives BOTH the addebito breakdown panel and a prepend onto the list — no
@@ -821,7 +827,9 @@ export function FlightsManager({
           // Flat context only: the extra date column overflows the panel at
           // the design's canonical 1280px width (review 12.4, 124-F3), and
           // flat has no sticky day headers to break — so it gets a scoped
-          // horizontal scroll wrapper. Grouped stays wrapperless (sticky).
+          // horizontal scroll wrapper. Grouped: `lg:overflow-x-visible` keeps
+          // the day headers sticky from lg up; below lg horizontal containment
+          // deliberately wins over sticky (module doc-comment).
           <div className={activeFilter ? 'overflow-x-auto' : 'overflow-x-auto lg:overflow-x-visible'}>
           <table className="w-full text-left text-sm">
             <thead>
@@ -853,13 +861,13 @@ export function FlightsManager({
                   ))
                 : groupFlightsByDay(flights).map((group) => (
                     <Fragment key={group.flightDate}>
-                      {/* Story 12.4 (AC 2) — day divider, `data-testid="flight-day-header"` (NEVER `flight-row`), sticky against the dashboard panel's own scroll (no `overflow-x-auto` ancestor on this table — see the module doc-comment). */}
+                      {/* Story 12.4 (AC 2) — day divider, `data-testid="flight-day-header"` (NEVER `flight-row`), sticky against the dashboard panel's own scroll from `lg` up, where the wrapper is `overflow-x-visible`; below `lg` the wrapper scrolls horizontally and sticky is deliberately off (module doc-comment). */}
                       <tr>
                         <th
                           colSpan={GROUPED_COLUMN_COUNT}
                           scope="colgroup"
                           data-testid="flight-day-header"
-                          className="sticky top-0 z-10 border-b border-hairline bg-canvas px-2 py-2 text-left text-sm font-medium text-ink"
+                          className="lg:sticky top-0 z-10 border-b border-hairline bg-canvas px-2 py-2 text-left text-sm font-medium text-ink"
                         >
                           {formatDateOnly(group.flightDate, moneyLocale)}
                         </th>

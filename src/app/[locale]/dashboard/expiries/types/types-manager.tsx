@@ -383,8 +383,16 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
           whether an expired scadenza of this type blocks a booking, so it
           deserves the same visibility as name/scope. */}
       <div>
-        <Switch label={labels.form.blocksBooking} labelClassName="font-medium" {...register('blocksBooking')} />
-        <p className="mt-1 pl-[46px] text-xs text-mid-gray">{labels.form.blocksBookingHint}</p>
+        {/* `aria-describedby` re-attaches the hint to the control (audit review 2026-07-13): before the Switch refactor the hint text lived inside the `<label>` and was part of the accessible description. */}
+        <Switch
+          label={labels.form.blocksBooking}
+          labelClassName="font-medium"
+          aria-describedby="expiry-type-blocks-booking-hint"
+          {...register('blocksBooking')}
+        />
+        <p id="expiry-type-blocks-booking-hint" className="mt-1 pl-[46px] text-xs text-mid-gray">
+          {labels.form.blocksBookingHint}
+        </p>
       </div>
 
       {formError ? (
