@@ -4,7 +4,7 @@ baseline_commit: 1350dd6
 
 # TD-7: Fusione Piloti + Utenti — una sola pagina, un solo form (change request utente 2026-07-13)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -51,12 +51,12 @@ so that non esistano più due "profili" separati (Piloti e Utenti) per la stessa
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 2)** — `listPersons` + join `user` (select minimale, `passwordSet` derivato); `PersonRow.access`; colonna "Accesso" con StatusPill + `noValue`; i18n colonna.
-- [ ] **T2 (AC 3, 5)** — Form unico `mode create|edit`: sezione profili (3 Switch + campi condizionali attuali, precarico da GET people/{id} in edit), sezione accesso (`users.manage` only: toggle + 5 Switch ruoli + lingua + stato/reinvia in edit), orchestrazione sequenziale con partial-failure; rimozione Panel 'edit' inline e azione riga "Profili"; email obbligatoria se accesso attivo.
-- [ ] **T3 (AC 4)** — `updateUserSchema.email` + `users.service.updateUser` (unique check → 409) + OpenAPI + unit test (`users.service.test.ts`).
-- [ ] **T4 (AC 1, 6)** — Rimozione nav entry + route `/dashboard/users` + `users-manager.tsx`; migrazione chiavi i18n (grep finale anti-orfani dichiarato).
-- [ ] **T5 (AC 7, 8)** — Riscrittura `user-management.spec.ts` + aggiornamenti `people-management`/`person-profiles`; scenario staff-senza-sezione-accesso; `npm run gates`; run e2e mirati (user-management, people-management, person-profiles, rbac, app-shell) su DB fresco.
-- [ ] **T6 (AC 9)** — Verifica visiva MCP (3 screenshot, mai committati) con giudizio DESIGN.md; Dev Agent Record + File List; sprint-status `td-7` → `review`.
+- [x] **T1 (AC 2)** — `listPersons` + join `user` (select minimale, `passwordSet` derivato); `PersonRow.access`; colonna "Accesso" con StatusPill + `noValue`; i18n colonna.
+- [x] **T2 (AC 3, 5)** — Form unico `mode create|edit`: sezione profili (3 Switch + campi condizionali attuali, precarico da GET people/{id} in edit), sezione accesso (`users.manage` only: toggle + 5 Switch ruoli + lingua + stato/reinvia in edit), orchestrazione sequenziale con partial-failure; rimozione Panel 'edit' inline e azione riga "Profili"; email obbligatoria se accesso attivo.
+- [x] **T3 (AC 4)** — `updateUserSchema.email` + `users.service.updateUser` (unique check → 409) + OpenAPI + unit test (`users.service.test.ts`).
+- [x] **T4 (AC 1, 6)** — Rimozione nav entry + route `/dashboard/users` + `users-manager.tsx`; migrazione chiavi i18n (grep finale anti-orfani dichiarato).
+- [x] **T5 (AC 7, 8)** — Riscrittura `user-management.spec.ts` + aggiornamenti `people-management`/`person-profiles`; scenario staff-senza-sezione-accesso; `npm run gates`; run e2e mirati (user-management, people-management, person-profiles, rbac, app-shell) su DB fresco.
+- [x] **T6 (AC 9)** — Verifica visiva MCP (3 screenshot, mai committati) con giudizio DESIGN.md; Dev Agent Record + File List; sprint-status `td-7` → `review`.
 
 ## Dev Notes
 
@@ -80,12 +80,47 @@ so that non esistano più due "profili" separati (Piloti e Utenti) per la stessa
 
 ### Agent Model Used
 
-_(dev subagent)_
+Sonnet 5 (dev subagent, xhigh)
 
 ### Debug Log References
 
+- `npm run gates` — PASS lint / PASS typecheck / PASS test (1283 unit) / PASS build, run twice (after T1-T4 and again after T5) — both green.
+- Targeted e2e (`user-management`, `people-management`, `person-profiles`, `rbac`, `app-shell`) on the fresh DB provided by the main session: 26/26 green on the combined run. Two standalone reruns of `person-profiles.spec.ts` alone hit transient `next dev` cold-compile flakes (`CredentialsSignin`/`Unexpected end of JSON input` on the very first login of a freshly (re)started dev server — the documented class in `playwright.config.ts`'s own comment and the story's baseline note "8 flaky da retry noti"); a same-file rerun and the full combined run were both clean. No code change was needed to reach green — retry resolved it.
+- Visual verification: production build (`env -u NODE_ENV npx next build` + `AUTH_TRUST_HOST=true npm run start`, required in prod mode — `next dev` trusts localhost implicitly, `next start` does not, matching `.github/workflows/ci.yml`'s `AUTH_TRUST_HOST: "true"`), admin session via a freshly minted `authjs.session-token` (obtained through a server-side `/api/auth/csrf` + `/api/auth/callback/credentials` exchange using `SEED_ADMIN_PASSWORD` read only as a shell variable, never printed/typed literally) injected into `.playwright-mcp/inject-admin.js` (the pre-existing token in that file had expired). Three screenshots taken under `.playwright-mcp/` (gitignored, none committed): people list with the "Accesso" column (StatusPill "Attivo"/"—"), the unified form with all three sections open (pilot profile toggled on with its conditional fields, access toggled on with roles/locale), and the sidebar without "Utenti" (visible in both other screenshots too). Judged against `DESIGN.md` + Addendum Palette v2 "Celeste": accent blue (#1d4ed8-family) on the primary button/active nav item/Switch-ON, StatusPill semaforo unchanged (green/amber/red), 24px card radius, hairline dividers between the three form sections, Geist-family typography consistent with the rest of the app — no deviation observed.
+
 ### Completion Notes List
+
+- T1: `people.service.ts#listPeople`'s `PERSON_SELECT` now joins `user { id, isActive, passwordHash, roles, locale }`; `toListItem` derives `access: PersonAccess | null` (`passwordSet` from `passwordHash !== null`, same convention as `users.service.ts`). Added to `personListItemSchema` (`personAccessSchema`, importing `roleSchema`/`localeSchema` from `./users`) so the OpenAPI-documented wire shape matches the real payload (API-first). `people-manager.tsx` gained an "Accesso" column (StatusPill: Attivo/Invitato/Disattivato/`—`) using the exact same active/passwordSet/isActive precedence the old `UsersManager` used.
+- T2: New `person-form-dialog.tsx` (`PersonFormDialog`, replacing `person-create-dialog.tsx`) with `mode: 'create' | 'edit'`. Section (a) reuses `createPersonSchema` validation for BOTH modes (a full object also satisfies the looser `updatePersonSchema` an edit PATCH expects). Section (b): 3 independent Switches (pilot/student/instructor) with conditional required fields, precached via `GET /api/v1/people/{id}` in edit mode (fetched once per mount — the dialog remounts per distinct target through `people-manager.tsx`'s `key`). Section (c) (`canManageAccess` only, computed server-side in `page.tsx` via `hasPermission(actor, 'users.manage')` and threaded down as a prop — the UI hides, the API remains the real guardian per AD-5): toggle + 5 role Switches + locale select + inline StatusPill/"Reinvia invito" for an existing account. Submit orchestrates sequentially (person → pilot → student → instructor → access), diffing against a snapshot loaded once at open (`useRef`, per the Dev Notes' stated risk #1) so a retry after a partial failure only resends what's missing; profile PUT/deactivate calls are naturally idempotent so a redundant resend on retry is harmless, `POST /api/v1/users` is tracked via a small `accountId` **state** (not a ref — React forbids reading refs during render, so the render-facing "does an account exist" flag had to be state; the full diff snapshot stays in a ref since it's read only inside the submit handler). `people-manager.tsx`'s inline `EditPersonForm`/row "Profili" action/inline `ProfilesPanel` panel are all removed; a single `formState: null | {mode:'create'} | {mode:'edit', person}` now drives the one dialog.
+- T3: `updateUserSchema.email` (optional, same `.trim().toLowerCase().pipe(z.email())` pipe as `createUserSchema`); `users.service.ts#updateUser` gained an `assertEmailAvailable` pre-check (mirrors the existing `assertPersonAvailable` check-then-write + P2002-catch double layer) and patches `email` when provided.
+- T4: `nav-items.ts`'s `users` entry/`NavItemKey` member removed; `src/app/[locale]/dashboard/users/` deleted; `messages/{it,en}.json`: `UsersPage` block and `DashboardPage.nav.users` removed entirely, reusable keys (roles/locales/rolesRequired/emailConflict/resendInvite/inviteResent/status) migrated under the new `PeoplePage.form.access.*`; `PeoplePage.form.role`/`roleNone`/`actions.profiles` (orphaned by the role-select/row-action removal) deleted; `PeoplePage.newPerson`/`form.createTitle`/`form.editTitle`/`feedback.created` reworded to "Nuovo pilota"/"Modifica pilota"/"Pilota creato." per AC 6's terminology-alignment finding (only those four, as explicitly named — the rest of the "persona" wording, and every cross-domain usage, is untouched). Grepped for `UsersPage`/`nav.users`/`dashboard/users` afterward — zero hits outside this story's own diff.
+- T5: `e2e/user-management.spec.ts` rewritten around the unified form (`createInvitedPerson` helper posts through `/dashboard/people`, not the retired `/dashboard/users`); added the new staff-can't-see-Accesso scenario; the two `/api/v1/users` 401/403 tests are untouched (API-first, endpoints unchanged). `people-management.spec.ts`'s create-dialog role-select test now checks the "Pilota" profile Switch instead of a `<select>`. `person-profiles.spec.ts`'s `openProfilesPanel` now navigates to the scheda persona (`[id]`, unchanged/out of scope) via the row's name link instead of the retired row "Profili" action; the two profile-activation tests were adjusted to hop back to the people list (same `?q=` filter) to assert the list badge, since profile activation now happens on a different page than the list.
+- Deviation (declared, not a scope change): `PersonAccessLabels`/`personAccessSchema` and the `Labels.table.access`/`form.access` typed shapes are new TypeScript/Zod surface not literally named in the story text, but required to thread the migrated i18n keys and the new `access` field through in a type-safe way consistent with the codebase's existing `Labels`/`*Schema` conventions — no behavior beyond what the ACs describe.
 
 ### File List
 
+- `src/server/services/people.service.ts`
+- `src/server/services/people.service.test.ts`
+- `src/server/services/users.service.ts`
+- `src/server/services/users.service.test.ts`
+- `src/lib/schemas/people.ts`
+- `src/lib/schemas/users.ts`
+- `src/lib/schemas/registry.ts`
+- `src/app/[locale]/dashboard/nav-items.ts`
+- `src/app/[locale]/dashboard/people/page.tsx`
+- `src/app/[locale]/dashboard/people/people-manager.tsx`
+- `src/app/[locale]/dashboard/people/person-form-dialog.tsx` (new — replaces `person-create-dialog.tsx`, deleted)
+- `src/app/[locale]/dashboard/people/person-create-dialog.tsx` (deleted)
+- `src/app/[locale]/dashboard/users/page.tsx` (deleted)
+- `src/app/[locale]/dashboard/users/users-manager.tsx` (deleted)
+- `messages/it.json`
+- `messages/en.json`
+- `e2e/user-management.spec.ts`
+- `e2e/people-management.spec.ts`
+- `e2e/person-profiles.spec.ts`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/td-7-people-users-merge.md` (this file — Dev Agent Record/File List/Change Log/Status/task checkboxes)
+
 ## Change Log
+
+- 2026-07-13 — TD-7 implemented (dev subagent, Sonnet 5): Piloti + Utenti merged into one page/one form per AC 1-9. `/dashboard/users` route and nav entry removed; `PersonFormDialog` (mode create|edit) replaces the create dialog, the inline edit panel and the row "Profili" action/panel; `listPeople` exposes `access` (StatusPill column); `updateUser` learns `email` (single-email-field model). e2e rewritten accordingly. Status → review.
