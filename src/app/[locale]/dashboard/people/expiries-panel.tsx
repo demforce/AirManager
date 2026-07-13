@@ -16,6 +16,7 @@ import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
 import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
+import { PencilIcon, TrashIcon } from '@/components/ui/icons';
 
 export type ExpiriesPanelLabels = {
   heading: string;
@@ -313,17 +314,21 @@ function ExpiryRow({
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm"
+              <Button variant="outline" size="icon"
                 type="button"
                 onClick={onEdit}
+                aria-label={labels.form.edit}
+                title={labels.form.edit}
               >
-                {labels.form.edit}
+                <PencilIcon />
               </Button>
-              <Button variant="outline" size="sm"
+              <Button variant="outline" size="icon"
                 type="button"
                 onClick={onRequestDelete}
+                aria-label={labels.actions.delete}
+                title={labels.actions.delete}
               >
-                {labels.actions.delete}
+                <TrashIcon />
               </Button>
             </div>
           )}

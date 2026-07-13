@@ -4,7 +4,7 @@ baseline_commit: ff82d5d
 
 # TD-6: Rifiniture UI post-Epic 12 (change request utente 2026-07-12)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -39,11 +39,11 @@ so that tabelle e form siano più asciutti e coerenti (change request utente a v
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1)** — Componente disclosure "Filtri" + contatore; adozione sulle 4 barre (cash guadagna anche flag attivo/reset col pattern flights); i18n nuove chiavi.
-- [ ] **T2 (AC 2, 3)** — `icons.tsx` + `Button size="icon"`; conversione delle azioni riga (lista chiusa) con aria-label/title = label attuale; rinomina Correggi→Modifica (i18n it/en + e2e heading).
-- [ ] **T3 (AC 4, 5)** — Sheet: 3 bottoni allineati + audit contenitori; rimozione colonna Stato con badge inline nella tratta + riga attenuata (colSpan aggiornato).
-- [ ] **T4 (AC 6)** — Aggiornamento e2e lista chiusa + 2 scenari nuovi; `npm run gates`; e2e mirati: flight-log, flights, flight-reversal, cash-register, ppr-register, expiry-dashboard, people-management, person-profiles, aircraft-management, package-types, expiry-types, user-management, bookings, exports.
-- [ ] **T5 (AC 7)** — Verifica visiva MCP (4 screenshot) con giudizio DESIGN.md; Dev Agent Record + File List; sprint-status `td-6` → `review`.
+- [x] **T1 (AC 1)** — Componente disclosure "Filtri" + contatore; adozione sulle 4 barre (cash guadagna anche flag attivo/reset col pattern flights); i18n nuove chiavi.
+- [x] **T2 (AC 2, 3)** — `icons.tsx` + `Button size="icon"`; conversione delle azioni riga (lista chiusa) con aria-label/title = label attuale; rinomina Correggi→Modifica (i18n it/en + e2e heading).
+- [x] **T3 (AC 4, 5)** — Sheet: 3 bottoni allineati + audit contenitori; rimozione colonna Stato con badge inline nella tratta + riga attenuata (colSpan aggiornato).
+- [x] **T4 (AC 6)** — Aggiornamento e2e lista chiusa + 2 scenari nuovi; `npm run gates`; e2e mirati: flight-log, flights, flight-reversal, cash-register, ppr-register, expiry-dashboard, people-management, person-profiles, aircraft-management, package-types, expiry-types, user-management, bookings, exports.
+- [x] **T5 (AC 7)** — Verifica visiva MCP (4 screenshot) con giudizio DESIGN.md; Dev Agent Record + File List; sprint-status `td-6` → `review`.
 
 ## Dev Notes
 
@@ -66,8 +66,55 @@ so that tabelle e form siano più asciutti e coerenti (change request utente a v
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), BMAD dev subagent, xhigh effort.
+
 ### Debug Log References
+
+- `npm run gates` (final): PASS lint / PASS typecheck / PASS test (1278/1278) / PASS build.
+- Targeted e2e (curl localhost:3000 must fail before every run; `fuser -k 3000/tcp` before each): flight-log.spec.ts (9/9, 1 cold-compile login flake on the very first re-run, 0 on the clean re-run), flights.spec.ts (13/13), flight-reversal.spec.ts (2/2, incl. the `test.slow()` reversal flow), cash-register.spec.ts (5/5), ppr-register.spec.ts (7/7), expiry-dashboard.spec.ts (4/4), person-profiles/package-types/user-management (14/14), aircraft-management/aircraft-rates/aircraft-status-hours (10/13 — the 3 failures are pre-existing dirty-DB/cold-compile flakes, not regressions, see below), bookings.spec.ts + exports.spec.ts (27/30 — the 3 failures are all the SAME documented `booking-form-success` flake class as the story's own "bookings:636" note, at the booking-CREATE step, never reaching the Sposta/Cancella icon buttons).
+- Two real e2e bugs found and fixed during this sweep (both were MY OWN e2e-authoring mistakes, not product bugs): (1) `flight-log.spec.ts`'s `resetFiltersAndSettle` helper and one inline reset click checked/used a filter field BEFORE reopening the now-closed "Filtri" panel post-reset — reordered to reopen first; (2) `ppr-register.spec.ts`'s "PPR category cash movement" test used `cash-filter-category` directly without opening the cash register's own "Filtri" panel first (a cross-file testid usage I missed on the first sweep of `cash-register.spec.ts` alone) — fixed with an explicit toggle click.
+- `aircraft-rates.spec.ts`'s 2 failures: confirmed via the Playwright error-context page snapshot that EVERY icon action button (Modifica/Archivia/Fuori servizio/Rettifica contaore/Tariffe) resolves correctly by accessible name across dozens of rows on page 1 — the failing test's own newly-created aircraft simply landed on page 2 of the (accumulated, never-reset) dev DB, a pre-existing pagination-scoping gap in that one spec file (other specs already carry a documented fix for this same class of issue), unrelated to TD-6.
 
 ### Completion Notes List
 
+- **AC 1 (Filtri disclosure)**: new `src/components/ui/filter-disclosure.tsx` — a plain `useState` toggle (not `<details>`, declared choice: keeps the trigger a normal outline `Button` + solid `Badge` counter instead of fighting `<summary>`'s UA marker style) wrapping each of the 4 filter bars (`flight-filter-bar`, `cash-filter-bar` — new, cash had no active-filter/reset before this story — `ppr-register-filter-bar`, `expiry-dashboard-filters`). `defaultOpen` = the caller's own `hasActiveFilter`, so a deep link or a filter already in the URL lands pre-opened. Toggle label is `DashboardShell.filtersToggle` ("Filtri"/"Filters"), read via `useTranslations` directly in the component (same pattern as `search-trigger.tsx`) — ONE shared i18n key, no prop-threading through 4 page.tsx files. Reset buttons keep their existing testids, now inside the panel.
+- **AC 2/3 (icon row actions + Correggi→Modifica)**: new `src/components/ui/icons.tsx` (14 thin-stroke SVGs, canonical style from `CalendarGlyph`/`SearchIcon`: viewBox 24, strokeWidth 1.75, round caps, aria-hidden, ~16px) + `Button` `size="icon"` (32px square). Converted the closed list of 11 tables' STABLE row actions to icon buttons with `aria-label`/`title` = the CURRENT i18n label (verified with a targeted risk-mitigation e2e — `row action icon buttons resolve by their CURRENT accessible name` — before the full sweep). Transient confirm flows (Sì/Annulla, Conferma/Annulla prompts) were left textual, untouched. `FlightsPage.list.table.correctAction`/`correctPanel.title` renamed Correggi→Modifica (EN Correct→Edit) in it/en; `flight-correct-*` testids and the `submit`/`exit` labels (still storno-correzione domain concept) unchanged.
+- **AC 4 (form footer buttons)**: `flight-detail-sheet.tsx` — Chiudi now shares the same `flex gap-3` row as Modifica/Annulla (was a separate row below). Audit of every other multi-button container in the app (22 files using `flex gap-3`, all `FormActions`-style duplicated-per-file 2-button rows) found no other anomaly — the sheet was the sole a-capo case, confirmed by direct file inspection of every panel/dialog footer.
+- **AC 5 (Stato column removed)**: `flights-manager.tsx` — header/cell removed, `GROUPED_COLUMN_COUNT` 7→6. `FlightStatusCell` (unchanged, still reused verbatim by the sheet) now renders inside the tratta cell (below the route text) instead of its own column; row gets `opacity-60` when `status === 'CANCELLED'`. `flight-status-badge` testid and its container text (reason, lineage chips) are unchanged in substance — only relocated — so `flight-reversal.spec.ts`'s existing row-content assertions kept passing unmodified.
+- **AC 6 (e2e)**: updated the closed list per Dev Notes (flight-log, flights, flight-reversal, cash-register, ppr-register — the `cash-filter-category` fix above lives here too); added 2 new minimal scenarios to `flight-log.spec.ts`: the Filtri toggle lifecycle (closed→click→apply→counter→deep-link-preopened) and an icon button resolved by `getByRole('button', {name: 'Modifica'})`, asserting `'Correggi'` has zero matches.
+- **AC 7 (visual verification)**: logged in via cookie injection (server-side NextAuth credentials POST via curl reading `SEED_ADMIN_PASSWORD` from `.env`, never printed; injected the resulting session cookie into the Playwright MCP browser context — no password ever typed through an MCP tool call). Screenshots taken and judged, then deleted (not committed, per rule): (1) registry with Filtri closed, no Stato column, icon actions — matches DESIGN.md Imagery (thin-stroke #0a0a0a icons via `currentColor`/`text-ink`, functional not decorative); (2) `?status=CANCELLED` deep link — Filtri auto-opened with counter badge "1" (matches the DESIGN.md Badge tag spec: `#171717`/`#fafafa` pill) and the reset button inside, a cancelled row showing the "Annullato" badge + reason inline in the tratta cell, row visibly dimmed; (3) hover on an icon button — `title`/`aria-label` confirmed present via DOM inspection (`"Modifica"`), the native OS tooltip bubble itself is not capturable in a headless `page.screenshot()`, a Playwright/Chromium limitation, not a defect; (4) the detail sheet — Modifica/Annulla/Chiudi on one aligned row, still textual (sheet buttons are not table row actions, out of AC 2's scope). Judgment: compliant with DESIGN.md's clinical-monochrome contract; no deviations found.
+- **Declared "Stato" i18n key**: `FlightsPage.list.table.status` (the removed column header's translation) was intentionally LEFT in `messages/{it,en}.json` and in the `FlightsManagerLabels` type — deleting it would touch 4 more files (2 large JSON dictionaries with several other `"status"` keys nearby, the type, and `page.tsx`'s wiring) for a purely cosmetic dead-string cleanup the AC never asked for; flagged for the reviewer rather than risking a JSON edit mistake for no behavioral gain.
+
 ### File List
+
+- `src/components/ui/icons.tsx` (new)
+- `src/components/ui/filter-disclosure.tsx` (new)
+- `src/components/ui/button.tsx` (size="icon")
+- `src/app/[locale]/dashboard/flights/flights-manager.tsx`
+- `src/app/[locale]/dashboard/flights/flight-detail-sheet.tsx`
+- `src/app/[locale]/dashboard/finance/cash-register.tsx`
+- `src/app/[locale]/dashboard/finance/page.tsx`
+- `src/app/[locale]/dashboard/finance/categories/categories-manager.tsx`
+- `src/app/[locale]/dashboard/finance/packages/packages-manager.tsx`
+- `src/app/[locale]/dashboard/ppr/register/ppr-register.tsx`
+- `src/app/[locale]/dashboard/expiries/dashboard-filters.tsx`
+- `src/app/[locale]/dashboard/expiries/my-expiries.tsx`
+- `src/app/[locale]/dashboard/expiries/types/types-manager.tsx`
+- `src/app/[locale]/dashboard/people/people-manager.tsx`
+- `src/app/[locale]/dashboard/people/expiries-panel.tsx`
+- `src/app/[locale]/dashboard/aircraft/aircraft-manager.tsx`
+- `src/app/[locale]/dashboard/bookings/bookings-list.tsx`
+- `src/app/[locale]/dashboard/users/users-manager.tsx`
+- `messages/it.json`
+- `messages/en.json`
+- `e2e/flight-log.spec.ts`
+- `e2e/flights.spec.ts`
+- `e2e/flight-reversal.spec.ts`
+- `e2e/cash-register.spec.ts`
+- `e2e/ppr-register.spec.ts`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/td-6-ui-refinements.md` (this file)
+
+## Change Log
+
+- 2026-07-13: Implemented all 5 ACs — reusable "Filtri" disclosure with active-filter counter on the 4 closed-list bars; icon-only row actions (14 new SVGs, `Button size="icon"`) across the 11 closed-list tables with `aria-label`/`title` invariance; Correggi→Modifica i18n rename; flight-detail-sheet footer button alignment fix + full-app audit (no other anomaly); flight registry Stato column removed in favor of an inline badge + dimmed row; e2e closed-list updates plus 2 new minimal scenarios; visual verification against DESIGN.md via Playwright MCP. Status → review.

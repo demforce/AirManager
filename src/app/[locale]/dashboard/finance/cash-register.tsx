@@ -17,6 +17,7 @@ import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
 import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
+import { FilterDisclosure } from '@/components/ui/filter-disclosure';
 
 export type CashMovementRow = {
   id: string;
@@ -51,7 +52,18 @@ export type CashRegisterFilters = {
 
 export type CashRegisterLabels = {
   newMovement: string;
-  filters: { from: string; to: string; category: string; sign: string; allCategories: string; allSigns: string; signIn: string; signOut: string };
+  filters: {
+    from: string;
+    to: string;
+    category: string;
+    sign: string;
+    allCategories: string;
+    allSigns: string;
+    signIn: string;
+    signOut: string;
+    /** TD-6 (AC 1) — the filter bar gains its own reset button (Dev Notes §1: cash had none before this story), same pattern as `flights-manager.tsx`'s `FilterBar`. */
+    reset: string;
+  };
   /** Story 12.5 (AC 1) — shared `DatePicker` a11y/error strings (filter bar's `from`/`to` AND the new-movement form's `effectiveDate`). */
   datePicker: DatePickerLabels;
   table: {
@@ -150,6 +162,17 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
     setFilters(next);
     navigate(next);
   }
+
+  // TD-6 (AC 1) — cash had no reset/active-filter flag before this story
+  // (Dev Notes §1); same `Object.values(...).some/filter` shape as
+  // `flights-manager.tsx`'s `FilterBar`.
+  function handleResetFilters(): void {
+    const cleared: CashRegisterFilters = { from: '', to: '', categoryId: '', sign: '' };
+    setFilters(cleared);
+    navigate(cleared);
+  }
+  const hasActiveFilter = Object.values(filters).some((value) => value !== '');
+  const activeFilterCount = Object.values(filters).filter((value) => value !== '').length;
 
   function handleSuccess(message: string): void {
     setPanelOpen(false);
@@ -265,67 +288,79 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-end gap-4">
-        {/* `<label htmlFor>` as a SIBLING of its control, never wrapping it
-            (TD-1, AC 5): a wrapping `<label>` around a `<select>` folds every
-            `<option>`'s text into the label's own accessible name (browsers
-            compute it from textContent), which can accidentally collide with
-            an unrelated label elsewhere on the page once option text is
-            dynamic (e.g. a category name) — same footgun already fixed in
-            `flights-manager.tsx`'s `FilterBar` (story 5.4) and in this same
-            file's `NewMovementForm`/`ReverseForm` below (`cash-category`
-            etc.); the layout classes move to a wrapping `<div>` so the
-            visual result stays identical. */}
-        <DatePicker
-          id="cash-filter-from"
-          label={labels.filters.from}
-          value={filters.from}
-          onChange={(next) => handleFilterChange({ from: next })}
-          labels={labels.datePicker}
-          testId="cash-filter-from"
-          className="min-w-[160px]"
-        />
-        <DatePicker
-          id="cash-filter-to"
-          label={labels.filters.to}
-          value={filters.to}
-          onChange={(next) => handleFilterChange({ to: next })}
-          labels={labels.datePicker}
-          testId="cash-filter-to"
-          className="min-w-[160px]"
-        />
-        <div className="flex flex-col gap-2 text-sm text-ink">
-          <label htmlFor="cash-filter-category">{labels.filters.category}</label>
-          <select
-            id="cash-filter-category"
-            value={filters.categoryId}
-            onChange={(event) => handleFilterChange({ categoryId: event.target.value })}
-            className={selectClasses}
-            data-testid="cash-filter-category"
-          >
-            <option value="">{labels.filters.allCategories}</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
+      <FilterDisclosure activeCount={activeFilterCount} defaultOpen={hasActiveFilter} testId="cash-filter-bar">
+        <div className="mt-6 flex flex-wrap items-end gap-4" data-testid="cash-filter-bar">
+          {/* `<label htmlFor>` as a SIBLING of its control, never wrapping it
+              (TD-1, AC 5): a wrapping `<label>` around a `<select>` folds every
+              `<option>`'s text into the label's own accessible name (browsers
+              compute it from textContent), which can accidentally collide with
+              an unrelated label elsewhere on the page once option text is
+              dynamic (e.g. a category name) — same footgun already fixed in
+              `flights-manager.tsx`'s `FilterBar` (story 5.4) and in this same
+              file's `NewMovementForm`/`ReverseForm` below (`cash-category`
+              etc.); the layout classes move to a wrapping `<div>` so the
+              visual result stays identical. */}
+          <DatePicker
+            id="cash-filter-from"
+            label={labels.filters.from}
+            value={filters.from}
+            onChange={(next) => handleFilterChange({ from: next })}
+            labels={labels.datePicker}
+            testId="cash-filter-from"
+            className="min-w-[160px]"
+          />
+          <DatePicker
+            id="cash-filter-to"
+            label={labels.filters.to}
+            value={filters.to}
+            onChange={(next) => handleFilterChange({ to: next })}
+            labels={labels.datePicker}
+            testId="cash-filter-to"
+            className="min-w-[160px]"
+          />
+          <div className="flex flex-col gap-2 text-sm text-ink">
+            <label htmlFor="cash-filter-category">{labels.filters.category}</label>
+            <select
+              id="cash-filter-category"
+              value={filters.categoryId}
+              onChange={(event) => handleFilterChange({ categoryId: event.target.value })}
+              className={selectClasses}
+              data-testid="cash-filter-category"
+            >
+              <option value="">{labels.filters.allCategories}</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-2 text-sm text-ink">
+            <label htmlFor="cash-filter-sign">{labels.filters.sign}</label>
+            <select
+              id="cash-filter-sign"
+              value={filters.sign}
+              onChange={(event) => handleFilterChange({ sign: event.target.value as CashRegisterFilters['sign'] })}
+              className={selectClasses}
+              data-testid="cash-filter-sign"
+            >
+              <option value="">{labels.filters.allSigns}</option>
+              <option value="in">{labels.filters.signIn}</option>
+              <option value="out">{labels.filters.signOut}</option>
+            </select>
+          </div>
+          {hasActiveFilter ? (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              data-testid="cash-filter-reset"
+              className="min-h-[40px] rounded-buttons border border-hairline bg-paper px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-canvas"
+            >
+              {labels.filters.reset}
+            </button>
+          ) : null}
         </div>
-        <div className="flex flex-col gap-2 text-sm text-ink">
-          <label htmlFor="cash-filter-sign">{labels.filters.sign}</label>
-          <select
-            id="cash-filter-sign"
-            value={filters.sign}
-            onChange={(event) => handleFilterChange({ sign: event.target.value as CashRegisterFilters['sign'] })}
-            className={selectClasses}
-            data-testid="cash-filter-sign"
-          >
-            <option value="">{labels.filters.allSigns}</option>
-            <option value="in">{labels.filters.signIn}</option>
-            <option value="out">{labels.filters.signOut}</option>
-          </select>
-        </div>
-      </div>
+      </FilterDisclosure>
 
       {panelOpen ? (
         <Card className="mt-6 p-6">

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Card } from '@/components/ui/card';
+import { PencilIcon, ToggleIcon, TrashIcon } from '@/components/ui/icons';
 
 export type CashCategoryRow = {
   id: string;
@@ -172,27 +173,38 @@ export function CategoriesManager({ categories, labels }: CategoriesManagerProps
 
         return (
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" type="button" onClick={() => setPanel({ mode: 'rename', category })}>
-              {labels.actions.rename}
+            <Button
+              variant="outline"
+              size="icon"
+              type="button"
+              onClick={() => setPanel({ mode: 'rename', category })}
+              aria-label={labels.actions.rename}
+              title={labels.actions.rename}
+            >
+              <PencilIcon />
             </Button>
             <Button
               variant="outline"
-              size="sm"
+              size="icon"
               type="button"
               disabled={pendingActionId === category.id}
               onClick={() => void handleLifecycleAction(category, category.isActive ? 'deactivate' : 'reactivate')}
+              aria-label={category.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+              title={category.isActive ? labels.actions.deactivate : labels.actions.reactivate}
             >
-              {category.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+              <ToggleIcon />
             </Button>
             {category.isSystem ? null : (
               <Button
                 variant="outline"
-                size="sm"
+                size="icon"
                 type="button"
                 disabled={pendingActionId === category.id}
                 onClick={() => setConfirmingDeleteId(category.id)}
+                aria-label={labels.actions.delete}
+                title={labels.actions.delete}
               >
-                {labels.actions.delete}
+                <TrashIcon />
               </Button>
             )}
           </div>

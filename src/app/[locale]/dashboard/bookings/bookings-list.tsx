@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/card';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { DateTimeField, type DateTimeFieldLabels } from '@/components/ui/date-time-field';
+import { CircleXIcon, MoveIcon } from '@/components/ui/icons';
 
 export type BookingRowDto = {
   id: string;
@@ -319,21 +320,23 @@ export function BookingsList({
                           </div>
                         ) : canManageRow ? (
                           <div className="flex flex-wrap gap-2">
-                            <Button variant="outline" size="sm"
+                            <Button variant="outline" size="icon"
                               type="button"
                               onClick={() => requestMove(booking.id)}
                               data-testid="booking-move-action"
-                              className="min-h-[36px]"
+                              aria-label={labels.actions.move}
+                              title={labels.actions.move}
                             >
-                              {labels.actions.move}
+                              <MoveIcon />
                             </Button>
-                            <Button variant="outline" size="sm"
+                            <Button variant="outline" size="icon"
                               type="button"
                               onClick={() => requestCancel(booking.id)}
                               data-testid="booking-cancel-action"
-                              className="min-h-[36px]"
+                              aria-label={labels.actions.cancel}
+                              title={labels.actions.cancel}
                             >
-                              {labels.actions.cancel}
+                              <CircleXIcon />
                             </Button>
                           </div>
                         ) : null}

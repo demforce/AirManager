@@ -15,6 +15,7 @@ import { Card } from '@/components/ui/card';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
+import { SendIcon } from '@/components/ui/icons';
 
 export type MyExpiriesLabels = {
   empty: string;
@@ -145,11 +146,13 @@ function MyExpiryRow({ expiry, isProposing, labels, onOpenPropose, onCancelPropo
           {expiry.pendingProposal ? (
             <span className="text-xs text-mid-gray">{labels.table.pendingHint}</span>
           ) : (
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="icon"
               type="button"
               onClick={onOpenPropose}
+              aria-label={labels.proposeAction}
+              title={labels.proposeAction}
             >
-              {labels.proposeAction}
+              <SendIcon />
             </Button>
           )}
         </td>

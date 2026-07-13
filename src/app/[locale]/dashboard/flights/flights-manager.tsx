@@ -27,6 +27,8 @@ import { cn } from '@/components/ui/cn';
 import { Card, CardFooter, CardHeader } from '@/components/ui/card';
 import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 import { Dialog } from '@/components/ui/dialog';
+import { FilterDisclosure } from '@/components/ui/filter-disclosure';
+import { CircleXIcon, EyeIcon, PencilIcon } from '@/components/ui/icons';
 import { Menu } from '@/components/ui/menu';
 import { FlightDetailSheet } from './flight-detail-sheet';
 
@@ -454,6 +456,10 @@ export function FlightsManager({
   // school drill-down's `instructorPersonId` (not a `FilterBar` control, see
   // its own prop doc-comment).
   const activeFilter = hasActiveFlightFilter({ ...filters, instructorPersonId });
+  // TD-6 (AC 1) — the "Filtri" disclosure's badge count: only the BAR's own
+  // visible controls (not `instructorPersonId`, same scope as `FilterBar`'s
+  // own `hasActiveFilter`/reset-button condition below).
+  const activeFilterCount = Object.values(filters).filter((value) => value !== '').length;
 
   /**
    * Pushes the new filter values into the URL (dropping `page` — any filter
@@ -789,18 +795,20 @@ export function FlightsManager({
               </Menu>
             </div>
           </div>
-          <FilterBar
-            canManage={canManage}
-            filters={filters}
-            onChange={handleFilterChange}
-            onReset={handleResetFilters}
-            aircraftOptions={aircraftFilterOptions}
-            personOptions={personFilterOptions}
-            labels={labels.filters}
-            flightTypeLabels={labels.form.flightTypes}
-            pickerLabels={labels.picker}
-            datePickerLabels={labels.datePicker}
-          />
+          <FilterDisclosure activeCount={activeFilterCount} defaultOpen={activeFilter} testId="flight-filter-bar">
+            <FilterBar
+              canManage={canManage}
+              filters={filters}
+              onChange={handleFilterChange}
+              onReset={handleResetFilters}
+              aircraftOptions={aircraftFilterOptions}
+              personOptions={personFilterOptions}
+              labels={labels.filters}
+              flightTypeLabels={labels.form.flightTypes}
+              pickerLabels={labels.picker}
+              datePickerLabels={labels.datePicker}
+            />
+          </FilterDisclosure>
         </CardHeader>
 
         {flights.length === 0 ? (
@@ -821,7 +829,6 @@ export function FlightsManager({
                 <th className="py-2 pr-4 font-medium">{labels.list.table.duration}</th>
                 <th className="py-2 pr-4 font-medium">{labels.list.table.amount}</th>
                 <th className="py-2 pr-4 font-medium">{labels.list.table.pic}</th>
-                <th className="py-2 pr-4 font-medium">{labels.list.table.status}</th>
                 <th className="py-2 font-medium">{labels.list.table.actions}</th>
               </tr>
             </thead>
@@ -914,8 +921,8 @@ export function FlightsManager({
   );
 }
 
-/** Column count of the GROUPED context's `<thead>` (tratta, velivolo, durata, costo, PIC, stato, azioni — no date column) — the day header's own `colSpan`. */
-const GROUPED_COLUMN_COUNT = 7;
+/** Column count of the GROUPED context's `<thead>` (tratta, velivolo, durata, costo, PIC, azioni — no date column; TD-6 AC 5 dropped the separate stato column, now inline in tratta) — the day header's own `colSpan`. */
+const GROUPED_COLUMN_COUNT = 6;
 
 type FlightRowProps = {
   flight: FlightListItemDto;
@@ -946,14 +953,25 @@ function FlightRow({ flight, showDate, canManage, moneyLocale, labels, onDetail,
       ? `${flight.departureAirfield} → ${flight.arrivalAirfield}`
       : labels.list.table.noValue;
   const picLabel = pic ? personLabel(pic) : labels.list.table.noValue;
+  // TD-6 (AC 5) — the Stato column is gone: a CANCELLED flight's badge/reason
+  // (and any correction lineage chip) now render INLINE in the tratta cell
+  // via the same `FlightStatusCell` the sheet already reuses verbatim, and
+  // the whole row is dimmed. `FlightStatusCell` self-gates to `null` when
+  // there is nothing to show, so it stays unconditional here.
+  const dimmed = flight.status === 'CANCELLED';
 
   return (
-    <tr data-testid="flight-row" className="border-b border-hairline text-ink">
+    <tr data-testid="flight-row" className={cn('border-b border-hairline text-ink', dimmed && 'opacity-60')}>
       {showDate ? (
         <td className="py-2 pr-4 whitespace-nowrap text-mid-gray">{formatDateOnly(flight.flightDate, moneyLocale)}</td>
       ) : null}
-      <td className="max-w-[220px] truncate py-2 pr-4" title={route}>
-        {route}
+      <td className="max-w-[220px] py-2 pr-4">
+        <span className="block truncate" title={route}>
+          {route}
+        </span>
+        <div className="mt-1">
+          <FlightStatusCell flight={flight} labels={labels.list.table} locale={moneyLocale} />
+        </div>
       </td>
       <td className="py-2 pr-4 whitespace-nowrap">{flight.aircraft.registration}</td>
       <td className="py-2 pr-4 whitespace-nowrap">
@@ -963,38 +981,44 @@ function FlightRow({ flight, showDate, canManage, moneyLocale, labels, onDetail,
       <td data-testid="flight-pic-cell" className="max-w-[160px] truncate py-2 pr-4" title={picLabel}>
         {picLabel}
       </td>
-      <td className="py-2 pr-4">
-        <FlightStatusCell flight={flight} labels={labels.list.table} locale={moneyLocale} />
-      </td>
       <td className="py-2 whitespace-nowrap">
         <div className="flex gap-2">
           {/* Story 12.3 (AC 5) — available on EVERY row, own-access included (a per-row VIEW, not a management action). */}
-          <button
+          <Button
+            variant="outline"
+            size="icon"
             type="button"
             data-testid="flight-detail-action"
             onClick={() => onDetail(flight)}
-            className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
+            aria-label={labels.detail.openAction}
+            title={labels.detail.openAction}
           >
-            {labels.detail.openAction}
-          </button>
+            <EyeIcon />
+          </Button>
           {canManage && flight.status === 'REGISTERED' ? (
             <>
-              <button
+              <Button
+                variant="outline"
+                size="icon"
                 type="button"
                 data-testid="flight-cancel-action"
                 onClick={() => onCancel(flight)}
-                className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
+                aria-label={labels.list.table.cancelAction}
+                title={labels.list.table.cancelAction}
               >
-                {labels.list.table.cancelAction}
-              </button>
-              <button
+                <CircleXIcon />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
                 type="button"
                 data-testid="flight-correct-action"
                 onClick={() => onCorrect(flight)}
-                className="rounded-buttons border border-hairline bg-paper px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-canvas"
+                aria-label={labels.list.table.correctAction}
+                title={labels.list.table.correctAction}
               >
-                {labels.list.table.correctAction}
-              </button>
+                <PencilIcon />
+              </Button>
             </>
           ) : null}
         </div>

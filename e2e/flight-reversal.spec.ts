@@ -26,6 +26,14 @@ async function selectFromCombobox(combobox: Locator, query: string, optionLabel:
   await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
+/** TD-6 (AC 1): the filter bar is hidden behind a "Filtri" toggle, auto-open ONLY when the URL already carries an active filter — opens it if (and only if) it is currently closed. */
+async function openFlightFilters(page: Page): Promise<void> {
+  const toggle = page.getByTestId('flight-filter-bar-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
+}
+
 /** Story 12.3 (AC 2): the registration form now lives in a `Dialog` — opens it before any `flight-form` field interaction (same helper as `flights.spec.ts`). */
 async function openRegisterDialog(page: Page): Promise<void> {
   await page.getByTestId('flight-open-register').click();
@@ -239,6 +247,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     // filter change navigates and REMOUNTS the manager — settle on its URL
     // effect before touching anything else (TD-3 review M1 lesson).
     await page.goto('/it/dashboard/flights');
+    await openFlightFilters(page);
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(/aircraftId=/);
     const flightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).first();
@@ -299,6 +308,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     // this run's aircraft and settle BEFORE using the form, so the '2020-01-02'
     // row lookups below cannot be buried by other runs' recent-dated flights.
     await page.goto('/it/dashboard/flights');
+    await openFlightFilters(page);
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(/aircraftId=/);
     await openRegisterDialog(page);
@@ -313,7 +323,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     // Correct it: 60' -> 30' (a genuine "dati sbagliati" fix) — same takeoff (prefilled from the original), landing moved an hour earlier.
     const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).first();
     await secondFlightRow.getByTestId('flight-correct-action').click();
-    await expect(page.getByRole('heading', { name: 'Correggi volo' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Modifica volo' })).toBeVisible();
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByLabel('Motivo della correzione').fill('Durata inserita per errore');
     await page.getByRole('button', { name: 'Conferma correzione' }).click();

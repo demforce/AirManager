@@ -111,6 +111,7 @@
   },
   "DashboardShell": {
     "switchTo": "English",
+    "filtersToggle": "Filtri",
     "searchTrigger": {
       "label": "Cerca"
     },
@@ -647,7 +648,8 @@
         "allCategories": "Tutte le categorie",
         "allSigns": "Tutti",
         "signIn": "Entrate",
-        "signOut": "Uscite"
+        "signOut": "Uscite",
+        "reset": "Azzera filtri"
       },
       "table": {
         "date": "Data",
@@ -1074,7 +1076,7 @@
         "correctedBy": "Corretto da un volo successivo",
         "actions": "Azioni",
         "cancelAction": "Annulla",
-        "correctAction": "Correggi"
+        "correctAction": "Modifica"
       },
       "loadMoreGrouped": "Carica giorni precedenti",
       "loadMoreFlat": "Carica altri voli",
@@ -1097,7 +1099,7 @@
       "success": "Volo annullato."
     },
     "correctPanel": {
-      "title": "Correggi volo",
+      "title": "Modifica volo",
       "reason": "Motivo della correzione",
       "requiredReason": "Il motivo è obbligatorio.",
       "submit": "Conferma correzione",

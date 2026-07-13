@@ -14,6 +14,8 @@ import { Card } from '@/components/ui/card';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
+import { FilterDisclosure } from '@/components/ui/filter-disclosure';
+import { CheckIcon, CircleXIcon } from '@/components/ui/icons';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 
 export type PprRegisterFilters = { status: string; from: string; to: string };
@@ -152,6 +154,9 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
   // "active filter" — otherwise the button shows on a freshly opened
   // register with no URL params at all.
   const hasActiveFilter = filters.status !== 'APPROVED' || filters.from !== '' || filters.to !== '';
+  // TD-6 (AC 1) — the "Filtri" disclosure's badge count, same three-field
+  // scope as `hasActiveFilter` above.
+  const activeFilterCount = (filters.status !== 'APPROVED' ? 1 : 0) + (filters.from !== '' ? 1 : 0) + (filters.to !== '' ? 1 : 0);
 
   function startComplete(id: string): void {
     setFeedback(null);
@@ -192,54 +197,57 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
 
   return (
     <div data-testid="ppr-register">
-      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-hairline pb-6">
-        <div className="flex flex-wrap items-end gap-4" data-testid="ppr-register-filter-bar">
-          <div className="flex flex-col text-sm text-ink">
-            <label htmlFor="ppr-register-filter-status">{labels.filters.status}</label>
-            <select
-              id="ppr-register-filter-status"
-              value={filters.status}
-              onChange={(event) => handleFilterChange({ status: event.target.value })}
-              className={inputClasses}
-              data-testid="ppr-register-filter-status"
-            >
-              <option value="ALL">{labels.filters.statusAll}</option>
-              <option value="PENDING">{labels.filters.statusOptions.pending}</option>
-              <option value="APPROVED">{labels.filters.statusOptions.approved}</option>
-              <option value="REJECTED">{labels.filters.statusOptions.rejected}</option>
-              <option value="COMPLETED">{labels.filters.statusOptions.completed}</option>
-              <option value="CANCELLED">{labels.filters.statusOptions.cancelled}</option>
-            </select>
+      {/* TD-6 (AC 1) — `items-start` (was `items-end`): once the "Filtri" disclosure's panel opens, its column grows taller than the export button; `items-start` keeps the export button pinned to the top of the row instead of dragging it down to match. */}
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-hairline pb-6">
+        <FilterDisclosure activeCount={activeFilterCount} defaultOpen={hasActiveFilter} testId="ppr-register-filter-bar">
+          <div className="flex flex-wrap items-end gap-4" data-testid="ppr-register-filter-bar">
+            <div className="flex flex-col text-sm text-ink">
+              <label htmlFor="ppr-register-filter-status">{labels.filters.status}</label>
+              <select
+                id="ppr-register-filter-status"
+                value={filters.status}
+                onChange={(event) => handleFilterChange({ status: event.target.value })}
+                className={inputClasses}
+                data-testid="ppr-register-filter-status"
+              >
+                <option value="ALL">{labels.filters.statusAll}</option>
+                <option value="PENDING">{labels.filters.statusOptions.pending}</option>
+                <option value="APPROVED">{labels.filters.statusOptions.approved}</option>
+                <option value="REJECTED">{labels.filters.statusOptions.rejected}</option>
+                <option value="COMPLETED">{labels.filters.statusOptions.completed}</option>
+                <option value="CANCELLED">{labels.filters.statusOptions.cancelled}</option>
+              </select>
+            </div>
+            <DatePicker
+              id="ppr-register-filter-from"
+              label={labels.filters.from}
+              value={filters.from}
+              onChange={(next) => handleFilterChange({ from: next })}
+              labels={labels.filters.datePicker}
+              testId="ppr-register-filter-from"
+              className="min-w-[160px]"
+            />
+            <DatePicker
+              id="ppr-register-filter-to"
+              label={labels.filters.to}
+              value={filters.to}
+              onChange={(next) => handleFilterChange({ to: next })}
+              labels={labels.filters.datePicker}
+              testId="ppr-register-filter-to"
+              className="min-w-[160px]"
+            />
+            {hasActiveFilter ? (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                data-testid="ppr-register-filter-reset"
+                className="min-h-[40px] rounded-buttons border border-hairline bg-paper px-3 text-sm font-medium text-ink transition-colors hover:bg-canvas"
+              >
+                {labels.filters.reset}
+              </button>
+            ) : null}
           </div>
-          <DatePicker
-            id="ppr-register-filter-from"
-            label={labels.filters.from}
-            value={filters.from}
-            onChange={(next) => handleFilterChange({ from: next })}
-            labels={labels.filters.datePicker}
-            testId="ppr-register-filter-from"
-            className="min-w-[160px]"
-          />
-          <DatePicker
-            id="ppr-register-filter-to"
-            label={labels.filters.to}
-            value={filters.to}
-            onChange={(next) => handleFilterChange({ to: next })}
-            labels={labels.filters.datePicker}
-            testId="ppr-register-filter-to"
-            className="min-w-[160px]"
-          />
-          {hasActiveFilter ? (
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              data-testid="ppr-register-filter-reset"
-              className="min-h-[40px] rounded-buttons border border-hairline bg-paper px-3 text-sm font-medium text-ink transition-colors hover:bg-canvas"
-            >
-              {labels.filters.reset}
-            </button>
-          ) : null}
-        </div>
+        </FilterDisclosure>
         <ExportButton href={exportHref} label={exportLabel} testId="ppr-register-export-button" />
       </div>
 
@@ -309,21 +317,25 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
                           </div>
                         ) : action === 'complete' ? null : (
                           <div className="flex flex-wrap gap-2">
-                            <Button size="sm"
+                            <Button size="icon"
                               type="button"
                               disabled={isBusy}
                               onClick={() => startComplete(request.id)}
                               data-testid="ppr-register-complete-button"
+                              aria-label={labels.actions.complete}
+                              title={labels.actions.complete}
                             >
-                              {labels.actions.complete}
+                              <CheckIcon />
                             </Button>
-                            <Button variant="outline" size="sm"
+                            <Button variant="outline" size="icon"
                               type="button"
                               disabled={isBusy}
                               onClick={() => startCancelConfirm(request.id)}
                               data-testid="ppr-register-cancel-button"
+                              aria-label={labels.actions.cancel}
+                              title={labels.actions.cancel}
                             >
-                              {labels.actions.cancel}
+                              <CircleXIcon />
                             </Button>
                           </div>
                         )}

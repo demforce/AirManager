@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Card } from '@/components/ui/card';
+import { PencilIcon, ToggleIcon, TrashIcon } from '@/components/ui/icons';
 
 export type PackageTypeAircraftOption = { id: string; registration: string };
 
@@ -251,26 +252,37 @@ export function PackagesManager({ packageTypes, activeAircraft, canManage, money
 
               return (
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" type="button" onClick={() => setPanel({ mode: 'edit', packageType })}>
-                    {labels.actions.edit}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    type="button"
+                    onClick={() => setPanel({ mode: 'edit', packageType })}
+                    aria-label={labels.actions.edit}
+                    title={labels.actions.edit}
+                  >
+                    <PencilIcon />
                   </Button>
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="icon"
                     type="button"
                     disabled={pendingActionId === packageType.id}
                     onClick={() => void handleToggleActive(packageType)}
+                    aria-label={packageType.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+                    title={packageType.isActive ? labels.actions.deactivate : labels.actions.reactivate}
                   >
-                    {packageType.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+                    <ToggleIcon />
                   </Button>
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="icon"
                     type="button"
                     disabled={pendingActionId === packageType.id}
                     onClick={() => setConfirmingDeleteId(packageType.id)}
+                    aria-label={labels.actions.delete}
+                    title={labels.actions.delete}
                   >
-                    {labels.actions.delete}
+                    <TrashIcon />
                   </Button>
                 </div>
               );

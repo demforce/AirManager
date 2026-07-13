@@ -111,6 +111,7 @@
   },
   "DashboardShell": {
     "switchTo": "Italiano",
+    "filtersToggle": "Filters",
     "searchTrigger": {
       "label": "Search"
     },
@@ -647,7 +648,8 @@
         "allCategories": "All categories",
         "allSigns": "All",
         "signIn": "Inflows",
-        "signOut": "Outflows"
+        "signOut": "Outflows",
+        "reset": "Clear filters"
       },
       "table": {
         "date": "Date",
@@ -1074,7 +1076,7 @@
         "correctedBy": "Corrected by a later flight",
         "actions": "Actions",
         "cancelAction": "Cancel",
-        "correctAction": "Correct"
+        "correctAction": "Edit"
       },
       "loadMoreGrouped": "Load earlier days",
       "loadMoreFlat": "Load more flights",
@@ -1097,7 +1099,7 @@
       "success": "Flight cancelled."
     },
     "correctPanel": {
-      "title": "Correct flight",
+      "title": "Edit flight",
       "reason": "Correction reason",
       "requiredReason": "The reason is required.",
       "submit": "Confirm correction",

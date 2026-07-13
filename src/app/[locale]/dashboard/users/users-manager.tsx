@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Card } from '@/components/ui/card';
+import { MailIcon, PencilIcon, ToggleIcon } from '@/components/ui/icons';
 
 type RoleKey = 'ADMIN' | 'STAFF' | 'INSTRUCTOR' | 'PILOT' | 'STUDENT';
 const ALL_ROLES: readonly RoleKey[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
@@ -188,26 +189,32 @@ export function UsersManager({ users, persons, labels }: UsersManagerProps) {
                   <td className="px-5 py-3 text-ink">{labels.locales[user.locale === 'en' ? 'en' : 'it']}</td>
                   <td className="px-5 py-3">
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm"
+                      <Button variant="outline" size="icon"
                         type="button"
                         onClick={() => setPanel({ mode: 'edit', user })}
+                        aria-label={labels.actions.edit}
+                        title={labels.actions.edit}
                       >
-                        {labels.actions.edit}
+                        <PencilIcon />
                       </Button>
-                      <Button variant="outline" size="sm"
+                      <Button variant="outline" size="icon"
                         type="button"
                         disabled={pendingActionId === user.id}
                         onClick={() => void handleToggleActive(user)}
+                        aria-label={user.isActive ? labels.actions.deactivate : labels.actions.activate}
+                        title={user.isActive ? labels.actions.deactivate : labels.actions.activate}
                       >
-                        {user.isActive ? labels.actions.deactivate : labels.actions.activate}
+                        <ToggleIcon />
                       </Button>
                       {!user.passwordSet ? (
-                        <Button variant="outline" size="sm"
+                        <Button variant="outline" size="icon"
                           type="button"
                           disabled={pendingActionId === user.id}
                           onClick={() => void handleResendInvite(user)}
+                          aria-label={labels.actions.resendInvite}
+                          title={labels.actions.resendInvite}
                         >
-                          {labels.actions.resendInvite}
+                          <MailIcon />
                         </Button>
                       ) : null}
                     </div>

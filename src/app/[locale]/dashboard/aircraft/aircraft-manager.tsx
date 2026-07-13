@@ -29,6 +29,7 @@ import { cn } from '@/components/ui/cn';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Card } from '@/components/ui/card';
 import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
+import { ArchiveIcon, GaugeIcon, PencilIcon, RestoreIcon, TagEuroIcon, ToggleIcon } from '@/components/ui/icons';
 
 export type AircraftRow = {
   id: string;
@@ -414,46 +415,58 @@ export function AircraftManager({
 
         return (
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="icon"
               type="button"
               onClick={() => setPanel({ mode: 'edit', aircraft: item })}
+              aria-label={labels.actions.edit}
+              title={labels.actions.edit}
             >
-              {labels.actions.edit}
+              <PencilIcon />
             </Button>
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="icon"
               type="button"
               disabled={pendingActionId === item.id}
               onClick={() => setConfirming({ id: item.id, type: archiveActionType })}
+              aria-label={isArchived ? labels.actions.unarchive : labels.actions.archive}
+              title={isArchived ? labels.actions.unarchive : labels.actions.archive}
             >
-              {isArchived ? labels.actions.unarchive : labels.actions.archive}
+              {isArchived ? <RestoreIcon /> : <ArchiveIcon />}
             </Button>
             {isOutOfService ? (
-              <Button variant="outline" size="sm"
+              <Button variant="outline" size="icon"
                 type="button"
                 disabled={pendingActionId === item.id}
                 onClick={() => setConfirming({ id: item.id, type: 'return-to-service' })}
+                aria-label={labels.actions.returnToService}
+                title={labels.actions.returnToService}
               >
-                {labels.actions.returnToService}
+                <ToggleIcon />
               </Button>
             ) : (
-              <Button variant="outline" size="sm"
+              <Button variant="outline" size="icon"
                 type="button"
                 onClick={() => setPanel({ mode: 'out-of-service', aircraft: item })}
+                aria-label={labels.actions.setOutOfService}
+                title={labels.actions.setOutOfService}
               >
-                {labels.actions.setOutOfService}
+                <ToggleIcon />
               </Button>
             )}
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="icon"
               type="button"
               onClick={() => setPanel({ mode: 'hour-meter', aircraft: item })}
+              aria-label={labels.actions.adjustHourMeter}
+              title={labels.actions.adjustHourMeter}
             >
-              {labels.actions.adjustHourMeter}
+              <GaugeIcon />
             </Button>
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="icon"
               type="button"
               onClick={() => setPanel({ mode: 'rates', aircraft: item })}
+              aria-label={labels.actions.rates}
+              title={labels.actions.rates}
             >
-              {labels.actions.rates}
+              <TagEuroIcon />
             </Button>
           </div>
         );

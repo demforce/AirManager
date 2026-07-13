@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from 'react';
 import { cn } from './cn';
 
 export type ButtonVariant = 'filled' | 'ghost' | 'outline';
-export type ButtonSize = 'default' | 'sm';
+export type ButtonSize = 'default' | 'sm' | 'icon';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
@@ -21,6 +21,8 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
   // app before this story (row height/density is story 12.5's scope, not
   // this one's — this size variant only keeps dense rows unchanged).
   sm: 'px-3 py-1.5 text-xs',
+  // TD-6 (AC 2) — square icon-only row action, min-target 32px (h-8 w-8).
+  icon: 'h-8 w-8 p-0',
 };
 
 /**

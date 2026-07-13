@@ -39,11 +39,24 @@ async function selectFromCombobox(combobox: Locator, query: string, optionLabel:
 async function resetFiltersAndSettle(page: Page, dirtyFilter: Locator, dirtyValue: string): Promise<void> {
   await page.getByTestId('flight-filter-reset').click();
   await expect(page).toHaveURL(/\/dashboard\/flights$/);
+  // TD-6 (AC 1): the reset navigates to NO active filter, so the remounted
+  // "Filtri" disclosure defaults back to closed — `dirtyFilter` is NOT EVEN
+  // IN THE DOM until reopened (the panel's children don't render at all
+  // while closed), so this must run BEFORE the value check below.
+  await openFlightFilters(page);
   // The remounted control shows its own empty-state label (e.g. "Tutti i
   // velivoli"), never the value it held before the reset — waiting for the
   // DIRTY value to disappear is the remount-complete signal that works for
   // combobox and date inputs alike.
   await expect(dirtyFilter).not.toHaveValue(dirtyValue);
+}
+
+/** TD-6 (AC 1): the filter bar is hidden behind a "Filtri" toggle, auto-open ONLY when the URL already carries an active filter — opens it if (and only if) it is currently closed. */
+async function openFlightFilters(page: Page): Promise<void> {
+  const toggle = page.getByTestId('flight-filter-bar-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
 }
 
 /** Run-unique names (same pattern as the other specs, for the dirty/parallel DB). */
@@ -231,6 +244,8 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page.getByTestId('flight-form')).toHaveCount(0);
     await expect(page.getByTestId('flight-cancel-action')).toHaveCount(0);
     await expect(page.getByTestId('flight-correct-action')).toHaveCount(0);
+    // TD-6 (AC 1): open the "Filtri" panel before inspecting which controls it renders.
+    await openFlightFilters(page);
     // Only staff filters (aircraft/persona) are absent; period/tipo/stato remain.
     await expect(page.getByTestId('flight-filter-aircraft')).toHaveCount(0);
     await expect(page.getByTestId('flight-filter-person')).toHaveCount(0);
@@ -248,6 +263,8 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
 
     await page.getByTestId('flight-filter-reset').click();
     await expect(page.getByTestId('flight-row')).toHaveCount(2);
+    // TD-6 (AC 1): reset returns to no active filter, so the remounted panel closes back down.
+    await openFlightFilters(page);
 
     await page.getByTestId('flight-filter-type').selectOption('TOURISM');
     const tourismRow = page.getByTestId('flight-row');
@@ -288,6 +305,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'AERIAL_WORK', minutes: 45 });
 
     await page.goto('/it/dashboard/flights');
+    await openFlightFilters(page);
 
     // Velivolo filter: only aircraftA's flight.
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraftA.registration, aircraftA.registration);
@@ -444,6 +462,7 @@ test.describe('Registry rendering: day grouping, flat context, export menu (Stor
     await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate: '2020-08-15', flightType: 'TOURISM', minutes: 20 });
 
     await page.goto('/it/dashboard/flights');
+    await openFlightFilters(page);
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(/aircraftId=/);
 
@@ -477,5 +496,59 @@ test.describe('Registry rendering: day grouping, flat context, export menu (Stor
       page.getByTestId('flights-export-button').click(),
     ]);
     expect(download.suggestedFilename()).toMatch(/^airmanager-flights-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  });
+
+  test('the "Filtri" panel is closed by default with the reset button inside, opens on click, shows an active-filter counter once a filter is applied, and a deep link with a filter lands pre-opened (TD-6, AC 1)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 9000);
+    const person = await createPilotPerson(page, 'FiltriToggle');
+    await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate: '2020-10-01', flightType: 'TOURISM', minutes: 20 });
+
+    // Closed by default on a fresh, filterless landing.
+    await page.goto('/it/dashboard/flights');
+    const toggle = page.getByTestId('flight-filter-bar-toggle');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByTestId('flight-filter-bar')).toHaveCount(0);
+    await expect(page.getByTestId('flight-filter-bar-count')).toHaveCount(0);
+
+    // Click opens it; the reset button lives INSIDE the panel, hidden until a filter is active.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId('flight-filter-bar')).toBeVisible();
+    await expect(page.getByTestId('flight-filter-reset')).toHaveCount(0);
+
+    // Applying a filter shows the reset button AND the active-filter counter on the toggle.
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await expect(page).toHaveURL(/aircraftId=/);
+    await expect(page.getByTestId('flight-filter-reset')).toBeVisible();
+    await expect(page.getByTestId('flight-filter-bar-count')).toHaveText('1');
+
+    // A deep link WITH a filter already in the URL lands with the panel already open (auto-open).
+    await page.goto(`/it/dashboard/flights?aircraftId=${aircraft.id}`);
+    await expect(page.getByTestId('flight-filter-bar-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId('flight-filter-bar')).toBeVisible();
+  });
+
+  test('row action icon buttons resolve by their CURRENT accessible name (aria-label/title = the i18n label), never by visible text (TD-6, AC 2/3)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 7000);
+    const person = await createPilotPerson(page, 'IconaAccName');
+    await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate: '2020-10-02', flightType: 'TOURISM', minutes: 15 });
+
+    await page.goto('/it/dashboard/flights');
+    await openFlightFilters(page);
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).first();
+
+    // Icons carry no visible text — the accessible name comes ONLY from aria-label/title
+    // and matches the CURRENT i18n label ("Modifica", the TD-6 AC 3 rename from "Correggi").
+    await expect(row.getByRole('button', { name: 'Dettaglio' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Annulla' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Modifica' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Correggi' })).toHaveCount(0);
   });
 });

@@ -221,6 +221,7 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
                   allSigns: t('cashRegister.filters.allSigns'),
                   signIn: t('cashRegister.filters.signIn'),
                   signOut: t('cashRegister.filters.signOut'),
+                  reset: t('cashRegister.filters.reset'),
                 },
                 datePicker: {
                   openCalendar: t('datePicker.openCalendar'),

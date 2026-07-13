@@ -49,6 +49,14 @@ async function logout(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/it\/login$/);
 }
 
+/** TD-6 (AC 1): the filter bar is hidden behind a "Filtri" toggle, auto-open ONLY when the URL's own `hasActiveFilter` is true at mount — opens it if (and only if) it is currently closed. The register manager remounts on every filter change (`key={JSON.stringify({page, ...filterQuery})}`), so it can close back down (e.g. after "Azzera filtri" returns to the page's own APPROVED default). */
+async function openPprFilters(page: Page): Promise<void> {
+  const toggle = page.getByTestId('ppr-register-filter-bar-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
+}
+
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -224,6 +232,8 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
 
     // --- Cash register: the matching movement in the "PPR" category (pattern cash-register.spec.ts) ---
     await page.goto('/it/dashboard/finance');
+    // TD-6 (AC 1): the cash filter bar is hidden behind a "Filtri" toggle.
+    await page.getByTestId('cash-filter-bar-toggle').click();
     await page.getByTestId('cash-filter-category').selectOption({ label: 'PPR' });
     const movementRow = page.getByTestId('cash-register-table').locator('tbody tr').filter({ hasText: created.pprNumber });
     await expect(movementRow).toBeVisible();
@@ -349,8 +359,11 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
-    // Fresh landing, no URL params at all: the page's own APPROVED default is NOT an "active filter".
+    // Fresh landing, no URL params at all: the page's own APPROVED default is
+    // NOT an "active filter" — the "Filtri" panel is CLOSED by default here
+    // (TD-6 AC 1), open it to inspect its controls.
     await page.goto('/it/dashboard/ppr/register');
+    await openPprFilters(page);
     await expect(page.getByTestId('ppr-register-filter-status')).toHaveValue('APPROVED');
     await expect(page.getByTestId('ppr-register-filter-reset')).toHaveCount(0);
 
@@ -359,9 +372,12 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
     await expect(page).toHaveURL(/status=ALL/);
     await expect(page.getByTestId('ppr-register-filter-reset')).toBeVisible();
 
-    // Reset -> back to the page default: clean URL, APPROVED selected again, button gone.
+    // Reset -> back to the page default: clean URL, APPROVED selected again,
+    // button gone. The reset ALSO returns to no-active-filter, so the
+    // remounted panel closes back down (TD-6 AC 1) — reopen it to inspect.
     await page.getByTestId('ppr-register-filter-reset').click();
     await expect(page).toHaveURL(/\/it\/dashboard\/ppr\/register$/);
+    await openPprFilters(page);
     await expect(page.getByTestId('ppr-register-filter-status')).toHaveValue('APPROVED');
     await expect(page.getByTestId('ppr-register-filter-reset')).toHaveCount(0);
   });

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
+import { PencilIcon, ToggleIcon, TrashIcon } from '@/components/ui/icons';
 
 export type ExpiryScopeValue = 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
 
@@ -207,26 +208,37 @@ export function TypesManager({ expiryTypes, canManage, labels }: TypesManagerPro
 
               return (
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" type="button" onClick={() => setPanel({ mode: 'edit', expiryType })}>
-                    {labels.actions.edit}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    type="button"
+                    onClick={() => setPanel({ mode: 'edit', expiryType })}
+                    aria-label={labels.actions.edit}
+                    title={labels.actions.edit}
+                  >
+                    <PencilIcon />
                   </Button>
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="icon"
                     type="button"
                     disabled={pendingActionId === expiryType.id}
                     onClick={() => void handleToggleActive(expiryType)}
+                    aria-label={expiryType.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+                    title={expiryType.isActive ? labels.actions.deactivate : labels.actions.reactivate}
                   >
-                    {expiryType.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+                    <ToggleIcon />
                   </Button>
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="icon"
                     type="button"
                     disabled={pendingActionId === expiryType.id}
                     onClick={() => setConfirmingDeleteId(expiryType.id)}
+                    aria-label={labels.actions.delete}
+                    title={labels.actions.delete}
                   >
-                    {labels.actions.delete}
+                    <TrashIcon />
                   </Button>
                 </div>
               );

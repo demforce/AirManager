@@ -15,6 +15,7 @@ import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Card } from '@/components/ui/card';
+import { ArchiveIcon, PencilIcon, ProfileIcon, RestoreIcon } from '@/components/ui/icons';
 
 export type PersonRow = {
   id: string;
@@ -317,24 +318,30 @@ export function PeopleManager({
 
         return (
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="icon"
               type="button"
               onClick={() => setPanel({ mode: 'edit', person })}
+              aria-label={labels.actions.edit}
+              title={labels.actions.edit}
             >
-              {labels.actions.edit}
+              <PencilIcon />
             </Button>
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="icon"
               type="button"
               onClick={() => setPanel({ mode: 'profiles', person })}
+              aria-label={labels.actions.profiles}
+              title={labels.actions.profiles}
             >
-              {labels.actions.profiles}
+              <ProfileIcon />
             </Button>
-            <Button variant="outline" size="sm"
+            <Button variant="outline" size="icon"
               type="button"
               disabled={pendingActionId === person.id}
               onClick={() => setConfirming({ id: person.id, type: actionType })}
+              aria-label={isArchived ? labels.actions.unarchive : labels.actions.archive}
+              title={isArchived ? labels.actions.unarchive : labels.actions.archive}
             >
-              {isArchived ? labels.actions.unarchive : labels.actions.archive}
+              {isArchived ? <RestoreIcon /> : <ArchiveIcon />}
             </Button>
           </div>
         );

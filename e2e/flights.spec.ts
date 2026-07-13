@@ -34,6 +34,14 @@ async function selectFromCombobox(combobox: Locator, query: string, optionLabel:
   await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
+/** TD-6 (AC 1): the filter bar is hidden behind a "Filtri" toggle, auto-open ONLY when the URL already carries an active filter — opens it if (and only if) it is currently closed. */
+async function openFlightFilters(page: Page): Promise<void> {
+  const toggle = page.getByTestId('flight-filter-bar-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
+}
+
 /** Story 12.3 (AC 2): the registration form now lives in a `Dialog` — opens it before any `flight-form` field interaction (`flight-open-register` disambiguates the SAME "Registra volo" label from the dialog's own submit button). */
 async function openRegisterDialog(page: Page): Promise<void> {
   await page.getByTestId('flight-open-register').click();
@@ -534,6 +542,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const expectedTimes = `${romeTimeFormatter.format(new Date(takeoffAt))}–${romeTimeFormatter.format(new Date(landingAt))}`;
 
     await page.goto('/it/dashboard/flights');
+    await openFlightFilters(page);
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(/aircraftId=/);
 

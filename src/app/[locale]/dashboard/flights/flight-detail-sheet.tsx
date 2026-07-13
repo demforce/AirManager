@@ -111,20 +111,22 @@ export function FlightDetailSheet({ flight, onClose, canManage, onCorrect, onCan
             </dl>
           </div>
 
-          {canManage && flight.status === 'REGISTERED' ? (
-            <div className="flex gap-3">
-              <Button size="sm" type="button" onClick={() => onCorrect(flight)}>
-                {labels.list.table.correctAction}
-              </Button>
-              <Button size="sm" variant="outline" type="button" onClick={() => onCancel(flight)}>
-                {labels.list.table.cancelAction}
-              </Button>
-            </div>
-          ) : null}
-
-          <Button variant="outline" type="button" onClick={onClose}>
-            {labels.detail.close}
-          </Button>
+          {/* TD-6 (AC 4) — Chiudi joins the SAME `flex gap-3` row as Modifica/Annulla (was a separate row below, the sheet's one anomalous button container per the story's audit). */}
+          <div className="flex gap-3">
+            {canManage && flight.status === 'REGISTERED' ? (
+              <>
+                <Button size="sm" type="button" onClick={() => onCorrect(flight)}>
+                  {labels.list.table.correctAction}
+                </Button>
+                <Button size="sm" variant="outline" type="button" onClick={() => onCancel(flight)}>
+                  {labels.list.table.cancelAction}
+                </Button>
+              </>
+            ) : null}
+            <Button variant="outline" type="button" onClick={onClose}>
+              {labels.detail.close}
+            </Button>
+          </div>
         </div>
       ) : null}
     </Sheet>

@@ -71,6 +71,14 @@ function registerRows(page: Page) {
   return page.getByTestId('cash-register-table').locator('tbody tr');
 }
 
+/** TD-6 (AC 1): the filter bar is hidden behind a "Filtri" toggle. Cash's manager does NOT remount on a filter change (no `key`, unlike flights/ppr-register), so the panel simply stays open for the rest of the test once opened — open it once, before the first filter interaction. */
+async function openCashFilters(page: Page): Promise<void> {
+  const toggle = page.getByTestId('cash-filter-bar-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
+}
+
 test.describe('Cash register with categories and reversals (Story 3.4)', () => {
   test('staff records a +50 € entrata and a −30 € uscita: both in the register with signed colored amounts; sign and period filters work (AC 2)', async ({
     page,
@@ -96,6 +104,7 @@ test.describe('Cash register with categories and reversals (Story 3.4)', () => {
     });
 
     // Isolate this run's rows through the category filter (URL-driven).
+    await openCashFilters(page);
     await page.getByTestId('cash-filter-category').selectOption(categoryId);
     await expect(page).toHaveURL(new RegExp(`categoryId=${categoryId}`));
     await expect(registerRows(page)).toHaveCount(2);
@@ -175,6 +184,7 @@ test.describe('Cash register with categories and reversals (Story 3.4)', () => {
     await expect(page.locator('#cash-category')).toBeVisible();
     await expect(page.locator(`#cash-category option:has-text("${categoryName}")`)).toHaveCount(0);
     // ... while the FILTER select still lists it (historical movements stay reachable).
+    await openCashFilters(page);
     await expect(page.getByTestId('cash-filter-category').locator(`option:has-text("${categoryName}")`)).toHaveCount(1);
   });
 
