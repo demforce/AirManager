@@ -4,7 +4,7 @@ baseline_commit: ff82d5d
 
 # TD-6: Rifiniture UI post-Epic 12 (change request utente 2026-07-12)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -118,3 +118,11 @@ Claude Sonnet 5 (claude-sonnet-5), BMAD dev subagent, xhigh effort.
 ## Change Log
 
 - 2026-07-13: Implemented all 5 ACs — reusable "Filtri" disclosure with active-filter counter on the 4 closed-list bars; icon-only row actions (14 new SVGs, `Button size="icon"`) across the 11 closed-list tables with `aria-label`/`title` invariance; Correggi→Modifica i18n rename; flight-detail-sheet footer button alignment fix + full-app audit (no other anomaly); flight registry Stato column removed in favor of an inline badge + dimmed row; e2e closed-list updates plus 2 new minimal scenarios; visual verification against DESIGN.md via Playwright MCP. Status → review.
+
+## Review Record
+
+Reviewer: subagent **Opus 4.8 (xhigh)**, adversarial. **Verdetto: clean-pass.** 4 note non bloccanti, nessun fix richiesto.
+
+- **Priorità zero — full e2e CI-mode su DB fresco, build di produzione**: **214 passed + 5 flaky (retry-green, classi note) + 2 failed / 221**. I 2 hard-fail (`command-palette.spec.ts:95` dialog vuoto sotto DB sporco; `instructor-rates.spec.ts:123` race di refresh della tariffa corrente) sono PROVATI pre-esistenti con checkout del baseline `f5c81d3` e ri-esecuzione mirata: falliscono identici PRIMA di TD-6. Gates 1278/1278.
+- **I 5 punti verificati live** (admin + pilota own-access, build di produzione, bounding box): filtri chiusi/auto-aperti/contatore/reset/keyboard su tutte e 4 le superfici (deep-link `?status=` → pannello aperto con badge "1"); icone su 7 superfici risolte per accessible name con target 32px e stroke 1.75 conforme a DESIGN.md; Correggi→Modifica completo senza residui UI-facing; sheet a 3 bottoni su UNA riga (y identica) e audit falsificato senza controesempi; registro a 6 colonne col badge "Annullato" inline + riga attenuata, coerente anche own-access.
+- **Note accettate**: TD6-N1 (due bug PRE-esistenti reali smascherati dal DB sporco: race refresh tariffa istruttore; dialog palette vuoto su pagina voli sotto accumulo — ticket separato, v. deferred handoff); TD6-N2 (chiave i18n morta `list.table.status`, inerte); TD6-N3 (wrapper `mt-1` vuoto sulle righe REGISTERED); TD6-N4 (contatore filtri esclude il drill-down `instructorPersonId` — by design, vive nel banner).

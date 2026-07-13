@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-12, EPIC 12 DONE — refactor UI "infra-grade" completo)
+# HANDOFF — AirManager (aggiornato: 2026-07-13, EPIC 12 DONE + TD-6 rifiniture UI — clean-pass)
 
 ## Goal
 
@@ -7,8 +7,9 @@ Costruire AirManager, il gestionale per un'aviosuperficie, col metodo BMAD v6. M
 ## Stato branch/PR (SOLO qui, mai in CLAUDE.md)
 
 - Branch di lavoro: `claude/intent-doc-epics-stories-isfme0`, **stacked su `claude/install-impeccable-ui-ux-4farcn`** (il branch dell'intent doc/brainstorm, non ancora merged a inizio sessione — regola PR stacked).
-- Tutti i commit pushati; ultimo: `0199911` (pass grafico FABLE). PR dell'epic: da aprire/verificare a fine sessione (v. Next Steps).
-- Baseline attesa su DB fresco, build di produzione CI-mode: **218 e2e / 1278 unit / 30 migrazioni** (nessuna migrazione, env var o dipendenza nuova in tutto l'epic).
+- Tutti i commit pushati. **PR dell'epic: #18** (base main — era già aperta dall'utente su questo branch; titolo/corpo aggiornati per l'epic + TD-6).
+- **TD-6 (change request utente sera 2026-07-12, 5 punti) DONE, review clean-pass**: filtri dietro tasto "Filtri" con contatore + auto-open se attivi (4 barre: voli/cassa/PPR register/dashboard scadenze — delimitazione: search bar e selettori periodo report restano visibili); azioni di riga a ICONE (`ui/icons.tsx` 14 SVG thin-stroke + `Button size="icon"`, aria-label/title = label correnti → e2e per-name invariati; conferme transienti testuali); "Correggi"→"Modifica" (+ "Modifica volo"; submit/exit "correzione" invariati); bottoni finali sheet allineati; colonna Stato del registro RIMOSSA (badge "Annullato" inline nella tratta + riga attenuata, ratifica utente).
+- Baseline attesa su DB fresco, build di produzione CI-mode: **221 e2e / 1278 unit / 30 migrazioni** (nessuna migrazione, env var o dipendenza nuova in tutto l'epic).
 
 ## Ruoli modello e processo (confermati su epic 12)
 
@@ -44,11 +45,11 @@ Costruire AirManager, il gestionale per un'aviosuperficie, col metodo BMAD v6. M
 - **Ratifiche utente di sessione**: load-more per giorni (né pager né infinite scroll); SOLO regola Ember (stati semantici con accento colore minimo — NESSUNA conversione acromatica); modali keyboard-first + progressive disclosure + decolli/atterraggi nello sheet; 1 epic/6 stories; ruolo con campi condizionali nel modale persona; pass grafico FABLE a fine epic.
 - **Zero dipendenze nuove in tutto l'epic**: `<dialog>` nativo, `<details>`, DatePicker custom — niente Radix/cmdk/shadcn/tailwind-merge. Il guard-pattern su `cn()` naive (skip default se il caller porta la stessa utility) è la convenzione per gli override.
 - **Delimitazione ricerca ⌘K**: staff-only sugli endpoint esistenti (v. 12.6 sopra) — se in futuro servirà ricerca per non-staff, servono endpoint own-scoped nuovi.
-- **Deferred aperti (nuovi di questo epic)**: 121-N1 bottone "forza prenotazione" ambra pieno (DECISIONE UTENTE pendente — raccomandazione FABLE: tenerlo, è semantica warning coerente); 121-N2 tracking heading piatto -0.02em vs scala DESIGN.md; Badge component senza call-site (kicker raw); 125-N1 valore stantìo su dirty-invalid del DatePicker al submit; 126-N1 gate `canSearch` accoppiato (people.read AND aircraft.manage — separare i sub-fetch se i permessi divergono); 126-N2 `canCreatePerson=people.read` vs `people.manage` del service; 126-N3 affordance azione secondaria palette; **bookings.spec.ts:636** fragilità isolamento (data fissa condivisa — stessa classe della :397 già fixata); FG-3 doppia Card nella pagina scadenze; FG-4 colonna STATO del registro sempre renderizzata (gap visivo quando nessun annullato). I deferred pre-epic-12 restano nell'handoff archiviato 2026-07-11.
+- **Deferred aperti (nuovi di questo epic)**: 121-N1 bottone "forza prenotazione" ambra pieno (DECISIONE UTENTE pendente — raccomandazione FABLE: tenerlo, è semantica warning coerente); 121-N2 tracking heading piatto -0.02em vs scala DESIGN.md; Badge component senza call-site (kicker raw); 125-N1 valore stantìo su dirty-invalid del DatePicker al submit; 126-N1 gate `canSearch` accoppiato (people.read AND aircraft.manage — separare i sub-fetch se i permessi divergono); 126-N2 `canCreatePerson=people.read` vs `people.manage` del service; 126-N3 affordance azione secondaria palette; **bookings.spec.ts:636** fragilità isolamento (data fissa condivisa — stessa classe della :397 già fixata); FG-3 doppia Card nella pagina scadenze; ~~FG-4 colonna STATO~~ (CHIUSO da TD-6). **Nuovi da TD-6 (review)**: TD6-N1 — DUE BUG PRE-ESISTENTI REALI smascherati dal DB sporco, da ticket separato: (a) `instructor-rates` race di refresh della tariffa corrente post-salvataggio; (b) `command-palette` dialog che apre VUOTO sulla pagina voli sotto accumulo dati; TD6-N2 chiave i18n morta `FlightsPage.list.table.status`; TD6-N3 wrapper `mt-1` vuoto sulle righe REGISTERED; TD6-N4 contatore filtri esclude il drill-down instructor (by design). I deferred pre-epic-12 restano nell'handoff archiviato 2026-07-11.
 
 ## Next Steps (in ordine)
 
-1. **PR dell'epic**: aprire la PR di `claude/intent-doc-epics-stories-isfme0` — base `claude/install-impeccable-ui-ux-4farcn` se ancora unmerged (stacked), altrimenti main. (Se la sessione che legge questo handoff la trova già aperta: solo verificarla.)
+1. **PR #18 pronta al merge** (contiene epic 12 + TD-6 + i commit di setup del branch base).
 2. **STOP** — la prossima sessione parte SOLO da una decisione dell'utente. Candidati: (a) micro-TD sui deferred sopra (i più concreti: bookings:636, FG-4, Badge kickers); (b) decisione 121-N1; (c) merge train delle due PR stacked; (d) QTB/libretto pilota PDF; (e) go-live prep; (f) v2 Flutter.
 3. A inizio prossima sessione: bootstrap via hook; baseline attesa **218 e2e / 1278 unit / 30 migrazioni** su DB fresco CI-mode. Flake noti residui: bookings:636 (v. sopra), classi ECONNRESET sotto load, cold-compile Turbopack in dev-mode.
 4. Se si sviluppa: ciclo per story INVARIATO + pass grafico FABLE a fine epic (ora parte del processo).
