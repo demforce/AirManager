@@ -43,7 +43,7 @@ export function SidebarNav({ items, navHeading }: SidebarNavProps) {
             href={item.href}
             className={cn(
               'shrink-0 whitespace-nowrap rounded-nested px-3 py-2 text-sm font-medium transition-colors',
-              isActive ? 'bg-ink text-surface-alt' : 'text-ink hover:bg-hairline/60',
+              isActive ? 'bg-accent text-paper' : 'text-ink hover:bg-hairline/60',
             )}
           >
             {item.label}

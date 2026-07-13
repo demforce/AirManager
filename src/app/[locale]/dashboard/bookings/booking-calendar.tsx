@@ -120,7 +120,7 @@ const NAV_LINK_CLASSES =
 
 function viewToggleClasses(active: boolean): string {
   return `flex min-h-[44px] items-center justify-center rounded-buttons px-4 text-sm font-medium transition-colors ${
-    active ? 'bg-ink text-surface-alt' : 'text-ink hover:bg-canvas'
+    active ? 'bg-accent text-paper' : 'text-ink hover:bg-canvas'
   }`;
 }
 

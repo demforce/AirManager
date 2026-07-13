@@ -10,7 +10,7 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  filled: 'bg-ink text-surface-alt hover:bg-ink-soft',
+  filled: 'bg-accent text-paper hover:bg-accent-strong',
   ghost: 'bg-canvas text-ink hover:bg-hairline',
   outline: 'border border-hairline bg-transparent text-ink hover:bg-canvas',
 };

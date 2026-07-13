@@ -380,3 +380,25 @@ shadcn/ui is built on three principles visible in every token: (1) achromatic by
   --shadow-subtle-2: lab(2.75381 0 0) 0px 0px 0px 0px;
 }
 ```
+
+---
+
+## Addendum 2026-07-13 — Palette v2 "Celeste" (ratifica utente, full UI audit Fable)
+
+L'utente ha derogato il monocromo puro: «tabelle e sfondo… tutto molto piatto, grigio e triste. Gradirei qualcosa più sul blu/azzurro/celeste. Mi affido al tuo gusto». I neutri vengono RI-TINTEGGIATI in blu freddo e entra UNA famiglia `accent`; tutto il resto del contratto (radius, tipografia, ombre, densità, Ember, semaforo stati, famiglia blu informativa) resta invariato.
+
+| Token | v1 (monocromo) | v2 (Celeste) | Ruolo |
+|---|---|---|---|
+| `--color-canvas` | `#f5f5f5` | `#edf2f8` | sfondo pagina, fill input, skeleton |
+| `--color-paper` | `#ffffff` | `#ffffff` | card, popover |
+| `--color-surface-alt` | `#fafafa` | `#f7fafd` | sidebar |
+| `--color-ink` | `#0a0a0a` | `#101c2c` | testo (blu notte) |
+| `--color-ink-soft` | `#171717` | `#24384d` | badge solid, testi secondari scuri |
+| `--color-mid-gray` | `#737373` | `#5a6b7d` | muted (4.87:1 su canvas — sana anche il vecchio 121-N4) |
+| `--color-hairline` | `#e5e5e5` | `#d7e1ec` | bordi |
+| `--color-ember` | `#e7000b` | `#e7000b` | INVARIATO (distruttivo/errore) |
+| `--color-accent` | — | `#1d4ed8` | **NUOVO**: azione primaria (Button filled), voce nav attiva, giorno selezionato del DatePicker, tab attivo calendario, focus border input, Switch ON, `accent-color` dei controlli nativi |
+| `--color-accent-strong` | — | `#1a44be` | hover dell'accent |
+| `--color-accent-soft` | — | `#e6eefb` | bande/selezioni tenui |
+
+Regole: l'accent è il colore dell'**azione e dello stato attivo**, mai decorativo di superficie; Ember resta l'unico rosso; il semaforo scadenze/stati e la famiglia blu informativa (#E1F3FE/#1F6C9F) restano invariati. Contrasti validati (WCAG AA): ink/canvas 15.2, mid-gray/canvas 4.87, bianco/accent 6.7, bianco/accent-strong 8.0, accent/canvas 5.95, ink/accent-soft 14.7.

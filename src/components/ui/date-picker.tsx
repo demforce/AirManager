@@ -361,7 +361,7 @@ export function DatePicker({
                       className={cn(
                         'flex h-8 w-8 items-center justify-center rounded-nested text-sm transition-colors',
                         !cell.inMonth && 'text-mid-gray',
-                        cell.iso === value ? 'bg-ink text-surface-alt' : cell.inMonth ? 'text-ink hover:bg-canvas' : 'hover:bg-canvas',
+                        cell.iso === value ? 'bg-accent text-paper' : cell.inMonth ? 'text-ink hover:bg-canvas' : 'hover:bg-canvas',
                       )}
                     >
                       {cell.day}

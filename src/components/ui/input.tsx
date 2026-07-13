@@ -11,7 +11,7 @@ import { cn } from './cn';
  * story). `<Input>` below is the `<input>`-specific wrapper.
  */
 export const inputBaseClasses =
-  'rounded-inputs border border-transparent bg-canvas px-2.5 py-2 text-body text-ink outline-none transition-colors focus:border-hairline disabled:cursor-not-allowed disabled:opacity-60';
+  'rounded-inputs border border-transparent bg-canvas px-2.5 py-2 text-body text-ink outline-none transition-colors focus:border-accent disabled:cursor-not-allowed disabled:opacity-60';
 
 export type InputProps = InputHTMLAttributes<HTMLInputElement>;
 
