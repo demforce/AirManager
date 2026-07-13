@@ -162,7 +162,7 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
                 ) : (
                   negativeBalances.map((item) => (
                     <tr key={item.personId} className="border-b border-hairline last:border-b-0" data-testid="negative-balance-row">
-                      <td className="px-5 py-3 align-middle">
+                      <td className="whitespace-nowrap px-5 py-3 align-middle">
                         <Link
                           href={`/dashboard/people/${item.personId}`}
                           locale={locale as AppLocale}
@@ -174,7 +174,7 @@ export default async function FinancePage({ params, searchParams }: PageProps) {
                       <td className="px-5 py-3 align-middle font-medium text-[#9F2F2D]">
                         {formatCents(item.balanceCents, moneyLocale)}
                       </td>
-                      <td className="px-5 py-3 align-middle text-ink">
+                      <td className="whitespace-nowrap px-5 py-3 align-middle text-ink">
                         {item.lastMovementAt ? formatDateTime(item.lastMovementAt, moneyLocale) : t('negativeBalances.table.noValue')}
                       </td>
                     </tr>

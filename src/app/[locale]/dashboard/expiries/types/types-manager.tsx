@@ -9,6 +9,7 @@ import { DataTable, TruncatedCell } from '@/components/data-table';
 import { useRouter } from '@/i18n/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
@@ -381,17 +382,9 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
           hidden behind an "advanced" toggle: this IS the field that decides
           whether an expired scadenza of this type blocks a booking, so it
           deserves the same visibility as name/scope. */}
-      <div className="flex items-start gap-3">
-        <input
-          id="expiry-type-blocks-booking"
-          type="checkbox"
-          className="mt-1 h-4 w-4 rounded-[4px] border-hairline text-ink focus:ring-ink"
-          {...register('blocksBooking')}
-        />
-        <label htmlFor="expiry-type-blocks-booking" className="text-sm text-ink">
-          <span className="block font-medium">{labels.form.blocksBooking}</span>
-          <span className="block text-xs text-mid-gray">{labels.form.blocksBookingHint}</span>
-        </label>
+      <div>
+        <Switch label={labels.form.blocksBooking} labelClassName="font-medium" {...register('blocksBooking')} />
+        <p className="mt-1 pl-[46px] text-xs text-mid-gray">{labels.form.blocksBookingHint}</p>
       </div>
 
       {formError ? (

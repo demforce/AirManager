@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 import { createUserSchema, updateUserSchema, type CreateUserInput, type UpdateUserInput } from '@/lib/schemas/users';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Card } from '@/components/ui/card';
@@ -176,19 +177,19 @@ export function UsersManager({ users, persons, labels }: UsersManagerProps) {
             ) : (
               users.map((user) => (
                 <tr key={user.id} className="border-b border-hairline last:border-b-0">
-                  <td className="px-5 py-3 text-ink">{user.email}</td>
-                  <td className="px-5 py-3 text-ink">
+                  <td className="max-w-[240px] truncate whitespace-nowrap px-5 py-3 text-ink" title={user.email}>{user.email}</td>
+                  <td className="whitespace-nowrap px-5 py-3 text-ink">
                     {user.roles.map((role) => labels.roles[role]).join(', ')}
                   </td>
                   <td className="px-5 py-3">
                     <StatusPill tone={statusBadgeTone(user)}>{statusLabel(user, labels)}</StatusPill>
                   </td>
-                  <td className="px-5 py-3 text-ink">
+                  <td className="max-w-[200px] truncate whitespace-nowrap px-5 py-3 text-ink" title={user.person ? `${user.person.firstName} ${user.person.lastName}` : undefined}>
                     {user.person ? `${user.person.firstName} ${user.person.lastName}` : labels.table.noPerson}
                   </td>
                   <td className="px-5 py-3 text-ink">{labels.locales[user.locale === 'en' ? 'en' : 'it']}</td>
-                  <td className="px-5 py-3">
-                    <div className="flex flex-wrap gap-2">
+                  <td className="whitespace-nowrap px-5 py-3">
+                    <div className="flex gap-2">
                       <Button variant="outline" size="icon"
                         type="button"
                         onClick={() => setPanel({ mode: 'edit', user })}
@@ -241,14 +242,12 @@ function RoleCheckboxes({
   return (
     <div className="mt-2 flex flex-wrap gap-4">
       {ALL_ROLES.map((role) => (
-        <label key={role} className="flex items-center gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            checked={selected.includes(role)}
-            onChange={(event) => onToggle(role, event.target.checked)}
-          />
-          {labels.roles[role]}
-        </label>
+        <Switch
+          key={role}
+          label={labels.roles[role]}
+          checked={selected.includes(role)}
+          onChange={(event) => onToggle(role, event.target.checked)}
+        />
       ))}
     </div>
   );
@@ -485,10 +484,7 @@ function EditUserForm({ user, persons, labels, onCancel, onSuccess }: EditUserFo
         <PersonSelect id="personId" value={personId} onChange={changePerson} persons={persons} labels={labels} />
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-ink">
-        <input type="checkbox" {...register('isActive')} />
-        {labels.form.isActive}
-      </label>
+      <Switch label={labels.form.isActive} {...register('isActive')} />
 
       {formError ? (
         <p role="alert" data-testid="user-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">

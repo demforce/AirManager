@@ -97,7 +97,7 @@
       "heading": "This month's school hours"
     },
     "nav": {
-      "people": "People",
+      "people": "Pilots",
       "aircraft": "Aircraft",
       "flights": "Flights",
       "bookings": "Bookings",
@@ -131,8 +131,8 @@
   },
   "PeoplePage": {
     "kicker": "Records",
-    "title": "People",
-    "description": "The single source of truth for pilots, students, instructors and staff: create, edit and archive people.",
+    "title": "Pilots",
+    "description": "The pilot roster — with students, instructors and staff: create, edit and archive.",
     "newPerson": "New person",
     "searchPlaceholder": "Search by first name, last name or email…",
     "includeArchivedLabel": "Include archived",

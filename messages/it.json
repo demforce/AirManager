@@ -97,7 +97,7 @@
       "heading": "Ore scuola del mese"
     },
     "nav": {
-      "people": "Persone",
+      "people": "Piloti",
       "aircraft": "Velivoli",
       "flights": "Voli",
       "bookings": "Prenotazioni",
@@ -131,8 +131,8 @@
   },
   "PeoplePage": {
     "kicker": "Anagrafiche",
-    "title": "Persone",
-    "description": "Anagrafica unica di piloti, allievi, istruttori e staff: crea, modifica e archivia le persone.",
+    "title": "Piloti",
+    "description": "L'anagrafica dei piloti — con allievi, istruttori e staff: crea, modifica e archivia.",
     "newPerson": "Nuova persona",
     "searchPlaceholder": "Cerca per nome, cognome o email…",
     "includeArchivedLabel": "Includi archiviate",

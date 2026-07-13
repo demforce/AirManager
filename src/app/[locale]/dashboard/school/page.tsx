@@ -184,7 +184,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                           data-testid="school-summary-student-row"
                           className="border-b border-hairline text-ink last:border-b-0"
                         >
-                          <td className="px-5 py-3 align-middle font-medium">
+                          <td className="whitespace-nowrap px-5 py-3 align-middle font-medium">
                             <Link
                               href={`/dashboard/school/${student.personId}`}
                               locale={locale as AppLocale}
@@ -229,7 +229,7 @@ export default async function SchoolPage({ params, searchParams }: PageProps) {
                           data-testid="school-summary-instructor-row"
                           className="border-b border-hairline text-ink last:border-b-0"
                         >
-                          <td className="px-5 py-3 align-middle font-medium">
+                          <td className="whitespace-nowrap px-5 py-3 align-middle font-medium">
                             {instructor.lastName} {instructor.firstName}
                           </td>
                           <td className="px-5 py-3 align-middle font-medium text-[#346538]">{formatMinutes(instructor.minutes)}</td>

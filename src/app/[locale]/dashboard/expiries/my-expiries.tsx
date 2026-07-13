@@ -141,7 +141,7 @@ function MyExpiryRow({ expiry, isProposing, labels, onOpenPropose, onCancelPropo
         <td className="py-3 pr-4">
           <ExpiryStatusBadge status={expiry.status} label={labels.table.status[expiry.status]} data-testid="my-expiry-status-badge" />
         </td>
-        <td className="py-3 pr-4 text-mid-gray">{expiry.notes ?? labels.table.noNotes}</td>
+        <td className="max-w-[220px] truncate whitespace-nowrap py-3 pr-4 text-mid-gray" title={expiry.notes ?? undefined}>{expiry.notes ?? labels.table.noNotes}</td>
         <td className="py-3">
           {expiry.pendingProposal ? (
             <span className="text-xs text-mid-gray">{labels.table.pendingHint}</span>

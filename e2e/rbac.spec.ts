@@ -36,7 +36,7 @@ test.describe('RBAC (Story 1.3 AC 1, 2, 3)', () => {
     await login(page, ADMIN_EMAIL);
 
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(nav.getByRole('link', { name: 'Persone' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Piloti' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Finanze' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Impostazioni' })).toBeVisible();
   });
@@ -50,7 +50,7 @@ test.describe('RBAC (Story 1.3 AC 1, 2, 3)', () => {
     // A pilot has no `people.read`/`settings.manage` — those areas must be
     // absent, not merely disabled (AD-5: navigation hides, never the only
     // guardian, but it must still be correct).
-    await expect(nav.getByRole('link', { name: 'Persone' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Piloti' })).toHaveCount(0);
     await expect(nav.getByRole('link', { name: 'Impostazioni' })).toHaveCount(0);
     await expect(nav.getByRole('link', { name: 'Finanze' })).toHaveCount(0);
   });

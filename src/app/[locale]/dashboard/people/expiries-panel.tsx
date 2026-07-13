@@ -293,7 +293,7 @@ function ExpiryRow({
       <td className="py-3 pr-4">
         <ExpiryStatusBadge status={expiry.status} label={labels.table.status[expiry.status]} data-testid="expiry-status-badge" />
       </td>
-      <td className="py-3 pr-4 text-mid-gray">{expiry.notes ?? labels.table.noNotes}</td>
+      <td className="max-w-[220px] truncate whitespace-nowrap py-3 pr-4 text-mid-gray" title={expiry.notes ?? undefined}>{expiry.notes ?? labels.table.noNotes}</td>
       {canManage ? (
         <td className="py-3">
           {isConfirmingDelete ? (

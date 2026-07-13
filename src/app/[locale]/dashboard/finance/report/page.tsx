@@ -172,7 +172,7 @@ export default async function FinancialReportPage({ params, searchParams }: Page
                 ) : (
                   report.categories.map((category) => (
                     <tr key={category.categoryId} className="border-b border-hairline last:border-b-0" data-testid="cash-report-category-row">
-                      <td className="px-5 py-3 align-middle font-medium text-ink">{category.categoryName}</td>
+                      <td className="max-w-[260px] truncate whitespace-nowrap px-5 py-3 align-middle font-medium text-ink" title={category.categoryName}>{category.categoryName}</td>
                       <td className="px-5 py-3 align-middle text-[#346538]">{formatCents(category.inCents, moneyLocale)}</td>
                       <td className="px-5 py-3 align-middle text-[#9F2F2D]">{formatCents(category.outCents, moneyLocale)}</td>
                       <td

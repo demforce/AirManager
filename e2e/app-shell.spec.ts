@@ -38,7 +38,7 @@ test.describe('Desktop app shell (story 12.2)', () => {
     await expect(nav.getByRole('link', { name: 'Prenotazioni' })).toBeVisible();
     // A pilot has neither `people.read` nor `settings.manage` — those
     // sections must be absent from the sidebar on a sub-page too.
-    await expect(nav.getByRole('link', { name: 'Persone' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Piloti' })).toHaveCount(0);
     await expect(nav.getByRole('link', { name: 'Impostazioni' })).toHaveCount(0);
   });
 
@@ -46,14 +46,14 @@ test.describe('Desktop app shell (story 12.2)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await nav.getByRole('link', { name: 'Persone', exact: true }).click();
+    await nav.getByRole('link', { name: 'Piloti', exact: true }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/people$/);
 
     await nav.getByRole('link', { name: 'Velivoli', exact: true }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/aircraft$/);
     // The landmark still resolves and is still gated the same way — the
     // shell wasn't torn down and rebuilt by the second navigation.
-    await expect(nav.getByRole('link', { name: 'Persone', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Piloti', exact: true })).toBeVisible();
   });
 
   test('logout from the topbar works from a sub-page, not only the home', async ({ page }) => {

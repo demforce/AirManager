@@ -11,6 +11,7 @@ import { DataTable, TruncatedCell } from '@/components/data-table';
 import { ExportButton } from '@/components/export-button';
 import { Link, useRouter } from '@/i18n/navigation';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
@@ -389,14 +390,11 @@ export function PeopleManager({
           aria-label={labels.searchPlaceholder}
           className="w-full max-w-xs"
         />
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            checked={includeArchived}
-            onChange={(event) => handleIncludeArchivedChange(event.target.checked)}
-          />
-          {labels.includeArchivedLabel}
-        </label>
+        <Switch
+          label={labels.includeArchivedLabel}
+          checked={includeArchived}
+          onChange={(event) => handleIncludeArchivedChange(event.target.checked)}
+        />
       </div>
 
       {panel?.mode === 'edit' ? (

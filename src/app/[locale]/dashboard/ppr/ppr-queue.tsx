@@ -249,7 +249,7 @@ export function PprQueue({ requests: initialRequests, locale, labels, instructio
                             </Button>
                           </div>
                         ) : confirming === 'REJECT' ? null : (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex gap-2">
                             <Button size="sm"
                               type="button"
                               disabled={isBusy}

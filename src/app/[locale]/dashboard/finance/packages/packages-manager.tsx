@@ -10,6 +10,7 @@ import { formatCents, parseCents } from '@/lib/money';
 import { formatMinutes, parseMinutes } from '@/lib/time';
 import { useRouter } from '@/i18n/navigation';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Card } from '@/components/ui/card';
@@ -533,14 +534,12 @@ function PackageTypeForm({ packageType, activeAircraft, labels, onCancel, onSucc
         ) : (
           <div className="mt-2 flex flex-wrap gap-4">
             {aircraftOptions.map((aircraft) => (
-              <label key={aircraft.id} className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={aircraftIds.includes(aircraft.id)}
-                  onChange={(event) => toggleAircraft(aircraft.id, event.target.checked)}
-                />
-                {aircraft.registration}
-              </label>
+              <Switch
+                key={aircraft.id}
+                label={aircraft.registration}
+                checked={aircraftIds.includes(aircraft.id)}
+                onChange={(event) => toggleAircraft(aircraft.id, event.target.checked)}
+              />
             ))}
           </div>
         )}

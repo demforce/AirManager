@@ -276,7 +276,7 @@ export function BookingsList({
 
                 return (
                   <tr key={booking.id} className="border-b border-hairline last:border-b-0" data-testid="booking-row">
-                    <td className="px-5 py-3 align-middle font-medium text-ink">{booking.aircraftRegistration}</td>
+                    <td className="whitespace-nowrap px-5 py-3 align-middle font-medium text-ink">{booking.aircraftRegistration}</td>
                     <td className="px-5 py-3 align-middle whitespace-nowrap text-ink">
                       {/* `formatDateTime` is "DD/MM/YYYY, HH:MM" (Intl's it-IT/en-IE locale separator) — split on the comma, not a bare space. */}
                       {formatDateTime(startsAt, locale).split(',')[0]}
@@ -319,7 +319,7 @@ export function BookingsList({
                             ) : null}
                           </div>
                         ) : canManageRow ? (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex gap-2">
                             <Button variant="outline" size="icon"
                               type="button"
                               onClick={() => requestMove(booking.id)}
