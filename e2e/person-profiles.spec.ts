@@ -27,20 +27,26 @@ function uniquePerson(prefix: string): { firstName: string; lastName: string } {
 
 async function createPerson(page: Page, person: { firstName: string; lastName: string }): Promise<void> {
   await page.goto('/it/dashboard/people');
-  await page.getByRole('button', { name: 'Nuova persona' }).click();
+  await page.getByRole('button', { name: 'Nuovo pilota' }).click();
   await page.getByLabel('Nome', { exact: true }).fill(person.firstName);
   await page.getByLabel('Cognome', { exact: true }).fill(person.lastName);
   await page.getByRole('button', { name: 'Crea persona' }).click();
   await expect(page.getByTestId('people-feedback')).toBeVisible();
 }
 
-/** Finds the created person via search (the list is paginated — the fresh
- * row may not be on page 1) and opens its profiles panel. */
+/**
+ * Finds the created person via search (the list is paginated — the fresh
+ * row may not be on page 1) and opens its profiles panel. Story TD-7 (AC 3)
+ * removed the list's row "Profili" action/inline panel — the embedded
+ * `ProfilesPanel` on the scheda persona (`[id]`) is UNCHANGED and out of
+ * scope, so this now navigates there via the row's name link instead.
+ */
 async function openProfilesPanel(page: Page, lastName: string): Promise<void> {
   await page.goto(`/it/dashboard/people?q=${encodeURIComponent(lastName)}`);
   const row = page.getByRole('row', { name: new RegExp(lastName) });
   await expect(row).toBeVisible();
-  await row.getByRole('button', { name: 'Profili' }).click();
+  await row.getByRole('link', { name: new RegExp(lastName) }).click();
+  await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
   await expect(page.getByRole('heading', { name: 'Profili' })).toBeVisible();
 }
 
@@ -64,7 +70,11 @@ test.describe('Person profiles (Story 2.2)', () => {
     await expect(pilotSection.getByText('Numero licenza: IT-PPL-77821 · Tipo licenza: PPL(A)')).toBeVisible();
     await expect(pilotSection.getByText('Attivo', { exact: true })).toBeVisible();
 
-    // The list row now carries the "P" badge (router.refresh() re-fetched the flags).
+    // The list row now carries the "P" badge (router.refresh() re-fetched the
+    // flags) — story TD-7 moved profile activation onto the scheda persona,
+    // so checking the list badge means navigating back there (same `?q=`
+    // filter as `openProfilesPanel`/`createPerson` used).
+    await page.goto(`/it/dashboard/people?q=${encodeURIComponent(person.lastName)}`);
     const row = page.getByRole('row', { name: new RegExp(person.lastName) });
     await expect(row.getByText('P', { exact: true })).toBeVisible();
   });
@@ -75,6 +85,8 @@ test.describe('Person profiles (Story 2.2)', () => {
     await createPerson(page, person);
 
     await openProfilesPanel(page, person.lastName);
+    const schedaUrl = page.url();
+    const listUrl = `/it/dashboard/people?q=${encodeURIComponent(person.lastName)}`;
 
     // Activate the student profile.
     const studentSection = page.getByTestId('profile-section-student');
@@ -84,8 +96,12 @@ test.describe('Person profiles (Story 2.2)', () => {
     await expect(studentSection.getByText('Attivo', { exact: true })).toBeVisible();
     await expect(studentSection.getByText('Data inizio corso: 01/03/2026')).toBeVisible();
 
+    // Story TD-7: profile activation lives on the scheda now — hop back to
+    // the list to check the badge, then back to the scheda to continue.
+    await page.goto(listUrl);
     const row = page.getByRole('row', { name: new RegExp(person.lastName) });
     await expect(row.getByText('A', { exact: true })).toBeVisible();
+    await page.goto(schedaUrl);
 
     // The student gets the license: deactivate Allievo (two-step confirm)…
     await studentSection.getByRole('button', { name: 'Disattiva' }).click();
@@ -102,10 +118,13 @@ test.describe('Person profiles (Story 2.2)', () => {
 
     // Same single person row: pilot badge on, student badge off — no second
     // anagrafica appeared (AD-11: the Person and its id survive the switch).
+    await page.goto(listUrl);
     await expect(row).toHaveCount(1);
     await expect(row.getByText('P', { exact: true })).toBeVisible();
     await expect(row.getByText('A', { exact: true })).toHaveCount(0);
+
     // The deactivated student data is retained in the panel, not deleted.
+    await page.goto(schedaUrl);
     await expect(studentSection.getByText('Data inizio corso: 01/03/2026')).toBeVisible();
   });
 

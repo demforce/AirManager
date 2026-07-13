@@ -29,8 +29,15 @@ export type CreateUserInput = z.infer<typeof createUserSchema>;
  * (e.g. only `isActive` to deactivate). At least one field must be present;
  * enforced in the service, not here (an empty PATCH is a no-op, not invalid
  * shape).
+ *
+ * Story TD-7 (AC 4): `email` joins the patchable fields — additive, same
+ * trim/lowercase/`z.email()` pipe as `createUserSchema`. The unified
+ * person+access form (people page) propagates the anagrafica email here
+ * whenever it changes and the person already has an account (AC 5) — the
+ * single-email-field model (person email IS the login email).
  */
 export const updateUserSchema = z.object({
+  email: z.string().trim().toLowerCase().pipe(z.email()).optional(),
   roles: z.array(roleSchema).min(1).optional(),
   locale: localeSchema.optional(),
   personId: z.string().min(1).nullable().optional(),

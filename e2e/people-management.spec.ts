@@ -32,7 +32,7 @@ function uniquePerson(prefix: string): { firstName: string; lastName: string; em
 
 async function createPerson(page: Page, person: { firstName: string; lastName: string; email: string }): Promise<void> {
   await page.goto('/it/dashboard/people');
-  await page.getByRole('button', { name: 'Nuova persona' }).click();
+  await page.getByRole('button', { name: 'Nuovo pilota' }).click();
   await page.getByLabel('Nome', { exact: true }).fill(person.firstName);
   await page.getByLabel('Cognome', { exact: true }).fill(person.lastName);
   await page.getByLabel('Email', { exact: true }).fill(person.email);
@@ -147,18 +147,21 @@ test.describe('People CRUD with archiving (Story 2.1)', () => {
   });
 });
 
-test.describe('Person create dialog with optional role (Story 12.3, AC 4)', () => {
-  test('selecting a role reveals its required fields (blocked client-side until filled); submit is a two-call flow (POST person, then PUT profile) and the activated profile shows on the scheda', async ({
+test.describe('Person form dialog — profile toggle (Story 12.3 AC 4, superseded by Story TD-7 AC 3)', () => {
+  test('enabling the pilot profile toggle reveals its required fields (blocked client-side until filled); submit is a two-call flow (POST person, then PUT profile) and the activated profile shows on the scheda', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Ruolo');
 
     await page.goto('/it/dashboard/people');
-    await page.getByRole('button', { name: 'Nuova persona' }).click();
+    await page.getByRole('button', { name: 'Nuovo pilota' }).click();
     await page.getByLabel('Nome', { exact: true }).fill(person.firstName);
     await page.getByLabel('Cognome', { exact: true }).fill(person.lastName);
-    await page.getByLabel('Ruolo').selectOption({ label: 'Pilota' });
+    // Story TD-7 (AC 3) — the single "Ruolo" select is gone; each profile is
+    // its own Switch. "Pilota" is unambiguous here since the Accesso
+    // section's same-named role Switch never renders (access stays off).
+    await page.getByLabel('Pilota', { exact: true }).check();
     await expect(page.getByLabel('Numero licenza')).toBeVisible();
 
     // Submitting without the pilot profile's required fields is blocked
@@ -173,7 +176,7 @@ test.describe('Person create dialog with optional role (Story 12.3, AC 4)', () =
 
     // Success: feedback + "Completa la scheda" link to the new person (AC 4).
     const feedback = page.getByTestId('people-feedback');
-    await expect(feedback).toContainText('Persona creata.');
+    await expect(feedback).toContainText('Pilota creato.');
     const link = feedback.getByRole('link', { name: 'Completa la scheda' });
     await expect(link).toBeVisible();
 

@@ -1,5 +1,6 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { exportQuerySchema } from './common';
+import { localeSchema, roleSchema } from './users';
 import { z } from './zod-with-openapi';
 
 /**
@@ -77,6 +78,20 @@ export const profileFlagsSchema = z.object({
 });
 
 /**
+ * App-access summary for a person's linked `User` (story TD-7, AC 2) — `null`
+ * when the person has no account. Mirrors `people.service.ts#PersonAccess`.
+ */
+export const personAccessSchema = z
+  .object({
+    userId: z.string(),
+    isActive: z.boolean(),
+    passwordSet: z.boolean(),
+    roles: z.array(roleSchema),
+    locale: localeSchema,
+  })
+  .nullable();
+
+/**
  * Response shape of one list item (`people.service.ts#PersonListItem`).
  * Documentation only — the service's TS type remains the runtime source of
  * truth — registered in the OpenAPI registry (story 1.5 pattern). `Date`
@@ -93,6 +108,7 @@ export const personListItemSchema = z.object({
   archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   profiles: profileFlagsSchema,
+  access: personAccessSchema,
 });
 
 export type PersonListItemDto = z.infer<typeof personListItemSchema>;

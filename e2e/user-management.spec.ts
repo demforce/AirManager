@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
+const STAFF_EMAIL = 'staff@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -87,24 +88,40 @@ function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
 }
 
-/** Admin must already be logged in. Creates an invited PILOT user via the UI. */
-async function createInvitedUser(page: Page, email: string): Promise<void> {
-  await page.goto('/it/dashboard/users');
-  await page.getByRole('button', { name: 'Nuovo utente' }).click();
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Pilota', { exact: true }).check();
-  await page.getByRole('button', { name: 'Crea e invia invito' }).click();
-  await expect(page.getByTestId('users-feedback')).toBeVisible();
+/**
+ * Admin must already be logged in. Creates a person WITH access active via
+ * the unified form (story TD-7, AC 1/3/5 — the old `/dashboard/users`
+ * create-user flow this replaces). Returns the person's `lastName`, unique
+ * per call, used to find the row afterwards (the people list sorts
+ * `lastName asc`, NOT newest-first — same pagination hardening as
+ * `people-management.spec.ts`'s `createPerson`).
+ */
+async function createInvitedPerson(page: Page, email: string): Promise<string> {
+  const lastName = email.split('@')[0]!;
 
-  // Newest-first list: the fresh invitee is on page 1, with a pending badge.
-  const row = page.getByRole('row', { name: new RegExp(email) });
-  await expect(row.getByText('Invito in sospeso')).toBeVisible();
+  await page.goto('/it/dashboard/people');
+  await page.getByRole('button', { name: 'Nuovo pilota' }).click();
+  await page.getByLabel('Nome', { exact: true }).fill('Test');
+  await page.getByLabel('Cognome', { exact: true }).fill(lastName);
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel("Può accedere all'app").check();
+  // "Pilota" is ALSO a profile-toggle label (section b) — scope to the
+  // roles fieldset (section c, `<fieldset><legend>Ruoli</legend>`) so the
+  // two same-named Switches never collide (Playwright strictness).
+  await page.getByRole('group', { name: 'Ruoli' }).getByLabel('Pilota', { exact: true }).check();
+  await page.getByRole('button', { name: 'Crea persona' }).click();
+  await expect(page.getByTestId('people-feedback')).toBeVisible();
+
+  await page.goto(`/it/dashboard/people?q=${encodeURIComponent(lastName)}`);
+  const row = page.getByRole('row', { name: new RegExp(lastName) });
+  await expect(row.getByText('Invitato', { exact: true })).toBeVisible();
+  return lastName;
 }
 
-/** Full invite flow: create via UI, read the invite email from Mailpit, set the password. */
+/** Full invite flow: create via the unified form, read the invite email from Mailpit, set the password. */
 async function inviteAndSetPassword(page: Page, password: string): Promise<string> {
   const email = uniqueEmail('invitee');
-  await createInvitedUser(page, email);
+  await createInvitedPerson(page, email);
 
   const inviteEmail = await waitForMailpitMessage(email, 'invitato');
   await submitSetPassword(page, extractSetPasswordUrl(inviteEmail.Text), password);
@@ -112,8 +129,8 @@ async function inviteAndSetPassword(page: Page, password: string): Promise<strin
   return email;
 }
 
-test.describe('User management (Story 1.4)', () => {
-  test('admin creates a user, who receives an invite email, sets a password, and logs in (AC 1)', async ({
+test.describe('User management (Story 1.4, merged into the unified people form by Story TD-7)', () => {
+  test('admin creates a person with access, who receives an invite email, sets a password, and logs in (AC 1)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -125,11 +142,11 @@ test.describe('User management (Story 1.4)', () => {
     await loginExpectingDashboard(page, email, password);
   });
 
-  test('an invited user cannot log in before setting a password (AC 1)', async ({ page }) => {
+  test('an invited person cannot log in before setting a password (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const email = uniqueEmail('pending');
-    await createInvitedUser(page, email);
+    await createInvitedPerson(page, email);
     await logout(page);
 
     await login(page, email, 'whatever-password-they-guess');
@@ -138,15 +155,21 @@ test.describe('User management (Story 1.4)', () => {
     await expect(page).toHaveURL(/\/it\/login$/);
   });
 
-  test('a deactivated user is rejected at login (AC 2)', async ({ page }) => {
+  test('a deactivated account is rejected at login (AC 2)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const password = 'DeactivateFlow123!';
     const email = await inviteAndSetPassword(page, password);
+    const lastName = email.split('@')[0]!;
 
-    await page.goto('/it/dashboard/users');
-    const row = page.getByRole('row', { name: new RegExp(email) });
-    await row.getByRole('button', { name: 'Disattiva' }).click();
-    await expect(row.getByText('Disattivo')).toBeVisible();
+    await page.goto(`/it/dashboard/people?q=${encodeURIComponent(lastName)}`);
+    const row = page.getByRole('row', { name: new RegExp(lastName) });
+    await row.getByRole('button', { name: 'Modifica' }).click();
+    await page.getByLabel("Può accedere all'app").uncheck();
+    await page.getByRole('button', { name: 'Salva modifiche' }).click();
+    await expect(page.getByTestId('people-feedback')).toBeVisible();
+
+    await page.goto(`/it/dashboard/people?q=${encodeURIComponent(lastName)}`);
+    await expect(row.getByText('Disattivato', { exact: true })).toBeVisible();
 
     await logout(page);
     await login(page, email, password);
@@ -182,11 +205,15 @@ test.describe('User management (Story 1.4)', () => {
     await loginExpectingDashboard(page, email, newPassword);
   });
 
-  test('a pilot is redirected away from /dashboard/users (AD-5)', async ({ page }) => {
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+  test('a staff member (people.manage without users.manage) does not see the Accesso section in the person form (AC 3, AD-5)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, STAFF_EMAIL);
 
-    await page.goto('/it/dashboard/users');
-    await expect(page).toHaveURL(/\/it\/dashboard$/);
+    await page.goto('/it/dashboard/people');
+    await page.getByRole('button', { name: 'Nuovo pilota' }).click();
+    await expect(page.getByRole('heading', { name: "Accesso all'app" })).toHaveCount(0);
+    await expect(page.getByLabel("Può accedere all'app")).toHaveCount(0);
   });
 
   test('a pilot gets 403 from the users API directly (AD-5 defense in depth)', async ({ page }) => {

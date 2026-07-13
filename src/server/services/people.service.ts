@@ -1,8 +1,23 @@
+import type { Role } from '@/generated/prisma/enums';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import type { CreatePersonInput, ListPeopleQuery, UpdatePersonInput } from '@/lib/schemas/people';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, ForbiddenError, NotFoundError } from './errors';
+
+/**
+ * App-access summary for a person's linked `User` (story TD-7, AC 2) — `null`
+ * when the person has no account at all. `passwordSet` mirrors
+ * `users.service.ts#UserListItem`: derived from `passwordHash`, never the
+ * hash itself.
+ */
+export type PersonAccess = {
+  userId: string;
+  isActive: boolean;
+  passwordSet: boolean;
+  roles: Role[];
+  locale: string;
+};
 
 /** Story 2.2, AC 1: which profiles (pilot/student/instructor) are currently active. */
 export type ProfileFlags = {
@@ -22,6 +37,8 @@ export type PersonListItem = {
   archivedAt: Date | null;
   createdAt: Date;
   profiles: ProfileFlags;
+  /** Story TD-7 (AC 2) — `null` when the person has no linked `User`. */
+  access: PersonAccess | null;
 };
 
 /**
@@ -67,6 +84,11 @@ const PERSON_SELECT = {
   fiscalCode: true,
   archivedAt: true,
   createdAt: true,
+  // Story TD-7 (AC 2) — the merged Piloti/Utenti list needs the linked
+  // account's access state inline; no migration (`Person.user` already
+  // exists). `passwordHash` never leaves this module (mapped to
+  // `passwordSet` in `toListItem`, same convention as `users.service.ts`).
+  user: { select: { id: true, isActive: true, passwordHash: true, roles: true, locale: true } },
   ...PROFILE_FLAG_SELECT,
 } as const;
 
@@ -88,6 +110,7 @@ type SelectedPerson = {
   fiscalCode: string | null;
   archivedAt: Date | null;
   createdAt: Date;
+  user: { id: string; isActive: boolean; passwordHash: string | null; roles: Role[]; locale: string } | null;
   pilotProfile: { deactivatedAt: Date | null } | null;
   studentProfile: { deactivatedAt: Date | null } | null;
   instructorProfile: { deactivatedAt: Date | null } | null;
@@ -120,6 +143,15 @@ function toListItem(person: SelectedPerson): PersonListItem {
       student: person.studentProfile !== null && person.studentProfile.deactivatedAt === null,
       instructor: person.instructorProfile !== null && person.instructorProfile.deactivatedAt === null,
     },
+    access: person.user
+      ? {
+          userId: person.user.id,
+          isActive: person.user.isActive,
+          passwordSet: person.user.passwordHash !== null,
+          roles: person.user.roles,
+          locale: person.user.locale,
+        }
+      : null,
   };
 }
 

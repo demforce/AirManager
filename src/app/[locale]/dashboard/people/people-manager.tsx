@@ -1,22 +1,29 @@
 'use client';
 
-import { zodResolver } from '@hookform/resolvers/zod';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { updatePersonSchema, type UpdatePersonInput } from '@/lib/schemas/people';
-import { PersonCreateDialog } from './person-create-dialog';
-import { ProfilesPanel, type ProfilesPanelLabels } from './profiles-panel';
+import { PersonFormDialog } from './person-form-dialog';
+import type { ProfilesPanelLabels } from './profiles-panel';
 import { DataTable, TruncatedCell } from '@/components/data-table';
 import { ExportButton } from '@/components/export-button';
 import { Link, useRouter } from '@/i18n/navigation';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Input, inputBaseClasses } from '@/components/ui/input';
-import { cn } from '@/components/ui/cn';
+import { Input } from '@/components/ui/input';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
-import { Card } from '@/components/ui/card';
-import { ArchiveIcon, PencilIcon, ProfileIcon, RestoreIcon } from '@/components/ui/icons';
+import { ArchiveIcon, PencilIcon, RestoreIcon } from '@/components/ui/icons';
+
+/** Mirrors `users.service.ts`'s `Role` (kept as a local string union — no server-only Prisma import in a client component). */
+export type RoleKey = 'ADMIN' | 'STAFF' | 'INSTRUCTOR' | 'PILOT' | 'STUDENT';
+
+/** App-access summary for the row's linked `User` (story TD-7, AC 2) — `null` when the person has no account. */
+export type PersonAccessRow = {
+  userId: string;
+  isActive: boolean;
+  passwordSet: boolean;
+  roles: RoleKey[];
+  locale: string;
+};
 
 export type PersonRow = {
   id: string;
@@ -30,14 +37,33 @@ export type PersonRow = {
   archivedAt: string | null;
   /** Active-profile flags (story 2.2, AC 1) — rendered as P/A/I badges in the list. */
   profiles: { pilot: boolean; student: boolean; instructor: boolean };
+  access: PersonAccessRow | null;
 };
 
-/** Exported so `person-create-dialog.tsx` (story 12.3, AC 4) can share the exact same label shape — one source of truth passed down from `page.tsx`. */
+/** Access-section labels (story TD-7, AC 3) — migrated from the retired `UsersPage.*` under `PeoplePage.form.access.*`. */
+export type PersonAccessLabels = {
+  heading: string;
+  toggle: string;
+  rolesLabel: string;
+  rolesRequired: string;
+  roles: Record<RoleKey, string>;
+  localeLabel: string;
+  locales: { it: string; en: string };
+  emailRequired: string;
+  emailConflict: string;
+  status: { active: string; invited: string; deactivated: string };
+  resendInvite: string;
+  inviteResent: string;
+  /** Partial-failure message (AC 5) — the person/profiles were saved, the access step alone failed. */
+  stepFailed: string;
+};
+
+/** Exported so `person-form-dialog.tsx` (story TD-7 — evolved from `person-create-dialog.tsx`, story 12.3 AC 4) can share the exact same label shape — one source of truth passed down from `page.tsx`. */
 export type Labels = {
   newPerson: string;
   searchPlaceholder: string;
   includeArchivedLabel: string;
-  table: { name: string; email: string; phone: string; status: string; profiles: string; actions: string; noValue: string; empty: string };
+  table: { name: string; email: string; phone: string; status: string; profiles: string; access: string; actions: string; noValue: string; empty: string };
   status: { active: string; archived: string };
   actions: {
     edit: string;
@@ -47,7 +73,6 @@ export type Labels = {
     confirmUnarchive: string;
     confirmYes: string;
     confirmCancel: string;
-    profiles: string;
   };
   profilesPanel: ProfilesPanelLabels;
   form: {
@@ -65,13 +90,11 @@ export type Labels = {
     requiredField: string;
     genericError: string;
     conflictError: string;
-    /** Story 12.3 (AC 4) — the create dialog's OPTIONAL role select and its "no role" option. */
-    role: string;
-    roleNone: string;
-    /** Shown when the person was created but the second call (`PUT .../profiles/{type}`) failed — the person EXISTS, no rollback (AC 4). */
+    /** Shown when the person was saved but a profile step failed — the person EXISTS, no rollback (AC 5). */
     profileError: string;
-    /** Link text to the new person's scheda, shown both on full success and on the partial (`profileError`) case. */
+    /** Link text to the person's scheda, shown both on full success and on the partial (`profileError`) case. */
     completeProfile: string;
+    access: PersonAccessLabels;
   };
   feedback: { created: string; updated: string; archived: string; unarchived: string };
 };
@@ -82,14 +105,20 @@ type PeopleManagerProps = {
   initialIncludeArchived: boolean;
   /** Story 12.6 (AC 3) — the command palette's "Nuova persona" deep-link (`?new=1`): opens the create dialog from the very first render. */
   initialCreateOpen?: boolean;
+  /** Story TD-7 (AC 3) — whether the actor has `users.manage`: gates the form's "Accesso all'app" section client-side (the API is the real guardian, AD-5). */
+  canManageAccess: boolean;
   /** Story 10.1 (AC 5) — the SAME `q`/`includeArchived` this page was fetched with, `?format=xlsx` appended. */
   exportHref: string;
   exportLabel: string;
   labels: Labels;
 };
 
-/** Story 12.3 (AC 4) — 'create' moved out to `PersonCreateDialog`, a modal independent of this inline-panel mutual exclusion. */
-type Panel = { mode: 'edit'; person: PersonRow } | { mode: 'profiles'; person: PersonRow };
+/**
+ * Story TD-7 (AC 3) — the unified `PersonFormDialog` replaces BOTH the old
+ * create dialog (12.3) and this manager's inline 'edit'/'profiles' panels:
+ * one state slot drives create OR edit, `null` means closed.
+ */
+type FormState = { mode: 'create' } | { mode: 'edit'; person: PersonRow };
 type ConfirmState = { id: string; type: 'archive' | 'unarchive' };
 
 function statusLabel(person: PersonRow, labels: Labels): string {
@@ -98,6 +127,21 @@ function statusLabel(person: PersonRow, labels: Labels): string {
 
 function statusBadgeTone(person: PersonRow): StatusTone {
   return person.archivedAt ? 'warning' : 'ok';
+}
+
+/** Story TD-7 (AC 2) — the "Accesso" column's tri-state StatusPill: same active/invited(pending password)/deactivated precedence as the retired `UsersManager`. */
+function accessLabel(access: PersonAccessRow | null, labels: Labels): string {
+  if (!access) return labels.table.noValue;
+  if (!access.isActive) return labels.form.access.status.deactivated;
+  if (!access.passwordSet) return labels.form.access.status.invited;
+  return labels.form.access.status.active;
+}
+
+function accessBadgeTone(access: PersonAccessRow | null): StatusTone {
+  if (!access) return 'ok'; // unused when access is null — the cell renders plain text instead
+  if (!access.isActive) return 'danger';
+  if (!access.passwordSet) return 'warning';
+  return 'ok';
 }
 
 /**
@@ -125,23 +169,22 @@ export function PeopleManager({
   initialQuery,
   initialIncludeArchived,
   initialCreateOpen,
+  canManageAccess,
   exportHref,
   exportLabel,
   labels,
 }: PeopleManagerProps) {
   const router = useRouter();
-  const [panel, setPanel] = useState<Panel | null>(null);
+  // Story TD-7 (AC 3) — one dialog for create AND edit. Story 12.6 (AC 3):
+  // `initialCreateOpen` (the command palette's `?new=1` deep-link) seeds it
+  // open from the very first render — a lazy initializer, not an effect,
+  // since this only ever matters at mount.
+  const [formState, setFormState] = useState<FormState | null>(() => (initialCreateOpen ? { mode: 'create' } : null));
   const [feedback, setFeedback] = useState<string | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<ConfirmState | null>(null);
   const [queryInput, setQueryInput] = useState(initialQuery);
   const [includeArchived, setIncludeArchived] = useState(initialIncludeArchived);
-  // Story 12.3 (AC 4) — the create dialog, independent of `panel`'s inline
-  // edit/profiles mutual exclusion. Story 12.6 (AC 3): `initialCreateOpen`
-  // (the command palette's `?new=1` deep-link) seeds it open from the very
-  // first render — a lazy initializer, not an effect, since this only ever
-  // matters at mount.
-  const [createDialogOpen, setCreateDialogOpen] = useState(() => Boolean(initialCreateOpen));
 
   // Review 12.6, 126-F1: same-page `?new=1` never remounts this component,
   // so the lazy initializer misses the transition. Adjust-state-during-
@@ -152,7 +195,7 @@ export function PeopleManager({
   const [prevCreateOpen, setPrevCreateOpen] = useState(() => Boolean(initialCreateOpen));
   if (Boolean(initialCreateOpen) !== prevCreateOpen) {
     setPrevCreateOpen(Boolean(initialCreateOpen));
-    if (initialCreateOpen) setCreateDialogOpen(true);
+    if (initialCreateOpen) setFormState({ mode: 'create' });
   }
   useEffect(() => {
     if (!initialCreateOpen) return;
@@ -205,18 +248,16 @@ export function PeopleManager({
     }
   }
 
-  function handleFormSuccess(message: string): void {
-    setPanel(null);
+  /**
+   * Story TD-7 (AC 3/5) — the unified dialog's single success callback for
+   * BOTH create and edit. `showCompleteProfileLink` keeps the exact
+   * pre-existing UX split (story 12.3, AC 4): only a fresh creation gets the
+   * "Completa la scheda" link, an edit-save does not.
+   */
+  function handleFormSuccess(personId: string, message: string, showCompleteProfileLink: boolean): void {
+    setFormState(null);
     setFeedback(message);
-    setCompleteProfileHref(null);
-    router.refresh();
-  }
-
-  /** Story 12.3 (AC 4) — POST /people (+ optional PUT profile) succeeded: close the dialog, show `people-feedback` plus a link to the new scheda. */
-  function handlePersonCreated(personId: string, message: string): void {
-    setCreateDialogOpen(false);
-    setFeedback(message);
-    setCompleteProfileHref(`/dashboard/people/${personId}`);
+    setCompleteProfileHref(showCompleteProfileLink ? `/dashboard/people/${personId}` : null);
     router.refresh();
   }
 
@@ -287,6 +328,15 @@ export function PeopleManager({
       },
     },
     {
+      id: 'access',
+      header: labels.table.access,
+      cell: ({ row }) => {
+        const { access } = row.original;
+        if (!access) return labels.table.noValue;
+        return <StatusPill tone={accessBadgeTone(access)}>{accessLabel(access, labels)}</StatusPill>;
+      },
+    },
+    {
       id: 'actions',
       header: labels.table.actions,
       cell: ({ row }) => {
@@ -321,19 +371,11 @@ export function PeopleManager({
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="icon"
               type="button"
-              onClick={() => setPanel({ mode: 'edit', person })}
+              onClick={() => setFormState({ mode: 'edit', person })}
               aria-label={labels.actions.edit}
               title={labels.actions.edit}
             >
               <PencilIcon />
-            </Button>
-            <Button variant="outline" size="icon"
-              type="button"
-              onClick={() => setPanel({ mode: 'profiles', person })}
-              aria-label={labels.actions.profiles}
-              title={labels.actions.profiles}
-            >
-              <ProfileIcon />
             </Button>
             <Button variant="outline" size="icon"
               type="button"
@@ -372,14 +414,28 @@ export function PeopleManager({
           <ExportButton href={exportHref} label={exportLabel} testId="people-export-button" />
           <Button
             type="button"
-            onClick={() => setCreateDialogOpen(true)}
+            onClick={() => setFormState({ mode: 'create' })}
           >
             {labels.newPerson}
           </Button>
         </div>
       </div>
 
-      <PersonCreateDialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} labels={labels} onCreated={handlePersonCreated} />
+      <PersonFormDialog
+        // Story TD-7 (AC 3) — a fresh key per distinct target (create, or a
+        // specific person's edit) forces a remount so internal form state
+        // never leaks between targets — same latent stale-form bug class as
+        // the retired `EditPersonForm`'s `key={panel.person.id}` (review 2.4
+        // F1).
+        key={formState?.mode === 'edit' ? formState.person.id : 'create'}
+        open={formState !== null}
+        mode={formState?.mode ?? 'create'}
+        person={formState?.mode === 'edit' ? formState.person : null}
+        canManageAccess={canManageAccess}
+        labels={labels}
+        onClose={() => setFormState(null)}
+        onSuccess={handleFormSuccess}
+      />
 
       <div className="mt-6 flex flex-wrap items-center gap-4">
         <Input
@@ -397,34 +453,6 @@ export function PeopleManager({
         />
       </div>
 
-      {panel?.mode === 'edit' ? (
-        <Card className="mt-6 p-6">
-          <EditPersonForm
-            // Remount when the edit target changes — same latent stale-form
-            // bug found on the aircraft manager (review 2.4 F1): without the
-            // key, switching edit target keeps the previous person's values.
-            key={panel.person.id}
-            person={panel.person}
-            labels={labels}
-            onCancel={() => setPanel(null)}
-            onSuccess={handleFormSuccess}
-          />
-        </Card>
-      ) : null}
-
-      {panel?.mode === 'profiles' ? (
-        <div className="mt-6">
-          <ProfilesPanel
-            key={panel.person.id}
-            personId={panel.person.id}
-            personLabel={`${panel.person.lastName} ${panel.person.firstName}`}
-            labels={labels.profilesPanel}
-            onClose={() => setPanel(null)}
-            onChanged={() => router.refresh()}
-          />
-        </div>
-      ) : null}
-
       <div className="mt-6">
         <DataTable columns={columns} data={people} emptyMessage={labels.table.empty} />
       </div>
@@ -432,164 +460,3 @@ export function PeopleManager({
   );
 }
 
-type EditPersonFormProps = {
-  person: PersonRow;
-  labels: Labels;
-  onCancel: () => void;
-  onSuccess: (message: string) => void;
-};
-
-function EditPersonForm({ person, labels, onCancel, onSuccess }: EditPersonFormProps) {
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<UpdatePersonInput>({
-    resolver: zodResolver(updatePersonSchema),
-    defaultValues: {
-      firstName: person.firstName,
-      lastName: person.lastName,
-      email: person.email,
-      phone: person.phone,
-      address: person.address,
-      fiscalCode: person.fiscalCode,
-    },
-  });
-
-  async function onSubmit(values: UpdatePersonInput): Promise<void> {
-    setFormError(null);
-    const response = await fetch(`/api/v1/people/${person.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
-    });
-
-    if (!response.ok) {
-      const body: unknown = await response.json().catch(() => null);
-      const code = (body as { error?: { code?: string } } | null)?.error?.code;
-      setFormError(code === 'CONFLICT' ? labels.form.conflictError : labels.form.genericError);
-      return;
-    }
-
-    onSuccess(labels.feedback.updated);
-  }
-
-  return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-5">
-      <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
-        {labels.form.editTitle}
-      </h3>
-
-      <PersonFields register={register} errors={errors} labels={labels} idPrefix="edit" />
-
-      {formError ? (
-        <p role="alert" data-testid="person-form-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
-          {formError}
-        </p>
-      ) : null}
-
-      <FormActions submitLabel={labels.form.submitEdit} cancelLabel={labels.form.cancel} isSubmitting={isSubmitting} onCancel={onCancel} />
-    </form>
-  );
-}
-
-/**
- * Shared field set for create/edit. `register` is typed loosely (both forms'
- * input shapes only differ in whether `firstName`/`lastName` are required)
- * since both `CreatePersonInput`/`UpdatePersonInput` share every field name.
- */
-function PersonFields({
-  register,
-  errors,
-  labels,
-  idPrefix,
-}: {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- shared across two distinct RHF instances (create/edit); field names are identical.
-  register: any;
-  errors: { firstName?: unknown; lastName?: unknown };
-  labels: Labels;
-  idPrefix: string;
-}) {
-  const inputClasses = cn(inputBaseClasses, 'mt-2 w-full');
-
-  return (
-    <>
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <div>
-          <label htmlFor={`${idPrefix}-firstName`} className="block text-sm font-medium text-ink">
-            {labels.form.firstName}
-          </label>
-          <input id={`${idPrefix}-firstName`} className={inputClasses} aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
-          {errors.firstName ? <p className="mt-1 text-xs text-ember">{labels.form.requiredField}</p> : null}
-        </div>
-        <div>
-          <label htmlFor={`${idPrefix}-lastName`} className="block text-sm font-medium text-ink">
-            {labels.form.lastName}
-          </label>
-          <input id={`${idPrefix}-lastName`} className={inputClasses} aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
-          {errors.lastName ? <p className="mt-1 text-xs text-ember">{labels.form.requiredField}</p> : null}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <div>
-          <label htmlFor={`${idPrefix}-email`} className="block text-sm font-medium text-ink">
-            {labels.form.email}
-          </label>
-          <input id={`${idPrefix}-email`} type="email" autoComplete="off" className={inputClasses} {...register('email')} />
-        </div>
-        <div>
-          <label htmlFor={`${idPrefix}-phone`} className="block text-sm font-medium text-ink">
-            {labels.form.phone}
-          </label>
-          <input id={`${idPrefix}-phone`} type="tel" className={inputClasses} {...register('phone')} />
-        </div>
-      </div>
-
-      <div>
-        <label htmlFor={`${idPrefix}-address`} className="block text-sm font-medium text-ink">
-          {labels.form.address}
-        </label>
-        <input id={`${idPrefix}-address`} className={inputClasses} {...register('address')} />
-      </div>
-
-      <div>
-        <label htmlFor={`${idPrefix}-fiscalCode`} className="block text-sm font-medium text-ink">
-          {labels.form.fiscalCode}
-        </label>
-        <input id={`${idPrefix}-fiscalCode`} className={inputClasses} {...register('fiscalCode')} />
-      </div>
-    </>
-  );
-}
-
-function FormActions({
-  submitLabel,
-  cancelLabel,
-  isSubmitting,
-  onCancel,
-}: {
-  submitLabel: string;
-  cancelLabel: string;
-  isSubmitting: boolean;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="flex gap-3">
-      <Button
-        type="submit"
-        disabled={isSubmitting}
-      >
-        {submitLabel}
-      </Button>
-      <Button variant="outline"
-        type="button"
-        onClick={onCancel}
-      >
-        {cancelLabel}
-      </Button>
-    </div>
-  );
-}

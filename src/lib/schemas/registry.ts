@@ -1410,7 +1410,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'patch',
   path: '/api/v1/users/{id}',
-  summary: 'Update a user (roles, locale, linked person, active status)',
+  summary: 'Update a user (email, roles, locale, linked person, active status)',
   tags: ['Users'],
   security,
   request: { params: idParams, body: { content: jsonContent(updateUserSchema), required: true } },

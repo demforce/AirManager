@@ -111,6 +111,8 @@ const SELECTED_PERSON = {
   pilotProfile: null,
   studentProfile: null,
   instructorProfile: null,
+  // Story TD-7 (AC 2): `null` = no linked account.
+  user: null,
 };
 
 describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/archiving)', () => {
@@ -209,12 +211,43 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
             archivedAt: null,
             createdAt: SELECTED_PERSON.createdAt,
             profiles: { pilot: false, student: false, instructor: false },
+            access: null,
           },
         ],
         total: 1,
         page: 1,
         pageSize: 20,
       });
+    });
+
+    it('maps the linked user to access, deriving passwordSet from passwordHash (story TD-7, AC 2)', async () => {
+      transaction.mockResolvedValue([
+        [
+          {
+            ...SELECTED_PERSON,
+            user: { id: 'user_1', isActive: true, passwordHash: null, roles: ['PILOT'], locale: 'it' },
+          },
+        ],
+        1,
+      ]);
+
+      const result = await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+
+      expect(result.items[0]?.access).toEqual({
+        userId: 'user_1',
+        isActive: true,
+        passwordSet: false,
+        roles: ['PILOT'],
+        locale: 'it',
+      });
+    });
+
+    it('reports access: null when the person has no linked user', async () => {
+      transaction.mockResolvedValue([[SELECTED_PERSON], 1]);
+
+      const result = await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+
+      expect(result.items[0]?.access).toBeNull();
     });
 
     it('flags a profile as active only when it exists with deactivatedAt null (story 2.2, AC 1)', async () => {

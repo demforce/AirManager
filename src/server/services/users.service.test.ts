@@ -44,7 +44,10 @@ const sendInviteEmailMock = vi.mocked(sendInviteEmail);
 // fixtures ambiguous (same workaround as me.service.test.ts): narrow each
 // mock to the shapes this service actually reads.
 type UserFixture = Record<string, unknown> | null;
-const userFindUnique = findUniqueMock as unknown as { mockResolvedValue: (v: UserFixture) => void };
+const userFindUnique = findUniqueMock as unknown as {
+  mockResolvedValue: (v: UserFixture) => void;
+  mockResolvedValueOnce: (v: UserFixture) => void;
+};
 const userCreate = createMock as unknown as { mockResolvedValue: (v: UserFixture) => void };
 const userUpdate = updateMock as unknown as { mockResolvedValue: (v: UserFixture) => void };
 const personFindUnique = personFindUniqueMock as unknown as {
@@ -259,6 +262,43 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       personFindUnique.mockResolvedValue({ id: 'person_2', user: { id: 'someone_else' } });
 
       await expect(updateUser(adminActor(), 'user_1', { personId: 'person_2' })).rejects.toThrow(ConflictError);
+    });
+
+    describe('email (story TD-7, AC 4 — single-email-field propagation)', () => {
+      it('updates the email when it is free', async () => {
+        // First findUnique is the "existing user" lookup, second is the
+        // email-availability check — both hit the same mock in sequence.
+        userFindUnique.mockResolvedValueOnce(SELECTED_USER);
+        userFindUnique.mockResolvedValueOnce(null);
+        userUpdate.mockResolvedValue({ ...SELECTED_USER, email: 'new@airmanager.local' });
+
+        const result = await updateUser(adminActor(), 'user_1', { email: 'new@airmanager.local' });
+
+        expect(updateMock).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: 'user_1' }, data: { email: 'new@airmanager.local' } }),
+        );
+        expect(result.email).toBe('new@airmanager.local');
+      });
+
+      it('throws ConflictError when the email is already taken by another user', async () => {
+        userFindUnique.mockResolvedValueOnce(SELECTED_USER);
+        userFindUnique.mockResolvedValueOnce({ ...SELECTED_USER, id: 'other_user' });
+
+        await expect(updateUser(adminActor(), 'user_1', { email: 'taken@airmanager.local' })).rejects.toThrow(
+          ConflictError,
+        );
+        expect(updateMock).not.toHaveBeenCalled();
+      });
+
+      it('allows re-submitting the user’s own current email (no conflict against itself)', async () => {
+        userFindUnique.mockResolvedValueOnce(SELECTED_USER);
+        userFindUnique.mockResolvedValueOnce(SELECTED_USER);
+        userUpdate.mockResolvedValue(SELECTED_USER);
+
+        await updateUser(adminActor(), 'user_1', { email: SELECTED_USER.email });
+
+        expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { email: SELECTED_USER.email } }));
+      });
     });
   });
 

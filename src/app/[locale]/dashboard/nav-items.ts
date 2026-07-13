@@ -10,7 +10,6 @@ export type NavItemKey =
   | 'school'
   | 'expiries'
   | 'ppr'
-  | 'users'
   | 'settings';
 
 export type NavItem = {
@@ -60,8 +59,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // Story 8.2 (FR-23): the real staff PPR approval queue — `ppr.manage`
   // (staff + admin only, `rbac.ts`).
   { key: 'ppr', href: '/dashboard/ppr', permissions: ['ppr.manage'] },
-  // Story 1.4: the first real (non-placeholder) dashboard sub-page.
-  { key: 'users', href: '/dashboard/users', permissions: ['users.manage'] },
   // Story 10.2 (AC 1): the real settings page (airfield PDF branding) —
   // the old `/settings` placeholder (story 1.3) was never implemented.
   { key: 'settings', href: '/dashboard/settings', permissions: ['settings.manage'] },

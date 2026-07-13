@@ -105,7 +105,6 @@
       "school": "Scuola volo",
       "expiries": "Scadenze",
       "ppr": "PPR",
-      "users": "Utenti",
       "settings": "Impostazioni"
     }
   },
@@ -133,7 +132,7 @@
     "kicker": "Anagrafiche",
     "title": "Piloti",
     "description": "L'anagrafica dei piloti — con allievi, istruttori e staff: crea, modifica e archivia.",
-    "newPerson": "Nuova persona",
+    "newPerson": "Nuovo pilota",
     "searchPlaceholder": "Cerca per nome, cognome o email…",
     "includeArchivedLabel": "Includi archiviate",
     "table": {
@@ -142,6 +141,7 @@
       "phone": "Telefono",
       "status": "Stato",
       "profiles": "Profili",
+      "access": "Accesso",
       "actions": "Azioni",
       "noValue": "—",
       "empty": "Nessuna persona trovata."
@@ -157,12 +157,11 @@
       "confirmArchive": "Archiviare questa persona?",
       "confirmUnarchive": "Ripristinare questa persona?",
       "confirmYes": "Conferma",
-      "confirmCancel": "Annulla",
-      "profiles": "Profili"
+      "confirmCancel": "Annulla"
     },
     "form": {
-      "createTitle": "Nuova persona",
-      "editTitle": "Modifica persona",
+      "createTitle": "Nuovo pilota",
+      "editTitle": "Modifica pilota",
       "firstName": "Nome",
       "lastName": "Cognome",
       "email": "Email",
@@ -175,13 +174,39 @@
       "requiredField": "Campo obbligatorio.",
       "genericError": "Si è verificato un errore. Riprova.",
       "conflictError": "Esiste già una persona con questa email o codice fiscale.",
-      "role": "Ruolo",
-      "roleNone": "Nessuno",
-      "profileError": "Persona creata, ma non è stato possibile salvare il profilo.",
-      "completeProfile": "Completa la scheda"
+      "profileError": "Dati salvati, ma non è stato possibile salvare un profilo.",
+      "completeProfile": "Completa la scheda",
+      "access": {
+        "heading": "Accesso all'app",
+        "toggle": "Può accedere all'app",
+        "rolesLabel": "Ruoli",
+        "rolesRequired": "Seleziona almeno un ruolo.",
+        "roles": {
+          "ADMIN": "Admin",
+          "STAFF": "Staff",
+          "INSTRUCTOR": "Istruttore",
+          "PILOT": "Pilota",
+          "STUDENT": "Allievo"
+        },
+        "localeLabel": "Lingua",
+        "locales": {
+          "it": "Italiano",
+          "en": "Inglese"
+        },
+        "emailRequired": "L'email è obbligatoria per attivare l'accesso.",
+        "emailConflict": "Esiste già un utente con questa email.",
+        "status": {
+          "active": "Attivo",
+          "invited": "Invitato",
+          "deactivated": "Disattivato"
+        },
+        "resendInvite": "Reinvia invito",
+        "inviteResent": "Invito reinviato.",
+        "stepFailed": "Dati salvati, ma l'attivazione dell'accesso non è riuscita. Riprova."
+      }
     },
     "feedback": {
-      "created": "Persona creata.",
+      "created": "Pilota creato.",
       "updated": "Persona aggiornata.",
       "archived": "Persona archiviata.",
       "unarchived": "Persona ripristinata."
@@ -1398,65 +1423,6 @@
       "nextMonth": "Mese successivo",
       "invalidDate": "Data non valida (usa GG/MM/AAAA).",
       "invalidTime": "Ora non valida (usa HH:MM)."
-    }
-  },
-  "UsersPage": {
-    "kicker": "Amministrazione",
-    "title": "Utenti",
-    "description": "Crea utenti, assegna ruoli e gestisci l'accesso al sistema.",
-    "newUser": "Nuovo utente",
-    "table": {
-      "email": "Email",
-      "roles": "Ruoli",
-      "status": "Stato",
-      "person": "Persona",
-      "locale": "Lingua",
-      "actions": "Azioni",
-      "noPerson": "Nessuna",
-      "empty": "Nessun utente trovato."
-    },
-    "status": {
-      "active": "Attivo",
-      "inactive": "Disattivo",
-      "pending": "Invito in sospeso"
-    },
-    "roles": {
-      "ADMIN": "Admin",
-      "STAFF": "Staff",
-      "INSTRUCTOR": "Istruttore",
-      "PILOT": "Pilota",
-      "STUDENT": "Allievo"
-    },
-    "locales": {
-      "it": "Italiano",
-      "en": "Inglese"
-    },
-    "actions": {
-      "edit": "Modifica",
-      "deactivate": "Disattiva",
-      "activate": "Riattiva",
-      "resendInvite": "Reinvia invito"
-    },
-    "form": {
-      "createTitle": "Nuovo utente",
-      "editTitle": "Modifica utente",
-      "email": "Email",
-      "roles": "Ruoli",
-      "locale": "Lingua",
-      "person": "Persona collegata (opzionale)",
-      "personNone": "Nessuna",
-      "isActive": "Attivo",
-      "submitCreate": "Crea e invia invito",
-      "submitEdit": "Salva modifiche",
-      "cancel": "Annulla",
-      "rolesRequired": "Seleziona almeno un ruolo.",
-      "genericError": "Si è verificato un errore. Riprova.",
-      "emailConflict": "Esiste già un utente con questa email."
-    },
-    "feedback": {
-      "created": "Utente creato: email di invito inviata.",
-      "updated": "Utente aggiornato.",
-      "inviteResent": "Invito reinviato."
     }
   },
   "SetPasswordPage": {

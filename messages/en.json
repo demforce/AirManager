@@ -105,7 +105,6 @@
       "school": "Flight school",
       "expiries": "Expiries",
       "ppr": "PPR requests",
-      "users": "Users",
       "settings": "Settings"
     }
   },
@@ -133,7 +132,7 @@
     "kicker": "Records",
     "title": "Pilots",
     "description": "The pilot roster — with students, instructors and staff: create, edit and archive.",
-    "newPerson": "New person",
+    "newPerson": "New pilot",
     "searchPlaceholder": "Search by first name, last name or email…",
     "includeArchivedLabel": "Include archived",
     "table": {
@@ -142,6 +141,7 @@
       "phone": "Phone",
       "status": "Status",
       "profiles": "Profiles",
+      "access": "Access",
       "actions": "Actions",
       "noValue": "—",
       "empty": "No people found."
@@ -157,12 +157,11 @@
       "confirmArchive": "Archive this person?",
       "confirmUnarchive": "Restore this person?",
       "confirmYes": "Confirm",
-      "confirmCancel": "Cancel",
-      "profiles": "Profiles"
+      "confirmCancel": "Cancel"
     },
     "form": {
-      "createTitle": "New person",
-      "editTitle": "Edit person",
+      "createTitle": "New pilot",
+      "editTitle": "Edit pilot",
       "firstName": "First name",
       "lastName": "Last name",
       "email": "Email",
@@ -175,13 +174,39 @@
       "requiredField": "This field is required.",
       "genericError": "Something went wrong. Please try again.",
       "conflictError": "A person with this email or fiscal code already exists.",
-      "role": "Role",
-      "roleNone": "None",
-      "profileError": "Person created, but the profile could not be saved.",
-      "completeProfile": "Complete the profile"
+      "profileError": "Data saved, but a profile could not be saved.",
+      "completeProfile": "Complete the profile",
+      "access": {
+        "heading": "App access",
+        "toggle": "Can access the app",
+        "rolesLabel": "Roles",
+        "rolesRequired": "Select at least one role.",
+        "roles": {
+          "ADMIN": "Admin",
+          "STAFF": "Staff",
+          "INSTRUCTOR": "Instructor",
+          "PILOT": "Pilot",
+          "STUDENT": "Student"
+        },
+        "localeLabel": "Language",
+        "locales": {
+          "it": "Italian",
+          "en": "English"
+        },
+        "emailRequired": "Email is required to enable access.",
+        "emailConflict": "A user with this email already exists.",
+        "status": {
+          "active": "Active",
+          "invited": "Invited",
+          "deactivated": "Deactivated"
+        },
+        "resendInvite": "Resend invite",
+        "inviteResent": "Invite resent.",
+        "stepFailed": "Data saved, but enabling access failed. Please try again."
+      }
     },
     "feedback": {
-      "created": "Person created.",
+      "created": "Pilot created.",
       "updated": "Person updated.",
       "archived": "Person archived.",
       "unarchived": "Person restored."
@@ -1398,65 +1423,6 @@
       "nextMonth": "Next month",
       "invalidDate": "Invalid date (use DD/MM/YYYY).",
       "invalidTime": "Invalid time (use HH:MM)."
-    }
-  },
-  "UsersPage": {
-    "kicker": "Administration",
-    "title": "Users",
-    "description": "Create users, assign roles and manage access to the system.",
-    "newUser": "New user",
-    "table": {
-      "email": "Email",
-      "roles": "Roles",
-      "status": "Status",
-      "person": "Person",
-      "locale": "Language",
-      "actions": "Actions",
-      "noPerson": "None",
-      "empty": "No users found."
-    },
-    "status": {
-      "active": "Active",
-      "inactive": "Inactive",
-      "pending": "Invite pending"
-    },
-    "roles": {
-      "ADMIN": "Admin",
-      "STAFF": "Staff",
-      "INSTRUCTOR": "Instructor",
-      "PILOT": "Pilot",
-      "STUDENT": "Student"
-    },
-    "locales": {
-      "it": "Italian",
-      "en": "English"
-    },
-    "actions": {
-      "edit": "Edit",
-      "deactivate": "Deactivate",
-      "activate": "Reactivate",
-      "resendInvite": "Resend invite"
-    },
-    "form": {
-      "createTitle": "New user",
-      "editTitle": "Edit user",
-      "email": "Email",
-      "roles": "Roles",
-      "locale": "Language",
-      "person": "Linked person (optional)",
-      "personNone": "None",
-      "isActive": "Active",
-      "submitCreate": "Create and send invite",
-      "submitEdit": "Save changes",
-      "cancel": "Cancel",
-      "rolesRequired": "Select at least one role.",
-      "genericError": "Something went wrong. Please try again.",
-      "emailConflict": "A user with this email already exists."
-    },
-    "feedback": {
-      "created": "User created: invite email sent.",
-      "updated": "User updated.",
-      "inviteResent": "Invite resent."
     }
   },
   "SetPasswordPage": {

@@ -39,6 +39,10 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
 
   const page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
   const includeArchived = includeArchivedParam === 'true';
+  // Story TD-7 (AC 3) — the form's "Accesso all'app" section (and the
+  // access-mutating API calls it triggers) is admin-only; the UI hides it,
+  // `users.manage` on the API side remains the actual guardian (AD-5).
+  const canManageAccess = hasPermission(actor, 'users.manage');
   // Story 12.6 (AC 3) — the command palette's "Nuova persona" lands here via
   // `?new=1`. No extra permission check needed: the `people.read` redirect
   // above already gates every line past it (same permission the palette
@@ -91,10 +95,12 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
               fiscalCode: person.fiscalCode,
               archivedAt: person.archivedAt ? person.archivedAt.toISOString() : null,
               profiles: person.profiles,
+              access: person.access,
             }))}
             initialQuery={q ?? ''}
             initialIncludeArchived={includeArchived}
             initialCreateOpen={initialCreateOpen}
+            canManageAccess={canManageAccess}
             exportHref={exportHref}
             exportLabel={tExport('button')}
             labels={{
@@ -107,6 +113,7 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
                 phone: t('table.phone'),
                 status: t('table.status'),
                 profiles: t('table.profiles'),
+                access: t('table.access'),
                 actions: t('table.actions'),
                 noValue: t('table.noValue'),
                 empty: t('table.empty'),
@@ -123,7 +130,6 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
                 confirmUnarchive: t('actions.confirmUnarchive'),
                 confirmYes: t('actions.confirmYes'),
                 confirmCancel: t('actions.confirmCancel'),
-                profiles: t('actions.profiles'),
               },
               profilesPanel: {
                 heading: t('profilesPanel.heading'),
@@ -189,10 +195,36 @@ export default async function PeoplePage({ params, searchParams }: PageProps) {
                 requiredField: t('form.requiredField'),
                 genericError: t('form.genericError'),
                 conflictError: t('form.conflictError'),
-                role: t('form.role'),
-                roleNone: t('form.roleNone'),
                 profileError: t('form.profileError'),
                 completeProfile: t('form.completeProfile'),
+                access: {
+                  heading: t('form.access.heading'),
+                  toggle: t('form.access.toggle'),
+                  rolesLabel: t('form.access.rolesLabel'),
+                  rolesRequired: t('form.access.rolesRequired'),
+                  roles: {
+                    ADMIN: t('form.access.roles.ADMIN'),
+                    STAFF: t('form.access.roles.STAFF'),
+                    INSTRUCTOR: t('form.access.roles.INSTRUCTOR'),
+                    PILOT: t('form.access.roles.PILOT'),
+                    STUDENT: t('form.access.roles.STUDENT'),
+                  },
+                  localeLabel: t('form.access.localeLabel'),
+                  locales: {
+                    it: t('form.access.locales.it'),
+                    en: t('form.access.locales.en'),
+                  },
+                  emailRequired: t('form.access.emailRequired'),
+                  emailConflict: t('form.access.emailConflict'),
+                  status: {
+                    active: t('form.access.status.active'),
+                    invited: t('form.access.status.invited'),
+                    deactivated: t('form.access.status.deactivated'),
+                  },
+                  resendInvite: t('form.access.resendInvite'),
+                  inviteResent: t('form.access.inviteResent'),
+                  stepFailed: t('form.access.stepFailed'),
+                },
               },
               feedback: {
                 created: t('feedback.created'),

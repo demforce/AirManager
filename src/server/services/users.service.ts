@@ -165,13 +165,29 @@ export async function createUser(actor: Actor, input: CreateUserInput): Promise<
   return toListItem(user);
 }
 
-/** Partial update: roles, locale, linked person (incl. unlinking with `null`), active status (AC 2). */
+/** Prisma unique-constraint violation on `email` specifically vs. any other race — same shape as `createUser`'s check. */
+async function assertEmailAvailable(email: string, excludeUserId: string): Promise<void> {
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing && existing.id !== excludeUserId) {
+    throw new ConflictError('A user with this email already exists.');
+  }
+}
+
+/**
+ * Partial update: email (story TD-7, AC 4/5 — the unified person+access
+ * form propagates the anagrafica email here), roles, locale, linked person
+ * (incl. unlinking with `null`), active status (AC 2).
+ */
 export async function updateUser(actor: Actor, id: string, patch: UpdateUserInput): Promise<UserListItem> {
   authorize(actor, 'users.manage');
 
   const existing = await prisma.user.findUnique({ where: { id } });
   if (!existing) {
     throw new NotFoundError('User not found.');
+  }
+
+  if (patch.email !== undefined) {
+    await assertEmailAvailable(patch.email, id);
   }
 
   if (patch.personId !== undefined && patch.personId !== null) {
@@ -199,6 +215,7 @@ export async function updateUser(actor: Actor, id: string, patch: UpdateUserInpu
     user = await prisma.user.update({
       where: { id },
       data: {
+        ...(patch.email !== undefined && { email: patch.email }),
         ...(patch.roles !== undefined && { roles: patch.roles }),
         ...(patch.locale !== undefined && { locale: patch.locale }),
         ...(patch.personId !== undefined && { personId: patch.personId }),
