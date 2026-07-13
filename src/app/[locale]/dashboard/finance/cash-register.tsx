@@ -17,7 +17,7 @@ import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { Card } from '@/components/ui/card';
 import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
-import { FilterDisclosure } from '@/components/ui/filter-disclosure';
+import { FilterDisclosure, FilterDisclosurePanel, FilterDisclosureTrigger } from '@/components/ui/filter-disclosure';
 
 export type CashMovementRow = {
   id: string;
@@ -266,6 +266,8 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
 
   return (
     <div>
+      {/* UI-audit follow-up 2026-07-13 (user): the "Filtri" trigger sits in the action row next to "Esporta"; the panel spans below (compound FilterDisclosure). */}
+      <FilterDisclosure activeCount={activeFilterCount} defaultOpen={hasActiveFilter} testId="cash-filter-bar">
       <div className="flex flex-wrap items-center justify-between gap-4">
         {feedback ? (
           <p role="status" data-testid="cash-feedback" className="text-sm text-[#346538]">
@@ -275,6 +277,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
           <span />
         )}
         <div className="flex gap-3">
+          <FilterDisclosureTrigger />
           <ExportButton href={exportHref} label={exportLabel} testId="cash-export-button" />
           <Button
             type="button"
@@ -288,7 +291,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
         </div>
       </div>
 
-      <FilterDisclosure activeCount={activeFilterCount} defaultOpen={hasActiveFilter} testId="cash-filter-bar">
+      <FilterDisclosurePanel>
         <div className="mt-6 flex flex-wrap items-end gap-4" data-testid="cash-filter-bar">
           {/* `<label htmlFor>` as a SIBLING of its control, never wrapping it
               (TD-1, AC 5): a wrapping `<label>` around a `<select>` folds every
@@ -360,6 +363,7 @@ export function CashRegister({ rows, categories, initialFilters, moneyLocale, ex
             </button>
           ) : null}
         </div>
+      </FilterDisclosurePanel>
       </FilterDisclosure>
 
       {panelOpen ? (

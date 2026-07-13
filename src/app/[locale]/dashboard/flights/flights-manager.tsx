@@ -27,7 +27,7 @@ import { cn } from '@/components/ui/cn';
 import { Card, CardFooter, CardHeader } from '@/components/ui/card';
 import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
 import { Dialog } from '@/components/ui/dialog';
-import { FilterDisclosure } from '@/components/ui/filter-disclosure';
+import { FilterDisclosure, FilterDisclosurePanel, FilterDisclosureTrigger } from '@/components/ui/filter-disclosure';
 import { CircleXIcon, EyeIcon, PencilIcon } from '@/components/ui/icons';
 import { Menu } from '@/components/ui/menu';
 import { FlightDetailSheet } from './flight-detail-sheet';
@@ -743,16 +743,19 @@ export function FlightsManager({
           count), never bare on the canvas. */}
       <Card>
         <CardHeader className="space-y-5">
+          {/* UI-audit follow-up 2026-07-13 (user): the "Filtri" trigger sits in the header action row next to "Esporta"; the panel spans below (compound FilterDisclosure). */}
+          <FilterDisclosure activeCount={activeFilterCount} defaultOpen={activeFilter} testId="flight-filter-bar">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <h3 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
               {labels.list.heading}
             </h3>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               {cancelFeedback ? (
                 <p role="status" data-testid="flight-cancel-feedback" className="text-sm text-[#346538]">
                   {cancelFeedback}
                 </p>
               ) : null}
+              <FilterDisclosureTrigger />
               {/* Story 12.4 (AC 6): the two export actions collected into one overflow menu — testids stay on the menu ITEMS, unchanged. */}
               <Menu label={exportMenuLabel} triggerTestId="flights-export-menu-trigger">
                 <ExportButton
@@ -795,7 +798,7 @@ export function FlightsManager({
               </Menu>
             </div>
           </div>
-          <FilterDisclosure activeCount={activeFilterCount} defaultOpen={activeFilter} testId="flight-filter-bar">
+          <FilterDisclosurePanel>
             <FilterBar
               canManage={canManage}
               filters={filters}
@@ -808,6 +811,7 @@ export function FlightsManager({
               pickerLabels={labels.picker}
               datePickerLabels={labels.datePicker}
             />
+          </FilterDisclosurePanel>
           </FilterDisclosure>
         </CardHeader>
 

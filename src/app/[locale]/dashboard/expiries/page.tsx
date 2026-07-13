@@ -233,38 +233,38 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           </div>
 
           <section className="mt-10 rounded-cards border border-hairline bg-paper shadow-subtle p-6" data-testid="expiry-dashboard-section">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
-                  {t('dashboard.heading')}
-                </h2>
-                <p className="mt-1 text-sm text-mid-gray">{t('dashboard.description')}</p>
-              </div>
-              {/* Story 12.5 (AC 5): the two export actions collected into one overflow menu, same pattern as the flight registry (story 12.4, AC 6) — testids stay on the menu ITEMS, unchanged. */}
-              <Menu label={tExport('menuLabel')} triggerTestId="expiries-export-menu-trigger">
-                <ExportButton variant="menuItem" href={exportHref} label={tExport('button')} testId="expiries-export-button" />
-                <ExportButton variant="menuItem" href={exportPdfHref} label={tExport('buttonPdf')} testId="expiries-export-pdf-button" />
-              </Menu>
-            </div>
-
-            <div className="mt-6 border-b border-hairline pb-6">
-              <ExpiryDashboardFilters
-                types={allTypes}
-                initialFilters={dashboardInitialFilters}
-                labels={{
-                  type: t('dashboard.filters.type'),
-                  allTypes: t('dashboard.filters.allTypes'),
-                  inactiveSuffix: t('dashboard.filters.inactiveSuffix'),
-                  scope: t('dashboard.filters.scope'),
-                  allScopes: t('dashboard.filters.allScopes'),
-                  scopeOptions: scopeLabels,
-                  status: t('dashboard.filters.status'),
-                  allStatuses: t('dashboard.filters.allStatuses'),
-                  statusOptions: statusLabels,
-                  reset: t('dashboard.filters.reset'),
-                }}
-              />
-            </div>
+            {/* UI-audit follow-up 2026-07-13 (user): heading and export menu are slots of `ExpiryDashboardFilters`, whose header row places the "Filtri" trigger right next to "Esporta". */}
+            <ExpiryDashboardFilters
+              types={allTypes}
+              initialFilters={dashboardInitialFilters}
+              heading={
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-[-0.02em] text-ink">
+                    {t('dashboard.heading')}
+                  </h2>
+                  <p className="mt-1 text-sm text-mid-gray">{t('dashboard.description')}</p>
+                </div>
+              }
+              actions={
+                /* Story 12.5 (AC 5): the two export actions collected into one overflow menu, same pattern as the flight registry (story 12.4, AC 6) — testids stay on the menu ITEMS, unchanged. */
+                <Menu label={tExport('menuLabel')} triggerTestId="expiries-export-menu-trigger">
+                  <ExportButton variant="menuItem" href={exportHref} label={tExport('button')} testId="expiries-export-button" />
+                  <ExportButton variant="menuItem" href={exportPdfHref} label={tExport('buttonPdf')} testId="expiries-export-pdf-button" />
+                </Menu>
+              }
+              labels={{
+                type: t('dashboard.filters.type'),
+                allTypes: t('dashboard.filters.allTypes'),
+                inactiveSuffix: t('dashboard.filters.inactiveSuffix'),
+                scope: t('dashboard.filters.scope'),
+                allScopes: t('dashboard.filters.allScopes'),
+                scopeOptions: scopeLabels,
+                status: t('dashboard.filters.status'),
+                allStatuses: t('dashboard.filters.allStatuses'),
+                statusOptions: statusLabels,
+                reset: t('dashboard.filters.reset'),
+              }}
+            />
 
             <div className="mt-6 overflow-x-auto border-t border-hairline pt-1">
               <table className="w-full min-w-[720px] text-left text-sm" data-testid="expiry-dashboard-table">

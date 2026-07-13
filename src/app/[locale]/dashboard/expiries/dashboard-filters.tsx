@@ -6,7 +6,7 @@ import type { ExpiryScopeDto } from '@/lib/schemas/expiry-types';
 import type { ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
-import { FilterDisclosure } from '@/components/ui/filter-disclosure';
+import { FilterDisclosure, FilterDisclosurePanel, FilterDisclosureTrigger } from '@/components/ui/filter-disclosure';
 
 export type ExpiryDashboardFiltersValue = {
   expiryTypeId: string;
@@ -36,6 +36,9 @@ type ExpiryDashboardFiltersProps = {
   types: ExpiryTypeFilterOption[];
   initialFilters: ExpiryDashboardFiltersValue;
   labels: ExpiryDashboardFiltersLabels;
+  /** UI-audit follow-up 2026-07-13 (user): the section heading and the export menu render INSIDE this component's header row, so the "Filtri" trigger can sit right next to "Esporta" (compound FilterDisclosure) — both are server-rendered slots passed down from `page.tsx`. */
+  heading: React.ReactNode;
+  actions: React.ReactNode;
 };
 
 /**
@@ -49,7 +52,7 @@ type ExpiryDashboardFiltersProps = {
  * scadenza registered against a since-deactivated type must stay
  * filterable).
  */
-export function ExpiryDashboardFilters({ types, initialFilters, labels }: ExpiryDashboardFiltersProps) {
+export function ExpiryDashboardFilters({ types, initialFilters, labels, heading, actions }: ExpiryDashboardFiltersProps) {
   const router = useRouter();
   const [filters, setFilters] = useState<ExpiryDashboardFiltersValue>(initialFilters);
 
@@ -81,7 +84,15 @@ export function ExpiryDashboardFilters({ types, initialFilters, labels }: Expiry
 
   return (
     <FilterDisclosure activeCount={activeFilterCount} defaultOpen={hasActiveFilter} testId="expiry-dashboard-filters">
-      <div className="flex flex-wrap items-end gap-4" data-testid="expiry-dashboard-filters">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        {heading}
+        <div className="flex items-center gap-3">
+          <FilterDisclosureTrigger />
+          {actions}
+        </div>
+      </div>
+      <FilterDisclosurePanel>
+      <div className="mt-6 flex flex-wrap items-end gap-4 border-b border-hairline pb-6" data-testid="expiry-dashboard-filters">
         {/* `<label htmlFor>` as a sibling of its control, never wrapping it — same footgun fix as `flights-manager.tsx`'s `FilterBar` (a wrapping label folds every dynamic option's text into its accessible name). */}
         <div className="flex flex-col text-sm text-ink">
           <label htmlFor="expiry-dashboard-filter-type">{labels.type}</label>
@@ -146,6 +157,7 @@ export function ExpiryDashboardFilters({ types, initialFilters, labels }: Expiry
           </button>
         ) : null}
       </div>
+      </FilterDisclosurePanel>
     </FilterDisclosure>
   );
 }

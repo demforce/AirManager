@@ -14,7 +14,7 @@ import { Card } from '@/components/ui/card';
 import { Input, inputBaseClasses } from '@/components/ui/input';
 import { cn } from '@/components/ui/cn';
 import { DatePicker, type DatePickerLabels } from '@/components/ui/date-picker';
-import { FilterDisclosure } from '@/components/ui/filter-disclosure';
+import { FilterDisclosure, FilterDisclosurePanel, FilterDisclosureTrigger } from '@/components/ui/filter-disclosure';
 import { CheckIcon, CircleXIcon } from '@/components/ui/icons';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 
@@ -197,10 +197,15 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
 
   return (
     <div data-testid="ppr-register">
-      {/* TD-6 (AC 1) — `items-start` (was `items-end`): once the "Filtri" disclosure's panel opens, its column grows taller than the export button; `items-start` keeps the export button pinned to the top of the row instead of dragging it down to match. */}
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-hairline pb-6">
+      {/* UI-audit follow-up 2026-07-13 (user): the "Filtri" trigger sits right next to "Esporta" in one action row; the panel spans full-width below (compound FilterDisclosure). */}
+      <div className="border-b border-hairline pb-6">
         <FilterDisclosure activeCount={activeFilterCount} defaultOpen={hasActiveFilter} testId="ppr-register-filter-bar">
-          <div className="flex flex-wrap items-end gap-4" data-testid="ppr-register-filter-bar">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <FilterDisclosureTrigger />
+          <ExportButton href={exportHref} label={exportLabel} testId="ppr-register-export-button" />
+        </div>
+        <FilterDisclosurePanel>
+          <div className="mt-6 flex flex-wrap items-end gap-4" data-testid="ppr-register-filter-bar">
             <div className="flex flex-col text-sm text-ink">
               <label htmlFor="ppr-register-filter-status">{labels.filters.status}</label>
               <select
@@ -247,8 +252,8 @@ export function PprRegister({ requests, locale, filters, exportLabel, labels }: 
               </button>
             ) : null}
           </div>
+        </FilterDisclosurePanel>
         </FilterDisclosure>
-        <ExportButton href={exportHref} label={exportLabel} testId="ppr-register-export-button" />
       </div>
 
       {feedback ? (
