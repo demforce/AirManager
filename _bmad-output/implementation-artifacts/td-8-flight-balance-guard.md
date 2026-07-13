@@ -4,7 +4,7 @@ baseline_commit: 9a048a3
 
 # TD-8: Guardie alla registrazione volo — saldo insufficiente (override admin) + aereo fuori servizio (change request utente 2026-07-13)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -120,3 +120,4 @@ Sonnet 5 (dev subagent, xhigh)
 ## Change Log
 
 - 2026-07-13: Implementata la story (dev subagent) — guardia saldo insufficiente (admin-only force) + guardia AOG su registrazione/correzione volo. Vedi Dev Agent Record per dettagli e deviazioni dichiarate.
+- 2026-07-13: Review adversarial (Opus) fixes-required → F1 fixato dalla sessione principale (top-up nei 6 spec del blast radius). Full suite CI-mode su DB fresco POST-fix: **217 passed / 7 flaky (classi note) / 1 failed = command-palette:95 (deferred TD6-N1 pre-esistente)** — persino bookings:636/:690 verdi in questo run. Status → done.

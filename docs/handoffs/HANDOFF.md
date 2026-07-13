@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-13, EPIC 12 + TD-6 + FULL UI AUDIT done; TD-7 fusione Piloti+Utenti ready-for-dev)
+# HANDOFF — AirManager (aggiornato: 2026-07-13 notte, EPIC 12 + TD-6 + FULL UI AUDIT + TD-7 + TD-8 tutti done)
 
 ## Goal
 
@@ -16,7 +16,9 @@ Costruire AirManager, il gestionale per un'aviosuperficie, col metodo BMAD v6. M
   - `1350dd6` responsive fix registro voli (wrapper grouped `overflow-x-auto lg:overflow-x-visible`), pagina scadenze de-nidificata (doppia Card FG-3 → CHIUSO).
   - `e96f0cf` follow-up utente: tasto "Filtri" ACCANTO a "Esporta" su tutte e 4 le superfici — `FilterDisclosure` ora compound (`FilterDisclosureTrigger`/`FilterDisclosurePanel` su context; testid `*-toggle`/`*-count` e aria-expanded INVARIATI).
   - `4cf5ed4` fix review audit (Opus, 4 finding): MAJOR sticky day-header sotto lg → tradeoff DICHIARATO `lg:sticky` (sotto lg vince il contenimento orizzontale: la tabella non può fisicamente stare in ~450px e CSS non dà sticky verticale dentro scroller orizzontale); MINOR hint blocksBooking ri-associato via `aria-describedby`; NIT track OFF Switch hairline→mid-gray (1.18:1→4.87:1, WCAG 1.4.11); NIT terminologia «persona» sotto titolo «Piloti» → incanalata in TD-7.
-- **TD-7 «fusione Piloti+Utenti» ready-for-dev** (`_bmad-output/implementation-artifacts/td-7-people-users-merge.md`, commit `2d266c4`+emendamento in `4cf5ed4`): via pagina/nav Utenti (API `/api/v1/users*` restano, API-first); form UNICO create/edit (anagrafica + profili con campi condizionali + sezione Accesso con toggle, solo `users.manage`); colonna Accesso nella lista; `updateUser` impara `email`. **3 ratifiche utente**: form unico coi campi attuali; toggle accesso nel form (ruoli MANUALI); email UNICA (anagrafica = login). Baseline effettiva per il dev = HEAD attuale (verificare `git log`).
+- **TD-7 «fusione Piloti+Utenti» DONE** (story + Review Record in `td-7-people-users-merge.md`; impl `4e3a155`, fix review `9a048a3`): via pagina/nav Utenti (route → 404; API `/api/v1/users*` restano, API-first); `PersonFormDialog` unico create/edit a 3 sezioni (anagrafica + profili Switch con campi condizionali + Accesso admin-only: toggle, email UNICA anagrafica=login, 5 ruoli manuali, lingua, stato invito/reinvia, OFF=disattiva); colonna Accesso in lista; `updateUser` impara `email` (409 su duplicato, ora col messaggio dedicato nel form). Review Opus fixes-required→fixed: BLOCKER = selettore orfano «Nuova persona» in `person-detail.spec.ts` (spec fuori dal run mirato del dev — lezione: il censimento e2e di una RINOMINA va fatto con grep su TUTTI gli spec, non solo quelli in File List); +3 minori. CTA ora «Nuovo pilota».
+- **TD-8 «guardie registrazione volo» DONE** (story + Review Record in `td-8-flight-balance-guard.md`; impl `26e70ea`, fix review `4928e60`): (1) saldo insufficiente → 422 `INSUFFICIENT_BALANCE` {saldo, importo} dentro la transazione sotto lock, importo post-pacchetti; deroga SOLO admin (permission nuova `flights.force.balance`) con motivazione tracciata su 3 campi `Flight.balanceForced*` (migrazione 31); correzione = check sul saldo POST-storno; alert email invariato (scatta sui forzati). (2) AOG → 422 `AIRCRAFT_OUT_OF_SERVICE` {reason} in `resolveFlightInput`, MAI bypassabile (nemmeno force admin), simmetrico alle prenotazioni. Review Opus: logica promossa su 8 fronti empirici SENZA difetti; BLOCKER = blast radius (12 e2e con piloti a saldo zero → top-up nei creator di 6 spec, inclusi pilota SEED in exports e typeahead non censito dal dev). Il dev ha scovato via verifica interattiva un client Prisma stale post-migrate (fix `prisma generate`) che NESSUN gate avrebbe visto. **3 ratifiche utente**: override solo admin; blocco a saldo sotto zero; AOG blocco secco per tutti.
+- **NUOVA BASELINE su DB fresco CI-mode: 225 e2e (217 passed / 7 flaky noti / 1 failed = command-palette:95 deferred TD6-N1) / 1307 unit / 31 migrazioni.** Nel run finale persino bookings:636/:690 verdi (classe isolamento: intermittente, resta deferred). Nuovo deferred: **TD8-N1** — il picker velivoli del form voli non suffissa/disabilita gli AOG (le prenotazioni sì): UX-parity futura.
 
 ## Ruoli modello e processo (confermati su epic 12)
 
@@ -56,10 +58,10 @@ Costruire AirManager, il gestionale per un'aviosuperficie, col metodo BMAD v6. M
 
 ## Next Steps (in ordine)
 
-1. **TD-7 in sviluppo**: dev subagent Sonnet 5 xhigh sul story file, poi review Opus adversarial, fix, commit/push — ciclo standard.
-2. **PR #18** (epic 12 + TD-6 + full UI audit + TD-7 quando done) — corpo da tenere aggiornato.
-3. Decisioni utente pendenti: 121-N1 (bottone "forza prenotazione" ambra — raccomandazione FABLE: tenerlo).
-4. A inizio prossima sessione: bootstrap via hook; baseline attesa **221 e2e / 1278 unit / 30 migrazioni** su DB fresco CI-mode (2 fail noti deferred: bookings:636 isolamento; command-palette:95 TD6-N1). Flake noti: refresh-race instructor/aircraft-rates, login CredentialsSignin transiente sotto load, ECONNRESET, cold-compile dev-mode.
+1. **PR #18 pronta al merge** (epic 12 + TD-6 + full UI audit + TD-7 + TD-8).
+2. Decisioni utente pendenti: 121-N1 (bottone "forza prenotazione" ambra — raccomandazione FABLE: tenerlo; lo stesso stile è ora riusato dal force TD-8).
+3. Candidati prossima sessione: micro-TD sui deferred (command-palette:95/TD6-N1 il più visibile; bookings:636 isolamento; TD8-N1 picker AOG; TD6-N2/N3/N4; Badge kickers); QTB/libretto pilota PDF; go-live prep; v2 Flutter.
+4. A inizio prossima sessione: bootstrap via hook; baseline attesa **225 e2e (1 fail noto: command-palette:95) / 1307 unit / 31 migrazioni** su DB fresco CI-mode. Flake noti: refresh-race instructor/aircraft-rates, bookings picker/isolamento, login CredentialsSignin transiente sotto load, ECONNRESET, cold-compile dev-mode.
 5. Ciclo per story INVARIATO + pass grafico FABLE a fine epic (parte del processo).
 
 Ambiente: invariato (v. CLAUDE.md e handoff archiviati) — bootstrap automatico via hook SessionStart; reset DB SOLO sessione principale (`npm run db:reset`) prima di ogni dev e review; `curl localhost:3000` deve FALLIRE prima di ogni run e2e; gates SOLO `npm run gates`; MAI `playwright install`; utenti seed admin@/staff@/pilot@/instructor@/student@airmanager.local (password in SEED_ADMIN_PASSWORD).
