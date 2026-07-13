@@ -102,6 +102,20 @@ Sonnet 5 (dev subagent, xhigh)
 - `e2e/flight-log.spec.ts`
 - `e2e/flight-reversal.spec.ts`
 - `e2e/package-consumption.spec.ts`
+- `e2e/exports.spec.ts` (review fix F1 — top-up nei creator + pilota SEED del test own-rows)
+- `e2e/home-dashboard.spec.ts` (review fix F1)
+- `e2e/pdf-exports.spec.ts` (review fix F1)
+- `e2e/person-detail.spec.ts` (review fix F1)
+- `e2e/school.spec.ts` (review fix F1 — `createStudentPerson`, copre anche `createStudentWithLogin`)
+- `e2e/typeahead-pickers.spec.ts` (review fix F1 — pilota target, NON i 105 buffer mai addebitati)
+
+## Review Record (Opus 4.8 adversarial, 2026-07-13)
+
+- **Verdetto: fixes-required → fixed.** La LOGICA delle guardie è passata TUTTI gli 8 fronti empirici della review senza difetti: boundary al centesimo (0 vs 15000 → 422 con zero scritture verificate via psql; 15000 vs 15000 → 201; 14999 → 422), race-safety (read sotto il lock FOR UPDATE), semantica force (staff 403 pre-side-effect, refine Zod, stamping set-together, no-op a saldo capiente, AOG vince sul force admin), ordine storno-prima-del-check in correzione (provato con correzioni 60→60 pass e 60→120 422), esposizione DTO solo `flights.manage` (il pilota non vede i campi force del proprio volo), UI in entrambe le modalità su build di produzione, igiene migrazione (3 colonne + FK, client generato allineato, zero drift), alert email intatto (i 2 unit test ri-premessi sul force preservano l'intento).
+- **F1 (BLOCKER, fixato)**: blast radius e2e — 12 test in 6 spec creavano piloti/allievi a saldo zero e incassavano il nuovo 422 dove aspettavano 201 (`exports`, `home-dashboard`, `pdf-exports`, `person-detail`, `school`, più `typeahead-pickers:36` che il dev NON aveva censito; `login.spec` era un falso sospetto — solo GET). Fix: top-up 50M cents nei creator di ogni spec (pattern del dev), incluso il caso del **pilota seed** in `exports:190` (unico volo registrato a una persona non creata dagli helper); in `pdf-exports` il top-up da 5000 esistente era anche DOPO il POST del volo.
+- **F2 (NIT, nessun cambio)**: il check AOG vive in `resolveFlightInput` fuori dal lock (TOCTOU teorico) — identico al pre-esistente `AIRCRAFT_ARCHIVED`, non è un invariante monetario, ordine operativo ratificato.
+- **F3 (NIT, nessun cambio)**: il picker velivoli non disabilita/suffissa gli AOG (a differenza delle prenotazioni) — gap dichiarato, la story non lo richiedeva; candidato UX-parity futuro (deferred TD8-N1).
+- Post-fix: gates PASS (1307 unit); i 6 spec fixati 46/48 al primo giro (2 residui: `exports:190` = pilota seed, fixato; `person-detail:129` = ECONNRESET ambientale) poi 13/13 verdi; full suite CI-mode su DB fresco: esito nel Change Log.
 
 ## Change Log
 

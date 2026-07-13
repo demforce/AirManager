@@ -152,6 +152,12 @@ test.describe('Person detail page (Story 2.3)', () => {
       data: { priceCentsPerHour: 10000, validFrom: '2020-01-01' },
     });
     expect(rateResponse.status()).toBe(201);
+    // TD-8 (review fix): the person was just created at 0,00 € and the
+    // insufficient-balance guard now 422s the charge — top up first.
+    const topUpResponse = await page.request.post(`/api/v1/people/${personId}/account/top-ups`, {
+      data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: '2020-01-01' },
+    });
+    expect(topUpResponse.status()).toBe(200);
     const flightResponse = await page.request.post('/api/v1/flights', {
       data: {
         aircraftId: aircraft.id,

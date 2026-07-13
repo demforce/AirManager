@@ -64,6 +64,15 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
   });
   expect(profileResponse.status()).toBe(200);
 
+  // TD-8 (review fix): a fresh pilot starts at 0,00 € and the
+  // insufficient-balance guard now 422s any real charge — top up first
+  // (the 5000-cent top-up some tests add later is statement CONTENT, and
+  // it used to run only after the flight POST, too late for the guard).
+  const topUpResponse = await page.request.post(`/api/v1/people/${person.id}/account/top-ups`, {
+    data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: dateAt(0) },
+  });
+  expect(topUpResponse.status()).toBe(200);
+
   return { personId: person.id, firstName, lastName };
 }
 

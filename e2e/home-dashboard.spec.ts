@@ -101,6 +101,14 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+
+  // TD-8 (review fix): a fresh pilot starts at 0,00 € and the
+  // insufficient-balance guard now 422s any real charge — top up first.
+  const topUpResponse = await page.request.post(`/api/v1/people/${person.id}/account/top-ups`, {
+    data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: PAST_DATE },
+  });
+  expect(topUpResponse.status()).toBe(200);
+
   return { personId: person.id, firstName, lastName };
 }
 

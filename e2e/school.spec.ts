@@ -113,6 +113,13 @@ async function createStudentPerson(page: Page, tag: string, courseStartDate = PA
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/student`, { data: { courseStartDate } });
   expect(profileResponse.status()).toBe(200);
 
+  // TD-8 (review fix): school flights charge the student, who starts at
+  // 0,00 € — the insufficient-balance guard now 422s any charge. Top up first.
+  const topUpResponse = await page.request.post(`/api/v1/people/${person.id}/account/top-ups`, {
+    data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: PAST_DATE },
+  });
+  expect(topUpResponse.status()).toBe(200);
+
   return { personId: person.id, firstName, lastName };
 }
 

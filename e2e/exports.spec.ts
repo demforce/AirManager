@@ -62,6 +62,13 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
   });
   expect(profileResponse.status()).toBe(200);
 
+  // TD-8 (review fix): a fresh pilot starts at 0,00 € and the
+  // insufficient-balance guard now 422s any real charge — top up first.
+  const topUpResponse = await page.request.post(`/api/v1/people/${person.id}/account/top-ups`, {
+    data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: PAST_DATE },
+  });
+  expect(topUpResponse.status()).toBe(200);
+
   return { personId: person.id, firstName, lastName };
 }
 
@@ -191,6 +198,13 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     const aircraft = await createAircraftWithRate(page, 12000);
     const otherPilot = await createPilotPerson(page, 'Other');
     expect(myId).not.toBe(otherPilot.personId);
+    // TD-8 (review fix): `myId` is the SEEDED pilot, not one from the topped-up
+    // helper — its balance may be 0 (or drained by other tests), and the
+    // insufficient-balance guard would 422 the charge below.
+    const myTopUpResponse = await page.request.post(`/api/v1/people/${myId}/account/top-ups`, {
+      data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: PAST_DATE },
+    });
+    expect(myTopUpResponse.status()).toBe(200);
     await registerFlight(page, { aircraftId: aircraft.id, personId: otherPilot.personId, flightDate: '2020-04-01', flightType: 'TOURISM', minutes: 20 });
     await registerFlight(page, { aircraftId: aircraft.id, personId: myId, flightDate: '2020-04-02', flightType: 'TOURISM', minutes: 25 });
 

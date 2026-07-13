@@ -89,6 +89,12 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
       data: { licenseNumber: `IT-PPL-${suffix}-target`, licenseType: 'PPL(A)' },
     });
     expect(targetProfileResponse.status()).toBe(200);
+    // TD-8 (review fix): this pilot gets a real flight registered below and
+    // starts at 0,00 € — the insufficient-balance guard now 422s the charge.
+    const targetTopUpResponse = await page.request.post(`/api/v1/people/${targetPerson.id}/account/top-ups`, {
+      data: { amountCents: 50_000_000, paymentMethod: 'CASH', effectiveDate: '2020-01-01' },
+    });
+    expect(targetTopUpResponse.status()).toBe(200);
 
     // The regression's real proof, BEFORE ever touching the UI: the
     // form-picker's own domain query (`profile=pilot-or-student`, active
