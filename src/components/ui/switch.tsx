@@ -20,11 +20,21 @@ export type SwitchProps = {
 export function Switch({ label, className, labelClassName, ...props }: SwitchProps) {
   return (
     <label className={cn('inline-flex cursor-pointer select-none items-center gap-2.5 text-sm text-ink', className)}>
-      <input type="checkbox" className="peer sr-only" {...props} />
-      <span
-        aria-hidden="true"
-        className="relative h-5 w-9 shrink-0 rounded-full bg-hairline transition-colors peer-checked:bg-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-60 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-paper after:shadow-subtle after:transition-transform peer-checked:after:translate-x-4"
-      />
+      <span className="relative inline-flex h-5 w-9 shrink-0">
+        {/* The input OVERLAYS the track (opacity-0, not sr-only): it stays the
+            real pointer hit-target, so Playwright's .check() and real clicks
+            land on the control itself instead of being intercepted by the
+            decorative track. */}
+        <input
+          type="checkbox"
+          className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer appearance-none rounded-full opacity-0"
+          {...props}
+        />
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 rounded-full bg-hairline transition-colors peer-checked:bg-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-60 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-paper after:shadow-subtle after:transition-transform peer-checked:after:translate-x-4"
+        />
+      </span>
       <span className={labelClassName}>{label}</span>
     </label>
   );

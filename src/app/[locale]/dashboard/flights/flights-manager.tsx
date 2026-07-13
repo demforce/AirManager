@@ -818,7 +818,7 @@ export function FlightsManager({
           // the design's canonical 1280px width (review 12.4, 124-F3), and
           // flat has no sticky day headers to break — so it gets a scoped
           // horizontal scroll wrapper. Grouped stays wrapperless (sticky).
-          <div className={activeFilter ? 'overflow-x-auto' : undefined}>
+          <div className={activeFilter ? 'overflow-x-auto' : 'overflow-x-auto lg:overflow-x-visible'}>
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-hairline text-xs uppercase tracking-[0.05em] text-mid-gray">

@@ -266,7 +266,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               />
             </div>
 
-            <Card className="mt-6 overflow-x-auto p-0">
+            <div className="mt-6 overflow-x-auto border-t border-hairline pt-1">
               <table className="w-full min-w-[720px] text-left text-sm" data-testid="expiry-dashboard-table">
                 <thead>
                   <tr className="border-b border-hairline text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">
@@ -312,7 +312,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
                   )}
                 </tbody>
               </table>
-            </Card>
+            </div>
 
             <Pager
               page={dashboardPage}
