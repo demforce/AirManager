@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-13, EPIC 12 DONE + TD-6 rifiniture UI — clean-pass)
+# HANDOFF — AirManager (aggiornato: 2026-07-13, EPIC 12 + TD-6 + FULL UI AUDIT done; TD-7 fusione Piloti+Utenti ready-for-dev)
 
 ## Goal
 
@@ -10,6 +10,13 @@ Costruire AirManager, il gestionale per un'aviosuperficie, col metodo BMAD v6. M
 - Tutti i commit pushati. **PR dell'epic: #18** (base main — era già aperta dall'utente su questo branch; titolo/corpo aggiornati per l'epic + TD-6).
 - **TD-6 (change request utente sera 2026-07-12, 5 punti) DONE, review clean-pass**: filtri dietro tasto "Filtri" con contatore + auto-open se attivi (4 barre: voli/cassa/PPR register/dashboard scadenze — delimitazione: search bar e selettori periodo report restano visibili); azioni di riga a ICONE (`ui/icons.tsx` 14 SVG thin-stroke + `Button size="icon"`, aria-label/title = label correnti → e2e per-name invariati; conferme transienti testuali); "Correggi"→"Modifica" (+ "Modifica volo"; submit/exit "correzione" invariati); bottoni finali sheet allineati; colonna Stato del registro RIMOSSA (badge "Annullato" inline nella tratta + riga attenuata, ratifica utente).
 - Baseline attesa su DB fresco, build di produzione CI-mode: **221 e2e / 1278 unit / 30 migrazioni** (nessuna migrazione, env var o dipendenza nuova in tutto l'epic).
+- **FULL UI AUDIT Fable (change request utente 2026-07-13) DONE, review Opus applicata** — 5 commit dopo TD-6:
+  - `80258e6` Palette v2 "Celeste" (ratificata: canvas #edf2f8, ink #101c2c, accent #1d4ed8 + famiglia; Ember e semaforo stati INVARIATI; contrasti WCAG ricalcolati e CONFERMATI dalla review a 2 decimali) + addendum in DESIGN.md.
+  - `7f2dd85` «Persone»→«Piloti» (nav+titolo it/en, 5 e2e), NUOVO primitivo `ui/switch.tsx` (checkbox→switch, 6 siti; input opacity-0 SOVRAPPOSTO al track = hit-target vero, `.check()` Playwright funziona), no-wrap/truncate su users/school/finance/expiries/bookings/ppr.
+  - `1350dd6` responsive fix registro voli (wrapper grouped `overflow-x-auto lg:overflow-x-visible`), pagina scadenze de-nidificata (doppia Card FG-3 → CHIUSO).
+  - `e96f0cf` follow-up utente: tasto "Filtri" ACCANTO a "Esporta" su tutte e 4 le superfici — `FilterDisclosure` ora compound (`FilterDisclosureTrigger`/`FilterDisclosurePanel` su context; testid `*-toggle`/`*-count` e aria-expanded INVARIATI).
+  - `4cf5ed4` fix review audit (Opus, 4 finding): MAJOR sticky day-header sotto lg → tradeoff DICHIARATO `lg:sticky` (sotto lg vince il contenimento orizzontale: la tabella non può fisicamente stare in ~450px e CSS non dà sticky verticale dentro scroller orizzontale); MINOR hint blocksBooking ri-associato via `aria-describedby`; NIT track OFF Switch hairline→mid-gray (1.18:1→4.87:1, WCAG 1.4.11); NIT terminologia «persona» sotto titolo «Piloti» → incanalata in TD-7.
+- **TD-7 «fusione Piloti+Utenti» ready-for-dev** (`_bmad-output/implementation-artifacts/td-7-people-users-merge.md`, commit `2d266c4`+emendamento in `4cf5ed4`): via pagina/nav Utenti (API `/api/v1/users*` restano, API-first); form UNICO create/edit (anagrafica + profili con campi condizionali + sezione Accesso con toggle, solo `users.manage`); colonna Accesso nella lista; `updateUser` impara `email`. **3 ratifiche utente**: form unico coi campi attuali; toggle accesso nel form (ruoli MANUALI); email UNICA (anagrafica = login). Baseline effettiva per il dev = HEAD attuale (verificare `git log`).
 
 ## Ruoli modello e processo (confermati su epic 12)
 
@@ -49,9 +56,10 @@ Costruire AirManager, il gestionale per un'aviosuperficie, col metodo BMAD v6. M
 
 ## Next Steps (in ordine)
 
-1. **PR #18 pronta al merge** (contiene epic 12 + TD-6 + i commit di setup del branch base).
-2. **STOP** — la prossima sessione parte SOLO da una decisione dell'utente. Candidati: (a) micro-TD sui deferred sopra (i più concreti: bookings:636, FG-4, Badge kickers); (b) decisione 121-N1; (c) merge train delle due PR stacked; (d) QTB/libretto pilota PDF; (e) go-live prep; (f) v2 Flutter.
-3. A inizio prossima sessione: bootstrap via hook; baseline attesa **218 e2e / 1278 unit / 30 migrazioni** su DB fresco CI-mode. Flake noti residui: bookings:636 (v. sopra), classi ECONNRESET sotto load, cold-compile Turbopack in dev-mode.
-4. Se si sviluppa: ciclo per story INVARIATO + pass grafico FABLE a fine epic (ora parte del processo).
+1. **TD-7 in sviluppo**: dev subagent Sonnet 5 xhigh sul story file, poi review Opus adversarial, fix, commit/push — ciclo standard.
+2. **PR #18** (epic 12 + TD-6 + full UI audit + TD-7 quando done) — corpo da tenere aggiornato.
+3. Decisioni utente pendenti: 121-N1 (bottone "forza prenotazione" ambra — raccomandazione FABLE: tenerlo).
+4. A inizio prossima sessione: bootstrap via hook; baseline attesa **221 e2e / 1278 unit / 30 migrazioni** su DB fresco CI-mode (2 fail noti deferred: bookings:636 isolamento; command-palette:95 TD6-N1). Flake noti: refresh-race instructor/aircraft-rates, login CredentialsSignin transiente sotto load, ECONNRESET, cold-compile dev-mode.
+5. Ciclo per story INVARIATO + pass grafico FABLE a fine epic (parte del processo).
 
 Ambiente: invariato (v. CLAUDE.md e handoff archiviati) — bootstrap automatico via hook SessionStart; reset DB SOLO sessione principale (`npm run db:reset`) prima di ogni dev e review; `curl localhost:3000` deve FALLIRE prima di ogni run e2e; gates SOLO `npm run gates`; MAI `playwright install`; utenti seed admin@/staff@/pilot@/instructor@/student@airmanager.local (password in SEED_ADMIN_PASSWORD).
