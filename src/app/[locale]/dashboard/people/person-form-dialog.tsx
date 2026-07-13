@@ -177,7 +177,8 @@ export function PersonFormDialog({ open, mode, person, canManageAccess, labels, 
   const [passwordSet, setPasswordSet] = useState(() => initialAccess?.passwordSet ?? true);
   const [accessEmailError, setAccessEmailError] = useState(false);
   const [accessRolesError, setAccessRolesError] = useState(false);
-  const [accessStepError, setAccessStepError] = useState(false);
+  // 'conflict' = the users API answered 409 (duplicate login email) — rendered with its dedicated message (review TD-7, F2); 'generic' = any other access-step failure.
+  const [accessStepError, setAccessStepError] = useState<'generic' | 'conflict' | null>(null);
   const [resendPending, setResendPending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   // `accountId` is the render-facing "does an account exist yet" flag
@@ -326,13 +327,13 @@ export function PersonFormDialog({ open, mode, person, canManageAccess, labels, 
     setPasswordSet(true);
     setFormError(null);
     setProfileStepError(false);
-    setAccessStepError(false);
+    setAccessStepError(null);
   }
 
   async function onSubmit(values: CreatePersonInput): Promise<void> {
     setFormError(null);
     setProfileStepError(false);
-    setAccessStepError(false);
+    setAccessStepError(null);
 
     if (!validateProfileFields()) return;
     if (!validateAccessFields(values.email)) return;
@@ -401,7 +402,9 @@ export function PersonFormDialog({ open, mode, person, canManageAccess, labels, 
           body: JSON.stringify({ email, roles: accessRoles, locale: accessLocale, personId }),
         });
         if (!response.ok) {
-          setAccessStepError(true);
+          const body: unknown = await response.json().catch(() => null);
+          const code = (body as { error?: { code?: string } } | null)?.error?.code;
+          setAccessStepError(code === 'CONFLICT' ? 'conflict' : 'generic');
           return;
         }
         const createdUser = (await response.json()) as { id: string };
@@ -422,7 +425,9 @@ export function PersonFormDialog({ open, mode, person, canManageAccess, labels, 
             body: JSON.stringify(patch),
           });
           if (!response.ok) {
-            setAccessStepError(true);
+            const body: unknown = await response.json().catch(() => null);
+            const code = (body as { error?: { code?: string } } | null)?.error?.code;
+            setAccessStepError(code === 'CONFLICT' ? 'conflict' : 'generic');
             return;
           }
           accountSnapshotRef.current = { userId: account.userId, isActive: accessOn, roles: accessRoles, locale: accessLocale, email };
@@ -492,9 +497,9 @@ export function PersonFormDialog({ open, mode, person, canManageAccess, labels, 
           </div>
         </div>
 
-        {/* (b) Profili */}
-        <div className="space-y-5 border-t border-hairline pt-5">
-          <h3 className="text-base font-medium text-ink">{labels.profilesPanel.heading}</h3>
+        {/* (b) Profili — a named group like the Ruoli fieldset (review TD-7, F4): with access ON the dialog holds two identically-named "Pilota"/"Allievo"/"Istruttore" switches, and both sides need programmatic group context for screen readers. `role="group"` + `aria-labelledby` instead of fieldset/legend because a legend inside this `border-t` container would render inside the border. */}
+        <div role="group" aria-labelledby="person-form-profiles-heading" className="space-y-5 border-t border-hairline pt-5">
+          <h3 id="person-form-profiles-heading" className="text-base font-medium text-ink">{labels.profilesPanel.heading}</h3>
           {profilesLoading ? <p className="text-sm text-mid-gray">…</p> : null}
 
           <div className="space-y-4">
@@ -628,7 +633,7 @@ export function PersonFormDialog({ open, mode, person, canManageAccess, labels, 
 
             {accessStepError ? (
               <p role="alert" data-testid="person-access-error" className="rounded-nested bg-canvas px-4 py-3 text-sm text-ember">
-                {labels.form.access.stepFailed}
+                {accessStepError === 'conflict' ? labels.form.access.emailConflict : labels.form.access.stepFailed}
               </p>
             ) : null}
           </div>

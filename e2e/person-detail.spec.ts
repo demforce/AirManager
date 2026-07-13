@@ -24,7 +24,7 @@ function uniquePerson(prefix: string): { firstName: string; lastName: string } {
 
 async function createPerson(page: Page, person: { firstName: string; lastName: string }): Promise<void> {
   await page.goto('/it/dashboard/people');
-  await page.getByRole('button', { name: 'Nuova persona' }).click();
+  await page.getByRole('button', { name: 'Nuovo pilota' }).click();
   await page.getByLabel('Nome', { exact: true }).fill(person.firstName);
   await page.getByLabel('Cognome', { exact: true }).fill(person.lastName);
   await page.getByRole('button', { name: 'Crea persona' }).click();

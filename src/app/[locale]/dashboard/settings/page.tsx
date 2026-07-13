@@ -10,8 +10,8 @@ type PageProps = {
 };
 
 /**
- * Admin-only airfield settings (story 10.2, AC 1 — `settings.manage`), same
- * gate pattern as `dashboard/users/page.tsx`: `hasPermission` here only
+ * Admin-only airfield settings (story 10.2, AC 1 — `settings.manage`),
+ * standard page-gate pattern (AD-5): `hasPermission` here only
  * decides whether to *redirect*; `setAirfieldBranding`'s own `authorize()`
  * (`app-settings.service.ts`) is the real guardian (AD-5). `getAirfieldBranding`
  * itself needs no gate (every role reads it for its own PDF exports) — see

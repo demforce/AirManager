@@ -4,7 +4,7 @@ baseline_commit: 1350dd6
 
 # TD-7: Fusione Piloti + Utenti — una sola pagina, un solo form (change request utente 2026-07-13)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -118,9 +118,22 @@ Sonnet 5 (dev subagent, xhigh)
 - `e2e/user-management.spec.ts`
 - `e2e/people-management.spec.ts`
 - `e2e/person-profiles.spec.ts`
+- `e2e/person-detail.spec.ts` (review fix F1 — orphaned «Nuova persona» selector)
+- `src/app/[locale]/dashboard/settings/page.tsx` (review fix F3 — stale comment)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/implementation-artifacts/td-7-people-users-merge.md` (this file — Dev Agent Record/File List/Change Log/Status/task checkboxes)
+
+## Review Record (Opus 4.8 adversarial, 2026-07-13)
+
+- **Verdetto: fixes-required → fixed.** Full suite CI-mode su DB fresco: 207 passed / 8 flaky (classi note) / 6 failed = 2 deferred noti (bookings:636, command-palette:95) + bookings:690 (stessa classe isolamento di :636, NON attribuibile a TD-7 — confermato: verde nel rerun mirato post-fix) + 3 CAUSATI dalla story (F1).
+- **F1 (BLOCKER, fixato)**: il rename AC 6 «Nuova persona»→«Nuovo pilota» ha orfanato il selettore dell'helper `createPerson` in `e2e/person-detail.spec.ts:27` (spec fuori dalla File List e dal run mirato del dev → il "26/26" non lo esercitava): 3 test rossi. Fix: selettore aggiornato, spec aggiunto alla File List.
+- **F2 (MINOR, fixato)**: `form.access.emailConflict` era threaded ma mai renderizzato — il 409 (email login duplicata, empiricamente raggiungibile) mostrava il messaggio generico. Fix: `accessStepError` ora `'generic' | 'conflict' | null`, entrambi i branch POST/PATCH leggono `error.code` e il 409 renderizza il messaggio dedicato.
+- **F3 (NIT, fixato)**: commento stale in `settings/page.tsx:14` che citava il cancellato `dashboard/users/page.tsx` — riformulato.
+- **F4 (NIT, fixato)**: i 3 Switch profilo non avevano il gruppo semantico che i ruoli hanno (due set di switch omonimi nel dialog) — `role="group"` + `aria-labelledby` sull'intestazione Profili (non fieldset/legend: la legend renderizzerebbe dentro il `border-t`).
+- Verifiche review passate: orchestrazione submit (retry-safe, no delete su toggle OFF, email obbligatoria), RBAC staff via curl (403 su POST/GET/PATCH users), updateUser email (409 + trim/lowercase), route cancellata → 404, invito Mailpit end-to-end, terminologia AC 6, niente migrazioni/dipendenze, scheda [id] intatta.
+- Post-fix: gates PASS (1283 unit), 41/41 e2e mirati verdi (person-detail, user-management, people-management, bookings INTERO — anche :636/:690/:942).
 
 ## Change Log
 
 - 2026-07-13 — TD-7 implemented (dev subagent, Sonnet 5): Piloti + Utenti merged into one page/one form per AC 1-9. `/dashboard/users` route and nav entry removed; `PersonFormDialog` (mode create|edit) replaces the create dialog, the inline edit panel and the row "Profili" action/panel; `listPeople` exposes `access` (StatusPill column); `updateUser` learns `email` (single-email-field model). e2e rewritten accordingly. Status → review.
+- 2026-07-13 — Adversarial review (Opus): fixes-required → all 4 findings fixed by the main session (see Review Record). Status → done.
