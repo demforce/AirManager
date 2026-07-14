@@ -146,7 +146,7 @@ development_status:
   td-8-flight-balance-guard: done
 
   # TD: stabilizzazione CI — i 4 e2e rossi ricorrenti su GitHub Actions (change request utente 2026-07-13 notte)
-  td-9-ci-stabilization: review
+  td-9-ci-stabilization: done
 
 action_items:
   - epic: 9

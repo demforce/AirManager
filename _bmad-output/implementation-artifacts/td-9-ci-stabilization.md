@@ -4,7 +4,7 @@ baseline_commit: ba3ca3e
 
 # TD-9: CI verde stabile — eradicare i 4 e2e rossi ricorrenti (change request utente 2026-07-13 notte)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -94,6 +94,16 @@ Dev subagent Sonnet 5 xhigh (interrotto dall'harness a metà validazione AC 3) +
 - `e2e/aircraft-status-hours.spec.ts` (stati operativi: feedback specifico + reload)
 - `_bmad-output/implementation-artifacts/td-9-ci-stabilization.md`, `sprint-status.yaml`
 
+## Review Record (Opus 4.8 adversarial, 2026-07-14)
+
+- **Verdetto: fixes-required → fixed.** Il full run del reviewer ha beccato 1 hard failure residuo e riprodotto LIVE un bug del mio secondo taglio:
+- **BLOCKER (fixato)**: 2 assert post-create sfuggiti allo sweep (`bookings:452` — 3/3 rossi nel run del reviewer — e il gemello warning `:1002`) → reload aggiunti.
+- **MAJOR (fixato)**: il pair-key `(aircraftId, startsAt)` di `staleMoves` nascondeva ancora PER SEMPRE una riga spostata cambiando solo `endsAt`/note (riprodotto live su build di produzione: riga sparita finché non si rinaviga). Terzo e definitivo taglio: un solo `Set` `hiddenUntilRefresh` per cancel+move, svuotato all'arrivo del successivo payload server (adjust-state-during-render sull'identità di `items`) — race-free per costruzione, nessun campo-chiave, meccanismo più semplice.
+- **MINOR (fixato)**: i reload di `aircraft-status-hours` atterravano sulla flotta non filtrata → la pagina resta scoped `?q=marche` dopo la creazione.
+- Promossi CLEAN dalla review: root cause palette (selettore textbox-vs-combobox confermato; marker readiness giustificato; ZERO timeout gonfiati nel diff), gemelli tariffe (AD-4 rispettato, asimmetria documentata), scoping aircraft-rates completo, nessun file vietato toccato.
+- **Post-fix**: gates PASS; mirati 28/28; full run di conferma **0 failed / 1 flaky / 224 passed** (il più pulito di sempre); **CI GitHub verde due push di fila** (run 29326667775 e 29329801587).
+
 ## Change Log
 
 - 2026-07-14: implementazione (dev subagent, interrotto a validazione iniziata) + continuation della sessione principale: root cause palette corretta (selettore, non timing), staleMoves a coppia, conversioni slot, sweep classe reload-then-assert. Validazione AC 3: 3 run consecutive 0-failed. **AC 5: CI GitHub verde (gates + e2e)**. Status → review.
+- 2026-07-14: review adversarial (Opus) fixes-required → 3 finding fixati (v. Review Record; il MAJOR ha sostituito gli override keyed con `hiddenUntilRefresh`). Conferma: full run 0-failed, CI verde anche sul push dei fix. Status → done.
