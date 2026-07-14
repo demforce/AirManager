@@ -4,7 +4,7 @@ baseline_commit: f2f22bd
 
 # Story 12.1: Fondamenta design system AirOps — stylesheet, primitive, shell, pagine auth
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -47,4 +47,38 @@ so that ogni pagina successiva dell'Epic 12 possa essere costruita nel nuovo lin
 
 ## Dev Agent Record
 
-(compilato dal dev agent)
+**Implementato da**: dev-story subagent (Sonnet 5 xhigh), branch `epic-12-airops-ui`.
+
+### Cosa è stato fatto
+
+- **AC1 (stylesheet)**: `src/styles/airops.css` è un porting verbatim di `docs/design-reference/airops/styles.css` (diff automatizzato verificato: solo i 6 selettori `[data-theme=...]` → `html[data-theme=...]`, più il blocco `.ppr-*` in coda estratto da `PPR Request.html`). Font self-hosted via `@fontsource/inter-tight`, `@fontsource/jetbrains-mono`, `@fontsource/instrument-serif` (pesi 400/500/600 per i primi due, 400 per Instrument Serif — unici pesi usati nel CSS), installati con `npx -y npm@10` (diff lockfile: 30 righe). Import in `src/app/[locale]/layout.tsx`, Geist rimane. `globals.css` importa `airops.css` dopo Tailwind.
+- **AC2 (tema)**: root layout legge il cookie `am-theme` server-side e stampa `data-theme` su `<html>` (niente flash). `theme-toggle.tsx` (client) aggiorna `document.documentElement.dataset.theme` + cookie (`path=/`, `max-age=31536000`, `samesite=lax`), niente localStorage. Default light.
+- **AC3 (primitive)**: tutti i file richiesti in `src/components/ui/` — `icons.tsx` (namespace `Icon.*`, porting 1:1 di `icons.jsx`), `badge.tsx`, `kpi.tsx` (KPI+Spark), `avatar.tsx`, `toast.tsx` (`ToastProvider`/`useToast().show(msg, tone)`, context React, NIENTE eventi window), `slide-over.tsx` (Esc + scrim-click), `field.tsx` (Field/Input/Select/InputGroup con prefix/suffix), `segmented.tsx`, `export-menu.tsx` (riceve `pdfHref`/`xlsHref` via props, nessun consumer ancora — arriva con gli export reali nelle story successive), `calendar-popover.tsx` (porting di `Schedule.jsx#CalendarPopover`; la matematica della griglia è estratta in `calendar-grid.ts`, con `calendar-grid.test.ts` — 6 casi, inclusi confini mese/anno). Stringhe via next-intl dove i componenti sono già montati (shell/auth); i primitive senza consumer in questa story (Badge/KPI/SlideOver/ExportMenu/CalendarPopover) non hanno ancora testo hardcoded da tradurre.
+- **AC4 (shell)**: `src/components/shell/route-registry.ts` — registry statico `{id, href, icon, group, roles, enabled}`; questa story abilita SOLO `/dashboard`, `/dashboard/bookings`, `/dashboard/ppr`, `/dashboard/expiries`, `/dashboard/settings` (le altre voci del prototipo restano `enabled:false`). `sidebar.tsx`/`top-bar.tsx` (client, porting 1:1 di `Sidebar.jsx`/`TopBar.jsx`) ricevono dati già tradotti/filtrati da `src/app/[locale]/dashboard/layout.tsx` (server, NUOVO file — non esisteva un layout dashboard condiviso prima di questa story, ogni pagina renderizzava standalone con un proprio link "torna alla dashboard"). Filtro per ruolo verificato interattivamente per tutti e 5 i ruoli seed (screenshot). Brand = "AirManager" (wordmark hardcoded) + `<nome club · ICAO>` da `app-settings.service.ts` (vedi deviazione sotto). Le pagine legacy esistenti (nessuna toccata) renderizzano dentro `.main` invariate.
+- **AC5 (auth)**: `login`, `set-password`, `forgot-password` ricostruite nel linguaggio AirOps (`.card` su `--bg`, `.fld`/`.input`/`.btn.primary`, brand mark `Icon.logo`), stessi campi/chiamate API/redirect/messaggi di errore. i18n spostato da `LoginPage`/`SetPasswordPage`/`ForgotPasswordPage` (namespace top-level) a `auth.login`/`auth.setPassword`/`auth.forgotPassword` (contenuto IT/EN invariato) per soddisfare la richiesta di namespace dedicati.
+- **AC6 (e2e tema)**: nuovo test in `e2e/login.spec.ts` (`AirOps theme toggle`) — login, verifica `data-theme=light` di default, click toggle → `data-theme=dark`, `page.reload()` → persiste.
+- **AC7 (gates)**: `npm run gates` verde (lint/typecheck/vitest 1231 test/build). `e2e/login.spec.ts` + `e2e/welcome.spec.ts` verdi in locale (12/12, vedi nota sotto). Smoke visivo delle pagine dashboard legacy fatto via screenshot (nessun errore console, contenuto leggibile in entrambi i temi).
+
+### Verifica interattiva
+
+Il tool MCP Playwright (`mcp__playwright__*`) non è utilizzabile su questa macchina locale: `.mcp.json` punta a `--executable-path /opt/pw-browsers/chromium`, che non esiste qui (drift ambiente locale già noto, vedi memoria utente). Sostituito con script Playwright standalone (stessa libreria `@playwright/test` del progetto, browser Chromium della cache locale) per login reale + screenshot in entrambi i temi: shell (sidebar/topbar) verificata per tutti e 5 i ruoli seed, pagine auth (login/set-password/forgot-password) in IT/EN/light/dark, stato d'errore login. Screenshot temporanei, non committati.
+
+**Bug trovato e fissato durante la verifica visiva**: le pagine dashboard legacy (Tailwind, non theme-aware) diventavano illeggibili in dark mode perché `.main` (AirOps) applica `background: var(--bg)` mentre il testo legacy resta hardcoded scuro. Fix: `{children}` avvolto in `dashboard/layout.tsx` con uno sfondo chiaro fisso (`#FBFBFA`/`#2F3437`, gli stessi colori del vecchio `<body>`), commentato come shim temporaneo da rimuovere quando tutte le pagine saranno riscritte in linguaggio AirOps (story 12.13).
+
+### Nota sui gate e2e locali (non un difetto della story)
+
+Il **primissimo** login reale (POST `/api/auth/callback/credentials`) dopo un avvio a freddo del dev server fallisce con `CredentialsSignin` nonostante le credenziali siano corrette (verificato manualmente: hash Argon2id in DB corrisponde a `SEED_ADMIN_PASSWORD`). Riproducibile anche pre-scaldando le rotte GET (login/dashboard) prima del test — solo il primo vero POST di sign-in fallisce, tutti i successivi sono istantanei e affidabili. Il codice coinvolto (`src/server/auth/authorize.ts`, `password.ts`) non è stato toccato da questa story. Ipotesi: costo di primo caricamento del modulo nativo Argon2/prima connessione Prisma sotto Turbopack dev mode, che eccede il timeout di 5s di Playwright solo alla primissima invocazione reale. `playwright.config.ts` già documenta una classe di flakiness da compilazione a freddo per la CI (che usa `next build`, non `next dev`) — questo sembra la stessa classe applicata localmente al dev server. Segnalato per trasparenza al reviewer; **non bloccante**: con server scaldato (secondo run in poi) tutti i 12 test passano stabilmente e ripetutamente.
+
+### Deviazioni dal file della story
+
+1. **`app-settings.service.ts` esteso** (non nella lista "Modify" esplicita del piano Task 1, ma necessario per AC4): aggiunta `getAirfieldIcao()` (lettura, nessun writer — l'admin UI per scriverlo arriva nella story 12.11 "Impostazioni"). Additiva, non tocca `AirfieldBrandingDto`/`setAirfieldBranding` esistenti (zero rischio per `settings-form.tsx`, pagina legacy non toccata). Test unitari aggiunti in `app-settings.service.test.ts`.
+2. **`.main` non è un tag `<main>`** come nel prototipo (`App.jsx`) ma un `<div className="main">`: le pagine legacy hanno già il proprio `<main>`, e annidare due landmark `<main>` è un anti-pattern di accessibilità. Solo la scelta del tag cambia, le classi/lo styling sono identici.
+3. **Nessun wrapper `.page` nel layout condiviso**: nel prototipo SPA `App.jsx` avvolge ogni vista in `<div className="page">` una sola volta; in un'app multi-route ogni `page.tsx` futura lo includerà autonomamente (coerente con l'architettura "server component per pagina" della spec §4). Il layout di questa story fornisce solo sidebar/topbar.
+4. **i18n auth spostato sotto `auth.*`** invece di restare in `LoginPage`/`SetPasswordPage`/`ForgotPasswordPage`: richiesto dai Dev Notes ("namespace nuovi per shell e auth"); contenuto IT/EN invariato, solo la chiave è cambiata (nessun altro consumer di quelle chiavi in tutto il repo, verificato via grep).
+5. **e2e**: `e2e/welcome.spec.ts` non modificato (la pagina pubblica `/[locale]` che copre non è toccata da questa story — nessuna riga da aggiornare) ma eseguito e verde. Confermato AC7 letteralmente ("verdi in locale"), non "modificati".
+6. **`ExportMenu`/`Badge`/`KPI`/`SlideOver`/`CalendarPopover`**: creati come da file map ma senza alcun consumer in questa story (arrivano con le story 12.3+). Nessun codice morto interno — sono componenti esportati completi, coerente con lo scopo dichiarato "fondamenta per le story successive".
+
+### Dubbi/nota per il reviewer
+
+- **Sidebar mostra "Impostazioni" anche a STAFF** (AC4 letterale: "ADMIN/STAFF vedono tutte le voci attive") ma `settings.manage` in `rbac.ts` è ADMIN-only: uno STAFF che clicca viene rimbalzato a `/dashboard` dalla guardia esistente della pagina legacy. Non è una rottura (redirect controllato, non un crash), ma è un'incoerenza nav-vs-permesso preesistente nel dominio che questa story non risolve (fuori scope: cambiare `rbac.ts` è una modifica di permessi globale, non "fondamenta shell"). Segnalo esplicitamente per decisione futura (story 12.11 o un fix RBAC dedicato).
+- **Ruolo primario per multi-ruolo**: user chip/avatar-color usano la priorità ADMIN>STAFF>INSTRUCTOR>PILOT>STUDENT (non specificata nella story) — scelta ragionevole ma arbitraria, non testata su un utente seed multi-ruolo (il seed non ne crea uno).

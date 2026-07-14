@@ -3,6 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { Field, Input } from '@/components/ui/field';
 import { Link } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { forgotPasswordSchema, type ForgotPasswordInput } from '@/lib/schemas/auth-tokens';
@@ -20,6 +21,7 @@ type ForgotPasswordFormProps = {
   labels: Labels;
 };
 
+/** AirOps visual pass (story 12.1, AC 5) — same request/neutral-confirmation behavior as before, `.fld`/`.input`/`.btn.primary` markup only. */
 export function ForgotPasswordForm({ locale, labels }: ForgotPasswordFormProps) {
   const [submitted, setSubmitted] = useState(false);
 
@@ -52,15 +54,19 @@ export function ForgotPasswordForm({ locale, labels }: ForgotPasswordFormProps) 
         <p
           role="status"
           data-testid="forgot-password-confirmation"
-          className="rounded-[8px] bg-[#E1F3FE] px-4 py-3 text-sm leading-[1.6] text-[#1F6C9F]"
+          style={{
+            margin: 0,
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--info-soft)',
+            color: 'oklch(0.38 0.12 245)',
+            fontSize: 12.5,
+            lineHeight: 1.5,
+          }}
         >
           {labels.confirmation}
         </p>
-        <Link
-          href="/login"
-          locale={locale}
-          className="mt-6 inline-block text-sm font-medium text-[#2F3437] underline underline-offset-4"
-        >
+        <Link href="/login" locale={locale} style={{ marginTop: 20, display: 'inline-block', fontSize: 12.5 }}>
           {labels.backToLogin}
         </Link>
       </div>
@@ -68,26 +74,12 @@ export function ForgotPasswordForm({ locale, labels }: ForgotPasswordFormProps) 
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-6">
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium text-[#2F3437]">
-          {labels.email}
-        </label>
-        <input
-          id="email"
-          type="email"
-          autoComplete="email"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-          aria-invalid={Boolean(errors.email)}
-          {...register('email')}
-        />
-      </div>
+    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Field label={labels.email}>
+        <Input type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
+      </Field>
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="w-full rounded-[6px] bg-[#111111] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <button type="submit" className="btn primary" disabled={isSubmitting} style={{ width: '100%', justifyContent: 'center' }}>
         {isSubmitting ? labels.submitting : labels.submit}
       </button>
     </form>

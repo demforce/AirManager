@@ -1,4 +1,5 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { Icon } from '@/components/ui/icons';
 import type { AppLocale } from '@/i18n/routing';
 import { ForgotPasswordForm } from './forgot-password-form';
 
@@ -7,30 +8,35 @@ type PageProps = {
 };
 
 /**
- * Public page (`src/proxy.ts` `PUBLIC_WEB_PATHS`). AC 3: the confirmation
- * shown after submit is always the same neutral message — it never depends
- * on the API response body, which itself never reveals whether the email
- * matched an account (see `requestPasswordReset` / the API route).
+ * AirOps visual pass (story 12.1, AC 5) — same neutral-confirmation
+ * behavior as before (`auth.forgotPassword.*` content unchanged from the
+ * old `ForgotPasswordPage` namespace), card/brand mark markup only.
  */
 export default async function ForgotPasswordPage({ params }: PageProps) {
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const t = await getTranslations('ForgotPasswordPage');
+  const t = await getTranslations('auth.forgotPassword');
 
   return (
-    <main className="flex flex-1 items-center justify-center px-6 py-24 sm:px-16">
-      <div className="w-full max-w-md">
-        <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
-          {t('kicker')}
-        </span>
+    <main className="flex min-h-screen items-center justify-center px-6 py-16" style={{ background: 'var(--bg)', color: 'var(--ink)' }}>
+      <div style={{ width: '100%', maxWidth: 400 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 28 }}>
+          <div className="brand-mark">
+            <Icon.logo />
+          </div>
+          <div className="brand-name" style={{ fontSize: 15 }}>
+            AirManager
+          </div>
+        </div>
 
-        <h1 className="mt-6 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">
-          {t('title')}
-        </h1>
-        <p className="mt-3 text-base leading-[1.6] text-[#787774]">{t('description')}</p>
+        <div className="card" style={{ padding: 28 }}>
+          <div className="page-title-block" style={{ marginBottom: 20 }}>
+            <div className="so-sub">{t('kicker')}</div>
+            <h1>{t('title')}</h1>
+            <div className="sub">{t('description')}</div>
+          </div>
 
-        <div className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-8">
           <ForgotPasswordForm
             locale={locale as AppLocale}
             labels={{

@@ -21,6 +21,7 @@ const {
   setPprLandingFeeDefaultCents,
   getAirfieldBranding,
   setAirfieldBranding,
+  getAirfieldIcao,
 } = await import('./app-settings.service');
 
 const findManyMock = vi.mocked(prisma.appSetting.findMany);
@@ -277,5 +278,33 @@ describe('app-settings.service — airfield branding (story 10.2, AC 1)', () => 
         expect.objectContaining({ where: { key: 'airfield.logo' }, update: { value: '' }, create: { key: 'airfield.logo', value: '' } }),
       );
     });
+  });
+});
+
+/**
+ * Airfield ICAO (story 12.1, AC 4) — read-only until a later story adds the
+ * write path (Impostazioni Club card): no permission gate, `''` default.
+ */
+describe('app-settings.service — airfield ICAO (story 12.1, AC 4)', () => {
+  beforeEach(() => {
+    findUniqueMock.mockReset();
+  });
+
+  it('has NO permission gate — a pilot reads it', async () => {
+    findUnique.mockResolvedValue(null);
+    await expect(getAirfieldIcao()).resolves.toBe('');
+  });
+
+  it('defaults to "" when no AppSetting row exists yet', async () => {
+    findUnique.mockResolvedValue(null);
+
+    await expect(getAirfieldIcao()).resolves.toBe('');
+    expect(findUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'airfield.icao' } }));
+  });
+
+  it('reads back a configured ICAO', async () => {
+    findUnique.mockResolvedValue({ value: 'LIML' });
+
+    await expect(getAirfieldIcao()).resolves.toBe('LIML');
   });
 });

@@ -17,6 +17,9 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",
+    "@fontsource/instrument-serif": "^5.2.8",
+    "@fontsource/inter-tight": "^5.2.7",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@hookform/resolvers": "5.4.0",
     "@node-rs/argon2": "2.0.2",
     "@prisma/adapter-pg": "7.8.0",

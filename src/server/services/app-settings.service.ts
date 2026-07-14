@@ -20,6 +20,7 @@ const PPR_OPERATING_INSTRUCTIONS_EN_KEY = 'ppr.operatingInstructions.en';
 const PPR_LANDING_FEE_CENTS_KEY = 'ppr.landingFeeCents';
 const AIRFIELD_NAME_KEY = 'airfield.name';
 const AIRFIELD_LOGO_KEY = 'airfield.logo';
+const AIRFIELD_ICAO_KEY = 'airfield.icao';
 
 /** Fresh-install default (story 10.2, AC 1) — no admin has configured branding yet. */
 const DEFAULT_AIRFIELD_NAME = 'AirManager';
@@ -171,6 +172,20 @@ export async function getAirfieldBranding(): Promise<AirfieldBrandingDto> {
   const logoDataUrl = rows.find((row) => row.key === AIRFIELD_LOGO_KEY)?.value || null;
 
   return { name, logoDataUrl };
+}
+
+/**
+ * Reads the airfield ICAO code shown next to the brand in the AirOps shell
+ * (story 12.1, AC 4 — spec D3: "club name/ICAO accanto al brand vengono da
+ * Settings"). No admin UI writes this key yet — the Impostazioni Club card
+ * that does arrives in a later story — so a fresh install always reads
+ * `''` and the shell simply omits the ICAO segment. No permission gate,
+ * same reasoning as {@link getAirfieldBranding}: every authenticated role
+ * sees the shell chrome.
+ */
+export async function getAirfieldIcao(): Promise<string> {
+  const row = await prisma.appSetting.findUnique({ where: { key: AIRFIELD_ICAO_KEY }, select: { value: true } });
+  return row?.value ?? '';
 }
 
 /**

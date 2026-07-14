@@ -1,0 +1,97 @@
+import type { Role } from '@/generated/prisma/client';
+
+/**
+ * AirOps sidebar route registry (story 12.1, AC 4) — one static array
+ * mirroring `docs/design-reference/airops/src/Sidebar.jsx`'s groups/items,
+ * with an `enabled` flag: this story turns on ONLY the routes that already
+ * exist (`overview`, `schedule`, `ppr`, `scadenze`, `settings`). Every other
+ * prototype entry stays defined but `enabled: false` — the epic story that
+ * builds that page flips its flag (see `docs/superpowers/plans/`, Task 1
+ * dev notes). `Sidebar`/`TopBar` both read this single source of truth
+ * (rendering + active-route/breadcrumb-title lookup).
+ */
+
+export type NavGroupId = 'operations' | 'directory' | 'archive' | 'system';
+
+export type NavItemId =
+  | 'overview'
+  | 'schedule'
+  | 'ppr'
+  | 'visiting'
+  | 'pilots'
+  | 'instructors'
+  | 'fleet'
+  | 'scadenze'
+  | 'logbook'
+  | 'billing'
+  | 'reports'
+  | 'settings';
+
+/** Icon key into `Icon.*` (`src/components/ui/icons.tsx`) — kept as a plain string union, not a `keyof typeof Icon` type import, so this module has no dependency on the (client-only) icon component values. */
+export type NavIconKey =
+  | 'dashboard'
+  | 'calendar'
+  | 'doc'
+  | 'plane'
+  | 'users'
+  | 'compass'
+  | 'fleet'
+  | 'clock'
+  | 'book'
+  | 'cash'
+  | 'chart'
+  | 'gear';
+
+export type NavItem = {
+  id: NavItemId;
+  /** Locale-free path, as expected by next-intl's `Link`/`usePathname` (`src/i18n/navigation.ts`). */
+  href: string;
+  icon: NavIconKey;
+  group: NavGroupId;
+  /** Roles that see this item (story 12.1 AC 4's literal "filtro per ruolo" — a coarser, presentation-only list, distinct from `src/server/auth/rbac.ts`'s granular permissions). */
+  roles: readonly Role[];
+  /** Whether the target route exists yet. A later story flips this to `true` when it ships the page. */
+  enabled: boolean;
+};
+
+const ALL_ROLES: readonly Role[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
+const STAFF_ROLES: readonly Role[] = ['ADMIN', 'STAFF'];
+
+/** Group display order (prototype: Operazioni/Anagrafiche/Archivio/Sistema). Labels are resolved by the caller via `t('groups.<id>')` (`messages/*.json`'s `shell.groups.*`) — this module stays i18n-agnostic. */
+export const NAV_GROUPS: readonly NavGroupId[] = ['operations', 'directory', 'archive', 'system'];
+
+export const NAV_ITEMS: readonly NavItem[] = [
+  { id: 'overview', href: '/dashboard', icon: 'dashboard', group: 'operations', roles: ALL_ROLES, enabled: true },
+  { id: 'schedule', href: '/dashboard/bookings', icon: 'calendar', group: 'operations', roles: ALL_ROLES, enabled: true },
+  { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: STAFF_ROLES, enabled: true },
+  { id: 'visiting', href: '/dashboard/movements', icon: 'plane', group: 'operations', roles: STAFF_ROLES, enabled: false },
+  { id: 'pilots', href: '/dashboard/pilots', icon: 'users', group: 'directory', roles: STAFF_ROLES, enabled: false },
+  { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: STAFF_ROLES, enabled: false },
+  { id: 'fleet', href: '/dashboard/fleet', icon: 'fleet', group: 'directory', roles: STAFF_ROLES, enabled: false },
+  {
+    id: 'scadenze',
+    href: '/dashboard/expiries',
+    icon: 'clock',
+    group: 'directory',
+    roles: ['ADMIN', 'STAFF', 'INSTRUCTOR'],
+    enabled: true,
+  },
+  { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: false },
+  { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: STAFF_ROLES, enabled: false },
+  { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: STAFF_ROLES, enabled: false },
+  { id: 'settings', href: '/dashboard/settings', icon: 'gear', group: 'system', roles: STAFF_ROLES, enabled: true },
+];
+
+/**
+ * Items an actor with `roles` may see: enabled routes only, filtered by the
+ * per-item role list (union: any role held is enough, same "OR" semantics
+ * as `nav-items.ts#visibleNavItems`'s permission union).
+ */
+export function visibleNavItems(roles: readonly Role[]): NavItem[] {
+  return NAV_ITEMS.filter((item) => item.enabled && item.roles.some((role) => roles.includes(role)));
+}
+
+/** Exact-match lookup (no prefix matching — a legacy route not yet in the registry must fall back to the generic breadcrumb title, never borrow `/dashboard`'s "Panoramica"). */
+export function findNavItemByPathname(pathname: string): NavItem | null {
+  return NAV_ITEMS.find((item) => item.href === pathname) ?? null;
+}

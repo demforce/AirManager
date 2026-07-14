@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Field, Input } from '@/components/ui/field';
 import { Link } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { setPasswordSchema } from '@/lib/schemas/auth-tokens';
@@ -36,6 +37,7 @@ type SetPasswordFormProps = {
   labels: Labels;
 };
 
+/** AirOps visual pass (story 12.1, AC 5) — same fields/API call/redirect as before, `.fld`/`.input`/`.btn.primary` markup only. */
 export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -75,15 +77,18 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
         <p
           role="status"
           data-testid="set-password-success"
-          className="rounded-[8px] bg-[#EDF3EC] px-4 py-3 text-sm text-[#346538]"
+          style={{
+            margin: 0,
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--ok-soft)',
+            color: 'oklch(0.35 0.1 155)',
+            fontSize: 12.5,
+          }}
         >
           {labels.success}
         </p>
-        <Link
-          href="/login"
-          locale={locale}
-          className="mt-6 inline-block text-sm font-medium text-[#2F3437] underline underline-offset-4"
-        >
+        <Link href="/login" locale={locale} style={{ marginTop: 20, display: 'inline-block', fontSize: 12.5 }}>
           {labels.goToLogin}
         </Link>
       </div>
@@ -91,52 +96,39 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-6">
-      <div>
-        <label htmlFor="password" className="block text-sm font-medium text-[#2F3437]">
-          {labels.password}
-        </label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="new-password"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-          aria-invalid={Boolean(errors.password)}
-          {...register('password')}
-        />
-        {errors.password ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errorTooShort}</p> : null}
-      </div>
+    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Field label={labels.password}>
+        <Input type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...register('password')} />
+      </Field>
+      {errors.password ? (
+        <p style={{ margin: 0, fontSize: 11.5, color: 'var(--bad)' }}>{labels.errorTooShort}</p>
+      ) : null}
 
-      <div>
-        <label htmlFor="confirmPassword" className="block text-sm font-medium text-[#2F3437]">
-          {labels.confirmPassword}
-        </label>
-        <input
-          id="confirmPassword"
-          type="password"
-          autoComplete="new-password"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-          aria-invalid={Boolean(errors.confirmPassword)}
-          {...register('confirmPassword')}
-        />
-        {errors.confirmPassword ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errorMismatch}</p> : null}
-      </div>
+      <Field label={labels.confirmPassword}>
+        <Input type="password" autoComplete="new-password" aria-invalid={Boolean(errors.confirmPassword)} {...register('confirmPassword')} />
+      </Field>
+      {errors.confirmPassword ? (
+        <p style={{ margin: 0, fontSize: 11.5, color: 'var(--bad)' }}>{labels.errorMismatch}</p>
+      ) : null}
 
       {formError ? (
         <p
           role="alert"
           data-testid="set-password-error"
-          className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]"
+          style={{
+            margin: 0,
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--bad-soft)',
+            color: 'oklch(0.4 0.17 25)',
+            fontSize: 12.5,
+          }}
         >
           {formError}
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="w-full rounded-[6px] bg-[#111111] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <button type="submit" className="btn primary" disabled={isSubmitting} style={{ width: '100%', justifyContent: 'center' }}>
         {isSubmitting ? labels.submitting : labels.submit}
       </button>
     </form>

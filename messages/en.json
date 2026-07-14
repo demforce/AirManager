@@ -11,16 +11,92 @@
     "statusValue": "Foundations under construction",
     "switchTo": "Italiano"
   },
-  "LoginPage": {
-    "kicker": "Sign in",
-    "title": "Sign in to AirManager",
-    "description": "Enter your email and password to access your account.",
-    "emailLabel": "Email",
-    "passwordLabel": "Password",
-    "submit": "Sign in",
-    "submitting": "Signing in…",
-    "errorGeneric": "Incorrect email or password.",
-    "forgotPassword": "Forgot your password?"
+  "shell": {
+    "groups": {
+      "operations": "Operations",
+      "directory": "Directory",
+      "archive": "Archive",
+      "system": "System"
+    },
+    "nav": {
+      "overview": "Overview",
+      "schedule": "Scheduling",
+      "ppr": "PPR requests",
+      "visiting": "Transit flights",
+      "pilots": "Pilots",
+      "instructors": "Instructors",
+      "fleet": "Aircraft",
+      "scadenze": "Expiries",
+      "logbook": "Flight log",
+      "billing": "Billing",
+      "reports": "Reports",
+      "settings": "Settings"
+    },
+    "pageTitle": {
+      "overview": "Operations overview",
+      "schedule": "Scheduling",
+      "ppr": "PPR requests",
+      "visiting": "Transit flights",
+      "pilots": "Pilots",
+      "instructors": "Instructors",
+      "fleet": "Aircraft",
+      "scadenze": "Expiries",
+      "logbook": "Flight log",
+      "billing": "Billing",
+      "reports": "Reports",
+      "settings": "Settings"
+    },
+    "breadcrumb": {
+      "fallback": "Dashboard"
+    },
+    "themeToggle": {
+      "label": "Toggle theme"
+    },
+    "roles": {
+      "ADMIN": "Admin",
+      "STAFF": "Staff",
+      "INSTRUCTOR": "Instructor",
+      "PILOT": "Pilot",
+      "STUDENT": "Student"
+    }
+  },
+  "auth": {
+    "login": {
+      "kicker": "Sign in",
+      "title": "Sign in to AirManager",
+      "description": "Enter your email and password to access your account.",
+      "emailLabel": "Email",
+      "passwordLabel": "Password",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "errorGeneric": "Incorrect email or password.",
+      "forgotPassword": "Forgot your password?"
+    },
+    "setPassword": {
+      "kicker": "Set password",
+      "title": "Set your password",
+      "description": "Choose a password of at least 10 characters to sign in to AirManager.",
+      "passwordLabel": "New password",
+      "confirmPasswordLabel": "Confirm password",
+      "submit": "Set password",
+      "submitting": "Setting password…",
+      "success": "Password set. You can now sign in.",
+      "goToLogin": "Go to sign in",
+      "errorMismatch": "Passwords do not match.",
+      "errorTooShort": "Password must be at least 10 characters long.",
+      "errorGeneric": "This link is invalid or has expired. Request a new one.",
+      "missingToken": "Invalid link: missing token."
+    },
+    "forgotPassword": {
+      "kicker": "Forgot password",
+      "title": "Recover your password",
+      "description": "Enter your email: if the account exists, we'll send you a link to reset your password.",
+      "emailLabel": "Email",
+      "submit": "Send reset link",
+      "submitting": "Sending…",
+      "confirmation": "If that email address matches an active account, you'll receive an email shortly with instructions to reset your password.",
+      "backToLogin": "Back to sign in"
+    }
   },
   "DashboardPage": {
     "kicker": "Dashboard",
@@ -1352,31 +1428,6 @@
       "updated": "User updated.",
       "inviteResent": "Invite resent."
     }
-  },
-  "SetPasswordPage": {
-    "kicker": "Set password",
-    "title": "Set your password",
-    "description": "Choose a password of at least 10 characters to sign in to AirManager.",
-    "passwordLabel": "New password",
-    "confirmPasswordLabel": "Confirm password",
-    "submit": "Set password",
-    "submitting": "Setting password…",
-    "success": "Password set. You can now sign in.",
-    "goToLogin": "Go to sign in",
-    "errorMismatch": "Passwords do not match.",
-    "errorTooShort": "Password must be at least 10 characters long.",
-    "errorGeneric": "This link is invalid or has expired. Request a new one.",
-    "missingToken": "Invalid link: missing token."
-  },
-  "ForgotPasswordPage": {
-    "kicker": "Forgot password",
-    "title": "Recover your password",
-    "description": "Enter your email: if the account exists, we'll send you a link to reset your password.",
-    "emailLabel": "Email",
-    "submit": "Send reset link",
-    "submitting": "Sending…",
-    "confirmation": "If that email address matches an active account, you'll receive an email shortly with instructions to reset your password.",
-    "backToLogin": "Back to sign in"
   },
   "PprPage": {
     "kicker": "PPR request",

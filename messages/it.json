@@ -11,16 +11,92 @@
     "statusValue": "Fondamenta in costruzione",
     "switchTo": "English"
   },
-  "LoginPage": {
-    "kicker": "Accesso",
-    "title": "Accedi ad AirManager",
-    "description": "Inserisci email e password per accedere alla tua area riservata.",
-    "emailLabel": "Email",
-    "passwordLabel": "Password",
-    "submit": "Accedi",
-    "submitting": "Accesso in corso…",
-    "errorGeneric": "Email o password non corretti.",
-    "forgotPassword": "Password dimenticata?"
+  "shell": {
+    "groups": {
+      "operations": "Operazioni",
+      "directory": "Anagrafiche",
+      "archive": "Archivio",
+      "system": "Sistema"
+    },
+    "nav": {
+      "overview": "Panoramica",
+      "schedule": "Pianificazione",
+      "ppr": "Richieste PPR",
+      "visiting": "Voli in transito",
+      "pilots": "Piloti",
+      "instructors": "Istruttori",
+      "fleet": "Aeromobili",
+      "scadenze": "Scadenze",
+      "logbook": "Registro voli",
+      "billing": "Contabilità",
+      "reports": "Statistiche",
+      "settings": "Impostazioni"
+    },
+    "pageTitle": {
+      "overview": "Panoramica operativa",
+      "schedule": "Pianificazione",
+      "ppr": "Richieste PPR",
+      "visiting": "Voli in transito",
+      "pilots": "Piloti",
+      "instructors": "Istruttori",
+      "fleet": "Aeromobili",
+      "scadenze": "Scadenze",
+      "logbook": "Registro voli",
+      "billing": "Contabilità",
+      "reports": "Statistiche",
+      "settings": "Impostazioni"
+    },
+    "breadcrumb": {
+      "fallback": "Pannello"
+    },
+    "themeToggle": {
+      "label": "Cambia tema"
+    },
+    "roles": {
+      "ADMIN": "Admin",
+      "STAFF": "Staff",
+      "INSTRUCTOR": "Istruttore",
+      "PILOT": "Pilota",
+      "STUDENT": "Allievo"
+    }
+  },
+  "auth": {
+    "login": {
+      "kicker": "Accesso",
+      "title": "Accedi ad AirManager",
+      "description": "Inserisci email e password per accedere alla tua area riservata.",
+      "emailLabel": "Email",
+      "passwordLabel": "Password",
+      "submit": "Accedi",
+      "submitting": "Accesso in corso…",
+      "errorGeneric": "Email o password non corretti.",
+      "forgotPassword": "Password dimenticata?"
+    },
+    "setPassword": {
+      "kicker": "Imposta password",
+      "title": "Imposta la tua password",
+      "description": "Scegli una password di almeno 10 caratteri per accedere ad AirManager.",
+      "passwordLabel": "Nuova password",
+      "confirmPasswordLabel": "Conferma password",
+      "submit": "Imposta password",
+      "submitting": "Impostazione in corso…",
+      "success": "Password impostata. Ora puoi accedere.",
+      "goToLogin": "Vai al login",
+      "errorMismatch": "Le password non coincidono.",
+      "errorTooShort": "La password deve avere almeno 10 caratteri.",
+      "errorGeneric": "Il link non è valido o è scaduto. Richiedine uno nuovo.",
+      "missingToken": "Link non valido: token mancante."
+    },
+    "forgotPassword": {
+      "kicker": "Password dimenticata",
+      "title": "Recupera la password",
+      "description": "Inserisci la tua email: se l'account esiste ti invieremo un link per reimpostare la password.",
+      "emailLabel": "Email",
+      "submit": "Invia link di reset",
+      "submitting": "Invio in corso…",
+      "confirmation": "Se l'indirizzo email corrisponde a un account attivo, riceverai a breve un'email con le istruzioni per reimpostare la password.",
+      "backToLogin": "Torna al login"
+    }
   },
   "DashboardPage": {
     "kicker": "Area riservata",
@@ -1352,31 +1428,6 @@
       "updated": "Utente aggiornato.",
       "inviteResent": "Invito reinviato."
     }
-  },
-  "SetPasswordPage": {
-    "kicker": "Imposta password",
-    "title": "Imposta la tua password",
-    "description": "Scegli una password di almeno 10 caratteri per accedere ad AirManager.",
-    "passwordLabel": "Nuova password",
-    "confirmPasswordLabel": "Conferma password",
-    "submit": "Imposta password",
-    "submitting": "Impostazione in corso…",
-    "success": "Password impostata. Ora puoi accedere.",
-    "goToLogin": "Vai al login",
-    "errorMismatch": "Le password non coincidono.",
-    "errorTooShort": "La password deve avere almeno 10 caratteri.",
-    "errorGeneric": "Il link non è valido o è scaduto. Richiedine uno nuovo.",
-    "missingToken": "Link non valido: token mancante."
-  },
-  "ForgotPasswordPage": {
-    "kicker": "Password dimenticata",
-    "title": "Recupera la password",
-    "description": "Inserisci la tua email: se l'account esiste ti invieremo un link per reimpostare la password.",
-    "emailLabel": "Email",
-    "submit": "Invia link di reset",
-    "submitting": "Invio in corso…",
-    "confirmation": "Se l'indirizzo email corrisponde a un account attivo, riceverai a breve un'email con le istruzioni per reimpostare la password.",
-    "backToLogin": "Torna al login"
   },
   "PprPage": {
     "kicker": "Richiesta PPR",

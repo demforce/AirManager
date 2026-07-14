@@ -5,6 +5,7 @@ import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { Field, Input } from '@/components/ui/field';
 import { loginSchema, type LoginInput } from '@/lib/schemas/login';
 
 type LoginFormLabels = {
@@ -21,6 +22,15 @@ type LoginFormProps = {
   callbackUrl: string;
 };
 
+/**
+ * AirOps visual pass (story 12.1, AC 5) — same fields, same `signIn` call,
+ * same redirect and error message as before; only the markup/classes
+ * changed (`.fld`/`.input`/`.btn.primary` instead of the old Tailwind
+ * card). `Field` wraps the `<input>` inside its `<label>` (implicit
+ * association), which `page.getByLabel(...)` resolves the same way an
+ * explicit `htmlFor`/`id` pair would — `e2e/login.spec.ts` selectors are
+ * untouched.
+ */
 export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
@@ -55,50 +65,33 @@ export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-6">
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium text-[#2F3437]">
-          {labels.email}
-        </label>
-        <input
-          id="email"
-          type="email"
-          autoComplete="email"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-          aria-invalid={Boolean(errors.email)}
-          {...register('email')}
-        />
-      </div>
+    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Field label={labels.email}>
+        <Input type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
+      </Field>
 
-      <div>
-        <label htmlFor="password" className="block text-sm font-medium text-[#2F3437]">
-          {labels.password}
-        </label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-          aria-invalid={Boolean(errors.password)}
-          {...register('password')}
-        />
-      </div>
+      <Field label={labels.password}>
+        <Input type="password" autoComplete="current-password" aria-invalid={Boolean(errors.password)} {...register('password')} />
+      </Field>
 
       {formError ? (
         <p
           role="alert"
           data-testid="login-error"
-          className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]"
+          style={{
+            margin: 0,
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--bad-soft)',
+            color: 'oklch(0.4 0.17 25)',
+            fontSize: 12.5,
+          }}
         >
           {formError}
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="w-full rounded-[6px] bg-[#111111] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <button type="submit" className="btn primary" disabled={isSubmitting} style={{ width: '100%', justifyContent: 'center' }}>
         {isSubmitting ? labels.submitting : labels.submit}
       </button>
     </form>

@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* AirOps design system (story 12.1, AC 1) — port of docs/design-reference/airops/styles.css. */
+@import '../styles/airops.css';
 
 :root {
   --background: #fbfbfa;

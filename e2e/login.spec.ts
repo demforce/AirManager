@@ -98,3 +98,25 @@ test.describe('login (AC 1, 2, 3)', () => {
     await expect(page).toHaveURL(/\/it\/login\?callbackUrl=/);
   });
 });
+
+test.describe('AirOps theme toggle (story 12.1, AC 2, 6)', () => {
+  test('toggles html[data-theme] instantly and persists the choice across a reload', async ({ page }) => {
+    await page.goto('/it/login');
+    await page.getByLabel('Email').fill(ADMIN_EMAIL);
+    await page.getByLabel('Password').fill(ADMIN_PASSWORD);
+    await page.getByRole('button', { name: 'Accedi' }).click();
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
+
+    const html = page.locator('html');
+    // Fresh session, no am-theme cookie yet — default is light (AC 2).
+    await expect(html).toHaveAttribute('data-theme', 'light');
+
+    await page.getByRole('button', { name: 'Cambia tema' }).click();
+    await expect(html).toHaveAttribute('data-theme', 'dark');
+
+    await page.reload();
+    // Cookie-persisted (not localStorage) — the reload's SSR HTML already
+    // carries data-theme="dark", no flash.
+    await expect(html).toHaveAttribute('data-theme', 'dark');
+  });
+});
