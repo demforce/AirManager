@@ -39,6 +39,11 @@ async function createAircraft(
   await page.getByLabel('Contaore (minuti)').fill('750');
   await page.getByRole('button', { name: 'Crea velivolo' }).click();
   await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
+  // TD-9 (review fix): leave the page SEARCH-SCOPED to this aircraft, so
+  // every later row lookup — and the reload-then-assert steps — stay
+  // volume-independent of the accumulated fleet (same pattern as
+  // aircraft-rates.spec.ts's createAircraft).
+  await page.goto(`/it/dashboard/aircraft?q=${encodeURIComponent(aircraft.registration)}`);
 }
 
 test.describe('Aircraft operational status and audited hour meter adjustments (Story 2.5)', () => {

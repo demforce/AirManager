@@ -146,25 +146,21 @@ function toDatetimeLocalValue(iso: string): string {
  * `startTransition(() => router.refresh())` never flipped `isPending` back
  * to `false` within the test's 5s budget here, an outright regression, not
  * a load-related flake). Both cancel and move instead gate THIS render's
- * visibility of the affected row on a small, targeted override —
- * deterministic and independent of `router.refresh()`'s timing entirely;
- * the refresh still runs, for cache freshness, but nothing observable waits
- * on it:
- * - **Cancel** — `cancelledIds`, a `Set` of ids cancelled successfully,
- *   filtered out of `items` below. The row never needs to come back, so a
- *   plain exclusion is enough.
- * - **Move** — `staleMoves`, a `Map` of id -> the (aircraftId, startsAt)
- *   PAIR it had BEFORE the move. A row is hidden only while `items` (still
- *   showing pre-refresh data) reports BOTH stale values for it; the moment
- *   `router.refresh()` lands with the new data, at least one of the two has
- *   changed (a move by definition changes the aircraft, the time, or both),
- *   the condition stops matching on its own and the row reappears — already
- *   correct, no separate "clear the override" step needed (unlike cancel's
- *   plain set, a moved row DOES need to come back, just with fresh data).
- *   Keying on the aircraftId ALONE was a TD-9 first-cut bug: a time-only
- *   move keeps the same aircraft, so that condition never stopped matching
- *   and the row stayed hidden forever (caught by the AC-3 validation run on
- *   bookings.spec.ts:1064's same-day move).
+ * visibility of the affected row on ONE targeted override — deterministic
+ * and independent of `router.refresh()`'s timing entirely:
+ * `hiddenUntilRefresh` is a `Set` of ids whose cancel/move POST just
+ * SUCCEEDED; those rows are filtered out of `items` below, and the WHOLE
+ * set is cleared the moment a NEW `items` array arrives (adjust-state-
+ * during-render on the prop's identity, project precedent 12.6). That
+ * clearing rule is race-free by construction: the mutation was COMMITTED
+ * server-side before the id entered the set, so any later server payload
+ * already reflects it — a cancelled row is absent from it, a moved row is
+ * present with fresh data. Two earlier TD-9 cuts keyed the move override on
+ * stale field values instead ((aircraftId) alone, then (aircraftId,
+ * startsAt)) and BOTH could hide a row forever when a move changed none of
+ * the keyed fields (time-only, then endsAt/notes-only — the latter
+ * live-reproduced by the adversarial review); clearing on the next payload
+ * has no such blind spot.
  *
  * **Ownership gate mirrors the service exactly** (`assertOwnAccessAndTiming`,
  * `bookings.service.ts`) so the UI never dangles a button that would only
@@ -202,23 +198,20 @@ export function BookingsList({
   // TD-9: ids successfully cancelled by THIS component instance — filtered
   // out of `items` below (see the module doc-comment for why, in place of
   // `router.refresh()`/`useTransition`).
-  const [cancelledIds, setCancelledIds] = useState<Set<string>>(new Set());
-  // TD-9: same class of race as cancel, on the move step (:636 exercises
-  // both in sequence) — `id -> the (aircraftId, startsAt) PAIR it had BEFORE
-  // the move`. A row is hidden ONLY while `items` (still un-refreshed) shows
-  // it with BOTH stale values; a move changes the aircraft, the time, or
-  // both, so once `router.refresh()` lands at least one side stops matching
-  // and the row reappears on its own, already correct — no separate "clear
-  // the override" step needed. The pair (not aircraftId alone) matters: a
-  // time-only move keeps the same aircraft, and keying on the aircraft alone
-  // hid the row forever (module doc-comment).
-  const [staleMoves, setStaleMoves] = useState<Map<string, { aircraftId: string; startsAt: string }>>(new Map());
-  const visibleItems = items.filter((booking) => {
-    if (cancelledIds.has(booking.id)) return false;
-    const preMove = staleMoves.get(booking.id);
-    if (preMove !== undefined && booking.aircraftId === preMove.aircraftId && booking.startsAt === preMove.startsAt) return false;
-    return true;
-  });
+  // TD-9: ids whose cancel/move POST just succeeded — hidden from THIS
+  // render, cleared as a whole when the next server payload arrives (module
+  // doc-comment: the clearing rule is race-free because the mutation
+  // committed before the id entered the set).
+  const [hiddenUntilRefresh, setHiddenUntilRefresh] = useState<Set<string>>(new Set());
+  // Adjust-state-during-render keyed on the prop's identity (React's own
+  // "storing information from previous renders" pattern, precedent 12.6) —
+  // a fresh `items` array IS the refresh landing.
+  const [prevItems, setPrevItems] = useState(items);
+  if (prevItems !== items) {
+    setPrevItems(items);
+    if (hiddenUntilRefresh.size > 0) setHiddenUntilRefresh(new Set());
+  }
+  const visibleItems = items.filter((booking) => !hiddenUntilRefresh.has(booking.id));
 
   function isOwnRow(booking: BookingRowDto): boolean {
     if (!canManageOwn) return false;
@@ -238,10 +231,10 @@ export function BookingsList({
     setConfirmingCancelId(id);
   }
 
-  function handleMoved(bookingId: string, preMove: { aircraftId: string; startsAt: string }): void {
+  function handleMoved(bookingId: string): void {
     setMovingId(null);
     setFeedback(labels.actions.moveSuccess);
-    setStaleMoves((prev) => new Map(prev).set(bookingId, preMove));
+    setHiddenUntilRefresh((prev) => new Set(prev).add(bookingId));
     router.refresh();
   }
 
@@ -262,7 +255,7 @@ export function BookingsList({
     }
 
     setConfirmingCancelId(null);
-    setCancelledIds((prev) => new Set(prev).add(id));
+    setHiddenUntilRefresh((prev) => new Set(prev).add(id));
     setFeedback(labels.actions.cancelSuccess);
     router.refresh();
   }
@@ -425,8 +418,8 @@ type MoveBookingFormProps = {
   aircraftOptions: AircraftOption[];
   labels: BookingsListLabels;
   onCancel: () => void;
-  /** TD-9: the booking's PRE-move (aircraftId, startsAt) — see `BookingsList`'s `staleMoves` doc-comment. */
-  onSuccess: (bookingId: string, preMove: { aircraftId: string; startsAt: string }) => void;
+  /** TD-9: the moved booking's id — see `BookingsList`'s `hiddenUntilRefresh` doc-comment. */
+  onSuccess: (bookingId: string) => void;
 };
 
 /**
@@ -505,7 +498,7 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
       return;
     }
 
-    onSuccess(booking.id, { aircraftId: booking.aircraftId, startsAt: booking.startsAt });
+    onSuccess(booking.id);
   }
 
   const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[44px] w-full');

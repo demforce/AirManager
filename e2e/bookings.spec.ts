@@ -449,6 +449,9 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    // TD-9 (review fix): reload before the row assert — the create's
+    // `router.refresh()` has no completion signal (same class as :314).
+    await page.reload();
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     // `personName`/`instructorName` are "Nome Cognome" (Contesto's DTO spec) — firstName first.
     await expect(row).toContainText(`${student.firstName} ${student.lastName}`);
@@ -998,6 +1001,9 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
 
     await expect(page.getByTestId('booking-form-warning')).toBeVisible();
     await expect(page.getByTestId('booking-form-warning')).toContainText(warningType.name);
+    // TD-9 (review fix): reload before the row assert — the create's
+    // `router.refresh()` has no completion signal (same class as :314).
+    await page.reload();
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(row).toBeVisible();
   });
