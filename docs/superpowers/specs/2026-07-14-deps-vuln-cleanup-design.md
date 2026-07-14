@@ -31,7 +31,7 @@ Root-cause analysis:
 "overrides": {
   "nodemailer": "$nodemailer",
   "exceljs": { "uuid": "^11.1.1" },
-  "@hono/node-server": ">=1.19.13"
+  "@hono/node-server": "^1.19.13"
 }
 ```
 
@@ -39,7 +39,7 @@ Rationale per override:
 
 - `"nodemailer": "$nodemailer"` — `next-auth@5.0.0-beta.31` (latest beta) and `@auth/core@0.41.2` declare an *optional* peer `nodemailer: ^7.0.7`; without the override, installing 9.0.3 trips ERESOLVE. Our auth flow never uses @auth/core's nodemailer integration (email goes through our own `src/server/adapters/mail/smtp-mail-sender.ts`), so aligning the peer edge is safe.
 - `"exceljs": { "uuid": "^11.1.1" }` — scoped to exceljs; fixes the uuid CVE and removes the uuid deprecation warning. uuid 11 keeps CommonJS named exports, so exceljs's `require('uuid')` continues to work.
-- `"@hono/node-server": ">=1.19.13"` — semver-compatible patch bump; only consumer is `@prisma/dev` (dev-only).
+- `"@hono/node-server": "^1.19.13"` — caret range so it stays within the 1.x major that `@prisma/dev` pins (`1.19.11` exact); a bare `>=` would jump to 2.x. Only consumer is `@prisma/dev` (dev-only).
 
 ## Expected outcome
 
@@ -48,10 +48,11 @@ Rationale per override:
 
 ## Verification
 
-1. `npm install` completes with no ERESOLVE errors.
-2. `npm audit` shows exactly the 2 accepted postcss/next findings.
-3. `npm run gates` passes (lint + typecheck + vitest + build).
+1. `npm install` completes with no ERESOLVE errors. ✅
+2. `npm audit` shows exactly the 2 accepted postcss/next findings. ✅
+3. `npm run gates` passes (lint + typecheck + vitest + build). ✅ (1222 unit tests)
 4. `npm run test:e2e` passes — email/login is a core flow touched by the nodemailer major bump; Excel export tests cover the uuid override.
+   **Amended during execution (2026-07-14):** the local machine cannot run browser e2e at all, on any branch — no `/opt/pw-browsers/chromium`, no Chromium system libraries (`libatk` etc., verified by running the binary directly: linker error, exit 127), no root; port 5432/1025/8025 are served by another project's Docker stack (airops postgres/mailhog), so the app has no local database either. Verified instead: the 8 browserless API e2e tests pass against the real server with nodemailer 9; a real SMTP send through the actual `SmtpMailSender` adapter delivered to the local SMTP sink (checked via mail API). **Full e2e arbitration = CI on the PR** (fresh DB, prod build, Playwright's own browser).
 
 ## Error handling / rollback
 

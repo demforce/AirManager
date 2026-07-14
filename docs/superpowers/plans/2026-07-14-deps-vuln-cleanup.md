@@ -40,7 +40,7 @@ After the `devDependencies` block (as a new top-level key, before the closing `}
     "exceljs": {
       "uuid": "^11.1.1"
     },
-    "@hono/node-server": ">=1.19.13"
+    "@hono/node-server": "^1.19.13"
   }
 ```
 
@@ -108,6 +108,8 @@ Any typecheck error *outside* that file is not expected by this plan — stop an
 
 Run: `npm run test:e2e`
 Expected: all specs pass. Sentinel specs for this change: `e2e/login.spec.ts` (real email send through nodemailer 9 → Mailpit) and `e2e/exports.spec.ts` + `e2e/pdf-exports.spec.ts` (Excel generation through exceljs with uuid 11).
+
+**Execution outcome (2026-07-14):** not runnable on this machine — Chromium launch fails at the dynamic-linker level (missing system libs, no preinstalled browser, no root; DB port owned by another project's Docker stack). Environmental, pre-existing, unrelated to this change. Substitute verification performed: 8 browserless API e2e tests green against the real server; real SMTP delivery through `SmtpMailSender` (nodemailer 9) verified via the local mail sink's API. Full-suite arbitration delegated to CI on the PR.
 
 ### Task 3: Commit
 
