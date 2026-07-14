@@ -271,10 +271,15 @@ const EXPIRED_EXPIRES_AT = '2020-06-01';
  * bookings, AND it self-cleans: `from: nowIso` drops it from the list on
  * its own once it is in the past, unlike a fixed/far future date that
  * accumulates forever.
+ *
+ * `offsetMinutes` (TD-9, default 10 — every pre-existing call site keeps its
+ * exact prior behavior): a SECOND, non-overlapping near-future slot for a
+ * test that needs two (e.g. an initial booking and a later "Sposta" target)
+ * — pass a larger offset so the two slots' 1-hour windows never intersect.
  */
-function soonestFutureSlot(): { startsAt: string; endsAt: string } {
+function soonestFutureSlot(offsetMinutes = 10): { startsAt: string; endsAt: string } {
   const toDatetimeLocal = (d: Date): string => d.toISOString().slice(0, 16);
-  const start = new Date(Date.now() + 10 * 60 * 1000);
+  const start = new Date(Date.now() + offsetMinutes * 60 * 1000);
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return { startsAt: toDatetimeLocal(start), endsAt: toDatetimeLocal(end) };
 }
@@ -313,31 +318,46 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
+    // TD-9: run-unique near-future slots (not the shared `FUTURE_DAY` pile —
+    // page-1 sink class, :397/:636) with overlap/back-to-back windows DERIVED
+    // from the base slot so their relationships stay exact.
+    const plusMinutes = (dtLocal: string, minutes: number): string =>
+      new Date(new Date(`${dtLocal}:00Z`).getTime() + minutes * 60_000).toISOString().slice(0, 16);
+    const slotA = soonestFutureSlot();
+
     await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await fillStartsAt(form, `${FUTURE_DAY}T09:00`);
-    await fillEndsAt(form, `${FUTURE_DAY}T10:00`);
+    await fillStartsAt(form, slotA.startsAt);
+    await fillEndsAt(form, slotA.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    // TD-9: the list is a plain server read refreshed by a completion-less
+    // `router.refresh()` (bookings-list.tsx module doc) — under parallel
+    // CI-mode load its landing time is unbounded, so asserting the row on
+    // the live page races it (AC-3 validation run 2 failed exactly here).
+    // A reload asserts the DURABLE outcome (booking persisted and listed)
+    // deterministically.
+    await page.reload();
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(row).toBeVisible();
 
     // Overlapping attempt on the SAME run-unique aircraft -> 409, never conflated with a 422.
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await fillStartsAt(form, `${FUTURE_DAY}T09:30`);
-    await fillEndsAt(form, `${FUTURE_DAY}T10:30`);
+    await fillStartsAt(form, plusMinutes(slotA.startsAt, 30));
+    await fillEndsAt(form, plusMinutes(slotA.endsAt, 30));
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-error')).toContainText('già prenotato');
 
     // Back-to-back: starts exactly when the first booking ends -> semi-open, no overlap, 201.
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await fillStartsAt(form, `${FUTURE_DAY}T10:00`);
-    await fillEndsAt(form, `${FUTURE_DAY}T11:00`);
+    await fillStartsAt(form, slotA.endsAt);
+    await fillEndsAt(form, plusMinutes(slotA.endsAt, 60));
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
+    await page.reload();
     const rows = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(rows).toHaveCount(2);
   });
@@ -351,11 +371,20 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
-    await fillStartsAt(form, `${FUTURE_DAY}T13:00`);
-    await fillEndsAt(form, `${FUTURE_DAY}T14:00`);
+    // TD-9: `soonestFutureSlot()`, not the shared `FUTURE_DAY` pile — this
+    // test's row assertion needs page 1 of the globally-sorted list (same
+    // class as :397/:636; a fixed far-future day sinks past page 1 once the
+    // suite has accumulated enough of it — CI run 29290290222, and again the
+    // AC-3 validation run, failed exactly here).
+    const slot = soonestFutureSlot();
+    await fillStartsAt(form, slot.startsAt);
+    await fillEndsAt(form, slot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    // TD-9: reload before the row assert — the create's `router.refresh()`
+    // has no completion signal (same rationale as the :314 test above).
+    await page.reload();
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     // `personName` is "Nome Cognome" (Contesto's DTO spec) — firstName first, unlike the picker's "Cognome Nome" option labels above.
     await expect(row).toContainText(`${pilot.firstName} ${pilot.lastName}`);
@@ -645,14 +674,28 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const me = await (await page.request.get('/api/v1/me')).json();
     const pilotPersonId = me.person.id as string;
 
+    // TD-9: `soonestFutureSlot()`, not the shared `FUTURE_DAY` fixture — same
+    // root cause as the other row-visibility assertions above (`:397` etc.):
+    // this test's FIRST assertion (`row.toBeVisible()` right after create)
+    // needs a slot outranking EVERYTHING in the globally-sorted, page-1-only
+    // list, which a fixed far-future day sinks past once the parallel suite
+    // has accumulated enough of it. The move target uses a SECOND,
+    // non-overlapping slot (a larger offset — the two 1-hour windows must
+    // never intersect) rather than reusing `initialSlot`.
+    const initialSlot = soonestFutureSlot();
+    const moveSlot = soonestFutureSlot(120);
+
     await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await fillStartsAt(form, `${FUTURE_DAY}T02:00`);
-    await fillEndsAt(form, `${FUTURE_DAY}T03:00`);
+    await fillStartsAt(form, initialSlot.startsAt);
+    await fillEndsAt(form, initialSlot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
+    // TD-9: reload before the row assert — the create's `router.refresh()`
+    // has no completion signal (same rationale as the :314 test above).
+    await page.reload();
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(row).toBeVisible();
 
@@ -660,8 +703,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await row.getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Velivolo').selectOption({ label: aircraft2.registration });
-    await fillStartsAt(moveForm, `${FUTURE_DAY}T13:00`);
-    await fillEndsAt(moveForm, `${FUTURE_DAY}T14:00`);
+    await fillStartsAt(moveForm, moveSlot.startsAt);
+    await fillEndsAt(moveForm, moveSlot.endsAt);
     await moveForm.getByTestId('move-booking-save').click();
 
     await expect(page.getByTestId('bookings-list-feedback')).toHaveText('Prenotazione spostata.');
@@ -676,13 +719,22 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await expect(page.getByTestId('booking-row').filter({ hasText: aircraft2.registration })).toHaveCount(0);
 
     // Gone from the calendar too (the row's own aircraft column has no block left).
-    await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
+    const moveDateOnly = moveSlot.startsAt.slice(0, 10);
+    await page.goto(`/it/dashboard/bookings?date=${moveDateOnly}`);
     const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft2.registration });
     await expect(column.getByTestId('calendar-block')).toHaveCount(0);
 
-    // The freed slot (aircraft2 @ 13:00-14:00Z) accepts a brand-new booking.
+    // The freed slot (aircraft2 @ moveSlot) accepts a brand-new booking —
+    // `new Date(...).toISOString()` matches the browser form's own
+    // datetime-local -> UTC conversion exactly (this environment's
+    // server/browser timezone is UTC, `soonestFutureSlot`'s own doc-comment).
     const recreate = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft2.id, personId: pilotPersonId, startsAt: `${FUTURE_DAY}T13:00:00.000Z`, endsAt: `${FUTURE_DAY}T14:00:00.000Z` },
+      data: {
+        aircraftId: aircraft2.id,
+        personId: pilotPersonId,
+        startsAt: new Date(moveSlot.startsAt).toISOString(),
+        endsAt: new Date(moveSlot.endsAt).toISOString(),
+      },
     });
     expect(recreate.status()).toBe(201);
   });
@@ -694,28 +746,39 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
+    // TD-9: `soonestFutureSlot()`, not the shared `FUTURE_DAY` pile — the
+    // `toHaveCount(2)` below needs BOTH rows on page 1 of the globally-sorted
+    // list (same class as :397/:636; the AC-3 validation run failed exactly
+    // there once the suite had accumulated enough `FUTURE_DAY` rows). The
+    // two 1-hour windows must not intersect: offsets 10 and 120 minutes.
+    const slotA = soonestFutureSlot();
+    const slotB = soonestFutureSlot(120);
+
     await gotoBookingsAndWaitForHydration(page);
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await fillStartsAt(form, `${FUTURE_DAY}T02:00`);
-    await fillEndsAt(form, `${FUTURE_DAY}T03:00`);
+    await fillStartsAt(form, slotA.startsAt);
+    await fillEndsAt(form, slotA.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await fillStartsAt(form, `${FUTURE_DAY}T05:00`);
-    await fillEndsAt(form, `${FUTURE_DAY}T06:00`);
+    await fillStartsAt(form, slotB.startsAt);
+    await fillEndsAt(form, slotB.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
+    // TD-9: reload before the row asserts — the create's `router.refresh()`
+    // has no completion signal (same rationale as the :314 test above).
+    await page.reload();
     const rows = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(rows).toHaveCount(2);
 
-    // The second (later, 05:00-06:00Z) booking is ordered second (startsAt asc) — move it into the first's slot (02:00-03:00Z, same aircraft, prefilled).
+    // The second (later, slotB) booking is ordered second (startsAt asc) — move it into the first's slot (slotA, same aircraft, prefilled).
     await rows.nth(1).getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
-    await fillStartsAt(moveForm, `${FUTURE_DAY}T02:00`);
-    await fillEndsAt(moveForm, `${FUTURE_DAY}T03:00`);
+    await fillStartsAt(moveForm, slotA.startsAt);
+    await fillEndsAt(moveForm, slotA.endsAt);
     await moveForm.getByTestId('move-booking-save').click();
 
     await expect(page.getByTestId('move-booking-form-error')).toContainText('già prenotato');
@@ -978,6 +1041,9 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
     await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
+    // TD-9: reload before the row assert — the create's `router.refresh()`
+    // has no completion signal (same class-wide rationale as :314).
+    await page.reload();
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(row).toBeVisible();
 
@@ -1070,6 +1136,9 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
+    // TD-9: reload before the row assert — the create's `router.refresh()`
+    // has no completion signal (same class-wide rationale as :314).
+    await page.reload();
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(row).toBeVisible();
 

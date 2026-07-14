@@ -96,6 +96,26 @@ function todayDateOnly(): string {
 }
 
 /**
+ * Client-side mirror of `getEffectiveInstructorRate`'s AD-4 rule (the rate
+ * with the MAXIMUM `validFrom <= today`), computed from `history` — which is
+ * already ordered `validFrom desc` by `GET .../instructor-rates` (AD-4's own
+ * server-side rule, `instructor-rates.service.ts`), so the first entry that
+ * qualifies IS that rate. TD-9 fix: `currentRatePriceCentsPerHour` is a
+ * server-computed PROP (`page.tsx`) that only updates via `router.refresh()`
+ * — under load its RSC re-fetch can lag well behind `refetchHistory()`
+ * (an `await`ed call in the SAME `onSubmit`), so deriving the displayed
+ * value from `history` instead removes the race entirely: `history` is
+ * refetched synchronously right after the POST resolves, before `onSubmit`
+ * returns. Twin fix: `aircraft-manager.tsx`'s `RatesPanel` (same rule, same
+ * shape, duplicated per-file per this codebase's existing twin convention —
+ * see e.g. `todayDateOnly` above, already duplicated rather than shared).
+ */
+function currentRateFromHistory(history: InstructorRateItemDto[], today: string): number | null {
+  const current = history.find((entry) => entry.validFrom <= today);
+  return current ? current.priceCentsPerHour : null;
+}
+
+/**
  * "Tariffe istruttore" section of the "scheda persona" (story 4.2, AC 1/2,
  * AD-4) — the deliberate twin of `aircraft-manager.tsx`'s `RatesPanel`, just
  * embedded directly on the person page (rendered only when the person has an
@@ -198,6 +218,11 @@ export function InstructorRatesPanel({ personId, currentRatePriceCentsPerHour, c
     router.refresh();
   }
 
+  // TD-9: derived from `history` (deterministic, see `currentRateFromHistory`
+  // doc-comment) once it has loaded; the server-computed prop is only the
+  // fallback for the brief instant before the mount fetch resolves.
+  const displayedCurrentRate = history === null ? currentRatePriceCentsPerHour : currentRateFromHistory(history, todayDateOnly());
+
   return (
     <Card className="p-6" data-testid="instructor-rates-panel">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -221,7 +246,7 @@ export function InstructorRatesPanel({ personId, currentRatePriceCentsPerHour, c
       <div className="mt-6">
         <span className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.current}</span>
         <p data-testid="instructor-rates-current" className="mt-1 text-2xl font-medium text-ink">
-          {currentRatePriceCentsPerHour === null ? labels.noCurrentRate : `${formatCents(currentRatePriceCentsPerHour, moneyLocale)}/h`}
+          {displayedCurrentRate === null ? labels.noCurrentRate : `${formatCents(displayedCurrentRate, moneyLocale)}/h`}
         </p>
       </div>
 

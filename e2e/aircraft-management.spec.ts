@@ -84,11 +84,13 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4)', () => {
     const row = page.getByRole('row', { name: new RegExp(aircraft.registration) });
     await row.getByRole('button', { name: 'Archivia' }).click();
     await row.getByRole('button', { name: 'Conferma' }).click();
-    // The default (includeArchived=false) list drops the row as soon as the
-    // archive call resolves and `router.refresh()` re-fetches — waiting for
-    // that here (rather than immediately `goto`-ing away) avoids racing the
-    // in-flight `fetch()`, which a same-tab navigation would otherwise abort
-    // before the request reaches the server (same pattern as people-management.spec.ts).
+    // TD-9: the feedback toast proves the archive POST RESOLVED (so a reload
+    // can't abort the in-flight fetch — the risk the old comment guarded
+    // against), while the row's disappearance depends on a completion-less
+    // `router.refresh()` whose landing time is unbounded under parallel
+    // CI-mode load. Reload, then assert the durable outcome.
+    await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
+    await page.reload();
     await expect(row).toHaveCount(0);
 
     // Fresh navigation: still gone from the default list.

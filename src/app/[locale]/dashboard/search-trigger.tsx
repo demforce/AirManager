@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CommandPalette, type CommandPaletteNavItem } from './command-palette';
 
@@ -36,6 +36,7 @@ function SearchIcon() {
 export function SearchTrigger({ navItems, canRegisterFlight, canCreatePerson, canSearch }: SearchTriggerProps) {
   const t = useTranslations('DashboardShell.searchTrigger');
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
@@ -53,16 +54,26 @@ export function SearchTrigger({ navItems, canRegisterFlight, canCreatePerson, ca
       setOpen(true);
     }
     window.addEventListener('keydown', handleKeyDown);
+    // TD-9: an imperative DOM write (not `setState`, so no extra render) —
+    // marks the exact moment the listener above is attached. SSR paints the
+    // trigger button (and the rest of the page) well before client
+    // hydration runs this effect, so a keypress in that gap lands on a DOM
+    // with no listener yet and is silently lost. `data-shortcut-ready` lets
+    // a caller (e2e, notably) wait for the real signal instead of guessing
+    // a delay.
+    triggerRef.current?.setAttribute('data-shortcut-ready', 'true');
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
         aria-label={t('label')}
         data-testid="command-palette-trigger"
+        data-shortcut-ready="false"
         className="hidden items-center gap-2 rounded-inputs bg-canvas px-2.5 py-2 text-sm text-mid-gray transition-colors hover:bg-hairline/60 sm:flex sm:w-48"
       >
         <SearchIcon />

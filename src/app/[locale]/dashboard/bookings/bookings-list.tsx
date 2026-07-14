@@ -138,10 +138,33 @@ function toDatetimeLocalValue(iso: string): string {
  * across rows (same reasoning as `ExpiriesPanel`'s `editingId`/
  * `confirmingDeleteId`), which is far simpler to own in ONE parent than to
  * thread between a server-rendered table shell and scattered client islands.
- * `router.refresh()` on any success — no local list reconciliation (AD-1):
- * a cancelled row disappears because the server re-fetches with the SAME
- * `status: 'ACTIVE'` filter, a moved row's new time/aircraft appears the
- * same way.
+ * `router.refresh()` on any success (AD-1: the list stays a plain server
+ * read — nothing here reconciles/mutates `items` itself). TD-9: that
+ * `router.refresh()` returns `void` and has no completion signal —
+ * `useTransition`'s `isPending` was tried and DISCARDED (empirically
+ * confirmed, single-worker/zero-contention reproduction:
+ * `startTransition(() => router.refresh())` never flipped `isPending` back
+ * to `false` within the test's 5s budget here, an outright regression, not
+ * a load-related flake). Both cancel and move instead gate THIS render's
+ * visibility of the affected row on a small, targeted override —
+ * deterministic and independent of `router.refresh()`'s timing entirely;
+ * the refresh still runs, for cache freshness, but nothing observable waits
+ * on it:
+ * - **Cancel** — `cancelledIds`, a `Set` of ids cancelled successfully,
+ *   filtered out of `items` below. The row never needs to come back, so a
+ *   plain exclusion is enough.
+ * - **Move** — `staleMoves`, a `Map` of id -> the (aircraftId, startsAt)
+ *   PAIR it had BEFORE the move. A row is hidden only while `items` (still
+ *   showing pre-refresh data) reports BOTH stale values for it; the moment
+ *   `router.refresh()` lands with the new data, at least one of the two has
+ *   changed (a move by definition changes the aircraft, the time, or both),
+ *   the condition stops matching on its own and the row reappears — already
+ *   correct, no separate "clear the override" step needed (unlike cancel's
+ *   plain set, a moved row DOES need to come back, just with fresh data).
+ *   Keying on the aircraftId ALONE was a TD-9 first-cut bug: a time-only
+ *   move keeps the same aircraft, so that condition never stopped matching
+ *   and the row stayed hidden forever (caught by the AC-3 validation run on
+ *   bookings.spec.ts:1064's same-day move).
  *
  * **Ownership gate mirrors the service exactly** (`assertOwnAccessAndTiming`,
  * `bookings.service.ts`) so the UI never dangles a button that would only
@@ -176,6 +199,26 @@ export function BookingsList({
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  // TD-9: ids successfully cancelled by THIS component instance — filtered
+  // out of `items` below (see the module doc-comment for why, in place of
+  // `router.refresh()`/`useTransition`).
+  const [cancelledIds, setCancelledIds] = useState<Set<string>>(new Set());
+  // TD-9: same class of race as cancel, on the move step (:636 exercises
+  // both in sequence) — `id -> the (aircraftId, startsAt) PAIR it had BEFORE
+  // the move`. A row is hidden ONLY while `items` (still un-refreshed) shows
+  // it with BOTH stale values; a move changes the aircraft, the time, or
+  // both, so once `router.refresh()` lands at least one side stops matching
+  // and the row reappears on its own, already correct — no separate "clear
+  // the override" step needed. The pair (not aircraftId alone) matters: a
+  // time-only move keeps the same aircraft, and keying on the aircraft alone
+  // hid the row forever (module doc-comment).
+  const [staleMoves, setStaleMoves] = useState<Map<string, { aircraftId: string; startsAt: string }>>(new Map());
+  const visibleItems = items.filter((booking) => {
+    if (cancelledIds.has(booking.id)) return false;
+    const preMove = staleMoves.get(booking.id);
+    if (preMove !== undefined && booking.aircraftId === preMove.aircraftId && booking.startsAt === preMove.startsAt) return false;
+    return true;
+  });
 
   function isOwnRow(booking: BookingRowDto): boolean {
     if (!canManageOwn) return false;
@@ -195,9 +238,10 @@ export function BookingsList({
     setConfirmingCancelId(id);
   }
 
-  function handleMoved(): void {
+  function handleMoved(bookingId: string, preMove: { aircraftId: string; startsAt: string }): void {
     setMovingId(null);
     setFeedback(labels.actions.moveSuccess);
+    setStaleMoves((prev) => new Map(prev).set(bookingId, preMove));
     router.refresh();
   }
 
@@ -218,6 +262,7 @@ export function BookingsList({
     }
 
     setConfirmingCancelId(null);
+    setCancelledIds((prev) => new Set(prev).add(id));
     setFeedback(labels.actions.cancelSuccess);
     router.refresh();
   }
@@ -246,14 +291,14 @@ export function BookingsList({
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
+            {visibleItems.length === 0 ? (
               <tr>
                 <td colSpan={columnCount} className="px-5 py-8 text-center text-mid-gray">
                   {labels.empty}
                 </td>
               </tr>
             ) : (
-              items.map((booking) => {
+              visibleItems.map((booking) => {
                 if (movingId === booking.id) {
                   return (
                     <tr key={booking.id} data-testid="booking-row-moving" className="border-b border-hairline last:border-b-0">
@@ -380,7 +425,8 @@ type MoveBookingFormProps = {
   aircraftOptions: AircraftOption[];
   labels: BookingsListLabels;
   onCancel: () => void;
-  onSuccess: () => void;
+  /** TD-9: the booking's PRE-move (aircraftId, startsAt) — see `BookingsList`'s `staleMoves` doc-comment. */
+  onSuccess: (bookingId: string, preMove: { aircraftId: string; startsAt: string }) => void;
 };
 
 /**
@@ -459,7 +505,7 @@ function MoveBookingForm({ booking, aircraftOptions, labels, onCancel, onSuccess
       return;
     }
 
-    onSuccess();
+    onSuccess(booking.id, { aircraftId: booking.aircraftId, startsAt: booking.startsAt });
   }
 
   const inputClasses = cn(inputBaseClasses, 'mt-2 min-h-[44px] w-full');

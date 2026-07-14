@@ -39,6 +39,17 @@ async function createAircraft(page: Page, aircraft: { registration: string; type
   await page.getByLabel('Contaore (minuti)').fill('750');
   await page.getByRole('button', { name: 'Crea velivolo' }).click();
   await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
+  // TD-9 hardening (same class as `people-management.spec.ts`'s
+  // `createPerson`): the fleet table is paginated 20/page ordered by
+  // `registration asc` — a freshly created aircraft reliably lands beyond
+  // page 1 once enough accumulated CI test data exists (TD-6 Debug Log:
+  // pre-existing pagination-scoping gap). Searching (`?q=`,
+  // `aircraft.service.ts`'s server-side filter on registration/model)
+  // guarantees it is the only row on the result page regardless of fleet
+  // size, and every row resolution below stays scoped to this filtered URL
+  // (`router.refresh()` after a rate/state mutation preserves `?q=`).
+  await page.goto(`/it/dashboard/aircraft?q=${encodeURIComponent(aircraft.registration)}`);
+  await expect(page.getByRole('row', { name: new RegExp(aircraft.registration) })).toBeVisible();
 }
 
 /** Today, `YYYY-MM-DD`, browser-local time — matches `RatesPanel`'s `<input type="date">` default. */

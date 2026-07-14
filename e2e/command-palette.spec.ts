@@ -96,10 +96,24 @@ test.describe('Command palette (story 12.6)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.goto('/it/dashboard/flights');
     await page.getByTestId('flight-open-register').waitFor();
+    // TD-9: `flight-open-register` being in the DOM only proves SSR painted
+    // it — NOT that client hydration (and therefore `SearchTrigger`'s ⌘K
+    // listener) has run yet. Waiting for the product's own readiness signal
+    // (`data-shortcut-ready`, set the instant the listener attaches) closes
+    // that lost-keypress race deterministically, with no timing guess.
+    await expect(page.getByTestId('command-palette-trigger')).toHaveAttribute('data-shortcut-ready', 'true');
 
-    await page.keyboard.press('Control+k');
     const palette = page.getByTestId('command-palette-dialog');
-    await palette.getByRole('textbox').fill('Registra');
+    await page.keyboard.press('Control+k');
+    await expect(palette).toBeVisible();
+
+    // TD-9 root cause of this test's long "known deferred" red: the palette
+    // input is `role="combobox"` (command-palette.tsx:265, explicit ARIA
+    // combobox pattern), so this test's old `getByRole('textbox')` could
+    // NEVER match it — every failing run's snapshot showed the dialog open
+    // and the combobox focused; the error was misread as "dialog not
+    // opening". Every OTHER test in this file already used the testid.
+    await page.getByTestId('command-palette-input').fill('Registra');
     await page.keyboard.press('Enter');
 
     // Same route, no remount: the dialog must open anyway...

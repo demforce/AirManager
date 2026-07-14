@@ -99,7 +99,11 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     await page.getByRole('button', { name: 'Registra rettifica' }).click();
     await submitAdjustment(page, '-250', 'Addebito pacchetto ore errato');
 
-    // Balance and statement refresh server-side (router.refresh).
+    // TD-9: `submitAdjustment` already saw the success feedback (POST
+    // resolved) — but the balance/statement refresh via a completion-less
+    // `router.refresh()`, whose landing time is unbounded under parallel
+    // CI-mode load. A reload asserts the durable outcome deterministically.
+    await page.reload();
     await expect(page.getByTestId('account-statement-balance')).toHaveText(/-250,00\s€/);
     const rows = page.locator('tbody tr');
     await expect(rows).toHaveCount(1);

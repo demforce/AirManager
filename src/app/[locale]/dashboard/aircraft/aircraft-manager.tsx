@@ -279,6 +279,11 @@ export function AircraftManager({
   const [confirming, setConfirming] = useState<ConfirmState | null>(null);
   const [queryInput, setQueryInput] = useState(initialQuery);
   const [includeArchived, setIncludeArchived] = useState(initialIncludeArchived);
+  // TD-9: current-rate values reported by `RatesPanel` right after a
+  // successful submit (see its `onSuccess` doc-comment) — overrides the
+  // `aircraft` prop's (possibly not-yet-refreshed) value for the fleet
+  // table's `current-rate-` cell, keyed by aircraft id.
+  const [rateOverrides, setRateOverrides] = useState<Map<string, number | null>>(new Map());
 
   function navigate(next: { q: string; includeArchived: boolean }): void {
     const params = new URLSearchParams();
@@ -319,9 +324,12 @@ export function AircraftManager({
     }
   }
 
-  function handleFormSuccess(message: string): void {
+  function handleFormSuccess(message: string, updatedRate?: { aircraftId: string; currentRatePriceCentsPerHour: number | null }): void {
     setPanel(null);
     setFeedback(message);
+    if (updatedRate) {
+      setRateOverrides((prev) => new Map(prev).set(updatedRate.aircraftId, updatedRate.currentRatePriceCentsPerHour));
+    }
     router.refresh();
   }
 
@@ -369,13 +377,18 @@ export function AircraftManager({
     {
       id: 'currentRate',
       header: labels.table.currentRate,
-      cell: ({ row }) => (
-        <span data-testid={`current-rate-${row.original.id}`}>
-          {row.original.currentRatePriceCentsPerHour === null
-            ? labels.table.noRate
-            : `${formatCents(row.original.currentRatePriceCentsPerHour, moneyLocale)}/h`}
-        </span>
-      ),
+      cell: ({ row }) => {
+        // TD-9: prefer the override (set right after a successful rate
+        // submit, see `handleFormSuccess`) over the `aircraft` prop, which
+        // only reflects the new rate once `router.refresh()` lands.
+        const override = rateOverrides.get(row.original.id);
+        const currentRate = override !== undefined ? override : row.original.currentRatePriceCentsPerHour;
+        return (
+          <span data-testid={`current-rate-${row.original.id}`}>
+            {currentRate === null ? labels.table.noRate : `${formatCents(currentRate, moneyLocale)}/h`}
+          </span>
+        );
+      },
     },
     {
       id: 'actions',
@@ -1158,6 +1171,25 @@ function todayDateOnly(): string {
 }
 
 /**
+ * Client-side mirror of `getEffectiveRate`'s AD-4 rule (the rate with the
+ * MAXIMUM `validFrom <= today`), computed from a rate list already ordered
+ * `validFrom desc` (`GET .../aircraft/{id}/rates`, `rates.service.ts`), so
+ * the first entry that qualifies IS that rate. TD-9 fix: both
+ * `AircraftRow.currentRatePriceCentsPerHour` (the fleet table) and
+ * `RatesPanel`'s own display are server-computed PROPS that only update via
+ * `router.refresh()` — under load its RSC re-fetch can lag well behind a
+ * direct re-fetch of this one endpoint, so deriving the displayed value from
+ * fresh history instead removes the race entirely. Twin fix:
+ * `instructor-rates-panel.tsx`'s `currentRateFromHistory` (same rule, same
+ * shape, duplicated per-file per this codebase's existing twin convention —
+ * see e.g. `todayDateOnly` above, already duplicated rather than shared).
+ */
+function currentRateFromHistory(history: AircraftRateItemDto[], today: string): number | null {
+  const current = history.find((entry) => entry.validFrom <= today);
+  return current ? current.priceCentsPerHour : null;
+}
+
+/**
  * Local, UI-only schema (never sent over the wire): the price input stays a
  * euro-with-2-decimals string end to end while the user types (same
  * pattern/rationale as `account-panel.tsx`'s `topUpFormSchema`) — only
@@ -1191,7 +1223,14 @@ type RatesPanelProps = {
   moneyLocale: 'it' | 'en';
   labels: Labels;
   onCancel: () => void;
-  onSuccess: (message: string) => void;
+  /**
+   * `updatedRate` (TD-9) is set only on a successful "Aggiungi tariffa"
+   * submit — the freshly recomputed current rate for `aircraft.id`, so the
+   * caller can update the fleet table's `current-rate-` cell immediately
+   * instead of waiting on `router.refresh()` (this panel is about to be
+   * unmounted by `onCancel`-equivalent close, discarding its own `history`).
+   */
+  onSuccess: (message: string, updatedRate?: { aircraftId: string; currentRatePriceCentsPerHour: number | null }) => void;
 };
 
 /**
@@ -1237,6 +1276,21 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
     };
   }, [aircraft.id]);
 
+  /**
+   * Re-fetches the full history after a successful submit (an `await` inside
+   * the `onSubmit` event handler, not inside a `useEffect` body — same
+   * distinct-call-site rationale/shape as `instructor-rates-panel.tsx`'s
+   * `refetchHistory`) — TD-9: lets `onSubmit` hand the caller a freshly
+   * computed current rate (`currentRateFromHistory`) instead of the stale
+   * `aircraft` prop, since this panel is about to unmount (`onSuccess`
+   * closes it) before `router.refresh()` could ever land.
+   */
+  async function refetchHistory(): Promise<AircraftRateItemDto[]> {
+    const response = await fetch(`/api/v1/aircraft/${aircraft.id}/rates`);
+    if (!response.ok) return history ?? [];
+    return (await response.json()) as AircraftRateItemDto[];
+  }
+
   async function onSubmit(values: NewRateFormValues): Promise<void> {
     setFormError(null);
     // Boundary conversion (AD-2): the user types euros, the wire format is
@@ -1255,8 +1309,18 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
       return;
     }
 
-    onSuccess(labels.feedback.rateAdded);
+    const freshHistory = await refetchHistory();
+    onSuccess(labels.feedback.rateAdded, {
+      aircraftId: aircraft.id,
+      currentRatePriceCentsPerHour: currentRateFromHistory(freshHistory, todayDateOnly()),
+    });
   }
+
+  // TD-9: derived from `history` (deterministic, see `currentRateFromHistory`
+  // doc-comment) once it has loaded; the `aircraft` prop (possibly stale,
+  // captured at the moment the row's "Tariffe" button was clicked) is only
+  // the fallback for the brief instant before the mount fetch resolves.
+  const displayedCurrentRate = history === null ? aircraft.currentRatePriceCentsPerHour : currentRateFromHistory(history, todayDateOnly());
 
   return (
     <div className="space-y-8">
@@ -1269,9 +1333,7 @@ function RatesPanel({ aircraft, canManageSettings, moneyLocale, labels, onCancel
       <div>
         <span className="text-xs font-medium uppercase tracking-[0.05em] text-mid-gray">{labels.ratesPanel.current}</span>
         <p data-testid="rates-current" className="mt-1 text-2xl font-medium text-ink">
-          {aircraft.currentRatePriceCentsPerHour === null
-            ? labels.ratesPanel.noCurrentRate
-            : `${formatCents(aircraft.currentRatePriceCentsPerHour, moneyLocale)}/h`}
+          {displayedCurrentRate === null ? labels.ratesPanel.noCurrentRate : `${formatCents(displayedCurrentRate, moneyLocale)}/h`}
         </p>
       </div>
 
