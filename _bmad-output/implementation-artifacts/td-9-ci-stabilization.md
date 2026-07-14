@@ -4,7 +4,7 @@ baseline_commit: ba3ca3e
 
 # TD-9: CI verde stabile — eradicare i 4 e2e rossi ricorrenti (change request utente 2026-07-13 notte)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -40,13 +40,13 @@ Esito CI: 216 passed / 5 flaky / **4 failed** (tutti e 3 i retry esauriti). Gate
 
 ## Tasks / Subtasks
 
-- [ ] **T1 (AC 1)** — Riproduzione + root cause dei 4 (full suite CI-mode locale su DB fresco; strumentare solo il necessario).
-- [ ] **T2 (AC 2)** — Fix #1 scoping aircraft-rates (pattern search esistente, tutte le risoluzioni-riga dello spec).
-- [ ] **T3 (AC 2)** — Fix #2 refresh tariffe (prodotto, entrambi i gemelli) + verifica che i test esistenti passino invariati.
-- [ ] **T4 (AC 2)** — Fix #3 palette Ctrl+K (prodotto).
-- [ ] **T5 (AC 2)** — Fix #4 bookings:636 secondo root cause.
-- [ ] **T6 (AC 3, 4)** — 3 full run CI-mode consecutivi con 0 failed; gates.
-- [ ] **T7** — Dev Agent Record + File List; sprint-status `td-9` → `review`.
+- [x] **T1 (AC 1)** — Riproduzione + root cause dei 4 (full suite CI-mode locale su DB fresco; strumentare solo il necessario).
+- [x] **T2 (AC 2)** — Fix #1 scoping aircraft-rates (pattern search esistente, tutte le risoluzioni-riga dello spec).
+- [x] **T3 (AC 2)** — Fix #2 refresh tariffe (prodotto, entrambi i gemelli) + verifica che i test esistenti passino invariati.
+- [x] **T4 (AC 2)** — Fix #3 palette Ctrl+K (prodotto).
+- [x] **T5 (AC 2)** — Fix #4 bookings:636 secondo root cause.
+- [x] **T6 (AC 3, 4)** — 3 full run CI-mode consecutivi con 0 failed; gates.
+- [x] **T7** — Dev Agent Record + File List; sprint-status `td-9` → `review`.
 
 ## Dev Notes
 
@@ -64,12 +64,36 @@ Esito CI: 216 passed / 5 flaky / **4 failed** (tutti e 3 i retry esauriti). Gate
 
 ### Agent Model Used
 
-_(dev subagent)_
+Dev subagent Sonnet 5 xhigh (interrotto dall'harness a metà validazione AC 3) + continuation della sessione principale (Fable), che ha corretto due fix del dev, trovato la root cause vera della palette e completato validazione e chiusura.
 
 ### Debug Log References
 
-### Completion Notes List
+- Gates: PASS a ogni iterazione (lint/typecheck/1307 unit/build).
+- Validazione AC 3 (full suite CI-mode, DB fresco per run, esito da `.last-run.json`): v1 r1 0-failed / r2 2-failed (create-race bookings) → fix → v3 r1 1-failed (:1102, stesso membro) → fix → v4 r1 1-failed (secondo assert adjustments) → sweep → **v5: 3/3 run consecutive 0-failed (219/220/221 passed, flaky 6→5→4)**.
+- **AC 5: job `e2e` GitHub Actions VERDE** (run 29326667775) sul push dei fix — prima CI interamente verde della PR #18.
+
+### Completion Notes List — root cause per test (AC 1)
+
+1. **aircraft-rates:118 — TEST (scoping)**: riga del velivolo fresco oltre pagina 1 sotto accumulo; fix search-first (`?q=registration`) su tutte le risoluzioni-riga dello spec (pattern esistente). [dev]
+2. **instructor/aircraft rates — PRODOTTO (refresh race)**: la tariffa corrente era SOLO una prop server che raceava `router.refresh()`; ora deriva anche dallo storico appena salvato (`currentRateFromHistory`/`rateOverrides`, simmetrico sui due gemelli); test invariati. [dev]
+3. **command-palette:95 — TEST (selettore), NON il dialog**: l'input della palette è `role="combobox"` (command-palette.tsx:265) e SOLO questo test usava `getByRole('textbox')` → mai matchabile; il dialog si è SEMPRE aperto (snapshot di ogni run fallito). Tre cicli di review avevano letto l'errore come "dialog non si apre". Fix: testid come gli altri test del file; rimossi i timeout gonfiati del primo taglio (45s/30s, deviazione ritirata); MANTENUTO il marker di prodotto `data-shortcut-ready` (race di idratazione reale: keypress perso prima dell'attach del listener) con attesa dichiarata nel test; ritirato il `flushSync` (motivato dalla diagnosi errata). [dev diagnosi parziale; continuation root cause + fix]
+4. **bookings:636 — PRODOTTO (visibilità lista) + TEST (isolamento)**: righe cancellate/spostate nascoste con override locali deterministici (indipendenti dal timing di `router.refresh()`, che non ha segnale di completamento — `useTransition` provato e SCARTATO empiricamente); l'override dello spostamento è keyed sulla coppia pre-move (aircraftId, startsAt) — il primo taglio del dev (solo aircraftId) nascondeva PER SEMPRE le righe spostate solo di orario (beccato dalla validazione su :1064). Slot run-unique al posto di FUTURE_DAY. [dev + fix continuation]
+5. **Classe trasversale emersa in validazione — TEST**: ogni assert che leggeva lista/saldo/stato subito dopo una mutazione raceava lo stesso `router.refresh()` senza segnale; pattern uniforme dichiarato «feedback DELL'AZIONE (testo specifico, non toBeVisible — il toast precedente può ancora essere visibile e un reload prematuro aborterebbe la POST in volo) → `page.reload()` → assert sull'esito durevole» applicato a: bookings create/force/expiry-move (:314/:350/:636/:715/:1005/:1102), adjustments (3 assert), archiviazione velivoli e persone, stati fuori servizio/rientro. [continuation]
 
 ### File List
 
+- `src/app/[locale]/dashboard/search-trigger.tsx` (marker `data-shortcut-ready`; flushSync introdotto e ritirato)
+- `src/app/[locale]/dashboard/bookings/bookings-list.tsx` (override `cancelledIds`/`staleMoves` a coppia pre-move)
+- `src/app/[locale]/dashboard/aircraft/aircraft-manager.tsx` (tariffa corrente derivata post-save)
+- `src/app/[locale]/dashboard/people/instructor-rates-panel.tsx` (idem, gemello)
+- `e2e/command-palette.spec.ts` (selettore + readiness wait)
+- `e2e/aircraft-rates.spec.ts` (search-first)
+- `e2e/bookings.spec.ts` (slot run-unique + reload-then-assert, 6 test)
+- `e2e/account-adjustments.spec.ts` (reload-then-assert, 3 assert)
+- `e2e/aircraft-management.spec.ts`, `e2e/people-management.spec.ts` (archiviazione: feedback specifico + reload)
+- `e2e/aircraft-status-hours.spec.ts` (stati operativi: feedback specifico + reload)
+- `_bmad-output/implementation-artifacts/td-9-ci-stabilization.md`, `sprint-status.yaml`
+
 ## Change Log
+
+- 2026-07-14: implementazione (dev subagent, interrotto a validazione iniziata) + continuation della sessione principale: root cause palette corretta (selettore, non timing), staleMoves a coppia, conversioni slot, sweep classe reload-then-assert. Validazione AC 3: 3 run consecutive 0-failed. **AC 5: CI GitHub verde (gates + e2e)**. Status → review.
