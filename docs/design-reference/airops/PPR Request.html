@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Richiesta PPR — Aeroporto LIML</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css?v=6" />
+<style>
+.ppr-page{min-height:100vh;background:var(--bg);color:var(--ink);display:flex;flex-direction:column}
+.ppr-top{background:var(--ink);color:var(--bg)}
+.ppr-top-in{max-width:1060px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:12px}
+.ppr-mark{width:32px;height:32px;border-radius:8px;background:var(--accent);color:var(--ink);display:grid;place-items:center}
+.ppr-mark svg{width:19px;height:19px}
+.ppr-brand-name{font-weight:600;font-size:15px;letter-spacing:-0.01em;line-height:1.1}
+.ppr-brand-sub{font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:oklch(0.75 0.02 250)}
+.ppr-top-right{margin-left:auto;display:flex;gap:22px;font-family:var(--font-mono);font-size:11px;color:oklch(0.8 0.02 250)}
+.ppr-top-right b{color:var(--bg);font-weight:600}
+.ppr-hero{max-width:1060px;margin:0 auto;width:100%;padding:38px 24px 22px}
+.ppr-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent-ink);margin-bottom:10px}
+.ppr-hero h1{font-family:var(--font-display);font-weight:400;font-size:44px;line-height:1.02;letter-spacing:-0.01em;margin:0 0 10px}
+.ppr-hero p{margin:0;max-width:60ch;color:var(--ink-2);font-size:15px}
+.ppr-grid{max-width:1060px;margin:0 auto;width:100%;padding:8px 24px 72px;display:grid;grid-template-columns:1.7fr 1fr;gap:22px;align-items:start}
+.ppr-section-label{font-family:var(--font-mono);font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3);margin:22px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.ppr-section-label:first-child{margin-top:4px}
+.ppr-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.ppr-form-grid .fld.wide{grid-column:1/-1}
+.ppr-actions{display:flex;align-items:center;gap:14px;margin-top:26px;padding-top:20px;border-top:1px solid var(--border)}
+.ppr-actions .note{font-size:12px;color:var(--ink-3)}
+.btn.big{padding:11px 20px;font-size:14px;border-radius:var(--radius-md)}
+.btn.accent{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.accent:hover{background:oklch(from var(--accent) calc(l - 0.04) c h)}
+.ppr-aside{display:flex;flex-direction:column;gap:14px;position:sticky;top:22px}
+.info-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:18px 18px;box-shadow:var(--shadow-sm)}
+.info-card h3{margin:0 0 10px;font-size:13px;font-weight:600}
+.info-row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:12.5px;border-bottom:1px solid var(--border)}
+.info-row:last-child{border-bottom:0}
+.info-row .k{color:var(--ink-3)}
+.info-row .v{font-family:var(--font-mono);font-weight:500;text-align:right}
+.info-card ul{margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;line-height:1.7}
+.info-card.accent{background:var(--accent-soft);border-color:oklch(from var(--accent) l c h / 0.5)}
+.req{color:var(--bad)}
+.ppr-success{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:40px 36px;text-align:center;box-shadow:var(--shadow-md)}
+.ppr-success .check{width:60px;height:60px;border-radius:50%;background:var(--ok-soft);color:var(--ok);display:grid;place-items:center;margin:0 auto 18px}
+.ppr-success .check svg{width:32px;height:32px}
+.ppr-success h2{margin:0 0 8px;font-size:24px;letter-spacing:-0.01em}
+.ppr-success p{margin:0 auto 6px;max-width:46ch;color:var(--ink-2);font-size:14px}
+.ppr-ref{display:inline-block;margin:16px 0 22px;font-family:var(--font-mono);font-size:15px;font-weight:600;padding:8px 16px;border:1px dashed var(--border-strong);border-radius:var(--radius-sm);background:var(--bg-sunken)}
+.ppr-foot{margin-top:auto;border-top:1px solid var(--border);background:var(--panel)}
+.ppr-foot-in{max-width:1060px;margin:0 auto;padding:16px 24px;display:flex;justify-content:space-between;gap:12px;font-size:11.5px;color:var(--ink-3);font-family:var(--font-mono)}
+@media (max-width:820px){.ppr-grid{grid-template-columns:1fr}.ppr-aside{position:static}.ppr-hero h1{font-size:34px}.ppr-top-right{display:none}}
+</style>
+</head>
+<body data-theme="light">
+<div class="ppr-page">
+  <header class="ppr-top">
+    <div class="ppr-top-in">
+      <div class="ppr-mark"><svg viewBox="0 0 24 24"><path d="M4 14 L12 4 L20 14 L12 11 Z" fill="currentColor"/><path d="M7 17 L17 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+      <div>
+        <div class="ppr-brand-name">AirOps · Aeroporto LIML</div>
+        <div class="ppr-brand-sub">Autorizzazione Preventiva Obbligatoria</div>
+      </div>
+      <div class="ppr-top-right">
+        <span>AFIS <b>122.505</b></span>
+        <span>ELEV <b>353 ft</b></span>
+        <span>OPS <b>+39 02 000 0000</b></span>
+      </div>
+    </div>
+  </header>
+
+  <div class="ppr-hero">
+    <div class="ppr-eyebrow">Aeromobili in transito · PPR</div>
+    <h1>Richiedi l'autorizzazione all'atterraggio</h1>
+    <p>LIML è un aeroporto con PPR. Invia questo modulo prima del volo: le operazioni esamineranno e confermeranno il tuo slot. Nessun account o accesso richiesto.</p>
+  </div>
+
+  <div class="ppr-grid" id="grid">
+    <div class="card" id="formCard" style="padding:22px 24px">
+      <form id="pprForm" novalidate>
+        <div class="ppr-section-label">Richiedente</div>
+        <div class="ppr-form-grid">
+          <label class="fld wide"><span class="fld-label">Nome completo <span class="req">*</span></span><input class="input" name="requester" required placeholder="Pilota responsabile" /></label>
+          <label class="fld"><span class="fld-label">Email <span class="req">*</span></span><input class="input" type="email" name="email" required placeholder="tu@esempio.com" /></label>
+          <label class="fld"><span class="fld-label">Telefono</span><input class="input" name="phone" placeholder="+39 …" /></label>
+        </div>
+
+        <div class="ppr-section-label">Aeromobile</div>
+        <div class="ppr-form-grid">
+          <label class="fld"><span class="fld-label">Nominativo / marche <span class="req">*</span></span><input class="input" name="callsign" required placeholder="I-XXXX" style="text-transform:uppercase" /></label>
+          <label class="fld"><span class="fld-label">Tipo di aeromobile <span class="req">*</span></span><input class="input" name="type" required placeholder="C172, TB-20, DA42…" /></label>
+          <label class="fld"><span class="fld-label">Persone a bordo <span class="req">*</span></span><input class="input" type="number" name="pob" min="1" max="19" value="1" required /></label>
+          <label class="fld"><span class="fld-label">Apertura alare (m)</span><input class="input" type="number" name="span" step="0.1" placeholder="es. 11.0" /></label>
+        </div>
+
+        <div class="ppr-section-label">Orari slot (locali)</div>
+        <div class="ppr-form-grid">
+          <label class="fld"><span class="fld-label">Data di arrivo <span class="req">*</span></span><input class="input" type="date" name="arrDate" required /></label>
+          <label class="fld"><span class="fld-label">Ora di arrivo <span class="req">*</span></span><input class="input" type="time" name="arrTime" value="10:00" required /></label>
+          <label class="fld"><span class="fld-label">Data di partenza</span><input class="input" type="date" name="depDate" /></label>
+          <label class="fld"><span class="fld-label">Ora di partenza</span><input class="input" type="time" name="depTime" value="14:00" /></label>
+        </div>
+
+        <div class="ppr-section-label">Informazioni aggiuntive</div>
+        <div class="ppr-form-grid">
+          <label class="fld wide"><span class="fld-label">Note per le operazioni</span><textarea class="input" name="note" rows="3" placeholder="Rifornimento, sosta notturna, handling, richieste particolari…"></textarea></label>
+        </div>
+
+        <div class="ppr-actions">
+          <button type="submit" class="btn accent big">Invia richiesta PPR</button>
+          <span class="note" id="formNote">I campi contrassegnati con <span class="req">*</span> sono obbligatori.</span>
+        </div>
+      </form>
+    </div>
+
+    <aside class="ppr-aside">
+      <div class="info-card accent">
+        <h3>Come funziona</h3>
+        <ul>
+          <li>Invia almeno 24 h prima dell'arrivo.</li>
+          <li>Le operazioni esaminano e confermano il tuo slot.</li>
+          <li>Verrai contattato via email o telefono.</li>
+        </ul>
+      </div>
+      <div class="info-card">
+        <h3>Aeroporto</h3>
+        <div class="info-row"><span class="k">ICAO</span><span class="v">LIML</span></div>
+        <div class="info-row"><span class="k">Orario di apertura</span><span class="v">07:00–21:00 L</span></div>
+        <div class="info-row"><span class="k">Pista</span><span class="v">18 / 36 · 1080 m</span></div>
+        <div class="info-row"><span class="k">Carburante</span><span class="v">AVGAS · JET A-1</span></div>
+        <div class="info-row"><span class="k">Circuito</span><span class="v">Sinistro · 1000 ft</span></div>
+      </div>
+      <div class="info-card">
+        <h3>Tempi di risposta</h3>
+        <p style="margin:0;color:var(--ink-2);font-size:12.5px">Le richieste vengono in genere esaminate entro <b>poche ore</b> durante l'orario di apertura. Le richieste in giornata sono gestite in base alla disponibilità.</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="ppr-foot">
+    <div class="ppr-foot-in">
+      <span>AirOps · Operazioni Aeroporto LIML</span>
+      <span>Questo è un modulo dimostrativo.</span>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var MON = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
+  var INBOX_KEY = "airops-ppr-inbox";
+  var form = document.getElementById("pprForm");
+  var grid = document.getElementById("grid");
+
+  // Default arrival date = tomorrow
+  var t = new Date(); t.setDate(t.getDate()+1);
+  var iso = t.toISOString().slice(0,10);
+  form.arrDate.value = iso;
+  form.depDate.value = iso;
+
+  function fmtSlot(dateStr, timeStr){
+    if(!dateStr) return "—";
+    var p = dateStr.split("-");
+    var label = MON[(+p[1])-1] + " " + (+p[2]);
+    return timeStr ? (label + " · " + timeStr) : label;
+  }
+  function readInbox(){ try { return JSON.parse(localStorage.getItem(INBOX_KEY) || "[]"); } catch(e){ return []; } }
+
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    if(!form.checkValidity()){ form.reportValidity(); return; }
+    var f = form;
+    var ref = "PPR-" + (700 + Math.floor(Math.random()*280));
+    var record = {
+      id: ref,
+      requester: f.requester.value.trim(),
+      contact: (f.email.value.trim() || f.phone.value.trim()),
+      callsign: f.callsign.value.trim().toUpperCase(),
+      type: f.type.value.trim(),
+      arrival: fmtSlot(f.arrDate.value, f.arrTime.value),
+      departure: fmtSlot(f.depDate.value, f.depTime.value),
+      pob: Number(f.pob.value) || 1,
+      status: "pending",
+      note: f.note.value.trim(),
+      source: "public",
+      requestedAt: new Date().toISOString()
+    };
+    var inbox = readInbox();
+    inbox.unshift(record);
+    localStorage.setItem(INBOX_KEY, JSON.stringify(inbox));
+
+    var contact = record.contact || "il recapito fornito";
+    grid.innerHTML =
+      '<div class="ppr-success" style="grid-column:1/-1">' +
+        '<div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>' +
+        '<h2>Richiesta inviata</h2>' +
+        '<p>Grazie, ' + (record.requester || "pilota") + '. La tua richiesta PPR per <b>' + record.callsign + '</b> (' + record.type + ') in arrivo il <b>' + record.arrival + '</b> è stata ricevuta.</p>' +
+        '<p>Le operazioni la esamineranno e ti contatteranno a <b>' + contact + '</b>.</p>' +
+        '<div class="ppr-ref">Riferimento ' + ref + '</div>' +
+        '<div><button type="button" class="btn accent big" id="again">Invia un\'altra richiesta</button></div>' +
+      '</div>';
+    window.scrollTo({top:0, behavior:"smooth"});
+    document.getElementById("again").addEventListener("click", function(){ location.reload(); });
+  });
+})();
+</script>
+</body>
+</html>
