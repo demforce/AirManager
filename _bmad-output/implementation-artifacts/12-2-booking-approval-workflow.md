@@ -4,7 +4,7 @@ baseline_commit: e1582f1
 
 # Story 12.2: Workflow di approvazione prenotazioni (backend)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -71,3 +71,14 @@ Al dispatch di questa sessione il working tree conteneva GIÀ, non committati, i
 ### Deviazioni dalla story
 
 - Nessuna deviazione dagli Acceptance Criteria. Un'estensione non esplicitamente richiesta ma necessaria per soddisfare AC 4+8 insieme: il fix del call-site `listBookings` in `page.tsx` (un filtro `status` esplicito, non nuova UI) e l'aggiornamento dei due e2e pre-esistenti il cui comportamento atteso è cambiato per via della nuova semantica overlap — entrambi emersi SOLO in verifica e2e empirica, non anticipabili dalla sola lettura della story.
+
+## Review Record (adversarial, Opus 4.8 xhigh — 2026-07-15)
+
+**Verdetto**: fixes-required → fixed. Full e2e CI-mode su DB fresco e build di produzione: **203/203 verdi, 0 flaky** (7.0 min); i 4 test story-relevant (api-v1 pilot→PENDING→approve→FLOWN; deny+email Mailpit; i 2 overlap riscritti) verdi. Matrice transizioni verificata LIVE per ruolo (403 per pilot/instructor/student), migrazione verificata su dati (ACTIVE→APPROVED in-place), email deny IT+EN reali in Mailpit, race concurrent-approve un solo 200.
+
+**Findings e risoluzione (fix applicati dalla sessione principale):**
+- **F1 (major, FIXED)**: il widget personale "Prossime prenotazioni" della home (`dashboard/page.tsx:198`) chiamava `listBookings` senza `status` → le PENDING del pilota sparivano dal widget (evidenza empirica: 6 PENDING nascoste). Fix: `status: ['PENDING','APPROVED']` come già su bookings/page.tsx.
+- **F2 (minor, FIXED)**: l'export xlsx della pagina prenotazioni legacy non passava `status` → export APPROVED-only divergente dalla lista visibile. Fix: `status: LEGACY_LIST_STATUSES.join(',')` nell'exportHref (+ doc-comment stantio corretto).
+- **F3 (note, ACCETTATO)**: le righe legacy non hanno badge di stato (un pilota non distingue una PENDING) — deferral DICHIARATO di questa story, chiuso dalla 12.3; F1/F2 garantiscono che una pending resti almeno visibile ovunque lo era prima.
+
+**Chiusura note del dev:** manage.any su ogni transizione confermato conforme a D7 (403 live per gli altri ruoli); ridondanza `updateMany`+FOR UPDATE giudicata convenzione corretta della codebase (non-finding); email post-commit con 2 query PK accettabile, skip/swallow verificati (unit) + happy path live; i 2 e2e riscritti testano ancora l'intento dei titoli (un titolo persino corretto in "...APPROVED booking..."); coerenza pending verificata empiricamente (lista sì, calendario no) — incompleta su widget/export → F1/F2.

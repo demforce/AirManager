@@ -341,12 +341,13 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   // Story 10.1 (AC 3/5): the "Prossime prenotazioni" list is deliberately
   // shared (calendario comune, `self.read`) — the export mirrors the SAME
-  // `from: nowIso` filter the list above was fetched with, no restriction
-  // beyond what `listBookings` already enforces.
-  const exportHref = buildExportHref('/api/v1/bookings', { from: nowIso }, locale);
+  // `from` + `status` filters the list above was fetched with (12.2 review
+  // F2: without the explicit statuses the export would fall back to the
+  // service's APPROVED-only default and diverge from the visible list).
+  const exportHref = buildExportHref('/api/v1/bookings', { from: nowIso, status: LEGACY_LIST_STATUSES.join(',') }, locale);
 
-  // Story 7.3: serialize the (already `status: 'APPROVED'`-filtered, service-
-  // side) rows into plain wire DTOs before crossing the server -> client
+  // Story 7.3: serialize the (already status-filtered to PENDING+APPROVED,
+  // service-side) rows into plain wire DTOs before crossing the server -> client
   // boundary (`bookings-list.tsx`) — the established codebase convention
   // (`aircraft-manager.tsx`'s own doc-comment: "ISO 8601 string, server Date
   // already serialized") rather than passing raw `Date` instances as props.

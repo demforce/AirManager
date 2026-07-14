@@ -195,7 +195,16 @@ export default async function DashboardPage({ params }: PageProps) {
     showPersonalBlock ? getAccountOverview(actor, personId!) : Promise.resolve<AccountOverview | null>(null),
     showPersonalBlock ? listPersonPackages(actor, personId!) : Promise.resolve<HourPackageListItem[]>([]),
     showPersonalBlock
-      ? listBookings(actor, { from: new Date().toISOString(), personId: personId!, page: 1, pageSize: 5 })
+      ? // Story 12.2 review F1: the service default became APPROVED-only; the
+        // personal widget must keep showing the user's own PENDING requests
+        // (pre-12.2 they were ACTIVE and visible) until 12.3's status-aware UI.
+        listBookings(actor, {
+          from: new Date().toISOString(),
+          personId: personId!,
+          page: 1,
+          pageSize: 5,
+          status: ['PENDING', 'APPROVED'],
+        })
       : Promise.resolve(null),
     showPersonalBlock ? listPersonExpiries(actor, personId!) : Promise.resolve<ExpiryListItem[]>([]),
     showPersonalBlock ? listFlights(actor, { page: 1, pageSize: 5 }) : Promise.resolve<FlightListResult | null>(null),
