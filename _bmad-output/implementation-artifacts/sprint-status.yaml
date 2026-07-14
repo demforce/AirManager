@@ -145,6 +145,9 @@ development_status:
   # TD: blocco addebito volo a saldo insufficiente + override admin, da change request utente 2026-07-13 (sera)
   td-8-flight-balance-guard: done
 
+  # TD: stabilizzazione CI — i 4 e2e rossi ricorrenti su GitHub Actions (change request utente 2026-07-13 notte)
+  td-9-ci-stabilization: ready-for-dev
+
 action_items:
   - epic: 9
     action: "AI-1: eseguire il TD-5 (deferred pass: hydration money-format, from<=to pagina school, locale diario, azzera-filtri PPR, ricontrollo scadenze updateBooking, pg.Pool warning) col ciclo story->dev->review"
