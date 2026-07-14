@@ -94,12 +94,13 @@ test.describe('People CRUD with archiving (Story 2.1)', () => {
     const row = page.getByRole('row', { name: new RegExp(person.lastName) });
     await row.getByRole('button', { name: 'Archivia' }).click();
     await row.getByRole('button', { name: 'Conferma' }).click();
-    // TD-9: the feedback toast proves the archive POST RESOLVED (so a reload
-    // can't abort the in-flight fetch — the risk the old comment guarded
-    // against), while the row's disappearance depends on a completion-less
-    // `router.refresh()` whose landing time is unbounded under parallel
-    // CI-mode load. Reload, then assert the durable outcome.
-    await expect(page.getByTestId('people-feedback')).toBeVisible();
+    // TD-9: the ACTION-SPECIFIC feedback text proves the archive POST
+    // RESOLVED (a bare toBeVisible could match the earlier create toast, and
+    // a premature reload would abort the in-flight fetch — the risk the old
+    // comment guarded against), while the row's disappearance depends on a
+    // completion-less `router.refresh()` whose landing time is unbounded
+    // under parallel CI-mode load. Reload, then assert the durable outcome.
+    await expect(page.getByTestId('people-feedback')).toHaveText('Persona archiviata.');
     await page.reload();
     await expect(row).toHaveCount(0);
 

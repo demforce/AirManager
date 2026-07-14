@@ -130,6 +130,8 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     await page.goto(`/it/dashboard/people/${personId}/account`);
     await page.getByRole('button', { name: 'Registra rettifica' }).click();
     await submitAdjustment(page, '-10', 'Conguaglio carburante');
+    // TD-9: same reload-then-assert as the first adjustment above.
+    await page.reload();
     await expect(page.getByTestId('account-statement-balance')).toHaveText(/-260,00\s€/);
 
     // Give a would-be (wrong) second email time to arrive, then assert the count is unchanged.
@@ -154,6 +156,9 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     // 'Ricarica'` row filter below must match ONLY the original top-up row.
     await submitAdjustment(page, '-100', 'Registrata due volte per errore');
 
+    // TD-9: same reload-then-assert as the balance asserts above — the badge
+    // and row states below render from the same refresh-raced server read.
+    await page.reload();
     // The linked ADJUSTMENT row carries the "rettifica di ..." badge (AC 1).
     await expect(page.getByTestId('adjustment-badge')).toHaveText(/Rettifica del movimento del/);
     // The original is intact (still listed) but can no longer be adjusted

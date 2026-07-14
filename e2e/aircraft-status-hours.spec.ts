@@ -53,8 +53,12 @@ test.describe('Aircraft operational status and audited hour meter adjustments (S
     await row.getByRole('button', { name: 'Fuori servizio' }).click();
     await page.getByLabel('Motivo', { exact: true }).fill('Revisione motore programmata');
     await page.getByRole('button', { name: 'Conferma' }).click();
-    await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
-
+    // TD-9: the ACTION-SPECIFIC feedback text proves THIS POST resolved (a
+    // bare toBeVisible could match a previous action's toast); the badge
+    // below renders from a completion-less `router.refresh()` — reload, then
+    // assert the durable outcome (same class-wide pattern as archiving).
+    await expect(page.getByTestId('aircraft-feedback')).toHaveText('Velivolo segnato fuori servizio.');
+    await page.reload();
     // Badge flips to "Fuori servizio" and the row list still shows it (not archived).
     const outOfServiceRow = page.getByRole('row', { name: new RegExp(aircraft.registration) });
     await expect(outOfServiceRow.getByText('Fuori servizio', { exact: true })).toBeVisible();
@@ -66,6 +70,9 @@ test.describe('Aircraft operational status and audited hour meter adjustments (S
     // Returning to service: two-step confirm, badge flips back and the reason is gone.
     await outOfServiceRow.getByRole('button', { name: 'Rientro in servizio' }).click();
     await outOfServiceRow.getByRole('button', { name: 'Conferma' }).click();
+    // TD-9: same action-specific-feedback-then-reload as above.
+    await expect(page.getByTestId('aircraft-feedback')).toHaveText('Velivolo rimesso in servizio.');
+    await page.reload();
     const restoredRow = page.getByRole('row', { name: new RegExp(aircraft.registration) });
     await expect(restoredRow.getByText('Operativo', { exact: true })).toBeVisible();
     await expect(restoredRow.getByTestId(/^operational-status-/)).not.toHaveAttribute('title', /.+/);
