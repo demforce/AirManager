@@ -126,6 +126,24 @@ development_status:
   11-3-italian-dates-logbook-exports: done
   epic-11-retrospective: optional
 
+  # Epic 12: sostituzione totale UI AirOps + backend build-out (change request 2026-07-14)
+  # Spec: docs/superpowers/specs/2026-07-14-airops-ui-replacement-design.md
+  # Piano: docs/superpowers/plans/2026-07-14-epic-12-airops-ui.md
+  epic-12: in-progress
+  12-1-airops-foundation-shell-auth: in-progress
+  12-2-booking-approval-workflow: planned
+  12-3-pianificazione-prenotazioni-ui: planned
+  12-4-ppr-console-pubblico-transiti: planned
+  12-5-aeromobili: planned
+  12-6-piloti: planned
+  12-7-istruttori-compensi: planned
+  12-8-registro-voli: planned
+  12-9-contabilita: planned
+  12-10-statistiche: planned
+  12-11-scadenze-impostazioni-metar: planned
+  12-12-panoramica-landing-ruoli: planned
+  12-13-rimozioni-cleanup-sweep: planned
+
 action_items:
   - epic: 9
     action: "AI-1: eseguire il TD-5 (deferred pass: hydration money-format, from<=to pagina school, locale diario, azzera-filtri PPR, ricontrollo scadenze updateBooking, pg.Pool warning) col ciclo story->dev->review"
