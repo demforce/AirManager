@@ -121,7 +121,7 @@ function toDatetimeLocalValue(iso: string): string {
  * resta read-only"). Design choice (declared, Task 4): rather than a
  * separate `booking-row-actions.tsx` bolted onto a still-server-rendered
  * table, the WHOLE list (table + per-row state machine) is ONE client
- * component receiving the already-`status: 'ACTIVE'`-filtered, serialized
+ * component receiving the already-`status: 'APPROVED'`-filtered, serialized
  * DTOs as a prop (`page.tsx` keeps the READ server-side, AD-1) — per-row
  * "is this row being moved / confirming cancel" state must be exclusive
  * across rows (same reasoning as `ExpiriesPanel`'s `editingId`/
@@ -129,7 +129,7 @@ function toDatetimeLocalValue(iso: string): string {
  * thread between a server-rendered table shell and scattered client islands.
  * `router.refresh()` on any success — no local list reconciliation (AD-1):
  * a cancelled row disappears because the server re-fetches with the SAME
- * `status: 'ACTIVE'` filter, a moved row's new time/aircraft appears the
+ * `status: 'APPROVED'` filter, a moved row's new time/aircraft appears the
  * same way.
  *
  * **Ownership gate mirrors the service exactly** (`assertOwnAccessAndTiming`,

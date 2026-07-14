@@ -82,27 +82,41 @@ export const updateBookingSchema = z
 export type UpdateBookingInput = z.infer<typeof updateBookingSchema>;
 
 /**
+ * Mirrors the Prisma `BookingStatus` enum (story 7.3; extended by the
+ * approval workflow, story 12.2) — see `bookings.service.ts#transitionBooking`'s
+ * doc-comment for the full transition matrix. `PENDING` is a pilot/
+ * instructor's own-path starting state; `APPROVED` is staff's own starting
+ * state AND the only state that occupies a slot for the overlap invariant.
+ * Declared BEFORE `listBookingsQuerySchema` (below), which references it.
+ */
+export const bookingStatusSchema = z.enum(['PENDING', 'APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED']);
+
+export type BookingStatusDto = z.infer<typeof bookingStatusSchema>;
+
+/**
  * `GET /api/v1/bookings` query (AC 1, FR-19 anticipated to its minimum).
  * `from`/`to` use the SAME semi-open semantics as the overlap check
  * (`bookings.service.ts#listBookings`'s doc-comment): `from` matches a
  * booking whose `endsAt` is strictly after it, `to` matches a booking whose
  * `startsAt` is strictly before it — every filter optional and
- * AND-combinable, same pattern as `listFlightsQuerySchema`.
+ * AND-combinable, same pattern as `listFlightsQuerySchema`. `status` (story
+ * 12.2, AC 4) is a comma-separated list (e.g. `?status=PENDING,APPROVED`) —
+ * a raw HTTP query string has no native array syntax, and `apiRoute` parses
+ * `searchParams` via `Object.fromEntries` (last-value-wins on a repeated
+ * key), so CSV is this codebase's own convention for a multi-value filter;
+ * absent, the service defaults to `APPROVED` only (`bookings.service.ts#listBookings`'s
+ * doc-comment) — added ahead of its first consumer (story 12.3's UI).
  */
 export const listBookingsQuerySchema = paginationQuerySchema.extend({
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
   aircraftId: z.string().trim().min(1).optional(),
   personId: z.string().trim().min(1).optional(),
+  status: z.preprocess((value) => (typeof value === 'string' ? value.split(',') : value), z.array(bookingStatusSchema).min(1)).optional(),
   ...exportQuerySchema.shape,
 });
 
 export type ListBookingsQuery = z.infer<typeof listBookingsQuerySchema>;
-
-/** Mirrors the Prisma `BookingStatus` enum (story 7.3) — same soft-cancel shape as `flightStatusSchema`/`FlightStatus`. */
-export const bookingStatusSchema = z.enum(['ACTIVE', 'CANCELLED']);
-
-export type BookingStatusDto = z.infer<typeof bookingStatusSchema>;
 
 /**
  * One entry of `GET /api/v1/bookings` (AC 1). Mirrors
@@ -115,6 +129,10 @@ export type BookingStatusDto = z.infer<typeof bookingStatusSchema>;
  * `null` on every normal booking, set only when staff bypassed a real
  * blocking-expiry check; `forcedByUserId`/`forceReason` are deliberately NOT
  * exposed here (DB-only for now, Contesto) to keep this read-side DTO small.
+ * `denyReason`/`decidedAt` (story 12.2, AC 6) are likewise additive — `null`
+ * unless the booking was decided (approved/denied) at least once;
+ * `decidedByUserId`/`closedAt`/`closedByUserId` stay DB-only, same
+ * deliberate omission as `forcedByUserId`/`forceReason` above.
  */
 export const bookingItemSchema = z.object({
   id: z.string(),
@@ -130,6 +148,8 @@ export const bookingItemSchema = z.object({
   status: bookingStatusSchema,
   cancelledAt: z.iso.datetime().nullable(),
   forcedAt: z.iso.datetime().nullable(),
+  denyReason: z.string().nullable(),
+  decidedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
 });
 
@@ -202,3 +222,24 @@ export type CalendarBookingsQuery = z.infer<typeof calendarBookingsQuerySchema>;
 export const calendarBookingsResponseSchema = z.array(bookingItemSchema);
 
 export type CalendarBookingsResponseDto = z.infer<typeof calendarBookingsResponseSchema>;
+
+// --- Booking approval workflow (epic 12, story 12.2) -------------------------
+// PENDING/APPROVED/DENIED/FLOWN/NO_SHOW — see
+// `bookings.service.ts#transitionBooking`'s doc-comment for the full matrix.
+
+/**
+ * `POST /api/v1/bookings/{id}/transition` body (AC 3/6). `to` excludes
+ * `CANCELLED` (`bookingStatusSchema.exclude`) — cancelling stays
+ * `POST /api/v1/bookings/{id}/cancel`'s own endpoint (story 7.3), never
+ * part of this matrix. `reason` is OPTIONAL here (unlike
+ * `createBookingSchema`'s `force`/`forceReason` schema-level `.refine`):
+ * whether it is required depends on `to` (mandatory only for `DENIED`,
+ * 422 `BOOKING_DENY_REASON_REQUIRED`) — a domain rule the SERVICE checks
+ * (`bookings.service.ts#transitionBooking`), not this shape-only schema.
+ */
+export const transitionBookingSchema = z.object({
+  to: bookingStatusSchema.exclude(['CANCELLED']),
+  reason: z.string().trim().max(500).optional(),
+});
+
+export type TransitionBookingInput = z.infer<typeof transitionBookingSchema>;

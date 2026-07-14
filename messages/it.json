@@ -1652,6 +1652,10 @@
     "pprRejection": {
       "subject": "Richiesta PPR non accolta: {aircraftRegistration}",
       "body": "Ciao {firstName},\n\nLa tua richiesta di PPR per {aircraftRegistration} (ETA: {eta}) non è stata accolta.\n\nMotivo: {reason}"
+    },
+    "bookingDenied": {
+      "subject": "Prenotazione rifiutata: {aircraftRegistration}",
+      "body": "Ciao {firstName},\n\nLa tua prenotazione per {aircraftRegistration} del {when} è stata rifiutata.\n\nMotivo: {reason}"
     }
   }
 }

@@ -25,6 +25,7 @@ export type ExpiryDigestEmailContent = { subject: string; text: string };
 export type PprReceiptEmailContent = { subject: string; text: string };
 export type PprApprovalEmailContent = { subject: string; text: string };
 export type PprRejectionEmailContent = { subject: string; text: string };
+export type BookingDeniedEmailContent = { subject: string; text: string };
 
 /**
  * One row of the staff digest (story 6.3, tri-state hardened story TD-1 AC
@@ -307,6 +308,36 @@ export async function buildPprRejectionEmail(
       firstName: params.firstName,
       aircraftRegistration: params.aircraftRegistration,
       eta,
+      reason: params.reason,
+    }),
+  };
+}
+
+/**
+ * Builds the booking-denial email (epic 12, story 12.2, AC 5) — sent
+ * best-effort AFTER `bookings.service.ts#transitionBooking`'s `PENDING ->
+ * DENIED` write commits, same fire-and-forget/no-throw rule as every other
+ * outcome email in this module. `locale` is the booking-holder's `User.locale`
+ * (AD-7), resolved by the caller the same way as
+ * `accounts.service.ts#sendNegativeBalanceAlert` (fallback `it` when there is
+ * no linked `User`). `startsAt` is formatted date+time in `APP_TIMEZONE`
+ * (`formatDateTime`, same as {@link buildPprRejectionEmail}'s `eta`) and
+ * `reason` is the staff-entered mandatory motivation, included verbatim.
+ */
+export async function buildBookingDeniedEmail(
+  locale: AppLocale,
+  params: { firstName: string; aircraftRegistration: string; startsAt: Date; reason: string },
+): Promise<BookingDeniedEmailContent> {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.bookingDenied' });
+  const when = formatDateTime(params.startsAt, locale);
+
+  return {
+    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
+    text: t('body', {
+      firstName: params.firstName,
+      aircraftRegistration: params.aircraftRegistration,
+      when,
       reason: params.reason,
     }),
   };

@@ -1652,6 +1652,10 @@
     "pprRejection": {
       "subject": "PPR request not approved: {aircraftRegistration}",
       "body": "Hello {firstName},\n\nYour PPR request for {aircraftRegistration} (ETA: {eta}) was not approved.\n\nReason: {reason}"
+    },
+    "bookingDenied": {
+      "subject": "Booking denied: {aircraftRegistration}",
+      "body": "Hello {firstName},\n\nYour booking for {aircraftRegistration} on {when} has been denied.\n\nReason: {reason}"
     }
   }
 }

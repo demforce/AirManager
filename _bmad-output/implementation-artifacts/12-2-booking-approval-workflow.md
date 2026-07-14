@@ -4,7 +4,7 @@ baseline_commit: e1582f1
 
 # Story 12.2: Workflow di approvazione prenotazioni (backend)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -52,4 +52,22 @@ so that il campo controlla l'uso degli aeromobili e il pilota riceve la motivazi
 
 ## Dev Agent Record
 
-(compilato dal dev agent)
+### Stato all'ingresso in sessione
+
+Al dispatch di questa sessione il working tree conteneva GIÀ, non committati, il lavoro di una sessione precedente per AC 1 (migrazione hand-written a due file + schema.prisma), parte di AC 5 (`buildBookingDeniedEmail` in `templates.ts` + stringhe `messages/{it,en}.json`) e parte di AC 6 (`bookingStatusSchema` esteso, `transitionBookingSchema`, `listBookingsQuerySchema.status`, `bookingItemSchema.denyReason/decidedAt` in `src/lib/schemas/bookings.ts`). Questa sessione ha verificato quel lavoro (letto ogni diff riga per riga, verificato la migrazione su DB fresco) e lo ha COMPLETATO: `bookings.service.ts` (createBooking status stamping, overlap ACTIVE→APPROVED, updateBooking/cancelBooking PENDING|APPROVED, nuova `transitionBooking`), la route API, `registry.ts`, la suite di test, e la correzione della pagina legacy — nessuna parte pre-esistente è stata scartata o riscritta da zero.
+
+### Note di completamento
+
+- **AC 1 (migrazione)**: verificata empiricamente su DB fresco (drop+create+`prisma migrate deploy`+seed) in QUESTA sessione — PG16 rifiuta effettivamente `SET DEFAULT 'PENDING'` nello stesso file transazionale dell'`ADD VALUE` ("unsafe use of new value ... must be committed"), confermando la necessità dei due file di migrazione consecutivi già presenti.
+- **AC 2/3 (stato + transizioni)**: `createBooking` stampa sempre `status` esplicitamente (mai il default colonna). Nuova `transitionBooking(actor, bookingId, { to, reason? })`: lock `FOR UPDATE` sulla riga `Booking` (pattern `lockPprRequest`), matrice legale via `isLegalBookingTransition` (switch esaustivo su `to`), approve ri-esegue scadenze/aircraft-lock/overlap come create, scrittura atomica `updateMany({ where: { id, status: existing.status } })`.
+- **AC 4 (overlap/liste)**: overlap invariant ristretto a `status: 'APPROVED'` in create/update/transition (due PENDING coesistono). `listBookings` di default `APPROVED`-only, con `status` (array, CSV in query string) opzionale che sovrascrive con `IN`; `listCalendarBookings` resta `APPROVED`-only, invariato. **Scoperta empirica non anticipata dalla story**: la pagina legacy (`page.tsx`) chiamava `listBookings` senza filtro esplicito, quindi ereditava il nuovo default `APPROVED`-only — le prenotazioni PENDING di piloti/istruttori (AC 2) sparivano dalla lista "Prossime prenotazioni", rompendo gli e2e esistenti (righe non più visibili). Fix chirurgico: `page.tsx` passa ora `status: ['PENDING', 'APPROVED']` esplicitamente, preservando l'insieme di righe mostrato prima di questa story (comportamento IDENTICO, come richiesto), mentre il default APPROVED-only resta disponibile per la UI 12.3.
+- **AC 4, seconda scoperta empirica**: due e2e pre-esistenti (`bookings.spec.ts`) assumevano che una prenotazione appena creata da un pilota occupasse subito lo slot (409 immediato su un tentativo sovrapposto/spostamento). Con AC 4 (solo `APPROVED` occupa lo slot) questo non è più vero per una prenotazione PENDING propria — comportamento NUOVO e VOLUTO (spec D7), non un difetto. Corretti chirurgicamente i due test (`pilot books via UI...`, `an overlap on a move...`) inserendo l'approvazione staff (via il nuovo endpoint transition) tra la creazione e il tentativo che deve collidere, così l'invariante testato resta genuino sotto la nuova semantica.
+- **AC 5 (email)**: `sendBookingDeniedEmail` chiamata DOPO il commit della transazione (mai dentro), stesso pattern fire-and-forget di `sendNegativeBalanceAlert` — persona senza email: skip silenzioso (nessun log); fallimento invio: `console.error`, nessun throw.
+- **AC 6 (API)**: nuova route `POST /api/v1/bookings/[id]/transition` (pattern thin-route come `.../cancel`), registrata in `registry.ts` (componente `TransitionBookingRequest` + path con `errorResponses(401,403,404,409,422)`).
+- **AC 7 (test)**: matrice di transizione in `bookings.service.test.ts` generata a tabella (ogni combinazione `from × to` esercitata, non solo i casi legali) via `describe` dedicata; re-check scadenze/aircraft-state/overlap sull'approve; race `updateMany count===0`; email inviata/skippata(no-email)/fallita(swallowed). 210 test nel file (era 133 prima di questa story), tutti verdi. Aggiornati anche i literal `'ACTIVE'` pre-esistenti (rinominati `'APPROVED'`) nelle fixture/asserzioni delle suite 7.1/7.3/7.4, conseguenza meccanica del rename enum AC 1.
+- **AC 8 (gates + e2e)**: `npm run gates` verde (lint/typecheck/1310 test/build). `e2e/bookings.spec.ts` + `e2e/api-v1.spec.ts`: 28 test, tutti verdi, verificati su DB fresco (reset con `docker exec ... psql` + `prisma migrate deploy` + `prisma db seed` — lo script `scripts/reset-db.sh`/`npm run db:reset` assume `sudo -u postgres`, non applicabile su questa macchina locale con Postgres in Docker, vedi Note per il reviewer). **Nota sull'ambiente**: sotto piena parallelizzazione Playwright (`fullyParallel: true`, default worker count) questa macchina container mostra flake da sovraccarico (login/ECONNRESET su test SCOLLEGATI dalle prenotazioni, inclusi test pre-esistenti di story precedenti) — non riproducibile in esecuzione seriale (`--workers=1`), dove la suite è sempre risultata 28/28 verde. Diagnosticato con script usa-e-getta (rimossi, non committati) prima di concludere che non fosse un difetto applicativo.
+- **Documentazione**: aggiornato il doc-comment di `enum BookingStatus`/`model Booking` in schema.prisma (già presente dalla sessione precedente, verificato accurato), il doc-comment del modulo `bookings.service.ts` e dei singoli commenti `'ACTIVE'`→`'APPROVED'` in `page.tsx`/`bookings-list.tsx` (solo commenti, nessuna logica client cambiata — confermato in ricognizione che nessun componente legge `.status` lato client).
+
+### Deviazioni dalla story
+
+- Nessuna deviazione dagli Acceptance Criteria. Un'estensione non esplicitamente richiesta ma necessaria per soddisfare AC 4+8 insieme: il fix del call-site `listBookings` in `page.tsx` (un filtro `status` esplicito, non nuova UI) e l'aggiornamento dei due e2e pre-esistenti il cui comportamento atteso è cambiato per via della nuova semantica overlap — entrambi emersi SOLO in verifica e2e empirica, non anticipabili dalla sola lettura della story.

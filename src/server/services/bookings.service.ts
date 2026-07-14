@@ -1,9 +1,12 @@
 import { Prisma, type AircraftStatus, type BookingStatus } from '@/generated/prisma/client';
+import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { toDateOnlyString } from '@/lib/date-only';
-import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, UpdateBookingInput } from '@/lib/schemas/bookings';
+import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, TransitionBookingInput, UpdateBookingInput } from '@/lib/schemas/bookings';
 import { APP_TIMEZONE } from '@/lib/time';
 import { dateOnlyInZone } from '@/lib/zoned-time';
+import { getMailSender } from '@/server/adapters/mail';
+import { buildBookingDeniedEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -67,8 +70,17 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  * `updatedByUserId` shape. `updateBooking`/`cancelBooking` are documented at
  * their own definitions below; every overlap predicate in this file
  * (`createBooking`'s pre-check, `updateBooking`'s pre-check, `listBookings`,
- * `listCalendarBookings`) filters `status: 'ACTIVE'` — a cancelled booking
- * frees its slot and disappears from every list/calendar.
+ * `listCalendarBookings`) filters `status: 'APPROVED'` (story 12.2: only an
+ * APPROVED booking occupies a slot) — a cancelled OR not-yet-approved
+ * booking frees/never held its slot and disappears from every list/calendar.
+ *
+ * **Approval workflow (epic 12, story 12.2)**: `createBooking` now stamps
+ * `status` explicitly — `APPROVED` for a `bookings.manage.any` actor,
+ * `PENDING` for a `bookings.manage.own` one — instead of relying on the
+ * column default. `transitionBooking` (below) moves a booking through the
+ * rest of the matrix (approve/deny/flown/no-show/riapri); `updateBooking`/
+ * `cancelBooking` are now permitted from BOTH `PENDING` and `APPROVED` (was
+ * `ACTIVE` only) — see `Booking`'s Prisma doc-comment for the full picture.
  *
  * **Expiry-based booking block (story 7.4, AC 1/2; FR-21; extended by TD-5,
  * AC 5)**: `createBooking` runs the full rule unconditionally (see its own
@@ -98,6 +110,10 @@ export type BookingListItem = {
   cancelledAt: Date | null;
   /** Set only when staff bypassed a blocking expired document at creation time (story 7.4, AC 2) — see `Booking.forcedAt`'s doc-comment. */
   forcedAt: Date | null;
+  /** Set only after a DENIED decision (story 12.2, AC 3) — see `Booking.denyReason`'s doc-comment. */
+  denyReason: string | null;
+  /** Set on a PENDING -> APPROVED/DENIED decision, cleared on "riapri" (story 12.2, AC 3) — see `Booking.decidedAt`'s doc-comment. */
+  decidedAt: Date | null;
   createdAt: Date;
 };
 
@@ -115,6 +131,8 @@ const BOOKING_SELECT = {
   status: true,
   cancelledAt: true,
   forcedAt: true,
+  denyReason: true,
+  decidedAt: true,
   createdAt: true,
 } as const;
 
@@ -132,6 +150,8 @@ type SelectedBooking = {
   status: BookingStatus;
   cancelledAt: Date | null;
   forcedAt: Date | null;
+  denyReason: string | null;
+  decidedAt: Date | null;
   createdAt: Date;
 };
 
@@ -152,6 +172,8 @@ function toListItem(booking: SelectedBooking): BookingListItem {
     status: booking.status,
     cancelledAt: booking.cancelledAt,
     forcedAt: booking.forcedAt,
+    denyReason: booking.denyReason,
+    decidedAt: booking.decidedAt,
     createdAt: booking.createdAt,
   };
 }
@@ -415,11 +437,12 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
 
     // Overlap pre-check (AC 2): semi-open `[startsAt, endsAt)` — two
     // bookings that merely touch at the boundary (one's `endsAt` equals the
-    // other's `startsAt`) do NOT overlap (Dev Notes). `status: 'ACTIVE'`
-    // (story 7.3): a CANCELLED booking freed its slot — creating on top of
-    // one is allowed.
+    // other's `startsAt`) do NOT overlap (Dev Notes). `status: 'APPROVED'`
+    // (story 12.2): only an APPROVED booking occupies a slot — a CANCELLED
+    // one freed its slot, and two PENDING bookings may legitimately coexist
+    // on the same interval (the conflict surfaces at approval time).
     const overlapping = await tx.booking.findFirst({
-      where: { aircraftId: input.aircraftId, status: 'ACTIVE', startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },
+      where: { aircraftId: input.aircraftId, status: 'APPROVED', startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },
       select: { id: true },
     });
     if (overlapping) {
@@ -435,6 +458,10 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
         endsAt,
         notes: input.notes ?? null,
         actorUserId: actor.userId,
+        // Story 12.2, AC 2: the service ALWAYS stamps status explicitly,
+        // never the column default — staff/admin (`bookings.manage.any`)
+        // bookings start APPROVED, everyone else's start PENDING.
+        status: canManageAny ? 'APPROVED' : 'PENDING',
         // Story 7.4, AC 2: stamped ONLY when a real block was bypassed
         // (`forceStamp` above) — otherwise every field stays `null`.
         ...(forceStamp ?? {}),
@@ -455,15 +482,17 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
  * tie-break). The DTO includes the booking-holder and instructor NAMES
  * (Dev Notes: no privacy requirement in the PRD, an aeroclub is transparent
  * about who has the aircraft when) and `notes`.
+ *
+ * `status` (story 12.2, AC 4): defaults to `APPROVED` only — today's "vivi"
+ * bookings, same set the legacy UI has always shown (was `ACTIVE`) — an
+ * explicit `query.status` array (added ahead of its first consumer, story
+ * 12.3's UI) overrides the default entirely with an `IN` filter.
  */
 export async function listBookings(actor: Actor, query: ListBookingsQuery): Promise<PaginatedResult<BookingListItem>> {
   authorize(actor, 'self.read');
 
   const where = {
-    // `status: 'ACTIVE'` (story 7.3): a cancelled booking frees its slot and
-    // disappears from this list — the row itself is never deleted (Booking's
-    // doc-comment), just excluded from every read here.
-    status: 'ACTIVE' as const,
+    status: query.status ? { in: query.status } : ('APPROVED' as const),
     ...(query.from ? { endsAt: { gt: new Date(query.from) } } : {}),
     ...(query.to ? { startsAt: { lt: new Date(query.to) } } : {}),
     ...(query.aircraftId ? { aircraftId: query.aircraftId } : {}),
@@ -526,9 +555,10 @@ export async function listCalendarBookings(actor: Actor, query: CalendarBookings
 
   const bookings = await prisma.booking.findMany({
     select: BOOKING_SELECT,
-    // `status: 'ACTIVE'` (story 7.3): same rationale as `listBookings` above
-    // — a cancelled booking frees its slot and disappears from the calendar.
-    where: { status: 'ACTIVE', startsAt: { lt: to }, endsAt: { gt: from } },
+    // `status: 'APPROVED'` (story 12.2, AC 4): unlike `listBookings`, the
+    // calendar stays APPROVED-only, no `status` param — a cancelled or
+    // not-yet-approved booking has no slot to show here.
+    where: { status: 'APPROVED', startsAt: { lt: to }, endsAt: { gt: from } },
     orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
     take: 1000,
   });
@@ -639,9 +669,10 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * irrelevant to this write. The overlap pre-check excludes this booking
  * itself (`id: { not: bookingId }`) and every CANCELLED row.
  *
- * The final write is ONE atomic `updateMany({ where: { id, status: 'ACTIVE' },
- * ... })` — folding the "is this still active" guard INTO the write, rather
- * than a separate re-fetch followed by a plain `.update()`. That distinction
+ * The final write is ONE atomic `updateMany({ where: { id, status: existing.status },
+ * ... })` — folding the "still in the same status just read" guard INTO the
+ * write, rather than a separate re-fetch followed by a plain `.update()`.
+ * That distinction
  * matters: a concurrent `cancelBooking` racing between a re-fetch and a
  * later unconditional `.update()` could land its write in between, and while
  * this edit's `data` never touches `status` (so it would not literally
@@ -662,7 +693,10 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
   if (!existing) {
     throw new NotFoundError('Booking not found.');
   }
-  if (existing.status !== 'ACTIVE') {
+  // Story 12.2, AC 4: editable from BOTH PENDING and APPROVED (was ACTIVE
+  // only) — any other status (DENIED/FLOWN/NO_SHOW/CANCELLED) is a 409,
+  // same shape as before.
+  if (existing.status !== 'PENDING' && existing.status !== 'APPROVED') {
     throw new ConflictError('This booking has already been cancelled.');
   }
 
@@ -723,12 +757,13 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
 
     // Overlap pre-check (AC 2, same semi-open semantics as `createBooking`):
     // excludes THIS booking (it is moving, not colliding with itself) and
-    // every CANCELLED row (they already freed their slot).
+    // filters `status: 'APPROVED'` (story 12.2) — only an APPROVED booking
+    // occupies a slot, same rationale as `createBooking`'s own pre-check.
     const overlapping = await tx.booking.findFirst({
       where: {
         aircraftId: nextAircraftId,
         id: { not: bookingId },
-        status: 'ACTIVE',
+        status: 'APPROVED',
         startsAt: { lt: nextEndsAt },
         endsAt: { gt: nextStartsAt },
       },
@@ -739,10 +774,13 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     }
 
     // The atomic guard+write (module doc-comment above): folds the "still
-    // ACTIVE" precondition INTO the update itself — no separate re-fetch, no
-    // TOCTOU window between checking and writing.
+    // in the SAME status just read" precondition INTO the update itself —
+    // no separate re-fetch, no TOCTOU window between checking and writing.
+    // `existing.status` (story 12.2: PENDING or APPROVED, both editable) —
+    // a concurrent transitionBooking/cancelBooking racing in between would
+    // move it away from this exact value, correctly losing this guard.
     const guard = await tx.booking.updateMany({
-      where: { id: bookingId, status: 'ACTIVE' },
+      where: { id: bookingId, status: existing.status },
       data: {
         aircraftId: nextAircraftId,
         startsAt: nextStartsAt,
@@ -773,10 +811,12 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
  * cancelling never touches the overlap invariant — it can only ever FREE a
  * slot, never create a conflict — so there is nothing to serialize against.
  * The guard against a double-cancel race is the SAME atomic
- * `updateMany({ where: { id, status: 'ACTIVE' }, ... })` pattern as
+ * `updateMany({ where: { id, status: existing.status }, ... })` pattern as
  * `updateBooking` (and `expiries.service.ts#decideExpiryProposal`) —
  * `count === 0` means a concurrent cancel (or an edit-vs-cancel race) already
- * flipped this booking's status first, 409, race-safe.
+ * flipped this booking's status first, 409, race-safe. Cancellable from
+ * BOTH `PENDING` and `APPROVED` (story 12.2, AC 4, was `ACTIVE` only) — any
+ * other status is a 409, same shape as before.
  */
 export async function cancelBooking(actor: Actor, bookingId: string): Promise<BookingListItem> {
   const canManageAny = hasPermission(actor, 'bookings.manage.any');
@@ -788,14 +828,14 @@ export async function cancelBooking(actor: Actor, bookingId: string): Promise<Bo
   if (!existing) {
     throw new NotFoundError('Booking not found.');
   }
-  if (existing.status !== 'ACTIVE') {
+  if (existing.status !== 'PENDING' && existing.status !== 'APPROVED') {
     throw new ConflictError('This booking has already been cancelled.');
   }
 
   await assertOwnAccessAndTiming(actor, canManageAny, existing);
 
   const guard = await prisma.booking.updateMany({
-    where: { id: bookingId, status: 'ACTIVE' },
+    where: { id: bookingId, status: existing.status },
     data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledByUserId: actor.userId },
   });
   if (guard.count === 0) {
@@ -804,6 +844,202 @@ export async function cancelBooking(actor: Actor, bookingId: string): Promise<Bo
 
   const cancelled = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId }, select: BOOKING_SELECT });
   return toListItem(cancelled);
+}
+
+// --- Booking approval workflow (epic 12, story 12.2) ------------------------
+// PENDING/APPROVED/DENIED/FLOWN/NO_SHOW — see `Booking`'s Prisma doc-comment
+// for the full transition matrix and rationale.
+
+/** `transitionBooking`'s `to` (AC 6): the schema itself excludes `CANCELLED` — cancelling stays `cancelBooking`'s own endpoint, never part of this matrix. */
+type TransitionTarget = Exclude<BookingStatus, 'CANCELLED'>;
+
+/**
+ * The legal `from -> to` pairs (AC 3) — every pair NOT covered here is
+ * `BOOKING_TRANSITION_INVALID`. `CANCELLED` never appears as a `from` either
+ * (it is a dead end reachable only via `cancelBooking`), and neither does a
+ * same-state no-op (e.g. `PENDING -> PENDING`) — the matrix is exhaustive on
+ * `to` by construction (switch), so an unmapped `from` for a given `to`
+ * simply falls through to `false`.
+ */
+function isLegalBookingTransition(from: BookingStatus, to: TransitionTarget): boolean {
+  switch (to) {
+    case 'APPROVED':
+      return from === 'PENDING';
+    case 'DENIED':
+      return from === 'PENDING';
+    case 'FLOWN':
+    case 'NO_SHOW':
+      return from === 'APPROVED';
+    case 'PENDING':
+      // "Riapri" — from any decided/closed state back to PENDING.
+      return from === 'DENIED' || from === 'FLOWN' || from === 'NO_SHOW';
+  }
+}
+
+/**
+ * The field stamps/resets for each legal `to` (AC 3) — `reason` is only read
+ * for `DENIED`, already guaranteed non-empty by `transitionBooking`'s own
+ * check before this is called. `Unchecked` (not the plain
+ * `BookingUpdateManyMutationInput`): `decidedByUserId`/`closedByUserId` are
+ * FK scalars only exposed on the Unchecked variant, same as every other raw
+ * `actorUserId`-shaped stamp in this file.
+ */
+function transitionUpdateData(to: TransitionTarget, actorUserId: string, reason: string | undefined, now: Date): Prisma.BookingUncheckedUpdateManyInput {
+  switch (to) {
+    case 'APPROVED':
+      return { status: 'APPROVED', decidedAt: now, decidedByUserId: actorUserId };
+    case 'DENIED':
+      return { status: 'DENIED', decidedAt: now, decidedByUserId: actorUserId, denyReason: reason };
+    case 'FLOWN':
+    case 'NO_SHOW':
+      return { status: to, closedAt: now, closedByUserId: actorUserId };
+    case 'PENDING':
+      // "Riapri": every decision/closure field resets together.
+      return { status: 'PENDING', decidedAt: null, decidedByUserId: null, denyReason: null, closedAt: null, closedByUserId: null };
+  }
+}
+
+type LockedBookingRow = { id: string; status: BookingStatus; personId: string; aircraftId: string; startsAt: Date; endsAt: Date };
+
+/**
+ * Moves a booking through the approval workflow (AC 3) — `bookings.manage.any`
+ * only, for EVERY transition (including "riapri": staff-only, never an
+ * own-path action — see the module doc-comment). Locks the `Booking` row
+ * `FOR UPDATE` as the FIRST statement in the transaction (same discipline as
+ * `ppr.service.ts#lockPprRequest`), so a race with another transition on the
+ * SAME booking serializes rather than double-applying.
+ *
+ * `PENDING -> APPROVED` re-runs `createBooking`'s own checks against the
+ * CURRENT booking — the expiry-based block on the flight day
+ * (`findBlockingExpiredDocuments`, no `force` bypass here, unlike create),
+ * the `Aircraft` row locked `FOR UPDATE` and validated (archived/
+ * out-of-service), and the overlap pre-check against every OTHER `APPROVED`
+ * booking on the same aircraft — an approval is, in effect, "would this
+ * booking still be creatable today".
+ *
+ * `PENDING -> DENIED` requires a `reason` (422 `BOOKING_DENY_REASON_REQUIRED`
+ * otherwise, checked BEFORE the transaction even opens) and fires a
+ * best-effort email to the booking-holder AFTER commit (AC 5,
+ * `sendBookingDeniedEmail` below) — same "the write already committed and
+ * stays valid" rule as `accounts.service.ts#sendNegativeBalanceAlert`.
+ *
+ * The actual write is ONE atomic `updateMany({ where: { id, status: <the
+ * status just read under the row lock> }, ... })` — same guard-folded-into-
+ * the-write discipline as `updateBooking`/`cancelBooking`, kept here even
+ * though the `FOR UPDATE` lock already makes a genuine race within this
+ * transaction impossible, so every mutation in this file states its own
+ * precondition on the write itself.
+ */
+export async function transitionBooking(actor: Actor, bookingId: string, input: TransitionBookingInput): Promise<BookingListItem> {
+  authorize(actor, 'bookings.manage.any');
+
+  const to = input.to;
+  if (to === 'DENIED' && !input.reason) {
+    throw new ValidationError('A reason is required to deny a booking.', undefined, 'BOOKING_DENY_REASON_REQUIRED');
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const lockedRows = await tx.$queryRaw<LockedBookingRow[]>`
+      SELECT "id", "status", "personId", "aircraftId", "startsAt", "endsAt" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
+    const existing = lockedRows[0];
+    if (!existing) {
+      throw new NotFoundError('Booking not found.');
+    }
+    if (!isLegalBookingTransition(existing.status, to)) {
+      throw new ValidationError(`Cannot transition a booking from ${existing.status} to ${to}.`, undefined, 'BOOKING_TRANSITION_INVALID');
+    }
+
+    if (to === 'APPROVED') {
+      // Re-run createBooking's own checks (this function's doc-comment).
+      const flightDateOnly = dateOnlyInZone(existing.startsAt, APP_TIMEZONE);
+      const { blockingDocuments } = await findBlockingExpiredDocuments(existing.personId, flightDateOnly);
+      if (blockingDocuments.length > 0) {
+        throw new ValidationError(
+          `Cannot approve this booking: the following documents are expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
+          { documents: blockingDocuments },
+          'EXPIRED_DOCUMENTS',
+        );
+      }
+
+      const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; archivedAt: Date | null }>>`
+        SELECT "id", "status", "statusReason", "archivedAt" FROM "Aircraft" WHERE "id" = ${existing.aircraftId} FOR UPDATE`;
+      const aircraft = lockedAircraft[0];
+      if (!aircraft) {
+        throw new NotFoundError('Aircraft not found.');
+      }
+      if (aircraft.archivedAt !== null) {
+        throw new ConflictError('Aircraft is archived.');
+      }
+      if (aircraft.status === 'OUT_OF_SERVICE') {
+        throw new ValidationError(
+          `Aircraft is out of service: ${aircraft.statusReason}.`,
+          { reason: aircraft.statusReason },
+          'AIRCRAFT_OUT_OF_SERVICE',
+        );
+      }
+
+      const overlapping = await tx.booking.findFirst({
+        where: {
+          aircraftId: existing.aircraftId,
+          id: { not: bookingId },
+          status: 'APPROVED',
+          startsAt: { lt: existing.endsAt },
+          endsAt: { gt: existing.startsAt },
+        },
+        select: { id: true },
+      });
+      if (overlapping) {
+        throw new ConflictError('This aircraft is already booked for an overlapping interval.');
+      }
+    }
+
+    const guard = await tx.booking.updateMany({
+      where: { id: bookingId, status: existing.status },
+      data: transitionUpdateData(to, actor.userId, input.reason, new Date()),
+    });
+    if (guard.count === 0) {
+      throw new ConflictError('This booking has changed status; please retry.');
+    }
+
+    return tx.booking.findUniqueOrThrow({ where: { id: bookingId }, select: BOOKING_SELECT });
+  });
+
+  if (to === 'DENIED') {
+    await sendBookingDeniedEmail(updated);
+  }
+
+  return toListItem(updated);
+}
+
+/**
+ * Best-effort DENIED-outcome email (AC 5), fire-and-forget — called AFTER
+ * `transitionBooking`'s transaction commits, same "a slow/broken SMTP
+ * server must never hold a lock or fail an otherwise-valid write" rule as
+ * `accounts.service.ts#sendNegativeBalanceAlert`. Recipient locale is the
+ * booking-holder's OWN `User.locale` (AD-7), resolved the SAME way as that
+ * function (`prisma.user.findUnique({ where: { personId } })`, fallback
+ * `it` with no linked `User`); a person with no email on file is a SILENT
+ * skip (AC 5), distinct from an actual send failure (`console.error`, still
+ * no throw).
+ */
+async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
+  const person = await prisma.person.findUnique({ where: { id: booking.personId }, select: { email: true } });
+  if (!person?.email) return;
+
+  try {
+    const user = await prisma.user.findUnique({ where: { personId: booking.personId }, select: { locale: true } });
+    const locale: AppLocale = user?.locale === 'en' ? 'en' : 'it';
+    const { subject, text } = await buildBookingDeniedEmail(locale, {
+      firstName: booking.person.firstName,
+      aircraftRegistration: booking.aircraft.registration,
+      startsAt: booking.startsAt,
+      // Just written by transitionBooking's own transaction — safe to assert.
+      reason: booking.denyReason!,
+    });
+    await getMailSender().send({ to: person.email, subject, text });
+  } catch (error) {
+    console.error('transitionBooking: failed to send booking-denied email', error);
+  }
 }
 
 // --- Booking-form picker data (Task 5) --------------------------------------

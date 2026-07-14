@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { calendarBookingsQuerySchema, createBookingSchema, listBookingsQuerySchema, updateBookingSchema } from '@/lib/schemas/bookings';
+import {
+  calendarBookingsQuerySchema,
+  createBookingSchema,
+  listBookingsQuerySchema,
+  transitionBookingSchema,
+  updateBookingSchema,
+} from '@/lib/schemas/bookings';
 import type { Actor } from '@/server/auth/rbac';
 
 vi.mock('@/server/db/prisma', () => ({
@@ -7,6 +13,9 @@ vi.mock('@/server/db/prisma', () => ({
     person: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
+    },
+    user: {
+      findUnique: vi.fn(),
     },
     instructorProfile: {
       findUnique: vi.fn(),
@@ -32,13 +41,24 @@ vi.mock('@/server/db/prisma', () => ({
   },
 }));
 
+const sendMock = vi.fn();
+vi.mock('@/server/adapters/mail', () => ({
+  getMailSender: vi.fn(() => ({ send: sendMock })),
+}));
+
+vi.mock('@/server/adapters/mail/templates', () => ({
+  buildBookingDeniedEmail: vi.fn(async () => ({ subject: 'Booking denied subject', text: 'Booking denied text' })),
+}));
+
 const { prisma } = await import('@/server/db/prisma');
+const { buildBookingDeniedEmail } = await import('@/server/adapters/mail/templates');
 const {
   createBooking,
   listBookings,
   listCalendarBookings,
   updateBooking,
   cancelBooking,
+  transitionBooking,
   listBookableAircraft,
   listBookableStudents,
   listActiveInstructors,
@@ -48,6 +68,7 @@ const { ForbiddenError, NotFoundError, ConflictError, ValidationError } = await 
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const personFindManyMock = vi.mocked(prisma.person.findMany);
+const userFindUniqueMock = vi.mocked(prisma.user.findUnique);
 const instructorProfileFindUniqueMock = vi.mocked(prisma.instructorProfile.findUnique);
 const instructorProfileFindManyMock = vi.mocked(prisma.instructorProfile.findMany);
 const aircraftFindManyMock = vi.mocked(prisma.aircraft.findMany);
@@ -80,7 +101,8 @@ const bookingFindUniqueOrThrow = bookingFindUniqueOrThrowMock as unknown as { mo
 const bookingCount = bookingCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const bookingUpdateMany = bookingUpdateManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
 const instructorProfileFindUnique = instructorProfileFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void };
+const userFindUnique = userFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void; mockResolvedValueOnce: (v: unknown[]) => void };
 const aircraftFindMany = aircraftFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const expiryFindMany = expiryFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const personFindMany = personFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
@@ -177,10 +199,15 @@ const CREATED_BOOKING_ROW = {
   notes: null,
   // Story 7.3: `BOOKING_SELECT` now includes `status`/`cancelledAt` — every
   // fixture that stands in for a `booking.create`/`findMany` row needs them.
-  status: 'ACTIVE' as 'ACTIVE' | 'CANCELLED',
+  // Story 12.2: default `APPROVED` (was `ACTIVE`) — the enum was renamed in
+  // place, and this fixture models a staff-created (already-live) booking.
+  status: 'APPROVED' as 'PENDING' | 'APPROVED' | 'DENIED' | 'FLOWN' | 'NO_SHOW' | 'CANCELLED',
   cancelledAt: null as Date | null,
   // Story 7.4: `BOOKING_SELECT` now also includes `forcedAt`.
   forcedAt: null as Date | null,
+  // Story 12.2: `BOOKING_SELECT` now also includes `denyReason`/`decidedAt`.
+  denyReason: null as string | null,
+  decidedAt: null as Date | null,
   createdAt: new Date('2026-07-01T00:00:00.000Z'),
 };
 
@@ -197,6 +224,13 @@ beforeEach(() => {
   // Story 7.4: no registered scadenze by default — individual expiry-block
   // tests override with their own fixture rows.
   expiryFindMany.mockResolvedValue([]);
+  // Story 12.2: `transitionBooking`'s post-commit deny email — a person with
+  // an email and no linked `User` (locale falls back to `it`) by default;
+  // individual email tests override with their own fixtures.
+  personFindUnique.mockImplementation(async () => ({ email: 'pilot@example.com' }));
+  userFindUnique.mockResolvedValue(null);
+  sendMock.mockReset();
+  sendMock.mockResolvedValue(undefined);
 });
 
 describe('createBooking (Story 7.1, AC 1/2/3)', () => {
@@ -426,7 +460,7 @@ describe('createBooking (Story 7.1, AC 1/2/3)', () => {
       expect.objectContaining({
         where: {
           aircraftId: 'aircraft_1',
-          status: 'ACTIVE',
+          status: 'APPROVED',
           startsAt: { lt: new Date(FUTURE_ENDS_AT) },
           endsAt: { gt: new Date(FUTURE_STARTS_AT) },
         },
@@ -440,6 +474,37 @@ describe('createBooking (Story 7.1, AC 1/2/3)', () => {
     await createBooking(pilotActor('person_pilot'), baseInput({ personId: 'person_pilot' }));
 
     expect(bookingCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ actorUserId: 'pilot_1' }) }));
+  });
+
+  // --- Initial status stamping (Story 12.2, AC 2) -------------------------
+
+  it('a staff actor (bookings.manage.any) creates with status APPROVED, stamped explicitly — never the column default', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+
+    await createBooking(staffActor(), baseInput({ personId: 'person_student' }));
+
+    expect(bookingCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) }));
+  });
+
+  it('a pilot (bookings.manage.own) self-booking creates with status PENDING', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_PILOT_PERSON);
+
+    await createBooking(pilotActor('person_pilot'), baseInput({ personId: 'person_pilot' }));
+
+    expect(bookingCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING' }) }));
+  });
+
+  it('an instructor (bookings.manage.own) booking for an allievo creates with status PENDING', async () => {
+    personFindUnique.mockImplementation(async (args) =>
+      args.where.id === 'person_instructor' ? ACTIVE_INSTRUCTOR_ACTOR_PERSON : ACTIVE_STUDENT_PERSON,
+    );
+
+    await createBooking(
+      instructorActor('person_instructor'),
+      baseInput({ personId: 'person_student', instructorProfileId: 'instr_profile_1' }),
+    );
+
+    expect(bookingCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING' }) }));
   });
 });
 
@@ -463,7 +528,7 @@ describe('listBookings (Story 7.1, AC 1, FR-19)', () => {
     expect(bookingFindManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          status: 'ACTIVE',
+          status: 'APPROVED',
           endsAt: { gt: new Date('2026-08-01T00:00:00.000Z') },
           startsAt: { lt: new Date('2026-08-02T00:00:00.000Z') },
         },
@@ -478,7 +543,7 @@ describe('listBookings (Story 7.1, AC 1, FR-19)', () => {
     await listBookings(staffActor(), { page: 1, pageSize: 20, aircraftId: 'aircraft_9', personId: 'person_9' });
 
     expect(bookingFindManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { status: 'ACTIVE', aircraftId: 'aircraft_9', personId: 'person_9' } }),
+      expect.objectContaining({ where: { status: 'APPROVED', aircraftId: 'aircraft_9', personId: 'person_9' } }),
     );
   });
 
@@ -488,7 +553,7 @@ describe('listBookings (Story 7.1, AC 1, FR-19)', () => {
 
     await listBookings(staffActor(), { page: 1, pageSize: 20 });
 
-    expect(bookingFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'ACTIVE' }) }));
+    expect(bookingFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'APPROVED' }) }));
   });
 
   it('orders by startsAt asc, id asc', async () => {
@@ -535,6 +600,28 @@ describe('listBookings (Story 7.1, AC 1, FR-19)', () => {
     const result = await listBookings(staffActor(), { page: 1, pageSize: 20 });
 
     expect(result.items[0]?.instructorName).toBeNull();
+  });
+
+  // --- Optional status filter (Story 12.2, AC 4) --------------------------
+
+  it('an explicit status array overrides the APPROVED-only default with an IN filter', async () => {
+    bookingFindMany.mockResolvedValue([]);
+    bookingCount.mockResolvedValue(0);
+
+    await listBookings(staffActor(), { page: 1, pageSize: 20, status: ['PENDING', 'APPROVED'] });
+
+    expect(bookingFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: { in: ['PENDING', 'APPROVED'] } }) }),
+    );
+  });
+
+  it('a single-element status array still uses the IN filter, not a bare equality', async () => {
+    bookingFindMany.mockResolvedValue([]);
+    bookingCount.mockResolvedValue(0);
+
+    await listBookings(staffActor(), { page: 1, pageSize: 20, status: ['DENIED'] });
+
+    expect(bookingFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { in: ['DENIED'] } }) }));
   });
 });
 
@@ -585,7 +672,7 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
 
     expect(bookingFindManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { status: 'ACTIVE', startsAt: { lt: new Date(TO) }, endsAt: { gt: new Date(FROM) } },
+        where: { status: 'APPROVED', startsAt: { lt: new Date(TO) }, endsAt: { gt: new Date(FROM) } },
       }),
     );
   });
@@ -595,7 +682,7 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
 
     await listCalendarBookings(staffActor(), { from: FROM, to: TO });
 
-    expect(bookingFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'ACTIVE' }) }));
+    expect(bookingFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'APPROVED' }) }));
   });
 
   it('a booking that ENDS exactly at `from` is EXCLUDED (semi-open)', async () => {
@@ -643,7 +730,10 @@ const EXISTING_OWN_BOOKING = {
   startsAt: new Date(FUTURE_STARTS_AT),
   endsAt: new Date(FUTURE_ENDS_AT),
   notes: null as string | null,
-  status: 'ACTIVE' as 'ACTIVE' | 'CANCELLED',
+  // Story 12.2: default `APPROVED` (was `ACTIVE`) — the enum was renamed in
+  // place; individual tests override with `PENDING` where the AC 4 broadened
+  // editable/cancellable set needs exercising.
+  status: 'APPROVED' as 'PENDING' | 'APPROVED' | 'DENIED' | 'FLOWN' | 'NO_SHOW' | 'CANCELLED',
 };
 
 describe('updateBooking (Story 7.3, AC 1/2)', () => {
@@ -672,7 +762,7 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
 
     expect(result.id).toBe('booking_1');
     expect(bookingUpdateManyMock).toHaveBeenCalledWith({
-      where: { id: 'booking_1', status: 'ACTIVE' },
+      where: { id: 'booking_1', status: 'APPROVED' },
       data: {
         aircraftId: 'aircraft_1',
         startsAt: new Date(FUTURE_STARTS_AT),
@@ -842,7 +932,7 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
 
     expect(bookingFindFirstMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: { not: 'booking_1' }, status: 'ACTIVE' }),
+        where: expect.objectContaining({ id: { not: 'booking_1' }, status: 'APPROVED' }),
       }),
     );
   });
@@ -859,6 +949,24 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
     bookingUpdateMany.mockResolvedValue({ count: 0 });
 
     await expect(updateBooking(staffActor(), 'booking_1', { notes: 'x' })).rejects.toThrow(ConflictError);
+  });
+
+  // --- PENDING/APPROVED editable set (Story 12.2, AC 4) -------------------
+
+  it('a PENDING booking is also editable (was ACTIVE-only) — the atomic guard keys off the CURRENT status', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, status: 'PENDING' });
+
+    const result = await updateBooking(staffActor(), 'booking_1', { notes: 'x' });
+
+    expect(result.id).toBe('booking_1');
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'booking_1', status: 'PENDING' } }));
+  });
+
+  it.each(['DENIED', 'FLOWN', 'NO_SHOW'] as const)('a %s booking is NOT editable — 409 from the fast pre-check', async (status) => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, status });
+
+    await expect(updateBooking(staffActor(), 'booking_1', { notes: 'x' })).rejects.toThrow(ConflictError);
+    expect(transactionMock).not.toHaveBeenCalled();
   });
 });
 
@@ -967,7 +1075,7 @@ describe('cancelBooking (Story 7.3, AC 1/2)', () => {
     await cancelBooking(pilotActor('person_pilot'), 'booking_1');
 
     expect(bookingUpdateManyMock).toHaveBeenCalledWith({
-      where: { id: 'booking_1', status: 'ACTIVE' },
+      where: { id: 'booking_1', status: 'APPROVED' },
       data: { status: 'CANCELLED', cancelledAt: expect.any(Date), cancelledByUserId: 'pilot_1' },
     });
   });
@@ -1011,12 +1119,292 @@ describe('cancelBooking (Story 7.3, AC 1/2)', () => {
 
     await expect(cancelBooking(staffActor(), 'booking_1')).rejects.toThrow(ConflictError);
   });
+
+  // --- PENDING/APPROVED cancellable set (Story 12.2, AC 4) ----------------
+
+  it('a PENDING booking is also cancellable (was ACTIVE-only) — the atomic guard keys off the CURRENT status', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, status: 'PENDING' });
+
+    const result = await cancelBooking(staffActor(), 'booking_1');
+
+    expect(result.id).toBe('booking_1');
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'booking_1', status: 'PENDING' } }),
+    );
+  });
+
+  it.each(['DENIED', 'FLOWN', 'NO_SHOW'] as const)('a %s booking is NOT cancellable — 409 from the fast pre-check', async (status) => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, status });
+
+    await expect(cancelBooking(staffActor(), 'booking_1')).rejects.toThrow(ConflictError);
+    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
+  });
+});
+
+// --- transitionBooking (Story 12.2, AC 3/5/6/7) -----------------------------
+// The booking approval workflow: PENDING/APPROVED/DENIED/FLOWN/NO_SHOW.
+
+/** The `FOR UPDATE` lock row `transitionBooking` reads first — shape of the raw `$queryRaw` result, NOT `BOOKING_SELECT` (no joins). */
+type LockedBookingFixture = { id: string; status: string; personId: string; aircraftId: string; startsAt: Date; endsAt: Date };
+
+const BASE_LOCKED_BOOKING: LockedBookingFixture = {
+  id: 'booking_1',
+  status: 'PENDING',
+  personId: 'person_pilot',
+  aircraftId: 'aircraft_1',
+  startsAt: new Date(FUTURE_STARTS_AT),
+  endsAt: new Date(FUTURE_ENDS_AT),
+};
+
+/** Queues the booking-row lock read (`transitionBooking`'s FIRST `$queryRaw` call) — same `mockResolvedValueOnce` ordering trick as `ppr.service.test.ts`'s `mockLockedRequest`. A SECOND `$queryRaw` call (the Aircraft lock, APPROVE only) falls through to `beforeEach`'s base `queryRaw.mockResolvedValue(LOCKED_OPERATIONAL_AIRCRAFT)`. */
+function mockBookingLock(overrides: Partial<LockedBookingFixture> = {}): void {
+  queryRaw.mockResolvedValueOnce([{ ...BASE_LOCKED_BOOKING, ...overrides }]);
+}
+
+describe('transitionBooking (Story 12.2, AC 3)', () => {
+  it('a non-staff actor (no bookings.manage.any) gets 403 straight from authorize() — no queries at all, not even for "riapri"', async () => {
+    await expect(transitionBooking(pilotActor(), 'booking_1', { to: 'APPROVED' })).rejects.toThrow(ForbiddenError);
+    await expect(transitionBooking(instructorActor(), 'booking_1', { to: 'PENDING' })).rejects.toThrow(ForbiddenError);
+    await expect(transitionBooking(studentActor(), 'booking_1', { to: 'DENIED', reason: 'x' })).rejects.toThrow(ForbiddenError);
+    expect(queryRawMock).not.toHaveBeenCalled();
+  });
+
+  it('an unknown booking id (empty lock result) answers 404', async () => {
+    queryRaw.mockResolvedValueOnce([]);
+
+    await expect(transitionBooking(staffActor(), 'ghost', { to: 'APPROVED' })).rejects.toThrow(NotFoundError);
+  });
+
+  it('DENY without a reason answers 422 BOOKING_DENY_REASON_REQUIRED, checked BEFORE the transaction ever opens', async () => {
+    const error = await transitionBooking(staffActor(), 'booking_1', { to: 'DENIED' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_DENY_REASON_REQUIRED');
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('PENDING -> APPROVED stamps decidedAt/decidedByUserId', async () => {
+    mockBookingLock({ status: 'PENDING' });
+
+    const result = await transitionBooking(staffActor(), 'booking_1', { to: 'APPROVED' });
+
+    expect(result.id).toBe('booking_1');
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: 'booking_1', status: 'PENDING' },
+      data: { status: 'APPROVED', decidedAt: expect.any(Date), decidedByUserId: 'staff_1' },
+    });
+  });
+
+  it('PENDING -> DENIED with a reason stamps denyReason/decidedAt/decidedByUserId', async () => {
+    mockBookingLock({ status: 'PENDING' });
+
+    await transitionBooking(staffActor(), 'booking_1', { to: 'DENIED', reason: 'Aeromobile richiesto per manutenzione' });
+
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: 'booking_1', status: 'PENDING' },
+      data: {
+        status: 'DENIED',
+        decidedAt: expect.any(Date),
+        decidedByUserId: 'staff_1',
+        denyReason: 'Aeromobile richiesto per manutenzione',
+      },
+    });
+  });
+
+  it('APPROVED -> FLOWN stamps closedAt/closedByUserId', async () => {
+    mockBookingLock({ status: 'APPROVED' });
+
+    await transitionBooking(staffActor(), 'booking_1', { to: 'FLOWN' });
+
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: 'booking_1', status: 'APPROVED' },
+      data: { status: 'FLOWN', closedAt: expect.any(Date), closedByUserId: 'staff_1' },
+    });
+  });
+
+  it('APPROVED -> NO_SHOW stamps closedAt/closedByUserId', async () => {
+    mockBookingLock({ status: 'APPROVED' });
+
+    await transitionBooking(staffActor(), 'booking_1', { to: 'NO_SHOW' });
+
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: 'booking_1', status: 'APPROVED' },
+      data: { status: 'NO_SHOW', closedAt: expect.any(Date), closedByUserId: 'staff_1' },
+    });
+  });
+
+  it.each(['DENIED', 'FLOWN', 'NO_SHOW'] as const)('%s -> PENDING ("riapri") clears every decision/closure field', async (from) => {
+    mockBookingLock({ status: from });
+
+    await transitionBooking(staffActor(), 'booking_1', { to: 'PENDING' });
+
+    expect(bookingUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: 'booking_1', status: from },
+      data: { status: 'PENDING', decidedAt: null, decidedByUserId: null, denyReason: null, closedAt: null, closedByUserId: null },
+    });
+  });
+
+  it('a race where the atomic guard finds 0 rows (status changed since the lock) answers 409', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    bookingUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(transitionBooking(staffActor(), 'booking_1', { to: 'APPROVED' })).rejects.toThrow(ConflictError);
+  });
+
+  // --- PENDING -> APPROVED re-checks (same rules as createBooking) --------
+
+  it('a blocking expired document (relative to the flight day) answers 422 EXPIRED_DOCUMENTS, same shape as create', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-01T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
+
+    const error = await transitionBooking(staffActor(), 'booking_1', { to: 'APPROVED' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    const validationError = error as InstanceType<typeof ValidationError>;
+    expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
+    expect(validationError.details).toEqual({ documents: [{ typeName: 'Licenza', expiresAt: '2020-01-01' }] });
+    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
+  });
+
+  it('an OUT_OF_SERVICE aircraft answers 422 AIRCRAFT_OUT_OF_SERVICE', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', status: 'OUT_OF_SERVICE', statusReason: 'Revisione motore', archivedAt: null }]);
+
+    const error = await transitionBooking(staffActor(), 'booking_1', { to: 'APPROVED' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('AIRCRAFT_OUT_OF_SERVICE');
+  });
+
+  it('an archived aircraft answers 409', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, archivedAt: new Date('2025-01-01T00:00:00.000Z') }]);
+
+    await expect(transitionBooking(staffActor(), 'booking_1', { to: 'APPROVED' })).rejects.toThrow(ConflictError);
+  });
+
+  it('an overlapping APPROVED booking on the same aircraft/interval answers 409, excluding this booking itself', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    bookingFindFirst.mockResolvedValue({ id: 'other_booking' });
+
+    await expect(transitionBooking(staffActor(), 'booking_1', { to: 'APPROVED' })).rejects.toThrow(ConflictError);
+
+    expect(bookingFindFirstMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: { not: 'booking_1' }, status: 'APPROVED' }) }),
+    );
+  });
+
+  it('no re-checks happen for DENY/FLOWN/NO_SHOW/riapri — only APPROVE re-runs expiry/aircraft/overlap', async () => {
+    mockBookingLock({ status: 'APPROVED' });
+
+    await transitionBooking(staffActor(), 'booking_1', { to: 'FLOWN' });
+
+    expect(expiryFindManyMock).not.toHaveBeenCalled();
+    // Exactly ONE `$queryRaw` call: the booking lock — no Aircraft lock for a non-APPROVE transition.
+    expect(queryRawMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('transitionBooking — transition matrix (Story 12.2, AC 3/7)', () => {
+  const ALL_STATUSES = ['PENDING', 'APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED'] as const;
+  const TARGETS = ['PENDING', 'APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW'] as const;
+
+  /** The exhaustive legal-pair table (AC 3) — mirrors `bookings.service.ts#isLegalBookingTransition` one-for-one, independently re-derived rather than imported, so this test actually catches a drift between the two. */
+  const LEGAL_FROM: Record<(typeof TARGETS)[number], readonly string[]> = {
+    APPROVED: ['PENDING'],
+    DENIED: ['PENDING'],
+    FLOWN: ['APPROVED'],
+    NO_SHOW: ['APPROVED'],
+    PENDING: ['DENIED', 'FLOWN', 'NO_SHOW'],
+  };
+
+  for (const from of ALL_STATUSES) {
+    for (const to of TARGETS) {
+      const legal = LEGAL_FROM[to].includes(from);
+
+      it(`${from} -> ${to} is ${legal ? 'LEGAL' : '422 BOOKING_TRANSITION_INVALID'}`, async () => {
+        mockBookingLock({ status: from });
+        const reason = to === 'DENIED' ? 'Motivo di test' : undefined;
+
+        if (legal) {
+          const result = await transitionBooking(staffActor(), 'booking_1', { to, reason });
+          expect(result.id).toBe('booking_1');
+          expect(bookingUpdateManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'booking_1', status: from } }));
+        } else {
+          const error = await transitionBooking(staffActor(), 'booking_1', { to, reason }).catch((e: unknown) => e);
+          expect(error).toBeInstanceOf(ValidationError);
+          expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_TRANSITION_INVALID');
+          expect(bookingUpdateManyMock).not.toHaveBeenCalled();
+        }
+      });
+    }
+  }
+});
+
+describe('transitionBooking — booking-denied email (Story 12.2, AC 5)', () => {
+  it('DENY sends the email AFTER commit, to the person\'s email, in their OWN User.locale', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    personFindUnique.mockImplementation(async () => ({ email: 'mario@example.com' }));
+    userFindUnique.mockResolvedValue({ locale: 'en' });
+    // The post-write re-read (`tx.booking.findUniqueOrThrow`) reflects what the
+    // transaction just wrote — the email body reads `denyReason` off of it.
+    bookingFindUniqueOrThrow.mockResolvedValue({ ...CREATED_BOOKING_ROW, status: 'DENIED', denyReason: 'Manutenzione straordinaria' });
+
+    await transitionBooking(staffActor(), 'booking_1', { to: 'DENIED', reason: 'Manutenzione straordinaria' });
+
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'mario@example.com', subject: 'Booking denied subject' }));
+    expect(buildBookingDeniedEmail).toHaveBeenCalledWith(
+      'en',
+      expect.objectContaining({ firstName: 'Mario', aircraftRegistration: 'I-ABCD', reason: 'Manutenzione straordinaria' }),
+    );
+  });
+
+  it('DENY falls back to locale "it" when the booking-holder has no linked User', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    personFindUnique.mockImplementation(async () => ({ email: 'mario@example.com' }));
+    userFindUnique.mockResolvedValue(null);
+
+    await transitionBooking(staffActor(), 'booking_1', { to: 'DENIED', reason: 'x' });
+
+    expect(buildBookingDeniedEmail).toHaveBeenCalledWith('it', expect.anything());
+  });
+
+  it('a person with no email on file is a SILENT skip — no send, no throw, transition still succeeds', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    personFindUnique.mockImplementation(async () => ({ email: null }));
+
+    const result = await transitionBooking(staffActor(), 'booking_1', { to: 'DENIED', reason: 'x' });
+
+    expect(result.id).toBe('booking_1');
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('a failing SMTP send never fails the transition — swallowed with console.error, no throw', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    sendMock.mockRejectedValue(new Error('SMTP down'));
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const result = await transitionBooking(staffActor(), 'booking_1', { to: 'DENIED', reason: 'x' });
+
+    expect(result.id).toBe('booking_1');
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it.each(['APPROVED', 'FLOWN', 'NO_SHOW', 'PENDING'] as const)('%s never sends an email (only DENIED does, AC 5)', async (to) => {
+    mockBookingLock({ status: to === 'APPROVED' ? 'PENDING' : to === 'PENDING' ? 'DENIED' : 'APPROVED' });
+
+    await transitionBooking(staffActor(), 'booking_1', { to });
+
+    expect(sendMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('createBooking on top of a CANCELLED booking (Story 7.3)', () => {
   it('creating over the exact interval of a CANCELLED booking succeeds (the slot was freed)', async () => {
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    // The overlap pre-check's own `where` already filters `status: 'ACTIVE'`
+    // The overlap pre-check's own `where` already filters `status: 'APPROVED'`
     // (asserted above) — mocking `findFirst` to resolve `null` here models a
     // DB that holds a CANCELLED row at this exact interval and correctly
     // excludes it.
@@ -1480,5 +1868,75 @@ describe('listBookingsQuerySchema (Story 7.1, Task 4)', () => {
 
   it('rejects a pageSize beyond the max (100)', () => {
     expect(listBookingsQuerySchema.safeParse({ pageSize: 101 }).success).toBe(false);
+  });
+
+  // --- status filter (Story 12.2, AC 4) -----------------------------------
+
+  it('accepts a comma-separated status list, parsed into an array', () => {
+    const result = listBookingsQuerySchema.safeParse({ status: 'PENDING,APPROVED' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.status).toEqual(['PENDING', 'APPROVED']);
+    }
+  });
+
+  it('accepts a single status value', () => {
+    const result = listBookingsQuerySchema.safeParse({ status: 'DENIED' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.status).toEqual(['DENIED']);
+    }
+  });
+
+  it('rejects an unknown status value', () => {
+    expect(listBookingsQuerySchema.safeParse({ status: 'NOT_A_STATUS' }).success).toBe(false);
+  });
+
+  it('omitted status stays undefined (the service applies its own APPROVED-only default)', () => {
+    const result = listBookingsQuerySchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.status).toBeUndefined();
+    }
+  });
+});
+
+describe('transitionBookingSchema (Story 12.2, AC 6)', () => {
+  it('accepts a minimal body for each non-CANCELLED target', () => {
+    for (const to of ['PENDING', 'APPROVED', 'FLOWN', 'NO_SHOW'] as const) {
+      expect(transitionBookingSchema.safeParse({ to }).success).toBe(true);
+    }
+  });
+
+  it('accepts DENIED with a reason', () => {
+    expect(transitionBookingSchema.safeParse({ to: 'DENIED', reason: 'Motivo' }).success).toBe(true);
+  });
+
+  it('accepts DENIED WITHOUT a reason at the schema level — the mandatory-reason rule is a SERVICE check (422 BOOKING_DENY_REASON_REQUIRED), not this shape-only schema', () => {
+    expect(transitionBookingSchema.safeParse({ to: 'DENIED' }).success).toBe(true);
+  });
+
+  it('rejects to: CANCELLED — cancelling stays the dedicated /cancel endpoint', () => {
+    expect(transitionBookingSchema.safeParse({ to: 'CANCELLED' }).success).toBe(false);
+  });
+
+  it('rejects an unknown to value', () => {
+    expect(transitionBookingSchema.safeParse({ to: 'NOT_A_STATUS' }).success).toBe(false);
+  });
+
+  it('rejects a missing to', () => {
+    expect(transitionBookingSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects a reason over 500 chars', () => {
+    expect(transitionBookingSchema.safeParse({ to: 'DENIED', reason: 'x'.repeat(501) }).success).toBe(false);
+  });
+
+  it('trims the reason', () => {
+    const result = transitionBookingSchema.safeParse({ to: 'DENIED', reason: '  Motivo  ' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reason).toBe('Motivo');
+    }
   });
 });

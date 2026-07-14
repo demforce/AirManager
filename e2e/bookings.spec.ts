@@ -287,7 +287,7 @@ function soonestFutureSlot(): { startsAt: string; endsAt: string } {
 }
 
 test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
-  test('pilot books via UI for a future interval; an overlap shows 409 in the form; back-to-back (semi-open) succeeds', async ({ page }) => {
+  test('pilot books via UI for a future interval; an overlap on an APPROVED booking shows 409 in the form; back-to-back (semi-open) succeeds', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
 
@@ -305,18 +305,39 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(row).toBeVisible();
 
+    // Story 12.2, AC 4: only an APPROVED booking occupies a slot (a PENDING
+    // one does not, AC 2) — fetch the just-created booking's id (via the
+    // API, same-aircraft filter) and have staff approve it, so the overlap
+    // the UI form attempt below exercises is actually live. Fetched via the
+    // API rather than hand-computed to avoid the datetime-local/UTC offset
+    // entirely (this form's inputs are LOCAL time, `af4e5f5`) — the id is
+    // the only thing this test needs from the row it just created.
+    const listResponse = await page.request.get(`/api/v1/bookings?aircraftId=${aircraft.id}&status=PENDING,APPROVED`);
+    const { items } = (await listResponse.json()) as { items: Array<{ id: string }> };
+    const bookingAId = items[0]!.id;
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const approveResponse = await page.request.post(`/api/v1/bookings/${bookingAId}/transition`, { data: { to: 'APPROVED' } });
+    expect(approveResponse.status()).toBe(200);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await gotoBookingsAndWaitForHydration(page);
+    const formAfterApproval = page.getByTestId('new-booking-form');
+
     // Overlapping attempt on the SAME run-unique aircraft -> 409, never conflated with a 422.
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:30`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T10:30`);
-    await form.getByRole('button', { name: 'Prenota' }).click();
+    await formAfterApproval.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await formAfterApproval.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:30`);
+    await formAfterApproval.getByLabel('Fine').fill(`${FUTURE_DAY}T10:30`);
+    await formAfterApproval.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-error')).toContainText('già prenotato');
 
-    // Back-to-back: starts exactly when the first booking ends -> semi-open, no overlap, 201.
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T10:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T11:00`);
-    await form.getByRole('button', { name: 'Prenota' }).click();
+    // Back-to-back: starts exactly when the first (APPROVED) booking ends -> semi-open, no overlap, 201.
+    await formAfterApproval.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await formAfterApproval.getByLabel('Inizio').fill(`${FUTURE_DAY}T10:00`);
+    await formAfterApproval.getByLabel('Fine').fill(`${FUTURE_DAY}T11:00`);
+    await formAfterApproval.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
     const rows = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
@@ -687,8 +708,30 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const rows = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(rows).toHaveCount(2);
 
-    // The second (later, 05:00-06:00Z) booking is ordered second (startsAt asc) — move it into the first's slot (02:00-03:00Z, same aircraft, prefilled).
-    await rows.nth(1).getByTestId('booking-move-action').click();
+    // Story 12.2, AC 4: only an APPROVED booking occupies a slot — approve
+    // the FIRST (soonest startsAt, 02:00-03:00) booking so the move below
+    // actually collides with it (own-path bookings now start PENDING, AC 2).
+    // Fetched via the API (sorted by startsAt) rather than hand-computed, to
+    // avoid the datetime-local/UTC offset entirely (this form's inputs are
+    // LOCAL time, `af4e5f5`) — only the id is needed from the row created above.
+    const listResponse = await page.request.get(`/api/v1/bookings?aircraftId=${aircraft.id}&status=PENDING,APPROVED`);
+    const { items } = (await listResponse.json()) as { items: Array<{ id: string; startsAt: string }> };
+    const firstBookingId = items.slice().sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0]!.id;
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const approveResponse = await page.request.post(`/api/v1/bookings/${firstBookingId}/transition`, { data: { to: 'APPROVED' } });
+    expect(approveResponse.status()).toBe(200);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await gotoBookingsAndWaitForHydration(page);
+
+    const rowsAfterApproval = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    await expect(rowsAfterApproval).toHaveCount(2);
+
+    // The second (later, 05:00-06:00) booking is ordered second (startsAt asc) — move it into the first's slot (02:00-03:00, same aircraft, prefilled).
+    await rowsAfterApproval.nth(1).getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
     await moveForm.getByLabel('Fine').fill(`${FUTURE_DAY}T03:00`);

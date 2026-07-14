@@ -31,6 +31,7 @@ import {
   createBookingResponseSchema,
   createBookingSchema,
   listBookingsQuerySchema,
+  transitionBookingSchema,
   updateBookingSchema,
 } from './bookings';
 import {
@@ -301,6 +302,7 @@ registry.register('BookingList', bookingListResponseSchema);
 registry.register('CreateBookingRequest', createBookingSchema);
 registry.register('CreateBookingResponse', createBookingResponseSchema);
 registry.register('UpdateBookingRequest', updateBookingSchema);
+registry.register('TransitionBookingRequest', transitionBookingSchema);
 registry.register('CreatePprRequestRequest', createPprRequestSchema);
 registry.register('PprRequestCreatedResponse', pprRequestCreatedResponseSchema);
 registry.register('PprRequest', pprRequestItemSchema);
@@ -1742,6 +1744,25 @@ registry.registerPath({
   request: { params: bookingIdParams },
   responses: {
     200: { description: 'The cancelled booking.', content: jsonContent(bookingItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- Booking approval workflow (epic 12, story 12.2) ------------------------
+// PENDING/APPROVED/DENIED/FLOWN/NO_SHOW — see
+// `bookings.service.ts#transitionBooking`'s doc-comment for the full matrix.
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/bookings/{id}/transition',
+  summary: 'Move a booking through the approval workflow: approve/deny/flown/no-show/riapri (AC 3, epic 12 story 12.2)',
+  description:
+    "`bookings.manage.any` only, for EVERY transition (`to` excludes `CANCELLED` — cancelling stays `POST /api/v1/bookings/{id}/cancel`'s own endpoint). `PENDING -> APPROVED` re-runs the create-time checks (422 `EXPIRED_DOCUMENTS`, 409 overlap with an `Aircraft` `FOR UPDATE` lock, 422 `AIRCRAFT_OUT_OF_SERVICE`) and stamps `decidedAt`/`decidedByUserId`. `PENDING -> DENIED` requires a `reason` (422 `BOOKING_DENY_REASON_REQUIRED` otherwise), stamps `denyReason`+`decidedAt`/`decidedByUserId`, and sends a best-effort email to the booking-holder. `APPROVED -> FLOWN | NO_SHOW` stamps `closedAt`/`closedByUserId`. `DENIED | FLOWN | NO_SHOW -> PENDING` (\"riapri\") clears every decision/closure field. Any other pair answers 422 `BOOKING_TRANSITION_INVALID`. Race-safe: an atomic `updateMany` guard answers 409 if the booking's status changed since it was read.",
+  tags: ['Bookings'],
+  security,
+  request: { params: bookingIdParams, body: { content: jsonContent(transitionBookingSchema), required: true } },
+  responses: {
+    200: { description: 'The booking in its new status.', content: jsonContent(bookingItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });

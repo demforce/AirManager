@@ -264,12 +264,18 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   const nowIso = new Date().toISOString();
   let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
-  let bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page });
+  // Story 12.2, AC 4: `listBookings`'s own default is APPROVED-only (for the
+  // future 12.3 UI) — the legacy "Prossime prenotazioni" list explicitly asks
+  // for BOTH PENDING and APPROVED to keep showing exactly what it showed
+  // before this story (every live, not-yet-terminal booking; approve/deny
+  // badges/filters arrive with 12.3's UI).
+  const LEGACY_LIST_STATUSES = ['PENDING', 'APPROVED'] as const;
+  let bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...LEGACY_LIST_STATUSES] });
   // Clamp an out-of-range ?page to the last real page (same pattern as `FlightsPage`).
   const lastPage = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
   if (page > lastPage) {
     page = lastPage;
-    bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page });
+    bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...LEGACY_LIST_STATUSES] });
   }
   const totalPages = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
 
@@ -339,7 +345,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   // beyond what `listBookings` already enforces.
   const exportHref = buildExportHref('/api/v1/bookings', { from: nowIso }, locale);
 
-  // Story 7.3: serialize the (already `status: 'ACTIVE'`-filtered, service-
+  // Story 7.3: serialize the (already `status: 'APPROVED'`-filtered, service-
   // side) rows into plain wire DTOs before crossing the server -> client
   // boundary (`bookings-list.tsx`) — the established codebase convention
   // (`aircraft-manager.tsx`'s own doc-comment: "ISO 8601 string, server Date
