@@ -79,7 +79,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: false },
   { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: STAFF_ROLES, enabled: false },
   { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: STAFF_ROLES, enabled: false },
-  { id: 'settings', href: '/dashboard/settings', icon: 'gear', group: 'system', roles: STAFF_ROLES, enabled: true },
+  // ADMIN-only: matches `settings.manage` in rbac.ts (review 12.1 F2 — nav must never
+  // point where the page guard bounces; D13: the domain contract wins over the prototype).
+  { id: 'settings', href: '/dashboard/settings', icon: 'gear', group: 'system', roles: ['ADMIN'], enabled: true },
 ];
 
 /**

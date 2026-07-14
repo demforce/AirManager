@@ -4,7 +4,7 @@ baseline_commit: f2f22bd
 
 # Story 12.1: Fondamenta design system AirOps — stylesheet, primitive, shell, pagine auth
 
-Status: review
+Status: done
 
 ## Story
 
@@ -51,7 +51,7 @@ so that ogni pagina successiva dell'Epic 12 possa essere costruita nel nuovo lin
 
 ### Cosa è stato fatto
 
-- **AC1 (stylesheet)**: `src/styles/airops.css` è un porting verbatim di `docs/design-reference/airops/styles.css` (diff automatizzato verificato: solo i 6 selettori `[data-theme=...]` → `html[data-theme=...]`, più il blocco `.ppr-*` in coda estratto da `PPR Request.html`). Font self-hosted via `@fontsource/inter-tight`, `@fontsource/jetbrains-mono`, `@fontsource/instrument-serif` (pesi 400/500/600 per i primi due, 400 per Instrument Serif — unici pesi usati nel CSS), installati con `npx -y npm@10` (diff lockfile: 30 righe). Import in `src/app/[locale]/layout.tsx`, Geist rimane. `globals.css` importa `airops.css` dopo Tailwind.
+- **AC1 (stylesheet)**: `src/styles/airops.css` è un porting verbatim di `docs/design-reference/airops/styles.css` (diff automatizzato verificato: solo i 7 selettori `[data-theme=...]` → `html[data-theme=...]` — conteggio corretto in review, F4 —, più il blocco `.ppr-*` in coda estratto da `PPR Request.html`; post-review si aggiunge la sezione marcata "AirManager additions" per il fix F1). Font self-hosted via `@fontsource/inter-tight`, `@fontsource/jetbrains-mono`, `@fontsource/instrument-serif` (pesi 400/500/600 per i primi due, 400 per Instrument Serif — unici pesi usati nel CSS), installati con `npx -y npm@10` (diff lockfile: 30 righe). Import in `src/app/[locale]/layout.tsx`, Geist rimane. `globals.css` importa `airops.css` dopo Tailwind.
 - **AC2 (tema)**: root layout legge il cookie `am-theme` server-side e stampa `data-theme` su `<html>` (niente flash). `theme-toggle.tsx` (client) aggiorna `document.documentElement.dataset.theme` + cookie (`path=/`, `max-age=31536000`, `samesite=lax`), niente localStorage. Default light.
 - **AC3 (primitive)**: tutti i file richiesti in `src/components/ui/` — `icons.tsx` (namespace `Icon.*`, porting 1:1 di `icons.jsx`), `badge.tsx`, `kpi.tsx` (KPI+Spark), `avatar.tsx`, `toast.tsx` (`ToastProvider`/`useToast().show(msg, tone)`, context React, NIENTE eventi window), `slide-over.tsx` (Esc + scrim-click), `field.tsx` (Field/Input/Select/InputGroup con prefix/suffix), `segmented.tsx`, `export-menu.tsx` (riceve `pdfHref`/`xlsHref` via props, nessun consumer ancora — arriva con gli export reali nelle story successive), `calendar-popover.tsx` (porting di `Schedule.jsx#CalendarPopover`; la matematica della griglia è estratta in `calendar-grid.ts`, con `calendar-grid.test.ts` — 6 casi, inclusi confini mese/anno). Stringhe via next-intl dove i componenti sono già montati (shell/auth); i primitive senza consumer in questa story (Badge/KPI/SlideOver/ExportMenu/CalendarPopover) non hanno ancora testo hardcoded da tradurre.
 - **AC4 (shell)**: `src/components/shell/route-registry.ts` — registry statico `{id, href, icon, group, roles, enabled}`; questa story abilita SOLO `/dashboard`, `/dashboard/bookings`, `/dashboard/ppr`, `/dashboard/expiries`, `/dashboard/settings` (le altre voci del prototipo restano `enabled:false`). `sidebar.tsx`/`top-bar.tsx` (client, porting 1:1 di `Sidebar.jsx`/`TopBar.jsx`) ricevono dati già tradotti/filtrati da `src/app/[locale]/dashboard/layout.tsx` (server, NUOVO file — non esisteva un layout dashboard condiviso prima di questa story, ogni pagina renderizzava standalone con un proprio link "torna alla dashboard"). Filtro per ruolo verificato interattivamente per tutti e 5 i ruoli seed (screenshot). Brand = "AirManager" (wordmark hardcoded) + `<nome club · ICAO>` da `app-settings.service.ts` (vedi deviazione sotto). Le pagine legacy esistenti (nessuna toccata) renderizzano dentro `.main` invariate.
@@ -82,3 +82,17 @@ Il **primissimo** login reale (POST `/api/auth/callback/credentials`) dopo un av
 
 - **Sidebar mostra "Impostazioni" anche a STAFF** (AC4 letterale: "ADMIN/STAFF vedono tutte le voci attive") ma `settings.manage` in `rbac.ts` è ADMIN-only: uno STAFF che clicca viene rimbalzato a `/dashboard` dalla guardia esistente della pagina legacy. Non è una rottura (redirect controllato, non un crash), ma è un'incoerenza nav-vs-permesso preesistente nel dominio che questa story non risolve (fuori scope: cambiare `rbac.ts` è una modifica di permessi globale, non "fondamenta shell"). Segnalo esplicitamente per decisione futura (story 12.11 o un fix RBAC dedicato).
 - **Ruolo primario per multi-ruolo**: user chip/avatar-color usano la priorità ADMIN>STAFF>INSTRUCTOR>PILOT>STUDENT (non specificata nella story) — scelta ragionevole ma arbitraria, non testata su un utente seed multi-ruolo (il seed non ne crea uno).
+
+## Review Record (adversarial, Opus 4.8 xhigh — 2026-07-14)
+
+**Verdetto**: fixes-required → fixed. Full e2e CI-mode su DB fresco e build di produzione: 201 test, 198 pass, 3 fail triagiati:
+- `bookings.spec.ts:509` (mobile 375px overflow) = REGRESSIONE 12.1 (finding F1);
+- `bookings.spec.ts:880` e `:911` = bug datetime-local pre-esistenti, già fixati su `fix/e2e-datetime-local-tz` (eb4dfe7, NON merged) — cherry-pickato nell'epic dopo la review.
+
+**Findings e risoluzione (fix applicati dalla sessione principale):**
+- **F1 (major, FIXED)**: `.user-chip` della nuova TopBar sborda un viewport 375px (scrollWidth 426) → sezione marcata "AirManager additions" in coda a `airops.css` (crumbs truncate, chip perde il nome sotto 640px, classe `user-chip-name` in `top-bar.tsx`). Verifica: `bookings.spec.ts:509` PASSA (flaky only per cold-start login, v. sotto).
+- **F2 (minor, FIXED)**: voce nav "Impostazioni" mostrata a STAFF ma pagina admin-only → `route-registry.ts` ristretto a `['ADMIN']` (D13: il contratto di dominio vince; commento nel codice).
+- **F3 (note, DEFERRED → 12.3)**: SlideOver registra il listener Escape anche da chiuso — early-return su `!open` quando arriva il primo consumer.
+- **F4 (note, FIXED)**: conteggio selettori nel Dev Agent Record corretto (7, non 6).
+
+**Chiusura note del dev (in prima persona dal reviewer):** STAFF/Impostazioni confermato e fixato (F2); `getAirfieldIcao()` additivo e sicuro (fresh DB → '' → brand senza segmento ICAO, unit test 37/37); shim light-backdrop verificato in dark mode su pagina legacy (nessun leak nel chrome, 0 errori console/hydration); utente multi-ruolo {PILOT,INSTRUCTOR} creato in DB → chip "· Istruttore" con priorità sana; cold-start login flake CLASSIFICATO pre-esistente (stessa classe cold-compile documentata in playwright.config.ts, si manifesta sul primo POST reale sotto next dev — non regressione 12.1).

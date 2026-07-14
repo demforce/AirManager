@@ -53,7 +53,7 @@ export function TopBar({ brandName, icao, pageTitles, fallbackTitle, initialThem
       <ThemeToggle initialTheme={initialTheme} label={themeToggleLabel} />
       <div className="user-chip" title={userChip.fullLabel}>
         <Avatar init={userChip.initials} color={userChip.color} />
-        <span style={{ fontSize: 12.5, fontWeight: 500 }}>{userChip.displayName}</span>
+        <span className="user-chip-name" style={{ fontSize: 12.5, fontWeight: 500 }}>{userChip.displayName}</span>
       </div>
     </header>
   );
