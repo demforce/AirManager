@@ -46,7 +46,7 @@ Tutte sotto `/[locale]/dashboard/...`, sidebar a 4 gruppi (Operazioni / Anagrafi
 | Auth | `/(auth)/login`, `set-password`, `forgot-password` | — (nuovo, nel linguaggio del design) | API auth esistenti |
 | Modulo PPR pubblico | `/ppr` | `PPR Request.html` | POST `ppr-requests`; dati aeroporto (ICAO, orari, frequenza/pista/circuito da settings dove esistono, altrimenti omessi) |
 
-**Landing per ruolo** (stessa shell, home diversa): ADMIN+STAFF → console completa; INSTRUCTOR → `InstructorView` (la mia giornata, ore/dovuto mese); PILOT+STUDENT → `PilotLanding` (saldo, licenza/medico, prossimi voli, prenota). Sidebar filtrata per ruolo (le voci amministrative spariscono per pilot/student; instructor vede solo le sue superfici). Il pannello Tweaks del prototipo NON si porta: ruolo = sessione reale.
+**Landing per ruolo** (stessa shell, home diversa): ADMIN+STAFF → console completa; INSTRUCTOR → `InstructorView` (la mia giornata, ore/dovuto mese); PILOT+STUDENT → `PilotLanding` (saldo, licenza/medico, prossimi voli, prenota). **Ratifica 2026-07-14**: gli allievi (STUDENT) NON creano prenotazioni — RBAC invariato; la CTA "Prenota volo" è nascosta per STUDENT (prenota staff/istruttore per loro). Sidebar filtrata per ruolo (le voci amministrative spariscono per pilot/student; instructor vede solo le sue superfici). Il pannello Tweaks del prototipo NON si porta: ruolo = sessione reale.
 
 **Widget meteo sidebar**: METAR live dalla stazione configurata (fetch server-side aviationweather.gov, cache ~10 min, categoria VFR/MVFR/IFR derivata); card nascosta se non configurata o fetch fallito.
 

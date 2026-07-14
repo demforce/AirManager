@@ -1,0 +1,55 @@
+---
+baseline_commit: e1582f1
+---
+
+# Story 12.2: Workflow di approvazione prenotazioni (backend)
+
+Status: ready-for-dev
+
+## Story
+
+As a staff dell'aviosuperficie,
+I want che le prenotazioni create dai piloti nascano "in attesa" e passino da un flusso di approvazione (approva / rifiuta con motivazione / effettuato / assente / riapri),
+so that il campo controlla l'uso degli aeromobili e il pilota riceve la motivazione di un rifiuto via email — come da design AirOps (spec D7).
+
+**Riferimenti vincolanti**: spec `docs/superpowers/specs/2026-07-14-airops-ui-replacement-design.md` (D7, §5.1), piano `docs/superpowers/plans/2026-07-14-epic-12-airops-ui.md` (Task 2). Story SOLO backend: la UI arriva con la 12.3 — la pagina prenotazioni legacy deve restare funzionante e le e2e esistenti verdi.
+
+## Acceptance Criteria
+
+1. **(Enum + migrazione)** `BookingStatus` diventa `PENDING | APPROVED | DENIED | FLOWN | NO_SHOW | CANCELLED` con migrazione HAND-WRITTEN (pattern TD-2, doc-comment esplicativo in testa al SQL): `ALTER TYPE "BookingStatus" RENAME VALUE 'ACTIVE' TO 'APPROVED'` (le righe esistenti migrano in-place, transazionale) + `ADD VALUE` per PENDING/DENIED/FLOWN/NO_SHOW + colonne `decidedAt TIMESTAMP(3)?`, `decidedByUserId TEXT? FK User SET NULL`, `denyReason TEXT?`, `closedAt TIMESTAMP(3)?`, `closedByUserId TEXT? FK User SET NULL`. Se PG16 rifiuta `SET DEFAULT 'PENDING'` nello stesso file transazionale del `ADD VALUE` (valore enum non ancora committato), splittare in DUE file di migrazione consecutivi documentati — verificarlo EMPIRICAMENTE su DB fresco, non assumerlo. Il doc-comment di `enum BookingStatus` in schema.prisma (oggi: "no third state… out of this PRD's scope", ~L1005-1012) va riscritto citando questa story.
+2. **(Stato alla creazione)** **Given** `createBooking`, **Then** lo status iniziale è SEMPRE impostato esplicitamente dal service (mai affidato al DB default): attore con `bookings.manage.any` (ADMIN/STAFF) → `APPROVED`; attore `bookings.manage.own` (PILOT/INSTRUCTOR/STUDENT via own) → `PENDING`. I controlli esistenti (persona bookable, `EXPIRED_DOCUMENTS` con force staff-only, `BOOKING_IN_PAST`, `AIRCRAFT_OUT_OF_SERVICE`, overlap) si applicano invariati alla creazione; il `CreateBookingResult.warnings` resta invariato.
+3. **(Transizioni)** Nuova `transitionBooking(actor, bookingId, { to, reason? })` in `bookings.service.ts` con mappa esplicita:
+   - `PENDING → APPROVED` (richiede `bookings.manage.any`): ri-esegue GLI STESSI controlli del create (documenti scaduti alla data volo — 422 `EXPIRED_DOCUMENTS` stesso shape; overlap con lock `FOR UPDATE` sull'aeromobile — 409; aeromobile out of service — 422) e stampa `decidedAt`/`decidedByUserId`.
+   - `PENDING → DENIED` (`bookings.manage.any`): `reason` OBBLIGATORIA (senza → 422 `BOOKING_DENY_REASON_REQUIRED`), stampa `denyReason`+`decidedAt`/`decidedByUserId`, invia email al pilota (AC 5).
+   - `APPROVED → FLOWN | NO_SHOW` (`bookings.manage.any`): stampa `closedAt`/`closedByUserId`.
+   - `DENIED | FLOWN | NO_SHOW → PENDING` ("riapri", `bookings.manage.any`): AZZERA `decidedAt/decidedByUserId/denyReason/closedAt/closedByUserId`.
+   - Ogni altra coppia → 422 `BOOKING_TRANSITION_INVALID`. Race-safety: scrittura con `updateMany({ where: { id, status: <from atteso> } })`, `count===0` → 409 (pattern già in uso per update/cancel).
+4. **(Cancel/update col nuovo enum)** `cancelBooking` funziona da `PENDING` e `APPROVED` (invariato altrove: guardia temporale `BOOKING_ALREADY_STARTED` per own inclusa); `updateBooking` è permesso su `PENDING` e `APPROVED` (altri stati → 409 come oggi il non-ACTIVE). **Overlap semantics**: SOLO le prenotazioni `APPROVED` occupano lo slot — i filtri overlap in create/update/transition puntano a `status: 'APPROVED'`; due PENDING possono coesistere sullo stesso slot (il conflitto emerge all'approvazione, che ricontrolla). `listBookings` di default mostra gli stati "vivi" di oggi (`APPROVED`) e guadagna un param opzionale `status` (array) per la 12.3; `listCalendarBookings` resta `APPROVED`-only. Le pagine legacy (che non leggono `.status` lato client — verificato in ricognizione) devono restare funzionanti IDENTICHE.
+5. **(Email di rifiuto)** **Given** una DENY su prenotazione di una persona CON email, **Then** DOPO il commit della transazione parte una email col pattern esistente (`src/server/adapters/mail/templates.ts`): nuovo builder `buildBookingDeniedEmail` su namespace `Emails.bookingDenied` (messaggi in `messages/it.json` + `en.json`; locale del DESTINATARIO risolto via `prisma.user.findUnique({ where: { personId } })` → fallback `it`, come `sendNegativeBalanceAlert`), corpo con data/aeromobile/orario della prenotazione e la `reason` verbatim; persona senza email → skip silenzioso; failure di invio → `console.error` e nessun throw (pattern esistente).
+6. **(API)** Nuova route `POST /api/v1/bookings/[id]/transition` via `apiRoute` (body `transitionBookingSchema = { to: bookingStatusSchema (senza CANCELLED), reason?: string max 500 }` in `src/lib/schemas/bookings.ts`; `bookingStatusSchema` esteso al nuovo enum; niente idempotency — non è endpoint money, TD-2 scope invariato). `bookingItemSchema` espone `denyReason` e `decidedAt` (nullable). Registrazione OpenAPI in `registry.ts` (component `TransitionBookingRequest`, path con tag `Bookings`, `errorResponses` standard).
+7. **(Test)** Unit suite della matrice di transizione in `bookings.service.test.ts` col fixture-pattern esistente (mockTransaction, staffActor/pilotActor/instructorActor/studentActor): stato iniziale per ruolo; ogni transizione legale con stamping dei campi; ogni transizione illegale → `BOOKING_TRANSITION_INVALID`; DENY senza reason; ri-check documenti/overlap all'approvazione; race `count===0`; email inviata/skippata/failure swallowed (mock del mail sender). e2e: `e2e/bookings.spec.ts` esistente resta verde SENZA riscritture sostanziali (il flusso staff crea→APPROVED è invariato); un blocco API-level nuovo in `e2e/api-v1.spec.ts` esercita pilot-create→PENDING→approve→flown e deny con email visibile in Mailpit (`http://localhost:8025/api/v1/messages`).
+8. **(Gates)** `npm run gates` verde; migrazione applicata su DB fresco senza errori; `e2e/bookings.spec.ts` + `e2e/api-v1.spec.ts` verdi in locale.
+
+## Contesto e decisioni di design (vincolanti — ricognizione 2026-07-14)
+
+- **Service** (`src/server/services/bookings.service.ts`, ~889 righe): `createBooking` L255 (permessi L256-259: `hasPermission(actor,'bookings.manage.any')` else `authorize(actor,'bookings.manage.own')`), expiry-check condiviso `findBlockingExpiredDocuments` L199 (chiamato a create L376, update L690 — RIUSARLO per l'approve), overlap inline nel `$transaction` con `SELECT … FOR UPDATE` su Aircraft (create L403-427, update L706-739, semi-open `[startsAt, endsAt)`) — replicare il pattern nell'approve. Guardie atomiche `updateMany` L744-745/L797-800. Error codes esistenti da riusare tal quali: `EXPIRED_DOCUMENTS`, `BOOKING_IN_PAST`, `AIRCRAFT_OUT_OF_SERVICE`, `PERSON_NOT_BOOKABLE`, `BOOKING_ALREADY_STARTED`.
+- **RBAC** (`src/server/auth/rbac.ts`): permessi ESATTI `'bookings.manage.own'`/`'bookings.manage.any'`/`'self.read'`; STAFF ha manage.any (L88), INSTRUCTOR/PILOT manage.own, STUDENT solo self.read. **RATIFICATO CON L'UTENTE (AskUserQuestion 2026-07-14): gli allievi NON creano prenotazioni** — RBAC INVARIATO in questa story; "creano PENDING" vale per chi ha già `bookings.manage.own` (PILOT/INSTRUCTOR). Conseguenza a valle (story 12.12): la CTA "Prenota volo" della landing è nascosta per STUDENT.
+- **Filtri status esistenti da aggiornare**: create overlap L422, `listBookings` where L466, `listCalendarBookings` L531, update overlap L732 (`'ACTIVE'` → `'APPROVED'`); update/cancel guards L665/L791 (`!== 'ACTIVE'` → set ammesso `PENDING|APPROVED`).
+- **API layer**: `apiRoute` in `src/lib/api/handler.ts` (error envelope AD-8, `statusForDomainError`); route esistenti `src/app/api/v1/bookings/{route.ts,[id]/route.ts,[id]/cancel/route.ts,calendar/route.ts}` — la transition route segue il pattern di `[id]/cancel/route.ts`. Schemi: `src/lib/schemas/bookings.ts` (`bookingStatusSchema` L103 da estendere, `bookingItemSchema` L119); registry: blocco Bookings L1660-1745 di `src/lib/schemas/registry.ts`.
+- **Email**: adapter `getMailSender()` (`src/server/adapters/mail/`), template pattern `templates.ts` (`createTranslator` su `Emails.<key>`, `loadMessages(locale)`); esempio più vicino: `buildPprRejectionEmail` L296 + invii post-commit in `ppr.service.ts` L390-400; risoluzione destinatario da Person: `accounts.service.ts#sendNegativeBalanceAlert` (skip senza email L446-447, locale da User L455-456, catch+console.error L462-465).
+- **Migrazione**: pattern hand-written con doc-comment = `prisma/migrations/20260710120000_rename_flight_types_add_solo_flag/migration.sql` (`ALTER TYPE … RENAME VALUE`, commento "Hand-written (TD-2 pattern)"); additive values = `ALTER TYPE "AccountMovementType" ADD VALUE` in `20260706090000…`. Naming `<UTCtimestamp>_booking_approval_workflow`. Aggiornare anche i `///` doc-comment di `model Booking`/`enum BookingStatus` in schema.prisma.
+- **Test conventions**: `bookings.service.test.ts` — `vi.mock('@/server/db/prisma')` L5-33, dynamic import post-mock L35, `mockTransaction()` L91-95, actor fixtures L97-112, date fixtures 2099/2020 L114-117, `baseInput()` L119. La matrice di transizione è una `describe` nuova nello stesso file.
+- **DB default**: schema.prisma `status BookingStatus @default(PENDING)` (il service imposta SEMPRE esplicitamente — il default è solo coerenza schema). Verifica empirica del vincolo transazionale PG sull'uso del valore appena aggiunto (v. AC 1).
+- **Ambiente locale**: identico alla story 12.1 (docker compose, DB fresco già preparato al dispatch, npm@10 per lockfile — questa story NON tocca dipendenze, MAI `playwright install`, port 3000 libero prima delle e2e, Mailpit su localhost:8025).
+- **Commit**: `feat(12.2): booking approval workflow (PENDING/APPROVED/DENIED/FLOWN/NO_SHOW)`. Niente push.
+
+## Fuori scope dichiarato
+
+- Qualunque UI (bottoni Approva/Rifiuta, badge stato, filtri) — story 12.3.
+- Estensione del permesso di creazione allo STUDENT (decisione di prodotto separata, v. Contesto/RBAC).
+- Notifiche email per approvazione (la spec richiede email SOLO sul rifiuto; l'approvazione resta silenziosa).
+- Ricontrollo scadenze su updateBooking oltre il comportamento TD-5 esistente (cambio-giorno only).
+
+## Dev Agent Record
+
+(compilato dal dev agent)
