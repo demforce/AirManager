@@ -4,7 +4,7 @@ baseline_commit: 1235a3a66f6b85e46d8299b12b0cbe78eb016063
 
 # Story 12.6: Piloti — registry AirOps, profilo, azioni account
 
-Status: review
+Status: done
 
 ## Story
 
@@ -74,3 +74,39 @@ so that la gestione persone avvenga dalla pagina Piloti come nel prototipo, nel 
 ### Change Log
 
 - Implementazione story 12.6 completa in un'unica sessione dev; `npm run gates` verde (lint · typecheck · 1348 unit · build) prima del commit implementativo, per protocollo anti-runway.
+
+## Review Record
+
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh, via workflow). **Data**: 2026-07-15. Il dev ha completato e committato pulito (protocollo anti-runway: `feat` `f3d33ab` + `fix` e2e `a4b7792`), ma NON ha girato la suite in CI-mode (budget) e aveva segnalato flakiness multi-file in dev-mode.
+
+### Arbiter (priority zero)
+
+- **`CI=1 npx playwright test` su build prod, DUE run su DB fresco**: Run 1 **213/213**, Run 2b **213/213** (0 fail, 0 flaky). La flakiness segnalata dal dev **NON si riproduce** su build di produzione — è contesa di `next dev` (dev-mode only). *(Nota harness: la suite NON resetta il DB tra run consecutivi → un doppio run senza reset sporca gli spec stateful bookings; sempre DB fresco prima di ogni CI=1.)* Dopo il fix di review `e2f2fc9`: **214/214**.
+
+### Verdetto
+
+**Shippable dopo un fix.** Zero blocker; implementazione funzionalmente corretta e verificata empiricamente.
+
+### Findings (fixati in `e2f2fc9`)
+
+- **F1 — MAJOR (gap di copertura, non difetto funzionale)**: il test e2e del profilo richiesto dall'**AC 7** ("saldo/ultimo volo/certificazioni/voli recenti da fixture reali") era stato **silenziosamente omesso** — il profilo slide-over (`pilot-profile.tsx`, AC 5) è arrivato con ZERO copertura e2e (il report del dev elencava 4 spec e taceva questo). La feature funziona (reviewer l'ha verificata: KPI/certificazioni/voli reali). **Fix**: aggiunto il test (apre il profilo, asserisce i 4 elementi da 8 fixture reali concatenate — person→pilota→aeromobile→tariffa→volo che addebita→ricarica→tipo scadenza→scadenza). Suite → 214/214.
+- **F2 — MINOR**: `courseStartDate` dello studente hardcoded `'it'` (`pilot-editor.tsx`) — `locale` threaded per `ProfilesSection` → `StudentProfileForm`, ora rispetta la lingua del viewer.
+- **F3 — ACCETTATO (non-blocker)**: `AccessSection` invia `locale: 'it'` sull'invito utente (nessun picker; entro la lettera dell'AC 4). Default sensato per un'aviosuperficie italiana finché la 12.11 non aggiunge la config locale del club; il flusso utenti completo resta su `/dashboard/users`.
+
+### Evidenza empirica (tutto CORRETTO)
+
+- **RBAC invariance (D13)**: `git diff 1235a3a..HEAD -- rbac.ts` VUOTO. Matrice live su build prod: staff vede Modifica/Registra ma NON Sospendi/Riattiva; `PATCH isActive` staff → 403; last-admin → 409 → toast.
+- **No N+1 (AC 1)**: `listPilotsPageData` = 6 query totali a prescindere dalla page size (unit test asserisce `toHaveBeenCalledTimes(1)` per tipo di enrichment); saldo lista batched == saldo profilo (fresh) empiricamente.
+- **Legacy boundary (AC 6)**: solo lista eliminata; `people/[id]/` e `users/` intatti (diff vuoto); nessun link orfano; registry/nav ripuntati.
+- **Profile-panel duplication**: stessi endpoint PUT/deactivate del pannello legacy — parità comportamentale.
+- **Cert grouping / profilo**: worst-status-wins per `typeName`, nessuna riga nascosta; KPI/voli/cert da fixture reali (no mock). i18n `PilotsPage` 103 chiavi IT==EN.
+
+### Verdetti strutturali
+
+- **(a) `listPilotsPageData` (composito nuovo) vs modificare `listPeople`**: CORRETTO — `listPeople` invariato (lo chiama e basta), gli altri consumer (bookings/flights/export/API) intatti.
+- **(b) badge "Ruolo" Pilota/Allievo/Istruttore** (non "Studente/Socio/Istruttore" del prototipo): CORRETTO — la story è internamente contraddittoria; il Contesto vincolante + D13 impongono i tre profili reali. "Socio"=Member non esiste nel dominio.
+
+### Commit di review
+
+- `e2f2fc9` — `fix(12.6)`: F1 (test profilo AC-7) + F2 (locale data studente).
+- questo commit — `docs(12.6)`: Review Record, status → done, sprint-status.
