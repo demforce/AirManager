@@ -1943,7 +1943,7 @@ describe('transitionBookingSchema (Story 12.2, AC 6)', () => {
 });
 
 describe('listReservedAircraftIds (story 12.5, AC 2 — fleet "Riservato" badge, batched)', () => {
-  it('rejects an actor without bookings.manage.any', async () => {
+  it('rejects an actor without aircraft.manage (e.g. a pilot)', async () => {
     await expect(listReservedAircraftIds(pilotActor(), ['aircraft_1'], new Date('2026-07-15T10:00:00.000Z'))).rejects.toThrow(
       ForbiddenError,
     );

@@ -181,20 +181,27 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
     });
     expect(profileResponse.status()).toBe(200);
 
-    // A run-unique booking straddling "now" — ADMIN holds `bookings.manage.any`, so `createBooking` auto-approves it (no separate transition call needed).
+    // A booking that COVERS "now" can't be created with a past startsAt —
+    // createBooking rejects it (BOOKING_IN_PAST, 422). So create it starting a
+    // few seconds in the FUTURE (passes the guard; ADMIN holds
+    // `bookings.manage.any` → auto-APPROVED), then wait past startsAt before
+    // loading the fleet page so the server-render `now` falls inside
+    // [startsAt, endsAt) and the row derives to "Riservato".
     const now = Date.now();
     const bookingResponse = await page.request.post('/api/v1/bookings', {
       data: {
         aircraftId,
         personId: person.id,
-        startsAt: new Date(now - 5 * 60_000).toISOString(),
-        endsAt: new Date(now + 55 * 60_000).toISOString(),
+        startsAt: new Date(now + 3_000).toISOString(),
+        endsAt: new Date(now + 3_600_000).toISOString(),
       },
     });
     expect(bookingResponse.status()).toBe(201);
-    const booking = (await bookingResponse.json()) as { status: string };
+    // createBooking returns `{ booking, warnings }` — the booking is nested.
+    const { booking } = (await bookingResponse.json()) as { booking: { status: string } };
     expect(booking.status).toBe('APPROVED');
 
+    await page.waitForTimeout(6_000);
     await gotoSearched(page, aircraft.registration);
     const card = cardFor(page, aircraft.registration);
     await expect(card.getByText('Riservato')).toBeVisible();

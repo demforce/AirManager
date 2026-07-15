@@ -1134,12 +1134,12 @@ export async function getOwnInstructorProfileId(actor: Actor): Promise<string | 
  * single `findMany` over every id on the fleet page's current page, NOT one
  * query per card) — same N+1-avoidance rationale as
  * `rates.service.ts#getEffectiveRates`. Presentational only (no field on
- * `Aircraft` itself): `bookings.manage.any` gates it, same permission every
- * STAFF/ADMIN actor who can reach the fleet page (`aircraft.manage`) already
- * holds (`rbac.ts`).
+ * `Aircraft` itself): gated on `aircraft.manage` — the SAME permission its
+ * only caller (the fleet page) requires — so the helper's gate can never
+ * diverge from the page that reaches it (`rbac.ts`).
  */
 export async function listReservedAircraftIds(actor: Actor, aircraftIds: string[], now: Date): Promise<Set<string>> {
-  authorize(actor, 'bookings.manage.any');
+  authorize(actor, 'aircraft.manage');
 
   if (aircraftIds.length === 0) {
     return new Set();
