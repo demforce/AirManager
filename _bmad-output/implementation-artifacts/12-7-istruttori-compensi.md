@@ -4,7 +4,7 @@ baseline_commit: 7e327b7498a3d03ae65155ac3b6734894adab3a3
 
 # Story 12.7: Istruttori — compensi, payout ledger, ciclo pagamenti
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -55,4 +55,15 @@ so that i compensi istruttori siano gestiti end-to-end nel gestionale (oggi non 
 
 ## Dev Agent Record
 
-(compilato dal dev agent)
+**Status**: review
+
+**Implementazione**: schema (`InstructorProfile.payoutRateCents` + `InstructorPayout`, migrazione `20260715180000_instructor_payouts`, verificata su DB fresco via `\d`), RBAC (`payouts.manage`, admin-only), service TDD (`instructor-compensation.service.ts` + 21 unit test, boundary Roma mtd/ytd/total, attribuzione payout per `periodEnd`), schemi Zod + registry OpenAPI, 3 route (GET riepilogo/dettaglio/export, POST payout con Idempotency-Key OBBLIGATORIA — controllo esplicito nella route dato che il meccanismo condiviso resta opt-in, PUT tariffa payout), pagina `/dashboard/instructors` (console + editor + profilo + slide-over Paga/Ciclo pagamenti/Aggiungi istruttore), `InstructorRatesPanel` spostato da `people/[id]` con restyling AirOps-nativo (era ancora in classi Tailwind legacy).
+
+**Deviazioni dichiarate**:
+1. Schema `InstructorPayout.periodStart/periodEnd`: aggiunto `@db.Date` (assente nello snippet grezzo del piano, che porta solo un commento inline non valido in sintassi Prisma) — necessario per la semantica "date-only Roma" richiesta dall'AC 1 stesso, stesso pattern di ogni altro campo data-only del dominio (`AircraftRate.validFrom` ecc.).
+2. "Aggiungi istruttore" (AC 4): implementato come ricerca persona esistente (`GET /api/v1/people?q=`) + attivazione profilo istruttore (`PUT .../profiles/instructor`, stesso endpoint della 12.6) — nessun form di creazione persona parallelo, come richiesto.
+3. "Ciclo pagamenti"/"Aggiungi istruttore" collocati nel card-head (non nel page-head come nel prototipo) per coerenza con `pilots-console.tsx`/`fleet-console.tsx`, dove ogni azione di riga vive nella card, non nel page-head.
+4. `InstructorRatesPanel` (tariffa allievo): rimosso il toggle "Nuova tariffa" del componente originale — form sempre visibile quando l'attore ha il permesso, stesso pattern del gemello `fleet/aircraft-editor.tsx#RatesSection` (mai portato dal prototipo AirOps, che non lo mostra). "Corrente" ora derivato client-side dallo storico (`currentRateOf`), non più da una prop server-computed — stesso pattern del gemello.
+5. Form "Paga": `periodStart` di default = inizio anno corrente (Roma) — l'API non espone un "ultimo periodo pagato", quindi non è calcolabile un "inizio del periodo scoperto" preciso; il campo resta editabile come da AC 5.
+
+**Test**: 21 unit test nuovi (`instructor-compensation.service.test.ts`) + rbac.test.ts aggiornato; e2e `instructor-rates.spec.ts` adattato (4/4 verdi) + nuovo `instructor-compensation.spec.ts` (6/6 verdi) — 10/10 e2e verdi in locale con `--retries=2`. Verifica interattiva screenshot in entrambi i temi (istruttori list, editor, profilo) — nessuna anomalia visiva.
