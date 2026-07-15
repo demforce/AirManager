@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-15 (story 12.5 Aeromobili implemented — dev complete, status review)
+last_updated: 2026-07-15 (story 12.5 Aeromobili done — fleet page + campi additivi; re-review Opus 211/211 CI-mode, F1 fixture Riservato + F2 permesso helper fixati)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -134,7 +134,7 @@ development_status:
   12-2-booking-approval-workflow: done
   12-3-pianificazione-prenotazioni-ui: done
   12-4-ppr-console-pubblico-transiti: done
-  12-5-aeromobili: review
+  12-5-aeromobili: done
   12-6-piloti: planned
   12-7-istruttori-compensi: planned
   12-8-registro-voli: planned

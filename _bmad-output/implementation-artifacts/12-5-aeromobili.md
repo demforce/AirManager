@@ -4,7 +4,7 @@ baseline_commit: 9cd1d7852324ecb29c590e8ff1a5d704e429b055
 
 # Story 12.5: Aeromobili — fleet page AirOps + campi additivi
 
-Status: review
+Status: done
 
 ## Story
 
@@ -72,3 +72,38 @@ Il dev subagent (Sonnet 5 xhigh) ha implementato la story ma ha **esaurito il ru
 - **i18n (M)**: `messages/it.json`, `messages/en.json`
 - **e2e (M)**: `aircraft-management`, `aircraft-rates`, `aircraft-status-hours`, `flight-reversal`, `flights`, `home-dashboard` (`.spec.ts`)
 - **Tracking (M)**: `sprint-status.yaml` (12-5 → review)
+
+## Review Record
+
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh, via workflow). **Data**: 2026-07-15. Contesto: il dev aveva esaurito il runway prima del commit/CI-mode; la sessione principale ha finalizzato `feat(12.5)` e la review è stata condotta a freddo sull'intero diff.
+
+### Arbiter (priority zero)
+
+- **`CI=1 npx playwright test` su build prod**: prima passata **210 passed · 1 FAILED** (il nuovo test AC-2 "Riservato", fallimento deterministico ×3). Dopo il fix di review `1e34f04`: **211/211 passed**. `npm run gates` verde (lint · typecheck · **1344** unit · build).
+
+### Verdetto
+
+**Codice di produzione CORRETTO** — l'unico difetto era nel test-fixture (F1). Feature verificata empiricamente, boundary pricing intatto, schema/RBAC/i18n sani.
+
+### Findings (fixati in `1e34f04`)
+
+- **F1 — BLOCKER, test-only**: il test AC-2 `aircraft-management.spec.ts:164` (a) creava una prenotazione con `startsAt` nel PASSATO → 422 `BOOKING_IN_PAST` (una prenotazione che "copre now" ha per definizione già iniziato, non creabile con start passato), e (b) leggeva `booking.status` dal path sbagliato (`createBooking` ritorna `{ booking, warnings }`). Fix: `startsAt = now+3s`, `waitForTimeout(6s)` oltre lo start prima del render, e destrutturazione `{ booking }`. Il reviewer ha provato la feature reale via SQL (badge "Riservato" con prenotazione covering-now, "Disponibile" senza). AC 5/6 ora soddisfatte (211/211).
+- **F2 — MINOR (defensive)**: `listReservedAircraftIds` (`bookings.service.ts`) autorizzava `bookings.manage.any` mentre l'unico chiamante (la fleet page) gate su `aircraft.manage` — coupling latente (sicuro oggi: admin/staff hanno entrambi). Fix: gate allineato ad `aircraft.manage`, così non può divergere dalla pagina che lo raggiunge.
+
+### Evidenza empirica
+
+- **Migrazione** (psql, DB fresco): `Aircraft.{seats,fuelType,owner,based}` + `AircraftRate.dryHourlyRateCents` + enum `AircraftOwner{CLUB,PRIVATE}` esattamente come AC 1.
+- **RBAC** (API+UI): admin/staff accesso; istruttore/pilota/allievo 403 + redirect.
+- **Dry rate**: POST/GET round-trip, UI "Tariffa attuale (dry)" in entrambi i temi; **pricing INTATTO** — `git diff flights.service.ts` VUOTO, dry isolato in `RATE_SELECT_WITH_DRY`, `RATE_SELECT`/`getEffectiveRate*` byte-invariati, test `NO_AIRCRAFT_RATE`/charge verdi.
+- **Race idempotency tariffe**: 6 POST concorrenti identici → 1×201 / 5×409, 1 sola riga (`@@unique` è il guard reale).
+- **Legacy (AC 4)**: nessun href/route vivo a `/dashboard/aircraft`; widget home + registry ripuntati; e2e non-aircraft (flight-reversal/flights/home-dashboard) = solo repoint/selettori, comportamentali intatti.
+
+### Verdetti strutturali
+
+- **(a) "Riservato" in `bookings.service.ts`**: CORRETTO (AC 2 lo lasciava al dev; `findMany` singola batched, no N+1, additiva, nessuna funzione booking/overlap toccata).
+- **(b) `nav-items.ts` (AC 4)**: CORRETTO (file con consumer vivi → ripuntato href aircraft a `/dashboard/fleet`, rimozione totale rinviata a 12.13, come da branch dell'AC).
+
+### Commit di review
+
+- `1e34f04` — `fix(12.5)`: F1 (fixture Riservato) + F2 (permesso helper).
+- questo commit — `docs(12.5)`: Review Record, status → done, sprint-status.
