@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-15 (story 12.2 in review — booking approval workflow backend)
+last_updated: 2026-07-15 (story 12.3 done — pianificazione UI; sessione fermata su richiesta utente)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -132,7 +132,7 @@ development_status:
   epic-12: in-progress
   12-1-airops-foundation-shell-auth: done
   12-2-booking-approval-workflow: done
-  12-3-pianificazione-prenotazioni-ui: in-progress
+  12-3-pianificazione-prenotazioni-ui: done
   12-4-ppr-console-pubblico-transiti: planned
   12-5-aeromobili: planned
   12-6-piloti: planned

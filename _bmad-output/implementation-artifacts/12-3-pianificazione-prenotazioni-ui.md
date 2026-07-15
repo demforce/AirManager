@@ -4,7 +4,7 @@ baseline_commit: 5ebe87f
 
 # Story 12.3: Pianificazione + Prenotazioni — UI AirOps
 
-Status: review
+Status: done
 
 ## Story
 
@@ -62,3 +62,19 @@ so that la gestione prenotazioni avvenga nel nuovo linguaggio visivo con il flus
 - **Deviazioni dichiarate**: (1) testid rinominati `schedule-aircraft-row`/`schedule-block`/`schedule-section`, drop `calendar-week-table`/`calendar-chip` (sanzionato dallo story file); (2) bottone "Oggi" aggiunto (classe `.today-btn` che il prototipo definisce ma non usa); (3) toggle giorno/settimana con link/router.push, NON la primitive `Segmented` (onChange-only, incompatibile con nav URL-driven — doc-comment in schedule.tsx); (4) submit dentro il `<form>` testid-ato anziché nel footer dello SlideOver (stabilità locator e2e); (5) l'annullamento lascia la riga con badge "Annullato" (conforme AC3, cambio visibile vs legacy che la rimuoveva); (6) assert 44px touch-target RIMOSSA dal test mobile (gli `.iconbtn` AirOps sono 26px per design — trade-off dichiarato, da scrutinare in review); (7) `list.table.instructor` chiave usata solo dalla colonna xlsx.
 - **Verifica interattiva** (script Playwright throwaway, poi eliminati): approve/deny-con-motivo/riapri/effettuato/assente, annulla two-step, force-booking end-to-end, riga AOG, popover filtri e calendario, mobile 375px senza overflow, dark mode — tutti confermati con screenshot e ispezione risposte di rete.
 - **Gates**: PASS (lint, typecheck, 1310/1310 unit, build). e2e completati dalla sessione principale su DB fresco (v. Review Record).
+
+## Review Record (adversarial, Opus 4.8 xhigh — 2026-07-15)
+
+**Verdetto**: fixes-required → fixed. Prima run full e2e CI-mode (build produzione, DB fresco): 191 pass / **16 fail** — tutte in bookings.spec.ts. Il reviewer ha separato empiricamente (re-run isolati su DB fresco + repro live): ~11 TEST rotti/fragili vs **3 bug di prodotto reali** + 1 giudizio di dominio. Audit inventario test: NESSUNA perdita di copertura (22→26 test, +4 workflow); l'app stessa funzionava (approve/deny+email/riapri/effettuato/assente/force→201 tutti guidati live dal reviewer).
+
+**Findings e risoluzione (fix del subagent dedicato, commit 5ea86b0):**
+- **F1 (blocker, FIXED)**: 10 test create/edit riscritti non aprivano MAI lo SlideOver (`new-booking-button`) — pannello chiuso = `aria-hidden` = submit fuori dall'albero a11y → timeout. Aggiunto il click di apertura; l'apertura ha SMASCHERATO 3 bug pre-esistenti dei test (scrim che intercetta il click post-create → Escape; accessible-name del select Allievo concatenato dalle option per il label-wrapping di `Field` → selettore by-name SOLO nel test; `toBeDisabled()` inaffidabile su `<option>` → `toHaveAttribute('disabled','')`).
+- **F2 (major, FIXED)**: crosstalk rotto — i Link di paginazione perdevano `?view/?date` e il toggle giorno/settimana era `<button>` senza href. Ora la paginazione porta view/date non-default (pageHref speculare a calendarHref) e il toggle è `<a>` locale-prefixed (CSS `.segmented` esteso agli anchor).
+- **F3 (major, FIXED)**: il pilota non poteva annullare la PROPRIA prenotazione PENDING (Annulla renderizzato solo su APPROVED; il backend lo permetteva già). Ora Annulla su own-row PENDING|APPROVED.
+- **F4 (major, FIXED)**: `formError` dell'EditBookingForm sopravviveva tra righe diverse (chiuso→riaperto su B mostrava il 409 di A). Clear su ogni chiusura + su cambio booking (adjust-state-during-render, niente effect).
+- **F5 (minor, FIXED)**: `setupPendingBookingAsStaff` senza clearCookies (redirect da /login già autenticati); test fragili su DB sporco → helper `findBookingRow` page-indipendente (walk ?page=N via goto diretto), giorni run-unique, week-count scopato per aeromobile, re-locate della riga dopo OGNI mutazione, timeout 60s sul test doppio-ciclo.
+- **F6 (minor, FIXED)**: titoli stantii rinominati (44px rimosso; "resta in lista come Annullato, assente dal calendario").
+- **F7 (RATIFICATO UTENTE → FIXED)**: finestra lista = **now − 48h** (Effettuato/Assente marcabili dopo l'atterraggio per 2 giorni; prima la riga spariva a slot concluso). Export allineato a listFrom+status della lista. Nota dichiarata: il conteggio "N in attesa" resta ancorato a now (fuori dal perimetro ratificato — eventuale allineamento su richiesta).
+- **F8 (note, FIXED)**: `model` aggiunto ad `AircraftOption`, cast `as ScheduleAircraftRow[]` rimosso.
+
+**Verifica finale**: gates verdi (1310 unit) e full suite CI-mode **207/207 su DUE run consecutive a DB fresco** (7.8m / 7.0m). Nota ambiente: MCP Playwright rotto in locale (path container) — verifica interattiva sostituita da script Playwright diretti + suite (workaround sanzionato, v. HANDOFF).
