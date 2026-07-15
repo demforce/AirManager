@@ -26,6 +26,18 @@ vi.mock('@/server/db/prisma', () => ({
     },
     account: {
       upsert: vi.fn(),
+      findMany: vi.fn(),
+    },
+    // Story 12.6, AC 1: `listPilotsPageData`'s three batched enrichment reads.
+    accountMovement: {
+      groupBy: vi.fn(),
+    },
+    flight: {
+      groupBy: vi.fn(),
+    },
+    user: {
+      findMany: vi.fn(),
+      count: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -38,6 +50,7 @@ const {
   deactivateProfile,
   getPerson,
   listPeople,
+  listPilotsPageData,
   unarchivePerson,
   updatePerson,
   upsertProfile,
@@ -58,6 +71,11 @@ const studentProfileUpdateManyMock = vi.mocked(prisma.studentProfile.updateMany)
 const instructorProfileUpsertMock = vi.mocked(prisma.instructorProfile.upsert);
 const instructorProfileUpdateManyMock = vi.mocked(prisma.instructorProfile.updateMany);
 const accountUpsertMock = vi.mocked(prisma.account.upsert);
+const accountFindManyMock = vi.mocked(prisma.account.findMany);
+const accountMovementGroupByMock = vi.mocked(prisma.accountMovement.groupBy);
+const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
+const userFindManyMock = vi.mocked(prisma.user.findMany);
+const userCountMock = vi.mocked(prisma.user.count);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as users.service.test.ts): narrow each
@@ -82,6 +100,11 @@ const instructorProfileUpdateMany = instructorProfileUpdateManyMock as unknown a
   mockResolvedValue: (v: UpdateManyFixture) => void;
 };
 const accountUpsert = accountUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+const accountFindMany = accountFindManyMock as unknown as { mockResolvedValue: (v: PersonFixture[]) => void };
+const accountMovementGroupBy = accountMovementGroupByMock as unknown as { mockResolvedValue: (v: PersonFixture[]) => void };
+const flightGroupBy = flightGroupByMock as unknown as { mockResolvedValue: (v: PersonFixture[]) => void };
+const userFindMany = userFindManyMock as unknown as { mockResolvedValue: (v: PersonFixture[]) => void };
+const userCount = userCountMock as unknown as { mockResolvedValue: (v: number) => void };
 
 function staffActor(): Actor {
   return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
@@ -129,6 +152,11 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     instructorProfileUpsertMock.mockReset();
     instructorProfileUpdateManyMock.mockReset();
     accountUpsertMock.mockReset();
+    accountFindManyMock.mockReset();
+    accountMovementGroupByMock.mockReset();
+    flightGroupByMock.mockReset();
+    userFindManyMock.mockReset();
+    userCountMock.mockReset();
 
     // Story 3.1 (interactive-callback form since story TD-1, AC 3):
     // `upsertProfile`'s pilot/student branches run their profile upsert
@@ -715,6 +743,100 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expect(pilotProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
       expect(createMock).not.toHaveBeenCalled();
       expect(updateMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listPilotsPageData (story 12.6, AC 1 — batched saldo/ultimo volo/stato utente)', () => {
+    const PERSON_A = { ...SELECTED_PERSON, id: 'person_a', firstName: 'Anna', lastName: 'Alfa' };
+    const PERSON_B = { ...SELECTED_PERSON, id: 'person_b', firstName: 'Bruno', lastName: 'Beta' };
+
+    it('rejects an actor without people.read (delegates authorization to listPeople)', async () => {
+      await expect(listPilotsPageData(pilotActor(), { page: 1, pageSize: 20, includeArchived: false })).rejects.toThrow(
+        ForbiddenError,
+      );
+      expect(accountFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('enriches a multi-person page with batched balance/last-flight/user-status reads, never a per-row query', async () => {
+      transaction.mockResolvedValue([[PERSON_A, PERSON_B], 2]);
+      accountFindMany.mockResolvedValue([
+        { id: 'account_a', personId: 'person_a' },
+        // person_b never activated a pilot/student profile — no Account row.
+      ]);
+      accountMovementGroupBy.mockResolvedValue([{ accountId: 'account_a', _sum: { amountCents: -1500 } }]);
+      flightGroupBy.mockResolvedValue([{ personId: 'person_a', _max: { flightDate: new Date('2026-02-10T00:00:00.000Z') } }]);
+      userFindMany.mockResolvedValue([
+        { id: 'user_a', personId: 'person_a', email: 'anna@airmanager.local', roles: ['PILOT'], isActive: true, passwordHash: 'x' },
+        // person_b has no linked user at all.
+      ]);
+      userCount.mockResolvedValue(0);
+
+      const result = await listPilotsPageData(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          id: 'person_a',
+          balanceCents: -1500,
+          lastFlightDate: '2026-02-10',
+          user: { id: 'user_a', email: 'anna@airmanager.local', roles: ['PILOT'], isActive: true, passwordSet: true },
+        }),
+        expect.objectContaining({
+          id: 'person_b',
+          balanceCents: 0,
+          lastFlightDate: null,
+          user: null,
+        }),
+      ]);
+      expect(result.total).toBe(2);
+
+      // Batched: exactly ONE call per enrichment kind for the whole page —
+      // never one call per person (that would be N+1, the thing AC 1 forbids).
+      expect(accountFindManyMock).toHaveBeenCalledTimes(1);
+      expect(accountFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { personId: { in: ['person_a', 'person_b'] } } }),
+      );
+      expect(accountMovementGroupByMock).toHaveBeenCalledTimes(1);
+      expect(accountMovementGroupByMock).toHaveBeenCalledWith(
+        expect.objectContaining({ by: ['accountId'], where: { accountId: { in: ['account_a'] } }, _sum: { amountCents: true } }),
+      );
+      expect(flightGroupByMock).toHaveBeenCalledTimes(1);
+      expect(flightGroupByMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['personId'],
+          where: { personId: { in: ['person_a', 'person_b'] }, status: 'REGISTERED' },
+          _max: { flightDate: true },
+        }),
+      );
+      expect(userFindManyMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports fleet-wide (unfiltered) totalCount/suspendedCount headline stats alongside the filtered page', async () => {
+      transaction.mockResolvedValue([[PERSON_A], 1]);
+      accountFindMany.mockResolvedValue([]);
+      flightGroupBy.mockResolvedValue([]);
+      userFindMany.mockResolvedValue([]);
+      countMock.mockResolvedValue(42);
+      userCount.mockResolvedValue(3);
+
+      const result = await listPilotsPageData(staffActor(), { page: 1, pageSize: 20, q: 'Alfa', includeArchived: false });
+
+      expect(result.totalCount).toBe(42);
+      expect(result.suspendedCount).toBe(3);
+      expect(countMock).toHaveBeenCalledWith({ where: { archivedAt: null } });
+      expect(userCountMock).toHaveBeenCalledWith({ where: { isActive: false, person: { archivedAt: null } } });
+    });
+
+    it('skips every enrichment query when the page is empty', async () => {
+      transaction.mockResolvedValue([[], 0]);
+      countMock.mockResolvedValue(0);
+      userCount.mockResolvedValue(0);
+
+      const result = await listPilotsPageData(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+
+      expect(result.items).toEqual([]);
+      expect(accountFindManyMock).not.toHaveBeenCalled();
+      expect(flightGroupByMock).not.toHaveBeenCalled();
+      expect(userFindManyMock).not.toHaveBeenCalled();
     });
   });
 });

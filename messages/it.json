@@ -283,6 +283,131 @@
       }
     }
   },
+  "PilotsPage": {
+    "title": "Piloti",
+    "sub": "{total} in archivio · {suspended} sospesi",
+    "cardTitle": "Anagrafica piloti",
+    "searchPlaceholder": "Cerca per nome o email…",
+    "includeArchivedLabel": "Mostra archiviati",
+    "empty": "Nessun pilota trovato.",
+    "newPilot": "Aggiungi pilota",
+    "pagination": { "prev": "Precedente", "next": "Successivo" },
+    "table": {
+      "name": "Nome",
+      "email": "Email",
+      "balance": "Saldo",
+      "lastFlight": "Ultimo volo",
+      "role": "Ruolo",
+      "status": "Stato",
+      "actions": "Azioni",
+      "noValue": "—"
+    },
+    "status": {
+      "active": "Attivo",
+      "suspended": "Sospeso",
+      "none": "Senza accesso"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "topUp": "Registra",
+      "suspend": "Sospendi",
+      "reactivate": "Riattiva"
+    },
+    "topUp": {
+      "title": "Registra ricarica",
+      "amount": "Importo (€)",
+      "paymentMethod": "Metodo di pagamento",
+      "paymentMethods": { "cash": "Contanti", "bankTransfer": "Bonifico", "pos": "POS" },
+      "effectiveDate": "Data valuta",
+      "description": "Descrizione",
+      "submit": "Registra ricarica",
+      "cancel": "Annulla",
+      "invalidAmount": "Inserisci un importo positivo (es. 100,00).",
+      "requiredField": "Campo obbligatorio.",
+      "genericError": "Si è verificato un errore. Riprova."
+    },
+    "editor": {
+      "newTitle": "Nuovo pilota",
+      "newSubtitle": "Aggiungi una persona all'anagrafica",
+      "closeLabel": "Chiudi",
+      "cancel": "Annulla",
+      "submitCreate": "Aggiungi pilota",
+      "submitEdit": "Salva modifiche",
+      "identity": {
+        "sectionTitle": "Anagrafica",
+        "firstName": "Nome",
+        "lastName": "Cognome",
+        "email": "Email",
+        "phone": "Telefono",
+        "address": "Indirizzo",
+        "fiscalCode": "Codice fiscale"
+      },
+      "profiles": {
+        "sectionTitle": "Profili"
+      },
+      "certifications": {
+        "sectionTitle": "Certificazioni",
+        "empty": "Nessuna scadenza registrata.",
+        "manageLink": "Gestisci in Scadenze",
+        "status": { "ok": "Valida", "expiring": "In scadenza", "expired": "Scaduta" }
+      },
+      "access": {
+        "sectionTitle": "Accesso",
+        "noUser": "Nessun utente collegato a questa persona.",
+        "email": "Email",
+        "roles": "Ruoli",
+        "rolesRequired": "Seleziona almeno un ruolo.",
+        "createSubmit": "Crea e invia invito",
+        "userSummary": "{email} · {roles}",
+        "statusActive": "Attivo",
+        "statusPending": "Invito in sospeso",
+        "resendInvite": "Reinvia invito",
+        "emailConflict": "Esiste già un utente con questa email.",
+        "genericError": "Si è verificato un errore. Riprova."
+      },
+      "archive": {
+        "sectionTitle": "Archivio",
+        "archive": "Archivia",
+        "unarchive": "Ripristina",
+        "confirmArchive": "Archiviare questa persona?",
+        "confirmUnarchive": "Ripristinare questa persona?",
+        "confirmYes": "Conferma",
+        "confirmCancel": "Annulla"
+      },
+      "errors": {
+        "required": "Campo obbligatorio.",
+        "generic": "Si è verificato un errore. Riprova.",
+        "conflictEmail": "Esiste già una persona con questa email o codice fiscale."
+      }
+    },
+    "profile": {
+      "closeLabel": "Chiudi",
+      "edit": "Modifica pilota",
+      "kpi": { "balance": "Saldo", "lastFlight": "Ultimo volo", "recentFlights": "Voli recenti" },
+      "noAccount": "—",
+      "archivedBadge": "Archiviato",
+      "certifications": { "sectionTitle": "Certificazioni", "empty": "Nessuna scadenza registrata." },
+      "recentFlights": {
+        "sectionTitle": "Voli recenti",
+        "empty": "Nessun volo registrato.",
+        "viewAll": "Vedi tutti",
+        "statement": "Estratto conto"
+      }
+    },
+    "toast": {
+      "created": "Pilota creato.",
+      "updated": "Dati aggiornati.",
+      "archived": "Persona archiviata.",
+      "unarchived": "Persona ripristinata.",
+      "topUpRecorded": "Ricarica registrata.",
+      "suspended": "Utente sospeso.",
+      "reactivated": "Utente riattivato.",
+      "userCreated": "Utente creato: email di invito inviata.",
+      "inviteResent": "Invito reinviato.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "lastAdminError": "Impossibile sospendere l'ultimo amministratore attivo."
+    }
+  },
   "PersonDetailPage": {
     "kicker": "Scheda persona",
     "backToList": "Torna all'elenco",

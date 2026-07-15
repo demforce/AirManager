@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
+const STAFF_EMAIL = 'staff@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -202,5 +203,80 @@ test.describe('User management (Story 1.4)', () => {
     expect(await response.json()).toEqual({
       error: { code: 'UNAUTHENTICATED', message: expect.any(String) },
     });
+  });
+});
+
+/**
+ * Suspend/reactivate from the Piloti row (story 12.6, AC 3) — `users.manage`
+ * is ADMIN-only (RBAC INVARIANT, D13): staff (`people.manage`/`finance.manage`
+ * but no `users.manage`) must see Modifica/Registra but NEVER
+ * Sospendi/Riattiva, even on a row with a linked user. The invite flow
+ * itself (create user + email) stays on the still-alive `/dashboard/users`
+ * page above; this only exercises the NEW row action.
+ */
+test.describe('Suspend/reactivate from the Piloti row (Story 12.6)', () => {
+  function rowFor(page: Page, lastName: string) {
+    return page.locator('[data-testid^="pilot-row-"]').filter({ hasText: lastName });
+  }
+
+  /** Admin must already be logged in. Creates a pilot person, then links a user to it from the editor's "Accesso" section (story 12.6, AC 4). */
+  async function createPilotWithAccess(page: Page): Promise<{ lastName: string }> {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const lastName = `Susp-${suffix}`;
+
+    await page.goto('/it/dashboard/pilots');
+    await page.getByTestId('pilots-new-button').click();
+    const form = page.getByTestId('pilot-identity-form');
+    await form.getByLabel('Nome', { exact: true }).fill('Test');
+    await form.getByLabel('Cognome', { exact: true }).fill(lastName);
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toBeVisible();
+
+    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
+    await rowFor(page, lastName).getByRole('button', { name: 'Modifica' }).click();
+
+    const accessSection = page.getByTestId('pilot-access-none');
+    await accessSection.getByLabel('Email').fill(uniqueEmail('pilotaccess'));
+    await accessSection.getByLabel('Pilota', { exact: true }).check();
+    await page.getByTestId('pilot-access-create').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Utente creato' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Chiudi' }).first().click();
+    return { lastName };
+  }
+
+  test('admin suspends and reactivates the linked user from the row', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const { lastName } = await createPilotWithAccess(page);
+
+    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
+    const row = rowFor(page, lastName);
+    await expect(row.getByText('Attivo', { exact: true })).toBeVisible();
+
+    await row.getByTestId(/^pilot-suspend-toggle-/).click();
+    await row.getByTestId(/^pilot-suspend-confirm-/).click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'sospeso' })).toBeVisible();
+    await expect(row.getByText('Sospeso', { exact: true })).toBeVisible();
+
+    await row.getByTestId(/^pilot-reactivate-toggle-/).click();
+    await row.getByTestId(/^pilot-suspend-confirm-/).click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'riattivato' })).toBeVisible();
+    await expect(row.getByText('Attivo', { exact: true })).toBeVisible();
+  });
+
+  test('staff sees Modifica/Registra but no Sospendi/Riattiva on a row with a linked user', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const { lastName } = await createPilotWithAccess(page);
+    await page.context().clearCookies();
+
+    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
+    const row = rowFor(page, lastName);
+    await expect(row).toBeVisible();
+
+    await expect(row.getByRole('button', { name: 'Modifica' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Registra' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Sospendi' })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: 'Riattiva' })).toHaveCount(0);
   });
 });

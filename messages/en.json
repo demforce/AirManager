@@ -283,6 +283,131 @@
       }
     }
   },
+  "PilotsPage": {
+    "title": "Pilots",
+    "sub": "{total} on file · {suspended} suspended",
+    "cardTitle": "Pilots directory",
+    "searchPlaceholder": "Search by name or email…",
+    "includeArchivedLabel": "Show archived",
+    "empty": "No pilots found.",
+    "newPilot": "Add pilot",
+    "pagination": { "prev": "Previous", "next": "Next" },
+    "table": {
+      "name": "Name",
+      "email": "Email",
+      "balance": "Balance",
+      "lastFlight": "Last flight",
+      "role": "Role",
+      "status": "Status",
+      "actions": "Actions",
+      "noValue": "—"
+    },
+    "status": {
+      "active": "Active",
+      "suspended": "Suspended",
+      "none": "No access"
+    },
+    "actions": {
+      "edit": "Edit",
+      "topUp": "Top up",
+      "suspend": "Suspend",
+      "reactivate": "Reactivate"
+    },
+    "topUp": {
+      "title": "Record top-up",
+      "amount": "Amount (€)",
+      "paymentMethod": "Payment method",
+      "paymentMethods": { "cash": "Cash", "bankTransfer": "Bank transfer", "pos": "Card" },
+      "effectiveDate": "Value date",
+      "description": "Description",
+      "submit": "Record top-up",
+      "cancel": "Cancel",
+      "invalidAmount": "Enter a positive amount (e.g. 100.00).",
+      "requiredField": "Required field.",
+      "genericError": "Something went wrong. Please try again."
+    },
+    "editor": {
+      "newTitle": "New pilot",
+      "newSubtitle": "Add a person to the directory",
+      "closeLabel": "Close",
+      "cancel": "Cancel",
+      "submitCreate": "Add pilot",
+      "submitEdit": "Save changes",
+      "identity": {
+        "sectionTitle": "Personal data",
+        "firstName": "First name",
+        "lastName": "Last name",
+        "email": "Email",
+        "phone": "Phone",
+        "address": "Address",
+        "fiscalCode": "Fiscal code"
+      },
+      "profiles": {
+        "sectionTitle": "Profiles"
+      },
+      "certifications": {
+        "sectionTitle": "Certifications",
+        "empty": "No expiry on file.",
+        "manageLink": "Manage in Expiries",
+        "status": { "ok": "Valid", "expiring": "Expiring", "expired": "Expired" }
+      },
+      "access": {
+        "sectionTitle": "Access",
+        "noUser": "No user linked to this person.",
+        "email": "Email",
+        "roles": "Roles",
+        "rolesRequired": "Select at least one role.",
+        "createSubmit": "Create and send invite",
+        "userSummary": "{email} · {roles}",
+        "statusActive": "Active",
+        "statusPending": "Invite pending",
+        "resendInvite": "Resend invite",
+        "emailConflict": "A user with this email already exists.",
+        "genericError": "Something went wrong. Please try again."
+      },
+      "archive": {
+        "sectionTitle": "Archive",
+        "archive": "Archive",
+        "unarchive": "Restore",
+        "confirmArchive": "Archive this person?",
+        "confirmUnarchive": "Restore this person?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel"
+      },
+      "errors": {
+        "required": "Required field.",
+        "generic": "Something went wrong. Please try again.",
+        "conflictEmail": "A person with this email or fiscal code already exists."
+      }
+    },
+    "profile": {
+      "closeLabel": "Close",
+      "edit": "Edit pilot",
+      "kpi": { "balance": "Balance", "lastFlight": "Last flight", "recentFlights": "Recent flights" },
+      "noAccount": "—",
+      "archivedBadge": "Archived",
+      "certifications": { "sectionTitle": "Certifications", "empty": "No expiry on file." },
+      "recentFlights": {
+        "sectionTitle": "Recent flights",
+        "empty": "No flights on file.",
+        "viewAll": "View all",
+        "statement": "Account statement"
+      }
+    },
+    "toast": {
+      "created": "Pilot created.",
+      "updated": "Details updated.",
+      "archived": "Person archived.",
+      "unarchived": "Person restored.",
+      "topUpRecorded": "Top-up recorded.",
+      "suspended": "User suspended.",
+      "reactivated": "User reactivated.",
+      "userCreated": "User created: invite email sent.",
+      "inviteResent": "Invite resent.",
+      "genericError": "Something went wrong. Please try again.",
+      "lastAdminError": "Cannot suspend the last active admin."
+    }
+  },
   "PersonDetailPage": {
     "kicker": "Person record",
     "backToList": "Back to list",

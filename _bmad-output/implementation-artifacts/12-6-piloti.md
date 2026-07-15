@@ -4,7 +4,7 @@ baseline_commit: 1235a3a66f6b85e46d8299b12b0cbe78eb016063
 
 # Story 12.6: Piloti — registry AirOps, profilo, azioni account
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -51,4 +51,26 @@ so that la gestione persone avvenga dalla pagina Piloti come nel prototipo, nel 
 
 ## Dev Agent Record
 
-(compilato dal dev agent)
+### Completion Notes
+
+- **AC 1 (composito batched)**: `listPilotsPageData` in `people.service.ts` avvolge `listPeople` (autorizzazione `people.read` invariata) e arricchisce la SOLA pagina di id con tre letture batched, nessun N+1: `account.findMany` + `accountMovement.groupBy` (saldo, pattern imitato da `listNegativeBalances` ma senza `having`), `flight.groupBy` su `status:'REGISTERED'` (ultimo volo), `user.findMany` (stato utente collegato). `totalCount`/`suspendedCount` (header "N in archivio · N sospesi") sono due query fleet-wide separate (`person.count`/`user.count`), stesso pattern del fleet header 12.5. Unit test dedicato con fixture a 2 persone (una con account/volo/utente, una senza nulla) + test skip-quando-pagina-vuota + test dei due count fleet-wide.
+- **AC 2/3 (pagina + RBAC)**: nuova `/dashboard/pilots` (`airopsNative`, route-registry acceso) port di `PilotsView`. Colonne come da AC; "Ruolo" mostra TUTTI i badge attivi tra i tre profili REALI del dominio (pilota/allievo/istruttore) — l'AC cita testualmente "Studente/Socio/Istruttore" (vocabolario del prototipo, `Member`↦"Socio" non esiste nel dominio) ma, letto insieme a "Renter/Visitor NON esistono" e al resto del Contesto ("una persona può essere Studente+Pilota"), è chiaramente un residuo lessicale del prototipo — implementato con le TRE relazioni reali e le label già esistenti in `PeoplePage.profilesPanel` (nessuna nuova categoria, D13). Azioni per riga (Modifica/Registra/Sospendi/Riattiva) sui gate RBAC esistenti, invariati.
+- **AC 4 (editor)**: `PilotEditor` a sezioni (stesso pattern esteso di `AircraftEditor`, 12.5): Anagrafica (POST/PATCH people), Profili (stessi endpoint PUT/deactivate di `profiles-panel.tsx`, restyled AirOps — non è il componente Tailwind riusato: sarebbe stato incoerente nel dark mode), Certificazioni SOLA LETTURA (da `/expiries`, raggruppate per `typeName` via helper condiviso `expiry-grouping.ts`, link "Gestisci in Scadenze"), Accesso (ADMIN-only: crea utente+invito o reinvia invito — editing ruoli di un utente esistente resta fuori scope, 12.13), Archivio.
+- **AC 5 (profilo)**: `PilotProfile` slide-over sola lettura — saldo da una fetch fresca di `getAccountOverview` (non dal valore di lista, potenzialmente stale), ultimo volo dal valore di lista (stesso dato batched, nessuna fetch aggiuntiva), voli recenti da `listFlights({personId,pageSize:5})` (stesso endpoint del pannello 11.2), certificazioni con lo stesso helper di raggruppamento dell'editor.
+- **AC 6 (rimozione parziale)**: eliminati SOLO `dashboard/people/page.tsx` + `people-manager.tsx`. `people/[id]/` intatta; il suo unico link dipendente (`backToList` → `/dashboard/people`) ripuntato a `/dashboard/pilots`. `nav-items.ts` (widget home) ripuntato allo stesso modo di aircraft→fleet in 12.5. `dashboard/users/` invariata.
+- **AC 7 (e2e)**: `people-management.spec.ts` riscritto sui nuovi selettori (`pilots-*`/`pilot-*`); redirect check ora su `/dashboard/pilots`; 403/401 su `/api/v1/people` invariati. `person-profiles.spec.ts` adattato all'editor (attivazione dentro la sezione "Profili", stesso 403/404 contract). `person-detail.spec.ts`: il suo helper `createPerson` usava la lista `/dashboard/people` per il click-through — ripuntato alla nuova pagina Piloti, l'id si risolve via l'API di lista invece di un click su un link ora inesistente (la pagina `[id]` stessa resta invariata). `user-management.spec.ts`: aggiunto un nuovo `describe` con 2 test (admin sospende/riattiva dalla riga; staff non vede quei bottoni).
+
+### File List
+
+- **Backend (M)**: `src/server/services/people.service.ts` (+ `.test.ts`) — `listPilotsPageData`.
+- **Pagina Piloti (nuovi)**: `src/app/[locale]/dashboard/pilots/{page.tsx,pilots-console.tsx,pilot-editor.tsx,pilot-profile.tsx,expiry-grouping.ts}`.
+- **Shell/nav (M)**: `src/components/shell/route-registry.ts`, `src/app/[locale]/dashboard/nav-items.ts`.
+- **Legacy (D)**: `src/app/[locale]/dashboard/people/page.tsx`, `src/app/[locale]/dashboard/people/people-manager.tsx`.
+- **Link repoint (M)**: `src/app/[locale]/dashboard/people/[id]/page.tsx` (`backToList` → `/dashboard/pilots`).
+- **i18n (M)**: `messages/it.json`, `messages/en.json` (nuovo namespace `PilotsPage`).
+- **e2e (M)**: `people-management.spec.ts`, `person-profiles.spec.ts`, `person-detail.spec.ts`, `user-management.spec.ts`.
+- **Tracking (M)**: `sprint-status.yaml` (12-6 → review).
+
+### Change Log
+
+- Implementazione story 12.6 completa in un'unica sessione dev; `npm run gates` verde (lint · typecheck · 1348 unit · build) prima del commit implementativo, per protocollo anti-runway.

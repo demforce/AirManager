@@ -73,7 +73,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'schedule', href: '/dashboard/bookings', icon: 'calendar', group: 'operations', roles: ALL_ROLES, enabled: true, airopsNative: true },
   { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: STAFF_ROLES, enabled: true, airopsNative: true },
   { id: 'visiting', href: '/dashboard/movements', icon: 'plane', group: 'operations', roles: STAFF_ROLES, enabled: true, airopsNative: true },
-  { id: 'pilots', href: '/dashboard/pilots', icon: 'users', group: 'directory', roles: STAFF_ROLES, enabled: false, airopsNative: false },
+  // Story 12.6: the pilots registry ships in the AirOps visual language directly.
+  { id: 'pilots', href: '/dashboard/pilots', icon: 'users', group: 'directory', roles: STAFF_ROLES, enabled: true, airopsNative: true },
   { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: STAFF_ROLES, enabled: false, airopsNative: false },
   // Story 12.5: the fleet page ships in the AirOps visual language directly.
   { id: 'fleet', href: '/dashboard/fleet', icon: 'fleet', group: 'directory', roles: STAFF_ROLES, enabled: true, airopsNative: true },

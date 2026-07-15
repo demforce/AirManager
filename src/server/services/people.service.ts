@@ -1,3 +1,4 @@
+import type { Role } from '@/generated/prisma/enums';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import type { CreatePersonInput, ListPeopleQuery, UpdatePersonInput } from '@/lib/schemas/people';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -234,6 +235,90 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   });
 
   return paginate(items.map(toListItem), total, query);
+}
+
+/** Story 12.6, AC 1: linked-user summary for the Piloti page's "Accesso"/"Stato" columns — `null` when the person has no linked user at all. */
+export type PilotUserInfo = {
+  id: string;
+  email: string;
+  roles: Role[];
+  isActive: boolean;
+  /** Whether the user completed their invite — never exposes the hash (same convention as `users.service.ts#UserListItem`). */
+  passwordSet: boolean;
+} | null;
+
+export type PilotsPageItem = PersonListItem & {
+  /** Always `SUM(AccountMovement.amountCents)` for the person's account (AD-3) — `0` when the person never activated one (same "no account" convention as `AccountOverview`). */
+  balanceCents: number;
+  /** The most recent REGISTERED flight's date (`YYYY-MM-DD`), or `null` if the person never flew. */
+  lastFlightDate: string | null;
+  user: PilotUserInfo;
+};
+
+export type PilotsPageResult = {
+  items: PilotsPageItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Fleet-wide (unfiltered by `q`/pagination — same convention as `fleet/page.tsx`'s own header counts), non-archived total: the page-head "N in archivio". */
+  totalCount: number;
+  /** Fleet-wide, non-archived count of persons whose linked user has `isActive: false`: the page-head "N sospesi". */
+  suspendedCount: number;
+};
+
+/**
+ * Composite reader for the Piloti page (story 12.6, AC 1) — wraps
+ * `listPeople` (which already authorizes `people.read` and does the
+ * search/pagination) and enriches that SAME page of ids with three derived
+ * reads that have no multi-person variant anywhere else in the codebase:
+ * account balance, last flight date, and linked-user status. Every one is a
+ * single batched `groupBy`/`findMany` over the page's ids — NEVER a per-row
+ * loop calling `getAccountOverview`/`listFlights` (that would be N+1, the
+ * exact thing this composite exists to avoid). The pattern mirrors
+ * `accounts.service.ts#listNegativeBalances`'s own two-step groupBy-then-join
+ * (here scoped to the page's ids instead of a `having` filter).
+ */
+export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): Promise<PilotsPageResult> {
+  const listResult = await listPeople(actor, query);
+  const ids = listResult.items.map((item) => item.id);
+
+  const [accounts, flightGroups, users, totalCount, suspendedCount] = await Promise.all([
+    ids.length > 0 ? prisma.account.findMany({ where: { personId: { in: ids } }, select: { id: true, personId: true } }) : [],
+    ids.length > 0
+      ? prisma.flight.groupBy({ by: ['personId'], where: { personId: { in: ids }, status: 'REGISTERED' }, _max: { flightDate: true } })
+      : [],
+    ids.length > 0
+      ? prisma.user.findMany({
+          where: { personId: { in: ids } },
+          select: { id: true, personId: true, email: true, roles: true, isActive: true, passwordHash: true },
+        })
+      : [],
+    prisma.person.count({ where: { archivedAt: null } }),
+    prisma.user.count({ where: { isActive: false, person: { archivedAt: null } } }),
+  ]);
+
+  const accountIds = accounts.map((account) => account.id);
+  const balanceGroups =
+    accountIds.length > 0
+      ? await prisma.accountMovement.groupBy({ by: ['accountId'], where: { accountId: { in: accountIds } }, _sum: { amountCents: true } })
+      : [];
+  const balanceByAccountId = new Map(balanceGroups.map((group) => [group.accountId, group._sum.amountCents ?? 0]));
+  const balanceByPersonId = new Map(accounts.map((account) => [account.personId, balanceByAccountId.get(account.id) ?? 0]));
+  const lastFlightByPersonId = new Map(flightGroups.map((group) => [group.personId, group._max.flightDate]));
+  const userByPersonId = new Map(users.map((user) => [user.personId, user]));
+
+  const items: PilotsPageItem[] = listResult.items.map((item) => {
+    const user = userByPersonId.get(item.id);
+    const lastFlightDate = lastFlightByPersonId.get(item.id);
+    return {
+      ...item,
+      balanceCents: balanceByPersonId.get(item.id) ?? 0,
+      lastFlightDate: lastFlightDate ? toDateOnlyString(lastFlightDate) : null,
+      user: user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null } : null,
+    };
+  });
+
+  return { items, total: listResult.total, page: listResult.page, pageSize: listResult.pageSize, totalCount, suspendedCount };
 }
 
 /**

@@ -22,13 +22,26 @@ function uniquePerson(prefix: string): { firstName: string; lastName: string } {
   return { firstName: prefix, lastName: `Scheda-${suffix}` };
 }
 
-async function createPerson(page: Page, person: { firstName: string; lastName: string }): Promise<void> {
-  await page.goto('/it/dashboard/people');
-  await page.getByRole('button', { name: 'Nuova persona' }).click();
-  await page.getByLabel('Nome', { exact: true }).fill(person.firstName);
-  await page.getByLabel('Cognome', { exact: true }).fill(person.lastName);
-  await page.getByRole('button', { name: 'Crea persona' }).click();
-  await expect(page.getByTestId('people-feedback')).toBeVisible();
+/**
+ * Creates a person via the Piloti page's "Aggiungi pilota" slide-over
+ * (story 12.6 — the legacy `/dashboard/people` create form is gone) and
+ * returns the fresh `Person.id`. `/dashboard/people/[id]` itself (this
+ * spec's subject) stays alive and unchanged (story 12.6, AC 6) — it is just
+ * no longer reached by clicking a list row, so this helper resolves the id
+ * via the (unchanged) list API instead of a UI click-through.
+ */
+async function createPerson(page: Page, person: { firstName: string; lastName: string }): Promise<string> {
+  await page.goto('/it/dashboard/pilots');
+  await page.getByTestId('pilots-new-button').click();
+  const form = page.getByTestId('pilot-identity-form');
+  await form.getByLabel('Nome', { exact: true }).fill(person.firstName);
+  await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
+  await page.getByTestId('pilot-identity-submit').click();
+  await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toBeVisible();
+
+  const response = await page.request.get(`/api/v1/people?q=${encodeURIComponent(person.lastName)}`);
+  const body = (await response.json()) as { items: Array<{ id: string }> };
+  return body.items[0]!.id;
 }
 
 async function ownPersonId(page: Page): Promise<string> {
@@ -41,12 +54,9 @@ test.describe('Person detail page (Story 2.3)', () => {
   test('staff opens the scheda from the list: anagrafica, profiles and the 5 structural placeholders (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Chiara');
-    await createPerson(page, person);
+    const personId = await createPerson(page, person);
 
-    await page.goto(`/it/dashboard/people?q=${encodeURIComponent(person.lastName)}`);
-    await page.getByRole('link', { name: new RegExp(`${person.lastName} ${person.firstName}`) }).click();
-
-    await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
+    await page.goto(`/it/dashboard/people/${personId}`);
     await expect(page.getByRole('heading', { name: `${person.lastName} ${person.firstName}` })).toBeVisible();
     await expect(page.getByText('Dati anagrafici')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Profili' })).toBeVisible();
@@ -62,7 +72,6 @@ test.describe('Person detail page (Story 2.3)', () => {
     // Staff (flights.manage): a REAL "Ultimi voli" panel — this fresh person has zero flights,
     // so the panel shows its own empty state (never "Disponibile prossimamente.") plus a
     // "Vedi tutti" link pre-filtered to this person (Story 11.2, AC 4).
-    const personId = page.url().split('/').pop()!;
     const flightsPanel = page.getByTestId('recent-flights-panel');
     await expect(flightsPanel).toBeVisible();
     await expect(flightsPanel.getByText('Nessun volo registrato.')).toBeVisible();
@@ -99,11 +108,7 @@ test.describe('Person detail page (Story 2.3)', () => {
   test('a pilot cannot open someone else’s scheda: redirected away (AC 2)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Davide');
-    await createPerson(page, person);
-    await page.goto(`/it/dashboard/people?q=${encodeURIComponent(person.lastName)}`);
-    await page.getByRole('link', { name: new RegExp(`${person.lastName} ${person.firstName}`) }).click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
-    const otherPersonId = page.url().split('/').pop();
+    const otherPersonId = await createPerson(page, person);
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
@@ -131,11 +136,7 @@ test.describe('Person detail page (Story 2.3)', () => {
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Diego');
-    await createPerson(page, person);
-    await page.goto(`/it/dashboard/people?q=${encodeURIComponent(person.lastName)}`);
-    await page.getByRole('link', { name: new RegExp(`${person.lastName} ${person.firstName}`) }).click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
-    const personId = page.url().split('/').pop()!;
+    const personId = await createPerson(page, person);
 
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     // A flight requires an active pilot/student profile on the person (PERSON_NOT_PILOT_OR_STUDENT otherwise).

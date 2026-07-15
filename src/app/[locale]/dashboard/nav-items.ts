@@ -26,8 +26,11 @@ export type NavItem = {
  * filtering end-to-end (AC 2).
  */
 export const NAV_ITEMS: readonly NavItem[] = [
-  // Story 2.1: the first real (non-placeholder) People sub-page.
-  { key: 'people', href: '/dashboard/people', permissions: ['people.read'] },
+  // Story 2.1: the first real (non-placeholder) People sub-page. Story
+  // 12.6: the legacy `/dashboard/people` list is gone — repointed at the new
+  // AirOps Piloti page (same rationale as `aircraft` below: this entry still
+  // has a consumer, `dashboard/page.tsx`'s own overview grid).
+  { key: 'people', href: '/dashboard/pilots', permissions: ['people.read'] },
   // Story 2.4: repointed the same way people was in 2.1. Story 12.5: the
   // legacy `/dashboard/aircraft` page is gone — repointed at the new AirOps
   // fleet page (this entry still has a consumer, `dashboard/page.tsx`'s own
