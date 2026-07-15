@@ -142,7 +142,7 @@ export function PilotEditor({ target, onClose, onMutated, canManageUsers, locale
           <IdentitySection mode="edit" pilot={current} labels={labels} toast={toast} toastLabels={toastLabels} onClose={onClose} onSaved={applyPatch} />
 
           <Section title={labels.profiles.sectionTitle}>
-            <ProfilesSection personId={current.id} labels={labels.profiles} onChanged={(profiles) => applyPatch({ profiles })} />
+            <ProfilesSection personId={current.id} locale={locale} labels={labels.profiles} onChanged={(profiles) => applyPatch({ profiles })} />
           </Section>
 
           <Section title={labels.certifications.sectionTitle}>
@@ -337,10 +337,12 @@ function profileStatusTone(profile: { deactivatedAt: string | null } | null): Ba
 
 function ProfilesSection({
   personId,
+  locale,
   labels,
   onChanged,
 }: {
   personId: string;
+  locale: 'it' | 'en';
   labels: PilotEditorLabels['profiles'];
   /** Called after a successful activate/update/deactivate (never on the initial load) — derives the same three boolean flags `PilotRow['profiles']` carries, so the row/badges behind this slide-over stay in sync (AD-1: no separate re-fetch of the list needed). */
   onChanged: (profiles: { pilot: boolean; student: boolean; instructor: boolean }) => void;
@@ -390,7 +392,7 @@ function ProfilesSection({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <PilotProfileForm personId={personId} profile={detail.pilotProfile} labels={labels} onSaved={refresh} />
-      <StudentProfileForm personId={personId} profile={detail.studentProfile} labels={labels} onSaved={refresh} />
+      <StudentProfileForm personId={personId} locale={locale} profile={detail.studentProfile} labels={labels} onSaved={refresh} />
       <InstructorProfileForm personId={personId} profile={detail.instructorProfile} labels={labels} onSaved={refresh} />
     </div>
   );
@@ -543,11 +545,13 @@ function PilotProfileForm({
 
 function StudentProfileForm({
   personId,
+  locale,
   profile,
   labels,
   onSaved,
 }: {
   personId: string;
+  locale: 'it' | 'en';
   profile: { courseStartDate: string; deactivatedAt: string | null } | null;
   labels: PilotEditorLabels['profiles'];
   onSaved: () => Promise<void>;
@@ -621,7 +625,7 @@ function StudentProfileForm({
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
           <span className="fld-label" style={{ textTransform: 'none' }}>
-            {profile ? `${labels.student.courseStartDate}: ${formatDateOnly(profile.courseStartDate, 'it')}` : ''}
+            {profile ? `${labels.student.courseStartDate}: ${formatDateOnly(profile.courseStartDate, locale)}` : ''}
           </span>
           {formError ? (
             <p role="alert" className="fld-label" style={{ color: 'var(--bad)' }}>

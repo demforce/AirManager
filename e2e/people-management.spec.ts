@@ -137,6 +137,87 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 
+  test('opens the read-only pilot profile slide-over and renders saldo, ultimo volo, certificazioni and voli recenti from real fixtures (AC 5/7)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('Profilo');
+
+    const personResponse = await page.request.post('/api/v1/people', {
+      data: { firstName: person.firstName, lastName: person.lastName, email: person.email },
+    });
+    expect(personResponse.status()).toBe(201);
+    const { id: personId } = (await personResponse.json()) as { id: string };
+
+    const pilotProfileResponse = await page.request.put(`/api/v1/people/${personId}/profiles/pilot`, {
+      data: { licenseNumber: `IT-PPL-${Date.now()}`, licenseType: 'PPL(A)' },
+    });
+    expect(pilotProfileResponse.status()).toBe(200);
+
+    // A UNIQUE aircraft (never reuse seed I-ABCD — avoids rate-collision with
+    // parallel specs), created directly via the API (same shape as
+    // `flight-log.spec.ts`'s `createAircraftWithRate`).
+    const registration = `I-PRF${Date.now()}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase().slice(0, 20);
+    const aircraftResponse = await page.request.post('/api/v1/aircraft', {
+      data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    });
+    expect(aircraftResponse.status()).toBe(201);
+    const { id: aircraftId } = (await aircraftResponse.json()) as { id: string };
+
+    const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraftId}/rates`, {
+      data: { priceCentsPerHour: 16000, validFrom: '2026-01-01' },
+    });
+    expect(rateResponse.status()).toBe(201);
+
+    // Gives ultimo-volo + voli-recenti (90 minutes -> "1:30").
+    const flightResponse = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId,
+        personId,
+        departureAirfield: 'LIMW',
+        arrivalAirfield: 'LIME',
+        flightType: 'TOURISM',
+        takeoffAt: '2026-06-15T10:00:00.000Z',
+        landingAt: '2026-06-15T11:30:00.000Z',
+      },
+    });
+    expect(flightResponse.status()).toBe(201);
+
+    // A non-trivial saldo (the exact figure is coupled to the flight charge
+    // above — asserted generically below, never hardcoded).
+    const topUpResponse = await page.request.post(`/api/v1/people/${personId}/account/top-ups`, {
+      data: { amountCents: 20000, paymentMethod: 'CASH', effectiveDate: '2026-07-01' },
+    });
+    expect(topUpResponse.status()).toBe(200);
+
+    const expiryTypeName = `Licenza ${Date.now()}`;
+    const expiryTypeResponse = await page.request.post('/api/v1/expiry-types', {
+      data: { name: expiryTypeName, scope: 'ALL' },
+    });
+    expect(expiryTypeResponse.status()).toBe(201);
+    const { id: expiryTypeId } = (await expiryTypeResponse.json()) as { id: string };
+
+    const expiryResponse = await page.request.post('/api/v1/expiries', {
+      data: { personId, expiryTypeId, issuedAt: '2026-01-01', expiresAt: '2027-01-31' },
+    });
+    expect(expiryResponse.status()).toBe(201);
+
+    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(person.lastName)}`);
+    await page.getByTestId(`pilot-name-${personId}`).click();
+
+    // Saldo: a real currency value, not the loading "…".
+    await expect(page.getByText(/\d,\d{2}\s*€/).first()).toBeVisible();
+    // Ultimo volo.
+    await expect(page.getByText('15/06/2026').first()).toBeVisible();
+    // Certificazioni: filter by the unique expiry-type name to disambiguate.
+    const cert = page.getByTestId('pilot-profile-certification-row').filter({ hasText: expiryTypeName });
+    await expect(cert).toContainText('31/01/2027');
+    // Voli recenti.
+    const flightRow = page.getByTestId('pilot-profile-flight-row');
+    await expect(flightRow).toContainText('LIMW → LIME');
+    await expect(flightRow).toContainText('1:30');
+  });
+
   test('a pilot gets a 403 AD-8 envelope from GET /api/v1/people directly (AC 3)', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
