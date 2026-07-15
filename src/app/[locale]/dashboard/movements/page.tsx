@@ -97,11 +97,12 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
     // request from a PREVIOUS day the staff never closed still counts as
     // "al suolo ora", AC 3's own rule), classified in JS below.
     listPprRequests(actor, { status: 'APPROVED', to: today, page: 1, pageSize: KPI_SCAN_LIMIT }),
-    // KPI: "movimenti nel mese" — every request (any status) whose eta falls
-    // in the current Rome month (Dev Notes: a simple, documented reading of
-    // "conteggi dal periodo" — historical statistics beyond this stay out of
-    // scope, story 12.10).
-    listPprRequests(actor, { status: 'ALL', from: monthRange.from, to: monthRange.to, page: 1, pageSize: 1 }),
+    // KPI: "movimenti nel mese" — COMPLETED transits (actually arrived AND
+    // departed) whose eta falls in the current Rome month (ratified 12.4
+    // review: a "movimento" is a materialized transit, so PENDING/REJECTED/
+    // APPROVED/CANCELLED are excluded). Historical statistics beyond this stay
+    // out of scope, story 12.10.
+    listPprRequests(actor, { status: 'COMPLETED', from: monthRange.from, to: monthRange.to, page: 1, pageSize: 1 }),
   ]);
   let listResult = results[0];
   const expectedTomorrowCount = results[1].total;

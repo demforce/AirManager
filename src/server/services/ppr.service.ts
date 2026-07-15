@@ -306,9 +306,11 @@ export async function listPprRequests(actor: Actor, query: ListPprRequestsQuery)
  * Staff manual PPR intake (epic 12, story 12.4, AC 1) — `ppr.manage`, shared
  * by BOTH the console's "PPR manuale" slide-over (`approveImmediately`
  * omitted/`false`, stays PENDING) and the movements page's "Registra
- * arrivo" slide-over (`approveImmediately: true`). Same domain validation
- * as the public `createPprRequest` (`ETA_IN_PAST`/`ETD_NOT_AFTER_ETA`,
- * instants never strings) but skips EVERYTHING anti-abuse — no honeypot, no
+ * arrivo" slide-over (`approveImmediately: true`). Enforces
+ * `ETD_NOT_AFTER_ETA` (instants, never strings) but — unlike the public
+ * `createPprRequest` — deliberately ALLOWS a past `eta` (ratified 12.4
+ * review): "Registra arrivo" logs an aircraft that has just landed, so the
+ * row derives to "al suolo" immediately. It skips EVERYTHING anti-abuse — no
  * rate limit, no receipt email (Dev Notes: "è staff"; this route never
  * triggers the automated notification pipeline the public form does — not
  * even the approval email when `approveImmediately` is used, since the
@@ -336,9 +338,9 @@ export async function createManualPprRequest(
   authorize(actor, 'ppr.manage');
 
   const eta = new Date(input.eta);
-  if (eta.getTime() <= Date.now()) {
-    throw new ValidationError('eta must be in the future.', undefined, 'ETA_IN_PAST');
-  }
+  // A past eta is intentionally allowed here (ratified 12.4 review) — "Registra
+  // arrivo" logs an aircraft that has just landed. The public createPprRequest
+  // still rejects it (ETA_IN_PAST); this staff path does not.
   let etd: Date | null = null;
   if (input.etd) {
     etd = new Date(input.etd);

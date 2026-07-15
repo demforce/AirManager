@@ -849,11 +849,13 @@ describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', (
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
-  it('eta in the past -> 422 ETA_IN_PAST, no row created (same domain validation as the public path)', async () => {
+  it('eta in the past is ACCEPTED — the staff path logs an arrival that already happened (ratified 12.4 review; the public createPprRequest still rejects it)', async () => {
+    pprCreate.mockResolvedValue(createdRow(baseInput()));
     const input = manualInput({ eta: new Date(Date.now() - 60_000).toISOString() });
 
-    await expect(createManualPprRequest(staffActor(), input)).rejects.toMatchObject({ code: 'ETA_IN_PAST' });
-    expect(createMock).not.toHaveBeenCalled();
+    await createManualPprRequest(staffActor(), input);
+
+    expect(createMock).toHaveBeenCalled();
   });
 
   it('etd not after eta -> 422 ETD_NOT_AFTER_ETA, no row created', async () => {

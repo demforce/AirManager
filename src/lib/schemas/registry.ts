@@ -1821,7 +1821,7 @@ registry.registerPath({
   path: '/api/v1/ppr-requests/manual',
   summary: 'Staff manual PPR intake, optionally auto-approved (AC 1, epic 12 story 12.4)',
   description:
-    "Staff-entered PPR (console's \"PPR manuale\" slide-over, or the movements page's \"Registra arrivo\" with `approveImmediately: true` in the SAME body shape) — no honeypot, no rate limit (staff, not public), no receipt/approval email. `email` is optional (a manual entry may have only a phone) but at least one of `email`/`phone` is required. Same domain validation as the public POST: `eta` in the past answers 422 `ETA_IN_PAST`; a present `etd` at or before `eta` answers 422 `ETD_NOT_AFTER_ETA`. With `approveImmediately: true`, issues the next atomic per-year PPR number in the SAME transaction as the create. Requires `ppr.manage`. Supports `Idempotency-Key`.",
+    "Staff-entered PPR (console's \"PPR manuale\" slide-over, or the movements page's \"Registra arrivo\" with `approveImmediately: true` in the SAME body shape) — no honeypot, no rate limit (staff, not public), no receipt/approval email. `email` is optional (a manual entry may have only a phone) but at least one of `email`/`phone` is required. Unlike the public POST, a past `eta` is ACCEPTED (\"Registra arrivo\" logs an aircraft that has just landed); a present `etd` at or before `eta` still answers 422 `ETD_NOT_AFTER_ETA`. With `approveImmediately: true`, issues the next atomic per-year PPR number in the SAME transaction as the create. Requires `ppr.manage`. Supports `Idempotency-Key`.",
   tags: ['Ppr'],
   security,
   request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(createManualPprRequestSchema), required: true } },

@@ -420,7 +420,7 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     await expect(movementsRows(page).filter({ hasText: atteso.registration })).toContainText('Atteso');
   });
 
-  test('"Registra arrivo" (epic 12, story 12.4, AC 3): the row appears immediately with an assigned pprNumber and a derived status, no separate approval step', async ({
+  test('"Registra arrivo" (epic 12, story 12.4, AC 3): a past eta is accepted (logging a just-landed arrival) and the row appears immediately as "al suolo" with an assigned pprNumber, no separate approval step', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, STAFF_EMAIL);
@@ -428,7 +428,10 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
 
     const suffix = uniqueSuffix();
     const registration = uniqueRegistration('A');
-    const eta = new Date(Date.now() + inArrivoEtaHoursFromNow() * 3_600_000);
+    // A past eta — "Registra arrivo" logs an aircraft that has just landed
+    // (ratified 12.4 review): the staff manual path accepts it (no ETA_IN_PAST)
+    // and the row derives to "al suolo" at once, no wait needed.
+    const eta = new Date(Date.now() - 30 * 60_000);
     const pad = (n: number) => String(n).padStart(2, '0');
     const etaLocal = `${eta.getFullYear()}-${pad(eta.getMonth() + 1)}-${pad(eta.getDate())}T${pad(eta.getHours())}:${pad(eta.getMinutes())}`;
 
@@ -453,7 +456,7 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     await gotoMovementsLastPage(page, 'APPROVED');
     const row = movementsRows(page).filter({ hasText: registration });
     await expect(row).toBeVisible();
-    await expect(row).toContainText('In arrivo');
+    await expect(row).toContainText('Al suolo');
     await expect(row.getByTestId('ppr-register-complete-button')).toBeVisible();
   });
 });
