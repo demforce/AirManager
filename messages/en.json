@@ -1404,6 +1404,151 @@
       "totalAmount": "Total charges"
     }
   },
+  "LogbookPage": {
+    "title": "Flight log",
+    "sub": "{count} logged entries",
+    "subOwn": "{count} entries · your flights only",
+    "newEntry": "New entry",
+    "cardTitle": "Flight log",
+    "exportLabel": "Export Excel",
+    "exportPdfLabel": "Export PDF",
+    "kpi": {
+      "entries": "Entries",
+      "hours": "Flight hours",
+      "movements": "Takeoffs / Landings",
+      "revenue": "Revenue"
+    },
+    "flightTypes": {
+      "private": "Tourism",
+      "school": "School",
+      "other": "Aerial work"
+    },
+    "table": {
+      "date": "Date",
+      "route": "Dep → Arr",
+      "pilot": "Pilot",
+      "aircraft": "Aircraft",
+      "type": "Type",
+      "hours": "Hours",
+      "takeoffs": "T/O",
+      "landings": "Ldg",
+      "amount": "Charge",
+      "pic": "PIC",
+      "actions": "Actions",
+      "totals": "Totals",
+      "soloSuffix": "solo",
+      "noInstructor": "—",
+      "noValue": "—",
+      "packageNote": "of which {duration} from package",
+      "statusCancelled": "Cancelled",
+      "cancelledDetail": "Cancelled on {date} — {reason}",
+      "correctionOf": "Correction of a previous flight",
+      "correctedBy": "Corrected by a later flight",
+      "cancelAction": "Cancel",
+      "correctAction": "Correct",
+      "empty": "No flights logged yet."
+    },
+    "filters": {
+      "dateFrom": "From",
+      "dateTo": "To",
+      "aircraft": "Aircraft",
+      "allAircraft": "All aircraft",
+      "person": "Person",
+      "allPeople": "All people",
+      "flightType": "Type",
+      "allTypes": "All types",
+      "status": "Status",
+      "allStatuses": "All statuses",
+      "statusOptions": {
+        "registered": "Registered",
+        "cancelled": "Cancelled"
+      },
+      "archivedSuffix": " (Archived)",
+      "reset": "Clear filters",
+      "instructorActive": "Instructor filter active",
+      "instructorClear": "Remove instructor filter"
+    },
+    "picker": {
+      "placeholder": "Search...",
+      "noResults": "No matches."
+    },
+    "editor": {
+      "newTitle": "New entry",
+      "newSubtitle": "Flight log",
+      "correctTitle": "Correct flight",
+      "closeLabel": "Close",
+      "cancel": "Cancel",
+      "submit": "Log flight",
+      "correctSubmit": "Confirm correction",
+      "correctReason": "Correction reason",
+      "requiredReason": "The reason is required.",
+      "conflictError": "This flight has already been cancelled.",
+      "requiredField": "Required field.",
+      "invalidHourMeter": "The end reading must be greater than the start reading.",
+      "fields": {
+        "aircraft": "Aircraft",
+        "noAircraftAvailable": "No active aircraft available.",
+        "person": "Pilot or student",
+        "noPersonAvailable": "No person with an active pilot or student profile.",
+        "instructor": "Instructor",
+        "noInstructor": "— None —",
+        "flightDate": "Flight date",
+        "flightType": "Flight type",
+        "soloMode": "Dual or solo?",
+        "soloModes": {
+          "dual": "Dual",
+          "solo": "Solo"
+        },
+        "departure": "Departure airport",
+        "arrival": "Arrival airport",
+        "takeoffTime": "Takeoff time",
+        "landingTime": "Landing time",
+        "computedDuration": "Duration",
+        "takeoffs": "Takeoffs",
+        "landings": "Landings",
+        "hourMeterStart": "Hour meter start",
+        "hourMeterEnd": "Hour meter end",
+        "notes": "Notes"
+      },
+      "errors": {
+        "HOUR_METER_INVALID": "The end reading must be greater than the start reading.",
+        "FLIGHT_TIMES_INVALID": "The landing time must be after takeoff and the duration cannot exceed 24 hours.",
+        "NO_AIRCRAFT_RATE": "No hourly rate is in effect for this aircraft on the flight date.",
+        "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
+        "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "A school flight requires an instructor.",
+        "SOLO_REQUIRES_SCHOOL": "Dual/solo is only valid for school flights.",
+        "AIRCRAFT_ARCHIVED": "The selected aircraft is archived.",
+        "PERSON_ARCHIVED": "The selected person is archived.",
+        "PERSON_NOT_PILOT_OR_STUDENT": "The person must have an active pilot or student profile.",
+        "INSTRUCTOR_NOT_FOUND": "The selected instructor has no active instructor profile.",
+        "INSTRUCTOR_SAME_AS_PILOT": "The instructor cannot be the same person as the pilot or student.",
+        "FLIGHT_DATE_IN_FUTURE": "The flight date cannot be in the future.",
+        "generic": "Could not log the flight. Please try again."
+      },
+      "result": {
+        "title": "Charge generated",
+        "minutes": "Duration",
+        "aircraftRate": "Aircraft rate",
+        "aircraftAmount": "Aircraft cost",
+        "instructorRate": "Instructor rate",
+        "instructorAmount": "Instructor cost",
+        "packageCovered": "From package",
+        "chargedMinutes": "Charged minutes",
+        "total": "Total charged",
+        "newBalance": "New balance"
+      }
+    },
+    "cancelModal": {
+      "title": "Cancel flight",
+      "reason": "Reason",
+      "requiredReason": "The reason is required.",
+      "submit": "Confirm cancellation",
+      "close": "Close",
+      "conflictError": "This flight has already been cancelled.",
+      "genericError": "Could not cancel the flight. Please try again.",
+      "success": "Flight cancelled."
+    }
+  },
   "ExpiriesPage": {
     "kicker": "Expiries",
     "title": "Expiries",

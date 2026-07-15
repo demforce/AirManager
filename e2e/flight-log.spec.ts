@@ -38,7 +38,7 @@ async function selectFromCombobox(combobox: Locator, query: string, optionLabel:
  */
 async function resetFiltersAndSettle(page: Page, dirtyFilter: Locator, dirtyValue: string): Promise<void> {
   await page.getByTestId('flight-filter-reset').click();
-  await expect(page).toHaveURL(/\/dashboard\/flights$/);
+  await expect(page).toHaveURL(/\/dashboard\/logbook$/);
   // The remounted control shows its own empty-state label (e.g. "Tutti i
   // velivoli"), never the value it held before the reset — waiting for the
   // DIRTY value to disappear is the remount-complete signal that works for
@@ -220,10 +220,10 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await loginExpectingDashboard(page, pilot.email, 'PilotOwnView123!');
 
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(nav.getByRole('link', { name: 'Voli', exact: true })).toHaveAttribute('href', '/it/dashboard/flights');
+    await expect(nav.getByRole('link', { name: 'Voli', exact: true })).toHaveAttribute('href', '/it/dashboard/logbook');
     await nav.getByRole('link', { name: 'Voli', exact: true }).click();
 
-    await expect(page.getByRole('heading', { name: 'I miei voli' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Registro voli' })).toBeVisible();
     // No registration form, no per-row actions for a non-staff actor.
     await expect(page.getByTestId('flight-form')).toHaveCount(0);
     await expect(page.getByTestId('flight-cancel-action')).toHaveCount(0);
@@ -281,7 +281,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await registerFlight(page, { aircraftId: aircraftA.id, personId: personA.personId, flightDate: '2020-05-01', flightType: 'TOURISM', minutes: 30 });
     await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'AERIAL_WORK', minutes: 45 });
 
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
 
     // Velivolo filter: only aircraftA's flight.
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraftA.registration, aircraftA.registration);
@@ -357,7 +357,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
       await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate, flightType: 'TOURISM', minutes: 10 });
     }
 
-    await page.goto(`/it/dashboard/flights?personId=${person.personId}`);
+    await page.goto(`/it/dashboard/logbook?personId=${person.personId}`);
 
     await expect(page.getByTestId('flight-row')).toHaveCount(20);
     await expect(page.getByTestId('flight-pagination-status')).toHaveText('1 / 2');

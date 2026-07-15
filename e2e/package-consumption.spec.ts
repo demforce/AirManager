@@ -168,7 +168,7 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(packageRow).toContainText('1:00'); // residuo pieno
 
     // Register a 70' flight on the eligible aircraft: 60' from the package, 10' pro-rata at full rate.
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill(PAST_DATE);
@@ -200,7 +200,7 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(exhaustedRow).toContainText('1:00'); // "Usati: 1:00"
 
     // A second flight on the SAME (now-exhausted) package: full rate, no coverage.
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-02');
@@ -231,7 +231,7 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await page.getByRole('button', { name: 'Conferma vendita' }).click();
     await expect(page.getByTestId('packages-panel-feedback')).toBeVisible();
 
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), otherAircraft.registration, otherAircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-04');

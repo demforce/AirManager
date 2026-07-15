@@ -20,13 +20,12 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
 }
 
 /**
- * Types into a `SearchCombobox` (story TD-3) and clicks the matching option
- * — the typeahead replacement for the old `selectOption({ label })` on the
- * flight pickers (velivolo/persona/istruttore/filter-bar). `combobox` must
- * already resolve to the specific `<input>` (scoped the same way the old
- * `selectOption` call sites were). Playwright's auto-waiting on the option
- * locator absorbs both the ~250ms debounce and the server round-trip —
- * no manual wait needed.
+ * Types into a `SearchCombobox` (story TD-3) and clicks the matching option —
+ * the "Nuova voce" slide-over's velivolo/pilota/istruttore pickers (story
+ * 12.8). `combobox` must already resolve to the specific `<input>` (scoped
+ * the same way the old `selectOption({ label })` call sites were).
+ * Playwright's auto-waiting on the option locator absorbs both the debounce
+ * and the server round-trip — no manual wait needed.
  */
 async function selectFromCombobox(combobox: Locator, query: string, optionLabel: string): Promise<void> {
   await combobox.click();
@@ -183,8 +182,14 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number | nu
   return { id: aircraft.id, registration };
 }
 
-test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Story 11.1, AC 1/2)', () => {
-  test('staff registers a flight with takeoff/landing times: duration auto-derived and shown live, breakdown shown, balance drops in the estratto conto (FLIGHT_CHARGE, negative), aircraft hour meter advances', async ({
+/** Opens the "Nuova voce" slide-over (story 12.8) — staff-only, replaces the legacy inline "Registra volo" form. */
+async function openNewEntryForm(page: Page): Promise<void> {
+  await page.getByTestId('logbook-new-button').click();
+  await expect(page.getByTestId('flight-form')).toBeVisible();
+}
+
+test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Story 11.1, AC 1/2; Story 12.8: AirOps logbook)', () => {
+  test('staff registers a flight with takeoff/landing times: duration auto-derived and shown live, breakdown shown INSIDE the slide-over, balance drops in the estratto conto (FLIGHT_CHARGE, negative), aircraft hour meter advances', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -200,25 +205,23 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.context().clearCookies();
     await loginExpectingDashboard(page, staffEmail, staffPassword);
 
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(
-      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
-      pilot.lastName,
-      `${pilot.lastName} ${pilot.firstName}`,
-    );
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     // 80' (1:20) via takeoff/landing times — story 11.1, AC 2: the duration is derived, never a direct input.
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:20');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:20');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
-    // 80' @ 150,00 €/h -> 200,00 € (the PRD-testable 80'x150 case).
+    // 80' @ 150,00 €/h -> 200,00 € (the PRD-testable 80'x150 case) — ratifica 1: the breakdown/nuovo saldo stays INSIDE the slide-over on success.
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel).toContainText('1:20');
     await expect(resultPanel).toContainText(/150,00\s€/);
     await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/200,00\s€/);
     await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-200,00\s€/);
+    await page.getByTestId('flight-result-close').click();
 
     const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
     await expect(row).toContainText('1:20');
@@ -258,18 +261,11 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const instructor = await createInstructorWithRate(page, 4000); // 40,00 €/h
 
     // Still authenticated as admin — creating the pilot/instructor logins above never touched this session cookie.
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(
-      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
-      pilot.lastName,
-      `${pilot.lastName} ${pilot.firstName}`,
-    );
-    await selectFromCombobox(
-      page.getByTestId('flight-form').getByLabel('Istruttore'),
-      instructor.lastName,
-      `${instructor.lastName} ${instructor.firstName}`,
-    );
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
     await page.getByTestId('flight-form').getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
     // 60' via takeoff/landing times — the (optional, purely informational) contaore pair is left blank.
     await page.getByLabel('Ora decollo').fill('10:00');
@@ -281,12 +277,15 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel).toContainText('1:00');
     await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/160,00\s€/);
+    await page.getByTestId('flight-result-close').click();
 
     const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
-    await expect(row).toContainText(`${instructor.lastName} ${instructor.firstName}`);
+    await expect(row).toContainText(`CFI ${instructor.lastName} ${instructor.firstName}`);
     await expect(row).toContainText('Scuola');
     await expect(row).toContainText('1:00');
     await expect(row).toContainText(/160,00\s€/);
+    // Dual SCHOOL flight (AC 2): the PIC is the INSTRUCTOR (own dedicated cell, distinct from the "pilota" column above).
+    await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${instructor.lastName} ${instructor.firstName}`);
   });
 
   test('an invalid hour-meter pair (end <= start) shows the HOUR_METER_INVALID message in the form (story 11.1: two independent optional fields, no radio/mode anymore)', async ({
@@ -297,13 +296,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const aircraft = await createAircraftWithRate(page, 15000);
     const pilot = await createPilotWithLogin(page, 'PilotFlights789!');
 
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(
-      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
-      pilot.lastName,
-      `${pilot.lastName} ${pilot.firstName}`,
-    );
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
@@ -319,13 +315,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const aircraft = await createAircraftWithRate(page, 15000);
     const pilot = await createPilotWithLogin(page, 'PilotFlightsHM1!');
 
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(
-      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
-      pilot.lastName,
-      `${pilot.lastName} ${pilot.firstName}`,
-    );
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
@@ -340,13 +333,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const aircraft = await createAircraftWithRate(page, null);
     const pilot = await createPilotWithLogin(page, 'PilotFlightsNoRate1!');
 
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(
-      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
-      pilot.lastName,
-      `${pilot.lastName} ${pilot.firstName}`,
-    );
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
@@ -416,13 +406,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const aircraft = await createAircraftWithRate(page, 12000); // 120,00 €/h
     const pilot = await createPilotWithLogin(page, 'PilotFlightsMidnight1!');
 
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(
-      page.getByTestId('flight-form').getByLabel('Pilota o allievo'),
-      pilot.lastName,
-      `${pilot.lastName} ${pilot.firstName}`,
-    );
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill(PAST_DATE);
     // 23:30 -> 00:10 the next day: 40', not a negative duration.
     await page.getByLabel('Ora decollo').fill('23:30');
@@ -452,21 +439,23 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     expect(body.flight.minutes).toBe(40);
   });
 
-  test('nav shows "Voli" for both staff and a pilot (story 5.4, FR-17: own-access registry)', async ({ page }) => {
+  test('nav shows "Registro voli" for both staff and a pilot (story 5.4, FR-17: own-access registry; story 12.8: repointed at the AirOps sidebar)', async ({
+    page,
+  }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilot = await createPilotWithLogin(page, 'PilotFlightsNav123!');
 
     await page.goto('/it/dashboard');
-    const adminNav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(adminNav.getByRole('link', { name: 'Voli', exact: true })).toHaveAttribute('href', '/it/dashboard/flights');
+    const adminSidebar = page.locator('aside.sidebar');
+    await expect(adminSidebar.getByRole('link', { name: 'Registro voli', exact: true })).toHaveAttribute('href', '/it/dashboard/logbook');
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, 'PilotFlightsNav123!');
-    const pilotNav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(pilotNav.getByRole('link', { name: 'Voli', exact: true })).toHaveAttribute('href', '/it/dashboard/flights');
+    const pilotSidebar = page.locator('aside.sidebar');
+    await expect(pilotSidebar.getByRole('link', { name: 'Registro voli', exact: true })).toHaveAttribute('href', '/it/dashboard/logbook');
   });
 
-  test('the registry shows the new logbook columns (data DD/MM/YYYY, tratta, orari, decolli/atterraggi) and derives the PIC for a dual SCHOOL flight as the instructor (story 11.2, AC 1/2)', async ({
+  test('the registry shows the new logbook columns (data DD/MM/YYYY, tratta, decolli/atterraggi) and derives the PIC for a dual SCHOOL flight as the instructor (story 11.2, AC 1/2; story 12.8 AC 2)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -480,8 +469,8 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const takeoffAt = `${PAST_DATE}T10:00:00.000Z`;
     const landingAt = `${PAST_DATE}T11:00:00.000Z`;
 
-    // Direct API registration (not the form): the tratta/orari assertions
-    // below need EXACT, run-deterministic values — the form composes
+    // Direct API registration (not the form): the tratta assertions below
+    // need EXACT, run-deterministic values — the form composes
     // `takeoffAt`/`landingAt` from the BROWSER's local timezone, which this
     // suite never pins (Playwright inherits the container's `Etc/UTC`), so a
     // form-filled '10:00' would not reliably equal `10:00:00.000Z`.
@@ -502,24 +491,17 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     });
     expect(response.status()).toBe(201);
 
-    // Same Europe/Rome conversion the registry's `formatTimeOfDay` applies
-    // (Node's `Intl` supports any IANA zone regardless of the host/browser
-    // TZ) — computed here instead of hardcoded, so it holds across the
-    // CET/CEST boundary too.
-    const romeTimeFormatter = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false });
-    const expectedTimes = `${romeTimeFormatter.format(new Date(takeoffAt))}–${romeTimeFormatter.format(new Date(landingAt))}`;
-
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(/aircraftId=/);
 
     const row = page.getByTestId('flight-row').first();
     await expect(row).toContainText('01/01/2020');
     await expect(row).toContainText(`${departure} → ${arrival}`);
-    await expect(row).toContainText(expectedTimes);
-    await expect(row).toContainText('2 / 3');
+    await expect(row.getByTestId('flight-takeoffs-cell')).toHaveText('2');
+    await expect(row.getByTestId('flight-landings-cell')).toHaveText('3');
     // Dual SCHOOL flight (AC 2): the PIC is the INSTRUCTOR, distinctly from
-    // the existing "Istruttore" column (same name, different cell).
+    // the existing "pilota" column (same name shown there as a "CFI" sub-line, different cell).
     await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${instructor.lastName} ${instructor.firstName}`);
 
     // A SOLO SCHOOL flight on the same pilot: the PIC is the pilot (allievo), not the instructor.

@@ -256,7 +256,7 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     const pilot = await createPilotPerson(page, 'UiClick');
     await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, flightDate: '2020-05-05', flightType: 'TOURISM', minutes: 15 });
 
-    await page.goto(`/it/dashboard/flights?aircraftId=${aircraft.id}`);
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
 
     const [download] = await Promise.all([

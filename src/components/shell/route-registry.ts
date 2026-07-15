@@ -88,7 +88,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     enabled: true,
     airopsNative: false,
   },
-  { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: false, airopsNative: false },
+  // Story 12.8: the logbook ships in the AirOps visual language directly, replacing the legacy `/dashboard/flights`.
+  { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: true, airopsNative: true },
   { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: STAFF_ROLES, enabled: false, airopsNative: false },
   { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: STAFF_ROLES, enabled: false, airopsNative: false },
   // ADMIN-only: matches `settings.manage` in rbac.ts (review 12.1 F2 — nav must never

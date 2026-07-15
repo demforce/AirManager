@@ -75,7 +75,7 @@ test.describe('Person detail page (Story 2.3)', () => {
     const flightsPanel = page.getByTestId('recent-flights-panel');
     await expect(flightsPanel).toBeVisible();
     await expect(flightsPanel.getByText('Nessun volo registrato.')).toBeVisible();
-    await expect(flightsPanel.getByTestId('recent-flights-view-all')).toHaveAttribute('href', `/it/dashboard/flights?personId=${personId}`);
+    await expect(flightsPanel.getByTestId('recent-flights-view-all')).toHaveAttribute('href', `/it/dashboard/logbook?personId=${personId}`);
 
     // Staff has people.manage: the pilot profile section is interactive (activate control present).
     const pilotSection = page.getByTestId('profile-section-pilot');
@@ -102,7 +102,7 @@ test.describe('Person detail page (Story 2.3)', () => {
     // registry page for a non-staff actor — Story 11.2, AC 4).
     const flightsPanel = page.getByTestId('recent-flights-panel');
     await expect(flightsPanel).toBeVisible();
-    await expect(flightsPanel.getByTestId('recent-flights-view-all')).toHaveAttribute('href', '/it/dashboard/flights');
+    await expect(flightsPanel.getByTestId('recent-flights-view-all')).toHaveAttribute('href', '/it/dashboard/logbook');
   });
 
   test('a pilot cannot open someone else’s scheda: redirected away (AC 2)', async ({ page }) => {
@@ -176,9 +176,9 @@ test.describe('Person detail page (Story 2.3)', () => {
     await expect(row).toContainText('Registrato');
 
     const viewAllLink = panel.getByTestId('recent-flights-view-all');
-    await expect(viewAllLink).toHaveAttribute('href', `/it/dashboard/flights?personId=${personId}`);
+    await expect(viewAllLink).toHaveAttribute('href', `/it/dashboard/logbook?personId=${personId}`);
     await viewAllLink.click();
-    await expect(page).toHaveURL(new RegExp(`/it/dashboard/flights\\?personId=${personId}`));
+    await expect(page).toHaveURL(new RegExp(`/it/dashboard/logbook\\?personId=${personId}`));
     await expect(page.getByTestId('flight-row').filter({ hasText: 'Campo Prova' })).toBeVisible();
   });
 });

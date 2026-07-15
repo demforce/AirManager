@@ -268,7 +268,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     const pilot = await createPilotPerson(page, 'UiPdfClick');
     await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, flightDate: dateAt(3), flightType: 'TOURISM', minutes: 20 });
 
-    await page.goto(`/it/dashboard/flights?aircraftId=${aircraft.id}`);
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
 
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('flights-export-pdf-button').click()]);

@@ -32,9 +32,9 @@ function sanitizeDateParam(value: string | undefined): string | undefined {
   return value && DATE_ONLY_PATTERN.test(value) ? value : undefined;
 }
 
-/** `/dashboard/flights?instructorPersonId=…` drill-down (AC 2/4) — the SAME period, always `SCHOOL` (the summary itself is SCHOOL-only). */
+/** `/dashboard/logbook?instructorPersonId=…` drill-down (AC 2/4; story 12.8 repointed from the legacy `/dashboard/flights`) — the SAME period, always `SCHOOL` (the summary itself is SCHOOL-only). */
 function flightsDrillDownHref(instructorPersonId: string, from: string, to: string) {
-  return { pathname: '/dashboard/flights', query: { instructorPersonId, flightType: 'SCHOOL', dateFrom: from, dateTo: to } };
+  return { pathname: '/dashboard/logbook', query: { instructorPersonId, flightType: 'SCHOOL', dateFrom: from, dateTo: to } };
 }
 
 /**

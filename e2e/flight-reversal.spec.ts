@@ -197,20 +197,24 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(page.getByTestId('packages-panel-feedback')).toBeVisible();
 
     // Register a SCHOOL flight (60' — fully covered by the package) with an instructor.
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
-    await page.getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
+    await page.getByTestId('flight-form').getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
     await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
-    // Aircraft fully covered by the package (0,00 €) + instructor 40,00 € full charge -> total 40,00 €.
+    // Aircraft fully covered by the package (0,00 €) + instructor 40,00 € full charge -> total 40,00 €
+    // — ratifica 1: shown INSIDE the slide-over on success.
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/40,00\s€/);
     await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-40,00\s€/);
+    await page.getByTestId('flight-result-close').click();
 
     // Aircraft hour meter advanced by 60' (500 -> 560 = 9:20). Search-scoped:
     // the fleet grid (`/dashboard/fleet`, story 12.5) is paginated 20/page
@@ -227,7 +231,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     // flights from other runs bury this 2020-dated row past the page. The
     // filter change navigates and REMOUNTS the manager — settle on its URL
     // effect before touching anything else (TD-3 review M1 lesson).
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(/aircraftId=/);
     const flightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).first();
@@ -286,9 +290,11 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     // Same run-unique registry scoping as above (TD-3 review D1/M1): filter by
     // this run's aircraft and settle BEFORE using the form, so the '2020-01-02'
     // row lookups below cannot be buried by other runs' recent-dated flights.
-    await page.goto('/it/dashboard/flights');
+    await page.goto('/it/dashboard/logbook');
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(/aircraftId=/);
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-02');
@@ -296,25 +302,28 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
     await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/0,00\s€/);
+    await page.getByTestId('flight-result-close').click();
 
     // Correct it: 60' -> 30' (a genuine "dati sbagliati" fix) — same takeoff (prefilled from the original), landing moved an hour earlier.
-    const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).first();
+    // Disambiguated by the presence of a still-available "Correggi" action
+    // (the REGISTERED row) rather than an H:MM duration substring: `textContent`
+    // concatenates adjacent cells with NO separator, so a `\b`-anchored regex
+    // can still land mid-word right after the preceding cell's own text
+    // (e.g. the type badge "Turismo" butting straight up against "0:30") —
+    // a structural filter has no such gotcha.
+    const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ has: page.getByTestId('flight-correct-action') });
     await secondFlightRow.getByTestId('flight-correct-action').click();
-    await expect(page.getByRole('heading', { name: 'Correggi volo' })).toBeVisible();
+    await expect(page.locator('.so-title')).toHaveText('Correggi volo');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByLabel('Motivo della correzione').fill('Durata inserita per errore');
     await page.getByRole('button', { name: 'Conferma correzione' }).click();
 
     // The new (30') flight is REGISTERED and marked as a correction; the old (60') is ANNULLATO and marked as corrected.
-    // Word-boundary regex (story 11.2): the new "orari" column renders
-    // `11:00–11:30`/`11:00–12:00`, and a plain `hasText: '1:00'` substring
-    // match now ALSO hits inside "11:00" — `\b` anchors exclude that (a
-    // digit right before "1" is not a word boundary), matching only the
-    // standalone duration cell.
     await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/0,00\s€/);
-    const correctedRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ hasText: /\b0:30\b/ });
+    await page.getByTestId('flight-result-close').click();
+    const correctedRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ has: page.getByTestId('flight-correct-action') });
     await expect(correctedRow).toContainText('Correzione di un volo precedente');
-    const oldRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ hasText: /\b1:00\b/ });
+    const oldRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ hasText: 'Annullato' });
     await expect(oldRow.getByTestId('flight-status-badge')).toContainText('Annullato');
     await expect(oldRow).toContainText('Corretto da un volo successivo');
     await expect(oldRow).toContainText('Durata inserita per errore');

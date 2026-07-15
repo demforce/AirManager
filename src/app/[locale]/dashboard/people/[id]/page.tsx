@@ -432,7 +432,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
               <div className="flex items-center justify-between gap-4">
                 <h3 className="text-base font-medium text-[#111111]">{t('recentFlightsPanel.heading')}</h3>
                 <Link
-                  href={canManageFlights ? { pathname: '/dashboard/flights', query: { personId: person.id } } : '/dashboard/flights'}
+                  href={canManageFlights ? { pathname: '/dashboard/logbook', query: { personId: person.id } } : '/dashboard/logbook'}
                   locale={locale as AppLocale}
                   data-testid="recent-flights-view-all"
                   className="text-xs font-medium text-[#2F3437] underline-offset-4 hover:underline"

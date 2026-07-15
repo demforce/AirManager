@@ -40,7 +40,11 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // 2.1/2.4/3.3. Story 5.4 (FR-17): reopened to every role via `self.read` —
   // the page itself (own-access registry vs full staff manager) and the
   // service (`flights.service.ts#listFlights`) decide what each role sees.
-  { key: 'flights', href: '/dashboard/flights', permissions: ['flights.manage', 'self.read'] },
+  // Story 12.8: the legacy `/dashboard/flights` page is gone — repointed at
+  // the new AirOps logbook (this entry still has a consumer,
+  // `dashboard/page.tsx`'s own overview grid, so `nav-items.ts` itself stays;
+  // full removal is 12.13).
+  { key: 'flights', href: '/dashboard/logbook', permissions: ['flights.manage', 'self.read'] },
   // Story 7.1: repointed the same way people/aircraft/finance/flights/
   // expiries were in 2.1/2.4/3.3/5.4/6.2. Story 7.2 (FR-19): reopened to
   // every role via `self.read` — same pattern as `flights`/`expiries` in

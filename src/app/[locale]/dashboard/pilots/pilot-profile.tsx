@@ -257,7 +257,7 @@ export function PilotProfile({ pilot, onClose, onEdit, locale, labels }: PilotPr
           </span>
           <span style={{ display: 'flex', gap: 10 }}>
             <Link
-              href={{ pathname: '/dashboard/flights', query: { personId: pilot.id } }}
+              href={{ pathname: '/dashboard/logbook', query: { personId: pilot.id } }}
               className="fld-label"
               style={{ textTransform: 'none', textDecoration: 'underline' }}
               data-testid="pilot-profile-view-all-flights"

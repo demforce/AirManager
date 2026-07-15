@@ -684,7 +684,7 @@ test.describe('School hour summaries (Story 9.3, FR-34)', () => {
     await expect(page.getByTestId('own-hours-minutes')).toHaveText('0:45');
 
     await page.getByTestId('own-hours-open-register').click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/flights\?/);
+    await expect(page).toHaveURL(/\/it\/dashboard\/logbook\?/);
     await expect(page).toHaveURL(new RegExp(`instructorPersonId=${instructorA.personId}`));
     await expect(page.getByTestId('flight-instructor-filter-banner')).toBeVisible();
 

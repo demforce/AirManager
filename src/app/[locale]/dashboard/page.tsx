@@ -244,8 +244,8 @@ export default async function DashboardPage({ params }: PageProps) {
     .reduce((sum, pkg) => sum + pkg.remainingMinutes, 0);
   const ownMonthlyMinutes = instructorHourSummaries.find((item) => item.personId === actor.personId)?.minutes ?? 0;
   const schoolFlightsHref = personId
-    ? `/dashboard/flights?instructorPersonId=${personId}&flightType=SCHOOL`
-    : '/dashboard/flights';
+    ? `/dashboard/logbook?instructorPersonId=${personId}&flightType=SCHOOL`
+    : '/dashboard/logbook';
 
   async function logoutAction() {
     'use server';
@@ -514,7 +514,7 @@ export default async function DashboardPage({ params }: PageProps) {
             <WidgetCard
               testId="recent-flights-widget"
               heading={t('recentFlightsWidget.heading')}
-              linkHref="/dashboard/flights"
+              linkHref="/dashboard/logbook"
               linkLabel={t('recentFlightsWidget.link')}
               isEmpty={(recentFlights?.items.length ?? 0) === 0}
               emptyLabel={t('recentFlightsWidget.empty')}

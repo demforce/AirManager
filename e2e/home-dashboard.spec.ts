@@ -356,7 +356,7 @@ test.describe('Home dashboard — widget links navigate to the right views (Stor
 
     await page.goto('/it/dashboard');
     await page.getByTestId('recent-flights-widget').getByRole('link').click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/flights$/);
+    await expect(page).toHaveURL(/\/it\/dashboard\/logbook$/);
 
     await page.goto('/it/dashboard');
     await page.getByTestId('account-widget').getByRole('link').click();
@@ -371,6 +371,6 @@ test.describe('Home dashboard — widget links navigate to the right views (Stor
 
     await page.goto('/it/dashboard');
     await page.getByTestId('school-flights-widget').getByRole('link').click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/flights\?/);
+    await expect(page).toHaveURL(/\/it\/dashboard\/logbook\?/);
   });
 });
