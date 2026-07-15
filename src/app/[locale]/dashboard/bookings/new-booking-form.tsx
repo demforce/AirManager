@@ -14,6 +14,8 @@ export type NewBookingFormMode = 'staff' | 'instructor' | 'pilot';
 export type AircraftOption = {
   id: string;
   registration: string;
+  /** Additive (review 12.3 F8): `listBookableAircraft` already selects it — shared with `ScheduleAircraftRow` (`schedule.tsx`) so `page.tsx` can hand `aircraftOptions` to both the create form AND the timeline without a cast. */
+  model: string;
   status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
   statusReason: string | null;
 };

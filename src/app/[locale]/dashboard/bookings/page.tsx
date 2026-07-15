@@ -19,7 +19,7 @@ import type { BookingRowDto, BookingsTableLabels, BookingStatusDto } from './boo
 import { BookingsTable } from './bookings-table';
 import type { EditBookingFormLabels } from './edit-booking-form';
 import type { AircraftOption, InstructorOption, NewBookingFormLabels, NewBookingFormMode, PersonOption } from './new-booking-form';
-import { Schedule, type CalendarDayBlock, type CalendarNav, type CalendarWeekChip, type ScheduleAircraftRow, type ScheduleLabels } from './schedule';
+import { Schedule, type CalendarDayBlock, type CalendarNav, type CalendarWeekChip, type ScheduleLabels } from './schedule';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -35,12 +35,16 @@ const BOOKINGS_PAGE_SIZE = 20;
 /**
  * Every `BookingStatus` the new UI shows (story 12.3, AC 3: "default UI:
  * tutti") — a deliberate scope decision, documented here (Karpathy: surface
- * assumptions): `from: nowIso` stays UNCHANGED (same as the legacy
- * "Prossime prenotazioni" list), so this is "every status, within the
- * future/current window", not "every booking ever". A DENIED/FLOWN/NO_SHOW
- * booking whose `endsAt` has already fully elapsed naturally drops off the
- * list — same as it always has — which also bounds "Riapri"'s visibility to
- * bookings still recent enough to matter operationally.
+ * assumptions): the list's lower bound is `listFrom` = now MINUS 48 HOURS
+ * (ratified with the user, review 12.3 F7, 2026-07-15) rather than a bare
+ * "now", so this is "every status, within the last-48h/future window", not
+ * "every booking ever". The 48h grace window is deliberate: a booking that
+ * ended minutes (or hours) ago still needs to stay operable —
+ * DENIED/FLOWN/NO_SHOW's "Riapri", or an APPROVED booking's
+ * Effettuato/Assente — not just up to the second it technically elapses. A
+ * booking whose `endsAt` is more than 48h in the past still naturally drops
+ * off the list, same as it always has, just with a wider grace window than
+ * the legacy "Prossime prenotazioni" list's bare `from: now`.
  */
 const ALL_BOOKING_STATUSES: readonly BookingStatusDto[] = ['PENDING', 'APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED'];
 
@@ -273,14 +277,18 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
     }
   }
 
-  const nowIso = new Date().toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  // Review 12.3 F7: the visible list's lower bound, `nowIso` minus 48h — see
+  // `ALL_BOOKING_STATUSES`'s doc-comment above for the ratified rationale.
+  const listFrom = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
   let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
-  let bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...ALL_BOOKING_STATUSES] });
+  let bookingsResult = await listBookings(actor, { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...ALL_BOOKING_STATUSES] });
   // Clamp an out-of-range ?page to the last real page (same pattern as `FlightsPage`).
   const lastPage = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
   if (page > lastPage) {
     page = lastPage;
-    bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...ALL_BOOKING_STATUSES] });
+    bookingsResult = await listBookings(actor, { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...ALL_BOOKING_STATUSES] });
   }
   const totalPages = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
 
@@ -360,8 +368,10 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   // Story 10.1 (AC 5): the export mirrors the SAME `from` + `status` filters
   // the list above was fetched with (12.2 review F2's lesson, story 12.3: now
-  // ALL statuses since the list itself shows all of them).
-  const exportHref = buildExportHref('/api/v1/bookings', { from: nowIso, status: ALL_BOOKING_STATUSES.join(',') }, locale);
+  // ALL statuses since the list itself shows all of them; review 12.3 F7:
+  // `listFrom`, not a bare `nowIso`, so the export never diverges from what
+  // the list actually shows).
+  const exportHref = buildExportHref('/api/v1/bookings', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale);
 
   // Story 7.3/12.3: serialize the already status-filtered, service-side rows
   // into plain wire DTOs before crossing the server -> client boundary
@@ -556,7 +566,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         today={today}
         isToday={isToday}
         weekDates={weekDates}
-        aircraft={aircraftOptions as ScheduleAircraftRow[]}
+        aircraft={aircraftOptions}
         instructors={instructorOptions}
         dayBlocks={dayBlocks}
         weekChips={weekChips}
@@ -572,6 +582,9 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         pendingCount={pendingCount}
         total={bookingsResult.total}
         aircraftOptions={aircraftOptions}
+        view={view}
+        date={date}
+        today={today}
         canManageAny={canManageAny}
         canManageOwn={canManageOwn}
         ownPersonId={actor.personId}

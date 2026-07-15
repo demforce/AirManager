@@ -788,7 +788,7 @@ html[data-theme="dark"] .badge.info{ color: oklch(0.86 0.1 245); }
   padding: 2px;
   gap: 2px;
 }
-.segmented button{
+.segmented button, .segmented a{
   border: 0;
   background: transparent;
   color: var(--ink-3);
@@ -798,8 +798,10 @@ html[data-theme="dark"] .badge.info{ color: oklch(0.86 0.1 245); }
   cursor: pointer;
   font-family: var(--font-ui);
   transition: background var(--t), color var(--t);
+  text-decoration: none;
+  text-align: center;
 }
-.segmented button.on{ background: var(--panel); color: var(--ink); box-shadow: var(--shadow-sm); }
+.segmented button.on, .segmented a.on{ background: var(--panel); color: var(--ink); box-shadow: var(--shadow-sm); }
 
 /* ---------- student view specific ---------- */
 .syllabus{ padding: 4px 0; }
@@ -969,12 +971,13 @@ textarea.input{ font-family: var(--font-ui); resize: vertical; }
   display: inline-flex; padding: 2px; border-radius: var(--radius-xs);
   background: var(--bg-sunken); border: 1px solid var(--border);
 }
-.segmented button{
+.segmented button, .segmented a{
   font: inherit; font-size: 12px; padding: 5px 10px;
   background: transparent; border: none; color: var(--ink-3);
   border-radius: 5px; cursor: pointer; letter-spacing: 0.01em;
+  text-decoration: none; text-align: center;
 }
-.segmented button.on{
+.segmented button.on, .segmented a.on{
   background: var(--panel); color: var(--ink);
   box-shadow: 0 1px 2px oklch(0.2 0.01 250 / 0.06), 0 0 0 1px var(--border);
 }

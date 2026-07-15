@@ -117,6 +117,25 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(formSchema), values: valuesFromBooking(booking) });
 
+  // Review 12.3 F4: `formError` used to leak between rows — a caller can swap
+  // `booking` to a DIFFERENT row while the SlideOver stays open (clicking
+  // another row's Modifica without closing this one first), which never goes
+  // through `handleClose` below. The React-documented "adjust state during
+  // render" pattern (a plain comparison + conditional `setState`, NOT inside
+  // an effect — `react-hooks/set-state-in-effect` only flags an effect body)
+  // clears it the moment the edited booking's id changes, mounted or not.
+  const [lastBookingId, setLastBookingId] = useState<string | null>(booking?.id ?? null);
+  if ((booking?.id ?? null) !== lastBookingId) {
+    setLastBookingId(booking?.id ?? null);
+    setFormError(null);
+  }
+
+  /** Every dismiss path (X, scrim, Esc) — mirrors `new-booking-form.tsx#handleClose`'s own reset-on-close pattern, so a stale error from a PREVIOUS open never survives into the next one. */
+  function handleClose(): void {
+    setFormError(null);
+    onClose();
+  }
+
   function fieldErrorLabel(fieldError: { message?: string } | undefined): string | null {
     if (!fieldError?.message) return null;
     return fieldError.message === 'invalidRange' ? labels.invalidRange : labels.requiredField;
@@ -162,7 +181,7 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
   }
 
   return (
-    <SlideOver open={open} onClose={onClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel}>
+    <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel}>
       {booking ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="move-booking-form">
           <div className="form-grid">
@@ -202,7 +221,7 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
           ) : null}
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-            <button type="button" className="btn" onClick={onClose}>
+            <button type="button" className="btn" onClick={handleClose}>
               {labels.cancel}
             </button>
             <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="move-booking-save">

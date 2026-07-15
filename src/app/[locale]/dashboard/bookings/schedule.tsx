@@ -355,12 +355,24 @@ export function Schedule({
         </div>
 
         <div className="segmented" role="group" aria-label={labels.viewToggleLabel}>
-          <button type="button" onClick={() => router.push(nav.dayViewHref)} className={view === 'day' ? 'on' : ''} aria-current={view === 'day' ? 'true' : undefined} data-testid="calendar-view-day">
+          <a
+            href={buildHrefString(nav.dayViewHref, locale)}
+            onClick={(e) => navigateOnClick(e, router, nav.dayViewHref)}
+            className={view === 'day' ? 'on' : ''}
+            aria-current={view === 'day' ? 'true' : undefined}
+            data-testid="calendar-view-day"
+          >
             {labels.dayView}
-          </button>
-          <button type="button" onClick={() => router.push(nav.weekViewHref)} className={view === 'week' ? 'on' : ''} aria-current={view === 'week' ? 'true' : undefined} data-testid="calendar-view-week">
+          </a>
+          <a
+            href={buildHrefString(nav.weekViewHref, locale)}
+            onClick={(e) => navigateOnClick(e, router, nav.weekViewHref)}
+            className={view === 'week' ? 'on' : ''}
+            aria-current={view === 'week' ? 'true' : undefined}
+            data-testid="calendar-view-week"
+          >
             {labels.weekView}
-          </button>
+          </a>
         </div>
       </div>
 

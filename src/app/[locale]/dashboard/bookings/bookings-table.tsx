@@ -20,6 +20,7 @@ import { useToast } from '@/components/ui/toast';
 import { formatDateOnly, formatTimeOfDay } from '@/lib/time';
 import { EditBookingForm, type EditBookingFormLabels } from './edit-booking-form';
 import { NewBookingForm, type AircraftOption, type InstructorOption, type NewBookingFormLabels, type NewBookingFormMode, type PersonOption } from './new-booking-form';
+import type { BookingCalendarView } from './schedule';
 
 export type BookingStatusDto = 'PENDING' | 'APPROVED' | 'DENIED' | 'FLOWN' | 'NO_SHOW' | 'CANCELLED';
 
@@ -105,6 +106,10 @@ type BookingsTableProps = {
   locale: 'it' | 'en';
   page: number;
   totalPages: number;
+  /** The timeline's current `?view`/`?date` (lesson 6.4 M1, review 12.3 F2): every pagination link below must preserve them, never reset — mirrors `page.tsx#calendarHref`'s own non-default check. */
+  view: BookingCalendarView;
+  date: string;
+  today: string;
   exportHref: string;
   canCreate: boolean;
   formMode: NewBookingFormMode;
@@ -143,6 +148,9 @@ export function BookingsTable({
   locale,
   page,
   totalPages,
+  view,
+  date,
+  today,
   exportHref,
   canCreate,
   formMode,
@@ -277,6 +285,18 @@ export function BookingsTable({
     router.refresh();
   }
 
+  /** Mirrors `page.tsx#calendarHref`'s non-default check (review 12.3 F2): a pagination link carries `?view`/`?date` too, whenever they aren't the page's own default, so paging never drops the timeline's current view. */
+  function pageHref(targetPage: number) {
+    return {
+      pathname: '/dashboard/bookings' as const,
+      query: {
+        ...(view !== 'day' ? { view } : {}),
+        ...(date !== today ? { date } : {}),
+        page: targetPage,
+      },
+    };
+  }
+
   const cols = 'minmax(160px,1.6fr) 140px 140px 100px 130px minmax(180px,1fr)';
 
   return (
@@ -391,24 +411,24 @@ export function BookingsTable({
                         {labels.actions.move}
                       </button>
                     ) : null}
-                    {booking.status === 'APPROVED' ? (
+                    {booking.status === 'APPROVED' && canManageAny ? (
                       <>
-                        {canManageAny ? (
-                          <>
-                            <button type="button" className="btn mini" disabled={busy} onClick={() => void handleFlown(booking.id)} data-testid="booking-flown-action">
-                              {labels.actions.markFlown}
-                            </button>
-                            <button type="button" className="btn mini" disabled={busy} onClick={() => void handleNoShow(booking.id)} data-testid="booking-noshow-action">
-                              {labels.actions.markNoShow}
-                            </button>
-                          </>
-                        ) : null}
-                        {canManageRow ? (
-                          <button type="button" className="btn mini" disabled={busy} onClick={() => setConfirmingCancelId(booking.id)} data-testid="booking-cancel-action">
-                            {labels.actions.cancel}
-                          </button>
-                        ) : null}
+                        <button type="button" className="btn mini" disabled={busy} onClick={() => void handleFlown(booking.id)} data-testid="booking-flown-action">
+                          {labels.actions.markFlown}
+                        </button>
+                        <button type="button" className="btn mini" disabled={busy} onClick={() => void handleNoShow(booking.id)} data-testid="booking-noshow-action">
+                          {labels.actions.markNoShow}
+                        </button>
                       </>
+                    ) : null}
+                    {/* Review 12.3 F3: Annulla is available on a PENDING row too (not
+                        only APPROVED) — a pilot/instructor must be able to withdraw
+                        their own still-undecided request, same two-step confirm,
+                        same `canManageRow` gate the Modifica button above already uses. */}
+                    {(booking.status === 'PENDING' || booking.status === 'APPROVED') && canManageRow ? (
+                      <button type="button" className="btn mini" disabled={busy} onClick={() => setConfirmingCancelId(booking.id)} data-testid="booking-cancel-action">
+                        {labels.actions.cancel}
+                      </button>
                     ) : null}
                     {(booking.status === 'DENIED' || booking.status === 'FLOWN' || booking.status === 'NO_SHOW') && canManageAny ? (
                       <button type="button" className="btn mini" disabled={busy} onClick={() => void handleReopen(booking.id)} data-testid="booking-reopen-action">
@@ -426,7 +446,7 @@ export function BookingsTable({
       {totalPages > 1 ? (
         <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
           <Link
-            href={{ pathname: '/dashboard/bookings', query: { page: page - 1 } }}
+            href={pageHref(page - 1)}
             locale={locale as AppLocale}
             aria-disabled={page <= 1}
             data-testid="booking-page-prev"
@@ -438,7 +458,7 @@ export function BookingsTable({
             {page} / {totalPages}
           </span>
           <Link
-            href={{ pathname: '/dashboard/bookings', query: { page: page + 1 } }}
+            href={pageHref(page + 1)}
             locale={locale as AppLocale}
             aria-disabled={page >= totalPages}
             data-testid="booking-page-next"
