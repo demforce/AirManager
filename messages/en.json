@@ -510,6 +510,7 @@
       "price": "Price (€/h)",
       "validFrom": "In effect from",
       "submit": "Add rate",
+      "rateAdded": "Rate added.",
       "requiredField": "Required field.",
       "invalidPrice": "Price must be a positive amount (e.g. 45.00).",
       "invalidDate": "Enter a valid date.",

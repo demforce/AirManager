@@ -160,6 +160,7 @@ export default async function InstructorsPage({ params }: PageProps) {
               price: t('studentRate.price'),
               validFrom: t('studentRate.validFrom'),
               submit: t('studentRate.submit'),
+              rateAdded: t('studentRate.rateAdded'),
               requiredField: t('studentRate.requiredField'),
               invalidPrice: t('studentRate.invalidPrice'),
               invalidDate: t('studentRate.invalidDate'),

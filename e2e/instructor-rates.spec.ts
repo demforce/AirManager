@@ -119,7 +119,21 @@ async function createStaffUserAndSetPassword(page: Page, password: string): Prom
   return email;
 }
 
-test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4.1)', () => {
+/**
+ * Opens the instructor editor slide-over for `personId` from the instructors
+ * page (story 12.7) and returns the (always-visible, no toggle) student-rate
+ * panel locator inside it — the NEW selectors this story's AC 8 adapts the
+ * 4 behavioral tests below onto.
+ */
+async function openInstructorRatesPanel(page: Page, personId: string) {
+  await page.goto('/it/dashboard/instructors');
+  await page.getByTestId(`instructor-edit-${personId}`).click();
+  const panel = page.getByTestId('instructor-rates-panel');
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4.1), on the instructors page (story 12.7)', () => {
   test('admin adds a past and a current rate; history shows both and the current rate is the most recent (AC 1)', async ({
     page,
   }) => {
@@ -128,26 +142,21 @@ test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4
     const personId = await createInstructorPerson(page, person);
 
     const today = todayDateOnly();
-
-    await page.goto(`/it/dashboard/people/${personId}`);
-    const panel = page.getByTestId('instructor-rates-panel');
-    await expect(panel).toBeVisible();
+    const panel = await openInstructorRatesPanel(page, personId);
     await expect(panel.getByTestId('instructor-rates-current')).toContainText('Nessuna tariffa in vigore');
 
     // First rate: 40 €/h from a past date.
-    await panel.getByRole('button', { name: 'Nuova tariffa' }).click();
-    await page.getByLabel('Prezzo (€/h)').fill('40,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
-    await panel.getByRole('button', { name: 'Aggiungi tariffa' }).click();
-    await expect(panel.getByTestId('instructor-rates-feedback')).toBeVisible();
+    await panel.getByLabel('Prezzo (€/h)').fill('40,00');
+    await panel.getByLabel('In vigore da').fill(PAST_DATE);
+    await panel.getByTestId('instructor-rates-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
     await expect(panel.getByTestId('instructor-rates-current')).toContainText(/40,00\s€/);
 
     // Second rate: 45 €/h from today.
-    await panel.getByRole('button', { name: 'Nuova tariffa' }).click();
-    await page.getByLabel('Prezzo (€/h)').fill('45,00');
-    await page.getByLabel('In vigore da').fill(today);
-    await panel.getByRole('button', { name: 'Aggiungi tariffa' }).click();
-    await expect(panel.getByTestId('instructor-rates-feedback')).toBeVisible();
+    await panel.getByLabel('Prezzo (€/h)').fill('45,00');
+    await panel.getByLabel('In vigore da').fill(today);
+    await panel.getByTestId('instructor-rates-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
 
     // Current rate is now 45,00 € (AD-4: max validFrom <= today) and BOTH
     // history rows are visible (append-only, AC 1).
@@ -165,21 +174,18 @@ test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4
     const person = uniquePerson('Giulia');
     const personId = await createInstructorPerson(page, person);
 
-    await page.goto(`/it/dashboard/people/${personId}`);
-    const panel = page.getByTestId('instructor-rates-panel');
+    const panel = await openInstructorRatesPanel(page, personId);
 
-    await panel.getByRole('button', { name: 'Nuova tariffa' }).click();
-    await page.getByLabel('Prezzo (€/h)').fill('40,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
-    await panel.getByRole('button', { name: 'Aggiungi tariffa' }).click();
-    await expect(panel.getByTestId('instructor-rates-feedback')).toBeVisible();
+    await panel.getByLabel('Prezzo (€/h)').fill('40,00');
+    await panel.getByLabel('In vigore da').fill(PAST_DATE);
+    await panel.getByTestId('instructor-rates-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
     await expect(panel.getByTestId('instructor-rates-current')).toContainText(/40,00\s€/);
 
     // Re-insert a rate with the SAME validFrom (AC 2 — 409).
-    await panel.getByRole('button', { name: 'Nuova tariffa' }).click();
-    await page.getByLabel('Prezzo (€/h)').fill('999,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
-    await panel.getByRole('button', { name: 'Aggiungi tariffa' }).click();
+    await panel.getByLabel('Prezzo (€/h)').fill('999,00');
+    await panel.getByLabel('In vigore da').fill(PAST_DATE);
+    await panel.getByTestId('instructor-rates-submit').click();
 
     await expect(panel.getByTestId('instructor-rates-form-error')).toContainText(
       'Esiste già una tariffa con questa data di decorrenza',

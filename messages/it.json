@@ -510,6 +510,7 @@
       "price": "Prezzo (€/h)",
       "validFrom": "In vigore da",
       "submit": "Aggiungi tariffa",
+      "rateAdded": "Tariffa aggiunta.",
       "requiredField": "Campo obbligatorio.",
       "invalidPrice": "Il prezzo deve essere un importo positivo (es. 45,00).",
       "invalidDate": "Inserisci una data valida.",

@@ -17,6 +17,7 @@ export type InstructorRatesPanelLabels = {
   price: string;
   validFrom: string;
   submit: string;
+  rateAdded: string;
   requiredField: string;
   invalidPrice: string;
   invalidDate: string;
@@ -29,8 +30,11 @@ export type InstructorRatesPanelLabels = {
   historyWhen: string;
 };
 
+type ToastHandle = { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
+
 type InstructorRatesPanelProps = {
   personId: string;
+  toast: ToastHandle;
   /**
    * Derived server-side from `hasPermission(actor, 'settings.manage')` AND
    * the instructor profile being active (`instructorProfile.deactivatedAt
@@ -100,7 +104,7 @@ function currentRateOf(history: InstructorRateItemDto[]): InstructorRateItemDto 
  * confused. No outer heading here (rendered by the parent's own `Section`
  * wrapper, same convention as `pilot-editor.tsx`'s sub-sections).
  */
-export function InstructorRatesPanel({ personId, canAddRate, labels }: InstructorRatesPanelProps) {
+export function InstructorRatesPanel({ personId, toast, canAddRate, labels }: InstructorRatesPanelProps) {
   // Money must follow the page locale (review 3.1 F1 — mandatory, same
   // pattern as `account-panel.tsx`): without this, `formatCents`' default
   // renders Italian separators on /en too.
@@ -151,6 +155,7 @@ export function InstructorRatesPanel({ personId, canAddRate, labels }: Instructo
     }
 
     reset({ price: '', validFrom: todayDateOnly() });
+    toast.show(labels.rateAdded, 'ok');
     setHistory(await fetchRatesHistory(personId));
   }
 

@@ -85,39 +85,68 @@ export function InstructorEditor({
   toast,
   toastLabels,
 }: InstructorEditorProps) {
-  const open = instructor !== null;
-  const title = instructor ? `${instructor.lastName} ${instructor.firstName}` : '';
-  const subtitle = instructor ? instructor.ratings : '';
+  // Own working copy of the row (same rationale as `pilots/pilot-editor.tsx`'s
+  // `current`/`applyPatch`): the parent's `items` prop only refreshes via
+  // `onMutated` -> `router.refresh()`, which does NOT retroactively update
+  // THIS already-open editor's `instructor` prop (`editorTarget` in
+  // `instructors-console.tsx` is a stable snapshot captured at click time) —
+  // without a local merge, the payout-rate/ratings fields (and this header)
+  // would keep showing the PRE-save value until the slide-over is closed and
+  // reopened. `initialRateCents`/`initialRatings` react to `current` (not
+  // the original prop) so every sub-form re-syncs immediately after its own
+  // save. The `Ore totali`/`Dovuto` readonly fields are the one exception —
+  // they are server-COMPUTED from flight/payout data no sub-form response
+  // carries, so they only refresh once the editor is reopened
+  // (`onMutated`'s `router.refresh()` already keeps the TABLE row itself
+  // correct in the meantime).
+  const [current, setCurrent] = useState<InstructorRow | null>(instructor);
+
+  function applyPatch(patch: Partial<InstructorRow>): void {
+    setCurrent((existing) => (existing ? { ...existing, ...patch } : existing));
+    onMutated();
+  }
+
+  const open = current !== null;
+  const title = current ? `${current.lastName} ${current.firstName}` : '';
+  const subtitle = current ? current.ratings : '';
 
   return (
     <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel}>
-      {instructor ? (
+      {current ? (
         <>
-          <IdentitySection personId={instructor.personId} canManagePeople={canManagePeople} locale={locale} labels={labels.identity} toast={toast} toastLabels={toastLabels} onSaved={onMutated} />
+          <IdentitySection
+            personId={current.personId}
+            canManagePeople={canManagePeople}
+            locale={locale}
+            labels={labels.identity}
+            toast={toast}
+            toastLabels={toastLabels}
+            onSaved={(patch) => applyPatch(patch)}
+          />
 
           <Section title={labels.ratings.sectionTitle}>
             <RatingsForm
-              personId={instructor.personId}
-              initialRatings={instructor.ratings}
+              personId={current.personId}
+              initialRatings={current.ratings}
               canManagePeople={canManagePeople}
               labels={labels.ratings}
               toast={toast}
               toastLabels={toastLabels}
-              onSaved={onMutated}
+              onSaved={(patch) => applyPatch(patch)}
             />
           </Section>
 
           <Section title={labels.payoutRate.sectionTitle}>
             <PayoutRateForm
-              personId={instructor.personId}
-              initialRateCents={instructor.payoutRateCents}
+              personId={current.personId}
+              initialRateCents={current.payoutRateCents}
               canManagePayouts={canManagePayouts}
               locale={locale}
               labels={labels.payoutRate}
               errorLabels={labels.errors}
               toast={toast}
               toastLabels={toastLabels}
-              onSaved={onMutated}
+              onSaved={(patch) => applyPatch(patch)}
             />
           </Section>
 
@@ -125,8 +154,9 @@ export function InstructorEditor({
             <InstructorRatesPanel
               // Remount on instructor change — same rationale as every
               // other per-id-keyed sub-panel in this codebase (review 2.4 F1).
-              key={instructor.personId}
-              personId={instructor.personId}
+              key={current.personId}
+              personId={current.personId}
+              toast={toast}
               canAddRate={canManageSettings}
               labels={labels.studentRate}
             />
@@ -135,10 +165,10 @@ export function InstructorEditor({
           <Section title={labels.readOnly.sectionTitle}>
             <div className="form-grid">
               <Field label={labels.readOnly.hoursTotal}>
-                <Input value={formatMinutes(instructor.totalMinutes)} disabled />
+                <Input value={formatMinutes(current.totalMinutes)} disabled />
               </Field>
               <Field label={labels.readOnly.owedTotal}>
-                <Input value={instructor.owedTotalCents === null ? labels.payoutRate.noValue : formatCents(instructor.owedTotalCents, locale)} disabled />
+                <Input value={current.owedTotalCents === null ? labels.payoutRate.noValue : formatCents(current.owedTotalCents, locale)} disabled />
               </Field>
             </div>
           </Section>
@@ -172,7 +202,7 @@ function IdentitySection({
   labels: InstructorEditorLabels['identity'];
   toast: ToastHandle;
   toastLabels: ToastLabels;
-  onSaved: () => void;
+  onSaved: (patch: Partial<InstructorRow>) => void;
 }) {
   const [identity, setIdentity] = useState<PersonIdentity | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -213,8 +243,9 @@ function IdentitySection({
       setFormError(toastLabels.genericError);
       return;
     }
+    const updated = (await response.json()) as PersonIdentity;
     toast.show(toastLabels.identitySaved, 'ok');
-    onSaved();
+    onSaved({ firstName: updated.firstName, lastName: updated.lastName });
   }
 
   if (loadError) {
@@ -293,7 +324,7 @@ function RatingsForm({
   labels: InstructorEditorLabels['ratings'];
   toast: ToastHandle;
   toastLabels: ToastLabels;
-  onSaved: () => void;
+  onSaved: (patch: Partial<InstructorRow>) => void;
 }) {
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -318,7 +349,7 @@ function RatingsForm({
       return;
     }
     toast.show(toastLabels.ratingsSaved, 'ok');
-    onSaved();
+    onSaved({ ratings: values.ratings });
   }
 
   if (!canManagePeople) {
@@ -382,7 +413,7 @@ function PayoutRateForm({
   errorLabels: InstructorEditorLabels['errors'];
   toast: ToastHandle;
   toastLabels: ToastLabels;
-  onSaved: () => void;
+  onSaved: (patch: Partial<InstructorRow>) => void;
 }) {
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -410,7 +441,7 @@ function PayoutRateForm({
       return;
     }
     toast.show(toastLabels.rateSet, 'ok');
-    onSaved();
+    onSaved({ payoutRateCents });
   }
 
   if (!canManagePayouts) {
