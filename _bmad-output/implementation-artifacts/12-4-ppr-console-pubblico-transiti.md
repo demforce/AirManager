@@ -4,7 +4,7 @@ baseline_commit: eeb849fa4b3a33fd4f07fc901ea28533ce1d99e2
 
 # Story 12.4: PPR — console, modulo pubblico, Voli in transito
 
-Status: review
+Status: done
 
 ## Story
 
@@ -122,7 +122,47 @@ so that il flusso transiti sia gestibile end-to-end nel nuovo design senza perde
 
 1. **Nessuna email di approvazione per `approveImmediately`**: la story dice solo "riusa la logica approve ESISTENTE (counter pprNumber con guard FOR-UPDATE)" — non menziona l'email. Ho scelto di NON inviarla nemmeno quando l'email è presente (coerenza con "niente email di ricevuta" del create manuale, D13-style: lo staff sta già interagendo direttamente col richiedente). Va confermato che sia la lettura corretta.
 2. **"Regole pubblicate" come anchor-scroll**: il prototipo non implementa alcun comportamento reale per questo bottone. Ho scelto un semplice `<a href="#ppr-instructions">` che porta alla sezione (sempre renderizzata quando `settings.manage`, non un toggle) — stessa visibilità "come oggi" richiesta dall'AC, minima invenzione.
-3. **"Movimenti nel mese" = tutti gli stati**: la query usa `status:'ALL'` con eta nel mese corrente (include PENDING/REJECTED). Alternativa scartata: solo APPROVED+COMPLETED+CANCELLED. La story non specifica; ho scelto l'opzione più semplice e l'ho documentata nel codice.
+3. **"Movimenti nel mese" = tutti gli stati** — **[SUPERATO: ratificato dall'utente in review → conta solo `COMPLETED` (transiti materializzati); cambiato in `368fe12`. Vedi Review Record.]** Scelta originale del dev: la query usava `status:'ALL'` con eta nel mese corrente (includeva PENDING/REJECTED).
 4. **`origin`/`destination` nella sezione "Aeromobile"** del modulo pubblico: il prototipo non ha questi campi (mock senza rotta); li ho collocati nella sezione Aeromobile piuttosto che crearne una dedicata — deviazione minima di layout, non di contenuto/validazione.
-5. **Manuale/Registra arrivo: stessa validazione ETA_IN_PAST del pubblico** (esplicitamente richiesto da Dev Notes: "STESSA validazione dominio eta/etd") — significa che "Registra arrivo" NON può loggare un arrivo già avvenuto (eta nel passato), solo uno imminente/futuro. Possibile frizione operativa segnalata esplicitamente per revisione PO, ma implementata come da istruzione vincolante.
-6. **Due test e2e riscritti per limiti di automazione** (non di dominio): il sotto-caso "period filter" di `movements.spec.ts` verifica l'esclusione via navigazione diretta invece che via `.fill()` sul date-input nativo (bug di interoperabilità Playwright+Chromium+React confermato con 4 tecniche diverse, non un difetto del componente — il valore DOM cambiava correttamente ma l'evento non raggiungeva mai `onChange` di React).
+5. **Manuale/Registra arrivo: stessa validazione ETA_IN_PAST del pubblico** — **[SUPERATO: ratificato dall'utente in review → sul percorso staff un `eta` passato è ora ACCETTATO ("Registra arrivo" logga un aeromobile appena atterrato → "al suolo" subito); cambiato in `368fe12`. Il modulo pubblico resta strict (ETA_IN_PAST). Vedi Review Record.]** Segnalazione originale del dev: la frizione operativa del vincolo ETA_IN_PAST applicato anche al manuale, implementato come da Dev Notes ("STESSA validazione dominio eta/etd").
+6. **Due test e2e riscritti per limiti di automazione** — **[SUPERATO dal fix F5 (`8f637a6`): il `.fill()` reale sul date-input nativo è stato ripristinato e passa in CI-mode; il testo seguente descrive il workaround poi rimosso. Vedi Review Record.]** (storico) il sotto-caso "period filter" di `movements.spec.ts` verificava l'esclusione via navigazione diretta invece che via `.fill()` sul date-input nativo (bug di interoperabilità Playwright+Chromium+React confermato con 4 tecniche diverse, non un difetto del componente — il valore DOM cambiava correttamente ma l'evento non raggiungeva mai `onChange` di React).
+
+## Review Record
+
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh) — RE-review sul tree corrente dopo che la prima review (di una sessione interrotta) aveva applicato i fix F1/F5 senza persistere i findings. **Data**: 2026-07-15.
+
+### Arbiter (priority zero)
+
+- **`CI=1 npx playwright test` su build di produzione → 210 passed, 0 failed** (prima sul commit `8f637a6`, poi ri-verificato dopo il fix di review `368fe12`: ancora **210/210**). `npm run gates` verde (lint · typecheck · **1332** unit · build). i18n key parity 1354/1354 simmetrica.
+
+### Verdetto
+
+**Shippable.** Zero blockers, zero majors, **zero code defects**. F1 (contratto DTO — nessun `createdByUserId`/`submitterIp` sul wire, `fromPublicForm` derivato) e F5 (`.fill()` reale sul date-input ripristinato) verificati empiricamente. La review interrotta non aveva lasciato nulla di rotto.
+
+### Evidenza empirica (non solo lettura codice)
+
+- **Migrazione** (`\d "PprRequest"`): `email` NULLABLE; `createdByUserId TEXT` FK → `User` `ON DELETE SET NULL`. Confermato.
+- **RBAC** su `POST /api/v1/ppr-requests/manual`: admin→201, staff→201, istruttore/pilota/allievo→403 (solo `ppr.manage`).
+- **Race pprNumber**: 8 `approveImmediately` concorrenti → 8 numeri DISTINTI, zero duplicati in tabella (counter inlined `INSERT … ON CONFLICT … RETURNING` serializza correttamente).
+- **Idempotency**: replay stessa `Idempotency-Key` → stesso `id`, esattamente 1 riga (psql).
+- **Email null-guards** (Mailpit): manuale phone-only + approve/reject, e `approveImmediately` con email presente → 0 mail, nessun throw; controllo positivo: submit pubblico con email → esattamente 1 ricevuta.
+- **Pubblico**: honeypot `website` → 201 senza riga creata; body legittimo `{status:'PENDING'}` senza riferimento fittizio (D13); ETA_IN_PAST/ETD_NOT_AFTER_ETA su istanti.
+- **308** `GET /dashboard/ppr/register` → `/dashboard/movements`. Boundary Roma 22–24 UTC (CET/CEST) pinnati come assert reali nei unit.
+
+### Findings
+
+- **MIN-1** (doc drift, non un difetto di codice): la Deviazione #6 dello story file descriveva ancora il workaround rimosso dal fix F5. **Fixato** in questo commit docs (annotazione [SUPERATO] sulla #6).
+
+### Adjudicazione delle 6 deviazioni
+
+1. **Nessuna email per `approveImmediately`** → **ACCEPT** (flag PO). Non è una regressione dell'approve normale (che continua a inviare l'email quando presente); "Registra arrivo" è azione on-the-spot dello staff.
+2. **"Regole pubblicate" anchor-scroll** → **ACCEPT** (invenzione minima, visibilità invariata).
+3. **KPI "movimenti nel mese"** → **RATIFICATO dall'utente**: solo `COMPLETED` → cambiato in `368fe12`.
+4. **origin/destination in sezione "Aeromobile"** → **ACCEPT** (solo layout; schema/validazione invariati, body POST byte-identico).
+5. **Registra arrivo & ETA_IN_PAST** → **RATIFICATO dall'utente**: `eta` passato ACCETTATO sul percorso staff (pubblico resta strict) → cambiato in `368fe12`.
+6. **Riscritture e2e per limiti automazione** → **RISOLTO**: il fix F5 ha ripristinato il `.fill()` reale; il diff inventario (`eeb849f:ppr-register.spec.ts` vs `movements.spec.ts`) mostra tutti i **7** comportamentali originali preservati 1:1 + **2** nuovi (stato derivato, Registra arrivo). Nessuna copertura persa.
+
+### Commit di review
+
+- `368fe12` — `fix(12.4)`: adjudicazione (#5 past-eta staff, #3 KPI COMPLETED, contratto OpenAPI, unit + e2e aggiornati).
+- questo commit — `docs(12.4)`: Review Record, status → done, sprint-status.
