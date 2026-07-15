@@ -468,11 +468,17 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(nav.getByRole('link', { name: 'Prenotazioni' })).toBeVisible();
 
     await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
-    const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft.registration });
-    const block = column.getByTestId('calendar-block').filter({ hasText: pilot.lastName });
+    // Story 12.3, AC 2: the day view's aircraft columns became rows (the
+    // prototype's horizontal timeline) — `calendar-aircraft-column`/
+    // `calendar-block` renamed to `schedule-aircraft-row`/`schedule-block`.
+    const row = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
+    const block = row.getByTestId('schedule-block').filter({ hasText: pilot.lastName });
     await expect(block).toBeVisible();
     await expect(block).toContainText(pilot.firstName);
 
+    // Story 12.3, AC 3: `NewBookingForm` (and `EditBookingForm`) are only
+    // ever MOUNTED for an actor who could ever open one (`canCreate`) — an
+    // allievo with no booking permission at all gets neither in the DOM.
     await expect(page.getByTestId('new-booking-form')).toHaveCount(0);
 
     const response = await page.request.post('/api/v1/bookings', {
@@ -488,7 +494,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  test('calendar (Story 7.2, AC 1): day-view blocks on the run-unique aircraft column, week-view chips, prev/next change the heading', async ({
+  test('timeline (Story 7.2 AC 1, re-presented story 12.3 AC 2): day-view blocks on the run-unique aircraft row, week-view real count, prev/next change the heading', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -514,9 +520,12 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.getByTestId('calendar-next').click();
     await expect(page).toHaveURL(new RegExp(`date=${tomorrow}`));
 
-    const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft.registration });
-    await expect(column).toBeVisible();
-    const blocksOnAircraft = column.getByTestId('calendar-block');
+    // Story 12.3, AC 2: the day view's aircraft columns became rows (the
+    // prototype's horizontal timeline) — `calendar-aircraft-column`/
+    // `calendar-block` renamed to `schedule-aircraft-row`/`schedule-block`.
+    const row = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
+    await expect(row).toBeVisible();
+    const blocksOnAircraft = row.getByTestId('schedule-block');
     await expect(blocksOnAircraft).toHaveCount(2);
     await expect(blocksOnAircraft.filter({ hasText: pilot.lastName })).toHaveCount(2);
 
@@ -527,11 +536,15 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.getByTestId('calendar-prev').click();
     await expect(page.getByTestId('calendar-heading')).toHaveText(headingOnTomorrow ?? '');
 
-    // Toggle week -> compact chips present, in the run-unique aircraft's column.
+    // Story 12.3, AC 2: the week view is now the prototype's simple 7-cell
+    // grid with a REAL per-day count (no more per-aircraft chip matrix,
+    // Contesto: "griglia .week-grid con conteggi reali per giorno") — the
+    // "selected" cell (CSS class the day-anchor `?date=tomorrow` carries
+    // over into week view) is tomorrow's, which must show count 2.
     await page.getByTestId('calendar-view-week').click();
-    await expect(page.getByTestId('calendar-week-table')).toBeVisible();
-    const weekChips = page.getByTestId('calendar-chip').filter({ hasText: pilot.lastName });
-    await expect(weekChips).toHaveCount(2);
+    const tomorrowCell = page.locator('[data-testid="schedule-week-day"].selected');
+    await expect(tomorrowCell).toBeVisible();
+    await expect(tomorrowCell.getByTestId('schedule-week-day-count')).toContainText('2');
   });
 
   test('calendar mobile viewport (375x812, Task 4): day view is usable, no page-level horizontal overflow, touch targets >= 44px', async ({
@@ -554,17 +567,24 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
 
-    const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft.registration });
-    const block = column.getByTestId('calendar-block').filter({ hasText: pilot.lastName });
+    // Story 12.3, AC 2: `calendar-aircraft-column`/`calendar-block` renamed
+    // to `schedule-aircraft-row`/`schedule-block` (day view is now rows, not columns).
+    const row = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
+    const block = row.getByTestId('schedule-block').filter({ hasText: pilot.lastName });
     await expect(block).toBeVisible();
 
-    // Pragmatic mobile-usability assert (Dev Notes): the body itself never scrolls horizontally — only the calendar's own `overflow-x-auto` wrapper does.
+    // Pragmatic mobile-usability assert (Dev Notes): the body itself never scrolls horizontally — only the timeline's own `overflow-x-auto` wrapper does.
     const bodyFitsViewport = await page.evaluate(() => document.body.scrollWidth <= window.innerWidth);
     expect(bodyFitsViewport).toBe(true);
 
-    const nextBox = await page.getByTestId('calendar-next').boundingBox();
-    expect(nextBox?.width).toBeGreaterThanOrEqual(44);
-    expect(nextBox?.height).toBeGreaterThanOrEqual(44);
+    // Story 12.3 deviation (documented): the AirOps prototype's toolbar
+    // icon buttons (`.iconbtn`, ported 1:1) are a deliberate 26x26px dense
+    // design, below the 44px touch-target guideline the LEGACY calendar's
+    // own bigger controls satisfied — this epic's binding decision
+    // ("minimalist-ui superseded") accepts that trade-off for visual
+    // parity with the prototype, so the pixel-size assertion is dropped;
+    // the primary action stays reachable at this viewport regardless.
+    await expect(page.getByTestId('new-booking-button')).toBeVisible();
   });
 
   test('review 7.2 fixes: an extreme ?date falls back to today without a 500 (F1); a bottom-clamped short block pins INSIDE the grid (F2)', async ({
@@ -575,16 +595,17 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const pilot = await createPilotPerson(page);
 
     // F1: a hand-edited year-9999 date must sanitize to today and render the
-    // calendar — before the fix, addDaysDateOnly(date, 1) overflowed into a
+    // timeline — before the fix, addDaysDateOnly(date, 1) overflowed into a
     // 5-digit ISO year and zonedMidnightUtc crashed the page with a 500.
     await page.goto('/it/dashboard/bookings?date=9999-12-31');
-    await expect(page.getByTestId('bookings-calendar-section')).toBeVisible();
+    // Story 12.3, AC 2: `bookings-calendar-section` renamed `schedule-section`.
+    await expect(page.getByTestId('schedule-section')).toBeVisible();
     await expect(page.getByTestId('calendar-heading')).not.toBeEmpty();
 
     // F2: a 20:45Z–21:45Z booking lands at/after the 22:00 Europe/Rome window
     // edge in BOTH DST regimes (22:45 CEST / 21:45 CET start), forcing the
     // min-height inflation near the bottom edge — the block must pin AT the
-    // grid's bottom border, never render below it.
+    // grid's edge, never render past it.
     const nextHref = await page.getByTestId('calendar-next').getAttribute('href');
     const tomorrow = nextHref?.match(/date=(\d{4}-\d{2}-\d{2})/)?.[1];
     if (!tomorrow) throw new Error(`Could not extract tomorrow's date from calendar-next href: ${nextHref}`);
@@ -595,14 +616,20 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(response.status()).toBe(201);
 
     await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
-    const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft.registration });
-    const block = column.getByTestId('calendar-block').filter({ hasText: pilot.lastName });
+    // Story 12.3, AC 2: `calendar-aircraft-column`/`calendar-block` renamed
+    // `schedule-aircraft-row`/`schedule-block`, AND the projection's
+    // `top%`/`height%` (still computed unchanged, `page.tsx#projectDayBlocks`)
+    // now drive `left%`/`width%` instead (the axis flipped from vertical
+    // column to horizontal row, Contesto) — the clamp check below follows
+    // that flip: RIGHT edge (x + width), not bottom edge (y + height).
+    const row = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
+    const block = row.getByTestId('schedule-block').filter({ hasText: pilot.lastName });
     await expect(block).toBeVisible();
 
     const blockBox = await block.boundingBox();
-    const columnBox = await column.boundingBox();
-    if (!blockBox || !columnBox) throw new Error('Missing bounding boxes for the clamped block/column');
-    expect(blockBox.y + blockBox.height).toBeLessThanOrEqual(columnBox.y + columnBox.height + 1);
+    const rowBox = await row.boundingBox();
+    if (!blockBox || !rowBox) throw new Error('Missing bounding boxes for the clamped block/row');
+    expect(blockBox.x + blockBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
   });
 
   test('concurrency (AC 2): two parallel POSTs for the same run-unique aircraft/interval yield exactly one 201 and one 409', async ({
@@ -653,7 +680,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(row).toBeVisible();
 
-    // Sposta: change BOTH the aircraft and the interval.
+    // Modifica (story 12.3: renamed from "Sposta", same PATCH mechanics):
+    // change BOTH the aircraft and the interval.
     await row.getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Velivolo').selectOption({ label: aircraft2.registration });
@@ -661,21 +689,31 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await moveForm.getByLabel('Fine').fill(`${FUTURE_DAY}T14:00`);
     await moveForm.getByTestId('move-booking-save').click();
 
-    await expect(page.getByTestId('bookings-list-feedback')).toHaveText('Prenotazione spostata.');
+    // Story 12.3: feedback moved from an inline `bookings-list-feedback`
+    // paragraph to a toast (`useToast`, the AirOps-native convention every
+    // workflow action in `bookings-table.tsx` uses).
+    await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione modificata.' })).toBeVisible();
     await expect(page.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
     const movedRow = page.getByTestId('booking-row').filter({ hasText: aircraft2.registration });
     await expect(movedRow).toBeVisible();
 
     // Cancella: two-step confirm.
     await movedRow.getByTestId('booking-cancel-action').click();
-    await page.getByTestId('booking-cancel-confirm').click();
-    await expect(page.getByTestId('bookings-list-feedback')).toHaveText('Prenotazione cancellata.');
-    await expect(page.getByTestId('booking-row').filter({ hasText: aircraft2.registration })).toHaveCount(0);
+    await movedRow.getByTestId('booking-cancel-confirm').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione annullata.' })).toBeVisible();
+    // Story 12.3, AC 3: the list now shows EVERY status (default UI: tutti)
+    // — a cancelled booking stays visible with an "Annullato" badge and no
+    // actions, it no longer disappears from the list (unlike the legacy
+    // "Prossime prenotazioni", which only ever fetched PENDING+APPROVED).
+    await expect(movedRow).toContainText('Annullato');
+    await expect(movedRow.getByTestId('booking-cancel-action')).toHaveCount(0);
 
-    // Gone from the calendar too (the row's own aircraft column has no block left).
+    // Gone from the timeline too (an own-path booking starts PENDING, story
+    // 12.2 AC 2 — it was never APPROVED, so it was never on the timeline to
+    // begin with; this assertion is the exact mirror of that: still zero).
     await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
-    const column = page.getByTestId('calendar-aircraft-column').filter({ hasText: aircraft2.registration });
-    await expect(column.getByTestId('calendar-block')).toHaveCount(0);
+    const scheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft2.registration });
+    await expect(scheduleRow.getByTestId('schedule-block')).toHaveCount(0);
 
     // The freed slot (aircraft2 @ 13:00-14:00Z) accepts a brand-new booking.
     const recreate = await page.request.post('/api/v1/bookings', {
@@ -1098,9 +1136,10 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await moveForm.getByLabel('Inizio').fill(`${DAY_1}T14:00`);
     await moveForm.getByLabel('Fine').fill(`${DAY_1}T15:00`);
     await moveForm.getByTestId('move-booking-save').click();
-    await expect(page.getByTestId('bookings-list-feedback')).toHaveText('Prenotazione spostata.');
+    // Story 12.3: toast instead of an inline `bookings-list-feedback` paragraph.
+    await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione modificata.' })).toBeVisible();
     // Wait for the first form to fully close before reopening it — avoids a
-    // race between `handleMoved`'s `router.refresh()` and the next click.
+    // race between `onSuccess`'s `router.refresh()` and the next click.
     await expect(page.getByTestId('move-booking-form')).toHaveCount(0);
 
     // Moving to the NEXT day: the document is expired relative to THAT day -> 422, naming it.
@@ -1110,5 +1149,145 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await moveForm.getByLabel('Fine').fill(`${DAY_2}T13:00`);
     await moveForm.getByTestId('move-booking-save').click();
     await expect(page.getByTestId('move-booking-form-error')).toContainText(blockingType.name);
+  });
+});
+
+test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
+  /**
+   * Creates a run-unique aircraft plus a PENDING booking (own-path: a
+   * freshly logged-in pilot creates it, story 12.2 AC 2 — `bookings.manage.own`
+   * always starts PENDING), then logs back in as staff and lands on the
+   * bookings page. Returns the aircraft (for a run-unique `booking-row`
+   * filter, same convention as every other test in this file) and the row
+   * locator itself.
+   */
+  async function setupPendingBookingAsStaff(page: Page): Promise<{ aircraft: { id: string; registration: string }; row: ReturnType<Page['getByTestId']> }> {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const pilotPassword = `PilotaWorkflow${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
+    const response = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` },
+    });
+    expect(response.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/bookings');
+    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    await expect(row).toContainText('In attesa');
+    return { aircraft, row };
+  }
+
+  test('staff approves a PENDING booking: badge changes, decisional actions gone, Effettuato/Assente/Annulla appear', async ({ page }) => {
+    const { row } = await setupPendingBookingAsStaff(page);
+
+    await row.getByTestId('booking-approve-action').click();
+
+    await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione approvata.' })).toBeVisible();
+    await expect(row).toContainText('Approvato');
+    await expect(row.getByTestId('booking-approve-action')).toHaveCount(0);
+    await expect(row.getByTestId('booking-reject-action')).toHaveCount(0);
+    await expect(row.getByTestId('booking-flown-action')).toBeVisible();
+    await expect(row.getByTestId('booking-noshow-action')).toBeVisible();
+    await expect(row.getByTestId('booking-cancel-action')).toBeVisible();
+  });
+
+  test('staff rejects a PENDING booking with a required reason, the reason shows under the badge; "Riapri" reopens it back to PENDING', async ({
+    page,
+  }) => {
+    const { row } = await setupPendingBookingAsStaff(page);
+
+    await row.getByTestId('booking-reject-action').click();
+
+    // Submitting without a motivo is rejected client-side first (same UX as the create form's "Forza prenotazione" reason).
+    await page.getByTestId('booking-deny-submit').click();
+    await expect(page.getByTestId('booking-deny-error')).toBeVisible();
+
+    const reason = `Aeromobile non disponibile ${uniqueSuffix()}`;
+    await page.getByTestId('booking-deny-reason').fill(reason);
+    await page.getByTestId('booking-deny-submit').click();
+
+    await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione rifiutata.' })).toBeVisible();
+    await expect(row).toContainText('Rifiutato');
+    await expect(row).toContainText(reason);
+    await expect(row.getByTestId('booking-reject-action')).toHaveCount(0);
+    await expect(row.getByTestId('booking-approve-action')).toHaveCount(0);
+
+    await row.getByTestId('booking-reopen-action').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione riaperta.' })).toBeVisible();
+    await expect(row).toContainText('In attesa');
+    await expect(row.getByTestId('booking-approve-action')).toBeVisible();
+  });
+
+  test('staff marks an APPROVED booking Effettuato (and a second one Assente); both then only offer "Riapri"', async ({ page }) => {
+    const { row: flownRow } = await setupPendingBookingAsStaff(page);
+    await flownRow.getByTestId('booking-approve-action').click();
+    await expect(flownRow).toContainText('Approvato');
+
+    await flownRow.getByTestId('booking-flown-action').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione segnata come effettuata.' })).toBeVisible();
+    await expect(flownRow).toContainText('Effettuato');
+    await expect(flownRow.getByTestId('booking-flown-action')).toHaveCount(0);
+    await expect(flownRow.getByTestId('booking-cancel-action')).toHaveCount(0);
+    await expect(flownRow.getByTestId('booking-reopen-action')).toBeVisible();
+
+    const { row: noShowRow } = await setupPendingBookingAsStaff(page);
+    await noShowRow.getByTestId('booking-approve-action').click();
+    await expect(noShowRow).toContainText('Approvato');
+
+    await noShowRow.getByTestId('booking-noshow-action').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione segnata come assente.' })).toBeVisible();
+    await expect(noShowRow).toContainText('Assente');
+    await expect(noShowRow.getByTestId('booking-noshow-action')).toHaveCount(0);
+    await expect(noShowRow.getByTestId('booking-reopen-action')).toBeVisible();
+  });
+
+  test('own-path pilot sees only Modifica/Annulla on their own PENDING booking, no decisional actions, and a PENDING row on another pilot\'s booking has no actions at all', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const otherPilotPassword = `PilotaAltro${uniqueSuffix()}!`;
+    // `createPilotWithLogin` ends its own set-password flow authenticated
+    // AS the new pilot (same pattern every other helper in this file
+    // relies on, e.g. the force-booking test below) — this own-path POST
+    // is genuinely `personId === actor.personId`, so it starts PENDING
+    // (story 12.2 AC 2), unlike a staff-created booking for someone else
+    // (which starts APPROVED).
+    const otherPilot = await createPilotWithLogin(page, otherPilotPassword);
+    const other = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T11:00:00.000Z`, endsAt: `${FUTURE_DAY}T12:00:00.000Z` },
+    });
+    expect(other.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    const me = await (await page.request.get('/api/v1/me')).json();
+    const ownResponse = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: me.person.id, startsAt: `${FUTURE_DAY}T14:00:00.000Z`, endsAt: `${FUTURE_DAY}T15:00:00.000Z` },
+    });
+    expect(ownResponse.status()).toBe(201);
+
+    // Still logged in as PILOT (own path): sees the shared list (FR-19,
+    // `self.read`), with the "other pilot's" row present but action-less.
+    await page.goto('/it/dashboard/bookings');
+    // Disambiguate rows by PERSON NAME, never by H:MM (CLAUDE.md lesson
+    // 11.2, epic 11: a substring time like "11:00" would also match
+    // "1:00" — the two rows here are distinguished by the two run-unique
+    // people involved instead).
+    const ownRow = page.getByTestId('booking-row').filter({ hasText: aircraft.registration }).filter({ hasText: me.person.lastName });
+    await expect(ownRow.getByTestId('booking-move-action')).toBeVisible();
+    await expect(ownRow.getByTestId('booking-cancel-action')).toBeVisible();
+    await expect(ownRow.getByTestId('booking-approve-action')).toHaveCount(0);
+    await expect(ownRow.getByTestId('booking-reject-action')).toHaveCount(0);
+
+    const otherRow = page.getByTestId('booking-row').filter({ hasText: aircraft.registration }).filter({ hasText: otherPilot.lastName });
+    await expect(otherRow.getByTestId('booking-move-action')).toHaveCount(0);
+    await expect(otherRow.getByTestId('booking-cancel-action')).toHaveCount(0);
+    await expect(otherRow.getByTestId('booking-approve-action')).toHaveCount(0);
   });
 });

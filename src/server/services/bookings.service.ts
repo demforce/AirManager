@@ -1053,20 +1053,24 @@ async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
 // still reuses `listPeople` directly (page.tsx) since staff already holds
 // `people.read`.
 
-export type BookableAircraftOption = { id: string; registration: string; status: AircraftStatus; statusReason: string | null };
+export type BookableAircraftOption = { id: string; registration: string; model: string; status: AircraftStatus; statusReason: string | null };
 
 /**
- * Non-archived aircraft, for the booking form's aircraft picker (AC 1/3).
- * `self.read` (every role) — deliberately NOT `aircraft.manage`. OUT_OF_SERVICE
- * aircraft ARE included (the UI disables them with their reason, Contesto);
- * the service re-verifies regardless on submit (AD-5: the UI only hides).
+ * Non-archived aircraft, for the booking form's aircraft picker (AC 1/3) AND
+ * (story 12.3) the Pianificazione timeline's row list — `model` is additive
+ * (story 12.3, AC 2: the timeline row shows registration + model, ported
+ * from the prototype's `.res-type`), every pre-12.3 caller already ignores
+ * unknown fields. `self.read` (every role) — deliberately NOT `aircraft.manage`.
+ * OUT_OF_SERVICE aircraft ARE included (the UI disables them with their
+ * reason, Contesto; story 12.3 renders them as the timeline's AOG row); the
+ * service re-verifies regardless on submit (AD-5: the UI only hides).
  */
 export async function listBookableAircraft(actor: Actor): Promise<BookableAircraftOption[]> {
   authorize(actor, 'self.read');
 
   return prisma.aircraft.findMany({
     where: { archivedAt: null },
-    select: { id: true, registration: true, status: true, statusReason: true },
+    select: { id: true, registration: true, model: true, status: true, statusReason: true },
     orderBy: { registration: 'asc' },
   });
 }

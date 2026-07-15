@@ -1,10 +1,8 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { ExportButton } from '@/components/export-button';
-import { Link, redirect } from '@/i18n/navigation';
-import type { AppLocale } from '@/i18n/routing';
+import { redirect } from '@/i18n/navigation';
 import { buildExportHref } from '@/lib/export-href';
 import { APP_TIMEZONE } from '@/lib/time';
-import { addDaysDateOnly, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from '@/lib/zoned-time';
+import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import {
@@ -17,9 +15,11 @@ import {
   type BookingListItem,
 } from '@/server/services/bookings.service';
 import { listPeople } from '@/server/services/people.service';
-import { BookingCalendar, type BookingCalendarView, type CalendarDayBlock, type CalendarNav, type CalendarWeekChip } from './booking-calendar';
-import { BookingsList, type BookingRowDto } from './bookings-list';
-import { NewBookingForm, type AircraftOption, type InstructorOption, type NewBookingFormMode, type PersonOption } from './new-booking-form';
+import type { BookingRowDto, BookingsTableLabels, BookingStatusDto } from './bookings-table';
+import { BookingsTable } from './bookings-table';
+import type { EditBookingFormLabels } from './edit-booking-form';
+import type { AircraftOption, InstructorOption, NewBookingFormLabels, NewBookingFormMode, PersonOption } from './new-booking-form';
+import { Schedule, type CalendarDayBlock, type CalendarNav, type CalendarWeekChip, type ScheduleAircraftRow, type ScheduleLabels } from './schedule';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -29,16 +29,29 @@ type PageProps = {
 /** Staff/instructor picker candidate cap — same "small admin-managed list" convention as `flights/page.tsx`'s `OPTIONS_PAGE_SIZE`. */
 const OPTIONS_PAGE_SIZE = 100;
 
-/** "Prossime prenotazioni" page size. */
+/** "Prenotazioni" table page size. */
 const BOOKINGS_PAGE_SIZE = 20;
 
-// --- Calendar (epic 7, story 7.2, FR-19) ------------------------------------
+/**
+ * Every `BookingStatus` the new UI shows (story 12.3, AC 3: "default UI:
+ * tutti") — a deliberate scope decision, documented here (Karpathy: surface
+ * assumptions): `from: nowIso` stays UNCHANGED (same as the legacy
+ * "Prossime prenotazioni" list), so this is "every status, within the
+ * future/current window", not "every booking ever". A DENIED/FLOWN/NO_SHOW
+ * booking whose `endsAt` has already fully elapsed naturally drops off the
+ * list — same as it always has — which also bounds "Riapri"'s visibility to
+ * bookings still recent enough to matter operationally.
+ */
+const ALL_BOOKING_STATUSES: readonly BookingStatusDto[] = ['PENDING', 'APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED'];
+
+// --- Calendar (epic 7, story 7.2, FR-19; re-presented story 12.3) ----------
 // Hand-edited URL defense (same pattern as `expiries/page.tsx`'s
 // `sanitizeScope`/`sanitizeStatus`): an invalid `?view`/`?date` NEVER
 // errors, it silently falls back to the default — the calendar's own
 // helpers (`zoned-time.ts`) also never see anything but a validated value.
 
 const CALENDAR_VIEWS = ['day', 'week'] as const;
+type BookingCalendarView = (typeof CALENDAR_VIEWS)[number];
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function sanitizeView(value: string | undefined): BookingCalendarView {
@@ -64,18 +77,16 @@ function sanitizeDate(value: string | undefined, today: string): string {
   return isRealDate ? value : today;
 }
 
-/** The day-view vertical axis (Contesto: "06:00–22:00 Europe/Rome ... su 960'"). Minutes from midnight. */
+/** The day-view horizontal axis (Contesto: "06:00–22:00 Europe/Rome"). Minutes from midnight. */
 const WINDOW_START_MINUTES = 6 * 60;
 const WINDOW_END_MINUTES = 22 * 60;
 const WINDOW_SPAN_MINUTES = WINDOW_END_MINUTES - WINDOW_START_MINUTES;
 const MINUTES_PER_DAY = 24 * 60;
 /**
- * A block is never rendered with zero (or near-zero) visible height, even
+ * A block is never rendered with zero (or near-zero) visible width, even
  * for a booking that is entirely clamped away (Contesto: "MAI nascosti") —
- * 8% of the 768px grid is ~61px, enough to fit the clamp indicator + time +
- * name on three short lines without the `overflow-hidden` wrapper clipping
- * them (verified interactively, Playwright MCP: a booking entirely before
- * 06:00 needs exactly this).
+ * story 7.2's own rationale, unchanged by story 12.3's axis flip (top/height
+ * -> left/width, same percentages).
  */
 const MIN_BLOCK_HEIGHT_PERCENT = 8;
 
@@ -95,17 +106,19 @@ function clampToWindowPercent(rawMinutes: number): number {
 
 /**
  * Projects every booking overlapping `dateOnly` (Europe/Rome) into an
- * ALREADY-POSITIONED day-view block (Dev Notes: "il client riceve blocchi
- * già proiettati ({top%, height%, label})") — SERVER-SIDE, via
- * `zonedWallTime`/`zonedMidnightUtc` (`zoned-time.ts`, story 7.2 Task 1):
- * the client never redoes this conversion (lesson 7.1: "container UTC vs
- * display CEST").
+ * ALREADY-POSITIONED block — SERVER-SIDE, via `zonedWallTime`/
+ * `zonedMidnightUtc` (`zoned-time.ts`, story 7.2 Task 1): the client never
+ * redoes this conversion (lesson 7.1: "container UTC vs display CEST").
+ * UNCHANGED mechanics from story 7.2 (story 12.3, Contesto: "cambia la
+ * PRESENTAZIONE, non la meccanica") — `instructorProfileId` is the only
+ * additive field (the Schedule timeline's instructor filter, AC 2).
  *
  * A booking that starts before this day (or before 06:00 within it) is
- * clamped to the top edge with `clampedTop`; one that ends after this day
- * (or after 22:00) is clamped to the bottom edge with `clampedBottom` —
- * EITHER WAY IT IS STILL RENDERED (Contesto: "MAI nascosti"), just clamped,
- * with the REAL (unclamped) `HH:MM–HH:MM` always shown as `timeLabel`.
+ * clamped to the top/left edge with `clampedTop`; one that ends after this
+ * day (or after 22:00) is clamped to the bottom/right edge with
+ * `clampedBottom` — EITHER WAY IT IS STILL RENDERED (Contesto: "MAI
+ * nascosti"), just clamped, with the REAL (unclamped) `HH:MM–HH:MM` always
+ * shown as `timeLabel`.
  */
 function projectDayBlocks(bookings: BookingListItem[], dateOnly: string): CalendarDayBlock[] {
   const dayStart = zonedMidnightUtc(dateOnly, APP_TIMEZONE);
@@ -141,6 +154,7 @@ function projectDayBlocks(bookings: BookingListItem[], dateOnly: string): Calend
       clampedBottom: rawBottom > WINDOW_SPAN_MINUTES,
       timeLabel: `${formatWallClock(startsAt)}–${formatWallClock(endsAt)}`,
       personName: booking.personName,
+      instructorProfileId: booking.instructorProfileId,
       instructorName: booking.instructorName,
     });
   }
@@ -148,14 +162,13 @@ function projectDayBlocks(bookings: BookingListItem[], dateOnly: string): Calend
 }
 
 /**
- * Projects every booking overlapping any of `weekDates` into a compact
- * week-view chip (Contesto: "celle con chip compatti HH:MM–HH:MM Nome") —
- * one chip PER (booking, day) it overlaps, so a booking spanning midnight
- * appears once in each neighboring day's cell, each clamped independently
- * (same rationale as {@link projectDayBlocks}, without the 06-22 window —
- * the week view has no vertical axis to clamp against, only day
- * boundaries). Composite `id` (`bookingId:dateOnly`) keeps React's
- * `key={id}` unique across those repeats.
+ * Projects every booking overlapping any of `weekDates` into a (booking,
+ * day) overlap record — one PER (booking, day) it overlaps, so a booking
+ * spanning midnight appears once in each neighboring day's count. Story
+ * 12.3 reads this ONLY for per-day counts (Contesto: the prototype's own
+ * week view has no per-aircraft chip matrix, just a 7-cell grid of counts) —
+ * UNCHANGED mechanics from story 7.2 otherwise, `instructorProfileId` is the
+ * only additive field (Dev Notes, same as `projectDayBlocks` above).
  */
 function projectWeekChips(bookings: BookingListItem[], weekDates: string[]): CalendarWeekChip[] {
   const chips: CalendarWeekChip[] = [];
@@ -175,6 +188,7 @@ function projectWeekChips(bookings: BookingListItem[], weekDates: string[]): Cal
         clampedStart: startsAt < dayStart,
         clampedEnd: endsAt >= dayEnd,
         personName: booking.personName,
+        instructorProfileId: booking.instructorProfileId,
         instructorName: booking.instructorName,
       });
     }
@@ -183,14 +197,14 @@ function projectWeekChips(bookings: BookingListItem[], weekDates: string[]): Cal
 }
 
 /**
- * Aircraft bookings (epic 7, stories 7.1/7.2; FR-18/FR-19) — Task 5 (7.1) +
- * Task 3 (7.2). Page order (7.2 Contesto): header -> **calendar** -> "Nuova
- * prenotazione" form (unchanged, `canCreate`-gated) -> "Prossime
- * prenotazioni" (unchanged). Gate: `bookings.manage.own` OR
- * `bookings.manage.any` OR `self.read` (in practice every authenticated
- * actor — the calendar/list serve everyone, FR-19). `canCreate` (either
- * `bookings.manage.*` permission) decides whether the "Nuova prenotazione"
- * form renders at all; within that, `formMode` picks the SHAPE of the form
+ * Aircraft bookings (epic 7 stories 7.1-7.4; epic 12 story 12.2's approval
+ * workflow; re-presented in the AirOps visual language by story 12.3, AC
+ * 1-5) — the FIRST AirOps-native page with real content (story 12.1 only
+ * shipped the shell). Gate: `bookings.manage.own` OR `bookings.manage.any`
+ * OR `self.read` (in practice every authenticated actor — the timeline/list
+ * serve everyone, FR-19). `canCreate` (either `bookings.manage.*`
+ * permission) decides whether the "Nuova prenotazione" button/slide-over
+ * renders at all; within that, `formMode` picks the SHAPE of the form
  * (AD-5: only what to RENDER — `bookings.service.ts#createBooking` is the
  * real guardian regardless of what this page decides to show):
  *
@@ -200,13 +214,13 @@ function projectWeekChips(bookings: BookingListItem[], weekDates: string[]): Cal
  * - `pilot` (`bookings.manage.own`, no active own instructor profile): books
  *   for self only, no picker at all.
  *
- * The calendar (7.2) and "Prossime prenotazioni" (7.1) table are BOTH plain
- * server reads (AD-1) — the form is the only client-interactive piece, and
- * its `router.refresh()` on success is what makes a freshly created booking
- * show up in either. `?view`/`?date` (calendar) and `?page` (list) are two
- * INDEPENDENT pieces of URL state on the SAME page (lesson 6.4 M1, same
- * pattern as `expiries/page.tsx`'s `dashboardPage`/`page`): every href
- * below preserves the OTHER section's current state, never resets it.
+ * Both cards are plain server reads (AD-1) handed to client components for
+ * their OWN interactivity (`Schedule`'s filters/calendar popover,
+ * `BookingsTable`'s workflow actions) — `router.refresh()` on every
+ * successful mutation is what makes a change show up in either. `?view`/
+ * `?date` (timeline) and `?page` (list) are two INDEPENDENT pieces of URL
+ * state on the SAME page (lesson 6.4 M1): every href below preserves the
+ * OTHER section's current state, never resets it.
  */
 export default async function BookingsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
@@ -228,22 +242,19 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   const canCreate = canManageAny || canManageOwn;
 
-  // `listBookableAircraft` now serves the calendar too (story 7.2) — moved
-  // OUT of the `canCreate` branch below, called unconditionally for every
-  // viewer (Task 3: "ORA serve anche ai non-creator").
+  // `listBookableAircraft` serves both the timeline (every viewer) and the
+  // create form's picker — called unconditionally (story 7.2 Task 3).
   const aircraftOptions: AircraftOption[] = await listBookableAircraft(actor);
 
-  // Story 7.3: needed for BOTH the create form's instructor "per me"/"per
-  // un allievo" toggle AND the "Prossime prenotazioni" row actions'
-  // ownership check (an instructor manages the school bookings involving
-  // their own profile, `BookingsList`'s `ownInstructorProfileId` prop) —
-  // called unconditionally (`self.read`-gated, cheap) for every viewer,
-  // same rationale as `listBookableAircraft` above.
+  // Story 7.3/12.3: needed for the create form's instructor toggle, the
+  // list's row-ownership check, AND (new, story 12.3 AC 2) the timeline's
+  // own instructor filter — `self.read` (every role), called unconditionally.
   const ownInstructorProfileId = await getOwnInstructorProfileId(actor);
+  const instructorOptions: InstructorOption[] = await listActiveInstructors(actor);
 
   let formMode: NewBookingFormMode = 'pilot';
   let personOptions: PersonOption[] = [];
-  let instructorOptions: InstructorOption[] = [];
+  let staffInstructorOptions: InstructorOption[] = [];
   let studentOptions: PersonOption[] = [];
 
   if (canCreate) {
@@ -253,7 +264,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
       personOptions = peopleResult.items
         .filter((person) => person.archivedAt === null && (person.profiles.pilot || person.profiles.student || person.profiles.instructor))
         .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
-      instructorOptions = await listActiveInstructors(actor);
+      staffInstructorOptions = instructorOptions;
     } else if (ownInstructorProfileId) {
       formMode = 'instructor';
       studentOptions = await listBookableStudents(actor);
@@ -264,28 +275,29 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   const nowIso = new Date().toISOString();
   let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
-  // Story 12.2, AC 4: `listBookings`'s own default is APPROVED-only (for the
-  // future 12.3 UI) — the legacy "Prossime prenotazioni" list explicitly asks
-  // for BOTH PENDING and APPROVED to keep showing exactly what it showed
-  // before this story (every live, not-yet-terminal booking; approve/deny
-  // badges/filters arrive with 12.3's UI).
-  const LEGACY_LIST_STATUSES = ['PENDING', 'APPROVED'] as const;
-  let bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...LEGACY_LIST_STATUSES] });
+  let bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...ALL_BOOKING_STATUSES] });
   // Clamp an out-of-range ?page to the last real page (same pattern as `FlightsPage`).
   const lastPage = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
   if (page > lastPage) {
     page = lastPage;
-    bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...LEGACY_LIST_STATUSES] });
+    bookingsResult = await listBookings(actor, { from: nowIso, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...ALL_BOOKING_STATUSES] });
   }
   const totalPages = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
 
-  // --- Calendar (story 7.2, AC 1) --------------------------------------
+  // "N in attesa" (story 12.3, AC 3, card-sub) — a dedicated cheap count
+  // query (`pageSize: 1`, only `.total` is read) rather than counting
+  // `bookingsResult.items` client-side, since that's only the CURRENT page.
+  const pendingResult = await listBookings(actor, { from: nowIso, status: ['PENDING'], page: 1, pageSize: 1 });
+  const pendingCount = pendingResult.total;
+
+  // --- Timeline (story 7.2, AC 1; re-presented story 12.3, AC 2) ---------
   const today = todayDateOnlyInZone(APP_TIMEZONE);
   const view = sanitizeView(viewParam);
   const date = sanitizeDate(dateParam, today);
+  const isToday = view === 'day' && date === today;
 
   const weekStart = weekStartDateOnly(date);
-  const weekDates = view === 'week' ? Array.from({ length: 7 }, (_, i) => addDaysDateOnly(weekStart, i)) : [];
+  const weekDatesOnly = view === 'week' ? Array.from({ length: 7 }, (_, i) => addDaysDateOnly(weekStart, i)) : [];
   const rangeFromDateOnly = view === 'day' ? date : weekStart;
   const rangeToDateOnly = view === 'day' ? addDaysDateOnly(date, 1) : addDaysDateOnly(weekStart, 7);
   const calendarFrom = zonedMidnightUtc(rangeFromDateOnly, APP_TIMEZONE);
@@ -293,12 +305,18 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   const calendarBookings = await listCalendarBookings(actor, { from: calendarFrom.toISOString(), to: calendarTo.toISOString() });
   const dayBlocks = view === 'day' ? projectDayBlocks(calendarBookings, date) : [];
-  const weekChips = view === 'week' ? projectWeekChips(calendarBookings, weekDates) : [];
+  // Story 12.3: the week view needs chips across the WHOLE displayed week
+  // regardless of `view` (the day-view branch above only projects `date`
+  // itself) — always computed when `view === 'week'`, matching the
+  // `calendarBookings` range fetched for that case.
+  const weekChips = view === 'week' ? projectWeekChips(calendarBookings, weekDatesOnly) : [];
+
+  const nowLinePercent = isToday ? clampToWindowPercent(wallMinutesOfDay(new Date()) - WINDOW_START_MINUTES) : null;
 
   const prevDate = view === 'day' ? addDaysDateOnly(date, -1) : addDaysDateOnly(date, -7);
   const nextDate = view === 'day' ? addDaysDateOnly(date, 1) : addDaysDateOnly(date, 7);
 
-  // Href builder (lesson 6.4 M1): every calendar link preserves the LIST
+  // Href builder (lesson 6.4 M1): every timeline link preserves the LIST
   // section's `?page` (only when it isn't the default page 1), never resets
   // it — a next-intl `Link`'s query object REPLACES the whole query string.
   function calendarHref(overrides: { view?: BookingCalendarView; date?: string }) {
@@ -322,35 +340,35 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
     weekViewHref: calendarHref({ view: 'week' }),
   };
 
-  // `pageHref` (list pagination) preserves the CALENDAR's `?view`/`?date`
-  // the same way (lesson 6.4 M1) — the inverse direction of `calendarHref` above.
-  function pageHref(targetPage: number) {
-    return {
-      pathname: '/dashboard/bookings',
-      query: {
-        page: targetPage,
-        ...(view !== 'day' ? { view } : {}),
-        ...(date !== today ? { date } : {}),
-      },
-    };
+  // Week-day cell hrefs (story 12.3, AC 2: click a day -> its day view) —
+  // bounded to exactly 7 dates, so (unlike the calendar popover's arbitrary
+  // pick, `schedule.tsx`'s own small client-only `buildDateHref`)
+  // precomputing them here needs no client-side duplication.
+  function hrefString(overrides: { view?: BookingCalendarView; date?: string }): string {
+    const href = calendarHref(overrides);
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(href.query)) {
+      params.set(key, String(value));
+    }
+    const qs = params.toString();
+    return `${href.pathname}${qs ? `?${qs}` : ''}`;
   }
+  const weekDates = weekDatesOnly.map((dateOnly) => ({ dateOnly, href: hrefString({ date: dateOnly }) }));
 
   const t = await getTranslations('BookingsPage');
-  const tExport = await getTranslations('Export');
   const dateLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
 
-  // Story 10.1 (AC 3/5): the "Prossime prenotazioni" list is deliberately
-  // shared (calendario comune, `self.read`) — the export mirrors the SAME
-  // `from` + `status` filters the list above was fetched with (12.2 review
-  // F2: without the explicit statuses the export would fall back to the
-  // service's APPROVED-only default and diverge from the visible list).
-  const exportHref = buildExportHref('/api/v1/bookings', { from: nowIso, status: LEGACY_LIST_STATUSES.join(',') }, locale);
+  // Story 10.1 (AC 5): the export mirrors the SAME `from` + `status` filters
+  // the list above was fetched with (12.2 review F2's lesson, story 12.3: now
+  // ALL statuses since the list itself shows all of them).
+  const exportHref = buildExportHref('/api/v1/bookings', { from: nowIso, status: ALL_BOOKING_STATUSES.join(',') }, locale);
 
-  // Story 7.3: serialize the (already status-filtered to PENDING+APPROVED,
-  // service-side) rows into plain wire DTOs before crossing the server -> client
-  // boundary (`bookings-list.tsx`) — the established codebase convention
-  // (`aircraft-manager.tsx`'s own doc-comment: "ISO 8601 string, server Date
-  // already serialized") rather than passing raw `Date` instances as props.
+  // Story 7.3/12.3: serialize the already status-filtered, service-side rows
+  // into plain wire DTOs before crossing the server -> client boundary
+  // (`bookings-table.tsx`) — `startsAtDateOnly`/`endsAtDateOnly` (AC 3:
+  // "formato formatDateOnly") are computed here with `dateOnlyInZone`
+  // (SERVER-ONLY, `zoned-time.ts`'s own doc-comment) so the client component
+  // never re-derives a Europe/Rome calendar day from a raw instant.
   const bookingRows: BookingRowDto[] = bookingsResult.items.map((booking) => ({
     id: booking.id,
     aircraftId: booking.aircraftId,
@@ -361,202 +379,216 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
     instructorName: booking.instructorName,
     startsAt: booking.startsAt.toISOString(),
     endsAt: booking.endsAt.toISOString(),
+    startsAtDateOnly: dateOnlyInZone(booking.startsAt, APP_TIMEZONE),
+    endsAtDateOnly: dateOnlyInZone(booking.endsAt, APP_TIMEZONE),
     notes: booking.notes,
+    status: booking.status,
+    denyReason: booking.denyReason,
   }));
 
+  const scheduleLabels: ScheduleLabels = {
+    cardTitle: t('schedule.cardTitle'),
+    cardTitleToday: t('schedule.cardTitleToday'),
+    prev: t('calendar.toolbar.prev'),
+    today: t('calendar.toolbar.today'),
+    next: t('calendar.toolbar.next'),
+    dayView: t('calendar.toolbar.dayView'),
+    weekView: t('calendar.toolbar.weekView'),
+    viewToggleLabel: t('calendar.toolbar.viewToggleLabel'),
+    filters: t('schedule.filters'),
+    filtersDone: t('schedule.filtersDone'),
+    filtersReset: t('schedule.filtersReset'),
+    filtersAll: t('schedule.filtersAll'),
+    filtersAircraft: t('schedule.filtersAircraft'),
+    filtersInstructor: t('schedule.filtersInstructor'),
+    prevMonth: t('schedule.prevMonth'),
+    nextMonth: t('schedule.nextMonth'),
+    aog: t('schedule.aog'),
+    available: t('schedule.available'),
+    outOfService: t('calendar.outOfService'),
+    dayEmpty: t('calendar.dayEmpty'),
+    noAircraft: t('calendar.noAircraft'),
+    clampedStartHint: t('calendar.clampedStartHint'),
+    clampedEndHint: t('calendar.clampedEndHint'),
+    weekBookingsCountTemplate: t.raw('schedule.weekBookingsCount') as string,
+  };
+
+  const newBookingLabels: NewBookingFormLabels = {
+    title: t('form.title'),
+    subtitle: t('list.cardTitle'),
+    selectPlaceholder: t('form.selectPlaceholder'),
+    aircraft: t('form.aircraft'),
+    outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
+    person: t('form.person'),
+    noPersonAvailable: t('form.noPersonAvailable'),
+    instructorOptional: t('form.instructorOptional'),
+    noInstructor: t('form.noInstructor'),
+    bookingTarget: t('form.bookingTarget'),
+    bookForMe: t('form.bookForMe'),
+    bookForStudent: t('form.bookForStudent'),
+    student: t('form.student'),
+    noStudentAvailable: t('form.noStudentAvailable'),
+    startsAt: t('form.startsAt'),
+    endsAt: t('form.endsAt'),
+    notes: t('form.notes'),
+    submit: t('form.submit'),
+    requiredField: t('form.requiredField'),
+    invalidRange: t('form.invalidRange'),
+    errors: {
+      AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
+      BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
+      PERSON_NOT_BOOKABLE: t('form.errors.PERSON_NOT_BOOKABLE'),
+      EXPIRED_DOCUMENTS: t.raw('form.errors.EXPIRED_DOCUMENTS') as string,
+      overlap: t('form.errors.overlap'),
+      generic: t('form.errors.generic'),
+    },
+    success: t('form.success'),
+    successWithWarnings: t('form.successWithWarnings'),
+    force: {
+      title: t('form.force.title'),
+      description: t('form.force.description'),
+      reasonLabel: t('form.force.reasonLabel'),
+      submit: t('form.force.submit'),
+      cancel: t('form.force.cancel'),
+      requiredReason: t('form.force.requiredReason'),
+      generic: t('form.force.generic'),
+    },
+  };
+
+  const editBookingLabels: EditBookingFormLabels = {
+    title: t('list.actions.moveTitle'),
+    subtitle: t('list.cardTitle'),
+    cancel: t('list.actions.dismiss'),
+    save: t('list.actions.save'),
+    selectPlaceholder: t('form.selectPlaceholder'),
+    aircraft: t('form.aircraft'),
+    outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
+    startsAt: t('form.startsAt'),
+    endsAt: t('form.endsAt'),
+    notes: t('form.notes'),
+    requiredField: t('form.requiredField'),
+    invalidRange: t('form.invalidRange'),
+    errors: {
+      BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
+      BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
+      AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
+      EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
+      conflict: t('list.actions.errors.conflict'),
+      generic: t('list.actions.errors.generic'),
+    },
+  };
+
+  const bookingsTableLabels: BookingsTableLabels = {
+    cardTitle: t('list.cardTitle'),
+    pendingSummary: t.raw('list.pendingSummary') as string,
+    newButton: t('list.newButton'),
+    exportLabel: t('list.exportLabel'),
+    exportXls: t('list.exportXls'),
+    empty: t('list.empty'),
+    table: {
+      pilot: t('list.table.pilot'),
+      startsAt: t('list.table.startsAt'),
+      endsAt: t('list.table.endsAt'),
+      aircraft: t('list.table.aircraft'),
+      status: t('list.table.status'),
+      actions: t('list.table.actions'),
+    },
+    status: {
+      PENDING: t('list.status.PENDING'),
+      APPROVED: t('list.status.APPROVED'),
+      DENIED: t('list.status.DENIED'),
+      FLOWN: t('list.status.FLOWN'),
+      NO_SHOW: t('list.status.NO_SHOW'),
+      CANCELLED: t('list.status.CANCELLED'),
+    },
+    actions: {
+      approve: t('list.actions.approve'),
+      reject: t('list.actions.reject'),
+      move: t('list.actions.move'),
+      markFlown: t('list.actions.markFlown'),
+      markNoShow: t('list.actions.markNoShow'),
+      cancel: t('list.actions.cancel'),
+      reopen: t('list.actions.reopen'),
+      cancelPrompt: t('list.actions.cancelPrompt'),
+      cancelConfirm: t('list.actions.cancelConfirm'),
+      dismiss: t('list.actions.dismiss'),
+      moveTitle: t('list.actions.moveTitle'),
+      save: t('list.actions.save'),
+      approveSuccess: t('list.actions.approveSuccess'),
+      rejectSuccess: t('list.actions.rejectSuccess'),
+      reopenSuccess: t('list.actions.reopenSuccess'),
+      flownSuccess: t('list.actions.flownSuccess'),
+      noShowSuccess: t('list.actions.noShowSuccess'),
+      moveSuccess: t('list.actions.moveSuccess'),
+      cancelSuccess: t('list.actions.cancelSuccess'),
+      errors: {
+        BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
+        BOOKING_TRANSITION_INVALID: t('list.actions.errors.BOOKING_TRANSITION_INVALID'),
+        BOOKING_DENY_REASON_REQUIRED: t('list.actions.errors.BOOKING_DENY_REASON_REQUIRED'),
+        EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
+        AIRCRAFT_OUT_OF_SERVICE: t.raw('list.actions.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
+        conflict: t('list.actions.errors.conflict'),
+        generic: t('list.actions.errors.generic'),
+      },
+    },
+    denyModal: {
+      title: t('list.denyModal.title'),
+      subtitle: t('list.denyModal.subtitle'),
+      reasonPlaceholder: t('list.denyModal.reasonPlaceholder'),
+      reasonRequired: t('list.denyModal.reasonRequired'),
+      submit: t('list.denyModal.submit'),
+      cancel: t('list.denyModal.cancel'),
+    },
+  };
+
   return (
-    <main className="flex-1 px-6 py-16 sm:px-16">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <span className="rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-xs font-medium uppercase tracking-[0.08em] text-[#787774]">
-              {t('kicker')}
-            </span>
-            <h1 className="mt-4 font-[family-name:var(--font-serif)] text-4xl font-medium tracking-[-0.02em] text-[#111111]">{t('title')}</h1>
-            <p className="mt-2 max-w-xl text-base leading-[1.6] text-[#787774]">{t('description')}</p>
-          </div>
-          <Link
-            href="/dashboard"
-            locale={locale as AppLocale}
-            className="rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-          >
-            {t('backToDashboard')}
-          </Link>
+    <main className="page">
+      <div className="page-head">
+        <div className="page-title-block">
+          <h1>{t('title')}</h1>
+          <div className="sub">{t('sub')}</div>
         </div>
-
-        <BookingCalendar
-          view={view}
-          date={date}
-          weekDates={weekDates}
-          aircraft={aircraftOptions}
-          dayBlocks={dayBlocks}
-          weekChips={weekChips}
-          locale={dateLocale}
-          nav={calendarNav}
-          labels={{
-            prev: t('calendar.toolbar.prev'),
-            today: t('calendar.toolbar.today'),
-            next: t('calendar.toolbar.next'),
-            dayView: t('calendar.toolbar.dayView'),
-            weekView: t('calendar.toolbar.weekView'),
-            viewToggleLabel: t('calendar.toolbar.viewToggleLabel'),
-            outOfService: t('calendar.outOfService'),
-            dayEmpty: t('calendar.dayEmpty'),
-            weekEmpty: t('calendar.weekEmpty'),
-            noAircraft: t('calendar.noAircraft'),
-            clampedStartHint: t('calendar.clampedStartHint'),
-            clampedEndHint: t('calendar.clampedEndHint'),
-            weekdayColumnLabel: t('calendar.weekdayColumnLabel'),
-          }}
-        />
-
-        {canCreate ? (
-          <div className="mt-10">
-            <NewBookingForm
-              mode={formMode}
-              aircraftOptions={aircraftOptions}
-              personOptions={personOptions}
-              instructorOptions={instructorOptions}
-              studentOptions={studentOptions}
-              ownPersonId={actor.personId}
-              ownInstructorProfileId={ownInstructorProfileId}
-              labels={{
-                title: t('form.title'),
-                selectPlaceholder: t('form.selectPlaceholder'),
-                aircraft: t('form.aircraft'),
-                outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
-                person: t('form.person'),
-                noPersonAvailable: t('form.noPersonAvailable'),
-                instructorOptional: t('form.instructorOptional'),
-                noInstructor: t('form.noInstructor'),
-                bookingTarget: t('form.bookingTarget'),
-                bookForMe: t('form.bookForMe'),
-                bookForStudent: t('form.bookForStudent'),
-                student: t('form.student'),
-                noStudentAvailable: t('form.noStudentAvailable'),
-                startsAt: t('form.startsAt'),
-                endsAt: t('form.endsAt'),
-                notes: t('form.notes'),
-                submit: t('form.submit'),
-                requiredField: t('form.requiredField'),
-                invalidRange: t('form.invalidRange'),
-                errors: {
-                  AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
-                  BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
-                  PERSON_NOT_BOOKABLE: t('form.errors.PERSON_NOT_BOOKABLE'),
-                  EXPIRED_DOCUMENTS: t.raw('form.errors.EXPIRED_DOCUMENTS') as string,
-                  overlap: t('form.errors.overlap'),
-                  generic: t('form.errors.generic'),
-                },
-                success: t('form.success'),
-                successWithWarnings: t('form.successWithWarnings'),
-                force: {
-                  title: t('form.force.title'),
-                  description: t('form.force.description'),
-                  reasonLabel: t('form.force.reasonLabel'),
-                  submit: t('form.force.submit'),
-                  cancel: t('form.force.cancel'),
-                  requiredReason: t('form.force.requiredReason'),
-                  generic: t('form.force.generic'),
-                },
-              }}
-            />
-          </div>
-        ) : null}
-
-        <section className="mt-10 rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="bookings-list-section">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h2 className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">{t('list.heading')}</h2>
-              <p className="mt-1 text-sm text-[#787774]">{t('list.description')}</p>
-            </div>
-            <ExportButton href={exportHref} label={tExport('button')} testId="bookings-export-button" />
-          </div>
-
-          <BookingsList
-            items={bookingRows}
-            aircraftOptions={aircraftOptions}
-            canManageAny={canManageAny}
-            canManageOwn={canManageOwn}
-            ownPersonId={actor.personId}
-            ownInstructorProfileId={ownInstructorProfileId}
-            locale={dateLocale}
-            labels={{
-              table: {
-                aircraft: t('list.table.aircraft'),
-                date: t('list.table.date'),
-                time: t('list.table.time'),
-                person: t('list.table.person'),
-                instructor: t('list.table.instructor'),
-                noInstructor: t('list.table.noInstructor'),
-                actions: t('list.table.actions'),
-              },
-              empty: t('list.empty'),
-              form: {
-                selectPlaceholder: t('form.selectPlaceholder'),
-                aircraft: t('form.aircraft'),
-                outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
-                startsAt: t('form.startsAt'),
-                endsAt: t('form.endsAt'),
-                notes: t('form.notes'),
-                requiredField: t('form.requiredField'),
-                invalidRange: t('form.invalidRange'),
-                errors: {
-                  AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
-                  BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
-                },
-              },
-              actions: {
-                move: t('list.actions.move'),
-                cancel: t('list.actions.cancel'),
-                cancelPrompt: t('list.actions.cancelPrompt'),
-                cancelConfirm: t('list.actions.cancelConfirm'),
-                dismiss: t('list.actions.dismiss'),
-                moveTitle: t('list.actions.moveTitle'),
-                save: t('list.actions.save'),
-                moveSuccess: t('list.actions.moveSuccess'),
-                cancelSuccess: t('list.actions.cancelSuccess'),
-                errors: {
-                  BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
-                  EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
-                  conflict: t('list.actions.errors.conflict'),
-                  generic: t('list.actions.errors.generic'),
-                },
-              },
-            }}
-          />
-
-          {totalPages > 1 ? (
-            <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-[#787774]">
-              <Link
-                href={pageHref(page - 1)}
-                locale={locale as AppLocale}
-                aria-disabled={page <= 1}
-                data-testid="booking-page-prev"
-                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                  page <= 1 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
-                }`}
-              >
-                &larr;
-              </Link>
-              <span data-testid="booking-pagination-status">
-                {page} / {totalPages}
-              </span>
-              <Link
-                href={pageHref(page + 1)}
-                locale={locale as AppLocale}
-                aria-disabled={page >= totalPages}
-                data-testid="booking-page-next"
-                className={`rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 transition-colors ${
-                  page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-[#F7F6F3]'
-                }`}
-              >
-                &rarr;
-              </Link>
-            </nav>
-          ) : null}
-        </section>
       </div>
+
+      <Schedule
+        view={view}
+        date={date}
+        today={today}
+        isToday={isToday}
+        weekDates={weekDates}
+        aircraft={aircraftOptions as ScheduleAircraftRow[]}
+        instructors={instructorOptions}
+        dayBlocks={dayBlocks}
+        weekChips={weekChips}
+        nowLinePercent={nowLinePercent}
+        locale={dateLocale}
+        nav={calendarNav}
+        listPage={page}
+        labels={scheduleLabels}
+      />
+
+      <BookingsTable
+        items={bookingRows}
+        pendingCount={pendingCount}
+        total={bookingsResult.total}
+        aircraftOptions={aircraftOptions}
+        canManageAny={canManageAny}
+        canManageOwn={canManageOwn}
+        ownPersonId={actor.personId}
+        ownInstructorProfileId={ownInstructorProfileId}
+        locale={dateLocale}
+        page={page}
+        totalPages={totalPages}
+        exportHref={exportHref}
+        canCreate={canCreate}
+        formMode={formMode}
+        personOptions={personOptions}
+        instructorOptions={staffInstructorOptions}
+        studentOptions={studentOptions}
+        newBookingLabels={newBookingLabels}
+        editBookingLabels={editBookingLabels}
+        labels={bookingsTableLabels}
+      />
     </main>
   );
 }

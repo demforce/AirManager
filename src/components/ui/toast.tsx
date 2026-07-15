@@ -39,7 +39,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="toast-host">
         {items.map((item) => (
-          <div key={item.id} className={`toast ${item.tone === 'ok' ? '' : item.tone}`}>
+          <div key={item.id} className={`toast ${item.tone === 'ok' ? '' : item.tone}`} role="status" data-testid="toast">
             <span className="toast-dot" />
             {item.msg}
           </div>

@@ -5,6 +5,9 @@ import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
+import { Field, Input, Select } from '@/components/ui/field';
+import { Icon } from '@/components/ui/icons';
+import { SlideOver } from '@/components/ui/slide-over';
 
 export type NewBookingFormMode = 'staff' | 'instructor' | 'pilot';
 
@@ -21,6 +24,7 @@ export type InstructorOption = { instructorProfileId: string; firstName: string;
 
 export type NewBookingFormLabels = {
   title: string;
+  subtitle: string;
   selectPlaceholder: string;
   aircraft: string;
   /** `{reason}` placeholder, client-filled (same `t.raw` pattern as `flights-manager.tsx`'s `packageNote`). */
@@ -66,6 +70,8 @@ export type NewBookingFormLabels = {
 };
 
 type NewBookingFormProps = {
+  open: boolean;
+  onClose: () => void;
   /** `staff` (`bookings.manage.any`): free person + optional instructor picker. `instructor` (`bookings.manage.own` + an active own `InstructorProfile`): "for me" / "for a student" toggle. `pilot` (`bookings.manage.own`, no active own instructor profile): books for self only, no picker. */
   mode: NewBookingFormMode;
   aircraftOptions: AircraftOption[];
@@ -154,28 +160,31 @@ type ApiErrorBody = {
 type CreateBookingResponseBody = { booking: { id: string }; warnings: Array<{ typeName: string; expiresAt: string }> };
 
 /**
- * "Nuova prenotazione" (AC 1/2/3, Task 5) — one form, three role-scoped
- * shapes decided by `mode` (computed server-side from the actor's
- * permissions/profiles, AD-5: this component only RENDERS the right
- * picker, the service is the real guardian). Datetime-local inputs
- * (`step=300`, first in the project) convert to ISO 8601 UTC via
- * `new Date(value).toISOString()` at submit time (Dev Notes: the
- * datetime-local value is the BROWSER's wall-time). On success: `role="status"`
- * feedback, form reset, and `router.refresh()` so the server-rendered
- * "Prossime prenotazioni" table (page.tsx) re-fetches — no local list
- * reconciliation here (AD-1: the list stays a plain server read).
+ * "Nuova prenotazione" (story 12.3, AC 4) — the SAME 7.1/7.3/7.4 mechanics
+ * (mode-scoped picker, expiry block + staff "Forza prenotazione", success/
+ * warning banners) as the legacy `new-booking-form.tsx`, re-skinned inside a
+ * `SlideOver` with `Field`/`Input`/`Select` (12.1 primitives) instead of the
+ * legacy Tailwind markup — Contesto: "parità funzionale COMPLETA col form
+ * legacy". `data-testid="new-booking-form"`/`booking-form-*`/`force-booking-*`
+ * are kept UNCHANGED (Contesto: "per minimizzare il churn e2e") — which is
+ * why the submit/cancel buttons stay INSIDE this `<form>` element rather
+ * than `SlideOver`'s separate `footer` slot: e2e locates them via
+ * `page.getByTestId('new-booking-form').getByRole('button', ...)`, a
+ * `footer`-rendered button would be a SIBLING of `so-body`, not a descendant
+ * of this form, and that locator would stop finding it.
  *
- * **Expiry block / staff force (story 7.4, AC 1/2)**: a 422
- * `EXPIRED_DOCUMENTS` response shows the blocking document names in the
- * error banner for EVERYONE; for `mode === 'staff'` ONLY, it also opens the
- * "Forza prenotazione" section (amber, mandatory motivo) — submitting it
- * resends the EXACT same body plus `force`/`forceReason`, so the user never
- * re-fills the form. A 201 whose body carries non-empty `warnings` (a
- * non-blocking expired document) renders the amber warning banner instead
- * of the plain green success one — both are `role="status"`, mutually
- * exclusive, driven by `warnings.length`.
+ * State resets on CLOSE (`handleClose`, called by every dismiss path: the
+ * X button, the scrim, Esc, and the in-form Annulla button) rather than an
+ * effect keyed on `open` becoming `true` — this component stays mounted the
+ * whole time (`SlideOver`'s own CSS drives the slide transition), and a
+ * synchronous `setState` in an effect body is a lint error in this codebase
+ * (`react-hooks/set-state-in-effect`); resetting from a user-triggered event
+ * handler needs no effect at all, and leaves the form clean the NEXT time it
+ * opens (same end result, one render earlier).
  */
 export function NewBookingForm({
+  open,
+  onClose,
   mode,
   aircraftOptions,
   personOptions,
@@ -218,6 +227,21 @@ export function NewBookingForm({
       return null;
     }
     return fieldError.message === 'invalidRange' ? labels.invalidRange : labels.requiredField;
+  }
+
+  function handleClose(): void {
+    reset(DEFAULT_VALUES);
+    setBookingTarget('self');
+    setFormError(null);
+    setSuccess(false);
+    setWarnings([]);
+    setBlockedDocuments(null);
+    setPendingForceBody(null);
+    setForceReason('');
+    setForceReasonTouched(false);
+    setForceSubmitting(false);
+    setForceError(null);
+    onClose();
   }
 
   /** Clears every force-related state — used both on a successful bypass and on "Annulla" (Task 4: "annulla che torna al form pulito dallo stato force"). */
@@ -343,244 +367,186 @@ export function NewBookingForm({
     router.refresh();
   }
 
-  const inputClasses =
-    'mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
-
   return (
-    <form
-      onSubmit={(event) => void handleSubmit(onSubmit)(event)}
-      noValidate
-      data-testid="new-booking-form"
-      className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6"
-    >
-      <h3 className="font-[family-name:var(--font-serif)] text-xl font-medium tracking-[-0.02em] text-[#111111]">{labels.title}</h3>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor="booking-aircraft" className="block text-sm font-medium text-[#2F3437]">
-            {labels.aircraft}
-          </label>
-          <select id="booking-aircraft" aria-invalid={Boolean(errors.aircraftId)} className={inputClasses} {...register('aircraftId')}>
-            <option value="">{labels.selectPlaceholder}</option>
-            {aircraftOptions.map((aircraft) => (
-              <option key={aircraft.id} value={aircraft.id} disabled={aircraft.status === 'OUT_OF_SERVICE'}>
-                {aircraft.status === 'OUT_OF_SERVICE'
-                  ? `${aircraft.registration} — ${labels.outOfServiceSuffix.replace('{reason}', aircraft.statusReason ?? '')}`
-                  : aircraft.registration}
-              </option>
-            ))}
-          </select>
-          {fieldErrorLabel(errors.aircraftId) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.aircraftId)}</p> : null}
-        </div>
-
-        {mode === 'staff' ? (
-          <div>
-            <label htmlFor="booking-person" className="block text-sm font-medium text-[#2F3437]">
-              {labels.person}
-            </label>
-            <select id="booking-person" aria-invalid={Boolean(errors.personId)} className={inputClasses} {...register('personId')}>
-              <option value="">{labels.selectPlaceholder}</option>
-              {personOptions.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.lastName} {person.firstName}
-                </option>
-              ))}
-            </select>
-            {personOptions.length === 0 ? <p className="mt-1 text-xs text-[#787774]">{labels.noPersonAvailable}</p> : null}
-            {fieldErrorLabel(errors.personId) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.personId)}</p> : null}
-          </div>
-        ) : null}
-
-        {mode === 'staff' ? (
-          <div>
-            <label htmlFor="booking-instructor" className="block text-sm font-medium text-[#2F3437]">
-              {labels.instructorOptional}
-            </label>
-            <select id="booking-instructor" className={inputClasses} {...register('instructorProfileId')}>
-              <option value="">{labels.noInstructor}</option>
-              {instructorOptions.map((instructor) => (
-                <option key={instructor.instructorProfileId} value={instructor.instructorProfileId}>
-                  {instructor.lastName} {instructor.firstName}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-
-        {mode === 'instructor' ? (
-          <fieldset className="sm:col-span-2">
-            <legend className="block text-sm font-medium text-[#2F3437]">{labels.bookingTarget}</legend>
-            <div className="mt-2 flex gap-6">
-              <label className="flex items-center gap-2 text-sm text-[#2F3437]">
-                <input
-                  type="radio"
-                  name="booking-target"
-                  checked={bookingTarget === 'self'}
-                  onChange={() => setBookingTarget('self')}
-                />
-                {labels.bookForMe}
-              </label>
-              <label className="flex items-center gap-2 text-sm text-[#2F3437]">
-                <input
-                  type="radio"
-                  name="booking-target"
-                  checked={bookingTarget === 'student'}
-                  onChange={() => setBookingTarget('student')}
-                />
-                {labels.bookForStudent}
-              </label>
-            </div>
-          </fieldset>
-        ) : null}
-
-        {mode === 'instructor' && bookingTarget === 'student' ? (
-          <div>
-            <label htmlFor="booking-student" className="block text-sm font-medium text-[#2F3437]">
-              {labels.student}
-            </label>
-            <select id="booking-student" aria-invalid={Boolean(errors.studentId)} className={inputClasses} {...register('studentId')}>
-              <option value="">{labels.selectPlaceholder}</option>
-              {studentOptions.map((student) => (
-                <option key={student.id} value={student.id}>
-                  {student.lastName} {student.firstName}
-                </option>
-              ))}
-            </select>
-            {studentOptions.length === 0 ? <p className="mt-1 text-xs text-[#787774]">{labels.noStudentAvailable}</p> : null}
-            {fieldErrorLabel(errors.studentId) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.studentId)}</p> : null}
-          </div>
-        ) : null}
-
-        <div>
-          <label htmlFor="booking-starts-at" className="block text-sm font-medium text-[#2F3437]">
-            {labels.startsAt}
-          </label>
-          <input
-            id="booking-starts-at"
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.startsAt)}
-            className={inputClasses}
-            {...register('startsAt')}
-          />
-          {fieldErrorLabel(errors.startsAt) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.startsAt)}</p> : null}
-        </div>
-
-        <div>
-          <label htmlFor="booking-ends-at" className="block text-sm font-medium text-[#2F3437]">
-            {labels.endsAt}
-          </label>
-          <input
-            id="booking-ends-at"
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.endsAt)}
-            className={inputClasses}
-            {...register('endsAt')}
-          />
-          {fieldErrorLabel(errors.endsAt) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.endsAt)}</p> : null}
-        </div>
-
-        <div className="sm:col-span-2">
-          <label htmlFor="booking-notes" className="block text-sm font-medium text-[#2F3437]">
-            {labels.notes}
-          </label>
-          <input id="booking-notes" maxLength={500} className={inputClasses} {...register('notes')} />
-        </div>
-      </div>
-
-      {formError ? (
-        <p role="alert" data-testid="booking-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
-          {formError}
-        </p>
-      ) : null}
-
-      {/* "Forza prenotazione" (story 7.4, AC 2) — staff-only bypass of a real
-          blocking-expiry check; the actual `bookings.manage.any` gate is
-          server-side (AD-5), `mode === 'staff'` is this component's own
-          mirror of that permission (page.tsx only sets it for staff/admin). */}
-      {blockedDocuments && mode === 'staff' ? (
-        <div
-          data-testid="force-booking-section"
-          className="space-y-3 rounded-[8px] border border-[#EADFAE] bg-[#FBF3DB] px-4 py-4"
-        >
-          <div>
-            <h4 className="text-sm font-medium text-[#7A5A00]">{labels.force.title}</h4>
-            <p className="mt-1 text-sm text-[#956400]">{labels.force.description}</p>
-          </div>
-          <div>
-            <label htmlFor="booking-force-reason" className="block text-sm font-medium text-[#7A5A00]">
-              {labels.force.reasonLabel}
-            </label>
-            <textarea
-              id="booking-force-reason"
-              rows={2}
-              maxLength={500}
-              value={forceReason}
-              onChange={(event) => setForceReason(event.target.value)}
-              aria-invalid={forceReasonTouched && forceReason.trim().length === 0}
-              data-testid="force-booking-reason"
-              className="mt-2 w-full rounded-[6px] border border-[#EADFAE] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#956400]"
-            />
-          </div>
-          {forceError ? (
-            <p role="alert" data-testid="force-booking-error" className="text-xs text-[#9F2F2D]">
-              {forceError}
-            </p>
+    <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.force.cancel}>
+      <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="new-booking-form">
+        <div className="form-grid">
+          {mode === 'staff' ? (
+            <Field label={labels.person} wide>
+              <Select aria-invalid={Boolean(errors.personId)} {...register('personId')}>
+                <option value="">{labels.selectPlaceholder}</option>
+                {personOptions.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.lastName} {person.firstName}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           ) : null}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              disabled={forceSubmitting}
-              onClick={() => void onForceSubmit()}
-              data-testid="force-booking-submit"
-              className="min-h-[40px] rounded-[6px] bg-[#956400] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#7A5300] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {labels.force.submit}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                resetForceState();
-                setFormError(null);
-              }}
-              data-testid="force-booking-cancel"
-              className="min-h-[40px] rounded-[6px] border border-[#EADFAE] bg-white px-4 py-2 text-sm font-medium text-[#7A5A00] transition-colors hover:bg-[#F7F1DC]"
-            >
-              {labels.force.cancel}
-            </button>
+          {mode === 'staff' && personOptions.length === 0 ? <p className="fld-label">{labels.noPersonAvailable}</p> : null}
+          {mode === 'staff' && fieldErrorLabel(errors.personId) ? <p className="fld-label">{fieldErrorLabel(errors.personId)}</p> : null}
+
+          <Field label={labels.aircraft}>
+            <Select aria-invalid={Boolean(errors.aircraftId)} {...register('aircraftId')}>
+              <option value="">{labels.selectPlaceholder}</option>
+              {aircraftOptions.map((aircraft) => (
+                <option key={aircraft.id} value={aircraft.id} disabled={aircraft.status === 'OUT_OF_SERVICE'}>
+                  {aircraft.status === 'OUT_OF_SERVICE'
+                    ? `${aircraft.registration} — ${labels.outOfServiceSuffix.replace('{reason}', aircraft.statusReason ?? '')}`
+                    : aircraft.registration}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {fieldErrorLabel(errors.aircraftId) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftId)}</p> : null}
+
+          {mode === 'staff' ? (
+            <Field label={labels.instructorOptional}>
+              <Select {...register('instructorProfileId')}>
+                <option value="">{labels.noInstructor}</option>
+                {instructorOptions.map((instructor) => (
+                  <option key={instructor.instructorProfileId} value={instructor.instructorProfileId}>
+                    {instructor.lastName} {instructor.firstName}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+
+          {mode === 'instructor' ? (
+            <fieldset className="fld wide">
+              <legend className="fld-label">{labels.bookingTarget}</legend>
+              <div style={{ display: 'flex', gap: 20, marginTop: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="radio" name="booking-target" checked={bookingTarget === 'self'} onChange={() => setBookingTarget('self')} />
+                  {labels.bookForMe}
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="radio" name="booking-target" checked={bookingTarget === 'student'} onChange={() => setBookingTarget('student')} />
+                  {labels.bookForStudent}
+                </label>
+              </div>
+            </fieldset>
+          ) : null}
+
+          {mode === 'instructor' && bookingTarget === 'student' ? (
+            <Field label={labels.student}>
+              <Select aria-invalid={Boolean(errors.studentId)} {...register('studentId')}>
+                <option value="">{labels.selectPlaceholder}</option>
+                {studentOptions.map((student) => (
+                  <option key={student.id} value={student.id}>
+                    {student.lastName} {student.firstName}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+          {mode === 'instructor' && bookingTarget === 'student' && studentOptions.length === 0 ? <p className="fld-label">{labels.noStudentAvailable}</p> : null}
+          {mode === 'instructor' && bookingTarget === 'student' && fieldErrorLabel(errors.studentId) ? <p className="fld-label">{fieldErrorLabel(errors.studentId)}</p> : null}
+
+          <Field label={labels.startsAt}>
+            <Input type="datetime-local" step={300} aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />
+          </Field>
+          {fieldErrorLabel(errors.startsAt) ? <p className="fld-label">{fieldErrorLabel(errors.startsAt)}</p> : null}
+
+          <Field label={labels.endsAt}>
+            <Input type="datetime-local" step={300} aria-invalid={Boolean(errors.endsAt)} {...register('endsAt')} />
+          </Field>
+          {fieldErrorLabel(errors.endsAt) ? <p className="fld-label">{fieldErrorLabel(errors.endsAt)}</p> : null}
+
+          <Field label={labels.notes} wide>
+            <Input maxLength={500} {...register('notes')} />
+          </Field>
+        </div>
+
+        {formError ? (
+          <p role="alert" data-testid="booking-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
+            {formError}
+          </p>
+        ) : null}
+
+        {/* "Forza prenotazione" (story 7.4, AC 2) — staff-only bypass of a real
+            blocking-expiry check; the actual `bookings.manage.any` gate is
+            server-side (AD-5), `mode === 'staff'` is this component's own
+            mirror of that permission (page.tsx only sets it for staff/admin). */}
+        {blockedDocuments && mode === 'staff' ? (
+          <div data-testid="force-booking-section" style={{ marginTop: 14, padding: 14, borderRadius: 8, background: 'var(--warn-soft)', border: '1px solid color-mix(in oklch, var(--warn) 40%, transparent)' }}>
+            <div>
+              <h4 className="fld-label" style={{ color: 'var(--accent-ink)' }}>
+                {labels.force.title}
+              </h4>
+              <p style={{ marginTop: 4, fontSize: 13 }}>{labels.force.description}</p>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <label className="fld-label" htmlFor="booking-force-reason">
+                {labels.force.reasonLabel}
+              </label>
+              <textarea
+                id="booking-force-reason"
+                rows={2}
+                maxLength={500}
+                value={forceReason}
+                onChange={(event) => setForceReason(event.target.value)}
+                aria-invalid={forceReasonTouched && forceReason.trim().length === 0}
+                data-testid="force-booking-reason"
+                className="input"
+                style={{ marginTop: 6 }}
+              />
+            </div>
+            {forceError ? (
+              <p role="alert" data-testid="force-booking-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 6 }}>
+                {forceError}
+              </p>
+            ) : null}
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button type="button" disabled={forceSubmitting} onClick={() => void onForceSubmit()} data-testid="force-booking-submit" className="btn primary">
+                {labels.force.submit}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resetForceState();
+                  setFormError(null);
+                }}
+                data-testid="force-booking-cancel"
+                className="btn"
+              >
+                {labels.force.cancel}
+              </button>
+            </div>
           </div>
+        ) : null}
+
+        {success && warnings.length === 0 ? (
+          <p role="status" data-testid="booking-form-success" className="fld-label" style={{ color: 'var(--ok)', marginTop: 14 }}>
+            {labels.success}
+          </p>
+        ) : null}
+
+        {/* Success-with-warnings (story 7.4, AC 1) — amber, distinct from both
+            the plain success message above and the error message: the
+            booking WAS created, but the person has non-blocking documents
+            already expired for this flight day. */}
+        {success && warnings.length > 0 ? (
+          <div role="status" data-testid="booking-form-warning" style={{ marginTop: 14, padding: 12, borderRadius: 8, background: 'var(--warn-soft)', color: 'var(--accent-ink)' }}>
+            <p style={{ fontWeight: 600, fontSize: 13 }}>{labels.successWithWarnings}</p>
+            <ul style={{ marginTop: 4, paddingLeft: 18, listStyle: 'disc' }}>
+              {warnings.map((warning) => (
+                <li key={warning.typeName}>{warning.typeName}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+          <button type="button" className="btn" onClick={handleClose}>
+            {labels.force.cancel}
+          </button>
+          <button type="submit" disabled={isSubmitting} className="btn primary">
+            <Icon.check /> {labels.submit}
+          </button>
         </div>
-      ) : null}
-
-      {success && warnings.length === 0 ? (
-        <p role="status" data-testid="booking-form-success" className="rounded-[8px] bg-[#EEF3EC] px-4 py-3 text-sm text-[#346538]">
-          {labels.success}
-        </p>
-      ) : null}
-
-      {/* Success-with-warnings (story 7.4, AC 1) — amber, distinct from both
-          the green plain-success banner above and the red error banner:
-          the booking WAS created, but the person has non-blocking documents
-          already expired for this flight day. */}
-      {success && warnings.length > 0 ? (
-        <div role="status" data-testid="booking-form-warning" className="rounded-[8px] bg-[#FBF3DB] px-4 py-3 text-sm text-[#956400]">
-          <p className="font-medium">{labels.successWithWarnings}</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5">
-            {warnings.map((warning) => (
-              <li key={warning.typeName}>{warning.typeName}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {labels.submit}
-      </button>
-    </form>
+      </form>
+    </SlideOver>
   );
 }

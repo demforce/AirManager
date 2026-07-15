@@ -282,14 +282,21 @@ export async function exportBookingsXlsx(actor: Actor, query: ListBookingsQuery)
 
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
     { header: t('list.table.aircraft'), value: (row) => row.aircraftRegistration },
-    // Same "date portion of a locale-formatted datetime" split as `bookings-list.tsx` (formatDateTime is "DD/MM/YYYY, HH:MM").
-    { header: t('list.table.date'), value: (row) => formatDateTime(row.startsAt, locale).split(',')[0] },
-    { header: t('list.table.time'), value: (row) => `${formatTimeOfDay(row.startsAt, locale)}–${formatTimeOfDay(row.endsAt, locale)}` },
-    { header: t('list.table.person'), value: (row) => row.personName },
+    { header: t('list.table.pilot'), value: (row) => row.personName },
+    // `list.table.instructor` (story 12.3, AC 3): the UI table itself only
+    // shows the instructor name as a sub-line under the pilot's, with no
+    // dedicated column header — this key exists solely for this export's own
+    // dedicated column, kept for spreadsheet usability.
     { header: t('list.table.instructor'), value: (row) => row.instructorName },
+    { header: t('list.table.startsAt'), value: (row) => formatDateTime(row.startsAt, locale) },
+    { header: t('list.table.endsAt'), value: (row) => formatDateTime(row.endsAt, locale) },
+    // Story 12.3, AC 4: the export lists every status the new UI shows (not
+    // just APPROVED/PENDING), so a status column is now necessary to read
+    // the rows meaningfully.
+    { header: t('list.table.status'), value: (row) => t(`list.status.${row.status}`) },
   ];
 
-  return toXlsxExport('bookings', t('title'), columns, result.items);
+  return toXlsxExport('bookings', t('list.cardTitle'), columns, result.items);
 }
 
 // --- PPR requests (`GET /api/v1/ppr-requests`) ------------------------------

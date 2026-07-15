@@ -1276,10 +1276,23 @@
     }
   },
   "BookingsPage": {
-    "kicker": "Prenotazioni",
-    "title": "Prenotazioni",
-    "description": "Prenota un velivolo per un intervallo di data e ora futuro.",
-    "backToDashboard": "Torna alla dashboard",
+    "title": "Pianificazione",
+    "sub": "Timeline aeromobili e prenotazioni in attesa di approvazione.",
+    "schedule": {
+      "cardTitle": "Programma",
+      "cardTitleToday": "Programma di oggi",
+      "prevMonth": "Mese precedente",
+      "nextMonth": "Mese successivo",
+      "filters": "Filtri",
+      "filtersDone": "Fatto",
+      "filtersReset": "Reimposta",
+      "filtersAll": "Tutti",
+      "filtersAircraft": "Aeromobile",
+      "filtersInstructor": "Istruttore",
+      "aog": "AOG",
+      "available": "Disponibile",
+      "weekBookingsCount": "{count} prenotazioni"
+    },
     "form": {
       "title": "Nuova prenotazione",
       "selectPlaceholder": "Seleziona…",
@@ -1321,34 +1334,66 @@
       }
     },
     "list": {
-      "heading": "Prossime prenotazioni",
-      "description": "Le prenotazioni future su tutti i velivoli.",
-      "empty": "Nessuna prenotazione futura.",
+      "cardTitle": "Prenotazioni",
+      "pendingSummary": "{pending} in attesa · {total} totali",
+      "newButton": "Nuova prenotazione",
+      "exportLabel": "Esporta",
+      "exportXls": "Esporta XLS",
+      "empty": "Nessuna prenotazione.",
       "table": {
-        "aircraft": "Velivolo",
-        "date": "Data",
-        "time": "Orario",
-        "person": "Prenotante",
-        "instructor": "Istruttore",
-        "noInstructor": "—",
-        "actions": "Azioni"
+        "pilot": "Pilota",
+        "startsAt": "Inizio",
+        "endsAt": "Fine",
+        "aircraft": "Aereo",
+        "status": "Stato",
+        "actions": "Azioni",
+        "instructor": "Istruttore"
+      },
+      "status": {
+        "PENDING": "In attesa",
+        "APPROVED": "Approvato",
+        "DENIED": "Rifiutato",
+        "FLOWN": "Effettuato",
+        "NO_SHOW": "Assente",
+        "CANCELLED": "Annullato"
       },
       "actions": {
-        "move": "Sposta",
-        "cancel": "Cancella",
-        "cancelPrompt": "Confermi la cancellazione di questa prenotazione?",
-        "cancelConfirm": "Sì, cancella",
+        "approve": "Approva",
+        "reject": "Rifiuta",
+        "move": "Modifica",
+        "markFlown": "Effettuato",
+        "markNoShow": "Assente",
+        "cancel": "Annulla",
+        "reopen": "Riapri",
+        "cancelPrompt": "Confermi l'annullamento di questa prenotazione?",
+        "cancelConfirm": "Sì, annulla",
         "dismiss": "Annulla",
-        "moveTitle": "Sposta prenotazione",
+        "moveTitle": "Modifica prenotazione",
         "save": "Salva",
-        "moveSuccess": "Prenotazione spostata.",
-        "cancelSuccess": "Prenotazione cancellata.",
+        "approveSuccess": "Prenotazione approvata.",
+        "rejectSuccess": "Prenotazione rifiutata.",
+        "reopenSuccess": "Prenotazione riaperta.",
+        "flownSuccess": "Prenotazione segnata come effettuata.",
+        "noShowSuccess": "Prenotazione segnata come assente.",
+        "moveSuccess": "Prenotazione modificata.",
+        "cancelSuccess": "Prenotazione annullata.",
         "errors": {
           "BOOKING_ALREADY_STARTED": "La prenotazione è già iniziata: non può più essere modificata o cancellata.",
-          "EXPIRED_DOCUMENTS": "Impossibile spostare la prenotazione: risultano scaduti i seguenti documenti: {documents}.",
+          "BOOKING_TRANSITION_INVALID": "Questa prenotazione è già stata aggiornata da un altro operatore. Ricarica la pagina e riprova.",
+          "BOOKING_DENY_REASON_REQUIRED": "Il motivo del rifiuto è obbligatorio.",
+          "EXPIRED_DOCUMENTS": "Impossibile completare l'operazione: risultano scaduti i seguenti documenti: {documents}.",
+          "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
           "conflict": "Il velivolo è già prenotato per questo intervallo, oppure la prenotazione non è più valida. Ricarica la pagina e riprova.",
           "generic": "Operazione non riuscita. Riprova."
         }
+      },
+      "denyModal": {
+        "title": "Rifiuta prenotazione",
+        "subtitle": "La motivazione sarà inviata al pilota.",
+        "reasonPlaceholder": "Aeromobile non disponibile, conflitto istruttore, minime meteo…",
+        "reasonRequired": "Il motivo è obbligatorio.",
+        "submit": "Invia rifiuto",
+        "cancel": "Annulla"
       }
     },
     "calendar": {
@@ -1362,11 +1407,9 @@
       },
       "outOfService": "Fuori servizio",
       "dayEmpty": "Nessuna prenotazione in questo giorno.",
-      "weekEmpty": "Nessuna prenotazione in questa settimana.",
       "noAircraft": "Nessun velivolo disponibile.",
       "clampedStartHint": "Inizia prima di questa finestra oraria",
-      "clampedEndHint": "Continua oltre questa finestra oraria",
-      "weekdayColumnLabel": "Giorno"
+      "clampedEndHint": "Continua oltre questa finestra oraria"
     }
   },
   "UsersPage": {

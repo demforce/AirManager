@@ -52,6 +52,14 @@ export type NavItem = {
   roles: readonly Role[];
   /** Whether the target route exists yet. A later story flips this to `true` when it ships the page. */
   enabled: boolean;
+  /**
+   * Story 12.3, AC 1: whether the route renders in the AirOps visual
+   * language directly (dark mode included) or still assumes the legacy
+   * light backdrop `dashboard/layout.tsx`'s `LegacyBackdrop` wraps it in.
+   * Only a route the epic has ALREADY rewritten flips this to `true` — every
+   * other `enabled` route stays `false` until its own story ships.
+   */
+  airopsNative: boolean;
 };
 
 const ALL_ROLES: readonly Role[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
@@ -61,13 +69,13 @@ const STAFF_ROLES: readonly Role[] = ['ADMIN', 'STAFF'];
 export const NAV_GROUPS: readonly NavGroupId[] = ['operations', 'directory', 'archive', 'system'];
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { id: 'overview', href: '/dashboard', icon: 'dashboard', group: 'operations', roles: ALL_ROLES, enabled: true },
-  { id: 'schedule', href: '/dashboard/bookings', icon: 'calendar', group: 'operations', roles: ALL_ROLES, enabled: true },
-  { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: STAFF_ROLES, enabled: true },
-  { id: 'visiting', href: '/dashboard/movements', icon: 'plane', group: 'operations', roles: STAFF_ROLES, enabled: false },
-  { id: 'pilots', href: '/dashboard/pilots', icon: 'users', group: 'directory', roles: STAFF_ROLES, enabled: false },
-  { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: STAFF_ROLES, enabled: false },
-  { id: 'fleet', href: '/dashboard/fleet', icon: 'fleet', group: 'directory', roles: STAFF_ROLES, enabled: false },
+  { id: 'overview', href: '/dashboard', icon: 'dashboard', group: 'operations', roles: ALL_ROLES, enabled: true, airopsNative: false },
+  { id: 'schedule', href: '/dashboard/bookings', icon: 'calendar', group: 'operations', roles: ALL_ROLES, enabled: true, airopsNative: true },
+  { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: STAFF_ROLES, enabled: true, airopsNative: false },
+  { id: 'visiting', href: '/dashboard/movements', icon: 'plane', group: 'operations', roles: STAFF_ROLES, enabled: false, airopsNative: false },
+  { id: 'pilots', href: '/dashboard/pilots', icon: 'users', group: 'directory', roles: STAFF_ROLES, enabled: false, airopsNative: false },
+  { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: STAFF_ROLES, enabled: false, airopsNative: false },
+  { id: 'fleet', href: '/dashboard/fleet', icon: 'fleet', group: 'directory', roles: STAFF_ROLES, enabled: false, airopsNative: false },
   {
     id: 'scadenze',
     href: '/dashboard/expiries',
@@ -75,13 +83,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
     group: 'directory',
     roles: ['ADMIN', 'STAFF', 'INSTRUCTOR'],
     enabled: true,
+    airopsNative: false,
   },
-  { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: false },
-  { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: STAFF_ROLES, enabled: false },
-  { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: STAFF_ROLES, enabled: false },
+  { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: false, airopsNative: false },
+  { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: STAFF_ROLES, enabled: false, airopsNative: false },
+  { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: STAFF_ROLES, enabled: false, airopsNative: false },
   // ADMIN-only: matches `settings.manage` in rbac.ts (review 12.1 F2 — nav must never
   // point where the page guard bounces; D13: the domain contract wins over the prototype).
-  { id: 'settings', href: '/dashboard/settings', icon: 'gear', group: 'system', roles: ['ADMIN'], enabled: true },
+  { id: 'settings', href: '/dashboard/settings', icon: 'gear', group: 'system', roles: ['ADMIN'], enabled: true, airopsNative: false },
 ];
 
 /**

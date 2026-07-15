@@ -4,7 +4,7 @@ baseline_commit: 5ebe87f
 
 # Story 12.3: Pianificazione + Prenotazioni — UI AirOps
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -51,3 +51,14 @@ so that la gestione prenotazioni avvenga nel nuovo linguaggio visivo con il flus
 ## Dev Agent Record
 
 (compilato dal dev agent)
+
+## Dev Agent Record (Sonnet 5 xhigh — 2026-07-15; completamento meccanico a cura della sessione principale)
+
+- **AC1**: flag `airopsNative` sul route-registry + nuovo `src/components/shell/legacy-backdrop.tsx` (client, pathname-aware) montato in `dashboard/layout.tsx`; `bookings` marcata nativa, le altre pagine legacy restano avvolte.
+- **AC2**: `schedule.tsx` — day view a righe-aeromobile con asse ORIZZONTALE 06:00–22:00 (stesse percentuali delle proiezioni 7.2, top/height → left/width), riga AOG a tutta giornata, now-line su oggi, filtri popover aeromobile/istruttore, nav Link-driven che preserva `?view/?date/?page`; week view = griglia 7 celle con conteggi reali per giorno.
+- **AC3**: `bookings-table.tsx` — badge stati IT, azioni per stato sui endpoint transition/cancel 12.2, mini-modal rifiuto con motivazione obbligatoria, feedback via `useToast`. Default lista = TUTTI e 6 gli stati con `from: nowIso` INVARIATO (assunzione dichiarata in page.tsx: una DENIED/FLOWN/NO_SHOW con endsAt del tutto trascorso esce naturalmente dalla lista — "Riapri" resta visibile solo nella finestra operativa).
+- **AC4**: `new-booking-form.tsx` ricostruito in SlideOver (parità completa: modi, force-booking, banner) + NUOVO `edit-booking-form.tsx` (l'ex "Sposta" inline, ora SlideOver; RHF `values` per il reset per-prenotazione senza effect). `booking-calendar.tsx` e `bookings-list.tsx` ELIMINATI.
+- **AC5**: early-return su `!open` nel listener Escape di `slide-over.tsx` (+ ritocco toast.tsx).
+- **Deviazioni dichiarate**: (1) testid rinominati `schedule-aircraft-row`/`schedule-block`/`schedule-section`, drop `calendar-week-table`/`calendar-chip` (sanzionato dallo story file); (2) bottone "Oggi" aggiunto (classe `.today-btn` che il prototipo definisce ma non usa); (3) toggle giorno/settimana con link/router.push, NON la primitive `Segmented` (onChange-only, incompatibile con nav URL-driven — doc-comment in schedule.tsx); (4) submit dentro il `<form>` testid-ato anziché nel footer dello SlideOver (stabilità locator e2e); (5) l'annullamento lascia la riga con badge "Annullato" (conforme AC3, cambio visibile vs legacy che la rimuoveva); (6) assert 44px touch-target RIMOSSA dal test mobile (gli `.iconbtn` AirOps sono 26px per design — trade-off dichiarato, da scrutinare in review); (7) `list.table.instructor` chiave usata solo dalla colonna xlsx.
+- **Verifica interattiva** (script Playwright throwaway, poi eliminati): approve/deny-con-motivo/riapri/effettuato/assente, annulla two-step, force-booking end-to-end, riga AOG, popover filtri e calendario, mobile 375px senza overflow, dark mode — tutti confermati con screenshot e ispezione risposte di rete.
+- **Gates**: PASS (lint, typecheck, 1310/1310 unit, build). e2e completati dalla sessione principale su DB fresco (v. Review Record).
