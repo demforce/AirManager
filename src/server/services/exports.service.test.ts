@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Actor } from '@/server/auth/rbac';
+import { formatMinutes } from '@/lib/time';
 
 // Every one of the 10 sibling list services `exports.service.ts` statically
 // imports is mocked here — NOT because each test below exercises all of
@@ -38,6 +39,7 @@ const { listAllExpiries } = await import('./expiries.service');
 const { listAccountMovements, getAccountOverview } = await import('./accounts.service');
 const { getAirfieldBranding } = await import('./app-settings.service');
 const { renderReportPdf } = await import('@/server/adapters/pdf/document');
+const { getCompensationSummary } = await import('./instructor-compensation.service');
 const {
   EXPORT_MAX_ROWS,
   PDF_EXPORT_MAX_ROWS,
@@ -47,6 +49,7 @@ const {
   exportFlightsXlsx,
   exportCashMovementsXlsx,
   exportExpiriesXlsx,
+  exportInstructorCompensationXlsx,
   exportAccountStatementPdf,
   exportCashReportPdf,
   exportFlightsPdf,
@@ -63,6 +66,7 @@ const getPersonMock = vi.mocked(getPerson);
 const getCashReportMock = vi.mocked(getCashReport);
 const getAirfieldBrandingMock = vi.mocked(getAirfieldBranding);
 const renderReportPdfMock = vi.mocked(renderReportPdf);
+const getCompensationSummaryMock = vi.mocked(getCompensationSummary);
 
 const ACTOR: Actor = { userId: 'user_1', personId: null, roles: ['ADMIN'] };
 const BRANDING = { name: 'Aviosuperficie di Test', logoDataUrl: null };
@@ -91,6 +95,7 @@ beforeEach(() => {
   renderReportPdfMock.mockClear();
   getAirfieldBrandingMock.mockReset();
   getAirfieldBrandingMock.mockResolvedValue(BRANDING);
+  getCompensationSummaryMock.mockReset();
 });
 
 describe('assertWithinExportCap (story 10.1, AC 4)', () => {
@@ -370,6 +375,30 @@ describe('exportExpiriesXlsx (T2 — date-only column mapping)', () => {
     expect(row.getCell(4).value).toBe('15/01/2026');
     expect(row.getCell(5).value).toBe('15/01/2027');
     expect(row.getCell(6).value).toBe('In regola');
+  });
+});
+
+describe('exportInstructorCompensationXlsx (story 12.7, AC 3 — payout rate/owed money columns)', () => {
+  it('maps name/ratings/hours + the payout rate and owed as numeric euro cells, null when the instructor has no payout rate', async () => {
+    getCompensationSummaryMock.mockResolvedValue([
+      { instructorProfileId: 'ip_1', personId: 'p_1', firstName: 'Ines', lastName: 'Bianchi', ratings: 'PPL, IR', payoutRateCents: 6000, totalMinutes: 90, owedTotalCents: 9000 },
+      { instructorProfileId: 'ip_2', personId: 'p_2', firstName: 'Luca', lastName: 'Verdi', ratings: '', payoutRateCents: null, totalMinutes: 0, owedTotalCents: null },
+    ] as never);
+
+    const { buffer } = await exportInstructorCompensationXlsx(ACTOR, { locale: 'it' });
+    const sheet = await readSheet(buffer);
+
+    const withRate = sheet.getRow(2);
+    expect(withRate.getCell(1).value).toBe('Bianchi Ines');
+    expect(withRate.getCell(2).value).toBe('PPL, IR');
+    expect(withRate.getCell(3).value).toBe(60); // 6000 cents → 60 as a real numeric euro cell (MONEY_NUM_FMT), never a string
+    expect(withRate.getCell(4).value).toBe(formatMinutes(90));
+    expect(withRate.getCell(5).value).toBe(90); // owed 9000 cents → 90
+
+    const noRate = sheet.getRow(3);
+    expect(noRate.getCell(1).value).toBe('Verdi Luca');
+    expect(noRate.getCell(3).value).toBeNull(); // rate null when the instructor has no payout rate
+    expect(noRate.getCell(5).value).toBeNull(); // owed null when no rate
   });
 });
 
