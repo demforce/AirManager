@@ -228,15 +228,18 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // T0 hardening: filter by this test's own registration instead of relying
     // on it landing on the default page 1 (root-caused empirically — under a
     // fully-parallel e2e run, dozens of aircraft get created by OTHER specs;
-    // `/dashboard/aircraft` is paginated 20/page ordered by `registration asc`,
-    // so a freshly created, run-unique registration can sort well past page 1
-    // and never appear, which read as a flaky `toContainText` timeout even
-    // though the underlying data was correct all along). The list page
-    // already supports `?q=` server-side search (`aircraft.service.ts`),
-    // same mechanism `people-manager.tsx`'s search box drives.
-    await page.goto(`/it/dashboard/aircraft?q=${encodeURIComponent(aircraft.registration)}`);
-    const aircraftRow = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await expect(aircraftRow).toContainText('3:00');
+    // `/dashboard/fleet` (story 12.5, the `/dashboard/aircraft` page's
+    // replacement) is paginated 20/page ordered by `registration asc`, so a
+    // freshly created, run-unique registration can sort well past page 1 and
+    // never appear, which read as a flaky `toContainText` timeout even
+    // though the underlying data was correct all along). The fleet page
+    // still supports `?q=` server-side search (`aircraft.service.ts`); the
+    // contaore now lives inside the slide-over editor's "Contaore" section
+    // (the card itself only shows the wet rate, story 12.5 AC 2), scoped by
+    // the card's own `data-testid="ac-card-{id}"` (no text-match ambiguity).
+    await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+    await page.getByTestId(`ac-card-${aircraft.id}`).click();
+    await expect(page.getByTestId('hour-meter-current')).toContainText('3:00');
 
     // Estratto conto: a FLIGHT_CHARGE row, negative, same total.
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);

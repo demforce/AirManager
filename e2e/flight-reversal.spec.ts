@@ -212,12 +212,14 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/40,00\s€/);
     await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-40,00\s€/);
 
-    // Aircraft hour meter advanced by 60' (500 -> 560 = 9:20).
-    // Search-scoped: the fleet list is paginated 20/page ordered by
-    // registration, so on an accumulated DB this run's aircraft can sit past
-    // page 1 (same TD-1 T0 fix as flights.spec).
-    await page.goto(`/it/dashboard/aircraft?q=${encodeURIComponent(aircraft.registration)}`);
-    await expect(page.getByRole('row', { name: new RegExp(aircraft.registration) })).toContainText('9:20');
+    // Aircraft hour meter advanced by 60' (500 -> 560 = 9:20). Search-scoped:
+    // the fleet grid (`/dashboard/fleet`, story 12.5) is paginated 20/page
+    // ordered by registration, so on an accumulated DB this run's aircraft
+    // can sit past page 1 (same TD-1 T0 fix as flights.spec) — the contaore
+    // itself now lives inside the slide-over editor's "Contaore" section.
+    await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+    await page.getByTestId(`ac-card-${aircraft.id}`).click();
+    await expect(page.getByTestId('hour-meter-current')).toContainText('9:20');
 
     // Cancel it with a reason. Scope the registry to this run's aircraft via
     // the filter bar FIRST (TD-3 review D1): the unfiltered page 1 orders by
@@ -253,12 +255,11 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(reversalRow).toContainText(/\+40,00\s€/);
     await expect(page.getByTestId('reversal-badge')).toBeVisible();
 
-    // Aircraft hour meter reverted to 8:20 (560 - 60 = 500).
-    // Search-scoped: the fleet list is paginated 20/page ordered by
-    // registration, so on an accumulated DB this run's aircraft can sit past
-    // page 1 (same TD-1 T0 fix as flights.spec).
-    await page.goto(`/it/dashboard/aircraft?q=${encodeURIComponent(aircraft.registration)}`);
-    await expect(page.getByRole('row', { name: new RegExp(aircraft.registration) })).toContainText('8:20');
+    // Aircraft hour meter reverted to 8:20 (560 - 60 = 500). Same
+    // search-scoped fleet-grid navigation as above.
+    await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+    await page.getByTestId(`ac-card-${aircraft.id}`).click();
+    await expect(page.getByTestId('hour-meter-current')).toContainText('8:20');
 
     // Package residuo restored to 1:00 (no more "Usati" note).
     await page.goto(`/it/dashboard/people/${pilot.personId}`);

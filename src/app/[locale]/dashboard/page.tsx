@@ -420,7 +420,7 @@ export default async function DashboardPage({ params }: PageProps) {
               <WidgetCard
                 testId="aircraft-out-of-service-widget"
                 heading={t('aircraftOutOfServiceWidget.heading')}
-                linkHref="/dashboard/aircraft"
+                linkHref="/dashboard/fleet"
                 linkLabel={t('aircraftOutOfServiceWidget.link')}
                 isEmpty={outOfServiceAircraft.length === 0}
                 emptyLabel={t('aircraftOutOfServiceWidget.empty')}

@@ -1127,3 +1127,27 @@ export async function getOwnInstructorProfileId(actor: Actor): Promise<string | 
   });
   return profile && profile.deactivatedAt === null ? profile.id : null;
 }
+
+/**
+ * The subset of `aircraftIds` currently "Riservato" (story 12.5, AC 2) — an
+ * APPROVED booking whose `[startsAt, endsAt)` covers `now`. Batched (a
+ * single `findMany` over every id on the fleet page's current page, NOT one
+ * query per card) — same N+1-avoidance rationale as
+ * `rates.service.ts#getEffectiveRates`. Presentational only (no field on
+ * `Aircraft` itself): `bookings.manage.any` gates it, same permission every
+ * STAFF/ADMIN actor who can reach the fleet page (`aircraft.manage`) already
+ * holds (`rbac.ts`).
+ */
+export async function listReservedAircraftIds(actor: Actor, aircraftIds: string[], now: Date): Promise<Set<string>> {
+  authorize(actor, 'bookings.manage.any');
+
+  if (aircraftIds.length === 0) {
+    return new Set();
+  }
+
+  const bookings = await prisma.booking.findMany({
+    where: { aircraftId: { in: aircraftIds }, status: 'APPROVED', startsAt: { lte: now }, endsAt: { gt: now } },
+    select: { aircraftId: true },
+  });
+  return new Set(bookings.map((booking) => booking.aircraftId));
+}

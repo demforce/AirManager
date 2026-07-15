@@ -99,6 +99,11 @@ const SELECTED_AIRCRAFT = {
   notes: 'Velivolo scuola volo demo.',
   status: 'OPERATIONAL',
   statusReason: null,
+  // Story 12.5, AC 1: additive fleet fields.
+  seats: 2,
+  fuelType: 'AVGAS 100LL',
+  owner: 'CLUB',
+  based: true,
   archivedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -207,6 +212,10 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
             notes: 'Velivolo scuola volo demo.',
             status: 'OPERATIONAL',
             statusReason: null,
+            seats: 2,
+            fuelType: 'AVGAS 100LL',
+            owner: 'CLUB',
+            based: true,
             archivedAt: null,
             createdAt: SELECTED_AIRCRAFT.createdAt,
           },
@@ -345,6 +354,30 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         expect.objectContaining({ data: expect.objectContaining({ hourMeterMinutes: 90 }) }),
       );
     });
+
+    it('persists the additive fleet fields when provided (story 12.5, AC 1)', async () => {
+      aircraftFindFirst.mockResolvedValue(null);
+      aircraftCreate.mockResolvedValue({ ...SELECTED_AIRCRAFT, seats: 4, fuelType: 'Jet A-1', owner: 'PRIVATE', based: false });
+
+      await createAircraft(staffActor(), { ...input, seats: 4, fuelType: 'Jet A-1', owner: 'PRIVATE', based: false });
+
+      expect(createMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ seats: 4, fuelType: 'Jet A-1', owner: 'PRIVATE', based: false }) }),
+      );
+    });
+
+    it('leaves owner/based undefined (DB default CLUB/true) when omitted, and seats/fuelType null (story 12.5, AC 1)', async () => {
+      aircraftFindFirst.mockResolvedValue(null);
+      aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
+
+      await createAircraft(staffActor(), input);
+
+      const dataArg = createMock.mock.calls[0]?.[0] as { data: Record<string, unknown> };
+      expect(dataArg.data.seats).toBeNull();
+      expect(dataArg.data.fuelType).toBeNull();
+      expect(dataArg.data.owner).toBeUndefined();
+      expect(dataArg.data.based).toBeUndefined();
+    });
   });
 
   describe('updateAircraft', () => {
@@ -393,6 +426,15 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       await expect(
         updateAircraft(staffActor(), 'aircraft_1', { registration: 'I-TAKEN' }),
       ).rejects.toThrow(ConflictError);
+    });
+
+    it('patches only the provided additive fleet fields (story 12.5, AC 1)', async () => {
+      aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+      aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, seats: 4, owner: 'PRIVATE' });
+
+      await updateAircraft(staffActor(), 'aircraft_1', { seats: 4, owner: 'PRIVATE' });
+
+      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { seats: 4, owner: 'PRIVATE' } }));
     });
   });
 

@@ -209,6 +209,15 @@ enum AircraftStatus {
   OUT_OF_SERVICE
 }
 
+/// Aircraft ownership (story 12.5, AC 1) — presentation/anagrafica only, no
+/// pricing/booking behavior keys off this: a CLUB aircraft belongs to the
+/// flying club's own fleet, PRIVATE is a member-owned airframe based at (or
+/// visiting) the field.
+enum AircraftOwner {
+  CLUB
+  PRIVATE
+}
+
 /// Aircraft fleet registry (story 2.4, AC 1/2; FR-7). `registration` (marche,
 /// e.g. "I-ABCD") is the unique human-facing identifier — normalized
 /// (`trim().toUpperCase()`) at the Zod boundary so the DB-level uniqueness is
@@ -237,6 +246,21 @@ model Aircraft {
   /// Mandatory while `status == OUT_OF_SERVICE`; reset to `null` on return to
   /// service (enforced in `aircraft.service.ts`, not at the DB level).
   statusReason     String?
+  /// Number of seats (story 12.5, AC 1) — anagrafica only, optional (not
+  /// every legacy row has it on record).
+  seats            Int?
+  /// Free-text fuel type (story 12.5, AC 1) — the fleet editor offers a
+  /// closed set of common options (AVGAS 100LL / Jet A-1 / Mogas) but the
+  /// column itself stays plain text, no DB-level enum, so an unusual fuel
+  /// isn't blocked.
+  fuelType         String?
+  /// Ownership (story 12.5, AC 1) — CLUB (default, matches every
+  /// pre-existing row) or PRIVATE.
+  owner            AircraftOwner  @default(CLUB)
+  /// Whether the aircraft is based at the field vs. a visiting/guest
+  /// airframe (story 12.5, AC 1). Defaults to `true` (matches every
+  /// pre-existing row, all of which are field-based).
+  based            Boolean        @default(true)
   archivedAt       DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -267,16 +291,21 @@ model Aircraft {
 /// two rates for the same aircraft on the same day is a 409, not a silent
 /// overwrite.
 model AircraftRate {
-  id                String   @id @default(cuid())
-  aircraftId        String
-  aircraft          Aircraft @relation(fields: [aircraftId], references: [id])
-  priceCentsPerHour Int
-  validFrom         DateTime @db.Date
+  id                 String   @id @default(cuid())
+  aircraftId         String
+  aircraft           Aircraft @relation(fields: [aircraftId], references: [id])
+  priceCentsPerHour  Int
+  /// Optional "dry" (fuel-excluded) hourly rate (story 12.5, AC 1) —
+  /// DISPLAY-ONLY: pricing/flight-cost computation (`rates.service.ts#getEffectiveRate`/
+  /// `#getEffectiveRates`, `flights.service.ts`) reads exclusively
+  /// `priceCentsPerHour` ("wet") and never this column.
+  dryHourlyRateCents Int?
+  validFrom          DateTime @db.Date
   /// The acting `User.id` (`Actor.userId`, always present) — who recorded
   /// this rate, same rationale as `HourMeterAdjustment.actorUserId`.
-  actorUserId       String
-  actorUser         User     @relation(fields: [actorUserId], references: [id])
-  createdAt         DateTime @default(now())
+  actorUserId        String
+  actorUser          User     @relation(fields: [actorUserId], references: [id])
+  createdAt          DateTime @default(now())
 
   @@unique([aircraftId, validFrom])
   @@index([aircraftId])

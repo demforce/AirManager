@@ -28,8 +28,11 @@ export type NavItem = {
 export const NAV_ITEMS: readonly NavItem[] = [
   // Story 2.1: the first real (non-placeholder) People sub-page.
   { key: 'people', href: '/dashboard/people', permissions: ['people.read'] },
-  // Story 2.4: repointed the same way people was in 2.1.
-  { key: 'aircraft', href: '/dashboard/aircraft', permissions: ['aircraft.manage'] },
+  // Story 2.4: repointed the same way people was in 2.1. Story 12.5: the
+  // legacy `/dashboard/aircraft` page is gone — repointed at the new AirOps
+  // fleet page (this entry still has a consumer, `dashboard/page.tsx`'s own
+  // overview grid, so `nav-items.ts` itself stays; full removal is 12.13).
+  { key: 'aircraft', href: '/dashboard/fleet', permissions: ['aircraft.manage'] },
   // Story 5.1: repointed the same way people/aircraft/finance were in
   // 2.1/2.4/3.3. Story 5.4 (FR-17): reopened to every role via `self.read` —
   // the page itself (own-access registry vs full staff manager) and the

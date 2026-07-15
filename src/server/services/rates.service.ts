@@ -60,6 +60,27 @@ function toListItem(rate: SelectedRate): AircraftRateListItem {
   };
 }
 
+/**
+ * Dry-rate-inclusive projection (story 12.5, AC 1) — used ONLY by
+ * `createAircraftRate`/`listAircraftRates`, deliberately a SEPARATE select
+ * object from `RATE_SELECT`: the pricing-critical hot path
+ * (`getEffectiveRate`/`getEffectiveRates`, read by `flights.service.ts`)
+ * stays byte-for-byte unchanged — the dry rate is display-only and never
+ * feeds it.
+ */
+const RATE_SELECT_WITH_DRY = {
+  ...RATE_SELECT,
+  dryHourlyRateCents: true,
+} as const;
+
+export type AircraftRateListItemWithDry = AircraftRateListItem & { dryHourlyRateCents: number | null };
+
+type SelectedRateWithDry = SelectedRate & { dryHourlyRateCents: number | null };
+
+function toListItemWithDry(rate: SelectedRateWithDry): AircraftRateListItemWithDry {
+  return { ...toListItem(rate), dryHourlyRateCents: rate.dryHourlyRateCents };
+}
+
 /** Prisma unique-constraint violation (same pattern as every other service). */
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2002';
@@ -97,7 +118,7 @@ export async function createAircraftRate(
   actor: Actor,
   aircraftId: string,
   input: CreateAircraftRateInput,
-): Promise<AircraftRateListItem> {
+): Promise<AircraftRateListItemWithDry> {
   authorize(actor, 'settings.manage');
 
   const aircraft = await prisma.aircraft.findUnique({ where: { id: aircraftId }, select: { id: true, archivedAt: true } });
@@ -120,10 +141,12 @@ export async function createAircraftRate(
       data: {
         aircraftId,
         priceCentsPerHour: input.priceCentsPerHour,
+        // Optional "dry" rate (story 12.5, AC 1) — display-only.
+        dryHourlyRateCents: input.dryHourlyRateCents ?? null,
         validFrom,
         actorUserId: actor.userId,
       },
-      select: RATE_SELECT,
+      select: RATE_SELECT_WITH_DRY,
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -132,7 +155,7 @@ export async function createAircraftRate(
     throw error;
   }
 
-  return toListItem(rate);
+  return toListItemWithDry(rate);
 }
 
 /**
@@ -142,7 +165,7 @@ export async function createAircraftRate(
  * though only admin sets it). No pagination (small, admin-managed list, same
  * choice as `listCashCategories`) but defensively capped at `take: 500`.
  */
-export async function listAircraftRates(actor: Actor, aircraftId: string): Promise<AircraftRateListItem[]> {
+export async function listAircraftRates(actor: Actor, aircraftId: string): Promise<AircraftRateListItemWithDry[]> {
   authorize(actor, 'aircraft.manage');
 
   const aircraft = await prisma.aircraft.findUnique({ where: { id: aircraftId }, select: { id: true } });
@@ -152,12 +175,12 @@ export async function listAircraftRates(actor: Actor, aircraftId: string): Promi
 
   const rates = await prisma.aircraftRate.findMany({
     where: { aircraftId },
-    select: RATE_SELECT,
+    select: RATE_SELECT_WITH_DRY,
     orderBy: [{ validFrom: 'desc' }],
     take: 500,
   });
 
-  return rates.map(toListItem);
+  return rates.map(toListItemWithDry);
 }
 
 /**

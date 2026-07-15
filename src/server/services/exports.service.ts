@@ -178,12 +178,12 @@ export async function exportPeopleXlsx(actor: Actor, query: ListPeopleQuery): Pr
 }
 
 // --- Aircraft (`GET /api/v1/aircraft`) --------------------------------------
-// Deviation (Dev Notes' "annotarlo in notesForReview"): the fleet table's
-// "Tariffa attuale" column is NOT exported — `dashboard/aircraft/page.tsx`
-// joins it in from a SEPARATE per-aircraft `getEffectiveRate` call
-// (`rates.service.ts`), it is not part of `AircraftListItem`/`GET
-// /api/v1/aircraft`'s own DTO (verified: `aircraft.service.ts#AircraftListItem`
-// has no such field).
+// Deviation (Dev Notes' "annotarlo in notesForReview"): the fleet card's
+// "Tariffa" is NOT exported — `dashboard/fleet/page.tsx` (story 12.5, the
+// `dashboard/aircraft` page's replacement) joins it in from a SEPARATE
+// batched `getEffectiveRates` call (`rates.service.ts`), it is not part of
+// `AircraftListItem`/`GET /api/v1/aircraft`'s own DTO (verified:
+// `aircraft.service.ts#AircraftListItem` has no such field).
 
 export async function exportAircraftXlsx(actor: Actor, query: ListAircraftQuery): Promise<XlsxExport> {
   const result = await listAircraft(actor, { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });

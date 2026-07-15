@@ -52,6 +52,7 @@ function rateFixture(overrides: Partial<Record<string, unknown>> = {}): Record<s
     id: 'rate_1',
     aircraftId: 'aircraft_1',
     priceCentsPerHour: 16000,
+    dryHourlyRateCents: null,
     validFrom: new Date('2026-07-07T00:00:00.000Z'),
     actorUserId: 'admin_1',
     actorUser: { email: 'admin@airmanager.local' },
@@ -121,14 +122,33 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
           data: {
             aircraftId: 'aircraft_1',
             priceCentsPerHour: 16000,
+            dryHourlyRateCents: null,
             validFrom: new Date('2026-07-07T00:00:00.000Z'),
             actorUserId: 'admin_1',
           },
         }),
       );
       expect(result.priceCentsPerHour).toBe(16000);
+      expect(result.dryHourlyRateCents).toBeNull();
       expect(result.validFrom).toBe('2026-07-07');
       expect(result.actorEmail).toBe('admin@airmanager.local');
+    });
+
+    it('persists the optional dry rate when provided (story 12.5, AC 1) — display-only, PRICING is untouched by this field', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      rateFindFirst.mockResolvedValue(null);
+      rateCreate.mockResolvedValue(rateFixture({ dryHourlyRateCents: 11500 }));
+
+      const result = await createAircraftRate(adminActor(), 'aircraft_1', {
+        priceCentsPerHour: 16000,
+        dryHourlyRateCents: 11500,
+        validFrom: '2026-07-07',
+      });
+
+      expect(rateCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ dryHourlyRateCents: 11500 }) }),
+      );
+      expect(result.dryHourlyRateCents).toBe(11500);
     });
 
     it('throws ConflictError when the pre-check finds an existing rate for the same validFrom (AC 2)', async () => {
@@ -170,6 +190,16 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
       );
       expect(result).toHaveLength(1);
       expect(result[0]?.validFrom).toBe('2026-07-07');
+      expect(result[0]?.dryHourlyRateCents).toBeNull();
+    });
+
+    it('exposes the dry rate when recorded (story 12.5, AC 1)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      rateFindMany.mockResolvedValue([rateFixture({ dryHourlyRateCents: 11500 })]);
+
+      const result = await listAircraftRates(staffActor(), 'aircraft_1');
+
+      expect(result[0]?.dryHourlyRateCents).toBe(11500);
     });
   });
 
@@ -310,6 +340,28 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
 
     it('accepts a valid positive integer price and ISO date', () => {
       expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, validFrom: '2026-07-07' }).success).toBe(true);
+    });
+
+    it('accepts an omitted dryHourlyRateCents (story 12.5, AC 1 — optional)', () => {
+      expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, validFrom: '2026-07-07' }).success).toBe(true);
+    });
+
+    it('accepts a valid dryHourlyRateCents (story 12.5, AC 1)', () => {
+      expect(
+        createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, dryHourlyRateCents: 11500, validFrom: '2026-07-07' })
+          .success,
+      ).toBe(true);
+    });
+
+    it('rejects a zero/negative dryHourlyRateCents (story 12.5, AC 1)', () => {
+      expect(
+        createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, dryHourlyRateCents: 0, validFrom: '2026-07-07' })
+          .success,
+      ).toBe(false);
+      expect(
+        createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, dryHourlyRateCents: -100, validFrom: '2026-07-07' })
+          .success,
+      ).toBe(false);
     });
   });
 });

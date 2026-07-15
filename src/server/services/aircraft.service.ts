@@ -1,4 +1,4 @@
-import type { AircraftStatus } from '@/generated/prisma/client';
+import type { AircraftOwner, AircraftStatus } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import type {
   CreateAircraftInput,
@@ -20,6 +20,14 @@ export type AircraftListItem = {
   notes: string | null;
   status: AircraftStatus;
   statusReason: string | null;
+  /** Number of seats (story 12.5, AC 1) — anagrafica only, optional. */
+  seats: number | null;
+  /** Free-text fuel type (story 12.5, AC 1). */
+  fuelType: string | null;
+  /** Ownership (story 12.5, AC 1) — CLUB or PRIVATE, defaults CLUB. */
+  owner: AircraftOwner;
+  /** Based at the field vs. a visiting/guest airframe (story 12.5, AC 1). */
+  based: boolean;
   archivedAt: Date | null;
   createdAt: Date;
 };
@@ -36,6 +44,10 @@ const AIRCRAFT_SELECT = {
   notes: true,
   status: true,
   statusReason: true,
+  seats: true,
+  fuelType: true,
+  owner: true,
+  based: true,
   archivedAt: true,
   createdAt: true,
 } as const;
@@ -52,6 +64,10 @@ function toListItem(aircraft: SelectedAircraft): AircraftListItem {
     notes: aircraft.notes,
     status: aircraft.status,
     statusReason: aircraft.statusReason,
+    seats: aircraft.seats,
+    fuelType: aircraft.fuelType,
+    owner: aircraft.owner,
+    based: aircraft.based,
     archivedAt: aircraft.archivedAt,
     createdAt: aircraft.createdAt,
   };
@@ -229,6 +245,12 @@ export async function createAircraft(actor: Actor, input: CreateAircraftInput): 
         model: input.model,
         hourMeterMinutes: input.hourMeterMinutes,
         notes: input.notes ?? null,
+        seats: input.seats ?? null,
+        fuelType: input.fuelType ?? null,
+        // Omitted (`undefined`) falls back to the Prisma/DB default
+        // (CLUB/`true`, story 12.5 AC 1) rather than forcing a value here.
+        owner: input.owner,
+        based: input.based,
       },
       select: AIRCRAFT_SELECT,
     });
@@ -245,10 +267,11 @@ export async function createAircraft(actor: Actor, input: CreateAircraftInput): 
 }
 
 /**
- * Partial update: registration, type, model, notes. Archiving is separate
- * (AC 2), and so is the hour meter (story 2.5, AC 2): `hourMeterMinutes` is
- * deliberately absent from `UpdateAircraftInput` — it only changes via
- * `adjustHourMeter`'s tracked transaction, never this generic patch.
+ * Partial update: registration, type, model, notes, seats, fuelType, owner,
+ * based (story 12.5, AC 1, all additive). Archiving is separate (AC 2), and
+ * so is the hour meter (story 2.5, AC 2): `hourMeterMinutes` is deliberately
+ * absent from `UpdateAircraftInput` — it only changes via `adjustHourMeter`'s
+ * tracked transaction, never this generic patch.
  */
 export async function updateAircraft(actor: Actor, id: string, patch: UpdateAircraftInput): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
@@ -271,6 +294,10 @@ export async function updateAircraft(actor: Actor, id: string, patch: UpdateAirc
         ...(patch.type !== undefined && { type: patch.type }),
         ...(patch.model !== undefined && { model: patch.model }),
         ...(patch.notes !== undefined && { notes: patch.notes }),
+        ...(patch.seats !== undefined && { seats: patch.seats }),
+        ...(patch.fuelType !== undefined && { fuelType: patch.fuelType }),
+        ...(patch.owner !== undefined && { owner: patch.owner }),
+        ...(patch.based !== undefined && { based: patch.based }),
       },
       select: AIRCRAFT_SELECT,
     });

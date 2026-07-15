@@ -9,6 +9,13 @@ if (!SEED_PASSWORD) {
   throw new Error('e2e/aircraft-status-hours.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
 
+/**
+ * Aircraft operational status and audited hour meter adjustments (Story
+ * 2.5). Rebuilt onto `/dashboard/fleet`'s slide-over "Disponibilità"/
+ * "Contaore" sections (the legacy `/dashboard/aircraft` table page is gone,
+ * epic 12 story 12.5).
+ */
+
 /** Same login helper as aircraft-management.spec.ts. */
 async function loginExpectingDashboard(page: Page, email: string): Promise<void> {
   await page.goto('/it/login');
@@ -27,83 +34,81 @@ function uniqueAircraft(prefix: string): { registration: string; type: string; m
   };
 }
 
-async function createAircraft(
-  page: Page,
-  aircraft: { registration: string; type: string; model: string },
-): Promise<void> {
-  await page.goto('/it/dashboard/aircraft');
-  await page.getByRole('button', { name: 'Nuovo velivolo' }).click();
-  await page.getByLabel('Marche', { exact: true }).fill(aircraft.registration);
-  await page.getByLabel('Tipo', { exact: true }).fill(aircraft.type);
-  await page.getByLabel('Modello', { exact: true }).fill(aircraft.model);
-  await page.getByLabel('Contaore (minuti)').fill('750');
-  await page.getByRole('button', { name: 'Crea velivolo' }).click();
-  await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
+/** Search-scoped card locator (same TD-1 lesson as aircraft-management.spec.ts). */
+function cardFor(page: Page, registration: string) {
+  return page.locator('[data-testid^="ac-card-"]').filter({ hasText: registration });
+}
+
+/** Creates an aircraft via the fleet slide-over, then re-opens it search-scoped — same helper shape as aircraft-management.spec.ts/aircraft-rates.spec.ts. */
+async function createAndOpenAircraft(page: Page, aircraft: { registration: string; type: string; model: string }): Promise<void> {
+  await page.goto('/it/dashboard/fleet');
+  await page.getByTestId('fleet-new-button').click();
+  const form = page.getByTestId('identity-form');
+  await form.getByLabel('Marche').fill(aircraft.registration);
+  await form.getByLabel('Tipo').fill(aircraft.type);
+  await form.getByLabel('Modello').fill(aircraft.model);
+  await form.getByLabel('Contaore iniziale (minuti)').fill('750');
+  await page.getByTestId('identity-submit').click();
+  await expect(page.getByTestId('toast').filter({ hasText: 'Velivolo creato' })).toBeVisible();
+
+  await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+  await cardFor(page, aircraft.registration).click();
 }
 
 test.describe('Aircraft operational status and audited hour meter adjustments (Story 2.5)', () => {
   test('staff marks an aircraft out of service with a reason, then returns it to service (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = uniqueAircraft('DDD');
-    await createAircraft(page, aircraft);
+    await createAndOpenAircraft(page, aircraft);
 
-    const row = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await expect(row.getByText('Operativo', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('availability-current')).toContainText('—');
 
-    await row.getByRole('button', { name: 'Fuori servizio' }).click();
-    await page.getByLabel('Motivo', { exact: true }).fill('Revisione motore programmata');
-    await page.getByRole('button', { name: 'Conferma' }).click();
-    await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
+    await page.getByTestId('out-of-service-reason').fill('Revisione motore programmata');
+    await page.getByTestId('out-of-service-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'fuori servizio' })).toBeVisible();
 
-    // Badge flips to "Fuori servizio" and the row list still shows it (not archived).
-    const outOfServiceRow = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await expect(outOfServiceRow.getByText('Fuori servizio', { exact: true })).toBeVisible();
-    await expect(outOfServiceRow.getByTestId(/^operational-status-/)).toHaveAttribute(
-      'title',
-      'Revisione motore programmata',
-    );
+    // The editor's own section reflects the reason, and the card badge flips to AOG.
+    await expect(page.getByTestId('availability-current')).toContainText('Revisione motore programmata');
+    await expect(cardFor(page, aircraft.registration)).toContainText('AOG');
 
-    // Returning to service: two-step confirm, badge flips back and the reason is gone.
-    await outOfServiceRow.getByRole('button', { name: 'Rientro in servizio' }).click();
-    await outOfServiceRow.getByRole('button', { name: 'Conferma' }).click();
-    const restoredRow = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await expect(restoredRow.getByText('Operativo', { exact: true })).toBeVisible();
-    await expect(restoredRow.getByTestId(/^operational-status-/)).not.toHaveAttribute('title', /.+/);
+    // Returning to service: the reason is gone, the card badge flips back.
+    await page.getByTestId('return-to-service-button').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'rimesso in servizio' })).toBeVisible();
+    await expect(page.getByTestId('availability-current')).toContainText('—');
+    await expect(cardFor(page, aircraft.registration)).toContainText('Disponibile');
   });
 
-  test('adjusting the hour meter updates the list value and records a tracked history row (AC 2)', async ({ page }) => {
+  test('adjusting the hour meter updates the editor + card and records a tracked history row (AC 2)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = uniqueAircraft('EEE');
-    await createAircraft(page, aircraft);
+    await createAndOpenAircraft(page, aircraft);
 
-    const row = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await expect(row.getByText('12:30')).toBeVisible(); // 750 minutes, from createAircraft's fixed input.
+    await expect(page.getByTestId('hour-meter-current')).toContainText('12:30'); // 750 minutes, from the create form's fixed input.
 
-    await row.getByRole('button', { name: 'Rettifica contaore' }).click();
-    await page.getByLabel('Nuovo valore (minuti)').fill('900');
-    await page.getByLabel('Motivo', { exact: true }).fill('Errore di lettura precedente');
+    const hourMeterForm = page.getByTestId('hour-meter-form');
+    await hourMeterForm.getByLabel('Nuovo valore (minuti)').fill('900');
+    await hourMeterForm.getByLabel('Motivo').fill('Errore di lettura precedente');
     await expect(page.getByTestId('hour-meter-delta')).toHaveText('+2:30');
-    await page.getByRole('button', { name: 'Registra rettifica' }).click();
-    await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
+    await page.getByTestId('hour-meter-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Contaore rettificato' })).toBeVisible();
 
-    // The list now shows the corrected value (900 minutes = 15:00).
-    const updatedRow = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await expect(updatedRow.getByText('15:00')).toBeVisible();
+    // The editor now shows the corrected value (900 minutes = 15:00).
+    await expect(page.getByTestId('hour-meter-current')).toContainText('15:00');
 
-    // Reopening the panel shows the tracked history: previous -> new, delta and reason.
-    await updatedRow.getByRole('button', { name: 'Rettifica contaore' }).click();
+    // The tracked history: who, when, previous -> new, delta and reason.
     const historyRow = page.getByTestId('hour-meter-history-row');
     await expect(historyRow).toBeVisible();
-    await expect(historyRow.getByText('12:30')).toBeVisible();
-    await expect(historyRow.getByText('15:00')).toBeVisible();
-    await expect(historyRow.getByText('+2:30')).toBeVisible();
-    await expect(historyRow.getByText('Errore di lettura precedente')).toBeVisible();
+    await expect(historyRow).toContainText('12:30');
+    await expect(historyRow).toContainText('15:00');
+    await expect(historyRow).toContainText('+2:30');
+    await expect(historyRow).toContainText(ADMIN_EMAIL);
+    await expect(historyRow).toContainText('Errore di lettura precedente');
   });
 
   test('a pilot gets a 403 AD-8 envelope from POST /api/v1/aircraft/{id}/out-of-service (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = uniqueAircraft('FFF');
-    await createAircraft(page, aircraft);
+    await createAndOpenAircraft(page, aircraft);
     const createResponse = await page.request.get('/api/v1/aircraft', { params: { q: aircraft.registration } });
     const created = (await createResponse.json()) as { items: Array<{ id: string }> };
     const aircraftId = created.items[0]?.id;

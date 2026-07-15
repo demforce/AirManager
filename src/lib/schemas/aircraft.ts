@@ -2,6 +2,11 @@ import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagina
 import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
+/** Mirrors the Prisma `AircraftOwner` enum (story 12.5, AC 1). */
+export const aircraftOwnerSchema = z.enum(['CLUB', 'PRIVATE']);
+
+export type AircraftOwnerDto = z.infer<typeof aircraftOwnerSchema>;
+
 /**
  * Shared by the create/edit aircraft forms and `POST`/`PATCH /api/v1/aircraft`
  * (Consistency Conventions: "Uno schema Zod per input/output per endpoint").
@@ -10,7 +15,11 @@ import { z } from './zod-with-openapi';
  * practice — deliberately no ICAO-style regex (Dev Notes: foreign
  * registrations and ultralight schemes vary too much for a rigid format).
  * `hourMeterMinutes` is an integer number of minutes (AD-2, the cardinal
- * constraint of this story) — never a decimal-hours float.
+ * constraint of this story) — never a decimal-hours float. `seats`/`fuelType`/
+ * `owner`/`based` (story 12.5, AC 1) are all additive and optional — an
+ * omitted `owner`/`based` falls back to the DB default (CLUB/`true`, same as
+ * every pre-existing row); `fuelType` is free text (the fleet editor offers a
+ * closed set of common options, the column itself does not enforce one).
  */
 export const createAircraftSchema = z.object({
   registration: z.string().trim().toUpperCase().min(1),
@@ -20,6 +29,10 @@ export const createAircraftSchema = z.object({
   // instead of a driver overflow error → 500 (review 2.4 F2).
   hourMeterMinutes: z.number().int().min(0).max(2_147_483_647),
   notes: z.string().trim().min(1).nullish(),
+  seats: z.number().int().min(0).max(100).nullish(),
+  fuelType: z.string().trim().min(1).nullish(),
+  owner: aircraftOwnerSchema.optional(),
+  based: z.boolean().optional(),
 });
 
 export type CreateAircraftInput = z.infer<typeof createAircraftSchema>;
@@ -38,6 +51,10 @@ export const updateAircraftSchema = z.object({
   type: z.string().trim().min(1).optional(),
   model: z.string().trim().min(1).optional(),
   notes: z.string().trim().min(1).nullish(),
+  seats: z.number().int().min(0).max(100).nullish(),
+  fuelType: z.string().trim().min(1).nullish(),
+  owner: aircraftOwnerSchema.optional(),
+  based: z.boolean().optional(),
 });
 
 export type UpdateAircraftInput = z.infer<typeof updateAircraftSchema>;
@@ -138,6 +155,10 @@ export const aircraftListItemSchema = z.object({
   notes: z.string().nullable(),
   status: aircraftStatusSchema,
   statusReason: z.string().nullable(),
+  seats: z.number().int().min(0).nullable(),
+  fuelType: z.string().nullable(),
+  owner: aircraftOwnerSchema,
+  based: z.boolean(),
   archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
 });
@@ -157,9 +178,14 @@ export const aircraftListResponseSchema = paginatedResponseSchema(aircraftListIt
  * date only (`YYYY-MM-DD`, same `z.iso.date()` pattern as
  * `recordCashMovementSchema.effectiveDate`) — two rates sharing the same
  * `(aircraftId, validFrom)` are a 409 (AC 2), never silently overwritten.
+ * `dryHourlyRateCents` (story 12.5, AC 1) is OPTIONAL — the "dry" (fuel
+ * excluded) rate, display-only: it never feeds pricing/flight-cost
+ * computation (`rates.service.ts`/`flights.service.ts` read `priceCentsPerHour`
+ * exclusively).
  */
 export const createAircraftRateSchema = z.object({
   priceCentsPerHour: z.number().int().positive().max(2_147_483_647),
+  dryHourlyRateCents: z.number().int().positive().max(2_147_483_647).nullish(),
   validFrom: z.iso.date(),
 });
 
@@ -169,12 +195,14 @@ export type CreateAircraftRateInput = z.infer<typeof createAircraftRateSchema>;
  * One entry of `GET /api/v1/aircraft/{id}/rates` (story 4.1). Documentation
  * only, mirroring `rates.service.ts`'s `AircraftRateListItem` TS type — same
  * pattern as `hourMeterAdjustmentListItemSchema`. `actorEmail` is a
- * display-only join over the stored `actorUserId`.
+ * display-only join over the stored `actorUserId`. `dryHourlyRateCents`
+ * (story 12.5, AC 1) is display-only, `null` when not recorded.
  */
 export const aircraftRateItemSchema = z.object({
   id: z.string(),
   aircraftId: z.string(),
   priceCentsPerHour: z.number().int().positive(),
+  dryHourlyRateCents: z.number().int().positive().nullable(),
   validFrom: z.iso.date(),
   actorUserId: z.string(),
   actorEmail: z.string(),

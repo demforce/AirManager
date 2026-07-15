@@ -4,7 +4,7 @@ baseline_commit: 9cd1d7852324ecb29c590e8ff1a5d704e429b055
 
 # Story 12.5: Aeromobili — fleet page AirOps + campi additivi
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -50,4 +50,25 @@ so that la flotta si gestisca nel nuovo linguaggio senza perdere NESSUNA funzion
 
 ## Dev Agent Record
 
-(compilato dal dev agent)
+### Nota di chiusura (sessione principale)
+
+Il dev subagent (Sonnet 5 xhigh) ha implementato la story ma ha **esaurito il runway DURANTE la ri-esecuzione e2e finale**, prima di committare e di compilare queste note (ultimo messaggio: "Waiting for the Monitor to report completion of the aircraft-focused e2e re-run"; processi e2e/next-server orfani terminati dalla sessione principale). La sessione principale ha chiuso meccanicamente (pattern lezione 12.3): verifica **`npm run gates` verde** (lint · typecheck · **1344** unit · build), migrazione applicata e colonne/enum verificate su **DB fresco** via psql (`Aircraft.{seats,fuelType,owner,based}`, `AircraftRate.dryHourlyRateCents`, enum `AircraftOwner=CLUB,PRIVATE` — tutti come da AC 1), poi commit `feat(12.5)`. **Le note sottostanti sono ricostruite dal diff, non dall'auto-report del dev** — la review adversarial va condotta a freddo sull'intero diff.
+
+### Aree da scrutinare in review (dal diff, NON auto-dichiarate dal dev)
+
+- **"Riservato"** (AC 2): derivazione aggiunta in `bookings.service.ts` (+ test) — verificare che sia **batched** (nessun N+1 sugli id di pagina) e che non alteri la logica overlap/pricing esistente.
+- **Rimozione legacy + repoint** (AC 4): `dashboard/aircraft/{page,aircraft-manager}.tsx` ELIMINATI; `nav-items.ts`, `dashboard/page.tsx` (widget home), `route-registry.ts` modificati — verificare href `/dashboard/fleet` e assenza di consumer orfani.
+- **e2e non-aircraft toccati**: `flight-reversal.spec.ts`, `flights.spec.ts`, `home-dashboard.spec.ts` modificati (presumibilmente per repoint/eliminazione legacy) — confermare che i comportamentali restino invariati.
+- **Confine pricing INTOCCABILE** (AC 1): `rates.service.ts` (+ test) modificato per la dry rate display-only — confermare che `getEffectiveRate*`/`RATE_SELECT` e `flights.service.ts` NON cambino la semantica di pricing.
+- **Arbiter**: la suite **CI=1 completa su build di produzione NON è stata eseguita in CI-mode** dal dev (girava in dev-mode quando il turno è finito) — è la priority-zero della review.
+
+### File List (ricostruita dal git status)
+
+- **Migrazione**: `prisma/migrations/20260715170000_add_aircraft_fleet_fields/migration.sql` (nuovo); `prisma/schema.prisma` (M)
+- **Fleet page (nuovi)**: `src/app/[locale]/dashboard/fleet/page.tsx`, `fleet-console.tsx`, `aircraft-editor.tsx`
+- **Servizi/schemi (M)**: `aircraft.service.ts` (+ `.test`), `rates.service.ts` (+ `.test`), `bookings.service.ts` (+ `.test`), `exports.service.ts`, `src/lib/schemas/aircraft.ts`
+- **Shell/nav (M)**: `src/components/shell/route-registry.ts`, `dashboard/nav-items.ts`, `dashboard/page.tsx`
+- **Legacy (D)**: `dashboard/aircraft/page.tsx`, `dashboard/aircraft/aircraft-manager.tsx`
+- **i18n (M)**: `messages/it.json`, `messages/en.json`
+- **e2e (M)**: `aircraft-management`, `aircraft-rates`, `aircraft-status-hours`, `flight-reversal`, `flights`, `home-dashboard` (`.spec.ts`)
+- **Tracking (M)**: `sprint-status.yaml` (12-5 → review)

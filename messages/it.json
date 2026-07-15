@@ -849,24 +849,23 @@
     }
   },
   "AircraftPage": {
-    "kicker": "Flotta",
     "title": "Velivoli",
-    "description": "Anagrafica della flotta: crea, modifica e archivia i velivoli.",
-    "backToDashboard": "Torna alla dashboard",
-    "newAircraft": "Nuovo velivolo",
+    "sub": "{total} totali · {available} disponibili · {aog} AOG",
+    "newAircraft": "Aggiungi aeromobile",
+    "cardTitle": "Flotta",
+    "exportLabel": "Esporta",
+    "exportXls": "Esporta XLS",
+    "rateLabel": "Tariffa",
     "searchPlaceholder": "Cerca per marche o modello…",
-    "includeArchivedLabel": "Includi archiviati",
+    "includeArchivedLabel": "Mostra archiviati",
+    "empty": "Nessun aeromobile trovato.",
     "table": {
       "registration": "Marche",
       "type": "Tipo",
       "model": "Modello",
       "hourMeter": "Contaore",
       "status": "Stato",
-      "operationalStatus": "Stato operativo",
-      "currentRate": "Tariffa attuale",
-      "noRate": "—",
-      "actions": "Azioni",
-      "empty": "Nessun velivolo trovato."
+      "operationalStatus": "Stato operativo"
     },
     "status": {
       "active": "Attivo",
@@ -876,91 +875,107 @@
       "operational": "Operativo",
       "outOfService": "Fuori servizio"
     },
-    "actions": {
-      "edit": "Modifica",
-      "archive": "Archivia",
-      "unarchive": "Ripristina",
-      "confirmArchive": "Archiviare questo velivolo?",
-      "confirmUnarchive": "Ripristinare questo velivolo?",
-      "confirmYes": "Conferma",
-      "confirmCancel": "Annulla",
-      "setOutOfService": "Fuori servizio",
-      "returnToService": "Rientro in servizio",
-      "confirmReturnToService": "Rimettere in servizio questo velivolo?",
-      "adjustHourMeter": "Rettifica contaore",
-      "rates": "Tariffe"
+    "badge": {
+      "aog": "AOG",
+      "reserved": "Riservato",
+      "available": "Disponibile",
+      "archived": "Archiviato"
     },
-    "form": {
-      "createTitle": "Nuovo velivolo",
-      "editTitle": "Modifica velivolo",
-      "registration": "Marche",
-      "type": "Tipo",
-      "model": "Modello",
-      "hourMeter": "Contaore (minuti)",
-      "hourMeterHint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm).",
-      "notes": "Note",
-      "submitCreate": "Crea velivolo",
+    "pagination": {
+      "prev": "Precedente",
+      "next": "Successivo"
+    },
+    "editor": {
+      "newTitle": "Nuovo aeromobile",
+      "newSubtitle": "Registra un aeromobile sul campo",
+      "closeLabel": "Chiudi",
+      "cancel": "Annulla",
+      "submitCreate": "Aggiungi aeromobile",
       "submitEdit": "Salva modifiche",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "invalidHourMeter": "Il contaore deve essere un numero intero di minuti maggiore o uguale a zero.",
-      "genericError": "Si è verificato un errore. Riprova.",
-      "conflictError": "Esiste già un velivolo con queste marche."
+      "delete": "Elimina",
+      "identity": {
+        "sectionTitle": "Anagrafica",
+        "registration": "Marche",
+        "type": "Tipo",
+        "model": "Modello",
+        "seats": "Posti",
+        "fuelType": "Carburante",
+        "fuelOptions": {
+          "avgas": "AVGAS 100LL",
+          "jetA1": "Jet A-1",
+          "mogas": "Mogas"
+        },
+        "owner": "Proprietario",
+        "ownerOptions": {
+          "club": "Club",
+          "private": "Privato"
+        },
+        "based": "Basato",
+        "basedOptions": {
+          "based": "Basato",
+          "guest": "Ospite"
+        },
+        "notes": "Note",
+        "hourMeter": "Contaore iniziale (minuti)",
+        "hourMeterHint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm)."
+      },
+      "availability": {
+        "sectionTitle": "Disponibilità",
+        "current": "Stato attuale",
+        "setOutOfService": "Fuori servizio",
+        "returnToService": "Rientro in servizio",
+        "reason": "Motivo",
+        "confirm": "Conferma",
+        "confirmReturnToService": "Rimettere in servizio questo velivolo?"
+      },
+      "rates": {
+        "sectionTitle": "Tariffe",
+        "current": "Tariffa attuale (wet)",
+        "currentDry": "Tariffa attuale (dry)",
+        "noCurrentRate": "Nessuna tariffa in vigore",
+        "newRateTitle": "Nuova tariffa",
+        "price": "Prezzo wet (€/h)",
+        "priceDry": "Prezzo dry (€/h) — opzionale",
+        "validFrom": "In vigore da",
+        "submit": "Aggiungi tariffa",
+        "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe.",
+        "historyTitle": "Storico tariffe",
+        "historyEmpty": "Nessuna tariffa registrata."
+      },
+      "hourMeter": {
+        "sectionTitle": "Contaore",
+        "current": "Contaore attuale",
+        "newValue": "Nuovo valore (minuti)",
+        "hint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm).",
+        "reason": "Motivo",
+        "delta": "Variazione",
+        "submit": "Registra rettifica",
+        "historyTitle": "Storico rettifiche",
+        "historyEmpty": "Nessuna rettifica registrata.",
+        "loadMore": "Carica altri"
+      },
+      "archive": {
+        "sectionTitle": "Archivio",
+        "archive": "Archivia",
+        "unarchive": "Ripristina",
+        "confirmArchive": "Archiviare questo velivolo?",
+        "confirmUnarchive": "Ripristinare questo velivolo?",
+        "confirmYes": "Conferma",
+        "confirmCancel": "Annulla"
+      },
+      "errors": {
+        "required": "Campo obbligatorio.",
+        "generic": "Si è verificato un errore. Riprova.",
+        "conflictRegistration": "Esiste già un velivolo con queste marche.",
+        "conflictStatus": "Lo stato del velivolo è già cambiato nel frattempo.",
+        "conflictRate": "Esiste già una tariffa con questa data di decorrenza.",
+        "invalidHourMeter": "Il contaore deve essere un numero intero di minuti maggiore o uguale a zero.",
+        "invalidPrice": "Il prezzo deve essere un importo positivo (es. 160,00).",
+        "invalidDate": "Inserisci una data valida.",
+        "reasonRequired": "Il motivo è obbligatorio."
+      }
     },
-    "statusForm": {
-      "title": "Fuori servizio",
-      "reason": "Motivo",
-      "reasonRequired": "Il motivo è obbligatorio.",
-      "submit": "Conferma",
-      "cancel": "Annulla",
-      "conflictError": "Lo stato del velivolo è già cambiato nel frattempo.",
-      "genericError": "Si è verificato un errore. Riprova."
-    },
-    "hourMeterPanel": {
-      "title": "Rettifica contaore",
-      "current": "Contaore attuale",
-      "newValue": "Nuovo valore (minuti)",
-      "hint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm).",
-      "reason": "Motivo",
-      "delta": "Variazione",
-      "submit": "Registra rettifica",
-      "cancel": "Annulla",
-      "requiredField": "Il motivo è obbligatorio.",
-      "invalidValue": "Il contaore deve essere un numero intero di minuti maggiore o uguale a zero.",
-      "genericError": "Si è verificato un errore. Riprova.",
-      "historyTitle": "Storico rettifiche",
-      "historyEmpty": "Nessuna rettifica registrata.",
-      "historyWhen": "Quando",
-      "historyActor": "Chi",
-      "historyPrevious": "Prima",
-      "historyNew": "Dopo",
-      "historyDelta": "Delta",
-      "historyReason": "Motivo",
-      "loadMore": "Carica altri"
-    },
-    "ratesPanel": {
-      "title": "Tariffe",
-      "current": "Tariffa attuale",
-      "noCurrentRate": "Nessuna tariffa in vigore",
-      "newRateTitle": "Nuova tariffa",
-      "price": "Prezzo (€/h)",
-      "validFrom": "In vigore da",
-      "submit": "Aggiungi tariffa",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "invalidPrice": "Il prezzo deve essere un importo positivo (es. 160,00).",
-      "invalidDate": "Inserisci una data valida.",
-      "genericError": "Si è verificato un errore. Riprova.",
-      "conflictError": "Esiste già una tariffa con questa data di decorrenza.",
-      "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe.",
-      "historyTitle": "Storico tariffe",
-      "historyEmpty": "Nessuna tariffa registrata.",
-      "historyValidFrom": "In vigore da",
-      "historyPrice": "Prezzo",
-      "historyActor": "Chi",
-      "historyWhen": "Registrata il"
-    },
-    "feedback": {
+    "toast": {
       "created": "Velivolo creato.",
       "updated": "Velivolo aggiornato.",
       "archived": "Velivolo archiviato.",

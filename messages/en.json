@@ -849,24 +849,23 @@
     }
   },
   "AircraftPage": {
-    "kicker": "Fleet",
     "title": "Aircraft",
-    "description": "The fleet registry: create, edit and archive aircraft.",
-    "backToDashboard": "Back to dashboard",
-    "newAircraft": "New aircraft",
+    "sub": "{total} total · {available} available · {aog} AOG",
+    "newAircraft": "Add aircraft",
+    "cardTitle": "Fleet",
+    "exportLabel": "Export",
+    "exportXls": "Export XLS",
+    "rateLabel": "Rate",
     "searchPlaceholder": "Search by registration or model…",
-    "includeArchivedLabel": "Include archived",
+    "includeArchivedLabel": "Show archived",
+    "empty": "No aircraft found.",
     "table": {
       "registration": "Registration",
       "type": "Type",
       "model": "Model",
       "hourMeter": "Hour meter",
       "status": "Status",
-      "operationalStatus": "Operational status",
-      "currentRate": "Current rate",
-      "noRate": "—",
-      "actions": "Actions",
-      "empty": "No aircraft found."
+      "operationalStatus": "Operational status"
     },
     "status": {
       "active": "Active",
@@ -876,91 +875,107 @@
       "operational": "Operational",
       "outOfService": "Out of service"
     },
-    "actions": {
-      "edit": "Edit",
-      "archive": "Archive",
-      "unarchive": "Restore",
-      "confirmArchive": "Archive this aircraft?",
-      "confirmUnarchive": "Restore this aircraft?",
-      "confirmYes": "Confirm",
-      "confirmCancel": "Cancel",
-      "setOutOfService": "Out of service",
-      "returnToService": "Return to service",
-      "confirmReturnToService": "Return this aircraft to service?",
-      "adjustHourMeter": "Adjust hour meter",
-      "rates": "Rates"
+    "badge": {
+      "aog": "AOG",
+      "reserved": "Reserved",
+      "available": "Available",
+      "archived": "Archived"
     },
-    "form": {
-      "createTitle": "New aircraft",
-      "editTitle": "Edit aircraft",
-      "registration": "Registration",
-      "type": "Type",
-      "model": "Model",
-      "hourMeter": "Hour meter (minutes)",
-      "hourMeterHint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm).",
-      "notes": "Notes",
-      "submitCreate": "Create aircraft",
+    "pagination": {
+      "prev": "Previous",
+      "next": "Next"
+    },
+    "editor": {
+      "newTitle": "New aircraft",
+      "newSubtitle": "Register an aircraft at the field",
+      "closeLabel": "Close",
+      "cancel": "Cancel",
+      "submitCreate": "Add aircraft",
       "submitEdit": "Save changes",
-      "cancel": "Cancel",
-      "requiredField": "This field is required.",
-      "invalidHourMeter": "The hour meter must be a whole number of minutes, zero or greater.",
-      "genericError": "Something went wrong. Please try again.",
-      "conflictError": "An aircraft with this registration already exists."
+      "delete": "Delete",
+      "identity": {
+        "sectionTitle": "Identity",
+        "registration": "Registration",
+        "type": "Type",
+        "model": "Model",
+        "seats": "Seats",
+        "fuelType": "Fuel",
+        "fuelOptions": {
+          "avgas": "AVGAS 100LL",
+          "jetA1": "Jet A-1",
+          "mogas": "Mogas"
+        },
+        "owner": "Owner",
+        "ownerOptions": {
+          "club": "Club",
+          "private": "Private"
+        },
+        "based": "Based",
+        "basedOptions": {
+          "based": "Based",
+          "guest": "Guest"
+        },
+        "notes": "Notes",
+        "hourMeter": "Initial hour meter (minutes)",
+        "hourMeterHint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm)."
+      },
+      "availability": {
+        "sectionTitle": "Availability",
+        "current": "Current status",
+        "setOutOfService": "Out of service",
+        "returnToService": "Return to service",
+        "reason": "Reason",
+        "confirm": "Confirm",
+        "confirmReturnToService": "Return this aircraft to service?"
+      },
+      "rates": {
+        "sectionTitle": "Rates",
+        "current": "Current rate (wet)",
+        "currentDry": "Current rate (dry)",
+        "noCurrentRate": "No rate in effect",
+        "newRateTitle": "New rate",
+        "price": "Wet price (€/h)",
+        "priceDry": "Dry price (€/h) — optional",
+        "validFrom": "Effective from",
+        "submit": "Add rate",
+        "readOnlyHint": "Only an administrator can add new rates.",
+        "historyTitle": "Rate history",
+        "historyEmpty": "No rates recorded yet."
+      },
+      "hourMeter": {
+        "sectionTitle": "Hour meter",
+        "current": "Current hour meter",
+        "newValue": "New value (minutes)",
+        "hint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm).",
+        "reason": "Reason",
+        "delta": "Change",
+        "submit": "Record adjustment",
+        "historyTitle": "Adjustment history",
+        "historyEmpty": "No adjustments recorded yet.",
+        "loadMore": "Load more"
+      },
+      "archive": {
+        "sectionTitle": "Archive",
+        "archive": "Archive",
+        "unarchive": "Restore",
+        "confirmArchive": "Archive this aircraft?",
+        "confirmUnarchive": "Restore this aircraft?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel"
+      },
+      "errors": {
+        "required": "This field is required.",
+        "generic": "Something went wrong. Please try again.",
+        "conflictRegistration": "An aircraft with this registration already exists.",
+        "conflictStatus": "The aircraft's status already changed in the meantime.",
+        "conflictRate": "A rate with this effective date already exists.",
+        "invalidHourMeter": "The hour meter must be a whole number of minutes, zero or greater.",
+        "invalidPrice": "The price must be a positive amount (e.g. 160.00).",
+        "invalidDate": "Enter a valid date.",
+        "reasonRequired": "The reason is required."
+      }
     },
-    "statusForm": {
-      "title": "Out of service",
-      "reason": "Reason",
-      "reasonRequired": "The reason is required.",
-      "submit": "Confirm",
-      "cancel": "Cancel",
-      "conflictError": "The aircraft's status already changed in the meantime.",
-      "genericError": "Something went wrong. Please try again."
-    },
-    "hourMeterPanel": {
-      "title": "Adjust hour meter",
-      "current": "Current hour meter",
-      "newValue": "New value (minutes)",
-      "hint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm).",
-      "reason": "Reason",
-      "delta": "Change",
-      "submit": "Record adjustment",
-      "cancel": "Cancel",
-      "requiredField": "The reason is required.",
-      "invalidValue": "The hour meter must be a whole number of minutes, zero or greater.",
-      "genericError": "Something went wrong. Please try again.",
-      "historyTitle": "Adjustment history",
-      "historyEmpty": "No adjustments recorded yet.",
-      "historyWhen": "When",
-      "historyActor": "Who",
-      "historyPrevious": "Before",
-      "historyNew": "After",
-      "historyDelta": "Delta",
-      "historyReason": "Reason",
-      "loadMore": "Load more"
-    },
-    "ratesPanel": {
-      "title": "Rates",
-      "current": "Current rate",
-      "noCurrentRate": "No rate in effect",
-      "newRateTitle": "New rate",
-      "price": "Price (€/h)",
-      "validFrom": "Effective from",
-      "submit": "Add rate",
-      "cancel": "Cancel",
-      "requiredField": "This field is required.",
-      "invalidPrice": "The price must be a positive amount (e.g. 160.00).",
-      "invalidDate": "Enter a valid date.",
-      "genericError": "Something went wrong. Please try again.",
-      "conflictError": "A rate with this effective date already exists.",
-      "readOnlyHint": "Only an administrator can add new rates.",
-      "historyTitle": "Rate history",
-      "historyEmpty": "No rates recorded yet.",
-      "historyValidFrom": "Effective from",
-      "historyPrice": "Price",
-      "historyActor": "Who",
-      "historyWhen": "Recorded on"
-    },
-    "feedback": {
+    "toast": {
       "created": "Aircraft created.",
       "updated": "Aircraft updated.",
       "archived": "Aircraft archived.",

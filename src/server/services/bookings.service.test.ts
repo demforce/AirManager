@@ -63,6 +63,7 @@ const {
   listBookableStudents,
   listActiveInstructors,
   getOwnInstructorProfileId,
+  listReservedAircraftIds,
 } = await import('./bookings.service');
 const { ForbiddenError, NotFoundError, ConflictError, ValidationError } = await import('./errors');
 
@@ -1938,5 +1939,43 @@ describe('transitionBookingSchema (Story 12.2, AC 6)', () => {
     if (result.success) {
       expect(result.data.reason).toBe('Motivo');
     }
+  });
+});
+
+describe('listReservedAircraftIds (story 12.5, AC 2 — fleet "Riservato" badge, batched)', () => {
+  it('rejects an actor without bookings.manage.any', async () => {
+    await expect(listReservedAircraftIds(pilotActor(), ['aircraft_1'], new Date('2026-07-15T10:00:00.000Z'))).rejects.toThrow(
+      ForbiddenError,
+    );
+    expect(bookingFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it('an empty id list short-circuits to an empty Set without querying', async () => {
+    const result = await listReservedAircraftIds(staffActor(), [], new Date('2026-07-15T10:00:00.000Z'));
+
+    expect(result.size).toBe(0);
+    expect(bookingFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it('queries with the exact AD-2 shape: aircraftId in ids, APPROVED, startsAt <= now < endsAt', async () => {
+    bookingFindMany.mockResolvedValue([]);
+    const now = new Date('2026-07-15T10:00:00.000Z');
+
+    await listReservedAircraftIds(staffActor(), ['aircraft_1', 'aircraft_2'], now);
+
+    expect(bookingFindManyMock).toHaveBeenCalledWith({
+      where: { aircraftId: { in: ['aircraft_1', 'aircraft_2'] }, status: 'APPROVED', startsAt: { lte: now }, endsAt: { gt: now } },
+      select: { aircraftId: true },
+    });
+  });
+
+  it('returns the Set of aircraftIds with a covering APPROVED booking, others absent', async () => {
+    bookingFindMany.mockResolvedValue([{ aircraftId: 'aircraft_1' }, { aircraftId: 'aircraft_3' }]);
+
+    const result = await listReservedAircraftIds(staffActor(), ['aircraft_1', 'aircraft_2', 'aircraft_3'], new Date('2026-07-15T10:00:00.000Z'));
+
+    expect(result.has('aircraft_1')).toBe(true);
+    expect(result.has('aircraft_2')).toBe(false);
+    expect(result.has('aircraft_3')).toBe(true);
   });
 });

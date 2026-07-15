@@ -11,6 +11,13 @@ if (!SEED_PASSWORD) {
 
 const MAILPIT_API = 'http://localhost:8025/api/v1';
 
+/**
+ * Historicized aircraft rates (story 4.1, AD-4/AD-2; extended with an
+ * optional "dry" rate by epic 12 story 12.5, AC 1 — display-only, never
+ * fed into pricing). Rebuilt onto `/dashboard/fleet`'s slide-over "Tariffe"
+ * section (the legacy `/dashboard/aircraft` table page is gone).
+ */
+
 /** Same login helper as the other aircraft e2e specs. */
 async function loginExpectingDashboard(page: Page, email: string, password: string = SEED_PASSWORD!): Promise<void> {
   await page.goto('/it/login');
@@ -29,19 +36,28 @@ function uniqueAircraft(prefix: string): { registration: string; type: string; m
   };
 }
 
-/** Same aircraft-creation helper as aircraft-management.spec.ts/aircraft-status-hours.spec.ts. */
-async function createAircraft(page: Page, aircraft: { registration: string; type: string; model: string }): Promise<void> {
-  await page.goto('/it/dashboard/aircraft');
-  await page.getByRole('button', { name: 'Nuovo velivolo' }).click();
-  await page.getByLabel('Marche', { exact: true }).fill(aircraft.registration);
-  await page.getByLabel('Tipo', { exact: true }).fill(aircraft.type);
-  await page.getByLabel('Modello', { exact: true }).fill(aircraft.model);
-  await page.getByLabel('Contaore (minuti)').fill('750');
-  await page.getByRole('button', { name: 'Crea velivolo' }).click();
-  await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
+/** Search-scoped card locator (same TD-1 lesson as aircraft-management.spec.ts). */
+function cardFor(page: Page, registration: string) {
+  return page.locator('[data-testid^="ac-card-"]').filter({ hasText: registration });
 }
 
-/** Today, `YYYY-MM-DD`, browser-local time — matches `RatesPanel`'s `<input type="date">` default. */
+/** Creates an aircraft via the fleet slide-over, then opens it (search-scoped) — same helper shape as aircraft-management.spec.ts/aircraft-status-hours.spec.ts. */
+async function createAndOpenAircraft(page: Page, aircraft: { registration: string; type: string; model: string }): Promise<void> {
+  await page.goto('/it/dashboard/fleet');
+  await page.getByTestId('fleet-new-button').click();
+  const form = page.getByTestId('identity-form');
+  await form.getByLabel('Marche').fill(aircraft.registration);
+  await form.getByLabel('Tipo').fill(aircraft.type);
+  await form.getByLabel('Modello').fill(aircraft.model);
+  await form.getByLabel('Contaore iniziale (minuti)').fill('750');
+  await page.getByTestId('identity-submit').click();
+  await expect(page.getByTestId('toast').filter({ hasText: 'Velivolo creato' })).toBeVisible();
+
+  await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+  await cardFor(page, aircraft.registration).click();
+}
+
+/** Today, `YYYY-MM-DD`, browser-local time — matches the "In vigore da" field's default. */
 function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -114,86 +130,73 @@ async function createStaffUserAndSetPassword(page: Page, password: string): Prom
   return email;
 }
 
-test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2)', () => {
-  test('admin adds a past and a current rate; history shows both and the current rate is the most recent (AC 1)', async ({
+test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2; dry rate added by epic 12 story 12.5, AC 1)', () => {
+  test('admin adds a past and a current rate (with an optional dry rate); history shows both and the current rate is the most recent (AC 1)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = uniqueAircraft('R1');
-    await createAircraft(page, aircraft);
+    await createAndOpenAircraft(page, aircraft);
 
     const today = todayDateOnly();
+    const newRateForm = page.getByTestId('new-rate-form');
 
-    const row = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await row.getByRole('button', { name: 'Tariffe' }).click();
+    // First rate: 150 €/h wet (no dry) from a past date.
+    await newRateForm.getByLabel('Prezzo wet (€/h)').fill('150,00');
+    await newRateForm.getByLabel('In vigore da').fill(PAST_DATE);
+    await page.getByTestId('new-rate-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
 
-    // First rate: 150 €/h from a past date.
-    await page.getByLabel('Prezzo (€/h)').fill('150,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
-    await page.getByRole('button', { name: 'Aggiungi tariffa' }).click();
-    await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
+    // The current rate (effective today) already reflects it — 150,00 €/h, no dry line.
+    await expect(page.getByTestId('rates-current')).toContainText(/150,00\s€/);
+    await expect(page.getByTestId('rates-current-dry')).toHaveCount(0);
 
-    // The fleet table already shows the current rate (effective today) — with only
-    // the past rate on file, that's 150,00 €.
-    const rowAfterFirstRate = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await expect(rowAfterFirstRate.getByTestId(/^current-rate-/)).toContainText(/150,00\s€/);
+    // Second rate: 160 €/h wet + 115 €/h dry from today.
+    await newRateForm.getByLabel('Prezzo wet (€/h)').fill('160,00');
+    await newRateForm.getByLabel('Prezzo dry (€/h) — opzionale').fill('115,00');
+    await newRateForm.getByLabel('In vigore da').fill(today);
+    await page.getByTestId('new-rate-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
 
-    // Second rate: 160 €/h from today — reopen the panel.
-    await rowAfterFirstRate.getByRole('button', { name: 'Tariffe' }).click();
-    await page.getByLabel('Prezzo (€/h)').fill('160,00');
-    await page.getByLabel('In vigore da').fill(today);
-    await page.getByRole('button', { name: 'Aggiungi tariffa' }).click();
-    await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
-
-    // Fleet table now shows the current rate as 160,00 € (AD-4: max validFrom <= today).
-    const rowAfterSecondRate = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await expect(rowAfterSecondRate.getByTestId(/^current-rate-/)).toContainText(/160,00\s€/);
-
-    // Reopen the panel: current rate + BOTH history rows are visible (append-only, AC 1).
-    await rowAfterSecondRate.getByRole('button', { name: 'Tariffe' }).click();
+    // Current rate now 160,00 €/h wet + 115,00 €/h dry (AD-4: max validFrom <= today).
     await expect(page.getByTestId('rates-current')).toContainText(/160,00\s€/);
+    await expect(page.getByTestId('rates-current-dry')).toContainText(/115,00\s€/);
+
+    // History (append-only, AC 1): BOTH rows, most recent first, dry shown only on the row that has it.
     const historyRows = page.getByTestId('rate-history-row');
     await expect(historyRows).toHaveCount(2);
     await expect(historyRows.nth(0)).toContainText(ddmmyyyy(today));
     await expect(historyRows.nth(0)).toContainText(/160,00\s€/);
+    await expect(historyRows.nth(0)).toContainText(/115,00\s€.*dry/);
     await expect(historyRows.nth(1)).toContainText(ddmmyyyy(PAST_DATE));
     await expect(historyRows.nth(1)).toContainText(/150,00\s€/);
+    await expect(historyRows.nth(1)).not.toContainText('dry');
   });
 
   test('a second rate with the same validFrom shows a 409 conflict message (AC 2)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = uniqueAircraft('R2');
-    await createAircraft(page, aircraft);
+    await createAndOpenAircraft(page, aircraft);
 
-    const row = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await row.getByRole('button', { name: 'Tariffe' }).click();
+    const newRateForm = page.getByTestId('new-rate-form');
+    await newRateForm.getByLabel('Prezzo wet (€/h)').fill('150,00');
+    await newRateForm.getByLabel('In vigore da').fill(PAST_DATE);
+    await page.getByTestId('new-rate-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
+    await expect(page.getByTestId('rates-current')).toContainText(/150,00\s€/);
 
-    await page.getByLabel('Prezzo (€/h)').fill('150,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
-    await page.getByRole('button', { name: 'Aggiungi tariffa' }).click();
-    await expect(page.getByTestId('aircraft-feedback')).toBeVisible();
+    // Re-insert a rate with the SAME validFrom (AC 2 — 409).
+    await newRateForm.getByLabel('Prezzo wet (€/h)').fill('999,00');
+    await newRateForm.getByLabel('In vigore da').fill(PAST_DATE);
+    await page.getByTestId('new-rate-submit').click();
 
-    // Wait for the post-submit `router.refresh()` to settle (same
-    // synchronization as the AC 1 test above) before the next interaction —
-    // otherwise clicking "Tariffe" can race the still-in-flight refresh.
-    const rowAfterFirstRate = page.getByRole('row', { name: new RegExp(aircraft.registration) });
-    await expect(rowAfterFirstRate.getByTestId(/^current-rate-/)).toContainText(/150,00\s€/);
-
-    // Re-open and re-insert a rate with the SAME validFrom (AC 2 — 409).
-    await rowAfterFirstRate.getByRole('button', { name: 'Tariffe' }).click();
-    await page.getByLabel('Prezzo (€/h)').fill('999,00');
-    await page.getByLabel('In vigore da').fill(PAST_DATE);
-    await page.getByRole('button', { name: 'Aggiungi tariffa' }).click();
-
-    await expect(page.getByTestId('aircraft-form-error')).toContainText('Esiste già una tariffa con questa data di decorrenza.');
+    await expect(page.getByTestId('new-rate-error')).toContainText('Esiste già una tariffa con questa data di decorrenza.');
   });
 
-  test('a STAFF actor (aircraft.manage but not settings.manage) gets a 403 AD-8 envelope from POST rates', async ({
-    page,
-  }) => {
+  test('a STAFF actor (aircraft.manage but not settings.manage) gets a 403 AD-8 envelope from POST rates', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = uniqueAircraft('R3');
-    await createAircraft(page, aircraft);
+    await createAndOpenAircraft(page, aircraft);
     const listResponse = await page.request.get('/api/v1/aircraft', { params: { q: aircraft.registration } });
     const listed = (await listResponse.json()) as { items: Array<{ id: string }> };
     const aircraftId = listed.items[0]?.id;
@@ -216,7 +219,7 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2)', () => {
   test('a pilot gets a 403 AD-8 envelope from POST /api/v1/aircraft/{id}/rates', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = uniqueAircraft('R4');
-    await createAircraft(page, aircraft);
+    await createAndOpenAircraft(page, aircraft);
     const listResponse = await page.request.get('/api/v1/aircraft', { params: { q: aircraft.registration } });
     const listed = (await listResponse.json()) as { items: Array<{ id: string }> };
     const aircraftId = listed.items[0]?.id;

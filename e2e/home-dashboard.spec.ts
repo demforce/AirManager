@@ -337,7 +337,7 @@ test.describe('Home dashboard — widget links navigate to the right views (Stor
 
     await page.goto('/it/dashboard');
     await page.getByTestId('aircraft-out-of-service-widget').getByRole('link').click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/aircraft$/);
+    await expect(page).toHaveURL(/\/it\/dashboard\/fleet$/);
 
     await page.goto('/it/dashboard');
     await page.getByTestId('bookings-today-widget').getByRole('link').click();
