@@ -402,7 +402,11 @@ export function PilotsConsole({
       </div>
 
       <PilotEditor
-        key={editorTarget === null ? 'closed' : editorTarget.mode === 'new' ? 'new' : editorTarget.pilot.id}
+        // Distinct key NAMESPACE from `PilotProfile` below (`editor-`/`profile-`
+        // prefixes) — React validates key uniqueness across ALL keyed
+        // siblings at this level regardless of element type, so both
+        // components resting on a bare `'closed'` at once would collide.
+        key={editorTarget === null ? 'editor-closed' : editorTarget.mode === 'new' ? 'editor-new' : `editor-${editorTarget.pilot.id}`}
         target={editorTarget}
         onClose={() => setEditorTarget(null)}
         onMutated={() => router.refresh()}
@@ -413,7 +417,7 @@ export function PilotsConsole({
       />
 
       <PilotProfile
-        key={profileTarget === null ? 'closed' : profileTarget.id}
+        key={profileTarget === null ? 'profile-closed' : `profile-${profileTarget.id}`}
         pilot={profileTarget}
         onClose={() => setProfileTarget(null)}
         onEdit={(pilot) => setEditorTarget({ mode: 'edit', pilot })}

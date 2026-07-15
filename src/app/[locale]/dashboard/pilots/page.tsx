@@ -201,7 +201,11 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
               },
               rolesRequired: t('editor.access.rolesRequired'),
               createSubmit: t('editor.access.createSubmit'),
-              userSummary: t('editor.access.userSummary'),
+              // `t.raw` (not `t`): the literal `{email}`/`{roles}` placeholders
+              // are filled CLIENT-side in `AccessSection` (same pattern as
+              // `PersonDetailPage`'s own `consumedNote`/`adjustmentOfDate`) —
+              // `t()` would throw FORMATTING_ERROR for an unprovided ICU var.
+              userSummary: t.raw('editor.access.userSummary') as string,
               statusActive: t('editor.access.statusActive'),
               statusPending: t('editor.access.statusPending'),
               resendInvite: t('editor.access.resendInvite'),

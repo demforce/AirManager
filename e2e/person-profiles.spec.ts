@@ -38,8 +38,8 @@ async function createPilot(page: Page, person: { firstName: string; lastName: st
   await page.goto('/it/dashboard/pilots');
   await page.getByTestId('pilots-new-button').click();
   const form = page.getByTestId('pilot-identity-form');
-  await form.getByLabel('Nome').fill(person.firstName);
-  await form.getByLabel('Cognome').fill(person.lastName);
+  await form.getByLabel('Nome', { exact: true }).fill(person.firstName);
+  await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
   await page.getByTestId('pilot-identity-submit').click();
   await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toBeVisible();
 
