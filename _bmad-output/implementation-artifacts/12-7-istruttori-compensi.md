@@ -4,7 +4,7 @@ baseline_commit: 7e327b7498a3d03ae65155ac3b6734894adab3a3
 
 # Story 12.7: Istruttori — compensi, payout ledger, ciclo pagamenti
 
-Status: review
+Status: done
 
 ## Story
 
@@ -67,3 +67,38 @@ so that i compensi istruttori siano gestiti end-to-end nel gestionale (oggi non 
 5. Form "Paga": `periodStart` di default = inizio anno corrente (Roma) — l'API non espone un "ultimo periodo pagato", quindi non è calcolabile un "inizio del periodo scoperto" preciso; il campo resta editabile come da AC 5.
 
 **Test**: 21 unit test nuovi (`instructor-compensation.service.test.ts`) + rbac.test.ts aggiornato; e2e `instructor-rates.spec.ts` adattato (4/4 verdi) + nuovo `instructor-compensation.spec.ts` (6/6 verdi) — 10/10 e2e verdi in locale con `--retries=2`. Verifica interattiva screenshot in entrambi i temi (istruttori list, editor, profilo) — nessuna anomalia visiva.
+
+## Review Record
+
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh, via workflow). **Data**: 2026-07-15. Prima RBAC-change dell'epic (nuovo permesso `payouts.manage`) + superficie money/idempotency → review empirica intensiva.
+
+### Arbiter (priority zero)
+
+- **`CI=1 npx playwright test` su build prod → 220 passed, 0 failed** (exit 0; tutti i 6 `instructor-compensation.spec` + 4 `instructor-rates.spec` adattati verdi). Gates re-verificati: **1369 unit** (→ **1370** dopo il fix di review), tsc OK, eslint 0 errori, build OK.
+
+### Verdetto
+
+**Shippable.** Zero blocker, zero major. Nessun difetto di correttezza / RBAC / idempotency / money-math.
+
+### Evidenza empirica (build prod live, non solo lettura codice)
+
+- **Migrazione (AC 1)** psql: `InstructorProfile.payoutRateCents` int nullable; `InstructorPayout` (periodStart/periodEnd `date`, method PaymentMethod, actorUserId FK "InstructorPayoutActor", `@@index([instructorProfileId, periodEnd])`) — esatta.
+- **RBAC `payouts.manage`** (prima permission-add dell'epic): aggiunto SOLO al type `Permission` + `ALL_PERMISSIONS` admin; staff/istruttore/pilota/allievo mai. Matrice live: admin POST payout 201 + PUT rate 200; **staff → 403 su entrambi, 200 su GET riepilogo + export xlsx** (`finance.manage`); altri ruoli 403 ovunque; UI nasconde Paga/Ciclo/campo-tariffa allo staff.
+- **Idempotency obbligatoria** (route-level, senza toccare l'handler condiviso): key mancante → **422 `IDEMPOTENCY_KEY_REQUIRED`, 0 righe**; replay stessa key → 1 riga; **8 POST concorrenti stessa key → 8×201 ma 1 sola riga DB**; due key diverse → 2 righe. Semantica sana, nessun doppio-standard.
+- **Owed math**: `owed = round(min/60×rate) − Σpayout` verificato (rate 6000, volo SCHOOL 90min → owed 9000; payout parziale scala; ciclo filtra owed>0). Boundary mtd/ytd/total su giorno Roma coperti dagli unit.
+- **InstructorRatesPanel MOVE**: vecchio componente eliminato; `people/[id]` pulito da import/uso/wiring morto; `instructor-rates.service.ts` NON nel diff (invariato); pricing allievo intatto (`getEffectiveInstructorRate` ancora usato da `flights.service.ts:550`); parità storicizzazione/409 confermata dai 4/4 e2e.
+- **Coupling guard**: `git diff -- flights.service.ts` **VUOTO** (12.8 possiede il flight-logging).
+
+### Findings
+
+- **MINOR-1 — FIXATO in `99103da`**: `exportInstructorCompensationXlsx` non aveva unit test sul contenuto colonne (e2e copriva solo lo status). Aggiunto test che asserisce name/ratings/ore + tariffa payout e dovuto come celle euro NUMERICHE, null quando l'istruttore non ha tariffa.
+- **MINOR-2 — ACCETTATO**: nessun upper-bound su `periodEnd` del payout. Un `periodEnd` futuro conta nel `total` ma non in mtd/ytd — è la semantica corretta delle finestre su un ledger append-only e correggibile (UI default `periodEnd=oggi`); guard non richiesta dall'AC 5.
+
+### Verdetti (close-your-notes)
+
+Tutte le note del dev ACCETTATE: #2 idempotency SANO (provato a livello DB); #3 owed/total future-periodEnd accettabile (MINOR-2); #4 recentStudents dai 5 voli recenti (matcha AC 3/7 + prototipo); #5 = MINOR-1 (fixato); #6 rimozione toggle pannello tariffa allievo (gemello di `fleet` RatesSection, parità); #7 Ore/Dovuto readonly stale nell'editor aperto (documentato, riga corretta via refresh). Deviazioni #1-#5 tutte sane (`@db.Date` corretto, "Aggiungi istruttore" = search+attivazione, ecc.).
+
+### Commit di review
+
+- `99103da` — `fix(12.7)`: MINOR-1 (unit test contenuto export xlsx).
+- questo commit — `docs(12.7)`: Review Record, status → done, sprint-status.

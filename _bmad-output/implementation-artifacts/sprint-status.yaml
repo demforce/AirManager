@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-15 (story 12.6 done; story 12.7 Istruttori/compensi ready-for-dev — ratificata (payouts.manage admin-only, export xlsx in scope), baseline 7e327b7, dispatch dev)
+last_updated: 2026-07-15 (story 12.7 Istruttori/compensi done — payout ledger + ciclo pagamenti + export xlsx; re-review Opus CI=1 220/220, shippable, MINOR-1 xlsx unit test fixato, MINOR-2 accettato)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -136,7 +136,7 @@ development_status:
   12-4-ppr-console-pubblico-transiti: done
   12-5-aeromobili: done
   12-6-piloti: done
-  12-7-istruttori-compensi: ready-for-dev
+  12-7-istruttori-compensi: done
   12-8-registro-voli: planned
   12-9-contabilita: planned
   12-10-statistiche: planned
