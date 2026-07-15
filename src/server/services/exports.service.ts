@@ -12,6 +12,7 @@ import type { CashReportPdfQuery, ListCashMovementsQuery } from '@/lib/schemas/c
 import type { PdfQuery } from '@/lib/schemas/common';
 import type { ListAllExpiriesQuery } from '@/lib/schemas/expiries';
 import type { ListFlightsQuery } from '@/lib/schemas/flights';
+import type { InstructorCompensationQuery } from '@/lib/schemas/instructor-compensation';
 import type { ListPeopleQuery } from '@/lib/schemas/people';
 import type { ListPprRequestsQuery } from '@/lib/schemas/ppr';
 import type { SchoolSummaryQuery } from '@/lib/schemas/school';
@@ -25,6 +26,7 @@ import { getCashReport, listCashMovements } from './cash.service';
 import { ValidationError } from './errors';
 import { listAllExpiries } from './expiries.service';
 import { listFlights } from './flights.service';
+import { getCompensationSummary } from './instructor-compensation.service';
 import { getPerson, listPeople } from './people.service';
 import { listPprRequests } from './ppr.service';
 import { getInstructorHourSummaries, getStudentHourSummaries } from './school.service';
@@ -445,6 +447,30 @@ export async function exportInstructorHourSummariesXlsx(actor: Actor, query: Sch
   ];
 
   return toXlsxExport('school-summaries-instructors', t('heading'), columns, items);
+}
+
+// --- Instructor compensation (`GET /api/v1/instructor-compensation`) -------
+// Story 12.7, AC 3 — the summary only (never the `?personId=` detail, which
+// has nothing to export, it's a slide-over). Same unpaginated-array shape as
+// the school summaries above (`assertWithinExportCap` on `.length`).
+
+export async function exportInstructorCompensationXlsx(actor: Actor, query: InstructorCompensationQuery): Promise<XlsxExport> {
+  const items = await getCompensationSummary(actor);
+  assertWithinExportCap(items.length);
+
+  const locale = resolveLocale(query);
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'InstructorsPage' });
+
+  const columns: ExportColumn<(typeof items)[number]>[] = [
+    { header: t('table.name'), value: (row) => `${row.lastName} ${row.firstName}` },
+    { header: t('table.ratings'), value: (row) => row.ratings },
+    { header: t('table.rate'), value: (row) => (row.payoutRateCents === null ? null : row.payoutRateCents / 100), numFmt: MONEY_NUM_FMT },
+    { header: t('table.hours'), value: (row) => formatMinutes(row.totalMinutes) },
+    { header: t('table.owed'), value: (row) => (row.owedTotalCents === null ? null : row.owedTotalCents / 100), numFmt: MONEY_NUM_FMT },
+  ];
+
+  return toXlsxExport('instructor-compensation', t('cardTitle'), columns, items);
 }
 
 // =============================================================================

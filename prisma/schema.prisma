@@ -123,12 +123,24 @@ model InstructorProfile {
   personId      String    @unique
   person        Person    @relation(fields: [personId], references: [id])
   ratings       String
+  /// Hourly PAYOUT rate (epic 12, story 12.7) — what the airfield pays THIS
+  /// instructor per hour taught, in euro cents. Deliberately a single
+  /// mutable column, NOT historicized like `InstructorRate` (the rate
+  /// charged TO the student, story 4.2): the payout ledger (`InstructorPayout`
+  /// below) already carries its own dated rows, so there is no "what was the
+  /// rate on date D" question to answer for this field the way AD-4 answers
+  /// it for `InstructorRate`. `null` until an admin sets one (`setPayoutRate`,
+  /// `payouts.manage`) — the UI shows "—" and `owed` is always `null` for
+  /// that instructor until then.
+  payoutRateCents Int?
   deactivatedAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
   rates                 InstructorRate[]
+  /// Payout ledger entries recorded for this instructor (epic 12, story 12.7) — see `InstructorPayout` doc.
+  payouts               InstructorPayout[]
   /// Flights where this profile was the instructor aboard (epic 5, story 5.1) — see `Flight` doc.
   flights               Flight[]
   /// Bookings where this profile is the indicated instructor (epic 7, story 7.1) — see `Booking` doc.
@@ -137,6 +149,38 @@ model InstructorProfile {
   studentAssignments    StudentInstructorAssignment[]
   /// Training diary entries authored by this instructor (epic 9, story 9.2, FR-33) — see `TrainingNote` doc.
   trainingNotesAuthored TrainingNote[]
+}
+
+/// Instructor payout ledger (epic 12, story 12.7) — an append-only record of
+/// what the airfield actually PAID an instructor for a period, the money
+/// side of `InstructorProfile.payoutRateCents`'s hourly rate. `amountCents`
+/// is the amount paid (always positive — a payout is never negative here,
+/// there is no reversal concept for this MVP ledger). `periodStart`/
+/// `periodEnd` are calendar-only (`@db.Date`, Rome day, same convention as
+/// `AircraftRate.validFrom`) and bound the SCHOOL-flight hours this payout
+/// covers — `periodStart <= periodEnd`, enforced at the service boundary.
+/// Attribution to a summary variant (mtd/ytd/total,
+/// `instructor-compensation.service.ts#getCompensationSummary`) is ALWAYS by
+/// `periodEnd` falling inside the variant's range — a deterministic,
+/// index-backed rule (see `@@index` below), never by `createdAt`.
+/// `actorUserId` is who recorded the payout (same audit pattern as every
+/// other ledger's `actorUserId`). There is deliberately no update/delete API
+/// (AD-3's spirit) — a wrong entry is corrected by a future payout, never by
+/// rewriting history.
+model InstructorPayout {
+  id                  String            @id @default(cuid())
+  instructorProfileId String
+  instructorProfile   InstructorProfile @relation(fields: [instructorProfileId], references: [id])
+  amountCents         Int
+  periodStart         DateTime          @db.Date
+  periodEnd           DateTime          @db.Date
+  method              PaymentMethod
+  notes               String?
+  actorUserId         String
+  actorUser           User              @relation("InstructorPayoutActor", fields: [actorUserId], references: [id])
+  createdAt           DateTime          @default(now())
+
+  @@index([instructorProfileId, periodEnd])
 }
 
 /// Many-to-many assignment between a student and their instructor(s) (epic 9,
@@ -431,6 +475,8 @@ model User {
   idempotencyRecords                  IdempotencyRecord[]
   /// Student-instructor assignments this user CREATED (epic 9, story 9.1) — `StudentInstructorAssignment.assignedByUserId`.
   studentInstructorAssignmentsCreated StudentInstructorAssignment[]
+  /// Instructor payouts this user recorded (epic 12, story 12.7) — `InstructorPayout.actorUserId`.
+  instructorPayouts                   InstructorPayout[]             @relation("InstructorPayoutActor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

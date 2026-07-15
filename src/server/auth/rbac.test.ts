@@ -24,6 +24,7 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     'settings.manage',
     'users.manage',
     'self.read',
+    'payouts.manage',
   ] as const;
 
   it('grants admin every permission in the catalogue', () => {
@@ -34,6 +35,7 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     }
     expect(() => authorize(admin, 'users.manage')).not.toThrow();
     expect(() => authorize(admin, 'settings.manage')).not.toThrow();
+    expect(() => authorize(admin, 'payouts.manage')).not.toThrow();
   });
 
   it('lets staff read/manage operational data but never manage users or settings (admin-only)', () => {
@@ -65,6 +67,12 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     expect(hasPermission(staff, 'settings.manage')).toBe(false);
     expect(() => authorize(staff, 'users.manage')).toThrow(ForbiddenError);
     expect(() => authorize(staff, 'settings.manage')).toThrow(ForbiddenError);
+
+    // Story 12.7: registering an instructor payout / setting the payout
+    // rate is ADMIN-only — staff reads the compensation summary via
+    // `finance.manage` (asserted above) but never holds `payouts.manage`.
+    expect(hasPermission(staff, 'payouts.manage')).toBe(false);
+    expect(() => authorize(staff, 'payouts.manage')).toThrow(ForbiddenError);
   });
 
   it('scopes a pilot to self-service and their own bookings only — no access to other people’s data', () => {
@@ -97,6 +105,8 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     expect(hasPermission(pilotInstructor, 'users.manage')).toBe(false);
     // Story 9.2: an instructor never holds the admin-only training-note override.
     expect(hasPermission(pilotInstructor, 'school.notes.manage.any')).toBe(false);
+    // Story 12.7: an instructor never holds `payouts.manage` either — it is ADMIN-only.
+    expect(hasPermission(pilotInstructor, 'payouts.manage')).toBe(false);
 
     const permissions = getPermissions(pilotInstructor);
     expect(permissions).toEqual(

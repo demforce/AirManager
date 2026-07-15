@@ -81,6 +81,14 @@ import {
   registerFlightResponseSchema,
   registerFlightSchema,
 } from './flights';
+import {
+  instructorCompensationDetailSchema,
+  instructorCompensationQuerySchema,
+  instructorCompensationSummaryResponseSchema,
+  instructorPayoutItemSchema,
+  recordInstructorPayoutSchema,
+  setInstructorPayoutRateSchema,
+} from './instructor-compensation';
 import { meResponseSchema } from './me';
 import {
   createPackageTypeSchema,
@@ -206,6 +214,29 @@ const idempotencyKeyHeader = registry.registerParameter(
       param: { name: 'Idempotency-Key', in: 'header' },
       description:
         'Opt-in replay-safe key for this request (1-200 chars, e.g. a UUID). A retry with the SAME key replays the first response (`Idempotency-Replayed: true`) instead of re-executing the mutation; a concurrent request with the same key gets 409 `IDEMPOTENCY_IN_PROGRESS`.',
+      example: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+    }),
+);
+
+/**
+ * Story 12.7 (AC 3) — the FIRST route where `Idempotency-Key` is MANDATORY,
+ * not opt-in: `POST /api/v1/instructor-payouts` rejects a request without
+ * it (422 `IDEMPOTENCY_KEY_REQUIRED`, checked in the route itself, since
+ * `src/lib/api/handler.ts`'s shared `idempotency` option stays opt-in for
+ * every other caller, story TD-2 AC 3 unchanged) — a separate registered
+ * parameter (required `.min(1).max(200)`, no `.optional()`) documents that
+ * distinction accurately rather than reusing {@link idempotencyKeyHeader}.
+ */
+const requiredIdempotencyKeyHeader = registry.registerParameter(
+  'RequiredIdempotencyKey',
+  z
+    .string()
+    .min(1)
+    .max(200)
+    .openapi({
+      param: { name: 'Idempotency-Key', in: 'header' },
+      description:
+        'MANDATORY replay-safe key (1-200 chars, e.g. a UUID) — unlike every other money-mutating POST, this endpoint 422s without it. A retry with the SAME key replays the first response instead of recording a second payout.',
       example: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
     }),
 );
@@ -1993,6 +2024,60 @@ registry.registerPath({
   responses: {
     200: { description: 'The saved airfield branding.', content: jsonContent(airfieldBrandingSchema) },
     ...errorResponses(401, 403, 422),
+  },
+});
+
+// --- Instructor compensation (epic 12, story 12.7) ---------------------------
+
+const instructorPersonIdParams = z.object({
+  personId: z.string().meta({ description: "Instructor's Person id (cuid).", example: 'clx1a2b3c4d5e6f7g8h9' }),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/instructor-compensation',
+  summary: 'Compensation summary (all ACTIVE instructors), or one instructor DETAIL with `?personId=`',
+  description:
+    "No `personId`: every active instructor's mtd/ytd/total flown minutes and owed cents (`payoutRateCents: null` -> `owed*Cents: null`, shown as \"—\"). With `?personId=`: the SAME row plus the 5 most recent SCHOOL flights as CFI and the distinct students among them (the profile slide-over — no additional endpoint). `?format=xlsx` exports the summary (never the detail). Requires `finance.manage` (staff+admin).",
+  tags: ['InstructorCompensation'],
+  security,
+  request: { query: instructorCompensationQuerySchema },
+  responses: {
+    200: {
+      description: 'The summary array, or (`?personId=`) the single detail object, or (`?format=xlsx`) the summary as an Excel workbook.',
+      content: { ...jsonContent(z.union([instructorCompensationSummaryResponseSchema, instructorCompensationDetailSchema])), ...xlsxContent() },
+    },
+    ...errorResponses(401, 403, 404, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/instructor-payouts',
+  summary: 'Record an instructor payout',
+  description:
+    "Body `{ instructorPersonId, amountCents, periodStart, periodEnd, method, notes? }` — `amountCents > 0`, `periodStart <= periodEnd`. 404 on an unknown `instructorPersonId`; 409 if the person has no active instructor profile. `Idempotency-Key` is MANDATORY (422 `IDEMPOTENCY_KEY_REQUIRED` without it) — see `requiredIdempotencyKeyHeader`'s doc-comment. Requires `payouts.manage` (ADMIN-only).",
+  tags: ['InstructorCompensation'],
+  security,
+  request: { headers: [requiredIdempotencyKeyHeader], body: { content: jsonContent(recordInstructorPayoutSchema), required: true } },
+  responses: {
+    201: { description: 'The recorded payout.', content: jsonContent(instructorPayoutItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/instructor-compensation/{personId}/rate',
+  summary: "Set (or clear) an instructor's hourly payout rate",
+  description:
+    'Body `{ payoutRateCents }` — an integer `>= 0`, or `null` to unset it (the summary/detail then show "—" and `owed*Cents: null`). Distinct from `PUT /api/v1/people/{id}/instructor-rates` (the STUDENT-charged rate, `settings.manage`, D8) — this is the amount PAID to the instructor. 404 on an unknown person; 409 if the person has no active instructor profile. Requires `payouts.manage` (ADMIN-only).',
+  tags: ['InstructorCompensation'],
+  security,
+  request: { params: instructorPersonIdParams, body: { content: jsonContent(setInstructorPayoutRateSchema), required: true } },
+  responses: {
+    200: { description: 'The current payout rate.', content: jsonContent(setInstructorPayoutRateSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 

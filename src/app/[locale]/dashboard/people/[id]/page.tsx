@@ -2,19 +2,16 @@ import { notFound } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { todayDateOnlyUtc } from '@/lib/date-only';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { ForbiddenError, NotFoundError } from '@/server/services/errors';
 import { listFlights, type FlightListItem } from '@/server/services/flights.service';
-import { getEffectiveInstructorRate } from '@/server/services/instructor-rates.service';
 import { getPerson } from '@/server/services/people.service';
 import { AccountPanel } from '../account-panel';
 import { AccountRefreshProvider } from '../account-refresh-context';
 import { AssignedInstructorsPanel } from '../assigned-instructors-panel';
 import { ExpiriesPanel } from '../expiries-panel';
-import { InstructorRatesPanel } from '../instructor-rates-panel';
 import { PackagesPanel } from '../packages-panel';
 import { ProfilesPanel } from '../profiles-panel';
 
@@ -79,7 +76,6 @@ export default async function PersonDetailPage({ params }: PageProps) {
 
   const canManageProfiles = hasPermission(actor, 'people.manage');
   const canManageFinance = hasPermission(actor, 'finance.manage');
-  const canManageSettings = hasPermission(actor, 'settings.manage');
   const canManageExpiries = hasPermission(actor, 'expiries.manage');
   // Story 9.1 (AC 1/4): the "Istruttori assegnati" panel is staff/admin-only
   // (`school.manage.any`) — unlike the other panels above, there is no
@@ -97,14 +93,6 @@ export default async function PersonDetailPage({ params }: PageProps) {
   const tPackages = await getTranslations('HourPackagesPanel');
   const tExpiries = await getTranslations('ExpiriesPanel');
   const tSchool = await getTranslations('AssignedInstructorsPanel');
-
-  // Story 4.2, AC 1/AD-4: the instructor-rate section is shown only when the
-  // person has an instructor profile (active or deactivated — deactivated
-  // stays read-only, per Dev Notes). The effective-today rate is
-  // server-computed here (never recomputed client-side, same rationale as
-  // `aircraft/page.tsx#getEffectiveRate`).
-  const currentInstructorRate =
-    person.instructorProfile !== null ? await getEffectiveInstructorRate(actor, person.id, todayDateOnlyUtc()) : null;
 
   // Story 11.2 (AC 4): AD-1 (consume the service directly, no new endpoint) —
   // staff filters by this scheda's `personId`; the titolare gets NO
@@ -325,43 +313,6 @@ export default async function PersonDetailPage({ params }: PageProps) {
             />
           </div>
         </AccountRefreshProvider>
-
-        {person.instructorProfile !== null ? (
-          <div className="mt-6">
-            <InstructorRatesPanel
-              // Remount on person change — same rationale as
-              // `aircraft-manager.tsx`'s `RatesPanel` (review 2.4 F1).
-              key={person.id}
-              personId={person.id}
-              currentRatePriceCentsPerHour={currentInstructorRate?.priceCentsPerHour ?? null}
-              canAddRate={canManageSettings && person.instructorProfile.deactivatedAt === null}
-              labels={{
-                heading: t('instructorRates.heading'),
-                current: t('instructorRates.current'),
-                noCurrentRate: t('instructorRates.noCurrentRate'),
-                loadError: t('instructorRates.loadError'),
-                newRateTitle: t('instructorRates.newRateTitle'),
-                addAction: t('instructorRates.addAction'),
-                price: t('instructorRates.price'),
-                validFrom: t('instructorRates.validFrom'),
-                submit: t('instructorRates.submit'),
-                cancel: t('instructorRates.cancel'),
-                requiredField: t('instructorRates.requiredField'),
-                invalidPrice: t('instructorRates.invalidPrice'),
-                invalidDate: t('instructorRates.invalidDate'),
-                genericError: t('instructorRates.genericError'),
-                conflictError: t('instructorRates.conflictError'),
-                readOnlyHint: t('instructorRates.readOnlyHint'),
-                historyTitle: t('instructorRates.historyTitle'),
-                historyEmpty: t('instructorRates.historyEmpty'),
-                historyValidFrom: t('instructorRates.historyValidFrom'),
-                historyPrice: t('instructorRates.historyPrice'),
-                historyActor: t('instructorRates.historyActor'),
-                historyWhen: t('instructorRates.historyWhen'),
-              }}
-            />
-          </div>
-        ) : null}
 
         {/* Active profile only (review 9.1 F2): on a deactivated student
             profile the API answers 422 STUDENT_NOT_FOUND, so mounting the

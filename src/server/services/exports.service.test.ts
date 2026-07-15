@@ -22,6 +22,7 @@ vi.mock('./accounts.service', () => ({ listAccountMovements: vi.fn(), getAccount
 vi.mock('./cash.service', () => ({ listCashMovements: vi.fn(), getCashReport: vi.fn() }));
 vi.mock('./expiries.service', () => ({ listAllExpiries: vi.fn() }));
 vi.mock('./school.service', () => ({ getStudentHourSummaries: vi.fn(), getInstructorHourSummaries: vi.fn() }));
+vi.mock('./instructor-compensation.service', () => ({ getCompensationSummary: vi.fn() }));
 // Story 10.2: the PDF adapter is mocked here (unlike `buildWorkbook`, never
 // mocked for the xlsx tests above) — the CONTENTS assertion is on the props
 // passed to `renderReportPdf` (Dev Notes: "asserzioni sui contenuti a

@@ -291,7 +291,10 @@
     "includeArchivedLabel": "Mostra archiviati",
     "empty": "Nessun pilota trovato.",
     "newPilot": "Aggiungi pilota",
-    "pagination": { "prev": "Precedente", "next": "Successivo" },
+    "pagination": {
+      "prev": "Precedente",
+      "next": "Successivo"
+    },
     "table": {
       "name": "Nome",
       "email": "Email",
@@ -317,7 +320,11 @@
       "title": "Registra ricarica",
       "amount": "Importo (€)",
       "paymentMethod": "Metodo di pagamento",
-      "paymentMethods": { "cash": "Contanti", "bankTransfer": "Bonifico", "pos": "POS" },
+      "paymentMethods": {
+        "cash": "Contanti",
+        "bankTransfer": "Bonifico",
+        "pos": "POS"
+      },
       "effectiveDate": "Data valuta",
       "description": "Descrizione",
       "submit": "Registra ricarica",
@@ -349,7 +356,11 @@
         "sectionTitle": "Certificazioni",
         "empty": "Nessuna scadenza registrata.",
         "manageLink": "Gestisci in Scadenze",
-        "status": { "ok": "Valida", "expiring": "In scadenza", "expired": "Scaduta" }
+        "status": {
+          "ok": "Valida",
+          "expiring": "In scadenza",
+          "expired": "Scaduta"
+        }
       },
       "access": {
         "sectionTitle": "Accesso",
@@ -383,10 +394,17 @@
     "profile": {
       "closeLabel": "Chiudi",
       "edit": "Modifica pilota",
-      "kpi": { "balance": "Saldo", "lastFlight": "Ultimo volo", "recentFlights": "Voli recenti" },
+      "kpi": {
+        "balance": "Saldo",
+        "lastFlight": "Ultimo volo",
+        "recentFlights": "Voli recenti"
+      },
       "noAccount": "—",
       "archivedBadge": "Archiviato",
-      "certifications": { "sectionTitle": "Certificazioni", "empty": "Nessuna scadenza registrata." },
+      "certifications": {
+        "sectionTitle": "Certificazioni",
+        "empty": "Nessuna scadenza registrata."
+      },
       "recentFlights": {
         "sectionTitle": "Voli recenti",
         "empty": "Nessun volo registrato.",
@@ -406,6 +424,156 @@
       "inviteResent": "Invito reinviato.",
       "genericError": "Si è verificato un errore. Riprova.",
       "lastAdminError": "Impossibile sospendere l'ultimo amministratore attivo."
+    }
+  },
+  "InstructorsPage": {
+    "title": "Istruttori",
+    "sub": "{active} attivi · {owed} da liquidare",
+    "kpi": {
+      "active": "Istruttori attivi",
+      "hours": "Ore totali volate",
+      "owed": "Totale dovuto",
+      "avgRate": "Tariffa media payout"
+    },
+    "cardTitle": "Elenco istruttori",
+    "searchPlaceholder": "Cerca per nome o abilitazioni…",
+    "empty": "Nessun istruttore trovato.",
+    "newInstructor": "Aggiungi istruttore",
+    "paymentCycleButton": "Ciclo pagamenti",
+    "table": {
+      "name": "Nome",
+      "ratings": "Abilitazioni",
+      "rate": "Tariffa payout",
+      "hours": "Ore totali",
+      "owed": "Totale dovuto",
+      "actions": "Azioni",
+      "noValue": "—"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "pay": "Paga"
+    },
+    "addInstructor": {
+      "title": "Aggiungi istruttore",
+      "subtitle": "Attiva il profilo istruttore su una persona esistente",
+      "searchLabel": "Cerca persona",
+      "searchPlaceholder": "Nome o cognome…",
+      "noResults": "Nessuna persona trovata.",
+      "ratings": "Abilitazioni",
+      "submit": "Attiva profilo istruttore",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "genericError": "Si è verificato un errore. Riprova."
+    },
+    "editor": {
+      "closeLabel": "Chiudi",
+      "cancel": "Annulla",
+      "save": "Salva modifiche",
+      "identity": {
+        "sectionTitle": "Anagrafica",
+        "firstName": "Nome",
+        "lastName": "Cognome",
+        "email": "Email",
+        "phone": "Telefono",
+        "address": "Indirizzo",
+        "fiscalCode": "Codice fiscale",
+        "save": "Salva modifiche",
+        "loadError": "Impossibile caricare i dati anagrafici."
+      },
+      "ratings": {
+        "sectionTitle": "Abilitazioni",
+        "label": "Abilitazioni",
+        "save": "Salva"
+      },
+      "payoutRate": {
+        "sectionTitle": "Tariffa payout (pagata all'istruttore)",
+        "label": "Tariffa oraria",
+        "noValue": "—",
+        "save": "Salva",
+        "readOnlyHint": "Solo un amministratore può impostare la tariffa payout."
+      },
+      "readOnly": {
+        "sectionTitle": "Riepilogo (sola lettura)",
+        "hoursTotal": "Ore totali",
+        "owedTotal": "Totale dovuto"
+      },
+      "errors": {
+        "generic": "Si è verificato un errore. Riprova.",
+        "invalidRate": "Inserisci un importo valido (es. 30,00) o lascia vuoto."
+      }
+    },
+    "studentRate": {
+      "heading": "Tariffa allievo (addebitata al pilota/allievo)",
+      "current": "Tariffa attuale",
+      "noCurrentRate": "Nessuna tariffa in vigore",
+      "loadError": "Impossibile caricare lo storico tariffe.",
+      "price": "Prezzo (€/h)",
+      "validFrom": "In vigore da",
+      "submit": "Aggiungi tariffa",
+      "requiredField": "Campo obbligatorio.",
+      "invalidPrice": "Il prezzo deve essere un importo positivo (es. 45,00).",
+      "invalidDate": "Inserisci una data valida.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "conflictError": "Esiste già una tariffa con questa data di decorrenza, oppure la persona non ha un profilo istruttore attivo.",
+      "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe istruttore.",
+      "historyTitle": "Storico tariffe",
+      "historyEmpty": "Nessuna tariffa registrata.",
+      "historyValidFrom": "In vigore da",
+      "historyPrice": "Prezzo",
+      "historyActor": "Chi",
+      "historyWhen": "Registrata il"
+    },
+    "pay": {
+      "title": "Registra pagamento",
+      "amount": "Importo (€)",
+      "method": "Metodo di pagamento",
+      "methods": {
+        "cash": "Contanti",
+        "bankTransfer": "Bonifico",
+        "pos": "POS"
+      },
+      "periodStart": "Periodo da",
+      "periodEnd": "Periodo a",
+      "notes": "Note",
+      "submit": "Registra pagamento",
+      "cancel": "Annulla",
+      "invalidAmount": "Inserisci un importo positivo (es. 100,00).",
+      "requiredField": "Campo obbligatorio.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "invalidPeriod": "La data di inizio periodo deve precedere o coincidere con la data di fine periodo."
+    },
+    "paymentCycle": {
+      "title": "Ciclo pagamenti",
+      "subtitle": "Istruttori con un dovuto da liquidare",
+      "empty": "Nessun istruttore con un dovuto da liquidare.",
+      "pay": "Paga",
+      "closeLabel": "Chiudi"
+    },
+    "profile": {
+      "closeLabel": "Chiudi",
+      "edit": "Modifica istruttore",
+      "kpi": {
+        "hoursTotal": "Ore totali",
+        "hoursMtd": "Ore nel mese",
+        "owedTotal": "Dovuto totale",
+        "rate": "Tariffa oraria"
+      },
+      "recentStudents": {
+        "sectionTitle": "Allievi recenti",
+        "empty": "Nessun allievo recente."
+      },
+      "recentFlights": {
+        "sectionTitle": "Voli recenti come CFI",
+        "empty": "Nessun volo registrato."
+      }
+    },
+    "toast": {
+      "rateSet": "Tariffa payout aggiornata.",
+      "ratingsSaved": "Abilitazioni aggiornate.",
+      "payoutRecorded": "Pagamento registrato.",
+      "instructorAdded": "Profilo istruttore attivato.",
+      "genericError": "Si è verificato un errore. Riprova.",
+      "identitySaved": "Dati anagrafici aggiornati."
     }
   },
   "PersonDetailPage": {
@@ -469,30 +637,6 @@
         "requiredField": "Campo obbligatorio.",
         "genericError": "Impossibile registrare la ricarica. Riprova."
       }
-    },
-    "instructorRates": {
-      "heading": "Tariffe istruttore",
-      "current": "Tariffa attuale",
-      "noCurrentRate": "Nessuna tariffa in vigore",
-      "loadError": "Impossibile caricare lo storico tariffe.",
-      "newRateTitle": "Nuova tariffa",
-      "addAction": "Nuova tariffa",
-      "price": "Prezzo (€/h)",
-      "validFrom": "In vigore da",
-      "submit": "Aggiungi tariffa",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "invalidPrice": "Il prezzo deve essere un importo positivo (es. 45,00).",
-      "invalidDate": "Inserisci una data valida.",
-      "genericError": "Si è verificato un errore. Riprova.",
-      "conflictError": "Esiste già una tariffa con questa data di decorrenza, oppure la persona non ha un profilo istruttore attivo.",
-      "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe istruttore.",
-      "historyTitle": "Storico tariffe",
-      "historyEmpty": "Nessuna tariffa registrata.",
-      "historyValidFrom": "In vigore da",
-      "historyPrice": "Prezzo",
-      "historyActor": "Chi",
-      "historyWhen": "Registrata il"
     }
   },
   "HourPackagesPanel": {

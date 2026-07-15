@@ -37,7 +37,13 @@ export type Permission =
   | 'ppr.manage'
   | 'settings.manage'
   | 'users.manage'
-  | 'self.read';
+  | 'self.read'
+  // Epic 12, story 12.7: registering an instructor payout AND setting an
+  // instructor's payout rate (the amount PAID to them, distinct from
+  // `settings.manage`'s `InstructorRate` — the amount CHARGED to the
+  // student). ADMIN-only, deliberately never granted to STAFF: reading the
+  // compensation summary/export stays on the wider `finance.manage`.
+  | 'payouts.manage';
 
 const ALL_PERMISSIONS: Permission[] = [
   'people.read',
@@ -56,6 +62,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'settings.manage',
   'users.manage',
   'self.read',
+  'payouts.manage',
 ];
 
 /**

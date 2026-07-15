@@ -291,7 +291,10 @@
     "includeArchivedLabel": "Show archived",
     "empty": "No pilots found.",
     "newPilot": "Add pilot",
-    "pagination": { "prev": "Previous", "next": "Next" },
+    "pagination": {
+      "prev": "Previous",
+      "next": "Next"
+    },
     "table": {
       "name": "Name",
       "email": "Email",
@@ -317,7 +320,11 @@
       "title": "Record top-up",
       "amount": "Amount (€)",
       "paymentMethod": "Payment method",
-      "paymentMethods": { "cash": "Cash", "bankTransfer": "Bank transfer", "pos": "Card" },
+      "paymentMethods": {
+        "cash": "Cash",
+        "bankTransfer": "Bank transfer",
+        "pos": "Card"
+      },
       "effectiveDate": "Value date",
       "description": "Description",
       "submit": "Record top-up",
@@ -349,7 +356,11 @@
         "sectionTitle": "Certifications",
         "empty": "No expiry on file.",
         "manageLink": "Manage in Expiries",
-        "status": { "ok": "Valid", "expiring": "Expiring", "expired": "Expired" }
+        "status": {
+          "ok": "Valid",
+          "expiring": "Expiring",
+          "expired": "Expired"
+        }
       },
       "access": {
         "sectionTitle": "Access",
@@ -383,10 +394,17 @@
     "profile": {
       "closeLabel": "Close",
       "edit": "Edit pilot",
-      "kpi": { "balance": "Balance", "lastFlight": "Last flight", "recentFlights": "Recent flights" },
+      "kpi": {
+        "balance": "Balance",
+        "lastFlight": "Last flight",
+        "recentFlights": "Recent flights"
+      },
       "noAccount": "—",
       "archivedBadge": "Archived",
-      "certifications": { "sectionTitle": "Certifications", "empty": "No expiry on file." },
+      "certifications": {
+        "sectionTitle": "Certifications",
+        "empty": "No expiry on file."
+      },
       "recentFlights": {
         "sectionTitle": "Recent flights",
         "empty": "No flights on file.",
@@ -406,6 +424,156 @@
       "inviteResent": "Invite resent.",
       "genericError": "Something went wrong. Please try again.",
       "lastAdminError": "Cannot suspend the last active admin."
+    }
+  },
+  "InstructorsPage": {
+    "title": "Instructors",
+    "sub": "{active} active · {owed} owed",
+    "kpi": {
+      "active": "Active instructors",
+      "hours": "Total hours flown",
+      "owed": "Total owed",
+      "avgRate": "Average payout rate"
+    },
+    "cardTitle": "Instructor roster",
+    "searchPlaceholder": "Search by name or ratings…",
+    "empty": "No instructors found.",
+    "newInstructor": "Add instructor",
+    "paymentCycleButton": "Payment cycle",
+    "table": {
+      "name": "Name",
+      "ratings": "Ratings",
+      "rate": "Payout rate",
+      "hours": "Total hours",
+      "owed": "Total owed",
+      "actions": "Actions",
+      "noValue": "—"
+    },
+    "actions": {
+      "edit": "Edit",
+      "pay": "Pay"
+    },
+    "addInstructor": {
+      "title": "Add instructor",
+      "subtitle": "Activate the instructor profile on an existing person",
+      "searchLabel": "Search person",
+      "searchPlaceholder": "First or last name…",
+      "noResults": "No person found.",
+      "ratings": "Ratings",
+      "submit": "Activate instructor profile",
+      "cancel": "Cancel",
+      "requiredField": "Required field.",
+      "genericError": "Something went wrong. Please try again."
+    },
+    "editor": {
+      "closeLabel": "Close",
+      "cancel": "Cancel",
+      "save": "Save changes",
+      "identity": {
+        "sectionTitle": "Identity",
+        "firstName": "First name",
+        "lastName": "Last name",
+        "email": "Email",
+        "phone": "Phone",
+        "address": "Address",
+        "fiscalCode": "Fiscal code",
+        "save": "Save changes",
+        "loadError": "Could not load the identity data."
+      },
+      "ratings": {
+        "sectionTitle": "Ratings",
+        "label": "Ratings",
+        "save": "Save"
+      },
+      "payoutRate": {
+        "sectionTitle": "Payout rate (paid to the instructor)",
+        "label": "Hourly rate",
+        "noValue": "—",
+        "save": "Save",
+        "readOnlyHint": "Only an administrator can set the payout rate."
+      },
+      "readOnly": {
+        "sectionTitle": "Summary (read-only)",
+        "hoursTotal": "Total hours",
+        "owedTotal": "Total owed"
+      },
+      "errors": {
+        "generic": "Something went wrong. Please try again.",
+        "invalidRate": "Enter a valid amount (e.g. 30.00) or leave it empty."
+      }
+    },
+    "studentRate": {
+      "heading": "Student rate (charged to the pilot/student)",
+      "current": "Current rate",
+      "noCurrentRate": "No rate currently in effect",
+      "loadError": "Could not load the rate history.",
+      "price": "Price (€/h)",
+      "validFrom": "In effect from",
+      "submit": "Add rate",
+      "requiredField": "Required field.",
+      "invalidPrice": "Price must be a positive amount (e.g. 45.00).",
+      "invalidDate": "Enter a valid date.",
+      "genericError": "Something went wrong. Please try again.",
+      "conflictError": "A rate with this validFrom already exists, or this person has no active instructor profile.",
+      "readOnlyHint": "Only an administrator can add new instructor rates.",
+      "historyTitle": "Rate history",
+      "historyEmpty": "No rate recorded.",
+      "historyValidFrom": "In effect from",
+      "historyPrice": "Price",
+      "historyActor": "Who",
+      "historyWhen": "Recorded on"
+    },
+    "pay": {
+      "title": "Record payout",
+      "amount": "Amount (€)",
+      "method": "Payment method",
+      "methods": {
+        "cash": "Cash",
+        "bankTransfer": "Bank transfer",
+        "pos": "Card"
+      },
+      "periodStart": "Period from",
+      "periodEnd": "Period to",
+      "notes": "Notes",
+      "submit": "Record payout",
+      "cancel": "Cancel",
+      "invalidAmount": "Enter a positive amount (e.g. 100.00).",
+      "requiredField": "Required field.",
+      "genericError": "Something went wrong. Please try again.",
+      "invalidPeriod": "The period start date must be on or before the period end date."
+    },
+    "paymentCycle": {
+      "title": "Payment cycle",
+      "subtitle": "Instructors with an amount still owed",
+      "empty": "No instructor has an amount owed.",
+      "pay": "Pay",
+      "closeLabel": "Close"
+    },
+    "profile": {
+      "closeLabel": "Close",
+      "edit": "Edit instructor",
+      "kpi": {
+        "hoursTotal": "Total hours",
+        "hoursMtd": "Hours this month",
+        "owedTotal": "Total owed",
+        "rate": "Hourly rate"
+      },
+      "recentStudents": {
+        "sectionTitle": "Recent students",
+        "empty": "No recent students."
+      },
+      "recentFlights": {
+        "sectionTitle": "Recent flights as CFI",
+        "empty": "No flights recorded."
+      }
+    },
+    "toast": {
+      "rateSet": "Payout rate updated.",
+      "ratingsSaved": "Ratings updated.",
+      "payoutRecorded": "Payout recorded.",
+      "instructorAdded": "Instructor profile activated.",
+      "genericError": "Something went wrong. Please try again.",
+      "identitySaved": "Identity data updated."
     }
   },
   "PersonDetailPage": {
@@ -469,30 +637,6 @@
         "requiredField": "This field is required.",
         "genericError": "Could not record the top-up. Please try again."
       }
-    },
-    "instructorRates": {
-      "heading": "Instructor rates",
-      "current": "Current rate",
-      "noCurrentRate": "No rate in effect",
-      "loadError": "Could not load the rate history.",
-      "newRateTitle": "New rate",
-      "addAction": "New rate",
-      "price": "Price (€/h)",
-      "validFrom": "Effective from",
-      "submit": "Add rate",
-      "cancel": "Cancel",
-      "requiredField": "This field is required.",
-      "invalidPrice": "The price must be a positive amount (e.g. 45.00).",
-      "invalidDate": "Enter a valid date.",
-      "genericError": "Something went wrong. Please try again.",
-      "conflictError": "A rate with this effective date already exists, or the person has no active instructor profile.",
-      "readOnlyHint": "Only an administrator can add new instructor rates.",
-      "historyTitle": "Rate history",
-      "historyEmpty": "No rates recorded.",
-      "historyValidFrom": "Effective from",
-      "historyPrice": "Price",
-      "historyActor": "Who",
-      "historyWhen": "Recorded on"
     }
   },
   "HourPackagesPanel": {
