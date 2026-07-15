@@ -169,6 +169,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
 
     // Register a 70' flight on the eligible aircraft: 60' from the package, 10' pro-rata at full rate.
     await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill(PAST_DATE);
@@ -183,7 +185,14 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(resultPanel).toContainText('0:10'); // Minuti addebitati
     await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/25,00\s€/);
     await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-25,00\s€/);
+    await page.getByTestId('flight-result-close').click();
 
+    // Scoped to this run's aircraft (T0 hardening, same class as
+    // `flights.spec.ts`): an unfiltered page 1 orders by flightDate desc with
+    // a 20-row cap, so this 2020-dated row can sit past the page on an
+    // accumulated DB.
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await expect(page).toHaveURL(/aircraftId=/);
     const firstFlightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).first();
     await expect(firstFlightRow).toContainText('di cui 1:00 da pacchetto');
     await expect(firstFlightRow).toContainText(/25,00\s€/);
@@ -201,6 +210,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
 
     // A second flight on the SAME (now-exhausted) package: full rate, no coverage.
     await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-02');
@@ -212,7 +223,15 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(secondResultPanel.getByTestId('flight-result-total')).toContainText(/25,00\s€/); // 10' x 150€/h
     // Total balance now -50,00 € (25,00 + 25,00) — no further package coverage.
     await expect(secondResultPanel.getByTestId('flight-result-new-balance')).toContainText(/-50,00\s€/);
-    const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).filter({ hasText: '0:10' });
+    await page.getByTestId('flight-result-close').click();
+
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await expect(page).toHaveURL(/aircraftId=/);
+    // Disambiguated by the package-note TEXT itself (never an H:MM/date
+    // substring, lesson 11.2/epic 11): exactly one of this aircraft's two
+    // rows lacks "da pacchetto" — that is THIS flight.
+    const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).filter({ hasNotText: 'da pacchetto' });
+    await expect(secondFlightRow).toHaveCount(1);
     await expect(secondFlightRow).not.toContainText('da pacchetto');
 
     // A flight on the NON-eligible aircraft: full rate, and the package (already exhausted anyway)
@@ -232,6 +251,8 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     await expect(page.getByTestId('packages-panel-feedback')).toBeVisible();
 
     await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), otherAircraft.registration, otherAircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Data volo').fill('2020-01-04');
@@ -242,6 +263,10 @@ test.describe('Package consumption in flight charges (Story 5.2, AC 1/2/3)', () 
     // 30' x 100,00 €/h = 50,00 € (full rate, otherAircraft is not eligible for the fresh package).
     const thirdResultPanel = page.getByTestId('flight-result-panel');
     await expect(thirdResultPanel.getByTestId('flight-result-total')).toContainText(/50,00\s€/);
+    await page.getByTestId('flight-result-close').click();
+
+    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), otherAircraft.registration, otherAircraft.registration);
+    await expect(page).toHaveURL(/aircraftId=/);
     const thirdFlightRow = page.getByTestId('flight-row').filter({ hasText: otherAircraft.registration });
     await expect(thirdFlightRow).not.toContainText('da pacchetto');
 

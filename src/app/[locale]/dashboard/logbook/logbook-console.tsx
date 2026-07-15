@@ -444,7 +444,15 @@ export function LogbookConsole({
                       {flight.isSolo ? ` — ${labels.table.soloSuffix}` : ''}
                     </Badge>
                   </div>
-                  <div className="mono num">{formatMinutes(flight.minutes)}</div>
+                  <div className="mono num">
+                    {formatMinutes(flight.minutes)}
+                    {/* Story 5.2 (AC 1) — the package-consumption note, shown only when a package covered part of the flight. */}
+                    {flight.breakdown.packageCoveredMinutes > 0 ? (
+                      <span style={{ display: 'block', fontSize: 10.5, fontWeight: 400, color: 'var(--ink-3)', textTransform: 'none', letterSpacing: 'normal' }}>
+                        {labels.table.packageNote.replace('{duration}', formatMinutes(flight.breakdown.packageCoveredMinutes))}
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mono num" data-testid="flight-takeoffs-cell">
                     {flight.takeoffs}
                   </div>
@@ -455,9 +463,14 @@ export function LogbookConsole({
                     {formatCents(flight.breakdown.totalAmountCents, moneyLocale)}
                   </div>
                   <div data-testid="flight-pic-cell">{pic ? personLabel(pic) : labels.table.noValue}</div>
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {/* Actions (REGISTERED only) and lineage (correction/cancellation
+                        notes) are NOT mutually exclusive — a REGISTERED flight that is
+                        ITSELF a correction of an earlier one still needs both (legacy
+                        `FlightStatusCell`'s own doc-comment: lineage chips render
+                        "REGARDLESS of this row's own status"). */}
                     {canManage && flight.status === 'REGISTERED' ? (
-                      <>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           className="btn mini"
@@ -477,10 +490,9 @@ export function LogbookConsole({
                         >
                           {labels.table.correctAction}
                         </button>
-                      </>
-                    ) : (
-                      lineage
-                    )}
+                      </div>
+                    ) : null}
+                    {lineage}
                   </div>
                 </div>
               );

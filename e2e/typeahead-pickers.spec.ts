@@ -115,6 +115,8 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     expect(rateResponse.status()).toBe(201);
 
     await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
 
     // Velivolo: a fresh aircraft, not part of the >100 story but exercised
     // via the SAME typeahead pattern for a realistic full submit.
