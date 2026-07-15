@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CreatePprRequestInput } from '@/lib/schemas/ppr';
+import type { CreateManualPprRequestInput, CreatePprRequestInput } from '@/lib/schemas/ppr';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
@@ -38,6 +38,7 @@ const { prisma } = await import('@/server/db/prisma');
 const { buildPprReceiptEmail, buildPprApprovalEmail, buildPprRejectionEmail } = await import('@/server/adapters/mail/templates');
 const {
   createPprRequest,
+  createManualPprRequest,
   extractSubmitterIp,
   listPprRequests,
   approvePprRequest,
@@ -800,5 +801,131 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       expect(cashCategoryFindUniqueMock).not.toHaveBeenCalled();
       expect(cashMovementCreateMock).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * Staff manual PPR intake (epic 12, story 12.4, AC 1) — written BEFORE
+ * `createManualPprRequest` existed (TDD). Focus: no honeypot/rate-limit at
+ * all (never calls `prisma.pprRequest.count`), the SAME eta/etd domain
+ * validation as the public path, `email`/`phone` defaulting
+ * (`?? null`/`?? ''`), and `approveImmediately` issuing a PPR number in the
+ * SAME transaction WITHOUT sending any email (neither the public path's
+ * receipt NOR `approvePprRequest`'s own outcome email).
+ */
+function manualInput(overrides: Partial<CreateManualPprRequestInput> = {}): CreateManualPprRequestInput {
+  return {
+    firstName: 'Mario',
+    lastName: 'Rossi',
+    email: 'mario@example.com',
+    phone: undefined,
+    aircraftRegistration: 'I-ABCD',
+    aircraftType: 'Cessna 172',
+    origin: 'LIRN',
+    destination: 'LIRU',
+    eta: new Date(Date.now() + 3_600_000).toISOString(),
+    personsOnBoard: 2,
+    locale: 'it',
+    approveImmediately: false,
+    ...overrides,
+  };
+}
+
+describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', () => {
+  beforeEach(() => {
+    createMock.mockReset();
+    updateMock.mockReset();
+    countMock.mockReset();
+    queryRawMock.mockReset();
+    transactionMock.mockReset();
+    sendMock.mockReset();
+    sendMock.mockResolvedValue(undefined);
+    mockTransaction();
+  });
+
+  it('throws ForbiddenError before any query for an actor lacking ppr.manage', async () => {
+    await expect(createManualPprRequest(pilotActor(), manualInput())).rejects.toBeInstanceOf(ForbiddenError);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('eta in the past -> 422 ETA_IN_PAST, no row created (same domain validation as the public path)', async () => {
+    const input = manualInput({ eta: new Date(Date.now() - 60_000).toISOString() });
+
+    await expect(createManualPprRequest(staffActor(), input)).rejects.toMatchObject({ code: 'ETA_IN_PAST' });
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('etd not after eta -> 422 ETD_NOT_AFTER_ETA, no row created', async () => {
+    const eta = new Date(Date.now() + 3_600_000).toISOString();
+    const input = manualInput({ eta, etd: eta });
+
+    await expect(createManualPprRequest(staffActor(), input)).rejects.toMatchObject({ code: 'ETD_NOT_AFTER_ETA' });
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('never queries the rate-limit count or checks a honeypot — staff, not public (AC 1)', async () => {
+    pprCreate.mockResolvedValue(createdRow(baseInput()));
+
+    await createManualPprRequest(staffActor(), manualInput());
+
+    expect(countMock).not.toHaveBeenCalled();
+  });
+
+  it('phone-only (email absent): stored as email=null, createdByUserId=actor, submitterIp=null, stays PENDING', async () => {
+    pprCreate.mockResolvedValue(createdRow(baseInput()));
+
+    await createManualPprRequest(staffActor(), manualInput({ email: undefined, phone: '+39 333 0000000' }));
+
+    expect(createMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({ email: null, phone: '+39 333 0000000', createdByUserId: 'staff_1', submitterIp: null }),
+      select: expect.anything(),
+    });
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it('email-only (phone absent): stored as phone=""', async () => {
+    pprCreate.mockResolvedValue(createdRow(baseInput()));
+
+    await createManualPprRequest(staffActor(), manualInput({ email: 'mario@example.com', phone: undefined }));
+
+    expect(createMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({ email: 'mario@example.com', phone: '' }),
+      select: expect.anything(),
+    });
+  });
+
+  it('never sends a receipt email, even when email is present (Dev Notes: "niente email di ricevuta")', async () => {
+    pprCreate.mockResolvedValue(createdRow(baseInput()));
+
+    await createManualPprRequest(staffActor(), manualInput({ email: 'mario@example.com' }));
+
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('approveImmediately (options param, not input.approveImmediately): issues a PPR number in the SAME transaction and never sends an approval email', async () => {
+    pprCreate.mockResolvedValue(createdRow(baseInput()));
+    mockCounterSeq(1);
+    pprUpdate.mockResolvedValue(decidedRow({ pprNumber: 'PPR-2026-0001', status: 'APPROVED' }));
+
+    const result = await createManualPprRequest(staffActor(), manualInput({ approveImmediately: false }), { approveImmediately: true });
+
+    expect(result.status).toBe('APPROVED');
+    expect(result.pprNumber).toBe('PPR-2026-0001');
+    expect(updateMock).toHaveBeenCalledWith({
+      where: { id: 'ppr_1' },
+      data: expect.objectContaining({ status: 'APPROVED', pprNumber: 'PPR-2026-0001', decidedByUserId: 'staff_1' }),
+      select: expect.anything(),
+    });
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('approveImmediately omitted (default false): stays PENDING, never touches the PprCounter', async () => {
+    pprCreate.mockResolvedValue(createdRow(baseInput()));
+
+    const result = await createManualPprRequest(staffActor(), manualInput());
+
+    expect(result.status).toBe('PENDING');
+    expect(queryRawMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
   });
 });

@@ -5,8 +5,10 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { AppLocale } from '@/i18n/routing';
+import { Icon } from '@/components/ui/icons';
 
 export type PprFormLabels = {
+  sections: { requester: string; aircraft: string; schedule: string; additional: string };
   firstName: string;
   lastName: string;
   email: string;
@@ -21,6 +23,8 @@ export type PprFormLabels = {
   notes: string;
   submit: string;
   submitting: string;
+  /** Plain text (e.g. "I campi contrassegnati con * sono obbligatori.") — no markup, unlike the prototype's `<span class="req">*</span>` (avoids `dangerouslySetInnerHTML` for a single asterisk). */
+  requiredNote: string;
   requiredField: string;
   invalidEmail: string;
   invalidRange: string;
@@ -34,6 +38,7 @@ export type PprFormLabels = {
   success: {
     title: string;
     message: string;
+    again: string;
   };
 };
 
@@ -76,16 +81,11 @@ const DEFAULT_VALUES: FormValues = {
 };
 
 /**
- * Client-side shape (Task 5): plain strings for every field (datetime-local
- * inputs yield the fixed-width `YYYY-MM-DDTHH:MM` shape, same reasoning as
- * `new-booking-form.tsx`'s `buildFormSchema`) with a `superRefine` producing
- * the SAME small set of custom message codes that
- * `NewBookingForm.fieldErrorLabel` uses — `requiredField` covers "empty",
- * `invalidEmail`/`invalidRange`/`invalidPersons` cover the field-specific
- * shape checks. `etd`/`notes` stay optional; `eta`-in-the-past and
- * `etd <= eta` (when `etd` is set) are checked server-side too (the
- * authoritative `ETA_IN_PAST`/`ETD_NOT_AFTER_ETA` 422 codes) — the client
- * check here is a same-request early-out, not a replacement.
+ * Client-side shape (epic 12, story 12.4, AC 4) — UNCHANGED from the
+ * pre-12.4 `pprFormSchema`: same fields (still NO wingspan — D13, the
+ * domain has no such column), same custom message codes, same
+ * `eta`-in-the-past/`etd <= eta` early-out (the authoritative
+ * `ETA_IN_PAST`/`ETD_NOT_AFTER_ETA` 422 codes stay server-side).
  */
 const pprFormSchema = z
   .object({
@@ -143,23 +143,22 @@ const pprFormSchema = z
 type ApiErrorBody = { error?: { code?: string } };
 
 /**
- * Public PPR request form (epic 8, story 8.1; FR-22, AC 1/2). Datetime-local
- * inputs convert to ISO 8601 UTC via `new Date(value).toISOString()` at
- * submit time, same pattern as `new-booking-form.tsx`. `locale` (the page's
- * own locale, NFR-1) travels in the body untouched — the receipt email
- * (`ppr.service.ts`) is sent in this exact language.
+ * Public PPR request form (epic 8, story 8.1; FR-22, AC 1/2 — rebuilt epic
+ * 12, story 12.4, AC 4) — markup/classes 1:1 with
+ * `docs/design-reference/airops/PPR Request.html` (`.ppr-section-label`/
+ * `.ppr-form-grid`/`.fld`/`.input`), grouped into the prototype's own 4
+ * sections; `origin`/`destination` (real schema fields the prototype's own
+ * mock has no equivalent for) are placed in "Aeromobile" alongside
+ * registration/type/POB — a reasonable placement within the prototype's own
+ * section framework (Dev Notes: no dedicated "Rotta" section in the
+ * reference). POST body/wire format, honeypot, and error-code handling stay
+ * BYTE-IDENTICAL to before this story (Contesto: "POST identico").
  *
- * **Honeypot (AC 2)**: the `website` field is registered like any other
- * but rendered off-screen (absolute positioning, NOT `display:none` — some
- * bots skip hidden elements), `aria-hidden="true"`, `tabIndex={-1}`,
- * `autoComplete="off"`, and with no associated `<label>` — a screen-reader
- * user never learns it exists. A bot's generic autofill is likely to
- * populate it; a human never will. The server treats a non-empty value as
- * a silent success (same 201 body, nothing persisted).
- *
- * Success swaps the ENTIRE form area for an in-page confirmation
- * (`role="status"`) — this IS the "confirmation page" the AC asks for,
- * never a route navigation (Contesto: "vista di conferma in-page").
+ * Success swaps the form for `.ppr-success` (`role="status"`) — WITHOUT a
+ * reference number (D13, AC 4: the response stays `{status:'PENDING'}`, the
+ * real number arrives by email on approval) — with a "send another" action
+ * that simply resets local state, no `location.reload()` needed (unlike the
+ * static prototype's own vanilla-JS demo).
  */
 export function PprForm({ locale, labels }: PprFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
@@ -168,6 +167,7 @@ export function PprForm({ locale, labels }: PprFormProps) {
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(pprFormSchema), defaultValues: DEFAULT_VALUES });
 
@@ -229,233 +229,134 @@ export function PprForm({ locale, labels }: PprFormProps) {
     setSuccess(true);
   }
 
-  const inputClasses =
-    'mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
+  function submitAnother(): void {
+    reset(DEFAULT_VALUES);
+    setFormError(null);
+    setSuccess(false);
+  }
 
   if (success) {
     return (
-      <div
-        role="status"
-        data-testid="ppr-success"
-        className="rounded-[12px] border border-[#EAEAEA] bg-white p-8"
-      >
-        <p className="font-[family-name:var(--font-serif)] text-2xl font-medium tracking-[-0.02em] text-[#111111]">
-          {labels.success.title}
-        </p>
-        <p className="mt-3 text-base leading-[1.6] text-[#787774]">{labels.success.message}</p>
+      <div role="status" data-testid="ppr-success" className="ppr-success" style={{ gridColumn: '1/-1' }}>
+        <div className="check">
+          <Icon.check />
+        </div>
+        <h2>{labels.success.title}</h2>
+        <p>{labels.success.message}</p>
+        <div>
+          <button type="button" className="btn accent big" onClick={submitAnother} data-testid="ppr-success-again">
+            {labels.success.again}
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <form
-      onSubmit={(event) => void handleSubmit(onSubmit)(event)}
-      noValidate
-      data-testid="ppr-form"
-      className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6 sm:p-8"
-    >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor="ppr-first-name" className="block text-sm font-medium text-[#2F3437]">
-            {labels.firstName}
+    <div className="card" id="formCard" style={{ padding: '22px 24px' }}>
+      <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="ppr-form">
+        <div className="ppr-section-label">{labels.sections.requester}</div>
+        <div className="ppr-form-grid">
+          <label className="fld wide">
+            <span className="fld-label">{labels.firstName}</span>
+            <input className="input" autoComplete="given-name" aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
           </label>
-          <input
-            id="ppr-first-name"
-            autoComplete="given-name"
-            aria-invalid={Boolean(errors.firstName)}
-            className={inputClasses}
-            {...register('firstName')}
-          />
-          {fieldErrorLabel(errors.firstName) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.firstName)}</p> : null}
+          {fieldErrorLabel(errors.firstName) ? <p className="fld-label">{fieldErrorLabel(errors.firstName)}</p> : null}
+
+          <label className="fld">
+            <span className="fld-label">{labels.lastName}</span>
+            <input className="input" autoComplete="family-name" aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
+          </label>
+          {fieldErrorLabel(errors.lastName) ? <p className="fld-label">{fieldErrorLabel(errors.lastName)}</p> : null}
+
+          <label className="fld">
+            <span className="fld-label">{labels.email}</span>
+            <input className="input" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
+          </label>
+          {fieldErrorLabel(errors.email) ? <p className="fld-label">{fieldErrorLabel(errors.email)}</p> : null}
+
+          <label className="fld">
+            <span className="fld-label">{labels.phone}</span>
+            <input className="input" type="tel" autoComplete="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
+          </label>
+          {fieldErrorLabel(errors.phone) ? <p className="fld-label">{fieldErrorLabel(errors.phone)}</p> : null}
         </div>
 
-        <div>
-          <label htmlFor="ppr-last-name" className="block text-sm font-medium text-[#2F3437]">
-            {labels.lastName}
+        <div className="ppr-section-label">{labels.sections.aircraft}</div>
+        <div className="ppr-form-grid">
+          <label className="fld">
+            <span className="fld-label">{labels.aircraftRegistration}</span>
+            <input className="input" style={{ textTransform: 'uppercase' }} aria-invalid={Boolean(errors.aircraftRegistration)} {...register('aircraftRegistration')} />
           </label>
-          <input
-            id="ppr-last-name"
-            autoComplete="family-name"
-            aria-invalid={Boolean(errors.lastName)}
-            className={inputClasses}
-            {...register('lastName')}
-          />
-          {fieldErrorLabel(errors.lastName) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.lastName)}</p> : null}
+          {fieldErrorLabel(errors.aircraftRegistration) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftRegistration)}</p> : null}
+
+          <label className="fld">
+            <span className="fld-label">{labels.aircraftType}</span>
+            <input className="input" aria-invalid={Boolean(errors.aircraftType)} {...register('aircraftType')} />
+          </label>
+          {fieldErrorLabel(errors.aircraftType) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftType)}</p> : null}
+
+          <label className="fld">
+            <span className="fld-label">{labels.origin}</span>
+            <input className="input" aria-invalid={Boolean(errors.origin)} {...register('origin')} />
+          </label>
+          {fieldErrorLabel(errors.origin) ? <p className="fld-label">{fieldErrorLabel(errors.origin)}</p> : null}
+
+          <label className="fld">
+            <span className="fld-label">{labels.destination}</span>
+            <input className="input" aria-invalid={Boolean(errors.destination)} {...register('destination')} />
+          </label>
+          {fieldErrorLabel(errors.destination) ? <p className="fld-label">{fieldErrorLabel(errors.destination)}</p> : null}
+
+          <label className="fld">
+            <span className="fld-label">{labels.personsOnBoard}</span>
+            <input className="input" type="number" min={1} max={99} step={1} aria-invalid={Boolean(errors.personsOnBoard)} {...register('personsOnBoard')} />
+          </label>
+          {fieldErrorLabel(errors.personsOnBoard) ? <p className="fld-label">{fieldErrorLabel(errors.personsOnBoard)}</p> : null}
         </div>
 
-        <div>
-          <label htmlFor="ppr-email" className="block text-sm font-medium text-[#2F3437]">
-            {labels.email}
+        <div className="ppr-section-label">{labels.sections.schedule}</div>
+        <div className="ppr-form-grid">
+          <label className="fld">
+            <span className="fld-label">{labels.eta}</span>
+            <input className="input" type="datetime-local" step={300} aria-invalid={Boolean(errors.eta)} {...register('eta')} />
           </label>
-          <input
-            id="ppr-email"
-            type="email"
-            autoComplete="email"
-            aria-invalid={Boolean(errors.email)}
-            className={inputClasses}
-            {...register('email')}
-          />
-          {fieldErrorLabel(errors.email) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.email)}</p> : null}
+          {fieldErrorLabel(errors.eta) ? <p className="fld-label">{fieldErrorLabel(errors.eta)}</p> : null}
+
+          <label className="fld">
+            <span className="fld-label">{labels.etd}</span>
+            <input className="input" type="datetime-local" step={300} aria-invalid={Boolean(errors.etd)} {...register('etd')} />
+          </label>
+          {fieldErrorLabel(errors.etd) ? <p className="fld-label">{fieldErrorLabel(errors.etd)}</p> : null}
         </div>
 
-        <div>
-          <label htmlFor="ppr-phone" className="block text-sm font-medium text-[#2F3437]">
-            {labels.phone}
+        <div className="ppr-section-label">{labels.sections.additional}</div>
+        <div className="ppr-form-grid">
+          <label className="fld wide">
+            <span className="fld-label">{labels.notes}</span>
+            <textarea className="input" rows={3} maxLength={1000} {...register('notes')} />
           </label>
-          <input
-            id="ppr-phone"
-            type="tel"
-            autoComplete="tel"
-            aria-invalid={Boolean(errors.phone)}
-            className={inputClasses}
-            {...register('phone')}
-          />
-          {fieldErrorLabel(errors.phone) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.phone)}</p> : null}
         </div>
 
-        <div>
-          <label htmlFor="ppr-aircraft-registration" className="block text-sm font-medium text-[#2F3437]">
-            {labels.aircraftRegistration}
-          </label>
-          <input
-            id="ppr-aircraft-registration"
-            autoComplete="off"
-            aria-invalid={Boolean(errors.aircraftRegistration)}
-            className={inputClasses}
-            {...register('aircraftRegistration')}
-          />
-          {fieldErrorLabel(errors.aircraftRegistration) ? (
-            <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.aircraftRegistration)}</p>
-          ) : null}
+        {/* Honeypot (AC 2) — off-screen, not `display:none`, aria-hidden, no
+            label. See the component doc-comment. */}
+        <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', top: 0, width: '1px', height: '1px', overflow: 'hidden' }}>
+          <input type="text" tabIndex={-1} autoComplete="off" data-testid="ppr-honeypot" {...register('website')} />
         </div>
 
-        <div>
-          <label htmlFor="ppr-aircraft-type" className="block text-sm font-medium text-[#2F3437]">
-            {labels.aircraftType}
-          </label>
-          <input
-            id="ppr-aircraft-type"
-            autoComplete="off"
-            aria-invalid={Boolean(errors.aircraftType)}
-            className={inputClasses}
-            {...register('aircraftType')}
-          />
-          {fieldErrorLabel(errors.aircraftType) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.aircraftType)}</p> : null}
+        {formError ? (
+          <p role="alert" data-testid="ppr-form-error" style={{ marginTop: 14, borderRadius: 8, background: 'var(--bad-soft)', padding: '10px 14px', fontSize: 13, color: 'var(--bad)' }}>
+            {formError}
+          </p>
+        ) : null}
+
+        <div className="ppr-actions">
+          <button type="submit" disabled={isSubmitting} className="btn accent big" data-testid="ppr-submit">
+            {isSubmitting ? labels.submitting : labels.submit}
+          </button>
+          <span className="note">{labels.requiredNote}</span>
         </div>
-
-        <div>
-          <label htmlFor="ppr-origin" className="block text-sm font-medium text-[#2F3437]">
-            {labels.origin}
-          </label>
-          <input
-            id="ppr-origin"
-            autoComplete="off"
-            aria-invalid={Boolean(errors.origin)}
-            className={inputClasses}
-            {...register('origin')}
-          />
-          {fieldErrorLabel(errors.origin) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.origin)}</p> : null}
-        </div>
-
-        <div>
-          <label htmlFor="ppr-destination" className="block text-sm font-medium text-[#2F3437]">
-            {labels.destination}
-          </label>
-          <input
-            id="ppr-destination"
-            autoComplete="off"
-            aria-invalid={Boolean(errors.destination)}
-            className={inputClasses}
-            {...register('destination')}
-          />
-          {fieldErrorLabel(errors.destination) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.destination)}</p> : null}
-        </div>
-
-        <div>
-          <label htmlFor="ppr-eta" className="block text-sm font-medium text-[#2F3437]">
-            {labels.eta}
-          </label>
-          <input
-            id="ppr-eta"
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.eta)}
-            className={inputClasses}
-            {...register('eta')}
-          />
-          {fieldErrorLabel(errors.eta) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.eta)}</p> : null}
-        </div>
-
-        <div>
-          <label htmlFor="ppr-etd" className="block text-sm font-medium text-[#2F3437]">
-            {labels.etd}
-          </label>
-          <input
-            id="ppr-etd"
-            type="datetime-local"
-            step={300}
-            aria-invalid={Boolean(errors.etd)}
-            className={inputClasses}
-            {...register('etd')}
-          />
-          {fieldErrorLabel(errors.etd) ? <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.etd)}</p> : null}
-        </div>
-
-        <div>
-          <label htmlFor="ppr-persons" className="block text-sm font-medium text-[#2F3437]">
-            {labels.personsOnBoard}
-          </label>
-          <input
-            id="ppr-persons"
-            type="number"
-            min={1}
-            max={99}
-            step={1}
-            aria-invalid={Boolean(errors.personsOnBoard)}
-            className={inputClasses}
-            {...register('personsOnBoard')}
-          />
-          {fieldErrorLabel(errors.personsOnBoard) ? (
-            <p className="mt-1 text-xs text-[#9F2F2D]">{fieldErrorLabel(errors.personsOnBoard)}</p>
-          ) : null}
-        </div>
-
-        <div className="sm:col-span-2">
-          <label htmlFor="ppr-notes" className="block text-sm font-medium text-[#2F3437]">
-            {labels.notes}
-          </label>
-          <textarea
-            id="ppr-notes"
-            rows={3}
-            maxLength={1000}
-            className={inputClasses}
-            {...register('notes')}
-          />
-        </div>
-      </div>
-
-      {/* Honeypot (AC 2) — off-screen, not `display:none`, aria-hidden, no
-          label. See the component doc-comment. Inline style (not a
-          Tailwind utility) so the off-screen positioning can never be
-          affected by a class purge/ordering change. */}
-      <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', top: 0, width: '1px', height: '1px', overflow: 'hidden' }}>
-        <input type="text" tabIndex={-1} autoComplete="off" data-testid="ppr-honeypot" {...register('website')} />
-      </div>
-
-      {formError ? (
-        <p role="alert" data-testid="ppr-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
-          {formError}
-        </p>
-      ) : null}
-
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        data-testid="ppr-submit"
-        className="min-h-[44px] w-full rounded-[6px] bg-[#111111] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-      >
-        {isSubmitting ? labels.submitting : labels.submit}
-      </button>
-    </form>
+      </form>
+    </div>
   );
 }

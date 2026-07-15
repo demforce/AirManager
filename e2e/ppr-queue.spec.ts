@@ -2,12 +2,13 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 /**
- * Staff PPR approval queue (epic 8, story 8.2; FR-23, FR-41). Requests are
- * created via the PUBLIC POST (`POST /api/v1/ppr-requests`, story 8.1) with
- * run-unique fake `x-forwarded-for` IPs and unique emails/registrations —
- * same pattern as `ppr-public.spec.ts` (the dev DB is never reset between
- * runs, and the rate-limit e2e in that file must stay untouched: never
- * reuse a fixed IP here).
+ * PPR console (epic 8, story 8.2; FR-23, FR-41 — rebuilt epic 12, story
+ * 12.4, AC 2). Requests are created via the PUBLIC POST
+ * (`POST /api/v1/ppr-requests`, story 8.1) with run-unique fake
+ * `x-forwarded-for` IPs and unique emails/registrations — same pattern as
+ * `ppr-public.spec.ts` (the dev DB is never reset between runs, and the
+ * rate-limit e2e in that file must stay untouched: never reuse a fixed IP
+ * here).
  *
  * **Serial within this file** (`test.describe.configure`, below): the FIFO
  * PENDING queue's page boundaries (`page.tsx`'s pagination) are shared,
@@ -16,17 +17,15 @@ import type { Page } from '@playwright/test';
  * page number mid-test. Two of these tests decide requests; running them
  * `fullyParallel` (the project default) let one test's decision race
  * another's "navigate to the last page, find my row" step and intermittently
- * miss it. Serial execution costs a little wall-clock time (~20s for 4
- * tests) and buys full determinism for the one file in the suite that
- * actually mutates this particular shared queue. Every OTHER e2e file is
- * unaffected — `ppr-public.spec.ts` only ever ADDS rows, never decides them,
- * so it can only push a row to a LATER page, never off an already-computed
- * one (see `gotoQueueLastPage`'s doc-comment).
+ * miss it.
  *
- * **Operating instructions is GLOBAL, single-row state** (`AppSetting`,
- * AC 1): only ONE test in this file writes it, and that same test is the
- * only one that reads it back out of an email — serial execution (above)
- * means no other test in this file can ever race it.
+ * **UI-structural rewrite (story 12.4, AC 5)**: approve is now a DIRECT
+ * action (no two-step confirm — `ppr-console.tsx`'s own precedent, matching
+ * `bookings-table.tsx`'s "Approva"); reject opens a `.mini-modal` (same
+ * testids as before: `ppr-reject-reason`/`ppr-reject-submit`); feedback is
+ * now a TOAST (`data-testid="toast"`, `useToast`), not a persistent
+ * `role="status"` paragraph — asserted immediately after the action, before
+ * `TOAST_LIFETIME_MS` (2.6s) elapses.
  */
 
 const MAILPIT_API = 'http://localhost:8025/api/v1';
@@ -128,9 +127,9 @@ const UI_QUEUE_PAGE_SIZE = 20;
  * queue is FIFO (`createdAt asc`), so a request just created via
  * `createPendingRequest` is always the NEWEST PENDING row — it lands on the
  * LAST page, not necessarily page 1, once the accumulated backlog exceeds
- * `QUEUE_PAGE_SIZE` (`page.tsx`). Navigating directly to that page keeps
- * this spec deterministic regardless of how many older PENDING rows other
- * test runs (this file's own, or `ppr-public.spec.ts`'s) have left behind.
+ * `QUEUE_PAGE_SIZE` (`page.tsx`). The console's own status filter default
+ * (PENDING) matches the API's default, so no `?status` is needed on this
+ * URL for the PENDING case.
  */
 async function gotoQueueLastPage(page: Page): Promise<void> {
   const response = await page.request.get(`/api/v1/ppr-requests?status=PENDING&pageSize=${UI_QUEUE_PAGE_SIZE}`);
@@ -163,12 +162,20 @@ async function waitForMailpitMessage(to: string, subjectIncludes: string, timeou
   throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
 }
 
-test.describe('PPR approval queue (Story 8.2, AC 1/2, FR-23/FR-41)', () => {
+/** Same short-negative-wait pattern as `ppr-public.spec.ts#expectNoMailpitMessage` — nothing to poll FOR. */
+async function expectNoMailpitMessage(to: string, waitMs = 3_000): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+  const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
+  const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
+  expect(searchBody.messages).toHaveLength(0);
+}
+
+test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 story 12.4, AC 2)', () => {
   // Module doc-comment: the shared FIFO PENDING queue's page boundaries are
   // mutable, global state that decisions in THIS file's own tests shift.
   test.describe.configure({ mode: 'serial' });
 
-  test('admin sets run-unique operating instructions via UI; staff sees the pending queue populated on the dashboard widget, opens the queue, sees the run-unique request, and approves it: feedback shows the assigned number, the row leaves the queue, and the outcome email carries BOTH the number and the instructions (IT form)', async ({
+  test('admin sets run-unique operating instructions via UI; staff sees the pending queue populated on the dashboard widget, opens the console, sees the run-unique request, and approves it: toast shows the assigned number, the row leaves the PENDING view, and the outcome email carries BOTH the number and the instructions (IT form)', async ({
     page,
   }) => {
     const created = await createPendingRequest(page, { firstName: 'Giulia', locale: 'it' });
@@ -188,20 +195,18 @@ test.describe('PPR approval queue (Story 8.2, AC 1/2, FR-23/FR-41)', () => {
     await expect(page.getByTestId('ppr-pending-widget-empty')).toHaveCount(0);
     await expect(page.getByTestId('ppr-pending-widget-row').first()).toBeVisible();
 
-    // --- Staff: open the queue, see the run-unique request (AC 1) --------
+    // --- Staff: open the console, see the run-unique request (AC 1) ------
     await gotoQueueLastPage(page);
     await expect(page.getByText(created.registration)).toBeVisible();
     // Staff (ppr.manage, not settings.manage) never sees the editor section.
     await expect(page.getByTestId('ppr-instructions-editor')).toHaveCount(0);
 
-    // --- Staff: approve, two-step confirm (AC 1) --------------------------
+    // --- Staff: approve, DIRECT action (AC 1, no confirm step) -----------
     const row = page.getByTestId('ppr-row').filter({ hasText: created.registration });
     await row.getByTestId('ppr-approve-button').click();
-    await row.getByTestId('ppr-approve-confirm').click();
 
-    const feedback = page.getByTestId('ppr-queue-feedback');
-    await expect(feedback).toBeVisible();
-    await expect(feedback).toHaveText(/PPR-\d{4}-\d{4}/);
+    const toast = page.getByTestId('toast').filter({ hasText: /PPR-\d{4}-\d{4}/ });
+    await expect(toast).toBeVisible();
     await expect(page.getByText(created.registration)).toHaveCount(0);
 
     // --- Outcome email: number + instructions, IT form locale ------------
@@ -211,7 +216,7 @@ test.describe('PPR approval queue (Story 8.2, AC 1/2, FR-23/FR-41)', () => {
     expect(message.Text).toContain(instructionsMarker);
   });
 
-  test('staff rejects a pending request with a mandatory reason (AC 2): empty submit shows an inline error with NO network call, then a real reason succeeds and the outcome email (EN form) carries the reason', async ({
+  test('staff rejects a pending request with a mandatory reason (AC 2, mini-modal): empty submit shows an inline error with NO network call, then a real reason succeeds and the outcome email (EN form) carries the reason', async ({
     page,
   }) => {
     const created = await createPendingRequest(page, { firstName: 'John', locale: 'en' });
@@ -224,9 +229,9 @@ test.describe('PPR approval queue (Story 8.2, AC 1/2, FR-23/FR-41)', () => {
     const row = page.getByTestId('ppr-row').filter({ hasText: created.registration });
     await row.getByTestId('ppr-reject-button').click();
 
-    // The reject form renders in a SEPARATE sibling <tr> (not nested inside
-    // `row`), so it is located page-wide — unique by construction, since
-    // `pendingConfirm` state only ever renders ONE reject form at a time.
+    // The mini-modal is a page-wide overlay (`.mini-modal`), not nested
+    // inside `row` — located page-wide, unique by construction (only ONE
+    // reject modal can be open at a time).
     // --- Empty submit: inline error, no call (the row must still be there) ---
     await page.getByTestId('ppr-reject-submit').click();
     await expect(page.getByText('Il motivo è obbligatorio.')).toBeVisible();
@@ -236,7 +241,7 @@ test.describe('PPR approval queue (Story 8.2, AC 1/2, FR-23/FR-41)', () => {
     await page.getByTestId('ppr-reject-reason').fill(reason);
     await page.getByTestId('ppr-reject-submit').click();
 
-    await expect(page.getByTestId('ppr-queue-feedback')).toHaveText('Richiesta rifiutata.');
+    await expect(page.getByTestId('toast').filter({ hasText: 'Richiesta rifiutata.' })).toBeVisible();
     await expect(page.getByText(created.registration)).toHaveCount(0);
 
     const message = await waitForMailpitMessage(created.email, 'not approved');
@@ -276,5 +281,46 @@ test.describe('PPR approval queue (Story 8.2, AC 1/2, FR-23/FR-41)', () => {
     // The page itself redirects away too (AD-5: the nav hiding is not the guardian).
     await page.goto('/it/dashboard/ppr');
     await expect(page).toHaveURL(/\/it\/dashboard$/);
+  });
+
+  test('"PPR manuale" (epic 12, story 12.4, AC 1): staff enters a manual request with an email — it appears PENDING in the console, badge-free ("da modulo web" is only for public-form rows), and NO receipt email is ever sent', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await page.goto('/it/dashboard/ppr');
+
+    const suffix = uniqueSuffix();
+    const registration = uniqueRegistration('M');
+    const email = uniqueEmail('ppr-manual');
+    const eta = new Date(Date.now() + 4 * 3_600_000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const etaLocal = `${eta.getFullYear()}-${pad(eta.getMonth() + 1)}-${pad(eta.getDate())}T${pad(eta.getHours())}:${pad(eta.getMinutes())}`;
+
+    await page.getByTestId('ppr-manual-button').click();
+    const form = page.getByTestId('manual-ppr-form');
+    await form.getByLabel('Nome', { exact: true }).fill('Manuale');
+    await form.getByLabel('Cognome', { exact: true }).fill(`Staff-${suffix}`);
+    await form.getByLabel('Email', { exact: true }).fill(email);
+    await form.getByLabel('Marche', { exact: true }).fill(registration);
+    await form.getByLabel('Tipo aeromobile', { exact: true }).fill('Cessna 172');
+    await form.getByLabel('Provenienza', { exact: true }).fill('LIRN');
+    await form.getByLabel('Destinazione', { exact: true }).fill('LIRU');
+    await form.getByLabel('Arrivo (ETA)', { exact: true }).fill(etaLocal);
+    await form.getByLabel('Persone a bordo', { exact: true }).fill('1');
+    await page.getByTestId('manual-ppr-submit').click();
+
+    await expect(page.getByTestId('toast').filter({ hasText: 'Richiesta PPR aggiunta.' })).toBeVisible();
+
+    // FIFO (createdAt asc): the just-created row is always the NEWEST
+    // PENDING one — it lands on the LAST page, not necessarily page 1, once
+    // the accumulated backlog exceeds the queue's own page size (same
+    // defensive navigation as `gotoQueueLastPage`'s own doc-comment).
+    await gotoQueueLastPage(page);
+    const row = page.getByTestId('ppr-row').filter({ hasText: registration });
+    await expect(row).toBeVisible();
+    await expect(row.getByTestId('ppr-approve-button')).toBeVisible();
+    await expect(row.getByTestId('ppr-from-public-badge')).toHaveCount(0);
+
+    await expectNoMailpitMessage(email);
   });
 });

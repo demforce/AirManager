@@ -1473,16 +1473,27 @@
     }
   },
   "PprPage": {
-    "kicker": "Richiesta PPR",
-    "title": "Richiedi il permesso di atterraggio",
-    "description": "Compila il modulo per richiedere il PPR a questa aviosuperficie. Ti risponderemo via email con l'esito della richiesta.",
     "switchTo": "English",
     "footer": "I dati inseriti sono usati solo per gestire la tua richiesta di PPR.",
     "metadata": {
       "title": "Richiesta PPR",
       "description": "Modulo pubblico per richiedere il permesso di atterraggio (PPR) a questa aviosuperficie."
     },
+    "top": {
+      "brandSub": "Autorizzazione Preventiva Obbligatoria"
+    },
+    "hero": {
+      "eyebrow": "Aeromobili in transito · PPR",
+      "title": "Richiedi il permesso di atterraggio",
+      "description": "Compila il modulo per richiedere il PPR a questa aviosuperficie. Ti risponderemo via email con l'esito della richiesta."
+    },
     "form": {
+      "sections": {
+        "requester": "Richiedente",
+        "aircraft": "Aeromobile",
+        "schedule": "Orari (locali)",
+        "additional": "Informazioni aggiuntive"
+      },
       "firstName": "Nome",
       "lastName": "Cognome",
       "email": "Email",
@@ -1497,6 +1508,7 @@
       "notes": "Note (facoltative)",
       "submit": "Invia richiesta",
       "submitting": "Invio in corso…",
+      "requiredNote": "I campi contrassegnati con * sono obbligatori.",
       "requiredField": "Campo obbligatorio.",
       "invalidEmail": "Inserisci un indirizzo email valido.",
       "invalidRange": "L'ETD deve essere successivo all'ETA.",
@@ -1508,55 +1520,107 @@
         "generic": "Non è stato possibile inviare la richiesta. Riprova."
       }
     },
+    "aside": {
+      "howItWorks": {
+        "title": "Come funziona",
+        "item1": "Invia almeno 24 h prima dell'arrivo.",
+        "item2": "Le operazioni esaminano e confermano il tuo slot.",
+        "item3": "Verrai contattato via email o telefono."
+      },
+      "airport": {
+        "title": "Aeroporto",
+        "nameLabel": "Nome",
+        "icaoLabel": "ICAO"
+      }
+    },
     "success": {
       "title": "Richiesta inviata",
-      "message": "Abbiamo ricevuto la tua richiesta di PPR. Riceverai a breve un'email di conferma con il riepilogo, seguita da un'altra email con l'esito della richiesta."
+      "message": "Abbiamo ricevuto la tua richiesta di PPR. Riceverai a breve un'email di conferma con il riepilogo, seguita da un'altra email con l'esito della richiesta.",
+      "again": "Invia un'altra richiesta"
     }
   },
   "PprQueuePage": {
-    "kicker": "Coda PPR",
     "title": "Richieste PPR",
-    "description": "Approva o rifiuta le richieste di permesso di atterraggio in attesa.",
-    "backToDashboard": "Torna alla dashboard",
+    "sub": "{pending} in attesa · {approved} approvate · {rejected} rifiutate",
+    "header": {
+      "publicForm": "Modulo pubblico",
+      "rules": "Regole pubblicate",
+      "manual": "PPR manuale"
+    },
+    "filters": {
+      "status": "Stato",
+      "statusAll": "Tutti",
+      "statusOptions": {
+        "pending": "In attesa",
+        "approved": "Approvato",
+        "rejected": "Rifiutato",
+        "completed": "Completato",
+        "cancelled": "Annullato"
+      }
+    },
+    "card": {
+      "title": "Richieste in arrivo",
+      "subTemplate": "{total} richieste"
+    },
     "table": {
+      "aircraft": "Nominativo · tipo",
       "requester": "Richiedente",
-      "aircraft": "Marche / Tipo",
-      "route": "Provenienza → Destinazione",
-      "eta": "ETA",
-      "persons": "Persone",
+      "schedule": "Orario",
+      "persons": "POB",
+      "status": "Stato",
       "actions": "Azioni"
     },
-    "detail": {
-      "show": "Dettagli",
-      "hide": "Nascondi dettagli",
-      "email": "Email",
-      "phone": "Telefono",
-      "etd": "ETD",
-      "noEtd": "Non indicato",
-      "notes": "Note",
-      "noNotes": "Nessuna nota",
-      "locale": "Lingua della richiesta",
-      "localeIt": "Italiano",
-      "localeEn": "Inglese"
+    "badge": {
+      "fromPublicForm": "da modulo web"
     },
     "actions": {
       "approve": "Approva",
-      "reject": "Rifiuta",
-      "confirmApprove": "Confermi l'approvazione?",
-      "confirmYes": "Sì, approva",
-      "confirmCancel": "Annulla",
-      "reasonLabel": "Motivo del rifiuto",
-      "reasonRequired": "Il motivo è obbligatorio.",
-      "submitReject": "Conferma rifiuto",
-      "cancelReject": "Annulla"
+      "reject": "Rifiuta"
     },
-    "feedback": {
+    "rejectModal": {
+      "title": "Rifiuta richiesta PPR",
+      "subtitle": "Il richiedente riceverà un'email con il motivo, se ha fornito un indirizzo.",
+      "reasonPlaceholder": "Documentazione mancante, aeroporto chiuso, conflitto di slot…",
+      "reasonRequired": "Il motivo è obbligatorio.",
+      "submit": "Conferma rifiuto",
+      "cancel": "Annulla"
+    },
+    "toast": {
       "approved": "Richiesta approvata: numero PPR {pprNumber}.",
       "rejected": "Richiesta rifiutata.",
       "conflictError": "Questa richiesta è già stata decisa da un altro operatore.",
-      "genericError": "Non è stato possibile completare l'operazione. Riprova."
+      "genericError": "Non è stato possibile completare l'operazione. Riprova.",
+      "manualCreated": "Richiesta PPR aggiunta."
     },
-    "empty": "Nessuna richiesta PPR in attesa.",
+    "empty": "Nessuna richiesta PPR trovata.",
+    "manualForm": {
+      "title": "PPR manuale",
+      "subtitle": "Richieste PPR",
+      "firstName": "Nome",
+      "lastName": "Cognome",
+      "email": "Email",
+      "phone": "Telefono",
+      "aircraftRegistration": "Marche",
+      "aircraftType": "Tipo aeromobile",
+      "origin": "Provenienza",
+      "destination": "Destinazione",
+      "eta": "Arrivo (ETA)",
+      "etd": "Partenza (ETD, facoltativo)",
+      "personsOnBoard": "Persone a bordo",
+      "notes": "Note (facoltative)",
+      "submit": "Aggiungi richiesta",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "invalidEmail": "Inserisci un indirizzo email valido.",
+      "invalidRange": "L'ETD deve essere successivo all'ETA.",
+      "invalidPersons": "Inserisci un numero di persone a bordo tra 1 e 99.",
+      "contactRequired": "Inserisci almeno un contatto (email o telefono).",
+      "errors": {
+        "ETA_IN_PAST": "L'ETA deve essere nel futuro.",
+        "ETD_NOT_AFTER_ETA": "L'ETD deve essere successivo all'ETA.",
+        "generic": "Non è stato possibile completare l'operazione. Riprova."
+      }
+    },
     "instructions": {
       "heading": "Istruzioni operative",
       "description": "Testo incluso nell'email di approvazione, nella lingua del richiedente. Lascia vuoto un campo per omettere la sezione in quella lingua.",
@@ -1574,15 +1638,20 @@
       "save": "Salva tassa",
       "saved": "Tassa salvata.",
       "error": "Non è stato possibile salvare la tassa. Riprova."
-    },
-    "registerLink": "Registro PPR"
+    }
   },
-  "PprRegisterPage": {
-    "kicker": "Registro PPR",
-    "title": "Registro PPR",
-    "description": "Chiudi i PPR approvati incassando la tassa di atterraggio, o consulta lo storico per stato e periodo.",
-    "backToDashboard": "Torna alla dashboard",
-    "backToQueue": "Vai alla coda approvazioni",
+  "MovementsPage": {
+    "title": "Voli in transito",
+    "sub": "Movimenti non basati · {onGround} attualmente al suolo",
+    "header": {
+      "logArrival": "Registra arrivo"
+    },
+    "kpi": {
+      "onGround": "Al suolo ora",
+      "inboundToday": "In arrivo oggi",
+      "expectedTomorrow": "Attesi domani",
+      "month": "Movimenti nel mese"
+    },
     "filters": {
       "status": "Stato",
       "statusAll": "Tutti",
@@ -1597,15 +1666,31 @@
       "to": "Al",
       "reset": "Azzera filtri"
     },
+    "card": {
+      "title": "Registro movimenti",
+      "subTemplate": "{total} record"
+    },
+    "export": {
+      "label": "Esporta",
+      "pprNumber": "Numero PPR"
+    },
     "table": {
-      "pprNumber": "Numero PPR",
-      "requester": "Richiedente",
-      "aircraft": "Marche",
+      "aircraft": "Nominativo",
+      "type": "Tipo",
+      "route": "Rotta",
+      "requester": "Richiedente · contatto",
       "eta": "ETA",
+      "etd": "Partenza",
       "status": "Stato",
       "fee": "Tassa",
       "actions": "Azioni",
       "noValue": "—"
+    },
+    "status": {
+      "ATTESO": "Atteso",
+      "IN_ARRIVO": "In arrivo",
+      "AL_SUOLO": "Al suolo",
+      "PARTITO": "Partito"
     },
     "actions": {
       "complete": "Completa",
@@ -1619,13 +1704,42 @@
       "submitComplete": "Conferma completamento",
       "closePanel": "Annulla"
     },
-    "feedback": {
+    "toast": {
       "completed": "PPR completato.",
       "cancelled": "PPR annullato.",
       "conflictError": "Questo PPR non è più in stato Approvato (probabilmente già chiuso da un altro operatore).",
-      "genericError": "Non è stato possibile completare l'operazione. Riprova."
+      "genericError": "Non è stato possibile completare l'operazione. Riprova.",
+      "logArrivalCreated": "Arrivo registrato: numero PPR {pprNumber}."
     },
-    "empty": "Nessun PPR trovato per i filtri selezionati."
+    "empty": "Nessun PPR trovato per i filtri selezionati.",
+    "logArrivalForm": {
+      "title": "Registra arrivo",
+      "subtitle": "Voli in transito",
+      "firstName": "Nome",
+      "lastName": "Cognome",
+      "email": "Email",
+      "phone": "Telefono",
+      "aircraftRegistration": "Marche",
+      "aircraftType": "Tipo aeromobile",
+      "origin": "Provenienza",
+      "destination": "Destinazione",
+      "eta": "Arrivo (ETA)",
+      "etd": "Partenza (ETD, facoltativo)",
+      "personsOnBoard": "Persone a bordo",
+      "notes": "Note (facoltative)",
+      "submit": "Registra movimento",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "invalidEmail": "Inserisci un indirizzo email valido.",
+      "invalidRange": "L'ETD deve essere successivo all'ETA.",
+      "invalidPersons": "Inserisci un numero di persone a bordo tra 1 e 99.",
+      "contactRequired": "Inserisci almeno un contatto (email o telefono).",
+      "errors": {
+        "ETA_IN_PAST": "L'ETA deve essere nel futuro.",
+        "ETD_NOT_AFTER_ETA": "L'ETD deve essere successivo all'ETA.",
+        "generic": "Non è stato possibile completare l'operazione. Riprova."
+      }
+    }
   },
   "Export": {
     "button": "Esporta Excel",

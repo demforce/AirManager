@@ -390,6 +390,8 @@ model User {
   pprRequestsDecided                  PprRequest[]                  @relation("PprRequestDecidedBy")
   /// PPR requests this user CLOSED — completed or cancelled (epic 8, story 8.3, AC 1/2) — `PprRequest.closedByUserId`.
   pprRequestsClosed                   PprRequest[]                  @relation("PprRequestClosedBy")
+  /// PPR requests this staff/admin user entered manually (epic 12, story 12.4, AC 1) — `PprRequest.createdByUserId`. Empty for every public-form submission.
+  pprRequestsCreated                  PprRequest[]                  @relation("PprRequestCreatedBy")
   /// Scadenze this user registered/last updated (epic 6, story 6.2) — `Expiry.actorUserId`.
   expiriesRecorded                    Expiry[]
   /// Update proposals this user FILED, as the scadenza's titolare (epic 6, story 6.2) — `ExpiryUpdateProposal.proposedByUserId`.
@@ -1414,8 +1416,14 @@ model PprRequest {
 
   firstName String
   lastName  String
-  email     String
-  phone     String
+  /// NULLABLE (epic 12, story 12.4, AC 1) — the public form still REQUIRES
+  /// it (Zod, `createPprRequestSchema`), so this is only ever `null` for a
+  /// STAFF-entered manual request that gave a phone but no email
+  /// (`createManualPprRequestSchema`'s "at least one contact" refine). Every
+  /// email-sending path (receipt/approval/rejection, `ppr.service.ts`) skips
+  /// silently when this is `null`.
+  email String?
+  phone String
 
   aircraftRegistration String
   aircraftType         String
@@ -1493,6 +1501,15 @@ model PprRequest {
   /// shape as `AccountMovement.flightId` (e.g. a future storno of the fee
   /// would link back here too), even though today at most one exists.
   cashMovements CashMovement[]
+
+  /// The staff/admin `User` who entered this request MANUALLY (epic 12,
+  /// story 12.4, AC 1) — `null` for every PUBLIC-form submission (the
+  /// console's "da modulo web" badge is exactly `createdByUserId === null`).
+  /// Same nullable-FK/`SetNull`-on-delete pattern as `decidedByUser`/
+  /// `closedByUser` above: deleting the staff user must never cascade-delete
+  /// the PPR history.
+  createdByUserId String?
+  createdByUser   User?   @relation("PprRequestCreatedBy", fields: [createdByUserId], references: [id])
 
   /// Backs the per-IP hourly rate-limit count (`ppr.service.ts`, AC 2):
   /// `count` of rows with the same `submitterIp` and `createdAt` within the

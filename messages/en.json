@@ -1473,16 +1473,27 @@
     }
   },
   "PprPage": {
-    "kicker": "PPR request",
-    "title": "Request landing permission",
-    "description": "Fill in the form to request PPR at this airfield. We will reply by email with the outcome of your request.",
     "switchTo": "Italiano",
     "footer": "The information you provide is used only to handle your PPR request.",
     "metadata": {
       "title": "PPR request",
       "description": "Public form to request landing permission (PPR) at this airfield."
     },
+    "top": {
+      "brandSub": "Prior Permission Required"
+    },
+    "hero": {
+      "eyebrow": "Aircraft in transit · PPR",
+      "title": "Request landing permission",
+      "description": "Fill in the form to request PPR at this airfield. We will reply by email with the outcome of your request."
+    },
     "form": {
+      "sections": {
+        "requester": "Requester",
+        "aircraft": "Aircraft",
+        "schedule": "Schedule (local)",
+        "additional": "Additional information"
+      },
       "firstName": "First name",
       "lastName": "Last name",
       "email": "Email",
@@ -1497,6 +1508,7 @@
       "notes": "Notes (optional)",
       "submit": "Send request",
       "submitting": "Sending…",
+      "requiredNote": "Fields marked with * are required.",
       "requiredField": "This field is required.",
       "invalidEmail": "Enter a valid email address.",
       "invalidRange": "ETD must be after ETA.",
@@ -1508,55 +1520,107 @@
         "generic": "We could not send the request. Please try again."
       }
     },
+    "aside": {
+      "howItWorks": {
+        "title": "How it works",
+        "item1": "Submit at least 24h before arrival.",
+        "item2": "Operations will review and confirm your slot.",
+        "item3": "You will be contacted by email or phone."
+      },
+      "airport": {
+        "title": "Airfield",
+        "nameLabel": "Name",
+        "icaoLabel": "ICAO"
+      }
+    },
     "success": {
       "title": "Request sent",
-      "message": "We received your PPR request. You will shortly get a confirmation email with a summary, followed by another email with the outcome of your request."
+      "message": "We received your PPR request. You will shortly get a confirmation email with a summary, followed by another email with the outcome of your request.",
+      "again": "Submit another request"
     }
   },
   "PprQueuePage": {
-    "kicker": "PPR queue",
     "title": "PPR requests",
-    "description": "Approve or reject pending prior-permission-to-land requests.",
-    "backToDashboard": "Back to dashboard",
+    "sub": "{pending} pending · {approved} approved · {rejected} rejected",
+    "header": {
+      "publicForm": "Public form",
+      "rules": "Published rules",
+      "manual": "Manual PPR"
+    },
+    "filters": {
+      "status": "Status",
+      "statusAll": "All",
+      "statusOptions": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "completed": "Completed",
+        "cancelled": "Cancelled"
+      }
+    },
+    "card": {
+      "title": "Incoming requests",
+      "subTemplate": "{total} requests"
+    },
     "table": {
+      "aircraft": "Registration · type",
       "requester": "Requester",
-      "aircraft": "Registration / Type",
-      "route": "Origin → Destination",
-      "eta": "ETA",
-      "persons": "Persons",
+      "schedule": "Schedule",
+      "persons": "POB",
+      "status": "Status",
       "actions": "Actions"
     },
-    "detail": {
-      "show": "Details",
-      "hide": "Hide details",
-      "email": "Email",
-      "phone": "Phone",
-      "etd": "ETD",
-      "noEtd": "Not indicated",
-      "notes": "Notes",
-      "noNotes": "No notes",
-      "locale": "Request language",
-      "localeIt": "Italian",
-      "localeEn": "English"
+    "badge": {
+      "fromPublicForm": "from web form"
     },
     "actions": {
       "approve": "Approve",
-      "reject": "Reject",
-      "confirmApprove": "Confirm approval?",
-      "confirmYes": "Yes, approve",
-      "confirmCancel": "Cancel",
-      "reasonLabel": "Rejection reason",
-      "reasonRequired": "The reason is required.",
-      "submitReject": "Confirm rejection",
-      "cancelReject": "Cancel"
+      "reject": "Reject"
     },
-    "feedback": {
+    "rejectModal": {
+      "title": "Reject PPR request",
+      "subtitle": "The requester will receive an email with the reason, if they provided an address.",
+      "reasonPlaceholder": "Missing documentation, airfield closed, slot conflict…",
+      "reasonRequired": "The reason is required.",
+      "submit": "Confirm rejection",
+      "cancel": "Cancel"
+    },
+    "toast": {
       "approved": "Request approved: PPR number {pprNumber}.",
       "rejected": "Request rejected.",
       "conflictError": "This request has already been decided by another operator.",
-      "genericError": "We could not complete the operation. Please try again."
+      "genericError": "We could not complete the operation. Please try again.",
+      "manualCreated": "PPR request added."
     },
-    "empty": "No PPR requests pending.",
+    "empty": "No PPR requests found.",
+    "manualForm": {
+      "title": "Manual PPR",
+      "subtitle": "PPR requests",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "phone": "Phone",
+      "aircraftRegistration": "Registration",
+      "aircraftType": "Aircraft type",
+      "origin": "Origin",
+      "destination": "Destination",
+      "eta": "Arrival (ETA)",
+      "etd": "Departure (ETD, optional)",
+      "personsOnBoard": "Persons on board",
+      "notes": "Notes (optional)",
+      "submit": "Add request",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "invalidEmail": "Enter a valid email address.",
+      "invalidRange": "ETD must be after ETA.",
+      "invalidPersons": "Enter a number of persons on board between 1 and 99.",
+      "contactRequired": "Enter at least one contact (email or phone).",
+      "errors": {
+        "ETA_IN_PAST": "ETA must be in the future.",
+        "ETD_NOT_AFTER_ETA": "ETD must be after ETA.",
+        "generic": "We could not complete the operation. Please try again."
+      }
+    },
     "instructions": {
       "heading": "Operating instructions",
       "description": "Text included in the approval email, in the requester's language. Leave a field empty to omit the section in that language.",
@@ -1574,15 +1638,20 @@
       "save": "Save fee",
       "saved": "Fee saved.",
       "error": "We could not save the fee. Please try again."
-    },
-    "registerLink": "PPR register"
+    }
   },
-  "PprRegisterPage": {
-    "kicker": "PPR register",
-    "title": "PPR register",
-    "description": "Complete approved PPR requests and charge the landing fee, or browse the history by status and period.",
-    "backToDashboard": "Back to dashboard",
-    "backToQueue": "Go to approval queue",
+  "MovementsPage": {
+    "title": "Transit flights",
+    "sub": "Non-based movements · {onGround} currently on the ground",
+    "header": {
+      "logArrival": "Log arrival"
+    },
+    "kpi": {
+      "onGround": "On the ground now",
+      "inboundToday": "Inbound today",
+      "expectedTomorrow": "Expected tomorrow",
+      "month": "Movements this month"
+    },
     "filters": {
       "status": "Status",
       "statusAll": "All",
@@ -1597,15 +1666,31 @@
       "to": "To",
       "reset": "Reset filters"
     },
+    "card": {
+      "title": "Movements register",
+      "subTemplate": "{total} records"
+    },
+    "export": {
+      "label": "Export",
+      "pprNumber": "PPR number"
+    },
     "table": {
-      "pprNumber": "PPR number",
-      "requester": "Requester",
       "aircraft": "Registration",
+      "type": "Type",
+      "route": "Route",
+      "requester": "Requester · contact",
       "eta": "ETA",
+      "etd": "Departure",
       "status": "Status",
       "fee": "Fee",
       "actions": "Actions",
       "noValue": "—"
+    },
+    "status": {
+      "ATTESO": "Expected",
+      "IN_ARRIVO": "Inbound",
+      "AL_SUOLO": "On the ground",
+      "PARTITO": "Departed"
     },
     "actions": {
       "complete": "Complete",
@@ -1619,13 +1704,42 @@
       "submitComplete": "Confirm completion",
       "closePanel": "Cancel"
     },
-    "feedback": {
+    "toast": {
       "completed": "PPR completed.",
       "cancelled": "PPR cancelled.",
       "conflictError": "This PPR is no longer in Approved status (likely already closed by another operator).",
-      "genericError": "We could not complete the operation. Please try again."
+      "genericError": "We could not complete the operation. Please try again.",
+      "logArrivalCreated": "Arrival logged: PPR number {pprNumber}."
     },
-    "empty": "No PPR requests match the selected filters."
+    "empty": "No PPR requests match the selected filters.",
+    "logArrivalForm": {
+      "title": "Log arrival",
+      "subtitle": "Transit flights",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "phone": "Phone",
+      "aircraftRegistration": "Registration",
+      "aircraftType": "Aircraft type",
+      "origin": "Origin",
+      "destination": "Destination",
+      "eta": "Arrival (ETA)",
+      "etd": "Departure (ETD, optional)",
+      "personsOnBoard": "Persons on board",
+      "notes": "Notes (optional)",
+      "submit": "Log movement",
+      "cancel": "Cancel",
+      "requiredField": "This field is required.",
+      "invalidEmail": "Enter a valid email address.",
+      "invalidRange": "ETD must be after ETA.",
+      "invalidPersons": "Enter a number of persons on board between 1 and 99.",
+      "contactRequired": "Enter at least one contact (email or phone).",
+      "errors": {
+        "ETA_IN_PAST": "ETA must be in the future.",
+        "ETD_NOT_AFTER_ETA": "ETD must be after ETA.",
+        "generic": "We could not complete the operation. Please try again."
+      }
+    }
   },
   "Export": {
     "button": "Export Excel",

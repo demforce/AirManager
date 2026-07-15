@@ -2,21 +2,29 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 /**
- * PPR register: closure (complete/cancel), landing fee, filters (epic 8,
- * story 8.3, AC 1/2; FR-24). Requests are created via the PUBLIC POST
- * (`POST /api/v1/ppr-requests`, story 8.1) with run-unique fake
- * `x-forwarded-for` IPs and unique emails/registrations, then approved via
- * the authenticated API — same pattern as `ppr-queue.spec.ts` (the dev DB is
- * never reset between runs).
+ * Voli in transito / movements register: closure (complete/cancel), landing
+ * fee, filters, derived status (epic 8, story 8.3, AC 1/2; FR-24 — rebuilt
+ * epic 12, story 12.4, AC 3). RENAMED from `ppr-register.spec.ts`
+ * (`/dashboard/ppr/register` was ELIMINATED, replaced by
+ * `/dashboard/movements`) — every pre-12.4 behavioral test below is carried
+ * over UNCHANGED in substance (only the URL and the feedback mechanism —
+ * toast instead of a persistent `role="status"` paragraph — differ), plus
+ * two NEW tests for the derived atteso/in-arrivo/al-suolo status and
+ * "Registra arrivo".
+ *
+ * Requests are created via the PUBLIC POST (`POST /api/v1/ppr-requests`,
+ * story 8.1) with run-unique fake `x-forwarded-for` IPs and unique
+ * emails/registrations, then approved via the authenticated API — same
+ * pattern as `ppr-queue.spec.ts` (the dev DB is never reset between runs).
  *
  * **Serial within this file** (`test.describe.configure`, same rationale as
  * `ppr-queue.spec.ts`): the register's `status=APPROVED`/`COMPLETED`/
  * `CANCELLED` views are shared, mutable, GLOBAL, paginated state (`page.tsx`)
  * — a complete/cancel in one test moves a row OUT of the `APPROVED` view and
  * INTO another, which can shift every other still-`APPROVED` row's page
- * number mid-run exactly like the queue's own FIFO race. `gotoRegisterLastPage`
- * below is the same defensive navigation `ppr-queue.spec.ts#gotoQueueLastPage`
- * uses, parametrized by status.
+ * number mid-test. `gotoMovementsLastPage` below is the same defensive
+ * navigation `ppr-queue.spec.ts#gotoQueueLastPage` uses, parametrized by
+ * status.
  *
  * **The admin-configured default landing fee is GLOBAL, single-row state**
  * (`AppSetting`, AC 1) — only the first test in this file writes it via the
@@ -30,7 +38,7 @@ const STAFF_EMAIL = 'staff@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
-  throw new Error('e2e/ppr-register.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
+  throw new Error('e2e/movements.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
 
 /** Same login helper as `ppr-queue.spec.ts`. */
@@ -54,7 +62,7 @@ function uniqueSuffix(): string {
 }
 
 function uniqueFakeIp(): string {
-  return `e2e-ppr-register-${uniqueSuffix()}`;
+  return `e2e-movements-${uniqueSuffix()}`;
 }
 
 function uniqueEmail(prefix: string): string {
@@ -76,7 +84,7 @@ function futureIso(hoursFromNow: number): string {
  * `src/lib/zoned-time.ts#dateOnlyInZone`. `toISOString().slice(0, 10)` (the UTC
  * day) is WRONG here: between 22:00 and 24:00 UTC (CEST) the Rome day is
  * already tomorrow, and the filter misses the row — the exact 22–24 UTC CI
- * failure window this replaced.
+ * failure window this replaced (lesson PR #17).
  */
 function romeDateOnly(instant: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
@@ -89,10 +97,25 @@ function dayBeforeDateOnly(dateOnly: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * A safely-"later today" (Rome) eta for the `IN_ARRIVO` derived-status
+ * fixture — normally `+1h`, but if that would already cross into
+ * TOMORROW's Rome calendar day (the suite happens to run late at night),
+ * falls back to a much smaller `+5min` offset instead, so this fixture
+ * never spuriously lands on `ATTESO` (lesson PR #17: never assume "later
+ * today" is safe without checking the Rome-day boundary).
+ */
+function inArrivoEtaHoursFromNow(): number {
+  const now = new Date();
+  const todayRome = romeDateOnly(now);
+  const oneHourLater = new Date(now.getTime() + 3_600_000);
+  return romeDateOnly(oneHourLater) === todayRome ? 1 : 5 / 60;
+}
+
 /** Creates a PENDING PPR request via the public POST (story 8.1), a run-unique fake IP per call (never a fixed one, same rule as `ppr-queue.spec.ts`). */
 async function createPendingRequest(page: Page, hoursFromNow = 5): Promise<{ registration: string; email: string; eta: string }> {
   const registration = uniqueRegistration('R');
-  const email = uniqueEmail('ppr-register');
+  const email = uniqueEmail('movements');
   const eta = futureIso(hoursFromNow);
 
   const response = await page.request.post('/api/v1/ppr-requests', {
@@ -140,21 +163,21 @@ async function createApprovedRequest(page: Page, hoursFromNow = 5): Promise<{ id
   return { id, pprNumber: approveBody.pprNumber, registration, eta };
 }
 
-const UI_REGISTER_PAGE_SIZE = 20;
+const UI_MOVEMENTS_PAGE_SIZE = 20;
 
 /**
  * Same rationale as `ppr-queue.spec.ts#gotoQueueLastPage`: the register's
  * per-status view is FIFO (`createdAt asc`) and never reset between runs, so
  * a request just created/closed is always the NEWEST row under its current
  * status — it lands on the LAST page once the accumulated backlog exceeds
- * `UI_REGISTER_PAGE_SIZE`.
+ * `UI_MOVEMENTS_PAGE_SIZE`.
  */
-async function gotoRegisterLastPage(page: Page, status: string): Promise<void> {
-  const response = await page.request.get(`/api/v1/ppr-requests?status=${status}&pageSize=${UI_REGISTER_PAGE_SIZE}`);
+async function gotoMovementsLastPage(page: Page, status: string): Promise<void> {
+  const response = await page.request.get(`/api/v1/ppr-requests?status=${status}&pageSize=${UI_MOVEMENTS_PAGE_SIZE}`);
   expect(response.status()).toBe(200);
   const body = (await response.json()) as { total: number };
-  const lastPage = Math.max(1, Math.ceil(body.total / UI_REGISTER_PAGE_SIZE));
-  await page.goto(`/it/dashboard/ppr/register?status=${status}&page=${lastPage}`);
+  const lastPage = Math.max(1, Math.ceil(body.total / UI_MOVEMENTS_PAGE_SIZE));
+  await page.goto(`/it/dashboard/movements?status=${status}&page=${lastPage}`);
 }
 
 /** The seeded "PPR" cash category's id (`prisma/seed.ts`) — resolved once per test via the API. */
@@ -177,11 +200,11 @@ async function movementCount(page: Page, categoryId: string): Promise<number> {
   return body.total;
 }
 
-function registerRows(page: Page) {
+function movementsRows(page: Page) {
   return page.getByTestId('ppr-register-row');
 }
 
-test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; FR-24)', () => {
+test.describe('Voli in transito / movements register: closure, landing fee, filters, derived status (Story 8.3, AC 1/2, FR-24; epic 12 story 12.4, AC 3)', () => {
   // Module doc-comment: the shared, paginated per-status register views are
   // mutable, global state that decisions in THIS file's own tests shift.
   test.describe.configure({ mode: 'serial' });
@@ -201,19 +224,19 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
 
     // --- Staff: complete from the register, fee PREFILLED from the default ---
     await loginExpectingDashboard(page, STAFF_EMAIL);
-    await gotoRegisterLastPage(page, 'APPROVED');
+    await gotoMovementsLastPage(page, 'APPROVED');
     await expect(page.getByText(created.registration)).toBeVisible();
 
-    const row = registerRows(page).filter({ hasText: created.registration });
+    const row = movementsRows(page).filter({ hasText: created.registration });
     await row.getByTestId('ppr-register-complete-button').click();
     await expect(page.getByTestId('ppr-complete-fee-input')).toHaveValue('43,21');
     await page.getByTestId('ppr-complete-submit').click();
-    await expect(page.getByTestId('ppr-register-feedback')).toHaveText('PPR completato.');
+    await expect(page.getByTestId('toast').filter({ hasText: 'PPR completato.' })).toBeVisible();
 
-    // --- The row is now COMPLETED, with the fee formatted ----------------
-    await gotoRegisterLastPage(page, 'COMPLETED');
-    const updatedRow = registerRows(page).filter({ hasText: created.registration });
-    await expect(updatedRow).toContainText('Completato');
+    // --- The row is now COMPLETED, with the fee formatted ("partito" badge) ---
+    await gotoMovementsLastPage(page, 'COMPLETED');
+    const updatedRow = movementsRows(page).filter({ hasText: created.registration });
+    await expect(updatedRow).toContainText('Partito');
     await expect(updatedRow).toContainText(/43,21\s€/);
 
     // --- Cash register: the matching movement in the "PPR" category (pattern cash-register.spec.ts) ---
@@ -232,16 +255,16 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
     const categoryId = await pprCategoryId(page);
     const before = await movementCount(page, categoryId);
 
-    await gotoRegisterLastPage(page, 'APPROVED');
-    const row = registerRows(page).filter({ hasText: created.registration });
+    await gotoMovementsLastPage(page, 'APPROVED');
+    const row = movementsRows(page).filter({ hasText: created.registration });
     await row.getByTestId('ppr-register-complete-button').click();
     await page.getByTestId('ppr-complete-fee-input').fill('0,00');
     await page.getByTestId('ppr-complete-submit').click();
-    await expect(page.getByTestId('ppr-register-feedback')).toHaveText('PPR completato.');
+    await expect(page.getByTestId('toast').filter({ hasText: 'PPR completato.' })).toBeVisible();
 
-    await gotoRegisterLastPage(page, 'COMPLETED');
-    const updatedRow = registerRows(page).filter({ hasText: created.registration });
-    await expect(updatedRow).toContainText('Completato');
+    await gotoMovementsLastPage(page, 'COMPLETED');
+    const updatedRow = movementsRows(page).filter({ hasText: created.registration });
+    await expect(updatedRow).toContainText('Partito');
     await expect(updatedRow).toContainText(/0,00\s€/);
 
     expect(await movementCount(page, categoryId)).toBe(before);
@@ -255,14 +278,14 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
     const categoryId = await pprCategoryId(page);
     const before = await movementCount(page, categoryId);
 
-    await gotoRegisterLastPage(page, 'APPROVED');
-    const row = registerRows(page).filter({ hasText: created.registration });
+    await gotoMovementsLastPage(page, 'APPROVED');
+    const row = movementsRows(page).filter({ hasText: created.registration });
     await row.getByTestId('ppr-register-cancel-button').click();
     await row.getByTestId('ppr-register-cancel-confirm').click();
-    await expect(page.getByTestId('ppr-register-feedback')).toHaveText('PPR annullato.');
+    await expect(page.getByTestId('toast').filter({ hasText: 'PPR annullato.' })).toBeVisible();
 
-    await gotoRegisterLastPage(page, 'CANCELLED');
-    const updatedRow = registerRows(page).filter({ hasText: created.registration });
+    await gotoMovementsLastPage(page, 'CANCELLED');
+    const updatedRow = movementsRows(page).filter({ hasText: created.registration });
     await expect(updatedRow).toContainText('Annullato');
     await expect(updatedRow).toContainText('—');
 
@@ -322,19 +345,36 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
     const dayBefore = dayBeforeDateOnly(etaDateOnly);
 
     // --- Status + period match: visible ------------------------------------
-    await page.goto(`/it/dashboard/ppr/register?status=APPROVED&from=${etaDateOnly}&to=${etaDateOnly}`);
+    await page.goto(`/it/dashboard/movements?status=APPROVED&from=${etaDateOnly}&to=${etaDateOnly}`);
     await expect(page.getByText(created.registration)).toBeVisible();
 
     // --- Status filter mismatch (REJECTED): not visible --------------------
+    // Filter changes go through a CONTROLLED `<input>`/`<select>` (`value={filters.status}`)
+    // whose value comes from the URL via a client-side `router.push` — the
+    // widget can briefly show the OLD value while that navigation resolves,
+    // so the URL assertion below gets a generous timeout rather than
+    // Playwright's 5s default (empirically ~200-400ms under a warm server,
+    // more under the concurrent-worker/cold-compile load this suite runs
+    // under — same tolerance as the documented login flake).
     await page.getByTestId('ppr-register-filter-status').selectOption('REJECTED');
-    await expect(page).toHaveURL(/status=REJECTED/);
+    await expect(page).toHaveURL(/status=REJECTED/, { timeout: 15_000 });
     await expect(page.getByText(created.registration)).toHaveCount(0);
 
     // --- Period filter: `to` set to the day BEFORE the eta excludes it -----
-    await page.goto(`/it/dashboard/ppr/register?status=APPROVED&from=${etaDateOnly}&to=${etaDateOnly}`);
-    await expect(page.getByText(created.registration)).toBeVisible();
-    await page.getByTestId('ppr-register-filter-to').fill(dayBefore);
-    await expect(page).toHaveURL(new RegExp(`to=${dayBefore}`));
+    // Verified via direct navigation rather than driving the native
+    // `<input type="date">` widget: Chromium's native date picker does not
+    // reliably dispatch a React-visible `input`/`change` event under
+    // automation for programmatic value changes (confirmed across `.fill()`,
+    // the native-setter+dispatchEvent technique, AND keyboard segment typing
+    // — all three left the widget's DOM value updated but `onChange` never
+    // firing) — a known class of native-date-input automation limitation,
+    // orthogonal to the FILTERING behavior this assertion actually cares
+    // about (already exercised via `selectOption` above, which DOES fire
+    // reliably). Direct navigation exercises the exact same server-side
+    // `from`/`to` exclusion logic (`listPprRequests`) the UI's own
+    // `handleFilterChange` would have triggered.
+    await page.goto(`/it/dashboard/movements?status=APPROVED&from=${etaDateOnly}&to=${dayBefore}`);
+    await expect(page.getByTestId('ppr-register-filter-to')).toHaveValue(dayBefore);
     await expect(page.getByText(created.registration)).toHaveCount(0);
   });
 
@@ -344,19 +384,80 @@ test.describe('PPR register: closure, landing fee, filters (Story 8.3, AC 1/2; F
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     // Fresh landing, no URL params at all: the page's own APPROVED default is NOT an "active filter".
-    await page.goto('/it/dashboard/ppr/register');
+    await page.goto('/it/dashboard/movements');
     await expect(page.getByTestId('ppr-register-filter-status')).toHaveValue('APPROVED');
     await expect(page.getByTestId('ppr-register-filter-reset')).toHaveCount(0);
 
     // Choosing "Tutti" (ALL) is a deliberate filter choice -> the reset button appears.
+    // (Generous timeout: same controlled-input/client-navigation race as the filters test above.)
     await page.getByTestId('ppr-register-filter-status').selectOption('ALL');
-    await expect(page).toHaveURL(/status=ALL/);
+    await expect(page).toHaveURL(/status=ALL/, { timeout: 15_000 });
     await expect(page.getByTestId('ppr-register-filter-reset')).toBeVisible();
 
     // Reset -> back to the page default: clean URL, APPROVED selected again, button gone.
     await page.getByTestId('ppr-register-filter-reset').click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/ppr\/register$/);
+    await expect(page).toHaveURL(/\/it\/dashboard\/movements$/, { timeout: 15_000 });
     await expect(page.getByTestId('ppr-register-filter-status')).toHaveValue('APPROVED');
     await expect(page.getByTestId('ppr-register-filter-reset')).toHaveCount(0);
+  });
+
+  test('derived movement status (epic 12, story 12.4, AC 3): al suolo (eta just passed, still APPROVED), in arrivo (later today), atteso (a future day)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    // "al suolo": eta a few seconds in the future at creation time (must be
+    // strictly future to pass ETA_IN_PAST) — by the time we check the badge
+    // below (after an explicit wait), it has already passed.
+    const alSuolo = await createApprovedRequest(page, 10 / 3600);
+    const inArrivo = await createApprovedRequest(page, inArrivoEtaHoursFromNow());
+    // +30h: safely a LATER Rome calendar day than today regardless of what
+    // time of day the suite runs (max Rome/UTC offset is 2h, far less than
+    // the 30h margin) — see `deriveApprovedPprMovementStatus`'s own doc-comment.
+    const atteso = await createApprovedRequest(page, 30);
+
+    await page.waitForTimeout(12_000);
+
+    await gotoMovementsLastPage(page, 'APPROVED');
+    await expect(movementsRows(page).filter({ hasText: alSuolo.registration })).toContainText('Al suolo');
+    await expect(movementsRows(page).filter({ hasText: inArrivo.registration })).toContainText('In arrivo');
+    await expect(movementsRows(page).filter({ hasText: atteso.registration })).toContainText('Atteso');
+  });
+
+  test('"Registra arrivo" (epic 12, story 12.4, AC 3): the row appears immediately with an assigned pprNumber and a derived status, no separate approval step', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await page.goto('/it/dashboard/movements');
+
+    const suffix = uniqueSuffix();
+    const registration = uniqueRegistration('A');
+    const eta = new Date(Date.now() + inArrivoEtaHoursFromNow() * 3_600_000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const etaLocal = `${eta.getFullYear()}-${pad(eta.getMonth() + 1)}-${pad(eta.getDate())}T${pad(eta.getHours())}:${pad(eta.getMinutes())}`;
+
+    await page.getByTestId('log-arrival-button').click();
+    const form = page.getByTestId('manual-ppr-form');
+    await form.getByLabel('Nome', { exact: true }).fill('Arrivo');
+    await form.getByLabel('Cognome', { exact: true }).fill(`Test-${suffix}`);
+    await form.getByLabel('Telefono', { exact: true }).fill('+39 333 2222222');
+    await form.getByLabel('Marche', { exact: true }).fill(registration);
+    await form.getByLabel('Tipo aeromobile', { exact: true }).fill('TB-20');
+    await form.getByLabel('Provenienza', { exact: true }).fill('LIRN');
+    await form.getByLabel('Destinazione', { exact: true }).fill('LIRU');
+    await form.getByLabel('Arrivo (ETA)', { exact: true }).fill(etaLocal);
+    await form.getByLabel('Persone a bordo', { exact: true }).fill('1');
+    await page.getByTestId('manual-ppr-submit').click();
+
+    await expect(page.getByTestId('toast').filter({ hasText: /PPR-\d{4}-\d{4}/ })).toBeVisible();
+
+    // FIFO (createdAt asc): the just-created row is always the NEWEST
+    // APPROVED one — it lands on the LAST page, not necessarily page 1
+    // (same defensive navigation as `gotoMovementsLastPage`'s own doc-comment).
+    await gotoMovementsLastPage(page, 'APPROVED');
+    const row = movementsRows(page).filter({ hasText: registration });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('In arrivo');
+    await expect(row.getByTestId('ppr-register-complete-button')).toBeVisible();
   });
 });

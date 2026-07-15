@@ -2,7 +2,7 @@ import type { Prisma, PprStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc } from '@/lib/date-only';
-import type { CompletePprRequestInput, CreatePprRequestInput, ListPprRequestsQuery } from '@/lib/schemas/ppr';
+import type { CompletePprRequestInput, CreateManualPprRequestInput, CreatePprRequestInput, ListPprRequestsQuery } from '@/lib/schemas/ppr';
 import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, dateOnlyInZone, zonedMidnightUtc } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
@@ -120,20 +120,26 @@ export async function createPprRequest(input: CreatePprRequestInput, meta: { ip:
 
   // --- Receipt email (AC 1) — best-effort, same pattern as
   // `accounts.service.ts#sendNegativeBalanceAlert`: the row is already
-  // committed, a send failure must never surface to the caller.
-  try {
-    const { subject, text } = await buildPprReceiptEmail(input.locale as AppLocale, {
-      firstName: created.firstName,
-      aircraftRegistration: created.aircraftRegistration,
-      aircraftType: created.aircraftType,
-      origin: created.origin,
-      destination: created.destination,
-      eta: created.eta,
-      personsOnBoard: created.personsOnBoard,
-    });
-    await getMailSender().send({ to: created.email, subject, text });
-  } catch (error) {
-    console.error('createPprRequest: failed to send receipt email', error);
+  // committed, a send failure must never surface to the caller. `email` is
+  // always non-null on THIS path (the public schema requires it) — the
+  // guard exists only because the column itself is nullable since story
+  // 12.4 (a manual entry may have none); skipping silently on `null` is the
+  // same contract every email-sending path in this module now shares.
+  if (created.email) {
+    try {
+      const { subject, text } = await buildPprReceiptEmail(input.locale as AppLocale, {
+        firstName: created.firstName,
+        aircraftRegistration: created.aircraftRegistration,
+        aircraftType: created.aircraftType,
+        origin: created.origin,
+        destination: created.destination,
+        eta: created.eta,
+        personsOnBoard: created.personsOnBoard,
+      });
+      await getMailSender().send({ to: created.email, subject, text });
+    } catch (error) {
+      console.error('createPprRequest: failed to send receipt email', error);
+    }
   }
 
   return { status: 'PENDING' };
@@ -150,7 +156,8 @@ export type PprRequestListItem = {
   status: PprStatus;
   firstName: string;
   lastName: string;
-  email: string;
+  /** `null` for a manual entry with a phone but no email (story 12.4, AC 1) — the public form always fills it. */
+  email: string | null;
   phone: string;
   aircraftRegistration: string;
   aircraftType: string;
@@ -173,6 +180,8 @@ export type PprRequestListItem = {
   /** Landing fee charged at completion (story 8.3, AC 1), integer euro cents. `null` unless `COMPLETED` — see `completePprRequest`. */
   landingFeeCents: number | null;
   createdAt: Date;
+  /** The staff/admin user who entered this request manually (story 12.4, AC 1) — `null` for every public-form submission. Never exposed as-is on the wire DTO (see `pprRequestItemSchema`'s `fromPublicForm` derived boolean instead). */
+  createdByUserId: string | null;
 };
 
 /**
@@ -204,12 +213,13 @@ const PPR_REQUEST_SELECT = {
   closedByUserId: true,
   landingFeeCents: true,
   createdAt: true,
+  createdByUserId: true,
 } as const;
 
 /**
  * Lists the staff approval queue (AC 1/2, story 8.2) AND the filterable
  * register (AC 2, story 8.3) — ONE function, two callers (`/dashboard/ppr`'s
- * queue and `/dashboard/ppr/register`), same `ppr.manage` gate. Defaults to
+ * console and `/dashboard/movements`), same `ppr.manage` gate. Defaults to
  * `status=PENDING` (the actionable queue's own contract, unchanged, FIFO
  * `createdAt asc`, tie-broken by `id` for stable pagination — same pattern
  * as `expiries.service.ts#listExpiryProposals`); the register passes an
@@ -252,6 +262,97 @@ export async function listPprRequests(actor: Actor, query: ListPprRequestsQuery)
   });
 
   return paginate(items, total, query);
+}
+
+/**
+ * Staff manual PPR intake (epic 12, story 12.4, AC 1) — `ppr.manage`, shared
+ * by BOTH the console's "PPR manuale" slide-over (`approveImmediately`
+ * omitted/`false`, stays PENDING) and the movements page's "Registra
+ * arrivo" slide-over (`approveImmediately: true`). Same domain validation
+ * as the public `createPprRequest` (`ETA_IN_PAST`/`ETD_NOT_AFTER_ETA`,
+ * instants never strings) but skips EVERYTHING anti-abuse — no honeypot, no
+ * rate limit, no receipt email (Dev Notes: "è staff"; this route never
+ * triggers the automated notification pipeline the public form does — not
+ * even the approval email when `approveImmediately` is used, since the
+ * staff member creating the row is already the one dealing with the
+ * requester directly). `phone`/`email` mirror the schema's own "at least
+ * one contact" contract: an absent `email` is stored as `null` (never `''`
+ * — a real NULL is what every email-sending path checks for); an absent
+ * `phone` is stored as `''` (the DB column stays `NOT NULL` — only `email`
+ * became nullable, story 12.4 AC 1).
+ *
+ * `approveImmediately` (`options`, NOT a field read off `input` — the wire
+ * schema carries it only so the ROUTE can bridge it into this explicit
+ * parameter) issues the SAME atomic per-year PPR number as
+ * `approvePprRequest` (`PprCounter`, FOR-UPDATE-then-upsert), inlined here
+ * rather than calling that function: this row was JUST created inside the
+ * SAME transaction, so no concurrent decision can exist yet and
+ * `lockPprRequest`'s `PPR_ALREADY_DECIDED` guard would be a no-op check
+ * against data only this transaction can see.
+ */
+export async function createManualPprRequest(
+  actor: Actor,
+  input: CreateManualPprRequestInput,
+  options: { approveImmediately?: boolean } = {},
+): Promise<PprRequestListItem> {
+  authorize(actor, 'ppr.manage');
+
+  const eta = new Date(input.eta);
+  if (eta.getTime() <= Date.now()) {
+    throw new ValidationError('eta must be in the future.', undefined, 'ETA_IN_PAST');
+  }
+  let etd: Date | null = null;
+  if (input.etd) {
+    etd = new Date(input.etd);
+    if (etd.getTime() <= eta.getTime()) {
+      throw new ValidationError('etd must be strictly after eta.', undefined, 'ETD_NOT_AFTER_ETA');
+    }
+  }
+
+  const approveImmediately = options.approveImmediately ?? false;
+  const decidedAt = new Date();
+  // Europe/Rome calendar year, same rule as `approvePprRequest` — never `getUTCFullYear`.
+  const year = Number(dateOnlyInZone(decidedAt, APP_TIMEZONE).slice(0, 4));
+
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.pprRequest.create({
+      data: {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: input.email ?? null,
+        phone: input.phone ?? '',
+        aircraftRegistration: input.aircraftRegistration,
+        aircraftType: input.aircraftType,
+        origin: input.origin,
+        destination: input.destination,
+        eta,
+        etd,
+        personsOnBoard: input.personsOnBoard,
+        notes: input.notes,
+        locale: input.locale,
+        submitterIp: null,
+        createdByUserId: actor.userId,
+      },
+      select: PPR_REQUEST_SELECT,
+    });
+
+    if (!approveImmediately) {
+      return created;
+    }
+
+    const counterRows = await tx.$queryRaw<Array<{ lastSeq: number }>>`
+      INSERT INTO "PprCounter" ("year", "lastSeq") VALUES (${year}, 1)
+      ON CONFLICT ("year") DO UPDATE SET "lastSeq" = "PprCounter"."lastSeq" + 1
+      RETURNING "lastSeq"`;
+    const seq = counterRows[0]!.lastSeq;
+    const pprNumber = `PPR-${year}-${String(seq).padStart(4, '0')}`;
+
+    return tx.pprRequest.update({
+      where: { id: created.id },
+      data: { status: 'APPROVED', pprNumber, decidedAt, decidedByUserId: actor.userId },
+      select: PPR_REQUEST_SELECT,
+    });
+  });
 }
 
 /** The `lockPprRequest` conflict shared by `approvePprRequest`/`rejectPprRequest` (story 8.2) — a request not `PENDING` when a decision is attempted. */
@@ -345,20 +446,25 @@ export async function approvePprRequest(actor: Actor, id: string): Promise<PprRe
     });
   });
 
-  try {
-    const instructions = await getPprOperatingInstructions(actor);
-    const operatingInstructions = updated.locale === 'en' ? instructions.en : instructions.it;
-    const { subject, text } = await buildPprApprovalEmail(updated.locale as AppLocale, {
-      firstName: updated.firstName,
-      // Set unconditionally by the transaction above — safe to assert.
-      pprNumber: updated.pprNumber!,
-      aircraftRegistration: updated.aircraftRegistration,
-      eta: updated.eta,
-      operatingInstructions,
-    });
-    await getMailSender().send({ to: updated.email, subject, text });
-  } catch (error) {
-    console.error('approvePprRequest: failed to send approval email', error);
+  // Story 12.4, AC 1: `email` is `null` for a manual entry with a phone but
+  // no email — every email-sending path in this module skips silently in
+  // that case, same as `createPprRequest`'s own guard.
+  if (updated.email) {
+    try {
+      const instructions = await getPprOperatingInstructions(actor);
+      const operatingInstructions = updated.locale === 'en' ? instructions.en : instructions.it;
+      const { subject, text } = await buildPprApprovalEmail(updated.locale as AppLocale, {
+        firstName: updated.firstName,
+        // Set unconditionally by the transaction above — safe to assert.
+        pprNumber: updated.pprNumber!,
+        aircraftRegistration: updated.aircraftRegistration,
+        eta: updated.eta,
+        operatingInstructions,
+      });
+      await getMailSender().send({ to: updated.email, subject, text });
+    } catch (error) {
+      console.error('approvePprRequest: failed to send approval email', error);
+    }
   }
 
   return updated;
@@ -386,17 +492,20 @@ export async function rejectPprRequest(actor: Actor, id: string, reason: string)
     });
   });
 
-  try {
-    const { subject, text } = await buildPprRejectionEmail(updated.locale as AppLocale, {
-      firstName: updated.firstName,
-      aircraftRegistration: updated.aircraftRegistration,
-      eta: updated.eta,
-      // Just written above by this same transaction — safe to assert.
-      reason: updated.rejectionReason!,
-    });
-    await getMailSender().send({ to: updated.email, subject, text });
-  } catch (error) {
-    console.error('rejectPprRequest: failed to send rejection email', error);
+  // Story 12.4, AC 1: same null-email guard as `approvePprRequest` above.
+  if (updated.email) {
+    try {
+      const { subject, text } = await buildPprRejectionEmail(updated.locale as AppLocale, {
+        firstName: updated.firstName,
+        aircraftRegistration: updated.aircraftRegistration,
+        eta: updated.eta,
+        // Just written above by this same transaction — safe to assert.
+        reason: updated.rejectionReason!,
+      });
+      await getMailSender().send({ to: updated.email, subject, text });
+    } catch (error) {
+      console.error('rejectPprRequest: failed to send rejection email', error);
+    }
   }
 
   return updated;

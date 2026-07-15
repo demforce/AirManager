@@ -109,6 +109,7 @@ import {
 } from './people';
 import {
   completePprRequestSchema,
+  createManualPprRequestSchema,
   createPprRequestSchema,
   listPprRequestsQuerySchema,
   pprLandingFeeDefaultSchema,
@@ -1814,6 +1815,21 @@ registry.registerPath({
 // the route file's doc-comment: `apiRoute`'s own default (`auth: 'required'`)
 // plus `authorize()` inside the service are what actually guard it (AD-5).
 // The approve/reject/settings paths below are NOT in `PUBLIC_API_PATHS`.
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/ppr-requests/manual',
+  summary: 'Staff manual PPR intake, optionally auto-approved (AC 1, epic 12 story 12.4)',
+  description:
+    "Staff-entered PPR (console's \"PPR manuale\" slide-over, or the movements page's \"Registra arrivo\" with `approveImmediately: true` in the SAME body shape) — no honeypot, no rate limit (staff, not public), no receipt/approval email. `email` is optional (a manual entry may have only a phone) but at least one of `email`/`phone` is required. Same domain validation as the public POST: `eta` in the past answers 422 `ETA_IN_PAST`; a present `etd` at or before `eta` answers 422 `ETD_NOT_AFTER_ETA`. With `approveImmediately: true`, issues the next atomic per-year PPR number in the SAME transaction as the create. Requires `ppr.manage`. Supports `Idempotency-Key`.",
+  tags: ['Ppr'],
+  security,
+  request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(createManualPprRequestSchema), required: true } },
+  responses: {
+    201: { description: 'The created request — PENDING, or APPROVED with its assigned pprNumber when `approveImmediately` was set.', content: jsonContent(pprRequestItemSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
 
 registry.registerPath({
   method: 'get',

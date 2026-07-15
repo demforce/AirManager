@@ -300,10 +300,12 @@ export async function exportBookingsXlsx(actor: Actor, query: ListBookingsQuery)
 }
 
 // --- PPR requests (`GET /api/v1/ppr-requests`) ------------------------------
-// Wired from the PPR REGISTER view (`dashboard/ppr/register`, filterable by
-// stato/periodo) rather than the approval queue (`dashboard/ppr`, a fixed
-// PENDING action list) — see `export-button.tsx`'s callers; both read the
-// SAME endpoint, this is which page's table shape the columns mirror.
+// Wired from the MOVEMENTS view (`dashboard/movements`, epic 12 story 12.4 —
+// replaces the pre-12.4 `dashboard/ppr/register`, filterable by
+// stato/periodo) rather than the approval console (`dashboard/ppr`, a
+// PENDING-default action list) — see `export-button.tsx`'s callers; both
+// read the SAME endpoint, this is which page's table shape the columns
+// mirror.
 
 const PPR_STATUS_KEYS = { PENDING: 'pending', APPROVED: 'approved', REJECTED: 'rejected', COMPLETED: 'completed', CANCELLED: 'cancelled' } as const;
 
@@ -313,10 +315,10 @@ export async function exportPprRequestsXlsx(actor: Actor, query: ListPprRequests
 
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
-  const t = createTranslator({ locale, messages, namespace: 'PprRegisterPage' });
+  const t = createTranslator({ locale, messages, namespace: 'MovementsPage' });
 
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
-    { header: t('table.pprNumber'), value: (row) => row.pprNumber },
+    { header: t('export.pprNumber'), value: (row) => row.pprNumber },
     { header: t('table.requester'), value: (row) => `${row.firstName} ${row.lastName}` },
     { header: t('table.aircraft'), value: (row) => row.aircraftRegistration },
     { header: t('table.eta'), value: (row) => formatDateTime(row.eta, locale) },
@@ -324,7 +326,7 @@ export async function exportPprRequestsXlsx(actor: Actor, query: ListPprRequests
     { header: t('table.fee'), value: (row) => (row.landingFeeCents === null ? null : row.landingFeeCents / 100), numFmt: MONEY_NUM_FMT },
   ];
 
-  return toXlsxExport('ppr-requests', t('title'), columns, result.items);
+  return toXlsxExport('ppr-requests', t('card.title'), columns, result.items);
 }
 
 // --- Account statement (`GET /api/v1/people/{id}/account/movements`) -------

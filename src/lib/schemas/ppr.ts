@@ -53,6 +53,48 @@ export const createPprRequestSchema = z.object({
 
 export type CreatePprRequestInput = z.infer<typeof createPprRequestSchema>;
 
+// --- Staff manual intake (epic 12, story 12.4, AC 1) -------------------------
+// `POST /api/v1/ppr-requests/manual` — `ppr.manage`, shared by the console's
+// "PPR manuale" slide-over (stays PENDING) and the movements page's
+// "Registra arrivo" slide-over (`approveImmediately: true`, same endpoint,
+// same body shape). No `website` honeypot field at all (staff, not public —
+// `ppr.service.ts#createManualPprRequest`'s doc-comment).
+
+/**
+ * Unlike the public schema above, `email` is OPTIONAL here — a manual entry
+ * may have only a phone number (Dev Notes: "il manuale può avere solo
+ * telefono") — but `.refine` below still requires AT LEAST ONE contact
+ * (email or phone), so a request with neither is rejected before it ever
+ * reaches the service. `approveImmediately` (default `false`) is a WIRE
+ * field only — the route bridges it into
+ * `createManualPprRequest`'s own explicit `{ approveImmediately }` options
+ * parameter (that function's doc-comment); the service does not read it off
+ * `input` itself.
+ */
+export const createManualPprRequestSchema = z
+  .object({
+    firstName: z.string().trim().min(1).max(100),
+    lastName: z.string().trim().min(1).max(100),
+    email: z.string().trim().toLowerCase().pipe(z.email()).optional(),
+    phone: z.string().trim().min(1).max(30).optional(),
+    aircraftRegistration: z.string().trim().min(1).max(20),
+    aircraftType: z.string().trim().min(1).max(100),
+    origin: z.string().trim().min(1).max(100),
+    destination: z.string().trim().min(1).max(100),
+    eta: z.iso.datetime(),
+    etd: z.iso.datetime().optional(),
+    personsOnBoard: z.number().int().min(1).max(99),
+    notes: z.string().trim().max(1000).optional(),
+    locale: z.enum(['it', 'en']),
+    approveImmediately: z.boolean().optional().default(false),
+  })
+  .refine((value) => Boolean(value.email) || Boolean(value.phone), {
+    message: 'At least one contact (email or phone) is required.',
+    path: ['phone'],
+  });
+
+export type CreateManualPprRequestInput = z.infer<typeof createManualPprRequestSchema>;
+
 /**
  * `POST /api/v1/ppr-requests` response — deliberately minimal (Contesto):
  * no `id`, no echo of the submitted data. The requester has no use for
@@ -117,7 +159,8 @@ export const pprRequestItemSchema = z.object({
   status: pprStatusSchema,
   firstName: z.string(),
   lastName: z.string(),
-  email: z.string(),
+  /** `null` for a manual entry with a phone but no email (epic 12, story 12.4, AC 1) — the public form always fills it. */
+  email: z.string().nullable(),
   phone: z.string(),
   aircraftRegistration: z.string(),
   aircraftType: z.string(),
@@ -139,6 +182,8 @@ export const pprRequestItemSchema = z.object({
   /** When this request was closed — completed or cancelled (story 8.3, AC 1/2). `null` while still `PENDING`/`APPROVED`/`REJECTED`. */
   closedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
+  /** `true` when this request came in through the public `/ppr` form — i.e. `createdByUserId === null` (epic 12, story 12.4, AC 1/2). Drives the console's "da modulo web" badge. Deliberately a derived boolean, never the raw staff user id (Dev Notes: "niente id utente nel DTO"). */
+  fromPublicForm: z.boolean(),
 });
 
 export type PprRequestItemDto = z.infer<typeof pprRequestItemSchema>;

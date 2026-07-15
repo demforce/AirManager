@@ -1219,7 +1219,8 @@ textarea.input{ font-family: var(--font-ui); resize: vertical; }
 }
 
 /* ---------- ppr public form (extracted from docs/design-reference/airops/PPR Request.html <style>, story 12.1 AC 1b) ---------- */
-.ppr-page{min-height:100vh;background:var(--bg);color:var(--ink);display:flex;flex-direction:column}
+/* `flex-shrink:0` (epic 12, story 12.4 — the first real page to use `.ppr-page`, outside the dashboard `.app` shell): without it, `html,body{height:100%}` above makes `body`'s own flex-column layout shrink this item down to exactly the viewport height whenever real content (this page, unlike the static prototype mock, can be taller than one screen) exceeds it — the excess visually overflows `.ppr-page`'s own now-too-short box, so its `background`/`color` stop covering the overflowing area and the page's OWN light-mode `<body>` background/text show through underneath in dark theme. `flex-shrink:0` keeps this item at its natural (>= 100vh) content height instead. */
+.ppr-page{min-height:100vh;flex-shrink:0;background:var(--bg);color:var(--ink);display:flex;flex-direction:column}
 .ppr-top{background:var(--ink);color:var(--bg)}
 .ppr-top-in{max-width:1060px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:12px}
 .ppr-mark{width:32px;height:32px;border-radius:8px;background:var(--accent);color:var(--ink);display:grid;place-items:center}
