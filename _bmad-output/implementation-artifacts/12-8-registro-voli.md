@@ -4,7 +4,7 @@ baseline_commit: fda70d9fb4574919d27adb600d30fdd6b30af01f
 
 # Story 12.8: Registro voli — logbook AirOps + "Nuova voce"
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -52,4 +52,36 @@ so that la registrazione e la consultazione dei voli avvenga nel nuovo linguaggi
 
 ## Dev Agent Record
 
-(compilato dal dev agent)
+### Completion Notes
+
+- Implementata `/dashboard/logbook` (server `page.tsx` + client `logbook-console.tsx` + `flight-editor.tsx`), port di `LogbookView.jsx`/`Forms.jsx#NewLogbookForm` sul dominio reale (D13): tabella `.logbook`/`.lb-row` con colonna PIC dedicata (`flight-pic-cell`, oltre alle 10 colonne del prototipo — necessaria per l'assert e2e su PIC=istruttore), riga Totali, KPI row (Voci/Ore/Decolli-Atterraggi/Ricavo, ratifica 3: solo REGISTERED, scope pagina corrente — `flights.service.ts` non espone un aggregato cross-pagina e sommare su tutte le pagine avrebbe richiesto N round-trip; nessuna modifica al service, SOLO-UI rispettato).
+- "Nuova voce" = SlideOver (ratifica 1), stesso componente per "Correggi volo" (come il legacy `RegisterFlightForm`); durata calcolata live mostrata SOLO nel footer (AC 3); breakdown/nuovo saldo mostrati DENTRO lo SlideOver al successo (stato `lastResult`), mai un semplice toast — l'utente chiude esplicitamente quando pronto.
+- Storno via mini-modal (`.mini-modal`/`.mini-modal-card`, stesso pattern già usato da `bookings-table.tsx#denyModal`) — testid `flight-cancel-panel`/`flight-cancel-confirm`/`flight-cancel-feedback` preservati.
+- Rotta legacy `/dashboard/flights` HARD-DELETATA (ratifica 2): eliminati `flights/page.tsx` e `flights-manager.tsx` (+ dir). Ripuntati TUTTI i link entranti: `pilot-profile.tsx`, `people/[id]/page.tsx`, `school/page.tsx` (drill-down istruttore), `dashboard/page.tsx` (2 widget), `nav-items.ts` (label "Voli" invariata, solo href). `route-registry.ts`: voce `logbook` → `enabled:true, airopsNative:true`. Grep finale: zero riferimenti residui a `/dashboard/flights` in codice/test (solo commenti storici/doc rimasti, intenzionale).
+- i18n: `FlightsPage` lasciato INTATTO (letto direttamente da `exports.service.ts` per gli header xlsx/pdf, fuori scope SOLO-UI) — contenuto duplicato/riadattato sotto una nuova namespace `LogbookPage` in `messages/it.json`/`en.json`.
+- e2e: `flights.spec.ts` riscritto, `flight-log.spec.ts`/`flight-reversal.spec.ts` adattati (selettori SlideOver, nav sidebar "Registro voli"). `exports.spec.ts`/`pdf-exports.spec.ts`/`person-detail.spec.ts`/`school.spec.ts`/`home-dashboard.spec.ts`: solo swap di path (`/dashboard/flights` → `/dashboard/logbook`), invariati altrimenti. `package-consumption.spec.ts`/`typeahead-pickers.spec.ts`: oltre allo swap di path, aggiunta l'apertura esplicita dello SlideOver ("Nuova voce") — assumevano il form legacy sempre aperto inline; `package-consumption.spec.ts` ha anche guadagnato lo stesso scoping-per-aereo (T0 hardening) già usato altrove, sostituendo una disambiguazione per H:MM con il testo della package-note (lezione 11.2).
+- Due bug trovati e fissati durante la verifica e2e completa (non durante una review, durante l'implementazione stessa): (1) la nota "di cui X da pacchetto" era stata omessa dalla cella Ore; (2) azioni riga (Storna/Correggi) e lineage (badge/nota di correzione o annullamento) erano trattati come mutuamente esclusivi invece che combinabili (un volo REGISTERED che è ESSO STESSO una correzione deve mostrare entrambi).
+- Verifica interattiva (script Playwright throwaway, Playwright MCP rotto in questo ambiente): entrambi i temi (light/dark), flusso completo registra→breakdown→chiudi→correggi→breakdown→chiudi→storna, vista own-access pilota (niente form/filtri staff).
+
+### File List
+
+- `src/app/[locale]/dashboard/logbook/page.tsx` (nuovo)
+- `src/app/[locale]/dashboard/logbook/logbook-console.tsx` (nuovo)
+- `src/app/[locale]/dashboard/logbook/flight-editor.tsx` (nuovo)
+- `src/app/[locale]/dashboard/flights/page.tsx` (eliminato)
+- `src/app/[locale]/dashboard/flights/flights-manager.tsx` (eliminato)
+- `src/app/[locale]/dashboard/pilots/pilot-profile.tsx` (repoint link)
+- `src/app/[locale]/dashboard/people/[id]/page.tsx` (repoint link)
+- `src/app/[locale]/dashboard/school/page.tsx` (repoint drill-down)
+- `src/app/[locale]/dashboard/page.tsx` (repoint 2 widget)
+- `src/app/[locale]/dashboard/nav-items.ts` (repoint href)
+- `src/components/shell/route-registry.ts` (flip `logbook` a `enabled:true, airopsNative:true`)
+- `messages/it.json`, `messages/en.json` (nuova namespace `LogbookPage`)
+- `e2e/flights.spec.ts` (riscritto)
+- `e2e/flight-log.spec.ts`, `e2e/flight-reversal.spec.ts` (adattati)
+- `e2e/exports.spec.ts`, `e2e/pdf-exports.spec.ts`, `e2e/person-detail.spec.ts`, `e2e/school.spec.ts`, `e2e/home-dashboard.spec.ts` (swap path)
+- `e2e/package-consumption.spec.ts`, `e2e/typeahead-pickers.spec.ts` (swap path + apertura SlideOver + T0 hardening)
+
+### Change Log
+
+- 2026-07-15/16: implementazione story 12.8 (commit `feat(12.8)`), fix post-verifica e2e completa (commit `fix(12.8)`).
