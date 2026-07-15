@@ -1,6 +1,6 @@
 import { apiRoute } from '@/lib/api/handler';
 import { completePprRequestSchema, type CompletePprRequestInput } from '@/lib/schemas/ppr';
-import { completePprRequest } from '@/server/services/ppr.service';
+import { completePprRequest, toPprRequestDto } from '@/server/services/ppr.service';
 
 type RouteParams = { id: string };
 
@@ -15,5 +15,5 @@ type RouteParams = { id: string };
 export const POST = apiRoute<undefined, CompletePprRequestInput, RouteParams>({
   bodySchema: completePprRequestSchema,
   idempotency: { endpoint: 'ppr-complete' },
-  handle: async ({ actor, params, body }) => completePprRequest(actor, params.id, body),
+  handle: async ({ actor, params, body }) => toPprRequestDto(await completePprRequest(actor, params.id, body)),
 });

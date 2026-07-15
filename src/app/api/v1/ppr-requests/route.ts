@@ -2,7 +2,7 @@ import { apiRoute } from '@/lib/api/handler';
 import { createPprRequestSchema, listPprRequestsQuerySchema } from '@/lib/schemas/ppr';
 import { xlsxResponse } from '@/server/adapters/excel/response';
 import { exportPprRequestsXlsx } from '@/server/services/exports.service';
-import { createPprRequest, extractSubmitterIp, listPprRequests } from '@/server/services/ppr.service';
+import { createPprRequest, extractSubmitterIp, listPprRequests, toPprRequestDto } from '@/server/services/ppr.service';
 
 /**
  * Public route (`src/proxy.ts` `PUBLIC_API_PATHS`) — the first
@@ -45,6 +45,8 @@ export const GET = apiRoute({
       const { buffer, filename } = await exportPprRequestsXlsx(actor, query);
       return xlsxResponse(buffer, filename);
     }
-    return listPprRequests(actor, query);
+    // Review 12.4 F1: the wire shape is `pprRequestItemSchema`, never the raw service item.
+    const result = await listPprRequests(actor, query);
+    return { ...result, items: result.items.map(toPprRequestDto) };
   },
 });

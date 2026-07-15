@@ -45,6 +45,7 @@ const {
   rejectPprRequest,
   completePprRequest,
   cancelPprRequest,
+  toPprRequestDto,
   PPR_RATE_LIMIT_MAX,
 } = await import('./ppr.service');
 const { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } = await import('./errors');
@@ -927,5 +928,48 @@ describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', (
     expect(result.status).toBe('PENDING');
     expect(queryRawMock).not.toHaveBeenCalled();
     expect(updateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('ppr.service — toPprRequestDto (review 12.4, F1)', () => {
+  const listItem = {
+    id: 'ppr_1',
+    status: 'APPROVED' as const,
+    firstName: 'Mario',
+    lastName: 'Rossi',
+    email: null,
+    phone: '+39 333 0000000',
+    aircraftRegistration: 'I-ABCD',
+    aircraftType: 'P2008',
+    origin: 'LIML',
+    destination: 'LIMB',
+    eta: new Date('2026-07-20T10:00:00.000Z'),
+    etd: new Date('2026-07-20T15:00:00.000Z'),
+    personsOnBoard: 2,
+    notes: null,
+    locale: 'it',
+    pprNumber: 'PPR-2026-0001',
+    rejectionReason: null,
+    decidedAt: new Date('2026-07-19T09:00:00.000Z'),
+    decidedByUserId: 'staff_1',
+    closedAt: null,
+    closedByUserId: null,
+    landingFeeCents: null,
+    createdAt: new Date('2026-07-19T08:00:00.000Z'),
+    createdByUserId: 'staff_1',
+  };
+
+  it('derives fromPublicForm and NEVER exposes createdByUserId/closedByUserId (the wire is pprRequestItemSchema, not the service item)', () => {
+    const dto = toPprRequestDto(listItem);
+
+    expect(dto.fromPublicForm).toBe(false);
+    expect(dto).not.toHaveProperty('createdByUserId');
+    expect(dto).not.toHaveProperty('closedByUserId');
+    expect(dto.eta).toBe('2026-07-20T10:00:00.000Z');
+    expect(dto.decidedByUserId).toBe('staff_1');
+  });
+
+  it('public-form row (createdByUserId null) -> fromPublicForm true', () => {
+    expect(toPprRequestDto({ ...listItem, createdByUserId: null }).fromPublicForm).toBe(true);
   });
 });

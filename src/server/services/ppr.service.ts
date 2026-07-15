@@ -2,7 +2,7 @@ import type { Prisma, PprStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc } from '@/lib/date-only';
-import type { CompletePprRequestInput, CreateManualPprRequestInput, CreatePprRequestInput, ListPprRequestsQuery } from '@/lib/schemas/ppr';
+import type { CompletePprRequestInput, CreateManualPprRequestInput, CreatePprRequestInput, ListPprRequestsQuery, PprRequestItemDto } from '@/lib/schemas/ppr';
 import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, dateOnlyInZone, zonedMidnightUtc } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
@@ -183,6 +183,44 @@ export type PprRequestListItem = {
   /** The staff/admin user who entered this request manually (story 12.4, AC 1) — `null` for every public-form submission. Never exposed as-is on the wire DTO (see `pprRequestItemSchema`'s `fromPublicForm` derived boolean instead). */
   createdByUserId: string | null;
 };
+
+/**
+ * `PprRequestListItem` -> the wire DTO (`pprRequestItemSchema`), the ONE
+ * mapping every consumer goes through — the API routes and both server
+ * pages (review 12.4, F1: the routes used to return the service item raw,
+ * so `createdByUserId`/`closedByUserId` reached the wire and the declared
+ * `fromPublicForm` never did). Field-by-field ON PURPOSE, no spread: a
+ * spread would silently re-leak any future service-only field into every
+ * response; this shape fails typecheck instead the moment the schema and
+ * the service type diverge.
+ */
+export function toPprRequestDto(item: PprRequestListItem): PprRequestItemDto {
+  return {
+    id: item.id,
+    status: item.status,
+    firstName: item.firstName,
+    lastName: item.lastName,
+    email: item.email,
+    phone: item.phone,
+    aircraftRegistration: item.aircraftRegistration,
+    aircraftType: item.aircraftType,
+    origin: item.origin,
+    destination: item.destination,
+    eta: item.eta.toISOString(),
+    etd: item.etd ? item.etd.toISOString() : null,
+    personsOnBoard: item.personsOnBoard,
+    notes: item.notes,
+    locale: item.locale as AppLocale,
+    pprNumber: item.pprNumber,
+    rejectionReason: item.rejectionReason,
+    decidedAt: item.decidedAt ? item.decidedAt.toISOString() : null,
+    decidedByUserId: item.decidedByUserId,
+    landingFeeCents: item.landingFeeCents,
+    closedAt: item.closedAt ? item.closedAt.toISOString() : null,
+    createdAt: item.createdAt.toISOString(),
+    fromPublicForm: item.createdByUserId === null,
+  };
+}
 
 /**
  * Every detail field EXCEPT `submitterIp` (Contesto: "MAI submitterIp" — an

@@ -1,5 +1,5 @@
 import { apiRoute } from '@/lib/api/handler';
-import { cancelPprRequest } from '@/server/services/ppr.service';
+import { cancelPprRequest, toPprRequestDto } from '@/server/services/ppr.service';
 
 type RouteParams = { id: string };
 
@@ -12,5 +12,5 @@ type RouteParams = { id: string };
  */
 export const POST = apiRoute<undefined, undefined, RouteParams>({
   idempotency: { endpoint: 'ppr-cancel' },
-  handle: async ({ actor, params }) => cancelPprRequest(actor, params.id),
+  handle: async ({ actor, params }) => toPprRequestDto(await cancelPprRequest(actor, params.id)),
 });

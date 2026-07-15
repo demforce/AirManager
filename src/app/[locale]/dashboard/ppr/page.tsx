@@ -1,11 +1,10 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import type { PprRequestItemDto } from '@/lib/schemas/ppr';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getPprLandingFeeDefaultCents, getPprOperatingInstructions } from '@/server/services/app-settings.service';
-import { listPprRequests, type PprRequestListItem } from '@/server/services/ppr.service';
+import { listPprRequests, toPprRequestDto } from '@/server/services/ppr.service';
 import { ManualPprLaunchButton } from './manual-ppr-launch-button';
 import { PprConsole } from './ppr-console';
 
@@ -23,26 +22,6 @@ export type QueueStatus = (typeof QUEUE_STATUSES)[number];
 /** Hand-edited URL defense (same pattern as `movements/page.tsx#sanitizeStatus`): an invalid `?status` never errors, it silently falls back to the page's own default (`PENDING`, the 8.2 contract, unchanged). */
 function sanitizeStatus(value: string | undefined): QueueStatus {
   return value && (QUEUE_STATUSES as readonly string[]).includes(value) ? (value as QueueStatus) : 'PENDING';
-}
-
-/**
- * Server-serialized `Date` fields to the wire DTO shape
- * (`pprRequestItemSchema`) — same rationale as the pre-12.4 page's own
- * `toPprRequestDto`. `fromPublicForm` (AC 1/2) is derived HERE, server-side,
- * from `createdByUserId` — the client component never sees the raw user id
- * (Dev Notes: "niente id utente nel DTO").
- */
-function toPprRequestDto(item: PprRequestListItem): PprRequestItemDto {
-  return {
-    ...item,
-    locale: item.locale as 'it' | 'en',
-    eta: item.eta.toISOString(),
-    etd: item.etd ? item.etd.toISOString() : null,
-    decidedAt: item.decidedAt ? item.decidedAt.toISOString() : null,
-    closedAt: item.closedAt ? item.closedAt.toISOString() : null,
-    createdAt: item.createdAt.toISOString(),
-    fromPublicForm: item.createdByUserId === null,
-  };
 }
 
 /**

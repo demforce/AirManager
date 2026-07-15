@@ -1,6 +1,6 @@
 import { apiRoute } from '@/lib/api/handler';
 import { createManualPprRequestSchema } from '@/lib/schemas/ppr';
-import { createManualPprRequest } from '@/server/services/ppr.service';
+import { createManualPprRequest, toPprRequestDto } from '@/server/services/ppr.service';
 
 /**
  * Thin route (AD-1): `ppr.manage` — real authorization stays in
@@ -14,5 +14,5 @@ export const POST = apiRoute({
   bodySchema: createManualPprRequestSchema,
   successStatus: 201,
   idempotency: { endpoint: 'ppr-manual-create' },
-  handle: async ({ actor, body }) => createManualPprRequest(actor, body, { approveImmediately: body.approveImmediately }),
+  handle: async ({ actor, body }) => toPprRequestDto(await createManualPprRequest(actor, body, { approveImmediately: body.approveImmediately })),
 });

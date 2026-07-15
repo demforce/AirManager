@@ -1,5 +1,5 @@
 import { apiRoute } from '@/lib/api/handler';
-import { approvePprRequest } from '@/server/services/ppr.service';
+import { approvePprRequest, toPprRequestDto } from '@/server/services/ppr.service';
 
 type RouteParams = { id: string };
 
@@ -13,5 +13,5 @@ type RouteParams = { id: string };
  */
 export const POST = apiRoute<undefined, undefined, RouteParams>({
   idempotency: { endpoint: 'ppr-approve' },
-  handle: async ({ actor, params }) => approvePprRequest(actor, params.id),
+  handle: async ({ actor, params }) => toPprRequestDto(await approvePprRequest(actor, params.id)),
 });

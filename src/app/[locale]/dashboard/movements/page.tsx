@@ -4,12 +4,12 @@ import type { AppLocale } from '@/i18n/routing';
 import { buildExportHref } from '@/lib/export-href';
 import { currentMonthRange } from '@/lib/period-presets';
 import { deriveApprovedPprMovementStatus } from '@/lib/ppr-movement-status';
-import type { PprRequestItemDto, PprStatusDto } from '@/lib/schemas/ppr';
+import type { PprStatusDto } from '@/lib/schemas/ppr';
 import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import { listPprRequests, type PprRequestListItem } from '@/server/services/ppr.service';
+import { listPprRequests, toPprRequestDto } from '@/server/services/ppr.service';
 import { LogArrivalLaunchButton } from './log-arrival-launch-button';
 import { MovementsTable, type MovementRowDto, type MovementsFilters } from './movements-table';
 
@@ -37,19 +37,6 @@ function sanitizeStatus(value: string | undefined): MovementsStatus {
 
 /** Upper bound on how many currently-open (never-closed) APPROVED rows the KPI scan below reads at once (Dev Notes: a realistic airfield has well under this many simultaneously in flight; exceeding it undercounts the "al suolo ora"/"in arrivo oggi" KPIs rather than crashing — a documented, accepted degradation, not a hard cap on the register itself). */
 const KPI_SCAN_LIMIT = 500;
-
-function toPprRequestDto(item: PprRequestListItem): PprRequestItemDto {
-  return {
-    ...item,
-    locale: item.locale as 'it' | 'en',
-    eta: item.eta.toISOString(),
-    etd: item.etd ? item.etd.toISOString() : null,
-    decidedAt: item.decidedAt ? item.decidedAt.toISOString() : null,
-    closedAt: item.closedAt ? item.closedAt.toISOString() : null,
-    createdAt: item.createdAt.toISOString(),
-    fromPublicForm: item.createdByUserId === null,
-  };
-}
 
 /**
  * `PprStatus` -> the movements table's own presentation status (AC 3): only

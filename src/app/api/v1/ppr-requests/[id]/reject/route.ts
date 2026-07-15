@@ -1,6 +1,6 @@
 import { apiRoute } from '@/lib/api/handler';
 import { rejectPprRequestSchema, type RejectPprRequestInput } from '@/lib/schemas/ppr';
-import { rejectPprRequest } from '@/server/services/ppr.service';
+import { rejectPprRequest, toPprRequestDto } from '@/server/services/ppr.service';
 
 type RouteParams = { id: string };
 
@@ -14,5 +14,5 @@ type RouteParams = { id: string };
 export const POST = apiRoute<undefined, RejectPprRequestInput, RouteParams>({
   bodySchema: rejectPprRequestSchema,
   idempotency: { endpoint: 'ppr-reject' },
-  handle: async ({ actor, params, body }) => rejectPprRequest(actor, params.id, body.reason),
+  handle: async ({ actor, params, body }) => toPprRequestDto(await rejectPprRequest(actor, params.id, body.reason)),
 });

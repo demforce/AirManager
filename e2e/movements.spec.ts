@@ -361,20 +361,16 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     await expect(page.getByText(created.registration)).toHaveCount(0);
 
     // --- Period filter: `to` set to the day BEFORE the eta excludes it -----
-    // Verified via direct navigation rather than driving the native
-    // `<input type="date">` widget: Chromium's native date picker does not
-    // reliably dispatch a React-visible `input`/`change` event under
-    // automation for programmatic value changes (confirmed across `.fill()`,
-    // the native-setter+dispatchEvent technique, AND keyboard segment typing
-    // — all three left the widget's DOM value updated but `onChange` never
-    // firing) — a known class of native-date-input automation limitation,
-    // orthogonal to the FILTERING behavior this assertion actually cares
-    // about (already exercised via `selectOption` above, which DOES fire
-    // reliably). Direct navigation exercises the exact same server-side
-    // `from`/`to` exclusion logic (`listPprRequests`) the UI's own
-    // `handleFilterChange` would have triggered.
-    await page.goto(`/it/dashboard/movements?status=APPROVED&from=${etaDateOnly}&to=${dayBefore}`);
-    await expect(page.getByTestId('ppr-register-filter-to')).toHaveValue(dayBefore);
+    // Drives the real date input, the pre-12.4 assertion (restored by review
+    // 12.4, F5 — `.fill()` DOES fire a React-visible change on this widget,
+    // reproduced 3/3 against the CI prod build): the URL round-trip proves
+    // the date-input -> `handleFilterChange` -> client-navigation wiring,
+    // not just the server-side exclusion. Same 15s URL tolerance as the
+    // `selectOption` assertion above.
+    await page.goto(`/it/dashboard/movements?status=APPROVED&from=${etaDateOnly}&to=${etaDateOnly}`);
+    await expect(page.getByText(created.registration)).toBeVisible();
+    await page.getByTestId('ppr-register-filter-to').fill(dayBefore);
+    await expect(page).toHaveURL(new RegExp(`to=${dayBefore}`), { timeout: 15_000 });
     await expect(page.getByText(created.registration)).toHaveCount(0);
   });
 
