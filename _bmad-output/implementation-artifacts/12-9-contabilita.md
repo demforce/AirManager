@@ -4,7 +4,7 @@ baseline_commit: 0dd03862df0d72f12147aa028a92f1a9f4fe284e
 
 # Story 12.9: Contabilità — ledger unificato + nuova transazione + estratti conto
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -62,15 +62,53 @@ so that tutta la finanza operativa (addebiti, pagamenti, cassa, compensi) si leg
 
 ### Completion Notes
 
-_(a cura del dev agent)_
+- **AC 1 (ledger unificato)**: `transactions.service.ts` legge l'unione via query Prisma TIPIZZATE (non SQL raw) — `buildAccountWhere`/`buildCashWhere` con Prisma relation-filters per il dedup del twin (`cashMovement: { isNot: null }` / `accountMovement: { amountCents: { not: 0 } } }`), condivise VERBATIM tra `listTransactions` e `getBillingKpis` (stessa lezione 12.8 di `getFlightTotals`). Paginazione cross-sorgente: due `findMany` bounded a `skip+take` per sorgente, merge+sort+slice in JS (approccio esplicitamente sanzionato dalla story quando manca un'infrastruttura a cursore). `total` = due `count()` sommati.
+- **Deviazione dichiarata (AC 1)**: paginazione `page/pageSize` offset (non `?cursor`) — confermato dalla story stessa, nessuna infrastruttura a cursore nel repo.
+- **AC 2 (KPI mese-corrente)**: `getBillingKpis(actor, ref?)` ricalcola SEMPRE il mese corrente Europe/Rome via `period-presets.ts` (aggiunta `previousMonthRange`, simmetrica a `currentMonthRange`), MAI i filtri della tabella — verificato sia da unit test sia da e2e (`billing.spec.ts`, "KPI ... does NOT change when filters do"). `revenueCents`/`chargesCents` sono LO STESSO numero per costruzione (ratifica utente 2 letterale) — due tile con sub-label diverse, non un bug.
+- **AC 3 (lineage/azioni)**: `reversal`/`reversed` derivati da `reversalOfId`/relazione `reversal` su ENTRAMBI i modelli; `actionable` = TOP_UP/ADJUSTMENT non ancora rettificati (conto) o cassa manuale non-twin/non-storno/non-stornata (parità 1:1 col registro legacy, incl. l'irrilevanza di `pprRequestId` — verificato leggendo `finance/cash-register.tsx` prima di eliminarlo).
+- **AC 4 (Nuova transazione)**: `POST /api/v1/transactions` è un dispatcher puro sui 3 writer preesistenti (`recordTopUp`/`recordAdjustment`/`recordCashMovement`), MAI reimplementati. Ramo Addebito conto: importo positivo nel form, negato server-side (convenzione DB "addebito = negativo", stessa di `FLIGHT_CHARGE`); niente `originalMovementId` (branch standalone — il ramo linkato è l'azione riga AC 3, che chiama l'endpoint `/account/adjustments` esistente direttamente). Campo "Data" del ramo Addebito: mostrato DISABILITATO a oggi (mai inviato all'API) solo per coerenza visiva coi 2 rami con data reale — `recordAdjustment` non accetta `effectiveDate` (sempre oggi, invariato).
+- **AC 5 (estratti conto)**: `accountStatementPdfQuerySchema` (nuovo, in `schemas/accounts.ts`) estende `pdfQuerySchema` con `from`/`to` opzionali indipendenti (NON un refine a coppia obbligata come `cashReportPdfQuerySchema` — stesso pattern indipendente di `listCashMovementsQuerySchema`). `listAccountMovements` accetta `from`/`to` opzionali additivi sullo stesso `PaginationQuery`. Riga saldo: sempre il saldo ATTUALE (mai un saldo di fine periodo — l'infra non lo calcola), ma RIETICHETTATA (`pdf.currentBalance` vs `pdf.balance`) quando è applicato un periodo, per non farla leggere come saldo di fine periodo.
+- **AC 6 (rimozioni + repoint)**: eliminati `finance/page.tsx`, `finance/report/*`, `finance/cash-register.tsx`; `finance/categories`/`finance/packages` intatti (muoiono in 12.13, D10). Grep finale `dashboard/finance` nel codice: zero riferimenti vivi (solo commenti/docstring aggiornati per accuratezza storica, incl. 2 JSDoc/OpenAPI stalizzati trovati e corretti in `accounts.service.ts`/`registry.ts`).
+- **AC 7 (e2e)**: nuovo `billing.spec.ts` (13 test). `cash-register.spec.ts` riscritto sul flusso SlideOver+billing (categorie CRUD restano su `/finance/categories` diretto). `cash-report.spec.ts` adattato: il "periodo libero" del report legacy non esiste più nella UI (la card "Ricavi per categoria" è ancorata al mese corrente, ratifica 2) — riscritto sul mese corrente + il download PDF; i test JSON-only restano UI-indipendenti. `account-adjustments.spec.ts`/`home-dashboard.spec.ts` repuntati. **Oltre alla lista esplicita dell'AC**: `package-sale.spec.ts` e `movements.spec.ts` navigavano anch'essi `/dashboard/finance` (non erano nella lista esplicita di AC 7 ma lo richiedeva AC 6 "grep finale zero residui vivi ... e2e") — adattati.
+- **AC 8 (gates)**: nessuna migrazione. `npm run gates` verde. Spec toccati verdi in locale (`--retries=2`) sia isolati sia in piccoli gruppi; un run combinato di TUTTI gli 11 spec insieme ha mostrato instabilità del dev server (`ECONNRESET`) causata dal container sotto carico pesante (aggravata da un `next build` di gates.sh che ha invalidato la cache `.next` di un `next dev` in esecuzione in parallelo) — non un difetto applicativo: confermato ririeseguendo gli stessi test singolarmente/a coppie dopo un riavvio pulito del dev server, tutti verdi. Verifica interattiva (script Playwright throwaway, cancellato prima del commit) entrambi i temi: nessun errore console/hydration con l'iniezione corretta del cookie `am-theme` (l'emulazione `colorScheme` del browser NON riflette il tema dell'app, che è cookie-based — falso positivo di hydration nel mio primo tentativo, risolto).
+- **Scelta implementativa non ovvia**: pulsanti "Estratti conto"/"Nuova transazione" collocati nel card-head della card Transazioni, non nel page-head — deviazione DELIBERATA dal markup 1:1 del prototipo (che li mette nel page-head), ma coerente con la convenzione già stabilita da fleet/pilots/instructors/logbook (che fanno la STESSA deviazione dal proprio prototipo) — le Dev Notes della story vincolano esplicitamente al template "come fleet/pilots/logbook".
+- **Bug trovato e corretto in corsa**: l'`ExportMenu` trigger usava `Export.button` ("Esporta Excel"), non intenzionale dato che billing è la prima pagina con SIA xlsx SIA pdf nello stesso menu — corretto al label generico "Esporta" già presente (ma non usato) in `BillingPage.exportMenu.label`.
 
 ### File List
 
-_(a cura del dev agent)_
+**Nuovi:**
+- `src/lib/schemas/transactions.ts`
+- `src/server/services/transactions.service.ts` (+`.test.ts`)
+- `src/app/api/v1/transactions/route.ts`
+- `src/app/[locale]/dashboard/billing/page.tsx`
+- `src/app/[locale]/dashboard/billing/billing-console.tsx`
+- `src/app/[locale]/dashboard/billing/transaction-editor.tsx`
+- `src/app/[locale]/dashboard/billing/statement-dialog.tsx`
+- `e2e/billing.spec.ts`
+
+**Modificati:**
+- `src/lib/schemas/accounts.ts` (+`accountStatementPdfQuerySchema`)
+- `src/lib/schemas/registry.ts` (+2 path `/api/v1/transactions`, query PDF estratto conto aggiornata, 2 docstring stalizzate corrette)
+- `src/lib/period-presets.ts` (+`previousMonthRange`)
+- `src/server/services/accounts.service.ts` (`listAccountMovements` +`from`/`to` additivi; docstring `listNegativeBalances` corretta)
+- `src/server/services/exports.service.ts` (+`exportTransactionsXlsx`; `exportAccountStatementPdf` +periodo/rietichettatura saldo) (+`.test.ts`)
+- `src/app/api/v1/people/[id]/account/pdf/route.ts` (nuovo query schema)
+- `src/components/shell/route-registry.ts` (`billing` → `enabled:true, airopsNative:true`)
+- `src/app/[locale]/dashboard/nav-items.ts` (`finance` → `/dashboard/billing`)
+- `src/app/[locale]/dashboard/page.tsx` (widget → `/dashboard/billing`)
+- `src/app/[locale]/dashboard/finance/categories/page.tsx`, `finance/packages/page.tsx` (back-link → `/dashboard/billing`)
+- `messages/it.json`, `messages/en.json` (+namespace `BillingPage`; +`AccountStatementPage.pdf.currentBalance`)
+- `e2e/cash-register.spec.ts`, `e2e/cash-report.spec.ts`, `e2e/account-adjustments.spec.ts`, `e2e/home-dashboard.spec.ts`, `e2e/movements.spec.ts`, `e2e/package-sale.spec.ts`
+
+**Eliminati:**
+- `src/app/[locale]/dashboard/finance/page.tsx`
+- `src/app/[locale]/dashboard/finance/report/page.tsx`
+- `src/app/[locale]/dashboard/finance/report/report-filters.tsx`
+- `src/app/[locale]/dashboard/finance/cash-register.tsx`
 
 ### Change Log
 
-_(a cura del dev agent)_
+- 2026-07-16/17: Implementata story 12.9 — ledger unificato (`transactions.service.ts`), pagina `/dashboard/billing` AirOps-native (KPI mese-corrente, tabella filtrata, Nuova transazione a 3 rami, Rettifica/Storna riga, Estratti conto, split Ricavi per categoria/Compensi istruttori, Saldi negativi), eliminazione `/dashboard/finance` + `/dashboard/finance/report`. e2e: nuovo `billing.spec.ts` + adattamento di 6 spec legacy. Due commit: `feat(12.9)` (implementazione) e `test(12.9)` (e2e + fix minori trovati in corsa). Status → review.
 
 ## Review Record
 
