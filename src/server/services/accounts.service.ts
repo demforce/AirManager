@@ -625,7 +625,8 @@ export type NegativeBalanceItem = {
 
 /**
  * Lists every account with a negative balance, most-negative first (AC 2,
- * Task 2) — the staff-facing "saldi negativi" list on `/dashboard/finance`.
+ * Task 2) — the staff-facing "saldi negativi" list, shown on `/dashboard/billing`
+ * since story 12.9 (the legacy `/dashboard/finance` it originally lived on is gone).
  * `finance.manage` only.
  *
  * Balance is ALWAYS the `SUM(AccountMovement.amountCents)` computation

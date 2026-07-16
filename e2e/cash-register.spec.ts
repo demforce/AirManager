@@ -43,83 +43,77 @@ async function recordMovement(page: Page, categoryId: string, amountCents: numbe
   expect(response.status()).toBe(201);
 }
 
-/** Fills and submits the "Nuovo movimento" panel (assumes the finance page is open). */
-async function submitMovement(
+/**
+ * Fills and submits the "Nuova transazione" SlideOver's "Movimento cassa"
+ * branch (story 12.9 — replaces the legacy `/dashboard/finance` inline
+ * panel). Assumes billing is open with no editor active.
+ */
+async function submitCashMovement(
   page: Page,
-  input: { direction: 'Entrata' | 'Uscita'; categoryName: string; amount: string; date: string; description: string },
+  input: { direction: 'in' | 'out'; categoryName: string; amount: string; date: string; description: string },
 ): Promise<void> {
-  await page.getByRole('button', { name: 'Nuovo movimento' }).click();
-  await page.locator('#cash-direction').selectOption({ label: input.direction });
-  await page.locator('#cash-category').selectOption({ label: input.categoryName });
-  await page.locator('#cash-amount').fill(input.amount);
-  await page.locator('#cash-effective-date').fill(input.date);
-  await page.locator('#cash-description').fill(input.description);
-  await page.getByRole('button', { name: 'Registra movimento' }).click();
-  // The panel closes only on success — a stronger completion signal than the
-  // feedback text, which persists from a previous submit in the same test.
-  await expect(page.getByTestId('cash-movement-form')).toHaveCount(0);
-  await expect(page.getByTestId('cash-feedback')).toHaveText('Movimento registrato.');
+  await page.getByTestId('billing-new-transaction-button').click();
+  await page.waitForSelector('[data-testid="transaction-form"]');
+  await page.getByTestId('transaction-kind').selectOption('cash');
+  await page.getByTestId('transaction-category').selectOption({ label: input.categoryName });
+  await page.getByTestId('transaction-direction').selectOption(input.direction);
+  await page.getByTestId('transaction-amount').fill(input.amount);
+  await page.getByTestId('transaction-date').fill(input.date);
+  await page.getByTestId('transaction-description').fill(input.description);
+  await page.getByTestId('transaction-submit').click();
+  await page.waitForSelector('[data-testid="transaction-result-panel"]');
+  await page.getByTestId('transaction-result-close').click();
 }
 
 function registerRows(page: Page) {
-  return page.getByTestId('cash-register-table').locator('tbody tr');
+  return page.getByTestId('transaction-row');
 }
 
-test.describe('Cash register with categories and reversals (Story 3.4)', () => {
-  test('staff records a +50 € entrata and a −30 € uscita: both in the register with signed colored amounts; sign and period filters work (AC 2)', async ({
+test.describe('Cash register with categories and reversals (Story 3.4 — port to billing, story 12.9)', () => {
+  test('staff records a +50 € entrata and a −30 € uscita via "Nuova transazione"; both show signed amounts and the category filter isolates them (AC 2)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const categoryName = uniqueCategoryName('Registro');
     const categoryId = await createCategory(page, categoryName);
 
-    await page.goto('/it/dashboard/finance');
-    await submitMovement(page, {
-      direction: 'Entrata',
+    await page.goto('/it/dashboard/billing');
+    await submitCashMovement(page, {
+      direction: 'in',
       categoryName,
       amount: '50',
       date: '2026-07-01',
       description: 'Incasso piazzale',
     });
-    await submitMovement(page, {
-      direction: 'Uscita',
+    await submitCashMovement(page, {
+      direction: 'out',
       categoryName,
       amount: '30',
       date: '2026-07-02',
       description: 'Acquisto materiale',
     });
 
-    // Isolate this run's rows through the category filter (URL-driven).
-    await page.getByTestId('cash-filter-category').selectOption(categoryId);
-    await expect(page).toHaveURL(new RegExp(`categoryId=${categoryId}`));
+    // Isolate this run's rows through the category filter (URL-driven, "Tipo" select's cash optgroup).
+    await page.getByTestId('billing-filter-type').selectOption(categoryId);
+    await expect(page).toHaveURL(new RegExp(`type=${categoryId}`));
     await expect(registerRows(page)).toHaveCount(2);
 
-    // Signed colored amounts: entrata green (+50,00 €), uscita red (−30,00 €).
+    // Signed amounts, club-centric convention (ratifica 1): entrata (positive) plain ink, uscita (negative) in `var(--ok)`.
     const inflowRow = registerRows(page).filter({ hasText: 'Incasso piazzale' });
-    await expect(inflowRow).toContainText(/\+50,00\s€/);
-    await expect(inflowRow.locator('span.text-\\[\\#346538\\]')).toBeVisible();
+    await expect(inflowRow).toContainText(/50,00\s€/);
     const outflowRow = registerRows(page).filter({ hasText: 'Acquisto materiale' });
     await expect(outflowRow).toContainText(/-30,00\s€/);
-    await expect(outflowRow.locator('span.text-\\[\\#9F2F2D\\]')).toBeVisible();
 
-    // Sign filter: out → only the uscita.
-    await page.getByTestId('cash-filter-sign').selectOption('out');
-    await expect(page).toHaveURL(/sign=out/);
-    await expect(registerRows(page)).toHaveCount(1);
-    await expect(registerRows(page).first()).toContainText('Acquisto materiale');
-    await page.getByTestId('cash-filter-sign').selectOption('');
-    await expect(page).not.toHaveURL(/sign=/);
-
-    // Period filter, INCLUSIVE boundaries: [2026-07-01, 2026-07-01] → only the entrata.
-    await page.getByTestId('cash-filter-from').fill('2026-07-01');
-    await expect(page).toHaveURL(/from=2026-07-01/);
-    await page.getByTestId('cash-filter-to').fill('2026-07-01');
-    await expect(page).toHaveURL(/to=2026-07-01/);
+    // Period filter, INCLUSIVE boundaries: [2026-07-01, 2026-07-01] -> only the entrata.
+    await page.getByTestId('billing-filter-date-from').fill('2026-07-01');
+    await expect(page).toHaveURL(/dateFrom=2026-07-01/);
+    await page.getByTestId('billing-filter-date-to').fill('2026-07-01');
+    await expect(page).toHaveURL(/dateTo=2026-07-01/);
     await expect(registerRows(page)).toHaveCount(1);
     await expect(registerRows(page).first()).toContainText('Incasso piazzale');
   });
 
-  test('reversing the uscita with a reason creates the +30 € storno row with badge; the original loses its Storna action (AC 2, AD-3)', async ({
+  test('reversing the uscita with a reason creates the +30 € storno row with the "Storno" status badge; the original loses its Storna action (AC 2, AD-3)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -127,29 +121,31 @@ test.describe('Cash register with categories and reversals (Story 3.4)', () => {
     const categoryId = await createCategory(page, categoryName);
     await recordMovement(page, categoryId, -3000, '2026-07-02');
 
-    await page.goto(`/it/dashboard/finance?categoryId=${categoryId}`);
+    await page.goto(`/it/dashboard/billing?type=${categoryId}`);
     await expect(registerRows(page)).toHaveCount(1);
 
     // Two-step: the row action only opens the panel; the storno needs a reason.
-    await registerRows(page).first().getByRole('button', { name: 'Storna' }).click();
-    await page.locator('#cash-reverse-reason').fill('Registrata per errore');
-    await page.getByRole('button', { name: 'Conferma storno' }).click();
-    await expect(page.getByTestId('cash-feedback')).toHaveText('Storno registrato.');
+    await registerRows(page).first().getByTestId('transaction-reverse-action').click();
+    await page.waitForSelector('[data-testid="transaction-reverse-panel"]');
+    await page.getByTestId('transaction-reverse-reason').fill('Registrata per errore');
+    await page.getByTestId('transaction-reverse-confirm').click();
+    await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
 
-    // The storno row: opposite amount, same category, badge.
+    // The storno row: opposite amount, same category, "Storno" status badge.
     await expect(registerRows(page)).toHaveCount(2);
     const reversalRow = registerRows(page).filter({ hasText: 'Registrata per errore' });
-    await expect(reversalRow).toContainText(/\+30,00\s€/);
-    await expect(reversalRow.getByTestId('cash-reversal-badge')).toBeVisible();
+    await expect(reversalRow).toContainText(/30,00\s€/);
+    await expect(reversalRow.getByText('Storno', { exact: true })).toBeVisible();
 
     // Neither the reversed original nor the storno itself offers "Storna" anymore.
-    await expect(page.getByTestId('cash-register-table').getByRole('button', { name: 'Storna' })).toHaveCount(0);
+    await expect(registerRows(page).getByTestId('transaction-reverse-action')).toHaveCount(0);
   });
 
-  test('admin creates a category and deactivates it: it disappears from the new-movement picker (AC 1)', async ({ page }) => {
+  test('admin creates a category and deactivates it: it disappears from the "Nuova transazione" cash picker (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const categoryName = uniqueCategoryName('Effimera');
 
+    // Category CRUD stays reachable with a direct URL (AC 6 — dies in 12.13).
     await page.goto('/it/dashboard/finance/categories');
     await page.getByRole('button', { name: 'Nuova categoria' }).click();
     await page.locator('#category-name').fill(categoryName);
@@ -163,13 +159,17 @@ test.describe('Cash register with categories and reversals (Story 3.4)', () => {
     await expect(page.getByTestId('categories-feedback')).toHaveText('Categoria disattivata.');
     await expect(row).toContainText('Disattivata');
 
-    // Deactivated → not selectable for new movements (the picker filters to active).
-    await page.goto('/it/dashboard/finance');
-    await page.getByRole('button', { name: 'Nuovo movimento' }).click();
-    await expect(page.locator('#cash-category')).toBeVisible();
-    await expect(page.locator(`#cash-category option:has-text("${categoryName}")`)).toHaveCount(0);
-    // ... while the FILTER select still lists it (historical movements stay reachable).
-    await expect(page.getByTestId('cash-filter-category').locator(`option:has-text("${categoryName}")`)).toHaveCount(1);
+    // Deactivated -> not selectable for new movements (the picker filters to active) NOR
+    // in the Tipo filter's cash optgroup (story 12.9: BOTH read the same active-only list —
+    // a deliberate deviation from the legacy register's filter, which kept inactive ones
+    // reachable there; the story ratifies "Categorie cassa = categorie attive" for billing).
+    await page.goto('/it/dashboard/billing');
+    await page.getByTestId('billing-new-transaction-button').click();
+    await page.waitForSelector('[data-testid="transaction-form"]');
+    await page.getByTestId('transaction-kind').selectOption('cash');
+    await expect(page.getByTestId('transaction-category')).toBeVisible();
+    await expect(page.locator(`[data-testid="transaction-category"] option:has-text("${categoryName}")`)).toHaveCount(0);
+    await expect(page.locator(`[data-testid="billing-filter-type"] option:has-text("${categoryName}")`)).toHaveCount(0);
   });
 
   test('deleting a category in use fails with a clear message suggesting deactivation (AC 1)', async ({ page }) => {

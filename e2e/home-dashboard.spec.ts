@@ -333,7 +333,8 @@ test.describe('Home dashboard — widget links navigate to the right views (Stor
     await loginExpectingDashboard(page, STAFF_EMAIL);
 
     await page.getByTestId('negative-balances-widget').getByRole('link').click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/finance$/);
+    // Story 12.9: repointed at the new AirOps billing page (legacy `/dashboard/finance` deleted).
+    await expect(page).toHaveURL(/\/it\/dashboard\/billing$/);
 
     await page.goto('/it/dashboard');
     await page.getByTestId('aircraft-out-of-service-widget').getByRole('link').click();

@@ -85,7 +85,7 @@ async function submitAdjustment(page: Page, amount: string, reason: string): Pro
 }
 
 test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () => {
-  test('staff records a −250 € rettifica on a 0 € account: saldo −250 €, ADJUSTMENT row, alert email, listed in /dashboard/finance; a further −10 € does NOT resend (AC 1/2/3)', async ({
+  test('staff records a −250 € rettifica on a 0 € account: saldo −250 €, ADJUSTMENT row, alert email, listed in /dashboard/billing; a further −10 € does NOT resend (AC 1/2/3)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -110,13 +110,15 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     // AC 2: 0 → −250 € crosses below the −200 € default threshold → ONE email in Mailpit.
     await waitForMailpitCount(person.email, 1);
 
-    // AC 2: the account shows up in the staff "saldi negativi" list, reached
-    // via the repointed "Finanze" nav item. Scoped to the nav landmark (suite
-    // convention, see rbac.spec.ts): since story 10.3 the home also has a
-    // "Vai alle finanze" widget link that a bare substring match would hit.
+    // AC 2: the account shows up in the staff "saldi negativi" card on the
+    // billing page (story 12.9 — legacy `/dashboard/finance` deleted),
+    // reached via the repointed "Finanze" nav item. Scoped to the nav
+    // landmark (suite convention, see rbac.spec.ts): since story 10.3 the
+    // home also has a "Vai alle finanze" widget link that a bare substring
+    // match would hit.
     await page.goto('/it/dashboard');
     await page.getByRole('navigation', { name: 'Aree operative' }).getByRole('link', { name: 'Finanze' }).click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/finance$/);
+    await expect(page).toHaveURL(/\/it\/dashboard\/billing$/);
     const negativeRow = page.getByTestId('negative-balance-row').filter({ hasText: person.lastName });
     await expect(negativeRow).toHaveCount(1);
     await expect(negativeRow).toContainText(/-250,00\s€/);

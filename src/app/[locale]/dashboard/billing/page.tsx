@@ -100,7 +100,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
 
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const t = await getTranslations('BillingPage');
-  const tExport = await getTranslations('Export');
 
   const filterQuery = {
     ...(dateFrom ? { dateFrom } : {}),
@@ -178,7 +177,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
           revenueByCategory: { title: t('revenueByCategory.title'), sub: t('revenueByCategory.sub', { month: monthLabel }), empty: t('revenueByCategory.empty') },
           instructorCompensation: { title: t('instructorCompensation.title'), sub: t('instructorCompensation.sub'), noRate: t('instructorCompensation.noRate'), empty: t('instructorCompensation.empty') },
           negativeBalances: { title: t('negativeBalances.title'), empty: t('negativeBalances.empty'), link: t('negativeBalances.link') },
-          exportMenu: { label: tExport('button'), xlsLabel: t('exportMenu.xlsLabel'), pdfLabel: t('exportMenu.pdfLabel') },
+          exportMenu: { label: t('exportMenu.label'), xlsLabel: t('exportMenu.xlsLabel'), pdfLabel: t('exportMenu.pdfLabel') },
           table: {
             cardTitle: t('table.cardTitle'),
             shown: t('table.shown', { shown: result.items.length, total: result.total }),

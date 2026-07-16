@@ -20,30 +20,11 @@ async function loginExpectingDashboard(page: Page, email: string): Promise<void>
 
 /**
  * The cash register (and therefore the report over it) is GLOBAL and
- * append-only (AD-3, story 3.4): every scenario isolates itself with its
- * OWN unique category — but the report's SUMMARY CARDS sum ACROSS every
- * category in the requested period (unlike the register table, which can
- * be filtered down to one category), so a fixed date range is not enough:
- * re-running this spec against a not-freshly-seeded DB (Dev Notes: "e2e
- * flaky su DB sporco") would accumulate a previous run's movements into
- * the SAME day and inflate the totals. Each scenario therefore also draws
- * its OWN random day, spread across ~27 years (2030-2057) — the same
- * negligible-collision-risk pattern as `uniqueCategoryName`'s random
- * suffix, just applied to the calendar instead of the name.
+ * append-only (AD-3, story 3.4): every scenario isolates itself with its OWN
+ * unique category.
  */
 function uniqueCategoryName(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-/** A day, `daysFromBase` after 2030-01-01 UTC, as `YYYY-MM-DD`. */
-function dateAt(daysFromBase: number): string {
-  return new Date(Date.UTC(2030, 0, 1) + daysFromBase * 86_400_000).toISOString().slice(0, 10);
-}
-
-/** A run-unique two-day window (`day1`, `day2 = day1 + 1`) — see the comment above. */
-function uniqueDatePair(): { day1: string; day2: string } {
-  const dayOffset = Math.floor(Math.random() * 9_000); // ~24.6 years of distinct starting days
-  return { day1: dateAt(dayOffset), day2: dateAt(dayOffset + 1) };
 }
 
 /** Creates a cash category via the API (admin session) and returns its id. */
@@ -62,62 +43,59 @@ async function recordMovement(page: Page, categoryId: string, amountCents: numbe
   expect(response.status()).toBe(201);
 }
 
-function categoryRow(page: Page, categoryName: string) {
-  return page.getByTestId('cash-report-category-row').filter({ hasText: categoryName });
+/** Today, `YYYY-MM-DD`, server-clock UTC — same convention `getBillingKpis`'s Europe/Rome "current month" reads (both land in the same calendar month in practice for this suite's run window). */
+function todayDateOnly(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
-test.describe('Financial report over the cash ledger (Story 3.5)', () => {
-  test('staff records +100 € and -40 € on known dates: the report shows entrate 100, uscite -40, saldo 60 and the right category; narrowing the range to exclude a date keeps totals coherent (AC 1/2)', async ({
+test.describe('Financial report over the cash ledger — per-category via billing + PDF export (Story 3.5, port to story 12.9)', () => {
+  test('a positive movement recorded TODAY shows up as a bar in billing\'s "Ricavi per categoria" card (ratifica utente 2: month-anchored, not a free period) — a negative one does not contribute (AC 1/2)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const categoryName = uniqueCategoryName('Report');
     const categoryId = await createCategory(page, categoryName);
-    const { day1, day2 } = uniqueDatePair();
-    await recordMovement(page, categoryId, 10000, day1);
-    await recordMovement(page, categoryId, -4000, day2);
+    const today = todayDateOnly();
+    await recordMovement(page, categoryId, 10000, today);
+    await recordMovement(page, categoryId, -4000, today);
 
-    await page.goto(`/it/dashboard/finance/report?from=${day1}&to=${day2}`);
-
-    await expect(page.getByTestId('cash-report-total-in')).toContainText(/100,00\s€/);
-    await expect(page.getByTestId('cash-report-total-out')).toContainText(/-40,00\s€/);
-    await expect(page.getByTestId('cash-report-net')).toContainText(/\+60,00\s€/);
-
-    const row = categoryRow(page, categoryName);
+    await page.goto('/it/dashboard/billing');
+    const row = page.getByTestId('billing-revenue-by-category-row').filter({ hasText: categoryName });
     await expect(row).toBeVisible();
+    // Only the POSITIVE movement (100,00 €) counts as revenue — the uscita (-40,00 €) never subtracts from it.
     await expect(row).toContainText(/100,00\s€/);
-    await expect(row).toContainText(/-40,00\s€/);
-    await expect(row).toContainText(/\+60,00\s€/);
-
-    // The "apri nel registro" link carries the same from/to (Dev Notes: no
-    // duplicated movements table — reopen the existing register instead).
-    await expect(page.getByTestId('cash-report-open-register')).toHaveAttribute(
-      'href',
-      new RegExp(`/it/dashboard/finance\\?from=${day1}&to=${day2}`),
-    );
-
-    // Narrow the range to exclude day2 (the uscita): totals stay coherent —
-    // only the entrata remains, saldo becomes +100.
-    await page.getByTestId('cash-report-filter-to').fill(day1);
-    await expect(page).toHaveURL(new RegExp(`to=${day1}`));
-    await expect(page.getByTestId('cash-report-total-in')).toContainText(/100,00\s€/);
-    await expect(page.getByTestId('cash-report-total-out')).toContainText(/0,00\s€/);
-    await expect(page.getByTestId('cash-report-net')).toContainText(/\+100,00\s€/);
-    await expect(categoryRow(page, categoryName)).toContainText(/\+100,00\s€/);
   });
 
-  test('a period with no movements shows all-zero totals and an empty category table (AC 1)', async ({ page }) => {
+  test('"Report cassa (PDF)" from billing\'s ExportMenu downloads (200, application/pdf), defaulting to the current month when no period filter is applied (AC 2, story 10.2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/billing');
+    await page.getByRole('button', { name: 'Esporta' }).click();
+    const pdfLink = page.getByRole('link', { name: 'Report cassa (PDF)' });
+    const href = await pdfLink.getAttribute('href');
+    expect(href).toContain('/api/v1/cash-report/pdf');
+
+    const response = await page.request.get(href!);
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toBe('application/pdf');
+  });
+
+  test('a period with no movements shows all-zero totals over the raw JSON report API (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
-    // A run-unique, guaranteed-empty date range (no category was ever
-    // created for these random days).
-    const { day1, day2 } = uniqueDatePair();
-    await page.goto(`/it/dashboard/finance/report?from=${day1}&to=${day2}`);
+    // A run-unique, guaranteed-empty date range (no category was ever created for these random future days).
+    const dayOffset = Math.floor(Math.random() * 9_000);
+    const day1 = new Date(Date.UTC(2035, 0, 1) + dayOffset * 86_400_000).toISOString().slice(0, 10);
+    const day2 = new Date(Date.UTC(2035, 0, 1) + (dayOffset + 1) * 86_400_000).toISOString().slice(0, 10);
 
-    await expect(page.getByTestId('cash-report-total-in')).toContainText(/0,00\s€/);
-    await expect(page.getByTestId('cash-report-total-out')).toContainText(/0,00\s€/);
-    await expect(page.getByTestId('cash-report-net')).toContainText(/0,00\s€/);
-    await expect(page.getByTestId('cash-report-categories-table')).toContainText('Nessun movimento nel periodo selezionato.');
+    const response = await page.request.get(`/api/v1/cash-report?from=${day1}&to=${day2}`);
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as { totalInCents: number; totalOutCents: number; netCents: number; categories: unknown[] };
+    expect(body.totalInCents).toBe(0);
+    expect(body.totalOutCents).toBe(0);
+    expect(body.netCents).toBe(0);
+    expect(body.categories).toEqual([]);
   });
 
   test('a pilot gets a 403 AD-8 envelope from GET /api/v1/cash-report (AD-5)', async ({ page }) => {

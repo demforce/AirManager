@@ -176,8 +176,9 @@ test.describe('Package sale and residuals (Story 4.4, AC 1/2/3)', () => {
     const pacchettiCategory = categories.find((category) => category.name === 'Pacchetti');
     expect(pacchettiCategory).toBeDefined();
 
-    await page.goto(`/it/dashboard/finance?categoryId=${pacchettiCategory!.id}`);
-    const cashRow = page.getByTestId('cash-register-table').locator('tbody tr').filter({ hasText: typeName });
+    // Story 12.9: the cash register is now the unified billing ledger.
+    await page.goto(`/it/dashboard/billing?type=${pacchettiCategory!.id}`);
+    const cashRow = page.getByTestId('transaction-row').filter({ hasText: typeName });
     await expect(cashRow).toContainText(/500,00\s€/);
     await expect(cashRow).toContainText(pilot.lastName);
 

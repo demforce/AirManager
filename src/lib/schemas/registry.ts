@@ -896,7 +896,7 @@ registry.registerPath({
   path: '/api/v1/accounts/negative-balances',
   summary: 'List every account with a negative balance, most negative first',
   description:
-    'The staff-facing "saldi negativi" list (story 3.3, AC 2) shown on the `/dashboard/finance` landing page. Balance is always `SUM(AccountMovement.amountCents)` (AD-3). Requires `finance.manage`.',
+    'The staff-facing "saldi negativi" list (story 3.3, AC 2) shown on `/dashboard/billing` since story 12.9. Balance is always `SUM(AccountMovement.amountCents)` (AD-3). Requires `finance.manage`.',
   tags: ['Accounts'],
   security,
   responses: {

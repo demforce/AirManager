@@ -239,12 +239,12 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     await expect(updatedRow).toContainText('Partito');
     await expect(updatedRow).toContainText(/43,21\s€/);
 
-    // --- Cash register: the matching movement in the "PPR" category (pattern cash-register.spec.ts) ---
-    await page.goto('/it/dashboard/finance');
-    await page.getByTestId('cash-filter-category').selectOption({ label: 'PPR' });
-    const movementRow = page.getByTestId('cash-register-table').locator('tbody tr').filter({ hasText: created.pprNumber });
+    // --- Billing ledger: the matching movement in the "PPR" category (story 12.9 — pattern cash-register.spec.ts) ---
+    await page.goto('/it/dashboard/billing');
+    await page.getByTestId('billing-filter-type').selectOption({ label: 'PPR' });
+    const movementRow = page.getByTestId('transaction-row').filter({ hasText: created.pprNumber });
     await expect(movementRow).toBeVisible();
-    await expect(movementRow).toContainText(/\+43,21\s€/);
+    await expect(movementRow).toContainText(/43,21\s€/);
   });
 
   test('completing with the fee cleared to 0,00 (overriding whatever the current default is): the row turns COMPLETED with landingFeeCents 0, and creates NO new cash movement (AC 1, "tassa zero -> nessun movimento")', async ({
