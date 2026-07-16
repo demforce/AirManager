@@ -110,9 +110,19 @@ export type LogbookConsoleLabels = {
   };
 };
 
+export type LogbookTotals = {
+  count: number;
+  minutes: number;
+  takeoffs: number;
+  landings: number;
+  revenueCents: number;
+};
+
 export type LogbookConsoleProps = {
   canManage: boolean;
   items: FlightListItemDto[];
+  /** TRUE totals over the whole filtered set (review fix 12.8, MAJOR) — `flights.service.ts#getFlightTotals`, REGISTERED-only. Renders the table's own "Totali" row; NOT derived from `items` (the current page). */
+  totals: LogbookTotals;
   page: number;
   totalPages: number;
   filters: LogbookFilters;
@@ -146,6 +156,7 @@ const COLS = '92px 150px minmax(150px,1.5fr) 110px 130px 64px 55px 55px 100px mi
 export function LogbookConsole({
   canManage,
   items,
+  totals,
   page,
   totalPages,
   filters: initialFilters,
@@ -497,43 +508,29 @@ export function LogbookConsole({
                 </div>
               );
             })}
-            {(() => {
-              const registered = items.filter((flight) => flight.status === 'REGISTERED');
-              const totals = registered.reduce(
-                (acc, flight) => ({
-                  minutes: acc.minutes + flight.minutes,
-                  takeoffs: acc.takeoffs + flight.takeoffs,
-                  landings: acc.landings + flight.landings,
-                  cents: acc.cents + flight.breakdown.totalAmountCents,
-                }),
-                { minutes: 0, takeoffs: 0, landings: 0, cents: 0 },
-              );
-              return (
-                <div className="lb-row total" style={{ gridTemplateColumns: COLS }} data-testid="logbook-totals-row">
-                  <div />
-                  <div />
-                  <div />
-                  <div style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                    {labels.table.totals}
-                  </div>
-                  <div />
-                  <div className="mono num" style={{ fontWeight: 600 }}>
-                    {formatMinutes(totals.minutes)}
-                  </div>
-                  <div className="mono num" style={{ fontWeight: 600 }}>
-                    {totals.takeoffs}
-                  </div>
-                  <div className="mono num" style={{ fontWeight: 600 }}>
-                    {totals.landings}
-                  </div>
-                  <div className="mono num" style={{ fontWeight: 600 }}>
-                    {formatCents(totals.cents, moneyLocale)}
-                  </div>
-                  <div />
-                  <div />
-                </div>
-              );
-            })()}
+            <div className="lb-row total" style={{ gridTemplateColumns: COLS }} data-testid="logbook-totals-row">
+              <div />
+              <div />
+              <div />
+              <div style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                {labels.table.totals}
+              </div>
+              <div />
+              <div className="mono num" style={{ fontWeight: 600 }}>
+                {formatMinutes(totals.minutes)}
+              </div>
+              <div className="mono num" style={{ fontWeight: 600 }}>
+                {totals.takeoffs}
+              </div>
+              <div className="mono num" style={{ fontWeight: 600 }}>
+                {totals.landings}
+              </div>
+              <div className="mono num" style={{ fontWeight: 600 }}>
+                {formatCents(totals.revenueCents, moneyLocale)}
+              </div>
+              <div />
+              <div />
+            </div>
           </div>
         )}
 

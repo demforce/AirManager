@@ -238,6 +238,22 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(rows.filter({ hasText: otherPerson.lastName })).toHaveCount(0);
     await expect(rows.filter({ hasText: 'Annullato' })).toHaveCount(1);
 
+    // TRUE totals (review fix 12.8, MAJOR), own-scoped: 2 rows show (AC 1
+    // "storia completa"), but the totals are REGISTERED-only AND scoped to
+    // this pilot ALONE — so only the 30' TOURISM flight counts (75,00 € @
+    // 150,00 €/h), never the cancelled 50' one, and NEVER otherPerson's 40'
+    // flight on the SAME aircraft (SECURITY-CRITICAL: own-access totals must
+    // never leak another person's data, same guard as the rows themselves).
+    await expect(page.locator('.page-title-block .sub')).toHaveText('1 voce · solo i tuoi voli');
+    const kpiValues = page.locator('.kpi-row .kpi .kpi-value');
+    await expect(kpiValues.nth(0)).toHaveText('1');
+    await expect(kpiValues.nth(1)).toHaveText('0:30');
+    await expect(kpiValues.nth(2)).toHaveText('1 / 1');
+    await expect(kpiValues.nth(3)).toHaveText(/^75,00\s€$/);
+    const totalsRow = page.getByTestId('logbook-totals-row');
+    await expect(totalsRow).toContainText('0:30');
+    await expect(totalsRow).toContainText(/75,00\s€/);
+
     // Own-access filters (period/tipo/stato) narrow the results.
     await page.getByTestId('flight-filter-status').selectOption('CANCELLED');
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
@@ -345,13 +361,17 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page.getByTestId('flight-row').first()).toContainText(aircraftB.registration);
   });
 
-  test('staff: pagination shows a second page once a filtered person has more than one page of flights (NFR-6)', async ({ page }) => {
+  test('staff: pagination shows a second page once a filtered person has more than one page of flights (NFR-6); the KPI row/Totali row/header count show the TRUE totals over the WHOLE filtered set, not just page 1 (review fix 12.8, MAJOR)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
-    const aircraft = await createAircraftWithRate(page, 6000);
+    const aircraft = await createAircraftWithRate(page, 6000); // 60,00 €/h
     const person = await createPilotPerson(page, 'Paginazione');
 
-    // 21 flights (the registry's page size is 20) for the SAME run-unique person — distinct dates so nothing collides.
+    // 21 flights (the registry's page size is 20) for the SAME run-unique
+    // person — distinct dates so nothing collides. Each is 10' @ 60,00 €/h
+    // -> round(6000*10/60) = 1000 cents (10,00 €) — TOURISM, no instructor
+    // (AC: avoid the SCHOOL/instructor requirement entirely). 21 flights:
+    // 210 minutes total (3:30), 21 takeoffs/landings, 210,00 € total.
     for (let day = 1; day <= 21; day += 1) {
       const flightDate = `2020-04-${String(day).padStart(2, '0')}`;
       await registerFlight(page, { aircraftId: aircraft.id, personId: person.personId, flightDate, flightType: 'TOURISM', minutes: 10 });
@@ -362,10 +382,38 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page.getByTestId('flight-row')).toHaveCount(20);
     await expect(page.getByTestId('flight-pagination-status')).toHaveText('1 / 2');
 
+    // Header count ("N voci registrate") — the FULL 21, not page 1's 20.
+    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voci registrate');
+
+    // KPI row (entries/ore/decolli-atterraggi/ricavo), in DOM order — the
+    // FULL filtered-set totals (`getFlightTotals`), never a per-page sum.
+    // `.kpi-value` gives the EXACT rendered value, not a substring match
+    // (currency still needs a `\s` regex — `Intl.NumberFormat('it-IT', ...)`
+    // uses a NON-BREAKING space before "€", same convention as every other
+    // money assertion in this suite).
+    const kpiValues = page.locator('.kpi-row .kpi .kpi-value');
+    await expect(kpiValues.nth(0)).toHaveText('21');
+    await expect(kpiValues.nth(1)).toHaveText('3:30');
+    await expect(kpiValues.nth(2)).toHaveText('21 / 21');
+    await expect(kpiValues.nth(3)).toHaveText(/^210,00\s€$/);
+
+    // Table's own "Totali" row — same FULL totals, not the 20 rows on screen.
+    const totalsRow = page.getByTestId('logbook-totals-row');
+    await expect(totalsRow).toContainText('3:30');
+    await expect(totalsRow).toContainText(/210,00\s€/);
+
     await page.getByRole('link', { name: '→' }).click();
     await expect(page).toHaveURL(/page=2/);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
     await expect(page.getByTestId('flight-pagination-status')).toHaveText('2 / 2');
+
+    // Page 2 (1 row) shows the exact SAME full totals as page 1 — proves the
+    // totals are page-independent, not derived from whichever rows happen to
+    // be on screen.
+    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voci registrate');
+    await expect(kpiValues.nth(0)).toHaveText('21');
+    await expect(kpiValues.nth(3)).toHaveText(/^210,00\s€$/);
+    await expect(totalsRow).toContainText(/210,00\s€/);
 
     await page.getByRole('link', { name: '←' }).click();
     await expect(page.getByTestId('flight-pagination-status')).toHaveText('1 / 2');

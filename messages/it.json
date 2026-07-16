@@ -1406,8 +1406,8 @@
   },
   "LogbookPage": {
     "title": "Registro voli",
-    "sub": "{count} voci registrate",
-    "subOwn": "{count} voci · solo i tuoi voli",
+    "sub": "{count, plural, one {# voce registrata} other {# voci registrate}}",
+    "subOwn": "{count, plural, one {# voce} other {# voci}} · solo i tuoi voli",
     "newEntry": "Nuova voce",
     "cardTitle": "Diario di volo",
     "exportLabel": "Esporta Excel",

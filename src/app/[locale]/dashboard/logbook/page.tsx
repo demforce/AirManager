@@ -10,7 +10,7 @@ import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listAircraft } from '@/server/services/aircraft.service';
 import { getAirfieldBranding } from '@/server/services/app-settings.service';
-import { listFlights } from '@/server/services/flights.service';
+import { getFlightTotals, listFlights } from '@/server/services/flights.service';
 import { listPeople } from '@/server/services/people.service';
 import { LogbookConsole, type LogbookFilters } from './logbook-console';
 
@@ -60,13 +60,13 @@ function sanitizeFlightStatus(value: string | undefined): FlightStatusDto | unde
  * Storna/Correggi); everyone else gets a read-only own-access registry
  * (period/tipo/stato only).
  *
- * KPI row + table "Totali" (ratifica 3): REGISTERED-only, computed over the
- * CURRENT PAGE's `listFlights` result — `flights.service.ts` exposes no
- * cross-page aggregate (SOLO-UI, untouched) and summing every filtered page
- * would mean an unbounded number of extra round-trips, so both the KPI row
- * and the table's own totals row are deliberately scoped to what is already
- * on screen (internally consistent with each other, same "visible data"
- * scope `FleetPage`'s own "Riservato" badge already accepts, Dev Notes).
+ * KPI row + table "Totali" + header count (ratifica 3, review fix — MAJOR):
+ * REGISTERED-only, TRUE totals over the WHOLE filtered set, via
+ * `flights.service.ts#getFlightTotals` (one aggregate query, same RBAC/WHERE
+ * as `listFlights`) — NOT the current page's items (a page-scoped sum was
+ * misleading: filtering to a month and landing on page 1 showed page 1's
+ * totals, not the month's). The pagination/table itself still shows only the
+ * current page's <=20 rows.
  */
 export default async function LogbookPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
@@ -142,6 +142,14 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   }
   const totalPages = Math.max(1, Math.ceil(flightsResult.total / FLIGHTS_PAGE_SIZE));
 
+  // NOT `Promise.all` with `listFlights` above — same sequential constraint
+  // documented for the aircraft/people options block above (Dev Notes:
+  // concurrent queries on the shared driver-adapter Prisma client trigger a
+  // pg "client is already executing a query" warning under load). `page` is
+  // irrelevant to the aggregate itself (`getFlightTotals` never paginates) —
+  // passed only to satisfy `ListFlightsQuery`'s required shape.
+  const totals = await getFlightTotals(actor, { ...flightsQuery, page });
+
   // ISO-serialize (AD-8) — same fields as the legacy page.
   const items = flightsResult.items.map((flight) => ({
     ...flight,
@@ -150,13 +158,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     takeoffAt: flight.takeoffAt ? flight.takeoffAt.toISOString() : null,
     landingAt: flight.landingAt ? flight.landingAt.toISOString() : null,
   }));
-
-  // KPI row (ratifica 3, REGISTERED-only, current page — see doc-comment above).
-  const registeredItems = items.filter((flight) => flight.status === 'REGISTERED');
-  const totalMinutes = registeredItems.reduce((sum, flight) => sum + flight.minutes, 0);
-  const totalTakeoffs = registeredItems.reduce((sum, flight) => sum + flight.takeoffs, 0);
-  const totalLandings = registeredItems.reduce((sum, flight) => sum + flight.landings, 0);
-  const totalRevenueCents = registeredItems.reduce((sum, flight) => sum + flight.breakdown.totalAmountCents, 0);
 
   const filters: LogbookFilters = {
     dateFrom: dateFrom ?? '',
@@ -188,7 +189,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
       <div className="page-head">
         <div className="page-title-block">
           <h1>{t('title')}</h1>
-          <div className="sub">{canManage ? t('sub', { count: registeredItems.length }) : t('subOwn', { count: registeredItems.length })}</div>
+          <div className="sub">{canManage ? t('sub', { count: totals.count }) : t('subOwn', { count: totals.count })}</div>
         </div>
       </div>
 
@@ -216,16 +217,17 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
       ) : null}
 
       <div className="kpi-row">
-        <KPI label={t('kpi.entries')} value={registeredItems.length} />
-        <KPI label={t('kpi.hours')} value={formatMinutes(totalMinutes)} />
-        <KPI label={t('kpi.movements')} value={`${totalTakeoffs} / ${totalLandings}`} />
-        <KPI label={t('kpi.revenue')} value={formatCents(totalRevenueCents, displayLocale)} />
+        <KPI label={t('kpi.entries')} value={totals.count} />
+        <KPI label={t('kpi.hours')} value={formatMinutes(totals.minutes)} />
+        <KPI label={t('kpi.movements')} value={`${totals.takeoffs} / ${totals.landings}`} />
+        <KPI label={t('kpi.revenue')} value={formatCents(totals.revenueCents, displayLocale)} />
       </div>
 
       <LogbookConsole
         key={JSON.stringify({ page, ...exportFilters })}
         canManage={canManage}
         items={items}
+        totals={totals}
         page={page}
         totalPages={totalPages}
         filters={filters}

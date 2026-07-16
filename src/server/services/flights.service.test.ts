@@ -32,6 +32,7 @@ vi.mock('@/server/db/prisma', () => ({
       update: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
+      aggregate: vi.fn(),
     },
     hourPackage: {
       findMany: vi.fn(),
@@ -84,7 +85,7 @@ vi.mock('./instructor-rates.service', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { listFlights, registerFlight, cancelFlight, correctFlight } = await import('./flights.service');
+const { listFlights, getFlightTotals, registerFlight, cancelFlight, correctFlight } = await import('./flights.service');
 const { NotFoundError, ConflictError } = await import('./errors');
 
 const aircraftFindUniqueMock = vi.mocked(prisma.aircraft.findUnique);
@@ -98,6 +99,7 @@ const flightFindUniqueMock = vi.mocked(prisma.flight.findUnique);
 const flightUpdateMock = vi.mocked(prisma.flight.update);
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const flightCountMock = vi.mocked(prisma.flight.count);
+const flightAggregateMock = vi.mocked(prisma.flight.aggregate);
 const hourPackageFindManyMock = vi.mocked(prisma.hourPackage.findMany);
 const packageConsumptionGroupByMock = vi.mocked(prisma.packageConsumption.groupBy);
 const packageConsumptionCreateManyMock = vi.mocked(prisma.packageConsumption.createMany);
@@ -125,6 +127,12 @@ const flightFindUnique = flightFindUniqueMock as unknown as { mockResolvedValue:
 const flightUpdate = flightUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const flightFindMany = flightFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const flightCount = flightCountMock as unknown as { mockResolvedValue: (v: number) => void };
+const flightAggregate = flightAggregateMock as unknown as {
+  mockResolvedValue: (v: {
+    _count: { _all: number };
+    _sum: { minutes: number | null; takeoffs: number | null; landings: number | null; aircraftAmountCents: number | null; instructorAmountCents: number | null };
+  }) => void;
+};
 const hourPackageFindMany = hourPackageFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const packageConsumptionGroupBy = packageConsumptionGroupByMock as unknown as {
   mockResolvedValue: (v: { hourPackageId: string; _sum: { minutes: number | null } }[]) => void;
@@ -266,6 +274,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     flightUpdateMock.mockReset();
     flightFindManyMock.mockReset();
     flightCountMock.mockReset();
+    flightAggregateMock.mockReset();
     hourPackageFindManyMock.mockReset();
     packageConsumptionGroupByMock.mockReset();
     packageConsumptionCreateManyMock.mockReset();
@@ -1601,6 +1610,118 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       const result = await listFlights(pilotActor('person_1'), baseQuery());
 
       expect(result.items[0]?.actorEmail).toBeUndefined();
+    });
+  });
+
+  describe('getFlightTotals (review fix 12.8, MAJOR — TRUE totals over the whole filtered set)', () => {
+    function noRoleActor(): Actor {
+      return { userId: 'nobody_1', personId: null, roles: [] };
+    }
+
+    function baseQuery(overrides: Partial<Parameters<typeof getFlightTotals>[1]> = {}) {
+      return listFlightsQuerySchema.parse({ page: 1, pageSize: 20, ...overrides });
+    }
+
+    const AGGREGATE_FIXTURE = {
+      _count: { _all: 25 },
+      _sum: { minutes: 3000, takeoffs: 25, landings: 25, aircraftAmountCents: 500000, instructorAmountCents: 100000 },
+    };
+
+    it('rejects an actor with neither flights.manage nor self.read, no query issued', async () => {
+      await expect(getFlightTotals(noRoleActor(), baseQuery())).rejects.toThrow(ForbiddenError);
+      expect(flightAggregateMock).not.toHaveBeenCalled();
+    });
+
+    it('sums aircraft + instructor amounts into revenueCents, defaulting null sums to 0', async () => {
+      flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
+
+      const result = await getFlightTotals(staffActor(), baseQuery());
+
+      expect(result).toEqual({ count: 25, minutes: 3000, takeoffs: 25, landings: 25, revenueCents: 600000 });
+    });
+
+    it('defaults every _sum field to 0 when the aggregate returns null (no matching rows)', async () => {
+      flightAggregate.mockResolvedValue({
+        _count: { _all: 0 },
+        _sum: { minutes: null, takeoffs: null, landings: null, aircraftAmountCents: null, instructorAmountCents: null },
+      });
+
+      const result = await getFlightTotals(staffActor(), baseQuery());
+
+      expect(result).toEqual({ count: 0, minutes: 0, takeoffs: 0, landings: 0, revenueCents: 0 });
+    });
+
+    it('forces status: REGISTERED in the WHERE even when the query filters status: CANCELLED', async () => {
+      flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
+
+      await getFlightTotals(staffActor(), baseQuery({ status: 'CANCELLED' }));
+
+      expect(flightAggregateMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'REGISTERED' }) }));
+    });
+
+    it('forces status: REGISTERED even with no status filter at all (query.status undefined)', async () => {
+      flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
+
+      await getFlightTotals(staffActor(), baseQuery());
+
+      expect(flightAggregateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'REGISTERED' } }));
+    });
+
+    it('forwards the filter args (dateFrom/dateTo/aircraftId/flightType) into the WHERE, alongside the forced status', async () => {
+      flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
+
+      await getFlightTotals(
+        staffActor(),
+        baseQuery({ dateFrom: '2026-01-01', dateTo: '2026-01-31', aircraftId: 'aircraft_9', flightType: 'SCHOOL' }),
+      );
+
+      expect(flightAggregateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            flightDate: { gte: parseDateOnlyUtc('2026-01-01'), lte: parseDateOnlyUtc('2026-01-31') },
+            aircraftId: 'aircraft_9',
+            flightType: 'SCHOOL',
+            status: 'REGISTERED',
+          },
+        }),
+      );
+    });
+
+    // SECURITY-CRITICAL: a pilot must NEVER see cross-person totals.
+    it('pilot (non-staff): scopes the WHERE to own/instructor flights only (OR own-access), same as listFlights', async () => {
+      flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
+
+      await getFlightTotals(pilotActor('person_1'), baseQuery());
+
+      expect(flightAggregateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [{ personId: 'person_1' }, { instructorProfile: { personId: 'person_1' } }],
+            status: 'REGISTERED',
+          },
+        }),
+      );
+    });
+
+    it('pilot (non-staff) filtering by someone else\'s personId -> Forbidden, no aggregate query issued', async () => {
+      await expect(getFlightTotals(pilotActor('person_1'), baseQuery({ personId: 'person_someone_else' }))).rejects.toThrow(
+        ForbiddenError,
+      );
+      expect(flightAggregateMock).not.toHaveBeenCalled();
+    });
+
+    it('non-staff filtering by someone else\'s instructorPersonId -> Forbidden, no aggregate query issued', async () => {
+      await expect(
+        getFlightTotals(instructorActor(), baseQuery({ instructorPersonId: 'person_someone_else' })),
+      ).rejects.toThrow(ForbiddenError);
+      expect(flightAggregateMock).not.toHaveBeenCalled();
+    });
+
+    it('non-staff with no linked person (personId null) gets zero totals, no query at all', async () => {
+      const result = await getFlightTotals(pilotActor(null), baseQuery());
+
+      expect(result).toEqual({ count: 0, minutes: 0, takeoffs: 0, landings: 0, revenueCents: 0 });
+      expect(flightAggregateMock).not.toHaveBeenCalled();
     });
   });
 });

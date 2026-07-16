@@ -1248,6 +1248,59 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
 }
 
 /**
+ * Shared RBAC guard for `listFlights`/`getFlightTotals` (review fix 12.8,
+ * MAJOR — extracted so the two can't drift on who is allowed to see what).
+ * Returns `canManage`. Throws `ForbiddenError` for an actor with neither
+ * `flights.manage` nor `self.read` (via `authorize`), or for a non-staff
+ * actor filtering by someone else's `personId`/`instructorPersonId` (AC 4,
+ * story 9.3) — exactly `listFlights`'s own guard order, unchanged.
+ */
+function authorizeFlightsQuery(actor: Actor, query: ListFlightsQuery): boolean {
+  const canManage = hasPermission(actor, 'flights.manage');
+  if (!canManage) {
+    authorize(actor, 'self.read');
+  }
+
+  // AC 4 — checked before any query, staff exempt (they may filter by any
+  // personId).
+  if (!canManage && query.personId && query.personId !== actor.personId) {
+    throw new ForbiddenError('Actor may only filter their own flights.');
+  }
+
+  // Story 9.3, AC 4 — same guard shape as `personId` above.
+  if (!canManage && query.instructorPersonId && query.instructorPersonId !== actor.personId) {
+    throw new ForbiddenError('Actor may only filter flights by their own instructorPersonId.');
+  }
+
+  return canManage;
+}
+
+/**
+ * Shared WHERE-builder for `listFlights`/`getFlightTotals` (review fix 12.8,
+ * MAJOR — extracted so the two can't drift on scope/filters). Mirrors
+ * `listFlights`'s own WHERE verbatim: own-access `OR` scoping when
+ * `!canManage`, plus every optional filter (AND-combined).
+ */
+function buildFlightsWhere(actor: Actor, query: ListFlightsQuery, canManage: boolean): Prisma.FlightWhereInput {
+  return {
+    ...(canManage ? {} : { OR: [{ personId: actor.personId! }, { instructorProfile: { personId: actor.personId! } }] }),
+    ...(query.dateFrom || query.dateTo
+      ? {
+          flightDate: {
+            ...(query.dateFrom ? { gte: parseDateOnlyUtc(query.dateFrom) } : {}),
+            ...(query.dateTo ? { lte: parseDateOnlyUtc(query.dateTo) } : {}),
+          },
+        }
+      : {}),
+    ...(query.aircraftId ? { aircraftId: query.aircraftId } : {}),
+    ...(query.personId ? { personId: query.personId } : {}),
+    ...(query.instructorPersonId ? { instructorProfile: { personId: query.instructorPersonId } } : {}),
+    ...(query.flightType ? { flightType: query.flightType } : {}),
+    ...(query.status ? { status: query.status } : {}),
+  };
+}
+
+/**
  * Lists flights, most recent first (story 5.1 AC 1/2; story 5.4 AC 1/2/3/4 —
  * the own-access + filters extension promised since 5.1). Two branches,
  * decided ONCE at the top (never trusted from the UI, AD-5):
@@ -1287,21 +1340,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
  * `paginationOffset`).
  */
 export async function listFlights(actor: Actor, query: ListFlightsQuery): Promise<FlightListResult> {
-  const canManage = hasPermission(actor, 'flights.manage');
-  if (!canManage) {
-    authorize(actor, 'self.read');
-  }
-
-  // AC 4 — checked before any query, staff exempt (they may filter by any
-  // personId).
-  if (!canManage && query.personId && query.personId !== actor.personId) {
-    throw new ForbiddenError('Actor may only filter their own flights.');
-  }
-
-  // Story 9.3, AC 4 — same guard shape as `personId` above.
-  if (!canManage && query.instructorPersonId && query.instructorPersonId !== actor.personId) {
-    throw new ForbiddenError('Actor may only filter flights by their own instructorPersonId.');
-  }
+  const canManage = authorizeFlightsQuery(actor, query);
 
   // AC 1/Contesto — an own-access actor with no linked person has nothing of
   // their own: an empty page, never a query.
@@ -1309,22 +1348,7 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
     return paginate([], 0, query);
   }
 
-  const where: Prisma.FlightWhereInput = {
-    ...(canManage ? {} : { OR: [{ personId: actor.personId! }, { instructorProfile: { personId: actor.personId! } }] }),
-    ...(query.dateFrom || query.dateTo
-      ? {
-          flightDate: {
-            ...(query.dateFrom ? { gte: parseDateOnlyUtc(query.dateFrom) } : {}),
-            ...(query.dateTo ? { lte: parseDateOnlyUtc(query.dateTo) } : {}),
-          },
-        }
-      : {}),
-    ...(query.aircraftId ? { aircraftId: query.aircraftId } : {}),
-    ...(query.personId ? { personId: query.personId } : {}),
-    ...(query.instructorPersonId ? { instructorProfile: { personId: query.instructorPersonId } } : {}),
-    ...(query.flightType ? { flightType: query.flightType } : {}),
-    ...(query.status ? { status: query.status } : {}),
-  };
+  const where = buildFlightsWhere(actor, query, canManage);
 
   const includeActorEmail = hasPermission(actor, 'people.read');
 
@@ -1349,4 +1373,54 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
     total,
     query,
   );
+}
+
+export type FlightTotals = {
+  count: number;
+  minutes: number;
+  takeoffs: number;
+  landings: number;
+  revenueCents: number;
+};
+
+const ZERO_FLIGHT_TOTALS: FlightTotals = { count: 0, minutes: 0, takeoffs: 0, landings: 0, revenueCents: 0 };
+
+/**
+ * TRUE totals over the WHOLE filtered set (review fix 12.8, MAJOR, user-
+ * ratified): the logbook's KPI row/Totali row/header count previously summed
+ * only the CURRENT PAGE's `listFlights` result (<=20 flights), which is
+ * misleading once any filter narrows the set (e.g. a month filter on page 1
+ * showed page 1's totals, not the month's). Shares `listFlights`'s exact
+ * RBAC (`authorizeFlightsQuery`) and WHERE (`buildFlightsWhere`) so a
+ * non-staff actor's totals can NEVER exceed their own scope — but ALWAYS
+ * forces `status: 'REGISTERED'` regardless of `query.status` (Ratifica 3: a
+ * CANCELLED flight stays visible in the table, never counted in totals).
+ * ONE `prisma.flight.aggregate` — no page-by-page summing, no N+1.
+ */
+export async function getFlightTotals(actor: Actor, query: ListFlightsQuery): Promise<FlightTotals> {
+  const canManage = authorizeFlightsQuery(actor, query);
+
+  // Mirrors listFlights' empty-page short-circuit (AC 1/Contesto) — nothing
+  // is "theirs", so zero totals without ever touching Flight.
+  if (!canManage && actor.personId === null) {
+    return ZERO_FLIGHT_TOTALS;
+  }
+
+  const where: Prisma.FlightWhereInput = { ...buildFlightsWhere(actor, query, canManage), status: 'REGISTERED' };
+
+  const aggregate = await prisma.flight.aggregate({
+    where,
+    _count: { _all: true },
+    _sum: { minutes: true, takeoffs: true, landings: true, aircraftAmountCents: true, instructorAmountCents: true },
+  });
+
+  return {
+    count: aggregate._count._all,
+    minutes: aggregate._sum.minutes ?? 0,
+    takeoffs: aggregate._sum.takeoffs ?? 0,
+    landings: aggregate._sum.landings ?? 0,
+    // Same total the DTO computes (`toListItem`'s `totalAmountCents`):
+    // aircraft + instructor (when any).
+    revenueCents: (aggregate._sum.aircraftAmountCents ?? 0) + (aggregate._sum.instructorAmountCents ?? 0),
+  };
 }

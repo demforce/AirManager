@@ -1406,8 +1406,8 @@
   },
   "LogbookPage": {
     "title": "Flight log",
-    "sub": "{count} logged entries",
-    "subOwn": "{count} entries · your flights only",
+    "sub": "{count, plural, one {# logged entry} other {# logged entries}}",
+    "subOwn": "{count, plural, one {# entry} other {# entries}} · your flights only",
     "newEntry": "New entry",
     "cardTitle": "Flight log",
     "exportLabel": "Export Excel",
