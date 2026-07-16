@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-16 (story 12.8 Registro voli done — logbook AirOps + Nuova voce SlideOver + hard-delete legacy; re-review Opus CI=1 220/220, MAJOR totali-filtrati-reali ratificato+fixato, i18n plural fixato)
+last_updated: 2026-07-16 (story 12.9 Contabilità ready-for-dev — 4 ratifiche utente: segni club-centric, KPI mese corrente, Stato lineage reale, saldi negativi+report in billing)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -138,7 +138,7 @@ development_status:
   12-6-piloti: done
   12-7-istruttori-compensi: done
   12-8-registro-voli: done
-  12-9-contabilita: planned
+  12-9-contabilita: ready-for-dev
   12-10-statistiche: planned
   12-11-scadenze-impostazioni-metar: planned
   12-12-panoramica-landing-ruoli: planned
