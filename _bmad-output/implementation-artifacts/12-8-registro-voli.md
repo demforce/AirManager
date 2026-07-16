@@ -4,7 +4,7 @@ baseline_commit: fda70d9fb4574919d27adb600d30fdd6b30af01f
 
 # Story 12.8: Registro voli — logbook AirOps + "Nuova voce"
 
-Status: review
+Status: done
 
 ## Story
 
@@ -85,3 +85,38 @@ so that la registrazione e la consultazione dei voli avvenga nel nuovo linguaggi
 ### Change Log
 
 - 2026-07-15/16: implementazione story 12.8 (commit `feat(12.8)`), fix post-verifica e2e completa (commit `fix(12.8)`).
+
+## Review Record
+
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh, via workflow). **Data**: 2026-07-16. Rebuild solo-UI con hard-delete di rotta + repoint completo → review completeness-critical + arbitro CI-mode (il dev aveva girato solo il subset in dev-mode).
+
+### Arbiter (priority zero)
+
+- **`CI=1 npx playwright test` su build prod, DB fresco → 220 passed, 0 failed** (tutti i 10 spec toccati verdi in CI-mode: il gap "solo dev-mode" del dev chiuso). Dopo il fix di review `f7014e3`: **220/220** ri-verificato. Gates 1370 → **1380 unit** (10 test nuovi per `getFlightTotals`).
+
+### Verdetto
+
+**Shippable dopo un fix escalato al PO.** Solo-UI, repoint, RBAC, storno/correggi, export tutti verificati empiricamente.
+
+### Findings
+
+- **MAJOR — escalato al PO, RATIFICATO e FIXATO in `f7014e3`**: KPI/Totali/conteggio header sommavano solo la PAGINA CORRENTE (≤20 voli), non l'insieme filtrato → fuorviante (filtro mese, pagina 1 mostra i totali di pagina 1). NON coperto da Ratifica 3 (che aveva solo blessato "solo REGISTERED"). **Decisione utente: totali filtrati REALI.** Fix: nuovo `getFlightTotals(actor, query)` in `flights.service.ts` (ADDITIVO — `listFlights`/register/cancel/correct invariati, provato dalla loro suite), helper condivisi `authorizeFlightsQuery`/`buildFlightsWhere` (list+totals non possono divergere), forza `status:'REGISTERED'`. **Own-scoping RBAC verificato dalla sessione principale** (personId/instructorPersonId altrui → 403, personId null → zero, OR own-access) — 9 unit test incl. quelli security-critical. Suite → 1380.
+- **MINOR — FIXATO**: `LogbookPage.sub`/`subOwn` rendevano "1 voci registrate" → ICU plural (convenzione repo).
+
+### Evidenza empirica
+
+- **SOLO-UI**: `git diff -- flights.service.ts schemas/flights.ts api/v1/flights/**` era VUOTO pre-fix (il fix di review aggiunge SOLO `getFlightTotals` + helper additivi, comportamento esistente invariato).
+- **Repoint (hard-delete, no redirect)**: grep `dashboard/flights` → solo doc-comment, zero href vivi; ogni link entrante guidato live atterra su `/dashboard/logbook` coi param (pilot-profile "Vedi tutti", school drill-down `?instructorPersonId=` con self-scoping non-staff, people/[id], 2 widget, nav legacy).
+- **RBAC per ruolo** (build prod): pilota UI = niente form/filtri/azioni renderizzati (non solo nascosti), API foreign personId/instructorPersonId → 403, POST → 403; staff = manager completo.
+- **Export single-click** (2 `.btn`, non ExportMenu): `exports.spec`/`pdf-exports.spec` verdi.
+- Bug auto-fixati dal dev verificati (package-note sub-line; azioni+lineage non esclusivi).
+
+### Verdetti (close-your-notes)
+
+- **#3 (per-page totals)**: escalato al PO → **totali filtrati reali** (fix sopra).
+- **#7** (SearchCombobox label legacy) ACCETTATO (cosmetico). **#8** (2 bottoni export, non ExportMenu) ACCETTATO (contratto single-click). **#9** (Badge testid wrapper) ACCETTATO+CORRETTO (TS rende il bug impossibile altrove — grep conferma zero `<Badge data-testid>`). Inventario test preservato (parità con `fda70d9:e2e/flights.spec.ts`, solo label nav cambiata).
+
+### Commit di review
+
+- `f7014e3` — `fix(12.8)`: totali filtrati reali (MAJOR) + i18n plural (MINOR).
+- questo commit — `docs(12.8)`: Review Record, status → done, sprint-status.
