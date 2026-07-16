@@ -24,6 +24,7 @@ vi.mock('./cash.service', () => ({ listCashMovements: vi.fn(), getCashReport: vi
 vi.mock('./expiries.service', () => ({ listAllExpiries: vi.fn() }));
 vi.mock('./school.service', () => ({ getStudentHourSummaries: vi.fn(), getInstructorHourSummaries: vi.fn() }));
 vi.mock('./instructor-compensation.service', () => ({ getCompensationSummary: vi.fn() }));
+vi.mock('./transactions.service', () => ({ listTransactions: vi.fn() }));
 // Story 10.2: the PDF adapter is mocked here (unlike `buildWorkbook`, never
 // mocked for the xlsx tests above) — the CONTENTS assertion is on the props
 // passed to `renderReportPdf` (Dev Notes: "asserzioni sui contenuti a
@@ -40,6 +41,7 @@ const { listAccountMovements, getAccountOverview } = await import('./accounts.se
 const { getAirfieldBranding } = await import('./app-settings.service');
 const { renderReportPdf } = await import('@/server/adapters/pdf/document');
 const { getCompensationSummary } = await import('./instructor-compensation.service');
+const { listTransactions } = await import('./transactions.service');
 const {
   EXPORT_MAX_ROWS,
   PDF_EXPORT_MAX_ROWS,
@@ -50,6 +52,7 @@ const {
   exportCashMovementsXlsx,
   exportExpiriesXlsx,
   exportInstructorCompensationXlsx,
+  exportTransactionsXlsx,
   exportAccountStatementPdf,
   exportCashReportPdf,
   exportFlightsPdf,
@@ -67,6 +70,7 @@ const getCashReportMock = vi.mocked(getCashReport);
 const getAirfieldBrandingMock = vi.mocked(getAirfieldBranding);
 const renderReportPdfMock = vi.mocked(renderReportPdf);
 const getCompensationSummaryMock = vi.mocked(getCompensationSummary);
+const listTransactionsMock = vi.mocked(listTransactions);
 
 const ACTOR: Actor = { userId: 'user_1', personId: null, roles: ['ADMIN'] };
 const BRANDING = { name: 'Aviosuperficie di Test', logoDataUrl: null };
@@ -96,6 +100,7 @@ beforeEach(() => {
   getAirfieldBrandingMock.mockReset();
   getAirfieldBrandingMock.mockResolvedValue(BRANDING);
   getCompensationSummaryMock.mockReset();
+  listTransactionsMock.mockReset();
 });
 
 describe('assertWithinExportCap (story 10.1, AC 4)', () => {
@@ -399,6 +404,68 @@ describe('exportInstructorCompensationXlsx (story 12.7, AC 3 — payout rate/owe
     expect(noRate.getCell(1).value).toBe('Verdi Luca');
     expect(noRate.getCell(3).value).toBeNull(); // rate null when the instructor has no payout rate
     expect(noRate.getCell(5).value).toBeNull(); // owed null when no rate
+  });
+});
+
+describe('exportTransactionsXlsx (story 12.9, AC 2 — unified ledger, ACCOUNT type label vs CASH category name)', () => {
+  it('translates an ACCOUNT row\'s enum kind, leaves a CASH row\'s category name verbatim, and derives the Stato label', async () => {
+    listTransactionsMock.mockResolvedValue({
+      total: 2,
+      page: 1,
+      pageSize: EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'am_1',
+          source: 'ACCOUNT',
+          date: '2026-07-10',
+          personId: 'p_1',
+          personName: 'Nakamura Elena',
+          kind: 'FLIGHT_CHARGE',
+          description: null,
+          amountCents: 18500,
+          method: null,
+          reference: 'flight_1',
+          reversal: false,
+          reversed: false,
+          actionable: false,
+        },
+        {
+          id: 'cm_1',
+          source: 'CASH',
+          date: '2026-07-09',
+          personId: null,
+          personName: null,
+          kind: 'Carburante',
+          description: 'Rifornimento',
+          amountCents: -5000,
+          method: null,
+          reference: null,
+          reversal: false,
+          reversed: true,
+          actionable: false,
+        },
+      ],
+    } as never);
+
+    const { buffer } = await exportTransactionsXlsx(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
+    const sheet = await readSheet(buffer);
+
+    const accountRow = sheet.getRow(2);
+    expect(accountRow.getCell(2).value).toBe('Nakamura Elena');
+    expect(accountRow.getCell(3).value).toBe('Addebito volo'); // AccountStatementPage.movementType.flightCharge
+    expect(accountRow.getCell(6).value).toBe(185);
+    expect(accountRow.getCell(7).value).toBe('Registrato');
+
+    const cashRow = sheet.getRow(3);
+    expect(cashRow.getCell(3).value).toBe('Carburante'); // verbatim category name, no translation lookup
+    expect(cashRow.getCell(6).value).toBe(-50);
+    expect(cashRow.getCell(7).value).toBe('Stornato');
+  });
+
+  it('rejects with 422 EXPORT_TOO_LARGE when the filtered total exceeds the cap', async () => {
+    listTransactionsMock.mockResolvedValue({ total: EXPORT_MAX_ROWS + 1, page: 1, pageSize: EXPORT_MAX_ROWS, items: [] } as never);
+
+    await expect(exportTransactionsXlsx(ACTOR, { page: 1, pageSize: 20, locale: 'it' })).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
   });
 });
 

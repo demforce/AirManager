@@ -898,7 +898,8 @@
       "success": "Rettifica registrata."
     },
     "pdf": {
-      "balance": "Saldo finale"
+      "balance": "Saldo finale",
+      "currentBalance": "Saldo attuale del conto"
     }
   },
   "FinancePage": {
@@ -2243,6 +2244,168 @@
     "bookingDenied": {
       "subject": "Prenotazione rifiutata: {aircraftRegistration}",
       "body": "Ciao {firstName},\n\nLa tua prenotazione per {aircraftRegistration} del {when} è stata rifiutata.\n\nMotivo: {reason}"
+    }
+  },
+  "BillingPage": {
+    "title": "Contabilità",
+    "sub": "{count, plural, one {# transazione} other {# transazioni}} · {period}",
+    "periodAll": "storico completo",
+    "newTransaction": "Nuova transazione",
+    "statements": "Estratti conto",
+    "kpi": {
+      "revenue": "Ricavi del mese",
+      "revenueDelta": "{value}% su mese prec.",
+      "charges": "Addebiti",
+      "chargesSub": "{count, plural, one {# addebito} other {# addebiti}}",
+      "payments": "Pagamenti ricevuti",
+      "paymentsSub": "{count, plural, one {# pagamento} other {# pagamenti}}",
+      "net": "Credito netto",
+      "instructors": "Compensi istruttori",
+      "instructorsSub": "{count} CFI"
+    },
+    "table": {
+      "cardTitle": "Transazioni",
+      "shown": "{shown} di {total} mostrate",
+      "date": "Data",
+      "pilot": "Pilota",
+      "type": "Tipo",
+      "description": "Descrizione",
+      "method": "Metodo",
+      "amount": "Importo",
+      "status": "Stato",
+      "statusOptions": {
+        "registered": "Registrato",
+        "reversed": "Stornato",
+        "reversal": "Storno"
+      },
+      "actions": "Azioni",
+      "noValue": "—",
+      "empty": "Nessuna transazione trovata.",
+      "kinds": {
+        "TOP_UP": "Ricarica",
+        "ADJUSTMENT": "Rettifica",
+        "PACKAGE_PURCHASE": "Acquisto pacchetto",
+        "FLIGHT_CHARGE": "Addebito volo",
+        "FLIGHT_CHARGE_REVERSAL": "Storno volo"
+      },
+      "methods": {
+        "CASH": "Contanti",
+        "BANK_TRANSFER": "Bonifico",
+        "POS": "POS"
+      }
+    },
+    "filters": {
+      "dateFrom": "Dal",
+      "dateTo": "Al",
+      "type": "Tipo",
+      "allTypes": "Tutti i tipi",
+      "accountGroup": "Movimenti conto",
+      "cashGroup": "Categorie cassa",
+      "pilot": "Pilota",
+      "allPilots": "Tutti i piloti",
+      "reset": "Azzera filtri"
+    },
+    "exportMenu": {
+      "label": "Esporta",
+      "xlsLabel": "Transazioni (Excel)",
+      "pdfLabel": "Report cassa (PDF)"
+    },
+    "revenueByCategory": {
+      "title": "Ricavi per categoria",
+      "sub": "{month}",
+      "empty": "Nessun ricavo registrato questo mese."
+    },
+    "instructorCompensation": {
+      "title": "Compensi istruttori",
+      "sub": "dovuto nel mese",
+      "noRate": "—",
+      "empty": "Nessun istruttore attivo."
+    },
+    "negativeBalances": {
+      "title": "Saldi negativi",
+      "empty": "Nessun conto in negativo.",
+      "link": "Vedi tutte le persone"
+    },
+    "actions": {
+      "adjust": "Rettifica",
+      "reverse": "Storna"
+    },
+    "adjustModal": {
+      "title": "Registra rettifica",
+      "linkedTo": "Collegata al movimento del {date}",
+      "amount": "Importo (EUR, con segno)",
+      "amountHint": "Positivo per accreditare, negativo per addebitare (es. -25,00).",
+      "reason": "Motivo",
+      "submit": "Conferma rettifica",
+      "cancel": "Annulla",
+      "invalidAmount": "Inserisci un importo valido diverso da zero.",
+      "requiredReason": "Il motivo è obbligatorio.",
+      "conflictError": "Questo movimento ha già una rettifica collegata.",
+      "genericError": "Impossibile registrare la rettifica. Riprova.",
+      "success": "Rettifica registrata."
+    },
+    "reverseModal": {
+      "title": "Storna movimento",
+      "reason": "Motivo dello storno",
+      "confirm": "Conferma storno",
+      "cancel": "Annulla",
+      "requiredReason": "Il motivo è obbligatorio.",
+      "conflictError": "Questo movimento non è stornabile (già stornato o automatico).",
+      "genericError": "Impossibile registrare lo storno. Riprova.",
+      "success": "Storno registrato."
+    },
+    "newTransactionForm": {
+      "title": "Nuova transazione",
+      "subtitle": "Contabilità",
+      "closeLabel": "Chiudi",
+      "kind": "Tipo",
+      "kinds": {
+        "payment": "Pagamento",
+        "adjustment": "Addebito conto",
+        "cash": "Movimento cassa"
+      },
+      "fields": {
+        "pilot": "Pilota",
+        "amount": "Importo",
+        "method": "Metodo",
+        "methods": {
+          "CASH": "Contanti",
+          "BANK_TRANSFER": "Bonifico",
+          "POS": "POS"
+        },
+        "date": "Data",
+        "description": "Descrizione (opzionale)",
+        "reason": "Motivo",
+        "category": "Categoria",
+        "direction": "Tipo movimento",
+        "directionIn": "Entrata",
+        "directionOut": "Uscita"
+      },
+      "submit": "Registra transazione",
+      "cancel": "Annulla",
+      "requiredField": "Campo obbligatorio.",
+      "invalidAmount": "Inserisci un importo valido maggiore di zero.",
+      "conflictError": "La categoria selezionata è stata disattivata: scegline un'altra.",
+      "genericError": "Impossibile registrare la transazione. Riprova.",
+      "result": {
+        "title": "Transazione registrata",
+        "newBalance": "Nuovo saldo",
+        "close": "Chiudi"
+      },
+      "picker": {
+        "placeholder": "Cerca...",
+        "noResults": "Nessun risultato."
+      }
+    },
+    "statementsDialog": {
+      "title": "Estratti conto",
+      "subtitle": "Contabilità",
+      "pilot": "Pilota",
+      "dateFrom": "Dal",
+      "dateTo": "Al",
+      "submit": "Scarica PDF",
+      "cancel": "Annulla",
+      "requiredField": "Seleziona un pilota."
     }
   }
 }

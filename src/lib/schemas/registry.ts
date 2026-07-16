@@ -2,6 +2,7 @@ import { OpenAPIRegistry, OpenApiGeneratorV31, type ResponseConfig } from '@aste
 import { z } from './zod-with-openapi';
 import {
   accountOverviewSchema,
+  accountStatementPdfQuerySchema,
   accountStatementResponseSchema,
   listAccountMovementsQuerySchema,
   negativeBalancesResponseSchema,
@@ -49,7 +50,7 @@ import {
   renameCashCategorySchema,
   reverseCashMovementSchema,
 } from './cash';
-import { errorEnvelopeSchema, okResponseSchema, pdfQuerySchema } from './common';
+import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { expiryAlertsJobResultSchema } from './expiry-alerts';
 import {
   decideProposalSchema,
@@ -142,6 +143,12 @@ import {
   trainingNoteListResponseSchema,
 } from './school';
 import { airfieldBrandingSchema } from './settings';
+import {
+  listTransactionsQuerySchema,
+  recordTransactionResponseSchema,
+  recordTransactionSchema,
+  transactionListResponseSchema,
+} from './transactions';
 import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
 
 /**
@@ -645,12 +652,12 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/people/{id}/account/pdf',
-  summary: "PDF export of a person's full account statement (story 10.2, AC 2)",
+  summary: "PDF export of a person's account statement, optionally scoped to a period (story 10.2, AC 2; story 12.9, AC 5)",
   description:
-    'Dedicated PDF route (spine :105), NOT `?format=pdf` on the movements endpoint above. The statement has no period filter — this is always the COMPLETE history, plus the final balance as a totals line. Same own/`people.read` access rule as `GET /api/v1/people/{id}/account/movements`. Above `2000` rows: 422 `EXPORT_TOO_LARGE` (use the xlsx export instead).',
+    'Dedicated PDF route (spine :105), NOT `?format=pdf` on the movements endpoint above. `from`/`to` are ADDITIVE optional bounds (story 12.9): absent means the COMPLETE history (unchanged default), present narrows the rows to that period — the balance totals line always shows the account\'s CURRENT balance either way. Same own/`people.read` access rule as `GET /api/v1/people/{id}/account/movements`. Above `2000` rows: 422 `EXPORT_TOO_LARGE` (use the xlsx export instead).',
   tags: ['Accounts'],
   security,
-  request: { params: personIdParams, query: pdfQuerySchema },
+  request: { params: personIdParams, query: accountStatementPdfQuerySchema },
   responses: {
     200: { description: 'The account statement as a PDF document.', content: pdfContent() },
     ...errorResponses(401, 403, 404, 422),
@@ -1064,6 +1071,41 @@ registry.registerPath({
   request: { params: cashMovementIdParams, body: { content: jsonContent(reverseCashMovementSchema), required: true } },
   responses: {
     200: { description: 'The reversal movement.', content: jsonContent(cashMovementItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- Unified billing ledger (epic 12, story 12.9) ---------------------------
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/transactions',
+  summary: 'List the unified billing ledger — AccountMovement ∪ CashMovement (paginated, filterable)',
+  description:
+    'Read-only union of the account and cash ledgers, normalized to a club-centric sign (a charge/ricavo is positive, a payment received is negative — the OPPOSITE of the raw `AccountMovement.amountCents` column) and deduplicated so an automatic twin (e.g. a cash top-up) never appears as two rows. Ordered `effectiveDate desc, createdAt desc, id desc` across BOTH sources, paginated correctly on the union (never per-source). `movementType` and `categoryId` are mutually exclusive (422 if both given). Requires `finance.manage`.',
+  tags: ['Billing'],
+  security,
+  request: { query: listTransactionsQuerySchema },
+  responses: {
+    200: {
+      description: 'A page of ledger rows, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
+      content: { ...jsonContent(transactionListResponseSchema), ...xlsxContent() },
+    },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/transactions',
+  summary: 'Record a new transaction — top-up, account adjustment, or cash movement (AirOps "Nuova transazione")',
+  description:
+    'A discriminated union over 3 branches (`kind`), each a pure dispatch onto a PRE-EXISTING writer, unchanged and still independently reachable on their own routes: `TOP_UP` -> `POST /api/v1/people/{id}/account/top-ups`\' `recordTopUp`; `ADJUSTMENT` -> `POST /api/v1/people/{id}/account/adjustments`\' `recordAdjustment` (the wire `amountCents` is the positive "importo addebito", negated server-side into that model\'s DB sign convention for a charge); `CASH` -> `POST /api/v1/cash-movements`\' `recordCashMovement`. `finance.manage` is enforced by each delegate. `Idempotency-Key` is MANDATORY here (unlike the 5 opt-in TD-2 routes it delegates to) — same pattern as `POST /api/v1/instructor-payouts` (story 12.7).',
+  tags: ['Billing'],
+  security,
+  request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(recordTransactionSchema), required: true } },
+  responses: {
+    201: { description: 'The delegated writer\'s fresh result — an account overview (TOP_UP/ADJUSTMENT) or the created cash movement (CASH).', content: jsonContent(recordTransactionResponseSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });

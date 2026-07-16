@@ -47,6 +47,16 @@ export function currentMonthRange(now: Date = new Date()): DateRange {
   return { from, to };
 }
 
+/** The PREVIOUS calendar month in Europe/Rome, as inclusive `YYYY-MM-DD` bounds (story 12.9's billing KPI: "Ricavi del mese" delta vs mese precedente). */
+export function previousMonthRange(now: Date = new Date()): DateRange {
+  const { year, month } = romeDateParts(now);
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+  const from = `${prevYear}-${pad2(prevMonth)}-01`;
+  const to = `${prevYear}-${pad2(prevMonth)}-${pad2(lastDayOfMonth(prevYear, prevMonth))}`;
+  return { from, to };
+}
+
 /** The current calendar quarter (Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec) in Europe/Rome, as inclusive `YYYY-MM-DD` bounds. */
 export function currentQuarterRange(now: Date = new Date()): DateRange {
   const { year, month } = romeDateParts(now);

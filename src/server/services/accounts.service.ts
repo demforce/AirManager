@@ -329,12 +329,16 @@ function toStatementItem(movement: SelectedStatementMovement, includeActor: bool
  * `getAccountOverview` (`assertReadAccess`) — checked BEFORE any query. A
  * person that exists but never activated an account gets an empty page
  * (`total: 0`), NOT a 404 — only an unknown person is (same 404-vs-null
- * split as `getAccountOverview`, review 3.1 F4).
+ * split as `getAccountOverview`, review 3.1 F4). `from`/`to` (epic 12, story
+ * 12.9, AC 5) are OPTIONAL, inclusive on `effectiveDate` — additive over the
+ * pre-existing `PaginationQuery`-only signature; absent (every pre-12.9
+ * caller: the JSON list, the xlsx export, the drill-down page) means the
+ * full, unfiltered statement, unchanged.
  */
 export async function listAccountMovements(
   actor: Actor,
   personId: string,
-  query: PaginationQuery,
+  query: PaginationQuery & { from?: string; to?: string },
 ): Promise<AccountStatementResult> {
   assertReadAccess(actor, personId);
 
@@ -349,7 +353,17 @@ export async function listAccountMovements(
   }
 
   const includeActor = hasPermission(actor, 'people.read');
-  const where = { accountId: account.id };
+  const where = {
+    accountId: account.id,
+    ...(query.from || query.to
+      ? {
+          effectiveDate: {
+            ...(query.from ? { gte: new Date(query.from) } : {}),
+            ...(query.to ? { lte: new Date(query.to) } : {}),
+          },
+        }
+      : {}),
+  };
   // Interactive transaction (story TD-1, AC 3) — see `buildOverview`'s
   // doc-comment above for the batch-vs-interactive `pg` DeprecationWarning rationale.
   const [items, total] = await prisma.$transaction(async (tx) => {

@@ -898,7 +898,8 @@
       "success": "Adjustment recorded."
     },
     "pdf": {
-      "balance": "Final balance"
+      "balance": "Final balance",
+      "currentBalance": "Current account balance"
     }
   },
   "FinancePage": {
@@ -2243,6 +2244,168 @@
     "bookingDenied": {
       "subject": "Booking denied: {aircraftRegistration}",
       "body": "Hello {firstName},\n\nYour booking for {aircraftRegistration} on {when} has been denied.\n\nReason: {reason}"
+    }
+  },
+  "BillingPage": {
+    "title": "Billing",
+    "sub": "{count, plural, one {# transaction} other {# transactions}} · {period}",
+    "periodAll": "full history",
+    "newTransaction": "New transaction",
+    "statements": "Statements",
+    "kpi": {
+      "revenue": "Revenue this month",
+      "revenueDelta": "{value}% vs last month",
+      "charges": "Charges",
+      "chargesSub": "{count, plural, one {# charge} other {# charges}}",
+      "payments": "Payments received",
+      "paymentsSub": "{count, plural, one {# payment} other {# payments}}",
+      "net": "Net credit",
+      "instructors": "Instructor compensation",
+      "instructorsSub": "{count} CFI"
+    },
+    "table": {
+      "cardTitle": "Transactions",
+      "shown": "{shown} of {total} shown",
+      "date": "Date",
+      "pilot": "Pilot",
+      "type": "Type",
+      "description": "Description",
+      "method": "Method",
+      "amount": "Amount",
+      "status": "Status",
+      "statusOptions": {
+        "registered": "Registered",
+        "reversed": "Reversed",
+        "reversal": "Reversal"
+      },
+      "actions": "Actions",
+      "noValue": "—",
+      "empty": "No transactions found.",
+      "kinds": {
+        "TOP_UP": "Top-up",
+        "ADJUSTMENT": "Adjustment",
+        "PACKAGE_PURCHASE": "Package purchase",
+        "FLIGHT_CHARGE": "Flight charge",
+        "FLIGHT_CHARGE_REVERSAL": "Flight charge reversal"
+      },
+      "methods": {
+        "CASH": "Cash",
+        "BANK_TRANSFER": "Bank transfer",
+        "POS": "Card"
+      }
+    },
+    "filters": {
+      "dateFrom": "From",
+      "dateTo": "To",
+      "type": "Type",
+      "allTypes": "All types",
+      "accountGroup": "Account movements",
+      "cashGroup": "Cash categories",
+      "pilot": "Pilot",
+      "allPilots": "All pilots",
+      "reset": "Reset filters"
+    },
+    "exportMenu": {
+      "label": "Export",
+      "xlsLabel": "Transactions (Excel)",
+      "pdfLabel": "Cash report (PDF)"
+    },
+    "revenueByCategory": {
+      "title": "Revenue by category",
+      "sub": "{month}",
+      "empty": "No revenue recorded this month."
+    },
+    "instructorCompensation": {
+      "title": "Instructor compensation",
+      "sub": "owed this month",
+      "noRate": "—",
+      "empty": "No active instructors."
+    },
+    "negativeBalances": {
+      "title": "Negative balances",
+      "empty": "No account in the red.",
+      "link": "See all people"
+    },
+    "actions": {
+      "adjust": "Adjust",
+      "reverse": "Reverse"
+    },
+    "adjustModal": {
+      "title": "Record adjustment",
+      "linkedTo": "Linked to the {date} movement",
+      "amount": "Amount (EUR, signed)",
+      "amountHint": "Positive to credit, negative to charge (e.g. -25.00).",
+      "reason": "Reason",
+      "submit": "Confirm adjustment",
+      "cancel": "Cancel",
+      "invalidAmount": "Enter a valid, non-zero amount.",
+      "requiredReason": "Reason is required.",
+      "conflictError": "This movement already has a linked adjustment.",
+      "genericError": "Could not record the adjustment. Try again.",
+      "success": "Adjustment recorded."
+    },
+    "reverseModal": {
+      "title": "Reverse movement",
+      "reason": "Reversal reason",
+      "confirm": "Confirm reversal",
+      "cancel": "Cancel",
+      "requiredReason": "Reason is required.",
+      "conflictError": "This movement cannot be reversed (already reversed or automatic).",
+      "genericError": "Could not record the reversal. Try again.",
+      "success": "Reversal recorded."
+    },
+    "newTransactionForm": {
+      "title": "New transaction",
+      "subtitle": "Billing",
+      "closeLabel": "Close",
+      "kind": "Type",
+      "kinds": {
+        "payment": "Payment",
+        "adjustment": "Account charge",
+        "cash": "Cash movement"
+      },
+      "fields": {
+        "pilot": "Pilot",
+        "amount": "Amount",
+        "method": "Method",
+        "methods": {
+          "CASH": "Cash",
+          "BANK_TRANSFER": "Bank transfer",
+          "POS": "Card"
+        },
+        "date": "Date",
+        "description": "Description (optional)",
+        "reason": "Reason",
+        "category": "Category",
+        "direction": "Movement type",
+        "directionIn": "Inflow",
+        "directionOut": "Outflow"
+      },
+      "submit": "Record transaction",
+      "cancel": "Cancel",
+      "requiredField": "Required field.",
+      "invalidAmount": "Enter a valid amount greater than zero.",
+      "conflictError": "The selected category was deactivated: choose another one.",
+      "genericError": "Could not record the transaction. Try again.",
+      "result": {
+        "title": "Transaction recorded",
+        "newBalance": "New balance",
+        "close": "Close"
+      },
+      "picker": {
+        "placeholder": "Search...",
+        "noResults": "No results."
+      }
+    },
+    "statementsDialog": {
+      "title": "Statements",
+      "subtitle": "Billing",
+      "pilot": "Pilot",
+      "dateFrom": "From",
+      "dateTo": "To",
+      "submit": "Download PDF",
+      "cancel": "Cancel",
+      "requiredField": "Select a pilot."
     }
   }
 }

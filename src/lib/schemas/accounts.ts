@@ -1,5 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
-import { exportQuerySchema } from './common';
+import { exportQuerySchema, pdfQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 /** Mirrors the Prisma `PaymentMethod` enum (story 3.1, AC 2). */
@@ -101,6 +101,23 @@ export type AccountOverviewDto = z.infer<typeof accountOverviewSchema>;
 export const listAccountMovementsQuerySchema = paginationQuerySchema.extend({ ...exportQuerySchema.shape });
 
 export type ListAccountMovementsQuery = z.infer<typeof listAccountMovementsQuerySchema>;
+
+/**
+ * `GET /api/v1/people/{id}/account/pdf` query (epic 12, story 12.9, AC 5) —
+ * `from`/`to` are ADDITIVE optional bounds over the pre-existing
+ * `pdfQuerySchema` (`locale` only): absent = the full statement (unchanged
+ * default, so `pdf-exports.spec.ts` and the drill-down page's own PDF button
+ * stay byte-identical), present = the billing "Estratti conto" period. No
+ * mandatory-pair `.refine` (unlike `cashReportPdfQuerySchema`'s always-bound
+ * report): same independently-optional convention as
+ * `listCashMovementsQuerySchema`'s own `from`/`to`.
+ */
+export const accountStatementPdfQuerySchema = pdfQuerySchema.extend({
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+});
+
+export type AccountStatementPdfQuery = z.infer<typeof accountStatementPdfQuerySchema>;
 
 /**
  * One entry of the full, paginated account statement (story 3.2, AC 1/2).

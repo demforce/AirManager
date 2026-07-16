@@ -53,8 +53,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // each role sees. An allievo alone therefore sees this item again (it
   // shows the calendar/list, never the form).
   { key: 'bookings', href: '/dashboard/bookings', permissions: ['bookings.manage.own', 'bookings.manage.any', 'self.read'] },
-  // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4.
-  { key: 'finance', href: '/dashboard/finance', permissions: ['finance.manage'] },
+  // Story 3.3: repointed the same way people/aircraft were in 2.1/2.4. Story
+  // 12.9: the legacy `/dashboard/finance` page is gone — repointed at the
+  // new AirOps billing page (this entry still has a consumer,
+  // `dashboard/page.tsx`'s own overview grid, so `nav-items.ts` itself stays;
+  // full removal is 12.13).
+  { key: 'finance', href: '/dashboard/billing', permissions: ['finance.manage'] },
   // Story 9.1: repointed at the real "I miei allievi" page (the old '/school'
   // placeholder was never implemented) — the INSTRUCTOR's own-students view.
   // Story 9.3 (FR-34): the SAME page grows a "Riepiloghi" face for the

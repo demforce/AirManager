@@ -5,17 +5,17 @@ import { renderReportPdf, type PdfColumn, type PdfTotal } from '@/server/adapter
 import { flightPicPerson } from '@/lib/flight-pic';
 import { formatCents, formatSignedCents } from '@/lib/money';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
-import type { ListAccountMovementsQuery } from '@/lib/schemas/accounts';
+import type { AccountStatementPdfQuery, ListAccountMovementsQuery } from '@/lib/schemas/accounts';
 import type { ListAircraftQuery } from '@/lib/schemas/aircraft';
 import type { ListBookingsQuery } from '@/lib/schemas/bookings';
 import type { CashReportPdfQuery, ListCashMovementsQuery } from '@/lib/schemas/cash';
-import type { PdfQuery } from '@/lib/schemas/common';
 import type { ListAllExpiriesQuery } from '@/lib/schemas/expiries';
 import type { ListFlightsQuery } from '@/lib/schemas/flights';
 import type { InstructorCompensationQuery } from '@/lib/schemas/instructor-compensation';
 import type { ListPeopleQuery } from '@/lib/schemas/people';
 import type { ListPprRequestsQuery } from '@/lib/schemas/ppr';
 import type { SchoolSummaryQuery } from '@/lib/schemas/school';
+import type { ListTransactionsQuery } from '@/lib/schemas/transactions';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
 import { getAccountOverview, listAccountMovements } from './accounts.service';
@@ -30,6 +30,7 @@ import { getCompensationSummary } from './instructor-compensation.service';
 import { getPerson, listPeople } from './people.service';
 import { listPprRequests } from './ppr.service';
 import { getInstructorHourSummaries, getStudentHourSummaries } from './school.service';
+import { listTransactions } from './transactions.service';
 
 /**
  * Excel export service (story 10.1, AC 1/2/3/4; FR-39; spine :227) — one
@@ -385,6 +386,54 @@ export async function exportCashMovementsXlsx(actor: Actor, query: ListCashMovem
   return toXlsxExport('cash-movements', t('heading'), columns, result.items);
 }
 
+// --- Unified billing ledger (`GET /api/v1/transactions`) -------------------
+// Epic 12, story 12.9, AC 2: "Transazioni (Excel)" — ADDITIVE beyond the
+// piano's file-list, required by the prototype's own ExportMenu. Same
+// three-step shape as every other export here; `t`/`tType` are TWO
+// translators on purpose — `BillingPage` for the columns' own headers/status
+// labels, `AccountStatementPage` for the 5 `AccountMovementType` labels
+// (reused verbatim, same mapping the account statement's own export uses —
+// `ACCOUNT_MOVEMENT_TYPE_KEYS` above). A `CASH` row's `kind` is already the
+// human `CashCategory.name`, no translation needed.
+
+export async function exportTransactionsXlsx(actor: Actor, query: ListTransactionsQuery): Promise<XlsxExport> {
+  const result = await listTransactions(actor, { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });
+  assertWithinExportCap(result.total);
+
+  const locale = resolveLocale(query);
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'BillingPage' });
+  const tType = createTranslator({ locale, messages, namespace: 'AccountStatementPage' });
+
+  function statusLabel(row: (typeof result.items)[number]): string {
+    if (row.reversed) return t('table.statusOptions.reversed');
+    if (row.reversal) return t('table.statusOptions.reversal');
+    return t('table.statusOptions.registered');
+  }
+
+  function methodLabel(row: (typeof result.items)[number]): string | null {
+    if (!row.method) return null;
+    if (row.method === 'BANK_TRANSFER') return t('table.methods.BANK_TRANSFER');
+    if (row.method === 'POS') return t('table.methods.POS');
+    return t('table.methods.CASH');
+  }
+
+  const columns: ExportColumn<(typeof result.items)[number]>[] = [
+    { header: t('table.date'), value: (row) => formatDateOnly(row.date, locale) },
+    { header: t('table.pilot'), value: (row) => row.personName },
+    {
+      header: t('table.type'),
+      value: (row) => (row.source === 'ACCOUNT' ? tType(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[row.kind as keyof typeof ACCOUNT_MOVEMENT_TYPE_KEYS]}`) : row.kind),
+    },
+    { header: t('table.description'), value: (row) => row.description },
+    { header: t('table.method'), value: methodLabel },
+    { header: t('table.amount'), value: (row) => row.amountCents / 100, numFmt: MONEY_NUM_FMT },
+    { header: t('table.status'), value: statusLabel },
+  ];
+
+  return toXlsxExport('transactions', t('table.cardTitle'), columns, result.items);
+}
+
 // --- Expiries dashboard (`GET /api/v1/expiries`) ----------------------------
 
 export async function exportExpiriesXlsx(actor: Actor, query: ListAllExpiriesQuery): Promise<XlsxExport> {
@@ -498,11 +547,17 @@ function periodSubtitle(from: string, to: string, locale: AppLocale): string {
 }
 
 // --- Account statement (`GET /api/v1/people/{id}/account/pdf`) -------------
-// The view has NO period filter (Dev Notes: "il PDF è l'estratto COMPLETO,
-// niente from/to inventati") — `query` only ever carries `locale`.
+// Epic 12, story 12.9, AC 5: `from`/`to` are now ADDITIVE optional bounds
+// (`accountStatementPdfQuerySchema`) — absent means the SAME "estratto
+// COMPLETO" as before (Dev Notes' original rationale, still true by
+// default); present narrows the rows to the billing "Estratti conto"
+// period. The balance line is ALWAYS the account's CURRENT balance (Dev
+// Notes: "semantica infra esistente" — `getAccountOverview` never took a
+// period), just RE-LABELED when a period is applied so it never reads as a
+// period-end balance it is not.
 
-export async function exportAccountStatementPdf(actor: Actor, personId: string, query: PdfQuery): Promise<PdfExport> {
-  const movements = await listAccountMovements(actor, personId, { page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+export async function exportAccountStatementPdf(actor: Actor, personId: string, query: AccountStatementPdfQuery): Promise<PdfExport> {
+  const movements = await listAccountMovements(actor, personId, { page: 1, pageSize: PDF_EXPORT_MAX_ROWS, from: query.from, to: query.to });
   assertWithinPdfExportCap(movements.total);
 
   // Same own-access rule as `listAccountMovements` (`accounts.service.ts#assertReadAccess`)
@@ -515,6 +570,7 @@ export async function exportAccountStatementPdf(actor: Actor, personId: string, 
   const t = createTranslator({ locale, messages, namespace: 'AccountStatementPage' });
   // Same conditional column as the xlsx export / `account-statement-table.tsx`'s `showActor`.
   const includeActor = hasPermission(actor, 'people.read');
+  const hasPeriod = Boolean(query.from || query.to);
 
   const columns: PdfColumn<(typeof movements.items)[number]>[] = [
     { header: t('table.date'), value: (row) => formatDateOnly(row.effectiveDate, locale) },
@@ -524,15 +580,21 @@ export async function exportAccountStatementPdf(actor: Actor, personId: string, 
     ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail ?? '' } satisfies PdfColumn<(typeof movements.items)[number]>] : []),
   ];
 
+  // Both bounds present (the billing "Estratti conto" dialog always sends
+  // both) -> a period subtitle; a hand-crafted single-sided query falls back
+  // to the plain name (Dev Notes: no invented open-ended range text).
+  const period = query.from && query.to ? periodSubtitle(query.from, query.to, locale) : null;
+  const subtitle = period ? `${person.lastName} ${person.firstName} · ${period}` : `${person.lastName} ${person.firstName}`;
+
   return toPdfExport(
     'account-statement',
     locale,
     branding,
     t('kicker'),
-    `${person.lastName} ${person.firstName}`,
+    subtitle,
     columns,
     movements.items,
-    [{ label: t('pdf.balance'), value: formatCents(overview.balanceCents, locale) }],
+    [{ label: hasPeriod ? t('pdf.currentBalance') : t('pdf.balance'), value: formatCents(overview.balanceCents, locale) }],
   );
 }
 

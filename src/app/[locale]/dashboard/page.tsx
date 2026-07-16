@@ -346,7 +346,7 @@ export default async function DashboardPage({ params }: PageProps) {
                 testId="negative-balances-widget"
                 heading={t('negativeBalancesWidget.heading')}
                 countLabel={t('negativeBalancesWidget.count', { count: negativeBalances.length })}
-                linkHref="/dashboard/finance"
+                linkHref="/dashboard/billing"
                 linkLabel={t('negativeBalancesWidget.link')}
                 isEmpty={topNegativeBalances.length === 0}
                 emptyLabel={t('negativeBalancesWidget.empty')}
