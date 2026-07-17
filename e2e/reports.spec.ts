@@ -249,7 +249,9 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
     await expect(page.getByTestId(`reports-fleet-row-${aircraft.registration}`)).toContainText('1.5h');
     await expect(page.getByTestId(`reports-instructor-row-${instructorName}`)).toContainText('1.0h');
     await expect(page.getByTestId(`reports-instructor-row-${instructorName}`)).toContainText('—');
+    // "Per pilota" RankBars defaults to the "Ore" metric — switch to "Spesa" to check the money column.
     await expect(page.getByTestId(`reports-rank-pilot-row-${pilotName}`)).toContainText('1.5h');
+    await page.getByTestId('reports-rank-pilots').getByRole('button', { name: 'Spesa' }).click();
     await expect(page.getByTestId(`reports-rank-pilot-row-${pilotName}`)).toContainText(formatCentsIt(expectedFlightRevenue));
   });
 
