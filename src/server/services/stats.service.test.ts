@@ -62,7 +62,6 @@ function pilotActor(): Actor {
   return { userId: 'pilot_1', personId: 'person_pilot', roles: ['PILOT'] };
 }
 
-const EMPTY_TYPE_GROUPS: never[] = [];
 const EMPTY_AIRCRAFT_RESULT = { items: [], total: 0, page: 1, pageSize: 100 };
 
 /** Sane empty defaults every test starts from — override per-scenario. */

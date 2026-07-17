@@ -5,6 +5,7 @@ import { LineChart } from '@/components/charts/line-chart';
 import { RankBars, type RankBarsRow } from '@/components/charts/rank-bars';
 import { formatCents } from '@/lib/money';
 import type { StatsResponseDto } from '@/lib/schemas/stats';
+import { formatMinutes } from '@/lib/time';
 
 type MixKey = 'SCHOOL' | 'TOURISM' | 'AERIAL_WORK' | 'TRANSIT';
 
@@ -41,11 +42,6 @@ export type ReportsConsoleProps = {
   labels: ReportsLabels;
 };
 
-/** RankBars' own decimal-hour display (`X.Xh`, prototype fidelity — AC 2's port, distinct from the app-wide `H:MM` convention used in the KPI row/util-rows below). */
-function formatHoursDecimal(minutes: number): string {
-  return `${(minutes / 60).toFixed(1)}h`;
-}
-
 /**
  * Reports body (epic 12, story 12.10, AC 3) — the 4 `.split` rows below the
  * page's own page-head/kpi-row. Client boundary (pattern 12.5-12.9) mainly
@@ -63,12 +59,12 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
 
   const rankAircraftRows: RankBarsRow[] = stats.fleet.map((aircraft) => ({
     label: aircraft.registration,
-    values: { hours: aircraft.minutes / 60, revenue: aircraft.revenueCents },
+    values: { hours: aircraft.minutes, revenue: aircraft.revenueCents },
     testId: `reports-rank-aircraft-row-${aircraft.registration}`,
   }));
   const rankPilotRows: RankBarsRow[] = stats.topPilots.map((pilot) => ({
     label: pilot.name,
-    values: { hours: pilot.minutes / 60, spent: pilot.spentCents },
+    values: { hours: pilot.minutes, spent: pilot.spentCents },
     testId: `reports-rank-pilot-row-${pilot.name}`,
   }));
 
@@ -122,7 +118,7 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
                   <div className="util-bar">
                     <div className="seg flown" style={{ left: 0, width: `${(aircraft.minutes / fleetMax) * 100}%` }} />
                   </div>
-                  <div className="util-value mono">{formatHoursDecimal(aircraft.minutes)}</div>
+                  <div className="util-value mono">{formatMinutes(aircraft.minutes)}</div>
                 </div>
               ))}
             </div>
@@ -179,7 +175,7 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
                     <div className="seg flown" style={{ left: 0, width: `${(instructor.minutes / instructorsMax) * 100}%` }} />
                   </div>
                   <div className="util-value mono">
-                    {formatHoursDecimal(instructor.minutes)} · {instructor.owedCents === null ? labels.instructors.owedUnknown : formatCents(instructor.owedCents, moneyLocale)}
+                    {formatMinutes(instructor.minutes)} · {instructor.owedCents === null ? labels.instructors.owedUnknown : formatCents(instructor.owedCents, moneyLocale)}
                   </div>
                 </div>
               ))}
@@ -198,7 +194,7 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
           testId="reports-rank-aircraft"
           emptyLabel={labels.rankAircraft.empty}
           metrics={[
-            { key: 'hours', label: labels.rankAircraft.metrics.hours, color: 'var(--ok)', format: (v) => `${v.toFixed(1)}h` },
+            { key: 'hours', label: labels.rankAircraft.metrics.hours, color: 'var(--ok)', format: (v) => formatMinutes(v) },
             { key: 'revenue', label: labels.rankAircraft.metrics.revenue, color: 'var(--accent)', format: (v) => formatCents(v, moneyLocale) },
           ]}
         />
@@ -210,7 +206,7 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
           testId="reports-rank-pilots"
           emptyLabel={labels.rankPilots.empty}
           metrics={[
-            { key: 'hours', label: labels.rankPilots.metrics.hours, color: 'var(--ok)', format: (v) => `${v.toFixed(1)}h` },
+            { key: 'hours', label: labels.rankPilots.metrics.hours, color: 'var(--ok)', format: (v) => formatMinutes(v) },
             { key: 'spent', label: labels.rankPilots.metrics.spent, color: 'var(--accent)', format: (v) => formatCents(v, moneyLocale) },
           ]}
         />
