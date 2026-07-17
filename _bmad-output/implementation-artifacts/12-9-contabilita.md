@@ -4,7 +4,7 @@ baseline_commit: 0dd03862df0d72f12147aa028a92f1a9f4fe284e
 
 # Story 12.9: Contabilità — ledger unificato + nuova transazione + estratti conto
 
-Status: review
+Status: done
 
 ## Story
 
@@ -112,4 +112,32 @@ so that tutta la finanza operativa (addebiti, pagamenti, cassa, compensi) si leg
 
 ## Review Record
 
-_(a cura della review adversarial)_
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh, via workflow). **Data**: 2026-07-17. Story service+UI con rimozione di rotte legacy e superficie security-sensitive (RBAC finanze, idempotenza POST, normalizzazione segni) → review empirica completa + audit copertura AC→test.
+
+### Arbiter (priority zero)
+
+- **`CI=1 npx playwright test` su build prod, DB fresco → 234 passed, 0 failed, 0 flaky (6.4m)**. Numeri coerenti: baseline 220 + billing.spec (13) + 1 test in cash-report.spec. Gates ri-eseguiti in autonomia dal reviewer: 1407 unit verdi.
+- **Dopo i fix di review (`14dd4e8`): 234/234 ri-verificato su DB fresco, build prod (6.5m). Gates → 1412 unit** (+5: regressione tie-break, 4 test copertura AC5).
+
+### Verdetto
+
+**needs-fixes → shippable dopo i fix.** Nessun BLOCKER/MAJOR. Ogni claim security-critical provato empiricamente: RBAC `finance.manage` (pilota/istruttore/allievo 403 su GET e POST), Idempotency-Key obbligatoria (422 senza; 10 POST concorrenti stessa key → 1 sola riga a livello DB), `rbac.ts` diff VUOTO, nessuna migrazione. Ledger: flip club-centric verificato (top-up → −15000), dedup twin (top-up contanti = 1 riga; package a 0 = twin visibile), KPI ancorati al mese e INDIPENDENTI dai filtri con delta esatti, `revenueCents == chargesCents`, coerenza lista↔KPI da helper condivisi. Rimozioni/repoint: finance e finance/report → 404, categories/packages → 200, zero riferimenti vivi.
+
+### Findings
+
+- **MINOR F1 — FIXATO in `14dd4e8`**: `compareRowsDesc` (transactions.service.ts:184) — tie-break `id desc` non antisimmetrico (ramo irraggiungibile): a parità di effectiveDate+createdAt le righe uscivano raggruppate per sorgente invece che in id-desc globale. Il reviewer ha DIMOSTRATO l'assenza di perdita/duplicazione cross-pagina (caso patologico 60 righe tie: 60/60 uniche) — impatto solo sull'ordine di visualizzazione. Fix one-line + regression test cross-source.
+- **MINOR F2 — FIXATO in `14dd4e8`**: AC5 senza asserzione diretta su filtro periodo del PDF e cap-con-periodo (il reviewer ha corroborato empiricamente il filtro via byte-size monotòno del PDF: 2>1>0 righe). Aggiunti 4 unit test (from/to su items+count, forward al PDF, re-label "Saldo attuale del conto", 422 sul totale filtrato).
+- **PRODUCT-DECISION F3 — escalato al PO, RATIFICATO e FIXATO in `14dd4e8`**: uscita di cassa (negativa) in verde (regola uniforme del prototipo) = controintuitiva per una spesa. **Decisione PO (2026-07-17)**: vista club-centric confermata — pagamenti dei piloti = entrate in VERDE, uscite di cassa = COSTI EFFETTIVI → **rosso (`--bad`)**. Contestualmente il PO ha chiesto una **vista per-pilota completa** (tutti gli addebiti/accrediti del singolo pilota, voli inclusi): GIÀ COPERTA — filtro Pilota del ledger (`/dashboard/billing?personId=`) + drill-down `people/[id]/account` (statement completo + PDF), entrambi vivi. La **"quota associativa annuale (importo da settings)"** è scope NUOVO → da ratificare nella 12.11 (Impostazioni), registrato in handoff e nel draft 12.10.
+
+### Verdetti (close-your-notes)
+
+- Union tipizzata con helper condivisi: VERIFICATO (delta KPI esatti). Paginazione bounded cross-source: VERIFICATO (caso patologico). Flip segni: VERIFICATO. KPI compensi da API 12.7: ACCETTATO — **nota al PO fuori scope 12.9**: `getCompensationSummary` può produrre dovuto NEGATIVO (payout > maturato); se serve un floor va deciso in 12.7-followup. Campo Data disabilitato sul ramo Addebito conto: LETTURA CORRETTA (recordAdjustment data sempre a oggi; cleanup opzionale). Re-label `pdf.currentBalance`: VERIFICATO (no-period byte-identico). Docstring stalizzate corrette: VERIFICATO. from>to senza refine: ACCETTABILE (risultato vuoto benigno, coerente col precedente). Deviazioni dev (offset pre-dichiarato, bottoni nel card-head come fleet/pilots, package-sale/movements adattati per AC6, label ExportMenu): TUTTE ACCETTATE.
+
+### Audit copertura AC→test
+
+AC1-AC8 tutti coperti (unit+e2e+empirico), con le due eccezioni F1/F2 sopra, chiuse dai fix. Dettaglio nel report del reviewer (KPI-indipendenza billing.spec:190, idempotenza DB-level, reachability 404/200, grep residui).
+
+### Commit di review
+
+- `14dd4e8` — `fix(12.9)`: tie-break id-desc (F1) + copertura AC5 (F2) + uscite cassa in rosso (F3, ratifica PO).
+- questo commit — `docs(12.9)`: Review Record, status → done, handoff + sprint-status.
