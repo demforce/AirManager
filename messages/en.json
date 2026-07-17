@@ -1630,7 +1630,9 @@
         "cancel": "Close",
         "invalidAmount": "Select a pilot and a valid amount.",
         "success": "Charged. New balance: {balance} · expiry renewed to {expires}.",
-        "genericError": "Could not complete the operation."
+        "genericError": "Could not complete the operation.",
+        "insufficientBalance": "Insufficient balance: the account is at {balance}, charging {amount} would take it below zero. An admin can force the charge with the checkbox below.",
+        "overrideCheckbox": "Force charge (insufficient balance)"
       }
     },
     "queue": {

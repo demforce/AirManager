@@ -241,7 +241,7 @@ export function SearchCombobox({
   // floor while staying correct in the grid.
   return (
     <div className="relative min-w-[200px]">
-      <label htmlFor={id} className="block text-sm font-medium text-[#2F3437]">
+      <label htmlFor={id} className="block text-sm font-medium text-[var(--ink-2)]">
         {label}
       </label>
       <input
@@ -261,7 +261,12 @@ export function SearchCombobox({
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         data-testid={id}
-        className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437] disabled:cursor-not-allowed disabled:bg-[#F7F6F3]"
+        // Review F6: hardcoded light-only colors (`#EAEAEA`/`bg-white`/`#111111`)
+        // stayed white in dark theme (billing/logbook/people/Scadenze filter/
+        // Quota associativa picker all share this component) — swapped for
+        // `airops.css`'s CSS variables, the app's existing dark-mode mechanism
+        // (`html[data-theme]`), same as the listbox/options below.
+        className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-base text-[var(--ink)] outline-none transition-colors focus:border-[var(--ink-3)] disabled:cursor-not-allowed disabled:bg-[var(--bg-sunken)]"
       />
       {open ? (
         <ul
@@ -278,10 +283,13 @@ export function SearchCombobox({
           // (mousedown fires before click) — without this, `onBlur` would
           // close the popup and revert the query before `onClick` ever runs.
           onMouseDown={(event) => event.preventDefault()}
-          className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-[6px] border border-[#EAEAEA] bg-white py-1 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+          // Review F6: same CSS-var swap as the input above — the popup and
+          // its rows (empty state, option hover, meta) all used light-only
+          // hardcoded colors, invisible against a dark-theme background.
+          className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-[6px] border border-[var(--border)] bg-[var(--panel)] py-1 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
         >
           {options.length === 0 ? (
-            <li role="option" aria-disabled="true" aria-selected="false" className="px-3 py-2 text-sm text-[#787774]">
+            <li role="option" aria-disabled="true" aria-selected="false" className="px-3 py-2 text-sm text-[var(--ink-3)]">
               {emptyText}
             </li>
           ) : (
@@ -293,10 +301,10 @@ export function SearchCombobox({
                 aria-selected={option.id === value}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => selectOption(option)}
-                className={`cursor-pointer px-3 py-2 text-sm ${index === activeIndex ? 'bg-[#F7F6F3] text-[#111111]' : 'text-[#2F3437]'}`}
+                className={`cursor-pointer px-3 py-2 text-sm ${index === activeIndex ? 'bg-[var(--panel-2)] text-[var(--ink)]' : 'text-[var(--ink-2)]'}`}
               >
                 {option.label}
-                {option.meta ? <span className="ml-2 text-xs text-[#787774]">{option.meta}</span> : null}
+                {option.meta ? <span className="ml-2 text-xs text-[var(--ink-3)]">{option.meta}</span> : null}
               </li>
             ))
           )}

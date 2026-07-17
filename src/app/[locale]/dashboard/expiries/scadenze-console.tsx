@@ -51,6 +51,8 @@ export type ScadenzeConsoleLabels = {
     invalidAmount: string;
     success: string;
     genericError: string;
+    insufficientBalance: string;
+    overrideCheckbox: string;
   };
   pagination: { prev: string; next: string };
 };
@@ -338,6 +340,7 @@ export function ScadenzeConsole({
           defaultAmountCents={membershipFeeCents}
           moneyLocale={locale}
           labels={labels.membershipFee}
+          canOverride={canTriggerReminders}
           onClose={() => setFeeModalOpen(false)}
           onCharged={() => router.refresh()}
         />
@@ -367,6 +370,8 @@ type MembershipFeeModalProps = {
   defaultAmountCents: number;
   moneyLocale: 'it' | 'en';
   labels: ScadenzeConsoleLabels['membershipFee'];
+  /** ADMIN-only (review F3): same `settings.manage` gate as `canTriggerReminders` — shows the "Forza addebito" override checkbox. */
+  canOverride: boolean;
   onClose: () => void;
   onCharged: () => void;
 };
@@ -376,10 +381,16 @@ type MembershipFeeModalProps = {
  * — a person picker + amount (precompiled from `membership.annualFeeCents`,
  * editable) firing `POST /api/v1/people/{id}/membership-fee`
  * (`Idempotency-Key` mandatory). Feedback shows the new balance and expiry.
+ *
+ * PO decision (2026-07-17, review F3): an addebito that would take the
+ * balance below zero is refused (422 `MEMBERSHIP_FEE_INSUFFICIENT_BALANCE`)
+ * unless an ADMIN checks "Forza addebito" (`canOverride`, unchecked by
+ * default — a deliberate action, never the default path).
  */
-function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, labels, onClose, onCharged }: MembershipFeeModalProps) {
+function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, labels, canOverride, onClose, onCharged }: MembershipFeeModalProps) {
   const [personId, setPersonId] = useState('');
   const [amount, setAmount] = useState(() => (defaultAmountCents / 100).toFixed(2));
+  const [override, setOverride] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ balanceCents: number; expiresAt: string } | null>(null);
@@ -405,12 +416,22 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
     const response = await fetch(`/api/v1/people/${personId}/membership-fee`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-      body: JSON.stringify({ amountCents: parsedAmount }),
+      body: JSON.stringify({ amountCents: parsedAmount, override }),
     });
     setSubmitting(false);
 
     if (!response.ok) {
-      setError(labels.genericError);
+      const errorBody = (await response.json().catch(() => null)) as { error?: { code?: string; details?: { balanceCents?: number; amountCents?: number } } } | null;
+      if (errorBody?.error?.code === 'MEMBERSHIP_FEE_INSUFFICIENT_BALANCE') {
+        const details = errorBody.error.details;
+        setError(
+          labels.insufficientBalance
+            .replace('{balance}', formatCents(details?.balanceCents ?? 0, moneyLocale))
+            .replace('{amount}', formatCents(details?.amountCents ?? 0, moneyLocale)),
+        );
+      } else {
+        setError(labels.genericError);
+      }
       return;
     }
     const body = (await response.json()) as { balanceCents: number; expiresAt: string };
@@ -449,6 +470,12 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
             </label>
             <input id="membership-fee-amount" className="input" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} data-testid="membership-fee-amount" />
             <p style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>{labels.amountHint}</p>
+            {canOverride ? (
+              <label className="fld-label" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontWeight: 400 }}>
+                <input type="checkbox" checked={override} onChange={(event) => setOverride(event.target.checked)} data-testid="membership-fee-override-checkbox" />
+                {labels.overrideCheckbox}
+              </label>
+            ) : null}
           </>
         )}
 

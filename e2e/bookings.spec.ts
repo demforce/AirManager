@@ -317,7 +317,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T10:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T10:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
@@ -349,14 +349,14 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // Overlapping attempt on the SAME run-unique aircraft -> 409, never conflated with a 422.
     await formAfterApproval.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await formAfterApproval.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:30`);
-    await formAfterApproval.getByLabel('Fine').fill(`${FUTURE_DAY}T10:30`);
+    await formAfterApproval.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T10:30`);
     await formAfterApproval.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-error')).toContainText('già prenotato');
 
     // Back-to-back: starts exactly when the first (APPROVED) booking ends -> semi-open, no overlap, 201.
     await formAfterApproval.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await formAfterApproval.getByLabel('Inizio').fill(`${FUTURE_DAY}T10:00`);
-    await formAfterApproval.getByLabel('Fine').fill(`${FUTURE_DAY}T11:00`);
+    await formAfterApproval.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T11:00`);
     await formAfterApproval.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
@@ -375,7 +375,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T13:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T14:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T14:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
@@ -448,7 +448,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // sidestepping the polluted accessible name entirely.
     await form.locator('select[name="studentId"]').selectOption({ label: `${student.lastName} ${student.firstName}` });
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T15:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T16:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T16:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
@@ -711,7 +711,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T03:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T03:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
@@ -729,7 +729,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Velivolo').selectOption({ label: aircraft2.registration });
     await moveForm.getByLabel('Inizio').fill(`${FUTURE_DAY}T13:00`);
-    await moveForm.getByLabel('Fine').fill(`${FUTURE_DAY}T14:00`);
+    await moveForm.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T14:00`);
     await moveForm.getByTestId('move-booking-save').click();
 
     // Story 12.3: feedback moved from an inline `bookings-list-feedback`
@@ -777,13 +777,13 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T03:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T03:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T05:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T06:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T06:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
@@ -816,7 +816,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await rowsAfterApproval.nth(1).getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
-    await moveForm.getByLabel('Fine').fill(`${FUTURE_DAY}T03:00`);
+    await moveForm.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T03:00`);
     await moveForm.getByTestId('move-booking-save').click();
 
     await expect(page.getByTestId('move-booking-form-error')).toContainText('già prenotato');
@@ -1002,7 +1002,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T06:00`);
-    await form.getByLabel('Fine').fill(`${FUTURE_DAY}T07:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T07:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-error')).toContainText(blockingType.name);
@@ -1033,7 +1033,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const slot = soonestFutureSlot();
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Inizio').fill(slot.startsAt);
-    await form.getByLabel('Fine').fill(slot.endsAt);
+    await form.getByLabel('Fine', { exact: true }).fill(slot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-warning')).toBeVisible();
@@ -1066,7 +1066,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
     await form.getByLabel('Inizio').fill(slot.startsAt);
-    await form.getByLabel('Fine').fill(slot.endsAt);
+    await form.getByLabel('Fine', { exact: true }).fill(slot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-error')).toContainText(blockingType.name);
@@ -1171,7 +1171,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
     await form.getByLabel('Inizio').fill(`${DAY_1}T12:00`);
-    await form.getByLabel('Fine').fill(`${DAY_1}T13:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${DAY_1}T13:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
@@ -1187,7 +1187,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await row.getByTestId('booking-move-action').click();
     let moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Inizio').fill(`${DAY_1}T14:00`);
-    await moveForm.getByLabel('Fine').fill(`${DAY_1}T15:00`);
+    await moveForm.getByLabel('Fine', { exact: true }).fill(`${DAY_1}T15:00`);
     await moveForm.getByTestId('move-booking-save').click();
     // Story 12.3: toast instead of an inline `bookings-list-feedback` paragraph.
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione modificata.' })).toBeVisible();
@@ -1199,7 +1199,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await row.getByTestId('booking-move-action').click();
     moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Inizio').fill(`${DAY_2}T12:00`);
-    await moveForm.getByLabel('Fine').fill(`${DAY_2}T13:00`);
+    await moveForm.getByLabel('Fine', { exact: true }).fill(`${DAY_2}T13:00`);
     await moveForm.getByTestId('move-booking-save').click();
     await expect(page.getByTestId('move-booking-form-error')).toContainText(blockingType.name);
   });

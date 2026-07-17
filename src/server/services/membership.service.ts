@@ -2,7 +2,7 @@ import { addMonthsClampUtc, todayDateOnlyUtc, toDateOnlyString } from '@/lib/dat
 import type { ChargeMembershipFeeInput } from '@/lib/schemas/membership';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { NotFoundError } from './errors';
+import { NotFoundError, ValidationError } from './errors';
 
 /** Upserted by NAME (not seeded via migration, Contesto) — also added to `prisma/seed.ts` so a fresh install's catalogue already lists it. */
 const MEMBERSHIP_FEE_TYPE_NAME = 'Quota associativa';
@@ -52,6 +52,18 @@ export type ChargeMembershipFeeResult = {
  * Gated `finance.manage` (STAFF+ADMIN) — a day-to-day staff action, not
  * `settings.manage` (reserved for changing the DEFAULT fee amount itself,
  * `setMembershipFeeCents`).
+ *
+ * **Insufficient-balance guard (PO decision 2026-07-17, review F3)**: an
+ * addebito that would take the balance BELOW zero is refused (`422
+ * MEMBERSHIP_FEE_INSUFFICIENT_BALANCE`) unless `input.override` is set,
+ * which requires `settings.manage` (ADMIN-only — a STAFF actor passing
+ * `override: true` gets a plain 403, same proxy-permission pattern as the
+ * "Invia promemoria" trigger, ratifica utente 4). Landing EXACTLY on zero is
+ * allowed. The balance is read with a `SELECT ... FOR UPDATE` lock on the
+ * `Account` row (same pattern as `recordAdjustment`, `accounts.service.ts`,
+ * review 2.5 F1) so two concurrent addebiti can never both read the same
+ * pre-charge balance — this also closes review F7 (stale balance in the
+ * response): the final balance returned is read under the SAME lock.
  */
 export async function chargeMembershipFee(actor: Actor, personId: string, input: ChargeMembershipFeeInput): Promise<ChargeMembershipFeeResult> {
   authorize(actor, 'finance.manage');
@@ -66,6 +78,30 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
 
   const result = await prisma.$transaction(async (tx) => {
     const account = await tx.account.upsert({ where: { personId }, create: { personId }, update: {}, select: { id: true } });
+
+    // Row lock (FOR UPDATE, same pattern as `recordAdjustment` in
+    // `accounts.service.ts`, review 2.5 F1) — serializes concurrent
+    // addebiti on THIS account so the balance check below, and the final
+    // balance returned at the end of this transaction, never race a
+    // concurrent write (review F3/F7).
+    await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR UPDATE`;
+
+    const balanceBeforeCents = (await tx.accountMovement.aggregate({ where: { accountId: account.id }, _sum: { amountCents: true } }))._sum.amountCents ?? 0;
+
+    // PO decision (2026-07-17, review F3): refuse an addebito that would
+    // take the balance below zero, unless an ADMIN explicitly overrides it.
+    // Landing EXACTLY on zero is allowed.
+    if (balanceBeforeCents - input.amountCents < 0) {
+      if (input.override) {
+        authorize(actor, 'settings.manage');
+      } else {
+        throw new ValidationError(
+          `Charging ${input.amountCents} cents would take the balance below zero (current balance: ${balanceBeforeCents} cents).`,
+          { balanceCents: balanceBeforeCents, amountCents: input.amountCents },
+          'MEMBERSHIP_FEE_INSUFFICIENT_BALANCE',
+        );
+      }
+    }
 
     await tx.accountMovement.create({
       data: {

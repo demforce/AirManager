@@ -1,3 +1,9 @@
+// This spec writes GLOBAL AppSetting rows (club/scheduling/smtp — including
+// `sched.*`) and runs in the `settings` Playwright project, serialized AFTER
+// the main `chromium` project (playwright.config.ts) so its writes never race
+// a concurrent booking create elsewhere. Running this file alone locally:
+// `npx playwright test settings.spec.ts --no-deps` (otherwise Playwright
+// first runs the `chromium` dependency project).
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
@@ -75,7 +81,17 @@ async function waitForMailpitMessage(to: string, subjectIncludes: string, timeou
 // rather than a follow-up GET.
 test.describe.configure({ mode: 'serial' });
 
+/** Same permissive baseline as `booking-window.spec.ts`'s `PERMISSIVE_SCHEDULING` (Review F1: a real `sched.*` setting, once written, persists for the rest of the local e2e run — this file's own "Scheduling card" test writes a restrictive 08:00-20:00 window that must not leak into any other spec's or re-run's booking creates). PUT has no unset, so restoring to a maximally permissive window is the only way to neutralize leftover state. */
+const PERMISSIVE_SCHEDULING = { openTime: '00:00', closeTime: '23:59', minSlotMinutes: 30, turnaroundMinutes: 0, maxAdvanceDays: 3650 };
+
 test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 1/2)', () => {
+  test.afterAll(async ({ browser }) => {
+    const page = await browser.newPage();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.request.put('/api/v1/settings/scheduling', { data: PERMISSIVE_SCHEDULING });
+    await page.close();
+  });
+
   test('redirects a non-ADMIN (staff) actor away from /dashboard/settings', async ({ page }) => {
     await loginExpectingDashboard(page, STAFF_EMAIL);
     await gotoSettingsAndWaitForHydration(page);

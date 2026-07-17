@@ -39,6 +39,14 @@ function personOptionLabel(person: { firstName: string; lastName: string }): str
   return `${person.lastName} ${person.firstName}`;
 }
 
+/** Same top-up pattern as `account-adjustments.spec.ts`/story 12.9 — `createPilotPerson`'s freshly-activated pilot profile has an Account at a ZERO balance (review F3: an addebito that would take it below zero is now refused), so most charging tests below pre-load it well above any fee amount they use. */
+async function topUpAccount(page: Page, personId: string, amountCents: number): Promise<void> {
+  const response = await page.request.post(`/api/v1/people/${personId}/account/top-ups`, {
+    data: { amountCents, paymentMethod: 'CASH', effectiveDate: '2026-07-01' },
+  });
+  expect(response.status()).toBe(200);
+}
+
 /**
  * "Quota associativa" (Story 12.11, AC 7; ratifiche utente 1/1a/1b): the
  * action debits the account (ADJUSTMENT, visible in Contabilità) AND
@@ -63,6 +71,7 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     expect(feeResponse.status()).toBe(200);
 
     const pilot = await createPilotPerson(page);
+    await topUpAccount(page, pilot.personId, 100_000); // review F3: sufficient balance for the addebito below
 
     await page.goto('/it/dashboard/expiries');
     await page.getByTestId('scadenze-membership-fee-button').click();
@@ -101,6 +110,7 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 3000 } });
 
     const pilot = await createPilotPerson(page);
+    await topUpAccount(page, pilot.personId, 100_000); // review F3: sufficient balance for both charges below
 
     const firstCharge = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
@@ -130,6 +140,7 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 4000 } });
 
     const pilot = await createPilotPerson(page);
+    await topUpAccount(page, pilot.personId, 100_000); // review F3: sufficient balance for the addebito below
     const key = crypto.randomUUID();
 
     const first = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, {
@@ -156,6 +167,7 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
   test('the endpoint requires an Idempotency-Key header (422 without it); gated finance.manage (STAFF may charge, matching the UI button)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilot = await createPilotPerson(page);
+    await topUpAccount(page, pilot.personId, 100_000); // review F3: sufficient balance for the staff addebito below
 
     const missingKey = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, { data: { amountCents: 1000 } });
     expect(missingKey.status()).toBe(422);
@@ -168,6 +180,61 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
       data: { amountCents: 1000 },
     });
     expect(staffCharge.status()).toBe(200);
+  });
+
+  test('an addebito that would take a ZERO-balance pilot below zero shows a clear error, no override checked (PO decision 2026-07-17, review F3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 5000 } });
+
+    const pilot = await createPilotPerson(page); // no top-up: balance stays 0
+
+    await page.goto('/it/dashboard/expiries');
+    await page.getByTestId('scadenze-membership-fee-button').click();
+    const panel = page.getByTestId('membership-fee-panel');
+    await expect(panel).toBeVisible();
+
+    const combobox = panel.getByRole('combobox', { name: 'Pilota' });
+    await combobox.click();
+    await combobox.fill(pilot.lastName);
+    await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();
+
+    // ADMIN sees the override checkbox (same `settings.manage` gate as "Invia promemoria") — left UNCHECKED.
+    await expect(panel.getByTestId('membership-fee-override-checkbox')).not.toBeChecked();
+    await panel.getByTestId('membership-fee-submit').click();
+
+    await expect(panel.getByTestId('membership-fee-error')).toBeVisible();
+    await expect(panel.getByTestId('membership-fee-success')).toHaveCount(0);
+
+    // No account movement / expiry was created — the addebito never happened.
+    const movementsResponse = await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`);
+    const movements = (await movementsResponse.json()) as { items: { type: string; description: string | null }[] };
+    expect(movements.items.filter((m) => m.type === 'ADJUSTMENT' && m.description?.startsWith('Quota associativa'))).toHaveLength(0);
+  });
+
+  test('an ADMIN checking "Forza addebito" charges a ZERO-balance pilot below zero successfully (review F3 override)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 5000 } });
+
+    const pilot = await createPilotPerson(page); // no top-up: balance stays 0
+
+    await page.goto('/it/dashboard/expiries');
+    await page.getByTestId('scadenze-membership-fee-button').click();
+    const panel = page.getByTestId('membership-fee-panel');
+    await expect(panel).toBeVisible();
+
+    const combobox = panel.getByRole('combobox', { name: 'Pilota' });
+    await combobox.click();
+    await combobox.fill(pilot.lastName);
+    await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();
+
+    await panel.getByTestId('membership-fee-override-checkbox').check();
+    await panel.getByTestId('membership-fee-submit').click();
+    await expect(panel.getByTestId('membership-fee-success')).toBeVisible();
+
+    const movementsResponse = await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`);
+    const movements = (await movementsResponse.json()) as { items: { type: string; amountCents: number; description: string | null }[] };
+    const adjustment = movements.items.find((m) => m.type === 'ADJUSTMENT' && m.description?.startsWith('Quota associativa'));
+    expect(adjustment?.amountCents).toBe(-5000); // balance now -5000, below zero — allowed by the override.
   });
 
   test('setting the fee to 0 disables the button on the Scadenze page, with a hint', async ({ page }) => {

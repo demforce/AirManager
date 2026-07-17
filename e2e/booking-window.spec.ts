@@ -1,3 +1,9 @@
+// This spec writes GLOBAL `sched.*` AppSetting rows (see PERMISSIVE_SCHEDULING
+// below) and runs in the `booking-window` Playwright project, serialized AFTER
+// `settings` and the main `chromium` project (playwright.config.ts) so its
+// writes never race a concurrent booking create elsewhere. Running this file
+// alone locally: `npx playwright test booking-window.spec.ts --no-deps`
+// (otherwise Playwright first runs its `chromium`/`settings` dependencies).
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
@@ -33,7 +39,7 @@ async function createAircraft(page: Page): Promise<{ id: string; registration: s
 
 async function createPilotPerson(page: Page): Promise<{ personId: string }> {
   const suffix = uniqueSuffix();
-  const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Finestra', lastName: `Booking-${suffix}` } });
+  const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Orario', lastName: `Booking-${suffix}` } });
   expect(personResponse.status()).toBe(201);
   const person = (await personResponse.json()) as { id: string };
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/pilot`, {
