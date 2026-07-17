@@ -4,7 +4,7 @@ baseline_commit: 0b3566885a5c7e9096173a872a603f29bd1d9669
 
 # Story 12.10: Statistiche — stats API + pagina reports AirOps
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
