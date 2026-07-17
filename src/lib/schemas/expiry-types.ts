@@ -25,10 +25,21 @@ export type ExpiryScopeDto = z.infer<typeof expiryScopeSchema>;
  * until an admin (`settings.manage`) opts it in from `types-manager.tsx`'s
  * checkbox.
  */
+/**
+ * Validity window in months (story 12.11, ratifica utente 2) — precompiles
+ * `expiresAt` at registration time (`issuedAt + validityMonths`, editable).
+ * `null`/`0` both mean "no expiry" — the catalogue UI shows a "senza
+ * scadenza" badge for either. Bounded at 600 (50 years, generously above
+ * any real-world validity window — a defensive `Int` guard, not a domain
+ * rule).
+ */
+export const expiryTypeValidityMonthsSchema = z.number().int().nonnegative().max(600).nullable();
+
 export const createExpiryTypeSchema = z.object({
   name: z.string().trim().min(1).max(100),
   scope: expiryScopeSchema,
   blocksBooking: z.boolean().default(false),
+  validityMonths: expiryTypeValidityMonthsSchema.default(null),
 });
 
 export type CreateExpiryTypeInput = z.infer<typeof createExpiryTypeSchema>;
@@ -49,6 +60,7 @@ export const updateExpiryTypeSchema = z
     scope: expiryScopeSchema.optional(),
     isActive: z.boolean().optional(),
     blocksBooking: z.boolean().optional(),
+    validityMonths: expiryTypeValidityMonthsSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: 'At least one field must be provided.' });
 
@@ -79,6 +91,7 @@ export const expiryTypeItemSchema = z.object({
   scope: expiryScopeSchema,
   isActive: z.boolean(),
   blocksBooking: z.boolean(),
+  validityMonths: z.number().int().nullable(),
   createdAt: z.iso.datetime(),
 });
 

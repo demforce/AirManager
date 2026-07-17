@@ -215,3 +215,67 @@ test.describe('Automatic expiry alert emails, idempotent job (Story 6.3, AC 1/2,
     expect(digest.Text).toContain('senza email');
   });
 });
+
+test.describe('Session-authenticated trigger (Story 12.11, AC 3; ratifica utente 4) — reuses the SAME idempotent job, cron route untouched', () => {
+  test('ADMIN triggers a run via the session route and gets the job counts back; a re-run right after is a no-op for the SAME expiry (idempotent, mirrors the cron route)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const person = await createPersonWithEmail(page, 'SessionTrigger');
+    const expiryType = await createExpiryType(page);
+    const registerResponse = await page.request.post('/api/v1/expiries', {
+      data: { personId: person.id, expiryTypeId: expiryType.id, issuedAt: addDaysUtc(-10), expiresAt: addDaysUtc(7) },
+    });
+    expect(registerResponse.status()).toBe(201);
+
+    const firstRun = await page.request.post('/api/v1/expiry-alerts/trigger');
+    expect(firstRun.status()).toBe(200);
+    const firstBody = (await firstRun.json()) as { holderEmailsSent: number; digestEmailsSent: number };
+    expect(typeof firstBody.holderEmailsSent).toBe('number');
+
+    const holderEmail = await waitForMailpitMessage(person.email, expiryType.name);
+    expect(holderEmail.Text).toContain(expiryType.name);
+    const countAfterFirst = await countMailpitMessagesTo(person.email);
+    expect(countAfterFirst).toBe(1);
+
+    // Idempotent re-run: no NEW email for this same recipient/expiry.
+    const secondRun = await page.request.post('/api/v1/expiry-alerts/trigger');
+    expect(secondRun.status()).toBe(200);
+    const countAfterSecond = await countMailpitMessagesTo(person.email);
+    expect(countAfterSecond).toBe(countAfterFirst);
+  });
+
+  test('the session trigger is gated settings.manage — a STAFF actor (expiries.manage, not settings.manage) gets 403; the bearer cron endpoint stays untouched (still needs the secret, not a session)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const staffPassword = 'StaffAlerts123!';
+    const staffEmail = uniqueEmail('staff-alerts');
+    const usersResponse = await page.request.post('/api/v1/users', { data: { email: staffEmail, roles: ['STAFF'] } });
+    expect(usersResponse.status()).toBe(201);
+    const inviteEmail = await waitForMailpitMessage(staffEmail, 'invitato');
+    const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(inviteEmail.Text);
+    if (!match) throw new Error('Invite email had no set-password link');
+    const setPasswordUrl = new URL(match[1]);
+    await page.goto(setPasswordUrl.pathname + setPasswordUrl.search);
+    await page.getByLabel('Nuova password').fill(staffPassword);
+    await page.getByLabel('Conferma password').fill(staffPassword);
+    await page.getByRole('button', { name: 'Imposta password' }).click();
+    await expect(page.getByTestId('set-password-success')).toBeVisible();
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, staffEmail, staffPassword);
+
+    // Ratifica utente 4: the "Invia promemoria" button is visible ONLY to ADMIN.
+    await page.goto('/it/dashboard/expiries');
+    await expect(page.getByTestId('scadenze-send-reminders-button')).toHaveCount(0);
+
+    const forbidden = await page.request.post('/api/v1/expiry-alerts/trigger');
+    expect(forbidden.status()).toBe(403);
+    expect((await forbidden.json()).error.code).toBe('FORBIDDEN');
+
+    // The cron route is untouched: a session cookie alone (no bearer) still answers 401.
+    const cronViaSession = await page.request.post('/api/v1/jobs/expiry-alerts');
+    expect(cronViaSession.status()).toBe(401);
+  });
+});

@@ -58,6 +58,9 @@
       "INSTRUCTOR": "Instructor",
       "PILOT": "Pilot",
       "STUDENT": "Student"
+    },
+    "weather": {
+      "title": "Field weather"
     }
   },
   "auth": {
@@ -1551,38 +1554,83 @@
     }
   },
   "ExpiriesPage": {
-    "kicker": "Expiries",
     "title": "Expiries",
-    "description": "The pending proposal queue and the airfield's expiry-type catalogue.",
+    "sub": "Certificate and rating expiries · {count} to manage",
     "titleOwn": "My expiries",
     "descriptionOwn": "Your registered expiries, with the computed status. Propose an update whenever you renew.",
-    "manageTypes": "Expiry types",
-    "backToDashboard": "Back to dashboard",
-    "stat": {
-      "label": "Active types",
-      "hint": "In the catalogue, ready for expiry registration."
-    },
     "dashboard": {
       "heading": "All expiries",
-      "description": "Every registered scadenza, ordered by urgency: expired first, then expiring soon, then the rest.",
-      "filters": {
-        "type": "Type",
-        "allTypes": "All types",
-        "inactiveSuffix": " (deactivated)",
-        "scope": "Scope",
-        "allScopes": "All scopes",
-        "status": "Status",
-        "allStatuses": "All statuses",
-        "reset": "Clear filters"
-      },
       "table": {
         "person": "Person",
         "type": "Type",
         "scope": "Scope",
         "issuedAt": "Issued",
         "expiresAt": "Expires",
+        "status": "Status"
+      }
+    },
+    "registry": {
+      "cardTitle": "Expiry registry",
+      "shown": "{count} shown",
+      "segmented": {
+        "win60": "≤60d",
+        "win30": "≤30d",
+        "win7": "≤7d",
+        "expired": "Expired",
+        "all": "All"
+      },
+      "filters": {
+        "allTypes": "All types",
+        "allPilots": "All pilots",
+        "reset": "Clear filters",
+        "picker": { "placeholder": "Search pilot…", "noResults": "No results" }
+      },
+      "table": {
+        "pilot": "Pilot",
+        "type": "Type",
+        "certificate": "Certificate",
+        "expiresAt": "Expires",
+        "daysLeft": "Days left",
         "status": "Status",
-        "empty": "No expiry registered."
+        "empty": "Nothing in this window."
+      },
+      "statCards": {
+        "expired": "Expired",
+        "expiredNote": "action required",
+        "within7": "Within 7 days",
+        "within7Note": "urgent",
+        "within30": "Within 30 days",
+        "within30Note": "plan renewal",
+        "within60": "Within 60 days",
+        "within60Note": "keep an eye on it"
+      },
+      "status": {
+        "expired": "Expired",
+        "within7": "≤ 7 days",
+        "within30": "≤ 30 days",
+        "within60": "≤ 60 days",
+        "ok": "Valid"
+      },
+      "daysAgoSuffix": "d ago",
+      "daysSuffix": " d",
+      "exportMenu": { "label": "Export", "xlsLabel": "Excel (.xlsx)", "pdfLabel": "PDF" },
+      "reminders": {
+        "button": "Send reminders",
+        "sent": "Reminders sent: {holders} to holders, {digests} to staff.",
+        "error": "Send failed. Please try again."
+      },
+      "membershipFee": {
+        "button": "Membership fee",
+        "disabledHint": "Set the fee amount in Settings first.",
+        "modalTitle": "Charge membership fee",
+        "pilot": "Pilot",
+        "amount": "Amount",
+        "amountHint": "Prefilled from Settings, editable.",
+        "submit": "Charge and renew",
+        "cancel": "Close",
+        "invalidAmount": "Select a pilot and a valid amount.",
+        "success": "Charged. New balance: {balance} · expiry renewed to {expires}.",
+        "genericError": "Could not complete the operation."
       }
     },
     "queue": {
@@ -1646,64 +1694,11 @@
     }
   },
   "ExpiryTypesPage": {
-    "kicker": "Expiries",
-    "title": "Expiry types",
-    "description": "Standard and custom expiry types: name, scope and status. A type never used can be deleted, otherwise it must be deactivated.",
-    "backToExpiries": "Back to expiries",
-    "newType": "New type",
-    "table": {
-      "name": "Name",
-      "scope": "Scope",
-      "status": "Status",
-      "blocksBooking": "Blocks bookings",
-      "actions": "Actions",
-      "empty": "No expiry types."
-    },
     "scope": {
       "PILOTS": "Pilots",
       "STUDENTS": "Students",
       "INSTRUCTORS": "Instructors",
       "ALL": "Everyone"
-    },
-    "status": {
-      "active": "Active",
-      "inactive": "Deactivated"
-    },
-    "blocksBooking": {
-      "yes": "Blocks bookings",
-      "no": "—"
-    },
-    "actions": {
-      "edit": "Edit",
-      "deactivate": "Deactivate",
-      "reactivate": "Reactivate",
-      "delete": "Delete",
-      "confirmDelete": "Delete this expiry type?",
-      "confirmYes": "Confirm",
-      "confirmCancel": "Cancel"
-    },
-    "form": {
-      "createTitle": "New expiry type",
-      "editTitle": "Edit expiry type",
-      "name": "Name",
-      "scope": "Scope",
-      "blocksBooking": "Blocks bookings",
-      "blocksBookingHint": "An expired scadenza of this type prevents a new booking (e.g. medical, license). Staff can still force the booking with a reason.",
-      "submitCreate": "Create type",
-      "submitSave": "Save",
-      "cancel": "Cancel",
-      "requiredField": "Name is required.",
-      "conflictError": "An expiry type with this name already exists.",
-      "genericError": "The operation failed. Please try again."
-    },
-    "feedback": {
-      "created": "Expiry type created.",
-      "updated": "Expiry type updated.",
-      "deactivated": "Expiry type deactivated.",
-      "reactivated": "Expiry type reactivated.",
-      "deleted": "Expiry type deleted.",
-      "deleteInUseError": "This type is in use on one or more recorded expiries and cannot be deleted: deactivate it instead.",
-      "genericError": "The operation failed. Please try again."
     }
   },
   "BookingsPage": {
@@ -2181,22 +2176,126 @@
     "page": "Page {page} of {total}"
   },
   "SettingsPage": {
-    "kicker": "Administration",
     "title": "Settings",
-    "description": "Configure the airfield's name and logo, used in the header of exported PDFs.",
-    "backToDashboard": "Back to dashboard",
-    "form": {
-      "nameLabel": "Airfield name",
-      "logoLabel": "Logo",
-      "logoHint": "PNG or JPEG, max 200 KB. Used in the header of exported PDFs.",
-      "logoUpload": "Upload logo",
-      "logoRemove": "Remove logo",
-      "logoPreviewAlt": "Logo preview",
-      "logoTooLarge": "The file exceeds 200 KB.",
-      "logoInvalidType": "Unsupported format: use PNG or JPEG.",
+    "sub": "Club setup · scheduling · notifications",
+    "club": {
+      "title": "Club",
+      "sub": "Identity used across the console and public forms",
+      "identityHeading": "Identity",
+      "icao": "Home airfield (ICAO)",
+      "contactEmail": "Contact email",
+      "metarStation": "METAR station",
+      "metarStationHint": "Station for the sidebar weather card. Empty = use the field's ICAO.",
+      "landingFee": "Default PPR landing fee",
+      "landingFeeHint": "Prefills the amount when completing PPR requests.",
+      "operatingInstructionsIt": "PPR operating instructions (IT)",
+      "operatingInstructionsEn": "PPR operating instructions (EN)",
+      "membershipFee": "Annual membership fee",
+      "membershipFeeHint": "Prefilled amount for the \"Membership fee\" action in Expiries.",
       "save": "Save",
       "saved": "Settings saved.",
-      "error": "Could not save the settings. Please try again."
+      "error": "Could not save. Please try again.",
+      "form": {
+        "nameLabel": "Airfield name",
+        "logoLabel": "Logo",
+        "logoHint": "PNG or JPEG, max 200 KB. Used in the header of exported PDFs.",
+        "logoUpload": "Upload logo",
+        "logoRemove": "Remove logo",
+        "logoPreviewAlt": "Logo preview",
+        "logoTooLarge": "The file exceeds 200 KB.",
+        "logoInvalidType": "Unsupported format: use PNG or JPEG.",
+        "save": "Save",
+        "saved": "Settings saved.",
+        "error": "Could not save the settings. Please try again."
+      }
+    },
+    "scheduling": {
+      "title": "Scheduling",
+      "sub": "Aircraft availability window for bookings",
+      "openTime": "Aircraft available from",
+      "closeTime": "Aircraft available until",
+      "minSlotMinutes": "Minimum slot duration",
+      "turnaroundMinutes": "Turnaround margin",
+      "maxAdvanceDays": "Maximum booking advance",
+      "minutesSuffix": "min",
+      "daysSuffix": "days",
+      "hint": "Aircraft can be booked between {open} and {close} local time, in {slot}-minute increments, up to {days} days in advance. Minimum slot duration and turnaround margin are advisory (they never block saving a booking).",
+      "save": "Save",
+      "saved": "Settings saved.",
+      "error": "Could not save. Please try again."
+    },
+    "smtp": {
+      "title": "Email (SMTP)",
+      "sub": "Outgoing mail for PPR replies, invoices and reminders",
+      "testEmail": "Send test email",
+      "testEmailSent": "Test email sent.",
+      "testEmailFailed": "Send failed. Check the SMTP configuration.",
+      "testEmailNoContact": "Set a contact email on the Club card first.",
+      "host": "SMTP host",
+      "port": "Port",
+      "security": "Security",
+      "securityOptions": { "NONE": "None", "STARTTLS": "STARTTLS", "SSL_TLS": "SSL/TLS" },
+      "from": "Sender address",
+      "user": "Username",
+      "pass": "Password",
+      "passHint": "Leave blank to keep the current password.",
+      "passConfigured": "Password already configured",
+      "save": "Save",
+      "saved": "Settings saved.",
+      "error": "Could not save. Please try again."
+    },
+    "ratings": {
+      "title": "Ratings",
+      "sub": "Rating types and validity duration",
+      "addAction": "Add rating",
+      "table": {
+        "name": "Rating name",
+        "scope": "Scope",
+        "validity": "Validity",
+        "status": "Status",
+        "actions": "Actions",
+        "empty": "No rating types configured.",
+        "monthsSuffix": "months",
+        "noExpiry": "never expires"
+      },
+      "scope": { "PILOTS": "Pilots", "STUDENTS": "Students", "INSTRUCTORS": "Instructors", "ALL": "Everyone" },
+      "status": { "active": "Active", "inactive": "Deactivated" },
+      "blocksBooking": { "yes": "Blocks bookings" },
+      "actions": {
+        "edit": "Edit",
+        "deactivate": "Deactivate",
+        "reactivate": "Reactivate",
+        "delete": "Delete",
+        "confirmDelete": "Confirm?",
+        "confirmYes": "Yes",
+        "confirmCancel": "Cancel"
+      },
+      "form": {
+        "createTitle": "New rating",
+        "editTitle": "Edit rating",
+        "name": "Rating name",
+        "scope": "Scope",
+        "validity": "Validity",
+        "validityHint": "Prefills the expiry at registration (issue date + months). Set 0 for ratings that never expire.",
+        "blocksBooking": "Blocks bookings",
+        "blocksBookingHint": "An expired document of this type prevents new bookings.",
+        "submitCreate": "Create",
+        "submitSave": "Save",
+        "cancel": "Cancel",
+        "requiredField": "Required field.",
+        "conflictError": "A type with this name already exists.",
+        "genericError": "Could not save. Please try again."
+      },
+      "feedback": {
+        "created": "Rating created.",
+        "updated": "Rating updated.",
+        "deactivated": "Rating deactivated.",
+        "reactivated": "Rating reactivated.",
+        "deleted": "Rating deleted.",
+        "deleteInUseError": "This type is in use: deactivate it instead of deleting it.",
+        "genericError": "Could not complete the operation."
+      },
+      "hint": "Set validity to 0 for ratings that never expire (e.g. night rating). Expiries appear on the Expiries page."
     }
   },
   "Emails": {
@@ -2419,7 +2518,8 @@
       "revenue": "Revenue",
       "hours": "Hours flown",
       "movements": "Movements",
-      "transitShare": "Transit share"
+      "transitShare": "Transit share",
+      "fleetUtilization": "Fleet utilization"
     },
     "charts": {
       "revenue": { "title": "Revenue", "sub": "last {count} months · €" },

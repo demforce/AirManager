@@ -111,10 +111,14 @@ async function createPilotPerson(page: Page, person: { firstName: string; lastNa
   return created.id;
 }
 
-/** Creates a run-unique, always-usable (scope `ALL`) expiry type via the admin API and returns its id. */
-async function createExpiryType(page: Page, scope: 'ALL' | 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' = 'ALL'): Promise<{ id: string; name: string }> {
+/** Creates a run-unique, always-usable (scope `ALL`) expiry type via the admin API and returns its id — `validityMonths` optional (story 12.11, ratifica utente 2). */
+async function createExpiryType(
+  page: Page,
+  scope: 'ALL' | 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' = 'ALL',
+  validityMonths?: number,
+): Promise<{ id: string; name: string }> {
   const name = uniqueTypeName('Tipo scadenza');
-  const response = await page.request.post('/api/v1/expiry-types', { data: { name, scope } });
+  const response = await page.request.post('/api/v1/expiry-types', { data: { name, scope, ...(validityMonths !== undefined ? { validityMonths } : {}) } });
   expect(response.status()).toBe(201);
   const created = (await response.json()) as { id: string };
   return { id: created.id, name };
@@ -210,18 +214,19 @@ test.describe('Person expiries with computed status and proposal validation queu
 
     // Story 6.1's delete-constraint contract, completed here (Task 3) —
     // `settings.manage` only, so back to admin: a type now in use cannot be
-    // deleted (409, "in use" message); it CAN still be deactivated.
+    // deleted (409, "in use" message); it CAN still be deactivated. Story
+    // 12.11: the catalogue moved onto the Impostazioni "Abilitazioni" card.
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.goto('/it/dashboard/expiries/types');
-    const okTypeRow = page.getByRole('row', { name: new RegExp(okType.name) });
+    await page.goto('/it/dashboard/settings');
+    const okTypeRow = page.getByTestId('rating-row').filter({ hasText: okType.name });
     await okTypeRow.getByRole('button', { name: 'Elimina' }).click();
-    await okTypeRow.getByRole('button', { name: 'Conferma' }).click();
-    await expect(page.getByTestId('expiry-types-feedback')).toContainText('in uso');
-    await expect(page.getByRole('row', { name: new RegExp(okType.name) })).toHaveCount(1);
+    await okTypeRow.getByRole('button', { name: 'Sì' }).click();
+    await expect(page.getByTestId('ratings-feedback')).toContainText('in uso');
+    await expect(page.getByTestId('rating-row').filter({ hasText: okType.name })).toHaveCount(1);
 
     await okTypeRow.getByRole('button', { name: 'Disattiva' }).click();
-    await expect(page.getByRole('row', { name: new RegExp(okType.name) })).toContainText('Disattivato');
+    await expect(page.getByTestId('rating-row').filter({ hasText: okType.name })).toContainText('Disattivato');
   });
 
   test('the seed pilot proposes an update from "Le mie scadenze"; staff sees it in the queue, approves it, then a second proposal is rejected leaving values unchanged; a pilot cannot POST /api/v1/expiries directly', async ({
@@ -318,5 +323,33 @@ test.describe('Person expiries with computed status and proposal validation queu
     // proposal's date must never have been applied.
     await expect(finalRow).toContainText(addDaysDisplay(500));
     await expect(finalRow).not.toContainText(addDaysDisplay(900));
+  });
+
+  test('story 12.11, ratifica utente 2: selecting a type with a configured validityMonths precompiles "Data scadenza" (issuedAt + months), still editable, and a validityMonths=0 type leaves it untouched', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const pilot = uniquePerson('Precompile');
+    const personId = await createPilotPerson(page, pilot);
+    const sixMonthType = await createExpiryType(page, 'ALL', 6);
+    const noExpiryType = await createExpiryType(page, 'ALL', 0);
+
+    await page.goto(`/it/dashboard/people/${personId}`);
+    await page.getByRole('button', { name: 'Registra scadenza' }).click();
+    const form = page.getByTestId('register-expiry-form');
+
+    await form.getByLabel('Data rilascio').fill('2026-01-15');
+    await form.getByLabel('Tipo di scadenza').selectOption(sixMonthType.name);
+    // issuedAt (2026-01-15) + 6 months = 2026-07-15.
+    await expect(form.getByLabel('Data scadenza')).toHaveValue('2026-07-15');
+
+    // Still editable — the precompiled value is a default, not a locked field.
+    await form.getByLabel('Data scadenza').fill('2026-08-01');
+    await expect(form.getByLabel('Data scadenza')).toHaveValue('2026-08-01');
+
+    // A validityMonths=0 (senza scadenza) type leaves the field untouched.
+    await form.getByLabel('Tipo di scadenza').selectOption(noExpiryType.name);
+    await expect(form.getByLabel('Data scadenza')).toHaveValue('2026-08-01');
   });
 });

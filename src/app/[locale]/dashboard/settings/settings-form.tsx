@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Field } from '@/components/ui/field';
 import type { AirfieldBrandingDto } from '@/lib/schemas/settings';
 
 export type SettingsFormLabels = {
@@ -37,10 +38,11 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 /**
- * Admin-only airfield branding form (story 10.2, AC 1, 5) — name + logo
- * upload/preview/removal, `PUT /api/v1/settings/airfield` on save. Same
- * fetch/feedback shape as `dashboard/ppr/ppr-queue.tsx`'s
- * `PprOperatingInstructionsEditor`/`LandingFeeEditor`.
+ * Name + logo (story 10.2, AC 1, 5) — the "nome"/logo half of the
+ * Impostazioni "Club" card (story 12.11, AC 2). AirOps-restyled (`Field`/
+ * `.input`/`.btn`) but the SAME `data-testid`s and behavior as before this
+ * story (`pdf-exports.spec.ts` drives this exact form) — a surgical visual
+ * port, no logic change. `PUT /api/v1/settings/airfield` on save.
  */
 export function SettingsForm({ initial, labels }: SettingsFormProps) {
   const [name, setName] = useState(initial.name);
@@ -93,84 +95,74 @@ export function SettingsForm({ initial, labels }: SettingsFormProps) {
   }
 
   return (
-    <section className="rounded-[12px] border border-[#EAEAEA] bg-white p-6" data-testid="airfield-settings-form">
-      <div>
-        <label htmlFor="airfield-name" className="block text-sm font-medium text-[#2F3437]">
-          {labels.nameLabel}
-        </label>
-        <input
-          id="airfield-name"
-          data-testid="airfield-name-input"
-          type="text"
-          maxLength={200}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          className="mt-2 w-full max-w-sm rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-        />
+    <div data-testid="airfield-settings-form">
+      <div className="form-grid">
+        <Field label={labels.nameLabel}>
+          <input
+            id="airfield-name"
+            data-testid="airfield-name-input"
+            type="text"
+            maxLength={200}
+            className="input"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
       </div>
 
-      <div className="mt-6 border-t border-[#EAEAEA] pt-6">
-        <p className="block text-sm font-medium text-[#2F3437]">{labels.logoLabel}</p>
-        <p className="mt-1 text-sm text-[#787774]">{labels.logoHint}</p>
+      <div style={{ marginTop: 18 }}>
+        <div className="fld-label">{labels.logoLabel}</div>
+        <p className="hint" style={{ marginTop: 4 }}>
+          {labels.logoHint}
+        </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-4">
+        <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
           {logoDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- data-URL preview, not a static asset next/image can optimize.
             <img
               src={logoDataUrl}
               alt={labels.logoPreviewAlt}
               data-testid="airfield-logo-preview"
-              className="h-16 w-16 rounded-[6px] border border-[#EAEAEA] object-contain"
+              style={{ height: 56, width: 56, borderRadius: 8, border: '1px solid var(--border)', objectFit: 'contain', background: 'var(--bg)' }}
             />
           ) : null}
 
-          <label className="inline-flex min-h-[40px] cursor-pointer items-center rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]">
+          <label className="btn" style={{ cursor: 'pointer' }}>
             {labels.logoUpload}
             <input
               type="file"
               accept="image/png,image/jpeg"
               data-testid="airfield-logo-input"
               onChange={(event) => void handleLogoChange(event)}
-              className="hidden"
+              style={{ display: 'none' }}
             />
           </label>
 
           {logoDataUrl ? (
-            <button
-              type="button"
-              onClick={removeLogo}
-              data-testid="airfield-logo-remove"
-              className="text-sm font-medium text-[#9F2F2D] underline-offset-4 hover:underline"
-            >
+            <button type="button" onClick={removeLogo} data-testid="airfield-logo-remove" className="btn mini bad">
               {labels.logoRemove}
             </button>
           ) : null}
         </div>
 
         {logoError ? (
-          <p role="alert" data-testid="airfield-logo-error" className="mt-2 text-xs text-[#9F2F2D]">
+          <p role="alert" data-testid="airfield-logo-error" style={{ marginTop: 8, fontSize: 12, color: 'var(--bad)' }}>
             {logoError}
           </p>
         ) : null}
       </div>
 
       {feedback ? (
-        <p role="status" data-testid="airfield-settings-feedback" className="mt-4 text-sm text-[#346538]">
+        <p role="status" data-testid="airfield-settings-feedback" style={{ marginTop: 14, fontSize: 12.5, color: 'var(--ok)' }}>
           {feedback}
         </p>
       ) : null}
 
-      <div className="mt-6">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => void save()}
-          data-testid="airfield-settings-save"
-          className="rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
-        >
+      <div style={{ marginTop: 18 }}>
+        <button type="button" disabled={saving} onClick={() => void save()} data-testid="airfield-settings-save" className="btn primary">
           {labels.save}
         </button>
       </div>
-    </section>
+    </div>
   );
 }

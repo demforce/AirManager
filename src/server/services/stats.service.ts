@@ -5,6 +5,7 @@ import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, dateOnlyInZone, zonedMidnightUtc } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { getSchedulingSettings } from './app-settings.service';
 import { listAircraft } from './aircraft.service';
 import { ValidationError } from './errors';
 import { getCompensationSummary } from './instructor-compensation.service';
@@ -53,6 +54,15 @@ type DateRange = { from: string; to: string };
 
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
+}
+
+/** `fleetUtilization`'s own day-count arithmetic (AC 6) — a private copy, same rationale as `expiries.service.ts`'s own `MS_PER_DAY` doc-comment: the day-BOUNDARY semantics that matter (`computeExpiryStatus`) stay a single shared implementation, this is only a millisecond-per-day constant for a date-only range span. */
+const MS_PER_DAY = 86_400_000;
+
+/** `"HH:MM"` -> minutes since midnight (AC 6) — same tiny private parser as `bookings.service.ts#minutesOfDay`, not shared: both are one-line, single-file-local helpers over the identical `sched.*` string format. */
+function minutesOfDay(hhmm: string): number {
+  const [hour, minute] = hhmm.split(':').map(Number) as [number, number];
+  return hour * 60 + minute;
 }
 
 /** Last day-of-month (1-based `month`), UTC-calendar arithmetic (day 0 of the next month) — same trick as `period-presets.ts`'s own private helper, duplicated here because that module only builds ranges anchored on "now", never an arbitrary `ref` month. */
@@ -130,6 +140,7 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     kpiTransitCount,
     aircraftResult,
     compensation,
+    schedulingSettings,
   ] = await Promise.all([
     Promise.all(
       seriesMonths.map((month) => {
@@ -147,6 +158,7 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     prisma.pprRequest.count({ where: { status: 'COMPLETED', eta: etaWindow(kpiRange) } }),
     listAircraft(actor, { page: 1, pageSize: 100, includeArchived: false }),
     isCurrentPeriod ? getCompensationSummary(actor) : Promise.resolve(null),
+    getSchedulingSettings(),
   ]);
 
   const personIds = personGroups.map((group) => group.personId);
@@ -196,6 +208,20 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
       return { registration: aircraft.registration, minutes: totals?.minutes ?? 0, revenueCents: totals?.revenueCents ?? 0 };
     });
 
+  // --- fleetUtilization (story 12.11, AC 6 — closes ratifica utente 2 from
+  // 12.10): flown hours / available hours over the KPI window. `null` when
+  // `sched.openTime`/`sched.closeTime` are absent OR there is no OPERATIONAL
+  // aircraft — never a fake `0`/divide-by-zero.
+  let fleetUtilization: number | null = null;
+  if (schedulingSettings.openTime && schedulingSettings.closeTime && fleet.length > 0) {
+    const dailyWindowMinutes = minutesOfDay(schedulingSettings.closeTime) - minutesOfDay(schedulingSettings.openTime);
+    const daysInKpiRange = Math.round((parseDateOnlyUtc(kpiRange.to).getTime() - parseDateOnlyUtc(kpiRange.from).getTime()) / MS_PER_DAY) + 1;
+    const availableMinutes = dailyWindowMinutes * daysInKpiRange * fleet.length;
+    if (dailyWindowMinutes > 0 && availableMinutes > 0) {
+      fleetUtilization = flightMinutes / availableMinutes;
+    }
+  }
+
   // --- movementMix (ratifica utente 1: fixed order, always all 4 keys) ---
   const countByType = new Map(typeGroups.map((group) => [group.flightType, group._count._all]));
   const movementMix = [
@@ -227,7 +253,7 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     .slice(0, 10);
 
   return {
-    kpis: { revenueCents: kpiRevenueCents, flightMinutes, movements, transitShare },
+    kpis: { revenueCents: kpiRevenueCents, flightMinutes, movements, transitShare, fleetUtilization },
     series: {
       months: seriesMonths,
       revenueCents: revenueSeries,

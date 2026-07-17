@@ -28,14 +28,24 @@ export type StatsQuery = z.infer<typeof statsQuerySchema>;
  * `transitShare` is a 0..1 FRACTION (transits / movements, `0` when
  * `movements` is `0`) — formatting to a percentage is presentation-only,
  * done in the UI (AD-2 convention: the wire never carries a formatted
- * string). Deliberately NO `fleetUtilization` (ratifica utente 2 — arrives
- * in story 12.11 once the "finestra prenotabile" settings exist).
+ * string).
+ *
+ * `fleetUtilization` (story 12.11, AC 6 — closes ratifica utente 2 from
+ * story 12.10): flown hours in the KPI window / available hours (`(closeTime
+ * - openTime) hours × days in the window × OPERATIONAL non-archived
+ * aircraft`) — also a 0..1-ish FRACTION (can exceed 1 if the fleet flew more
+ * than its nominal window, e.g. after-hours flights once `sched.*` is
+ * configured). `null` whenever `sched.openTime`/`sched.closeTime` are not
+ * configured OR there is no OPERATIONAL aircraft to divide by (Contesto: "no
+ * dati finti") — the UI OMITS the 5th KPI card entirely in that case, never
+ * shows a `0%`.
  */
 export const statsKpisSchema = z.object({
   revenueCents: z.number().int(),
   flightMinutes: z.number().int(),
   movements: z.number().int(),
   transitShare: z.number(),
+  fleetUtilization: z.number().nullable(),
 });
 
 /**

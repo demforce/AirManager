@@ -58,6 +58,9 @@
       "INSTRUCTOR": "Istruttore",
       "PILOT": "Pilota",
       "STUDENT": "Allievo"
+    },
+    "weather": {
+      "title": "Meteo campo"
     }
   },
   "auth": {
@@ -1551,38 +1554,83 @@
     }
   },
   "ExpiriesPage": {
-    "kicker": "Scadenze",
     "title": "Scadenze",
-    "description": "La coda delle proposte da validare e il catalogo dei tipi di scadenza dell'aviosuperficie.",
+    "sub": "Scadenze certificati e abilitazioni · {count} da gestire",
     "titleOwn": "Le mie scadenze",
     "descriptionOwn": "Le tue scadenze registrate, con lo stato calcolato. Proponi un aggiornamento quando rinnovi.",
-    "manageTypes": "Tipi di scadenza",
-    "backToDashboard": "Torna alla dashboard",
-    "stat": {
-      "label": "Tipi attivi",
-      "hint": "Nel catalogo, pronti per la registrazione delle scadenze."
-    },
     "dashboard": {
       "heading": "Tutte le scadenze",
-      "description": "Ogni scadenza registrata, ordinata per urgenza: le scadute per prime, poi quelle in scadenza, poi le altre.",
-      "filters": {
-        "type": "Tipo",
-        "allTypes": "Tutti i tipi",
-        "inactiveSuffix": " (disattivato)",
-        "scope": "Ambito",
-        "allScopes": "Tutti gli ambiti",
-        "status": "Stato",
-        "allStatuses": "Tutti gli stati",
-        "reset": "Azzera filtri"
-      },
       "table": {
         "person": "Persona",
         "type": "Tipo",
         "scope": "Ambito",
         "issuedAt": "Rilascio",
         "expiresAt": "Scadenza",
+        "status": "Stato"
+      }
+    },
+    "registry": {
+      "cardTitle": "Registro scadenze",
+      "shown": "{count} mostrati",
+      "segmented": {
+        "win60": "≤60g",
+        "win30": "≤30g",
+        "win7": "≤7g",
+        "expired": "Scaduti",
+        "all": "Tutte"
+      },
+      "filters": {
+        "allTypes": "Tutti i tipi",
+        "allPilots": "Tutti i piloti",
+        "reset": "Azzera filtri",
+        "picker": { "placeholder": "Cerca pilota…", "noResults": "Nessun risultato" }
+      },
+      "table": {
+        "pilot": "Pilota",
+        "type": "Tipo",
+        "certificate": "Certificato",
+        "expiresAt": "Scadenza",
+        "daysLeft": "Giorni rimasti",
         "status": "Stato",
-        "empty": "Nessuna scadenza registrata."
+        "empty": "Nulla in questa finestra."
+      },
+      "statCards": {
+        "expired": "Scaduti",
+        "expiredNote": "azione richiesta",
+        "within7": "Entro 7 giorni",
+        "within7Note": "urgente",
+        "within30": "Entro 30 giorni",
+        "within30Note": "pianifica rinnovo",
+        "within60": "Entro 60 giorni",
+        "within60Note": "da tenere d'occhio"
+      },
+      "status": {
+        "expired": "Scaduto",
+        "within7": "≤ 7 giorni",
+        "within30": "≤ 30 giorni",
+        "within60": "≤ 60 giorni",
+        "ok": "Valido"
+      },
+      "daysAgoSuffix": "g fa",
+      "daysSuffix": " g",
+      "exportMenu": { "label": "Esporta", "xlsLabel": "Excel (.xlsx)", "pdfLabel": "PDF" },
+      "reminders": {
+        "button": "Invia promemoria",
+        "sent": "Promemoria inviati: {holders} ai titolari, {digests} allo staff.",
+        "error": "Invio non riuscito. Riprova."
+      },
+      "membershipFee": {
+        "button": "Quota associativa",
+        "disabledHint": "Imposta prima l'importo della quota in Impostazioni.",
+        "modalTitle": "Addebita quota associativa",
+        "pilot": "Pilota",
+        "amount": "Importo",
+        "amountHint": "Precompilato dalle Impostazioni, modificabile.",
+        "submit": "Addebita e rinnova",
+        "cancel": "Chiudi",
+        "invalidAmount": "Seleziona un pilota e un importo valido.",
+        "success": "Addebitato. Nuovo saldo: {balance} · scadenza rinnovata al {expires}.",
+        "genericError": "Operazione non riuscita. Riprova."
       }
     },
     "queue": {
@@ -1646,64 +1694,11 @@
     }
   },
   "ExpiryTypesPage": {
-    "kicker": "Scadenze",
-    "title": "Tipi di scadenza",
-    "description": "I tipi di scadenza standard e personalizzati: nome, ambito e stato. Un tipo mai usato può essere eliminato, altrimenti va disattivato.",
-    "backToExpiries": "Torna alle scadenze",
-    "newType": "Nuovo tipo",
-    "table": {
-      "name": "Nome",
-      "scope": "Ambito",
-      "status": "Stato",
-      "blocksBooking": "Blocca prenotazioni",
-      "actions": "Azioni",
-      "empty": "Nessun tipo di scadenza."
-    },
     "scope": {
       "PILOTS": "Piloti",
       "STUDENTS": "Allievi",
       "INSTRUCTORS": "Istruttori",
       "ALL": "Tutti"
-    },
-    "status": {
-      "active": "Attivo",
-      "inactive": "Disattivato"
-    },
-    "blocksBooking": {
-      "yes": "Blocca prenotazioni",
-      "no": "—"
-    },
-    "actions": {
-      "edit": "Modifica",
-      "deactivate": "Disattiva",
-      "reactivate": "Riattiva",
-      "delete": "Elimina",
-      "confirmDelete": "Eliminare questo tipo di scadenza?",
-      "confirmYes": "Conferma",
-      "confirmCancel": "Annulla"
-    },
-    "form": {
-      "createTitle": "Nuovo tipo di scadenza",
-      "editTitle": "Modifica tipo di scadenza",
-      "name": "Nome",
-      "scope": "Ambito",
-      "blocksBooking": "Blocca prenotazioni",
-      "blocksBookingHint": "Una scadenza scaduta di questo tipo impedisce una nuova prenotazione (es. visita medica, licenza). Lo staff può comunque forzare la prenotazione motivandola.",
-      "submitCreate": "Crea tipo",
-      "submitSave": "Salva",
-      "cancel": "Annulla",
-      "requiredField": "Il nome è obbligatorio.",
-      "conflictError": "Esiste già un tipo di scadenza con questo nome.",
-      "genericError": "Operazione non riuscita. Riprova."
-    },
-    "feedback": {
-      "created": "Tipo di scadenza creato.",
-      "updated": "Tipo di scadenza aggiornato.",
-      "deactivated": "Tipo di scadenza disattivato.",
-      "reactivated": "Tipo di scadenza riattivato.",
-      "deleted": "Tipo di scadenza eliminato.",
-      "deleteInUseError": "Il tipo è in uso su una o più scadenze registrate e non può essere eliminato: disattivalo invece.",
-      "genericError": "Operazione non riuscita. Riprova."
     }
   },
   "BookingsPage": {
@@ -2181,22 +2176,126 @@
     "page": "Pag. {page} di {total}"
   },
   "SettingsPage": {
-    "kicker": "Amministrazione",
     "title": "Impostazioni",
-    "description": "Configura il nome e il logo dell'aviosuperficie, usati nell'intestazione dei PDF esportati.",
-    "backToDashboard": "Torna alla dashboard",
-    "form": {
-      "nameLabel": "Nome aviosuperficie",
-      "logoLabel": "Logo",
-      "logoHint": "PNG o JPEG, max 200 KB. Usato nell'intestazione dei PDF esportati.",
-      "logoUpload": "Carica logo",
-      "logoRemove": "Rimuovi logo",
-      "logoPreviewAlt": "Anteprima logo",
-      "logoTooLarge": "Il file supera i 200 KB.",
-      "logoInvalidType": "Formato non supportato: usa PNG o JPEG.",
+    "sub": "Configurazione club · pianificazione · notifiche",
+    "club": {
+      "title": "Club",
+      "sub": "Identità usata nella console e nei moduli pubblici",
+      "identityHeading": "Identità",
+      "icao": "Aeroporto base (ICAO)",
+      "contactEmail": "Email di contatto",
+      "metarStation": "Stazione METAR",
+      "metarStationHint": "Stazione per il meteo in sidebar. Vuota = usa l'ICAO del campo.",
+      "landingFee": "Tassa PPR di default",
+      "landingFeeHint": "Precompila l'importo nel completamento delle richieste PPR.",
+      "operatingInstructionsIt": "Istruzioni operative PPR (IT)",
+      "operatingInstructionsEn": "Istruzioni operative PPR (EN)",
+      "membershipFee": "Quota associativa annuale",
+      "membershipFeeHint": "Importo precompilato nell'azione \"Quota associativa\" in Scadenze.",
       "save": "Salva",
       "saved": "Impostazioni salvate.",
-      "error": "Non è stato possibile salvare le impostazioni. Riprova."
+      "error": "Non è stato possibile salvare. Riprova.",
+      "form": {
+        "nameLabel": "Nome aviosuperficie",
+        "logoLabel": "Logo",
+        "logoHint": "PNG o JPEG, max 200 KB. Usato nell'intestazione dei PDF esportati.",
+        "logoUpload": "Carica logo",
+        "logoRemove": "Rimuovi logo",
+        "logoPreviewAlt": "Anteprima logo",
+        "logoTooLarge": "Il file supera i 200 KB.",
+        "logoInvalidType": "Formato non supportato: usa PNG o JPEG.",
+        "save": "Salva",
+        "saved": "Impostazioni salvate.",
+        "error": "Non è stato possibile salvare le impostazioni. Riprova."
+      }
+    },
+    "scheduling": {
+      "title": "Pianificazione",
+      "sub": "Finestra di disponibilità degli aeromobili per le prenotazioni",
+      "openTime": "Aeromobili disponibili dalle",
+      "closeTime": "Aeromobili disponibili fino alle",
+      "minSlotMinutes": "Durata minima slot",
+      "turnaroundMinutes": "Margine di turnaround",
+      "maxAdvanceDays": "Anticipo massimo prenotazione",
+      "minutesSuffix": "min",
+      "daysSuffix": "giorni",
+      "hint": "Gli aeromobili possono essere prenotati tra le {open} e le {close} locali, in incrementi di {slot} minuti, fino a {days} giorni in anticipo. Durata minima slot e margine di turnaround sono indicativi (non impediscono il salvataggio di una prenotazione).",
+      "save": "Salva",
+      "saved": "Impostazioni salvate.",
+      "error": "Non è stato possibile salvare. Riprova."
+    },
+    "smtp": {
+      "title": "Email (SMTP)",
+      "sub": "Posta in uscita per risposte PPR, fatture e promemoria",
+      "testEmail": "Invia email di prova",
+      "testEmailSent": "Email di prova inviata.",
+      "testEmailFailed": "Invio non riuscito. Controlla la configurazione SMTP.",
+      "testEmailNoContact": "Imposta prima un'email di contatto nella card Club.",
+      "host": "Host SMTP",
+      "port": "Porta",
+      "security": "Sicurezza",
+      "securityOptions": { "NONE": "Nessuna", "STARTTLS": "STARTTLS", "SSL_TLS": "SSL/TLS" },
+      "from": "Indirizzo mittente",
+      "user": "Nome utente",
+      "pass": "Password",
+      "passHint": "Lascia vuoto per mantenere la password attuale.",
+      "passConfigured": "Password già configurata",
+      "save": "Salva",
+      "saved": "Impostazioni salvate.",
+      "error": "Non è stato possibile salvare. Riprova."
+    },
+    "ratings": {
+      "title": "Abilitazioni",
+      "sub": "Tipi di abilitazione e durata di validità",
+      "addAction": "Aggiungi abilitazione",
+      "table": {
+        "name": "Nome abilitazione",
+        "scope": "Ambito",
+        "validity": "Validità",
+        "status": "Stato",
+        "actions": "Azioni",
+        "empty": "Nessuna abilitazione configurata.",
+        "monthsSuffix": "mesi",
+        "noExpiry": "senza scadenza"
+      },
+      "scope": { "PILOTS": "Piloti", "STUDENTS": "Allievi", "INSTRUCTORS": "Istruttori", "ALL": "Tutti" },
+      "status": { "active": "Attivo", "inactive": "Disattivato" },
+      "blocksBooking": { "yes": "Blocca prenotazioni" },
+      "actions": {
+        "edit": "Modifica",
+        "deactivate": "Disattiva",
+        "reactivate": "Riattiva",
+        "delete": "Elimina",
+        "confirmDelete": "Confermi?",
+        "confirmYes": "Sì",
+        "confirmCancel": "Annulla"
+      },
+      "form": {
+        "createTitle": "Nuova abilitazione",
+        "editTitle": "Modifica abilitazione",
+        "name": "Nome abilitazione",
+        "scope": "Ambito",
+        "validity": "Validità",
+        "validityHint": "Precompila la scadenza alla registrazione (data rilascio + mesi). Imposta 0 per le abilitazioni che non scadono mai.",
+        "blocksBooking": "Blocca prenotazioni",
+        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta, impedisce nuove prenotazioni.",
+        "submitCreate": "Crea",
+        "submitSave": "Salva",
+        "cancel": "Annulla",
+        "requiredField": "Campo obbligatorio.",
+        "conflictError": "Esiste già un tipo con questo nome.",
+        "genericError": "Non è stato possibile salvare. Riprova."
+      },
+      "feedback": {
+        "created": "Abilitazione creata.",
+        "updated": "Abilitazione aggiornata.",
+        "deactivated": "Abilitazione disattivata.",
+        "reactivated": "Abilitazione riattivata.",
+        "deleted": "Abilitazione eliminata.",
+        "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
+        "genericError": "Non è stato possibile completare l'operazione."
+      },
+      "hint": "Imposta la validità a 0 per le abilitazioni che non scadono mai (es. Abilitazione notturna). Le scadenze compaiono nella pagina Scadenze."
     }
   },
   "Emails": {
@@ -2419,7 +2518,8 @@
       "revenue": "Ricavi",
       "hours": "Ore volate",
       "movements": "Movimenti",
-      "transitShare": "Quota transiti"
+      "transitShare": "Quota transiti",
+      "fleetUtilization": "Utilizzo flotta"
     },
     "charts": {
       "revenue": { "title": "Ricavi", "sub": "ultimi {count} mesi · €" },

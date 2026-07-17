@@ -1,5 +1,12 @@
 import type { PprOperatingInstructionsDto } from '@/lib/schemas/ppr';
-import type { AirfieldBrandingDto } from '@/lib/schemas/settings';
+import type {
+  AirfieldBrandingDto,
+  SchedulingSettingsDto,
+  SchedulingSettingsInput,
+  SmtpSecurityDto,
+  SmtpSettingsDto,
+  SmtpSettingsInput,
+} from '@/lib/schemas/settings';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 
@@ -21,6 +28,7 @@ const PPR_LANDING_FEE_CENTS_KEY = 'ppr.landingFeeCents';
 const AIRFIELD_NAME_KEY = 'airfield.name';
 const AIRFIELD_LOGO_KEY = 'airfield.logo';
 const AIRFIELD_ICAO_KEY = 'airfield.icao';
+const AIRFIELD_CONTACT_EMAIL_KEY = 'airfield.contactEmail';
 
 /** Fresh-install default (story 10.2, AC 1) — no admin has configured branding yet. */
 const DEFAULT_AIRFIELD_NAME = 'AirManager';
@@ -186,6 +194,289 @@ export async function getAirfieldBranding(): Promise<AirfieldBrandingDto> {
 export async function getAirfieldIcao(): Promise<string> {
   const row = await prisma.appSetting.findUnique({ where: { key: AIRFIELD_ICAO_KEY }, select: { value: true } });
   return row?.value ?? '';
+}
+
+/**
+ * Sets the airfield ICAO (story 12.11, AC 1/2 — the Impostazioni Club card
+ * `getAirfieldIcao`'s doc-comment anticipated). Gated `settings.manage`, same
+ * write-vs-read asymmetry as every other setter here.
+ */
+export async function setAirfieldIcao(actor: Actor, icao: string): Promise<string> {
+  authorize(actor, 'settings.manage');
+
+  await prisma.appSetting.upsert({
+    where: { key: AIRFIELD_ICAO_KEY },
+    update: { value: icao },
+    create: { key: AIRFIELD_ICAO_KEY, value: icao },
+  });
+
+  return icao;
+}
+
+/**
+ * Reads the airfield contact email (story 12.11, AC 1/2) — the address the
+ * SMTP "Invia email di prova" control (AC 2) sends its test message to. No
+ * permission gate, same reasoning as {@link getAirfieldIcao}. Absent key ->
+ * `''` (fresh install: no contact email configured yet).
+ */
+export async function getAirfieldContactEmail(): Promise<string> {
+  const row = await prisma.appSetting.findUnique({ where: { key: AIRFIELD_CONTACT_EMAIL_KEY }, select: { value: true } });
+  return row?.value ?? '';
+}
+
+/** Sets the airfield contact email (AC 1/2). Gated `settings.manage`. */
+export async function setAirfieldContactEmail(actor: Actor, email: string): Promise<string> {
+  authorize(actor, 'settings.manage');
+
+  await prisma.appSetting.upsert({
+    where: { key: AIRFIELD_CONTACT_EMAIL_KEY },
+    update: { value: email },
+    create: { key: AIRFIELD_CONTACT_EMAIL_KEY, value: email },
+  });
+
+  return email;
+}
+
+// --- Scheduling window (story 12.11, AC 1/4; ratifica utente 3) ------------
+// `sched.*` — the booking-window settings `bookings.service.ts`'s
+// `BOOKING_OUTSIDE_WINDOW` check and the Pianificazione timeline axis read.
+// Every field is `null` until an admin saves the Impostazioni "Pianificazione"
+// card ONCE (all 5 together, same single-card-save shape as the write
+// schema) — absent keys mean "no constraint" (backward-safe), never `0`.
+
+const SCHED_OPEN_TIME_KEY = 'sched.openTime';
+const SCHED_CLOSE_TIME_KEY = 'sched.closeTime';
+const SCHED_MIN_SLOT_MINUTES_KEY = 'sched.minSlotMinutes';
+const SCHED_TURNAROUND_MINUTES_KEY = 'sched.turnaroundMinutes';
+const SCHED_MAX_ADVANCE_DAYS_KEY = 'sched.maxAdvanceDays';
+const SCHED_KEYS = [
+  SCHED_OPEN_TIME_KEY,
+  SCHED_CLOSE_TIME_KEY,
+  SCHED_MIN_SLOT_MINUTES_KEY,
+  SCHED_TURNAROUND_MINUTES_KEY,
+  SCHED_MAX_ADVANCE_DAYS_KEY,
+] as const;
+
+function parseStoredInt(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+/**
+ * Reads the scheduling-window settings (AC 1/4). No permission gate: needed
+ * by ANY actor creating a booking (including a plain pilot self-booking),
+ * not just staff — same reasoning as {@link getAirfieldIcao}. Read through
+ * the top-level `prisma` client even when called from INSIDE
+ * `bookings.service.ts#transitionBooking`'s own `$transaction` — the exact
+ * same "sibling read via plain `prisma`, not `tx`" precedent that function's
+ * own `findBlockingExpiredDocuments` call already establishes.
+ */
+export async function getSchedulingSettings(): Promise<SchedulingSettingsDto> {
+  const rows = await prisma.appSetting.findMany({ where: { key: { in: [...SCHED_KEYS] } }, select: { key: true, value: true } });
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+
+  return {
+    openTime: byKey.get(SCHED_OPEN_TIME_KEY) ?? null,
+    closeTime: byKey.get(SCHED_CLOSE_TIME_KEY) ?? null,
+    minSlotMinutes: parseStoredInt(byKey.get(SCHED_MIN_SLOT_MINUTES_KEY)),
+    turnaroundMinutes: parseStoredInt(byKey.get(SCHED_TURNAROUND_MINUTES_KEY)),
+    maxAdvanceDays: parseStoredInt(byKey.get(SCHED_MAX_ADVANCE_DAYS_KEY)),
+  };
+}
+
+/** Sets the scheduling-window settings (AC 1/4) — all 5 fields together (the card's own form always submits the whole set). Gated `settings.manage`. */
+export async function setSchedulingSettings(actor: Actor, input: SchedulingSettingsInput): Promise<SchedulingSettingsDto> {
+  authorize(actor, 'settings.manage');
+
+  const entries: Array<[string, string]> = [
+    [SCHED_OPEN_TIME_KEY, input.openTime],
+    [SCHED_CLOSE_TIME_KEY, input.closeTime],
+    [SCHED_MIN_SLOT_MINUTES_KEY, String(input.minSlotMinutes)],
+    [SCHED_TURNAROUND_MINUTES_KEY, String(input.turnaroundMinutes)],
+    [SCHED_MAX_ADVANCE_DAYS_KEY, String(input.maxAdvanceDays)],
+  ];
+
+  await prisma.$transaction(entries.map(([key, value]) => prisma.appSetting.upsert({ where: { key }, update: { value }, create: { key, value } })));
+
+  return { openTime: input.openTime, closeTime: input.closeTime, minSlotMinutes: input.minSlotMinutes, turnaroundMinutes: input.turnaroundMinutes, maxAdvanceDays: input.maxAdvanceDays };
+}
+
+// --- SMTP (story 12.11, AC 1/2) --------------------------------------------
+// `smtp.*` — `smtp-mail-sender.ts` reads these settings-first with a
+// FALLBACK to the existing `SMTP_HOST`/`SMTP_PORT`/`MAIL_FROM` env vars
+// (Contesto: "NIENTE nuove env var"). `pass` is WRITE-ONLY (AC 1): stored
+// like every other key, but NEVER read back through the actor-facing getter
+// below — only {@link getSmtpSettingsForMailer} (internal, no `Actor`) sees it.
+
+const SMTP_HOST_KEY = 'smtp.host';
+const SMTP_PORT_KEY = 'smtp.port';
+const SMTP_SECURITY_KEY = 'smtp.security';
+const SMTP_USER_KEY = 'smtp.user';
+const SMTP_PASS_KEY = 'smtp.pass';
+const SMTP_FROM_KEY = 'smtp.from';
+const SMTP_KEYS = [SMTP_HOST_KEY, SMTP_PORT_KEY, SMTP_SECURITY_KEY, SMTP_USER_KEY, SMTP_PASS_KEY, SMTP_FROM_KEY] as const;
+
+function isSmtpSecurity(value: string | undefined): value is SmtpSecurityDto {
+  return value === 'NONE' || value === 'STARTTLS' || value === 'SSL_TLS';
+}
+
+/** Reads the SMTP settings for the Impostazioni form (AC 1/2). Gated `settings.manage` — admin-only, mirroring the write side (unlike the read-broader asymmetry of the PPR getters: nobody but the admin editing this card needs to see it). `pass` is NEVER included — only whether one is configured. */
+export async function getSmtpSettings(actor: Actor): Promise<SmtpSettingsDto> {
+  authorize(actor, 'settings.manage');
+
+  const rows = await prisma.appSetting.findMany({ where: { key: { in: [...SMTP_KEYS] } }, select: { key: true, value: true } });
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  const security = byKey.get(SMTP_SECURITY_KEY);
+
+  return {
+    host: byKey.get(SMTP_HOST_KEY) ?? null,
+    port: parseStoredInt(byKey.get(SMTP_PORT_KEY)),
+    security: isSmtpSecurity(security) ? security : null,
+    user: byKey.get(SMTP_USER_KEY) ?? null,
+    from: byKey.get(SMTP_FROM_KEY) ?? null,
+    hasPassword: Boolean(byKey.get(SMTP_PASS_KEY)),
+  };
+}
+
+/**
+ * Sets the SMTP settings (AC 1/2). Gated `settings.manage`. `pass` is
+ * OPTIONAL (AC 1: "mai restituita da GET — placeholder in UI") — omitted or
+ * empty leaves the STORED password untouched (the form never round-trips a
+ * real value to compare against), any non-empty string overwrites it.
+ */
+export async function setSmtpSettings(actor: Actor, input: SmtpSettingsInput): Promise<SmtpSettingsDto> {
+  authorize(actor, 'settings.manage');
+
+  const writes = [
+    prisma.appSetting.upsert({ where: { key: SMTP_HOST_KEY }, update: { value: input.host }, create: { key: SMTP_HOST_KEY, value: input.host } }),
+    prisma.appSetting.upsert({
+      where: { key: SMTP_PORT_KEY },
+      update: { value: String(input.port) },
+      create: { key: SMTP_PORT_KEY, value: String(input.port) },
+    }),
+    prisma.appSetting.upsert({
+      where: { key: SMTP_SECURITY_KEY },
+      update: { value: input.security },
+      create: { key: SMTP_SECURITY_KEY, value: input.security },
+    }),
+    prisma.appSetting.upsert({ where: { key: SMTP_USER_KEY }, update: { value: input.user }, create: { key: SMTP_USER_KEY, value: input.user } }),
+    prisma.appSetting.upsert({ where: { key: SMTP_FROM_KEY }, update: { value: input.from }, create: { key: SMTP_FROM_KEY, value: input.from } }),
+  ];
+  if (input.pass) {
+    writes.push(
+      prisma.appSetting.upsert({ where: { key: SMTP_PASS_KEY }, update: { value: input.pass }, create: { key: SMTP_PASS_KEY, value: input.pass } }),
+    );
+  }
+
+  await prisma.$transaction(writes);
+
+  return getSmtpSettings(actor);
+}
+
+/**
+ * Internal SMTP read for the mailer ONLY (`smtp-mail-sender.ts`) — the one
+ * place `pass` is ever read back. Deliberately no `Actor` parameter (same
+ * "not every read needs a session" shape as a job service) and NEVER
+ * exposed over HTTP — do not add a route that calls this.
+ */
+export async function getSmtpSettingsForMailer(): Promise<{
+  host: string | null;
+  port: number | null;
+  security: SmtpSecurityDto | null;
+  user: string | null;
+  pass: string | null;
+  from: string | null;
+}> {
+  const rows = await prisma.appSetting.findMany({ where: { key: { in: [...SMTP_KEYS] } }, select: { key: true, value: true } });
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  const security = byKey.get(SMTP_SECURITY_KEY);
+
+  return {
+    host: byKey.get(SMTP_HOST_KEY) ?? null,
+    port: parseStoredInt(byKey.get(SMTP_PORT_KEY)),
+    security: isSmtpSecurity(security) ? security : null,
+    user: byKey.get(SMTP_USER_KEY) ?? null,
+    pass: byKey.get(SMTP_PASS_KEY) ?? null,
+    from: byKey.get(SMTP_FROM_KEY) ?? null,
+  };
+}
+
+// --- METAR station (story 12.11, AC 1/5) ------------------------------------
+
+const METAR_STATION_KEY = 'metar.station';
+
+/**
+ * Reads the METAR station code (AC 1/5) — falls back to the airfield's own
+ * ICAO (`getAirfieldIcao`) when no override is configured (AC 1: "default =
+ * airfield.icao"). No permission gate: the sidebar weather card is rendered
+ * for every authenticated role.
+ */
+export async function getMetarStation(): Promise<string> {
+  const row = await prisma.appSetting.findUnique({ where: { key: METAR_STATION_KEY }, select: { value: true } });
+  if (row?.value) {
+    return row.value;
+  }
+  return getAirfieldIcao();
+}
+
+/** Sets the METAR station override (AC 1/5). Gated `settings.manage`. An empty string clears the override (back to the ICAO fallback). */
+export async function setMetarStation(actor: Actor, station: string): Promise<string> {
+  authorize(actor, 'settings.manage');
+
+  await prisma.appSetting.upsert({
+    where: { key: METAR_STATION_KEY },
+    update: { value: station },
+    create: { key: METAR_STATION_KEY, value: station },
+  });
+
+  return getMetarStation();
+}
+
+// --- Membership fee (story 12.11, AC 1, ratifica utente 1) -----------------
+
+const MEMBERSHIP_ANNUAL_FEE_CENTS_KEY = 'membership.annualFeeCents';
+
+/**
+ * Reads the default annual membership-fee amount, in integer euro cents
+ * (ratifica utente 1) — precompiles the "Quota associativa" action's amount
+ * field (`chargeMembershipFee`'s caller). Gated `finance.manage` (STAFF+
+ * ADMIN): the SAME actors who can trigger the charge itself need to see the
+ * default; `settings.manage` (ADMIN-only) is reserved for CHANGING it
+ * (`setMembershipFeeCents` below), same read/write asymmetry as
+ * `getPprLandingFeeDefaultCents`. Absent key -> `0` (Contesto: a fresh
+ * install charges nothing until an admin configures a fee) — a corrupted
+ * stored value also falls back to `0`, logged, never thrown (same rule as
+ * `getPprLandingFeeDefaultCents`).
+ */
+export async function getMembershipFeeCents(actor: Actor): Promise<number> {
+  authorize(actor, 'finance.manage');
+
+  const row = await prisma.appSetting.findUnique({ where: { key: MEMBERSHIP_ANNUAL_FEE_CENTS_KEY }, select: { value: true } });
+  if (!row) {
+    return 0;
+  }
+
+  const parsed = parseStoredLandingFeeCents(row.value);
+  if (parsed === null) {
+    console.warn(`getMembershipFeeCents: stored value "${row.value}" is not a valid non-negative integer — defaulting to 0.`);
+    return 0;
+  }
+
+  return parsed;
+}
+
+/** Sets the default annual membership-fee amount (AC 1). Gated `settings.manage`. */
+export async function setMembershipFeeCents(actor: Actor, cents: number): Promise<number> {
+  authorize(actor, 'settings.manage');
+
+  await prisma.appSetting.upsert({
+    where: { key: MEMBERSHIP_ANNUAL_FEE_CENTS_KEY },
+    update: { value: String(cents) },
+    create: { key: MEMBERSHIP_ANNUAL_FEE_CENTS_KEY, value: String(cents) },
+  });
+
+  return cents;
 }
 
 /**

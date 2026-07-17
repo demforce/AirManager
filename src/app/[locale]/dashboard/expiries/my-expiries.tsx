@@ -5,9 +5,10 @@ import { useLocale } from 'next-intl';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { Field, Input } from '@/components/ui/field';
 import type { ExpiryItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { formatDateOnly } from '@/lib/time';
-import { ExpiryStatusBadge } from './expiry-status-badge';
 
 export type MyExpiriesLabels = {
   empty: string;
@@ -43,13 +44,16 @@ type MyExpiriesProps = {
   labels: MyExpiriesLabels;
 };
 
+const STATUS_TONE: Record<ExpiryStatusDto, BadgeTone> = { ok: 'ok', expiring: 'warn', expired: 'bad' };
+const COLS = 'minmax(150px,1.4fr) 120px 120px 130px minmax(140px,1.4fr) 180px';
+
 /**
- * "Le mie scadenze" (story 6.2, AC 2, Task 5) — a titolare's own-access
- * view: read-only status table plus a "Proponi aggiornamento" action per
- * row. Proposing replaces the row's data with the pending values LOCALLY
- * (the `Expiry` itself is untouched server-side, AC 2) and disables further
- * proposals on that row with a hint, exactly mirroring what
- * `listPersonExpiries` would show on next load.
+ * "Le mie scadenze" (story 6.2, AC 2; AirOps restyle, story 12.11 AC 3) —
+ * own-access view, `.students` grid instead of a raw `<table>`. SAME
+ * `data-testid`s/behavior as before (`expiry-registration.spec.ts` drives
+ * this exact flow) — "Proponi aggiornamento" INTATTO fino alla 12.13 (D10):
+ * proposing replaces the row's data with the pending values LOCALLY (the
+ * `Expiry` itself stays untouched server-side, AC 2).
  */
 export function MyExpiries({ expiries: initialExpiries, labels }: MyExpiriesProps) {
   const [expiries, setExpiries] = useState(initialExpiries);
@@ -63,42 +67,41 @@ export function MyExpiries({ expiries: initialExpiries, labels }: MyExpiriesProp
   }
 
   if (expiries.length === 0) {
-    return <p className="text-sm text-[#787774]">{labels.empty}</p>;
+    return (
+      <div className="card" data-testid="my-expiries">
+        <p style={{ padding: '16px 20px', color: 'var(--ink-3)', fontSize: 13 }}>{labels.empty}</p>
+      </div>
+    );
   }
 
   return (
-    <div data-testid="my-expiries">
+    <div className="card" data-testid="my-expiries">
       {feedback ? (
-        <p role="status" data-testid="my-expiries-feedback" className="mb-4 text-sm text-[#346538]">
+        <p role="status" data-testid="my-expiries-feedback" style={{ padding: '12px 20px 0', fontSize: 12.5, color: 'var(--ok)' }}>
           {feedback}
         </p>
       ) : null}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
-              <th className="py-2 pr-4 font-medium">{labels.table.type}</th>
-              <th className="py-2 pr-4 font-medium">{labels.table.issuedAt}</th>
-              <th className="py-2 pr-4 font-medium">{labels.table.expiresAt}</th>
-              <th className="py-2 pr-4 font-medium">{labels.table.statusHeader}</th>
-              <th className="py-2 pr-4 font-medium">{labels.table.notes}</th>
-              <th className="py-2 font-medium">{labels.proposeAction}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {expiries.map((expiry) => (
-              <MyExpiryRow
-                key={expiry.id}
-                expiry={expiry}
-                isProposing={proposingId === expiry.id}
-                labels={labels}
-                onOpenPropose={() => setProposingId(expiry.id)}
-                onCancelPropose={() => setProposingId(null)}
-                onProposed={(pendingProposal) => handleProposed(expiry.id, pendingProposal)}
-              />
-            ))}
-          </tbody>
-        </table>
+
+      <div className="students">
+        <div className="student-row header" style={{ gridTemplateColumns: COLS }}>
+          <div>{labels.table.type}</div>
+          <div>{labels.table.issuedAt}</div>
+          <div>{labels.table.expiresAt}</div>
+          <div>{labels.table.statusHeader}</div>
+          <div>{labels.table.notes}</div>
+          <div>{labels.proposeAction}</div>
+        </div>
+        {expiries.map((expiry) => (
+          <MyExpiryRow
+            key={expiry.id}
+            expiry={expiry}
+            isProposing={proposingId === expiry.id}
+            labels={labels}
+            onOpenPropose={() => setProposingId(expiry.id)}
+            onCancelPropose={() => setProposingId(null)}
+            onProposed={(pendingProposal) => handleProposed(expiry.id, pendingProposal)}
+          />
+        ))}
       </div>
     </div>
   );
@@ -118,44 +121,41 @@ function MyExpiryRow({ expiry, isProposing, labels, onOpenPropose, onCancelPropo
 
   return (
     <>
-      <tr data-testid="my-expiry-row" className="border-b border-[#EAEAEA] align-top text-[#111111]">
-        <td className="py-3 pr-4">
-          <span className="font-medium">{expiry.typeName}</span>
+      <div data-testid="my-expiry-row" className="student-row" style={{ gridTemplateColumns: COLS }}>
+        <div>
+          <div className="student-name">{expiry.typeName}</div>
           {expiry.pendingProposal ? (
-            <span
-              data-testid="my-expiry-pending-badge"
-              className="mt-1 block w-fit rounded-full bg-[#F0EEE6] px-2.5 py-0.5 text-xs font-medium text-[#5F5B53]"
-            >
+            <span data-testid="my-expiry-pending-badge" className="badge" style={{ marginTop: 4, fontSize: 10 }}>
               {labels.table.pendingBadge}
             </span>
           ) : null}
-        </td>
-        <td className="py-3 pr-4 whitespace-nowrap">{formatDateOnly(expiry.issuedAt, moneyLocale)}</td>
-        <td className="py-3 pr-4 whitespace-nowrap">{formatDateOnly(expiry.expiresAt, moneyLocale)}</td>
-        <td className="py-3 pr-4">
-          <ExpiryStatusBadge status={expiry.status} label={labels.table.status[expiry.status]} data-testid="my-expiry-status-badge" />
-        </td>
-        <td className="py-3 pr-4 text-[#787774]">{expiry.notes ?? labels.table.noNotes}</td>
-        <td className="py-3">
+        </div>
+        <div className="mono" style={{ fontSize: 12 }}>
+          {formatDateOnly(expiry.issuedAt, moneyLocale)}
+        </div>
+        <div className="mono" style={{ fontSize: 12 }}>
+          {formatDateOnly(expiry.expiresAt, moneyLocale)}
+        </div>
+        <div data-testid="my-expiry-status-badge">
+          <Badge tone={STATUS_TONE[expiry.status]} dot>
+            {labels.table.status[expiry.status]}
+          </Badge>
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{expiry.notes ?? labels.table.noNotes}</div>
+        <div>
           {expiry.pendingProposal ? (
-            <span className="text-xs text-[#787774]">{labels.table.pendingHint}</span>
+            <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{labels.table.pendingHint}</span>
           ) : (
-            <button
-              type="button"
-              onClick={onOpenPropose}
-              className="rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-1.5 text-xs font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-            >
+            <button type="button" className="btn mini" onClick={onOpenPropose}>
               {labels.proposeAction}
             </button>
           )}
-        </td>
-      </tr>
+        </div>
+      </div>
       {isProposing ? (
-        <tr data-testid="propose-expiry-row">
-          <td colSpan={6} className="py-4">
-            <ProposeExpiryForm expiry={expiry} labels={labels.form} onCancel={onCancelPropose} onSuccess={onProposed} />
-          </td>
-        </tr>
+        <div data-testid="propose-expiry-row" className="student-row" style={{ gridTemplateColumns: '1fr' }}>
+          <ProposeExpiryForm expiry={expiry} labels={labels.form} onCancel={onCancelPropose} onSuccess={onProposed} />
+        </div>
       ) : null}
     </>
   );
@@ -180,10 +180,9 @@ type ProposeExpiryFormProps = {
 
 /**
  * "Proponi aggiornamento" form (story 6.2, AC 2) — prefilled with the
- * CURRENT values (Dev Notes: "form prefilled coi valori correnti"), so the
- * titolare edits just what changed (typically the new expiry date after a
- * renewal). Conditionally mounted (only while `isProposing`), so
- * `defaultValues` are read fresh every time (same fix as
+ * CURRENT values, so the titolare edits just what changed (typically the
+ * new expiry date after a renewal). Conditionally mounted (only while
+ * `isProposing`), so `defaultValues` are read fresh every time (same fix as
  * `expiries-panel.tsx`'s `EditExpiryRowForm`).
  */
 function ProposeExpiryForm({ expiry, labels, onCancel, onSuccess }: ProposeExpiryFormProps) {
@@ -219,71 +218,36 @@ function ProposeExpiryForm({ expiry, labels, onCancel, onSuccess }: ProposeExpir
     onSuccess(created);
   }
 
-  const inputClasses =
-    'mt-2 min-h-[44px] w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]';
-
   return (
-    <form
-      onSubmit={(event) => void handleSubmit(onSubmit)(event)}
-      noValidate
-      className="space-y-4 rounded-[8px] border border-[#EAEAEA] p-4"
-      data-testid="propose-expiry-form"
-    >
-      <h4 className="text-base font-medium text-[#111111]">{labels.title}</h4>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div>
-          <label htmlFor={`propose-issued-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
-            {labels.issuedAt}
-          </label>
-          <input
-            id={`propose-issued-at-${expiry.id}`}
-            type="date"
-            aria-invalid={Boolean(errors.issuedAt)}
-            className={inputClasses}
-            {...register('issuedAt')}
-          />
-          {errors.issuedAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
-        </div>
-        <div>
-          <label htmlFor={`propose-expires-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
-            {labels.expiresAt}
-          </label>
-          <input
-            id={`propose-expires-at-${expiry.id}`}
-            type="date"
-            aria-invalid={Boolean(errors.expiresAt)}
-            className={inputClasses}
-            {...register('expiresAt')}
-          />
-          {errors.expiresAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidRange}</p> : null}
-        </div>
-        <div>
-          <label htmlFor={`propose-notes-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
-            {labels.notes}
-          </label>
-          <input id={`propose-notes-${expiry.id}`} maxLength={500} className={inputClasses} {...register('notes')} />
-        </div>
+    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="propose-expiry-form">
+      <div className="fld-label" style={{ marginBottom: 10 }}>
+        {labels.title}
+      </div>
+      <div className="form-grid">
+        <Field label={labels.issuedAt}>
+          <Input type="date" aria-invalid={Boolean(errors.issuedAt)} {...register('issuedAt')} />
+        </Field>
+        {errors.issuedAt ? <p style={{ marginTop: -8, fontSize: 11, color: 'var(--bad)' }}>{labels.requiredField}</p> : null}
+        <Field label={labels.expiresAt}>
+          <Input type="date" aria-invalid={Boolean(errors.expiresAt)} {...register('expiresAt')} />
+        </Field>
+        {errors.expiresAt ? <p style={{ marginTop: -8, fontSize: 11, color: 'var(--bad)' }}>{labels.invalidRange}</p> : null}
+        <Field label={labels.notes}>
+          <Input maxLength={500} {...register('notes')} />
+        </Field>
       </div>
 
       {formError ? (
-        <p role="alert" data-testid="propose-expiry-form-error" className="rounded-[8px] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
+        <p role="alert" data-testid="propose-expiry-form-error" style={{ marginTop: 10, fontSize: 12.5, color: 'var(--bad)' }}>
           {formError}
         </p>
       ) : null}
 
-      <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="min-h-[44px] rounded-[6px] bg-[#111111] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#333333] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-        >
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button type="submit" className="btn primary" disabled={isSubmitting}>
           {labels.submit}
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="min-h-[44px] rounded-[6px] border border-[#EAEAEA] bg-white px-4 py-2 text-sm font-medium text-[#2F3437] transition-colors hover:bg-[#F7F6F3]"
-        >
+        <button type="button" className="btn" onClick={onCancel}>
           {labels.cancel}
         </button>
       </div>

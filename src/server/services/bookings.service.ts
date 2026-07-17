@@ -1,14 +1,15 @@
 import { Prisma, type AircraftStatus, type BookingStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
-import { toDateOnlyString } from '@/lib/date-only';
+import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, TransitionBookingInput, UpdateBookingInput } from '@/lib/schemas/bookings';
 import { APP_TIMEZONE } from '@/lib/time';
-import { dateOnlyInZone } from '@/lib/zoned-time';
+import { dateOnlyInZone, zonedWallTime } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildBookingDeniedEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { getSchedulingSettings } from './app-settings.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 /**
@@ -43,7 +44,8 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  * → `force` 403 without `bookings.manage.any` (story 7.4, AC 2 — before any
  * further query) → target person 404/409/422 `PERSON_NOT_BOOKABLE` →
  * expiry-based block 422 `EXPIRED_DOCUMENTS`/force bypass (story 7.4, AC 1/2)
- * → `startsAt` in the past 422 `BOOKING_IN_PAST` → [transaction: aircraft
+ * → `startsAt` in the past 422 `BOOKING_IN_PAST` → scheduling-window 422
+ * `BOOKING_OUTSIDE_WINDOW` (story 12.11, AC 4) → [transaction: aircraft
  * lock + 404/409/422 `AIRCRAFT_OUT_OF_SERVICE` → overlap pre-check 409 →
  * create]. Person/
  * instructor resolution runs OUTSIDE the transaction (Dev Notes: it never
@@ -236,6 +238,71 @@ async function findBlockingExpiredDocuments(
   };
 }
 
+// --- Booking window (story 12.11, AC 4; ratifica utente 3) -----------------
+
+const MS_PER_DAY = 86_400_000;
+
+/** `"HH:MM"` -> minutes since midnight. */
+function minutesOfDay(hhmm: string): number {
+  const [hour, minute] = hhmm.split(':').map(Number) as [number, number];
+  return hour * 60 + minute;
+}
+
+/**
+ * Rejects a booking whose `startsAt`/`endsAt` fall outside the configured
+ * `sched.openTime`–`sched.closeTime` window (Europe/Rome) or whose
+ * `startsAt` is more than `sched.maxAdvanceDays` ahead of today — 422
+ * `BOOKING_OUTSIDE_WINDOW` (ratifica utente 3). `minSlotMinutes`/
+ * `turnaroundMinutes` are deliberately NOT read here — they stay ADVISORY
+ * (UI-only defaults/validation, never a server rejection).
+ *
+ * ANY of the three settings being absent (`null`) disables ONLY that half of
+ * the check (Contesto: "chiavi assenti -> nessun vincolo nuovo",
+ * backward-safe) — `openTime`/`closeTime` are checked together (both or
+ * neither: a half-configured window would otherwise reject every booking
+ * against a bound of `0`), `maxAdvanceDays` is independent.
+ *
+ * The open/close bounds are INCLUSIVE (`startsAt` may equal `openTime`,
+ * `endsAt` may equal `closeTime`) and both instants must fall on the SAME
+ * Europe/Rome calendar day — a booking crossing midnight is always outside
+ * the window (a `closeTime` at or before midnight makes that geometrically
+ * inevitable).
+ */
+async function assertWithinSchedulingWindow(startsAt: Date, endsAt: Date): Promise<void> {
+  const settings = await getSchedulingSettings();
+
+  if (settings.openTime && settings.closeTime) {
+    const startDay = dateOnlyInZone(startsAt, APP_TIMEZONE);
+    const endDay = dateOnlyInZone(endsAt, APP_TIMEZONE);
+    const openMinutes = minutesOfDay(settings.openTime);
+    const closeMinutes = minutesOfDay(settings.closeTime);
+    const startMinutes = zonedWallTime(startsAt, APP_TIMEZONE).hour * 60 + zonedWallTime(startsAt, APP_TIMEZONE).minute;
+    const endMinutes = zonedWallTime(endsAt, APP_TIMEZONE).hour * 60 + zonedWallTime(endsAt, APP_TIMEZONE).minute;
+
+    const withinWindow = startDay === endDay && startMinutes >= openMinutes && endMinutes <= closeMinutes;
+    if (!withinWindow) {
+      throw new ValidationError(
+        `Booking must fall within the ${settings.openTime}–${settings.closeTime} operating window.`,
+        undefined,
+        'BOOKING_OUTSIDE_WINDOW',
+      );
+    }
+  }
+
+  if (settings.maxAdvanceDays !== null) {
+    const startDay = dateOnlyInZone(startsAt, APP_TIMEZONE);
+    const today = dateOnlyInZone(new Date(), APP_TIMEZONE);
+    const daysAhead = Math.round((parseDateOnlyUtc(startDay).getTime() - parseDateOnlyUtc(today).getTime()) / MS_PER_DAY);
+    if (daysAhead > settings.maxAdvanceDays) {
+      throw new ValidationError(
+        `Booking cannot be made more than ${settings.maxAdvanceDays} day(s) in advance.`,
+        undefined,
+        'BOOKING_OUTSIDE_WINDOW',
+      );
+    }
+  }
+}
+
 /**
  * Creates a booking (AC 1/2/3) — see the module doc-comment for the full
  * matrix/ordering rationale.
@@ -416,6 +483,11 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
   if (startsAt.getTime() <= Date.now()) {
     throw new ValidationError('startsAt must be in the future.', undefined, 'BOOKING_IN_PAST');
   }
+
+  // Story 12.11, AC 4 (ratifica utente 3): outside the transaction, same
+  // rationale as the expiry-based block above — the scheduling window
+  // participates in neither the overlap invariant nor the aircraft lock.
+  await assertWithinSchedulingWindow(startsAt, endsAt);
 
   const created = await prisma.$transaction(async (tx) => {
     // Row lock (FOR UPDATE) — the FIRST statement in the transaction (module
@@ -912,6 +984,7 @@ type LockedBookingRow = { id: string; status: BookingStatus; personId: string; a
  * `PENDING -> APPROVED` re-runs `createBooking`'s own checks against the
  * CURRENT booking — the expiry-based block on the flight day
  * (`findBlockingExpiredDocuments`, no `force` bypass here, unlike create),
+ * the scheduling-window check (story 12.11, AC 4, `assertWithinSchedulingWindow`),
  * the `Aircraft` row locked `FOR UPDATE` and validated (archived/
  * out-of-service), and the overlap pre-check against every OTHER `APPROVED`
  * booking on the same aircraft — an approval is, in effect, "would this
@@ -960,6 +1033,11 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
           'EXPIRED_DOCUMENTS',
         );
       }
+
+      // Story 12.11, AC 4: same scheduling-window check `createBooking` runs
+      // at creation — an approval is "would this booking still be creatable
+      // today".
+      await assertWithinSchedulingWindow(existing.startsAt, existing.endsAt);
 
       const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; archivedAt: Date | null }>>`
         SELECT "id", "status", "statusReason", "archivedAt" FROM "Aircraft" WHERE "id" = ${existing.aircraftId} FOR UPDATE`;

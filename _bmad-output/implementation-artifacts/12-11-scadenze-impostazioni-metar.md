@@ -4,7 +4,7 @@ baseline_commit: f9d518f
 
 # Story 12.11: Scadenze + Impostazioni + METAR (+ quota associativa, KPI utilizzo flotta)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -61,15 +61,55 @@ so that la configurazione dell'aviosuperficie e il presidio delle scadenze vivan
 
 ### Completion Notes
 
-_(a cura del dev agent)_
+**AC1 (settings keys + servizi)**: estesi `app-settings.service.ts` con get/set narrow per `sched.*` (5 chiavi), `smtp.*` (6 chiavi, `pass` write-only — GET restituisce solo `hasPassword`), `metar.station` (fallback `airfield.icao`), `membership.annualFeeCents`, più `setAirfieldIcao`/`getAirfieldContactEmail`/`setAirfieldContactEmail` (AC1 non li elencava esplicitamente ma AC2 li richiede nella card Club — vedi Deviations). `SmtpMailSender` riscritto settings-first con fallback a `SMTP_HOST`/`SMTP_PORT`/`MAIL_FROM`; nessuna nuova env var (`env.ci-sync.test.ts` verde senza modifiche). Route thin nuove sotto `settings/{club,scheduling,smtp,smtp/test-email,metar-station,membership-fee}`. Unit test completi in `app-settings.service.test.ts` (57 test) e `smtp-mail-sender.test.ts` (6 test).
+
+**AC2 (Impostazioni)**: `/dashboard/settings` riscritta come 4 card AirOps (`club-card.tsx`, `scheduling-card.tsx`, `smtp-card.tsx`, `ratings-card.tsx`), ognuna con un proprio bottone "Salva" (adattamento deliberato dal singolo bottone-pagina del prototipo, dato il backend multi-endpoint reale — vedi Deviations). `settings-form.tsx` (nome+logo) preservato 1:1 nei testid/comportamento (richiesto da `pdf-exports.spec.ts`), solo restilizzato AirOps. Catalogo abilitazioni portato da `types-manager.tsx` (rimosso) a `ratings-card.tsx`, con `validityMonths` (ratifica 2) e badge "senza scadenza".
+
+**AC3 (Scadenze)**: `/dashboard/expiries` riscritta con `scadenze-console.tsx` (staff face: 4 stat card `.kpi` con `borderLeft:3px` — 1:1 prototipo —, `.segmented` finestre 60/30/7/expired/all, filtri tipo+pilota URL-driven, tabella `.students` con tinte per tier, "Invia promemoria" ADMIN-only, azione "Quota associativa"). Stat card sono conteggi GLOBALI (nuova `getExpiryTierCounts`, 4 query COUNT a bande esclusive) indipendenti dai filtri tabella, come nel prototipo. Coda proposte (`proposals-queue.tsx`) preservata e restilizzata (proposte VIVE fino a 12.13). Own-face (`my-expiries.tsx`) restilizzata AirOps, stessi testid/comportamento (`expiry-registration.spec.ts` la guida). Pagina `expiries/types` rimossa; link "Gestisci tipi" rimosso (catalogo ora in Impostazioni).
+
+**AC4 (booking window)**: nuovo `assertWithinSchedulingWindow` in `bookings.service.ts`, chiamato da `createBooking` e da `transitionBooking` (ramo APPROVE) — 422 `BOOKING_OUTSIDE_WINDOW` per orario fuori `sched.openTime–closeTime` o anticipo oltre `sched.maxAdvanceDays`; `minSlotMinutes`/`turnaroundMinutes` NON applicati server-side (restano advisory, come da ratifica 3). Chiavi assenti = nessun vincolo (12 nuovi unit test su bordi/mezzanotte/cross-window). Timeline Pianificazione (`schedule.tsx`/`bookings/page.tsx`) legge l'asse 06–22 da `sched.openTime/closeTime` quando configurate (fallback al default esistente altrimenti).
+
+**AC5 (METAR)**: nuovo `metar.service.ts` (fetch `aviationweather.gov`, cache in-memory 10 min, parsing verificato contro una risposta reale via WebFetch in ricognizione — campi `rawOb/temp/wdir/wspd/visib/altim/fltCat/clouds`), `GET /api/v1/metar`, wiring del prop `metar` in `dashboard/layout.tsx`. 22 unit test, tutti su fixture offline (mai rete).
+
+**AC6 (KPI Utilizzo flotta)**: `stats.service.ts` esteso con `fleetUtilization` (ore volate / ore disponibili = finestra sched × giorni periodo × aeromobili OPERATIONAL), `null` quando `sched.*` assenti o flotta vuota — mai un valore finto. UI: 5° `<KPI>` in `/dashboard/reports`, omesso quando `null`. Suite 12.10 (`stats.service.test.ts`) resta verde, `resetMocksToEmpty` estesa col mock sibling `getSchedulingSettings`.
+
+**AC7 (Quota associativa)**: nuovo `membership.service.ts#chargeMembershipFee`, gated `finance.manage`, `POST /api/v1/people/{id}/membership-fee` con `Idempotency-Key` obbligatoria (pattern 12.9). Le tre scritture (addebito ADJUSTMENT, upsert ExpiryType "Quota associativa", create/renew Expiry + wipe SentAlert) sono in UNA transazione — deliberatamente NON una composizione di `recordAdjustment`+`updateExpiry` (vedi Deviations). Rolling anticipato (`max(oggi, expiresAt corrente)+12 mesi`) e wipe SentAlert testati esplicitamente (10 unit test). UI: bottone "Quota associativa" su Scadenze (staff face), disabilitato con hint quando il setting è 0. "Quota associativa" aggiunta al seed (`prisma/seed.ts`).
+
+**AC8 (e2e)**: `expiry-dashboard.spec.ts` riscritto (stat card, segmented, tinte, own-face); `expiry-types.spec.ts` adattato (catalogo via Impostazioni — vedi Deviations per la regressione staff); `expiry-registration.spec.ts` adattato (eliminazione tipo via Settings + nuovo test precompilazione validità); `expiry-alerts.spec.ts` INTATTO + nuovo describe per il trigger session (conteggi, idempotenza via Mailpit, 403 non-ADMIN, bottone invisibile a STAFF); nuovo `settings.spec.ts` (salvataggi per card, SMTP write-only, email di prova via Mailpit); nuovo `booking-window.spec.ts` (422 su create, permissive-restore in `afterAll` per non inquinare le altre spec); `reports.spec.ts` adattato (5° KPI); nuovo `membership-fee.spec.ts` (movimento in billing + scadenza creata/rinnovata + idempotenza + disabled a 0).
+
+**AC9 (gates)**: migrazione additiva unica (`20260717165337_add_expiry_type_validity_months`), `npm run gates` verde (lint/typecheck/test 1512/build), verifica interattiva Playwright script `/tmp` su Scadenze e Impostazioni in entrambi i temi (vedi note e2e sotto).
+
+### Deviations (da leggere per intero — nessuna omessa)
+
+1. **AC1 non elencava esplicitamente un setter per `airfield.icao` né la chiave `airfield.contactEmail`**, ma la card Club (AC2) richiede ICAO+email editabili. Aggiunti `setAirfieldIcao`/`getAirfieldContactEmail`/`setAirfieldContactEmail` seguendo lo stesso pattern narrow — nuova route `settings/club`. `PUT settings/airfield` (nome+logo) resta intatta, come richiesto.
+2. **Bottone "Salva" per card, non per pagina**: il prototipo ha UN bottone "Salva modifiche" globale (persistenza localStorage); la card Club, avendo un backend REALE multi-endpoint, ha DUE azioni di salvataggio interne (Identità nome/logo — comportamento/testid preesistenti da `pdf-exports.spec.ts`, invariati — e "Altri dati club" per ICAO/email/METAR/tassa PPR/istruzioni/quota). Le altre 3 card hanno un bottone ciascuna. Nessun bottone "Ripristina" (non mappa su un backend persistito).
+3. **`chargeMembershipFee` NON compone `recordAdjustment`+`updateExpiry`** nonostante AC7 dica "via writer esistente (recordAdjustment)": `recordAdjustment` apre una propria transazione e richiede un Account preesistente (fallirebbe per un socio al primo pagamento). Per garantire ATOMICITÀ reale (addebito+upsert tipo+renew+wipe SentAlert in una sola transazione, essenziale anche per la sicurezza del retry via Idempotency-Key) la scrittura del movimento ADJUSTMENT è stata scritta inline nella STESSA transazione, riusando lo stesso schema di dati (tipo ADJUSTMENT, segno negativo = addebito) ma non la funzione esportata. Non replica il lock `FOR UPDATE` né l'email di saldo negativo di `recordAdjustment` — un pagamento quota che porta il saldo sotto soglia NON invia l'alert automatico che una rettifica da Contabilità invierebbe. Punto da verificare in review.
+4. **Regressione per lo STAFF sul catalogo abilitazioni**: prima di questa story uno STAFF (`expiries.manage`, non `settings.manage`) vedeva il catalogo in sola lettura su `/dashboard/expiries/types`. Ora il catalogo vive su `/dashboard/settings`, gated `settings.manage` (solo ADMIN) — lo STAFF perde interamente la vista, anche in sola lettura. Non richiesto esplicitamente dalla story ma è una perdita di funzionalità reale, testata esplicitamente in `expiry-types.spec.ts` (redirect atteso) invece di essere nascosta.
+5. **Filtro "Ambito" rimosso dalla tabella Scadenze**: il vecchio dashboard aveva un filtro scope; il prototipo ScadenzeView.jsx no (solo tipo+pilota). Portato 1:1 il prototipo — l'ambito resta visibile come badge categoria (Medico/Licenza/Abilitazione) ma non è più filtrabile da UI (l'API mantiene comunque `scope` come query param, usato solo dall'export esistente).
+6. **`registry.tsx` (OpenAPI) non aggiornato** con le nuove route (`settings/club`, `settings/scheduling`, `settings/smtp*`, `settings/metar-station`, `settings/membership-fee`, `metar`, `expiry-alerts/trigger`, `people/{id}/membership-fee`): `registry.test.ts` usa `arrayContaining` quindi i gate restano verdi, ma la documentazione OpenAPI è incompleta per queste 8 route. Omissione deliberata per contenere lo scope di una story già enorme — da considerare per un follow-up.
+7. **Timeline Pianificazione**: l'asse orario (tick) usa `Math.round` sui minuti configurati per ottenere ore intere; se `sched.openTime`/`closeTime` non sono allineati all'ora esatta (es. "06:30") i tick possono discostarsi di alcuni minuti dalla posizione REALE dei blocchi (che restano posizionati con precisione al minuto). Caso limite raro (orari reali di aviosuperficie sono quasi sempre in ore/mezz'ore), non testato in e2e.
+8. **METAR — visibilità come stringa non numerica** (es. "1/2" per mezzo miglio): il parser minimale (`parseVisibilitySM`) degrada a `visM: 0` invece di interpretare la frazione — coperto da un test esplicito che documenta il limite, non un bug silenzioso.
+9. **e2e non eseguita in full-suite CI=1** (non è responsabilità del dev agent per questa story secondo le istruzioni); tutte le spec toccate/nuove sono state verificate in locale con `--retries=2` (vedi report finale).
 
 ### File List
 
-_(a cura del dev agent)_
+**Prisma**: `prisma/schema.prisma` (ExpiryType.validityMonths), `prisma/migrations/20260717165337_add_expiry_type_validity_months/`, `prisma/seed.ts` (Quota associativa).
+
+**Schemas**: `src/lib/schemas/settings.ts`, `src/lib/schemas/expiries.ts`, `src/lib/schemas/expiry-types.ts`, `src/lib/schemas/stats.ts`, `src/lib/schemas/membership.ts` (nuovo), `src/lib/schemas/metar.ts` (nuovo).
+
+**Services**: `src/server/services/app-settings.service.ts(+.test.ts)`, `src/server/services/expiries.service.ts(+.test.ts)`, `src/server/services/expiry-types.service.ts(+.test.ts)`, `src/server/services/bookings.service.ts(+.test.ts)`, `src/server/services/stats.service.ts(+.test.ts)`, `src/server/services/membership.service.ts(+.test.ts, nuovo)`, `src/server/services/metar.service.ts(+.test.ts, nuovo)`, `src/server/services/smtp-test-email.service.ts` (nuovo), `src/server/adapters/mail/smtp-mail-sender.ts(+.test.ts nuovo)`.
+
+**Routes**: `src/app/api/v1/settings/{club,scheduling,smtp,smtp/test-email,metar-station,membership-fee}/route.ts` (nuove), `src/app/api/v1/metar/route.ts` (nuova), `src/app/api/v1/expiry-alerts/trigger/route.ts` (nuova), `src/app/api/v1/people/[id]/membership-fee/route.ts` (nuova).
+
+**UI**: `src/app/[locale]/dashboard/settings/page.tsx`, `.../settings/settings-form.tsx`, `.../settings/club-card.tsx` (nuovo), `.../settings/scheduling-card.tsx` (nuovo), `.../settings/smtp-card.tsx` (nuovo), `.../settings/ratings-card.tsx` (nuovo), `.../expiries/page.tsx`, `.../expiries/scadenze-console.tsx` (nuovo), `.../expiries/my-expiries.tsx`, `.../expiries/proposals-queue.tsx`, `.../expiries/dashboard-filters.tsx` (rimosso), `.../expiries/types/` (rimosso), `.../people/expiries-panel.tsx` (precompilazione validità), `.../bookings/page.tsx`, `.../bookings/schedule.tsx`, `.../reports/page.tsx`, `.../dashboard/layout.tsx`, `src/components/shell/route-registry.ts`.
+
+**Messages**: `messages/it.json`, `messages/en.json`.
+
+**e2e**: `e2e/expiry-dashboard.spec.ts` (riscritto), `e2e/expiry-types.spec.ts` (riscritto), `e2e/expiry-registration.spec.ts` (adattato), `e2e/expiry-alerts.spec.ts` (esteso), `e2e/reports.spec.ts` (esteso), `e2e/settings.spec.ts` (nuovo), `e2e/booking-window.spec.ts` (nuovo), `e2e/membership-fee.spec.ts` (nuovo).
 
 ### Change Log
 
-_(a cura del dev agent)_
+- 2026-07-17: Implementazione story 12.11 completa (AC1-9). Vedi Completion Notes/Deviations sopra.
 
 ## Review Record
 

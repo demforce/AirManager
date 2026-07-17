@@ -50,8 +50,16 @@ vi.mock('@/server/adapters/mail/templates', () => ({
   buildBookingDeniedEmail: vi.fn(async () => ({ subject: 'Booking denied subject', text: 'Booking denied text' })),
 }));
 
+// Story 12.11, AC 4: `assertWithinSchedulingWindow` reads `getSchedulingSettings`
+// from the SIBLING `app-settings.service.ts` — mocked (not Prisma) per the
+// established "sibling-service mock" convention (`stats.service.test.ts`'s
+// doc-comment), defaulted to "no settings configured" (`beforeEach` below) so
+// every PRE-EXISTING test keeps its old backward-safe "no constraint" behavior.
+vi.mock('./app-settings.service', () => ({ getSchedulingSettings: vi.fn() }));
+
 const { prisma } = await import('@/server/db/prisma');
 const { buildBookingDeniedEmail } = await import('@/server/adapters/mail/templates');
+const { getSchedulingSettings } = await import('./app-settings.service');
 const {
   createBooking,
   listBookings,
@@ -232,6 +240,15 @@ beforeEach(() => {
   userFindUnique.mockResolvedValue(null);
   sendMock.mockReset();
   sendMock.mockResolvedValue(undefined);
+  // Story 12.11, AC 4: no scheduling window configured by default (backward-safe,
+  // "chiavi assenti -> nessun vincolo") — individual window tests override.
+  vi.mocked(getSchedulingSettings).mockResolvedValue({
+    openTime: null,
+    closeTime: null,
+    minSlotMinutes: null,
+    turnaroundMinutes: null,
+    maxAdvanceDays: null,
+  });
 });
 
 describe('createBooking (Story 7.1, AC 1/2/3)', () => {
@@ -435,6 +452,77 @@ describe('createBooking (Story 7.1, AC 1/2/3)', () => {
     expect(error).toBeInstanceOf(ValidationError);
     expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_IN_PAST');
     expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  // --- Scheduling window (Story 12.11, AC 4, ratifica utente 3) -----------
+  // FUTURE_STARTS_AT/FUTURE_ENDS_AT are 12:00-13:00 Europe/Rome (CEST,
+  // UTC+2) on 2099-06-01 — `beforeEach` defaults every `sched.*` key to
+  // `null` (no constraint); each test below overrides only what it needs.
+
+  it('absent scheduling keys impose no window constraint (backward-safe default)', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+
+    await expect(createBooking(staffActor(), baseInput({ personId: 'person_student' }))).resolves.toBeDefined();
+  });
+
+  it('a booking within the configured openTime–closeTime window is allowed', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: '07:00', closeTime: '21:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+
+    await expect(createBooking(staffActor(), baseInput({ personId: 'person_student' }))).resolves.toBeDefined();
+  });
+
+  it('the window bounds are INCLUSIVE — startsAt exactly at openTime and endsAt exactly at closeTime are allowed', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: '12:00', closeTime: '13:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+
+    await expect(createBooking(staffActor(), baseInput({ personId: 'person_student' }))).resolves.toBeDefined();
+  });
+
+  it('startsAt before openTime answers 422 BOOKING_OUTSIDE_WINDOW, checked BEFORE the transaction ever opens', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: '13:00', closeTime: '21:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+
+    const error = await createBooking(staffActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_OUTSIDE_WINDOW');
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('endsAt after closeTime answers 422 BOOKING_OUTSIDE_WINDOW', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: '07:00', closeTime: '12:30', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+
+    const error = await createBooking(staffActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_OUTSIDE_WINDOW');
+  });
+
+  it('midnight edge: a booking crossing into the next Europe/Rome calendar day is outside the window regardless of the numeric bounds', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+    // 21:00Z/22:30Z = 23:00/00:30 Europe/Rome (CEST) — crosses midnight into 2099-06-02.
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: '00:00', closeTime: '23:59', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+
+    const error = await createBooking(
+      staffActor(),
+      baseInput({ personId: 'person_student', startsAt: '2099-06-01T21:00:00.000Z', endsAt: '2099-06-01T22:30:00.000Z' }),
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_OUTSIDE_WINDOW');
+  });
+
+  it('startsAt beyond maxAdvanceDays answers 422 BOOKING_OUTSIDE_WINDOW', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: null, closeTime: null, minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: 1 });
+
+    // FUTURE_STARTS_AT (2099-06-01) is always > 1 day beyond "now", any time this suite runs.
+    const error = await createBooking(staffActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_OUTSIDE_WINDOW');
   });
 
   // --- Concurrency (AC 2) -------------------------------------------------
@@ -1264,6 +1352,17 @@ describe('transitionBooking (Story 12.2, AC 3)', () => {
     const validationError = error as InstanceType<typeof ValidationError>;
     expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
     expect(validationError.details).toEqual({ documents: [{ typeName: 'Licenza', expiresAt: '2020-01-01' }] });
+    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
+  });
+
+  it('a booking outside the configured scheduling window answers 422 BOOKING_OUTSIDE_WINDOW on APPROVE (Story 12.11, AC 4)', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: '13:00', closeTime: '21:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+
+    const error = await transitionBooking(staffActor(), 'booking_1', { to: 'APPROVED' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_OUTSIDE_WINDOW');
     expect(bookingUpdateManyMock).not.toHaveBeenCalled();
   });
 

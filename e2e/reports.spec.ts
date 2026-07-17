@@ -169,7 +169,7 @@ async function createCompletedTransit(page: Page, landingFeeCents: number): Prom
 }
 
 type StatsDto = {
-  kpis: { revenueCents: number; flightMinutes: number; movements: number; transitShare: number };
+  kpis: { revenueCents: number; flightMinutes: number; movements: number; transitShare: number; fleetUtilization: number | null };
   series: { months: string[]; revenueCents: number[]; flightMinutes: number[]; transitMovements: number[] };
   fleet: { registration: string; minutes: number; revenueCents: number }[];
   movementMix: { key: 'SCHOOL' | 'TOURISM' | 'AERIAL_WORK' | 'TRANSIT'; count: number }[];
@@ -296,5 +296,24 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
     expect(response.status()).toBe(422);
     const body = await response.json();
     expect(body.error.code).toBe('STATS_REF_IN_FUTURE');
+  });
+
+  // --- fleetUtilization (story 12.11, AC 6 — closes ratifica utente 2 from 12.10) ---
+
+  test('fleetUtilization: once sched.openTime/closeTime are configured, the API returns a number and the 5th KPI card renders (positive assertion — scheduling settings are process-wide and may already be configured by other specs, so absence is not asserted here)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const schedResponse = await page.request.put('/api/v1/settings/scheduling', {
+      data: { openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 },
+    });
+    expect(schedResponse.status()).toBe(200);
+
+    const statsResponse = await page.request.get('/api/v1/stats?period=month');
+    const stats = (await statsResponse.json()) as StatsDto;
+    expect(typeof stats.kpis.fleetUtilization).toBe('number');
+
+    await page.goto('/it/dashboard/reports');
+    const kpiValues = page.locator('.kpi-row .kpi .kpi-value');
+    await expect(kpiValues).toHaveCount(5);
   });
 });

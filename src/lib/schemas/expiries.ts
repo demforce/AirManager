@@ -201,10 +201,26 @@ export type DecideProposalInput = z.infer<typeof decideProposalSchema>;
  * not exist yields an empty page, never a 404 (same convention as
  * `personId`/`aircraftId` on `listFlightsQuerySchema`).
  */
+/**
+ * The Scadenze registry's "finestra" segmented filter (story 12.11, AC 3) —
+ * mirrors the prototype's own `win` state (`ScadenzeView.jsx`): `expiresAt
+ * <= today + N` for `'7'`/`'30'`/`'60'` (NO lower bound — an already-expired
+ * row still matches every one of those, same as the prototype's `d<=N`),
+ * `'expired'` is `expiresAt < today`. Deliberately DISTINCT from `status`
+ * above (3 bands: ok/expiring/expired) — this is a coarser day-count cutoff
+ * with 4 bands matching the alert job's own cadence markers
+ * (`EXPIRY_ALERT_THRESHOLDS`).
+ */
+export const expiryWindowSchema = z.enum(['60', '30', '7', 'expired']);
+
+export type ExpiryWindowDto = z.infer<typeof expiryWindowSchema>;
+
 export const listAllExpiriesQuerySchema = paginationQuerySchema.extend({
   expiryTypeId: z.string().trim().min(1).optional(),
   scope: expiryScopeSchema.optional(),
   status: expiryStatusSchema.optional(),
+  window: expiryWindowSchema.optional(),
+  personId: z.string().trim().min(1).optional(),
   ...exportQuerySchema.shape,
 });
 
@@ -228,6 +244,8 @@ export const expiryDashboardItemSchema = z.object({
   expiresAt: z.iso.date(),
   notes: z.string().nullable(),
   status: expiryStatusSchema,
+  /** Calendar-day count `expiresAt - today` (story 12.11, AC 3) — same `daysUntilUtc` arithmetic `status` is derived from; negative = already expired. Powers the registry's colored "Giorni" column (`{d}g` / `{|d|}g fa`). */
+  daysUntil: z.number().int(),
 });
 
 export type ExpiryDashboardItemDto = z.infer<typeof expiryDashboardItemSchema>;

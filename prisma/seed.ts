@@ -306,21 +306,25 @@ async function seedPilotAccount(): Promise<void> {
 // types — the migration's own backfill UPDATE uses these EXACT same names.
 // `update: {}` stays untouched below (existing seed pattern): an admin's own
 // `blocksBooking` toggle (`types-manager.tsx`) is never overwritten by a re-seed.
-const STANDARD_EXPIRY_TYPES: Array<{ name: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL'; blocksBooking: boolean }> = [
+const STANDARD_EXPIRY_TYPES: Array<{ name: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL'; blocksBooking: boolean; validityMonths?: number }> = [
   { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true },
   { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true },
   { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true },
   { name: 'Licenza', scope: 'PILOTS', blocksBooking: true },
   { name: 'Rating SEP', scope: 'PILOTS', blocksBooking: false },
   { name: 'Inglese ICAO', scope: 'PILOTS', blocksBooking: false },
+  // Story 12.11 (ratifica utente 1): also created lazily by `membership.service.ts#chargeMembershipFee`'s
+  // own upsert-by-name on the FIRST charge — seeded here too so a fresh
+  // install's catalogue (Impostazioni "Abilitazioni") already lists it.
+  { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12 },
 ];
 
 async function seedExpiryTypes(): Promise<void> {
-  for (const { name, scope, blocksBooking } of STANDARD_EXPIRY_TYPES) {
+  for (const { name, scope, blocksBooking, validityMonths } of STANDARD_EXPIRY_TYPES) {
     await prisma.expiryType.upsert({
       where: { name },
       update: {},
-      create: { name, scope, blocksBooking },
+      create: { name, scope, blocksBooking, validityMonths: validityMonths ?? null },
     });
   }
 

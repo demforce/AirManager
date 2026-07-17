@@ -62,10 +62,8 @@ function extractSetPasswordUrl(emailText: string): URL {
 
 /**
  * Creates a STAFF-only user (via the admin users API) and returns credentials
- * once the password is set — the seed only ships admin + pilot, and the
- * read-only-catalogue/403-write test below needs an actor with
- * `expiries.manage` but deliberately WITHOUT `settings.manage` (same helper
- * shape as `package-types.spec.ts#createStaffUserAndSetPassword`).
+ * once the password is set — `expiries.manage` but deliberately WITHOUT
+ * `settings.manage` (same helper shape as `package-types.spec.ts`).
  */
 async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
   const email = uniqueEmail('staff-exp');
@@ -83,98 +81,118 @@ async function createStaffUserAndSetPassword(page: Page, password: string): Prom
   return email;
 }
 
-test.describe('Expiry-type catalogue (Story 6.1, AC 1/2, FR-35)', () => {
-  test('admin sees the 6 seeded standard types, creates a custom one, edits/deactivates/deletes it', async ({ page }) => {
+/**
+ * Expiry-type catalogue (Story 6.1, AC 1/2, FR-35) — story 12.11 AC 2/3
+ * moved it from the removed `/dashboard/expiries/types` page into the
+ * Impostazioni "Abilitazioni" card (`ratings-card.tsx`), `settings.manage`
+ * (ADMIN-only) gated same as every other card on that page.
+ */
+test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Story 12.11 AC 2/3)', () => {
+  test('admin sees the 7 seeded standard types (6 domain + Quota associativa), creates a custom one, edits/deactivates/deletes it', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
-    // Landing page (AC 1/2): links through to the types manager.
-    await page.goto('/it/dashboard/expiries');
-    await page.getByRole('link', { name: 'Tipi di scadenza' }).click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/expiries\/types$/);
+    await page.goto('/it/dashboard/settings');
+    const ratingsCard = page.getByTestId('ratings-settings-card');
+    await expect(ratingsCard).toBeVisible();
 
-    // AC 1: the 6 standard types are seeded, with their scopes.
-    const medicalClass2Row = page.getByRole('row', { name: /Visita medica classe 2/ });
+    const medicalClass2Row = page.getByTestId('rating-row').filter({ hasText: 'Visita medica classe 2' });
     await expect(medicalClass2Row).toContainText('Piloti');
     await expect(medicalClass2Row).toContainText('Attivo');
 
-    const medicalLapl = page.getByRole('row', { name: /Visita medica LAPL/ });
+    const medicalLapl = page.getByTestId('rating-row').filter({ hasText: 'Visita medica LAPL' });
     await expect(medicalLapl).toContainText('Allievi');
 
-    const licenseRow = page.getByRole('row', { name: /^Licenza/ });
-    await expect(licenseRow).toContainText('Piloti');
+    // Ratifica utente 1: seeded for a fresh install too.
+    const membershipRow = page.getByTestId('rating-row').filter({ hasText: 'Quota associativa' });
+    await expect(membershipRow).toContainText('12 mesi');
 
-    // AC 2: a custom type, scope "Tutti", is usable exactly like a standard one.
+    // AC 2 (6.1): a custom type, scope "Tutti", usable exactly like a standard one — WITH a validity in months (story 12.11, ratifica utente 2).
     const name = uniqueTypeName('Assicurazione volo');
 
-    await page.getByRole('button', { name: 'Nuovo tipo' }).click();
-    await page.getByLabel('Nome').fill(name);
-    await page.getByLabel('Ambito').selectOption('ALL');
-    await page.getByRole('button', { name: 'Crea tipo' }).click();
+    await ratingsCard.getByTestId('ratings-add-button').click();
+    await page.getByTestId('rating-name-input').fill(name);
+    await page.getByTestId('rating-scope-select').selectOption('ALL');
+    await page.getByTestId('rating-validity-input').fill('24');
+    await page.getByTestId('rating-form-submit').click();
 
-    await expect(page.getByTestId('expiry-types-feedback')).toBeVisible();
+    await expect(page.getByTestId('ratings-feedback')).toBeVisible();
 
-    const row = page.getByRole('row', { name: new RegExp(name) });
+    const row = page.getByTestId('rating-row').filter({ hasText: name });
     await expect(row).toContainText('Tutti');
     await expect(row).toContainText('Attivo');
+    await expect(row).toContainText('24 mesi');
 
-    // A second type with the SAME name → 409 shown in the form, not created twice.
-    await page.getByRole('button', { name: 'Nuovo tipo' }).click();
-    await page.getByLabel('Nome').fill(name);
-    await page.getByLabel('Ambito').selectOption('PILOTS');
-    await page.getByRole('button', { name: 'Crea tipo' }).click();
-    await expect(page.getByTestId('expiry-type-form-error')).toContainText('Esiste già un tipo di scadenza con questo nome.');
-    await page.getByRole('button', { name: 'Annulla' }).click();
+    // A second type with the SAME name -> 409 shown in the form, not created twice.
+    await ratingsCard.getByTestId('ratings-add-button').click();
+    await page.getByTestId('rating-name-input').fill(name);
+    await page.getByTestId('rating-scope-select').selectOption('PILOTS');
+    await page.getByTestId('rating-form-submit').click();
+    await expect(page.getByTestId('rating-form-error')).toContainText('Esiste già un tipo con questo nome.');
+    await page.getByTestId('rating-form').getByRole('button', { name: 'Annulla' }).click();
 
     // Edit the scope — the badge reflects the new value.
-    await row.getByRole('button', { name: 'Modifica' }).click();
-    await page.getByLabel('Ambito').selectOption('STUDENTS');
-    await page.getByRole('button', { name: 'Salva' }).click();
-    await expect(page.getByTestId('expiry-types-feedback')).toBeVisible();
-    const rowAfterEdit = page.getByRole('row', { name: new RegExp(name) });
+    await row.getByTestId('rating-edit-button').click();
+    await page.getByTestId('rating-scope-select').selectOption('STUDENTS');
+    await page.getByTestId('rating-form-submit').click();
+    await expect(page.getByTestId('ratings-feedback')).toBeVisible();
+    const rowAfterEdit = page.getByTestId('rating-row').filter({ hasText: name });
     await expect(rowAfterEdit).toContainText('Allievi');
 
     // Deactivate — the status badge flips to "Disattivato".
     await rowAfterEdit.getByRole('button', { name: 'Disattiva' }).click();
-    const rowAfterDeactivate = page.getByRole('row', { name: new RegExp(name) });
+    const rowAfterDeactivate = page.getByTestId('rating-row').filter({ hasText: name });
     await expect(rowAfterDeactivate).toContainText('Disattivato');
 
     // Delete (never used) — the row disappears from the catalogue.
     await rowAfterDeactivate.getByRole('button', { name: 'Elimina' }).click();
-    await rowAfterDeactivate.getByRole('button', { name: 'Conferma' }).click();
-    await expect(page.getByTestId('expiry-types-feedback')).toBeVisible();
-    await expect(page.getByRole('row', { name: new RegExp(name) })).toHaveCount(0);
+    await rowAfterDeactivate.getByRole('button', { name: 'Sì' }).click();
+    await expect(page.getByTestId('ratings-feedback')).toBeVisible();
+    await expect(page.getByTestId('rating-row').filter({ hasText: name })).toHaveCount(0);
   });
 
-  test('admin creates a type with "Blocca prenotazioni" checked (story 7.4, AC 1), sees the list badge, then unchecks it on edit and the badge disappears', async ({
-    page,
-  }) => {
+  test('a validity of 0 shows the "senza scadenza" badge instead of a month count', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.goto('/it/dashboard/expiries/types');
+    await page.goto('/it/dashboard/settings');
+
+    const name = uniqueTypeName('Abilitazione notturna');
+    await page.getByTestId('ratings-add-button').click();
+    await page.getByTestId('rating-name-input').fill(name);
+    await page.getByTestId('rating-scope-select').selectOption('ALL');
+    await page.getByTestId('rating-validity-input').fill('0');
+    await page.getByTestId('rating-form-submit').click();
+    await expect(page.getByTestId('ratings-feedback')).toBeVisible();
+
+    const row = page.getByTestId('rating-row').filter({ hasText: name });
+    await expect(row).toContainText('senza scadenza');
+  });
+
+  test('admin creates a type with "Blocca prenotazioni" checked (story 7.4, AC 1), sees the list badge, then unchecks it on edit and the badge disappears', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/settings');
 
     const name = uniqueTypeName('Tipo bloccante');
 
-    await page.getByRole('button', { name: 'Nuovo tipo' }).click();
-    await page.getByLabel('Nome').fill(name);
-    await page.getByLabel('Ambito').selectOption('ALL');
+    await page.getByTestId('ratings-add-button').click();
+    await page.getByTestId('rating-name-input').fill(name);
+    await page.getByTestId('rating-scope-select').selectOption('ALL');
     await page.getByLabel('Blocca prenotazioni').check();
-    await page.getByRole('button', { name: 'Crea tipo' }).click();
-    await expect(page.getByTestId('expiry-types-feedback')).toBeVisible();
+    await page.getByTestId('rating-form-submit').click();
+    await expect(page.getByTestId('ratings-feedback')).toBeVisible();
 
-    const row = page.getByRole('row', { name: new RegExp(name) });
+    const row = page.getByTestId('rating-row').filter({ hasText: name });
     await expect(row).toContainText('Blocca prenotazioni');
 
-    // Edit: the checkbox reopens CHECKED (prefilled from the current value), unchecking clears the badge.
-    await row.getByRole('button', { name: 'Modifica' }).click();
+    await row.getByTestId('rating-edit-button').click();
     await expect(page.getByLabel('Blocca prenotazioni')).toBeChecked();
     await page.getByLabel('Blocca prenotazioni').uncheck();
-    await page.getByRole('button', { name: 'Salva' }).click();
-    await expect(page.getByTestId('expiry-types-feedback')).toBeVisible();
+    await page.getByTestId('rating-form-submit').click();
+    await expect(page.getByTestId('ratings-feedback')).toBeVisible();
 
-    const rowAfterEdit = page.getByRole('row', { name: new RegExp(name) });
+    const rowAfterEdit = page.getByTestId('rating-row').filter({ hasText: name });
     await expect(rowAfterEdit).not.toContainText('Blocca prenotazioni');
   });
 
-  test('a STAFF actor (expiries.manage) sees the read-only catalogue, a POST as staff gets a 403 AD-8 envelope, nav item visible', async ({
+  test('a STAFF actor (expiries.manage, NOT settings.manage) is redirected away from /dashboard/settings; a POST to expiry-types as staff gets a 403 AD-8 envelope; the Scadenze nav item stays visible', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -185,16 +203,18 @@ test.describe('Expiry-type catalogue (Story 6.1, AC 1/2, FR-35)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, staffEmail, staffPassword);
 
-    // Nav (rendered on the dashboard landing itself, story 1.3's tile grid):
-    // "Scadenze" visible for staff (`expiries.manage`).
+    // Nav: "Scadenze" visible for staff (`expiries.manage`) — unlike the
+    // catalogue, the registry itself stays reachable by staff.
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
     await expect(nav.getByRole('link', { name: 'Scadenze' })).toBeVisible();
 
-    await page.goto('/it/dashboard/expiries/types');
-    await expect(page.getByTestId('expiry-types-table')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Nuovo tipo' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Modifica' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Elimina' })).toHaveCount(0);
+    // Story 12.11 (deviation from 6.1's original behavior, Dev Agent Record):
+    // the catalogue moved onto `/dashboard/settings`, `settings.manage`
+    // (ADMIN-only) — staff LOSES the read-only catalogue view it had at the
+    // old `/dashboard/expiries/types` URL. Only the API's own 403 stays
+    // asserted here.
+    await page.goto('/it/dashboard/settings');
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
 
     const response = await page.request.post('/api/v1/expiry-types', {
       data: { name: uniqueTypeName('Non permesso'), scope: 'ALL' },
@@ -204,23 +224,15 @@ test.describe('Expiry-type catalogue (Story 6.1, AC 1/2, FR-35)', () => {
     expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  test('the pilot seed user (no expiries.manage) sees the Scadenze nav item (story 6.2 reopens it via self.read) but /dashboard/expiries/types stays out of reach', async ({
-    page,
-  }) => {
+  test('the pilot seed user (no expiries.manage) sees the Scadenze nav item (own-access, self.read) but /dashboard/settings stays out of reach', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
-    // Story 6.2 (FR-36): `expiries` joins `flights` in being reopened to
-    // every role via `self.read` — the pilot now lands on "Le mie
-    // scadenze" (own-access), not the staff catalogue this story built.
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
     await expect(nav.getByRole('link', { name: 'Scadenze' })).toHaveCount(1);
     await nav.getByRole('link', { name: 'Scadenze' }).click();
     await expect(page.getByRole('heading', { name: 'Le mie scadenze' })).toBeVisible();
 
-    // The catalogue management page itself is still gated on
-    // `expiries.manage` (story 6.1, unchanged by 6.2) — a pilot has neither
-    // that nor `settings.manage`, so it redirects to the dashboard.
-    await page.goto('/it/dashboard/expiries/types');
+    await page.goto('/it/dashboard/settings');
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 });

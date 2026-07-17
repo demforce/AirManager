@@ -1,24 +1,39 @@
 import nodemailer from 'nodemailer';
 import { env } from '@/lib/env';
+import { getSmtpSettingsForMailer } from '@/server/services/app-settings.service';
 import type { MailMessage, MailSender } from './mail-sender';
 
 /**
- * SMTP implementation of `MailSender`, via `nodemailer`. Points at Mailpit in
- * dev/test (`SMTP_HOST`/`SMTP_PORT`, default localhost:1025 — no auth, no
- * TLS); a production deployment only needs new env values (or a different
- * `MailSender` implementation swapped in by `getMailSender()`), never a
- * change to any caller.
+ * SMTP implementation of `MailSender`, via `nodemailer`. Settings-first
+ * (story 12.11, AC 1): reads the admin-configured `smtp.*` `AppSetting` keys
+ * on EVERY send (`getSmtpSettingsForMailer`, no caching — sends are
+ * infrequent, and a config change must take effect immediately, no
+ * redeploy), falling back to the existing `SMTP_HOST`/`SMTP_PORT`/
+ * `MAIL_FROM` env vars for whichever field is not configured — Mailpit in
+ * dev/test keeps working unchanged (no admin has touched Impostazioni yet,
+ * every `smtp.*` key reads `null`). NIENTE nuove env var (Contesto):
+ * `security`/`user`/`pass` have no env counterpart at all, they simply stay
+ * unset (no auth, no TLS) until an admin configures them.
  */
 export class SmtpMailSender implements MailSender {
-  private readonly transporter = nodemailer.createTransport({
-    host: env.SMTP_HOST,
-    port: env.SMTP_PORT,
-    secure: false,
-  });
-
   async send(message: MailMessage): Promise<void> {
-    await this.transporter.sendMail({
-      from: env.MAIL_FROM,
+    const settings = await getSmtpSettingsForMailer();
+
+    const host = settings.host || env.SMTP_HOST;
+    const port = settings.port ?? env.SMTP_PORT;
+    const from = settings.from || env.MAIL_FROM;
+    // `security` mapping (AC 1): none/STARTTLS/SSL-TLS -> `secure`/`requireTLS`.
+    // `secure: true` speaks TLS from the first byte (SMTPS, typically :465);
+    // `requireTLS: true` upgrades via STARTTLS on a plaintext connection —
+    // the two are mutually exclusive, both `false` is a plain connection.
+    const secure = settings.security === 'SSL_TLS';
+    const requireTLS = settings.security === 'STARTTLS';
+    const auth = settings.user && settings.pass ? { user: settings.user, pass: settings.pass } : undefined;
+
+    const transporter = nodemailer.createTransport({ host, port, secure, requireTLS, auth });
+
+    await transporter.sendMail({
+      from,
       to: message.to,
       subject: message.subject,
       text: message.text,

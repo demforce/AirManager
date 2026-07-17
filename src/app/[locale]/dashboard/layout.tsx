@@ -4,14 +4,26 @@ import type { Role } from '@/generated/prisma/client';
 import type { AvatarColor } from '@/components/ui/avatar';
 import { ToastProvider } from '@/components/ui/toast';
 import { LegacyBackdrop } from '@/components/shell/legacy-backdrop';
-import { Sidebar } from '@/components/shell/sidebar';
+import { Sidebar, type FlightCategory, type SidebarMetar } from '@/components/shell/sidebar';
 import { NAV_GROUPS, visibleNavItems, type NavItemId } from '@/components/shell/route-registry';
 import type { Theme } from '@/components/shell/theme-toggle';
 import { TopBar } from '@/components/shell/top-bar';
 import { redirect } from '@/i18n/navigation';
 import { getSessionActor } from '@/server/auth/session';
-import { getAirfieldBranding, getAirfieldIcao } from '@/server/services/app-settings.service';
+import { getAirfieldBranding, getAirfieldIcao, getMetarStation } from '@/server/services/app-settings.service';
 import { getMe } from '@/server/services/me.service';
+import { getMetar, type MetarCategory } from '@/server/services/metar.service';
+
+const METAR_CATEGORY_TO_FLIGHT_CATEGORY: Record<MetarCategory, FlightCategory> = { VFR: 'vfr', MVFR: 'mvfr', IFR: 'ifr' };
+
+/** `"WIND 290@08"` / `"VIS 10KM"` / `"QNH 1017"` — 1:1 of `Sidebar.jsx:57-72`'s mono row, built here (server) so the client `Sidebar` stays a dumb renderer. */
+function formatWeatherRow(metar: NonNullable<Awaited<ReturnType<typeof getMetar>>>): { windLabel: string; visLabel: string; qnhLabel: string } {
+  return {
+    windLabel: `WIND ${String(metar.windDir).padStart(3, '0')}@${String(metar.windKt).padStart(2, '0')}`,
+    visLabel: `VIS ${Math.round(metar.visM / 1000)}KM`,
+    qnhLabel: `QNH ${Math.round(metar.qnh)}`,
+  };
+}
 
 const THEME_COOKIE = 'am-theme';
 
@@ -64,14 +76,30 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
     return null;
   }
 
-  const [me, branding, icao, theme] = await Promise.all([
+  const [me, branding, icao, theme, metarStation] = await Promise.all([
     getMe(actor),
     getAirfieldBranding(),
     getAirfieldIcao(),
     (async (): Promise<Theme> => ((await cookies()).get(THEME_COOKIE)?.value === 'dark' ? 'dark' : 'light'))(),
+    getMetarStation(),
   ]);
+  // Story 12.11, AC 5: depends on `metarStation` above, so it cannot join the `Promise.all` batch.
+  const metarData = await getMetar(metarStation);
 
   const t = await getTranslations('shell');
+
+  // Card hidden when null/unconfigured (story 12.1's existing `metar &&` guard in `Sidebar` — unchanged).
+  const metar: SidebarMetar | undefined = metarData
+    ? {
+        weatherTitleLabel: t('weather.title'),
+        station: metarStation,
+        tempC: Math.round(metarData.tempC),
+        category: METAR_CATEGORY_TO_FLIGHT_CATEGORY[metarData.category],
+        categoryLabel: metarData.category,
+        raw: metarData.raw,
+        ...formatWeatherRow(metarData),
+      }
+    : undefined;
 
   const rawItems = visibleNavItems(actor.roles);
   const groups = NAV_GROUPS.map((groupId) => ({
@@ -91,7 +119,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
   return (
     <ToastProvider>
       <div className="app">
-        <Sidebar groups={groups} brandName="AirManager" brandSub={icao ? `${branding.name} · ${icao}` : branding.name} />
+        <Sidebar groups={groups} brandName="AirManager" brandSub={icao ? `${branding.name} · ${icao}` : branding.name} metar={metar} />
         <div className="main">
           <TopBar
             brandName="AirManager"

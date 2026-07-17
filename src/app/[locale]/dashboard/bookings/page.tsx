@@ -5,6 +5,7 @@ import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
+import { getSchedulingSettings } from '@/server/services/app-settings.service';
 import {
   getOwnInstructorProfileId,
   listActiveInstructors,
@@ -81,11 +82,32 @@ function sanitizeDate(value: string | undefined, today: string): string {
   return isRealDate ? value : today;
 }
 
-/** The day-view horizontal axis (Contesto: "06:00–22:00 Europe/Rome"). Minutes from midnight. */
-const WINDOW_START_MINUTES = 6 * 60;
-const WINDOW_END_MINUTES = 22 * 60;
-const WINDOW_SPAN_MINUTES = WINDOW_END_MINUTES - WINDOW_START_MINUTES;
+/**
+ * The day-view horizontal axis (Contesto: "06:00–22:00 Europe/Rome") —
+ * DEFAULT bounds, in minutes from midnight, used whenever
+ * `sched.openTime`/`sched.closeTime` are not configured (story 12.11, AC 4:
+ * "chiavi assenti -> nessun vincolo nuovo" applies to the display axis too,
+ * falling back to the ORIGINAL hardcoded window, never a blank chart).
+ */
+const DEFAULT_WINDOW_START_MINUTES = 6 * 60;
+const DEFAULT_WINDOW_END_MINUTES = 22 * 60;
 const MINUTES_PER_DAY = 24 * 60;
+
+/** `"HH:MM"` -> minutes since midnight — same tiny private parser as `bookings.service.ts#minutesOfDay`/`stats.service.ts#minutesOfDay`, not shared (Dev Notes: one-line, single-file-local helper over the identical `sched.*` string format). */
+function minutesOfDay(hhmm: string): number {
+  const [hour, minute] = hhmm.split(':').map(Number) as [number, number];
+  return hour * 60 + minute;
+}
+
+/** Resolves the day-view axis bounds from `sched.openTime`/`sched.closeTime` (AC 4) — BOTH must be present and form a real (`end > start`) window, or the default 06:00-22:00 wins (same backward-safe rule as the booking-window 422 check, `bookings.service.ts#assertWithinSchedulingWindow`). */
+function resolveWindowMinutes(openTime: string | null, closeTime: string | null): { start: number; end: number } {
+  if (openTime && closeTime) {
+    const start = minutesOfDay(openTime);
+    const end = minutesOfDay(closeTime);
+    if (end > start) return { start, end };
+  }
+  return { start: DEFAULT_WINDOW_START_MINUTES, end: DEFAULT_WINDOW_END_MINUTES };
+}
 /**
  * A block is never rendered with zero (or near-zero) visible width, even
  * for a booking that is entirely clamped away (Contesto: "MAI nascosti") —
@@ -104,8 +126,8 @@ function formatWallClock(instant: Date): string {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
-function clampToWindowPercent(rawMinutes: number): number {
-  return (Math.min(WINDOW_SPAN_MINUTES, Math.max(0, rawMinutes)) / WINDOW_SPAN_MINUTES) * 100;
+function clampToWindowPercent(rawMinutes: number, windowSpanMinutes: number): number {
+  return (Math.min(windowSpanMinutes, Math.max(0, rawMinutes)) / windowSpanMinutes) * 100;
 }
 
 /**
@@ -124,9 +146,10 @@ function clampToWindowPercent(rawMinutes: number): number {
  * nascosti"), just clamped, with the REAL (unclamped) `HH:MM–HH:MM` always
  * shown as `timeLabel`.
  */
-function projectDayBlocks(bookings: BookingListItem[], dateOnly: string): CalendarDayBlock[] {
+function projectDayBlocks(bookings: BookingListItem[], dateOnly: string, windowStartMinutes: number, windowEndMinutes: number): CalendarDayBlock[] {
   const dayStart = zonedMidnightUtc(dateOnly, APP_TIMEZONE);
   const dayEnd = zonedMidnightUtc(addDaysDateOnly(dateOnly, 1), APP_TIMEZONE);
+  const windowSpanMinutes = windowEndMinutes - windowStartMinutes;
 
   const blocks: CalendarDayBlock[] = [];
   for (const booking of bookings) {
@@ -139,10 +162,10 @@ function projectDayBlocks(bookings: BookingListItem[], dateOnly: string): Calend
     const startMinutesOfDay = startsBeforeDay ? 0 : wallMinutesOfDay(startsAt);
     const endMinutesOfDay = endsAtOrAfterDay ? MINUTES_PER_DAY : wallMinutesOfDay(endsAt);
 
-    const rawTop = startMinutesOfDay - WINDOW_START_MINUTES;
-    const rawBottom = endMinutesOfDay - WINDOW_START_MINUTES;
-    const top = clampToWindowPercent(rawTop);
-    const bottom = clampToWindowPercent(rawBottom);
+    const rawTop = startMinutesOfDay - windowStartMinutes;
+    const rawBottom = endMinutesOfDay - windowStartMinutes;
+    const top = clampToWindowPercent(rawTop, windowSpanMinutes);
+    const bottom = clampToWindowPercent(rawBottom, windowSpanMinutes);
 
     // Review 7.2 F2: after the min-height inflation, re-anchor the top so
     // `top + height` never exceeds 100% — a bottom-clamped short block must
@@ -155,7 +178,7 @@ function projectDayBlocks(bookings: BookingListItem[], dateOnly: string): Calend
       top: Math.min(top, 100 - height),
       height,
       clampedTop: rawTop < 0,
-      clampedBottom: rawBottom > WINDOW_SPAN_MINUTES,
+      clampedBottom: rawBottom > windowSpanMinutes,
       timeLabel: `${formatWallClock(startsAt)}–${formatWallClock(endsAt)}`,
       personName: booking.personName,
       instructorProfileId: booking.instructorProfileId,
@@ -311,15 +334,22 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   const calendarFrom = zonedMidnightUtc(rangeFromDateOnly, APP_TIMEZONE);
   const calendarTo = zonedMidnightUtc(rangeToDateOnly, APP_TIMEZONE);
 
+  // Story 12.11, AC 4: the day-view axis reads `sched.openTime`/`closeTime`
+  // when configured, falling back to the original 06:00-22:00 default.
+  const schedulingSettings = await getSchedulingSettings();
+  const { start: windowStartMinutes, end: windowEndMinutes } = resolveWindowMinutes(schedulingSettings.openTime, schedulingSettings.closeTime);
+
   const calendarBookings = await listCalendarBookings(actor, { from: calendarFrom.toISOString(), to: calendarTo.toISOString() });
-  const dayBlocks = view === 'day' ? projectDayBlocks(calendarBookings, date) : [];
+  const dayBlocks = view === 'day' ? projectDayBlocks(calendarBookings, date, windowStartMinutes, windowEndMinutes) : [];
   // Story 12.3: the week view needs chips across the WHOLE displayed week
   // regardless of `view` (the day-view branch above only projects `date`
   // itself) — always computed when `view === 'week'`, matching the
   // `calendarBookings` range fetched for that case.
   const weekChips = view === 'week' ? projectWeekChips(calendarBookings, weekDatesOnly) : [];
 
-  const nowLinePercent = isToday ? clampToWindowPercent(wallMinutesOfDay(new Date()) - WINDOW_START_MINUTES) : null;
+  const nowLinePercent = isToday
+    ? clampToWindowPercent(wallMinutesOfDay(new Date()) - windowStartMinutes, windowEndMinutes - windowStartMinutes)
+    : null;
 
   const prevDate = view === 'day' ? addDaysDateOnly(date, -1) : addDaysDateOnly(date, -7);
   const nextDate = view === 'day' ? addDaysDateOnly(date, 1) : addDaysDateOnly(date, 7);
@@ -574,6 +604,13 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         locale={dateLocale}
         nav={calendarNav}
         listPage={page}
+        // `Schedule`'s hourly tick axis needs whole hours — rounded here
+        // (a non-hour-aligned `sched.openTime`/`closeTime`, e.g. "06:30", is
+        // a rare config; block positioning above still uses the EXACT
+        // configured minutes, so this rounding only affects where the tick
+        // LABELS fall, never a booking's actual plotted position).
+        windowStartHour={Math.round(windowStartMinutes / 60)}
+        windowEndHour={Math.round(windowEndMinutes / 60)}
         labels={scheduleLabels}
       />
 

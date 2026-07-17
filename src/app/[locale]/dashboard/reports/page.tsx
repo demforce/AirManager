@@ -132,6 +132,13 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
         <KPI label={t('kpi.hours')} value={formatMinutes(stats.kpis.flightMinutes)} />
         <KPI label={t('kpi.movements')} value={stats.kpis.movements} />
         <KPI label={t('kpi.transitShare')} value={transitSharePercent} />
+        {/* Story 12.11, AC 6: OMITTED entirely (never a fake 0%) when sched.openTime/closeTime aren't configured or there is no OPERATIONAL aircraft. */}
+        {stats.kpis.fleetUtilization !== null ? (
+          <KPI
+            label={t('kpi.fleetUtilization')}
+            value={new Intl.NumberFormat(intlLocale, { style: 'percent', maximumFractionDigits: 1 }).format(stats.kpis.fleetUtilization)}
+          />
+        ) : null}
       </div>
 
       <ReportsConsole stats={stats} seriesLabels={seriesLabels} moneyLocale={displayLocale} labels={labels} />

@@ -1,8 +1,9 @@
 import type { ExpiryProposalStatus, ExpiryScope } from '@/generated/prisma/client';
 import { paginate, paginationOffset } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
-import { computeExpiryStatus, EXPIRY_WARNING_DAYS, type ExpiryStatus } from '@/lib/expiry-status';
+import { computeExpiryStatus, daysUntilUtc, EXPIRY_WARNING_DAYS, type ExpiryStatus } from '@/lib/expiry-status';
 import type {
+  ExpiryWindowDto,
   ListAllExpiriesQuery,
   ListExpiryProposalsQuery,
   ProposeExpiryInput,
@@ -342,6 +343,7 @@ export type ExpiryDashboardItem = {
   expiresAt: string;
   notes: string | null;
   status: ExpiryStatus;
+  daysUntil: number;
 };
 
 export type ExpiryDashboardListResult = {
@@ -386,6 +388,7 @@ function toDashboardItem(expiry: SelectedDashboardExpiry, today: Date): ExpiryDa
     expiresAt: toDateOnlyString(expiry.expiresAt),
     notes: expiry.notes,
     status: computeExpiryStatus(expiry.expiresAt, today),
+    daysUntil: daysUntilUtc(expiry.expiresAt, today),
   };
 }
 
@@ -418,6 +421,24 @@ function expiresAtRangeForStatus(status: ExpiryStatus, today: Date): { lt: Date 
 }
 
 /**
+ * Maps the registry's "finestra" segmented filter (story 12.11, AC 3) to an
+ * `expiresAt` range — mirrors the prototype's own `inWindow` predicate
+ * (`ScadenzeView.jsx`): `'7'`/`'30'`/`'60'` are `expiresAt <= today + N`
+ * with NO lower bound (an already-expired row still matches, exactly like
+ * the prototype's `d<=N`); `'expired'` is `expiresAt < today`. Deliberately
+ * a SEPARATE mapping from {@link expiresAtRangeForStatus} (3-band
+ * ok/expiring/expired) — a caller passes ONE of `status`/`window`, never
+ * both (the new Scadenze page only ever sends `window`).
+ */
+function expiresAtRangeForWindow(window: ExpiryWindowDto, today: Date): { lt: Date } | { lte: Date } {
+  if (window === 'expired') {
+    return { lt: today };
+  }
+  const days = window === '7' ? 7 : window === '30' ? 30 : 60;
+  return { lte: new Date(today.getTime() + days * MS_PER_DAY) };
+}
+
+/**
  * Lists EVERY scadenza across every person, ordered by urgency (AC 1) — the
  * data behind the staff `/dashboard/expiries` "Tutte le scadenze" table.
  * `expiries.manage` only. Filters are AND-combinable (pattern `listFlights`,
@@ -439,8 +460,13 @@ export async function listAllExpiries(actor: Actor, query: ListAllExpiriesQuery)
 
   const where = {
     ...(query.expiryTypeId ? { expiryTypeId: query.expiryTypeId } : {}),
+    ...(query.personId ? { personId: query.personId } : {}),
     ...(query.scope ? { expiryType: { scope: query.scope } } : {}),
-    ...(query.status ? { expiresAt: expiresAtRangeForStatus(query.status, today) } : {}),
+    ...(query.window
+      ? { expiresAt: expiresAtRangeForWindow(query.window, today) }
+      : query.status
+        ? { expiresAt: expiresAtRangeForStatus(query.status, today) }
+        : {}),
   };
 
   // Interactive transaction (story TD-1, AC 3) — see
@@ -458,6 +484,42 @@ export async function listAllExpiries(actor: Actor, query: ListAllExpiriesQuery)
   });
 
   return paginate(items.map((item) => toDashboardItem(item, today)), total, query);
+}
+
+export type ExpiryTierCounts = {
+  expired: number;
+  within7: number;
+  within30: number;
+  within60: number;
+};
+
+/**
+ * The Scadenze registry's 4 stat-card counts (story 12.11, AC 3) — GLOBAL
+ * counts across every scadenza, unaffected by the table's own tipo/pilota/
+ * finestra filters (mirrors the prototype's own `rows` vs `shown` split,
+ * `ScadenzeView.jsx`: stat cards always count the FULL unfiltered set).
+ * EXCLUSIVE bands (Contesto: `tierOf`, `ScadenzeView.jsx:12-20`) — `within30`
+ * is "more than 7 but at most 30 days out", NOT cumulative with `within7`
+ * (mirrors the prototype's own `d>7&&d<=30`, `d>30&&d<=60`) — the 4 numbers
+ * sum to the total scadenze count. Same boundaries the alert job's cadence
+ * markers use (60/30/7/0, `EXPIRY_ALERT_THRESHOLDS`) — 4 plain `COUNT`
+ * queries rather than fetching every row into memory (correct regardless of
+ * how many scadenze exist, unlike a client-side tally over a capped page).
+ */
+export async function getExpiryTierCounts(actor: Actor): Promise<ExpiryTierCounts> {
+  authorize(actor, 'expiries.manage');
+
+  const today = todayDateOnlyUtc();
+  const plus = (days: number) => new Date(today.getTime() + days * MS_PER_DAY);
+
+  const [expired, within7, within30, within60] = await Promise.all([
+    prisma.expiry.count({ where: { expiresAt: { lt: today } } }),
+    prisma.expiry.count({ where: { expiresAt: { gte: today, lte: plus(7) } } }),
+    prisma.expiry.count({ where: { expiresAt: { gt: plus(7), lte: plus(30) } } }),
+    prisma.expiry.count({ where: { expiresAt: { gt: plus(30), lte: plus(60) } } }),
+  ]);
+
+  return { expired, within7, within30, within60 };
 }
 
 // --- Update proposals (AC 2) -------------------------------------------------

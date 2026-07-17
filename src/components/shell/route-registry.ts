@@ -79,6 +79,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: STAFF_ROLES, enabled: true, airopsNative: true },
   // Story 12.5: the fleet page ships in the AirOps visual language directly.
   { id: 'fleet', href: '/dashboard/fleet', icon: 'fleet', group: 'directory', roles: STAFF_ROLES, enabled: true, airopsNative: true },
+  // Story 12.11: the scadenze registry ships in the AirOps visual language directly.
   {
     id: 'scadenze',
     href: '/dashboard/expiries',
@@ -86,7 +87,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     group: 'directory',
     roles: ['ADMIN', 'STAFF', 'INSTRUCTOR'],
     enabled: true,
-    airopsNative: false,
+    airopsNative: true,
   },
   // Story 12.8: the logbook ships in the AirOps visual language directly, replacing the legacy `/dashboard/flights`.
   { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: true, airopsNative: true },
@@ -95,7 +96,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: STAFF_ROLES, enabled: true, airopsNative: true },
   // ADMIN-only: matches `settings.manage` in rbac.ts (review 12.1 F2 — nav must never
   // point where the page guard bounces; D13: the domain contract wins over the prototype).
-  { id: 'settings', href: '/dashboard/settings', icon: 'gear', group: 'system', roles: ['ADMIN'], enabled: true, airopsNative: false },
+  // Story 12.11: ships in the AirOps visual language directly.
+  { id: 'settings', href: '/dashboard/settings', icon: 'gear', group: 'system', roles: ['ADMIN'], enabled: true, airopsNative: true },
 ];
 
 /**

@@ -47,6 +47,7 @@ const { prisma } = await import('@/server/db/prisma');
 const {
   decideExpiryProposal,
   deleteExpiry,
+  getExpiryTierCounts,
   listAllExpiries,
   listExpiryProposals,
   listPersonExpiries,
@@ -465,6 +466,92 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
         expect(filtered.items).toHaveLength(1);
         expect(filtered.items[0]?.status).toBe('ok');
       });
+    });
+
+    // --- daysUntil (story 12.11, AC 3) -------------------------------------
+
+    it('daysUntil is the SAME daysUntilUtc arithmetic status is derived from (negative = already expired)', async () => {
+      const today = todayDateOnlyUtc();
+      expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: new Date(today.getTime() - 5 * 86_400_000) })]);
+      expiryCount.mockResolvedValue(1);
+
+      const result = await listAllExpiries(staffActor(), { page: 1, pageSize: 20 });
+
+      expect(result.items[0]?.daysUntil).toBe(-5);
+    });
+
+    // --- window filter (story 12.11, AC 3 — the registry's segmented filter) ---
+
+    describe('window filter -> expiresAt range (prototype\'s own d<=N semantics, no lower bound except "expired")', () => {
+      it('window=expired -> expiresAt < today', async () => {
+        expiryFindMany.mockResolvedValue([]);
+        expiryCount.mockResolvedValue(0);
+
+        await listAllExpiries(staffActor(), { window: 'expired', page: 1, pageSize: 20 });
+
+        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { lt: Date } };
+        expect(where.expiresAt).toEqual({ lt: todayDateOnlyUtc() });
+      });
+
+      it.each([
+        ['7', 7],
+        ['30', 30],
+        ['60', 60],
+      ] as const)('window=%s -> expiresAt <= today + %d days, NO lower bound', async (window, days) => {
+        expiryFindMany.mockResolvedValue([]);
+        expiryCount.mockResolvedValue(0);
+
+        await listAllExpiries(staffActor(), { window, page: 1, pageSize: 20 });
+
+        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { lte: Date } };
+        expect(where.expiresAt).toEqual({ lte: new Date(todayDateOnlyUtc().getTime() + days * 86_400_000) });
+      });
+
+      it('an already-expired row matches window=7 too (no lower bound, mirrors the prototype\'s d<=7)', async () => {
+        expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: parseDateOnlyUtc('2020-01-01') })]);
+        expiryCount.mockResolvedValue(1);
+
+        const result = await listAllExpiries(staffActor(), { window: '7', page: 1, pageSize: 20 });
+        expect(result.items).toHaveLength(1);
+      });
+    });
+
+    it('personId filter is an exact match, AND-combinable with the others', async () => {
+      expiryFindMany.mockResolvedValue([]);
+      expiryCount.mockResolvedValue(0);
+
+      await listAllExpiries(staffActor(), { personId: 'person_1', expiryTypeId: 'type_1', page: 1, pageSize: 20 });
+
+      expect(expiryFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { personId: 'person_1', expiryTypeId: 'type_1' } }),
+      );
+    });
+  });
+
+  // --- getExpiryTierCounts: the registry's 4 stat cards (story 12.11, AC 3) ---
+
+  describe('getExpiryTierCounts', () => {
+    it('is gated expiries.manage', async () => {
+      await expect(getExpiryTierCounts(pilotActor())).rejects.toThrow(ForbiddenError);
+      expect(expiryCountMock).not.toHaveBeenCalled();
+    });
+
+    it('computes EXCLUSIVE bands (not cumulative) — 4 separate COUNT queries with non-overlapping ranges', async () => {
+      expiryCountMock.mockResolvedValueOnce(2 as never); // expired
+      expiryCountMock.mockResolvedValueOnce(3 as never); // within7
+      expiryCountMock.mockResolvedValueOnce(5 as never); // within30
+      expiryCountMock.mockResolvedValueOnce(7 as never); // within60
+
+      const result = await getExpiryTierCounts(staffActor());
+
+      expect(result).toEqual({ expired: 2, within7: 3, within30: 5, within60: 7 });
+
+      const today = todayDateOnlyUtc();
+      const plus = (days: number) => new Date(today.getTime() + days * 86_400_000);
+      expect(expiryCountMock).toHaveBeenNthCalledWith(1, { where: { expiresAt: { lt: today } } });
+      expect(expiryCountMock).toHaveBeenNthCalledWith(2, { where: { expiresAt: { gte: today, lte: plus(7) } } });
+      expect(expiryCountMock).toHaveBeenNthCalledWith(3, { where: { expiresAt: { gt: plus(7), lte: plus(30) } } });
+      expect(expiryCountMock).toHaveBeenNthCalledWith(4, { where: { expiresAt: { gt: plus(30), lte: plus(60) } } });
     });
   });
 

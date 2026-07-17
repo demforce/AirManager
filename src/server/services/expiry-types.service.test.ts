@@ -63,6 +63,8 @@ function fixture(overrides: Partial<Record<string, unknown>> = {}): Record<strin
     // Story 7.4: `EXPIRY_TYPE_SELECT` now includes `blocksBooking` — every
     // fixture that stands in for a `create`/`update`/`findMany` row needs it.
     blocksBooking: false,
+    // Story 12.11: `EXPIRY_TYPE_SELECT` now also includes `validityMonths`.
+    validityMonths: null,
     createdAt: new Date('2026-01-01'),
     ...overrides,
   };
@@ -134,7 +136,7 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
       expect(findFirstMock).toHaveBeenCalledWith(expect.objectContaining({ where: { name: 'Nuovo tipo' } }));
       expect(createMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { name: 'Nuovo tipo', scope: 'ALL', blocksBooking: false } }),
+        expect.objectContaining({ data: { name: 'Nuovo tipo', scope: 'ALL', blocksBooking: false, validityMonths: null } }),
       );
     });
 
@@ -146,8 +148,18 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       await createExpiryType(adminActor(), input);
 
       expect(createMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { name: 'Tipo critico', scope: 'PILOTS', blocksBooking: true } }),
+        expect.objectContaining({ data: { name: 'Tipo critico', scope: 'PILOTS', blocksBooking: true, validityMonths: null } }),
       );
+    });
+
+    it('creates with a validityMonths value when provided (story 12.11, ratifica utente 2)', async () => {
+      findFirst.mockResolvedValue(null);
+      create.mockResolvedValue(fixture({ name: 'Abilitazione IR', validityMonths: 24 }));
+      const input = createExpiryTypeSchema.parse({ name: 'Abilitazione IR', scope: 'PILOTS', validityMonths: 24 });
+
+      await createExpiryType(adminActor(), input);
+
+      expect(createMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ validityMonths: 24 }) }));
     });
 
     it('maps a duplicate name (P2002 concurrency backstop) to ConflictError', async () => {
@@ -184,6 +196,26 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
       expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { isActive: false }, select: expect.anything() });
       expect(findFirstMock).not.toHaveBeenCalled();
+    });
+
+    it('patches validityMonths independently of every other field (story 12.11, ratifica utente 2)', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      update.mockResolvedValue(fixture({ validityMonths: 12 }));
+      const input = updateExpiryTypeSchema.parse({ validityMonths: 12 });
+
+      await updateExpiryType(adminActor(), 'et_1', input);
+
+      expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { validityMonths: 12 }, select: expect.anything() });
+    });
+
+    it('validityMonths: null clears it back to "no expiry"', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      update.mockResolvedValue(fixture({ validityMonths: null }));
+      const input = updateExpiryTypeSchema.parse({ validityMonths: null });
+
+      await updateExpiryType(adminActor(), 'et_1', input);
+
+      expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { validityMonths: null }, select: expect.anything() });
     });
 
     it('a duplicate name on update (excluding self) → ConflictError, update never attempted', async () => {

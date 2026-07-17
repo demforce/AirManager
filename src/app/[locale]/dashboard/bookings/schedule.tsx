@@ -122,16 +122,17 @@ export type ScheduleProps = {
   nav: CalendarNav;
   /** The list section's current `?page` — preserved by every date the calendar popover navigates to (lesson 6.4 M1, same crosstalk contract as the legacy calendar). */
   listPage: number;
+  /**
+   * The day-view axis bounds, in whole hours (story 12.11, AC 4: "la
+   * timeline legge l'asse orario dalle settings quando presenti"). Always
+   * concrete numbers — `page.tsx` resolves the 6/22 default itself when
+   * `sched.openTime`/`closeTime` are not configured, so this component never
+   * needs a second default.
+   */
+  windowStartHour: number;
+  windowEndHour: number;
   labels: ScheduleLabels;
 };
-
-const WINDOW_START_HOUR = 6;
-const WINDOW_END_HOUR = 22;
-const HOURS: readonly number[] = Array.from({ length: WINDOW_END_HOUR - WINDOW_START_HOUR + 1 }, (_, i) => WINDOW_START_HOUR + i);
-
-function hourLeftPercent(hour: number): number {
-  return ((hour - WINDOW_START_HOUR) / (WINDOW_END_HOUR - WINDOW_START_HOUR)) * 100;
-}
 
 function intlLocale(locale: 'it' | 'en'): string {
   return locale === 'it' ? 'it-IT' : 'en-IE';
@@ -194,9 +195,13 @@ export function Schedule({
   locale,
   nav,
   listPage,
+  windowStartHour,
+  windowEndHour,
   labels,
 }: ScheduleProps) {
   const router = useRouter();
+  const HOURS = Array.from({ length: windowEndHour - windowStartHour + 1 }, (_, i) => windowStartHour + i);
+  const hourLeftPercent = (hour: number) => ((hour - windowStartHour) / (windowEndHour - windowStartHour)) * 100;
   const [calOpen, setCalOpen] = useState(false);
   const [calCursor, setCalCursor] = useState(() => dateOnlyToLocalDate(date));
   const [filterOpen, setFilterOpen] = useState(false);

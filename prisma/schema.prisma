@@ -1215,6 +1215,12 @@ model ExpiryType {
   /// function's doc-comment for the flight-day comparison and force/warning
   /// semantics.
   blocksBooking Boolean     @default(false)
+  /// Validity window in months, used to PRECOMPILE `Expiry.expiresAt` at
+  /// registration time (story 12.11, ratifica utente 2) — `null`/`0` means
+  /// "no expiry" (badge shown in the catalogue UI). ADDITIVE: existing rows
+  /// read `null` (no backfill, no retroactive recalculation of already
+  /// registered `Expiry` rows) until an admin sets it from Impostazioni.
+  validityMonths Int?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 

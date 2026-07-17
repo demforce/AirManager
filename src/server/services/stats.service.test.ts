@@ -36,6 +36,11 @@ vi.mock('@/server/db/prisma', () => ({
 vi.mock('./aircraft.service', () => ({ listAircraft: vi.fn() }));
 vi.mock('./instructor-compensation.service', () => ({ getCompensationSummary: vi.fn() }));
 vi.mock('./transactions.service', () => ({ getLedgerRevenueCents: vi.fn() }));
+// Story 12.11, AC 6: `fleetUtilization` reads `getSchedulingSettings` from the
+// SIBLING `app-settings.service.ts` — mocked per this file's own doc-comment
+// convention, defaulted to "no sched.* configured" (`resetMocksToEmpty`) so
+// every PRE-EXISTING test keeps its old `fleetUtilization: null` behavior.
+vi.mock('./app-settings.service', () => ({ getSchedulingSettings: vi.fn() }));
 
 const { prisma } = await import('@/server/db/prisma');
 const { getStats } = await import('./stats.service');
@@ -43,6 +48,7 @@ const { ValidationError } = await import('./errors');
 const { listAircraft } = await import('./aircraft.service');
 const { getCompensationSummary } = await import('./instructor-compensation.service');
 const { getLedgerRevenueCents } = await import('./transactions.service');
+const { getSchedulingSettings } = await import('./app-settings.service');
 
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
@@ -53,6 +59,7 @@ const instructorProfileFindManyMock = vi.mocked(prisma.instructorProfile.findMan
 const listAircraftMock = vi.mocked(listAircraft);
 const getCompensationSummaryMock = vi.mocked(getCompensationSummary);
 const getLedgerRevenueCentsMock = vi.mocked(getLedgerRevenueCents);
+const getSchedulingSettingsMock = vi.mocked(getSchedulingSettings);
 
 function staffActor(): Actor {
   return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
@@ -75,6 +82,7 @@ function resetMocksToEmpty(): void {
   listAircraftMock.mockResolvedValue(EMPTY_AIRCRAFT_RESULT as never);
   getCompensationSummaryMock.mockResolvedValue([]);
   getLedgerRevenueCentsMock.mockResolvedValue(0);
+  getSchedulingSettingsMock.mockResolvedValue({ openTime: null, closeTime: null, minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
 }
 
 beforeEach(() => {
@@ -234,6 +242,39 @@ describe('getStats (story 12.10, AC 1)', () => {
     const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.fleet).toEqual([{ registration: 'I-AERO', minutes: 240, revenueCents: 50000 }]);
+  });
+
+  // --- fleetUtilization (story 12.11, AC 6 — closes ratifica utente 2 from 12.10) ---
+
+  it('fleetUtilization is null when sched.openTime/closeTime are not configured (default)', async () => {
+    listAircraftMock.mockResolvedValue({ items: [{ id: 'ac_1', registration: 'I-AERO', status: 'OPERATIONAL' }], total: 1, page: 1, pageSize: 100 } as never);
+
+    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+
+    expect(result.kpis.fleetUtilization).toBeNull();
+  });
+
+  it('fleetUtilization is null when there is NO OPERATIONAL aircraft, even if sched.* is configured', async () => {
+    getSchedulingSettingsMock.mockResolvedValue({ openTime: '08:00', closeTime: '20:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+    listAircraftMock.mockResolvedValue({ items: [{ id: 'ac_1', registration: 'I-OOS', status: 'OUT_OF_SERVICE' }], total: 1, page: 1, pageSize: 100 } as never);
+
+    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+
+    expect(result.kpis.fleetUtilization).toBeNull();
+  });
+
+  it('fleetUtilization = flown hours / (window hours × days in the KPI range × OPERATIONAL aircraft)', async () => {
+    getSchedulingSettingsMock.mockResolvedValue({ openTime: '08:00', closeTime: '20:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+    listAircraftMock.mockResolvedValue({ items: [{ id: 'ac_1', registration: 'I-AERO', status: 'OPERATIONAL' }], total: 1, page: 1, pageSize: 100 } as never);
+    flightGroupByMock.mockImplementation((async (args: { by: string[] }) => {
+      if (args.by[0] === 'flightType') return [{ flightType: 'TOURISM', _count: { _all: 1 }, _sum: { minutes: 6696 } }]; // 111.6h flown, an arbitrary round number vs. the 22320min/372h available window below.
+      return [];
+    }) as never);
+
+    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+
+    // July = 31 days; window = 08:00-20:00 = 12h/day; 1 aircraft -> 31 * 12 * 60 = 22320 available minutes.
+    expect(result.kpis.fleetUtilization).toBeCloseTo(6696 / 22320);
   });
 
   it('revenue reuses getLedgerRevenueCents for every series bucket AND the kpi window, with the correct [from,to] per call', async () => {

@@ -22,6 +22,18 @@ const {
   getAirfieldBranding,
   setAirfieldBranding,
   getAirfieldIcao,
+  setAirfieldIcao,
+  getAirfieldContactEmail,
+  setAirfieldContactEmail,
+  getSchedulingSettings,
+  setSchedulingSettings,
+  getSmtpSettings,
+  setSmtpSettings,
+  getSmtpSettingsForMailer,
+  getMetarStation,
+  setMetarStation,
+  getMembershipFeeCents,
+  setMembershipFeeCents,
 } = await import('./app-settings.service');
 
 const findManyMock = vi.mocked(prisma.appSetting.findMany);
@@ -306,5 +318,262 @@ describe('app-settings.service — airfield ICAO (story 12.1, AC 4)', () => {
     findUnique.mockResolvedValue({ value: 'LIML' });
 
     await expect(getAirfieldIcao()).resolves.toBe('LIML');
+  });
+});
+
+/** Story 12.11, AC 1/2: the write path `getAirfieldIcao`'s doc-comment anticipated, plus the brand-new contact email key. */
+describe('app-settings.service — setAirfieldIcao / airfield contact email (story 12.11, AC 1/2)', () => {
+  beforeEach(() => {
+    findUniqueMock.mockReset();
+    upsertMock.mockReset();
+  });
+
+  it('setAirfieldIcao is gated settings.manage — staff is forbidden, no write runs', async () => {
+    await expect(setAirfieldIcao(staffActor(), 'LIML')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  it('setAirfieldIcao (admin) upserts the existing airfield.icao key', async () => {
+    upsert.mockResolvedValue({});
+
+    await expect(setAirfieldIcao(adminActor(), 'LIML')).resolves.toBe('LIML');
+    expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'airfield.icao' }, update: { value: 'LIML' } }));
+  });
+
+  it('getAirfieldContactEmail has NO permission gate and defaults to "" when absent', async () => {
+    findUnique.mockResolvedValue(null);
+    await expect(getAirfieldContactEmail()).resolves.toBe('');
+    expect(findUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'airfield.contactEmail' } }));
+  });
+
+  it('setAirfieldContactEmail is gated settings.manage', async () => {
+    await expect(setAirfieldContactEmail(staffActor(), 'ops@example.com')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  it('setAirfieldContactEmail (admin) upserts the key and returns it', async () => {
+    upsert.mockResolvedValue({});
+    await expect(setAirfieldContactEmail(adminActor(), 'ops@example.com')).resolves.toBe('ops@example.com');
+  });
+});
+
+/**
+ * Scheduling window (story 12.11, AC 1/4) — `sched.*`. No permission gate on
+ * read (needed by any actor creating a booking); write gated `settings.manage`.
+ */
+describe('app-settings.service — scheduling window (story 12.11, AC 1/4)', () => {
+  beforeEach(() => {
+    findManyMock.mockReset();
+    upsertMock.mockReset();
+    transactionMock.mockReset();
+  });
+
+  it('getSchedulingSettings has NO permission gate and defaults every field to null when absent', async () => {
+    findMany.mockResolvedValue([]);
+
+    await expect(getSchedulingSettings()).resolves.toEqual({
+      openTime: null,
+      closeTime: null,
+      minSlotMinutes: null,
+      turnaroundMinutes: null,
+      maxAdvanceDays: null,
+    });
+  });
+
+  it('getSchedulingSettings reads back configured values, parsing the integer fields', async () => {
+    findMany.mockResolvedValue([
+      { key: 'sched.openTime', value: '07:00' },
+      { key: 'sched.closeTime', value: '21:00' },
+      { key: 'sched.minSlotMinutes', value: '60' },
+      { key: 'sched.turnaroundMinutes', value: '15' },
+      { key: 'sched.maxAdvanceDays', value: '30' },
+    ]);
+
+    await expect(getSchedulingSettings()).resolves.toEqual({
+      openTime: '07:00',
+      closeTime: '21:00',
+      minSlotMinutes: 60,
+      turnaroundMinutes: 15,
+      maxAdvanceDays: 30,
+    });
+  });
+
+  it('setSchedulingSettings is gated settings.manage — staff is forbidden, no write runs', async () => {
+    await expect(
+      setSchedulingSettings(staffActor(), { openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('setSchedulingSettings (admin) writes all 5 keys together in one transaction', async () => {
+    upsert.mockResolvedValue({});
+    transaction.mockResolvedValue([{}, {}, {}, {}, {}]);
+
+    const result = await setSchedulingSettings(adminActor(), {
+      openTime: '07:00',
+      closeTime: '21:00',
+      minSlotMinutes: 60,
+      turnaroundMinutes: 15,
+      maxAdvanceDays: 30,
+    });
+
+    expect(result).toEqual({ openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 });
+    expect(transactionMock).toHaveBeenCalledTimes(1);
+    const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
+    expect(batch).toHaveLength(5);
+  });
+});
+
+/**
+ * SMTP settings (story 12.11, AC 1/2) — write-only password: the GET never
+ * carries it back, only `hasPassword`; an empty/omitted `pass` on write
+ * leaves the stored password untouched.
+ */
+describe('app-settings.service — SMTP settings (story 12.11, AC 1/2)', () => {
+  beforeEach(() => {
+    findManyMock.mockReset();
+    upsertMock.mockReset();
+    transactionMock.mockReset();
+  });
+
+  const SMTP_INPUT = { host: 'smtp.example.com', port: 587, security: 'STARTTLS' as const, user: 'ops@example.com', from: 'Club Ops <ops@example.com>' };
+
+  it('getSmtpSettings is gated settings.manage', async () => {
+    await expect(getSmtpSettings(staffActor())).rejects.toBeInstanceOf(ForbiddenError);
+    expect(findManyMock).not.toHaveBeenCalled();
+  });
+
+  it('getSmtpSettings never returns the password, only hasPassword', async () => {
+    findMany.mockResolvedValue([
+      { key: 'smtp.host', value: 'smtp.example.com' },
+      { key: 'smtp.pass', value: 'secret' },
+    ]);
+
+    const result = await getSmtpSettings(adminActor());
+
+    expect(result.hasPassword).toBe(true);
+    expect(result).not.toHaveProperty('pass');
+  });
+
+  it('getSmtpSettings.hasPassword is false when no password is stored', async () => {
+    findMany.mockResolvedValue([]);
+    await expect(getSmtpSettings(adminActor())).resolves.toMatchObject({ hasPassword: false });
+  });
+
+  it('setSmtpSettings is gated settings.manage', async () => {
+    await expect(setSmtpSettings(staffActor(), SMTP_INPUT)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('setSmtpSettings WITHOUT pass writes only the 5 non-password keys (leaves the stored password untouched)', async () => {
+    upsert.mockResolvedValue({});
+    transaction.mockResolvedValue([{}, {}, {}, {}, {}]);
+    findMany.mockResolvedValue([]);
+
+    await setSmtpSettings(adminActor(), SMTP_INPUT);
+
+    const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
+    expect(batch).toHaveLength(5);
+  });
+
+  it('setSmtpSettings WITH a non-empty pass also writes the password key (6 writes)', async () => {
+    upsert.mockResolvedValue({});
+    transaction.mockResolvedValue([{}, {}, {}, {}, {}, {}]);
+    findMany.mockResolvedValue([]);
+
+    await setSmtpSettings(adminActor(), { ...SMTP_INPUT, pass: 'new-secret' });
+
+    const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
+    expect(batch).toHaveLength(6);
+  });
+
+  it('getSmtpSettingsForMailer (internal, no Actor) DOES return the raw password', async () => {
+    findMany.mockResolvedValue([
+      { key: 'smtp.host', value: 'smtp.example.com' },
+      { key: 'smtp.pass', value: 'secret' },
+    ]);
+
+    await expect(getSmtpSettingsForMailer()).resolves.toMatchObject({ host: 'smtp.example.com', pass: 'secret' });
+  });
+});
+
+/** Typed shim for a `findUnique` mock that branches on the queried key (`mockResolvedValue` alone can't — `getMetarStation` reads TWO different keys in the fallback path). */
+const findUniqueByKey = findUniqueMock as unknown as {
+  mockImplementation: (fn: (args: { where: { key: string } }) => Promise<Fixture | null>) => void;
+};
+
+/** METAR station (story 12.11, AC 1/5) — falls back to the airfield ICAO when unconfigured. */
+describe('app-settings.service — METAR station (story 12.11, AC 1/5)', () => {
+  beforeEach(() => {
+    findUniqueMock.mockReset();
+    upsertMock.mockReset();
+  });
+
+  it('getMetarStation has NO permission gate and falls back to the airfield ICAO when no override is stored', async () => {
+    findUniqueByKey.mockImplementation(async (args) => {
+      if (args.where.key === 'metar.station') return null;
+      if (args.where.key === 'airfield.icao') return { value: 'LIML' };
+      return null;
+    });
+
+    await expect(getMetarStation()).resolves.toBe('LIML');
+  });
+
+  it('a configured override wins over the ICAO fallback', async () => {
+    findUniqueByKey.mockImplementation(async (args) => (args.where.key === 'metar.station' ? { value: 'LIRF' } : null));
+
+    await expect(getMetarStation()).resolves.toBe('LIRF');
+  });
+
+  it('setMetarStation is gated settings.manage', async () => {
+    await expect(setMetarStation(staffActor(), 'LIRF')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  it('setMetarStation (admin) writes the override and reads it back', async () => {
+    upsert.mockResolvedValue({});
+    findUniqueByKey.mockImplementation(async () => ({ value: 'LIRF' }));
+
+    await expect(setMetarStation(adminActor(), 'LIRF')).resolves.toBe('LIRF');
+  });
+});
+
+/** Membership fee default (story 12.11, AC 1, ratifica utente 1) — same read/write asymmetry as the PPR landing fee (`finance.manage` reads, `settings.manage` writes). */
+describe('app-settings.service — membership fee default (story 12.11, AC 1)', () => {
+  beforeEach(() => {
+    findUniqueMock.mockReset();
+    upsertMock.mockReset();
+  });
+
+  it('getMembershipFeeCents is gated finance.manage — a pilot (no finance.manage) is forbidden', async () => {
+    await expect(getMembershipFeeCents(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
+    expect(findUniqueMock).not.toHaveBeenCalled();
+  });
+
+  it('staff (finance.manage, not settings.manage) CAN read', async () => {
+    findUnique.mockResolvedValue(null);
+    await expect(getMembershipFeeCents(staffActor())).resolves.toBe(0);
+  });
+
+  it('defaults to 0 when no AppSetting row exists yet', async () => {
+    findUnique.mockResolvedValue(null);
+    await expect(getMembershipFeeCents(adminActor())).resolves.toBe(0);
+    expect(findUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'membership.annualFeeCents' } }));
+  });
+
+  it('reads back a stored value', async () => {
+    findUnique.mockResolvedValue({ value: '5000' });
+    await expect(getMembershipFeeCents(adminActor())).resolves.toBe(5000);
+  });
+
+  it('setMembershipFeeCents is gated settings.manage — staff (finance.manage only) is forbidden', async () => {
+    await expect(setMembershipFeeCents(staffActor(), 5000)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  it('setMembershipFeeCents (admin) writes the value as a decimal string', async () => {
+    upsert.mockResolvedValue({});
+    await expect(setMembershipFeeCents(adminActor(), 5000)).resolves.toBe(5000);
+    expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ update: { value: '5000' } }));
   });
 });

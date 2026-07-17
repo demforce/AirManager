@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { addMonthsClampUtc, parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { ExpiryTypeItemDto } from '@/lib/schemas/expiry-types';
 import type { ExpiryItemDto, ExpiryStatusDto } from '@/lib/schemas/expiries';
 import { formatDateOnly } from '@/lib/time';
@@ -396,11 +397,32 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
   const {
     register,
     handleSubmit,
+    setValue,
+    getValues,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<RegisterExpiryFormValues>({
     resolver: zodResolver(registerExpiryFormSchema),
     defaultValues: { expiryTypeId: '', issuedAt: todayDateOnly(), expiresAt: '', notes: '' },
   });
+
+  // Story 12.11, ratifica utente 2: precompiles `expiresAt` from the
+  // selected type's `validityMonths` (`issuedAt + validityMonths`, clamped
+  // to the target month's real last day). Fires ONLY when the TYPE
+  // selection itself changes (not on every `issuedAt` keystroke) — the
+  // field stays a normal, editable input afterwards (Contesto: "editabile").
+  // A type with `validityMonths` 0/null (or a type not yet loaded) leaves
+  // `expiresAt` untouched.
+  const selectedTypeId = watch('expiryTypeId');
+  useEffect(() => {
+    if (!selectedTypeId) return;
+    const type = (types ?? []).find((candidate) => candidate.id === selectedTypeId);
+    if (!type || !type.validityMonths) return;
+
+    const issuedAtValue = getValues('issuedAt') || todayDateOnly();
+    setValue('expiresAt', toDateOnlyString(addMonthsClampUtc(parseDateOnlyUtc(issuedAtValue), type.validityMonths)), { shouldValidate: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the TYPE selection retriggers precompilation (Dev Notes above); `types`/`getValues`/`setValue` are stable across the component's lifetime for this purpose.
+  }, [selectedTypeId]);
 
   async function onSubmit(values: RegisterExpiryFormValues): Promise<void> {
     setFormError(null);
