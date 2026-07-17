@@ -181,7 +181,7 @@ function compareRowsDesc(a: InternalRow, b: InternalRow): number {
   if (a.date !== b.date) return a.date < b.date ? 1 : -1;
   const createdDiff = b.createdAt.getTime() - a.createdAt.getTime();
   if (createdDiff !== 0) return createdDiff;
-  return a.id < b.id ? 1 : b.id > a.id ? -1 : 0;
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 }
 
 function stripInternal(row: InternalRow): TransactionRowDto {

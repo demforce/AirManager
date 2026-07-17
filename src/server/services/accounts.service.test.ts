@@ -404,6 +404,32 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         }),
       );
     });
+
+    it('applies from/to inclusive on effectiveDate — items AND total (story 12.9 AC 5, the statement-PDF period; review 12.9 F2)', async () => {
+      accountFindUnique.mockResolvedValue({ id: 'account_1' });
+      accountMovementFindMany.mockResolvedValue([]);
+      accountMovementCount.mockResolvedValue(0);
+
+      await listAccountMovements(staffActor(), 'person_1', { page: 1, pageSize: 20, from: '2026-07-01', to: '2026-07-31' });
+
+      const periodWhere = {
+        accountId: 'account_1',
+        effectiveDate: { gte: new Date('2026-07-01'), lte: new Date('2026-07-31') },
+      };
+      expect(accountMovementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: periodWhere }));
+      // The cap (`assertWithinPdfExportCap`) reads `total`: the count MUST see the same period filter.
+      expect(accountMovementCountMock).toHaveBeenCalledWith({ where: periodWhere });
+    });
+
+    it('absent from/to leaves the where untouched (pre-12.9 callers: full statement, unchanged)', async () => {
+      accountFindUnique.mockResolvedValue({ id: 'account_1' });
+      accountMovementFindMany.mockResolvedValue([]);
+      accountMovementCount.mockResolvedValue(0);
+
+      await listAccountMovements(staffActor(), 'person_1', { page: 1, pageSize: 20 });
+
+      expect(accountMovementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'account_1' } }));
+    });
   });
 
   describe('recordTopUp — authorization (AD-5, AC 2)', () => {

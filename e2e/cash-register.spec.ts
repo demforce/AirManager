@@ -98,7 +98,9 @@ test.describe('Cash register with categories and reversals (Story 3.4 — port t
     await expect(page).toHaveURL(new RegExp(`type=${categoryId}`));
     await expect(registerRows(page)).toHaveCount(2);
 
-    // Signed amounts, club-centric convention (ratifica 1): entrata (positive) plain ink, uscita (negative) in `var(--ok)`.
+    // Signed amounts, club-centric convention (ratifica 1): entrata (positive) plain ink; uscita (negative)
+    // in `var(--bad)` — a cash outflow is a real expense (PO ratification, review 12.9), unlike ACCOUNT
+    // payments whose negative stays `var(--ok)` (money received).
     const inflowRow = registerRows(page).filter({ hasText: 'Incasso piazzale' });
     await expect(inflowRow).toContainText(/50,00\s€/);
     const outflowRow = registerRows(page).filter({ hasText: 'Acquisto materiale' });

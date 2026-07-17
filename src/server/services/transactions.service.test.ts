@@ -124,6 +124,28 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     expect(result.total).toBe(3);
   });
 
+  it('tie-break id desc holds across sources when effectiveDate AND createdAt coincide (review 12.9 F1)', async () => {
+    // Same-instant rows (ms-truncated createdAt: batch imports/seeds) must still come out in
+    // GLOBAL id-desc order, interleaving the sources — the exact case the broken comparator
+    // grouped per-source instead.
+    const sameDate = new Date('2026-07-10T00:00:00.000Z');
+    const sameCreated = new Date('2026-07-10T09:00:00.000Z');
+    accountFindMany.mockResolvedValue([
+      { ...baseAccountRow, id: 'id_a', effectiveDate: sameDate, createdAt: sameCreated },
+      { ...baseAccountRow, id: 'id_c', effectiveDate: sameDate, createdAt: sameCreated },
+    ]);
+    accountCount.mockResolvedValue(2);
+    cashFindMany.mockResolvedValue([
+      { ...baseCashRow, id: 'id_b', effectiveDate: sameDate, createdAt: sameCreated },
+      { ...baseCashRow, id: 'id_d', effectiveDate: sameDate, createdAt: sameCreated },
+    ]);
+    cashCount.mockResolvedValue(2);
+
+    const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+
+    expect(result.items.map((item) => item.id)).toEqual(['id_d', 'id_c', 'id_b', 'id_a']);
+  });
+
   it('normalizes ACCOUNT amounts club-centric (flipped sign): a positive-in-DB TOP_UP becomes negative (payment received)', async () => {
     accountFindMany.mockResolvedValue([baseAccountRow]);
     accountCount.mockResolvedValue(1);

@@ -561,6 +561,51 @@ describe('exportAccountStatementPdf (story 10.2, AC 2/3/4)', () => {
     const props = lastPdfProps();
     expect(props.columns.map((c) => c.header)).toEqual(['Data', 'Tipo', 'Descrizione', 'Importo']);
   });
+
+  it('forwards from/to to listAccountMovements (rows filtered at the source), adds the period subtitle and re-labels the balance as CURRENT (story 12.9 AC 5; review 12.9 F2)', async () => {
+    listAccountMovementsMock.mockResolvedValue({
+      total: 1,
+      page: 1,
+      pageSize: PDF_EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'mv_1',
+          type: 'TOP_UP',
+          amountCents: 15000,
+          effectiveDate: '2026-07-10',
+          description: 'Ricarica POS',
+          createdAt: new Date('2026-07-10T09:00:00Z'),
+          actorEmail: 'staff@airmanager.local',
+          reversalOfId: null,
+          hasReversal: false,
+        },
+      ],
+    } as never);
+    getAccountOverviewMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: 42000, recentMovements: [] } as never);
+    getPersonMock.mockResolvedValue({ id: 'person_1', firstName: 'Mario', lastName: 'Rossi' } as never);
+
+    await exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'it', from: '2026-07-01', to: '2026-07-31' });
+
+    expect(listAccountMovementsMock).toHaveBeenCalledWith(ACTOR, 'person_1', {
+      page: 1,
+      pageSize: PDF_EXPORT_MAX_ROWS,
+      from: '2026-07-01',
+      to: '2026-07-31',
+    });
+    const props = lastPdfProps();
+    expect(props.subtitle).toMatch(/^Rossi Mario · /);
+    expect(props.totals).toEqual([{ label: 'Saldo attuale del conto', value: '420,00 €' }]);
+  });
+
+  it('rejects EXPORT_TOO_LARGE on the PERIOD-FILTERED total — the cap reads the total AFTER from/to are applied', async () => {
+    listAccountMovementsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+
+    await expect(exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'it', from: '2026-07-01', to: '2026-07-31' })).rejects.toMatchObject({
+      code: 'EXPORT_TOO_LARGE',
+    });
+
+    expect(listAccountMovementsMock).toHaveBeenCalledWith(ACTOR, 'person_1', expect.objectContaining({ from: '2026-07-01', to: '2026-07-31' }));
+  });
 });
 
 describe('exportCashReportPdf (story 10.2, AC 2/3)', () => {

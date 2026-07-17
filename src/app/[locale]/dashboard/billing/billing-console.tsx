@@ -490,7 +490,15 @@ export function BillingConsole({
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
                     {methodLabel(row, labels)}
                   </div>
-                  <div className="mono num" style={{ fontWeight: 600, textAlign: 'right', color: row.amountCents < 0 ? 'var(--ok)' : 'var(--ink)' }}>
+                  {/* PO ratification (review 12.9): a negative CASH row is a real club expense, not money received — red, not green. */}
+                  <div
+                    className="mono num"
+                    style={{
+                      fontWeight: 600,
+                      textAlign: 'right',
+                      color: row.amountCents < 0 ? (row.source === 'CASH' ? 'var(--bad)' : 'var(--ok)') : 'var(--ink)',
+                    }}
+                  >
                     {formatCents(row.amountCents, moneyLocale)}
                   </div>
                   <div>
