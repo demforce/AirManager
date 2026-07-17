@@ -4,7 +4,7 @@ baseline_commit: 0b3566885a5c7e9096173a872a603f29bd1d9669
 
 # Story 12.10: Statistiche — stats API + pagina reports AirOps
 
-Status: review
+Status: done
 
 ## Story
 
@@ -88,4 +88,32 @@ so that l'andamento dell'aviosuperficie si legga a colpo d'occhio su dati veri (
 
 ## Review Record
 
-_(a cura della review adversarial)_
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh, via workflow). **Data**: 2026-07-17. Story API+UI su aggregazioni cross-dominio (voli, PPR, ledger, compensi) → review con verifica EMPIRICA di ogni ratifica (dati creati via API + psql), non solo lettura.
+
+### Arbiter (priority zero)
+
+- **`CI=1 npx playwright test` su build prod, DB fresco → 238 passed, 0 failed (6.9m)** = baseline 234 + `reports.spec.ts` (4), esatto. Gates ri-verificati dal reviewer (typecheck pulito, lint 0 errori, vitest verde).
+- **Dopo i fix di review (`ec15b4c`): 238/238 ri-verificato su DB fresco, build prod (6.4m). Gates: 1425 unit.**
+
+### Verdetto
+
+**Shippable** (nessun BLOCKER/MAJOR). Verifiche empiriche chiave: ratifica 1 — fixture con volo CANCELLED e PPR APPROVED non-completato ESCLUSI dal conteggio (delta movimenti +4), mix che somma esattamente al KPI, transitShare 5/20=25%; ratifica 3 — volo retrodatato via psql → `ref=2026-03` ritorna minuti con `owedCents=null`, periodo corrente con payout rate → owed esatto (60min×5000/60), ref futuro → 422; ratifica 4 — `kpis.revenueCents` combacia AL CENTESIMO col KPI "Ricavi del mese" di `/dashboard/billing` (stessi helper: `getLedgerRevenueCents` è un wrapper byte-identico al percorso di `getBillingKpis`; il mock senza delegate ledger nel test di stats GARANTISCE l'assenza di accessi diretti), TOP_UP escluso (delta 0), entrata cassa inclusa; RBAC matrice completa (admin/staff 200; istruttore/pilota/allievo 403 API + redirect pagina; unauth 401); `rbac.ts` e `prisma/` diff VUOTI.
+
+### Findings
+
+- **MINOR F1 — FIXATO in `ec15b4c`**: variabile morta `EMPTY_TYPE_GROUPS` in `stats.service.test.ts:65` (warning lint nuovo introdotto dalla story). Rimossa.
+- **PRODUCT-DECISION F2 — escalato al PO, RATIFICATO e FIXATO in `ec15b4c`**: due formati durata sulla stessa pagina (KPI in H:MM; card flotta/istruttori e RankBars in decimale `X.Xh` fedele al prototipo, contro l'AC 3 letterale "H:MM · dovuto"). **Decisione PO (2026-07-17): TUTTO H:MM** — `formatMinutes` ovunque, formatter decimale rimosso, e2e aggiornato.
+- **PRODUCT-DECISION F3 — escalato al PO, CONFERMATO (nessun cambio)**: `fleet[].revenueCents` = SOLA componente aeromobile (esclude il compenso istruttore dei voli SCHOOL), mentre `topPilots[].spentCents` = aeromobile+istruttore (spesa reale) → Σ ricavi flotta ≠ Σ spese piloti sui voli scuola. Il reviewer l'ha provato empiricamente (12000c+4000c → fleet 12000, spend 16000, sui delta). **Il PO conferma la semantica** (il tempo istruttore non è ricavo del mezzo); asimmetria dichiarata nei doc-comment.
+
+### Verdetti (close-your-notes)
+
+Riuso helper 12.9: VERIFICATO (wrapper thin, suite 12.9 intatta e verde, revenue identico a billing al centesimo). Serie rolling 6/12 + bucketing Rome: VERIFICATO (incl. test DST ottobre/novembre: eta `2026-10-31T23:30Z` → bucket novembre in Rome). N+1 `getLedgerRevenueCents` per bucket: ACCETTATO (7/13 chiamate, volumi da aviosuperficie). Nessun ref-picker UI: CONFORME (AC 3 spedisce solo il toggle; il percorso storico dell'API è comunque esercitato). Adattamenti D13 (niente Noleggi/Margine/ExportMenu/Condividi, sub "€" non "€k"): ACCETTATI. 4 groupBy separate: ACCETTATO. data-testid keyed su valori univoci: ACCETTATO (caveat nomi omonimi, fixture con suffissi univoci). Temi light/dark: VERIFICATO. Osservazione (non finding): il lordo di un volo stornato resta nei "Ricavi" ledger accanto allo storno — è la definizione club-centric ratificata in 12.9, identica su billing (coerenza ratifica 4 rispettata).
+
+### Audit copertura AC→test
+
+AC1-AC5 tutti FULL (dettaglio nel report: 22 unit stats + 4 e2e; unica deviazione AC-text era il formato istruttori, chiusa da F2). Nessun deliverable omesso.
+
+### Commit di review
+
+- `ec15b4c` — `fix(12.10)`: H:MM ovunque (F2, ratifica PO) + variabile morta (F1); F3 confermato senza codice.
+- questo commit — `docs(12.10)`: Review Record, status → done, handoff + sprint-status.
