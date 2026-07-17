@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-17 (story 12.10 Statistiche done — stats API + reports, review Opus CI=1 238/238, fix H:MM ovunque ratificato PO + ricavo flotta confermato; 12.11 bozza pronta con 4 ratifiche PENDING, sessione fermata su richiesta utente)
+last_updated: 2026-07-17 (story 12.11 ready-for-dev — 4 ratifiche PO chiuse via AskUserQuestion: quota associativa = addebito+rinnovo scadenza in un gesto, +12 mesi rolling; validityMonths additiva; booking 422 solo open-close+anticipo; promemoria solo ADMIN — mail automatiche ai piloti GIÀ esistenti da 6.3)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -140,7 +140,7 @@ development_status:
   12-8-registro-voli: done
   12-9-contabilita: done
   12-10-statistiche: done
-  12-11-scadenze-impostazioni-metar: planned
+  12-11-scadenze-impostazioni-metar: ready-for-dev
   12-12-panoramica-landing-ruoli: planned
   12-13-rimozioni-cleanup-sweep: planned
 
