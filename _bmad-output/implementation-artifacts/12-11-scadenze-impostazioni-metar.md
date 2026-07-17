@@ -4,7 +4,7 @@ baseline_commit: f9d518f
 
 # Story 12.11: Scadenze + Impostazioni + METAR (+ quota associativa, KPI utilizzo flotta)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -116,4 +116,21 @@ so that la configurazione dell'aviosuperficie e il presidio delle scadenze vivan
 
 ## Review Record
 
-_(a cura della review adversarial)_
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh), 2026-07-17/18 — briefato con notesForReview del dev + Deviations 1-9 + mandato chiudi-tu-le-note; priority zero full suite `CI=1` su build di produzione, DB fresco.
+
+**Verdetto iniziale: not-shippable** — full suite CI 253/257: 4 fail DETERMINISTICI in `bookings.spec.ts` (file NON toccato dalla story), causati dai nuovi spec della story che avvelenano stato condiviso. L'attribuzione del dev alla "contesa CPU 4-core" (Deviation 9) è stata CONFUTATA empiricamente: era proprio la modalità CI=1 su build prod che il dev riteneva immune. Le feature in sé sono state validate con evidenza empirica (v. AC audit sotto).
+
+**Findings ed esiti** (fix `52a401d` salvo dove indicato):
+
+- **F1 (BLOCKER)** — `settings.spec.ts` (nessun restore) + `booking-window.spec.ts` scrivono le `AppSetting` GLOBALI `sched.*` → le create concorrenti di `bookings.spec` ricevono 422 `BOOKING_OUTSIDE_WINDOW` (riprodotto via psql + POST reale). **Fix**: catena di 3 project Playwright (`chromium` → `settings` → `booking-window` via `dependencies`) che serializza gli spec global-writer DOPO la suite principale + `afterAll` permissivo in `settings.spec.ts`. Regola durevole nel commento del config e in CLAUDE.md.
+- **F2 (BLOCKER)** — fixture `firstName: 'Finestra'` collide col label "Fine" del form prenotazioni (accessible-name del `<select>` concatena le option; classe 103-F1/11.2). **Fix**: fixture → `'Orario'` + hardening `exact: true` sui 16 `getByLabel('Fine')` di `bookings.spec.ts`.
+- **F3 (PO-DECISION → PRODUCT CHANGE)** — `chargeMembershipFee` non inviava l'alert saldo negativo di `recordAdjustment`. **Decisione PO 2026-07-17** (che SUPERA la proposta alert): "se l'addebito porta il saldo in negativo non si può effettuare (solo con override di admin)". **Fix**: lock `FOR UPDATE` + pre-check saldo (fine sotto zero → 422 `MEMBERSHIP_FEE_INSUFFICIENT_BALANCE`; zero esatto permesso); `override` ADMIN-only (`settings.manage`, 403 a STAFF); checkbox UI admin-only; unit + e2e (top-up preliminare nel flusso base).
+- **F4 (PO-DECISION)** — lo STAFF perde la vista sola-lettura del catalogo abilitazioni (ora su Impostazioni, ADMIN-only). **PO 2026-07-17: ACCETTATO** (il catalogo è configurazione; lo staff continua a usare i tipi nei form di registrazione).
+- **F5 (MINOR, DEFERITO → 12.13)** — 8 route nuove assenti dal registry OpenAPI (`registry.test.ts` usa `arrayContaining`, gates verdi comunque). Action item in sprint-status per la 12.13.
+- **F6 (MINOR)** — `search-combobox.tsx` (condiviso, PRE-esistente) colori hardcoded light-only. **Fix**: tutti i token colore → CSS var di `airops.css` (scope allargato motivato: solo-sfondo avrebbe reso il testo illeggibile in dark); verificato light/dark su Scadenze, modal Quota e billing.
+- **F7 (MINOR)** — saldo di risposta potenzialmente stale (SUM non lockata). **CHIUSO dal fix F3** (lettura sotto lo stesso lock). L'idempotenza era già SAFE (prova empirica review: 8 POST concorrenti stessa key → 1×200 + 7×409, 1 movimento, 1 renew).
+- **F8/F9/F10 (NOTE) — ACCETTATI**: tick timeline arrotondati con orari non in ora esatta (raro, documentato); METAR visibilità frazionaria "1/2" → `visM 0` (categoria da `fltCat` resta corretta, limite unit-testato); hydration-race Impostazioni mitigato test-side (`networkidle`, stesso pattern accettato di `bookings.spec`).
+
+**AC audit (reviewer)**: AC1–AC7 e AC9 PASS con evidenza empirica — RBAC di tutte le route nuove provato con richieste reali (trigger promemoria: admin 200, staff/pilot/instructor/student 403); password SMTP write-only provata su API + HTML/RSC + log server; mailer settings-first → Mailpit OK; booking window 422 su create E approve, chiavi assenti = nessun vincolo; fleetUtilization matematica verificata (no errore DST); primo pagamento quota senza Account preesistente → 200 con upsert. AC8 inizialmente FAIL (suite rossa per F1/F2) → chiuso dal fix.
+
+**Stato finale**: full suite **`CI=1` su build prod, DB fresco: 259/259 PASS** (baseline pre-story 238); `npm run gates` verde (**1517 unit**). Commit della story: `e5854e1` (feat) + `a1f74fb` (fix dev) + `52a401d` (fix review). Nota residua documentata: con `sched.*` configurate una prenotazione che attraversa la mezzanotte è sempre fuori finestra (comportamento deliberato di `assertWithinSchedulingWindow`).
