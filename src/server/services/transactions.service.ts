@@ -307,6 +307,25 @@ export async function getBillingKpis(actor: Actor, ref: Date = new Date()): Prom
   };
 }
 
+/**
+ * Total club-centric ledger revenue (Σ positive normalized amounts, twin
+ * dedup applied) over an ARBITRARY `[from, to]` period — story 12.10's stats
+ * API reuses this so its "Ricavi" KPI/series can NEVER drift from
+ * `getBillingKpis`'s own definition (ratifica utente 4: "MAI reimplementarle",
+ * the two-reader-divergence lesson from story 12.8). A thin wrapper over the
+ * SAME `fetchAllLedgerRows`/`sumPositive` this file's own `getBillingKpis`
+ * uses — `getBillingKpis` itself is UNCHANGED (still current-month-only, via
+ * `currentMonthRange`); this is the general-period variant callers outside
+ * this module need. Self-authorizes (same permission `getBillingKpis`
+ * requires) — the "coarser-permission" cross-service call convention
+ * `flights.service.ts#registerFlight`'s own doc-comment documents.
+ */
+export async function getLedgerRevenueCents(actor: Actor, from: string, to: string): Promise<number> {
+  authorize(actor, 'finance.manage');
+  const rows = await fetchAllLedgerRows({ from, to });
+  return sumPositive(rows);
+}
+
 export type RecordTransactionResult =
   | { kind: 'TOP_UP'; account: AccountOverview }
   | { kind: 'ADJUSTMENT'; account: AccountOverview }

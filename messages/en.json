@@ -2407,5 +2407,53 @@
       "cancel": "Cancel",
       "requiredField": "Select a pilot."
     }
+  },
+  "ReportsPage": {
+    "title": "Reports",
+    "sub": "Airfield analytics · {period}",
+    "periodToggle": {
+      "title": "Period",
+      "year": "Year {year}"
+    },
+    "kpi": {
+      "revenue": "Revenue",
+      "hours": "Hours flown",
+      "movements": "Movements",
+      "transitShare": "Transit share"
+    },
+    "charts": {
+      "revenue": { "title": "Revenue", "sub": "last {count} months · €" },
+      "hours": { "title": "Hours flown", "sub": "last {count} months · h" },
+      "transits": { "title": "Transit movements", "sub": "last {count} months" },
+      "fleet": { "title": "Fleet utilization", "sub": "hours · {period}", "empty": "No operational aircraft." }
+    },
+    "movementMix": {
+      "title": "Movement composition",
+      "sub": "by type · {period}",
+      "keys": {
+        "SCHOOL": "School",
+        "TOURISM": "Tourism/Private",
+        "AERIAL_WORK": "Aerial work",
+        "TRANSIT": "Transits"
+      }
+    },
+    "instructors": {
+      "title": "Instructor hours",
+      "sub": "{period}",
+      "empty": "No instructor hours in this period.",
+      "owedUnknown": "—"
+    },
+    "rankAircraft": {
+      "title": "By aircraft",
+      "sub": "hours and revenue · {period}",
+      "metrics": { "hours": "Hours", "revenue": "Revenue" },
+      "empty": "No aircraft flew in this period."
+    },
+    "rankPilots": {
+      "title": "By pilot",
+      "sub": "top 10 · {period}",
+      "metrics": { "hours": "Hours", "spent": "Spent" },
+      "empty": "No pilot flew in this period."
+    }
   }
 }

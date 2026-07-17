@@ -143,6 +143,7 @@ import {
   trainingNoteListResponseSchema,
 } from './school';
 import { airfieldBrandingSchema } from './settings';
+import { statsQuerySchema, statsResponseSchema } from './stats';
 import {
   listTransactionsQuerySchema,
   recordTransactionResponseSchema,
@@ -351,6 +352,7 @@ registry.register('CompletePprRequestRequest', completePprRequestSchema);
 registry.register('PprOperatingInstructions', pprOperatingInstructionsSchema);
 registry.register('PprLandingFeeDefault', pprLandingFeeDefaultSchema);
 registry.register('AirfieldBranding', airfieldBrandingSchema);
+registry.register('Stats', statsResponseSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -2120,6 +2122,23 @@ registry.registerPath({
   responses: {
     200: { description: 'The current payout rate.', content: jsonContent(setInstructorPayoutRateSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+// --- Statistics/reports (epic 12, story 12.10) ---------------------------
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/stats',
+  summary: 'Aggregated statistics (KPIs, monthly series, fleet/movement/instructor/pilot breakdowns)',
+  description:
+    "Read-only aggregation over flights/PPR/ledger/compensation, no new model. `period` (`month`|`year`, REQUIRED) picks the KPI window's granularity; `ref` (`YYYY-MM`, optional, defaults to the current Europe/Rome month) anchors it — full history is supported, a FUTURE `ref` answers 422. The chart series is always a ROLLING window ending at `ref` (6 points for `period=month`, 12 for `period=year`), independent of the KPI window's own calendar alignment. `kpis.revenueCents`/`series.revenueCents` are the club-centric ledger total (`transactions.service.ts#getLedgerRevenueCents`, same sign-normalization as `GET /api/v1/transactions`'s KPIs); `fleet[].revenueCents`/`topPilots[].spentCents` are FLIGHT-charge totals instead (a deliberately different notion). `instructors[].owedCents` is `null` unless `ref` is the CURRENT period. Requires `finance.manage` (staff+admin).",
+  tags: ['Stats'],
+  security,
+  request: { query: statsQuerySchema },
+  responses: {
+    200: { description: 'The aggregated statistics for the requested period.', content: jsonContent(statsResponseSchema) },
+    ...errorResponses(401, 403, 422),
   },
 });
 

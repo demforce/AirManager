@@ -1,0 +1,92 @@
+'use client';
+
+import { useState } from 'react';
+
+/**
+ * `RankBars` port (epic 12, story 12.10, AC 2) — 1:1 of
+ * `docs/design-reference/airops/src/ReportsView.jsx#RankBars` (lines
+ * 46-76): a `.card` with a `.segmented` metric toggle in the head and
+ * ranked `.util-row`s below, sorted by the SELECTED metric, bar width
+ * relative to that metric's own max. ZERO new CSS (`.util-*`/`.segmented`
+ * already in `airops.css`, story 12.1).
+ *
+ * Deliberately DROPS the prototype's `period`/`mField`/`yField` dance: here
+ * the period switch is a SERVER-SIDE `?period=` navigation (12.10's page),
+ * so by the time this renders, `rows` already carry the values for the
+ * CURRENTLY selected period — there is only ONE value per metric per row,
+ * never a month/year pair to pick between client-side. The only client
+ * state left is the metric toggle itself (Ore vs Ricavo/Spesa).
+ */
+export type RankBarsMetric = {
+  key: string;
+  label: string;
+  color: string;
+  format: (value: number) => string;
+};
+
+export type RankBarsRow = {
+  label: string;
+  values: Record<string, number>;
+  /** Optional e2e hook (`e2e/reports.spec.ts`) — a row identified by a unique label (never by array position, which shifts as other rows enter/leave the ranking). */
+  testId?: string;
+};
+
+export type RankBarsProps = {
+  title: string;
+  sub: string;
+  rows: RankBarsRow[];
+  metrics: RankBarsMetric[];
+  labelCol?: number;
+  monoLabel?: boolean;
+  emptyLabel: string;
+  /** Optional e2e hook on the root `.card` — the page renders two `RankBars` instances sharing the same DOM shape, so a plain class selector can't tell them apart. */
+  testId?: string;
+};
+
+const NAME_LABEL_STYLE = { fontSize: 12.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+
+export function RankBars({ title, sub, rows, metrics, labelCol = 110, monoLabel = false, emptyLabel, testId }: RankBarsProps) {
+  const [metricIndex, setMetricIndex] = useState(0);
+  const metric = metrics[metricIndex]!;
+  const sorted = [...rows].sort((a, b) => (b.values[metric.key] ?? 0) - (a.values[metric.key] ?? 0));
+  const max = Math.max(1, ...sorted.map((row) => row.values[metric.key] ?? 0));
+
+  return (
+    <div className="card" data-testid={testId}>
+      <div className="card-head">
+        <div className="card-title">{title}</div>
+        <span className="card-sub">{sub}</span>
+        <div className="spacer" />
+        <div className="segmented">
+          {metrics.map((m, i) => (
+            <button key={m.key} type="button" className={i === metricIndex ? 'on' : ''} onClick={() => setMetricIndex(i)}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {sorted.length === 0 ? (
+        <div className="card-body">
+          <p style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{emptyLabel}</p>
+        </div>
+      ) : (
+        <div className="util-rows">
+          {sorted.map((row, i) => {
+            const value = row.values[metric.key] ?? 0;
+            return (
+              <div className="util-row" key={i} data-testid={row.testId} style={{ gridTemplateColumns: `${labelCol}px 1fr 96px` }}>
+                <div className={monoLabel ? 'util-tail' : undefined} style={monoLabel ? undefined : NAME_LABEL_STYLE}>
+                  {row.label}
+                </div>
+                <div className="util-bar">
+                  <div className="seg" style={{ left: 0, width: `${(value / max) * 100}%`, background: metric.color }} />
+                </div>
+                <div className="util-value">{metric.format(value)}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

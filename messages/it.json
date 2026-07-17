@@ -2407,5 +2407,53 @@
       "cancel": "Annulla",
       "requiredField": "Seleziona un pilota."
     }
+  },
+  "ReportsPage": {
+    "title": "Statistiche",
+    "sub": "Analisi dell'aeroporto · {period}",
+    "periodToggle": {
+      "title": "Periodo",
+      "year": "Anno {year}"
+    },
+    "kpi": {
+      "revenue": "Ricavi",
+      "hours": "Ore volate",
+      "movements": "Movimenti",
+      "transitShare": "Quota transiti"
+    },
+    "charts": {
+      "revenue": { "title": "Ricavi", "sub": "ultimi {count} mesi · €" },
+      "hours": { "title": "Ore volate", "sub": "ultimi {count} mesi · h" },
+      "transits": { "title": "Movimenti in transito", "sub": "ultimi {count} mesi" },
+      "fleet": { "title": "Utilizzo flotta", "sub": "ore · {period}", "empty": "Nessun aeromobile operativo." }
+    },
+    "movementMix": {
+      "title": "Composizione movimenti",
+      "sub": "per tipo · {period}",
+      "keys": {
+        "SCHOOL": "Scuola",
+        "TOURISM": "Turismo/Privato",
+        "AERIAL_WORK": "Lavoro aereo",
+        "TRANSIT": "Transiti"
+      }
+    },
+    "instructors": {
+      "title": "Ore istruttori",
+      "sub": "{period}",
+      "empty": "Nessuna ora istruttore nel periodo.",
+      "owedUnknown": "—"
+    },
+    "rankAircraft": {
+      "title": "Per aeromobile",
+      "sub": "ore e ricavo · {period}",
+      "metrics": { "hours": "Ore", "revenue": "Ricavo" },
+      "empty": "Nessun aeromobile con voli nel periodo."
+    },
+    "rankPilots": {
+      "title": "Per pilota",
+      "sub": "top 10 · {period}",
+      "metrics": { "hours": "Ore", "spent": "Spesa" },
+      "empty": "Nessun pilota con voli nel periodo."
+    }
   }
 }

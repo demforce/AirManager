@@ -54,15 +54,37 @@ so that l'andamento dell'aviosuperficie si legga a colpo d'occhio su dati veri (
 
 ### Completion Notes
 
-_(a cura del dev agent)_
+- **Stats API (AC 1)**: `stats.service.ts#getStats(actor, {period, ref?}, now?)` — `finance.manage` in-service, `ref` (`YYYY-MM`) opzionale (default mese corrente Rome), storico completo, futuro → 422 `ValidationError('STATS_REF_IN_FUTURE')`. KPI window = mese/anno di `ref`; serie = rolling 6/12 mesi fino a `ref` incluso (indipendente dall'allineamento calendario del KPI quando `period=year`).
+- **Revenue reuse (ratifica 4)**: `transactions.service.ts` guadagna UN solo export nuovo, `getLedgerRevenueCents(actor, from, to)` — thin wrapper sui `fetchAllLedgerRows`/`sumPositive` GIÀ esistenti (dietro `getBillingKpis`), comportamento invariato, `transactions.service.test.ts` (26 test) resta verde senza modifiche. `stats.service.ts` lo richiama una volta per ciascun bucket mensile della serie + una volta per la finestra KPI — MAI query dirette su `accountMovement`/`cashMovement`.
+- **Movimenti (ratifica 1)**: `movements` = COUNT flight REGISTERED (via `prisma.flight.groupBy(by:['flightType'])`, riusato anche per `flightMinutes`/`movementMix`) + COUNT PPR `COMPLETED` (eta nella finestra, bounds Rome via `zonedMidnightUtc`/`addDaysDateOnly`, pattern 12.4). `movementMix` sempre 4 chiavi fisse (SCHOOL/TOURISM/AERIAL_WORK/TRANSIT), anche a conteggio 0.
+- **Istruttori (ratifica 3)**: minuti via `groupBy(instructorProfileId)` su SCHOOL REGISTERED per QUALUNQUE periodo; `owedCents` letto da `getCompensationSummary(actor)` (mtd/ytd a seconda di `period`) SOLO quando `ref` è il periodo corrente — la summary non viene nemmeno interrogata sui ref storici (test dedicato: `getCompensationSummary` NON chiamata).
+- **Fleet/topPilots (ratifica 4, doppia nozione dichiarata)**: `fleet[].revenueCents` = solo componente aeromobile (`aircraftAmountCents`), MAI l'istruttore — assunzione esplicita (il tempo istruttore non è "ricavo dell'aeromobile"); `topPilots[].spentCents` = aeromobile + istruttore (la spesa reale del pilota). `fleet` = solo aeromobili `status=OPERATIONAL` non archiviati (`listAircraft`), ordine registration asc riusato da `listAircraft` stesso (nessun re-sort).
+- **Serie mensili**: nessun helper "ultimi N mesi" preesisteva — `monthRangeFor`/`yearRangeFor`/`shiftMonth`/`rollingMonths` nuovi in `stats.service.ts` (calendario puro su stringhe `YYYY-MM`, nessuna conversione timezone: `ref` è già un mese-calendario Rome). Bucketing voli (date-only) via `toDateOnlyString().slice(0,7)`; bucketing PPR (istanti) via `dateOnlyInZone(eta, APP_TIMEZONE).slice(0,7)` — Rome-esatto (test dedicato sul confine ottobre/novembre 2026, post-cambio-ora).
+- **Chart components (AC 2)**: `bar-chart.tsx`/`line-chart.tsx` porting 1:1, presentational puri (nessuno stato) con guardia `Math.max(1, ...data)` contro dati reali tutti-a-zero (il mock del prototipo non è mai a zero, i dati reali possono esserlo). `rank-bars.tsx` — stessa resa visiva ma API adattata: niente `period`/`mField`/`yField` (il toggle periodo qui è navigazione server-side via `?period=`, quindi le righe arrivano già scoped al periodo corrente; l'unico stato client rimasto è il toggle metrica).
+- **Pagina (AC 3)**: server component (redirect non-`finance.manage`) + `reports-console.tsx` client (stato del solo `RankBars`). Toggle periodo = `<Link>` `?period=month|year` (URL-driven, NIENTE `ref` picker in UI in questa story — l'API lo supporta, ma la pagina interroga sempre il periodo corrente). 4 KPI (ratifica 2, NIENTE "Utilizzo flotta" KPI). `route-registry.ts` `reports` → `enabled:true, airopsNative:true`.
+- **Adattamenti dichiarati dal prototipo**: (1) card-sub ricavi "€" non "€k" — i numeri reali di una piccola aviosuperficie non sono nell'ordine delle migliaia come nel mock, "€k" avrebbe reso male; (2) niente "Noleggi" nel mix (nessun `FlightType` RENTAL, ratifica 1); (3) niente metrica "Margine" in RankBars pilota (non derivabile, piano-conforme); (4) niente `ExportMenu`/"Condividi report" (piano Step 2).
+- **Verifica interattiva**: script Playwright throwaway in `/tmp` (Playwright MCP rotto in questo ambiente) contro DB fresco — pagina verificata in light/dark, toggle mese/anno, KPI/grafici/RankBars popolati da dati reali via fixture API. Script cancellato prima del commit.
 
 ### File List
 
-_(a cura del dev agent)_
+- `src/lib/schemas/stats.ts` (nuovo)
+- `src/server/services/stats.service.ts` (nuovo)
+- `src/server/services/stats.service.test.ts` (nuovo)
+- `src/server/services/transactions.service.ts` (edit chirurgico: +`getLedgerRevenueCents`, nessun'altra riga toccata)
+- `src/app/api/v1/stats/route.ts` (nuovo)
+- `src/lib/schemas/registry.ts` (edit: import + `register('Stats', ...)` + `registerPath('/api/v1/stats')`)
+- `src/components/charts/bar-chart.tsx` (nuovo)
+- `src/components/charts/line-chart.tsx` (nuovo)
+- `src/components/charts/rank-bars.tsx` (nuovo)
+- `src/app/[locale]/dashboard/reports/page.tsx` (nuovo)
+- `src/app/[locale]/dashboard/reports/reports-console.tsx` (nuovo)
+- `src/components/shell/route-registry.ts` (edit: `reports` → `enabled:true, airopsNative:true`)
+- `messages/it.json`, `messages/en.json` (edit: sezione `ReportsPage`)
+- `e2e/reports.spec.ts` (nuovo)
 
 ### Change Log
 
-_(a cura del dev agent)_
+- 2026-07-17 — Implementazione stats API + pagina Statistiche AirOps-native (story 12.10). `npm run gates` verde.
 
 ## Review Record
 
