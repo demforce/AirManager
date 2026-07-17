@@ -136,7 +136,12 @@ export default async function SettingsPage({ params }: PageProps) {
           maxAdvanceDays: t('scheduling.maxAdvanceDays'),
           minutesSuffix: t('scheduling.minutesSuffix'),
           daysSuffix: t('scheduling.daysSuffix'),
-          hint: t('scheduling.hint'),
+          // `t.raw` (not `t`): the message carries `{open}`/`{close}`/`{slot}`/`{days}`
+          // ICU placeholders interpolated CLIENT-SIDE from live form state
+          // (`scheduling-card.tsx`'s own `.replace(...)` calls) — `t()` would
+          // try to interpolate them immediately server-side and throw
+          // `FORMATTING_ERROR` since no values are provided here.
+          hint: t.raw('scheduling.hint') as string,
           save: t('scheduling.save'),
           saved: t('scheduling.saved'),
           error: t('scheduling.error'),

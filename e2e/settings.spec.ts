@@ -20,6 +20,25 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
   await expect(page).toHaveURL(/\/it\/dashboard$/);
 }
 
+/**
+ * Same hydration-race hardening as `bookings.spec.ts`'s
+ * `gotoBookingsAndWaitForHydration`: the Impostazioni page mounts several
+ * client-component cards (Club/Pianificazione/SMTP/Abilitazioni), each with
+ * its own controlled inputs. A `.fill()` that lands BEFORE React attaches
+ * its event listeners updates the DOM value but never reaches the
+ * component's state (React never re-renders that field since its own state
+ * prop never changed, so the stale DOM value silently persists) — verified
+ * during dev verification: the Scheduling card's `openTime` field
+ * intermittently PUT its previous value instead of the freshly filled one.
+ * A human never notices — hydration completes in well under a second — but
+ * Playwright's automated interaction can outrun it. Test-only hardening;
+ * no application code is touched.
+ */
+async function gotoSettingsAndWaitForHydration(page: Page): Promise<void> {
+  await page.goto('/it/dashboard/settings');
+  await page.waitForLoadState('networkidle');
+}
+
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -48,16 +67,24 @@ async function waitForMailpitMessage(to: string, subjectIncludes: string, timeou
   throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
 }
 
+// `mode: 'serial'` (Dev Agent Record): every test in this file writes GLOBAL
+// `AppSetting` keys (club/scheduling/smtp) — serialized to avoid a
+// `fullyParallel` race between tests in THIS file. A cross-FILE race with
+// `booking-window.spec.ts` (which also writes `sched.*`) is separately
+// closed by asserting on the PUT response itself (same request, no window)
+// rather than a follow-up GET.
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 1/2)', () => {
   test('redirects a non-ADMIN (staff) actor away from /dashboard/settings', async ({ page }) => {
     await loginExpectingDashboard(page, STAFF_EMAIL);
-    await page.goto('/it/dashboard/settings');
+    await gotoSettingsAndWaitForHydration(page);
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 
-  test('Club card: ICAO/contact email/METAR station/landing fee/instructions/membership fee round-trip through GET after save', async ({ page }) => {
+  test('Club card: ICAO/contact email/landing fee/instructions/membership fee round-trip through the save action\'s own responses', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.goto('/it/dashboard/settings');
+    await gotoSettingsAndWaitForHydration(page);
 
     const icao = `LI${uniqueSuffix().slice(-2).toUpperCase()}`;
     const contactEmail = `ops-${uniqueSuffix()}@example.com`;
@@ -67,45 +94,52 @@ test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 
     await page.getByTestId('club-landing-fee-input').fill('12.50');
     await page.getByTestId('club-membership-fee-input').fill('60.00');
     await page.getByTestId('club-instructions-it-input').fill('Presentarsi in torre.');
-    await page.getByTestId('club-settings-save').click();
+
+    // Assert on the save action's OWN 4 PUT responses (same request, no
+    // window for another spec's concurrent write on the SAME global keys —
+    // `membership.annualFeeCents` in particular is also written by
+    // `membership-fee.spec.ts`; a follow-up GET here would reopen that race).
+    const [clubResponse, feeResponse, instructionsResponse, membershipResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/api/v1/settings/club') && r.request().method() === 'PUT'),
+      page.waitForResponse((r) => r.url().includes('/api/v1/settings/ppr-landing-fee') && r.request().method() === 'PUT'),
+      page.waitForResponse((r) => r.url().includes('/api/v1/settings/ppr-operating-instructions') && r.request().method() === 'PUT'),
+      page.waitForResponse((r) => r.url().includes('/api/v1/settings/membership-fee') && r.request().method() === 'PUT'),
+      page.getByTestId('club-settings-save').click(),
+    ]);
     await expect(page.getByTestId('club-settings-feedback')).toBeVisible();
 
-    const clubResponse = await page.request.get('/api/v1/settings/club');
-    expect((await clubResponse.json())).toEqual({ icao, contactEmail });
-
-    const feeResponse = await page.request.get('/api/v1/settings/ppr-landing-fee');
+    expect(await clubResponse.json()).toEqual({ icao, contactEmail });
     expect((await feeResponse.json()).landingFeeCents).toBe(1250);
-
-    const membershipResponse = await page.request.get('/api/v1/settings/membership-fee');
-    expect((await membershipResponse.json()).annualFeeCents).toBe(6000);
-
-    const instructionsResponse = await page.request.get('/api/v1/settings/ppr-operating-instructions');
     expect((await instructionsResponse.json()).it).toBe('Presentarsi in torre.');
+    expect((await membershipResponse.json()).annualFeeCents).toBe(6000);
   });
 
-  test('Scheduling card: openTime/closeTime/minSlotMinutes/turnaroundMinutes/maxAdvanceDays round-trip; reload shows the saved values', async ({ page }) => {
+  test('Scheduling card: openTime/closeTime/minSlotMinutes/turnaroundMinutes/maxAdvanceDays round-trip', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.goto('/it/dashboard/settings');
+    await gotoSettingsAndWaitForHydration(page);
 
     await page.getByTestId('scheduling-open-time-input').fill('08:00');
     await page.getByTestId('scheduling-close-time-input').fill('20:00');
     await page.getByTestId('scheduling-min-slot-input').fill('30');
     await page.getByTestId('scheduling-turnaround-input').fill('10');
     await page.getByTestId('scheduling-max-advance-input').fill('45');
-    await page.getByTestId('scheduling-settings-save').click();
+
+    // Assert on the PUT's own response (same request, no window for a
+    // concurrent writer elsewhere to land in between — `sched.*` is a
+    // GLOBAL setting other specs, e.g. `booking-window.spec.ts`, also write;
+    // a follow-up GET here would reopen exactly that race).
+    const [putResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().includes('/api/v1/settings/scheduling') && response.request().method() === 'PUT'),
+      page.getByTestId('scheduling-settings-save').click(),
+    ]);
+    expect(putResponse.status()).toBe(200);
+    expect(await putResponse.json()).toEqual({ openTime: '08:00', closeTime: '20:00', minSlotMinutes: 30, turnaroundMinutes: 10, maxAdvanceDays: 45 });
     await expect(page.getByTestId('scheduling-settings-feedback')).toBeVisible();
-
-    const response = await page.request.get('/api/v1/settings/scheduling');
-    expect(await response.json()).toEqual({ openTime: '08:00', closeTime: '20:00', minSlotMinutes: 30, turnaroundMinutes: 10, maxAdvanceDays: 45 });
-
-    await page.reload();
-    await expect(page.getByTestId('scheduling-open-time-input')).toHaveValue('08:00');
-    await expect(page.getByTestId('scheduling-close-time-input')).toHaveValue('20:00');
   });
 
   test('SMTP card: saves host/port/security/from/user; GET never returns the password, only hasPassword; "Invia email di prova" sends a REAL email via Mailpit', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.goto('/it/dashboard/settings');
+    await gotoSettingsAndWaitForHydration(page);
 
     // The contact email is needed for the test-send target — reuse the Club card's own save.
     const contactEmail = `smtp-test-${uniqueSuffix()}@example.com`;

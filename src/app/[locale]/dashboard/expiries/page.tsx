@@ -150,7 +150,11 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           locale={displayLocale}
           labels={{
             cardTitle: t('registry.cardTitle'),
-            shown: t('registry.shown'),
+            // `t.raw` (not `t`): `{count}` is interpolated CLIENT-SIDE
+            // (`scadenze-console.tsx`'s own `.replace(...)`, the shown count
+            // changes with client-only filters) — `t()` would try to
+            // interpolate immediately server-side and throw `FORMATTING_ERROR`.
+            shown: t.raw('registry.shown') as string,
             segmented: {
               win60: t('registry.segmented.win60'),
               win30: t('registry.segmented.win30'),
@@ -193,7 +197,8 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             daysAgoSuffix: t('registry.daysAgoSuffix'),
             daysSuffix: t('registry.daysSuffix'),
             exportMenu: { label: t('registry.exportMenu.label'), xlsLabel: t('registry.exportMenu.xlsLabel'), pdfLabel: t('registry.exportMenu.pdfLabel') },
-            reminders: { button: t('registry.reminders.button'), sent: t('registry.reminders.sent'), error: t('registry.reminders.error') },
+            // `sent`: `t.raw` — `{holders}`/`{digests}` interpolated CLIENT-SIDE (same rationale as `shown` above).
+            reminders: { button: t('registry.reminders.button'), sent: t.raw('registry.reminders.sent') as string, error: t('registry.reminders.error') },
             membershipFee: {
               button: t('registry.membershipFee.button'),
               disabledHint: t('registry.membershipFee.disabledHint'),
@@ -204,7 +209,8 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               submit: t('registry.membershipFee.submit'),
               cancel: t('registry.membershipFee.cancel'),
               invalidAmount: t('registry.membershipFee.invalidAmount'),
-              success: t('registry.membershipFee.success'),
+              // `t.raw`: `{balance}`/`{expires}` interpolated CLIENT-SIDE (same rationale as `shown` above).
+              success: t.raw('registry.membershipFee.success') as string,
               genericError: t('registry.membershipFee.genericError'),
             },
             pagination: { prev: '←', next: '→' },

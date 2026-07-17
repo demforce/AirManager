@@ -44,7 +44,16 @@ function personOptionLabel(person: { firstName: string; lastName: string }): str
  * action debits the account (ADJUSTMENT, visible in Contabilità) AND
  * creates/renews the "Quota associativa" Expiry (visible in the Scadenze
  * registry) in ONE gesture.
+ *
+ * `mode: 'serial'` (Dev Agent Record): every test in this file writes the
+ * SAME global `membership.annualFeeCents` setting — under `fullyParallel`
+ * (`playwright.config.ts`) two of these tests racing on different workers
+ * would clobber each other's fee value mid-test (verified during dev
+ * verification: a parallel run intermittently read back a SIBLING test's fee
+ * instead of its own). Serial execution removes that race entirely.
  */
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Quota associativa (Story 12.11, AC 7)', () => {
   test('charging a pilot for the first time creates an ADJUSTMENT movement (visible in billing) and a NEW "Quota associativa" expiry (visible in the registry), 12 months out', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
