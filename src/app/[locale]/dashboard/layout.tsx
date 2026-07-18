@@ -9,6 +9,7 @@ import { NAV_GROUPS, visibleNavItems, type NavItemId } from '@/components/shell/
 import type { Theme } from '@/components/shell/theme-toggle';
 import { TopBar } from '@/components/shell/top-bar';
 import { redirect } from '@/i18n/navigation';
+import { signOut } from '@/server/auth/auth';
 import { getSessionActor } from '@/server/auth/session';
 import { getAirfieldBranding, getAirfieldIcao, getMetarStation } from '@/server/services/app-settings.service';
 import { getMe } from '@/server/services/me.service';
@@ -116,6 +117,17 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
   const role = primaryRole(actor.roles);
   const roleLabel = t(`roles.${role}`);
 
+  /**
+   * Story 12.12 fix (Dev Notes): the ONLY logout control in the app used to
+   * live on the legacy home page's own `<form action={logoutAction}>` —
+   * that page is gone (AC 6), so the AirOps shell (TopBar, every page)
+   * needs its own, same pattern as before.
+   */
+  async function logoutAction() {
+    'use server';
+    await signOut({ redirectTo: `/${locale}/login` });
+  }
+
   return (
     <ToastProvider>
       <div className="app">
@@ -134,6 +146,8 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
               initials: initialsFor(displayName),
               color: AVATAR_COLOR_BY_ROLE[role],
             }}
+            logoutAction={logoutAction}
+            logoutLabel={t('logout')}
           />
           {/*
            * Legacy (pre-AirOps) pages assume the OLD light backdrop

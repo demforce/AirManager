@@ -53,6 +53,7 @@
     "themeToggle": {
       "label": "Toggle theme"
     },
+    "logout": "Log out",
     "roles": {
       "ADMIN": "Admin",
       "STAFF": "Staff",

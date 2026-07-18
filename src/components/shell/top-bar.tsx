@@ -29,9 +29,18 @@ export type TopBarProps = {
   initialTheme: Theme;
   themeToggleLabel: string;
   userChip: TopBarUserChip;
+  /**
+   * Server Action (story 12.12 fix — see `layout.tsx`'s own doc-comment):
+   * the ONLY logout control in the app used to live on the legacy home
+   * page's own form; that page is gone (story 12.12, AC 6), so the AirOps
+   * shell needs its own. A Server Action reference IS a valid Server ->
+   * Client Component prop (unlike a plain function).
+   */
+  logoutAction: () => Promise<void>;
+  logoutLabel: string;
 };
 
-export function TopBar({ brandName, icao, pageTitles, fallbackTitle, initialTheme, themeToggleLabel, userChip }: TopBarProps) {
+export function TopBar({ brandName, icao, pageTitles, fallbackTitle, initialTheme, themeToggleLabel, userChip, logoutAction, logoutLabel }: TopBarProps) {
   const pathname = usePathname();
   const activeItem = findNavItemByPathname(pathname);
   const currentTitle = activeItem ? pageTitles[activeItem.id] : fallbackTitle;
@@ -55,6 +64,11 @@ export function TopBar({ brandName, icao, pageTitles, fallbackTitle, initialThem
         <Avatar init={userChip.initials} color={userChip.color} />
         <span className="user-chip-name" style={{ fontSize: 12.5, fontWeight: 500 }}>{userChip.displayName}</span>
       </div>
+      <form action={logoutAction}>
+        <button type="submit" className="btn" data-testid="logout-button">
+          {logoutLabel}
+        </button>
+      </form>
     </header>
   );
 }

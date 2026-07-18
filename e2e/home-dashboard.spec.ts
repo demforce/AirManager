@@ -195,7 +195,7 @@ test.describe('Home dashboard — data-driven (story 12.12, AC 1)', () => {
       data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${tomorrow}T09:00:00.000Z`, endsAt: `${tomorrow}T10:00:00.000Z` },
     });
     expect(bookingResponse.status()).toBe(201);
-    expect((await bookingResponse.json()).status).toBe('PENDING');
+    expect((await bookingResponse.json()).booking.status).toBe('PENDING');
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);

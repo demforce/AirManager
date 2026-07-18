@@ -53,6 +53,7 @@
     "themeToggle": {
       "label": "Cambia tema"
     },
+    "logout": "Esci",
     "roles": {
       "ADMIN": "Admin",
       "STAFF": "Staff",
