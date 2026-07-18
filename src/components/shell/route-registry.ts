@@ -69,7 +69,8 @@ const STAFF_ROLES: readonly Role[] = ['ADMIN', 'STAFF'];
 export const NAV_GROUPS: readonly NavGroupId[] = ['operations', 'directory', 'archive', 'system'];
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { id: 'overview', href: '/dashboard', icon: 'dashboard', group: 'operations', roles: ALL_ROLES, enabled: true, airopsNative: false },
+  // Story 12.12: the home ships in the AirOps visual language directly, replacing the legacy widget-grid dashboard.
+  { id: 'overview', href: '/dashboard', icon: 'dashboard', group: 'operations', roles: ALL_ROLES, enabled: true, airopsNative: true },
   { id: 'schedule', href: '/dashboard/bookings', icon: 'calendar', group: 'operations', roles: ALL_ROLES, enabled: true, airopsNative: true },
   { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: STAFF_ROLES, enabled: true, airopsNative: true },
   { id: 'visiting', href: '/dashboard/movements', icon: 'plane', group: 'operations', roles: STAFF_ROLES, enabled: true, airopsNative: true },
@@ -79,13 +80,18 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: STAFF_ROLES, enabled: true, airopsNative: true },
   // Story 12.5: the fleet page ships in the AirOps visual language directly.
   { id: 'fleet', href: '/dashboard/fleet', icon: 'fleet', group: 'directory', roles: STAFF_ROLES, enabled: true, airopsNative: true },
-  // Story 12.11: the scadenze registry ships in the AirOps visual language directly.
+  // Story 12.11: the scadenze registry ships in the AirOps visual language
+  // directly. Story 12.12 fix: widened to ALL_ROLES — the legacy home's own
+  // in-page nav (permission-based, `nav-items.ts`) always gave a
+  // self-access PILOT/STUDENT a link to their OWN scadenze (`self.read`,
+  // `expiries/page.tsx`'s own-access face); once that nav disappears with
+  // the widget-grid home, the Sidebar is the only nav that can offer it.
   {
     id: 'scadenze',
     href: '/dashboard/expiries',
     icon: 'clock',
     group: 'directory',
-    roles: ['ADMIN', 'STAFF', 'INSTRUCTOR'],
+    roles: ALL_ROLES,
     enabled: true,
     airopsNative: true,
   },

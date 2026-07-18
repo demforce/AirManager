@@ -16,6 +16,7 @@ import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { categoryOf, tierOf } from '@/lib/expiry-status';
 import { formatCents, parseCents } from '@/lib/money';
 import type { ExpiryDashboardItemDto, ExpiryWindowDto } from '@/lib/schemas/expiries';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
@@ -77,23 +78,10 @@ export type ScadenzeConsoleProps = {
 
 const COLS = 'minmax(140px,1.4fr) 110px minmax(150px,1.5fr) 130px 120px 130px';
 
-/** Category badge tone (Contesto: Medico=info, Licenza="", Abilitazione=warn — `ScadenzeView.jsx`'s `catTone`). */
-function categoryOf(typeName: string): Category {
-  const lower = typeName.toLowerCase();
-  if (lower.includes('medic')) return 'Medico';
-  if (lower.includes('licenz')) return 'Licenza';
-  return 'Abilitazione';
-}
+/** Category badge tone (Contesto: Medico=info, Licenza="", Abilitazione=warn — `ScadenzeView.jsx`'s `catTone`). `categoryOf` itself is shared, `@/lib/expiry-status` (story 12.12: reused by `ScadenzeWidget`, no second implementation). */
 const CATEGORY_TONE: Record<Category, BadgeTone> = { Medico: 'info', Licenza: '', Abilitazione: 'warn' };
 
-/** Tier 0-4 (Contesto: `tierOf`, `ScadenzeView.jsx:12-20`) — drives the row tint + days badge tone. */
-function tierOf(days: number): 0 | 1 | 2 | 3 | 4 {
-  if (days < 0) return 0;
-  if (days <= 7) return 1;
-  if (days <= 30) return 2;
-  if (days <= 60) return 3;
-  return 4;
-}
+/** Tier tone (Contesto: `ScadenzeView.jsx:12-20`) — `tierOf` itself is shared, `@/lib/expiry-status` (story 12.12). */
 const TIER_TONE: Record<0 | 1 | 2 | 3 | 4, BadgeTone> = { 0: 'bad', 1: 'bad', 2: 'warn', 3: 'info', 4: '' };
 const TIER_ROW_TINT: Record<0 | 1 | 2 | 3 | 4, string> = {
   0: 'var(--bad-soft)',

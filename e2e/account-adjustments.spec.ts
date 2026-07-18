@@ -112,12 +112,12 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
 
     // AC 2: the account shows up in the staff "saldi negativi" card on the
     // billing page (story 12.9 — legacy `/dashboard/finance` deleted),
-    // reached via the repointed "Finanze" nav item. Scoped to the nav
-    // landmark (suite convention, see rbac.spec.ts): since story 10.3 the
-    // home also has a "Vai alle finanze" widget link that a bare substring
-    // match would hit.
+    // reached via the AirOps Sidebar's "Contabilità" nav item (story 12.12:
+    // the legacy in-page "Aree operative" nav died with the widget-grid
+    // home — same landmark name, now the Sidebar). Scoped to the nav
+    // landmark (suite convention, see rbac.spec.ts).
     await page.goto('/it/dashboard');
-    await page.getByRole('navigation', { name: 'Aree operative' }).getByRole('link', { name: 'Finanze' }).click();
+    await page.getByRole('navigation', { name: 'Aree operative' }).getByRole('link', { name: 'Contabilità', exact: true }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/billing$/);
     const negativeRow = page.getByTestId('negative-balance-row').filter({ hasText: person.lastName });
     await expect(negativeRow).toHaveCount(1);

@@ -48,13 +48,22 @@ export type SidebarProps = {
   /** Optional per-item badge count text (story 12.1, AC 4: wired by later stories — always absent this story). */
   badges?: Partial<Record<NavItemId, string>>;
   metar?: SidebarMetar;
+  /**
+   * Accessible name for the nav landmark (story 12.12 AC 7): the legacy
+   * home's own in-page "Aree operative" `<nav>` disappeared with the
+   * widget-grid dashboard it lived on — this is now the ONE nav landmark
+   * e2e specs scope role-based link assertions to (lesson 103-F1). `role`
+   * is set explicitly (an `<aside>` defaults to `complementary`) rather
+   * than restructuring the DOM into a nested `<nav>`.
+   */
+  navLabel: string;
 };
 
-export function Sidebar({ groups, brandName, brandSub, badges, metar }: SidebarProps) {
+export function Sidebar({ groups, brandName, brandSub, badges, metar, navLabel }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" role="navigation" aria-label={navLabel}>
       <div className="brand">
         <div className="brand-mark">
           <Icon.logo />

@@ -18,6 +18,7 @@
       "archive": "Archivio",
       "system": "Sistema"
     },
+    "navLabel": "Aree operative",
     "nav": {
       "overview": "Panoramica",
       "schedule": "Pianificazione",
@@ -102,90 +103,89 @@
     }
   },
   "DashboardPage": {
-    "kicker": "Area riservata",
-    "welcome": "Bentornato, {name}",
-    "subtitle": "Le aree operative (piloti, velivoli, voli, prenotazioni...) arriveranno nelle prossime iterazioni.",
-    "logout": "Esci",
-    "navHeading": "Aree operative",
-    "myProfile": "La mia scheda",
-    "myAccount": "Il mio conto",
-    "myDiary": "Il mio diario",
-    "myExpiries": {
-      "heading": "Le mie scadenze",
-      "link": "Tutte le mie scadenze",
-      "empty": "Nessuna scadenza registrata."
+    "fallback": {
+      "title": "Panoramica",
+      "sub": "Nessuna vista disponibile per il tuo ruolo."
     },
-    "pprPendingWidget": {
-      "heading": "PPR in attesa",
-      "link": "Vai alla coda PPR",
-      "empty": "Nessuna richiesta PPR in attesa.",
-      "count": "{count} in attesa"
+    "overview": {
+      "title": "Panoramica operativa",
+      "aogCount": "{count} AOG",
+      "pprPendingCount": "{count} PPR in attesa",
+      "onGroundCount": "{count} in transito al suolo",
+      "dispatchButton": "Pianifica volo",
+      "kpis": {
+        "flightsToday": "Voli oggi",
+        "fleetAvailable": "Flotta disponibile",
+        "pprPending": "PPR in attesa",
+        "bookingsPending": "Prenotazioni in attesa",
+        "revenue": "Ricavi del mese"
+      }
     },
-    "negativeBalancesWidget": {
-      "heading": "Saldi negativi",
-      "link": "Vai alle finanze",
-      "empty": "Nessun conto in negativo.",
-      "count": "{count} in negativo"
+    "pilotLanding": {
+      "greeting": "Ciao, {name}",
+      "subAccount": "Conto · {balance}",
+      "kpis": {
+        "balance": "Saldo conto",
+        "license": "Licenza",
+        "medical": "Scadenza medico",
+        "ratings": "Abilitazioni"
+      },
+      "upcomingFlights": {
+        "title": "I miei prossimi voli",
+        "empty": "Nessun volo in programma."
+      },
+      "status": {
+        "scheduled": "in programma"
+      },
+      "logbookCta": "Il mio registro",
+      "bookCta": "Prenota volo",
+      "noValue": "—"
     },
-    "expiriesWidget": {
-      "heading": "Scadenze",
-      "link": "Vai alle scadenze",
-      "empty": "Nessuna scadenza scaduta o in scadenza.",
-      "count": "{count} da verificare"
+    "instructorLanding": {
+      "greeting": "Buongiorno, {name}",
+      "sub": "{flightsToday} voli oggi · {owed} dovuti nel mese",
+      "kpis": {
+        "hoursMonth": "Ore mese",
+        "payoutRate": "Tariffa payout",
+        "owedMonth": "Dovuto mese",
+        "flightsToday": "Voli oggi"
+      },
+      "myDay": {
+        "title": "La mia giornata",
+        "empty": "Nessun volo in programma per oggi."
+      },
+      "status": {
+        "inProgress": "in corso",
+        "completed": "completato",
+        "scheduled": "in programma"
+      },
+      "logbookCta": "Le mie ore",
+      "noValue": "—"
     },
-    "bookingsTodayWidget": {
-      "heading": "Prenotazioni di oggi e domani",
-      "link": "Vai alle prenotazioni",
-      "empty": "Nessuna prenotazione per oggi o domani."
+    "scadenzeWidget": {
+      "cardTitle": "Scadenze",
+      "countInWindow": "{count} entro {window}g",
+      "empty": "Nessuna scadenza entro {window} giorni. 🎉",
+      "window7": "7g",
+      "window30": "30g",
+      "window60": "60g",
+      "today": "oggi",
+      "ago": "{n}g fa",
+      "inDays": "tra {n}g",
+      "seeAll": "+{count} altre · Vedi tutte"
     },
-    "aircraftOutOfServiceWidget": {
-      "heading": "Velivoli fuori servizio",
-      "link": "Vai ai velivoli",
-      "empty": "Nessun velivolo fuori servizio."
-    },
-    "accountWidget": {
-      "heading": "Il mio saldo",
-      "link": "Vai al mio conto",
-      "empty": "Nessun conto attivo."
-    },
-    "packagesWidget": {
-      "heading": "Pacchetti residui",
-      "link": "Vai al mio conto"
-    },
-    "upcomingBookingsWidget": {
-      "heading": "Prossime prenotazioni",
-      "link": "Vai alle prenotazioni",
-      "empty": "Nessuna prenotazione futura."
-    },
-    "recentFlightsWidget": {
-      "heading": "Ultimi voli",
-      "link": "Vai al registro voli",
-      "empty": "Nessun volo registrato."
-    },
-    "studentsWidget": {
-      "heading": "I miei allievi",
-      "link": "Vai alla scuola volo",
-      "empty": "Nessun allievo assegnato."
-    },
-    "schoolFlightsWidget": {
-      "heading": "Voli scuola recenti",
-      "link": "Vai al registro voli",
-      "empty": "Nessun volo scuola registrato."
-    },
-    "monthlyHoursWidget": {
-      "heading": "Ore scuola del mese"
-    },
-    "nav": {
-      "people": "Persone",
-      "aircraft": "Velivoli",
-      "flights": "Voli",
-      "bookings": "Prenotazioni",
-      "finance": "Finanze",
-      "school": "Scuola volo",
-      "expiries": "Scadenze",
-      "ppr": "PPR",
-      "users": "Utenti",
-      "settings": "Impostazioni"
+    "fleetCard": {
+      "cardTitle": "Aeromobili",
+      "summary": "{total} totali · {available} disponibili · {aog} AOG",
+      "addAircraft": "Aggiungi aeromobile",
+      "empty": "Nessun aeromobile registrato.",
+      "rateLabel": "Tariffa",
+      "badge": {
+        "aog": "AOG",
+        "reserved": "Riservato",
+        "available": "Disponibile",
+        "archived": "Archiviato"
+      }
     }
   },
   "PeoplePage": {
@@ -1583,7 +1583,10 @@
         "allTypes": "Tutti i tipi",
         "allPilots": "Tutti i piloti",
         "reset": "Azzera filtri",
-        "picker": { "placeholder": "Cerca pilota…", "noResults": "Nessun risultato" }
+        "picker": {
+          "placeholder": "Cerca pilota…",
+          "noResults": "Nessun risultato"
+        }
       },
       "table": {
         "pilot": "Pilota",
@@ -1613,7 +1616,11 @@
       },
       "daysAgoSuffix": "g fa",
       "daysSuffix": " g",
-      "exportMenu": { "label": "Esporta", "xlsLabel": "Excel (.xlsx)", "pdfLabel": "PDF" },
+      "exportMenu": {
+        "label": "Esporta",
+        "xlsLabel": "Excel (.xlsx)",
+        "pdfLabel": "PDF"
+      },
       "reminders": {
         "button": "Invia promemoria",
         "sent": "Promemoria inviati: {holders} ai titolari, {digests} allo staff.",
@@ -2236,7 +2243,11 @@
       "host": "Host SMTP",
       "port": "Porta",
       "security": "Sicurezza",
-      "securityOptions": { "NONE": "Nessuna", "STARTTLS": "STARTTLS", "SSL_TLS": "SSL/TLS" },
+      "securityOptions": {
+        "NONE": "Nessuna",
+        "STARTTLS": "STARTTLS",
+        "SSL_TLS": "SSL/TLS"
+      },
       "from": "Indirizzo mittente",
       "user": "Nome utente",
       "pass": "Password",
@@ -2260,9 +2271,19 @@
         "monthsSuffix": "mesi",
         "noExpiry": "senza scadenza"
       },
-      "scope": { "PILOTS": "Piloti", "STUDENTS": "Allievi", "INSTRUCTORS": "Istruttori", "ALL": "Tutti" },
-      "status": { "active": "Attivo", "inactive": "Disattivato" },
-      "blocksBooking": { "yes": "Blocca prenotazioni" },
+      "scope": {
+        "PILOTS": "Piloti",
+        "STUDENTS": "Allievi",
+        "INSTRUCTORS": "Istruttori",
+        "ALL": "Tutti"
+      },
+      "status": {
+        "active": "Attivo",
+        "inactive": "Disattivato"
+      },
+      "blocksBooking": {
+        "yes": "Blocca prenotazioni"
+      },
       "actions": {
         "edit": "Modifica",
         "deactivate": "Disattiva",
@@ -2524,10 +2545,23 @@
       "fleetUtilization": "Utilizzo flotta"
     },
     "charts": {
-      "revenue": { "title": "Ricavi", "sub": "ultimi {count} mesi · €" },
-      "hours": { "title": "Ore volate", "sub": "ultimi {count} mesi · h" },
-      "transits": { "title": "Movimenti in transito", "sub": "ultimi {count} mesi" },
-      "fleet": { "title": "Utilizzo flotta", "sub": "ore · {period}", "empty": "Nessun aeromobile operativo." }
+      "revenue": {
+        "title": "Ricavi",
+        "sub": "ultimi {count} mesi · €"
+      },
+      "hours": {
+        "title": "Ore volate",
+        "sub": "ultimi {count} mesi · h"
+      },
+      "transits": {
+        "title": "Movimenti in transito",
+        "sub": "ultimi {count} mesi"
+      },
+      "fleet": {
+        "title": "Utilizzo flotta",
+        "sub": "ore · {period}",
+        "empty": "Nessun aeromobile operativo."
+      }
     },
     "movementMix": {
       "title": "Composizione movimenti",
@@ -2548,13 +2582,19 @@
     "rankAircraft": {
       "title": "Per aeromobile",
       "sub": "ore e ricavo · {period}",
-      "metrics": { "hours": "Ore", "revenue": "Ricavo" },
+      "metrics": {
+        "hours": "Ore",
+        "revenue": "Ricavo"
+      },
       "empty": "Nessun aeromobile con voli nel periodo."
     },
     "rankPilots": {
       "title": "Per pilota",
       "sub": "top 10 · {period}",
-      "metrics": { "hours": "Ore", "spent": "Spesa" },
+      "metrics": {
+        "hours": "Ore",
+        "spent": "Spesa"
+      },
       "empty": "Nessun pilota con voli nel periodo."
     }
   }

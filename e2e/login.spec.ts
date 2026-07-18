@@ -16,7 +16,8 @@ test.describe('login (AC 1, 2, 3)', () => {
     await page.getByRole('button', { name: 'Accedi' }).click();
 
     await expect(page).toHaveURL(/\/it\/dashboard$/);
-    await expect(page.getByRole('heading', { name: 'Bentornato, Admin AirManager' })).toBeVisible();
+    // Story 12.12: the admin/staff face is now the AirOps AdminOverview console.
+    await expect(page.getByRole('heading', { name: 'Panoramica operativa' })).toBeVisible();
   });
 
   test('shows a generic error for wrong credentials, without revealing which field was wrong', async ({

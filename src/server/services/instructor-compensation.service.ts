@@ -212,6 +212,39 @@ export async function getCompensationSummary(actor: Actor): Promise<InstructorCo
   return computeSummaryRows(instructors);
 }
 
+/** The Overview instructor landing's own-scoped compensation KPIs (AC 5, ratifica 2) — a narrow projection of {@link InstructorCompensationSummaryItem}. */
+export type OwnCompensationSummary = {
+  payoutRateCents: number | null;
+  mtdMinutes: number;
+  owedMtdCents: number | null;
+};
+
+/**
+ * `getOwnCompensationSummary` (epic 12, story 12.12, AC 5; ratifica utente 2,
+ * 2026-07-18) — own-scoped instructor compensation reader for the
+ * Overview's Instructor landing KPIs (Ore mese / Tariffa payout / Dovuto
+ * mese). NO new permission: gated on `self.read` (every role, same
+ * own-scoping convention as `me.service.ts`) plus the actor's OWN person
+ * having an active `InstructorProfile` — an actor with no linked person, or
+ * whose person has no active instructor profile, gets `null` (never a 403,
+ * never fabricated data, Dev Notes: "profilo istruttore assente -> niente
+ * KPI compensi, mai dati finti"). Reuses `listActiveInstructors`'s existing
+ * single-`personId` filter and `computeSummaryRows`'s existing math
+ * VERBATIM — the staff-facing `finance.manage`/`payouts.manage` reads
+ * (`getCompensationSummary`/`getInstructorCompensationDetail`) are
+ * UNCHANGED by this addition.
+ */
+export async function getOwnCompensationSummary(actor: Actor): Promise<OwnCompensationSummary | null> {
+  authorize(actor, 'self.read');
+  if (!actor.personId) return null;
+
+  const instructors = await listActiveInstructors(actor.personId);
+  if (instructors.length === 0) return null;
+
+  const [row] = await computeSummaryRows(instructors);
+  return { payoutRateCents: row!.payoutRateCents, mtdMinutes: row!.mtdMinutes, owedMtdCents: row!.owedMtdCents };
+}
+
 /** Resolves ONE active instructor by `Person.id` for the detail read (unknown person OR no/deactivated profile -> 404, no enumeration concern since `finance.manage` already sees every person). */
 async function resolveActiveInstructorRow(personId: string): Promise<InstructorRow> {
   const person = await prisma.person.findUnique({

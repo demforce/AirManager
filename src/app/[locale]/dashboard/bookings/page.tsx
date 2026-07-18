@@ -1,8 +1,9 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
+import { clampToWindowPercent, projectDayBlocks, projectWeekChips, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
 import { buildExportHref } from '@/lib/export-href';
 import { APP_TIMEZONE } from '@/lib/time';
-import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc, zonedWallTime } from '@/lib/zoned-time';
+import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getSchedulingSettings } from '@/server/services/app-settings.service';
@@ -13,14 +14,14 @@ import {
   listBookableStudents,
   listBookings,
   listCalendarBookings,
-  type BookingListItem,
 } from '@/server/services/bookings.service';
 import { listPeople } from '@/server/services/people.service';
+import { buildBookingsTableLabels, buildEditBookingFormLabels, buildNewBookingFormLabels, buildScheduleLabels } from './booking-labels';
 import type { BookingRowDto, BookingsTableLabels, BookingStatusDto } from './bookings-table';
 import { BookingsTable } from './bookings-table';
 import type { EditBookingFormLabels } from './edit-booking-form';
 import type { AircraftOption, InstructorOption, NewBookingFormLabels, NewBookingFormMode, PersonOption } from './new-booking-form';
-import { Schedule, type CalendarDayBlock, type CalendarNav, type CalendarWeekChip, type ScheduleLabels } from './schedule';
+import { Schedule, type CalendarNav, type ScheduleLabels } from './schedule';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -80,147 +81,6 @@ function sanitizeDate(value: string | undefined, today: string): string {
   const roundTrip = new Date(Date.UTC(year, month - 1, day));
   const isRealDate = roundTrip.getUTCFullYear() === year && roundTrip.getUTCMonth() === month - 1 && roundTrip.getUTCDate() === day;
   return isRealDate ? value : today;
-}
-
-/**
- * The day-view horizontal axis (Contesto: "06:00–22:00 Europe/Rome") —
- * DEFAULT bounds, in minutes from midnight, used whenever
- * `sched.openTime`/`sched.closeTime` are not configured (story 12.11, AC 4:
- * "chiavi assenti -> nessun vincolo nuovo" applies to the display axis too,
- * falling back to the ORIGINAL hardcoded window, never a blank chart).
- */
-const DEFAULT_WINDOW_START_MINUTES = 6 * 60;
-const DEFAULT_WINDOW_END_MINUTES = 22 * 60;
-const MINUTES_PER_DAY = 24 * 60;
-
-/** `"HH:MM"` -> minutes since midnight — same tiny private parser as `bookings.service.ts#minutesOfDay`/`stats.service.ts#minutesOfDay`, not shared (Dev Notes: one-line, single-file-local helper over the identical `sched.*` string format). */
-function minutesOfDay(hhmm: string): number {
-  const [hour, minute] = hhmm.split(':').map(Number) as [number, number];
-  return hour * 60 + minute;
-}
-
-/** Resolves the day-view axis bounds from `sched.openTime`/`sched.closeTime` (AC 4) — BOTH must be present and form a real (`end > start`) window, or the default 06:00-22:00 wins (same backward-safe rule as the booking-window 422 check, `bookings.service.ts#assertWithinSchedulingWindow`). */
-function resolveWindowMinutes(openTime: string | null, closeTime: string | null): { start: number; end: number } {
-  if (openTime && closeTime) {
-    const start = minutesOfDay(openTime);
-    const end = minutesOfDay(closeTime);
-    if (end > start) return { start, end };
-  }
-  return { start: DEFAULT_WINDOW_START_MINUTES, end: DEFAULT_WINDOW_END_MINUTES };
-}
-/**
- * A block is never rendered with zero (or near-zero) visible width, even
- * for a booking that is entirely clamped away (Contesto: "MAI nascosti") —
- * story 7.2's own rationale, unchanged by story 12.3's axis flip (top/height
- * -> left/width, same percentages).
- */
-const MIN_BLOCK_HEIGHT_PERCENT = 8;
-
-function wallMinutesOfDay(instant: Date): number {
-  const { hour, minute } = zonedWallTime(instant, APP_TIMEZONE);
-  return hour * 60 + minute;
-}
-
-function formatWallClock(instant: Date): string {
-  const { hour, minute } = zonedWallTime(instant, APP_TIMEZONE);
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-}
-
-function clampToWindowPercent(rawMinutes: number, windowSpanMinutes: number): number {
-  return (Math.min(windowSpanMinutes, Math.max(0, rawMinutes)) / windowSpanMinutes) * 100;
-}
-
-/**
- * Projects every booking overlapping `dateOnly` (Europe/Rome) into an
- * ALREADY-POSITIONED block — SERVER-SIDE, via `zonedWallTime`/
- * `zonedMidnightUtc` (`zoned-time.ts`, story 7.2 Task 1): the client never
- * redoes this conversion (lesson 7.1: "container UTC vs display CEST").
- * UNCHANGED mechanics from story 7.2 (story 12.3, Contesto: "cambia la
- * PRESENTAZIONE, non la meccanica") — `instructorProfileId` is the only
- * additive field (the Schedule timeline's instructor filter, AC 2).
- *
- * A booking that starts before this day (or before 06:00 within it) is
- * clamped to the top/left edge with `clampedTop`; one that ends after this
- * day (or after 22:00) is clamped to the bottom/right edge with
- * `clampedBottom` — EITHER WAY IT IS STILL RENDERED (Contesto: "MAI
- * nascosti"), just clamped, with the REAL (unclamped) `HH:MM–HH:MM` always
- * shown as `timeLabel`.
- */
-function projectDayBlocks(bookings: BookingListItem[], dateOnly: string, windowStartMinutes: number, windowEndMinutes: number): CalendarDayBlock[] {
-  const dayStart = zonedMidnightUtc(dateOnly, APP_TIMEZONE);
-  const dayEnd = zonedMidnightUtc(addDaysDateOnly(dateOnly, 1), APP_TIMEZONE);
-  const windowSpanMinutes = windowEndMinutes - windowStartMinutes;
-
-  const blocks: CalendarDayBlock[] = [];
-  for (const booking of bookings) {
-    const startsAt = new Date(booking.startsAt);
-    const endsAt = new Date(booking.endsAt);
-    if (endsAt <= dayStart || startsAt >= dayEnd) continue; // does not overlap this day at all
-
-    const startsBeforeDay = startsAt < dayStart;
-    const endsAtOrAfterDay = endsAt >= dayEnd;
-    const startMinutesOfDay = startsBeforeDay ? 0 : wallMinutesOfDay(startsAt);
-    const endMinutesOfDay = endsAtOrAfterDay ? MINUTES_PER_DAY : wallMinutesOfDay(endsAt);
-
-    const rawTop = startMinutesOfDay - windowStartMinutes;
-    const rawBottom = endMinutesOfDay - windowStartMinutes;
-    const top = clampToWindowPercent(rawTop, windowSpanMinutes);
-    const bottom = clampToWindowPercent(rawBottom, windowSpanMinutes);
-
-    // Review 7.2 F2: after the min-height inflation, re-anchor the top so
-    // `top + height` never exceeds 100% — a bottom-clamped short block must
-    // pin AT the bottom edge (the ▼ indicator shows), never render below the
-    // grid (the exact mirror of the before-06:00 min-height case above).
-    const height = Math.max(bottom - top, MIN_BLOCK_HEIGHT_PERCENT);
-    blocks.push({
-      id: booking.id,
-      aircraftId: booking.aircraftId,
-      top: Math.min(top, 100 - height),
-      height,
-      clampedTop: rawTop < 0,
-      clampedBottom: rawBottom > windowSpanMinutes,
-      timeLabel: `${formatWallClock(startsAt)}–${formatWallClock(endsAt)}`,
-      personName: booking.personName,
-      instructorProfileId: booking.instructorProfileId,
-      instructorName: booking.instructorName,
-    });
-  }
-  return blocks;
-}
-
-/**
- * Projects every booking overlapping any of `weekDates` into a (booking,
- * day) overlap record — one PER (booking, day) it overlaps, so a booking
- * spanning midnight appears once in each neighboring day's count. Story
- * 12.3 reads this ONLY for per-day counts (Contesto: the prototype's own
- * week view has no per-aircraft chip matrix, just a 7-cell grid of counts) —
- * UNCHANGED mechanics from story 7.2 otherwise, `instructorProfileId` is the
- * only additive field (Dev Notes, same as `projectDayBlocks` above).
- */
-function projectWeekChips(bookings: BookingListItem[], weekDates: string[]): CalendarWeekChip[] {
-  const chips: CalendarWeekChip[] = [];
-  for (const dateOnly of weekDates) {
-    const dayStart = zonedMidnightUtc(dateOnly, APP_TIMEZONE);
-    const dayEnd = zonedMidnightUtc(addDaysDateOnly(dateOnly, 1), APP_TIMEZONE);
-    for (const booking of bookings) {
-      const startsAt = new Date(booking.startsAt);
-      const endsAt = new Date(booking.endsAt);
-      if (endsAt <= dayStart || startsAt >= dayEnd) continue;
-
-      chips.push({
-        id: `${booking.id}:${dateOnly}`,
-        aircraftId: booking.aircraftId,
-        dateOnly,
-        timeLabel: `${formatWallClock(startsAt)}–${formatWallClock(endsAt)}`,
-        clampedStart: startsAt < dayStart,
-        clampedEnd: endsAt >= dayEnd,
-        personName: booking.personName,
-        instructorProfileId: booking.instructorProfileId,
-        instructorName: booking.instructorName,
-      });
-    }
-  }
-  return chips;
 }
 
 /**
@@ -426,160 +286,10 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
     denyReason: booking.denyReason,
   }));
 
-  const scheduleLabels: ScheduleLabels = {
-    cardTitle: t('schedule.cardTitle'),
-    cardTitleToday: t('schedule.cardTitleToday'),
-    prev: t('calendar.toolbar.prev'),
-    today: t('calendar.toolbar.today'),
-    next: t('calendar.toolbar.next'),
-    dayView: t('calendar.toolbar.dayView'),
-    weekView: t('calendar.toolbar.weekView'),
-    viewToggleLabel: t('calendar.toolbar.viewToggleLabel'),
-    filters: t('schedule.filters'),
-    filtersDone: t('schedule.filtersDone'),
-    filtersReset: t('schedule.filtersReset'),
-    filtersAll: t('schedule.filtersAll'),
-    filtersAircraft: t('schedule.filtersAircraft'),
-    filtersInstructor: t('schedule.filtersInstructor'),
-    prevMonth: t('schedule.prevMonth'),
-    nextMonth: t('schedule.nextMonth'),
-    aog: t('schedule.aog'),
-    available: t('schedule.available'),
-    outOfService: t('calendar.outOfService'),
-    dayEmpty: t('calendar.dayEmpty'),
-    noAircraft: t('calendar.noAircraft'),
-    clampedStartHint: t('calendar.clampedStartHint'),
-    clampedEndHint: t('calendar.clampedEndHint'),
-    weekBookingsCountTemplate: t.raw('schedule.weekBookingsCount') as string,
-  };
-
-  const newBookingLabels: NewBookingFormLabels = {
-    title: t('form.title'),
-    subtitle: t('list.cardTitle'),
-    selectPlaceholder: t('form.selectPlaceholder'),
-    aircraft: t('form.aircraft'),
-    outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
-    person: t('form.person'),
-    noPersonAvailable: t('form.noPersonAvailable'),
-    instructorOptional: t('form.instructorOptional'),
-    noInstructor: t('form.noInstructor'),
-    bookingTarget: t('form.bookingTarget'),
-    bookForMe: t('form.bookForMe'),
-    bookForStudent: t('form.bookForStudent'),
-    student: t('form.student'),
-    noStudentAvailable: t('form.noStudentAvailable'),
-    startsAt: t('form.startsAt'),
-    endsAt: t('form.endsAt'),
-    notes: t('form.notes'),
-    submit: t('form.submit'),
-    requiredField: t('form.requiredField'),
-    invalidRange: t('form.invalidRange'),
-    errors: {
-      AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
-      BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
-      PERSON_NOT_BOOKABLE: t('form.errors.PERSON_NOT_BOOKABLE'),
-      EXPIRED_DOCUMENTS: t.raw('form.errors.EXPIRED_DOCUMENTS') as string,
-      overlap: t('form.errors.overlap'),
-      generic: t('form.errors.generic'),
-    },
-    success: t('form.success'),
-    successWithWarnings: t('form.successWithWarnings'),
-    force: {
-      title: t('form.force.title'),
-      description: t('form.force.description'),
-      reasonLabel: t('form.force.reasonLabel'),
-      submit: t('form.force.submit'),
-      cancel: t('form.force.cancel'),
-      requiredReason: t('form.force.requiredReason'),
-      generic: t('form.force.generic'),
-    },
-  };
-
-  const editBookingLabels: EditBookingFormLabels = {
-    title: t('list.actions.moveTitle'),
-    subtitle: t('list.cardTitle'),
-    cancel: t('list.actions.dismiss'),
-    save: t('list.actions.save'),
-    selectPlaceholder: t('form.selectPlaceholder'),
-    aircraft: t('form.aircraft'),
-    outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
-    startsAt: t('form.startsAt'),
-    endsAt: t('form.endsAt'),
-    notes: t('form.notes'),
-    requiredField: t('form.requiredField'),
-    invalidRange: t('form.invalidRange'),
-    errors: {
-      BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
-      BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
-      AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
-      EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
-      conflict: t('list.actions.errors.conflict'),
-      generic: t('list.actions.errors.generic'),
-    },
-  };
-
-  const bookingsTableLabels: BookingsTableLabels = {
-    cardTitle: t('list.cardTitle'),
-    pendingSummary: t.raw('list.pendingSummary') as string,
-    newButton: t('list.newButton'),
-    exportLabel: t('list.exportLabel'),
-    exportXls: t('list.exportXls'),
-    empty: t('list.empty'),
-    table: {
-      pilot: t('list.table.pilot'),
-      startsAt: t('list.table.startsAt'),
-      endsAt: t('list.table.endsAt'),
-      aircraft: t('list.table.aircraft'),
-      status: t('list.table.status'),
-      actions: t('list.table.actions'),
-    },
-    status: {
-      PENDING: t('list.status.PENDING'),
-      APPROVED: t('list.status.APPROVED'),
-      DENIED: t('list.status.DENIED'),
-      FLOWN: t('list.status.FLOWN'),
-      NO_SHOW: t('list.status.NO_SHOW'),
-      CANCELLED: t('list.status.CANCELLED'),
-    },
-    actions: {
-      approve: t('list.actions.approve'),
-      reject: t('list.actions.reject'),
-      move: t('list.actions.move'),
-      markFlown: t('list.actions.markFlown'),
-      markNoShow: t('list.actions.markNoShow'),
-      cancel: t('list.actions.cancel'),
-      reopen: t('list.actions.reopen'),
-      cancelPrompt: t('list.actions.cancelPrompt'),
-      cancelConfirm: t('list.actions.cancelConfirm'),
-      dismiss: t('list.actions.dismiss'),
-      moveTitle: t('list.actions.moveTitle'),
-      save: t('list.actions.save'),
-      approveSuccess: t('list.actions.approveSuccess'),
-      rejectSuccess: t('list.actions.rejectSuccess'),
-      reopenSuccess: t('list.actions.reopenSuccess'),
-      flownSuccess: t('list.actions.flownSuccess'),
-      noShowSuccess: t('list.actions.noShowSuccess'),
-      moveSuccess: t('list.actions.moveSuccess'),
-      cancelSuccess: t('list.actions.cancelSuccess'),
-      errors: {
-        BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
-        BOOKING_TRANSITION_INVALID: t('list.actions.errors.BOOKING_TRANSITION_INVALID'),
-        BOOKING_DENY_REASON_REQUIRED: t('list.actions.errors.BOOKING_DENY_REASON_REQUIRED'),
-        EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
-        AIRCRAFT_OUT_OF_SERVICE: t.raw('list.actions.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
-        conflict: t('list.actions.errors.conflict'),
-        generic: t('list.actions.errors.generic'),
-      },
-    },
-    denyModal: {
-      title: t('list.denyModal.title'),
-      subtitle: t('list.denyModal.subtitle'),
-      reasonPlaceholder: t('list.denyModal.reasonPlaceholder'),
-      reasonRequired: t('list.denyModal.reasonRequired'),
-      submit: t('list.denyModal.submit'),
-      cancel: t('list.denyModal.cancel'),
-    },
-  };
+  const scheduleLabels: ScheduleLabels = buildScheduleLabels(t);
+  const newBookingLabels: NewBookingFormLabels = buildNewBookingFormLabels(t);
+  const editBookingLabels: EditBookingFormLabels = buildEditBookingFormLabels(t);
+  const bookingsTableLabels: BookingsTableLabels = buildBookingsTableLabels(t);
 
   return (
     <main className="page">

@@ -161,13 +161,10 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     expect(after).toBe(before);
   });
 
-  test('AC 2: a scadenza registered for the seed pilot shows in their home widget; navigating to "Tutte le mie scadenze" lands on the own-face heading; a pilot cannot GET /api/v1/expiries (staff-only)', async ({
+  test('AC 2: a scadenza registered for the seed pilot shows in their own-face "Le mie scadenze" view, reachable from the Sidebar; a pilot cannot GET /api/v1/expiries (staff-only)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    await page.goto('/it/dashboard');
-    await expect(page.getByTestId('my-expiries-widget')).toHaveCount(0);
 
     const pilotPersonId = await getSeedPilotPersonId(page);
     const type = await createExpiryType(page, 'ALL');
@@ -176,12 +173,16 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
-    const widget = page.getByTestId('my-expiries-widget');
-    await expect(widget).toBeVisible();
-
-    await page.getByRole('link', { name: 'Tutte le mie scadenze' }).click();
+    // Story 12.12: the legacy home's "my-expiries-widget" (with its own
+    // "Tutte le mie scadenze" footer link) is gone with the widget-grid
+    // dashboard — the Sidebar's "Scadenze" nav item is now the entry point
+    // (route-registry.ts widened back to ALL_ROLES, restoring the
+    // self-access nav the legacy home always gave a pilot).
+    const nav = page.getByRole('navigation', { name: 'Aree operative' });
+    await nav.getByRole('link', { name: 'Scadenze', exact: true }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/expiries$/);
     await expect(page.getByRole('heading', { name: 'Le mie scadenze' })).toBeVisible();
+    await expect(page.getByText(type.name)).toBeVisible();
 
     const forbiddenResponse = await page.request.get('/api/v1/expiries');
     expect(forbiddenResponse.status()).toBe(403);

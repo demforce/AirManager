@@ -499,8 +499,11 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, student.email, 'AllievoForbidden123!');
 
+    // Story 12.12: the legacy in-page "Aree operative" nav died with the
+    // widget-grid home — same landmark name, now the AirOps Sidebar, whose
+    // "schedule" nav item is labeled "Pianificazione" (`shell.nav.schedule`).
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(nav.getByRole('link', { name: 'Prenotazioni' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Pianificazione', exact: true })).toBeVisible();
 
     await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
     // Story 12.3, AC 2: the day view's aircraft columns became rows (the

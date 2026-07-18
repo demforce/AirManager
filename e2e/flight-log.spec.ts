@@ -219,9 +219,12 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, 'PilotOwnView123!');
 
+    // Story 12.12: the legacy in-page "Aree operative" nav died with the
+    // widget-grid home — same landmark name, now the AirOps Sidebar, whose
+    // logbook nav item is labeled "Registro voli" (`shell.nav.logbook`).
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(nav.getByRole('link', { name: 'Voli', exact: true })).toHaveAttribute('href', '/it/dashboard/logbook');
-    await nav.getByRole('link', { name: 'Voli', exact: true }).click();
+    await expect(nav.getByRole('link', { name: 'Registro voli', exact: true })).toHaveAttribute('href', '/it/dashboard/logbook');
+    await nav.getByRole('link', { name: 'Registro voli', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Registro voli' })).toBeVisible();
     // No registration form, no per-row actions for a non-staff actor.

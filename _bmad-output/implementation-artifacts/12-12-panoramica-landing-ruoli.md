@@ -4,7 +4,7 @@ baseline_commit: 9584133
 
 # Story 12.12: Panoramica reale + landing per ruolo
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -56,15 +56,46 @@ so that l'atterraggio nell'app mostri subito le informazioni giuste per il mio r
 
 ### Completion Notes
 
-_(a cura del dev agent)_
+Implementate tutte le 8 AC. Riepilogo per AC:
+
+- **AC1 (AdminOverview)**: `dashboard/page.tsx` riscritto — gate `finance.manage`. `.page-head` con dot-status reale (ICAO D3 se configurato, AOG count, PPR pending count, on-ground count via `deriveApprovedPprMovementStatus`, 12.4 reuse). CTA "Pianifica volo" = `DispatchFlightButton` (nuovo) che apre `FlightEditor` (story 12.8, riusato AS-IS, non modificato) in modalità `new` — interpretazione: nel dominio reale "pianifica/registra un volo" = una voce di registro voli (`flights.manage`), non una prenotazione (assunzione esplicita, vedi deviations). 5 KPI reali, nessun delta/spark finto: Voli oggi (ratifica 1: REGISTERED oggi + APPROVED-non-FLOWN oggi), Flotta disponibile (OPERATIONAL non archiviati e non riservati ora), PPR in attesa, Prenotazioni in attesa, Ricavi del mese (`stats.service#getStats`, `kpis.revenueCents`). `Schedule` (vista giorno, oggi) e `BookingsTable` (pending-first) embedded, riusando la data-prep estratta in `@/lib/booking-schedule` + i label-builder estratti in `bookings/booking-labels.ts`. Pending-first implementato con una query DEDICATA per i PENDING (non un resort della singola pagina, per non perdere PENDING oltre la prima pagina by `startsAt`) + fill dei posti restanti con gli altri stati. `.split` con ScadenzeWidget + FleetCard.
+- **AC2 (ScadenzeWidget)**: `components/dashboard/scadenze-widget.tsx`, port di `ScadenzeWidget` del prototipo. `tierOf`/`categoryOf` ESTRATTI da `scadenze-console.tsx` in `@/lib/expiry-status.ts` (nessuna seconda implementazione delle soglie) — `scadenze-console.tsx` ora importa da lì. Dati: UNA fetch server-side `listAllExpiries(window:'60', pageSize:60)`, poi filtro/slice client-side per il toggle 7/30/60 (nessun round-trip aggiuntivo).
+- **AC3 (FleetCard)**: `components/dashboard/fleet-card.tsx` — `FleetCardItem`/`badgeFor`/`FleetCardGrid` estratti da `fleet-console.tsx`; `fleet-console.tsx` ora consuma `FleetCardGrid` (nessuna divergenza, e2e fleet invariati). Widget `FleetCard` (card completa) usato solo dalla Overview.
+- **AC4 (PilotLanding)**: gate `me.person && !finance.manage && !school.manage.own`, comune a PILOT/STUDENT. 4 KPI da `listPersonExpiries` (own) + `getAccountOverview` — "Licenza"/"Scadenza medico" = prossima scadenza per categoria (`categoryOf`), "Abilitazioni" = conteggio categoria Abilitazione (assunzione esplicita: il dominio non ha un campo "licenza"/rating testuale per pilota/allievo come nel prototipo, vedi deviations). CTA "Prenota volo" gated `bookings.manage.own || bookings.manage.any` → assente per STUDENT.
+- **AC5 (InstructorLanding)**: gate `school.manage.own && !finance.manage`. 3 KPI compensi da `getOwnCompensationSummary` (NUOVO reader, own-scoped, nessun permesso nuovo — riusa `listActiveInstructors(personId)` + `computeSummaryRows` esistenti). "Voli oggi" KPI = STESSA formula ratifica 1 ma scoped instructor (assunzione esplicita, vedi deviations). "La mia giornata" = prenotazioni APPROVED di oggi con instructorProfileId proprio. CTA solo "Le mie ore"; NESSUNA CTA di creazione (ratifica 3).
+- **AC6 (switch/registry)**: face selection server-side su sessione reale, mai query param. `route-registry.ts` `overview` → `airopsNative:true`. Home legacy (widget grids, nav in-page, consumi `packages.service`/`school.service`) rimossa da `page.tsx`. `nav-items.ts` orfano dichiarato (12.13). **Fix collaterale**: `route-registry.ts` `scadenze` roles allargato da `['ADMIN','STAFF','INSTRUCTOR']` a `ALL_ROLES` — la home legacy dava sempre a un pilota/allievo self-access un link nav alle proprie scadenze (permission-based); sparendo quella nav, la Sidebar (role-based) era l'unico nav rimasto e senza il fix un pilota/allievo perdeva l'entry point (nessuna pagina persa, solo il link nav).
+- **AC7 (e2e)**: `home-dashboard.spec.ts` riscritto integralmente (5 facce + 1 test data-driven pending-first). `rbac.spec.ts` adattato alla Sidebar (stesso landmark `aria-label="Aree operative"`, ora sulla Sidebar via nuovo prop `navLabel` — non un `<nav>` innestato ma `role="navigation"` sull'`<aside>` esistente). `login.spec.ts` corretto (heading "Bentornato" → "Panoramica operativa"). **Fix collaterali non dichiarati ma necessari** (rotti dalla sparizione della nav in-page legacy, stesso landmark name riusato ma label dei link cambiate): `bookings.spec.ts` (Prenotazioni→Pianificazione), `flight-log.spec.ts` (Voli→Registro voli), `account-adjustments.spec.ts` (Finanze→Contabilità), `expiry-dashboard.spec.ts` (my-expiries-widget→navigazione via Sidebar+heading), `ppr-queue.spec.ts` (ppr-pending-widget→kpi-ppr-pending). `expiry-types.spec.ts` NON toccato (il fix AC6 sulla scadenze roles lo mantiene verde as-is).
+- **AC8 (gates)**: nessuna migrazione. `npm run gates` verde. Vedi notesForReview per l'ampiezza della verifica e2e locale eseguita vs. quella lasciata al reviewer.
 
 ### File List
 
-_(a cura del dev agent)_
+Nuovi:
+- `src/lib/booking-schedule.ts` (+ `.test.ts`)
+- `src/app/[locale]/dashboard/bookings/booking-labels.ts`
+- `src/app/[locale]/dashboard/dispatch-flight-button.tsx`
+- `src/components/dashboard/fleet-card.tsx`
+- `src/components/dashboard/scadenze-widget.tsx`
+
+Modificati:
+- `src/app/[locale]/dashboard/page.tsx` (rewrite completo)
+- `src/app/[locale]/dashboard/bookings/page.tsx` (data-prep + label-building estratti, comportamento invariato)
+- `src/app/[locale]/dashboard/bookings/schedule.tsx` (re-export tipi da `@/lib/booking-schedule`)
+- `src/app/[locale]/dashboard/fleet/fleet-console.tsx` (consuma `FleetCardGrid`)
+- `src/app/[locale]/dashboard/expiries/scadenze-console.tsx` (consuma `tierOf`/`categoryOf`)
+- `src/lib/expiry-status.ts` (+ `tierOf`, `categoryOf`)
+- `src/server/services/instructor-compensation.service.ts` (+ `getOwnCompensationSummary`)
+- `src/server/services/instructor-compensation.service.test.ts` (+ test nuovo reader)
+- `src/components/shell/route-registry.ts` (`overview` → airopsNative, `scadenze` roles → ALL_ROLES)
+- `src/components/shell/sidebar.tsx` (+ prop `navLabel`, landmark nav)
+- `src/app/[locale]/dashboard/layout.tsx` (passa `navLabel`)
+- `messages/en.json`, `messages/it.json` (`DashboardPage` sostituito, `shell.navLabel` nuovo)
+- `e2e/home-dashboard.spec.ts` (riscritto)
+- `e2e/rbac.spec.ts`, `e2e/login.spec.ts` (adattati, dichiarati AC7)
+- `e2e/bookings.spec.ts`, `e2e/flight-log.spec.ts`, `e2e/account-adjustments.spec.ts`, `e2e/expiry-dashboard.spec.ts`, `e2e/ppr-queue.spec.ts` (fix collaterali non dichiarati, necessari)
 
 ### Change Log
 
-_(a cura del dev agent)_
+- 2026-07-18: Implementazione story 12.12 — panoramica reale (AdminOverview/InstructorLanding/PilotLanding) + rimozione home legacy. `npm run gates` verde. Status → review.
 
 ## Review Record
 

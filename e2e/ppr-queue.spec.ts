@@ -189,11 +189,15 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     await expect(page.getByTestId('ppr-instructions-feedback')).toBeVisible();
     await logout(page);
 
-    // --- Staff: dashboard widget is populated (AC 2, FR-41) --------------
+    // --- Staff: dashboard KPI reflects the pending queue (AC 2, FR-41) ---
+    // Story 12.12: the legacy home's "ppr-pending-widget" (a row list) is
+    // gone with the widget-grid dashboard — staff lands on the AdminOverview
+    // console, whose "PPR in attesa" KPI is a real count over the SAME
+    // pending queue (never zero here: this run's own request is PENDING).
     await loginExpectingDashboard(page, STAFF_EMAIL);
-    await expect(page.getByTestId('ppr-pending-widget')).toBeVisible();
-    await expect(page.getByTestId('ppr-pending-widget-empty')).toHaveCount(0);
-    await expect(page.getByTestId('ppr-pending-widget-row').first()).toBeVisible();
+    const pprKpiValue = page.getByTestId('kpi-ppr-pending').locator('.kpi-value');
+    await expect(pprKpiValue).toBeVisible();
+    expect(Number(await pprKpiValue.innerText())).toBeGreaterThanOrEqual(1);
 
     // --- Staff: open the console, see the run-unique request (AC 1) ------
     await gotoQueueLastPage(page);

@@ -28,37 +28,17 @@ import { getPathname, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { CalendarPopover } from '@/components/ui/calendar-popover';
 import { Icon } from '@/components/ui/icons';
+// Story 12.12 AC 1: the projection ITSELF (`projectDayBlocks`/`projectWeekChips`)
+// moved to `@/lib/booking-schedule`, shared with the Overview's embedded day
+// timeline — these output types moved with it, imported (and re-exported
+// below) so no consumer of THIS module needs to change its own import.
+import type { CalendarDayBlock, CalendarWeekChip } from '@/lib/booking-schedule';
 import { parseDateOnlyUtc } from '@/lib/date-only';
 import type { InstructorOption } from './new-booking-form';
 
+export type { CalendarDayBlock, CalendarWeekChip } from '@/lib/booking-schedule';
+
 export type BookingCalendarView = 'day' | 'week';
-
-/** A day-view block, already positioned by `page.tsx#projectDayBlocks` — `top`/`height` are percentages of the 06:00-22:00 window, reused as `left`/`width` here (see module doc-comment). */
-export type CalendarDayBlock = {
-  id: string;
-  aircraftId: string;
-  top: number;
-  height: number;
-  clampedTop: boolean;
-  clampedBottom: boolean;
-  timeLabel: string;
-  personName: string;
-  instructorProfileId: string | null;
-  instructorName: string | null;
-};
-
-/** A week-view (booking, day) overlap, produced by `page.tsx#projectWeekChips` — story 12.3 only reads it for PER-DAY COUNTS (Contesto: "griglia .week-grid con conteggi reali per giorno"), never renders individual chips (the prototype's own week view has no per-aircraft breakdown). */
-export type CalendarWeekChip = {
-  id: string;
-  aircraftId: string;
-  dateOnly: string;
-  timeLabel: string;
-  clampedStart: boolean;
-  clampedEnd: boolean;
-  personName: string;
-  instructorProfileId: string | null;
-  instructorName: string | null;
-};
 
 export type ScheduleAircraftRow = {
   id: string;

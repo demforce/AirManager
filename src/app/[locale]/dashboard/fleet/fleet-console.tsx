@@ -6,38 +6,23 @@
  * paginated/searchable data. Card-grid coherence with the shell (`.card` +
  * `.card-head` search/toggle, same idiom `People.jsx`'s own list-in-card
  * layout uses) rather than the prototype's own bare embedded-tile markup —
- * this is a full standalone page, not a dashboard widget (that's story
- * 12.12's FleetCard reuse, out of scope here).
+ * this is a full standalone page, not a dashboard widget.
+ *
+ * The `.fleet-grid`/`.ac-card` markup itself moved to
+ * `@/components/dashboard/fleet-card.tsx` (story 12.12 AC 3), so this
+ * console and the Overview's compact widget render the SAME grid — this
+ * file now CONSUMES `FleetCardGrid`, re-exporting `FleetCardItem` for its
+ * existing consumers (`aircraft-editor.tsx`, `fleet/page.tsx`).
  */
 import { useEffect, useRef, useState } from 'react';
-import { Badge } from '@/components/ui/badge';
+import { FleetCardGrid, type FleetCardItem } from '@/components/dashboard/fleet-card';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { formatCents } from '@/lib/money';
 import { AircraftEditor, type AircraftEditorLabels } from './aircraft-editor';
 
-export type FleetCardItem = {
-  id: string;
-  registration: string;
-  type: string;
-  model: string;
-  hourMeterMinutes: number;
-  notes: string | null;
-  status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
-  statusReason: string | null;
-  seats: number | null;
-  fuelType: string | null;
-  owner: 'CLUB' | 'PRIVATE';
-  based: boolean;
-  /** ISO string or `null` — active. */
-  archivedAt: string | null;
-  /** The wet hourly rate in effect TODAY (batched `getEffectiveRates`), or `null` if none is on file. */
-  wetRateCents: number | null;
-  /** Derived, presentational (AC 2): an APPROVED booking covers `now`. */
-  reserved: boolean;
-};
+export type { FleetCardItem } from '@/components/dashboard/fleet-card';
 
 export type FleetConsoleLabels = {
   cardTitle: string;
@@ -139,31 +124,6 @@ export function FleetConsole({
     };
   }
 
-  function badgeFor(item: FleetCardItem): React.JSX.Element {
-    if (item.archivedAt !== null) {
-      return <Badge dot>{labels.badge.archived}</Badge>;
-    }
-    if (item.status === 'OUT_OF_SERVICE') {
-      return (
-        <Badge tone="bad" dot>
-          {labels.badge.aog}
-        </Badge>
-      );
-    }
-    if (item.reserved) {
-      return (
-        <Badge tone="warn" dot>
-          {labels.badge.reserved}
-        </Badge>
-      );
-    }
-    return (
-      <Badge tone="ok" dot>
-        {labels.badge.available}
-      </Badge>
-    );
-  }
-
   return (
     <>
       <div className="card">
@@ -196,29 +156,13 @@ export function FleetConsole({
             {labels.empty}
           </p>
         ) : (
-          <div className="fleet-grid">
-            {items.map((ac) => (
-              <div
-                key={ac.id}
-                className={`ac-card ${ac.status === 'OUT_OF_SERVICE' ? 'aog' : ''}`}
-                onClick={() => setTarget({ mode: 'edit', aircraft: ac })}
-                data-testid={`ac-card-${ac.id}`}
-              >
-                <div className="ac-head">
-                  <div className="ac-tail">{ac.registration}</div>
-                  {badgeFor(ac)}
-                </div>
-                <div className="ac-silhouette">
-                  <Icon.acsmall />
-                </div>
-                <div className="ac-model">{ac.model}</div>
-                <div className="meter-row" style={{ marginTop: 2 }}>
-                  <span>{labels.rateLabel}</span>
-                  <span className="v mono">{ac.wetRateCents === null ? '—' : `${formatCents(ac.wetRateCents, locale)}/h`}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <FleetCardGrid
+            items={items}
+            locale={locale}
+            rateLabel={labels.rateLabel}
+            badgeLabels={labels.badge}
+            onCardClick={(ac) => setTarget({ mode: 'edit', aircraft: ac })}
+          />
         )}
 
         {totalPages > 1 ? (

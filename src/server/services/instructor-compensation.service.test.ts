@@ -20,7 +20,9 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { getCompensationSummary, getInstructorCompensationDetail, recordPayout, setPayoutRate } = await import('./instructor-compensation.service');
+const { getCompensationSummary, getInstructorCompensationDetail, getOwnCompensationSummary, recordPayout, setPayoutRate } = await import(
+  './instructor-compensation.service'
+);
 const { ConflictError, NotFoundError } = await import('./errors');
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
@@ -113,6 +115,48 @@ describe('instructor-compensation.service (story 12.7)', () => {
     it('setPayoutRate rejects a staff actor (needs payouts.manage, ADMIN-only)', async () => {
       await expect(setPayoutRate(staffActor(), 'person_ines', 3000)).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getOwnCompensationSummary (story 12.12, AC 5; ratifica utente 2 — own-scoped, no new permission)', () => {
+    it('rejects an unauthenticated-shaped actor without self.read (defensive — every real Role has self.read)', async () => {
+      await expect(getOwnCompensationSummary({ userId: 'u1', personId: 'person_ines', roles: [] })).rejects.toThrow(ForbiddenError);
+      expect(personFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('returns null for an actor with no linked person — never queries', async () => {
+      const result = await getOwnCompensationSummary({ userId: 'u1', personId: null, roles: ['INSTRUCTOR'] });
+      expect(result).toBeNull();
+      expect(personFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('returns null when the actor\'s own person has no active InstructorProfile (never fabricates data)', async () => {
+      personFindMany.mockResolvedValue([]);
+
+      const result = await getOwnCompensationSummary({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).toBeNull();
+    });
+
+    it('returns the own payoutRateCents/mtdMinutes/owedMtdCents, scoped to the actor\'s own personId only', async () => {
+      personFindMany.mockResolvedValue([instructorPersonRow()]); // rate 3000 c/h
+      flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 130 } }]);
+      payoutGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { amountCents: 2000 } }]);
+
+      const result = await getOwnCompensationSummary({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).toEqual({ payoutRateCents: 3000, mtdMinutes: 130, owedMtdCents: 4500 });
+      const [args] = personFindManyMock.mock.calls[0] as [{ where: { id?: string } }];
+      expect(args.where.id).toBe('person_ines');
+    });
+
+    it('a null payoutRateCents (no rate set yet) yields a null owedMtdCents, never a fabricated 0', async () => {
+      personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', ratings: 'SEP(land)', payoutRateCents: null } })]);
+      stubZeroAggregates();
+
+      const result = await getOwnCompensationSummary({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).toEqual({ payoutRateCents: null, mtdMinutes: 0, owedMtdCents: null });
     });
   });
 

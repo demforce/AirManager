@@ -75,3 +75,37 @@ export function computeExpiryStatus(expiresAt: Date, today: Date): ExpiryStatus 
   }
   return 'ok';
 }
+
+/**
+ * Finer-grained urgency tier (0-4), extracted from
+ * `dashboard/expiries/scadenze-console.tsx` (story 12.11) so story 12.12's
+ * `ScadenzeWidget` and Overview KPI can share the EXACT same
+ * `daysUntilUtc`/soglie boundaries — there must never be a second
+ * implementation (Contesto: `tierOf`, `ScadenzeView.jsx:12-20`). 0 = scaduto,
+ * 1 = entro 7 giorni, 2 = entro 30, 3 = entro 60, 4 = valido oltre 60.
+ */
+export type ExpiryTier = 0 | 1 | 2 | 3 | 4;
+
+export function tierOf(daysUntil: number): ExpiryTier {
+  if (daysUntil < 0) return 0;
+  if (daysUntil <= 7) return 1;
+  if (daysUntil <= 30) return 2;
+  if (daysUntil <= 60) return 3;
+  return 4;
+}
+
+/**
+ * Scadenza category, derived from its `ExpiryType.name` (Contesto: `catTone`/
+ * `categoryOf`, `ScadenzeView.jsx`'s own heuristic) — extracted alongside
+ * {@link tierOf} for the same single-implementation reason. A free-text
+ * type name is bucketed by substring match: "medic..." -> Medico,
+ * "licenz..." -> Licenza, everything else -> Abilitazione.
+ */
+export type ExpiryCategory = 'Medico' | 'Licenza' | 'Abilitazione';
+
+export function categoryOf(typeName: string): ExpiryCategory {
+  const lower = typeName.toLowerCase();
+  if (lower.includes('medic')) return 'Medico';
+  if (lower.includes('licenz')) return 'Licenza';
+  return 'Abilitazione';
+}

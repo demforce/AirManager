@@ -32,26 +32,29 @@ test.describe('RBAC (Story 1.3 AC 1, 2, 3)', () => {
     });
   });
 
-  test('admin dashboard navigation shows every operational area', async ({ page }) => {
+  test('admin dashboard navigation shows every operational area (AirOps sidebar, story 12.12 AC 7)', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
 
+    // Story 12.12: the legacy in-page "Aree operative" nav died with the
+    // widget-grid home — the ONE nav landmark left is the AirOps Sidebar
+    // (same accessible name, `sidebar.tsx`'s `navLabel` prop).
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(nav.getByRole('link', { name: 'Persone' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Finanze' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Impostazioni' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Piloti', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Contabilità', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Impostazioni', exact: true })).toBeVisible();
   });
 
   test('pilot dashboard navigation only shows self-service areas (AC 2)', async ({ page }) => {
     await login(page, PILOT_EMAIL);
 
     const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(nav.getByRole('link', { name: 'Prenotazioni' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Pianificazione', exact: true })).toBeVisible();
 
-    // A pilot has no `people.read`/`settings.manage` — those areas must be
-    // absent, not merely disabled (AD-5: navigation hides, never the only
-    // guardian, but it must still be correct).
-    await expect(nav.getByRole('link', { name: 'Persone' })).toHaveCount(0);
-    await expect(nav.getByRole('link', { name: 'Impostazioni' })).toHaveCount(0);
-    await expect(nav.getByRole('link', { name: 'Finanze' })).toHaveCount(0);
+    // A pilot has no `people.read`/`settings.manage`/`finance.manage` —
+    // those areas must be absent, not merely disabled (AD-5: navigation
+    // hides, never the only guardian, but it must still be correct).
+    await expect(nav.getByRole('link', { name: 'Piloti', exact: true })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Impostazioni', exact: true })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Contabilità', exact: true })).toHaveCount(0);
   });
 });
