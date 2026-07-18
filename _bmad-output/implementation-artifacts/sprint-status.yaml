@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-18 (story 12.11 DONE — review Opus: 2 blocker e2e global-state fixati (catena project playwright), decisione PO saldo insufficiente + override admin implementata, full CI=1 build prod 259/259, 1517 unit; F5 registry OpenAPI deferito a 12.13 come action item)
+last_updated: 2026-07-18 (12.11 done; 12.12 ready-for-dev — 3 ratifiche PO chiuse: voli oggi = REGISTERED + APPROVED-non-FLOWN; KPI compensi istruttore via reader own-scoped nuovo; CTA "Nuovo volo" istruttore DROPPATA)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -141,7 +141,7 @@ development_status:
   12-9-contabilita: done
   12-10-statistiche: done
   12-11-scadenze-impostazioni-metar: done
-  12-12-panoramica-landing-ruoli: planned
+  12-12-panoramica-landing-ruoli: ready-for-dev
   12-13-rimozioni-cleanup-sweep: planned
 
 action_items:

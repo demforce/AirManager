@@ -1,0 +1,71 @@
+---
+baseline_commit: 9584133
+---
+
+# Story 12.12: Panoramica reale + landing per ruolo
+
+Status: ready-for-dev
+
+## Story
+
+As a utente di AirManager (admin/staff, istruttore, pilota, allievo),
+I want una home `/dashboard` AirOps-native diversa per ruolo — console operativa completa con KPI reali per admin/staff, "la mia giornata" per l'istruttore, saldo/scadenze/prossimi voli per pilota e allievo,
+so that l'atterraggio nell'app mostri subito le informazioni giuste per il mio ruolo nel nuovo linguaggio visivo, su dati reali e senza superfici legacy.
+
+**Riferimenti vincolanti**: spec §3 riga Panoramica (`:34`) + "Landing per ruolo" (`:49`, con ratifica STUDENT 2026-07-14) + D1/D2/D3/D11/D13; piano Task 12 (`:295-304`) + fate-map e2e (`:341`); prototipo `docs/design-reference/airops/src/App.jsx` (AdminOverview `:6-38`, renderPage `:81-103`), `StudentView.jsx#PilotLanding` (`:1-39`), `InstructorView.jsx` (`:1-45`), `ScadenzeView.jsx#ScadenzeWidget` (`:125-174`), `Fleet.jsx#FleetCard` (`:2-35`).
+
+## Ratifiche utente (2026-07-18, AskUserQuestion pre-dispatch — regola AI-2)
+
+1. **KPI "Voli oggi" = voli REGISTERED con data oggi + prenotazioni di oggi ancora in APPROVED (non FLOWN).** Insiemi disgiunti per costruzione (la transizione FLOWN della 12.2 sposta la prenotazione fuori da APPROVED quando il volo viene registrato) — mai doppio conteggio; la mattina il KPI mostra già la giornata prevista.
+2. **KPI compensi sul landing istruttore: SÌ, via reader own-scoped nuovo** (`getOwnCompensationSummary`): espone SOLO i propri dati (tariffa payout, dovuto mese, ore) all'actor la cui persona ha un `InstructorProfile` — nessun permesso nuovo (own-scoping alla `me.service`), riuso della matematica compensi 12.7 (`instructor-compensation.service`), sola lettura. La lettura ADMIN (`payouts.manage`) resta invariata.
+3. **CTA "Nuovo volo" del landing istruttore: DROPPATA** (l'istruttore non ha `flights.log`; D13 il dominio vince sul prototipo). Sul landing istruttore resta la sola CTA "Le mie ore" → `/dashboard/logbook` (registro own-scoped). NIENTE CTA di creazione.
+
+## Acceptance Criteria
+
+1. **(AdminOverview — port `App.jsx#AdminOverview`)** Rewrite completo di `src/app/[locale]/dashboard/page.tsx` per ADMIN/STAFF (gate `finance.manage`, come l'attuale faccia staff): `.page-head` con `h1` "Panoramica operativa" + `.sub` a `.dot` REALI (ICAO da settings D3, conteggio AOG, PPR in attesa, transiti al suolo dalla 12.4) + CTA "Pianifica volo" che apre il form volo della 12.8 (SlideOver); `.kpi-row` con 5 `<KPI>` REALI: Voli oggi (ratifica 1), Flotta disponibile (OPERATIONAL non archiviati né riservati ora), PPR in attesa, Prenotazioni in attesa (PENDING), Ricavi del mese (stats 12.10 `kpis.revenueCents`, formatter D11); `Schedule` (vista giorno, oggi) e `BookingsTable` (pending-first) EMBEDDED riusando la data-prep di `bookings/page.tsx` estratta in helper condiviso (NO duplicazione — tocco cross-story dichiarato, la pagina Pianificazione resta verde); `.split` con ScadenzeWidget (AC 2) + FleetCard (AC 3). NIENTE delta/spark finti: delta solo dove derivabile dai dati reali, altrimenti KPI senza delta (stessa regola no-dead-UI del piano per la KPI IFR, omessa).
+2. **(ScadenzeWidget)** Port di `ScadenzeView.jsx:125-174` in `src/components/dashboard/scadenze-widget.tsx`: toggle `.segmented` 7/30/60, top 6 righe ordinate per urgenza da `listAllExpiries` con tier/label RIUSATI dalla 12.11 (stessa logica `daysUntilUtc`/soglie — nessuna seconda implementazione), icone rosso ≤7/ambra, badge bad/warn/info, footer "+N altre · Vedi tutte" → `/dashboard/expiries`.
+3. **(FleetCard widget)** ESTRARRE da `fleet-console.tsx:199-221` il markup `.fleet-grid`/`.ac-card` in `src/components/dashboard/fleet-card.tsx` riusabile (riuso `FleetCardItem` + `badgeFor`; fleet-console la consuma per non divergere — tocco cross-story dichiarato, 12.5 resta verde): niente search/paginazione, badge AOG/Riservato/Disponibile, "Aggiungi aeromobile" → `/dashboard/fleet` (visibile solo `aircraft.manage`).
+4. **(PilotLanding — port `StudentView.jsx#PilotLanding`)** Per PILOT e STUDENT (`me.person && !finance.manage && !school.manage.own`): `.page-head` "Ciao, {nome}" + `.sub` reale; `.kpi-row` 4 KPI da dati REALI (Saldo conto, Licenza, Scadenza medico, Abilitazioni — da `listPersonExpiries` own + account, formatter D11); card "I miei prossimi voli" (prenotazioni APPROVED future own, `.list`); CTA "Il mio registro" → `/dashboard/logbook`; CTA **"Prenota volo" gated `bookings.manage.own || bookings.manage.any`** → NASCOSTA per STUDENT (ratifica spec §3:49 del 2026-07-14, stesso gate di `canCreate` in `bookings/page.tsx:247`).
+5. **(InstructorLanding — port `InstructorView.jsx`)** Per INSTRUCTOR (`school.manage.own` senza `finance.manage` — ADMIN resta sulla console): `.page-head` "Buongiorno, {nome}" + `.sub` reale; 4 KPI reali: Ore mese / Tariffa payout / Dovuto mese / Voli oggi (i primi 3 dal NUOVO reader own-scoped `getOwnCompensationSummary` — ratifica 2: TDD, gate = persona dell'actor con `InstructorProfile`, riuso della matematica `instructor-compensation.service` 12.7, NESSUN permesso nuovo, la lettura ADMIN `payouts.manage` resta invariata; profilo istruttore assente → niente KPI compensi, mai dati finti); card "La mia giornata" = prenotazioni di OGGI dove è istruttore (`.list-item` griglia prototipo); CTA: SOLO "Le mie ore" → `/dashboard/logbook` — la CTA "Nuovo volo" del prototipo è DROPPATA (ratifica 3, D13); NESSUN link a superfici morte (niente `/dashboard/school` — D5).
+6. **(Switch per ruolo + registry)** La page server-side sceglie la faccia dal ruolo/permessi reali (sessione, MAI query param); `route-registry.ts` entry `overview` → `airopsNative: true` (esce dal `LegacyBackdrop`); la home legacy (widget grids + nav in-page "Aree operative") SPARISCE; le dipendenze della vecchia home da `packages.service` (D10) e `school.service` (D5) ELIMINATE dalla pagina (i service restano, li rimuove la 12.13); `nav-items.ts` perde l'ultimo consumer e resta orfano DICHIARATO per la scopa 12.13.
+7. **(e2e)** `home-dashboard.spec.ts` RISCRITTO (per ruolo: console admin/staff con 5 KPI + widget, landing pilota con CTA visibile, landing allievo SENZA CTA "Prenota volo", landing istruttore coi KPI compensi own e SENZA CTA di creazione); `rbac.spec.ts` ADATTATO (selettori dalla nav in-page morta alla Sidebar AirOps scoped al landmark — lezione 103-F1); `welcome.spec.ts`/`login.spec.ts` verificati/adattati. Selettori scoped/exact, MAI hasText su date/valori (11.2).
+8. **(Gates)** NESSUNA migrazione. `npm run gates` verde; spec toccati verdi in locale (`--retries=2`); verifica interattiva delle 3 facce in ENTRAMBI i temi.
+
+## Contesto e decisioni di design (vincolanti — ricognizione 2026-07-17)
+
+- **Prototipo AdminOverview** (`App.jsx:6-38`): `.page-head` con dot-status, `.kpi-row` 5 KPI (delta/spark FINTI nel prototipo — qui reali o assenti), poi `<Schedule/>`, `<BookingsTable/>`, `.split` con ScadenzeWidget + FleetCard. Routing per ruolo `renderPage` (`:81-103`) via Tweaks `data-role` → qui sessione reale (spec §3:49, pannello Tweaks NON si porta).
+- **Home attuale** (`dashboard/page.tsx`, story 10.3, legacy Tailwind): 3 blocchi gated per permesso (staff/personal/instructor widgets grid, gate `:149-164`), fetch in un `Promise.all` (`:171-230`) con dipendenze da `packages.service#listPersonPackages` (`:196`) e `school.service#listOwnStudents/getInstructorHourSummaries` (`:212,:225`) da ELIMINARE; nav in-page `aria-label` "Aree operative" (`:277`) che muore col rewrite (→ `rbac.spec.ts:35-56` da riadattare alla Sidebar shell).
+- **Registry**: `route-registry.ts:72` entry `overview` (`enabled: true, airopsNative: false` → flip); `visibleNavItems` (`:106`) già filtra la sidebar per ruolo (`layout.tsx:76-83`).
+- **Riuso**: `<KPI>`/`<Spark>` in `src/components/ui/kpi.tsx` (pattern `reports/page.tsx:130`, `billing/page.tsx:144`); `Schedule` (`bookings/schedule.tsx:183`) e `BookingsTable` (`bookings/bookings-table.tsx:139`) prendono props precomputate — la data-prep vive in `bookings/page.tsx` e va ESTRATTA in helper condiviso server-side (no drift); `FleetCardItem`+`badgeFor` (`fleet-console.tsx:21-40,:142-165`); doc-comment `fleet-console.tsx:3-11` rinvia esplicitamente l'estrazione widget a QUESTA story.
+- **Dati**: scadenze `listAllExpiries` (staff, `expiries.service.ts:435`) / `listPersonExpiries` (own, `:123`) + `src/lib/expiry-status.ts` (`daysUntilUtc:58`, soglie); ricavi `stats.service.ts#getStats` → `kpis.revenueCents` (`:230`); PPR pending + transiti dalla 12.4 (`ppr-movement-status.ts` e reader console); prenotazioni PENDING dalla 12.2 (`listBookings` param `status`); saldo/anagrafica own via `me.service`.
+- **RBAC** (`rbac.ts:87-120`): STUDENT = `['self.read','expiries.propose.own']` — NIENTE `bookings.manage.own` (doc `:80-85`: "an allievo never books solo"); INSTRUCTOR = self.read + bookings.manage.own + school.manage.own + expiries.propose.own; facce: `finance.manage` → console; `school.manage.own && !finance.manage` → istruttore; `me.person` altrimenti → pilota/allievo (ordine gate = quello della home legacy `:161-172`, ADMIN "degradato" già testato).
+- **e2e attuali**: `home-dashboard.spec.ts` (18KB, testid dei widget legacy — muore tutto, rewrite previsto dal fate-map `:341`); `rbac.spec.ts:17` (`toHaveURL /\/it\/dashboard$/` resta valido); molti spec usano `/dashboard` solo come ingresso post-login → non impattati.
+- **Dipendenza dura**: dispatch SOLO dopo il close-out della 12.11 (ScadenzeWidget riusa tier/label del port Scadenze; il repo al momento della recon aveva `expiries/page.tsx` ancora legacy).
+- **Ambiente locale**: identico alle story precedenti (DB fresco al dispatch, port 3000 libero, `--retries=2`, Playwright MCP rotto → script /tmp, MAI `playwright install`, gates SOLO `npm run gates`, lockfile `npx -y npm@10`).
+- **Commit**: `feat(12.12): panoramica reale + landing per ruolo` (dal piano `:304`). Staging esplicito, niente push.
+
+## Fuori scope dichiarato
+
+- Widget meteo METAR in sidebar (12.11 — la Panoramica lo eredita dalla shell senza toccarlo).
+- Rimozione fisica di `nav-items.ts`, `packages.service`, `school.service`, flusso proposals (12.13, D5/D10) — qui si eliminano solo i CONSUMI dalla home.
+- KPI IFR-count del prototipo: OMESSA (piano self-review `:347`, no dead UI).
+- Pannello Tweaks del prototipo (ruolo = sessione reale, spec §3:49).
+- Qualunque migrazione DB.
+
+## Dev Agent Record
+
+### Completion Notes
+
+_(a cura del dev agent)_
+
+### File List
+
+_(a cura del dev agent)_
+
+### Change Log
+
+_(a cura del dev agent)_
+
+## Review Record
+
+_(a cura della review adversarial)_
