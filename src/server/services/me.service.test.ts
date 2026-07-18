@@ -28,7 +28,13 @@ type MeSelectResult = {
   id: string;
   email: string;
   roles: Actor['roles'];
-  person: { id: string; firstName: string; lastName: string; studentProfile: { deactivatedAt: Date | null } | null } | null;
+  person: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    studentProfile: { deactivatedAt: Date | null } | null;
+    pilotProfile: { licenseType: string; deactivatedAt: Date | null } | null;
+  } | null;
 } | null;
 const findUnique = findUniqueMock as unknown as {
   mockResolvedValue: (value: MeSelectResult) => void;
@@ -44,7 +50,7 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
       id: 'user_1',
       email: 'pilot@airmanager.local',
       roles: ['PILOT'],
-      person: { id: 'person_1', firstName: 'Piero', lastName: 'Volante', studentProfile: null },
+      person: { id: 'person_1', firstName: 'Piero', lastName: 'Volante', studentProfile: null, pilotProfile: { licenseType: 'PPL(A)', deactivatedAt: null } },
     });
 
     const result = await getMe(actorWith(['PILOT']));
@@ -53,7 +59,7 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
       userId: 'user_1',
       email: 'pilot@airmanager.local',
       roles: ['PILOT'],
-      person: { id: 'person_1', firstName: 'Piero', lastName: 'Volante', hasActiveStudentProfile: false },
+      person: { id: 'person_1', firstName: 'Piero', lastName: 'Volante', hasActiveStudentProfile: false, activePilotLicenseType: 'PPL(A)' },
     });
     expect(findUniqueMock).toHaveBeenCalledWith({
       where: { id: 'user_1' },
@@ -62,7 +68,13 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
         email: true,
         roles: true,
         person: {
-          select: { id: true, firstName: true, lastName: true, studentProfile: { select: { deactivatedAt: true } } },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            studentProfile: { select: { deactivatedAt: true } },
+            pilotProfile: { select: { licenseType: true, deactivatedAt: true } },
+          },
         },
       },
     });
@@ -86,11 +98,12 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
       id: 'user_1',
       email: 'student@airmanager.local',
       roles: ['STUDENT'],
-      person: { id: 'person_1', firstName: 'Sara', lastName: 'Allieva', studentProfile: { deactivatedAt: null } },
+      person: { id: 'person_1', firstName: 'Sara', lastName: 'Allieva', studentProfile: { deactivatedAt: null }, pilotProfile: null },
     });
 
     const result = await getMe(actorWith(['STUDENT']));
     expect(result.person?.hasActiveStudentProfile).toBe(true);
+    expect(result.person?.activePilotLicenseType).toBeNull();
   });
 
   it('sets hasActiveStudentProfile = false for a DEACTIVATED student profile', async () => {
@@ -98,11 +111,23 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
       id: 'user_1',
       email: 'student@airmanager.local',
       roles: ['STUDENT'],
-      person: { id: 'person_1', firstName: 'Sara', lastName: 'Allieva', studentProfile: { deactivatedAt: new Date('2026-01-01T00:00:00.000Z') } },
+      person: { id: 'person_1', firstName: 'Sara', lastName: 'Allieva', studentProfile: { deactivatedAt: new Date('2026-01-01T00:00:00.000Z') }, pilotProfile: null },
     });
 
     const result = await getMe(actorWith(['STUDENT']));
     expect(result.person?.hasActiveStudentProfile).toBe(false);
+  });
+
+  it('sets activePilotLicenseType = null for a DEACTIVATED pilot profile (story 12.12 — the license KPI never shows a stale title)', async () => {
+    findUnique.mockResolvedValue({
+      id: 'user_1',
+      email: 'pilot@airmanager.local',
+      roles: ['PILOT'],
+      person: { id: 'person_1', firstName: 'Piero', lastName: 'Volante', studentProfile: null, pilotProfile: { licenseType: 'PPL(A)', deactivatedAt: new Date('2026-01-01T00:00:00.000Z') } },
+    });
+
+    const result = await getMe(actorWith(['PILOT']));
+    expect(result.person?.activePilotLicenseType).toBeNull();
   });
 
   it('throws NotFoundError when the session references a user that no longer exists', async () => {

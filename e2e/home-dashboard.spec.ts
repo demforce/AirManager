@@ -145,6 +145,9 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
     for (const testId of PILOT_LANDING_KPI_TESTIDS) {
       await expect(page.getByTestId(testId)).toBeVisible();
     }
+    // PO ratification 2026-07-18: the license is LIFETIME — the KPI shows the
+    // license TYPE from the pilot profile (seed: PPL(A)), never an expiry date.
+    await expect(page.getByTestId('kpi-license')).toContainText('PPL(A)');
     await expect(page.getByTestId('pilot-landing-logbook-cta')).toBeVisible();
     await expect(page.getByTestId('pilot-landing-book-cta')).toBeVisible();
 

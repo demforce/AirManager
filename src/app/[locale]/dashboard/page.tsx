@@ -594,9 +594,11 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
   ]);
 
   const noValue = t('pilotLanding.noValue');
-  const licenseExpiry = myExpiries.find((expiry) => categoryOf(expiry.typeName) === 'Licenza');
   const medicalExpiry = myExpiries.find((expiry) => categoryOf(expiry.typeName) === 'Medico');
-  const ratingsCount = myExpiries.filter((expiry) => categoryOf(expiry.typeName) === 'Abilitazione').length;
+  // Ratifica PO 2026-07-18: la licenza è LIFETIME (mai una data di scadenza —
+  // il KPI mostra il TIPO dal PilotProfile); solo i ratings scadono, e il KPI
+  // ne mostra i NOMI, non un conteggio.
+  const ratingNames = [...new Set(myExpiries.filter((expiry) => categoryOf(expiry.typeName) === 'Abilitazione').map((expiry) => expiry.typeName))];
 
   const canBook = hasPermission(actor, 'bookings.manage.own') || hasPermission(actor, 'bookings.manage.any');
 
@@ -627,13 +629,13 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
           <KPI label={t('pilotLanding.kpis.balance')} value={formatCents(accountOverview.balanceCents, displayLocale)} />
         </div>
         <div data-testid="kpi-license">
-          <KPI label={t('pilotLanding.kpis.license')} value={licenseExpiry ? formatDateOnly(licenseExpiry.expiresAt, displayLocale) : noValue} />
+          <KPI label={t('pilotLanding.kpis.license')} value={person.activePilotLicenseType ?? noValue} />
         </div>
         <div data-testid="kpi-medical">
           <KPI label={t('pilotLanding.kpis.medical')} value={medicalExpiry ? formatDateOnly(medicalExpiry.expiresAt, displayLocale) : noValue} />
         </div>
         <div data-testid="kpi-ratings">
-          <KPI label={t('pilotLanding.kpis.ratings')} value={ratingsCount} />
+          <KPI label={t('pilotLanding.kpis.ratings')} value={ratingNames.length > 0 ? ratingNames.join(' · ') : noValue} />
         </div>
       </div>
 

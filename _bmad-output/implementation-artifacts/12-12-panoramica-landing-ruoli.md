@@ -20,6 +20,11 @@ so that l'atterraggio nell'app mostri subito le informazioni giuste per il mio r
 2. **KPI compensi sul landing istruttore: SÌ, via reader own-scoped nuovo** (`getOwnCompensationSummary`): espone SOLO i propri dati (tariffa payout, dovuto mese, ore) all'actor la cui persona ha un `InstructorProfile` — nessun permesso nuovo (own-scoping alla `me.service`), riuso della matematica compensi 12.7 (`instructor-compensation.service`), sola lettura. La lettura ADMIN (`payouts.manage`) resta invariata.
 3. **CTA "Nuovo volo" del landing istruttore: DROPPATA** (l'istruttore non ha `flights.log`; D13 il dominio vince sul prototipo). Sul landing istruttore resta la sola CTA "Le mie ore" → `/dashboard/logbook` (registro own-scoped). NIENTE CTA di creazione.
 
+**Ratifiche post-dev (2026-07-18, AskUserQuestion sulle assumption del dev):**
+
+4. **CTA "Pianifica volo" = form del REGISTRO VOLI (FlightEditor 12.8)**, com'è implementata — CONFERMATA la lettura del dev (non una prenotazione).
+5. **KPI pilota "Licenza"/"Ratings" (correzione di dominio PO)**: la licenza è **LIFETIME** (non scade mai) → il KPI "Licenza" mostra il **TIPO** dal `PilotProfile.licenseType` (es. PPL(A)), MAI una data; "Abilitazioni" si chiama **"Ratings"** e il KPI ne mostra i **NOMI** (typeName delle scadenze categoria Abilitazione, dedup), non un conteggio — solo i ratings hanno scadenza. Implementato nel fix post-dev: `MeResult.person.activePilotLicenseType` additivo (pattern `hasActiveStudentProfile`, schema `/me` aggiornato), label i18n IT "Ratings".
+
 ## Acceptance Criteria
 
 1. **(AdminOverview — port `App.jsx#AdminOverview`)** Rewrite completo di `src/app/[locale]/dashboard/page.tsx` per ADMIN/STAFF (gate `finance.manage`, come l'attuale faccia staff): `.page-head` con `h1` "Panoramica operativa" + `.sub` a `.dot` REALI (ICAO da settings D3, conteggio AOG, PPR in attesa, transiti al suolo dalla 12.4) + CTA "Pianifica volo" che apre il form volo della 12.8 (SlideOver); `.kpi-row` con 5 `<KPI>` REALI: Voli oggi (ratifica 1), Flotta disponibile (OPERATIONAL non archiviati né riservati ora), PPR in attesa, Prenotazioni in attesa (PENDING), Ricavi del mese (stats 12.10 `kpis.revenueCents`, formatter D11); `Schedule` (vista giorno, oggi) e `BookingsTable` (pending-first) EMBEDDED riusando la data-prep di `bookings/page.tsx` estratta in helper condiviso (NO duplicazione — tocco cross-story dichiarato, la pagina Pianificazione resta verde); `.split` con ScadenzeWidget (AC 2) + FleetCard (AC 3). NIENTE delta/spark finti: delta solo dove derivabile dai dati reali, altrimenti KPI senza delta (stessa regola no-dead-UI del piano per la KPI IFR, omessa).
@@ -96,6 +101,7 @@ Modificati:
 ### Change Log
 
 - 2026-07-18: Implementazione story 12.12 — panoramica reale (AdminOverview/InstructorLanding/PilotLanding) + rimozione home legacy. `npm run gates` verde. Status → review.
+- 2026-07-18 (fix pre-review, ratifiche 4-5): CTA "Pianifica volo" CONFERMATA dal PO com'è (FlightEditor 12.8). Correzione di dominio PO sui KPI pilota: licenza LIFETIME → KPI "Licenza" mostra `PilotProfile.licenseType` (via nuovo campo additivo `MeResult.person.activePilotLicenseType`, select estesa in `me.service.ts`, schema `/me` aggiornato, pattern `hasActiveStudentProfile`); KPI ratings mostra i NOMI dedup delle scadenze categoria Abilitazione (label IT → "Ratings"). Unit test me.service estesi (+1 caso profilo disattivato), e2e pilota asserisce `PPL(A)` dal seed.
 
 ## Review Record
 

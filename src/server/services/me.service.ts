@@ -13,6 +13,8 @@ export type MeResult = {
     lastName: string;
     /** Story 9.2 (FR-33): whether this person has an ACTIVE `StudentProfile` — gates the "Il mio diario" home tile (`dashboard/page.tsx`). Not part of the wider scheda persona (`people.service.ts#getPerson`), just the minimal flag the home page needs. */
     hasActiveStudentProfile: boolean;
+    /** Story 12.12 (ratifica PO 2026-07-18: la licenza è LIFETIME, non scade): the ACTIVE `PilotProfile`'s `licenseType`, shown as-is by the pilot landing's "Licenza" KPI — `null` when there is no active pilot profile. Same minimal-flag rationale as `hasActiveStudentProfile`. */
+    activePilotLicenseType: string | null;
   } | null;
 };
 
@@ -38,6 +40,7 @@ export async function getMe(actor: Actor): Promise<MeResult> {
           firstName: true,
           lastName: true,
           studentProfile: { select: { deactivatedAt: true } },
+          pilotProfile: { select: { licenseType: true, deactivatedAt: true } },
         },
       },
     },
@@ -60,6 +63,8 @@ export async function getMe(actor: Actor): Promise<MeResult> {
           firstName: user.person.firstName,
           lastName: user.person.lastName,
           hasActiveStudentProfile: user.person.studentProfile !== null && user.person.studentProfile.deactivatedAt === null,
+          activePilotLicenseType:
+            user.person.pilotProfile !== null && user.person.pilotProfile.deactivatedAt === null ? user.person.pilotProfile.licenseType : null,
         }
       : null,
   };
