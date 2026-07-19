@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-18 (12.11 done; 12.12 ready-for-dev — 3 ratifiche PO chiuse: voli oggi = REGISTERED + APPROVED-non-FLOWN; KPI compensi istruttore via reader own-scoped nuovo; CTA "Nuovo volo" istruttore DROPPATA)
+last_updated: 2026-07-19 (story 12.12 DONE — home per ruolo AirOps; review Opus: F1 blocker link self-service ripristinati (decisione PO), F2 overcount "Voli oggi" ACCETTATO dal PO, F3 fixato; full CI=1 build prod 252/252 (totale suite 259→252 col rewrite home-dashboard), 1533 unit. Resta SOLO la 12.13 — bozza pronta, 5 ratifiche PENDING)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -141,7 +141,7 @@ development_status:
   12-9-contabilita: done
   12-10-statistiche: done
   12-11-scadenze-impostazioni-metar: done
-  12-12-panoramica-landing-ruoli: ready-for-dev
+  12-12-panoramica-landing-ruoli: done
   12-13-rimozioni-cleanup-sweep: planned
 
 action_items:

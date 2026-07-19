@@ -4,7 +4,7 @@ baseline_commit: 9584133
 
 # Story 12.12: Panoramica reale + landing per ruolo
 
-Status: review
+Status: done
 
 ## Story
 
@@ -111,4 +111,19 @@ Modificati:
 
 ## Review Record
 
-_(a cura della review adversarial)_
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh), 2026-07-18/19 — briefato con i 10 punti notesForReview del dev + deviations; priority zero full suite `CI=1` su build di produzione, DB fresco.
+
+**Verdetto iniziale: not-shippable** — full suite CI 242 pass / **3 FAIL deterministici** / 7 skipped (la catena settings/booking-window salta se il project chromium fallisce). Root cause unica dei 3 fail: F1.
+
+**Findings ed esiti** (fix `206f512` salvo dove indicato):
+
+- **F1 (BLOCKER)** — la rimozione della home legacy ha eliminato gli UNICI entry point self-service di pilota/allievo ("Il mio conto" → estratto conto, "La mia scheda" → scheda personale): pagine vive e own-accessibili ma irraggiungibili dalla UI; 3 e2e pre-esistenti rossi (`account-statement`, `accounts-topups`, `person-detail`), regressione NON dichiarata dal dev (i suoi 5 fix collaterali non coprivano questi 3 spec). **Decisione PO 2026-07-19** (ratifica 6): KPI "Saldo conto" cliccabile → `/dashboard/people/{id}/account` con `aria-label` "Il mio conto" + nuova CTA "La mia scheda" → `/dashboard/people/{id}`. L'accessible-name identico ha fatto tornare verdi i 3 spec SENZA toccarli.
+- **F2 (MAJOR → RATIFICATO)** — KPI "Voli oggi" conta DOPPIO nel flusso ordinario (provato empiricamente: 1 booking APPROVED + il suo volo REGISTERED = KPI 2): la premessa "insiemi disgiunti per costruzione" della ratifica 1 è FALSA — registrare un volo non tocca la prenotazione, la transizione FLOWN è manuale. **Decisione PO 2026-07-19** (ratifica 7): overcount ACCETTATO — il KPI è "previsti + effettuati"; solo commento documentale sul calcolo (entrambe le facce).
+- **F3 (MINOR)** — il summary "N in attesa" della card Prenotazioni embedded usava il totale PENDING all-time mentre le righe sono windowed (now−48h). **Fix**: `pendingCount` = `embedPendingResult.total` (stessa finestra delle righe); la KPI resta il totale all-time.
+- **F4 (MINOR, ACCETTATO)** — i conteggi dello ScadenzeWidget sono cappati a 60 (pageSize del fetch): annotato nel doc-comment; "Vedi tutte" pagina tutto.
+- **F5 (NOTE, ACCETTATO)** — doppia semantica di "disponibile" (KPI esclude i riservati-ora, il summary FleetCard no): design coerente con la console 12.5, lasciato come nota.
+- **F6 (NOTE)** — performance AdminOverview MISURATA, non un problema: TTFB `/dashboard` admin su build prod ~145ms mediana (131-156ms su 5 campioni), query bounded dai cap.
+
+**Verifiche positive del reviewer** (empiriche): RBAC `getOwnCompensationSummary` own-scoped corretto (nessuna route API, mai dati altrui/finti, unit coprono i casi negativi); fix logout reale (sessione morta dopo il logout, back/refresh non rientra); `scadenze` ALL_ROLES → own-face 12.11 intatta e nessuna voce amministrativa in sidebar; estrazioni cross-story VERBATIM (Pianificazione/Aeromobili invariate, diff verificato); ratifiche 4-5 rispettate (kpi-license = PPL(A), mai date; ratings per nome); selettori scoped/exact (103-F1); i 5 fix e2e collaterali del dev minimi e corretti (uno anzi rafforzato).
+
+**Stato finale**: dopo `206f512` full suite **`CI=1` su build prod, DB fresco: 252/252 PASS** (245 chromium + 7 catena; il totale suite scende da 259 a 252 col rewrite di home-dashboard) — verifica mirata 21/21 sui 4 spec interessati; `npm run gates` verde (**1533 unit**). Commit della story: `a75c6b4` (feat) + `7bbc5cd` (fix logout) + `3e47e33` (fix ratifiche 4-5) + `206f512` (fix review).
