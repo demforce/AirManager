@@ -207,12 +207,14 @@ function movementsRows(page: Page) {
 /**
  * Story 12.13, ratifica utente 5 — hard-delete: the pre-12.4 shim page that
  * used to 308-redirect `/dashboard/ppr/register` to `/dashboard/movements`
- * is gone entirely. Stateless, unauthenticated (the route no longer exists
- * at the framework-routing level — the request never reaches the dashboard
- * layout's session check), so it runs standalone, outside the serial block
- * below.
+ * is gone entirely. MUST authenticate first: every `/dashboard/*` path is
+ * proxy-gated (`src/proxy.ts`) BEFORE Next's own router ever resolves it —
+ * an unauthenticated request never reaches the missing-route 404 at all, it
+ * gets redirected (200) to `/login` instead. Runs standalone, outside the
+ * serial block below (stateless once logged in).
  */
 test('the eliminated /dashboard/ppr/register route answers 404, no redirect (ratifica utente 5: hard-delete, not a shim)', async ({ page }) => {
+  await loginExpectingDashboard(page, ADMIN_EMAIL);
   const response = await page.goto('/it/dashboard/ppr/register');
   expect(response?.status()).toBe(404);
 });

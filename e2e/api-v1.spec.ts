@@ -66,22 +66,11 @@ test.describe('Shared API infrastructure (Story 1.5)', () => {
     expect(body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  test('GET /api/v1/users returns dates as ISO 8601 UTC (AC 3)', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const response = await page.request.get('/api/v1/users');
-    expect(response.status()).toBe(200);
-
-    const body = await response.json();
-    expect(Array.isArray(body.items)).toBe(true);
-    expect(body).toMatchObject({ page: 1, pageSize: 20 });
-    expect(typeof body.total).toBe('number');
-    expect(body.items.length).toBeGreaterThan(0);
-    for (const item of body.items) {
-      // ISO 8601 UTC, e.g. 2026-07-04T18:12:00.000Z
-      expect(item.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    }
-  });
+  // Story 12.13: `GET /api/v1/users` (list) was removed — no consumer left
+  // (the Piloti page reads its roster from `people.service.ts` directly).
+  // `POST /api/v1/users`'s own dates-as-ISO-8601-UTC behavior is still
+  // exercised indirectly wherever its response is asserted elsewhere
+  // (e.g. `user-management.spec.ts`); nothing left here to list-and-check.
 });
 
 // --- Booking approval workflow (epic 12, story 12.2) ------------------------
