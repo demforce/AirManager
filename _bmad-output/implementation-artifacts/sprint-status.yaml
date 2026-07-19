@@ -142,7 +142,7 @@ development_status:
   12-10-statistiche: done
   12-11-scadenze-impostazioni-metar: done
   12-12-panoramica-landing-ruoli: done
-  12-13-rimozioni-cleanup-sweep: planned
+  12-13-rimozioni-cleanup-sweep: ready-for-dev
 
 action_items:
   - epic: 12
