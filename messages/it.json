@@ -646,70 +646,6 @@
       }
     }
   },
-  "HourPackagesPanel": {
-    "heading": "Pacchetti ore",
-    "loadError": "Impossibile caricare i pacchetti.",
-    "empty": "Nessun pacchetto acquistato.",
-    "addAction": "Vendi pacchetto",
-    "feedback": "Pacchetto venduto.",
-    "table": {
-      "remaining": "Residuo",
-      "price": "Prezzo pagato",
-      "expiresAt": "Scadenza",
-      "noExpiry": "—",
-      "expiredBadge": "Scaduto",
-      "consumedNote": "Usati: {duration}"
-    },
-    "form": {
-      "title": "Vendi pacchetto",
-      "packageType": "Tipo di pacchetto",
-      "noActiveTypes": "Nessun tipo di pacchetto attivo. Configuralo nel listino.",
-      "paymentMethod": "Metodo di pagamento",
-      "paymentMethods": {
-        "cash": "Contanti",
-        "bankTransfer": "Bonifico",
-        "pos": "POS"
-      },
-      "effectiveDate": "Data valuta",
-      "description": "Note",
-      "submit": "Conferma vendita",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "inactiveTypeError": "Il tipo di pacchetto selezionato non è più attivo. Aggiorna la pagina e riprova.",
-      "genericError": "Impossibile registrare la vendita. Riprova."
-    }
-  },
-  "AssignedInstructorsPanel": {
-    "heading": "Istruttori assegnati",
-    "loadError": "Impossibile caricare gli istruttori assegnati.",
-    "empty": "Nessun istruttore assegnato.",
-    "addAction": "Assegna istruttore",
-    "feedback": {
-      "assigned": "Istruttore assegnato.",
-      "removed": "Istruttore rimosso."
-    },
-    "table": {
-      "name": "Istruttore",
-      "assignedAt": "Assegnato il",
-      "actions": "Azioni"
-    },
-    "form": {
-      "title": "Assegna istruttore",
-      "instructor": "Istruttore",
-      "noInstructors": "Nessun istruttore disponibile da assegnare.",
-      "submit": "Assegna",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "conflictError": "Questo istruttore è già assegnato a questo allievo.",
-      "genericError": "Si è verificato un errore. Riprova."
-    },
-    "actions": {
-      "remove": "Rimuovi",
-      "confirmRemove": "Confermi la rimozione?",
-      "confirmYes": "Sì, rimuovi",
-      "confirmCancel": "Annulla"
-    }
-  },
   "ExpiriesPanel": {
     "heading": "Scadenze",
     "loadError": "Impossibile caricare le scadenze.",
@@ -757,105 +693,6 @@
       "confirmDelete": "Eliminare questa scadenza?",
       "confirmYes": "Conferma",
       "confirmCancel": "Annulla"
-    }
-  },
-  "SchoolPage": {
-    "kicker": "Scuola volo",
-    "title": "I miei allievi",
-    "description": "L'elenco dei tuoi allievi assegnati, con ore di scuola totali e stato delle scadenze.",
-    "empty": "Nessun allievo assegnato.",
-    "table": {
-      "name": "Allievo",
-      "courseStartDate": "Inizio corso",
-      "totalHours": "Ore scuola totali",
-      "lastNote": "Ultima annotazione",
-      "noNotes": "—",
-      "statusHeader": "Scadenze",
-      "noExpiries": "—",
-      "status": {
-        "ok": "In regola",
-        "expiring": "In scadenza",
-        "expired": "Scaduta"
-      }
-    },
-    "titleManage": "Riepiloghi scuola",
-    "descriptionManage": "Ore doppio comando e solista di ogni allievo attivo, ore volo scuola per istruttore: filtra per periodo.",
-    "summaries": {
-      "heading": "Riepiloghi",
-      "filters": {
-        "heading": "Periodo",
-        "month": "Mese corrente",
-        "quarter": "Trimestre corrente",
-        "year": "Anno corrente",
-        "custom": "Intervallo libero",
-        "from": "Dal",
-        "to": "Al"
-      },
-      "students": {
-        "heading": "Ore allievi",
-        "empty": "Nessun allievo attivo.",
-        "table": {
-          "name": "Allievo",
-          "dual": "Doppio comando (periodo)",
-          "solo": "Solista (periodo)",
-          "totalPeriod": "Totale periodo",
-          "totalAllTime": "Totale storico"
-        }
-      },
-      "instructors": {
-        "heading": "Ore istruttori",
-        "empty": "Nessun istruttore attivo.",
-        "table": {
-          "name": "Istruttore",
-          "hours": "Ore scuola (periodo)",
-          "action": "Apri nel registro"
-        }
-      }
-    },
-    "myHours": {
-      "heading": "Le mie ore scuola",
-      "openRegister": "Apri nel registro"
-    }
-  },
-  "TrainingDiaryPage": {
-    "kicker": "Diario di addestramento",
-    "courseStartDate": "Inizio corso",
-    "back": "Indietro",
-    "empty": "Nessuna annotazione registrata.",
-    "row": {
-      "author": "Istruttore",
-      "edited": "modificata",
-      "exercises": "Esercizi svolti",
-      "assessment": "Giudizio",
-      "nextSteps": "Prossimi passi",
-      "linkedFlight": "Volo collegato",
-      "edit": "Modifica"
-    },
-    "newNoteForm": {
-      "title": "Nuova annotazione",
-      "addAction": "Nuova annotazione",
-      "noteDate": "Data addestramento",
-      "exercises": "Esercizi svolti",
-      "assessment": "Giudizio",
-      "nextSteps": "Prossimi passi",
-      "flight": "Volo collegato",
-      "noFlight": "Nessun volo collegato",
-      "submit": "Salva annotazione",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "flightError": "Il volo selezionato non è collegabile a questa annotazione.",
-      "genericError": "Impossibile salvare l'annotazione. Riprova."
-    },
-    "editForm": {
-      "noteDate": "Data addestramento",
-      "exercises": "Esercizi svolti",
-      "assessment": "Giudizio",
-      "nextSteps": "Prossimi passi",
-      "save": "Salva",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "immutableError": "Questa annotazione non è più modificabile (finestra di 7 giorni scaduta).",
-      "genericError": "Impossibile salvare le modifiche. Riprova."
     }
   },
   "AccountStatementPage": {
@@ -909,23 +746,6 @@
     }
   },
   "FinancePage": {
-    "kicker": "Finanze",
-    "title": "Finanze",
-    "description": "La situazione finanziaria dell'aviosuperficie: conti prepagati, saldi negativi e registro cassa.",
-    "backToDashboard": "Torna alla dashboard",
-    "manageCategories": "Gestisci categorie",
-    "viewPackages": "Listino pacchetti",
-    "viewReport": "Report finanziario",
-    "negativeBalances": {
-      "heading": "Saldi negativi",
-      "empty": "Nessun conto in negativo.",
-      "table": {
-        "person": "Persona",
-        "balance": "Saldo",
-        "lastMovement": "Ultimo movimento",
-        "noValue": "—"
-      }
-    },
     "cashRegister": {
       "heading": "Registro cassa",
       "newMovement": "Nuovo movimento",
@@ -1012,117 +832,6 @@
       "out": "Uscite",
       "net": "Netto",
       "empty": "Nessun movimento nel periodo selezionato."
-    }
-  },
-  "CashCategoriesPage": {
-    "kicker": "Finanze",
-    "title": "Categorie di cassa",
-    "description": "Le categorie del registro cassa: crea, rinomina, disattiva o elimina quelle mai usate.",
-    "backToFinance": "Torna alle finanze",
-    "newCategory": "Nuova categoria",
-    "table": {
-      "name": "Nome",
-      "status": "Stato",
-      "movements": "Movimenti",
-      "actions": "Azioni",
-      "empty": "Nessuna categoria."
-    },
-    "status": {
-      "active": "Attiva",
-      "inactive": "Disattivata"
-    },
-    "actions": {
-      "rename": "Rinomina",
-      "deactivate": "Disattiva",
-      "reactivate": "Riattiva",
-      "delete": "Elimina",
-      "confirmDelete": "Eliminare questa categoria?",
-      "confirmYes": "Conferma",
-      "confirmCancel": "Annulla"
-    },
-    "form": {
-      "createTitle": "Nuova categoria",
-      "renameTitle": "Rinomina categoria",
-      "name": "Nome",
-      "submitCreate": "Crea categoria",
-      "submitRename": "Salva",
-      "cancel": "Annulla",
-      "requiredField": "Il nome è obbligatorio.",
-      "conflictError": "Esiste già una categoria con questo nome.",
-      "genericError": "Operazione non riuscita. Riprova."
-    },
-    "feedback": {
-      "created": "Categoria creata.",
-      "renamed": "Categoria rinominata.",
-      "deactivated": "Categoria disattivata.",
-      "reactivated": "Categoria riattivata.",
-      "deleted": "Categoria eliminata.",
-      "deleteInUseError": "La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.",
-      "genericError": "Operazione non riuscita. Riprova."
-    }
-  },
-  "PackagesPage": {
-    "kicker": "Finanze",
-    "title": "Listino pacchetti ore",
-    "description": "I tipi di pacchetto ore scontati in vendita ai piloti: nome, ore incluse, prezzo, velivoli idonei e validità.",
-    "backToFinance": "Torna alle finanze",
-    "newPackageType": "Nuovo pacchetto",
-    "table": {
-      "name": "Nome",
-      "includedHours": "Ore incluse",
-      "price": "Prezzo",
-      "effectivePrice": "Prezzo orario effettivo",
-      "aircraft": "Velivoli idonei",
-      "validity": "Validità",
-      "status": "Stato",
-      "actions": "Azioni",
-      "empty": "Nessun pacchetto configurato.",
-      "noValidity": "—",
-      "noAircraft": "Nessuno",
-      "monthsUnit": "mesi"
-    },
-    "status": {
-      "active": "Attivo",
-      "inactive": "Disattivato"
-    },
-    "actions": {
-      "edit": "Modifica",
-      "deactivate": "Disattiva",
-      "reactivate": "Riattiva",
-      "delete": "Elimina",
-      "confirmDelete": "Eliminare questo pacchetto?",
-      "confirmYes": "Conferma",
-      "confirmCancel": "Annulla"
-    },
-    "form": {
-      "createTitle": "Nuovo tipo di pacchetto",
-      "editTitle": "Modifica tipo di pacchetto",
-      "name": "Nome",
-      "includedHours": "Ore incluse",
-      "includedHoursHint": "Formato H:MM, es. 10:00",
-      "price": "Prezzo (€)",
-      "validityMonths": "Validità (mesi)",
-      "validityMonthsHint": "Vuoto = nessuna scadenza",
-      "aircraft": "Velivoli idonei",
-      "noAircraftAvailable": "Nessun velivolo attivo disponibile.",
-      "submitCreate": "Crea pacchetto",
-      "submitSave": "Salva",
-      "cancel": "Annulla",
-      "requiredField": "Il nome è obbligatorio.",
-      "invalidDuration": "Inserisci una durata valida in formato H:MM.",
-      "invalidAmount": "Inserisci un prezzo valido maggiore di zero.",
-      "invalidValidity": "Inserisci un numero di mesi valido (1-600) oppure lascia vuoto.",
-      "conflictError": "Esiste già un pacchetto con questo nome.",
-      "genericError": "Operazione non riuscita. Riprova."
-    },
-    "feedback": {
-      "created": "Pacchetto creato.",
-      "updated": "Pacchetto aggiornato.",
-      "deactivated": "Pacchetto disattivato.",
-      "reactivated": "Pacchetto riattivato.",
-      "deleted": "Pacchetto eliminato.",
-      "deleteInUseError": "Il pacchetto è già stato venduto e non può essere eliminato: disattivalo invece.",
-      "genericError": "Operazione non riuscita. Riprova."
     }
   },
   "AircraftPage": {
@@ -1328,7 +1037,6 @@
       "aircraftAmount": "Costo velivolo",
       "instructorRate": "Tariffa istruttore",
       "instructorAmount": "Costo istruttore",
-      "packageCovered": "Da pacchetto",
       "chargedMinutes": "Minuti addebitati",
       "total": "Totale addebitato",
       "newBalance": "Nuovo saldo"
@@ -1357,7 +1065,6 @@
         "movements": "Decolli/Atterraggi",
         "pic": "PIC",
         "noValue": "—",
-        "packageNote": "di cui {duration} da pacchetto",
         "status": "Stato",
         "statusCancelled": "Annullato",
         "cancelledDetail": "Annullato il {date} — {reason}",
@@ -1446,7 +1153,6 @@
       "soloSuffix": "solista",
       "noInstructor": "—",
       "noValue": "—",
-      "packageNote": "di cui {duration} da pacchetto",
       "statusCancelled": "Annullato",
       "cancelledDetail": "Annullato il {date} — {reason}",
       "correctionOf": "Correzione di un volo precedente",
@@ -1539,8 +1245,6 @@
         "aircraftAmount": "Costo velivolo",
         "instructorRate": "Tariffa istruttore",
         "instructorAmount": "Costo istruttore",
-        "packageCovered": "Da pacchetto",
-        "chargedMinutes": "Minuti addebitati",
         "total": "Totale addebitato",
         "newBalance": "Nuovo saldo"
       }
@@ -1560,7 +1264,7 @@
     "title": "Scadenze",
     "sub": "Scadenze certificati e abilitazioni · {count} da gestire",
     "titleOwn": "Le mie scadenze",
-    "descriptionOwn": "Le tue scadenze registrate, con lo stato calcolato. Proponi un aggiornamento quando rinnovi.",
+    "descriptionOwn": "Le tue scadenze registrate, con lo stato calcolato.",
     "dashboard": {
       "heading": "Tutte le scadenze",
       "table": {
@@ -1645,33 +1349,6 @@
         "overrideCheckbox": "Forza addebito (saldo insufficiente)"
       }
     },
-    "queue": {
-      "heading": "Coda proposte",
-      "description": "Le proposte di aggiornamento in attesa di validazione, in ordine di arrivo.",
-      "empty": "Nessuna proposta in attesa.",
-      "table": {
-        "person": "Persona",
-        "type": "Tipo",
-        "current": "Valori attuali",
-        "proposed": "Valori proposti",
-        "proposedBy": "Proposto da",
-        "when": "Quando",
-        "actions": "Azioni"
-      },
-      "actions": {
-        "approve": "Approva",
-        "reject": "Rifiuta",
-        "confirmApprove": "Approvare questa proposta?",
-        "confirmReject": "Rifiutare questa proposta?",
-        "confirmYes": "Conferma",
-        "confirmCancel": "Annulla"
-      },
-      "feedback": {
-        "approved": "Proposta approvata.",
-        "rejected": "Proposta rifiutata.",
-        "genericError": "Impossibile registrare la decisione. Riprova."
-      }
-    },
     "own": {
       "empty": "Nessuna scadenza registrata.",
       "table": {
@@ -1686,22 +1363,7 @@
           "expiring": "In scadenza",
           "expired": "Scaduta"
         },
-        "pendingBadge": "Proposta in attesa",
-        "pendingHint": "Una proposta è già in attesa di validazione."
-      },
-      "proposeAction": "Proponi aggiornamento",
-      "form": {
-        "title": "Proponi aggiornamento",
-        "issuedAt": "Data rilascio",
-        "expiresAt": "Data scadenza",
-        "notes": "Note",
-        "submit": "Invia proposta",
-        "cancel": "Annulla",
-        "requiredField": "Campo obbligatorio.",
-        "invalidRange": "La data di scadenza non può precedere la data di rilascio.",
-        "conflictError": "Una proposta è già in attesa di validazione per questa scadenza.",
-        "genericError": "Impossibile inviare la proposta. Riprova.",
-        "success": "Proposta inviata, in attesa di validazione da parte dello staff."
+        "pendingBadge": "Proposta in attesa"
       }
     }
   },
@@ -1851,63 +1513,12 @@
     }
   },
   "UsersPage": {
-    "kicker": "Amministrazione",
-    "title": "Utenti",
-    "description": "Crea utenti, assegna ruoli e gestisci l'accesso al sistema.",
-    "backToDashboard": "Torna alla dashboard",
-    "newUser": "Nuovo utente",
-    "table": {
-      "email": "Email",
-      "roles": "Ruoli",
-      "status": "Stato",
-      "person": "Persona",
-      "locale": "Lingua",
-      "actions": "Azioni",
-      "noPerson": "Nessuna",
-      "empty": "Nessun utente trovato."
-    },
-    "status": {
-      "active": "Attivo",
-      "inactive": "Disattivo",
-      "pending": "Invito in sospeso"
-    },
     "roles": {
       "ADMIN": "Admin",
       "STAFF": "Staff",
       "INSTRUCTOR": "Istruttore",
       "PILOT": "Pilota",
       "STUDENT": "Allievo"
-    },
-    "locales": {
-      "it": "Italiano",
-      "en": "Inglese"
-    },
-    "actions": {
-      "edit": "Modifica",
-      "deactivate": "Disattiva",
-      "activate": "Riattiva",
-      "resendInvite": "Reinvia invito"
-    },
-    "form": {
-      "createTitle": "Nuovo utente",
-      "editTitle": "Modifica utente",
-      "email": "Email",
-      "roles": "Ruoli",
-      "locale": "Lingua",
-      "person": "Persona collegata (opzionale)",
-      "personNone": "Nessuna",
-      "isActive": "Attivo",
-      "submitCreate": "Crea e invia invito",
-      "submitEdit": "Salva modifiche",
-      "cancel": "Annulla",
-      "rolesRequired": "Seleziona almeno un ruolo.",
-      "genericError": "Si è verificato un errore. Riprova.",
-      "emailConflict": "Esiste già un utente con questa email."
-    },
-    "feedback": {
-      "created": "Utente creato: email di invito inviata.",
-      "updated": "Utente aggiornato.",
-      "inviteResent": "Invito reinviato."
     }
   },
   "PprPage": {

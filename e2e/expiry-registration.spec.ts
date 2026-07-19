@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -41,16 +40,10 @@ function addDaysUtc(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** Display counterpart of {@link addDaysUtc} — `DD/MM/YYYY`, the registry's own `formatDateOnly` presentation (story 11.3) — for `toContainText` assertions against rendered rows. */
-function addDaysDisplay(days: number): string {
-  const [y, m, d] = addDaysUtc(days).split('-');
-  return `${d}/${m}/${y}`;
-}
-
 type MailpitMessageSummary = { ID: string; Subject: string };
 type MailpitFullMessage = { Text: string; Subject: string };
 
-/** Same Mailpit-polling helper as `expiry-types.spec.ts`/`package-types.spec.ts`. */
+/** Same Mailpit-polling helper as `expiry-types.spec.ts`. */
 async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
   const deadline = Date.now() + timeoutMs;
 
@@ -124,18 +117,6 @@ async function createExpiryType(
   return { id: created.id, name };
 }
 
-/** Looks up the seed pilot's `Person.id` via the admin people search. */
-async function getSeedPilotPersonId(page: Page): Promise<string> {
-  const response = await page.request.get(`/api/v1/people?q=${encodeURIComponent(PILOT_EMAIL)}`);
-  expect(response.status()).toBe(200);
-  const body = (await response.json()) as { items: { id: string; email: string | null }[] };
-  const match = body.items.find((item) => item.email === PILOT_EMAIL);
-  if (!match) {
-    throw new Error(`Seed pilot (${PILOT_EMAIL}) not found via GET /api/v1/people`);
-  }
-  return match.id;
-}
-
 /** Drives the "Registra scadenza" form on the scheda persona through the actual UI (AC 1). */
 async function registerExpiryViaUi(
   page: Page,
@@ -149,7 +130,7 @@ async function registerExpiryViaUi(
   await form.getByRole('button', { name: 'Registra' }).click();
 }
 
-test.describe('Person expiries with computed status and proposal validation queue (Story 6.2, AC 1/2, FR-36)', () => {
+test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
   test('a staff actor registers scadenze via the UI with correct status badges, sees a duplicate rejected in-form, and a SCOPE_MISMATCH is rejected at the API; admin completes the 6.1 delete-constraint contract', async ({
     page,
   }) => {
@@ -161,7 +142,7 @@ test.describe('Person expiries with computed status and proposal validation queu
     // AC 1: register three scadenze (each its own run-unique, always-usable
     // type) with dates chosen to land in each of the three status bands —
     // driven through the ACTUAL "Registra scadenza" form, by a STAFF actor
-    // (created via the API, same pattern as `package-types.spec.ts`) —
+    // (created via the API, same pattern as `expiry-types.spec.ts`) —
     // `expiries.manage` is granted to staff too (story 6.1).
     const okType = await createExpiryType(page);
     const expiringType = await createExpiryType(page);
@@ -192,8 +173,7 @@ test.describe('Person expiries with computed status and proposal validation queu
     await expect(expiredRow.getByTestId('expiry-status-badge')).toHaveText('Scaduta');
 
     // AC 1: a duplicate (person, type) — shown IN-FORM as the shared
-    // conflict message (same "one message per 409 cause" convention as
-    // `packages-panel.tsx`'s `SellPackageForm`).
+    // conflict message ("one message per 409 cause" convention).
     await registerExpiryViaUi(page, { typeName: okType.name, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(500) });
     await expect(page.getByTestId('register-expiry-form-error')).toBeVisible();
     await page.getByTestId('register-expiry-form').getByRole('button', { name: 'Annulla' }).click();
@@ -227,102 +207,6 @@ test.describe('Person expiries with computed status and proposal validation queu
 
     await okTypeRow.getByRole('button', { name: 'Disattiva' }).click();
     await expect(page.getByTestId('rating-row').filter({ hasText: okType.name })).toContainText('Disattivato');
-  });
-
-  test('the seed pilot proposes an update from "Le mie scadenze"; staff sees it in the queue, approves it, then a second proposal is rejected leaving values unchanged; a pilot cannot POST /api/v1/expiries directly', async ({
-    page,
-  }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const personId = await getSeedPilotPersonId(page);
-    const expiryType = await createExpiryType(page);
-
-    const registerResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId, expiryTypeId: expiryType.id, issuedAt: addDaysUtc(-10), expiresAt: addDaysUtc(10) },
-    });
-    expect(registerResponse.status()).toBe(201);
-
-    // A pilot cannot register directly (403 AD-8 envelope) — asserted here,
-    // before switching sessions, on the same expiryType/person pair.
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
-
-    const forbiddenResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId, expiryTypeId: expiryType.id, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(100) },
-    });
-    expect(forbiddenResponse.status()).toBe(403);
-    expect((await forbiddenResponse.json()).error.code).toBe('FORBIDDEN');
-
-    // AC 2: "Le mie scadenze" — the pilot proposes a renewal. The scadenza
-    // itself must NOT change (still the ORIGINAL values) while pending.
-    await page.goto('/it/dashboard/expiries');
-    await expect(page.getByRole('heading', { name: 'Le mie scadenze' })).toBeVisible();
-
-    const myRow = page.getByTestId('my-expiry-row').filter({ hasText: expiryType.name });
-    await expect(myRow.getByTestId('my-expiry-status-badge')).toBeVisible();
-    await myRow.getByRole('button', { name: 'Proponi aggiornamento' }).click();
-
-    const proposeForm = page.getByTestId('propose-expiry-form');
-    await proposeForm.getByLabel('Data scadenza').fill(addDaysUtc(500));
-    await proposeForm.getByRole('button', { name: 'Invia proposta' }).click();
-
-    await expect(page.getByTestId('my-expiries-feedback')).toBeVisible();
-    const myRowAfterPropose = page.getByTestId('my-expiry-row').filter({ hasText: expiryType.name });
-    await expect(myRowAfterPropose.getByTestId('my-expiry-pending-badge')).toBeVisible();
-    // The current row still shows the ORIGINAL expiresAt (AC 2: value stays
-    // authoritative until staff decides) — the proposed date must not leak in.
-    await expect(myRowAfterPropose).toContainText(addDaysDisplay(10));
-    await expect(myRowAfterPropose).not.toContainText(addDaysDisplay(500));
-
-    // A second proposal is blocked while one is pending.
-    await expect(myRowAfterPropose).toContainText('Una proposta è già in attesa di validazione.');
-
-    // Staff opens the queue, sees current vs proposed, approves.
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.goto('/it/dashboard/expiries');
-
-    const queueRow = page.getByTestId('proposal-row').filter({ hasText: expiryType.name });
-    await expect(queueRow).toContainText(addDaysDisplay(10));
-    await expect(queueRow).toContainText(addDaysDisplay(500));
-    await queueRow.getByRole('button', { name: 'Approva' }).click();
-    await queueRow.getByRole('button', { name: 'Conferma' }).click();
-    await expect(page.getByTestId('proposals-queue-feedback')).toBeVisible();
-
-    // The scheda persona now reflects the approved values, pending badge gone.
-    await page.goto(`/it/dashboard/people/${personId}`);
-    const approvedRow = page.getByTestId('expiry-row').filter({ hasText: expiryType.name });
-    await expect(approvedRow).toContainText(addDaysDisplay(500));
-    await expect(approvedRow.getByTestId('expiry-pending-badge')).toHaveCount(0);
-
-    // A second proposal (now legal again, the first is decided) followed by
-    // a REJECT must leave the (already-approved) values unchanged.
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
-    await page.goto('/it/dashboard/expiries');
-
-    const myRowAgain = page.getByTestId('my-expiry-row').filter({ hasText: expiryType.name });
-    await myRowAgain.getByRole('button', { name: 'Proponi aggiornamento' }).click();
-    const secondProposeForm = page.getByTestId('propose-expiry-form');
-    await secondProposeForm.getByLabel('Data scadenza').fill(addDaysUtc(900));
-    await secondProposeForm.getByRole('button', { name: 'Invia proposta' }).click();
-    await expect(page.getByTestId('my-expiry-row').filter({ hasText: expiryType.name }).getByTestId('my-expiry-pending-badge')).toBeVisible();
-
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.goto('/it/dashboard/expiries');
-
-    const secondQueueRow = page.getByTestId('proposal-row').filter({ hasText: expiryType.name });
-    await secondQueueRow.getByRole('button', { name: 'Rifiuta' }).click();
-    await secondQueueRow.getByRole('button', { name: 'Conferma' }).click();
-    await expect(page.getByTestId('proposals-queue-feedback')).toBeVisible();
-
-    await page.goto(`/it/dashboard/people/${personId}`);
-    const finalRow = page.getByTestId('expiry-row').filter({ hasText: expiryType.name });
-    // Still the APPROVED (first proposal's) value — the rejected second
-    // proposal's date must never have been applied.
-    await expect(finalRow).toContainText(addDaysDisplay(500));
-    await expect(finalRow).not.toContainText(addDaysDisplay(900));
   });
 
   test('story 12.11, ratifica utente 2: selecting a type with a configured validityMonths precompiles "Data scadenza" (issuedAt + months), still editable, and a validityMonths=0 type leaves it untouched', async ({

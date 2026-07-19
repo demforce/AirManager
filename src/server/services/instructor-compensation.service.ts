@@ -13,11 +13,11 @@ import { ConflictError, NotFoundError } from './errors';
  * `instructor-rates.service.ts`'s `InstructorRate` (what the STUDENT is
  * charged, D8 — that one stays untouched by this story).
  *
- * `getCompensationSummary`'s minutes query is MODELED on
- * `school.service.ts:846-855`'s `getInstructorHourSummaries` groupBy (SCHOOL,
- * non-CANCELLED, per `instructorProfileId`) but deliberately NOT imported
- * from there — the school area is slated for removal (story 12.13) and this
- * page must not depend on it.
+ * `getCompensationSummary`'s minutes query (SCHOOL, non-CANCELLED, per
+ * `instructorProfileId`, ONE batched groupBy) was deliberately
+ * self-contained rather than shared with the pre-12.13 school area's own
+ * equivalent groupBy — that area was removed in story 12.13, and this page
+ * never depended on it.
  */
 
 export type InstructorCompensationSummaryItem = {
@@ -117,7 +117,7 @@ async function listActiveInstructors(personId?: string): Promise<InstructorRow[]
   }));
 }
 
-/** SUM(minutes) of non-cancelled SCHOOL flights per instructor, ONE batched groupBy (never N+1) — modeled on `school.service.ts#getInstructorHourSummaries`. */
+/** SUM(minutes) of non-cancelled SCHOOL flights per instructor, ONE batched groupBy (never N+1). */
 async function sumMinutesByProfile(instructorProfileIds: string[], bounds: VariantBounds): Promise<Map<string, number>> {
   if (instructorProfileIds.length === 0) return new Map();
   const rows = await prisma.flight.groupBy({

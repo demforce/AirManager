@@ -12,7 +12,7 @@ import { prisma } from '@/server/db/prisma';
 import { getPprOperatingInstructions } from './app-settings.service';
 import { ConflictError, NotFoundError, RateLimitError, ValidationError } from './errors';
 
-/** The seeded cash category (`prisma/seed.ts`) the landing-fee movement is recorded under (story 8.3, AC 1) — resolved BY NAME inside the closing transaction, same "fails loudly by design" contract as `accounts.service.ts#recordTopUp`'s "Ricariche"/`packages.service.ts#sellPackage`'s "Pacchetti". */
+/** The seeded cash category (`prisma/seed.ts`) the landing-fee movement is recorded under (story 8.3, AC 1) — resolved BY NAME inside the closing transaction, same "fails loudly by design" contract as `accounts.service.ts#recordTopUp`'s "Ricariche". */
 const PPR_CASH_CATEGORY_NAME = 'PPR';
 
 /**
@@ -259,8 +259,7 @@ const PPR_REQUEST_SELECT = {
  * register (AC 2, story 8.3) — ONE function, two callers (`/dashboard/ppr`'s
  * console and `/dashboard/movements`), same `ppr.manage` gate. Defaults to
  * `status=PENDING` (the actionable queue's own contract, unchanged, FIFO
- * `createdAt asc`, tie-broken by `id` for stable pagination — same pattern
- * as `expiries.service.ts#listExpiryProposals`); the register passes an
+ * `createdAt asc`, tie-broken by `id` for stable pagination); the register passes an
  * explicit status (including `'ALL'`, no status filter at all) plus an
  * optional `from`/`to` period bounding `eta` — the register is a register
  * of ARRIVALS. The period is resolved to a semi-open

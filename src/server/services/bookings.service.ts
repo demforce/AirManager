@@ -459,8 +459,7 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
   // --- Expiry-based booking block (story 7.4, AC 1/2) — see this
   // function's own doc-comment for the full rationale. Deliberately NOT
   // `computeExpiryStatus` (Dev Notes: that helper is anchored to "today",
-  // this rule is anchored to the FLIGHT DAY) — a direct date-only compare,
-  // same convention as `packages.service.ts`'s `expiresAt >= flightDate`.
+  // this rule is anchored to the FLIGHT DAY) — a direct date-only compare.
   const flightDateOnly = dateOnlyInZone(startsAt, APP_TIMEZONE);
   const { blockingDocuments, warnings } = await findBlockingExpiredDocuments(input.personId, flightDateOnly);
 
@@ -751,7 +750,7 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * resurrect a cancelled booking), it WOULD still silently rewrite
  * aircraft/times/notes on a row that is supposed to be frozen the instant it
  * is cancelled. The single guarded `updateMany` (same pattern as
- * `expiries.service.ts#decideExpiryProposal`) closes that window entirely —
+ * `cash.service.ts`'s reversal guard) closes that window entirely —
  * `count === 0` means a concurrent cancel won the race, 409, same
  * `ConflictError` message as the fast pre-check below.
  */
@@ -884,7 +883,7 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
  * slot, never create a conflict — so there is nothing to serialize against.
  * The guard against a double-cancel race is the SAME atomic
  * `updateMany({ where: { id, status: existing.status }, ... })` pattern as
- * `updateBooking` (and `expiries.service.ts#decideExpiryProposal`) —
+ * `updateBooking` (and `cash.service.ts`'s reversal guard) —
  * `count === 0` means a concurrent cancel (or an edit-vs-cancel race) already
  * flipped this booking's status first, 409, race-safe. Cancellable from
  * BOTH `PENDING` and `APPROVED` (story 12.2, AC 4, was `ACTIVE` only) — any

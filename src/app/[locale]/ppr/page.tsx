@@ -28,11 +28,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
  * 12.4, AC 4) — `src/proxy.ts` `PUBLIC_WEB_PATHS`, reachable by anyone with
  * the URL, no session. Rebuilt from
  * `docs/design-reference/airops/PPR Request.html` (`.ppr-*` classes, in
- * `airops.css` since story 12.1) — outside `dashboard/layout.tsx` entirely,
- * so no `airopsNative`/`LegacyBackdrop` opt-out applies here (Dev Notes:
- * `.ppr-page` sets its OWN `background`/`color` from the theme variables,
- * overriding the root `[locale]/layout.tsx`'s hardcoded legacy `<body>`
- * classes via plain CSS inheritance — no shim needed).
+ * `airops.css` since story 12.1) — outside `dashboard/layout.tsx` entirely
+ * (Dev Notes: `.ppr-page` sets its OWN `background`/`color` from the theme
+ * variables, overriding the root `[locale]/layout.tsx`'s hardcoded legacy
+ * `<body>` classes via plain CSS inheritance — no shim needed).
  *
  * The prototype's top-right AFIS/ELEV/OPS stats and the aside's
  * schedule/runway/circuit/fuel rows have NO backing setting (AC 4) and are

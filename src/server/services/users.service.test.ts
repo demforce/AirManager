@@ -6,16 +6,13 @@ vi.mock('@/server/db/prisma', () => ({
   prisma: {
     user: {
       findUnique: vi.fn(),
-      findMany: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
     },
     person: {
       findUnique: vi.fn(),
-      findMany: vi.fn(),
     },
-    $transaction: vi.fn(),
   },
 }));
 
@@ -25,19 +22,14 @@ vi.mock('./auth-tokens.service', () => ({
 
 const { prisma } = await import('@/server/db/prisma');
 const { sendInviteEmail } = await import('./auth-tokens.service');
-const { createUser, getUser, listAvailablePersons, listUsers, resendInvite, updateUser } = await import(
-  './users.service'
-);
+const { createUser, resendInvite, updateUser } = await import('./users.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
 const findUniqueMock = vi.mocked(prisma.user.findUnique);
-const findManyMock = vi.mocked(prisma.user.findMany);
 const countMock = vi.mocked(prisma.user.count);
 const createMock = vi.mocked(prisma.user.create);
 const updateMock = vi.mocked(prisma.user.update);
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
-const personFindManyMock = vi.mocked(prisma.person.findMany);
-const transactionMock = vi.mocked(prisma.$transaction);
 const sendInviteEmailMock = vi.mocked(sendInviteEmail);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
@@ -50,10 +42,6 @@ const userUpdate = updateMock as unknown as { mockResolvedValue: (v: UserFixture
 const personFindUnique = personFindUniqueMock as unknown as {
   mockResolvedValue: (v: { id: string; user: { id: string } | null } | null) => void;
 };
-const personFindMany = personFindManyMock as unknown as {
-  mockResolvedValue: (v: Array<{ id: string; firstName: string; lastName: string }>) => void;
-};
-const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void };
 
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
@@ -77,22 +65,14 @@ const SELECTED_USER = {
 describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)', () => {
   beforeEach(() => {
     findUniqueMock.mockReset();
-    findManyMock.mockReset();
     countMock.mockReset();
     createMock.mockReset();
     updateMock.mockReset();
     personFindUniqueMock.mockReset();
-    personFindManyMock.mockReset();
-    transactionMock.mockReset();
     sendInviteEmailMock.mockReset();
   });
 
   describe('authorization (AD-5)', () => {
-    it('listUsers rejects an actor without users.manage', async () => {
-      await expect(listUsers(pilotActor(), { page: 1, pageSize: 20 })).rejects.toThrow(ForbiddenError);
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
     it('createUser rejects an actor without users.manage', async () => {
       await expect(
         createUser(pilotActor(), { email: 'x@airmanager.local', roles: ['PILOT'], locale: 'it', personId: null }),
@@ -106,45 +86,6 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
 
     it('resendInvite rejects an actor without users.manage', async () => {
       await expect(resendInvite(pilotActor(), 'user_1')).rejects.toThrow(ForbiddenError);
-    });
-  });
-
-  describe('listUsers', () => {
-    it('returns the AD-8 paginated shape', async () => {
-      transaction.mockResolvedValue([[SELECTED_USER], 1]);
-
-      const result = await listUsers(adminActor(), { page: 1, pageSize: 20 });
-
-      expect(result).toEqual({
-        items: [
-          {
-            id: 'user_1',
-            email: 'invitee@airmanager.local',
-            roles: ['PILOT'],
-            isActive: true,
-            locale: 'it',
-            passwordSet: false,
-            person: null,
-            createdAt: SELECTED_USER.createdAt,
-          },
-        ],
-        total: 1,
-        page: 1,
-        pageSize: 20,
-      });
-    });
-  });
-
-  describe('getUser', () => {
-    it('throws NotFoundError for a missing id', async () => {
-      userFindUnique.mockResolvedValue(null);
-      await expect(getUser(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
-    });
-
-    it('maps passwordHash presence to passwordSet: true', async () => {
-      userFindUnique.mockResolvedValue({ ...SELECTED_USER, passwordHash: 'argon2id$...' });
-      const result = await getUser(adminActor(), 'user_1');
-      expect(result.passwordSet).toBe(true);
     });
   });
 
@@ -280,20 +221,6 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       await resendInvite(adminActor(), 'user_1');
 
       expect(sendInviteEmailMock).toHaveBeenCalledWith('user_1', 'invitee@airmanager.local', 'it');
-    });
-  });
-
-  describe('listAvailablePersons', () => {
-    it('rejects an actor without users.manage', async () => {
-      await expect(listAvailablePersons(pilotActor())).rejects.toThrow(ForbiddenError);
-    });
-
-    it('returns unlinked persons for an authorized actor', async () => {
-      personFindMany.mockResolvedValue([{ id: 'person_3', firstName: 'Maria', lastName: 'Bianchi' }]);
-
-      const result = await listAvailablePersons(adminActor());
-
-      expect(result).toEqual([{ id: 'person_3', firstName: 'Maria', lastName: 'Bianchi' }]);
     });
   });
 });

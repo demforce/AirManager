@@ -64,20 +64,6 @@ async function recordCashMovement(page: Page, categoryId: string, amountCents: n
   expect(response.status()).toBe(201);
 }
 
-async function createPackageType(page: Page, data: { name: string; includedMinutes: number; priceCents: number }): Promise<string> {
-  const response = await page.request.post('/api/v1/package-types', { data });
-  expect(response.status()).toBe(201);
-  const created = (await response.json()) as { id: string };
-  return created.id;
-}
-
-async function sellPackage(page: Page, personId: string, packageTypeId: string, effectiveDate: string): Promise<void> {
-  const response = await page.request.post(`/api/v1/people/${personId}/packages`, {
-    data: { packageTypeId, paymentMethod: 'CASH', effectiveDate },
-  });
-  expect(response.status()).toBe(201);
-}
-
 async function accountBalance(page: Page, personId: string): Promise<number> {
   const response = await page.request.get(`/api/v1/people/${personId}/account`);
   const body = (await response.json()) as { balanceCents: number };
@@ -121,25 +107,6 @@ test.describe('Unified billing ledger (Story 12.9)', () => {
     await expect(billingRows(page).nth(0)).toContainText('Ricarica');
     await expect(billingRows(page).nth(0)).toContainText(pilot.lastName);
     await expect(billingRows(page).nth(1)).toContainText('Voce cassa manuale');
-  });
-
-  test('a package sale twin (PACKAGE_PURCHASE amount 0) surfaces as ONE row on the CASH side, person derived through the link, no row actions (AC 1/3)', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const pilot = await createPilotPerson(page, 'Pacchetto');
-    const typeName = `Pacchetto-${uniqueSuffix()}`;
-    const packageTypeId = await createPackageType(page, { name: typeName, includedMinutes: 300, priceCents: 12000 });
-    const { day1 } = uniqueDatePair();
-
-    await sellPackage(page, pilot.personId, packageTypeId, day1);
-
-    await gotoBilling(page, { dateFrom: day1, dateTo: day1 });
-    await expect(billingRows(page)).toHaveCount(1);
-    const row = billingRows(page).first();
-    await expect(row).toContainText(pilot.lastName);
-    await expect(row).toContainText(/120,00\s€/);
-    // Derived/automatic twin: no Rettifica/Storna action.
-    await expect(row.getByTestId('transaction-adjust-action')).toHaveCount(0);
-    await expect(row.getByTestId('transaction-reverse-action')).toHaveCount(0);
   });
 
   test('Tipo filter (movementType via URL) narrows to the account vocabulary only', async ({ page }) => {
@@ -296,7 +263,7 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
     expect(second.status()).toBe(409);
   });
 
-  test('Storna on a manual cash movement via the row action; a derived (package twin) row offers no action', async ({ page }) => {
+  test('Storna on a manual cash movement via the row action', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const categoryName = `Storna-${uniqueSuffix()}`;
     const categoryId = await createCategory(page, categoryName);

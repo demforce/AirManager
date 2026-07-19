@@ -95,9 +95,8 @@ async function seedStaffUser(passwordHash: string): Promise<void> {
 
 /**
  * Story 9.1 (AC 5): an INSTRUCTOR test user with an active `InstructorProfile`
- * so the "Scuola" own-access view (`/dashboard/school`) and the e2e suite
- * have a real instructor to log in as. Same idempotent upsert pattern as
- * `seedStaffUser`.
+ * so `/dashboard/instructors` and the e2e suite have a real instructor to
+ * log in as. Same idempotent upsert pattern as `seedStaffUser`.
  */
 async function seedInstructorUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
@@ -251,7 +250,11 @@ async function seedAircraft(): Promise<void> {
  * incrementally). Idempotent like the rest of this seed — `upsert` keyed on
  * the unique `name`.
  */
-const CASH_CATEGORY_NAMES = ['Ricariche', 'Pacchetti', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro'];
+// Story 12.13 (ratifica utente 4a): "Pacchetti" dropped — the hour-packages
+// feature that used to record cash movements under it is retired; existing
+// historical movements under that category (if any, on a real DB) are
+// untouched (no destructive migration, §9).
+const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro'];
 
 async function seedCashCategories(): Promise<void> {
   for (const name of CASH_CATEGORY_NAMES) {

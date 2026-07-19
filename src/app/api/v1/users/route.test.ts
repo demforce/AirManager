@@ -11,6 +11,10 @@ import type { SessionActor } from '@/server/auth/session';
  * would require crashing the database mid-request, which is exactly the
  * kind of flaky, environment-dependent setup this integration test avoids
  * while still exercising the production route + wrapper code end to end.
+ *
+ * Story 12.13: the sibling GET (list) handler was removed (no consumer —
+ * the Piloti page reads its roster from `people.service.ts`'s own
+ * `listPilotsPageData` directly) — both cases below now exercise POST.
  */
 
 vi.mock('@/server/auth/session', () => ({
@@ -27,16 +31,15 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 vi.mock('@/server/services/users.service', () => ({
-  listUsers: vi.fn(),
   createUser: vi.fn(),
 }));
 
 const { getSessionActor } = await import('@/server/auth/session');
-const { listUsers } = await import('@/server/services/users.service');
-const { GET, POST } = await import('./route');
+const { createUser } = await import('@/server/services/users.service');
+const { POST } = await import('./route');
 
 const getSessionActorMock = vi.mocked(getSessionActor);
-const listUsersMock = vi.mocked(listUsers);
+const createUserMock = vi.mocked(createUser);
 
 const ACTOR: SessionActor = { userId: 'user_1', roles: ['ADMIN'], personId: null, email: 'admin@airmanager.local' };
 
@@ -44,10 +47,10 @@ function req(url: string, init?: RequestInit): NextRequest {
   return new NextRequest(new Request(url, init));
 }
 
-describe('GET/POST /api/v1/users (integration, Story 1.5 Task 4)', () => {
+describe('POST /api/v1/users (integration, Story 1.5 Task 4)', () => {
   beforeEach(() => {
     getSessionActorMock.mockReset();
-    listUsersMock.mockReset();
+    createUserMock.mockReset();
   });
 
   it('POST with an invalid body answers the AD-8 422 envelope', async () => {
@@ -80,9 +83,15 @@ describe('GET/POST /api/v1/users (integration, Story 1.5 Task 4)', () => {
 
     it('answers the AD-8 500 INTERNAL_ERROR envelope, with no internal detail leaked to the client', async () => {
       getSessionActorMock.mockResolvedValue(ACTOR);
-      listUsersMock.mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:5432'));
+      createUserMock.mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:5432'));
 
-      const response = await GET(req('http://localhost/api/v1/users'));
+      const response = await POST(
+        req('http://localhost/api/v1/users', {
+          method: 'POST',
+          body: JSON.stringify({ email: 'invitee@airmanager.local', roles: ['PILOT'] }),
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
 
       expect(response.status).toBe(500);
       const body = (await response.json()) as { error: { code: string; message: string } };

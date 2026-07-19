@@ -1,6 +1,17 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+/**
+ * User management (story 1.4; rewritten story 12.13 — `/dashboard/users`
+ * is gone, no longer a route). Every flow this spec exercises (invite,
+ * pending-invite login block, deactivated-user login block, forgot-password)
+ * moved to the Piloti page's "Accesso" section (story 12.6) — the API
+ * (`POST /api/v1/users`, `PATCH /api/v1/users/{id}`,
+ * `POST /api/v1/users/{id}/resend-invite`) is unchanged, only its UI moved.
+ * The suspend/reactivate-from-the-row describe block below (story 12.6) was
+ * already Piloti-native and is untouched.
+ */
+
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const STAFF_EMAIL = 'staff@airmanager.local';
@@ -21,11 +32,7 @@ async function login(page: Page, email: string, password: string = SEED_PASSWORD
 
 /** Login that must succeed: waits for the dashboard redirect so the session
  * cookie is in place before the test navigates elsewhere. */
-async function loginExpectingDashboard(
-  page: Page,
-  email: string,
-  password: string = SEED_PASSWORD!,
-): Promise<void> {
+async function loginExpectingDashboard(page: Page, email: string, password: string = SEED_PASSWORD!): Promise<void> {
   await login(page, email, password);
   await expect(page).toHaveURL(/\/it\/dashboard$/);
 }
@@ -45,11 +52,7 @@ type MailpitFullMessage = { Text: string; Subject: string };
  * whose subject contains `subjectIncludes` — used to tell the invite email
  * apart from the password-reset email when both land in the same inbox.
  */
-async function waitForMailpitMessage(
-  to: string,
-  subjectIncludes: string,
-  timeoutMs = 15_000,
-): Promise<MailpitFullMessage> {
+async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -88,39 +91,68 @@ function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
 }
 
-/** Admin must already be logged in. Creates an invited PILOT user via the UI. */
-async function createInvitedUser(page: Page, email: string): Promise<void> {
-  await page.goto('/it/dashboard/users');
-  await page.getByRole('button', { name: 'Nuovo utente' }).click();
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Pilota', { exact: true }).check();
-  await page.getByRole('button', { name: 'Crea e invia invito' }).click();
-  await expect(page.getByTestId('users-feedback')).toBeVisible();
-
-  // Newest-first list: the fresh invitee is on page 1, with a pending badge.
-  const row = page.getByRole('row', { name: new RegExp(email) });
-  await expect(row.getByText('Invito in sospeso')).toBeVisible();
+function rowFor(page: Page, lastName: string) {
+  return page.locator('[data-testid^="pilot-row-"]').filter({ hasText: lastName });
 }
 
-/** Full invite flow: create via UI, read the invite email from Mailpit, set the password. */
-async function inviteAndSetPassword(page: Page, password: string): Promise<string> {
+/**
+ * Admin must already be logged in. Creates a fresh pilot person, then
+ * invites a user for it from the editor's "Accesso" section (story 12.6,
+ * AC 4) — the ONLY invite path left now that `/dashboard/users` is gone.
+ */
+async function createPilotWithAccess(page: Page, email: string): Promise<{ lastName: string }> {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const lastName = `UserMgmt-${suffix}`;
+
+  await page.goto('/it/dashboard/pilots');
+  await page.getByTestId('pilots-new-button').click();
+  const form = page.getByTestId('pilot-identity-form');
+  await form.getByLabel('Nome', { exact: true }).fill('Test');
+  await form.getByLabel('Cognome', { exact: true }).fill(lastName);
+  await page.getByTestId('pilot-identity-submit').click();
+  await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toBeVisible();
+
+  await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
+  await rowFor(page, lastName).getByRole('button', { name: 'Modifica' }).click();
+
+  const accessSection = page.getByTestId('pilot-access-none');
+  await accessSection.getByLabel('Email').fill(email);
+  await accessSection.getByLabel('Pilota', { exact: true }).check();
+  await page.getByTestId('pilot-access-create').click();
+  await expect(page.getByTestId('toast').filter({ hasText: 'Utente creato' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Chiudi' }).first().click();
+  return { lastName };
+}
+
+/** Full invite flow: create from the Piloti "Accesso" section, read the invite email from Mailpit, set the password. */
+async function inviteAndSetPassword(page: Page, password: string): Promise<{ email: string; lastName: string }> {
   const email = uniqueEmail('invitee');
-  await createInvitedUser(page, email);
+  const { lastName } = await createPilotWithAccess(page, email);
 
   const inviteEmail = await waitForMailpitMessage(email, 'invitato');
   await submitSetPassword(page, extractSetPasswordUrl(inviteEmail.Text), password);
 
-  return email;
+  return { email, lastName };
+}
+
+/** Suspends the pilot's linked user from the Piloti row (story 12.6, AC 3) — admin must already be on the filtered Piloti list. */
+async function suspendFromRow(page: Page, lastName: string): Promise<void> {
+  await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
+  const row = rowFor(page, lastName);
+  await row.getByTestId(/^pilot-suspend-toggle-/).click();
+  await row.getByTestId(/^pilot-suspend-confirm-/).click();
+  await expect(page.getByTestId('toast').filter({ hasText: 'sospeso' })).toBeVisible();
 }
 
 test.describe('User management (Story 1.4)', () => {
-  test('admin creates a user, who receives an invite email, sets a password, and logs in (AC 1)', async ({
+  test('admin invites a user from the Piloti "Accesso" section, who receives an invite email, sets a password, and logs in (AC 1)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const password = 'InviteFlow123!';
 
-    const email = await inviteAndSetPassword(page, password);
+    const { email } = await inviteAndSetPassword(page, password);
     await logout(page);
 
     await loginExpectingDashboard(page, email, password);
@@ -130,7 +162,7 @@ test.describe('User management (Story 1.4)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const email = uniqueEmail('pending');
-    await createInvitedUser(page, email);
+    await createPilotWithAccess(page, email);
     await logout(page);
 
     await login(page, email, 'whatever-password-they-guess');
@@ -142,12 +174,9 @@ test.describe('User management (Story 1.4)', () => {
   test('a deactivated user is rejected at login (AC 2)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const password = 'DeactivateFlow123!';
-    const email = await inviteAndSetPassword(page, password);
+    const { email, lastName } = await inviteAndSetPassword(page, password);
 
-    await page.goto('/it/dashboard/users');
-    const row = page.getByRole('row', { name: new RegExp(email) });
-    await row.getByRole('button', { name: 'Disattiva' }).click();
-    await expect(row.getByText('Disattivo')).toBeVisible();
+    await suspendFromRow(page, lastName);
 
     await logout(page);
     await login(page, email, password);
@@ -156,12 +185,10 @@ test.describe('User management (Story 1.4)', () => {
     await expect(page).toHaveURL(/\/it\/login$/);
   });
 
-  test('forgot-password sends a reset email and the new password works, without revealing account existence (AC 3)', async ({
-    page,
-  }) => {
+  test('forgot-password sends a reset email and the new password works, without revealing account existence (AC 3)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const initialPassword = 'ForgotFlowInitial123!';
-    const email = await inviteAndSetPassword(page, initialPassword);
+    const { email } = await inviteAndSetPassword(page, initialPassword);
     await logout(page);
 
     // Unknown email: same neutral confirmation, no distinguishing behavior.
@@ -183,22 +210,17 @@ test.describe('User management (Story 1.4)', () => {
     await loginExpectingDashboard(page, email, newPassword);
   });
 
-  test('a pilot is redirected away from /dashboard/users (AD-5)', async ({ page }) => {
+  test('a pilot gets 403 creating a user directly via the API (AD-5 defense in depth — users.manage is ADMIN-only)', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
-    await page.goto('/it/dashboard/users');
-    await expect(page).toHaveURL(/\/it\/dashboard$/);
-  });
-
-  test('a pilot gets 403 from the users API directly (AD-5 defense in depth)', async ({ page }) => {
-    await loginExpectingDashboard(page, PILOT_EMAIL);
-
-    const response = await page.request.get('/api/v1/users');
+    const response = await page.request.post('/api/v1/users', {
+      data: { email: uniqueEmail('forbidden'), roles: ['PILOT'] },
+    });
     expect(response.status()).toBe(403);
   });
 
-  test('GET /api/v1/users returns the AD-8 401 envelope without a session', async ({ request }) => {
-    const response = await request.get('/api/v1/users');
+  test('POST /api/v1/users returns the AD-8 401 envelope without a session', async ({ request }) => {
+    const response = await request.post('/api/v1/users', { data: { email: uniqueEmail('anon'), roles: ['PILOT'] } });
     expect(response.status()).toBe(401);
     expect(await response.json()).toEqual({
       error: { code: 'UNAUTHENTICATED', message: expect.any(String) },
@@ -210,44 +232,12 @@ test.describe('User management (Story 1.4)', () => {
  * Suspend/reactivate from the Piloti row (story 12.6, AC 3) — `users.manage`
  * is ADMIN-only (RBAC INVARIANT, D13): staff (`people.manage`/`finance.manage`
  * but no `users.manage`) must see Modifica/Registra but NEVER
- * Sospendi/Riattiva, even on a row with a linked user. The invite flow
- * itself (create user + email) stays on the still-alive `/dashboard/users`
- * page above; this only exercises the NEW row action.
+ * Sospendi/Riattiva, even on a row with a linked user.
  */
 test.describe('Suspend/reactivate from the Piloti row (Story 12.6)', () => {
-  function rowFor(page: Page, lastName: string) {
-    return page.locator('[data-testid^="pilot-row-"]').filter({ hasText: lastName });
-  }
-
-  /** Admin must already be logged in. Creates a pilot person, then links a user to it from the editor's "Accesso" section (story 12.6, AC 4). */
-  async function createPilotWithAccess(page: Page): Promise<{ lastName: string }> {
-    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const lastName = `Susp-${suffix}`;
-
-    await page.goto('/it/dashboard/pilots');
-    await page.getByTestId('pilots-new-button').click();
-    const form = page.getByTestId('pilot-identity-form');
-    await form.getByLabel('Nome', { exact: true }).fill('Test');
-    await form.getByLabel('Cognome', { exact: true }).fill(lastName);
-    await page.getByTestId('pilot-identity-submit').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toBeVisible();
-
-    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
-    await rowFor(page, lastName).getByRole('button', { name: 'Modifica' }).click();
-
-    const accessSection = page.getByTestId('pilot-access-none');
-    await accessSection.getByLabel('Email').fill(uniqueEmail('pilotaccess'));
-    await accessSection.getByLabel('Pilota', { exact: true }).check();
-    await page.getByTestId('pilot-access-create').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Utente creato' })).toBeVisible();
-
-    await page.getByRole('button', { name: 'Chiudi' }).first().click();
-    return { lastName };
-  }
-
   test('admin suspends and reactivates the linked user from the row', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const { lastName } = await createPilotWithAccess(page);
+    const { lastName } = await createPilotWithAccess(page, uniqueEmail('pilotaccess'));
 
     await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
     const row = rowFor(page, lastName);
@@ -266,7 +256,7 @@ test.describe('Suspend/reactivate from the Piloti row (Story 12.6)', () => {
 
   test('staff sees Modifica/Registra but no Sospendi/Riattiva on a row with a linked user', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const { lastName } = await createPilotWithAccess(page);
+    const { lastName } = await createPilotWithAccess(page, uniqueEmail('pilotaccess'));
     await page.context().clearCookies();
 
     await loginExpectingDashboard(page, STAFF_EMAIL);

@@ -10,7 +10,6 @@ import { getSessionActor } from '@/server/auth/session';
 import { getAccountOverview, listAccountMovements } from '@/server/services/accounts.service';
 import { ForbiddenError, NotFoundError } from '@/server/services/errors';
 import { getPerson } from '@/server/services/people.service';
-import { PackagesPanel } from '../../packages-panel';
 import { AccountStatementTable } from './account-statement-table';
 
 type PageProps = {
@@ -88,7 +87,6 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
   // pattern as `AccountPanel`.
   const moneyLocale = locale === 'en' ? ('en' as const) : ('it' as const);
   const t = await getTranslations('AccountStatementPage');
-  const tPackages = await getTranslations('HourPackagesPanel');
   const tExport = await getTranslations('Export');
   const totalPages = Math.max(1, Math.ceil(statement.total / PAGE_SIZE));
 
@@ -124,48 +122,6 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
           >
             {t('backToPerson')}
           </Link>
-        </div>
-
-        <div className="mt-10">
-          <PackagesPanel
-            personId={id}
-            canSell={false}
-            labels={{
-              heading: tPackages('heading'),
-              loadError: tPackages('loadError'),
-              empty: tPackages('empty'),
-              addAction: tPackages('addAction'),
-              feedback: tPackages('feedback'),
-              table: {
-                remaining: tPackages('table.remaining'),
-                price: tPackages('table.price'),
-                expiresAt: tPackages('table.expiresAt'),
-                noExpiry: tPackages('table.noExpiry'),
-                expiredBadge: tPackages('table.expiredBadge'),
-                // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
-                // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).
-                consumedNote: tPackages.raw('table.consumedNote') as string,
-              },
-              form: {
-                title: tPackages('form.title'),
-                packageType: tPackages('form.packageType'),
-                noActiveTypes: tPackages('form.noActiveTypes'),
-                paymentMethod: tPackages('form.paymentMethod'),
-                paymentMethods: {
-                  cash: tPackages('form.paymentMethods.cash'),
-                  bankTransfer: tPackages('form.paymentMethods.bankTransfer'),
-                  pos: tPackages('form.paymentMethods.pos'),
-                },
-                effectiveDate: tPackages('form.effectiveDate'),
-                description: tPackages('form.description'),
-                submit: tPackages('form.submit'),
-                cancel: tPackages('form.cancel'),
-                requiredField: tPackages('form.requiredField'),
-                inactiveTypeError: tPackages('form.inactiveTypeError'),
-                genericError: tPackages('form.genericError'),
-              },
-            }}
-          />
         </div>
 
         <div className="mt-10 flex justify-end gap-3">

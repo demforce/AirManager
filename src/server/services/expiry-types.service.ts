@@ -14,8 +14,7 @@ function isUniqueViolation(error: unknown): boolean {
  * `Expiry.expiryTypeId` (`ON DELETE RESTRICT`): a scadenza recorded against
  * this very type between the pre-check (added in 6.2) and the `DELETE` must
  * still read as the same `Conflict`, never a raw 500 (same rationale as
- * `cash.service.ts#isForeignKeyViolation` / `package-types.service.ts#isForeignKeyViolation`,
- * the identical 4.3 → 4.4 split this story mirrors).
+ * `cash.service.ts#isForeignKeyViolation`).
  */
 function isForeignKeyViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2003';
@@ -28,7 +27,7 @@ function isForeignKeyViolation(error: unknown): boolean {
  * and the other's `DELETE` then hits a row that is already gone. Maps to the
  * SAME 404 the pre-check itself would have produced, never a raw 500 (this
  * was the exact gap 6.1's review deferred as D1, for parity with
- * `cash.service.ts`/`package-types.service.ts` — now hardened uniformly).
+ * `cash.service.ts` — now hardened uniformly).
  */
 function isRecordNotFound(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2025';
@@ -163,8 +162,7 @@ export async function updateExpiryType(actor: Actor, id: string, input: UpdateEx
  * "in use" message) BEFORE the delete — the `P2003` catch remains as the
  * concurrency backstop (a scadenza registered against this very type
  * between the pre-check and the `DELETE` still reads as the same
- * `Conflict`, never a raw 500 — identical pre-check + backstop split to
- * `package-types.service.ts#deletePackageType`, story 4.3 → 4.4).
+ * `Conflict`, never a raw 500).
  */
 export async function deleteExpiryType(actor: Actor, id: string): Promise<void> {
   authorize(actor, 'settings.manage');

@@ -1,13 +1,14 @@
 import { apiRoute } from '@/lib/api/handler';
 import { updateUserSchema, type UpdateUserInput } from '@/lib/schemas/users';
-import { getUser, updateUser } from '@/server/services/users.service';
+import { updateUser } from '@/server/services/users.service';
 
 type RouteParams = { id: string };
 
-export const GET = apiRoute<undefined, undefined, RouteParams>({
-  handle: async ({ actor, params }) => getUser(actor, params.id),
-});
-
+/**
+ * Story 12.13: the sibling GET (single) handler was removed — no consumer
+ * ever read it directly (the Piloti page reads its roster from
+ * `people.service.ts#listPilotsPageData`).
+ */
 export const PATCH = apiRoute<undefined, UpdateUserInput, RouteParams>({
   bodySchema: updateUserSchema,
   handle: async ({ actor, params, body }) => updateUser(actor, params.id, body),

@@ -9,13 +9,10 @@ import { z } from './zod-with-openapi';
 // Computed status (`ok`/`expiring`/`expired`) is server-computed
 // (`src/lib/expiry-status.ts`) and always shipped ready-to-render — never
 // recomputed client-side (Dev Notes: a client clock skew must not change
-// the badge). A pilot/student/instructor proposes an update to their OWN
-// scadenza (`ExpiryUpdateProposal`); staff validates the queue.
-
-/** Mirrors the Prisma `ExpiryProposalStatus` enum. */
-export const expiryProposalStatusSchema = z.enum(['PENDING', 'APPROVED', 'REJECTED']);
-
-export type ExpiryProposalStatusDto = z.infer<typeof expiryProposalStatusSchema>;
+// the badge). Story 12.13 (ratifica utente 4b) retired the titolare-facing
+// update-proposal flow (`ExpiryUpdateProposal` stays in the schema,
+// dormant, §9) — `pendingProposalSummarySchema` below is a READ-ONLY
+// leftover for any pre-cutover proposal still `PENDING`.
 
 /** Mirrors `src/lib/expiry-status.ts`'s `ExpiryStatus` — server-computed, NEVER recomputed client-side (Dev Notes). */
 export const expiryStatusSchema = z.enum(['ok', 'expiring', 'expired']);
@@ -25,9 +22,10 @@ export type ExpiryStatusDto = z.infer<typeof expiryStatusSchema>;
 /**
  * The pending proposal summary embedded on a `GET .../expiries` list item
  * (AC 2) — `null` when no proposal is currently pending for that scadenza.
- * Just enough to render the "proposta in attesa" badge/hint; the full
- * current-vs-proposed comparison lives in the staff queue
- * (`expiryProposalListItemSchema` below).
+ * Just enough to render the "proposta in attesa" badge/hint (story 12.13:
+ * the propose/decide flow that used to produce these is gone — a
+ * non-`null` value can now only come from a proposal filed before the
+ * cutover).
  */
 export const pendingProposalSummarySchema = z.object({
   id: z.string(),
@@ -119,72 +117,6 @@ export const updateExpirySchema = z
 
 export type UpdateExpiryInput = z.infer<typeof updateExpirySchema>;
 
-/**
- * `POST /api/v1/expiries/{id}/proposals` body (AC 2). COMPLETE values, not
- * a partial patch (Dev Notes: the form arrives prefilled with the current
- * issuedAt/expiresAt/notes) — same `.refine` as `registerExpirySchema`.
- */
-export const proposeExpirySchema = z
-  .object({
-    issuedAt: z.iso.date(),
-    expiresAt: z.iso.date(),
-    notes: z.string().trim().max(500).optional(),
-  })
-  .refine((value) => value.expiresAt >= value.issuedAt, { message: 'expiresAt must not be before issuedAt', path: ['expiresAt'] });
-
-export type ProposeExpiryInput = z.infer<typeof proposeExpirySchema>;
-
-/**
- * `GET /api/v1/expiry-proposals` query (staff queue, AC 2) — `status`
- * defaults to `PENDING` (the actionable queue); staff can pass `APPROVED`/
- * `REJECTED` to review past decisions. Shares the standard pagination shape
- * (story 1.5) — same as `listCashMovementsQuerySchema`.
- */
-export const listExpiryProposalsQuerySchema = paginationQuerySchema.extend({
-  status: expiryProposalStatusSchema.optional().default('PENDING'),
-});
-
-export type ListExpiryProposalsQuery = z.infer<typeof listExpiryProposalsQuerySchema>;
-
-/**
- * One entry of the staff proposal queue (AC 2) — current vs proposed values
- * side by side, plus the persona/tipo/proponente identification needed to
- * decide. Mirrors `expiries.service.ts`'s `ExpiryProposalListItem`.
- */
-export const expiryProposalItemSchema = z.object({
-  id: z.string(),
-  expiryId: z.string(),
-  personId: z.string(),
-  personName: z.string(),
-  expiryTypeId: z.string(),
-  typeName: z.string(),
-  currentIssuedAt: z.iso.date(),
-  currentExpiresAt: z.iso.date(),
-  currentNotes: z.string().nullable(),
-  proposedIssuedAt: z.iso.date(),
-  proposedExpiresAt: z.iso.date(),
-  proposedNotes: z.string().nullable(),
-  status: expiryProposalStatusSchema,
-  proposedByEmail: z.string(),
-  decidedByEmail: z.string().nullable(),
-  decidedAt: z.iso.datetime().nullable(),
-  createdAt: z.iso.datetime(),
-});
-
-export type ExpiryProposalItemDto = z.infer<typeof expiryProposalItemSchema>;
-
-/** `GET /api/v1/expiry-proposals` response — the AD-8 paginated envelope (same shape as `listCashMovements`). */
-export const expiryProposalListResponseSchema = paginatedResponseSchema(expiryProposalItemSchema);
-
-export type ExpiryProposalListResponseDto = z.infer<typeof expiryProposalListResponseSchema>;
-
-/** `POST /api/v1/expiry-proposals/{id}/decision` body (AC 2). */
-export const decideProposalSchema = z.object({
-  decision: z.enum(['APPROVE', 'REJECT']),
-});
-
-export type DecideProposalInput = z.infer<typeof decideProposalSchema>;
-
 // --- Expiry dashboard (epic 6, story 6.4, AC 1; FR-38) ----------------------
 // The staff-facing "Tutte le scadenze" landing (`/dashboard/expiries`) — every
 // scadenza across every person, ordered by urgency. `status` is NEVER
@@ -250,7 +182,7 @@ export const expiryDashboardItemSchema = z.object({
 
 export type ExpiryDashboardItemDto = z.infer<typeof expiryDashboardItemSchema>;
 
-/** `GET /api/v1/expiries` response — the AD-8 paginated envelope (same shape as `expiryProposalListResponseSchema`). */
+/** `GET /api/v1/expiries` response — the AD-8 paginated envelope (same shape as `listCashMovements`'s). */
 export const expiryDashboardListResponseSchema = paginatedResponseSchema(expiryDashboardItemSchema);
 
 export type ExpiryDashboardListResponseDto = z.infer<typeof expiryDashboardListResponseSchema>;

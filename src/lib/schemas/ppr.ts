@@ -123,7 +123,7 @@ export type PprStatusDto = z.infer<typeof pprStatusSchema>;
  * `GET /api/v1/ppr-requests` query (AC 1/2). `status` defaults to `PENDING`
  * — the actionable queue, FIFO (`createdAt asc`) — same
  * `paginationQuerySchema.extend` + `.optional().default(...)` pattern as
- * `listExpiryProposalsQuerySchema`. `'ALL'` (story 8.3, AC 2) means no
+ * `listAllExpiriesQuerySchema`. `'ALL'` (story 8.3, AC 2) means no
  * status filter at all — an explicit, separate literal rather than
  * `status` becoming optional-and-absent-means-all, so the queue's own
  * default (`PENDING`, the 8.2 contract, unchanged) and the register's

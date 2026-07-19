@@ -3,7 +3,6 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Role } from '@/generated/prisma/client';
 import type { AvatarColor } from '@/components/ui/avatar';
 import { ToastProvider } from '@/components/ui/toast';
-import { LegacyBackdrop } from '@/components/shell/legacy-backdrop';
 import { Sidebar, type FlightCategory, type SidebarMetar } from '@/components/shell/sidebar';
 import { NAV_GROUPS, visibleNavItems, type NavItemId } from '@/components/shell/route-registry';
 import type { Theme } from '@/components/shell/theme-toggle';
@@ -149,18 +148,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             logoutAction={logoutAction}
             logoutLabel={t('logout')}
           />
-          {/*
-           * Legacy (pre-AirOps) pages assume the OLD light backdrop
-           * (`#FBFBFA`/`#2F3437`, the root layout's previous <body> colors)
-           * regardless of the active AirOps theme — their hardcoded dark
-           * Tailwind text would be illegible against `.main`'s own
-           * `var(--bg)` in dark mode otherwise. `LegacyBackdrop` (story
-           * 12.3, AC 1) applies that wrapper conditionally, keyed off each
-           * route's `airopsNative` flag in the registry — a route rewritten
-           * in the AirOps language (12.3+) renders bare. The final sweep
-           * (story 12.13) removes this component once no legacy page remains.
-           */}
-          <LegacyBackdrop>{children}</LegacyBackdrop>
+          {children}
         </div>
       </div>
     </ToastProvider>

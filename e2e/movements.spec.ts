@@ -204,6 +204,19 @@ function movementsRows(page: Page) {
   return page.getByTestId('ppr-register-row');
 }
 
+/**
+ * Story 12.13, ratifica utente 5 — hard-delete: the pre-12.4 shim page that
+ * used to 308-redirect `/dashboard/ppr/register` to `/dashboard/movements`
+ * is gone entirely. Stateless, unauthenticated (the route no longer exists
+ * at the framework-routing level — the request never reaches the dashboard
+ * layout's session check), so it runs standalone, outside the serial block
+ * below.
+ */
+test('the eliminated /dashboard/ppr/register route answers 404, no redirect (ratifica utente 5: hard-delete, not a shim)', async ({ page }) => {
+  const response = await page.goto('/it/dashboard/ppr/register');
+  expect(response?.status()).toBe(404);
+});
+
 test.describe('Voli in transito / movements register: closure, landing fee, filters, derived status (Story 8.3, AC 1/2, FR-24; epic 12 story 12.4, AC 3)', () => {
   // Module doc-comment: the shared, paginated per-status register views are
   // mutable, global state that decisions in THIS file's own tests shift.

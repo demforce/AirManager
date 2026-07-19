@@ -29,11 +29,7 @@ export type Permission =
   | 'flights.manage'
   | 'bookings.manage.own'
   | 'bookings.manage.any'
-  | 'school.manage.own'
-  | 'school.manage.any'
-  | 'school.notes.manage.any'
   | 'expiries.manage'
-  | 'expiries.propose.own'
   | 'ppr.manage'
   | 'settings.manage'
   | 'users.manage'
@@ -53,11 +49,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'flights.manage',
   'bookings.manage.own',
   'bookings.manage.any',
-  'school.manage.own',
-  'school.manage.any',
-  'school.notes.manage.any',
   'expiries.manage',
-  'expiries.propose.own',
   'ppr.manage',
   'settings.manage',
   'users.manage',
@@ -93,14 +85,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'finance.manage',
     'flights.manage',
     'bookings.manage.any',
-    // Story 9.1 (FR-32): staff assigns/removes a student's instructor(s)
-    // from the scheda persona — the "any" counterpart to the instructor's
-    // own `school.manage.own` (their own students' view at `/dashboard/school`).
-    'school.manage.any',
-    // Story 9.2 (FR-33): deliberately NO `school.notes.manage.any` here — an
-    // admin's override to edit ANY training note past its 7-day window is
-    // reserved to ADMIN alone (via `ALL_PERMISSIONS` above), never staff,
-    // per the story's literal AC 3 ("solo l'autore o l'admin").
     'expiries.manage',
     // Story 8.2 (FR-23): staff approves/rejects PPR requests — the queue at
     // `/dashboard/ppr` and the operating-instructions GET (edit stays
@@ -109,14 +93,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'ppr.manage',
     'self.read',
   ],
-  // `expiries.propose.own` (story 6.2, FR-36): the titolare proposes a
-  // renewal of their OWN scadenza, staff validates it — staff deliberately
-  // does NOT hold this permission (it edits directly via `expiries.manage`
-  // instead, never through the proposal queue).
-  INSTRUCTOR: ['self.read', 'bookings.manage.own', 'school.manage.own', 'expiries.propose.own'],
-  PILOT: ['self.read', 'bookings.manage.own', 'expiries.propose.own'],
+  INSTRUCTOR: ['self.read', 'bookings.manage.own'],
+  PILOT: ['self.read', 'bookings.manage.own'],
   // Story 7.1: no `bookings.manage.own` — see the doc-comment above.
-  STUDENT: ['self.read', 'expiries.propose.own'],
+  STUDENT: ['self.read'],
 };
 
 /**

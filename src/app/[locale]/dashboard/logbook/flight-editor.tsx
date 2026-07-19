@@ -95,8 +95,6 @@ export type FlightEditorLabels = {
     aircraftAmount: string;
     instructorRate: string;
     instructorAmount: string;
-    packageCovered: string;
-    chargedMinutes: string;
     total: string;
     newBalance: string;
   };
@@ -426,14 +424,6 @@ export function FlightEditor({
             <dd className="mono num">{formatMinutes(lastResult.flight.minutes)}</dd>
             <dt style={{ color: 'var(--ink-3)' }}>{labels.result.aircraftRate}</dt>
             <dd className="mono num">{formatCents(lastResult.flight.breakdown.aircraftRateCentsPerHour, moneyLocale)}/h</dd>
-            {lastResult.flight.breakdown.packageCoveredMinutes > 0 ? (
-              <>
-                <dt style={{ color: 'var(--ink-3)' }}>{labels.result.packageCovered}</dt>
-                <dd className="mono num">{formatMinutes(lastResult.flight.breakdown.packageCoveredMinutes)}</dd>
-                <dt style={{ color: 'var(--ink-3)' }}>{labels.result.chargedMinutes}</dt>
-                <dd className="mono num">{formatMinutes(lastResult.flight.breakdown.chargedMinutes)}</dd>
-              </>
-            ) : null}
             <dt style={{ color: 'var(--ink-3)' }}>{labels.result.aircraftAmount}</dt>
             <dd className="mono num">{formatCents(lastResult.flight.breakdown.aircraftAmountCents, moneyLocale)}</dd>
             {lastResult.flight.breakdown.instructorAmountCents !== undefined && lastResult.flight.breakdown.instructorRateCentsPerHour !== undefined ? (

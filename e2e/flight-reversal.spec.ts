@@ -35,11 +35,7 @@ function uniqueEmail(prefix: string): string {
   return `${prefix}-${uniqueSuffix()}@airmanager.local`;
 }
 
-function uniqueName(prefix: string): string {
-  return `${prefix} ${uniqueSuffix()}`;
-}
-
-/** A safely-in-the-past date, before any run-unique aircraft/package/rate created below. */
+/** A safely-in-the-past date, before any run-unique aircraft/rate created below. */
 const PAST_DATE = '2020-01-01';
 
 /** Story 11.1: composes `{ takeoffAt, landingAt }` for a direct `POST /api/v1/flights`/`.../correct` call — `10:00Z` stays clear of the Europe/Rome midnight boundary. */
@@ -152,51 +148,28 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
   return { id: aircraft.id, registration };
 }
 
-async function createPackageType(
-  page: Page,
-  data: { name: string; includedMinutes: number; priceCents: number; aircraftIds: string[] },
-): Promise<{ id: string; name: string }> {
-  const response = await page.request.post('/api/v1/package-types', { data });
-  expect(response.status()).toBe(201);
-  return (await response.json()) as { id: string; name: string };
-}
-
 test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1/2/3/4)', () => {
-  test('cancel a school flight (package + instructor): balance/contaore/package residuo all revert, flight shows ANNULLATO with the reason; a second cancel is a 409; correcting a fresh flight links old->new and adjusts consumption', async ({
+  test('cancel a school flight (instructor): balance/contaore revert, flight shows ANNULLATO with the reason; a second cancel is a 409; correcting a fresh flight links old->new', async ({
     page,
   }) => {
     // The heaviest single test in the suite (~15 UI interactions across
-    // sale, flight, cancel, 409, correct, and three verification pages):
-    // functionally green with headroom (~16s on a warm server) but it can
-    // exceed the default per-test timeout when the dev server compiles its
-    // pages cold or under parallel-worker contention — the exact signature
-    // of every historical "failure" of this test. slow() triples the
-    // timeout without weakening a single assertion.
+    // flight, cancel, 409, correct, and three verification pages):
+    // functionally green with headroom but it can exceed the default
+    // per-test timeout when the dev server compiles its pages cold or under
+    // parallel-worker contention — the exact signature of every historical
+    // "failure" of this test. slow() triples the timeout without weakening
+    // a single assertion.
     test.slow();
 
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const aircraft = await createAircraftWithRate(page, 15000); // 150,00 €/h
-    const typeName = uniqueName('Pacchetto Storno');
-    await createPackageType(page, {
-      name: typeName,
-      includedMinutes: 60,
-      priceCents: 50000,
-      aircraftIds: [aircraft.id],
-    });
     const pilot = await createPilotWithLogin(page, 'PilotStorno123!');
     const instructor = await createInstructorWithRate(page, 4000); // 40,00 €/h
 
-    // Still authenticated as admin — creating the pilot/instructor logins above never touched this session cookie.
-    // Sell the package via the UI (scheda persona).
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
-    await page.getByRole('button', { name: 'Vendi pacchetto' }).click();
-    await page.getByLabel('Tipo di pacchetto').selectOption({ label: typeName });
-    await page.getByLabel('Data valuta').fill(PAST_DATE);
-    await page.getByRole('button', { name: 'Conferma vendita' }).click();
-    await expect(page.getByTestId('packages-panel-feedback')).toBeVisible();
-
-    // Register a SCHOOL flight (60' — fully covered by the package) with an instructor.
+    // Register a SCHOOL flight (60') with an instructor. Story 12.13:
+    // package consumption is retired — the aircraft component is always
+    // charged at the full rate now.
     await page.goto('/it/dashboard/logbook');
     await page.getByTestId('logbook-new-button').click();
     await expect(page.getByTestId('flight-form')).toBeVisible();
@@ -209,11 +182,11 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
-    // Aircraft fully covered by the package (0,00 €) + instructor 40,00 € full charge -> total 40,00 €
+    // Aircraft 150,00 € (full rate, 60') + instructor 40,00 € full charge -> total 190,00 €
     // — ratifica 1: shown INSIDE the slide-over on success.
     const resultPanel = page.getByTestId('flight-result-panel');
-    await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/40,00\s€/);
-    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-40,00\s€/);
+    await expect(resultPanel.getByTestId('flight-result-total')).toContainText(/190,00\s€/);
+    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-190,00\s€/);
     await page.getByTestId('flight-result-close').click();
 
     // Aircraft hour meter advanced by 60' (500 -> 560 = 9:20). Search-scoped:
@@ -238,7 +211,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await flightRow.getByTestId('flight-cancel-action').click();
     const cancelPanel = page.getByTestId('flight-cancel-panel');
     await expect(cancelPanel).toContainText(aircraft.registration);
-    await expect(cancelPanel).toContainText(/40,00\s€/);
+    await expect(cancelPanel).toContainText(/190,00\s€/);
     await page.getByLabel('Motivo').fill('Volo mai avvenuto per meteo');
     await page.getByTestId('flight-cancel-confirm').click();
     await expect(page.getByTestId('flight-cancel-feedback')).toBeVisible();
@@ -254,9 +227,9 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
     await expect(page.getByTestId('account-statement-balance')).toContainText(/0,00\s€/);
     const chargeRow = page.locator('tbody tr').filter({ hasText: 'Addebito volo' }).first();
-    await expect(chargeRow).toContainText(/-40,00\s€/);
+    await expect(chargeRow).toContainText(/-190,00\s€/);
     const reversalRow = page.locator('tbody tr').filter({ hasText: 'Storno volo' }).first();
-    await expect(reversalRow).toContainText(/\+40,00\s€/);
+    await expect(reversalRow).toContainText(/\+190,00\s€/);
     await expect(page.getByTestId('reversal-badge')).toBeVisible();
 
     // Aircraft hour meter reverted to 8:20 (560 - 60 = 500). Same
@@ -264,12 +237,6 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
     await page.getByTestId(`ac-card-${aircraft.id}`).click();
     await expect(page.getByTestId('hour-meter-current')).toContainText('8:20');
-
-    // Package residuo restored to 1:00 (no more "Usati" note).
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
-    const packageRow = page.getByTestId('hour-package-row').filter({ hasText: typeName });
-    await expect(packageRow).toContainText('1:00');
-    await expect(packageRow).not.toContainText('Usati');
 
     // A second cancel attempt on the same flight is a 409 AD-8 envelope.
     // Scoped to this run's aircraft (TD-3 review D1 class): an UNSCOPED page 1
@@ -286,10 +253,11 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     const secondCancelBody = (await secondCancelResponse.json()) as { error: { code: string } };
     expect(secondCancelBody.error.code).toBe('CONFLICT');
 
-    // A second (independent) 60' flight consumes the SAME (now-restored) package fully again, no instructor this time.
-    // Same run-unique registry scoping as above (TD-3 review D1/M1): filter by
-    // this run's aircraft and settle BEFORE using the form, so the '2020-01-02'
-    // row lookups below cannot be buried by other runs' recent-dated flights.
+    // A second (independent) 60' TOURISM flight, no instructor this time —
+    // full aircraft rate: 150,00 €. Same run-unique registry scoping as
+    // above (TD-3 review D1/M1): filter by this run's aircraft and settle
+    // BEFORE using the form, so the '2020-01-02' row lookups below cannot
+    // be buried by other runs' recent-dated flights.
     await page.goto('/it/dashboard/logbook');
     await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(/aircraftId=/);
@@ -301,7 +269,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
-    await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/0,00\s€/);
+    await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/150,00\s€/);
     await page.getByTestId('flight-result-close').click();
 
     // Correct it: 60' -> 30' (a genuine "dati sbagliati" fix) — same takeoff (prefilled from the original), landing moved an hour earlier.
@@ -319,7 +287,8 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.getByRole('button', { name: 'Conferma correzione' }).click();
 
     // The new (30') flight is REGISTERED and marked as a correction; the old (60') is ANNULLATO and marked as corrected.
-    await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/0,00\s€/);
+    // 30' at 150,00 €/h -> 75,00 €.
+    await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toContainText(/75,00\s€/);
     await page.getByTestId('flight-result-close').click();
     const correctedRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ has: page.getByTestId('flight-correct-action') });
     await expect(correctedRow).toContainText('Correzione di un volo precedente');
@@ -328,15 +297,9 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(oldRow).toContainText('Corretto da un volo successivo');
     await expect(oldRow).toContainText('Durata inserita per errore');
 
-    // Net balance stays 0,00 € (both the 60' and the corrected 30' fully covered by the restored/re-consumed package).
+    // Net balance: 0,00 € (first flight, cancelled) - 75,00 € (corrected second flight) = -75,00 €.
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
-    await expect(page.getByTestId('account-statement-balance')).toContainText(/0,00\s€/);
-
-    // Package now shows 30' consumed (0:30 residuo of the 1:00 included).
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
-    const packageRowAfterCorrection = page.getByTestId('hour-package-row').filter({ hasText: typeName });
-    await expect(packageRowAfterCorrection).toContainText('0:30');
-    await expect(packageRowAfterCorrection).toContainText('Usati: 0:30');
+    await expect(page.getByTestId('account-statement-balance')).toContainText(/-75,00\s€/);
   });
 
   test('a pilot gets a 403 AD-8 envelope from both POST /cancel and POST /correct', async ({ page }) => {

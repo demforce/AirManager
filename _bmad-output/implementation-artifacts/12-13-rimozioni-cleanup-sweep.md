@@ -4,7 +4,7 @@ baseline_commit: 943a5b0
 
 # Story 12.13: Rimozioni e cleanup sweep finale
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -57,15 +57,29 @@ so that il codebase a fine epic contenga UNA sola UI (AirOps) e un contratto API
 
 ### Completion Notes
 
-_(a cura del dev agent)_
+**AC1 (rimozioni UI+API)** — rimossi integralmente: scuola (`dashboard/school/**`, `api/v1/school/**`, `api/v1/people/{id}/instructors/**`, `api/v1/people/{id}/training-notes/**`, `school.service.ts(+test)`, `schemas/school.ts`, i summary in `exports.service.ts`, `AssignedInstructorsPanel`); pacchetti (`dashboard/finance/packages`, `api/v1/package-types/**`, `package-types.service.ts(+test)`, `packages.service.ts(+test)`, `api/v1/people/{id}/packages`, `HourPackagesPanel`/`packages-panel.tsx`) INCLUSO il ramo package-consumption dentro `registerFlight`/`registerFlightCore` (FIFO allocation, `PackageConsumption` writes) coi suoi unit test — i voli addebitano SEMPRE il conto pieno da ora; `packageCoveredMinutes`/`chargedMinutes`/`packageConsumptions` rimossi anche dal breakdown wire (`FlightBreakdown`, `flightBreakdownSchema`) e dalla UI (flight-editor, logbook-console) essendo diventati costanti morte dopo la rimozione del ramo (stesso principio del `-0` guard, orfani creati dalla rimozione stessa); `dashboard/finance/categories` (`categories-manager.tsx`) rimossa — le API `cash-categories` restano (`cash-* RESTANO`, ratificato) ma senza più UI di gestione (gap segnalato, v. audit AC4); proposte scadenze (`api/v1/expiry-proposals/**`, `expiries/{id}/proposals`, `proposeExpiryUpdate`/`listExpiryProposals`/`decideExpiryProposal` in `expiries.service.ts`, `proposals-queue.tsx`, form "Proponi aggiornamento" in `my-expiries.tsx`) — `pendingProposalSummarySchema`/`pendingProposal` TENUTI (read-only, leftover da proposte pre-cutover, ExpiriesPanel/MyExpiries li mostrano ancora); `dashboard/users` rimossa, handler `GET /api/v1/users` (list) e `GET /api/v1/users/{id}` rimossi (nessun consumer residuo — Piloti legge `people.service.ts#listPilotsPageData` direttamente), tenuti POST (invito)/PATCH (sospendi/riattiva)/POST resend-invite; `ppr/register` HARD-DELETE (era già uno shim di redirect 308, ora 404, verificato e2e). `people/{id}` e `people/{id}/account` TENUTI e ripuliti (via `packages-panel.tsx`/`assigned-instructors-panel.tsx`); `account-refresh-context.tsx` rimosso come conseguenza diretta (serviva solo a `PackagesPanel` per notificare `AccountPanel`, diventato dead code dalla rimozione dei pacchetti).
+
+**AC2 (shell)** — `LegacyBackdrop` + campo `airopsNative` rimossi da `route-registry.ts`/`layout.tsx` (ogni entry NAV_ITEMS è nativa AirOps dopo 12.12); `nav-items.ts(+test)` rimosso (orfano confermato, zero import residui).
+
+**AC3/F5 (registry OpenAPI)** — registrate le 9 route mancanti: `settings/{club,scheduling,smtp,smtp/test-email,metar-station,membership-fee}`, `metar`, `expiry-alerts/trigger`, `people/{id}/membership-fee` (pattern `registerPath` esistente, modello `settings/ppr-landing-fee`); aggiunte a `registry.test.ts` (arrayContaining). Registry aggiornato anche in negativo: rimossi tutti i `registerPath`/`registry.register` di scuola/pacchetti/proposte/`GET /users`/`GET /users/{id}`.
+
+**AC4 (audit endpoint finale)** — v. sezione dedicata sotto (notesForReview include gli stessi dettagli per il reviewer).
+
+**AC5 (rbac + i18n + seed)** — rbac: rimossi `school.manage.own`, `school.manage.any`, `school.notes.manage.any`, `expiries.propose.own` da `Permission`/`ALL_PERMISSIONS`/`ROLE_PERMISSIONS` (+ test aggiornati); `dashboard/page.tsx` non usava più `school.manage.own` come proxy di "è istruttore" — sostituito con `actor.roles.includes('INSTRUCTOR')` (stesso esito, nessuna permission-check nuova). i18n: rimossi interamente `SchoolPage`, `TrainingDiaryPage`, `AssignedInstructorsPanel`, `HourPackagesPanel`, `PackagesPage`, `CashCategoriesPage` (namespace mai più raggiunti, verificato per grep su `getTranslations`/`useTranslations`); potati parzialmente `FinancePage` (solo `cashRegister` sopravvive, consumato da `exports.service.ts`), `UsersPage` (solo `roles`, consumato da `pilots/page.tsx`), `ExpiriesPage` (`queue` rimosso, `own.proposeAction`/`own.form`/`own.table.pendingHint` rimossi, `descriptionOwn` riscritta senza menzionare "Proponi"), `LogbookPage`/`FlightsPage` (chiavi `packageCovered`/`chargedMinutes`/`packageNote` rimosse — stesso principio "costanti morte" di AC1). it.json/en.json restano speculari (verificato via script Python, stessa struttura di chiavi). Seed: nessuna semina scuola/pacchetti esisteva già nel seed corrente (solo un doc-comment stale su `/dashboard/school` corretto); rimossa "Pacchetti" da `CASH_CATEGORY_NAMES` (nessun consumer per nome residuo).
+
+**AC6 (CLAUDE.md)** — riga Stack riscritta: AirOps è la UI primaria, Tailwind/TanStack/Geist dichiarati DORMIENTI a servizio delle pagine legacy rimaste (`people/{id}[.../account]`) e dei loro componenti di supporto; nota esplicita che shadcn/ui è già stato ritirato (nessuna dipendenza Radix/CVA in `package.json`, verificato); riferimento `minimalist-ui` circoscritto alle sole pagine legacy; aggiunta voce "Route map" che punta a `route-registry.ts` come unica fonte di verità invece di duplicare l'elenco. Hook `claude-md-drift.sh` verificato: zero drift.
+
+**AC7 (e2e)** — cancellati `school.spec.ts` (non esisteva già — orfano di una story precedente), `package-types.spec.ts`, `package-sale.spec.ts`, `package-consumption.spec.ts`. Adattati: `expiry-registration.spec.ts` (rimosso l'intero test proposte + helper orfani `getSeedPilotPersonId`/`addDaysDisplay`/costante `PILOT_EMAIL`), `person-detail.spec.ts` (rimosso "Pacchetti ore" dall'elenco heading atteso), `user-management.spec.ts` (riscritto: il flusso invito/deattivazione/forgot-password ora passa dalla sezione "Accesso" di Piloti invece di `/dashboard/users`; sostituiti i due assert su `GET /api/v1/users` — rimosso — con `POST /api/v1/users` 403/401), `movements.spec.ts` (nuovo assert standalone: `ppr/register` → 404, ratifica 5). **Trovati durante l'audit e corretti (non nel piano originale, veri regressioni introdotte dalle rimozioni AC1/AC3)**: `cash-register.spec.ts` navigava DAVVERO su `/dashboard/finance/categories` (pagina cancellata) per creare/disattivare/eliminare categorie — riscritto per usare l'API direttamente (`POST/DELETE/deactivate /api/v1/cash-categories`), correggendo anche l'asserzione del messaggio d'errore (era la stringa italiana della UI cancellata, ora il messaggio inglese reale della busta AD-8); `billing.spec.ts` aveva un test INTERO dedicato al "package sale twin" via `api/v1/package-types`+`api/v1/people/{id}/packages` (entrambi cancellati) — rimosso, più gli helper orfani; `flight-reversal.spec.ts` aveva il test più pesante della suite costruito attorno a un volo scuola COPERTO DA PACCHETTO — riscritto per un volo a tariffa piena (importi ricalcolati: 190,00€ invece di 40,00€ sul primo volo, 150,00€/75,00€ invece di 0,00€ su registrazione/correzione del secondo, saldo finale -75,00€ invece di 0,00€), rimossi gli assert su `hour-package-row` (panel cancellato) e gli helper orfani `createPackageType`/`uniqueName`. Catena project Playwright (`chromium`→`settings`→`booking-window`) invariata.
+
+**AC8 (gates)** — `npm run gates` verde ad ogni ondata (ultimo run pre-commit: lint/typecheck/test 1345 passed/build tutti PASS). Nessuna migrazione DB. Full `CI=1 npx playwright test` su build prod + DB fresco: v. `ciRun` nel report finale.
 
 ### File List
 
-_(a cura del dev agent)_
+Vedi `filesChanged` nel report della sessione (elenco completo file creati/modificati/eliminati — i file [DELETED] sono marcati esplicitamente lì).
 
 ### Change Log
 
-_(a cura del dev agent)_
+- 2026-07-19/20 — Rimozione completa scuola/pacchetti/proposte scadenze/pagina users/shell legacy/`ppr/register`; F5 registry OpenAPI (9 route); audit endpoint finale (AC4); rbac/i18n/seed cleanup; CLAUDE.md aggiornato; sweep e2e (incl. 3 regressioni reali trovate e corrette in `cash-register.spec.ts`/`billing.spec.ts`/`flight-reversal.spec.ts`, fuori dal piano originale ma causate dalle rimozioni AC1/AC3). Status → review.
 
 ## Review Record
 

@@ -30,14 +30,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/people/{id}/account/movements',
         '/api/v1/people/{id}/account/adjustments',
         '/api/v1/people/{id}/instructor-rates',
-        '/api/v1/people/{id}/instructors',
-        '/api/v1/people/{id}/instructors/{instructorPersonId}',
-        '/api/v1/school/students',
-        '/api/v1/school/summaries/students',
-        '/api/v1/school/summaries/instructors',
-        '/api/v1/people/{id}/training-notes',
-        '/api/v1/people/{id}/training-notes/{noteId}',
-        '/api/v1/people/{id}/packages',
         '/api/v1/accounts/negative-balances',
         '/api/v1/cash-categories',
         '/api/v1/cash-categories/{id}',
@@ -46,8 +38,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/cash-movements',
         '/api/v1/cash-movements/{id}/reverse',
         '/api/v1/cash-report',
-        '/api/v1/package-types',
-        '/api/v1/package-types/{id}',
         '/api/v1/expiry-types',
         '/api/v1/expiry-types/{id}',
         '/api/v1/flights',
@@ -69,9 +59,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/people/{id}/expiries',
         '/api/v1/expiries',
         '/api/v1/expiries/{id}',
-        '/api/v1/expiries/{id}/proposals',
-        '/api/v1/expiry-proposals',
-        '/api/v1/expiry-proposals/{id}/decision',
         '/api/v1/jobs/expiry-alerts',
         '/api/v1/bookings',
         '/api/v1/bookings/calendar',
@@ -89,6 +76,17 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/flights/pdf',
         '/api/v1/expiries/pdf',
         '/api/v1/settings/airfield',
+        // Story 12.13 (F5, review 12.11 action item) — the 9 routes 12.11
+        // shipped without ever registering.
+        '/api/v1/settings/club',
+        '/api/v1/settings/scheduling',
+        '/api/v1/settings/smtp',
+        '/api/v1/settings/smtp/test-email',
+        '/api/v1/settings/metar-station',
+        '/api/v1/settings/membership-fee',
+        '/api/v1/metar',
+        '/api/v1/expiry-alerts/trigger',
+        '/api/v1/people/{id}/membership-fee',
       ]),
     );
   });
@@ -110,11 +108,11 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(Object.keys(jobRoute?.responses ?? {}).sort()).toEqual(['200', '401', '500']);
   });
 
-  it('documents 401/403/404/409/422/500 error responses on the protected users list endpoint', () => {
-    const listUsers = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)['/api/v1/users']?.[
-      'get'
+  it('documents 201/401/403/409/422/500 error responses on the protected user-invite endpoint (story 12.13: list/get handlers removed, unused after the Piloti page took over)', () => {
+    const createUser = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)['/api/v1/users']?.[
+      'post'
     ];
-    expect(Object.keys(listUsers?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+    expect(Object.keys(createUser?.responses ?? {}).sort()).toEqual(['201', '401', '403', '409', '422', '500']);
   });
 
   it('documents 401/403/422/500 error responses on the expiry dashboard endpoint (story 6.4)', () => {
@@ -275,7 +273,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     it.each([
       ['/api/v1/people/{id}/account/top-ups', 'post'],
       ['/api/v1/people/{id}/account/adjustments', 'post'],
-      ['/api/v1/people/{id}/packages', 'post'],
       ['/api/v1/flights', 'post'],
       ['/api/v1/cash-movements', 'post'],
     ] as const)('references the IdempotencyKey header on %s', (path, method) => {

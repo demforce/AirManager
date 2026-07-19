@@ -1,29 +1,20 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
-import type { ExpiryItemDto, ExpiryProposalItemDto, ExpiryWindowDto } from '@/lib/schemas/expiries';
+import type { ExpiryItemDto, ExpiryWindowDto } from '@/lib/schemas/expiries';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getMembershipFeeCents } from '@/server/services/app-settings.service';
-import {
-  getExpiryTierCounts,
-  listAllExpiries,
-  listExpiryProposals,
-  listPersonExpiries,
-  type ExpiryListItem,
-  type ExpiryProposalListItem,
-} from '@/server/services/expiries.service';
+import { getExpiryTierCounts, listAllExpiries, listPersonExpiries, type ExpiryListItem } from '@/server/services/expiries.service';
 import { listExpiryTypes } from '@/server/services/expiry-types.service';
 import { listPeople } from '@/server/services/people.service';
 import { MyExpiries } from './my-expiries';
-import { ProposalsQueue } from './proposals-queue';
 import { ScadenzeConsole, type ScadenzeFilters } from './scadenze-console';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
   searchParams: Promise<{
     page?: string;
-    proposalsPage?: string;
     window?: string;
     expiryTypeId?: string;
     personId?: string;
@@ -31,16 +22,11 @@ type PageProps = {
 };
 
 const REGISTRY_PAGE_SIZE = 20;
-const PROPOSALS_PAGE_SIZE = 20;
 const OPTIONS_PAGE_SIZE = 100;
 const WINDOWS: readonly ExpiryWindowDto[] = ['60', '30', '7', 'expired'];
 
 function sanitizeWindow(value: string | undefined): ExpiryWindowDto | 'all' {
   return value && (WINDOWS as readonly string[]).includes(value) ? (value as ExpiryWindowDto) : value === 'all' ? 'all' : '60';
-}
-
-function toProposalDto(item: ExpiryProposalListItem): ExpiryProposalItemDto {
-  return { ...item, decidedAt: item.decidedAt ? item.decidedAt.toISOString() : null, createdAt: item.createdAt.toISOString() };
 }
 
 /** Same server-DTO-to-wire-DTO conversion as the pre-12.11 page (`pendingProposal.createdAt` Date -> ISO string) — `MyExpiries` receives its data as a plain server-component prop, but the DTO's own schema expects the wire shape. */
@@ -55,9 +41,9 @@ function toExpiryDto(item: ExpiryListItem): ExpiryItemDto {
  * Scadenze (epic 6/7, epic 12 story 12.11) — AirOps-native, port of
  * `docs/design-reference/airops/src/ScadenzeView.jsx`. Two faces (Contesto,
  * unchanged since story 6.2): `expiries.manage` (staff/admin) gets the full
- * registry + proposal queue; everyone else (own-access, `self.read`) gets
- * "Le mie scadenze" — INTATTO fino alla 12.13 (D10, `ExpiryUpdateProposal`
- * flow removal is out of scope here).
+ * registry; everyone else (own-access, `self.read`) gets "Le mie scadenze".
+ * Story 12.13 (ratifica utente 4b) retired the titolare-facing
+ * propose/staff-decide queue this page used to also render.
  */
 export default async function ExpiriesPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
@@ -113,10 +99,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
       registryResult = await listAllExpiries(actor, { ...registryQuery, page });
     }
     const registryTotalPages = Math.max(1, Math.ceil(registryResult.total / REGISTRY_PAGE_SIZE));
-
-    const proposalsPage = Math.max(1, Number.parseInt(sp.proposalsPage ?? '1', 10) || 1);
-    const proposalsResult = await listExpiryProposals(actor, { status: 'PENDING', page: proposalsPage, pageSize: PROPOSALS_PAGE_SIZE });
-    const proposalsTotalPages = Math.max(1, Math.ceil(proposalsResult.total / PROPOSALS_PAGE_SIZE));
 
     const exportFilterQuery = { expiryTypeId, scope: undefined, status: undefined };
     const exportHref = buildExportHref('/api/v1/expiries', exportFilterQuery, locale);
@@ -219,50 +201,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             pagination: { prev: '←', next: '→' },
           }}
         />
-
-        <div className="card" style={{ marginTop: 16 }} data-testid="proposals-queue-card">
-          <div className="card-head">
-            <div className="card-title">{t('queue.heading')}</div>
-            <span className="card-sub">{t('queue.description')}</span>
-          </div>
-
-          <ProposalsQueue
-            proposals={proposalsResult.items.map(toProposalDto)}
-            labels={{
-              empty: t('queue.empty'),
-              table: {
-                person: t('queue.table.person'),
-                type: t('queue.table.type'),
-                current: t('queue.table.current'),
-                proposed: t('queue.table.proposed'),
-                proposedBy: t('queue.table.proposedBy'),
-                when: t('queue.table.when'),
-                actions: t('queue.table.actions'),
-              },
-              actions: {
-                approve: t('queue.actions.approve'),
-                reject: t('queue.actions.reject'),
-                confirmApprove: t('queue.actions.confirmApprove'),
-                confirmReject: t('queue.actions.confirmReject'),
-                confirmYes: t('queue.actions.confirmYes'),
-                confirmCancel: t('queue.actions.confirmCancel'),
-              },
-              feedback: {
-                approved: t('queue.feedback.approved'),
-                rejected: t('queue.feedback.rejected'),
-                genericError: t('queue.feedback.genericError'),
-              },
-            }}
-          />
-
-          {proposalsTotalPages > 1 ? (
-            <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-              <span className="mono">
-                {proposalsPage} / {proposalsTotalPages}
-              </span>
-            </div>
-          ) : null}
-        </div>
       </main>
     );
   }
@@ -298,21 +236,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               expired: t('own.table.status.expired'),
             },
             pendingBadge: t('own.table.pendingBadge'),
-            pendingHint: t('own.table.pendingHint'),
-          },
-          proposeAction: t('own.proposeAction'),
-          form: {
-            title: t('own.form.title'),
-            issuedAt: t('own.form.issuedAt'),
-            expiresAt: t('own.form.expiresAt'),
-            notes: t('own.form.notes'),
-            submit: t('own.form.submit'),
-            cancel: t('own.form.cancel'),
-            requiredField: t('own.form.requiredField'),
-            invalidRange: t('own.form.invalidRange'),
-            conflictError: t('own.form.conflictError'),
-            genericError: t('own.form.genericError'),
-            success: t('own.form.success'),
           },
         }}
       />

@@ -28,7 +28,7 @@ const updateMock = vi.mocked(prisma.expiryType.update);
 const deleteMock = vi.mocked(prisma.expiryType.delete);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
-// fixtures ambiguous (same workaround as `package-types.service.test.ts`).
+// fixtures ambiguous (same workaround as every other `*.service.test.ts`).
 type Fixture = Record<string, unknown> | null;
 const findMany = findManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const findFirst = findFirstMock as unknown as { mockResolvedValue: (v: Fixture) => void };

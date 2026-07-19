@@ -9,10 +9,7 @@ import { ForbiddenError, NotFoundError } from '@/server/services/errors';
 import { listFlights, type FlightListItem } from '@/server/services/flights.service';
 import { getPerson } from '@/server/services/people.service';
 import { AccountPanel } from '../account-panel';
-import { AccountRefreshProvider } from '../account-refresh-context';
-import { AssignedInstructorsPanel } from '../assigned-instructors-panel';
 import { ExpiriesPanel } from '../expiries-panel';
-import { PackagesPanel } from '../packages-panel';
 import { ProfilesPanel } from '../profiles-panel';
 
 type PageProps = {
@@ -77,11 +74,6 @@ export default async function PersonDetailPage({ params }: PageProps) {
   const canManageProfiles = hasPermission(actor, 'people.manage');
   const canManageFinance = hasPermission(actor, 'finance.manage');
   const canManageExpiries = hasPermission(actor, 'expiries.manage');
-  // Story 9.1 (AC 1/4): the "Istruttori assegnati" panel is staff/admin-only
-  // (`school.manage.any`) — unlike the other panels above, there is no
-  // read-only mode for a lesser-privileged viewer (every one of this
-  // feature's endpoints answers 403 without this permission).
-  const canManageSchool = hasPermission(actor, 'school.manage.any');
   // Story 11.2 (AC 4): the "Ultimi voli" panel is real for staff
   // (`flights.manage`) or the titolare's own scheda (`isOwnAccess`, computed
   // above); everyone else keeps today's placeholder.
@@ -90,9 +82,7 @@ export default async function PersonDetailPage({ params }: PageProps) {
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const t = await getTranslations('PersonDetailPage');
   const tPeople = await getTranslations('PeoplePage');
-  const tPackages = await getTranslations('HourPackagesPanel');
   const tExpiries = await getTranslations('ExpiriesPanel');
-  const tSchool = await getTranslations('AssignedInstructorsPanel');
 
   // Story 11.2 (AC 4): AD-1 (consume the service directly, no new endpoint) —
   // staff filters by this scheda's `personId`; the titolare gets NO
@@ -221,143 +211,46 @@ export default async function PersonDetailPage({ params }: PageProps) {
           />
         </div>
 
-        {/* Story TD-1, AC 8: both sections share an `AccountRefreshProvider`
-            so a package sale (`PackagesPanel`) can bump the sibling
-            `AccountPanel`'s movements/balance preview without a full page
-            reload — the provider is a thin client wrapper around these two
-            SERVER-rendered sections (children stay RSC), no layout change. */}
-        <AccountRefreshProvider>
-          <div className="mt-6">
-            <AccountPanel
-              personId={person.id}
-              canManageFinance={canManageFinance}
-              labels={{
-                heading: t('accountPanel.heading'),
-                balanceLabel: t('accountPanel.balanceLabel'),
-                noAccount: t('accountPanel.noAccount'),
-                loadError: t('accountPanel.loadError'),
-                recentTitle: t('accountPanel.recentTitle'),
-                recentEmpty: t('accountPanel.recentEmpty'),
-                viewStatement: t('accountPanel.viewStatement'),
-                movementType: {
-                  topUp: t('accountPanel.movementType.topUp'),
-                  adjustment: t('accountPanel.movementType.adjustment'),
-                  packagePurchase: t('accountPanel.movementType.packagePurchase'),
-                  flightCharge: t('accountPanel.movementType.flightCharge'),
-                  flightChargeReversal: t('accountPanel.movementType.flightChargeReversal'),
+        <div className="mt-6">
+          <AccountPanel
+            personId={person.id}
+            canManageFinance={canManageFinance}
+            labels={{
+              heading: t('accountPanel.heading'),
+              balanceLabel: t('accountPanel.balanceLabel'),
+              noAccount: t('accountPanel.noAccount'),
+              loadError: t('accountPanel.loadError'),
+              recentTitle: t('accountPanel.recentTitle'),
+              recentEmpty: t('accountPanel.recentEmpty'),
+              viewStatement: t('accountPanel.viewStatement'),
+              movementType: {
+                topUp: t('accountPanel.movementType.topUp'),
+                adjustment: t('accountPanel.movementType.adjustment'),
+                packagePurchase: t('accountPanel.movementType.packagePurchase'),
+                flightCharge: t('accountPanel.movementType.flightCharge'),
+                flightChargeReversal: t('accountPanel.movementType.flightChargeReversal'),
+              },
+              topUp: {
+                action: t('accountPanel.topUp.action'),
+                title: t('accountPanel.topUp.title'),
+                amount: t('accountPanel.topUp.amount'),
+                paymentMethod: t('accountPanel.topUp.paymentMethod'),
+                paymentMethods: {
+                  cash: t('accountPanel.topUp.paymentMethods.cash'),
+                  bankTransfer: t('accountPanel.topUp.paymentMethods.bankTransfer'),
+                  pos: t('accountPanel.topUp.paymentMethods.pos'),
                 },
-                topUp: {
-                  action: t('accountPanel.topUp.action'),
-                  title: t('accountPanel.topUp.title'),
-                  amount: t('accountPanel.topUp.amount'),
-                  paymentMethod: t('accountPanel.topUp.paymentMethod'),
-                  paymentMethods: {
-                    cash: t('accountPanel.topUp.paymentMethods.cash'),
-                    bankTransfer: t('accountPanel.topUp.paymentMethods.bankTransfer'),
-                    pos: t('accountPanel.topUp.paymentMethods.pos'),
-                  },
-                  effectiveDate: t('accountPanel.topUp.effectiveDate'),
-                  description: t('accountPanel.topUp.description'),
-                  submit: t('accountPanel.topUp.submit'),
-                  cancel: t('accountPanel.topUp.cancel'),
-                  invalidAmount: t('accountPanel.topUp.invalidAmount'),
-                  requiredField: t('accountPanel.topUp.requiredField'),
-                  genericError: t('accountPanel.topUp.genericError'),
-                },
-              }}
-            />
-          </div>
-
-          <div className="mt-6">
-            <PackagesPanel
-              // Remount on person change — same rationale as
-              // `InstructorRatesPanel`'s `key={person.id}` (review 2.4 F1 pattern).
-              key={person.id}
-              personId={person.id}
-              canSell={canManageFinance}
-              labels={{
-                heading: tPackages('heading'),
-                loadError: tPackages('loadError'),
-                empty: tPackages('empty'),
-                addAction: tPackages('addAction'),
-                feedback: tPackages('feedback'),
-                table: {
-                  remaining: tPackages('table.remaining'),
-                  price: tPackages('table.price'),
-                  expiresAt: tPackages('table.expiresAt'),
-                  noExpiry: tPackages('table.noExpiry'),
-                  expiredBadge: tPackages('table.expiredBadge'),
-                  // `t.raw`: literal `{duration}` placeholder, CLIENT-filled
-                  // (same pattern as account-statement-table.tsx's `adjustmentOfDate`).
-                  consumedNote: tPackages.raw('table.consumedNote') as string,
-                },
-                form: {
-                  title: tPackages('form.title'),
-                  packageType: tPackages('form.packageType'),
-                  noActiveTypes: tPackages('form.noActiveTypes'),
-                  paymentMethod: tPackages('form.paymentMethod'),
-                  paymentMethods: {
-                    cash: tPackages('form.paymentMethods.cash'),
-                    bankTransfer: tPackages('form.paymentMethods.bankTransfer'),
-                    pos: tPackages('form.paymentMethods.pos'),
-                  },
-                  effectiveDate: tPackages('form.effectiveDate'),
-                  description: tPackages('form.description'),
-                  submit: tPackages('form.submit'),
-                  cancel: tPackages('form.cancel'),
-                  requiredField: tPackages('form.requiredField'),
-                  inactiveTypeError: tPackages('form.inactiveTypeError'),
-                  genericError: tPackages('form.genericError'),
-                },
-              }}
-            />
-          </div>
-        </AccountRefreshProvider>
-
-        {/* Active profile only (review 9.1 F2): on a deactivated student
-            profile the API answers 422 STUDENT_NOT_FOUND, so mounting the
-            panel would only render its generic load error. */}
-        {person.studentProfile !== null && person.studentProfile.deactivatedAt === null && canManageSchool ? (
-          <div className="mt-6">
-            <AssignedInstructorsPanel
-              // Remount on person change — same rationale as
-              // `InstructorRatesPanel`'s `key={person.id}` (review 2.4 F1).
-              key={person.id}
-              personId={person.id}
-              labels={{
-                heading: tSchool('heading'),
-                loadError: tSchool('loadError'),
-                empty: tSchool('empty'),
-                addAction: tSchool('addAction'),
-                feedback: {
-                  assigned: tSchool('feedback.assigned'),
-                  removed: tSchool('feedback.removed'),
-                },
-                table: {
-                  name: tSchool('table.name'),
-                  assignedAt: tSchool('table.assignedAt'),
-                  actions: tSchool('table.actions'),
-                },
-                form: {
-                  title: tSchool('form.title'),
-                  instructor: tSchool('form.instructor'),
-                  noInstructors: tSchool('form.noInstructors'),
-                  submit: tSchool('form.submit'),
-                  cancel: tSchool('form.cancel'),
-                  requiredField: tSchool('form.requiredField'),
-                  conflictError: tSchool('form.conflictError'),
-                  genericError: tSchool('form.genericError'),
-                },
-                actions: {
-                  remove: tSchool('actions.remove'),
-                  confirmRemove: tSchool('actions.confirmRemove'),
-                  confirmYes: tSchool('actions.confirmYes'),
-                  confirmCancel: tSchool('actions.confirmCancel'),
-                },
-              }}
-            />
-          </div>
-        ) : null}
+                effectiveDate: t('accountPanel.topUp.effectiveDate'),
+                description: t('accountPanel.topUp.description'),
+                submit: t('accountPanel.topUp.submit'),
+                cancel: t('accountPanel.topUp.cancel'),
+                invalidAmount: t('accountPanel.topUp.invalidAmount'),
+                requiredField: t('accountPanel.topUp.requiredField'),
+                genericError: t('accountPanel.topUp.genericError'),
+              },
+            }}
+          />
+        </div>
 
         <div className="mt-6">
           <ExpiriesPanel

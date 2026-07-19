@@ -34,8 +34,8 @@ const payoutCreateMock = vi.mocked(prisma.instructorPayout.create);
 const profileUpdateMock = vi.mocked(prisma.instructorProfile.update);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
-// fixtures ambiguous (same workaround as instructor-rates.service.test.ts/
-// school.service.test.ts) — thin, loosely-typed wrappers around each mock.
+// fixtures ambiguous (same workaround as instructor-rates.service.test.ts)
+// — thin, loosely-typed wrappers around each mock.
 type Fixture = Record<string, unknown> | null;
 type ImplFn = (args: Record<string, unknown>) => Promise<unknown>;
 const personFindUnique = personFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };

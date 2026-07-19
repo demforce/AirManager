@@ -53,17 +53,11 @@ import {
 import { errorEnvelopeSchema, okResponseSchema } from './common';
 import { expiryAlertsJobResultSchema } from './expiry-alerts';
 import {
-  decideProposalSchema,
   expiryDashboardItemSchema,
   expiryDashboardListResponseSchema,
   expiryItemSchema,
   expiryListResponseSchema,
-  expiryProposalItemSchema,
-  expiryProposalListResponseSchema,
   listAllExpiriesQuerySchema,
-  listExpiryProposalsQuerySchema,
-  pendingProposalSummarySchema,
-  proposeExpirySchema,
   registerExpirySchema,
   updateExpirySchema,
 } from './expiries';
@@ -91,14 +85,6 @@ import {
   setInstructorPayoutRateSchema,
 } from './instructor-compensation';
 import { meResponseSchema } from './me';
-import {
-  createPackageTypeSchema,
-  listPackageTypesQuerySchema,
-  packageTypeItemSchema,
-  packageTypeListResponseSchema,
-  updatePackageTypeSchema,
-} from './package-types';
-import { hourPackageItemSchema, hourPackageListResponseSchema, sellPackageResponseSchema, sellPackageSchema } from './packages';
 import {
   createInstructorRateSchema,
   createPersonSchema,
@@ -128,21 +114,20 @@ import {
   pprRequestListResponseSchema,
   rejectPprRequestSchema,
 } from './ppr';
+import { chargeMembershipFeeResponseSchema, chargeMembershipFeeSchema } from './membership';
+import { metarResponseSchema } from './metar';
 import {
-  assignInstructorSchema,
-  assignedInstructorItemSchema,
-  assignedInstructorListResponseSchema,
-  instructorHourSummaryListResponseSchema,
-  listTrainingNotesQuerySchema,
-  ownStudentItemSchema,
-  ownStudentListResponseSchema,
-  schoolSummaryQuerySchema,
-  studentHourSummaryListResponseSchema,
-  trainingNoteInputSchema,
-  trainingNoteItemSchema,
-  trainingNoteListResponseSchema,
-} from './school';
-import { airfieldBrandingSchema } from './settings';
+  airfieldBrandingSchema,
+  clubIdentitySchema,
+  membershipFeeSettingSchema,
+  metarStationDtoSchema,
+  metarStationInputSchema,
+  schedulingSettingsDtoSchema,
+  schedulingSettingsSchema,
+  smtpSettingsDtoSchema,
+  smtpSettingsInputSchema,
+  testEmailResultSchema,
+} from './settings';
 import { statsQuerySchema, statsResponseSchema } from './stats';
 import {
   listTransactionsQuerySchema,
@@ -150,7 +135,7 @@ import {
   recordTransactionSchema,
   transactionListResponseSchema,
 } from './transactions';
-import { createUserSchema, listUsersQuerySchema, updateUserSchema, userListItemSchema, userListResponseSchema } from './users';
+import { createUserSchema, updateUserSchema, userListItemSchema } from './users';
 
 /**
  * OpenAPI registry (story 1.5, AD-1/AD-8): the single place that turns the
@@ -268,16 +253,6 @@ registry.register('InstructorProfile', instructorProfileSchema);
 registry.register('InstructorRate', instructorRateItemSchema);
 registry.register('InstructorRateList', instructorRateListResponseSchema);
 registry.register('CreateInstructorRateRequest', createInstructorRateSchema);
-registry.register('AssignInstructorRequest', assignInstructorSchema);
-registry.register('AssignedInstructor', assignedInstructorItemSchema);
-registry.register('AssignedInstructorList', assignedInstructorListResponseSchema);
-registry.register('OwnStudent', ownStudentItemSchema);
-registry.register('OwnStudentList', ownStudentListResponseSchema);
-registry.register('StudentHourSummaryList', studentHourSummaryListResponseSchema);
-registry.register('InstructorHourSummaryList', instructorHourSummaryListResponseSchema);
-registry.register('TrainingNoteRequest', trainingNoteInputSchema);
-registry.register('TrainingNote', trainingNoteItemSchema);
-registry.register('TrainingNoteList', trainingNoteListResponseSchema);
 registry.register('Aircraft', aircraftListItemSchema);
 registry.register('AircraftList', aircraftListResponseSchema);
 registry.register('CreateAircraftRequest', createAircraftSchema);
@@ -302,21 +277,12 @@ registry.register('CashMovementList', cashMovementListResponseSchema);
 registry.register('RecordCashMovementRequest', recordCashMovementSchema);
 registry.register('ReverseCashMovementRequest', reverseCashMovementSchema);
 registry.register('CashReport', cashReportResponseSchema);
-registry.register('PackageType', packageTypeItemSchema);
-registry.register('PackageTypeList', packageTypeListResponseSchema);
-registry.register('CreatePackageTypeRequest', createPackageTypeSchema);
-registry.register('UpdatePackageTypeRequest', updatePackageTypeSchema);
-registry.register('HourPackage', hourPackageItemSchema);
-registry.register('HourPackageList', hourPackageListResponseSchema);
-registry.register('SellPackageRequest', sellPackageSchema);
-registry.register('SellPackageResponse', sellPackageResponseSchema);
 registry.register('RegisterFlightRequest', registerFlightSchema);
 registry.register('RegisterFlightResponse', registerFlightResponseSchema);
 registry.register('FlightList', flightListResponseSchema);
 registry.register('CancelFlightRequest', cancelFlightSchema);
 registry.register('CorrectFlightRequest', correctFlightSchema);
 registry.register('User', userListItemSchema);
-registry.register('UserList', userListResponseSchema);
 registry.register('CreateUserRequest', createUserSchema);
 registry.register('UpdateUserRequest', updateUserSchema);
 registry.register('SetPasswordRequest', setPasswordSchema);
@@ -329,11 +295,6 @@ registry.register('Expiry', expiryItemSchema);
 registry.register('ExpiryList', expiryListResponseSchema);
 registry.register('RegisterExpiryRequest', registerExpirySchema);
 registry.register('UpdateExpiryRequest', updateExpirySchema);
-registry.register('ProposeExpiryRequest', proposeExpirySchema);
-registry.register('PendingProposalSummary', pendingProposalSummarySchema);
-registry.register('ExpiryProposal', expiryProposalItemSchema);
-registry.register('ExpiryProposalList', expiryProposalListResponseSchema);
-registry.register('DecideProposalRequest', decideProposalSchema);
 registry.register('ExpiryAlertsJobResult', expiryAlertsJobResultSchema);
 registry.register('ExpiryDashboardItem', expiryDashboardItemSchema);
 registry.register('ExpiryDashboardList', expiryDashboardListResponseSchema);
@@ -353,6 +314,18 @@ registry.register('PprOperatingInstructions', pprOperatingInstructionsSchema);
 registry.register('PprLandingFeeDefault', pprLandingFeeDefaultSchema);
 registry.register('AirfieldBranding', airfieldBrandingSchema);
 registry.register('Stats', statsResponseSchema);
+// Story 12.13 (F5, review 12.11 action item) — the 9 routes story 12.11
+// shipped without ever registering: settings sub-resources, METAR, the
+// manual expiry-alerts trigger, and the per-person membership-fee charge.
+registry.register('ClubIdentity', clubIdentitySchema);
+registry.register('SchedulingSettings', schedulingSettingsDtoSchema);
+registry.register('SmtpSettings', smtpSettingsDtoSchema);
+registry.register('TestEmailResult', testEmailResultSchema);
+registry.register('MetarStation', metarStationDtoSchema);
+registry.register('MembershipFeeSetting', membershipFeeSettingSchema);
+registry.register('MetarData', metarResponseSchema);
+registry.register('ChargeMembershipFeeRequest', chargeMembershipFeeSchema);
+registry.register('ChargeMembershipFeeResponse', chargeMembershipFeeResponseSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -711,188 +684,6 @@ registry.registerPath({
   },
 });
 
-// --- School (epic 9, story 9.1, FR-32) --------------------------------------
-
-const studentInstructorParams = z.object({
-  id: z.string().meta({ description: "Student's Person id (cuid).", example: 'clx1a2b3c4d5e6f7g8h9' }),
-  instructorPersonId: z.string().meta({ description: "Instructor's Person id (cuid).", example: 'clx1a2b3c4d5e6f7g8h9' }),
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/people/{id}/instructors',
-  summary: "List a student's assigned instructors",
-  description:
-    'Story 9.1, AC 1 — a plain array (no pagination). `{id}` is the STUDENT\'s `Person.id`. 404 on an unknown person; 422 `STUDENT_NOT_FOUND` if the person has no active student profile. Requires `school.manage.any` (staff/admin).',
-  tags: ['People'],
-  security,
-  request: { params: personIdParams },
-  responses: {
-    200: { description: "The student's assigned instructors.", content: jsonContent(assignedInstructorListResponseSchema) },
-    ...errorResponses(401, 403, 404, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/v1/people/{id}/instructors',
-  summary: 'Assign an instructor to a student',
-  description:
-    "Story 9.1, AC 1 — many-to-many: a student may have several instructors, an instructor several students. Both sides must have an ACTIVE profile (422 `STUDENT_NOT_FOUND`/`INSTRUCTOR_NOT_FOUND`). A repeat assignment of the same pair is a 409. Requires `school.manage.any` (staff/admin).",
-  tags: ['People'],
-  security,
-  request: { params: personIdParams, body: { content: jsonContent(assignInstructorSchema), required: true } },
-  responses: {
-    201: { description: 'The created assignment.', content: jsonContent(assignedInstructorItemSchema) },
-    ...errorResponses(401, 403, 404, 409, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'delete',
-  path: '/api/v1/people/{id}/instructors/{instructorPersonId}',
-  summary: 'Remove a student-instructor assignment',
-  description:
-    'Story 9.1, AC 2 — hard delete (no history kept). A concurrent double-DELETE answers one 204 + one 404, never a 500. Requires `school.manage.any` (staff/admin).',
-  tags: ['People'],
-  security,
-  request: { params: studentInstructorParams },
-  responses: {
-    204: { description: 'The assignment was removed.' },
-    ...errorResponses(401, 403, 404),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/school/students',
-  summary: 'List the calling instructor\'s own students (essential overview)',
-  description:
-    "Story 9.1, AC 3/4 — ALWAYS self-scoped on the calling instructor (`actor.personId`); no query params, by construction an instructor can never enumerate another instructor's students. `totalMinutes` sums the student's non-cancelled SCHOOL flights ACROSS every instructor; `expiryStatus` is the worst status among the student's scadenze (`null` if none registered). 422 if the caller has `school.manage.own` but no active instructor profile. Requires `school.manage.own`.",
-  tags: ['School'],
-  security,
-  responses: {
-    200: { description: "The instructor's own students.", content: jsonContent(ownStudentListResponseSchema) },
-    ...errorResponses(401, 403, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/school/summaries/students',
-  summary: 'Per-student hour summary (dual-command/solo split, period + all-time)',
-  description:
-    "Story 9.3 AC 1/3/5, re-derived in story 9.4 — staff/admin only (`school.manage.any`). Platea: every ACTIVE student (active profile, non-archived person). `dualMinutes`/`soloMinutes` are `Flight.isSolo`-derived splits of non-cancelled `SCHOOL` flights (see `school.service.ts#getStudentHourSummaries`'s doc-comment for the exact derivation); `totalMinutes` is their period sum, `totalMinutesAllTime` the same sum with no period bound. CANCELLED flights are always excluded. `from`/`to` mandatory (`YYYY-MM-DD`, inclusive on `flightDate`), rejected with 422 if inverted.",
-  tags: ['School'],
-  security,
-  request: { query: schoolSummaryQuerySchema },
-  responses: {
-    200: {
-      description: 'The per-student hour summary for the requested period, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
-      content: { ...jsonContent(studentHourSummaryListResponseSchema), ...xlsxContent() },
-    },
-    ...errorResponses(401, 403, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/school/summaries/instructors',
-  summary: 'Per-instructor SCHOOL-flight hour summary for a period',
-  description:
-    "Story 9.3, AC 2/3/5 — two access paths: `school.manage.any` sees every ACTIVE instructor; `school.manage.own` sees ONLY the caller's own row (FR-2 \"proprie ore\"). `minutes` sums non-cancelled SCHOOL flights in the period — no compensi/tariffe (calculated outside the system). `from`/`to` mandatory, rejected with 422 if inverted.",
-  tags: ['School'],
-  security,
-  request: { query: schoolSummaryQuerySchema },
-  responses: {
-    200: {
-      description: "The instructor(s)' SCHOOL hour summary for the requested period, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).",
-      content: { ...jsonContent(instructorHourSummaryListResponseSchema), ...xlsxContent() },
-    },
-    ...errorResponses(401, 403, 422),
-  },
-});
-
-const studentNoteParams = z.object({
-  id: z.string().meta({ description: "Student's Person id (cuid).", example: 'clx1a2b3c4d5e6f7g8h9' }),
-  noteId: z.string().meta({ description: 'TrainingNote id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }),
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/people/{id}/training-notes',
-  summary: "List a student's training diary (paginated)",
-  description:
-    "Story 9.2, AC 2/4 — the training diary. `{id}` is the STUDENT's `Person.id`. Access: `school.manage.any` (staff/admin, any student) OR `school.manage.own` plus an existing assignment to this student (the diary is the allievo's — an assigned instructor sees EVERY author's entries) OR own-access (`self.read` and a matching `personId`, the allievo reading their OWN diary read-only, even on a deactivated profile). 422 `STUDENT_NOT_FOUND` on the management paths if the student profile is inactive/archived.",
-  tags: ['School'],
-  security,
-  request: { params: personIdParams, query: listTrainingNotesQuerySchema },
-  responses: {
-    200: { description: "The student's training diary, paginated.", content: jsonContent(trainingNoteListResponseSchema) },
-    ...errorResponses(401, 403, 404, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/v1/people/{id}/training-notes',
-  summary: 'Add a training-diary entry',
-  description:
-    "Story 9.2, AC 1 — requires `school.manage.own` (staff never authors — it holds `school.manage.any` instead, a 403). The caller's own ACTIVE `InstructorProfile` becomes the author (422 `INSTRUCTOR_PROFILE_REQUIRED` if absent); the student must be explicitly assigned to this instructor (403 otherwise); an optional `flightId` must be a `SCHOOL` flight of THIS student (422 `FLIGHT_NOT_LINKABLE` otherwise).",
-  tags: ['School'],
-  security,
-  request: { params: personIdParams, body: { content: jsonContent(trainingNoteInputSchema), required: true } },
-  responses: {
-    201: { description: 'The created training note.', content: jsonContent(trainingNoteItemSchema) },
-    ...errorResponses(401, 403, 404, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'patch',
-  path: '/api/v1/people/{id}/training-notes/{noteId}',
-  summary: 'Edit a training-diary entry',
-  description:
-    "Story 9.2, AC 3 — editable fields are noteDate/flightId/exercises/assessment/nextSteps ONLY (never the author or the student), a full replace of that set. Only the AUTHOR (`school.manage.own` and a matching `InstructorProfile`) or `school.notes.manage.any` (admin only) may edit, and ONLY within 7 days of `createdAt` — past that, 409 `NOTE_IMMUTABLE` for EVERYONE, admin included. 404 if `noteId` does not belong to `{id}`'s diary.",
-  tags: ['School'],
-  security,
-  request: { params: studentNoteParams, body: { content: jsonContent(trainingNoteInputSchema), required: true } },
-  responses: {
-    200: { description: 'The updated training note.', content: jsonContent(trainingNoteItemSchema) },
-    ...errorResponses(401, 403, 404, 409, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/people/{id}/packages',
-  summary: "List a person's sold hour packages (residuals + expiry)",
-  description:
-    'Story 4.4, AC 2 — a plain array (no pagination, capped at 500), most recent sale first. An unknown person is a 404; a person with no packages yet gets an empty array. `remainingMinutes` is always computed (AD-3, epic 5 will extend it to subtract consumption); `isExpired` is true only when `expiresAt` is strictly before today. `actorEmail` is included ONLY when the caller has `people.read` (same conditional-field pattern as the account statement). Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}/account`).',
-  tags: ['Finance'],
-  security,
-  request: { params: personIdParams },
-  responses: {
-    200: { description: "The person's sold packages.", content: jsonContent(hourPackageListResponseSchema) },
-    ...errorResponses(401, 403, 404, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/v1/people/{id}/packages',
-  summary: 'Sell an hour package to a person (FR-13)',
-  description:
-    'Story 4.4, AC 1 — in one transaction: upserts the `Account`, creates the `PACKAGE_PURCHASE` `AccountMovement` (always `amountCents: 0` — the payment is external to the account, see `HourPackage`\'s doc-comment), the `HourPackage` snapshot (`includedMinutes`/`pricePaidCents` copied from the type, `expiresAt` materialized from `validityMonths` when present) and the linked `CashMovement` under the seeded "Pacchetti" category (`amountCents: +priceCents`). `packageTypeId` must reference an ACTIVE type (409 otherwise); an archived person is also a 409. Requires `finance.manage` (staff/admin) — an operazione di sportello, never "own". Accepts the opt-in `Idempotency-Key` header (story TD-2).',
-  tags: ['Finance'],
-  security,
-  request: { params: personIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(sellPackageSchema), required: true } },
-  responses: {
-    201: { description: 'The created package, plus the refreshed account overview.', content: jsonContent(sellPackageResponseSchema) },
-    ...errorResponses(401, 403, 404, 409, 422),
-  },
-});
-
 registry.registerPath({
   method: 'get',
   path: '/api/v1/accounts/negative-balances',
@@ -1112,70 +903,6 @@ registry.registerPath({
   },
 });
 
-// --- Package types (story 4.3, FR-12) ---------------------------------------
-
-const packageTypeIdParams = z.object({ id: z.string().meta({ description: 'Package type id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/package-types',
-  summary: 'List the package-type listino (discounted hour bundles, FR-12)',
-  description:
-    'Active types only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 4.3, AC 1). Requires `finance.manage` (the same list feeds the sale picker, story 4.4).',
-  tags: ['Finance'],
-  security,
-  request: { query: listPackageTypesQuerySchema },
-  responses: {
-    200: { description: 'Every package type, with its eligible-aircraft set.', content: jsonContent(packageTypeListResponseSchema) },
-    ...errorResponses(401, 403, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/v1/package-types',
-  summary: 'Create a package type',
-  description:
-    'Name must be unique — conflict is a 409. Every `aircraftId` in `aircraftIds` must exist (404) and must not be archived (409). Requires `settings.manage` (admin-only configuration, story 4.3, AC 1).',
-  tags: ['Finance'],
-  security,
-  request: { body: { content: jsonContent(createPackageTypeSchema), required: true } },
-  responses: {
-    201: { description: 'The created package type.', content: jsonContent(packageTypeItemSchema) },
-    ...errorResponses(401, 403, 404, 409, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'patch',
-  path: '/api/v1/package-types/{id}',
-  summary: 'Update a package type (partial patch)',
-  description:
-    'Every field optional; `validityMonths: null` clears the validity. `aircraftIds`, when present, fully replaces the eligible-aircraft set. Editing a type with sold packages is legal (the sale snapshots price/minutes, story 4.4). Requires `settings.manage`.',
-  tags: ['Finance'],
-  security,
-  request: { params: packageTypeIdParams, body: { content: jsonContent(updatePackageTypeSchema), required: true } },
-  responses: {
-    200: { description: 'The updated package type.', content: jsonContent(packageTypeItemSchema) },
-    ...errorResponses(401, 403, 404, 409, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'delete',
-  path: '/api/v1/package-types/{id}',
-  summary: 'Delete a package type (only if never sold)',
-  description:
-    'A package type with sold packages cannot be deleted — 409 suggesting deactivation instead (story 4.3, AC 2; story 4.4 adds the `HourPackage.packageTypeId` FK RESTRICT this backstops). Requires `settings.manage`.',
-  tags: ['Finance'],
-  security,
-  request: { params: packageTypeIdParams },
-  responses: {
-    204: { description: 'The package type was deleted.' },
-    ...errorResponses(401, 403, 404, 409),
-  },
-});
-
 // --- Flights (epic 5, story 5.1, FR-9/FR-14/FR-15) --------------------------
 
 registry.registerPath({
@@ -1183,7 +910,7 @@ registry.registerPath({
   path: '/api/v1/flights',
   summary: 'List flights (paginated, most recent first, own-access or all with filters)',
   description:
-    'Story 5.1/5.4, AC 1/2/3/4; story 9.3, AC 4 — `flights.manage` (staff/admin) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`instructorPersonId`/`flightType`/`status`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard (CANCELLED included). A non-staff `personId`/`instructorPersonId` filter for anyone but themselves answers 403 (this is how the school hour-summary drill-down reaches the registry as a non-staff instructor). `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for staff.',
+    'Story 5.1/5.4, AC 1/2/3/4; story 9.3, AC 4 — `flights.manage` (staff/admin) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`instructorPersonId`/`flightType`/`status`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard (CANCELLED included). A non-staff `personId`/`instructorPersonId` filter for anyone but themselves answers 403 (this is how the logbook\'s own-instructor drill-down reaches the registry as a non-staff instructor). `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for staff.',
   tags: ['Flights'],
   security,
   request: { query: listFlightsQuerySchema },
@@ -1430,41 +1157,16 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/v1/users',
-  summary: 'List users (paginated)',
-  tags: ['Users'],
-  security,
-  request: { query: listUsersQuerySchema },
-  responses: {
-    200: { description: 'A page of users.', content: jsonContent(userListResponseSchema) },
-    ...errorResponses(401, 403, 422),
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/v1/users',
   summary: 'Create (invite) a user',
+  description: "Story 12.13: the sibling GET (list) handler was removed — the Piloti page reads its roster from `people.service.ts#listPilotsPageData` directly, never from this endpoint.",
   tags: ['Users'],
   security,
   request: { body: { content: jsonContent(createUserSchema), required: true } },
   responses: {
     201: { description: 'The created user.', content: jsonContent(userListItemSchema) },
     ...errorResponses(401, 403, 409, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/users/{id}',
-  summary: 'Get a single user',
-  tags: ['Users'],
-  security,
-  request: { params: idParams },
-  responses: {
-    200: { description: 'The user.', content: jsonContent(userListItemSchema) },
-    ...errorResponses(401, 403, 404),
   },
 });
 
@@ -1548,7 +1250,7 @@ registry.registerPath({
   path: '/api/v1/expiry-types',
   summary: 'Create an expiry type',
   description:
-    'Name must be unique — conflict is a 409 (story 6.1, AC 1/2). Requires `settings.manage` (admin-only catalogue configuration, same split as `POST /api/v1/cash-categories`/`POST /api/v1/package-types`).',
+    'Name must be unique — conflict is a 409 (story 6.1, AC 1/2). Requires `settings.manage` (admin-only catalogue configuration, same split as `POST /api/v1/cash-categories`).',
   tags: ['Expiries'],
   security,
   request: { body: { content: jsonContent(createExpiryTypeSchema), required: true } },
@@ -1588,14 +1290,11 @@ registry.registerPath({
   },
 });
 
-// --- Expiries + update-proposal queue (epic 6, story 6.2, FR-36) -----------
+// --- Expiries (epic 6, story 6.2/6.4) ---------------------------------------
 // Person expiries with computed status (`ok`/`expiring`/`expired`, never
-// persisted) plus a titolare-facing update-proposal queue staff validates.
+// persisted).
 
 const expiryIdParams = z.object({ id: z.string().meta({ description: 'Expiry id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
-const expiryProposalIdParams = z.object({
-  id: z.string().meta({ description: 'ExpiryUpdateProposal id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }),
-});
 
 registry.registerPath({
   method: 'get',
@@ -1687,51 +1386,6 @@ registry.registerPath({
   responses: {
     204: { description: 'The scadenza was deleted.' },
     ...errorResponses(401, 403, 404),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/v1/expiries/{id}/proposals',
-  summary: 'Propose an update to your OWN scadenza (AC 2, FR-36)',
-  description:
-    "Requires `expiries.propose.own` (instructor/pilot/student, never staff — staff edits directly via `expiries.manage`). The actor must be the scadenza's own titolare (403 otherwise, including an actor with no linked `personId`). Values are COMPLETE (not a partial patch) — the form arrives prefilled. Does NOT touch the `Expiry` itself (it stays authoritative until staff decides); at most one PENDING proposal per scadenza (409 pre-check + P2002 backstop on the hand-appended partial unique index).",
-  tags: ['Expiries'],
-  security,
-  request: { params: expiryIdParams, body: { content: jsonContent(proposeExpirySchema), required: true } },
-  responses: {
-    201: { description: 'The pending proposal.', content: jsonContent(pendingProposalSummarySchema) },
-    ...errorResponses(401, 403, 404, 409, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/expiry-proposals',
-  summary: 'List the staff update-proposal queue (AC 2)',
-  description:
-    "Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED` to review past decisions. Current vs proposed values side by side. Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `expiries.manage`.",
-  tags: ['Expiries'],
-  security,
-  request: { query: listExpiryProposalsQuerySchema },
-  responses: {
-    200: { description: 'A page of proposals.', content: jsonContent(expiryProposalListResponseSchema) },
-    ...errorResponses(401, 403, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/v1/expiry-proposals/{id}/decision',
-  summary: 'Approve or reject a pending proposal (AC 2)',
-  description:
-    "404 on an unknown id; already-decided -> 409. Runs in one transaction with an optimistic `updateMany`-count guard against two staff members deciding concurrently. On APPROVE, the proposed values are applied to the target `Expiry` in the SAME transaction; REJECT leaves it untouched. Requires `expiries.manage`.",
-  tags: ['Expiries'],
-  security,
-  request: { params: expiryProposalIdParams, body: { content: jsonContent(decideProposalSchema), required: true } },
-  responses: {
-    200: { description: 'The decided proposal.', content: jsonContent(expiryProposalItemSchema) },
-    ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 
@@ -2068,6 +1722,204 @@ registry.registerPath({
   responses: {
     200: { description: 'The saved airfield branding.', content: jsonContent(airfieldBrandingSchema) },
     ...errorResponses(401, 403, 422),
+  },
+});
+
+// --- Settings sub-resources + METAR (epic 12, story 12.11 — registered in
+// 12.13, F5/review 12.11 action item) ----------------------------------------
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/club',
+  summary: 'Read the club identity (ICAO + contact email, story 12.11, AC 1)',
+  description:
+    "`{ icao, contactEmail }` — two `AppSetting` keys read/written together as one DTO (`airfield.name`/`airfield.logo` stay on the separate `settings/airfield` above). NO permission gate beyond an authenticated session (same asymmetry as `settings/airfield`).",
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current club identity.', content: jsonContent(clubIdentitySchema) },
+    ...errorResponses(401),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/club',
+  summary: 'Set the club identity (story 12.11, AC 1/2)',
+  description: 'Body `{ icao, contactEmail }`. Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(clubIdentitySchema), required: true } },
+  responses: {
+    200: { description: 'The saved club identity.', content: jsonContent(clubIdentitySchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/scheduling',
+  summary: 'Read the booking-window scheduling settings (story 12.11, AC 1/4)',
+  description:
+    "`{ openTime, closeTime, minSlotMinutes, turnaroundMinutes, maxAdvanceDays }` — advisory defaults booking create/approve enforce (422 `BOOKING_OUTSIDE_WINDOW`); each field reads `null` until an admin saves the card once (backward-safe: absent keys impose no new constraint). NO permission gate: any actor creating a booking needs these, not just staff.",
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current scheduling settings.', content: jsonContent(schedulingSettingsDtoSchema) },
+    ...errorResponses(401),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/scheduling',
+  summary: 'Set the booking-window scheduling settings (story 12.11, AC 1/4)',
+  description: 'Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(schedulingSettingsSchema), required: true } },
+  responses: {
+    200: { description: 'The saved scheduling settings.', content: jsonContent(schedulingSettingsDtoSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/smtp',
+  summary: 'Read the SMTP settings (story 12.11, AC 1/2)',
+  description:
+    '`{ host, port, security, user, from, hasPassword }` — `pass` is write-only, NEVER present on the GET response (`hasPassword` tells the UI whether one is already stored). Admin-only (`settings.manage`): unlike `settings/scheduling`, nobody but the admin editing this card needs to see it.',
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current SMTP settings (password omitted).', content: jsonContent(smtpSettingsDtoSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/smtp',
+  summary: 'Set the SMTP settings (story 12.11, AC 1/2)',
+  description: 'Body `{ host, port, security, user, pass?, from }` — `pass` optional (omit to keep the existing one). Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(smtpSettingsInputSchema), required: true } },
+  responses: {
+    200: { description: 'The saved SMTP settings (password omitted).', content: jsonContent(smtpSettingsDtoSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/settings/smtp/test-email',
+  summary: 'Send a test email through the configured SMTP settings (story 12.11, AC 1/2)',
+  description: '`{ sent: boolean }` — `sent: false` on a mail-transport failure, never a 5xx (the service\'s own contract). Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The send attempt result.', content: jsonContent(testEmailResultSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/metar-station',
+  summary: 'Read the METAR station ICAO (story 12.11, AC 1/5)',
+  description: '`{ station }` — the ICAO the sidebar weather widget fetches. NO permission gate: the widget renders for every authenticated role.',
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current METAR station.', content: jsonContent(metarStationDtoSchema) },
+    ...errorResponses(401),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/metar-station',
+  summary: 'Set the METAR station ICAO (story 12.11, AC 1/5)',
+  description: 'Body `{ station }`. Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(metarStationInputSchema), required: true } },
+  responses: {
+    200: { description: 'The saved METAR station.', content: jsonContent(metarStationDtoSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/membership-fee',
+  summary: 'Read the default annual membership fee (ratifica utente 1, story 12.11, AC 1)',
+  description:
+    '`{ annualFeeCents }` — the admin-configured default, prefilled by the Scadenze "Quota associativa" action. Requires `finance.manage` (STAFF+ADMIN).',
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current default membership fee.', content: jsonContent(membershipFeeSettingSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/membership-fee',
+  summary: 'Set the default annual membership fee (ratifica utente 1, story 12.11, AC 1)',
+  description: 'Body `{ annualFeeCents }` (integer euro cents). Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(membershipFeeSettingSchema), required: true } },
+  responses: {
+    200: { description: 'The saved default membership fee.', content: jsonContent(membershipFeeSettingSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/metar',
+  summary: 'Read the current METAR for the configured station (story 12.11, AC 5)',
+  description:
+    'Authenticated, no further gate: every role sees the sidebar weather card. `null` whenever no station is configured or the upstream fetch to aviationweather.gov failed — NEVER a 4xx/5xx for that case, this is a best-effort widget (10-min in-memory cache).',
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current METAR, or `null` if unavailable.', content: jsonContent(metarResponseSchema) },
+    ...errorResponses(401),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/expiry-alerts/trigger',
+  summary: 'Manually re-run the expiry-alerts job (story 12.11, AC 3; ratifica utente 4)',
+  description:
+    "Session-authenticated counterpart to the bearer-only `POST /api/v1/jobs/expiry-alerts` (INTACT, unchanged) — re-runs the SAME idempotent job (`SentAlert`-guarded, story 6.3, AD-9): a manual re-run is a no-op when nothing new is due. Admin-only (`settings.manage`, gated directly in the route).",
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The job run result.', content: jsonContent(expiryAlertsJobResultSchema) },
+    ...errorResponses(401, 403),
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/v1/people/{id}/membership-fee',
+  summary: "Charge a person's annual membership fee and renew their membership expiry (story 12.11, AC 7; ratifiche utente 1/1a/1b)",
+  description:
+    'Body `{ amountCents, override? }` — `override: true` (ADMIN-only, `settings.manage`) bypasses the insufficient-balance refusal. `Idempotency-Key` is MANDATORY (422 `IDEMPOTENCY_KEY_REQUIRED` without it, same "money-mutating discriminated write" convention as `POST /api/v1/transactions`) — a network retry of this addebito+renewal gesture must replay, never double-charge. Requires `finance.manage`.',
+  tags: ['People'],
+  security,
+  request: { params: personIdParams, headers: [requiredIdempotencyKeyHeader], body: { content: jsonContent(chargeMembershipFeeSchema), required: true } },
+  responses: {
+    200: { description: 'The refreshed account overview plus the renewed membership expiry.', content: jsonContent(chargeMembershipFeeResponseSchema) },
+    ...errorResponses(401, 403, 404, 422),
   },
 });
 

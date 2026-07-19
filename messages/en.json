@@ -646,70 +646,6 @@
       }
     }
   },
-  "HourPackagesPanel": {
-    "heading": "Hour packages",
-    "loadError": "Could not load the packages.",
-    "empty": "No packages purchased.",
-    "addAction": "Sell package",
-    "feedback": "Package sold.",
-    "table": {
-      "remaining": "Remaining",
-      "price": "Price paid",
-      "expiresAt": "Expires",
-      "noExpiry": "—",
-      "expiredBadge": "Expired",
-      "consumedNote": "Used: {duration}"
-    },
-    "form": {
-      "title": "Sell package",
-      "packageType": "Package type",
-      "noActiveTypes": "No active package type. Configure one in the listino.",
-      "paymentMethod": "Payment method",
-      "paymentMethods": {
-        "cash": "Cash",
-        "bankTransfer": "Bank transfer",
-        "pos": "POS"
-      },
-      "effectiveDate": "Value date",
-      "description": "Notes",
-      "submit": "Confirm sale",
-      "cancel": "Cancel",
-      "requiredField": "This field is required.",
-      "inactiveTypeError": "The selected package type is no longer active. Refresh the page and try again.",
-      "genericError": "Could not record the sale. Please try again."
-    }
-  },
-  "AssignedInstructorsPanel": {
-    "heading": "Assigned instructors",
-    "loadError": "Could not load the assigned instructors.",
-    "empty": "No instructor assigned.",
-    "addAction": "Assign instructor",
-    "feedback": {
-      "assigned": "Instructor assigned.",
-      "removed": "Instructor removed."
-    },
-    "table": {
-      "name": "Instructor",
-      "assignedAt": "Assigned on",
-      "actions": "Actions"
-    },
-    "form": {
-      "title": "Assign instructor",
-      "instructor": "Instructor",
-      "noInstructors": "No instructor available to assign.",
-      "submit": "Assign",
-      "cancel": "Cancel",
-      "requiredField": "This field is required.",
-      "conflictError": "This instructor is already assigned to this student.",
-      "genericError": "Something went wrong. Please try again."
-    },
-    "actions": {
-      "remove": "Remove",
-      "confirmRemove": "Confirm removal?",
-      "confirmYes": "Yes, remove",
-      "confirmCancel": "Cancel"
-    }
-  },
   "ExpiriesPanel": {
     "heading": "Expiries",
     "loadError": "Could not load the expiries.",
@@ -757,105 +693,6 @@
       "confirmDelete": "Delete this expiry?",
       "confirmYes": "Confirm",
       "confirmCancel": "Cancel"
-    }
-  },
-  "SchoolPage": {
-    "kicker": "Flight school",
-    "title": "My students",
-    "description": "The list of your assigned students, with total school hours and expiry status.",
-    "empty": "No student assigned.",
-    "table": {
-      "name": "Student",
-      "courseStartDate": "Course start",
-      "totalHours": "Total school hours",
-      "lastNote": "Last note",
-      "noNotes": "—",
-      "statusHeader": "Expiries",
-      "noExpiries": "—",
-      "status": {
-        "ok": "OK",
-        "expiring": "Expiring",
-        "expired": "Expired"
-      }
-    },
-    "titleManage": "School summaries",
-    "descriptionManage": "Dual-command and solo hours for every active student, SCHOOL flight hours per instructor: filter by period.",
-    "summaries": {
-      "heading": "Summaries",
-      "filters": {
-        "heading": "Period",
-        "month": "Current month",
-        "quarter": "Current quarter",
-        "year": "Current year",
-        "custom": "Custom range",
-        "from": "From",
-        "to": "To"
-      },
-      "students": {
-        "heading": "Student hours",
-        "empty": "No active students.",
-        "table": {
-          "name": "Student",
-          "dual": "Dual command (period)",
-          "solo": "Solo (period)",
-          "totalPeriod": "Period total",
-          "totalAllTime": "All-time total"
-        }
-      },
-      "instructors": {
-        "heading": "Instructor hours",
-        "empty": "No active instructors.",
-        "table": {
-          "name": "Instructor",
-          "hours": "School hours (period)",
-          "action": "Open in register"
-        }
-      }
-    },
-    "myHours": {
-      "heading": "My school hours",
-      "openRegister": "Open in register"
-    }
-  },
-  "TrainingDiaryPage": {
-    "kicker": "Training diary",
-    "courseStartDate": "Course start",
-    "back": "Back",
-    "empty": "No note recorded yet.",
-    "row": {
-      "author": "Instructor",
-      "edited": "edited",
-      "exercises": "Exercises",
-      "assessment": "Assessment",
-      "nextSteps": "Next steps",
-      "linkedFlight": "Linked flight",
-      "edit": "Edit"
-    },
-    "newNoteForm": {
-      "title": "New note",
-      "addAction": "New note",
-      "noteDate": "Training date",
-      "exercises": "Exercises",
-      "assessment": "Assessment",
-      "nextSteps": "Next steps",
-      "flight": "Linked flight",
-      "noFlight": "No linked flight",
-      "submit": "Save note",
-      "cancel": "Cancel",
-      "requiredField": "Required field.",
-      "flightError": "The selected flight cannot be linked to this note.",
-      "genericError": "Could not save the note. Try again."
-    },
-    "editForm": {
-      "noteDate": "Training date",
-      "exercises": "Exercises",
-      "assessment": "Assessment",
-      "nextSteps": "Next steps",
-      "save": "Save",
-      "cancel": "Cancel",
-      "requiredField": "Required field.",
-      "immutableError": "This note can no longer be edited (7-day window elapsed).",
-      "genericError": "Could not save the changes. Try again."
     }
   },
   "AccountStatementPage": {
@@ -909,23 +746,6 @@
     }
   },
   "FinancePage": {
-    "kicker": "Finance",
-    "title": "Finance",
-    "description": "The airfield's financial picture: prepaid accounts, negative balances and the cash register.",
-    "backToDashboard": "Back to dashboard",
-    "manageCategories": "Manage categories",
-    "viewPackages": "Package listing",
-    "viewReport": "Financial report",
-    "negativeBalances": {
-      "heading": "Negative balances",
-      "empty": "No account is in the negative.",
-      "table": {
-        "person": "Person",
-        "balance": "Balance",
-        "lastMovement": "Last movement",
-        "noValue": "—"
-      }
-    },
     "cashRegister": {
       "heading": "Cash register",
       "newMovement": "New movement",
@@ -1012,117 +832,6 @@
       "out": "Outflows",
       "net": "Net",
       "empty": "No movement in the selected period."
-    }
-  },
-  "CashCategoriesPage": {
-    "kicker": "Finance",
-    "title": "Cash categories",
-    "description": "The cash register's categories: create, rename, deactivate or delete the never-used ones.",
-    "backToFinance": "Back to finance",
-    "newCategory": "New category",
-    "table": {
-      "name": "Name",
-      "status": "Status",
-      "movements": "Movements",
-      "actions": "Actions",
-      "empty": "No categories."
-    },
-    "status": {
-      "active": "Active",
-      "inactive": "Deactivated"
-    },
-    "actions": {
-      "rename": "Rename",
-      "deactivate": "Deactivate",
-      "reactivate": "Reactivate",
-      "delete": "Delete",
-      "confirmDelete": "Delete this category?",
-      "confirmYes": "Confirm",
-      "confirmCancel": "Cancel"
-    },
-    "form": {
-      "createTitle": "New category",
-      "renameTitle": "Rename category",
-      "name": "Name",
-      "submitCreate": "Create category",
-      "submitRename": "Save",
-      "cancel": "Cancel",
-      "requiredField": "The name is required.",
-      "conflictError": "A category with this name already exists.",
-      "genericError": "The operation failed. Try again."
-    },
-    "feedback": {
-      "created": "Category created.",
-      "renamed": "Category renamed.",
-      "deactivated": "Category deactivated.",
-      "reactivated": "Category reactivated.",
-      "deleted": "Category deleted.",
-      "deleteInUseError": "This category has recorded movements and cannot be deleted: deactivate it instead.",
-      "genericError": "The operation failed. Try again."
-    }
-  },
-  "PackagesPage": {
-    "kicker": "Finance",
-    "title": "Hour-package listing",
-    "description": "The discounted hour-bundle types sold to pilots: name, included hours, price, eligible aircraft and validity.",
-    "backToFinance": "Back to finance",
-    "newPackageType": "New package type",
-    "table": {
-      "name": "Name",
-      "includedHours": "Included hours",
-      "price": "Price",
-      "effectivePrice": "Effective hourly price",
-      "aircraft": "Eligible aircraft",
-      "validity": "Validity",
-      "status": "Status",
-      "actions": "Actions",
-      "empty": "No package type configured.",
-      "noValidity": "—",
-      "noAircraft": "None",
-      "monthsUnit": "months"
-    },
-    "status": {
-      "active": "Active",
-      "inactive": "Deactivated"
-    },
-    "actions": {
-      "edit": "Edit",
-      "deactivate": "Deactivate",
-      "reactivate": "Reactivate",
-      "delete": "Delete",
-      "confirmDelete": "Delete this package type?",
-      "confirmYes": "Confirm",
-      "confirmCancel": "Cancel"
-    },
-    "form": {
-      "createTitle": "New package type",
-      "editTitle": "Edit package type",
-      "name": "Name",
-      "includedHours": "Included hours",
-      "includedHoursHint": "H:MM format, e.g. 10:00",
-      "price": "Price (€)",
-      "validityMonths": "Validity (months)",
-      "validityMonthsHint": "Empty = no expiry",
-      "aircraft": "Eligible aircraft",
-      "noAircraftAvailable": "No active aircraft available.",
-      "submitCreate": "Create package type",
-      "submitSave": "Save",
-      "cancel": "Cancel",
-      "requiredField": "The name is required.",
-      "invalidDuration": "Enter a valid duration in H:MM format.",
-      "invalidAmount": "Enter a valid price greater than zero.",
-      "invalidValidity": "Enter a valid number of months (1-600), or leave it empty.",
-      "conflictError": "A package type with this name already exists.",
-      "genericError": "The operation failed. Try again."
-    },
-    "feedback": {
-      "created": "Package type created.",
-      "updated": "Package type updated.",
-      "deactivated": "Package type deactivated.",
-      "reactivated": "Package type reactivated.",
-      "deleted": "Package type deleted.",
-      "deleteInUseError": "This package type has already been sold and cannot be deleted: deactivate it instead.",
-      "genericError": "The operation failed. Try again."
     }
   },
   "AircraftPage": {
@@ -1328,7 +1037,6 @@
       "aircraftAmount": "Aircraft cost",
       "instructorRate": "Instructor rate",
       "instructorAmount": "Instructor cost",
-      "packageCovered": "From package",
       "chargedMinutes": "Charged minutes",
       "total": "Total charged",
       "newBalance": "New balance"
@@ -1357,7 +1065,6 @@
         "movements": "Takeoffs/Landings",
         "pic": "PIC",
         "noValue": "—",
-        "packageNote": "of which {duration} from package",
         "status": "Status",
         "statusCancelled": "Cancelled",
         "cancelledDetail": "Cancelled on {date} — {reason}",
@@ -1446,7 +1153,6 @@
       "soloSuffix": "solo",
       "noInstructor": "—",
       "noValue": "—",
-      "packageNote": "of which {duration} from package",
       "statusCancelled": "Cancelled",
       "cancelledDetail": "Cancelled on {date} — {reason}",
       "correctionOf": "Correction of a previous flight",
@@ -1539,8 +1245,6 @@
         "aircraftAmount": "Aircraft cost",
         "instructorRate": "Instructor rate",
         "instructorAmount": "Instructor cost",
-        "packageCovered": "From package",
-        "chargedMinutes": "Charged minutes",
         "total": "Total charged",
         "newBalance": "New balance"
       }
@@ -1560,7 +1264,7 @@
     "title": "Expiries",
     "sub": "Certificate and rating expiries · {count} to manage",
     "titleOwn": "My expiries",
-    "descriptionOwn": "Your registered expiries, with the computed status. Propose an update whenever you renew.",
+    "descriptionOwn": "Your registered expiries, with the computed status.",
     "dashboard": {
       "heading": "All expiries",
       "table": {
@@ -1645,33 +1349,6 @@
         "overrideCheckbox": "Force charge (insufficient balance)"
       }
     },
-    "queue": {
-      "heading": "Proposal queue",
-      "description": "Update proposals pending validation, in order of arrival.",
-      "empty": "No pending proposals.",
-      "table": {
-        "person": "Person",
-        "type": "Type",
-        "current": "Current values",
-        "proposed": "Proposed values",
-        "proposedBy": "Proposed by",
-        "when": "When",
-        "actions": "Actions"
-      },
-      "actions": {
-        "approve": "Approve",
-        "reject": "Reject",
-        "confirmApprove": "Approve this proposal?",
-        "confirmReject": "Reject this proposal?",
-        "confirmYes": "Confirm",
-        "confirmCancel": "Cancel"
-      },
-      "feedback": {
-        "approved": "Proposal approved.",
-        "rejected": "Proposal rejected.",
-        "genericError": "Could not record the decision. Please try again."
-      }
-    },
     "own": {
       "empty": "No expiry registered.",
       "table": {
@@ -1686,22 +1363,7 @@
           "expiring": "Expiring soon",
           "expired": "Expired"
         },
-        "pendingBadge": "Pending proposal",
-        "pendingHint": "A proposal is already pending validation."
-      },
-      "proposeAction": "Propose update",
-      "form": {
-        "title": "Propose an update",
-        "issuedAt": "Issued on",
-        "expiresAt": "Expires on",
-        "notes": "Notes",
-        "submit": "Send proposal",
-        "cancel": "Cancel",
-        "requiredField": "This field is required.",
-        "invalidRange": "The expiry date cannot be before the issue date.",
-        "conflictError": "A proposal is already pending validation for this expiry.",
-        "genericError": "Could not send the proposal. Please try again.",
-        "success": "Proposal sent, pending validation by staff."
+        "pendingBadge": "Pending proposal"
       }
     }
   },
@@ -1851,63 +1513,12 @@
     }
   },
   "UsersPage": {
-    "kicker": "Administration",
-    "title": "Users",
-    "description": "Create users, assign roles and manage access to the system.",
-    "backToDashboard": "Back to dashboard",
-    "newUser": "New user",
-    "table": {
-      "email": "Email",
-      "roles": "Roles",
-      "status": "Status",
-      "person": "Person",
-      "locale": "Language",
-      "actions": "Actions",
-      "noPerson": "None",
-      "empty": "No users found."
-    },
-    "status": {
-      "active": "Active",
-      "inactive": "Inactive",
-      "pending": "Invite pending"
-    },
     "roles": {
       "ADMIN": "Admin",
       "STAFF": "Staff",
       "INSTRUCTOR": "Instructor",
       "PILOT": "Pilot",
       "STUDENT": "Student"
-    },
-    "locales": {
-      "it": "Italian",
-      "en": "English"
-    },
-    "actions": {
-      "edit": "Edit",
-      "deactivate": "Deactivate",
-      "activate": "Reactivate",
-      "resendInvite": "Resend invite"
-    },
-    "form": {
-      "createTitle": "New user",
-      "editTitle": "Edit user",
-      "email": "Email",
-      "roles": "Roles",
-      "locale": "Language",
-      "person": "Linked person (optional)",
-      "personNone": "None",
-      "isActive": "Active",
-      "submitCreate": "Create and send invite",
-      "submitEdit": "Save changes",
-      "cancel": "Cancel",
-      "rolesRequired": "Select at least one role.",
-      "genericError": "Something went wrong. Please try again.",
-      "emailConflict": "A user with this email already exists."
-    },
-    "feedback": {
-      "created": "User created: invite email sent.",
-      "updated": "User updated.",
-      "inviteResent": "Invite resent."
     }
   },
   "PprPage": {

@@ -164,7 +164,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     // ...)` — this generic stand-in handles BOTH the interactive-callback
     // form (invokes the callback with the plain `prisma` mock as `tx`) and a
     // legacy batch-array argument (`Promise.all`), same rationale as
-    // `mockTransaction` in `cash.service.test.ts`/`package-types.service.test.ts`.
+    // `mockTransaction` in `cash.service.test.ts`.
     // Per-test `transaction.mockResolvedValue(...)` calls (e.g. `listPeople`'s
     // `[items, total]`) still override this default outright (they don't
     // inspect the argument at all), since they run later in the same test.

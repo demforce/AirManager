@@ -77,8 +77,11 @@ const EXPIRIES_WIDGET_SCAN_LIMIT = 60;
  * console operativa reale per admin/staff (AC 1), "la mia giornata" per
  * l'istruttore (AC 5), saldo/scadenze/prossimi voli per pilota/allievo (AC
  * 4). The face is chosen from the REAL session role/permessi, never a query
- * param (AC 6) — same gate order as the legacy home this replaces
- * (`finance.manage` → `school.manage.own` → `me.person`).
+ * param (AC 6) — gate order: `finance.manage` → INSTRUCTOR role (story
+ * 12.13: the `school.manage.own` permission this used to read was the
+ * feature-scoped "scuola" permission, removed with the school area — an
+ * actor's INSTRUCTOR role membership is the same signal, plain and
+ * unambiguous) → `me.person`.
  *
  * `src/proxy.ts` already blocks unauthenticated requests before they reach
  * this route; the session is re-checked here, close to the data fetch (AD-5).
@@ -97,7 +100,7 @@ export default async function DashboardPage({ params }: PageProps) {
   const me = await getMe(actor);
 
   const canManageFinance = hasPermission(actor, 'finance.manage');
-  const showInstructorFace = !canManageFinance && hasPermission(actor, 'school.manage.own');
+  const showInstructorFace = !canManageFinance && actor.roles.includes('INSTRUCTOR');
   const showPersonalFace = !canManageFinance && !showInstructorFace && me.person !== null;
 
   if (canManageFinance) {
@@ -474,8 +477,6 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       aircraftAmount: t('editor.result.aircraftAmount'),
       instructorRate: t('editor.result.instructorRate'),
       instructorAmount: t('editor.result.instructorAmount'),
-      packageCovered: t('editor.result.packageCovered'),
-      chargedMinutes: t('editor.result.chargedMinutes'),
       total: t('editor.result.total'),
       newBalance: t('editor.result.newBalance'),
     },

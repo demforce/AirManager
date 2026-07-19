@@ -22,7 +22,6 @@ vi.mock('./ppr.service', () => ({ listPprRequests: vi.fn() }));
 vi.mock('./accounts.service', () => ({ listAccountMovements: vi.fn(), getAccountOverview: vi.fn() }));
 vi.mock('./cash.service', () => ({ listCashMovements: vi.fn(), getCashReport: vi.fn() }));
 vi.mock('./expiries.service', () => ({ listAllExpiries: vi.fn() }));
-vi.mock('./school.service', () => ({ getStudentHourSummaries: vi.fn(), getInstructorHourSummaries: vi.fn() }));
 vi.mock('./instructor-compensation.service', () => ({ getCompensationSummary: vi.fn() }));
 vi.mock('./transactions.service', () => ({ listTransactions: vi.fn() }));
 // Story 10.2: the PDF adapter is mocked here (unlike `buildWorkbook`, never

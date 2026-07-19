@@ -63,7 +63,7 @@ test.describe('Person detail page (Story 2.3)', () => {
 
     // The heading "Ultimi voli" + "Prossime prenotazioni" (the ONE remaining
     // structural placeholder — story 11.2 turns "Ultimi voli" into a real panel).
-    for (const title of ['Scadenze', 'Saldo conto', 'Pacchetti ore', 'Ultimi voli', 'Prossime prenotazioni']) {
+    for (const title of ['Scadenze', 'Saldo conto', 'Ultimi voli', 'Prossime prenotazioni']) {
       await expect(page.getByRole('heading', { name: title })).toBeVisible();
     }
     // "Prossime prenotazioni" is still a placeholder — "Ultimi voli" is now real (Story 11.2, AC 4).

@@ -143,23 +143,16 @@ test.describe('Cash register with categories and reversals (Story 3.4 — port t
     await expect(registerRows(page).getByTestId('transaction-reverse-action')).toHaveCount(0);
   });
 
-  test('admin creates a category and deactivates it: it disappears from the "Nuova transazione" cash picker (AC 1)', async ({ page }) => {
+  test('admin deactivates a category via the API: it disappears from the "Nuova transazione" cash picker (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const categoryName = uniqueCategoryName('Effimera');
+    const categoryId = await createCategory(page, categoryName);
 
-    // Category CRUD stays reachable with a direct URL (AC 6 — dies in 12.13).
-    await page.goto('/it/dashboard/finance/categories');
-    await page.getByRole('button', { name: 'Nuova categoria' }).click();
-    await page.locator('#category-name').fill(categoryName);
-    await page.getByRole('button', { name: 'Crea categoria' }).click();
-    await expect(page.getByTestId('categories-feedback')).toHaveText('Categoria creata.');
-
-    const row = page.getByTestId('cash-categories-table').locator('tbody tr').filter({ hasText: categoryName });
-    await expect(row).toContainText('Attiva');
-
-    await row.getByRole('button', { name: 'Disattiva' }).click();
-    await expect(page.getByTestId('categories-feedback')).toHaveText('Categoria disattivata.');
-    await expect(row).toContainText('Disattivata');
+    // Story 12.13: the legacy `/dashboard/finance/categories` management page
+    // is gone — category CRUD is API-only now (`cash-* RESTANO`, ratified);
+    // the picker-visibility behavior below is what still has a live UI to check.
+    const deactivateResponse = await page.request.post(`/api/v1/cash-categories/${categoryId}/deactivate`);
+    expect(deactivateResponse.status()).toBe(200);
 
     // Deactivated -> not selectable for new movements (the picker filters to active) NOR
     // in the Tipo filter's cash optgroup (story 12.9: BOTH read the same active-only list —
@@ -174,23 +167,29 @@ test.describe('Cash register with categories and reversals (Story 3.4 — port t
     await expect(page.locator(`[data-testid="billing-filter-type"] option:has-text("${categoryName}")`)).toHaveCount(0);
   });
 
-  test('deleting a category in use fails with a clear message suggesting deactivation (AC 1)', async ({ page }) => {
+  test('deleting a category in use via the API fails with a clear message suggesting deactivation (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const categoryName = uniqueCategoryName('Usata');
     const categoryId = await createCategory(page, categoryName);
     await recordMovement(page, categoryId, 1500, '2026-07-03');
 
-    await page.goto('/it/dashboard/finance/categories');
-    const row = page.getByTestId('cash-categories-table').locator('tbody tr').filter({ hasText: categoryName });
-    // Movement-count column (3rd cell) — the unique name itself contains digits, so target the cell.
-    await expect(row.locator('td').nth(2)).toHaveText('1');
-    await row.getByRole('button', { name: 'Elimina' }).click();
-    await row.getByRole('button', { name: 'Conferma' }).click();
-    await expect(page.getByTestId('categories-feedback')).toHaveText(
-      'La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.',
-    );
-    // The category is still there.
-    await expect(row).toHaveCount(1);
+    // Story 12.13: no more management page to drive this through the UI —
+    // the DELETE endpoint itself stays (`cash-* RESTANO`, ratified). Asserted
+    // directly against the API's own (English, AD-8) envelope now — the
+    // Italian-translated message the deleted management page used to render
+    // no longer exists to assert against.
+    const deleteResponse = await page.request.delete(`/api/v1/cash-categories/${categoryId}`);
+    expect(deleteResponse.status()).toBe(409);
+    const deleteBody = await deleteResponse.json();
+    expect(deleteBody.error.code).toBe('CONFLICT');
+    expect(deleteBody.error.message).toBe('This category has recorded movements — deactivate it instead of deleting it.');
+
+    // The category is still there (still selectable in the billing picker).
+    await page.goto('/it/dashboard/billing');
+    await page.getByTestId('billing-new-transaction-button').click();
+    await page.waitForSelector('[data-testid="transaction-form"]');
+    await page.getByTestId('transaction-kind').selectOption('cash');
+    await expect(page.locator(`[data-testid="transaction-category"] option:has-text("${categoryName}")`)).toHaveCount(1);
   });
 
   test('a pilot gets a 403 AD-8 envelope from GET /api/v1/cash-movements (AD-5)', async ({ page }) => {

@@ -1,5 +1,4 @@
 import type { Role } from '@/generated/prisma/enums';
-import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { CreateUserInput, UpdateUserInput } from '@/lib/schemas/users';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
@@ -18,9 +17,6 @@ export type UserListItem = {
   person: { id: string; firstName: string; lastName: string } | null;
   createdAt: Date;
 };
-
-/** AD-8 paginated shape, via the shared helper (story 1.5). */
-export type UserListResult = PaginatedResult<UserListItem>;
 
 const USER_SELECT = {
   id: true,
@@ -59,37 +55,6 @@ function toListItem(user: SelectedUser): UserListItem {
 
 function emailLocale(locale: string): 'it' | 'en' {
   return locale === 'en' ? 'en' : 'it';
-}
-
-/** List users, paginated (AD-8: `{ items, total, page, pageSize }`). Admin-only (`users.manage`). */
-export async function listUsers(actor: Actor, query: PaginationQuery): Promise<UserListResult> {
-  authorize(actor, 'users.manage');
-
-  // Interactive transaction (story TD-1, AC 3) — see
-  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
-  // `pg` DeprecationWarning rationale.
-  const [items, total] = await prisma.$transaction(async (tx) => {
-    const items = await tx.user.findMany({
-      select: USER_SELECT,
-      // Newest first: keeps freshly invited users on page 1 for the admin.
-      orderBy: { createdAt: 'desc' },
-      ...paginationOffset(query),
-    });
-    const total = await tx.user.count();
-    return [items, total] as const;
-  });
-
-  return paginate(items.map(toListItem), total, query);
-}
-
-export async function getUser(actor: Actor, id: string): Promise<UserListItem> {
-  authorize(actor, 'users.manage');
-
-  const user = await prisma.user.findUnique({ where: { id }, select: USER_SELECT });
-  if (!user) {
-    throw new NotFoundError('User not found.');
-  }
-  return toListItem(user);
 }
 
 /** Prisma unique-constraint violation (e.g. concurrent link to the same person). */
@@ -229,32 +194,4 @@ export async function resendInvite(actor: Actor, id: string): Promise<void> {
   }
 
   await sendInviteEmail(user.id, user.email, emailLocale(user.locale));
-}
-
-export type AvailablePerson = { id: string; firstName: string; lastName: string };
-
-/**
- * Persons selectable for linking to a user (story Dev Notes: "qui solo
- * select di Person esistenti per il collegamento" — full People CRUD is
- * epic 2). Available = not linked to any user yet, or already linked to the
- * user currently being edited (so its own selection still shows up).
- */
-export async function listAvailablePersons(
-  actor: Actor,
-  options?: { excludeLinkedToUserId?: string },
-): Promise<AvailablePerson[]> {
-  authorize(actor, 'users.manage');
-
-  const persons = await prisma.person.findMany({
-    where: {
-      OR: [
-        { user: null },
-        ...(options?.excludeLinkedToUserId ? [{ user: { id: options.excludeLinkedToUserId } }] : []),
-      ],
-    },
-    select: { id: true, firstName: true, lastName: true },
-    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
-  });
-
-  return persons;
 }

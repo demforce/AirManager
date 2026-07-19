@@ -47,10 +47,9 @@ export type CreateExpiryTypeInput = z.infer<typeof createExpiryTypeSchema>;
 /**
  * `PATCH /api/v1/expiry-types/{id}` body (AC 1/2) — every field optional so
  * a caller can patch just one; `isActive` toggling the lifecycle also goes
- * through here (no dedicated deactivate/reactivate endpoints, following
- * `package-types.service.ts`'s pattern, NOT `cash.service.ts`'s). `.refine`:
- * an empty body is a 422, not a silent no-op PATCH (same pattern as
- * `updatePackageTypeSchema`). `blocksBooking` (story 7.4) is patchable
+ * through here (no dedicated deactivate/reactivate endpoints, unlike
+ * `cash.service.ts`'s categories). `.refine`: an empty body is a 422, not a
+ * silent no-op PATCH. `blocksBooking` (story 7.4) is patchable
  * independently of every other field — the admin can toggle "Blocca
  * prenotazioni" on an existing type without touching its name/scope.
  */

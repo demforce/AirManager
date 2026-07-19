@@ -14,7 +14,6 @@ import type { ListFlightsQuery } from '@/lib/schemas/flights';
 import type { InstructorCompensationQuery } from '@/lib/schemas/instructor-compensation';
 import type { ListPeopleQuery } from '@/lib/schemas/people';
 import type { ListPprRequestsQuery } from '@/lib/schemas/ppr';
-import type { SchoolSummaryQuery } from '@/lib/schemas/school';
 import type { ListTransactionsQuery } from '@/lib/schemas/transactions';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
@@ -29,7 +28,6 @@ import { listFlights } from './flights.service';
 import { getCompensationSummary } from './instructor-compensation.service';
 import { getPerson, listPeople } from './people.service';
 import { listPprRequests } from './ppr.service';
-import { getInstructorHourSummaries, getStudentHourSummaries } from './school.service';
 import { listTransactions } from './transactions.service';
 
 /**
@@ -455,47 +453,6 @@ export async function exportExpiriesXlsx(actor: Actor, query: ListAllExpiriesQue
   ];
 
   return toXlsxExport('expiries', t('dashboard.heading'), columns, result.items);
-}
-
-// --- School summaries (`GET /api/v1/school/summaries/*`) -------------------
-// Both endpoints return a plain, UNPAGINATED array (Dev Notes: "volumi
-// piccoli") — the row cap is checked on `.length`, not on a service-reported
-// `total`, and `page`/`pageSize` are never part of `SchoolSummaryQuery` to
-// begin with (nothing to override).
-
-export async function exportStudentHourSummariesXlsx(actor: Actor, query: SchoolSummaryQuery): Promise<XlsxExport> {
-  const items = await getStudentHourSummaries(actor, query);
-  assertWithinExportCap(items.length);
-
-  const locale = resolveLocale(query);
-  const messages = await loadMessages(locale);
-  const t = createTranslator({ locale, messages, namespace: 'SchoolPage.summaries.students' });
-
-  const columns: ExportColumn<(typeof items)[number]>[] = [
-    { header: t('table.name'), value: (row) => `${row.lastName} ${row.firstName}` },
-    { header: t('table.dual'), value: (row) => formatMinutes(row.dualMinutes) },
-    { header: t('table.solo'), value: (row) => formatMinutes(row.soloMinutes) },
-    { header: t('table.totalPeriod'), value: (row) => formatMinutes(row.totalMinutes) },
-    { header: t('table.totalAllTime'), value: (row) => formatMinutes(row.totalMinutesAllTime) },
-  ];
-
-  return toXlsxExport('school-summaries-students', t('heading'), columns, items);
-}
-
-export async function exportInstructorHourSummariesXlsx(actor: Actor, query: SchoolSummaryQuery): Promise<XlsxExport> {
-  const items = await getInstructorHourSummaries(actor, query);
-  assertWithinExportCap(items.length);
-
-  const locale = resolveLocale(query);
-  const messages = await loadMessages(locale);
-  const t = createTranslator({ locale, messages, namespace: 'SchoolPage.summaries.instructors' });
-
-  const columns: ExportColumn<(typeof items)[number]>[] = [
-    { header: t('table.name'), value: (row) => `${row.lastName} ${row.firstName}` },
-    { header: t('table.hours'), value: (row) => formatMinutes(row.minutes) },
-  ];
-
-  return toXlsxExport('school-summaries-instructors', t('heading'), columns, items);
 }
 
 // --- Instructor compensation (`GET /api/v1/instructor-compensation`) -------

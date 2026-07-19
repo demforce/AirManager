@@ -1,13 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseDateOnlyUtc, todayDateOnlyUtc } from '@/lib/date-only';
 import { EXPIRY_WARNING_DAYS } from '@/lib/expiry-status';
-import {
-  decideProposalSchema,
-  listAllExpiriesQuerySchema,
-  proposeExpirySchema,
-  registerExpirySchema,
-  updateExpirySchema,
-} from '@/lib/schemas/expiries';
+import { listAllExpiriesQuerySchema, registerExpirySchema, updateExpirySchema } from '@/lib/schemas/expiries';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
@@ -27,15 +21,6 @@ vi.mock('@/server/db/prisma', () => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
-    expiryUpdateProposal: {
-      findFirst: vi.fn(),
-      findUnique: vi.fn(),
-      findUniqueOrThrow: vi.fn(),
-      findMany: vi.fn(),
-      count: vi.fn(),
-      create: vi.fn(),
-      updateMany: vi.fn(),
-    },
     sentAlert: {
       deleteMany: vi.fn(),
     },
@@ -44,17 +29,9 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const {
-  decideExpiryProposal,
-  deleteExpiry,
-  getExpiryTierCounts,
-  listAllExpiries,
-  listExpiryProposals,
-  listPersonExpiries,
-  proposeExpiryUpdate,
-  registerExpiry,
-  updateExpiry,
-} = await import('./expiries.service');
+const { deleteExpiry, getExpiryTierCounts, listAllExpiries, listPersonExpiries, registerExpiry, updateExpiry } = await import(
+  './expiries.service'
+);
 const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
@@ -65,13 +42,6 @@ const expiryCountMock = vi.mocked(prisma.expiry.count);
 const expiryCreateMock = vi.mocked(prisma.expiry.create);
 const expiryUpdateMock = vi.mocked(prisma.expiry.update);
 const expiryDeleteMock = vi.mocked(prisma.expiry.delete);
-const proposalFindFirstMock = vi.mocked(prisma.expiryUpdateProposal.findFirst);
-const proposalFindUniqueMock = vi.mocked(prisma.expiryUpdateProposal.findUnique);
-const proposalFindUniqueOrThrowMock = vi.mocked(prisma.expiryUpdateProposal.findUniqueOrThrow);
-const proposalFindManyMock = vi.mocked(prisma.expiryUpdateProposal.findMany);
-const proposalCountMock = vi.mocked(prisma.expiryUpdateProposal.count);
-const proposalCreateMock = vi.mocked(prisma.expiryUpdateProposal.create);
-const proposalUpdateManyMock = vi.mocked(prisma.expiryUpdateProposal.updateMany);
 const sentAlertDeleteManyMock = vi.mocked(prisma.sentAlert.deleteMany);
 const transactionMock = vi.mocked(prisma.$transaction);
 
@@ -86,13 +56,6 @@ const expiryCount = expiryCountMock as unknown as { mockResolvedValue: (v: numbe
 const expiryCreate = expiryCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
 const expiryUpdate = expiryUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryDelete = expiryDeleteMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
-const proposalFindFirst = proposalFindFirstMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const proposalFindUnique = proposalFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const proposalFindUniqueOrThrow = proposalFindUniqueOrThrowMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const proposalFindMany = proposalFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
-const proposalCount = proposalCountMock as unknown as { mockResolvedValue: (v: number) => void };
-const proposalCreate = proposalCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
-const proposalUpdateMany = proposalUpdateManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
 const sentAlertDeleteMany = sentAlertDeleteManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
 
 /** Same batch/interactive `$transaction` stand-in as `cash.service.test.ts`/`flights.service.test.ts`. */
@@ -154,43 +117,7 @@ function dashboardExpiryFixture(overrides: Partial<Record<string, unknown>> = {}
   };
 }
 
-function proposalCreateFixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
-  return {
-    id: 'prop_1',
-    proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
-    proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
-    proposedNotes: null,
-    createdAt: new Date('2026-07-08T08:00:00.000Z'),
-    ...overrides,
-  };
-}
-
-function proposalListFixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
-  return {
-    id: 'prop_1',
-    expiryId: 'exp_1',
-    proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
-    proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
-    proposedNotes: null,
-    status: 'PENDING',
-    decidedAt: null,
-    createdAt: new Date('2026-07-08T08:00:00.000Z'),
-    expiry: {
-      personId: 'person_1',
-      person: { firstName: 'Mario', lastName: 'Rossi' },
-      expiryTypeId: 'type_1',
-      expiryType: { name: 'Visita medica classe 2' },
-      issuedAt: parseDateOnlyUtc('2026-01-01'),
-      expiresAt: parseDateOnlyUtc('2026-12-31'),
-      notes: null,
-    },
-    proposedByUser: { email: 'pilot@airmanager.local' },
-    decidedByUser: null,
-    ...overrides,
-  };
-}
-
-describe('expiries.service (story 6.2 — person expiries, computed status, proposal queue, FR-36)', () => {
+describe('expiries.service (story 6.2 — person expiries, computed status, FR-36)', () => {
   beforeEach(() => {
     personFindUniqueMock.mockReset();
     typeFindUniqueMock.mockReset();
@@ -200,13 +127,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
     expiryCreateMock.mockReset();
     expiryUpdateMock.mockReset();
     expiryDeleteMock.mockReset();
-    proposalFindFirstMock.mockReset();
-    proposalFindUniqueMock.mockReset();
-    proposalFindUniqueOrThrowMock.mockReset();
-    proposalFindManyMock.mockReset();
-    proposalCountMock.mockReset();
-    proposalCreateMock.mockReset();
-    proposalUpdateManyMock.mockReset();
     sentAlertDeleteManyMock.mockReset();
     transactionMock.mockReset();
     mockTransaction();
@@ -220,39 +140,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
         registerExpiry(pilotActor(), { personId: 'person_1', expiryTypeId: 'type_1', issuedAt: '2026-01-01', expiresAt: '2026-12-31' }),
       ).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
-    });
-
-    it('proposeExpiryUpdate rejects staff (staff deliberately lacks expiries.propose.own — it edits directly)', async () => {
-      await expect(
-        proposeExpiryUpdate(staffActor(), 'exp_1', { issuedAt: '2026-01-01', expiresAt: '2026-12-31' }),
-      ).rejects.toThrow(ForbiddenError);
-      expect(expiryFindUniqueMock).not.toHaveBeenCalled();
-    });
-
-    it('proposeExpiryUpdate allows a pilot proposing on their OWN expiry', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', personId: 'person_1' });
-      proposalFindFirst.mockResolvedValue(null);
-      proposalCreate.mockResolvedValue(proposalCreateFixture());
-
-      await expect(
-        proposeExpiryUpdate(pilotActor('person_1'), 'exp_1', { issuedAt: '2026-01-01', expiresAt: '2026-12-31' }),
-      ).resolves.toMatchObject({ id: 'prop_1' });
-    });
-
-    it('proposeExpiryUpdate rejects a pilot proposing on ANOTHER person\'s expiry (403, not a 404 — same "own" rule as bookings/flights)', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', personId: 'person_OTHER' });
-
-      await expect(
-        proposeExpiryUpdate(pilotActor('person_1'), 'exp_1', { issuedAt: '2026-01-01', expiresAt: '2026-12-31' }),
-      ).rejects.toThrow(ForbiddenError);
-    });
-
-    it('proposeExpiryUpdate rejects an actor with no linked personId', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', personId: 'person_1' });
-
-      await expect(
-        proposeExpiryUpdate(pilotActor(null), 'exp_1', { issuedAt: '2026-01-01', expiresAt: '2026-12-31' }),
-      ).rejects.toThrow(ForbiddenError);
     });
 
     it('listPersonExpiries: a pilot reading their OWN person id succeeds without a person lookup (own access by definition)', async () => {
@@ -271,15 +158,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
       personFindUnique.mockResolvedValue(null);
 
       await expect(listPersonExpiries(staffActor(), 'person_1')).rejects.toThrow(NotFoundError);
-    });
-
-    it('decideExpiryProposal rejects a pilot', async () => {
-      await expect(decideExpiryProposal(pilotActor(), 'prop_1', 'APPROVE')).rejects.toThrow(ForbiddenError);
-      expect(proposalFindUniqueMock).not.toHaveBeenCalled();
-    });
-
-    it('listExpiryProposals rejects a pilot', async () => {
-      await expect(listExpiryProposals(pilotActor(), { page: 1, pageSize: 20, status: 'PENDING' })).rejects.toThrow(ForbiddenError);
     });
 
     it('listAllExpiries rejects a pilot (needs expiries.manage) without querying anything', async () => {
@@ -766,208 +644,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
     });
   });
 
-  // --- proposeExpiryUpdate -------------------------------------------------
-
-  describe('proposeExpiryUpdate', () => {
-    const input = { issuedAt: '2026-01-01', expiresAt: '2026-12-31' };
-
-    it('404 on an unknown expiry', async () => {
-      expiryFindUnique.mockResolvedValue(null);
-
-      await expect(proposeExpiryUpdate(pilotActor('person_1'), 'missing', input)).rejects.toThrow(NotFoundError);
-    });
-
-    it('a PENDING proposal already exists -> 409 pre-check, no create attempted', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', personId: 'person_1' });
-      proposalFindFirst.mockResolvedValue({ id: 'prop_existing' });
-
-      await expect(proposeExpiryUpdate(pilotActor('person_1'), 'exp_1', input)).rejects.toThrow(ConflictError);
-      expect(proposalCreateMock).not.toHaveBeenCalled();
-    });
-
-    it('race on the partial unique index -> P2002 backstop maps to ConflictError', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', personId: 'person_1' });
-      proposalFindFirst.mockResolvedValue(null);
-      proposalCreate.mockRejectedValue(prismaError('P2002'));
-
-      await expect(proposeExpiryUpdate(pilotActor('person_1'), 'exp_1', input)).rejects.toThrow(ConflictError);
-    });
-
-    it('does NOT touch the Expiry itself (AC 2 — value stays authoritative until staff decides)', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', personId: 'person_1' });
-      proposalFindFirst.mockResolvedValue(null);
-      proposalCreate.mockResolvedValue(proposalCreateFixture());
-
-      await proposeExpiryUpdate(pilotActor('person_1'), 'exp_1', input);
-
-      expect(expiryUpdateMock).not.toHaveBeenCalled();
-      expect(proposalCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ expiryId: 'exp_1', proposedByUserId: 'pilot_1' }) }),
-      );
-    });
-  });
-
-  // --- listExpiryProposals --------------------------------------------------
-
-  describe('listExpiryProposals', () => {
-    it('returns the AD-8 paginated envelope, defaulting to status PENDING', async () => {
-      proposalFindMany.mockResolvedValue([proposalListFixture()]);
-      proposalCount.mockResolvedValue(1);
-
-      const result = await listExpiryProposals(staffActor(), { page: 1, pageSize: 20, status: 'PENDING' });
-
-      expect(result).toMatchObject({ total: 1, page: 1, pageSize: 20 });
-      expect(result.items[0]).toMatchObject({
-        id: 'prop_1',
-        personName: 'Mario Rossi',
-        typeName: 'Visita medica classe 2',
-        proposedByEmail: 'pilot@airmanager.local',
-        status: 'PENDING',
-      });
-    });
-  });
-
-  // --- decideExpiryProposal -------------------------------------------------
-
-  describe('decideExpiryProposal', () => {
-    it('404 on an unknown proposal', async () => {
-      proposalFindUnique.mockResolvedValue(null);
-
-      await expect(decideExpiryProposal(staffActor(), 'missing', 'APPROVE')).rejects.toThrow(NotFoundError);
-    });
-
-    it('already decided -> 409, before opening the transaction', async () => {
-      proposalFindUnique.mockResolvedValue({
-        id: 'prop_1',
-        status: 'APPROVED',
-        expiryId: 'exp_1',
-        proposedIssuedAt: parseDateOnlyUtc('2026-01-01'),
-        proposedExpiresAt: parseDateOnlyUtc('2026-12-31'),
-        proposedNotes: null,
-      });
-
-      await expect(decideExpiryProposal(staffActor(), 'prop_1', 'APPROVE')).rejects.toThrow(ConflictError);
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it('race: the optimistic updateMany guard returns count 0 -> 409, even though the pre-check saw PENDING', async () => {
-      proposalFindUnique.mockResolvedValue({
-        id: 'prop_1',
-        status: 'PENDING',
-        expiryId: 'exp_1',
-        proposedIssuedAt: parseDateOnlyUtc('2026-01-01'),
-        proposedExpiresAt: parseDateOnlyUtc('2026-12-31'),
-        proposedNotes: null,
-        expiry: { expiresAt: parseDateOnlyUtc('2026-06-01') },
-      });
-      proposalUpdateMany.mockResolvedValue({ count: 0 });
-
-      await expect(decideExpiryProposal(staffActor(), 'prop_1', 'APPROVE')).rejects.toThrow(ConflictError);
-    });
-
-    it('APPROVE applies the proposed values to the Expiry in the same transaction', async () => {
-      proposalFindUnique.mockResolvedValue({
-        id: 'prop_1',
-        status: 'PENDING',
-        expiryId: 'exp_1',
-        proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
-        proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
-        proposedNotes: 'nuova nota',
-        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
-      });
-      proposalUpdateMany.mockResolvedValue({ count: 1 });
-      proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'APPROVED' }));
-
-      const result = await decideExpiryProposal(staffActor(), 'prop_1', 'APPROVE');
-
-      expect(expiryUpdateMock).toHaveBeenCalledWith({
-        where: { id: 'exp_1' },
-        data: {
-          issuedAt: parseDateOnlyUtc('2026-02-01'),
-          expiresAt: parseDateOnlyUtc('2027-02-01'),
-          notes: 'nuova nota',
-          actorUserId: 'staff_1',
-        },
-      });
-      expect(result.status).toBe('APPROVED');
-    });
-
-    it('REJECT leaves the Expiry untouched', async () => {
-      proposalFindUnique.mockResolvedValue({
-        id: 'prop_1',
-        status: 'PENDING',
-        expiryId: 'exp_1',
-        proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
-        proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
-        proposedNotes: null,
-        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
-      });
-      proposalUpdateMany.mockResolvedValue({ count: 1 });
-      proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'REJECTED' }));
-
-      await decideExpiryProposal(staffActor(), 'prop_1', 'REJECT');
-
-      expect(expiryUpdateMock).not.toHaveBeenCalled();
-    });
-
-    // --- SentAlert wipe-on-renewal (story 6.3, AD-9) -----------------------
-
-    it('APPROVE with a proposedExpiresAt DIFFERENT from the current value -> wipes SentAlert in the same transaction', async () => {
-      proposalFindUnique.mockResolvedValue({
-        id: 'prop_1',
-        status: 'PENDING',
-        expiryId: 'exp_1',
-        proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
-        proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
-        proposedNotes: null,
-        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
-      });
-      proposalUpdateMany.mockResolvedValue({ count: 1 });
-      sentAlertDeleteMany.mockResolvedValue({ count: 3 });
-      proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'APPROVED' }));
-
-      await decideExpiryProposal(staffActor(), 'prop_1', 'APPROVE');
-
-      expect(sentAlertDeleteManyMock).toHaveBeenCalledWith({ where: { expiryId: 'exp_1' } });
-    });
-
-    it('APPROVE with a proposedExpiresAt EQUAL to the current value -> does NOT touch SentAlert', async () => {
-      proposalFindUnique.mockResolvedValue({
-        id: 'prop_1',
-        status: 'PENDING',
-        expiryId: 'exp_1',
-        proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
-        proposedExpiresAt: parseDateOnlyUtc('2026-12-31'),
-        proposedNotes: 'solo note aggiornate',
-        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
-      });
-      proposalUpdateMany.mockResolvedValue({ count: 1 });
-      proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'APPROVED' }));
-
-      await decideExpiryProposal(staffActor(), 'prop_1', 'APPROVE');
-
-      expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
-    });
-
-    it('REJECT never touches SentAlert, even when proposedExpiresAt differs from the current value', async () => {
-      proposalFindUnique.mockResolvedValue({
-        id: 'prop_1',
-        status: 'PENDING',
-        expiryId: 'exp_1',
-        proposedIssuedAt: parseDateOnlyUtc('2026-02-01'),
-        proposedExpiresAt: parseDateOnlyUtc('2027-02-01'),
-        proposedNotes: null,
-        expiry: { expiresAt: parseDateOnlyUtc('2026-12-31') },
-      });
-      proposalUpdateMany.mockResolvedValue({ count: 1 });
-      proposalFindUniqueOrThrow.mockResolvedValue(proposalListFixture({ status: 'REJECTED' }));
-
-      await decideExpiryProposal(staffActor(), 'prop_1', 'REJECT');
-
-      expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
-    });
-  });
-
   // --- Schema validation (422s at the Zod boundary, before the service) ---
 
   describe('schema validation', () => {
@@ -999,10 +675,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
       ).toBe(false);
     });
 
-    it('proposeExpirySchema rejects expiresAt before issuedAt', () => {
-      expect(proposeExpirySchema.safeParse({ issuedAt: '2026-12-31', expiresAt: '2026-01-01' }).success).toBe(false);
-    });
-
     it('updateExpirySchema rejects an empty body', () => {
       expect(updateExpirySchema.safeParse({}).success).toBe(false);
     });
@@ -1013,10 +685,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, prop
 
     it('updateExpirySchema accepts a single-field patch (no cross-field check possible here — the service merges)', () => {
       expect(updateExpirySchema.safeParse({ expiresAt: '2026-01-01' }).success).toBe(true);
-    });
-
-    it('decideProposalSchema rejects a decision outside the enum', () => {
-      expect(decideProposalSchema.safeParse({ decision: 'MAYBE' }).success).toBe(false);
     });
 
     it('listAllExpiriesQuerySchema rejects a status outside the enum', () => {

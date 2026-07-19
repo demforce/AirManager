@@ -20,9 +20,8 @@ import { getEffectiveRate } from './rates.service';
 
 /**
  * Flight logging with automatic charges (epic 5, story 5.1; FR-9/FR-14/
- * FR-15) — the model that, unlike `sellPackage`'s always-zero
- * `PACKAGE_PURCHASE`, records a REAL debit: `FLIGHT_CHARGE` is negative and
- * is allowed to push the account into the red (Dev Notes — no
+ * FR-15) — `FLIGHT_CHARGE` is a REAL debit (negative `amountCents`) and is
+ * allowed to push the account into the red (Dev Notes — no
  * insufficient-balance block, the domain expects the pilot to top up
  * afterwards). Rate lookups (AD-4) reuse `rates.service.ts#getEffectiveRate`
  * and `instructor-rates.service.ts#getEffectiveInstructorRate`, both called
@@ -32,69 +31,23 @@ import { getEffectiveRate } from './rates.service';
  * `balanceBand`, `bandWorsened`, `sendNegativeBalanceAlert`) verbatim —
  * nothing here reimplements that logic.
  *
- * **422 vs 409 (deliberate divergence from `sellPackage`)**: an archived
- * aircraft/person here answers 422 (a stable, specific code — AC 3), not
- * the 409 `sellPackage` uses for an archived person. The flight input
+ * **422, not 409, on a stale reference**: an archived aircraft/person here
+ * answers 422 (a stable, specific code — AC 3), never a 409. The flight input
  * references MULTIPLE entities (aircraft, person, optionally instructor);
  * the wrong state of any one of them is treated as unprocessable INPUT for
  * this request, not a conflict with the state of a single target resource
  * the caller is directly mutating. The epic's own AC spells out 422 here,
  * so this is intentional, not an oversight.
  *
- * **Package consumption (epic 5, story 5.2; FR-13, AD-6)**: an eligible,
- * non-expired, non-exhausted `HourPackage` belonging to the flight's person
- * scales minutes off its residuo BEFORE the aircraft component is charged
- * at full rate — FIFO by purchase date (`effectiveDate asc, createdAt asc,
- * id asc`, the deterministic tie-break lesson from review 3.1 F3), oldest
- * purchase first, spilling into the next eligible package until the
- * flight's minutes are covered or eligible packages run out. Eligibility
- * (all four, checked INSIDE the transaction, Dev Notes): (1) belongs to
- * this flight's person; (2) the package's TYPE is associated with this
- * flight's aircraft (`PackageTypeAircraft` — an aircraft archived AFTER the
- * association stays eligible, story 4.3 review F1); (3) not expired AT THE
- * FLIGHT DATE (`expiresAt == null || expiresAt >= flightDate` — the expiry
- * day itself is still valid, same boundary as `isExpired`, compared against
- * `flightDate` NEVER "today": a backdated flight consumes against the
- * package's validity as of ITS OWN date); (4) already purchased at the
- * flight date (`effectiveDate <= flightDate` — a flight backdated before the
- * sale cannot consume a package that did not exist yet); residuo > 0
- * (always computed, `includedMinutes - SUM(consumptions)`, never a
- * persisted counter). The eligible set and every package's consumed-so-far
- * SUM are read in ONE aggregated query each (never one query per package,
- * Dev Notes: no N+1). Only packages the allocation actually TAKES minutes
- * from get a `PackageConsumption` row (`take > 0`); the aircraft component
- * is then charged pro-rata on the REMAINING (uncovered) minutes only
- * (`Math.round(rate * chargedMinutes / 60)`) — the instructor component, by
- * contrast, is NEVER touched by package consumption: it is always
- * `round(rate * minutes / 60)` on the flight's FULL duration (AD-6: a
- * package covers the aircraft, never the instructor). When packages cover
- * every minute and there is no instructor, the total is 0 — the
- * `FLIGHT_CHARGE` movement is still created (`amountCents: 0`, a
- * conscious analogue of `sellPackage`'s always-zero `PACKAGE_PURCHASE`,
- * Dev Notes), never omitted.
- *
- * **Why the allocation runs INSIDE the transaction, after the `Account`
- * lock**: in 5.1 every amount was computable before opening the
- * transaction (rates are append-only). Story 5.2 breaks that for the
- * aircraft component alone, because it now depends on OTHER packages'
- * residuo, which is concurrent — two flights for the same person racing to
- * consume the same package must not both succeed in taking more than its
- * residuo. `HourPackage` belongs to the same `personId` as the `Account`
- * this function already takes a `FOR UPDATE` lock on (Dev Notes) — so that
- * existing lock is ALSO the serialization point for package consumption:
- * the eligible-package read, the consumed-SUM read and the allocation all
- * happen after that lock is held, and the `PackageConsumption` rows are
- * written in the same transaction as everything else. Rate lookups stay
- * OUTSIDE the transaction as in 5.1 (append-only, no race); only the
- * consumption-dependent aircraft amount moves in.
- *
- * **Backdated flights consume from what is available NOW, never a
- * replay**: the allocation always spends from each package's residuo AS OF
- * the moment this flight is being registered, in purchase order — it never
- * rewrites `PackageConsumption` rows already recorded for other flights
- * just because a flight with an earlier `flightDate` arrives later (Dev
- * Notes: real-world registrations are almost always chronological; this
- * service does not implement a historical re-play).
+ * **No more package consumption (story 12.13, ratifica utente 4a)**: the
+ * hour-packages feature (`HourPackage`/`PackageConsumption`, epic 5, story
+ * 5.2) is retired from UI and API — every flight charges the aircraft
+ * component at the full rate on the full duration, always
+ * `Math.round(rate * minutes / 60)`, computed the same way as the
+ * instructor component in `resolveFlightInput`. The `HourPackage`/
+ * `PackageConsumption` tables stay in the schema (no destructive migration,
+ * §9) purely as historical rows for packages sold/consumed before this
+ * story — this service never reads or writes them anymore.
  *
  * **Storno/correction (epic 5, story 5.3; FR-16) — `cancelFlight`/
  * `correctFlight`**: a flight is NEVER edited in place or physically
@@ -108,22 +61,16 @@ import { getEffectiveRate } from './rates.service';
  * (`Math.max(0, current - minutes)` — the clamp is deliberate: a manual
  * `HourMeterAdjustment` that already lowered the contaore below this
  * flight's minutes must never BLOCK a cancellation, the audit trail already
- * lives in the flight + any rectifications). Package minutes are "restored"
- * WITHOUT writing anything to `PackageConsumption` (append-only forever,
- * see that model's doc-comment): every consumed-so-far aggregate in this
- * file and in `packages.service.ts#listPersonPackages` filters
- * `flight: { status: { not: 'CANCELLED' } }`, so a cancelled flight's
- * consumption simply stops counting the instant its `status` flips —
- * nothing about the `PackageConsumption` rows themselves ever changes.
+ * lives in the flight + any rectifications).
  *
  * **`registerFlightCore` (the mandatory refactor, Task 2)**: `registerFlight`
- * (story 5.1/5.2) and `correctFlight` (this story) both end in the exact
- * same in-transaction work — package consumption, `Flight.create`, the
- * `FLIGHT_CHARGE` movement, the contaore advance — so that logic lives in
+ * (story 5.1) and `correctFlight` (story 5.3) both end in the exact
+ * same in-transaction work — `Flight.create`, the `FLIGHT_CHARGE` movement,
+ * the contaore advance — so that logic lives in
  * ONE place, `registerFlightCore`, which ASSUMES every lock it needs is
  * ALREADY held by its caller and takes none itself. `registerFlight` opens
  * its own transaction, takes the same two locks as before (Aircraft, then
- * Account — UNCHANGED, story 5.1/5.2's tests still pass unmodified), and
+ * Account — UNCHANGED, story 5.1's tests still pass unmodified), and
  * calls the core once. `correctFlight` does the storno FIRST (inside its own
  * transaction) and calls the SAME core immediately after, so the "new"
  * flight is registered against data the storno has already refunded.
@@ -161,25 +108,13 @@ import { getEffectiveRate } from './rates.service';
  * worsening.
  */
 
-export type FlightPackageConsumptionItem = {
-  hourPackageId: string;
-  typeName: string;
-  minutes: number;
-};
-
 export type FlightBreakdown = {
   aircraftRateCentsPerHour: number;
-  /** The amount ACTUALLY CHARGED (story 5.2): pro-rata on `chargedMinutes`, never on the full flight duration once a package covered part of it. */
+  /** Always on the FULL flight duration (story 12.13: package consumption retired). */
   aircraftAmountCents: number;
   instructorRateCentsPerHour?: number;
-  /** Always on the FULL flight duration (AD-6: never reduced by package consumption). */
+  /** Always on the FULL flight duration. */
   instructorAmountCents?: number;
-  /** Total minutes covered by package consumption (story 5.2) — 0 when no eligible package existed. */
-  packageCoveredMinutes: number;
-  /** `minutes - packageCoveredMinutes` — what the aircraft component is actually rated on. */
-  chargedMinutes: number;
-  /** Per-package detail, FIFO (oldest purchase first) — empty when `packageCoveredMinutes === 0`. */
-  packageConsumptions: FlightPackageConsumptionItem[];
   /** Always COMPUTED (aircraft + instructor, when any) — never a persisted column. */
   totalAmountCents: number;
 };
@@ -249,7 +184,6 @@ const FLIGHT_SELECT = {
   aircraftAmountCents: true,
   instructorRateCentsPerHour: true,
   instructorAmountCents: true,
-  packageCoveredMinutes: true,
   createdAt: true,
   cancelledAt: true,
   cancelReason: true,
@@ -261,19 +195,6 @@ const FLIGHT_SELECT = {
   person: { select: { id: true, firstName: true, lastName: true } },
   instructorProfile: { select: { person: { select: { id: true, firstName: true, lastName: true } } } },
   actorUser: { select: { email: true } },
-  // Nested select (no N+1, Dev Notes) — the per-package breakdown detail
-  // (AC 1). Deterministic order: creation order mirrors FIFO allocation
-  // order, `id` breaks a same-millisecond tie. `select` stays a plain
-  // literal (needed as-is, alongside the outer `as const`, for Prisma's
-  // payload-shape inference); only `orderBy`'s array literal is cast away
-  // from the `readonly` tuple `as const` would otherwise produce — Prisma's
-  // generated `...OrderByWithRelationInput[]` is a MUTABLE array type, and
-  // an inline `as` cast on just this expression is not re-widened/narrowed
-  // by the enclosing `as const`.
-  packageConsumptions: {
-    select: { hourPackageId: true, minutes: true, hourPackage: { select: { packageType: { select: { name: true } } } } },
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] as Prisma.PackageConsumptionOrderByWithRelationInput[],
-  },
 } as const;
 
 type SelectedFlight = {
@@ -296,7 +217,6 @@ type SelectedFlight = {
   aircraftAmountCents: number;
   instructorRateCentsPerHour: number | null;
   instructorAmountCents: number | null;
-  packageCoveredMinutes: number;
   createdAt: Date;
   cancelledAt: Date | null;
   cancelReason: string | null;
@@ -306,7 +226,6 @@ type SelectedFlight = {
   person: { id: string; firstName: string; lastName: string };
   instructorProfile: { person: { id: string; firstName: string; lastName: string } } | null;
   actorUser: { email: string };
-  packageConsumptions: { hourPackageId: string; minutes: number; hourPackage: { packageType: { name: string } } }[];
 };
 
 /**
@@ -354,13 +273,6 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightL
             instructorAmountCents: flight.instructorAmountCents!,
           }
         : {}),
-      packageCoveredMinutes: flight.packageCoveredMinutes,
-      chargedMinutes: flight.minutes - flight.packageCoveredMinutes,
-      packageConsumptions: flight.packageConsumptions.map((consumption) => ({
-        hourPackageId: consumption.hourPackageId,
-        typeName: consumption.hourPackage.packageType.name,
-        minutes: consumption.minutes,
-      })),
       totalAmountCents: flight.aircraftAmountCents + (flight.instructorAmountCents ?? 0),
     },
     ...(includeActorEmail ? { actorEmail: flight.actorUser.email } : {}),
@@ -386,7 +298,7 @@ type ResolvedFlightInput = {
   hourMeterEnd: number | null;
   aircraftRateCentsPerHour: number;
   instructorRateCentsPerHour: number | null;
-  /** Unaffected by package consumption (AD-6) — already rounded on the FULL duration. */
+  /** Already rounded on the FULL duration. */
   instructorAmountCents: number | null;
 };
 
@@ -416,11 +328,11 @@ type ResolvedFlightInput = {
  * non-instructor). Then, BEFORE any transaction (rates are append-only, no
  * meaningful race): `getEffectiveRate` -> null -> `NO_AIRCRAFT_RATE`; with
  * an instructor, `getEffectiveInstructorRate` -> null ->
- * `NO_INSTRUCTOR_RATE`. The instructor amount (unaffected by package
- * consumption, AD-6) is rounded here, `Math.round(rate * minutes / 60)` on
- * the FULL duration (AD-2/NFR-5) — the aircraft amount is NOT computed here:
- * it depends on the concurrent package residuo, resolved INSIDE the
- * transaction by `registerFlightCore` (module doc-comment).
+ * `NO_INSTRUCTOR_RATE`. The instructor amount is rounded here,
+ * `Math.round(rate * minutes / 60)` on the FULL duration (AD-2/NFR-5) — the
+ * aircraft amount is computed the SAME way, but inside `registerFlightCore`
+ * (module doc-comment), which stayed the single place that writes it after
+ * story 12.13 retired package consumption.
  */
 async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Promise<ResolvedFlightInput> {
   const aircraft = await prisma.aircraft.findUnique({
@@ -619,34 +531,29 @@ type RegisterFlightCoreResult = {
 };
 
 /**
- * The shared in-transaction core of a flight registration (story 5.1/5.2),
+ * The shared in-transaction core of a flight registration (story 5.1),
  * extracted (story 5.3, Task 2 — the mandatory refactor) so `registerFlight`
  * (a brand-new flight, its own transaction) and `correctFlight` (a storno
  * immediately followed by a brand-new flight, SAME transaction) run ONE
- * implementation of the consumption/charge/contaore logic instead of two
- * copies that could drift. ASSUMES every lock its own writes need is
- * ALREADY held by the caller (the `Aircraft` row behind `aircraftId`, the
- * `Account` row behind `accountId`) — it takes none of its own; that is
- * exactly what lets `correctFlight` slot its own multi-row locking in front
- * of this same function (module doc-comment).
+ * implementation of the charge/contaore logic instead of two copies that
+ * could drift. ASSUMES every lock its own writes need is ALREADY held by the
+ * caller (the `Aircraft` row behind `aircraftId`, the `Account` row behind
+ * `accountId`) — it takes none of its own; that is exactly what lets
+ * `correctFlight` slot its own multi-row locking in front of this same
+ * function (module doc-comment).
  *
  * 1. Reads the pre-movement balance (`SUM(AccountMovement.amountCents)`,
  *    AD-3) — this doubles as `correctFlight`'s "saldo-prima" (Contesto): when
  *    called AFTER that function's storno write in the SAME transaction, this
  *    SUM already reflects the refund (read-your-own-writes), so the balance
  *    it returns is the TRUE pre-correction one.
- * 2. Package consumption (story 5.2, AD-6): candidate packages for
- *    `personId`/`aircraftId` at `flightDate`, FIFO order, each package's
- *    consumed-so-far SUM filtered to non-cancelled flights (story 5.3 —
- *    module doc-comment) — greedy allocation exactly as 5.2 shipped it.
- * 3. Writes, in order: `Flight.create` (full AD-4 snapshot, including
- *    `packageCoveredMinutes` and `correctionOfId`), one `PackageConsumption`
- *    row per package actually touched (`take > 0`), the `FLIGHT_CHARGE`
- *    `AccountMovement` (`amountCents: -(total)`, possibly 0 — never omitted
- *    — linked via `flightId`), `Aircraft.hourMeterMinutes` advanced by
- *    `minutes` from the CALLER-SUPPLIED current value (never re-read here —
- *    Dev Notes: that value already reflects any earlier write to the SAME
- *    row within this transaction).
+ * 2. Writes, in order: `Flight.create` (full AD-4 snapshot, including
+ *    `correctionOfId`), the `FLIGHT_CHARGE` `AccountMovement`
+ *    (`amountCents: -(total)`, linked via `flightId`),
+ *    `Aircraft.hourMeterMinutes` advanced by `minutes` from the
+ *    CALLER-SUPPLIED current value (never re-read here — Dev Notes: that
+ *    value already reflects any earlier write to the SAME row within this
+ *    transaction).
  */
 async function registerFlightCore(tx: Prisma.TransactionClient, params: RegisterFlightCoreInput): Promise<RegisterFlightCoreResult> {
   const aggregate = await tx.accountMovement.aggregate({
@@ -655,67 +562,13 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
   });
   const balanceBeforeCents = aggregate._sum.amountCents ?? 0;
 
-  // Package consumption (story 5.2, AD-6) — candidate packages, in FIFO
-  // order (`effectiveDate asc, createdAt asc, id asc`, Dev Notes' tie-break).
-  const candidatePackages = await tx.hourPackage.findMany({
-    where: {
-      personId: params.personId,
-      effectiveDate: { lte: params.flightDate },
-      OR: [{ expiresAt: null }, { expiresAt: { gte: params.flightDate } }],
-      packageType: { eligibleAircraft: { some: { aircraftId: params.aircraftId } } },
-    },
-    select: { id: true, includedMinutes: true, packageType: { select: { name: true } } },
-    orderBy: [{ effectiveDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-  });
-
-  // ONE aggregated query for every candidate's consumed-so-far SUM (Dev
-  // Notes: never one query per package — `groupBy`, not a loop).
-  // `flight: { status: { not: 'CANCELLED' } }` (story 5.3): a cancelled
-  // flight's `PackageConsumption` rows are never touched (append-only
-  // forever) — they simply stop counting here, which is exactly what
-  // "restores" the minutes after a storno, including inside THIS SAME
-  // transaction when `correctFlight` just cancelled the original flight
-  // moments ago.
-  const consumedRows =
-    candidatePackages.length > 0
-      ? await tx.packageConsumption.groupBy({
-          by: ['hourPackageId'],
-          where: { hourPackageId: { in: candidatePackages.map((pkg) => pkg.id) }, flight: { status: { not: 'CANCELLED' } } },
-          _sum: { minutes: true },
-        })
-      : [];
-  const consumedByPackageId = new Map(consumedRows.map((row) => [row.hourPackageId, row._sum.minutes ?? 0]));
-
-  // Greedy FIFO allocation: spend from the oldest eligible, non-exhausted
-  // package first, spilling into the next only once the current one is
-  // exhausted, until this flight's minutes are covered or eligible
-  // packages run out. A package with `residualMinutes <= 0` (exhausted, or
-  // — defensively — over-consumed) is skipped entirely, never touched.
-  let uncoveredMinutes = params.minutes;
-  const allocations: { hourPackageId: string; typeName: string; minutes: number }[] = [];
-  for (const pkg of candidatePackages) {
-    if (uncoveredMinutes <= 0) break;
-    const residualMinutes = pkg.includedMinutes - (consumedByPackageId.get(pkg.id) ?? 0);
-    if (residualMinutes <= 0) continue;
-    const take = Math.min(residualMinutes, uncoveredMinutes);
-    allocations.push({ hourPackageId: pkg.id, typeName: pkg.packageType.name, minutes: take });
-    uncoveredMinutes -= take;
-  }
-  const packageCoveredMinutes = params.minutes - uncoveredMinutes;
-  const chargedMinutes = params.minutes - packageCoveredMinutes;
-
-  // Pro-rata (AC 1, PRD FR-13): the aircraft component is rated ONLY on
-  // the minutes the packages left uncovered — never a percentage discount
-  // applied to the full-duration amount. The instructor amount (computed by
-  // `resolveFlightInput`) is NEVER touched by this (AD-6).
-  const aircraftAmountCents = Math.round((params.aircraftRateCentsPerHour * chargedMinutes) / 60);
+  // Full duration, full rate (story 12.13: package consumption retired —
+  // the aircraft component is no longer pro-rated against anything). The
+  // instructor amount (computed by `resolveFlightInput`) is unaffected.
+  const aircraftAmountCents = Math.round((params.aircraftRateCentsPerHour * params.minutes) / 60);
   const totalAmountCents = aircraftAmountCents + (params.instructorAmountCents ?? 0);
 
-  // Appends "(H:MM da pacchetto)" only when a package covered part of the
-  // flight — the base description stays byte-identical to 5.1 otherwise.
-  const description =
-    `Volo ${params.aircraftRegistration} ${params.flightDateDisplay} — ${formatMinutes(params.minutes)}` +
-    (packageCoveredMinutes > 0 ? ` (${formatMinutes(packageCoveredMinutes)} da pacchetto)` : '');
+  const description = `Volo ${params.aircraftRegistration} ${params.flightDateDisplay} — ${formatMinutes(params.minutes)}`;
 
   const created = await tx.flight.create({
     data: {
@@ -739,36 +592,21 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
       aircraftAmountCents,
       instructorRateCentsPerHour: params.instructorRateCentsPerHour,
       instructorAmountCents: params.instructorAmountCents,
-      packageCoveredMinutes,
       correctionOfId: params.correctionOfId,
       actorUserId: params.actorUserId,
     },
     select: FLIGHT_SELECT,
   });
 
-  // One `PackageConsumption` row per package the allocation actually took
-  // minutes from (`take > 0` guaranteed by construction above) — a single
-  // `createMany`, not a loop of individual `create`s.
-  if (allocations.length > 0) {
-    await tx.packageConsumption.createMany({
-      data: allocations.map((allocation) => ({
-        flightId: created.id,
-        hourPackageId: allocation.hourPackageId,
-        minutes: allocation.minutes,
-      })),
-    });
-  }
-
   await tx.accountMovement.create({
     data: {
       accountId: params.accountId,
       type: 'FLIGHT_CHARGE',
-      // `0 - totalAmountCents`, NOT unary `-totalAmountCents`: when
-      // packages cover every minute and there is no instructor,
-      // `totalAmountCents` is exactly 0 (Dev Notes: the movement is still
-      // created, never omitted) — unary negation of `0` produces `-0`,
-      // which is a distinct (if numerically equal) value that a strict
-      // `Object.is`-based comparison downstream could trip on.
+      // `0 - totalAmountCents`, NOT unary `-totalAmountCents` (same `-0`
+      // guard as `cancelFlight`'s reversal below): unary negation of `0`
+      // produces `-0`, a distinct (if numerically equal) value that a
+      // strict `Object.is`-based comparison downstream (e.g. `toBe`) could
+      // trip on.
       amountCents: 0 - totalAmountCents,
       description,
       effectiveDate: params.flightDate,
@@ -787,20 +625,7 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
     data: { hourMeterMinutes: params.aircraftHourMeterMinutes + params.minutes },
   });
 
-  // `created.packageConsumptions` came back empty from `FLIGHT_SELECT`
-  // above (the rows did not exist yet at that `SELECT`'s time — they were
-  // just inserted). Patch in the in-memory `allocations` we already
-  // computed rather than re-querying: same data, no extra round-trip.
-  const flightWithConsumptions: SelectedFlight = {
-    ...created,
-    packageConsumptions: allocations.map((allocation) => ({
-      hourPackageId: allocation.hourPackageId,
-      minutes: allocation.minutes,
-      hourPackage: { packageType: { name: allocation.typeName } },
-    })),
-  };
-
-  return { flight: flightWithConsumptions, balanceBeforeCents, balanceAfterCents: balanceBeforeCents - totalAmountCents };
+  return { flight: created, balanceBeforeCents, balanceAfterCents: balanceBeforeCents - totalAmountCents };
 }
 
 /** Prisma unique-constraint violation (same pattern as `accounts.service.ts`/`cash.service.ts`). */
@@ -815,26 +640,24 @@ function isUniqueViolation(error: unknown): boolean {
  * `getAccountOverview` re-checks its own coarser permission
  * (`aircraft.manage`/`people.read`), which every actor holding
  * `flights.manage` today also holds (same guard-free-re-read caveat as
- * `sellPackage`'s doc-comment — revisit if that ever decouples).
+ * `recordAdjustment`'s doc-comment — revisit if that ever decouples).
  *
  * Guards and rate lookups: `resolveFlightInput` (story 5.3's extraction —
- * unchanged behavior/error codes from 5.1/5.2).
+ * unchanged behavior/error codes from 5.1).
  *
  * ONE `prisma.$transaction`: `FOR UPDATE` locks on the `Aircraft` row (same
  * raw-query pattern as `aircraft.service.ts#adjustHourMeter`) and, after the
  * `Account` get-or-create upsert, on the `Account` row (same pattern as
  * `recordAdjustment`) so the pre-movement balance never races a concurrent
- * top-up/adjustment/flight on the same account — and, since story 5.2, ALSO
- * serializes package consumption for this person (module doc-comment). This
- * lock shape is UNCHANGED from 5.1/5.2 (story 5.3, Task 2: no contract
- * change) — only the in-transaction WORK after it now lives in the shared
- * `registerFlightCore` (module doc-comment).
+ * top-up/adjustment/flight on the same account. This lock shape is
+ * UNCHANGED from 5.1 (story 5.3, Task 2: no contract change) — only the
+ * in-transaction WORK after it now lives in the shared `registerFlightCore`
+ * (module doc-comment).
  *
- * Returns the created flight plus the refreshed account overview (same
- * shape/caveat as `sellPackage`'s return). POST-commit (never inside the
- * transaction, Dev Notes): compares the balance band before/after and fires
- * `sendNegativeBalanceAlert` (fire-and-forget) exactly when it worsened —
- * identical rule to `recordAdjustment`'s AC 2/3.
+ * Returns the created flight plus the refreshed account overview. POST-commit
+ * (never inside the transaction, Dev Notes): compares the balance band
+ * before/after and fires `sendNegativeBalanceAlert` (fire-and-forget) exactly
+ * when it worsened — identical rule to `recordAdjustment`'s AC 2/3.
  */
 export async function registerFlight(actor: Actor, input: RegisterFlightInput): Promise<RegisterFlightResult> {
   authorize(actor, 'flights.manage');
@@ -901,7 +724,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
     });
   });
 
-  // Guard-free re-read, same rationale as `sellPackage`/`recordTopUp`.
+  // Guard-free re-read, same rationale as `recordTopUp`.
   const account = await getAccountOverview(actor, resolved.person.id);
 
   const bandBefore = balanceBand(balanceBeforeCents, thresholdCents);
@@ -1055,8 +878,8 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
           accountId: flight.originalMovement.accountId,
           type: 'FLIGHT_CHARGE_REVERSAL',
           // `0 - amountCents`, not unary negation (same -0 lesson as
-          // `registerFlightCore`): a fully-package-covered original charge
-          // can itself be exactly 0.
+          // `registerFlightCore`): the original charge can itself be
+          // exactly 0 (a pathologically low rate/short flight).
           amountCents: 0 - flight.originalMovement.amountCents,
           reversalOfId: flight.originalMovement.id,
           flightId: flight.id,
@@ -1323,7 +1146,7 @@ function buildFlightsWhere(actor: Actor, query: ListFlightsQuery, canManage: boo
  * providing anyone else's id is a 403 — checked BEFORE any query, never
  * silently ignored or narrowed (never enumerate/filter another person's data
  * via a filter). Providing exactly the actor's own id is redundant but
- * harmless — this is exactly how the 9.3 school-summary "Le mie ore"
+ * harmless — this is exactly how the logbook's own-instructor "Le mie ore"
  * drill-down reaches the registry as a non-staff instructor.
  *
  * `actor.personId === null` with only `self.read` (AC 1, Contesto): nothing
