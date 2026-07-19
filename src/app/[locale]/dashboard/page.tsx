@@ -62,7 +62,14 @@ const EMBED_BOOKINGS_PAGE_SIZE = 8;
 const ALL_BOOKING_STATUSES: readonly BookingStatusDto[] = ['PENDING', 'APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED'];
 /** `ALL_BOOKING_STATUSES` minus `PENDING` — the "fill the rest" query once every PENDING booking in-window is already fetched (see the pending-first fetch below). */
 const NON_PENDING_BOOKING_STATUSES: readonly BookingStatusDto[] = ['APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED'];
-/** Generous cap on scadenze fetched for the widest widget window (60 days) — the widget then filters/slices client-side per the 7/30/60 toggle without a second round-trip. */
+/**
+ * Generous cap on scadenze fetched for the widest widget window (60 days) —
+ * the widget then filters/slices client-side per the 7/30/60 toggle without a
+ * second round-trip. Review 12.12 F4 (accepted): the counts the widget shows
+ * (e.g. "+N altre") are therefore also capped at this scan limit, not true
+ * all-time totals — "Vedi tutte" links to `/dashboard/expiries`, which pages
+ * through everything.
+ */
 const EXPIRIES_WIDGET_SCAN_LIMIT = 60;
 
 /**
@@ -201,6 +208,9 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
 
   // --- KPI row (AC 1) ------------------------------------------------------
   const trulyAvailableCount = operationalIds.filter((id) => !reservedIds.has(id)).length;
+  // Review 12.12 F2, PO-ratified overcount 2026-07-19: planned + flown; a
+  // today APPROVED booking keeps counting after its flight is registered —
+  // FLOWN is a separate manual step.
   const flightsToday = flightsTodayTotals.count + calendarBookingsToday.length;
 
   // --- Embedded Schedule (vista giorno, oggi) — data-prep shared with `bookings/page.tsx` (@/lib/booking-schedule, AC 1) ---
@@ -333,7 +343,11 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
 
       <BookingsTable
         items={embedBookingRows}
-        pendingCount={pendingBookingsResult.total}
+        // Review 12.12 F3: windowed PENDING count (same `listFrom` window as
+        // the embedded rows), NOT the all-time `pendingBookingsResult.total`
+        // used by the KPI above — the card can only ever list what's in its
+        // own window, so its "N in attesa" summary must match what it shows.
+        pendingCount={embedPendingResult.total}
         total={embedTotal}
         aircraftOptions={scheduleAircraftOptions}
         view="day"
@@ -496,6 +510,9 @@ async function renderInstructorLanding(actor: Actor, me: MeResult, locale: AppLo
   ]);
 
   const myDayBookings: BookingListItem[] = calendarBookingsToday.filter((booking) => booking.instructorProfileId === ownInstructorProfileId);
+  // Review 12.12 F2, PO-ratified overcount 2026-07-19: planned + flown; a
+  // today APPROVED booking keeps counting after its flight is registered —
+  // FLOWN is a separate manual step.
   const flightsToday = flightsTodayTotals.count + myDayBookings.length;
   const displayName = me.person ? me.person.firstName : me.email;
 
@@ -613,6 +630,9 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <Link href={`/dashboard/people/${person.id}`} locale={locale} className="btn" data-testid="pilot-landing-profile-cta">
+            {t('pilotLanding.profileCta')}
+          </Link>
           <Link href="/dashboard/logbook" locale={locale} className="btn" data-testid="pilot-landing-logbook-cta">
             {t('pilotLanding.logbookCta')}
           </Link>
@@ -625,9 +645,15 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
       </div>
 
       <div className="kpi-row">
-        <div data-testid="kpi-balance">
+        <Link
+          href={`/dashboard/people/${person.id}/account`}
+          locale={locale}
+          aria-label={t('pilotLanding.accountLink')}
+          data-testid="kpi-balance"
+          style={{ display: 'block', textDecoration: 'none', color: 'inherit' }}
+        >
           <KPI label={t('pilotLanding.kpis.balance')} value={formatCents(accountOverview.balanceCents, displayLocale)} />
-        </div>
+        </Link>
         <div data-testid="kpi-license">
           <KPI label={t('pilotLanding.kpis.license')} value={person.activePilotLicenseType ?? noValue} />
         </div>

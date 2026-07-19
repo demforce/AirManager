@@ -140,6 +140,8 @@
       },
       "logbookCta": "My logbook",
       "bookCta": "Book a flight",
+      "accountLink": "My account",
+      "profileCta": "My profile",
       "noValue": "—"
     },
     "instructorLanding": {
