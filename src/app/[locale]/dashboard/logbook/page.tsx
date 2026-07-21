@@ -288,7 +288,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             archivedSuffix: t('filters.archivedSuffix'),
             reset: t('filters.reset'),
           },
-          picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
           editor: {
             newTitle: t('editor.newTitle'),
             newSubtitle: t('editor.newSubtitle'),

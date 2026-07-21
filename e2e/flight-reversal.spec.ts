@@ -23,7 +23,11 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
 async function selectFromCombobox(combobox: Locator, query: string, optionLabel: string): Promise<void> {
   await combobox.click();
   await combobox.fill(query);
-  await combobox.page().getByRole('option', { name: optionLabel, exact: true }).click();
+  // Scoped to the combobox's own popup (role=listbox): a page-level option
+  // lookup ALSO matches the logbook filter bar's native <select> options
+  // since the 2026-07-21 filter-UI change (the 103-F1 page-level-selector
+  // lesson again).
+  await combobox.page().getByRole('listbox').getByRole('option', { name: optionLabel, exact: true }).click();
 }
 
 /** Run-unique names (same pattern as the other specs, for the dirty DB). */
@@ -205,7 +209,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     // filter change navigates and REMOUNTS the manager — settle on its URL
     // effect before touching anything else (TD-3 review M1 lesson).
     await page.goto('/it/dashboard/logbook');
-    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraft.registration }); // native select since the 2026-07-21 filter-UI change
     await expect(page).toHaveURL(/aircraftId=/);
     const flightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).first();
     await flightRow.getByTestId('flight-cancel-action').click();
@@ -259,7 +263,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     // BEFORE using the form, so the '2020-01-02' row lookups below cannot
     // be buried by other runs' recent-dated flights.
     await page.goto('/it/dashboard/logbook');
-    await selectFromCombobox(page.getByTestId('flight-filter-aircraft'), aircraft.registration, aircraft.registration);
+    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraft.registration }); // native select since the 2026-07-21 filter-UI change
     await expect(page).toHaveURL(/aircraftId=/);
     await page.getByTestId('logbook-new-button').click();
     await expect(page.getByTestId('flight-form')).toBeVisible();

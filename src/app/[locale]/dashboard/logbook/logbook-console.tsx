@@ -32,7 +32,6 @@ import { flightPicPerson } from '@/lib/flight-pic';
 import { formatCents } from '@/lib/money';
 import type { FlightListItemDto, FlightStatusDto, FlightTypeDto } from '@/lib/schemas/flights';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
-import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { FlightEditor, type FlightEditorLabels, type FlightEditorTarget } from './flight-editor';
 
 type AircraftOption = { id: string; registration: string };
@@ -95,7 +94,6 @@ export type LogbookConsoleLabels = {
     archivedSuffix: string;
     reset: string;
   };
-  picker: { placeholder: string; noResults: string };
   editor: FlightEditorLabels;
   cancelModal: {
     title: string;
@@ -220,36 +218,23 @@ export function LogbookConsole({
 
   const hasActiveFilter = Object.values(filters).some((value) => value !== '');
 
-  const aircraftComboOptions: SearchComboboxOption[] = [
+  // Plain-select option lists (user decision 2026-07-21: the velivolo/persona
+  // filters use the SAME control as the tipo/stato ones, no typeahead) — the
+  // server page already loads the full candidate lists (`OPTIONS_PAGE_SIZE`).
+  const aircraftSelectOptions: { id: string; label: string }[] = [
     { id: '', label: labels.filters.allAircraft },
     ...aircraftFilterOptions.map((aircraft) => ({
       id: aircraft.id,
       label: aircraft.registration + (aircraft.archived ? labels.filters.archivedSuffix : ''),
     })),
   ];
-  const personComboOptions: SearchComboboxOption[] = [
+  const personSelectOptions: { id: string; label: string }[] = [
     { id: '', label: labels.filters.allPeople },
     ...personFilterOptions.map((person) => ({
       id: person.id,
       label: personLabel(person) + (person.archived ? labels.filters.archivedSuffix : ''),
     })),
   ];
-
-  async function searchAircraftFilter(query: string): Promise<SearchComboboxOption[]> {
-    const params = new URLSearchParams({ q: query, pageSize: '50', includeArchived: 'true' });
-    const response = await fetch(`/api/v1/aircraft?${params.toString()}`);
-    if (!response.ok) return [];
-    const body = (await response.json()) as { items: { id: string; registration: string; archivedAt: string | null }[] };
-    return body.items.map((aircraft) => ({ id: aircraft.id, label: aircraft.registration + (aircraft.archivedAt ? labels.filters.archivedSuffix : '') }));
-  }
-
-  async function searchPersonFilter(query: string): Promise<SearchComboboxOption[]> {
-    const params = new URLSearchParams({ q: query, pageSize: '50', includeArchived: 'true' });
-    const response = await fetch(`/api/v1/people?${params.toString()}`);
-    if (!response.ok) return [];
-    const body = (await response.json()) as { items: { id: string; firstName: string; lastName: string; archivedAt: string | null }[] };
-    return body.items.map((person) => ({ id: person.id, label: personLabel(person) + (person.archivedAt ? labels.filters.archivedSuffix : '') }));
-  }
 
   function statusBadgeAndLineage(flight: FlightListItemDto) {
     if (flight.status !== 'CANCELLED' && !flight.correctionOfId && !flight.correctedByFlightId) return null;
@@ -338,32 +323,36 @@ export function LogbookConsole({
             />
           </div>
           {canManage ? (
-            <div style={{ width: 190 }}>
-              <SearchCombobox
-                id="flight-filter-aircraft"
-                label={labels.filters.aircraft}
-                value={filters.aircraftId}
-                onChange={(id) => handleFilterChange({ aircraftId: id })}
-                fetchOptions={searchAircraftFilter}
-                initialOptions={aircraftComboOptions}
-                placeholder={labels.picker.placeholder}
-                emptyText={labels.picker.noResults}
-              />
-            </div>
+            <select
+              className="input"
+              style={{ width: 'auto', minWidth: 130, fontSize: 12 }}
+              value={filters.aircraftId}
+              onChange={(event) => handleFilterChange({ aircraftId: event.target.value })}
+              data-testid="flight-filter-aircraft"
+              aria-label={labels.filters.aircraft}
+            >
+              {aircraftSelectOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           ) : null}
           {canManage ? (
-            <div style={{ width: 190 }}>
-              <SearchCombobox
-                id="flight-filter-person"
-                label={labels.filters.person}
-                value={filters.personId}
-                onChange={(id) => handleFilterChange({ personId: id })}
-                fetchOptions={searchPersonFilter}
-                initialOptions={personComboOptions}
-                placeholder={labels.picker.placeholder}
-                emptyText={labels.picker.noResults}
-              />
-            </div>
+            <select
+              className="input"
+              style={{ width: 'auto', minWidth: 150, fontSize: 12 }}
+              value={filters.personId}
+              onChange={(event) => handleFilterChange({ personId: event.target.value })}
+              data-testid="flight-filter-person"
+              aria-label={labels.filters.person}
+            >
+              {personSelectOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           ) : null}
           <select
             className="input"
