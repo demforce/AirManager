@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Field, Input } from '@/components/ui/field';
+import { DateInput } from '@/components/ui/date-input';
 import { formatCents, parseCents } from '@/lib/money';
 import type { InstructorRateItemDto } from '@/lib/schemas/people';
 import { formatDateOnly, formatDateTime } from '@/lib/time';
@@ -177,7 +178,7 @@ export function InstructorRatesPanel({ personId, toast, canAddRate, labels }: In
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.price)} {...register('price')} />
             </Field>
             <Field label={labels.validFrom}>
-              <Input type="date" aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
+              <DateInput aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
             </Field>
           </div>
           {formError ? (

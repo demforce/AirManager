@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { DateInput } from '@/components/ui/date-input';
 import { useLocale } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -434,9 +435,8 @@ function StudentSection({ personId, profile, labels, onSaved, readOnly }: Studen
             <label htmlFor="student-courseStartDate" className="block text-sm font-medium text-[#2F3437]">
               {labels.student.courseStartDate}
             </label>
-            <input
+            <DateInput
               id="student-courseStartDate"
-              type="date"
               className="mt-2 w-full max-w-xs rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
               aria-invalid={Boolean(errors.courseStartDate)}
               {...register('courseStartDate')}

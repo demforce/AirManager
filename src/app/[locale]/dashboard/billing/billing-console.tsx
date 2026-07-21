@@ -29,6 +29,7 @@ import { useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
+import { DateInput } from '@/components/ui/date-input';
 import { Avatar } from '@/components/ui/avatar';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
@@ -384,9 +385,8 @@ export function BillingConsole({
             </p>
           ) : null}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }} title={`${labels.filters.dateFrom} – ${labels.filters.dateTo}`}>
-            <input
-              type="date"
-              className="input"
+            <DateInput
+              inline
               style={{ width: 'auto', fontSize: 12 }}
               value={filters.dateFrom}
               onChange={(event) => handleFilterChange({ dateFrom: event.target.value })}
@@ -394,9 +394,8 @@ export function BillingConsole({
               aria-label={labels.filters.dateFrom}
             />
             <span style={{ color: 'var(--ink-3)', fontSize: 12 }}>–</span>
-            <input
-              type="date"
-              className="input"
+            <DateInput
+              inline
               style={{ width: 'auto', fontSize: 12 }}
               value={filters.dateTo}
               onChange={(event) => handleFilterChange({ dateTo: event.target.value })}

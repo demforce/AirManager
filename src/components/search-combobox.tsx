@@ -240,8 +240,11 @@ export function SearchCombobox({
   // onto its own line. `min-w-[200px]` alone gives the filter bar a sane
   // floor while staying correct in the grid.
   return (
-    <div className="relative min-w-[200px]">
-      <label htmlFor={id} className="block text-sm font-medium text-[var(--ink-2)]">
+    // `.fld` (airops.css) gives the same label/control stack as every other
+    // slide-over field — the combobox label/input must read EXACTLY like a
+    // `Field`+`Input` pair (user decision 2026-07-21: uniform form typography).
+    <div className="fld relative min-w-[200px]">
+      <label htmlFor={id} className="fld-label">
         {label}
       </label>
       <input
@@ -266,7 +269,7 @@ export function SearchCombobox({
         // Quota associativa picker all share this component) — swapped for
         // `airops.css`'s CSS variables, the app's existing dark-mode mechanism
         // (`html[data-theme]`), same as the listbox/options below.
-        className="mt-2 min-h-[44px] w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-base text-[var(--ink)] outline-none transition-colors focus:border-[var(--ink-3)] disabled:cursor-not-allowed disabled:bg-[var(--bg-sunken)]"
+        className="input"
       />
       {open ? (
         <ul

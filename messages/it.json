@@ -2249,5 +2249,13 @@
       },
       "empty": "Nessun pilota con voli nel periodo."
     }
+  },
+  "ui": {
+    "datePicker": {
+      "openCalendar": "Apri calendario",
+      "today": "Oggi",
+      "prevMonth": "Mese precedente",
+      "nextMonth": "Mese successivo"
+    }
   }
 }

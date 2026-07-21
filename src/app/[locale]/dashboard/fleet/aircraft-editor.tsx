@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Field, Input, Select } from '@/components/ui/field';
+import { DateInput } from '@/components/ui/date-input';
 import { Segmented } from '@/components/ui/segmented';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
@@ -699,7 +700,7 @@ function RatesSection({
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.priceDry)} {...register('priceDry')} />
             </Field>
             <Field label={labels.rates.validFrom}>
-              <Input type="date" aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
+              <DateInput aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
             </Field>
           </div>
           {formError ? (

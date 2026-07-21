@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { DateInput } from '@/components/ui/date-input';
 import { useLocale } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -483,14 +484,14 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
           <label htmlFor="expiry-issued-at" className="block text-sm font-medium text-[#2F3437]">
             {labels.issuedAt}
           </label>
-          <input id="expiry-issued-at" type="date" aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
+          <DateInput id="expiry-issued-at" aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
           {errors.issuedAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
         </div>
         <div>
           <label htmlFor="expiry-expires-at" className="block text-sm font-medium text-[#2F3437]">
             {labels.expiresAt}
           </label>
-          <input id="expiry-expires-at" type="date" aria-invalid={Boolean(errors.expiresAt)} className={inputClasses} {...register('expiresAt')} />
+          <DateInput id="expiry-expires-at" aria-invalid={Boolean(errors.expiresAt)} className={inputClasses} {...register('expiresAt')} />
           {errors.expiresAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidRange}</p> : null}
         </div>
         <div>
@@ -597,15 +598,14 @@ function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRo
         <label htmlFor={`edit-issued-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
           {labels.issuedAt}
         </label>
-        <input id={`edit-issued-at-${expiry.id}`} type="date" aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
+        <DateInput id={`edit-issued-at-${expiry.id}`} aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
       </div>
       <div>
         <label htmlFor={`edit-expires-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
           {labels.expiresAt}
         </label>
-        <input
+        <DateInput
           id={`edit-expires-at-${expiry.id}`}
-          type="date"
           aria-invalid={Boolean(errors.expiresAt)}
           className={inputClasses}
           {...register('expiresAt')}

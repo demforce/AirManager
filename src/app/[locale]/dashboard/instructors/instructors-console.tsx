@@ -19,6 +19,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Field, Input, Select } from '@/components/ui/field';
+import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
@@ -344,10 +345,10 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
               </Select>
             </Field>
             <Field label={labels.periodStart}>
-              <Input type="date" aria-invalid={Boolean(errors.periodStart)} {...register('periodStart')} />
+              <DateInput aria-invalid={Boolean(errors.periodStart)} {...register('periodStart')} />
             </Field>
             <Field label={labels.periodEnd}>
-              <Input type="date" aria-invalid={Boolean(errors.periodEnd)} {...register('periodEnd')} />
+              <DateInput aria-invalid={Boolean(errors.periodEnd)} {...register('periodEnd')} />
             </Field>
             <Field label={labels.notes} wide>
               <Input {...register('notes')} />

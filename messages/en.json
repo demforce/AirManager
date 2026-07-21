@@ -2249,5 +2249,13 @@
       },
       "empty": "No pilot flew in this period."
     }
+  },
+  "ui": {
+    "datePicker": {
+      "openCalendar": "Open calendar",
+      "today": "Today",
+      "prevMonth": "Previous month",
+      "nextMonth": "Next month"
+    }
   }
 }

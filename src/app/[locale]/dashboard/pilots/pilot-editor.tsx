@@ -20,6 +20,7 @@ import { z } from 'zod';
 import type { Role } from '@/generated/prisma/client';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Field, Input } from '@/components/ui/field';
+import { DateInput } from '@/components/ui/date-input';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { Link } from '@/i18n/navigation';
@@ -605,7 +606,7 @@ function StudentProfileForm({
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
           <div className="form-grid">
             <Field label={labels.student.courseStartDate}>
-              <Input type="date" aria-invalid={Boolean(errors.courseStartDate)} {...register('courseStartDate')} />
+              <DateInput aria-invalid={Boolean(errors.courseStartDate)} {...register('courseStartDate')} />
             </Field>
           </div>
           {formError ? (

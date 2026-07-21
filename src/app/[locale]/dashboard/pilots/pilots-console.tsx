@@ -26,6 +26,7 @@ import type { Role } from '@/generated/prisma/client';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Field, Input, Select } from '@/components/ui/field';
+import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
@@ -524,7 +525,7 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
               </Select>
             </Field>
             <Field label={labels.effectiveDate}>
-              <Input type="date" aria-invalid={Boolean(errors.effectiveDate)} {...register('effectiveDate')} />
+              <DateInput aria-invalid={Boolean(errors.effectiveDate)} {...register('effectiveDate')} />
             </Field>
             <Field label={labels.description} wide>
               <Input {...register('description')} />

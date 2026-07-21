@@ -123,7 +123,10 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     const aircraftCombobox = page.getByTestId('flight-form').getByLabel('Velivolo');
     await aircraftCombobox.click();
     await aircraftCombobox.fill(aircraft.registration);
-    await page.getByRole('option', { name: aircraft.registration, exact: true }).click();
+    // Scoped to the combobox popup (role=listbox): the logbook filter bar's
+    // native <select> options also carry role=option since the 2026-07-21
+    // filter-UI change (103-F1 page-level-selector lesson).
+    await page.getByRole('listbox').getByRole('option', { name: aircraft.registration, exact: true }).click();
 
     // Pilota o allievo: the target, ranked past the 100-row cap — typed
     // (server-side `q`, AC 1) and selected. This is the finding 5.4 D1
@@ -133,7 +136,7 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     await personCombobox.click();
     await personCombobox.fill(targetLastName);
     const targetOptionLabel = `${targetLastName} ${targetFirstName}`;
-    const targetOption = page.getByRole('option', { name: targetOptionLabel, exact: true });
+    const targetOption = page.getByRole('listbox').getByRole('option', { name: targetOptionLabel, exact: true });
     await expect(targetOption).toBeVisible();
     await targetOption.click();
     await expect(personCombobox).toHaveValue(targetOptionLabel);

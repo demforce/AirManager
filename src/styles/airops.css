@@ -1276,3 +1276,22 @@ textarea.input{ font-family: var(--font-ui); resize: vertical; }
   .user-chip .user-chip-name{ display: none; }
   .user-chip{ padding: 4px; }
 }
+
+/* Custom date field (user decision 2026-07-21): the browser's native
+   calendar popup is replaced by `CalendarPopover` (`ui/date-input.tsx`) —
+   the UA picker indicator is hidden, the sibling button is the only
+   calendar affordance. Typing into the input still works. */
+.date-input{ position: relative; display: inline-flex; align-items: center; }
+.date-input.grow{ width: 100%; }
+.date-input input::-webkit-calendar-picker-indicator{ display: none; }
+.date-input input{ padding-right: 30px; }
+.date-input-btn{
+  position: absolute; right: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0;
+  border: 0; background: transparent; color: var(--ink-3);
+  cursor: pointer; border-radius: var(--radius-xs);
+  transition: color var(--t), background var(--t);
+}
+.date-input-btn:hover{ color: var(--ink); background: var(--panel-2); }
+.date-input-btn svg{ width: 14px; height: 14px; }

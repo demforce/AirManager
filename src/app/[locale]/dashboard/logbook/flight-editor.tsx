@@ -24,6 +24,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Field, Input, Select } from '@/components/ui/field';
+import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
@@ -448,8 +449,7 @@ export function FlightEditor({
         <form id="flight-editor-form" data-testid="flight-form" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
           <div className="form-grid">
             <Field label={labels.fields.flightDate}>
-              <Input
-                type="date"
+              <DateInput
                 aria-invalid={Boolean(errors.flightDate)}
                 {...register('flightDate', { onChange: (event: { target: { value: string } }) => setFlightDateValue(event.target.value) })}
               />
