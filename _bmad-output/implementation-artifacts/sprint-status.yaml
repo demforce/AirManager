@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-19 (story 12.12 DONE — home per ruolo AirOps; review Opus: F1 blocker link self-service ripristinati (decisione PO), F2 overcount "Voli oggi" ACCETTATO dal PO, F3 fixato; full CI=1 build prod 252/252 (totale suite 259→252 col rewrite home-dashboard), 1533 unit. Resta SOLO la 12.13 — bozza pronta, 5 ratifiche PENDING)
+last_updated: 2026-07-20 (story 12.13 DONE — EPIC 12 COMPLETO. Sweep di rimozione (~40 file), review Opus DOPPIA (2 run indipendenti convergenti, redo su richiesta utente): F1 dark-theme legacy fixato, F2 card Categorie di cassa in Impostazioni (decisione PO), F3 potatura wire contract RATIFICATA; full CI=1 build prod 232/232, 1345 unit. Prossimo: push+PR unica (utente), poi nuovo epic in nuova sessione)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -129,7 +129,7 @@ development_status:
   # Epic 12: sostituzione totale UI AirOps + backend build-out (change request 2026-07-14)
   # Spec: docs/superpowers/specs/2026-07-14-airops-ui-replacement-design.md
   # Piano: docs/superpowers/plans/2026-07-14-epic-12-airops-ui.md
-  epic-12: in-progress
+  epic-12: done
   12-1-airops-foundation-shell-auth: done
   12-2-booking-approval-workflow: done
   12-3-pianificazione-prenotazioni-ui: done
@@ -142,7 +142,8 @@ development_status:
   12-10-statistiche: done
   12-11-scadenze-impostazioni-metar: done
   12-12-panoramica-landing-ruoli: done
-  12-13-rimozioni-cleanup-sweep: ready-for-dev
+  12-13-rimozioni-cleanup-sweep: done
+  epic-12-retrospective: optional
 
 action_items:
   - epic: 12

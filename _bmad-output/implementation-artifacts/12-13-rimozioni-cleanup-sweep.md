@@ -4,7 +4,7 @@ baseline_commit: 943a5b0
 
 # Story 12.13: Rimozioni e cleanup sweep finale
 
-Status: review
+Status: done
 
 ## Story
 
@@ -85,4 +85,23 @@ Vedi `filesChanged` nel report della sessione (elenco completo file creati/modif
 
 ## Review Record
 
-_(a cura della review adversarial)_
+**Reviewer**: adversarial-reviewer (Opus 4.8, effort xhigh) — **DUE run indipendenti da zero** (2026-07-20, il secondo su richiesta esplicita dell'utente "redo from beginning review and fix review"), briefati coi 5 punti notesForReview del dev + audit endpoint + il punto critico della sessione principale (gate faccia istruttore dopo la rimozione di `school.manage.own`). **Verdetti CONVERGENTI: shippable-with-fixes** su entrambi i run — stessi major/decision, stessa attribuzione del calo suite.
+
+**Verifiche indipendenti (entrambi i run, tutte OK)**:
+- Full suite `CI=1` su build prod, DB fresco: **230/230, 0 skip, 0 flaky** — riprodotto due volte; calo 252→230 INTERAMENTE spiegato dagli spec/test di feature rimosse (`git diff` su e2e/: NESSUN skip/only/fixme, adattamenti fedeli — user-management guida la vera UI "Accesso" di Piloti fino a Mailpit/set-password/login).
+- Gates verdi (1345 unit); OpenAPI REALE generato e ispezionato (79 path: le 9 route nuove del F5-12.11 presenti e imposte da `registry.test.ts`, le route rimosse assenti); i18n it/en SPECULARI (0 diff); `claude-md-drift.sh` exit 0; rbac senza permessi fantasma (set ESATTI asseriti nei test).
+- **Gate faccia istruttore** (punto critico): rimappato da `school.manage.own` (rimosso) a `actor.roles.includes('INSTRUCTOR')` — verificato con login REALI dei 5 utenti seed: ogni ruolo sulla faccia giusta, nessun leak.
+- Aritmetica `flight-reversal` riscritto RI-DERIVATA indipendentemente (190,00/150,00/75,00/−75,00 + contaore 9:20→8:20): esatta. Invito/sospensione/riattivazione da Piloti FUNZIONANTI dopo la rimozione dei GET /users (flusso completo provato). `ppr/register` → 404 autenticato. AC1–AC8 tutti DONE.
+
+**Findings ed esiti** (fix `a58f745`, full CI=1 post-fix **232/232**):
+
+- **F1 (MAJOR → FIXATO)** — tema scuro ILLEGGIBILE sulle 2 pagine legacy TENUTE (`people/{id}`, `[id]/account`): la rimozione del `LegacyBackdrop` (AC2) ha tolto lo shim chiaro che il doc-comment del componente cancellato dichiarava esistere ESATTAMENTE per quelle route (h1/saldo `#2F3437` su `.main` near-black, provato con screenshot). **Fix**: shim chiaro SCOPED (`#FBFBFA`/`#2F3437` inline sul `<main>` root delle 2 pagine — light-only deliberato, ratifica 3), verificato visivamente in entrambi i temi; nessun componente generico reintrodotto.
+- **F2 (PO-DECISION → IMPLEMENTATA)** — write-side `cash-categories` orfano (l'unica UI era la pagina finance/categories rimossa). **PO 2026-07-20: UI minima SUBITO** → nuova card "Categorie di cassa" in Impostazioni (pattern `RatingsCard` + logica di dominio del manager rimosso: crea/rinomina/disattiva/riattiva/elimina, delete nascosto per la categoria di sistema "Ricariche", colonna Movimenti), backend/gate INVARIATI, 2 e2e nuovi in `settings.spec.ts` (fixture proprie, mai le categorie seed).
+- **F3 (PO-DECISION → RATIFICATA as-is)** — la rimozione dei 3 campi pacchetti anche dal wire contract `flightBreakdownSchema` (oltre la lettera della ratifica 4a; breaking sull'API versionata, nessun consumer OGGI): **potatura CONFERMATA dal PO** — nessun cambio.
+- **F4 (MINOR → FIXATI)** — 4 doc-comment stale su simboli rimossi (`rbac.ts` bullet instructor, `dashboard/page.tsx` fallback, `people/[id]/page.tsx` PackagesPanel, `ppr-queue.tsx` proposals-queue).
+- **F5 (MINOR → FIXATO)** — fixture morte in `exports.service.test.ts` (campi breakdown rimossi, sopravvissuti via `as never`).
+- **F6 (NOTE → CORRETTA)** — narrativa AC7 del Dev Agent Record errata (`school.spec.ts` esisteva: 738 righe/17 test, correttamente cancellato).
+- **F7 (NOTE → ACCETTATO)** — path read-only `pendingProposal` ormai vestigiale (le proposte non si possono più creare né decidere): tenuto come leftover documentato per eventuali dati pre-cutover — cleanup candidato post-epic.
+- **Nota ambiente** (non un difetto del codice): su questa macchina locale `next build` può fallire NON-deterministicamente il prerender di `/it/dashboard/reports` (pagina NON toccata, `TypeError useContext`) — retry-once; nel run finale post-fix non si è manifestato.
+
+**Stato finale**: full suite **`CI=1` su build prod, DB fresco: 232/232 PASS** (230 + 2 nuovi test categorie); `npm run gates` verde (1345 unit). Commit della story: `92b426b` (feat, ~40 file rimossi) + `d8bcfb5` (fix e2e dev) + `a58f745` (fix review). **EPIC 12 COMPLETO.**
