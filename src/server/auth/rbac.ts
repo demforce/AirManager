@@ -65,8 +65,9 @@ const ALL_PERMISSIONS: Permission[] = [
  * - `admin`: everything (FR-2 "admin: tutto").
  * - `staff`: operational management + finance, but never user/settings
  *   administration (FR-3 reserves user management to admin).
- * - `instructor`: self-service plus their own students/school notes and
- *   their own bookings (FR-2 "istruttore: propri allievi").
+ * - `instructor`: self-service plus their own bookings (story 12.13: the
+ *   diario/assegnazioni scuola were retired — instructors keep the same
+ *   permissions as `pilot`, `self.read` + `bookings.manage.own`).
  * - `pilot`: pure self-service — their own data, bookings, account,
  *   expiries (FR-2 "pilota: i propri dati").
  * - `student`: self-service on their own data/account/expiries — but NOT

@@ -185,3 +185,86 @@ test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 
     expect(testEmail.Text.toLowerCase()).toContain('prova');
   });
 });
+
+/** Run-unique cash-category name (same pattern as `uniqueCategoryName` in `cash-register.spec.ts`) — NEVER a seeded name (`Ricariche`/`PPR`/`Carburante`/`Assicurazione`/`Manutenzione`/`Utenze`/`Altro`, shared with `billing.spec.ts`/`cash-register.spec.ts`). */
+function uniqueCategoryName(prefix: string): string {
+  return `${prefix}-${uniqueSuffix()}`;
+}
+
+/**
+ * "Categorie di cassa" card (story 12.13 review, F2 — PO decision
+ * 2026-07-20): a minimal admin UI for the `cash-categories` API, which lost
+ * its dedicated page (`dashboard/finance/categories`) in the same story's
+ * AC1 without a replacement. Not a global-settings write (unlike the cards
+ * above) — added to this file only because it lives on the same page, NOT
+ * because it needs the serialized `settings` project chain.
+ */
+test.describe('Impostazioni — Categorie di cassa card (story 12.13 review, F2)', () => {
+  test('admin creates, renames, deactivates, reactivates and deletes a cash category from the Impostazioni card', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await gotoSettingsAndWaitForHydration(page);
+
+    const card = page.getByTestId('cash-categories-settings-card');
+    await expect(card).toBeVisible();
+
+    const name = uniqueCategoryName('CategoriaE2E');
+    await page.getByTestId('cash-category-add-button').click();
+    await page.getByTestId('cash-category-name-input').fill(name);
+    await page.getByTestId('cash-category-form-submit').click();
+    await expect(page.getByTestId('cash-categories-feedback')).toBeVisible();
+
+    const row = page.getByTestId('cash-category-row').filter({ hasText: name });
+    await expect(row).toContainText('Attiva');
+
+    // A second category with the SAME name -> 409 shown in the form, not created twice.
+    await page.getByTestId('cash-category-add-button').click();
+    await page.getByTestId('cash-category-name-input').fill(name);
+    await page.getByTestId('cash-category-form-submit').click();
+    await expect(page.getByTestId('cash-category-form-error')).toContainText('Esiste già una categoria con questo nome.');
+    await page.getByTestId('cash-category-form').getByRole('button', { name: 'Annulla' }).click();
+
+    // Rename.
+    const renamedName = `${name}-rinominata`;
+    await row.getByTestId('cash-category-rename-button').click();
+    await page.getByTestId('cash-category-name-input').fill(renamedName);
+    await page.getByTestId('cash-category-form-submit').click();
+    await expect(page.getByTestId('cash-categories-feedback')).toBeVisible();
+    const rowAfterRename = page.getByTestId('cash-category-row').filter({ hasText: renamedName });
+    await expect(rowAfterRename).toBeVisible();
+
+    // Deactivate — the status badge flips to "Disattivata".
+    await rowAfterRename.getByRole('button', { name: 'Disattiva' }).click();
+    await expect(rowAfterRename).toContainText('Disattivata');
+
+    // Reactivate — back to "Attiva".
+    await rowAfterRename.getByRole('button', { name: 'Riattiva' }).click();
+    await expect(rowAfterRename).toContainText('Attiva');
+
+    // Delete (never used) — the row disappears.
+    await rowAfterRename.getByRole('button', { name: 'Elimina' }).click();
+    await rowAfterRename.getByRole('button', { name: 'Conferma' }).click();
+    await expect(page.getByTestId('cash-categories-feedback')).toBeVisible();
+    await expect(page.getByTestId('cash-category-row').filter({ hasText: renamedName })).toHaveCount(0);
+  });
+
+  test('deleting a category with recorded movements surfaces the API\'s conflict message instead of crashing; the row stays', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const name = uniqueCategoryName('CategoriaInUso');
+    const createResponse = await page.request.post('/api/v1/cash-categories', { data: { name } });
+    expect(createResponse.status()).toBe(201);
+    const created = (await createResponse.json()) as { id: string };
+    const movementResponse = await page.request.post('/api/v1/cash-movements', {
+      data: { categoryId: created.id, amountCents: 1000, effectiveDate: '2026-07-01' },
+    });
+    expect(movementResponse.status()).toBe(201);
+
+    await gotoSettingsAndWaitForHydration(page);
+    const row = page.getByTestId('cash-category-row').filter({ hasText: name });
+    await row.getByRole('button', { name: 'Elimina' }).click();
+    await row.getByRole('button', { name: 'Conferma' }).click();
+
+    await expect(page.getByTestId('cash-categories-feedback')).toContainText('La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.');
+    await expect(row).toBeVisible();
+  });
+});

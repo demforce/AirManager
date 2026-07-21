@@ -114,7 +114,7 @@ export default async function DashboardPage({ params }: PageProps) {
   }
 
   // Defensive fallback (Dev Notes): no REAL seed role ever falls through
-  // here (every role holds `finance.manage`, `school.manage.own`, or a
+  // here (every role holds `finance.manage`, the `INSTRUCTOR` role, or a
   // linked person) — kept for type-safety and any future role with none of
   // the three, never a crash.
   const t = await getTranslations('DashboardPage');

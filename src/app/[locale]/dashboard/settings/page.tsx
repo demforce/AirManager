@@ -13,7 +13,9 @@ import {
   getSchedulingSettings,
   getSmtpSettings,
 } from '@/server/services/app-settings.service';
+import { listCashCategories } from '@/server/services/cash.service';
 import { listExpiryTypes } from '@/server/services/expiry-types.service';
+import { CashCategoriesCard } from './cash-categories-card';
 import { ClubCard } from './club-card';
 import { RatingsCard } from './ratings-card';
 import { SchedulingCard } from './scheduling-card';
@@ -33,7 +35,9 @@ type PageProps = {
  * quota associativa default), Pianificazione (booking window), Email
  * (SMTP, settings-first mailer + real test send), Abilitazioni (the
  * expiry-type catalogue, moved here from the removed
- * `/dashboard/expiries/types`).
+ * `/dashboard/expiries/types`), Categorie di cassa (story 12.13 review, F2 —
+ * a minimal management UI for the `cash-categories` API, whose own page,
+ * `/dashboard/finance/categories`, was removed in 12.13 AC1 without one).
  *
  * `settings.manage` (ADMIN-only) gates the whole page — `hasPermission`
  * here only decides the redirect; every card's own write action re-checks
@@ -53,7 +57,7 @@ export default async function SettingsPage({ params }: PageProps) {
     return;
   }
 
-  const [branding, icao, contactEmail, metarStation, landingFeeCents, operatingInstructions, membershipFeeCents, schedulingSettings, smtpSettings, expiryTypes] =
+  const [branding, icao, contactEmail, metarStation, landingFeeCents, operatingInstructions, membershipFeeCents, schedulingSettings, smtpSettings, expiryTypes, cashCategories] =
     await Promise.all([
       getAirfieldBranding(),
       getAirfieldIcao(),
@@ -65,6 +69,7 @@ export default async function SettingsPage({ params }: PageProps) {
       getSchedulingSettings(),
       getSmtpSettings(actor),
       listExpiryTypes(actor, { includeInactive: true }),
+      listCashCategories(actor, { includeInactive: true }),
     ]);
 
   const t = await getTranslations('SettingsPage');
@@ -231,6 +236,53 @@ export default async function SettingsPage({ params }: PageProps) {
             genericError: t('ratings.feedback.genericError'),
           },
           hint: t('ratings.hint'),
+        }}
+      />
+
+      <CashCategoriesCard
+        categories={cashCategories}
+        labels={{
+          title: t('cashCategories.title'),
+          sub: t('cashCategories.sub'),
+          addAction: t('cashCategories.addAction'),
+          table: {
+            name: t('cashCategories.table.name'),
+            movements: t('cashCategories.table.movements'),
+            status: t('cashCategories.table.status'),
+            actions: t('cashCategories.table.actions'),
+            empty: t('cashCategories.table.empty'),
+          },
+          status: { active: t('cashCategories.status.active'), inactive: t('cashCategories.status.inactive') },
+          systemBadge: t('cashCategories.systemBadge'),
+          actions: {
+            rename: t('cashCategories.actions.rename'),
+            deactivate: t('cashCategories.actions.deactivate'),
+            reactivate: t('cashCategories.actions.reactivate'),
+            delete: t('cashCategories.actions.delete'),
+            confirmDelete: t('cashCategories.actions.confirmDelete'),
+            confirmYes: t('cashCategories.actions.confirmYes'),
+            confirmCancel: t('cashCategories.actions.confirmCancel'),
+          },
+          form: {
+            createTitle: t('cashCategories.form.createTitle'),
+            renameTitle: t('cashCategories.form.renameTitle'),
+            name: t('cashCategories.form.name'),
+            submitCreate: t('cashCategories.form.submitCreate'),
+            submitRename: t('cashCategories.form.submitRename'),
+            cancel: t('cashCategories.form.cancel'),
+            requiredField: t('cashCategories.form.requiredField'),
+            conflictError: t('cashCategories.form.conflictError'),
+            genericError: t('cashCategories.form.genericError'),
+          },
+          feedback: {
+            created: t('cashCategories.feedback.created'),
+            renamed: t('cashCategories.feedback.renamed'),
+            deactivated: t('cashCategories.feedback.deactivated'),
+            reactivated: t('cashCategories.feedback.reactivated'),
+            deleted: t('cashCategories.feedback.deleted'),
+            deleteInUseError: t('cashCategories.feedback.deleteInUseError'),
+            genericError: t('cashCategories.feedback.genericError'),
+          },
         }}
       />
     </main>

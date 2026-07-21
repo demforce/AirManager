@@ -19,10 +19,12 @@ type PageProps = {
 /**
  * Story 2.3, AC 1: the structural placeholders future epics fill without
  * restructuring the page. Story 3.1 turns "balance" into the real
- * `AccountPanel` below (removed from this list); story 4.4 does the same for
- * "hoursPackages" -> the real `PackagesPanel`; story 6.2 does the same for
+ * `AccountPanel` below (removed from this list); story 6.2 does the same for
  * "expiries" -> the real `ExpiriesPanel`; story 11.2 does the same for
- * "recentFlights" -> the real "Ultimi voli" panel below.
+ * "recentFlights" -> the real "Ultimi voli" panel below. "hoursPackages" had
+ * the same treatment (story 4.4, `PackagesPanel`) but the panel was removed
+ * in story 12.13 (pacchetti ore ritirati) — only `upcomingBookings` is still
+ * a placeholder today.
  */
 const PLACEHOLDER_SECTIONS = ['upcomingBookings'] as const;
 
@@ -108,7 +110,13 @@ export default async function PersonDetailPage({ params }: PageProps) {
   ];
 
   return (
-    <main className="flex-1 px-6 py-16 sm:px-16">
+    // Story 12.13 review (F1): this legacy Tailwind page is light-only by
+    // design (ratifica 3 — kept alongside `people/{id}/account`, not
+    // ported to AirOps). It used to inherit a light backdrop from the
+    // now-removed `LegacyBackdrop` (`dashboard/layout.tsx`'s `.main` is
+    // dark in dark theme, and the fixed `#111111`/`#2F3437` text below
+    // would go dark-on-dark without this). Same colors as that shim.
+    <main className="flex-1 px-6 py-16 sm:px-16" style={{ background: '#FBFBFA', color: '#2F3437' }}>
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

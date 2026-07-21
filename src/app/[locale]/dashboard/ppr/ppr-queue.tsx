@@ -92,13 +92,14 @@ async function errorCodeOf(response: Response): Promise<string | null> {
 }
 
 /**
- * Staff PPR approval queue (epic 8, story 8.2; FR-23, FR-41). Model:
- * `expiries/proposals-queue.tsx` (PENDING queue, per-row actions, decided
- * rows removed from local state on success) for the overall shape, plus
- * `bookings-list.tsx`'s expandable-row pattern for the detail toggle and
- * `finance/cash-register.tsx`'s `ReverseForm` for the reject-with-reason
- * form-in-row. Approve is a simple two-step confirm (no extra input);
- * reject additionally requires a non-empty reason, validated client-side
+ * Staff PPR approval queue (epic 8, story 8.2; FR-23, FR-41). Shape: a
+ * PENDING queue with per-row actions, decided rows removed from local state
+ * on success (the same pattern the now-removed `expiries/proposals-queue.tsx`
+ * used pre-12.13), plus `bookings-list.tsx`'s expandable-row pattern for the
+ * detail toggle and `finance/cash-register.tsx`'s `ReverseForm` for the
+ * reject-with-reason form-in-row. Approve is a simple two-step confirm (no
+ * extra input); reject additionally requires a non-empty reason, validated
+ * client-side
  * BEFORE any network call (AC 2: "senza motivo -> nessuna chiamata").
  */
 export function PprQueue({ requests: initialRequests, locale, labels, instructionsEditor }: PprQueueProps) {

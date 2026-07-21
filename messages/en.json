@@ -1933,6 +1933,52 @@
         "genericError": "Could not complete the operation."
       },
       "hint": "Set validity to 0 for ratings that never expire (e.g. night rating). Expiries appear on the Expiries page."
+    },
+    "cashCategories": {
+      "title": "Cash categories",
+      "sub": "The cash register's categories: create, rename, deactivate or delete the never-used ones.",
+      "addAction": "New category",
+      "table": {
+        "name": "Name",
+        "movements": "Movements",
+        "status": "Status",
+        "actions": "Actions",
+        "empty": "No categories."
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Deactivated"
+      },
+      "systemBadge": "System",
+      "actions": {
+        "rename": "Rename",
+        "deactivate": "Deactivate",
+        "reactivate": "Reactivate",
+        "delete": "Delete",
+        "confirmDelete": "Delete this category?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel"
+      },
+      "form": {
+        "createTitle": "New category",
+        "renameTitle": "Rename category",
+        "name": "Name",
+        "submitCreate": "Create category",
+        "submitRename": "Save",
+        "cancel": "Cancel",
+        "requiredField": "The name is required.",
+        "conflictError": "A category with this name already exists.",
+        "genericError": "The operation failed. Try again."
+      },
+      "feedback": {
+        "created": "Category created.",
+        "renamed": "Category renamed.",
+        "deactivated": "Category deactivated.",
+        "reactivated": "Category reactivated.",
+        "deleted": "Category deleted.",
+        "deleteInUseError": "This category has recorded movements and cannot be deleted: deactivate it instead.",
+        "genericError": "The operation failed. Try again."
+      }
     }
   },
   "Emails": {

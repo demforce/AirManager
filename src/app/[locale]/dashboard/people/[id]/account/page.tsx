@@ -101,7 +101,13 @@ export default async function AccountStatementPage({ params, searchParams }: Pag
   }
 
   return (
-    <main className="flex-1 px-6 py-16 sm:px-16">
+    // Story 12.13 review (F1): this legacy Tailwind page is light-only by
+    // design (ratifica 3 — kept alongside `people/{id}`, not ported to
+    // AirOps). It used to inherit a light backdrop from the now-removed
+    // `LegacyBackdrop` (`dashboard/layout.tsx`'s `.main` is dark in dark
+    // theme, and the fixed `#111111`/`#2F3437` text below would go
+    // dark-on-dark without this). Same colors as that shim.
+    <main className="flex-1 px-6 py-16 sm:px-16" style={{ background: '#FBFBFA', color: '#2F3437' }}>
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

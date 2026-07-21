@@ -1933,6 +1933,52 @@
         "genericError": "Non è stato possibile completare l'operazione."
       },
       "hint": "Imposta la validità a 0 per le abilitazioni che non scadono mai (es. Abilitazione notturna). Le scadenze compaiono nella pagina Scadenze."
+    },
+    "cashCategories": {
+      "title": "Categorie di cassa",
+      "sub": "Le categorie del registro cassa: crea, rinomina, disattiva o elimina quelle mai usate.",
+      "addAction": "Nuova categoria",
+      "table": {
+        "name": "Nome",
+        "movements": "Movimenti",
+        "status": "Stato",
+        "actions": "Azioni",
+        "empty": "Nessuna categoria."
+      },
+      "status": {
+        "active": "Attiva",
+        "inactive": "Disattivata"
+      },
+      "systemBadge": "Sistema",
+      "actions": {
+        "rename": "Rinomina",
+        "deactivate": "Disattiva",
+        "reactivate": "Riattiva",
+        "delete": "Elimina",
+        "confirmDelete": "Eliminare questa categoria?",
+        "confirmYes": "Conferma",
+        "confirmCancel": "Annulla"
+      },
+      "form": {
+        "createTitle": "Nuova categoria",
+        "renameTitle": "Rinomina categoria",
+        "name": "Nome",
+        "submitCreate": "Crea categoria",
+        "submitRename": "Salva",
+        "cancel": "Annulla",
+        "requiredField": "Il nome è obbligatorio.",
+        "conflictError": "Esiste già una categoria con questo nome.",
+        "genericError": "Operazione non riuscita. Riprova."
+      },
+      "feedback": {
+        "created": "Categoria creata.",
+        "renamed": "Categoria rinominata.",
+        "deactivated": "Categoria disattivata.",
+        "reactivated": "Categoria riattivata.",
+        "deleted": "Categoria eliminata.",
+        "deleteInUseError": "La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.",
+        "genericError": "Operazione non riuscita. Riprova."
+      }
     }
   },
   "Emails": {

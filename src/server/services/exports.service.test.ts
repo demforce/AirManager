@@ -162,9 +162,6 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           breakdown: {
             aircraftRateCentsPerHour: 10000,
             aircraftAmountCents: 12345,
-            packageCoveredMinutes: 0,
-            chargedMinutes: 95,
-            packageConsumptions: [],
             totalAmountCents: 12345,
           },
           createdAt: new Date('2026-07-10T10:00:00Z'),
@@ -225,9 +222,6 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           breakdown: {
             aircraftRateCentsPerHour: 10000,
             aircraftAmountCents: 5000,
-            packageCoveredMinutes: 0,
-            chargedMinutes: 30,
-            packageConsumptions: [],
             totalAmountCents: 5000,
           },
           createdAt: new Date('2020-01-01T10:00:00Z'),
@@ -279,9 +273,6 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           breakdown: {
             aircraftRateCentsPerHour: 10000,
             aircraftAmountCents: 4000,
-            packageCoveredMinutes: 0,
-            chargedMinutes: 40,
-            packageConsumptions: [],
             totalAmountCents: 4000,
           },
           createdAt: new Date('2026-07-03T10:00:00Z'),
