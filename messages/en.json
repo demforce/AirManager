@@ -3,14 +3,6 @@
     "title": "AirManager",
     "description": "Airfield management: pilots, aircraft, flights, bookings and finances in one place."
   },
-  "HomePage": {
-    "kicker": "Airfield management",
-    "title": "AirManager",
-    "description": "Pilots, aircraft, flights, PPR requests, finances, flight school and expiries: airfield operations in one reliable system.",
-    "statusLabel": "Project status",
-    "statusValue": "Foundations under construction",
-    "switchTo": "Italiano"
-  },
   "shell": {
     "groups": {
       "operations": "Operations",

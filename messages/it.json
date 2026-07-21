@@ -3,14 +3,6 @@
     "title": "AirManager",
     "description": "Gestionale per aviosuperficie: piloti, velivoli, voli, prenotazioni e finanze in un unico posto."
   },
-  "HomePage": {
-    "kicker": "Gestionale aviosuperficie",
-    "title": "AirManager",
-    "description": "Piloti, velivoli, voli, PPR, finanze, scuola volo e scadenze: la gestione dell'aviosuperficie in un unico ambiente affidabile.",
-    "statusLabel": "Stato del progetto",
-    "statusValue": "Fondamenta in costruzione",
-    "switchTo": "English"
-  },
   "shell": {
     "groups": {
       "operations": "Operazioni",

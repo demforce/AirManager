@@ -13,6 +13,23 @@ import { useState } from 'react';
 export const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
 
 /**
+ * UUIDv4 that also works in NON-secure contexts: `crypto.randomUUID` is
+ * gated to https/localhost, so browsing the app over plain http on a LAN IP
+ * (demo/remote setups) would crash any component rendering this hook.
+ * `crypto.getRandomValues` has no such gate and is universally available.
+ */
+export function randomIdempotencyKey(): string {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
  * Client-side lifecycle for the `Idempotency-Key` header (story TD-2, AC 6),
  * shared by the 5 money-mutating forms (top-up, rettifica, vendita
  * pacchetto, registrazione volo, movimento cassa) plus (epic 12, story 12.4)
@@ -44,10 +61,10 @@ export const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
  * ```
  */
 export function useIdempotencyKey() {
-  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => randomIdempotencyKey());
 
   function regenerateIdempotencyKey(): void {
-    setIdempotencyKey(crypto.randomUUID());
+    setIdempotencyKey(randomIdempotencyKey());
   }
 
   return { idempotencyKey, regenerateIdempotencyKey };

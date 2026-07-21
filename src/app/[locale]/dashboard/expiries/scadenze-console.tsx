@@ -18,6 +18,7 @@ import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { categoryOf, tierOf } from '@/lib/expiry-status';
 import { formatCents, parseCents } from '@/lib/money';
+import { randomIdempotencyKey } from '@/lib/use-idempotency-key';
 import type { ExpiryDashboardItemDto, ExpiryWindowDto } from '@/lib/schemas/expiries';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { formatDateOnly } from '@/lib/time';
@@ -403,7 +404,7 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
     setSubmitting(true);
     const response = await fetch(`/api/v1/people/${personId}/membership-fee`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': randomIdempotencyKey() },
       body: JSON.stringify({ amountCents: parsedAmount, override }),
     });
     setSubmitting(false);
