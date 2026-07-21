@@ -114,11 +114,6 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
             noValue: t('table.noValue'),
           },
           role: { pilot: tProfiles('profilesPanel.pilot.title'), student: tProfiles('profilesPanel.student.title'), instructor: tProfiles('profilesPanel.instructor.title') },
-          profileBadge: {
-            pilot: tProfiles('profilesPanel.badges.pilot'),
-            student: tProfiles('profilesPanel.badges.student'),
-            instructor: tProfiles('profilesPanel.badges.instructor'),
-          },
           status: { active: t('status.active'), suspended: t('status.suspended'), none: t('status.none') },
           actions: { edit: t('actions.edit'), topUp: t('actions.topUp'), suspend: t('actions.suspend'), reactivate: t('actions.reactivate') },
           topUp: {

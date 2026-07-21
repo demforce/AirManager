@@ -65,7 +65,6 @@ export type PilotsConsoleLabels = {
   pagination: { prev: string; next: string };
   table: { name: string; email: string; balance: string; lastFlight: string; role: string; status: string; actions: string; noValue: string };
   role: { pilot: string; student: string; instructor: string };
-  profileBadge: { pilot: string; student: string; instructor: string };
   status: { active: string; suspended: string; none: string };
   actions: { edit: string; topUp: string; suspend: string; reactivate: string };
   topUp: {
@@ -198,14 +197,6 @@ export function PilotsConsole({
     return badges;
   }
 
-  function profileSubBadges(profiles: PilotRow['profiles']): Array<{ key: string; label: string }> {
-    const badges: Array<{ key: string; label: string }> = [];
-    if (profiles.pilot) badges.push({ key: 'pilot', label: labels.profileBadge.pilot });
-    if (profiles.student) badges.push({ key: 'student', label: labels.profileBadge.student });
-    if (profiles.instructor) badges.push({ key: 'instructor', label: labels.profileBadge.instructor });
-    return badges;
-  }
-
   function statusLabel(user: PilotUser): string {
     if (!user) return labels.status.none;
     return user.isActive ? labels.status.active : labels.status.suspended;
@@ -278,7 +269,6 @@ export function PilotsConsole({
               <div>{labels.table.actions}</div>
             </div>
             {items.map((pilot) => {
-              const badges = profileSubBadges(pilot.profiles);
               const roles = roleBadges(pilot.profiles);
               const hasUser = pilot.user !== null;
               return (
@@ -292,11 +282,6 @@ export function PilotsConsole({
                     >
                       {pilot.lastName} {pilot.firstName}
                     </div>
-                    {badges.length > 0 ? (
-                      <div className="student-sub" data-testid={`person-profile-badges-${pilot.id}`}>
-                        {badges.map((badge) => badge.label).join(' · ')}
-                      </div>
-                    ) : null}
                   </div>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {pilot.email ?? labels.table.noValue}
