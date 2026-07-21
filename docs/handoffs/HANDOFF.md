@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-20 — **EPIC 12 COMPLETO, 13/13 story done**. Branch MAI pushato: il prossimo passo è push + PR unica, POI nuovo epic in una NUOVA sessione)
+# HANDOFF — AirManager (aggiornato: 2026-07-21 — **EPIC 12 COMPLETO, 13/13 story done**. Branch PUSHATO, PR #20 ready-for-review; PR #18 (linea parallela superata) commentata, close a carico dell'utente. Prossimo: merge a CI verde, retro, decisioni pendenti)
 
 ## Goal
 
@@ -10,8 +10,8 @@
 
 ## Branch e stato git
 
-- Branch: **`epic-12-airops-ui`** (da main 56d2f77). Una PR per l'epic A FINE epic (regola utente); ogni story = suoi commit.
-- **MAI PUSHATO**: questa macchina NON ha credenziali git (verificato: nessun credential helper). Il push lo fa l'utente (`git push -u origin epic-12-airops-ui`). CI gira solo su PR verso main → l'arbitro resta la full suite locale in CI-mode.
+- Branch: **`epic-12-airops-ui`** (da main 56d2f77). Una PR per l'epic (regola utente); ogni story = suoi commit.
+- **PUSHATO il 2026-07-21** (fino a `e1682f9` + il docs di riallineamento): le credenziali ORA ci sono (`gh` autenticato come `demforce` dal 15/07, credential helper attivo). **PR #20** = LA PR dell'epic (aperta draft "WIP 4/13" dall'utente a metà 12.4, promossa ready con titolo/body finali il 21/07). **PR #18** (linea Epic-12 parallela "Refero+Celeste", 65 commit TD-7/8/9) = superata: commento di riconciliazione postato; il **close è dell'utente** (il classifier di permessi blocca `gh pr close`/`git stash drop`/`--delete-branch` da Claude, mentre push/pr-edit passano col mandato esplicito). CI gira solo su PR verso main → arbitro locale resta la full suite CI-mode.
 - Ultimo commit: `a58f745` (`fix(12.13)` review) + il `docs(12.13)` di chiusura epic (questo). Sequenza (sintesi, ultime story): … → 12.11 (`ff1e6da` story+4 ratifiche PO, `e5854e1` impl, `a1f74fb` fix dev, `52a401d` fix review, `9584133` docs) → 12.12 (`74f6574` story+3 ratifiche, `a75c6b4` impl r2, `7bbc5cd` fix logout, `3e47e33` fix ratifiche 4-5, `206f512` fix review, `943a5b0` docs) → 12.13 (`6c481fb` story+5 ratifiche PO, `92b426b` impl ~40 file rimossi, `d8bcfb5` fix e2e dev, `a58f745` fix review F1/F2-PO/F4/F5, `docs(12.13)` questo). **N.B.**: `stash@{0}` ("12.12 dev parziale") è lavoro superato di un run interrotto — droppabile con `git stash drop` prima del push.
 - **Untracked deliberato**: SOLO la churn plugin dell'utente (`.agents/`, `.claude/skills/*` nuovi, `.github/hooks|skills/`, `skills-lock.json`, la sostituzione di `design-taste-frontend`, `.claude/workflows/`) — NON committarla, non è lavoro dell'epic. Tutte le 13 story hanno file committato, nessuna bozza pendente.
 - Il branch `fix/e2e-datetime-local-tz` dell'utente resta separato; il suo commit eb4dfe7 è GIÀ cherry-pickato nell'epic (af4e5f5).
@@ -36,8 +36,8 @@
 
 ## Next Steps (in ordine)
 
-1. **PUSH + PR (compito dell'UTENTE — questa macchina non ha credenziali git)**: prima, opzionale, `git stash drop` (stash 12.12 superato); poi `git push -u origin epic-12-airops-ui` e **PR UNICA verso `main`** (la CI GitHub girerà lì; l'arbitro locale è già verde: 232/232 CI=1 su build prod). Dopo il merge: il prossimo epic parte in una NUOVA sessione (regola: la sessione a epic chiuso NON inizia il successivo).
-2. **Follow-up POST-epic tracciati** (non bloccano la PR): (a) nota PO 12.7 — `getCompensationSummary` può produrre dovuto NEGATIVO (payout > maturato): serve un floor?; (b) F7 review 12.13 — path read-only `pendingProposal` vestigiale (le proposte non si possono più creare né decidere): rimuoverlo quando è confermato che il DB reale non ha proposte legacy PENDING; (c) retrospettiva Epic 12 (opzionale, skill `bmad-retrospective`).
+1. ~~Push + PR~~ **FATTO (2026-07-21)**: branch pushato, PR #20 ready. Restano all'UTENTE: `gh pr close 18` (bloccato dal classifier per Claude) e, opzionale, `git stash drop` (stash 12.12 superato — idem bloccato). Poi **merge della PR #20 a CI verde** (arbitro locale già verde: 232/232 CI=1 su build prod). Dopo il merge: il prossimo epic parte in una NUOVA sessione (regola: la sessione a epic chiuso NON inizia il successivo).
+2. **Decisioni pendenti POST-epic** (non bloccano la PR — l'utente vuole passarle in rassegna dopo la retro): (a) nota PO 12.7 — `getCompensationSummary` può produrre dovuto NEGATIVO (payout > maturato): serve un floor?; (b) F7 review 12.13 — path read-only `pendingProposal` vestigiale (le proposte non si possono più creare né decidere): rimuoverlo quando è confermato che il DB reale non ha proposte legacy PENDING; (c) **guardie TD-8 della defunta PR #18**: `registerFlight` oggi NON ha né blocco saldo-insufficiente né guard velivolo fuori-servizio (esistono solo sulle prenotazioni; precedente di design: `chargeMembershipFee` 12.11 → 422 + override ADMIN) — portarle nella linea AirOps?; (d) retrospettiva Epic 12 (skill `bmad-retrospective` — richiesta dall'utente, in corso in questa sessione).
 3. Promemoria ciclo per il prossimo epic (regola utente 2026-07-15): create story (ratifiche AskUserQuestion PRIMA del dispatch) → dev (UN subagent Sonnet 5 xhigh, brief anti-runway) → review (Opus 4.8 xhigh adversarial, priority zero full `CI=1` su build prod) → fix coi findings verbatim → `docs(N)` di chiusura con handoff + sprint-status SEMPRE aggiornati, poi story successiva.
 
 ## Ciclo per story su QUESTA macchina (consolidato in 3 story)
@@ -57,7 +57,7 @@
 - Flake noto: PRIMO login POST su dev server freddo fallisce una volta (classe cold-compile) → e2e locali con `--retries=2`. In CI-mode (build prod) non si è mai manifestato.
 - e2e prima di ogni run: `curl localhost:3000` deve FALLIRE (`fuser -k 3000/tcp`).
 - Utenti seed: admin@/staff@/pilot@/instructor@/student@airmanager.local (password in `SEED_ADMIN_PASSWORD` di `.env` — non copiarla nei documenti).
-- gates: `npm run gates` (mai i 4 comandi separati). Identità git già configurata (Claude/noreply); **Co-Authored-By = il modello che ha fatto il lavoro** (dev subagent = `Claude Sonnet 5`; fix/review-close della sessione principale = modello di sessione, es. `Claude Opus 4.8 (1M context)`); MAI push (v. sopra).
+- gates: `npm run gates` (mai i 4 comandi separati). Identità git già configurata (Claude/noreply); **Co-Authored-By = il modello che ha fatto il lavoro** (dev subagent = `Claude Sonnet 5`; fix/review-close della sessione principale = modello di sessione, es. `Claude Fable 5`); push consentito SOLO su mandato esplicito dell'utente nella sessione (il classifier lo blocca altrimenti; `gh pr close`/`git stash drop`/`--delete-branch` restano bloccati sempre → comandi inline `!` dell'utente).
 
 ## What Worked / What Didn't (lezioni consolidate a fine Epic 12)
 
