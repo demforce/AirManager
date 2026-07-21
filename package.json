@@ -13,6 +13,7 @@
     "test:e2e": "playwright test",
     "gates": "bash scripts/gates.sh",
     "db:reset": "bash scripts/reset-db.sh",
+    "seed:demo": "tsx prisma/seed-demo.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
