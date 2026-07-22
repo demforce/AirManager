@@ -699,6 +699,34 @@ describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
       expect(handle).not.toHaveBeenCalled();
     });
 
+    it('rejects an oversized body with NO content-length (chunked/HTTP2 bypass) via the stream cap (review F1)', async () => {
+      const handle = vi.fn();
+      const POST = apiRoute({ bodySchema: z.object({ amountCents: z.number() }), handle });
+      // A ReadableStream body and no content-length header: the header-only
+      // check cannot see the size, so the streaming ceiling must catch it.
+      const big = new TextEncoder().encode('x'.repeat(100_000));
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(big);
+          controller.close();
+        },
+      });
+      const response = await POST(
+        req('http://localhost/api/v1/x', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: stream,
+          // Node/undici requires duplex for a stream body.
+          duplex: 'half',
+        } as RequestInit),
+      );
+
+      expect(response.status).toBe(413);
+      const body = (await readJson(response)) as { error: { code: string } };
+      expect(body.error.code).toBe('PAYLOAD_TOO_LARGE');
+      expect(handle).not.toHaveBeenCalled();
+    });
+
     it('accepts a body at/under the cap normally', async () => {
       const handle = vi.fn().mockResolvedValue({ ok: true });
       const POST = apiRoute({ bodySchema: z.object({ amountCents: z.number() }), handle });

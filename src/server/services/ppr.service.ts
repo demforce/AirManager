@@ -55,6 +55,17 @@ export const PPR_RATE_LIMIT_MAX = 5;
  */
 export const PPR_NO_IP_RATE_LIMIT_MAX = 20;
 
+/**
+ * Per-recipient cap (review F3, CWE-770) on how many public PPR requests may
+ * name the SAME `email` within the window. The receipt email is sent to this
+ * caller-supplied address, so the per-IP limit alone is insufficient: an
+ * attacker rotating `x-forwarded-for` gets a fresh per-IP budget each time
+ * and could otherwise mail-bomb / relay unbounded receipts to any chosen
+ * address using the club's SMTP reputation. This bound is independent of IP.
+ * Case-insensitive so `Victim@x` / `victim@x` share one bucket.
+ */
+export const PPR_PER_EMAIL_RATE_LIMIT_MAX = 5;
+
 const PPR_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
 export type CreatePprRequestResult = { status: 'PENDING' };
@@ -108,6 +119,23 @@ export async function createPprRequest(input: CreatePprRequestInput, meta: { ip:
     });
     if (recentCount >= PPR_NO_IP_RATE_LIMIT_MAX) {
       throw new RateLimitError('Too many PPR requests — try again later.');
+    }
+  }
+
+  // --- Per-recipient cap (review F3) — independent of IP, so x-forwarded-for
+  // rotation cannot mail-bomb / relay unbounded receipts to a chosen address.
+  // A 429 here still creates no row. Public rows only (manual staff entries,
+  // `createdByUserId` set, are excluded — same rationale as the IP buckets).
+  if (input.email) {
+    const recentForEmail = await prisma.pprRequest.count({
+      where: {
+        email: { equals: input.email, mode: 'insensitive' },
+        createdByUserId: null,
+        createdAt: { gt: windowStart },
+      },
+    });
+    if (recentForEmail >= PPR_PER_EMAIL_RATE_LIMIT_MAX) {
+      throw new RateLimitError('Too many PPR requests for this email — try again later.');
     }
   }
 

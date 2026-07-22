@@ -31,11 +31,14 @@ export async function authorizeCredentials(rawCredentials: unknown, ip: string |
   const { email, password } = parsed.data;
 
   if (await isLoginLocked(email, ip)) {
-    // Same constant-time cost and same generic `null` as every other
-    // failure path below (AC 2) — a locked identifier/IP must be
-    // indistinguishable, in timing AND in outcome, from an unknown email or
-    // a wrong password. No DB user lookup and no new LoginAttempt row here
-    // (see `recordFailedLoginAttempt`'s doc-comment for why).
+    // Same generic `null` as every other failure path (AC 2), and still runs
+    // the constant-time dummy verify so the CredentialsSignin outcome carries
+    // no password-shaped timing. This path is measurably FASTER than the
+    // paths below (it skips the user lookup and the LoginAttempt write) — but
+    // that only reveals *lock-state*, which the attacker themselves caused;
+    // it does NOT reveal email validity (an unknown and a real email lock
+    // identically). No new LoginAttempt row here (see
+    // `recordFailedLoginAttempt`'s doc-comment for why).
     await verifyPassword(await getTimingDummyHash(), password);
     return null;
   }

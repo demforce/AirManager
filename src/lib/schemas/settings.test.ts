@@ -44,6 +44,20 @@ describe('smtpSettingsInputSchema — SSRF host validation', () => {
     expect(parseHost(host).success).toBe(false);
   });
 
+  // Review F4: bypass forms the first guard let through.
+  it.each([
+    '::ffff:127.0.0.1', // IPv4-mapped IPv6 loopback
+    '::ffff:169.254.169.254', // IPv4-mapped metadata address
+    '0:0:0:0:0:0:0:1', // fully-expanded loopback
+    '::', // IPv6 unspecified
+    'fe80::1', // link-local
+    '0.0.0.0', // IPv4 unspecified (routes to loopback)
+    '2130706433', // decimal 127.0.0.1
+    '0x7f000001', // hex 127.0.0.1
+  ])('rejects the loopback/internal bypass form %s (review F4)', (host) => {
+    expect(parseHost(host).success).toBe(false);
+  });
+
   it('accepts an ordinary public IPv6 address', () => {
     expect(parseHost('2001:4860:4860::8888').success).toBe(true);
   });

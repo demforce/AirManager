@@ -98,6 +98,23 @@ Il ramo account-reale fa una write-transaction sul response path, quello sconosc
 ### D-C — JWT 30 giorni su plain-HTTP senza flag Secure (CWE-614, A02) [era C5]
 `proxy.ts:100` — in modalità LAN plain-HTTP il cookie non ha `Secure`; il logout non invalida un JWT rubato. **Decisione di prodotto accettata** per la demo LAN. Raccomandazione: documentare TLS come obbligatorio fuori dalla demo, valutare `maxAge` più corto + `sessionVersion` verificata in `jwt-active-check` per rendere logout/deattivazione revocanti.
 
+### D-D — Residuo H1: CPU-exhaustion via rotazione identificativo in deployment senza proxy fidato (CWE-307) [review F2]
+Il lockout H1 blocca il guessing focalizzato per-account (10 fail/identifier) e per-IP (30 fail/IP). Ma in deployment **direct-IP / senza reverse proxy fidato** (`meta.ip` null), un attaccante che ruota un'email casuale a ogni richiesta tiene ogni contatore per-identifier ~0 → ogni tentativo esegue comunque un `verifyPassword` Argon2id → CPU-exhaustion non autenticato + crescita illimitata di `LoginAttempt`. **Bounded in produzione dietro un reverse proxy TLS** (il cap per-IP 30/finestra si applica). Chiusura piena = rate-limit globale/proof-of-work o WAF davanti al login; non aggiunto qui per non introdurre un lockout-di-tutti sotto attacco. Raccomandazione: esporre il login solo dietro proxy fidato che imposta l'IP client reale.
+
+---
+
+## Esito review adversarial (Opus 4.8) + remediation
+
+Review adversarial sull'intero batch (`77ee7a5..HEAD`):
+
+- **Verificati corretti e completi**: H3 (tracciati tutti i 12 endpoint idempotenti, non solo i 3 patchati), M1 (fingerprint stabile, params include l'id URL), M2 (AES-GCM/HKDF, passthrough legacy sicuro), M4 (skip `NEXT_PHASE=phase-production-build` corretto, nessun buco prod), H2 (ruoli refreshati e cablati). CSV, docker bind, `method="post"` corretti.
+- **Remediati in questo commit**:
+  - **F1** (M5): il cap sul body non si fidava più del solo `Content-Length` (bypassabile via chunked/HTTP2) — ora `readJsonBodyCapped` legge lo stream con un tetto rigido di byte.
+  - **F3** (H5): la rotazione `x-forwarded-for` permetteva ancora relay email illimitato verso un indirizzo scelto — aggiunto un cap **per-destinatario** (`PPR_PER_EMAIL_RATE_LIMIT_MAX`, case-insensitive), indipendente dall'IP.
+  - **F4** (L1): la guardia SSRF ora rifiuta IPv4-mapped IPv6 (`::ffff:…`), loopback espanso, `::`, `0.0.0.0`, link-local `fe80::/10`, e i literal numerici decimale/hex (`2130706433`, `0x…`).
+  - Corretto il commento H1 che sovra-dichiarava l'equivalenza di timing del path locked.
+- **Residui documentati** (non difetti): D-D (F2 sopra); degrade-catch ampio in accounts/flights (accettato — l'attore vede già quei dati); CSP non contiene XSS di script (`'unsafe-inline'` necessario senza nonce — i veri guadagni sono clickjacking/nosniff/referrer); rotazione `AUTH_SECRET` invalida le password SMTP cifrate (fail-closed, nessun leak); guardia seed solo su `NODE_ENV`.
+
 ---
 
 ## DISMISS

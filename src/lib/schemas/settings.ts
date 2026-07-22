@@ -107,6 +107,7 @@ function isPrivateIpv4(host: string): boolean {
   if (octets.some((octet) => octet > 255)) return false; // not a valid IPv4 literal — not this check's concern
   const [a, b] = octets;
   return (
+    a === 0 || // 0.0.0.0/8 "this host" (0.0.0.0 routes to loopback on connect)
     a === 127 || // 127.0.0.0/8 loopback
     a === 10 || // 10.0.0.0/8 private
     (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12 private
@@ -116,9 +117,21 @@ function isPrivateIpv4(host: string): boolean {
 }
 
 function isPrivateIpv6(host: string): boolean {
-  if (host === '::1') return true; // loopback
-  const firstGroup = host.split(':')[0] ?? '';
-  return /^f[cd][0-9a-f]{0,2}$/.test(firstGroup); // fc00::/7 unique local
+  const h = host.split('%')[0] ?? host; // drop any zone id
+  if (h === '::1' || h === '::') return true; // loopback / unspecified
+  // IPv4-mapped (::ffff:a.b.c.d) — defer to the IPv4 check (review F4).
+  const mapped = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(h);
+  if (mapped?.[1]) return isPrivateIpv4(mapped[1]);
+  const groups = h.split(':');
+  // Fully-expanded loopback / unspecified (0:0:0:0:0:0:0:0|1).
+  if (groups.length === 8 && groups.slice(0, 7).every((g) => /^0+$/.test(g)) && /^0*1?$/.test(groups[7] ?? '')) {
+    return true;
+  }
+  const firstGroup = groups[0] ?? '';
+  return (
+    /^f[cd][0-9a-f]{0,2}$/.test(firstGroup) || // fc00::/7 unique-local
+    /^fe[89ab][0-9a-f]?$/.test(firstGroup) // fe80::/10 link-local
+  );
 }
 
 function isDisallowedSmtpHost(host: string): boolean {
@@ -127,6 +140,10 @@ function isDisallowedSmtpHost(host: string): boolean {
     return false;
   }
   if (normalized === 'localhost') return true;
+  // Non-dotted numeric literals that a socket still resolves to an address
+  // (decimal 2130706433 = 127.0.0.1, or any 0x… hex form) are never a
+  // legitimate SMTP hostname — reject outright (review F4).
+  if (/^\d+$/.test(normalized) || /^0x/.test(normalized)) return true;
   return normalized.includes(':') ? isPrivateIpv6(normalized) : isPrivateIpv4(normalized);
 }
 

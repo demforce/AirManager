@@ -91,10 +91,73 @@ const IDEMPOTENCY_REPLAYED_HEADER = 'Idempotency-Replayed';
  * `request.json()` below buffers the entire body before Zod ever sees it —
  * unbounded, that is an unauthenticated memory-pressure DoS on any POST
  * route. Every `bodySchema` in this codebase is small; 64 KB is generous
- * headroom over the largest of them. Checked against `Content-Length` only
- * (no streaming byte-count) — simplest sufficient guard per the finding.
+ * headroom over the largest of them. Enforced by streaming the body with a
+ * hard ceiling ({@link readJsonBodyCapped}) — `Content-Length` alone is
+ * insufficient, since an attacker can omit it (chunked / HTTP2) and stream
+ * an unbounded body.
  */
 const MAX_BODY_BYTES = 64 * 1024;
+
+type CappedBody = { tooLarge: true } | { tooLarge: false; value: unknown };
+
+/**
+ * Reads and JSON-parses the request body while never buffering more than
+ * `maxBytes` (finding M5, review F1). A too-large `Content-Length` is
+ * rejected up front (fast path for honest clients); otherwise the body
+ * stream is read chunk-by-chunk and aborted the moment the running total
+ * exceeds the ceiling, so a missing/lying header cannot force an unbounded
+ * allocation. A malformed JSON body parses to `null` (same as the previous
+ * `request.json().catch(() => null)`), leaving the Zod schema to 422 it.
+ */
+async function readJsonBodyCapped(request: NextRequest, maxBytes: number): Promise<CappedBody> {
+  const contentLengthHeader = request.headers.get('content-length');
+  const contentLength = contentLengthHeader === null ? null : Number(contentLengthHeader);
+  if (contentLength !== null && Number.isFinite(contentLength) && contentLength > maxBytes) {
+    return { tooLarge: true };
+  }
+
+  const stream = request.body;
+  if (!stream) {
+    // No readable stream (e.g. a mocked request): fall back to the buffered
+    // read — bounded in practice by the Content-Length check above.
+    const value: unknown = await request.json().catch(() => null);
+    return { tooLarge: false, value };
+  }
+
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return { tooLarge: true };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (total === 0) return { tooLarge: false, value: null };
+  const buffer = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  let value: unknown = null;
+  try {
+    value = JSON.parse(new TextDecoder().decode(buffer));
+  } catch {
+    value = null;
+  }
+  return { tooLarge: false, value };
+}
 
 /**
  * Deterministic JSON stringify for {@link computeRequestFingerprint} (M1):
@@ -316,24 +379,20 @@ export function apiRoute<
 
       let body: TBody = undefined as TBody;
       if (bodySchema) {
-        // M5: reject an oversized body BEFORE `request.json()` buffers it —
-        // that call has no size cap of its own, so an unbounded body is an
-        // unauthenticated memory-pressure DoS. `Content-Length` is
-        // client-supplied and can be absent/wrong, but every legitimate
-        // caller of these small JSON schemas sends it accurately; a check
-        // here is the simplest sufficient guard (finding M5, no streaming
-        // byte-count needed).
-        const contentLengthHeader = request.headers.get('content-length');
-        const contentLength = contentLengthHeader === null ? null : Number(contentLengthHeader);
-        if (contentLength !== null && Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
+        // M5: cap the body BEFORE it is fully buffered — `request.json()` has
+        // no size limit of its own, so an unbounded body is an
+        // unauthenticated memory-pressure DoS. `readJsonBodyCapped` streams
+        // with a hard byte ceiling instead of trusting `Content-Length`
+        // (which an attacker can omit entirely under chunked/HTTP2).
+        const capped = await readJsonBodyCapped(request, MAX_BODY_BYTES);
+        if (capped.tooLarge) {
           return NextResponse.json(
             errorEnvelope('PAYLOAD_TOO_LARGE', `Request body exceeds the ${MAX_BODY_BYTES}-byte limit.`),
             { status: 413 },
           );
         }
 
-        const raw: unknown = await request.json().catch(() => null);
-        const parsed = bodySchema.safeParse(raw);
+        const parsed = bodySchema.safeParse(capped.value);
         if (!parsed.success) {
           return validationErrorResponse(parsed.error);
         }

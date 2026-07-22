@@ -54,6 +54,7 @@ const {
   toPprRequestDto,
   PPR_RATE_LIMIT_MAX,
   PPR_NO_IP_RATE_LIMIT_MAX,
+  PPR_PER_EMAIL_RATE_LIMIT_MAX,
 } = await import('./ppr.service');
 const { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } = await import('./errors');
 
@@ -71,6 +72,11 @@ const queryRawMock = vi.mocked(prisma.$queryRaw);
 // fixtures ambiguous (same workaround as `cash.service.test.ts`).
 type Fixture = Record<string, unknown>;
 const pprCount = countMock as unknown as { mockResolvedValue: (v: number) => void };
+// Queue a single count() result (for tests that need the per-IP/null-IP and
+// per-email count calls to return different values in sequence).
+const countOnce = (v: number): void => {
+  (countMock as unknown as { mockResolvedValueOnce: (n: number) => void }).mockResolvedValueOnce(v);
+};
 const pprCreate = createMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const pprFindMany = findManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const pprUpdate = updateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
@@ -325,12 +331,40 @@ describe('ppr.service (story 8.1)', () => {
     });
 
     it('global no-IP fallback (H5 fix): a request under PPR_NO_IP_RATE_LIMIT_MAX is allowed', async () => {
-      pprCount.mockResolvedValue(PPR_NO_IP_RATE_LIMIT_MAX - 1);
+      // 1st count = null-IP bucket (just under cap); 2nd = per-email cap
+      // (review F3), left at the beforeEach default (0, under its limit).
+      countOnce(PPR_NO_IP_RATE_LIMIT_MAX - 1);
       const input = baseInput();
       pprCreate.mockResolvedValue(createdRow(input));
 
       await expect(createPprRequest(input, { ip: null })).resolves.toEqual({ status: 'PENDING' });
       expect(createMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('per-recipient cap (review F3): the 6th request for the same email is rejected even from a fresh IP — closes the x-forwarded-for-rotation email relay', async () => {
+      // 1st count = per-IP bucket (under cap, simulating a rotated fresh IP);
+      // 2nd count = per-email bucket at its limit → 429, no row created.
+      countOnce(0);
+      countOnce(PPR_PER_EMAIL_RATE_LIMIT_MAX);
+      const input = baseInput();
+
+      await expect(createPprRequest(input, { ip: '198.51.100.9' })).rejects.toBeInstanceOf(RateLimitError);
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    it('per-recipient cap queries public rows for the same email, case-insensitive, in the window', async () => {
+      const input = baseInput();
+      pprCreate.mockResolvedValue(createdRow(input));
+
+      await createPprRequest(input, { ip: '198.51.100.9' });
+
+      expect(countMock).toHaveBeenCalledWith({
+        where: {
+          email: { equals: input.email, mode: 'insensitive' },
+          createdByUserId: null,
+          createdAt: { gt: expect.any(Date) },
+        },
+      });
     });
 
     it('global no-IP fallback (H5 fix): a null-IP flood at PPR_NO_IP_RATE_LIMIT_MAX is rejected with a 429, no row created — closes the "omit the header" bypass', async () => {
