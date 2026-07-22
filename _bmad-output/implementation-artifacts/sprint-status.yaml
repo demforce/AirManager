@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-20 (story 12.13 DONE — EPIC 12 COMPLETO. Sweep di rimozione (~40 file), review Opus DOPPIA (2 run indipendenti convergenti, redo su richiesta utente): F1 dark-theme legacy fixato, F2 card Categorie di cassa in Impostazioni (decisione PO), F3 potatura wire contract RATIFICATA; full CI=1 build prod 232/232, 1345 unit. Prossimo: push+PR unica (utente), poi nuovo epic in nuova sessione)
+last_updated: 2026-07-22 (EPIC 13 APERTO — punch-list feedback utente post-Epic 12, 10 story pianificate, branch epic-13-ui-feedback stacked su epic-12-airops-ui (PR #20 ancora open). Piano: docs/superpowers/plans/2026-07-22-epic-13-ui-feedback.md. 4 ratifiche epic-level acquisite: sospesi visibili con badge, ratings a chip, storici aereo 5+espandi, ritiro stack legacy Tailwind/Geist/TanStack)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -144,6 +144,21 @@ development_status:
   12-12-panoramica-landing-ruoli: done
   12-13-rimozioni-cleanup-sweep: done
   epic-12-retrospective: optional
+
+  # Epic 13: UI feedback batch post-Epic 12 (punch-list utente 2026-07-22, ~36 item + 4 ratifiche epic-level)
+  # Piano: docs/superpowers/plans/2026-07-22-epic-13-ui-feedback.md
+  epic-13: in-progress
+  13-1-piloti-backend-ratings-medical-create: backlog
+  13-2-piloti-ui-form-unico: backlog
+  13-3-scheda-persona-estratto-conto-ritiro-legacy: backlog
+  13-4-flotta-toggle-storici-owner: backlog
+  13-5-polish-tabelle-billing-logbook-expiries: backlog
+  13-6-ppr-movimenti: backlog
+  13-7-pianificazione: backlog
+  13-8-shell-misc: backlog
+  13-9-dark-theme-pass: backlog
+  13-10-mobile-pass: backlog
+  epic-13-retrospective: optional
 
 action_items:
   - epic: 12
