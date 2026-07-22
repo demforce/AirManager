@@ -5,17 +5,20 @@ import { prisma } from '@/server/db/prisma';
 export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 /**
- * Re-verifies `User.isActive` against the DB at most once every
- * `ACTIVE_RECHECK_INTERVAL_MS`, using `token.lastActiveCheck` as the
+ * Re-verifies `User.isActive` and `User.roles` against the DB at most once
+ * every `ACTIVE_RECHECK_INTERVAL_MS`, using `token.lastActiveCheck` as the
  * watermark. Node runtime only (`auth.ts`) — never called from
  * `src/proxy.ts`'s `getToken` read, which has no Prisma access.
  *
- * Returns the token unchanged (refreshing `lastActiveCheck`) when the check
- * is not due yet, or the user is still active. Returns `null` when the
- * recheck finds the user deactivated or gone: `@auth/core`'s `jwt` callback
- * contract treats a `null` return as "end the session" (the session cookie
- * is cleared — see `@auth/core`'s `session` action), which is exactly how a
- * deactivated user's existing session decays without waiting for expiry.
+ * Returns the token unchanged when the check is not due yet. Once due,
+ * returns the token with `lastActiveCheck` refreshed and `roles` overwritten
+ * from the DB for a still-active user — this is how a role change made by an
+ * admin propagates to an already signed-in session without waiting for the
+ * JWT to expire (CWE-613). Returns `null` when the recheck finds the user
+ * deactivated or gone: `@auth/core`'s `jwt` callback contract treats a `null`
+ * return as "end the session" (the session cookie is cleared — see
+ * `@auth/core`'s `session` action), which is exactly how a deactivated
+ * user's existing session decays without waiting for expiry.
  */
 export async function applyActiveRecheck(token: JWT, now: number = Date.now()): Promise<JWT | null> {
   const lastCheck = token.lastActiveCheck ?? 0;
@@ -25,13 +28,14 @@ export async function applyActiveRecheck(token: JWT, now: number = Date.now()): 
 
   const user = await prisma.user.findUnique({
     where: { id: token.userId },
-    select: { isActive: true },
+    select: { isActive: true, roles: true },
   });
 
   if (!user || !user.isActive) {
     return null;
   }
 
+  token.roles = user.roles;
   token.lastActiveCheck = now;
   return token;
 }

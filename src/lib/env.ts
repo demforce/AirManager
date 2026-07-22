@@ -1,29 +1,66 @@
 import { z } from 'zod';
 
+// The .env.example placeholders — booting production with either of these
+// would mean a known, public secret signs sessions or authorizes jobs.
+const PLACEHOLDER_AUTH_SECRET = 'replace-with-a-random-32-byte-secret';
+const PLACEHOLDER_JOBS_SECRET = 'dev-jobs-secret-change-me';
+
 /**
  * Server-side environment schema. Validated eagerly (see below) so a
  * misconfigured deployment fails fast at boot instead of surfacing as an
  * obscure runtime error deep inside a request handler.
  */
-export const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DATABASE_URL: z.url({ error: 'DATABASE_URL must be a valid connection string' }),
-  // Auth.js v5 — signs/encrypts the JWT session cookie. Generate with `npx auth secret`.
-  AUTH_SECRET: z.string().min(1, { error: 'AUTH_SECRET is required' }),
-  // Password for the demo admin user created by `prisma/seed.ts` (dev/test only).
-  SEED_ADMIN_PASSWORD: z.string().min(1, { error: 'SEED_ADMIN_PASSWORD is required' }),
-  // Base URL used to build absolute links in emails (invite/reset). Story 1.4.
-  APP_URL: z.url({ error: 'APP_URL must be a valid URL' }).default('http://localhost:3000'),
-  // SMTP transport for the MailSender adapter (story 1.4) — Mailpit in dev/test.
-  SMTP_HOST: z.string().min(1).default('localhost'),
-  SMTP_PORT: z.coerce.number().int().positive().default(1025),
-  MAIL_FROM: z.string().min(1).default('AirManager <no-reply@airmanager.local>'),
-  // Bearer token for POST /api/v1/jobs/* (story 6.3, AD-9). Deliberately
-  // OPTIONAL here (no default) so a deployment that forgot to set it still
-  // boots normally — only the job route itself answers 500 for a missing
-  // secret (Contesto: "mai fallback insicuro"), never the whole app.
-  JOBS_SECRET: z.string().min(1).optional(),
-});
+export const envSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    DATABASE_URL: z.url({ error: 'DATABASE_URL must be a valid connection string' }),
+    // Auth.js v5 — signs/encrypts the JWT session cookie. Generate with `npx auth secret`.
+    AUTH_SECRET: z.string().min(32, { error: 'AUTH_SECRET must be at least 32 characters' }),
+    // Password for the demo admin user created by `prisma/seed.ts` /
+    // `prisma/seed-demo.ts` (dev/test only — both scripts refuse to run
+    // when NODE_ENV=production, so this is never required in prod).
+    SEED_ADMIN_PASSWORD: z.string().min(1).optional(),
+    // Base URL used to build absolute links in emails (invite/reset). Story 1.4.
+    APP_URL: z.url({ error: 'APP_URL must be a valid URL' }).default('http://localhost:3000'),
+    // SMTP transport for the MailSender adapter (story 1.4) — Mailpit in dev/test.
+    SMTP_HOST: z.string().min(1).default('localhost'),
+    SMTP_PORT: z.coerce.number().int().positive().default(1025),
+    MAIL_FROM: z.string().min(1).default('AirManager <no-reply@airmanager.local>'),
+    // Bearer token for POST /api/v1/jobs/* (story 6.3, AD-9). Deliberately
+    // OPTIONAL here (no default) so a deployment that forgot to set it still
+    // boots normally — only the job route itself answers 500 for a missing
+    // secret (Contesto: "mai fallback insicuro"), never the whole app.
+    JOBS_SECRET: z.string().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    // Public placeholders from .env.example must never boot in production —
+    // a known secret would let an attacker forge sessions (AUTH_SECRET) or
+    // call the jobs API (JOBS_SECRET). Dev/test keep booting with them.
+    //
+    // Enforce at production RUNTIME only, not during `next build`: the Next
+    // CLI forces NODE_ENV=production for the build too (page-data collection
+    // imports this module), so a local/CI build with the placeholder .env
+    // would otherwise fail. `NEXT_PHASE === 'phase-production-build'` marks
+    // the build; a real `next start` never carries it, so the guard still
+    // fires when the server actually boots to serve traffic.
+    if (value.NODE_ENV !== 'production') return;
+    if (process.env.NEXT_PHASE === 'phase-production-build') return;
+
+    if (value.AUTH_SECRET === PLACEHOLDER_AUTH_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AUTH_SECRET'],
+        message: 'AUTH_SECRET is still the .env.example placeholder — set a real secret in production',
+      });
+    }
+    if (value.JOBS_SECRET === PLACEHOLDER_JOBS_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['JOBS_SECRET'],
+        message: 'JOBS_SECRET is still the .env.example placeholder — set a real secret in production',
+      });
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 

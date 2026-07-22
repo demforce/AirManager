@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CreateManualPprRequestInput, CreatePprRequestInput } from '@/lib/schemas/ppr';
 
+// `app-settings.service.ts` (imported below, real — only its Prisma calls
+// are mocked) now imports `secret-box.ts` for the SMTP password encryption
+// (CWE-312 fix), which reads `AUTH_SECRET` from `@/lib/env` — same "mock
+// env, don't load the real schema" convention as `auth-tokens.service.test.ts`.
+vi.mock('@/lib/env', () => ({ env: { AUTH_SECRET: 'test-auth-secret-not-real-0123456789' } }));
+
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
     pprRequest: {
@@ -47,6 +53,7 @@ const {
   cancelPprRequest,
   toPprRequestDto,
   PPR_RATE_LIMIT_MAX,
+  PPR_NO_IP_RATE_LIMIT_MAX,
 } = await import('./ppr.service');
 const { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } = await import('./errors');
 
@@ -217,14 +224,16 @@ describe('ppr.service (story 8.1)', () => {
       expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'mario@example.com', subject: 'Receipt subject (en)' }));
     });
 
-    it('a null IP (no x-forwarded-for) skips the rate-limit query entirely and still creates the row', async () => {
+    it('a null IP (no x-forwarded-for) is checked against the shared global fallback bucket (H5 fix) and still creates the row under the cap', async () => {
       const input = baseInput();
       pprCreate.mockResolvedValue(createdRow(input));
 
       const result = await createPprRequest(input, { ip: null });
 
       expect(result).toEqual({ status: 'PENDING' });
-      expect(countMock).not.toHaveBeenCalled();
+      expect(countMock).toHaveBeenCalledWith({
+        where: { submitterIp: null, createdByUserId: null, createdAt: { gt: expect.any(Date) } },
+      });
       expect(createMock).toHaveBeenCalledWith({ data: expect.objectContaining({ submitterIp: null }) });
     });
 
@@ -273,6 +282,17 @@ describe('ppr.service (story 8.1)', () => {
       expect(result).toEqual({ status: 'PENDING' });
       expect(countMock).not.toHaveBeenCalled();
     });
+
+    it('runs BEFORE the global no-IP fallback too: a honeypot hit with no IP short-circuits even at that limit', async () => {
+      pprCount.mockResolvedValue(PPR_NO_IP_RATE_LIMIT_MAX);
+      const input = baseInput({ website: 'https://spam.example' });
+
+      const result = await createPprRequest(input, { ip: null });
+
+      expect(result).toEqual({ status: 'PENDING' });
+      expect(countMock).not.toHaveBeenCalled();
+      expect(createMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('rate limit (AC 2)', () => {
@@ -301,6 +321,34 @@ describe('ppr.service (story 8.1)', () => {
 
       expect(countMock).toHaveBeenCalledWith({
         where: { submitterIp: '203.0.113.5', createdAt: { gt: expect.any(Date) } },
+      });
+    });
+
+    it('global no-IP fallback (H5 fix): a request under PPR_NO_IP_RATE_LIMIT_MAX is allowed', async () => {
+      pprCount.mockResolvedValue(PPR_NO_IP_RATE_LIMIT_MAX - 1);
+      const input = baseInput();
+      pprCreate.mockResolvedValue(createdRow(input));
+
+      await expect(createPprRequest(input, { ip: null })).resolves.toEqual({ status: 'PENDING' });
+      expect(createMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('global no-IP fallback (H5 fix): a null-IP flood at PPR_NO_IP_RATE_LIMIT_MAX is rejected with a 429, no row created — closes the "omit the header" bypass', async () => {
+      pprCount.mockResolvedValue(PPR_NO_IP_RATE_LIMIT_MAX);
+      const input = baseInput();
+
+      await expect(createPprRequest(input, { ip: null })).rejects.toBeInstanceOf(RateLimitError);
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    it('global no-IP fallback queries rows with submitterIp: null AND createdByUserId: null — a staff-entered manual PPR row must not eat into the public bucket', async () => {
+      const input = baseInput();
+      pprCreate.mockResolvedValue(createdRow(input));
+
+      await createPprRequest(input, { ip: null });
+
+      expect(countMock).toHaveBeenCalledWith({
+        where: { submitterIp: null, createdByUserId: null, createdAt: { gt: expect.any(Date) } },
       });
     });
   });

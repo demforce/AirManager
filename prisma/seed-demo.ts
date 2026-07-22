@@ -242,6 +242,10 @@ const EXPIRIES: ExpiryPlan[] = [
 // --- main -------------------------------------------------------------------
 
 async function main(): Promise<void> {
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error('Demo seed: refusing to run with NODE_ENV=production (creates a demo admin with a known password).');
+  }
+
   const seedPassword = process.env['SEED_ADMIN_PASSWORD'];
   if (!seedPassword) {
     throw new Error('Seed: SEED_ADMIN_PASSWORD must be set (see .env.example).');

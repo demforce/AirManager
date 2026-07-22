@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Actor } from '@/server/auth/rbac';
+import { decryptSecret, encryptSecret } from '@/server/crypto/secret-box';
 import { ForbiddenError } from './errors';
+
+// `secret-box.ts` (imported by `app-settings.service.ts` for the SMTP
+// password encryption, CWE-312 fix) reads `AUTH_SECRET` from `@/lib/env` at
+// call time — same "mock env, don't load the real schema" convention as
+// `auth-tokens.service.test.ts`.
+vi.mock('@/lib/env', () => ({ env: { AUTH_SECRET: 'test-auth-secret-not-real-0123456789' } }));
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
@@ -494,6 +501,32 @@ describe('app-settings.service — SMTP settings (story 12.11, AC 1/2)', () => {
     ]);
 
     await expect(getSmtpSettingsForMailer()).resolves.toMatchObject({ host: 'smtp.example.com', pass: 'secret' });
+  });
+
+  it('setSmtpSettings ENCRYPTS the password before writing (CWE-312 fix) — the stored value is not the plaintext, and decrypts back to it', async () => {
+    upsert.mockResolvedValue({});
+    transaction.mockResolvedValue([{}, {}, {}, {}, {}, {}]);
+    findMany.mockResolvedValue([]);
+
+    await setSmtpSettings(adminActor(), { ...SMTP_INPUT, pass: 'a-real-password' });
+
+    const passUpsertCall = upsertMock.mock.calls.find((call) => (call[0] as { where: { key: string } }).where.key === 'smtp.pass');
+    const storedValue = (passUpsertCall?.[0] as { update: { value: string } }).update.value;
+
+    expect(storedValue).not.toBe('a-real-password');
+    expect(decryptSecret(storedValue)).toBe('a-real-password');
+  });
+
+  it('getSmtpSettingsForMailer decrypts an encrypted stored password back to the original plaintext', async () => {
+    findMany.mockResolvedValue([{ key: 'smtp.pass', value: encryptSecret('a-real-password') }]);
+
+    await expect(getSmtpSettingsForMailer()).resolves.toMatchObject({ pass: 'a-real-password' });
+  });
+
+  it('getSmtpSettingsForMailer passes a LEGACY cleartext stored password through unchanged (rows written before the CWE-312 fix)', async () => {
+    findMany.mockResolvedValue([{ key: 'smtp.pass', value: 'legacy-cleartext-password' }]);
+
+    await expect(getSmtpSettingsForMailer()).resolves.toMatchObject({ pass: 'legacy-cleartext-password' });
   });
 });
 

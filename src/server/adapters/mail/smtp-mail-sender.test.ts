@@ -38,6 +38,8 @@ describe('SmtpMailSender (story 12.11, AC 1)', () => {
     expect(createTransportMock).toHaveBeenCalledWith(
       expect.objectContaining({ host: 'localhost', port: 1025, secure: false, requireTLS: false, auth: undefined }),
     );
+    // CWE-918 defense-in-depth: a black-holed/unreachable host must fail fast, not hang.
+    expect(createTransportMock).toHaveBeenCalledWith(expect.objectContaining({ connectionTimeout: 10_000, greetingTimeout: 10_000 }));
     expect(sendMailMock).toHaveBeenCalledWith(
       expect.objectContaining({ from: 'AirManager <no-reply@airmanager.local>', to: 'x@example.com' }),
     );

@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { generateOpenApiDocument } from './registry';
+import { describe, expect, it, vi } from 'vitest';
+
+// `settings.ts` (SMTP host SSRF check, CWE-918 fix) imports `@/lib/env` for
+// its `smtpSettingsInputSchema` refine — same "mock env, don't load the real
+// schema" convention as every other test that transitively touches
+// `@/lib/env` (e.g. `auth-tokens.service.test.ts`).
+vi.mock('@/lib/env', () => ({ env: { SMTP_HOST: 'localhost' } }));
+
+const { generateOpenApiDocument } = await import('./registry');
 
 describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
   const doc = generateOpenApiDocument();

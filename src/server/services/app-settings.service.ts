@@ -8,6 +8,7 @@ import type {
   SmtpSettingsInput,
 } from '@/lib/schemas/settings';
 import { authorize, type Actor } from '@/server/auth/rbac';
+import { decryptSecret, encryptSecret } from '@/server/crypto/secret-box';
 import { prisma } from '@/server/db/prisma';
 
 /**
@@ -308,6 +309,9 @@ export async function setSchedulingSettings(actor: Actor, input: SchedulingSetti
 // (Contesto: "NIENTE nuove env var"). `pass` is WRITE-ONLY (AC 1): stored
 // like every other key, but NEVER read back through the actor-facing getter
 // below — only {@link getSmtpSettingsForMailer} (internal, no `Actor`) sees it.
+// CWE-312 fix: `pass` is encrypted at rest (`encryptSecret`, AES-256-GCM —
+// see `secret-box.ts`) and decrypted ONLY inside `getSmtpSettingsForMailer`
+// (`decryptSecret`, which passes a legacy cleartext row through unchanged).
 
 const SMTP_HOST_KEY = 'smtp.host';
 const SMTP_PORT_KEY = 'smtp.port';
@@ -364,8 +368,13 @@ export async function setSmtpSettings(actor: Actor, input: SmtpSettingsInput): P
     prisma.appSetting.upsert({ where: { key: SMTP_FROM_KEY }, update: { value: input.from }, create: { key: SMTP_FROM_KEY, value: input.from } }),
   ];
   if (input.pass) {
+    const encryptedPass = encryptSecret(input.pass);
     writes.push(
-      prisma.appSetting.upsert({ where: { key: SMTP_PASS_KEY }, update: { value: input.pass }, create: { key: SMTP_PASS_KEY, value: input.pass } }),
+      prisma.appSetting.upsert({
+        where: { key: SMTP_PASS_KEY },
+        update: { value: encryptedPass },
+        create: { key: SMTP_PASS_KEY, value: encryptedPass },
+      }),
     );
   }
 
@@ -391,13 +400,14 @@ export async function getSmtpSettingsForMailer(): Promise<{
   const rows = await prisma.appSetting.findMany({ where: { key: { in: [...SMTP_KEYS] } }, select: { key: true, value: true } });
   const byKey = new Map(rows.map((row) => [row.key, row.value]));
   const security = byKey.get(SMTP_SECURITY_KEY);
+  const storedPass = byKey.get(SMTP_PASS_KEY);
 
   return {
     host: byKey.get(SMTP_HOST_KEY) ?? null,
     port: parseStoredInt(byKey.get(SMTP_PORT_KEY)),
     security: isSmtpSecurity(security) ? security : null,
     user: byKey.get(SMTP_USER_KEY) ?? null,
-    pass: byKey.get(SMTP_PASS_KEY) ?? null,
+    pass: storedPass !== undefined ? decryptSecret(storedPass) : null,
     from: byKey.get(SMTP_FROM_KEY) ?? null,
   };
 }

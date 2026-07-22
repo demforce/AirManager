@@ -1,3 +1,4 @@
+import { env } from '@/lib/env';
 import { z } from './zod-with-openapi';
 
 // --- Airfield branding (story 10.2, AC 1) -----------------------------------
@@ -79,8 +80,65 @@ export const smtpSecuritySchema = z.enum(['NONE', 'STARTTLS', 'SSL_TLS']);
 
 export type SmtpSecurityDto = z.infer<typeof smtpSecuritySchema>;
 
+/**
+ * CWE-918 (SSRF) fix — `host` is an outbound connection target an admin can
+ * freely type, so literal private/loopback/link-local/metadata addresses are
+ * rejected. Only LITERAL IPs and the `localhost` alias are checked (no DNS
+ * resolution here — Zod validation must stay synchronous); a hostname that
+ * *resolves* to an internal address at connect time is a separate, unhandled
+ * class of SSRF this fix does not claim to close.
+ *
+ * `localhost` is exempted when it matches `env.SMTP_HOST` (the mailer's own
+ * existing, deploy-operator-controlled fallback target — Mailpit in dev/test,
+ * see `smtp-mail-sender.ts`): the settings e2e suite configures `smtp.host`
+ * to `'localhost'` through this exact schema to verify a real send via
+ * Mailpit (`e2e/settings.spec.ts`), and `next start`'s production mode in CI
+ * makes a `NODE_ENV`-based dev/test carve-out unreliable. Allowing the
+ * settings value to match the already-trusted env fallback adds no new SSRF
+ * surface — the mailer would reach that exact host via the env fallback
+ * regardless of this field.
+ */
+const IPV4_PATTERN = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+
+function isPrivateIpv4(host: string): boolean {
+  const match = IPV4_PATTERN.exec(host);
+  if (!match) return false;
+  const octets = match.slice(1, 5).map(Number);
+  if (octets.some((octet) => octet > 255)) return false; // not a valid IPv4 literal — not this check's concern
+  const [a, b] = octets;
+  return (
+    a === 127 || // 127.0.0.0/8 loopback
+    a === 10 || // 10.0.0.0/8 private
+    (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12 private
+    (a === 192 && b === 168) || // 192.168.0.0/16 private
+    (a === 169 && b === 254) // 169.254.0.0/16 link-local, incl. the 169.254.169.254 cloud metadata address
+  );
+}
+
+function isPrivateIpv6(host: string): boolean {
+  if (host === '::1') return true; // loopback
+  const firstGroup = host.split(':')[0] ?? '';
+  return /^f[cd][0-9a-f]{0,2}$/.test(firstGroup); // fc00::/7 unique local
+}
+
+function isDisallowedSmtpHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  if (normalized === env.SMTP_HOST.trim().toLowerCase()) {
+    return false;
+  }
+  if (normalized === 'localhost') return true;
+  return normalized.includes(':') ? isPrivateIpv6(normalized) : isPrivateIpv4(normalized);
+}
+
 export const smtpSettingsInputSchema = z.object({
-  host: z.string().trim().min(1).max(255),
+  host: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .refine((host) => !isDisallowedSmtpHost(host), {
+      message: 'host must not be a private, loopback, link-local, or metadata address.',
+    }),
   port: z.number().int().min(1).max(65535),
   security: smtpSecuritySchema,
   user: z.string().trim().max(255),

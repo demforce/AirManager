@@ -30,7 +30,18 @@ export class SmtpMailSender implements MailSender {
     const requireTLS = settings.security === 'STARTTLS';
     const auth = settings.user && settings.pass ? { user: settings.user, pass: settings.pass } : undefined;
 
-    const transporter = nodemailer.createTransport({ host, port, secure, requireTLS, auth });
+    // CWE-918 (SSRF) defense-in-depth: an admin-configured host that is
+    // unreachable/black-holed (e.g. a filtered internal address) must fail
+    // fast rather than hang the request indefinitely.
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      requireTLS,
+      auth,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+    });
 
     await transporter.sendMail({
       from,

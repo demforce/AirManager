@@ -335,6 +335,10 @@ async function seedExpiryTypes(): Promise<void> {
 }
 
 async function main() {
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error('Seed: refusing to run with NODE_ENV=production (creates a demo admin with a known password).');
+  }
+
   const seedPassword = process.env['SEED_ADMIN_PASSWORD'];
   if (!seedPassword) {
     throw new Error('Seed: SEED_ADMIN_PASSWORD must be set (see .env.example).');

@@ -40,19 +40,35 @@ const PPR_CASH_CATEGORY_NAME = 'PPR';
 /** Max PPR requests accepted from the same source IP within a rolling hour (AC 2). */
 export const PPR_RATE_LIMIT_MAX = 5;
 
+/**
+ * Global fallback cap (CWE-770/H5 fix) on PPR requests with NO resolvable
+ * submitter IP, within the SAME rolling window as the per-IP limit. Without
+ * this, `extractSubmitterIp` returning `null` (no `x-forwarded-for` — the
+ * app is reachable directly by IP, no trusted proxy guaranteed) let an
+ * attacker who simply omits the header skip `PPR_RATE_LIMIT_MAX` entirely:
+ * unbounded rows plus unbounded receipt emails to an attacker-chosen
+ * address. Every no-IP request now shares ONE bucket instead. Set higher
+ * than `PPR_RATE_LIMIT_MAX`: this bucket is also hit by every legitimate
+ * no-header submitter (e.g. behind a proxy that strips the header), not
+ * just an attacker, so it only needs to bound the damage, not match the
+ * per-IP limit's tightness.
+ */
+export const PPR_NO_IP_RATE_LIMIT_MAX = 20;
+
 const PPR_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
 export type CreatePprRequestResult = { status: 'PENDING' };
 
 /**
  * Extracts the caller's IP from the `x-forwarded-for` header (first value,
- * trimmed) — `null` when the header is absent (no rate limit is applied in
- * that case, Contesto: "nessun header -> niente rate limit ma logga").
- * Trust assumption, declared: in production the reverse proxy sets this
- * header; in dev/e2e the client sets it directly. A future real deployment
- * behind a proxy that does NOT strip/overwrite client-supplied
- * `x-forwarded-for` would need hardening — out of scope here (same
- * "declared assumption" shape as `JOBS_SECRET`'s bearer check).
+ * trimmed) — `null` when the header is absent. A `null` result no longer
+ * means "no rate limit at all" (H5 fix): `createPprRequest` falls back to
+ * the shared `PPR_NO_IP_RATE_LIMIT_MAX` bucket in that case instead. Trust
+ * assumption, declared: in production the reverse proxy sets this header;
+ * in dev/e2e the client sets it directly. A future real deployment behind a
+ * proxy that does NOT strip/overwrite client-supplied `x-forwarded-for`
+ * would need hardening — out of scope here (same "declared assumption"
+ * shape as `JOBS_SECRET`'s bearer check).
  */
 export function extractSubmitterIp(forwardedFor: string | null): string | null {
   if (!forwardedFor) {
@@ -60,7 +76,7 @@ export function extractSubmitterIp(forwardedFor: string | null): string | null {
   }
   const first = forwardedFor.split(',')[0]?.trim();
   if (!first) {
-    console.warn('extractSubmitterIp: x-forwarded-for header present but empty — no rate limit applied to this request.');
+    console.warn('extractSubmitterIp: x-forwarded-for header present but empty — falling back to the shared no-IP rate limit for this request.');
     return null;
   }
   return first;
@@ -72,16 +88,26 @@ export async function createPprRequest(input: CreatePprRequestInput, meta: { ip:
     return { status: 'PENDING' };
   }
 
-  // --- Rate limit (AC 2) — a null IP (no x-forwarded-for header) skips the
-  // limit entirely rather than either blocking everyone or exempting no
-  // one (Contesto).
+  // --- Rate limit (AC 2) — per-IP when the caller has a resolvable IP;
+  // otherwise a shared global bucket (H5 fix, CWE-770) so a missing
+  // x-forwarded-for is no longer a free pass. The global bucket excludes
+  // staff-entered manual rows (`createManualPprRequest`, `createdByUserId`
+  // set) — those already skip every anti-abuse check by design and must
+  // not eat into the public endpoint's shared allowance.
+  const windowStart = new Date(Date.now() - PPR_RATE_LIMIT_WINDOW_MS);
   if (meta.ip) {
-    const windowStart = new Date(Date.now() - PPR_RATE_LIMIT_WINDOW_MS);
     const recentCount = await prisma.pprRequest.count({
       where: { submitterIp: meta.ip, createdAt: { gt: windowStart } },
     });
     if (recentCount >= PPR_RATE_LIMIT_MAX) {
       throw new RateLimitError('Too many PPR requests from this address — try again later.');
+    }
+  } else {
+    const recentCount = await prisma.pprRequest.count({
+      where: { submitterIp: null, createdByUserId: null, createdAt: { gt: windowStart } },
+    });
+    if (recentCount >= PPR_NO_IP_RATE_LIMIT_MAX) {
+      throw new RateLimitError('Too many PPR requests — try again later.');
     }
   }
 

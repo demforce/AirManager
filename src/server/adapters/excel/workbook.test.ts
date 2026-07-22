@@ -73,4 +73,15 @@ describe('buildWorkbook (story 10.1, AC 2 — Task 1)', () => {
 
     expect(workbook.getWorksheet('Sheet1')!.getRow(2).getCell(1).value).toBeNull();
   });
+
+  it('prefixes a string cell starting with a formula metacharacter with `\'` (formula-injection guard), leaving normal strings and numbers untouched', async () => {
+    const rows: Row[] = [{ name: '=HYPERLINK("http://x")', amountCents: 150000, when: '10/07/2026' }];
+    const buffer = await buildWorkbook({ sheetName: 'Sheet1', columns: COLUMNS, rows });
+    const workbook = await readBack(buffer);
+
+    const dataRow = workbook.getWorksheet('Sheet1')!.getRow(2);
+    expect(dataRow.getCell(1).value).toBe('\'=HYPERLINK("http://x")');
+    expect(dataRow.getCell(2).value).toBe(1500); // numeric column: untouched
+    expect(dataRow.getCell(3).value).toBe('10/07/2026'); // normal string: untouched
+  });
 });

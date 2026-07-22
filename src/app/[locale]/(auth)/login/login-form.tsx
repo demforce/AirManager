@@ -64,8 +64,10 @@ export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
     router.refresh();
   }
 
+  // method="post" is the no-JS fallback: without it a pre-hydration submit
+  // would be a native GET putting the credentials in the URL.
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <form method="post" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <Field label={labels.email}>
         <Input type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
       </Field>

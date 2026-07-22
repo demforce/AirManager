@@ -7,8 +7,7 @@ import { describe, expect, it } from 'vitest';
 // import throw "Invalid environment configuration: ... at NEW_VAR" — same
 // signal, the failure names the variable to align.
 process.env['DATABASE_URL'] ??= 'postgresql://test:test@localhost:5432/test?schema=public';
-process.env['AUTH_SECRET'] ??= 'test-secret';
-process.env['SEED_ADMIN_PASSWORD'] ??= 'test-password';
+process.env['AUTH_SECRET'] ??= 'test-secret-at-least-32-characters-long';
 const { envSchema } = await import('./env');
 
 // Keeps the automation aligned with the env contract: a story that adds a
@@ -25,7 +24,8 @@ const requiredKeys = Object.entries(envSchema.shape)
 describe('env contract stays in sync with CI and .env.example', () => {
   it('has the expected shape (guards the introspection itself)', () => {
     expect(requiredKeys).toContain('DATABASE_URL');
-    expect(requiredKeys.length).toBeGreaterThanOrEqual(3);
+    expect(requiredKeys).toContain('AUTH_SECRET');
+    expect(requiredKeys.length).toBeGreaterThanOrEqual(2);
   });
 
   it.each(requiredKeys)('.env.example documents %s', (key) => {

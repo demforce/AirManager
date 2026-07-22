@@ -15,9 +15,9 @@ const { applyActiveRecheck, ACTIVE_RECHECK_INTERVAL_MS } = await import('./jwt-a
 const findUniqueMock = vi.mocked(prisma.user.findUnique);
 // Prisma's overloaded `findUnique` type makes `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as me.service.test.ts) — the recheck
-// only ever selects `{ isActive }`.
+// only ever selects `{ isActive, roles }`.
 const findUnique = findUniqueMock as unknown as {
-  mockResolvedValue: (value: { isActive: boolean } | null) => void;
+  mockResolvedValue: (value: { isActive: boolean; roles: string[] } | null) => void;
 };
 
 function makeToken(overrides: Partial<JWT> = {}): JWT {
@@ -48,13 +48,13 @@ describe('applyActiveRecheck (story 1.4, AC 2 — mocked time)', () => {
   it('rechecks exactly at the interval boundary and refreshes the watermark for an active user', async () => {
     const now = 1_000_000;
     const token = makeToken({ lastActiveCheck: now - ACTIVE_RECHECK_INTERVAL_MS });
-    findUnique.mockResolvedValue({ isActive: true });
+    findUnique.mockResolvedValue({ isActive: true, roles: ['PILOT'] });
 
     const result = await applyActiveRecheck(token, now);
 
     expect(findUniqueMock).toHaveBeenCalledWith({
       where: { id: 'user_1' },
-      select: { isActive: true },
+      select: { isActive: true, roles: true },
     });
     expect(result).not.toBeNull();
     expect(result?.lastActiveCheck).toBe(now);
@@ -63,7 +63,7 @@ describe('applyActiveRecheck (story 1.4, AC 2 — mocked time)', () => {
   it('invalidates the token (returns null) when the user has been deactivated', async () => {
     const now = 1_000_000;
     const token = makeToken({ lastActiveCheck: now - ACTIVE_RECHECK_INTERVAL_MS - 1 });
-    findUnique.mockResolvedValue({ isActive: false });
+    findUnique.mockResolvedValue({ isActive: false, roles: ['PILOT'] });
 
     const result = await applyActiveRecheck(token, now);
 
@@ -83,11 +83,33 @@ describe('applyActiveRecheck (story 1.4, AC 2 — mocked time)', () => {
   it('treats a token with no prior check (lastActiveCheck 0) as immediately due for a recheck', async () => {
     const now = Date.now();
     const token = makeToken({ lastActiveCheck: 0 });
-    findUnique.mockResolvedValue({ isActive: true });
+    findUnique.mockResolvedValue({ isActive: true, roles: ['PILOT'] });
 
     const result = await applyActiveRecheck(token, now);
 
     expect(findUniqueMock).toHaveBeenCalledTimes(1);
     expect(result?.lastActiveCheck).toBe(now);
+  });
+
+  it('propagates a DB role change onto token.roles once the recheck is due', async () => {
+    const now = 1_000_000;
+    const token = makeToken({ roles: ['PILOT'], lastActiveCheck: now - ACTIVE_RECHECK_INTERVAL_MS });
+    findUnique.mockResolvedValue({ isActive: true, roles: ['ADMIN'] });
+
+    const result = await applyActiveRecheck(token, now);
+
+    expect(result).not.toBeNull();
+    expect(result?.roles).toEqual(['ADMIN']);
+  });
+
+  it('leaves token.roles unchanged when the recheck interval has not elapsed yet', async () => {
+    const now = 1_000_000;
+    const token = makeToken({ roles: ['PILOT'], lastActiveCheck: now - (ACTIVE_RECHECK_INTERVAL_MS - 1) });
+
+    const result = await applyActiveRecheck(token, now);
+
+    expect(findUniqueMock).not.toHaveBeenCalled();
+    expect(result).toBe(token);
+    expect(result?.roles).toEqual(['PILOT']);
   });
 });

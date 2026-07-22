@@ -21,6 +21,19 @@ export type ExportColumn<T> = {
 
 const DEFAULT_COLUMN_WIDTH = 18;
 
+// Leading characters that spreadsheet apps (and CSV re-imports) treat as
+// formula/command triggers — prefixing with `'` forces literal-text
+// interpretation, defusing formula injection (CWE-1236) from user-supplied
+// strings (e.g. unauthenticated public PPR fields).
+const FORMULA_TRIGGER_CHARS = new Set(['=', '+', '-', '@', '\t', '\r']);
+
+function neutralizeFormulaInjection(value: string | number | null): string | number | null {
+  if (typeof value === 'string' && FORMULA_TRIGGER_CHARS.has(value.charAt(0))) {
+    return `'${value}`;
+  }
+  return value;
+}
+
 /**
  * Builds a single-sheet `.xlsx` workbook as a `Buffer` (AC 1/2): a bold,
  * frozen header row (`views: [{ state: 'frozen', ySplit: 1 }]`) followed by
@@ -37,7 +50,7 @@ export async function buildWorkbook<T>(params: { sheetName: string; columns: Exp
   sheet.getRow(1).font = { bold: true };
 
   for (const row of params.rows) {
-    const addedRow = sheet.addRow(params.columns.map((column) => column.value(row)));
+    const addedRow = sheet.addRow(params.columns.map((column) => neutralizeFormulaInjection(column.value(row))));
     params.columns.forEach((column, index) => {
       if (column.numFmt) {
         addedRow.getCell(index + 1).numFmt = column.numFmt;
