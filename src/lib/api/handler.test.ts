@@ -416,7 +416,7 @@ describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
       );
 
       expect(idempotencyCreateMock).toHaveBeenCalledWith({
-        data: { userId: ACTOR.userId, endpoint: 'account-topup', key: 'k-1' },
+        data: { userId: ACTOR.userId, endpoint: 'account-topup', key: 'k-1', requestFingerprint: expect.any(String) },
         select: { id: true },
       });
       expect(handle).toHaveBeenCalledTimes(1);
@@ -433,6 +433,10 @@ describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
       idempotencyCreateMock.mockRejectedValue(uniqueViolation());
       idempotencyFindUniqueMock.mockResolvedValue({
         id: 'idem_1',
+        // No stored fingerprint (a row predating the M1 column) — must not
+        // be treated as a mismatch, see the "request fingerprint" describe
+        // block below for the dedicated mismatch/match coverage.
+        requestFingerprint: null,
         responseStatus: 201,
         responseBody: { id: 'created_1' },
       } as never);
@@ -533,6 +537,182 @@ describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
       expect(response.status).toBe(422);
       expect(handle).not.toHaveBeenCalled();
       expect(idempotencyCreateMock).not.toHaveBeenCalled();
+    });
+
+    describe('request fingerprint (finding M1, CWE-840 — a reused key must not replay a DIFFERENT request)', () => {
+      const bodySchema = z.object({ amountCents: z.number() });
+
+      it('replays when a retry sends the IDENTICAL body (fingerprint matches)', async () => {
+        idempotencyCreateMock.mockResolvedValueOnce({ id: 'idem_1' } as never);
+        const handle = vi.fn().mockResolvedValue({ id: 'created_1' });
+        const POST = apiRoute({ successStatus: 201, bodySchema, idempotency: { endpoint: 'account-topup' }, handle });
+        const body = JSON.stringify({ amountCents: 100 });
+
+        await POST(
+          req('http://localhost/api/v1/x', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: 'k-1' },
+            body,
+          }),
+        );
+        // Read back the fingerprint `beginIdempotentRequest` just stored —
+        // proves round-trip consistency without reimplementing the hash here.
+        const storedFingerprint = (idempotencyCreateMock.mock.calls[0]?.[0] as { data: { requestFingerprint: string } }).data
+          .requestFingerprint;
+
+        idempotencyCreateMock.mockRejectedValueOnce(uniqueViolation());
+        idempotencyFindUniqueMock.mockResolvedValueOnce({
+          id: 'idem_1',
+          requestFingerprint: storedFingerprint,
+          responseStatus: 201,
+          responseBody: { id: 'created_1' },
+        } as never);
+
+        const response = await POST(
+          req('http://localhost/api/v1/x', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: 'k-1' },
+            body,
+          }),
+        );
+
+        expect(response.status).toBe(201);
+        expect(response.headers.get('Idempotency-Replayed')).toBe('true');
+        await expect(readJson(response)).resolves.toEqual({ id: 'created_1' });
+        expect(handle).toHaveBeenCalledTimes(1);
+      });
+
+      it('answers 422 IDEMPOTENCY_KEY_MISMATCH (never replays, never calls `handle`) when the same key is reused for a DIFFERENT body', async () => {
+        idempotencyCreateMock.mockRejectedValue(uniqueViolation());
+        idempotencyFindUniqueMock.mockResolvedValue({
+          id: 'idem_1',
+          requestFingerprint: 'fingerprint-of-a-completely-different-original-request',
+          responseStatus: 201,
+          responseBody: { id: 'created_1', amountCents: 100 },
+        } as never);
+        const handle = vi.fn();
+        const POST = apiRoute({ successStatus: 201, bodySchema, idempotency: { endpoint: 'account-topup' }, handle });
+
+        const response = await POST(
+          req('http://localhost/api/v1/x', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: 'k-1' },
+            body: JSON.stringify({ amountCents: 999 }),
+          }),
+        );
+
+        expect(response.status).toBe(422);
+        const body = (await readJson(response)) as { error: { code: string } };
+        expect(body.error.code).toBe('IDEMPOTENCY_KEY_MISMATCH');
+        expect(handle).not.toHaveBeenCalled();
+        expect(idempotencyUpdateMock).not.toHaveBeenCalled();
+      });
+
+      it('still replays (fingerprint unverifiable, not a mismatch) when the stored record predates this column — backfill-safe', async () => {
+        idempotencyCreateMock.mockRejectedValue(uniqueViolation());
+        idempotencyFindUniqueMock.mockResolvedValue({
+          id: 'idem_1',
+          requestFingerprint: null,
+          responseStatus: 201,
+          responseBody: { id: 'created_1' },
+        } as never);
+        const handle = vi.fn();
+        const POST = apiRoute({ successStatus: 201, bodySchema, idempotency: { endpoint: 'account-topup' }, handle });
+
+        const response = await POST(
+          req('http://localhost/api/v1/x', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: 'k-1' },
+            body: JSON.stringify({ amountCents: 999 }),
+          }),
+        );
+
+        expect(response.status).toBe(201);
+        expect(response.headers.get('Idempotency-Replayed')).toBe('true');
+        expect(handle).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('H3 safety property (post-commit failures must never free an already-committed key)', () => {
+      it('a retry with the same key never re-executes the mutation, even when the FIRST attempt degraded (resolved, did not throw) after its own commit', async () => {
+        let mutationCount = 0;
+        const handle = vi.fn(async () => {
+          // Models the H3-fixed services (`recordAdjustment`/`registerFlight`):
+          // the money mutation "commits" here, and — thanks to the fix — the
+          // function always resolves afterwards, even if some post-commit
+          // enrichment read failed and had to degrade.
+          mutationCount += 1;
+          return { balanceCents: 100, recentMovements: [] as unknown[] };
+        });
+        const POST = apiRoute({ idempotency: { endpoint: 'account-topup' }, handle });
+        const call = () =>
+          POST(req('http://localhost/api/v1/x', { method: 'POST', headers: { [IDEMPOTENCY_KEY_HEADER]: 'k-1' } }));
+
+        idempotencyCreateMock.mockResolvedValueOnce({ id: 'idem_1' } as never);
+        const first = await call();
+
+        expect(mutationCount).toBe(1);
+        expect(idempotencyDeleteMock).not.toHaveBeenCalled();
+
+        // Retry with the SAME key: `create` now conflicts (the first attempt's
+        // record is COMPLETED, never freed) and replays instead of re-running `handle`.
+        idempotencyCreateMock.mockRejectedValueOnce(uniqueViolation());
+        idempotencyFindUniqueMock.mockResolvedValueOnce({
+          id: 'idem_1',
+          requestFingerprint: null,
+          responseStatus: 200,
+          responseBody: { balanceCents: 100, recentMovements: [] },
+        } as never);
+        const second = await call();
+
+        expect(mutationCount).toBe(1); // NOT executed a second time
+        expect(second.headers.get('Idempotency-Replayed')).toBe('true');
+        await expect(readJson(second)).resolves.toEqual(await readJson(first));
+      });
+    });
+  });
+
+  describe('request body size limit (finding M5, CWE-400 — no cap on `request.json()`)', () => {
+    beforeEach(() => {
+      getSessionActorMock.mockResolvedValue(ACTOR);
+    });
+
+    it('rejects an oversized body with 413 PAYLOAD_TOO_LARGE, without ever calling `handle`', async () => {
+      const handle = vi.fn();
+      const POST = apiRoute({ bodySchema: z.object({ amountCents: z.number() }), handle });
+      const oversizedBody = JSON.stringify({ amountCents: 1, padding: 'x'.repeat(100_000) });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', {
+          method: 'POST',
+          // `undici`'s `Request` does not auto-compute `Content-Length` from
+          // a string body in this test environment — set it explicitly,
+          // same as any real HTTP client sending a non-streamed body would.
+          headers: { 'content-type': 'application/json', 'content-length': String(oversizedBody.length) },
+          body: oversizedBody,
+        }),
+      );
+
+      expect(response.status).toBe(413);
+      const body = (await readJson(response)) as { error: { code: string } };
+      expect(body.error.code).toBe('PAYLOAD_TOO_LARGE');
+      expect(handle).not.toHaveBeenCalled();
+    });
+
+    it('accepts a body at/under the cap normally', async () => {
+      const handle = vi.fn().mockResolvedValue({ ok: true });
+      const POST = apiRoute({ bodySchema: z.object({ amountCents: z.number() }), handle });
+
+      const response = await POST(
+        req('http://localhost/api/v1/x', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ amountCents: 1 }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(handle).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -1431,16 +1431,27 @@ model ExpiryUpdateProposal {
 /// `User` FK in this schema, e.g. `AccountMovement.actorUserId`) — a `User`
 /// with idempotency history cannot be hard-deleted (there is no hard-delete
 /// path for `User` in this codebase anyway, only deactivation).
+///
+/// `requestFingerprint` (security audit 2026-07-22, finding M1): sha256 of
+/// `method + endpoint + canonical(params) + canonical(body)`, stamped on the
+/// PENDING row at creation. A P2002 conflict whose stored fingerprint
+/// differs from the incoming request's is a DIFFERENT operation reusing the
+/// same key — `apiRoute` answers `422 IDEMPOTENCY_KEY_MISMATCH` instead of
+/// replaying the first operation's response over it. Nullable/backfill-safe:
+/// a row with no stored fingerprint (pre-migration) is never treated as a
+/// mismatch, only as "unverifiable" — it still replays, same as before this
+/// column existed.
 model IdempotencyRecord {
-  id             String    @id @default(cuid())
-  userId         String
-  user           User      @relation(fields: [userId], references: [id])
-  endpoint       String
-  key            String
-  responseStatus Int?
-  responseBody   Json?
-  createdAt      DateTime  @default(now())
-  completedAt    DateTime?
+  id                 String    @id @default(cuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id])
+  endpoint           String
+  key                String
+  requestFingerprint String?
+  responseStatus     Int?
+  responseBody       Json?
+  createdAt          DateTime  @default(now())
+  completedAt        DateTime?
 
   @@unique([userId, endpoint, key])
 }

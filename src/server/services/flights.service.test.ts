@@ -747,6 +747,42 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
   });
 
+  describe('registerFlight — H3 fix (docs/security/owasp-audit-2026-07-22.md): the flight already committed by the time the post-commit account re-read runs', () => {
+    beforeEach(() => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      accountUpsert.mockResolvedValue({ id: 'account_1', createdAt: new Date('2026-01-01T00:00:00.000Z') });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+    });
+
+    it('does NOT throw when the post-commit `getAccountOverview` re-read fails — degrades to the balance already computed inside the transaction', async () => {
+      getAccountOverviewMock.mockRejectedValueOnce(new Error('transient read failure'));
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const result = await registerFlight(staffActor(), BASE_INPUT);
+
+      // The flight + charge + hour-meter write already happened — exactly
+      // once — before the failing read.
+      expect(flightCreateMock).toHaveBeenCalledTimes(1);
+      expect(accountMovementCreateMock).toHaveBeenCalledTimes(1);
+      // Degraded but correct: the balance the transaction itself computed
+      // (0 - 20000 = -20000 for this 80-min/15000-cents-per-hour flight),
+      // never a throw that would have freed the caller's Idempotency-Key
+      // (`apiRoute`'s AC 4) and let a retry double-register the flight.
+      expect(result.account).toEqual({
+        account: { id: 'account_1', createdAt: new Date('2026-01-01T00:00:00.000Z') },
+        balanceCents: -20000,
+        recentMovements: [],
+      });
+      expect(consoleErrorSpy).toHaveBeenCalledWith('registerFlight: post-commit account overview read failed', expect.any(Error));
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
   describe('registerFlight — with an instructor (AC 1/2)', () => {
     beforeEach(() => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);

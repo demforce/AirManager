@@ -81,8 +81,12 @@ const accountMovementAggregate = accountMovementAggregateMock as unknown as {
   mockResolvedValueOnce: (v: { _sum: { amountCents: number | null } }) => {
     mockResolvedValueOnce: (v: { _sum: { amountCents: number | null } }) => void;
   };
+  mockRejectedValue: (v: unknown) => void;
 };
-const accountMovementFindMany = accountMovementFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const accountMovementFindMany = accountMovementFindManyMock as unknown as {
+  mockResolvedValue: (v: Fixture[]) => void;
+  mockRejectedValue: (v: unknown) => void;
+};
 const accountMovementFindUnique = accountMovementFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const accountMovementCount = accountMovementCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const accountMovementCreate = accountMovementCreateMock as unknown as {
@@ -540,6 +544,39 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         expect.objectContaining({ data: expect.objectContaining({ description: null }) }),
       );
     });
+
+    it('H3 fix (docs/security/owasp-audit-2026-07-22.md): the overview read runs INSIDE the same transaction as the movement — ONE `$transaction` call, not a separate post-commit one', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      cashCategoryFindUnique.mockResolvedValue({ id: 'category_ricariche' });
+      accountUpsert.mockResolvedValue({ id: 'account_1', createdAt: new Date('2026-01-01T00:00:00.000Z') });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10000 } });
+      accountMovementFindMany.mockResolvedValue([]);
+
+      await recordTopUp(staffActor(), 'person_1', input);
+
+      // Before the fix, `buildOverview` opened its OWN separate
+      // `$transaction` after the mutation's had already committed — a
+      // failure in THAT second one still left the top-up committed while
+      // `recordTopUp` threw, which used to free the caller's
+      // Idempotency-Key (`apiRoute`'s AC 4) and let a retry double the
+      // top-up. Now there is only ever one commit boundary.
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('H3 fix: a failure in the (now in-transaction) overview read rolls the WHOLE transaction back — the top-up never partially commits', async () => {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      cashCategoryFindUnique.mockResolvedValue({ id: 'category_ricariche' });
+      accountUpsert.mockResolvedValue({ id: 'account_1', createdAt: new Date('2026-01-01T00:00:00.000Z') });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      accountMovementAggregate.mockRejectedValue(new Error('transient read failure'));
+
+      // The mocked `$transaction` just invokes the callback and propagates
+      // whatever it does — a real Postgres transaction rolls back identically
+      // on an uncaught throw from an interactive-transaction callback, so
+      // this failure never reaches the caller as "committed, then errored".
+      await expect(recordTopUp(staffActor(), 'person_1', input)).rejects.toThrow('transient read failure');
+    });
   });
 
   describe('recordAdjustment (story 3.3, AC 1 — AD-3: a NEW movement, the original is never touched)', () => {
@@ -811,6 +848,29 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
           'en',
           expect.objectContaining({ personName: 'Mario Rossi', balanceCents: -10000 }),
         );
+      });
+    });
+
+    describe('H3 fix (docs/security/owasp-audit-2026-07-22.md) — the adjustment already committed by the time the post-commit re-read runs', () => {
+      it('does NOT throw when the post-commit overview re-read fails — degrades to the balance already computed inside the transaction', async () => {
+        mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
+        // `buildOverview`'s post-commit read calls BOTH `aggregate` and
+        // `findMany`; the mutation's own in-tx read only calls `aggregate`.
+        // Failing `findMany` isolates the failure to the read that runs
+        // AFTER the movement create above has already committed.
+        accountMovementFindMany.mockRejectedValue(new Error('transient read failure'));
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const result = await recordAdjustment(staffActor(), 'person_1', { amountCents: -2500, reason: 'Importo errato' });
+
+        // The write already happened — exactly once — before the failing read.
+        expect(accountMovementCreateMock).toHaveBeenCalledTimes(1);
+        // Degraded but correct: the balance the transaction itself computed,
+        // never a throw that would have freed the caller's Idempotency-Key
+        // (`apiRoute`'s AC 4) and let a retry double-record the adjustment.
+        expect(result).toEqual({ account: ACCOUNT, balanceCents: 7500, recentMovements: [] });
+        expect(consoleErrorSpy).toHaveBeenCalledWith('recordAdjustment: post-commit account overview read failed', expect.any(Error));
+        consoleErrorSpy.mockRestore();
       });
     });
   });

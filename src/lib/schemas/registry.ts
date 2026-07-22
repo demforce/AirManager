@@ -206,7 +206,7 @@ const idempotencyKeyHeader = registry.registerParameter(
     .openapi({
       param: { name: 'Idempotency-Key', in: 'header' },
       description:
-        'Opt-in replay-safe key for this request (1-200 chars, e.g. a UUID). A retry with the SAME key replays the first response (`Idempotency-Replayed: true`) instead of re-executing the mutation; a concurrent request with the same key gets 409 `IDEMPOTENCY_IN_PROGRESS`.',
+        'Opt-in replay-safe key for this request (1-200 chars, e.g. a UUID). A retry with the IDENTICAL request replays the first response (`Idempotency-Replayed: true`) instead of re-executing the mutation; a concurrent request with the same key gets 409 `IDEMPOTENCY_IN_PROGRESS`. Reusing the key for a DIFFERENT request (different body/params) gets 422 `IDEMPOTENCY_KEY_MISMATCH` instead of replaying the wrong response (security audit 2026-07-22, finding M1).',
       example: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
     }),
 );

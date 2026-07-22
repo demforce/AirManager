@@ -1,4 +1,4 @@
-import type { AccountMovementType, PaymentMethod } from '@/generated/prisma/client';
+import type { AccountMovementType, Prisma, PaymentMethod } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { AppLocale } from '@/i18n/routing';
 import type { RecordAdjustmentInput, RecordTopUpInput } from '@/lib/schemas/accounts';
@@ -142,23 +142,25 @@ export async function getAccountOverview(actor: Actor, personId: string): Promis
  * holding a read permission — a future write-only role would get its top-up
  * committed and then a 403 on the response.
  */
-async function buildOverview(account: { id: string; createdAt: Date }): Promise<AccountOverview> {
-  // Interactive transaction (story TD-1, AC 3) — see `people.service.ts#listPeople`'s
-  // doc-comment for the batch-vs-interactive `pg` DeprecationWarning rationale.
-  const [aggregate, recent] = await prisma.$transaction(async (tx) => {
-    const aggregate = await tx.accountMovement.aggregate({
-      where: { accountId: account.id },
-      _sum: { amountCents: true },
-    });
-    const recent = await tx.accountMovement.findMany({
-      where: { accountId: account.id },
-      select: RECENT_MOVEMENT_SELECT,
-      // `id` as tie-break: same-millisecond `createdAt` (batch imports/seeds)
-      // must not make the preview order non-deterministic (review 3.1 F3).
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: RECENT_MOVEMENTS_LIMIT,
-    });
-    return [aggregate, recent] as const;
+/**
+ * The two reads `buildOverview` needs, against a GIVEN client — either
+ * `prisma` itself (wrapped in `buildOverview`'s own transaction below) or an
+ * outer `tx` a caller is already inside (`recordTopUp`, H3 fix: see its
+ * doc-comment). Extracted so the read can run atomically WITH a mutation's
+ * own transaction instead of only ever as a separate one after it commits.
+ */
+async function readOverview(client: Prisma.TransactionClient, account: { id: string; createdAt: Date }): Promise<AccountOverview> {
+  const aggregate = await client.accountMovement.aggregate({
+    where: { accountId: account.id },
+    _sum: { amountCents: true },
+  });
+  const recent = await client.accountMovement.findMany({
+    where: { accountId: account.id },
+    select: RECENT_MOVEMENT_SELECT,
+    // `id` as tie-break: same-millisecond `createdAt` (batch imports/seeds)
+    // must not make the preview order non-deterministic (review 3.1 F3).
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: RECENT_MOVEMENTS_LIMIT,
   });
 
   return {
@@ -169,6 +171,12 @@ async function buildOverview(account: { id: string; createdAt: Date }): Promise<
     balanceCents: aggregate._sum.amountCents ?? 0,
     recentMovements: recent.map(toMovementListItem),
   };
+}
+
+async function buildOverview(account: { id: string; createdAt: Date }): Promise<AccountOverview> {
+  // Interactive transaction (story TD-1, AC 3) — see `people.service.ts#listPeople`'s
+  // doc-comment for the batch-vs-interactive `pg` DeprecationWarning rationale.
+  return prisma.$transaction((tx) => readOverview(tx, account));
 }
 
 /**
@@ -219,7 +227,7 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
   const effectiveDate = new Date(input.effectiveDate);
   const description = input.description ?? null;
 
-  const account = await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     const upserted = await tx.account.upsert({
       where: { personId },
       create: { personId },
@@ -251,13 +259,18 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
       },
     });
 
-    return upserted;
+    // H3 fix (docs/security/owasp-audit-2026-07-22.md): the overview read
+    // now runs INSIDE this same transaction instead of after it commits
+    // (`buildOverview`, called separately, used to do exactly that). A
+    // transient failure here rolls the whole transaction back — nothing
+    // committed — instead of leaving the top-up committed while this
+    // function still throws, which used to free the caller's
+    // Idempotency-Key (`apiRoute`'s AC 4) and let a retry double the top-up.
+    // Guard-free on purpose: the write was authorized by `finance.manage`,
+    // and the fresh overview must not require a separate read permission
+    // (review 3.1 F1 — see `buildOverview`).
+    return readOverview(tx, upserted);
   });
-
-  // Guard-free on purpose: the write was authorized by `finance.manage`, and
-  // the fresh overview must not require a separate read permission (review
-  // 3.1 F1 — see `buildOverview`).
-  return buildOverview(account);
 }
 
 /**
@@ -591,8 +604,22 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
     return { balanceBeforeCents: beforeCents, balanceAfterCents: beforeCents + input.amountCents };
   });
 
-  // Guard-free re-read, same rationale as `recordTopUp` (review 3.1 F1).
-  const overview = await buildOverview(account);
+  // Guard-free re-read, same rationale as `recordTopUp` (review 3.1 F1) —
+  // kept POST-commit deliberately (review 3.3 F2: the freshest possible
+  // balance for the alert email below, since a concurrent `recordTopUp`
+  // takes no `Account` lock). H3 fix (docs/security/owasp-audit-2026-07-22.md):
+  // the adjustment above already committed, so a failure in this read must
+  // never propagate out of this function — it would free the caller's
+  // Idempotency-Key (`apiRoute`'s AC 4) and let a retry double-record the
+  // adjustment. On failure, degrade to the balance already computed inside
+  // the (committed) transaction instead of throwing.
+  let overview: AccountOverview;
+  try {
+    overview = await buildOverview(account);
+  } catch (error) {
+    console.error('recordAdjustment: post-commit account overview read failed', error);
+    overview = { account, balanceCents: balanceAfterCents, recentMovements: [] };
+  }
 
   const bandBefore = balanceBand(balanceBeforeCents, thresholdCents);
   const bandAfter = balanceBand(balanceAfterCents, thresholdCents);

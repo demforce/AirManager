@@ -671,6 +671,8 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
     flight: createdFlight,
     balanceBeforeCents,
     balanceAfterCents,
+    accountId,
+    accountCreatedAt,
   } = await prisma.$transaction(async (tx) => {
     // Row lock (FOR UPDATE): same raw-query pattern as `adjustHourMeter` —
     // serializes concurrent flights/adjustments touching this aircraft's
@@ -682,11 +684,13 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       throw new NotFoundError('Aircraft not found.');
     }
 
+    // `createdAt` selected too (H3 fix, below): the fallback account
+    // overview built if the post-commit re-read fails needs it.
     const account = await tx.account.upsert({
       where: { personId: resolved.person.id },
       create: { personId: resolved.person.id },
       update: {},
-      select: { id: true },
+      select: { id: true, createdAt: true },
     });
 
     // Row lock (FOR UPDATE), same pattern as `recordAdjustment`: the upsert
@@ -695,7 +699,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
     // THIS account so the "balance before" read never races.
     await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR UPDATE`;
 
-    return registerFlightCore(tx, {
+    const core = await registerFlightCore(tx, {
       actorUserId: actor.userId,
       aircraftId: resolved.aircraft.id,
       aircraftRegistration: resolved.aircraft.registration,
@@ -722,10 +726,23 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       instructorAmountCents: resolved.instructorAmountCents,
       correctionOfId: null,
     });
+    return { ...core, accountId: account.id, accountCreatedAt: account.createdAt };
   });
 
-  // Guard-free re-read, same rationale as `recordTopUp`.
-  const account = await getAccountOverview(actor, resolved.person.id);
+  // Guard-free re-read, same rationale as `recordTopUp`. H3 fix
+  // (docs/security/owasp-audit-2026-07-22.md): the flight above already
+  // committed, so a failure in this read must never propagate out of this
+  // function — it would free the caller's Idempotency-Key (`apiRoute`'s AC
+  // 4) and let a retry double-register the flight. On failure, degrade to
+  // the balance already computed inside the (committed) transaction instead
+  // of throwing.
+  let account: AccountOverview;
+  try {
+    account = await getAccountOverview(actor, resolved.person.id);
+  } catch (error) {
+    console.error('registerFlight: post-commit account overview read failed', error);
+    account = { account: { id: accountId, createdAt: accountCreatedAt }, balanceCents: balanceAfterCents, recentMovements: [] };
+  }
 
   const bandBefore = balanceBand(balanceBeforeCents, thresholdCents);
   const bandAfter = balanceBand(balanceAfterCents, thresholdCents);

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { Prisma } from '@/generated/prisma/client';
@@ -85,6 +86,41 @@ type AuthMode = 'required' | 'public';
 export const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
 const IDEMPOTENCY_REPLAYED_HEADER = 'Idempotency-Replayed';
 
+/**
+ * Request body size cap (security audit 2026-07-22, finding M5, CWE-400):
+ * `request.json()` below buffers the entire body before Zod ever sees it —
+ * unbounded, that is an unauthenticated memory-pressure DoS on any POST
+ * route. Every `bodySchema` in this codebase is small; 64 KB is generous
+ * headroom over the largest of them. Checked against `Content-Length` only
+ * (no streaming byte-count) — simplest sufficient guard per the finding.
+ */
+const MAX_BODY_BYTES = 64 * 1024;
+
+/**
+ * Deterministic JSON stringify for {@link computeRequestFingerprint} (M1):
+ * object keys sorted recursively so two logically-identical payloads always
+ * hash the same regardless of property order; array element order is
+ * preserved (it is significant).
+ */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
+}
+
+/**
+ * Binds an `IdempotencyRecord` to the exact request that created it
+ * (security audit 2026-07-22, finding M1, CWE-840): sha256 of method +
+ * endpoint + the canonical route params + canonical body. Reusing a key for
+ * a DIFFERENT request now fails the fingerprint comparison in
+ * {@link beginIdempotentRequest} instead of silently replaying the first
+ * request's response over the second one.
+ */
+function computeRequestFingerprint(method: string, endpoint: string, params: unknown, body: unknown): string {
+  return createHash('sha256').update(`${method}:${endpoint}:${canonicalJson(params)}:${canonicalJson(body)}`).digest('hex');
+}
+
 export interface IdempotencyConfig {
   /**
    * Stable identifier for this route in the `IdempotencyRecord` unique key
@@ -104,20 +140,23 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * Inserts the PENDING `IdempotencyRecord` (AC 1/2). On a unique-constraint
- * conflict (another attempt already exists for this exact
- * `[userId, endpoint, key]`), rereads it: a COMPLETED row replays its exact
- * response (`Idempotency-Replayed: true`); a still-PENDING row (or the
- * extremely rare race where the conflicting row was deleted concurrently by
- * the OTHER attempt's own failure cleanup between our failed insert and this
- * reread) answers 409 `IDEMPOTENCY_IN_PROGRESS` — never risking a second
- * `create` that could race a genuinely concurrent attempt into double
- * execution.
+ * Inserts the PENDING `IdempotencyRecord` (AC 1/2), stamped with the
+ * request's fingerprint (M1). On a unique-constraint conflict (another
+ * attempt already exists for this exact `[userId, endpoint, key]`), rereads
+ * it: a COMPLETED row whose stored fingerprint MATCHES replays its exact
+ * response (`Idempotency-Replayed: true`); a COMPLETED row whose fingerprint
+ * DIFFERS is a different request reusing the same key — 422
+ * `IDEMPOTENCY_KEY_MISMATCH` (M1) instead of replaying the wrong response. A
+ * still-PENDING row (or the extremely rare race where the conflicting row
+ * was deleted concurrently by the OTHER attempt's own failure cleanup
+ * between our failed insert and this reread) answers 409
+ * `IDEMPOTENCY_IN_PROGRESS` — never risking a second `create` that could
+ * race a genuinely concurrent attempt into double execution.
  */
-async function beginIdempotentRequest(userId: string, endpoint: string, key: string): Promise<IdempotencyGate> {
+async function beginIdempotentRequest(userId: string, endpoint: string, key: string, fingerprint: string): Promise<IdempotencyGate> {
   try {
     const created = await prisma.idempotencyRecord.create({
-      data: { userId, endpoint, key },
+      data: { userId, endpoint, key, requestFingerprint: fingerprint },
       select: { id: true },
     });
     return { outcome: 'proceed', recordId: created.id };
@@ -130,6 +169,17 @@ async function beginIdempotentRequest(userId: string, endpoint: string, key: str
   });
 
   if (existing && existing.responseStatus !== null) {
+    // `requestFingerprint === null` (M1): a row from before this column
+    // existed — unverifiable, not a mismatch, so it still replays (backfill-safe).
+    if (existing.requestFingerprint !== null && existing.requestFingerprint !== fingerprint) {
+      return {
+        outcome: 'short-circuit',
+        response: NextResponse.json(
+          errorEnvelope('IDEMPOTENCY_KEY_MISMATCH', 'This Idempotency-Key was already used for a different request — use a new key.'),
+          { status: 422 },
+        ),
+      };
+    }
     return {
       outcome: 'short-circuit',
       response: NextResponse.json(existing.responseBody, {
@@ -266,6 +316,22 @@ export function apiRoute<
 
       let body: TBody = undefined as TBody;
       if (bodySchema) {
+        // M5: reject an oversized body BEFORE `request.json()` buffers it —
+        // that call has no size cap of its own, so an unbounded body is an
+        // unauthenticated memory-pressure DoS. `Content-Length` is
+        // client-supplied and can be absent/wrong, but every legitimate
+        // caller of these small JSON schemas sends it accurately; a check
+        // here is the simplest sufficient guard (finding M5, no streaming
+        // byte-count needed).
+        const contentLengthHeader = request.headers.get('content-length');
+        const contentLength = contentLengthHeader === null ? null : Number(contentLengthHeader);
+        if (contentLength !== null && Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
+          return NextResponse.json(
+            errorEnvelope('PAYLOAD_TOO_LARGE', `Request body exceeds the ${MAX_BODY_BYTES}-byte limit.`),
+            { status: 413 },
+          );
+        }
+
         const raw: unknown = await request.json().catch(() => null);
         const parsed = bodySchema.safeParse(raw);
         if (!parsed.success) {
@@ -298,7 +364,8 @@ export function apiRoute<
             // assertion.
             return internalErrorResponse(new Error('apiRoute: idempotency reached with no resolved actor.'));
           }
-          const gate = await beginIdempotentRequest(actor.userId, idempotency.endpoint, keyHeader);
+          const fingerprint = computeRequestFingerprint(request.method, idempotency.endpoint, params, body);
+          const gate = await beginIdempotentRequest(actor.userId, idempotency.endpoint, keyHeader, fingerprint);
           if (gate.outcome === 'short-circuit') {
             return gate.response;
           }
