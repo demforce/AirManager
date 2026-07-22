@@ -3,7 +3,7 @@
 /**
  * Read-only pilot profile slide-over (story 12.6, AC 5) — port of
  * `docs/design-reference/airops/src/PilotProfile.jsx` onto the real domain:
- * avatar+identity, KPI row (saldo/ultimo volo/voli recenti), certifications
+ * avatar+identity, KPI row (saldo/ultimo volo/voli recenti), ratings
  * (grouped by `typeName`, D13 — no license/medical enum), and the 5 most
  * recent flights (same source/shape as the `person/[id]` scheda's own
  * "Ultimi voli" panel, story 11.2). Footer: Chiudi / Modifica.
@@ -22,7 +22,7 @@ export type PilotProfileLabels = {
   edit: string;
   kpi: { balance: string; lastFlight: string; recentFlights: string };
   noAccount: string;
-  certifications: { sectionTitle: string; empty: string; status: { ok: string; expiring: string; expired: string } };
+  ratings: { sectionTitle: string; empty: string; status: { ok: string; expiring: string; expired: string } };
   recentFlights: { sectionTitle: string; empty: string; viewAll: string; statement: string };
   /** Same three profile badges / account-status badges as the table (AC 2), reused here for the identity header (AC 5). */
   role: { pilot: string; student: string; instructor: string };
@@ -79,7 +79,7 @@ function expiryStatusTone(status: 'ok' | 'expiring' | 'expired'): BadgeTone {
 
 export function PilotProfile({ pilot, onClose, onEdit, locale, labels }: PilotProfileProps) {
   const [balanceCents, setBalanceCents] = useState<number | null>(null);
-  const [certGroups, setCertGroups] = useState<ReturnType<typeof groupExpiriesByTypeName> | null>(null);
+  const [ratingGroups, setRatingGroups] = useState<ReturnType<typeof groupExpiriesByTypeName> | null>(null);
   const [recentFlights, setRecentFlights] = useState<RecentFlight[] | null>(null);
 
   // The caller remounts this component per `pilot.id` (`key={...}` in
@@ -93,7 +93,7 @@ export function PilotProfile({ pilot, onClose, onEdit, locale, labels }: PilotPr
       if (!cancelled) setBalanceCents(result ?? 0);
     });
     void fetchExpiries(pilot.id).then((result) => {
-      if (!cancelled) setCertGroups(groupExpiriesByTypeName(result));
+      if (!cancelled) setRatingGroups(groupExpiriesByTypeName(result));
     });
     void fetchRecentFlights(pilot.id).then((result) => {
       if (!cancelled) setRecentFlights(result);
@@ -106,7 +106,7 @@ export function PilotProfile({ pilot, onClose, onEdit, locale, labels }: PilotPr
   if (!pilot) return null;
 
   const statusLabelOf = (status: 'ok' | 'expiring' | 'expired'): string =>
-    status === 'expired' ? labels.certifications.status.expired : status === 'expiring' ? labels.certifications.status.expiring : labels.certifications.status.ok;
+    status === 'expired' ? labels.ratings.status.expired : status === 'expiring' ? labels.ratings.status.expiring : labels.ratings.status.ok;
 
   return (
     <SlideOver
@@ -205,18 +205,18 @@ export function PilotProfile({ pilot, onClose, onEdit, locale, labels }: PilotPr
         ))}
       </div>
 
-      {/* Certifications */}
+      {/* Ratings */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 10 }}>
-          {labels.certifications.sectionTitle}
+          {labels.ratings.sectionTitle}
         </div>
-        {certGroups === null ? (
+        {ratingGroups === null ? (
           <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>…</p>
-        ) : certGroups.length === 0 ? (
-          <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>{labels.certifications.empty}</p>
+        ) : ratingGroups.length === 0 ? (
+          <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>{labels.ratings.empty}</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 1, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-            {certGroups.map((group, i) => (
+            {ratingGroups.map((group, i) => (
               <div
                 key={group.typeName}
                 data-testid="pilot-profile-certification-row"

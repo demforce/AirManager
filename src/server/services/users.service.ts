@@ -1,3 +1,4 @@
+import type { Prisma } from '@/generated/prisma/client';
 import type { Role } from '@/generated/prisma/enums';
 import type { CreateUserInput, UpdateUserInput } from '@/lib/schemas/users';
 import { authorize, type Actor } from '@/server/auth/rbac';
@@ -53,7 +54,8 @@ function toListItem(user: SelectedUser): UserListItem {
   };
 }
 
-function emailLocale(locale: string): 'it' | 'en' {
+/** Exported (story 13.1) so `people.service.ts`'s one-step create composite can reuse it for its own `access.email` invite. */
+export function emailLocale(locale: string): 'it' | 'en' {
   return locale === 'en' ? 'en' : 'it';
 }
 
@@ -82,6 +84,39 @@ async function assertPersonAvailable(personId: string, excludeUserId?: string): 
 }
 
 /**
+ * The raw write behind `createUser` (AC 1) — extracted (story 13.1, Dev
+ * Notes: "helper condivisi, mai duplicazione", same `getFlightTotals` 12.8
+ * precedent) so the one-step person-create composite
+ * (`people.service.ts#createPerson`, its `access` block) can run this INSIDE
+ * its OWN atomic transaction via the SAME `tx` — a brand-new person can
+ * never already be linked to a user, so unlike the standalone `createUser`
+ * below, no `assertPersonAvailable` pre-check is needed here, only the
+ * unique-email backstop. Deliberately does NOT send the invite email — every
+ * caller does that AFTER its transaction commits (fire-and-forget,
+ * unchanged behavior; AC 5's "post-commit" requirement for the composite).
+ */
+export async function createUserCore(tx: Prisma.TransactionClient, input: CreateUserInput): Promise<SelectedUser> {
+  try {
+    return await tx.user.create({
+      data: {
+        email: input.email,
+        roles: input.roles,
+        locale: input.locale,
+        personId: input.personId ?? null,
+        passwordHash: null,
+        isActive: true,
+      },
+      select: USER_SELECT,
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ConflictError('Email or person already linked to another user.');
+    }
+    throw error;
+  }
+}
+
+/**
  * Creates an invited user (AC 1): no password until the invite link is
  * followed (`passwordHash: null`), roles/locale/person set up-front. Sends
  * the invite email; an SMTP failure does not fail the creation itself — the
@@ -99,27 +134,10 @@ export async function createUser(actor: Actor, input: CreateUserInput): Promise<
     await assertPersonAvailable(input.personId);
   }
 
-  let user;
-  try {
-    user = await prisma.user.create({
-      data: {
-        email: input.email,
-        roles: input.roles,
-        locale: input.locale,
-        personId: input.personId ?? null,
-        passwordHash: null,
-        isActive: true,
-      },
-      select: USER_SELECT,
-    });
-  } catch (error) {
-    // assertPersonAvailable/email check are check-then-write: a concurrent
-    // request can win the race and the unique constraint fires here instead.
-    if (isUniqueViolation(error)) {
-      throw new ConflictError('Email or person already linked to another user.');
-    }
-    throw error;
-  }
+  // assertPersonAvailable/email check are check-then-write: a concurrent
+  // request can win the race and the unique constraint fires here instead
+  // (`createUserCore`'s own P2002 catch).
+  const user = await prisma.$transaction((tx) => createUserCore(tx, input));
 
   try {
     await sendInviteEmail(user.id, user.email, emailLocale(user.locale));

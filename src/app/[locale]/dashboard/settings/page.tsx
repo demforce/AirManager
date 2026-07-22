@@ -17,7 +17,7 @@ import { listCashCategories } from '@/server/services/cash.service';
 import { listExpiryTypes } from '@/server/services/expiry-types.service';
 import { CashCategoriesCard } from './cash-categories-card';
 import { ClubCard } from './club-card';
-import { RatingsCard } from './ratings-card';
+import { RatingsCard, type RatingsCardLabels } from './ratings-card';
 import { SchedulingCard } from './scheduling-card';
 import { SmtpCard } from './smtp-card';
 
@@ -25,19 +25,91 @@ type PageProps = {
   params: Promise<{ locale: string }>;
 };
 
+type Translator = Awaited<ReturnType<typeof getTranslations>>;
+
+/**
+ * Builds the (identical-shape) labels for one `RatingsCard` instance from
+ * its i18n namespace (story 13.1, AC 3) — `ns` is `'ratings'` (Abilitazioni)
+ * or `'medical'` (Visite mediche), each a full sibling block in
+ * `messages/{it,en}.json`'s `SettingsPage`. Shared so the two cards below
+ * don't duplicate this ~35-line lookup twice.
+ */
+function expiryTypeCardLabels(t: Translator, ns: 'ratings' | 'medical'): RatingsCardLabels {
+  return {
+    title: t(`${ns}.title`),
+    sub: t(`${ns}.sub`),
+    addAction: t(`${ns}.addAction`),
+    table: {
+      name: t(`${ns}.table.name`),
+      scope: t(`${ns}.table.scope`),
+      validity: t(`${ns}.table.validity`),
+      status: t(`${ns}.table.status`),
+      actions: t(`${ns}.table.actions`),
+      empty: t(`${ns}.table.empty`),
+      monthsSuffix: t(`${ns}.table.monthsSuffix`),
+      noExpiry: t(`${ns}.table.noExpiry`),
+    },
+    scope: {
+      PILOTS: t(`${ns}.scope.PILOTS`),
+      STUDENTS: t(`${ns}.scope.STUDENTS`),
+      INSTRUCTORS: t(`${ns}.scope.INSTRUCTORS`),
+      ALL: t(`${ns}.scope.ALL`),
+    },
+    status: { active: t(`${ns}.status.active`), inactive: t(`${ns}.status.inactive`) },
+    blocksBooking: { yes: t(`${ns}.blocksBooking.yes`) },
+    actions: {
+      edit: t(`${ns}.actions.edit`),
+      deactivate: t(`${ns}.actions.deactivate`),
+      reactivate: t(`${ns}.actions.reactivate`),
+      delete: t(`${ns}.actions.delete`),
+      confirmDelete: t(`${ns}.actions.confirmDelete`),
+      confirmYes: t(`${ns}.actions.confirmYes`),
+      confirmCancel: t(`${ns}.actions.confirmCancel`),
+    },
+    form: {
+      createTitle: t(`${ns}.form.createTitle`),
+      editTitle: t(`${ns}.form.editTitle`),
+      name: t(`${ns}.form.name`),
+      scope: t(`${ns}.form.scope`),
+      validity: t(`${ns}.form.validity`),
+      validityHint: t(`${ns}.form.validityHint`),
+      blocksBooking: t(`${ns}.form.blocksBooking`),
+      blocksBookingHint: t(`${ns}.form.blocksBookingHint`),
+      submitCreate: t(`${ns}.form.submitCreate`),
+      submitSave: t(`${ns}.form.submitSave`),
+      cancel: t(`${ns}.form.cancel`),
+      requiredField: t(`${ns}.form.requiredField`),
+      conflictError: t(`${ns}.form.conflictError`),
+      genericError: t(`${ns}.form.genericError`),
+    },
+    feedback: {
+      created: t(`${ns}.feedback.created`),
+      updated: t(`${ns}.feedback.updated`),
+      deactivated: t(`${ns}.feedback.deactivated`),
+      reactivated: t(`${ns}.feedback.reactivated`),
+      deleted: t(`${ns}.feedback.deleted`),
+      deleteInUseError: t(`${ns}.feedback.deleteInUseError`),
+      genericError: t(`${ns}.feedback.genericError`),
+    },
+    hint: t(`${ns}.hint`),
+  };
+}
+
 /**
  * Impostazioni (epic 12, story 12.11, AC 2) — AirOps-native, complete
  * rewrite of the branding-only legacy page (`SettingsForm`'s name/logo
  * control survives UNCHANGED inside the new "Club" card, same
- * `data-testid`s — `pdf-exports.spec.ts` drives it). Four cards, port of
+ * `data-testid`s — `pdf-exports.spec.ts` drives it). Port of
  * `docs/design-reference/airops/src/SettingsView.jsx`: Club (identity +
  * ICAO + contact email + METAR station + PPR default fee/instructions +
  * quota associativa default), Pianificazione (booking window), Email
- * (SMTP, settings-first mailer + real test send), Abilitazioni (the
- * expiry-type catalogue, moved here from the removed
- * `/dashboard/expiries/types`), Categorie di cassa (story 12.13 review, F2 —
- * a minimal management UI for the `cash-categories` API, whose own page,
- * `/dashboard/finance/categories`, was removed in 12.13 AC1 without one).
+ * (SMTP, settings-first mailer + real test send), Abilitazioni + Visite
+ * mediche (story 13.1, AC 3, R-13.1-a — TWO instances of the SAME
+ * `RatingsCard` component split by `ExpiryType.kind`, the expiry-type
+ * catalogue moved here from the removed `/dashboard/expiries/types`),
+ * Categorie di cassa (story 12.13 review, F2 — a minimal management UI for
+ * the `cash-categories` API, whose own page, `/dashboard/finance/categories`,
+ * was removed in 12.13 AC1 without one).
  *
  * `settings.manage` (ADMIN-only) gates the whole page — `hasPermission`
  * here only decides the redirect; every card's own write action re-checks
@@ -71,6 +143,13 @@ export default async function SettingsPage({ params }: PageProps) {
       listExpiryTypes(actor, { includeInactive: true }),
       listCashCategories(actor, { includeInactive: true }),
     ]);
+
+  // Story 13.1 (AC 3, R-13.1-a): ONE fetch, split client-side by `kind` — the
+  // "Abilitazioni" card shows only RATING, the new "Visite mediche" card
+  // only MEDICAL (the service also accepts a `kind` query filter, AC 2, for
+  // consumers that want the DB to do the split instead).
+  const ratingTypes = expiryTypes.filter((expiryType) => expiryType.kind === 'RATING');
+  const medicalTypes = expiryTypes.filter((expiryType) => expiryType.kind === 'MEDICAL');
 
   const t = await getTranslations('SettingsPage');
 
@@ -177,65 +256,24 @@ export default async function SettingsPage({ params }: PageProps) {
         }}
       />
 
+      <RatingsCard expiryTypes={ratingTypes} labels={expiryTypeCardLabels(t, 'ratings')} />
+
       <RatingsCard
-        expiryTypes={expiryTypes}
-        labels={{
-          title: t('ratings.title'),
-          sub: t('ratings.sub'),
-          addAction: t('ratings.addAction'),
-          table: {
-            name: t('ratings.table.name'),
-            scope: t('ratings.table.scope'),
-            validity: t('ratings.table.validity'),
-            status: t('ratings.table.status'),
-            actions: t('ratings.table.actions'),
-            empty: t('ratings.table.empty'),
-            monthsSuffix: t('ratings.table.monthsSuffix'),
-            noExpiry: t('ratings.table.noExpiry'),
-          },
-          scope: {
-            PILOTS: t('ratings.scope.PILOTS'),
-            STUDENTS: t('ratings.scope.STUDENTS'),
-            INSTRUCTORS: t('ratings.scope.INSTRUCTORS'),
-            ALL: t('ratings.scope.ALL'),
-          },
-          status: { active: t('ratings.status.active'), inactive: t('ratings.status.inactive') },
-          blocksBooking: { yes: t('ratings.blocksBooking.yes') },
-          actions: {
-            edit: t('ratings.actions.edit'),
-            deactivate: t('ratings.actions.deactivate'),
-            reactivate: t('ratings.actions.reactivate'),
-            delete: t('ratings.actions.delete'),
-            confirmDelete: t('ratings.actions.confirmDelete'),
-            confirmYes: t('ratings.actions.confirmYes'),
-            confirmCancel: t('ratings.actions.confirmCancel'),
-          },
-          form: {
-            createTitle: t('ratings.form.createTitle'),
-            editTitle: t('ratings.form.editTitle'),
-            name: t('ratings.form.name'),
-            scope: t('ratings.form.scope'),
-            validity: t('ratings.form.validity'),
-            validityHint: t('ratings.form.validityHint'),
-            blocksBooking: t('ratings.form.blocksBooking'),
-            blocksBookingHint: t('ratings.form.blocksBookingHint'),
-            submitCreate: t('ratings.form.submitCreate'),
-            submitSave: t('ratings.form.submitSave'),
-            cancel: t('ratings.form.cancel'),
-            requiredField: t('ratings.form.requiredField'),
-            conflictError: t('ratings.form.conflictError'),
-            genericError: t('ratings.form.genericError'),
-          },
-          feedback: {
-            created: t('ratings.feedback.created'),
-            updated: t('ratings.feedback.updated'),
-            deactivated: t('ratings.feedback.deactivated'),
-            reactivated: t('ratings.feedback.reactivated'),
-            deleted: t('ratings.feedback.deleted'),
-            deleteInUseError: t('ratings.feedback.deleteInUseError'),
-            genericError: t('ratings.feedback.genericError'),
-          },
-          hint: t('ratings.hint'),
+        expiryTypes={medicalTypes}
+        kind="MEDICAL"
+        labels={expiryTypeCardLabels(t, 'medical')}
+        testIds={{
+          card: 'medical-settings-card',
+          addButton: 'medical-add-button',
+          feedback: 'medical-feedback',
+          row: 'medical-row',
+          editButton: 'medical-edit-button',
+          form: 'medical-form',
+          nameInput: 'medical-name-input',
+          scopeSelect: 'medical-scope-select',
+          validityInput: 'medical-validity-input',
+          formSubmit: 'medical-form-submit',
+          formError: 'medical-form-error',
         }}
       />
 

@@ -213,7 +213,6 @@ export default async function PersonDetailPage({ params }: PageProps) {
               },
               instructor: {
                 title: tPeople('profilesPanel.instructor.title'),
-                ratings: tPeople('profilesPanel.instructor.ratings'),
               },
             }}
           />

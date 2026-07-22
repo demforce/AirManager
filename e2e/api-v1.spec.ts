@@ -213,3 +213,75 @@ test.describe('Booking approval workflow — API (Story 12.2)', () => {
     expect(email.Text).toContain(denyReason);
   });
 });
+
+// --- One-step person create (story 13.1, AC 5) ------------------------------
+
+function uniqueEmail(prefix: string): string {
+  return `${prefix}-${uniqueSuffix()}@airmanager.local`;
+}
+
+test.describe('POST /api/v1/people — one-step composite create (story 13.1, AC 5)', () => {
+  test('creates a person with a pilot profile, a registered expiry and a linked user in ONE call — invite visible in Mailpit', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    // A RATING type scoped to pilots, straight from the seeded catalogue (AC 2's `kind` filter).
+    const typesResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    expect(typesResponse.status()).toBe(200);
+    const ratingTypes = (await typesResponse.json()) as Array<{ id: string; name: string; scope: string }>;
+    const pilotRatingType = ratingTypes.find((type) => type.scope === 'PILOTS');
+    expect(pilotRatingType).toBeDefined();
+
+    const email = uniqueEmail('one-step');
+    const suffix = uniqueSuffix();
+
+    const createResponse = await page.request.post('/api/v1/people', {
+      data: {
+        firstName: 'OneStep',
+        lastName: `Composite-${suffix}`,
+        profiles: { pilot: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' } },
+        expiries: [{ expiryTypeId: pilotRatingType!.id, expiresAt: '2099-01-01' }],
+        access: { email, roles: ['PILOT'] },
+      },
+    });
+    expect(createResponse.status()).toBe(201);
+    const person = (await createResponse.json()) as { id: string; profiles: { pilot: boolean; student: boolean; instructor: boolean } };
+    expect(person.profiles).toEqual({ pilot: true, student: false, instructor: false });
+
+    // The pilot profile really landed (AC 5's `profiles` block).
+    const detailResponse = await page.request.get(`/api/v1/people/${person.id}`);
+    expect(detailResponse.status()).toBe(200);
+    const detail = (await detailResponse.json()) as { pilotProfile: { licenseNumber: string; deactivatedAt: string | null } | null };
+    expect(detail.pilotProfile?.licenseNumber).toBe(`IT-PPL-${suffix}`);
+    expect(detail.pilotProfile?.deactivatedAt).toBeNull();
+
+    // The expiry really landed (AC 5's `expiries` block).
+    const expiriesResponse = await page.request.get(`/api/v1/people/${person.id}/expiries`);
+    expect(expiriesResponse.status()).toBe(200);
+    const expiries = (await expiriesResponse.json()) as Array<{ typeName: string; expiresAt: string }>;
+    expect(expiries.some((item) => item.typeName === pilotRatingType!.name && item.expiresAt === '2099-01-01')).toBe(true);
+
+    // The invite really went out post-commit (AC 5's `access` block, fire-and-forget).
+    const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+    expect(inviteEmail.Text).toContain('set-password');
+  });
+
+  test('an expiries entry missing expiresAt answers the AD-8 422 envelope (R-13.1-c)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const typesResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    const ratingTypes = (await typesResponse.json()) as Array<{ id: string; scope: string }>;
+    const anyType = ratingTypes.find((type) => type.scope === 'ALL') ?? ratingTypes[0];
+
+    const response = await page.request.post('/api/v1/people', {
+      data: {
+        firstName: 'Missing',
+        lastName: `ExpiresAt-${uniqueSuffix()}`,
+        // No `profiles` block needed for a 422 that never reaches the service.
+        expiries: [{ expiryTypeId: anyType!.id }],
+      },
+    });
+    expect(response.status()).toBe(422);
+    const body = await response.json();
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+});

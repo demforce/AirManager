@@ -32,7 +32,6 @@ export const instructorCompensationSummaryItemSchema = z.object({
   personId: z.string(),
   firstName: z.string(),
   lastName: z.string(),
-  ratings: z.string(),
   payoutRateCents: z.number().int().nullable(),
   mtdMinutes: z.number().int(),
   ytdMinutes: z.number().int(),

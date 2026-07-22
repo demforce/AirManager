@@ -13,6 +13,7 @@ vi.mock('@/server/db/prisma', () => ({
     person: {
       findUnique: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -30,6 +31,7 @@ const countMock = vi.mocked(prisma.user.count);
 const createMock = vi.mocked(prisma.user.create);
 const updateMock = vi.mocked(prisma.user.update);
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
+const transactionMock = vi.mocked(prisma.$transaction);
 const sendInviteEmailMock = vi.mocked(sendInviteEmail);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
@@ -70,6 +72,16 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
     updateMock.mockReset();
     personFindUniqueMock.mockReset();
     sendInviteEmailMock.mockReset();
+
+    // `createUser` runs its write inside a trivial `$transaction` (story
+    // 13.1, so its own write logic — `createUserCore` — is reusable by
+    // `people.service.ts`'s one-step composite from within ITS transaction)
+    // — same stand-in as `people.service.test.ts`'s: invokes the callback
+    // with the plain `prisma` mock as `tx`.
+    transactionMock.mockReset();
+    (transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation((arg: unknown) =>
+      typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[]),
+    );
   });
 
   describe('authorization (AD-5)', () => {

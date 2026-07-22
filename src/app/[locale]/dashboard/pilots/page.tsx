@@ -174,13 +174,13 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
                 licenseType: tProfiles('profilesPanel.pilot.licenseType'),
               },
               student: { title: tProfiles('profilesPanel.student.title'), courseStartDate: tProfiles('profilesPanel.student.courseStartDate') },
-              instructor: { title: tProfiles('profilesPanel.instructor.title'), ratings: tProfiles('profilesPanel.instructor.ratings') },
+              instructor: { title: tProfiles('profilesPanel.instructor.title') },
             },
-            certifications: {
-              sectionTitle: t('editor.certifications.sectionTitle'),
-              empty: t('editor.certifications.empty'),
-              manageLink: t('editor.certifications.manageLink'),
-              status: { ok: t('editor.certifications.status.ok'), expiring: t('editor.certifications.status.expiring'), expired: t('editor.certifications.status.expired') },
+            ratings: {
+              sectionTitle: t('editor.ratings.sectionTitle'),
+              empty: t('editor.ratings.empty'),
+              manageLink: t('editor.ratings.manageLink'),
+              status: { ok: t('editor.ratings.status.ok'), expiring: t('editor.ratings.status.expiring'), expired: t('editor.ratings.status.expired') },
             },
             access: {
               sectionTitle: t('editor.access.sectionTitle'),
@@ -228,13 +228,13 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
             kpi: { balance: t('profile.kpi.balance'), lastFlight: t('profile.kpi.lastFlight'), recentFlights: t('profile.kpi.recentFlights') },
             noAccount: t('profile.noAccount'),
             archivedBadge: t('profile.archivedBadge'),
-            certifications: {
-              sectionTitle: t('profile.certifications.sectionTitle'),
-              empty: t('profile.certifications.empty'),
+            ratings: {
+              sectionTitle: t('profile.ratings.sectionTitle'),
+              empty: t('profile.ratings.empty'),
               status: {
-                ok: t('editor.certifications.status.ok'),
-                expiring: t('editor.certifications.status.expiring'),
-                expired: t('editor.certifications.status.expired'),
+                ok: t('editor.ratings.status.ok'),
+                expiring: t('editor.ratings.status.expiring'),
+                expired: t('editor.ratings.status.expired'),
               },
             },
             recentFlights: {

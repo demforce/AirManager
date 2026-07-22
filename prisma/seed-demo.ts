@@ -53,7 +53,7 @@ type DemoPerson = {
   address?: string;
   role: Role;
   pilot?: { licenseNumber: string; licenseType: string };
-  instructor?: { ratings: string; payoutRateCents: number; rateCentsPerHour: number };
+  instructor?: { payoutRateCents: number; rateCentsPerHour: number };
   student?: { courseStartDate: string };
 };
 
@@ -62,11 +62,11 @@ const DEMO_PEOPLE: DemoPerson[] = [
   {
     firstName: 'Luca', lastName: 'Bianchi', email: 'luca.bianchi.fi@gmail.com', phone: '+39 347 660 1183',
     address: 'Via delle Colline 14, Pontedera (PI)', role: 'INSTRUCTOR',
-    instructor: { ratings: 'SEP(land), FI(A)', payoutRateCents: 2500, rateCentsPerHour: 3000 },
+    instructor: { payoutRateCents: 2500, rateCentsPerHour: 3000 },
   },
   {
     firstName: 'Paola', lastName: 'Rinaldi', email: 'paola.rinaldi@outlook.it', phone: '+39 349 502 9917', role: 'INSTRUCTOR',
-    instructor: { ratings: 'SEP(land), FI(A), CRI(A)', payoutRateCents: 2600, rateCentsPerHour: 3200 },
+    instructor: { payoutRateCents: 2600, rateCentsPerHour: 3200 },
   },
   {
     firstName: 'Marco', lastName: 'De Santis', email: 'marco.desantis@gmail.com', phone: '+39 333 481 2209',
@@ -351,8 +351,8 @@ async function main(): Promise<void> {
     if (p.instructor) {
       const profile = await prisma.instructorProfile.upsert({
         where: { personId },
-        update: { ratings: p.instructor.ratings, payoutRateCents: p.instructor.payoutRateCents, deactivatedAt: null },
-        create: { personId, ratings: p.instructor.ratings, payoutRateCents: p.instructor.payoutRateCents },
+        update: { payoutRateCents: p.instructor.payoutRateCents, deactivatedAt: null },
+        create: { personId, payoutRateCents: p.instructor.payoutRateCents },
         select: { id: true },
       });
       instructorProfileIdByEmail.set(p.email, profile.id);

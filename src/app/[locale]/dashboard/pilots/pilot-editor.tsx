@@ -65,9 +65,9 @@ export type PilotEditorLabels = {
     errors: { requiredField: string; generic: string };
     pilot: { title: string; licenseNumber: string; licenseType: string };
     student: { title: string; courseStartDate: string };
-    instructor: { title: string; ratings: string };
+    instructor: { title: string };
   };
-  certifications: { sectionTitle: string; empty: string; manageLink: string; status: { ok: string; expiring: string; expired: string } };
+  ratings: { sectionTitle: string; empty: string; manageLink: string; status: { ok: string; expiring: string; expired: string } };
   access: {
     sectionTitle: string;
     noUser: string;
@@ -146,8 +146,8 @@ export function PilotEditor({ target, onClose, onMutated, canManageUsers, locale
             <ProfilesSection personId={current.id} locale={locale} labels={labels.profiles} onChanged={(profiles) => applyPatch({ profiles })} />
           </Section>
 
-          <Section title={labels.certifications.sectionTitle}>
-            <CertificationsSection personId={current.id} labels={labels.certifications} locale={locale} />
+          <Section title={labels.ratings.sectionTitle}>
+            <RatingsSection personId={current.id} labels={labels.ratings} locale={locale} />
           </Section>
 
           {canManageUsers ? (
@@ -317,7 +317,7 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
 type PersonProfilesDetail = {
   pilotProfile: { licenseNumber: string; licenseType: string; deactivatedAt: string | null } | null;
   studentProfile: { courseStartDate: string; deactivatedAt: string | null } | null;
-  instructorProfile: { ratings: string; deactivatedAt: string | null } | null;
+  instructorProfile: { deactivatedAt: string | null } | null;
 };
 
 async function fetchProfilesDetail(personId: string): Promise<PersonProfilesDetail | null> {
@@ -668,7 +668,7 @@ function InstructorProfileForm({
   onSaved,
 }: {
   personId: string;
-  profile: { ratings: string; deactivatedAt: string | null } | null;
+  profile: { deactivatedAt: string | null } | null;
   labels: PilotEditorLabels['profiles'];
   onSaved: () => Promise<void>;
 }) {
@@ -678,12 +678,11 @@ function InstructorProfileForm({
   const [pending, setPending] = useState(false);
 
   const {
-    register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { isSubmitting },
   } = useForm<InstructorProfileRequestInput>({
     resolver: zodResolver(instructorProfileRequestSchema),
-    values: { ratings: profile?.ratings ?? '' },
+    values: {},
   });
 
   async function onSubmit(values: InstructorProfileRequestInput): Promise<void> {
@@ -719,11 +718,6 @@ function InstructorProfileForm({
     <ProfileSubShell title={labels.instructor.title} profile={profile} labels={labels} testId="pilot-editor-profile-instructor">
       {editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
-          <div className="form-grid">
-            <Field label={labels.instructor.ratings} wide>
-              <Input aria-invalid={Boolean(errors.ratings)} {...register('ratings')} />
-            </Field>
-          </div>
           {formError ? (
             <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
               {formError}
@@ -740,9 +734,7 @@ function InstructorProfileForm({
         </form>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-          <span className="fld-label" style={{ textTransform: 'none' }}>
-            {profile ? profile.ratings : ''}
-          </span>
+          <span className="fld-label" style={{ textTransform: 'none' }} />
           {formError ? (
             <p role="alert" className="fld-label" style={{ color: 'var(--bad)' }}>
               {formError}
@@ -797,7 +789,7 @@ function expiryStatusTone(status: 'ok' | 'expiring' | 'expired'): BadgeTone {
  * Scadenze page — this section only surfaces what already exists, grouped
  * by `typeName` (`groupExpiriesByTypeName`, shared with `pilot-profile.tsx`).
  */
-function CertificationsSection({ personId, labels, locale }: { personId: string; labels: PilotEditorLabels['certifications']; locale: 'it' | 'en' }) {
+function RatingsSection({ personId, labels, locale }: { personId: string; labels: PilotEditorLabels['ratings']; locale: 'it' | 'en' }) {
   const [groups, setGroups] = useState<Array<ExpiryGroupSource> | null>(null);
 
   useEffect(() => {

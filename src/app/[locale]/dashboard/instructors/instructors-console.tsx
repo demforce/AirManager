@@ -35,7 +35,6 @@ export type InstructorRow = {
   personId: string;
   firstName: string;
   lastName: string;
-  ratings: string;
   payoutRateCents: number | null;
   totalMinutes: number;
   owedTotalCents: number | null;
@@ -55,7 +54,6 @@ export type InstructorsConsoleLabels = {
     searchLabel: string;
     searchPlaceholder: string;
     noResults: string;
-    ratings: string;
     submit: string;
     cancel: string;
     requiredField: string;
@@ -79,7 +77,7 @@ export type InstructorsConsoleLabels = {
     genericError: string;
   };
   paymentCycle: { title: string; subtitle: string; empty: string; pay: string; closeLabel: string };
-  toast: { rateSet: string; ratingsSaved: string; payoutRecorded: string; instructorAdded: string; genericError: string; identitySaved: string };
+  toast: { rateSet: string; payoutRecorded: string; instructorAdded: string; genericError: string; identitySaved: string };
 };
 
 type InstructorsConsoleProps = {
@@ -146,7 +144,6 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
                   >
                     {instructor.lastName} {instructor.firstName}
                   </div>
-                  <div className="student-sub">{instructor.ratings}</div>
                 </div>
                 <div className="mono num">{instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`}</div>
                 <div className="mono num">{formatMinutes(instructor.totalMinutes)}</div>
@@ -430,9 +427,10 @@ function PaymentCycleSlideOver({ open, onClose, items, locale, labels, onPay }: 
 // created via the Pilots page, story 12.6) — reuses the SAME
 // `PUT /api/v1/people/{id}/profiles/instructor` endpoint the pilots editor's
 // `ProfilesSection` already uses, never a parallel "create person" flow.
-
-const addInstructorFormSchema = z.object({ ratings: z.string().trim().min(1) });
-type AddInstructorFormValues = z.infer<typeof addInstructorFormSchema>;
+// Story 13.1 (R-13.1-b): the free-text "abilitazioni" field this form used
+// to require is GONE — `PUT .../profiles/instructor` now just activates the
+// profile, no body needed, so this is a plain search-then-confirm (no
+// react-hook-form/zod left to validate).
 
 type PeopleSearchResponse = { items: PersonListItemDto[] };
 
@@ -457,14 +455,8 @@ function AddInstructorSlideOver({ open, onClose, onMutated, labels, successMessa
   const [results, setResults] = useState<PersonListItemDto[]>([]);
   const [selected, setSelected] = useState<PersonListItemDto | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<AddInstructorFormValues>({ resolver: zodResolver(addInstructorFormSchema), defaultValues: { ratings: '' } });
 
   useEffect(
     () => () => {
@@ -491,18 +483,19 @@ function AddInstructorSlideOver({ open, onClose, onMutated, labels, successMessa
     setResults([]);
     setSelected(null);
     setFormError(null);
-    reset({ ratings: '' });
     onClose();
   }
 
-  async function onSubmit(values: AddInstructorFormValues): Promise<void> {
+  async function handleConfirm(): Promise<void> {
     if (!selected) return;
     setFormError(null);
+    setSubmitting(true);
     const response = await fetch(`/api/v1/people/${selected.id}/profiles/instructor`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
+      body: JSON.stringify({}),
     });
+    setSubmitting(false);
     if (!response.ok) {
       setFormError(labels.genericError);
       return;
@@ -548,12 +541,7 @@ function AddInstructorSlideOver({ open, onClose, onMutated, labels, successMessa
       ) : null}
 
       {selected ? (
-        <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ marginTop: 16 }} data-testid="add-instructor-form">
-          <div className="form-grid">
-            <Field label={labels.ratings} wide>
-              <Input aria-invalid={Boolean(errors.ratings)} {...register('ratings')} />
-            </Field>
-          </div>
+        <div style={{ marginTop: 16 }} data-testid="add-instructor-form">
           {formError ? (
             <p role="alert" data-testid="add-instructor-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 10 }}>
               {formError}
@@ -563,11 +551,11 @@ function AddInstructorSlideOver({ open, onClose, onMutated, labels, successMessa
             <button type="button" className="btn" onClick={handleClose}>
               {labels.cancel}
             </button>
-            <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="add-instructor-submit">
+            <button type="button" disabled={submitting} className="btn primary" onClick={() => void handleConfirm()} data-testid="add-instructor-submit">
               {labels.submit}
             </button>
           </div>
-        </form>
+        </div>
       ) : null}
     </SlideOver>
   );

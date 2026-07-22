@@ -20,10 +20,15 @@ import { formatDateOnly } from '@/lib/time';
  * Fetched in full only here (`GET /api/v1/people/{id}`) — the list row only
  * carries the active/inactive flags (`PersonRow['profiles']`) shown as
  * badges, kept light on purpose (`people-manager.tsx`).
+ *
+ * Story 13.1 (R-13.1-b): `InstructorProfileData` no longer carries `ratings`
+ * (the free-text field was removed along with `InstructorProfile.ratings`)
+ * — this legacy page is NOT redesigned here (13.3 rebuilds `people/{id}` in
+ * AirOps), only kept compiling against the shrunk API contract.
  */
 type PilotProfileData = { licenseNumber: string; licenseType: string; deactivatedAt: string | null };
 type StudentProfileData = { courseStartDate: string; deactivatedAt: string | null };
-type InstructorProfileData = { ratings: string; deactivatedAt: string | null };
+type InstructorProfileData = { deactivatedAt: string | null };
 
 type PersonProfilesDetail = {
   id: string;
@@ -52,7 +57,7 @@ export type ProfilesPanelLabels = {
   errors: { requiredField: string; generic: string };
   pilot: { title: string; licenseNumber: string; licenseType: string };
   student: { title: string; courseStartDate: string };
-  instructor: { title: string; ratings: string };
+  instructor: { title: string };
 };
 
 type ProfilesPanelProps = {
@@ -539,12 +544,11 @@ function InstructorSection({ personId, profile, labels, onSaved, readOnly }: Ins
   const [pending, setPending] = useState(false);
 
   const {
-    register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { isSubmitting },
   } = useForm<InstructorProfileRequestInput>({
     resolver: zodResolver(instructorProfileRequestSchema),
-    values: { ratings: profile?.ratings ?? '' },
+    values: {},
   });
 
   async function onSubmit(values: InstructorProfileRequestInput): Promise<void> {
@@ -589,21 +593,9 @@ function InstructorSection({ personId, profile, labels, onSaved, readOnly }: Ins
       testId="profile-section-instructor"
     >
       {readOnly ? (
-        profile ? <p className="text-sm text-[#2F3437]">{profile.ratings}</p> : <span />
+        <span />
       ) : editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4">
-          <div>
-            <label htmlFor="instructor-ratings" className="block text-sm font-medium text-[#2F3437]">
-              {labels.instructor.ratings}
-            </label>
-            <input
-              id="instructor-ratings"
-              className="mt-2 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 py-2 text-base text-[#111111] outline-none transition-colors focus:border-[#2F3437]"
-              aria-invalid={Boolean(errors.ratings)}
-              {...register('ratings')}
-            />
-            {errors.ratings ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.errors.requiredField}</p> : null}
-          </div>
           {formError ? (
             <p role="alert" className="text-sm text-[#9F2F2D]">
               {formError}
@@ -628,7 +620,7 @@ function InstructorSection({ personId, profile, labels, onSaved, readOnly }: Ins
         </form>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-4">
-          {profile ? <p className="text-sm text-[#2F3437]">{profile.ratings}</p> : <span />}
+          <span />
           {formError ? (
             <p role="alert" className="text-sm text-[#9F2F2D]">
               {formError}

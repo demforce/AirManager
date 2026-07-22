@@ -190,7 +190,7 @@ describe('getStats (story 12.10, AC 1)', () => {
     }) as never);
     instructorProfileFindManyMock.mockResolvedValue([{ id: 'ip_1', personId: 'person_instr', person: { firstName: 'Elena', lastName: 'Nakamura' } }] as never);
     getCompensationSummaryMock.mockResolvedValue([
-      { personId: 'person_instr', firstName: 'Elena', lastName: 'Nakamura', ratings: 'FI(A)', payoutRateCents: 4000, mtdMinutes: 60, ytdMinutes: 60, totalMinutes: 60, owedMtdCents: 4000, owedYtdCents: 4000, owedTotalCents: 4000 },
+      { personId: 'person_instr', firstName: 'Elena', lastName: 'Nakamura', payoutRateCents: 4000, mtdMinutes: 60, ytdMinutes: 60, totalMinutes: 60, owedMtdCents: 4000, owedYtdCents: 4000, owedTotalCents: 4000 },
     ] as never);
 
     const monthResult = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);

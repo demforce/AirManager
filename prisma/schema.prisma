@@ -115,14 +115,18 @@ model StudentProfile {
 }
 
 /// Instructor profile (story 2.2, AC 1/2, AD-11) — see `PilotProfile` doc for
-/// the 1-to-0/1 + soft-deactivation rationale, identical here. `ratings` is a
-/// single free-text field for the MVP (e.g. "SEP(land), FI(A)"); structuring
-/// it further is deferred to epic 9 if the school domain needs it.
+/// the 1-to-0/1 + soft-deactivation rationale, identical here. The free-text
+/// `ratings` field (MVP-era, e.g. "SEP(land), FI(A)") was REMOVED in story
+/// 13.1 (R-13.1-b): instructor abilitazioni now live as `Expiry` rows on
+/// `ExpiryType`s scoped `INSTRUCTORS` — the SAME catalogue/mechanism piloti
+/// use, never a parallel free-text field. The migration
+/// (`20260722190100_drop_instructor_profile_ratings`) does NOT migrate the
+/// old free text into `Expiry` rows automatically (unreliable name parsing);
+/// existing instructors' abilitazioni are reassigned manually.
 model InstructorProfile {
   id            String    @id @default(cuid())
   personId      String    @unique
   person        Person    @relation(fields: [personId], references: [id])
-  ratings       String
   /// Hourly PAYOUT rate (epic 12, story 12.7) — what the airfield pays THIS
   /// instructor per hour taught, in euro cents. Deliberately a single
   /// mutable column, NOT historicized like `InstructorRate` (the rate
@@ -1225,6 +1229,18 @@ enum ExpiryScope {
   ALL
 }
 
+/// Rating vs medical-visit split (story 13.1, R-13.1-a) — a SEPARATE axis
+/// from `ExpiryScope` (who it's for): `kind` is WHAT it is. Medical visits
+/// were seeded as plain `ExpiryType` rows indistinguishable from a rating
+/// (`schema.prisma` pre-13.1 comment); this enum lets Impostazioni show them
+/// in a dedicated "Visite mediche" card instead of alongside abilitazioni,
+/// with zero change to how a registered `Expiry` behaves (same table, same
+/// `blocksBooking`/derived-status logic either way).
+enum ExpiryTypeKind {
+  RATING
+  MEDICAL
+}
+
 /// Expiry-type catalogue (epic 6, story 6.1; FR-35). MUTABLE catalogue
 /// configuration — like `CashCategory` (story 3.4) / `PackageType` (story
 /// 4.3) — NOT an append-only ledger: created, edited and
@@ -1251,6 +1267,11 @@ model ExpiryType {
   id            String      @id @default(cuid())
   name          String      @unique
   scope         ExpiryScope
+  /// RATING vs MEDICAL (story 13.1, R-13.1-a). Defaults `RATING` — every
+  /// existing type keeps behaving as an abilitazione unless the migration's
+  /// data-backfill (or an admin, going forward, via the dedicated card)
+  /// marks it MEDICAL.
+  kind          ExpiryTypeKind @default(RATING)
   isActive      Boolean     @default(true)
   /// Whether an EXPIRED `Expiry` of this type blocks a NEW booking (epic 7,
   /// story 7.4; FR-21 `[ASSUMPTION]`: medica/licenza block, ratings only

@@ -24,7 +24,6 @@ export type InstructorCompensationSummaryItem = {
   personId: string;
   firstName: string;
   lastName: string;
-  ratings: string;
   payoutRateCents: number | null;
   mtdMinutes: number;
   ytdMinutes: number;
@@ -65,7 +64,6 @@ type InstructorRow = {
   personId: string;
   firstName: string;
   lastName: string;
-  ratings: string;
   instructorProfileId: string;
   payoutRateCents: number | null;
 };
@@ -103,7 +101,7 @@ async function listActiveInstructors(personId?: string): Promise<InstructorRow[]
       id: true,
       firstName: true,
       lastName: true,
-      instructorProfile: { select: { id: true, ratings: true, payoutRateCents: true } },
+      instructorProfile: { select: { id: true, payoutRateCents: true } },
     },
     orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
   });
@@ -111,7 +109,6 @@ async function listActiveInstructors(personId?: string): Promise<InstructorRow[]
     personId: row.id,
     firstName: row.firstName,
     lastName: row.lastName,
-    ratings: row.instructorProfile!.ratings,
     instructorProfileId: row.instructorProfile!.id,
     payoutRateCents: row.instructorProfile!.payoutRateCents,
   }));
@@ -192,7 +189,6 @@ async function computeSummaryRows(instructors: InstructorRow[]): Promise<Instruc
       personId: instructor.personId,
       firstName: instructor.firstName,
       lastName: instructor.lastName,
-      ratings: instructor.ratings,
       payoutRateCents: instructor.payoutRateCents,
       mtdMinutes: mtd,
       ytdMinutes: ytd,
@@ -253,7 +249,7 @@ async function resolveActiveInstructorRow(personId: string): Promise<InstructorR
       id: true,
       firstName: true,
       lastName: true,
-      instructorProfile: { select: { id: true, ratings: true, payoutRateCents: true, deactivatedAt: true } },
+      instructorProfile: { select: { id: true, payoutRateCents: true, deactivatedAt: true } },
     },
   });
   if (!person || !person.instructorProfile || person.instructorProfile.deactivatedAt !== null) {
@@ -263,7 +259,6 @@ async function resolveActiveInstructorRow(personId: string): Promise<InstructorR
     personId: person.id,
     firstName: person.firstName,
     lastName: person.lastName,
-    ratings: person.instructorProfile.ratings,
     instructorProfileId: person.instructorProfile.id,
     payoutRateCents: person.instructorProfile.payoutRateCents,
   };

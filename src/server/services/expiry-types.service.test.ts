@@ -59,6 +59,8 @@ function fixture(overrides: Partial<Record<string, unknown>> = {}): Record<strin
     id: 'et_1',
     name: 'Visita medica classe 2',
     scope: 'PILOTS',
+    // Story 13.1: `EXPIRY_TYPE_SELECT` now also includes `kind`.
+    kind: 'MEDICAL',
     isActive: true,
     // Story 7.4: `EXPIRY_TYPE_SELECT` now includes `blocksBooking` — every
     // fixture that stands in for a `create`/`update`/`findMany` row needs it.
@@ -110,6 +112,31 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
       expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }));
     });
+
+    it('kind omitted (story 13.1, AC 2): every kind is returned, retro-compatible with every pre-13.1 consumer', async () => {
+      findMany.mockResolvedValue([]);
+
+      await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({}));
+
+      expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { isActive: true } }));
+    });
+
+    it('kind=MEDICAL filters the query to only medical-visit types', async () => {
+      findMany.mockResolvedValue([fixture({ name: 'Visita medica classe 2', kind: 'MEDICAL' })]);
+
+      const result = await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({ kind: 'MEDICAL' }));
+
+      expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { isActive: true, kind: 'MEDICAL' } }));
+      expect(result).toEqual([fixture({ name: 'Visita medica classe 2', kind: 'MEDICAL' })]);
+    });
+
+    it('kind=RATING combines with includeInactive', async () => {
+      findMany.mockResolvedValue([]);
+
+      await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({ includeInactive: 'true', kind: 'RATING' }));
+
+      expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { kind: 'RATING' } }));
+    });
   });
 
   describe('createExpiryType (Task 2, AC 1/2 — settings.manage only)', () => {
@@ -136,7 +163,7 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
       expect(findFirstMock).toHaveBeenCalledWith(expect.objectContaining({ where: { name: 'Nuovo tipo' } }));
       expect(createMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { name: 'Nuovo tipo', scope: 'ALL', blocksBooking: false, validityMonths: null } }),
+        expect.objectContaining({ data: { name: 'Nuovo tipo', scope: 'ALL', kind: 'RATING', blocksBooking: false, validityMonths: null } }),
       );
     });
 
@@ -148,7 +175,7 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       await createExpiryType(adminActor(), input);
 
       expect(createMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { name: 'Tipo critico', scope: 'PILOTS', blocksBooking: true, validityMonths: null } }),
+        expect.objectContaining({ data: { name: 'Tipo critico', scope: 'PILOTS', kind: 'RATING', blocksBooking: true, validityMonths: null } }),
       );
     });
 
@@ -160,6 +187,16 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       await createExpiryType(adminActor(), input);
 
       expect(createMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ validityMonths: 24 }) }));
+    });
+
+    it('creates with kind: MEDICAL when the request specifies it (story 13.1, AC 1/3 — the "Visite mediche" card)', async () => {
+      findFirst.mockResolvedValue(null);
+      create.mockResolvedValue(fixture({ name: 'Visita medica classe 3', kind: 'MEDICAL' }));
+      const input = createExpiryTypeSchema.parse({ name: 'Visita medica classe 3', scope: 'PILOTS', kind: 'MEDICAL' });
+
+      await createExpiryType(adminActor(), input);
+
+      expect(createMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ kind: 'MEDICAL' }) }));
     });
 
     it('maps a duplicate name (P2002 concurrency backstop) to ConflictError', async () => {

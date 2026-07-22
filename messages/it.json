@@ -276,8 +276,7 @@
         "courseStartDate": "Data inizio corso"
       },
       "instructor": {
-        "title": "Istruttore",
-        "ratings": "Abilitazioni"
+        "title": "Istruttore"
       }
     }
   },
@@ -350,7 +349,7 @@
       "profiles": {
         "sectionTitle": "Profili"
       },
-      "certifications": {
+      "ratings": {
         "sectionTitle": "Certificazioni",
         "empty": "Nessuna scadenza registrata.",
         "manageLink": "Gestisci in Scadenze",
@@ -399,7 +398,7 @@
       },
       "noAccount": "—",
       "archivedBadge": "Archiviato",
-      "certifications": {
+      "ratings": {
         "sectionTitle": "Certificazioni",
         "empty": "Nessuna scadenza registrata."
       },
@@ -440,7 +439,6 @@
     "paymentCycleButton": "Ciclo pagamenti",
     "table": {
       "name": "Nome",
-      "ratings": "Abilitazioni",
       "rate": "Tariffa payout",
       "hours": "Ore totali",
       "owed": "Totale dovuto",
@@ -457,7 +455,6 @@
       "searchLabel": "Cerca persona",
       "searchPlaceholder": "Nome o cognome…",
       "noResults": "Nessuna persona trovata.",
-      "ratings": "Abilitazioni",
       "submit": "Attiva profilo istruttore",
       "cancel": "Annulla",
       "requiredField": "Campo obbligatorio.",
@@ -477,11 +474,6 @@
         "fiscalCode": "Codice fiscale",
         "save": "Salva modifiche",
         "loadError": "Impossibile caricare i dati anagrafici."
-      },
-      "ratings": {
-        "sectionTitle": "Abilitazioni",
-        "label": "Abilitazioni",
-        "save": "Salva"
       },
       "payoutRate": {
         "sectionTitle": "Tariffa payout (pagata all'istruttore)",
@@ -568,7 +560,6 @@
     },
     "toast": {
       "rateSet": "Tariffa payout aggiornata.",
-      "ratingsSaved": "Abilitazioni aggiornate.",
       "payoutRecorded": "Pagamento registrato.",
       "instructorAdded": "Profilo istruttore attivato.",
       "genericError": "Si è verificato un errore. Riprova.",
@@ -1925,6 +1916,69 @@
         "genericError": "Non è stato possibile completare l'operazione."
       },
       "hint": "Imposta la validità a 0 per le abilitazioni che non scadono mai (es. Abilitazione notturna). Le scadenze compaiono nella pagina Scadenze."
+    },
+    "medical": {
+      "title": "Visite mediche",
+      "sub": "Tipi di visita medica e durata di validità",
+      "addAction": "Aggiungi visita medica",
+      "table": {
+        "name": "Nome visita",
+        "scope": "Ambito",
+        "validity": "Validità",
+        "status": "Stato",
+        "actions": "Azioni",
+        "empty": "Nessuna visita medica configurata.",
+        "monthsSuffix": "mesi",
+        "noExpiry": "senza scadenza"
+      },
+      "scope": {
+        "PILOTS": "Piloti",
+        "STUDENTS": "Allievi",
+        "INSTRUCTORS": "Istruttori",
+        "ALL": "Tutti"
+      },
+      "status": {
+        "active": "Attivo",
+        "inactive": "Disattivato"
+      },
+      "blocksBooking": {
+        "yes": "Blocca prenotazioni"
+      },
+      "actions": {
+        "edit": "Modifica",
+        "deactivate": "Disattiva",
+        "reactivate": "Riattiva",
+        "delete": "Elimina",
+        "confirmDelete": "Confermi?",
+        "confirmYes": "Sì",
+        "confirmCancel": "Annulla"
+      },
+      "form": {
+        "createTitle": "Nuova visita medica",
+        "editTitle": "Modifica visita medica",
+        "name": "Nome visita",
+        "scope": "Ambito",
+        "validity": "Validità",
+        "validityHint": "Precompila la scadenza alla registrazione (data rilascio + mesi). Imposta 0 per le visite che non scadono mai.",
+        "blocksBooking": "Blocca prenotazioni",
+        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta, impedisce nuove prenotazioni.",
+        "submitCreate": "Crea",
+        "submitSave": "Salva",
+        "cancel": "Annulla",
+        "requiredField": "Campo obbligatorio.",
+        "conflictError": "Esiste già un tipo con questo nome.",
+        "genericError": "Non è stato possibile salvare. Riprova."
+      },
+      "feedback": {
+        "created": "Visita medica creata.",
+        "updated": "Visita medica aggiornata.",
+        "deactivated": "Visita medica disattivata.",
+        "reactivated": "Visita medica riattivata.",
+        "deleted": "Visita medica eliminata.",
+        "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
+        "genericError": "Non è stato possibile completare l'operazione."
+      },
+      "hint": "Le visite mediche sono separate dalle abilitazioni (Ratings): hanno una propria scadenza e non sono mai testo libero. Le scadenze compaiono nella pagina Scadenze."
     },
     "cashCategories": {
       "title": "Categorie di cassa",

@@ -276,8 +276,7 @@
         "courseStartDate": "Course start date"
       },
       "instructor": {
-        "title": "Instructor",
-        "ratings": "Ratings"
+        "title": "Instructor"
       }
     }
   },
@@ -350,8 +349,8 @@
       "profiles": {
         "sectionTitle": "Profiles"
       },
-      "certifications": {
-        "sectionTitle": "Certifications",
+      "ratings": {
+        "sectionTitle": "Ratings",
         "empty": "No expiry on file.",
         "manageLink": "Manage in Expiries",
         "status": {
@@ -399,8 +398,8 @@
       },
       "noAccount": "—",
       "archivedBadge": "Archived",
-      "certifications": {
-        "sectionTitle": "Certifications",
+      "ratings": {
+        "sectionTitle": "Ratings",
         "empty": "No expiry on file."
       },
       "recentFlights": {
@@ -440,7 +439,6 @@
     "paymentCycleButton": "Payment cycle",
     "table": {
       "name": "Name",
-      "ratings": "Ratings",
       "rate": "Payout rate",
       "hours": "Total hours",
       "owed": "Total owed",
@@ -457,7 +455,6 @@
       "searchLabel": "Search person",
       "searchPlaceholder": "First or last name…",
       "noResults": "No person found.",
-      "ratings": "Ratings",
       "submit": "Activate instructor profile",
       "cancel": "Cancel",
       "requiredField": "Required field.",
@@ -477,11 +474,6 @@
         "fiscalCode": "Fiscal code",
         "save": "Save changes",
         "loadError": "Could not load the identity data."
-      },
-      "ratings": {
-        "sectionTitle": "Ratings",
-        "label": "Ratings",
-        "save": "Save"
       },
       "payoutRate": {
         "sectionTitle": "Payout rate (paid to the instructor)",
@@ -568,7 +560,6 @@
     },
     "toast": {
       "rateSet": "Payout rate updated.",
-      "ratingsSaved": "Ratings updated.",
       "payoutRecorded": "Payout recorded.",
       "instructorAdded": "Instructor profile activated.",
       "genericError": "Something went wrong. Please try again.",
@@ -1925,6 +1916,69 @@
         "genericError": "Could not complete the operation."
       },
       "hint": "Set validity to 0 for ratings that never expire (e.g. night rating). Expiries appear on the Expiries page."
+    },
+    "medical": {
+      "title": "Medical checks",
+      "sub": "Medical check types and validity duration",
+      "addAction": "Add medical check",
+      "table": {
+        "name": "Medical check name",
+        "scope": "Scope",
+        "validity": "Validity",
+        "status": "Status",
+        "actions": "Actions",
+        "empty": "No medical check types configured.",
+        "monthsSuffix": "months",
+        "noExpiry": "never expires"
+      },
+      "scope": {
+        "PILOTS": "Pilots",
+        "STUDENTS": "Students",
+        "INSTRUCTORS": "Instructors",
+        "ALL": "Everyone"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Deactivated"
+      },
+      "blocksBooking": {
+        "yes": "Blocks bookings"
+      },
+      "actions": {
+        "edit": "Edit",
+        "deactivate": "Deactivate",
+        "reactivate": "Reactivate",
+        "delete": "Delete",
+        "confirmDelete": "Confirm?",
+        "confirmYes": "Yes",
+        "confirmCancel": "Cancel"
+      },
+      "form": {
+        "createTitle": "New medical check",
+        "editTitle": "Edit medical check",
+        "name": "Medical check name",
+        "scope": "Scope",
+        "validity": "Validity",
+        "validityHint": "Prefills the expiry at registration (issue date + months). Set 0 for medical checks that never expire.",
+        "blocksBooking": "Blocks bookings",
+        "blocksBookingHint": "An expired document of this type prevents new bookings.",
+        "submitCreate": "Create",
+        "submitSave": "Save",
+        "cancel": "Cancel",
+        "requiredField": "Required field.",
+        "conflictError": "A type with this name already exists.",
+        "genericError": "Could not save. Please try again."
+      },
+      "feedback": {
+        "created": "Medical check created.",
+        "updated": "Medical check updated.",
+        "deactivated": "Medical check deactivated.",
+        "reactivated": "Medical check reactivated.",
+        "deleted": "Medical check deleted.",
+        "deleteInUseError": "This type is in use: deactivate it instead of deleting it.",
+        "genericError": "Could not complete the operation."
+      },
+      "hint": "Medical checks are separate from ratings: they have their own expiry date and are never free text. Expiries appear on the Expiries page."
     },
     "cashCategories": {
       "title": "Cash categories",

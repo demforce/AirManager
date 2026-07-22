@@ -64,7 +64,7 @@ function instructorPersonRow(overrides: Partial<Record<string, unknown>> = {}): 
     id: 'person_ines',
     firstName: 'Ines',
     lastName: 'Volpi',
-    instructorProfile: { id: 'profile_ines', ratings: 'SEP(land), FI(A)', payoutRateCents: 3000 },
+    instructorProfile: { id: 'profile_ines', payoutRateCents: 3000 },
     ...overrides,
   };
 }
@@ -151,7 +151,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
     });
 
     it('a null payoutRateCents (no rate set yet) yields a null owedMtdCents, never a fabricated 0', async () => {
-      personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', ratings: 'SEP(land)', payoutRateCents: null } })]);
+      personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', payoutRateCents: null } })]);
       stubZeroAggregates();
 
       const result = await getOwnCompensationSummary({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
@@ -162,7 +162,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
 
   describe('getCompensationSummary — minutes/owed computation (AC 2)', () => {
     it('returns 0 hours and null owed for an instructor with no flights and no payout rate', async () => {
-      personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', ratings: 'SEP(land)', payoutRateCents: null } })]);
+      personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', payoutRateCents: null } })]);
       stubZeroAggregates();
 
       const [row] = await getCompensationSummary(staffActor());
@@ -187,7 +187,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
     });
 
     it('rounds a fractional gross amount (Math.round, not truncation)', async () => {
-      personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', ratings: 'SEP(land)', payoutRateCents: 4501 } })]);
+      personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', payoutRateCents: 4501 } })]);
       // 25 minutes / 60 * 4501 = 1875.4166... -> rounds to 1875
       flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 25 } }]);
       payoutGroupBy.mockResolvedValue([]);
@@ -292,7 +292,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
         id: 'person_ines',
         firstName: 'Ines',
         lastName: 'Volpi',
-        instructorProfile: { id: 'profile_ines', ratings: 'SEP(land)', payoutRateCents: 3000, deactivatedAt: null },
+        instructorProfile: { id: 'profile_ines', payoutRateCents: 3000, deactivatedAt: null },
       });
       flightGroupBy.mockResolvedValue([]);
       payoutGroupBy.mockResolvedValue([]);

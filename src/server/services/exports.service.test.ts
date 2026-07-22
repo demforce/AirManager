@@ -374,10 +374,10 @@ describe('exportExpiriesXlsx (T2 — date-only column mapping)', () => {
 });
 
 describe('exportInstructorCompensationXlsx (story 12.7, AC 3 — payout rate/owed money columns)', () => {
-  it('maps name/ratings/hours + the payout rate and owed as numeric euro cells, null when the instructor has no payout rate', async () => {
+  it('maps name/hours + the payout rate and owed as numeric euro cells, null when the instructor has no payout rate', async () => {
     getCompensationSummaryMock.mockResolvedValue([
-      { instructorProfileId: 'ip_1', personId: 'p_1', firstName: 'Ines', lastName: 'Bianchi', ratings: 'PPL, IR', payoutRateCents: 6000, totalMinutes: 90, owedTotalCents: 9000 },
-      { instructorProfileId: 'ip_2', personId: 'p_2', firstName: 'Luca', lastName: 'Verdi', ratings: '', payoutRateCents: null, totalMinutes: 0, owedTotalCents: null },
+      { instructorProfileId: 'ip_1', personId: 'p_1', firstName: 'Ines', lastName: 'Bianchi', payoutRateCents: 6000, totalMinutes: 90, owedTotalCents: 9000 },
+      { instructorProfileId: 'ip_2', personId: 'p_2', firstName: 'Luca', lastName: 'Verdi', payoutRateCents: null, totalMinutes: 0, owedTotalCents: null },
     ] as never);
 
     const { buffer } = await exportInstructorCompensationXlsx(ACTOR, { locale: 'it' });
@@ -385,15 +385,14 @@ describe('exportInstructorCompensationXlsx (story 12.7, AC 3 — payout rate/owe
 
     const withRate = sheet.getRow(2);
     expect(withRate.getCell(1).value).toBe('Bianchi Ines');
-    expect(withRate.getCell(2).value).toBe('PPL, IR');
-    expect(withRate.getCell(3).value).toBe(60); // 6000 cents → 60 as a real numeric euro cell (MONEY_NUM_FMT), never a string
-    expect(withRate.getCell(4).value).toBe(formatMinutes(90));
-    expect(withRate.getCell(5).value).toBe(90); // owed 9000 cents → 90
+    expect(withRate.getCell(2).value).toBe(60); // 6000 cents → 60 as a real numeric euro cell (MONEY_NUM_FMT), never a string
+    expect(withRate.getCell(3).value).toBe(formatMinutes(90));
+    expect(withRate.getCell(4).value).toBe(90); // owed 9000 cents → 90
 
     const noRate = sheet.getRow(3);
     expect(noRate.getCell(1).value).toBe('Verdi Luca');
-    expect(noRate.getCell(3).value).toBeNull(); // rate null when the instructor has no payout rate
-    expect(noRate.getCell(5).value).toBeNull(); // owed null when no rate
+    expect(noRate.getCell(2).value).toBeNull(); // rate null when the instructor has no payout rate
+    expect(noRate.getCell(4).value).toBeNull(); // owed null when no rate
   });
 });
 

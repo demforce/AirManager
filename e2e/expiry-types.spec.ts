@@ -83,26 +83,35 @@ async function createStaffUserAndSetPassword(page: Page, password: string): Prom
 
 /**
  * Expiry-type catalogue (Story 6.1, AC 1/2, FR-35) — story 12.11 AC 2/3
- * moved it from the removed `/dashboard/expiries/types` page into the
- * Impostazioni "Abilitazioni" card (`ratings-card.tsx`), `settings.manage`
+ * moved it from the removed `/dashboard/expiries/types` page into
+ * Impostazioni; story 13.1 (AC 3, R-13.1-a) split it into TWO cards —
+ * "Abilitazioni" (`kind=RATING`) and "Visite mediche" (`kind=MEDICAL`),
+ * both backed by the SAME `ratings-card.tsx` component — `settings.manage`
  * (ADMIN-only) gated same as every other card on that page.
  */
-test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Story 12.11 AC 2/3)', () => {
-  test('admin sees the 7 seeded standard types (6 domain + Quota associativa), creates a custom one, edits/deactivates/deletes it', async ({ page }) => {
+test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Story 12.11 AC 2/3; Story 13.1 AC 3)', () => {
+  test('admin sees the seeded standard types split RATING/MEDICAL across the two cards, creates a custom rating, edits/deactivates/deletes it', async ({
+    page,
+  }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     await page.goto('/it/dashboard/settings');
     const ratingsCard = page.getByTestId('ratings-settings-card');
     await expect(ratingsCard).toBeVisible();
+    const medicalCard = page.getByTestId('medical-settings-card');
+    await expect(medicalCard).toBeVisible();
 
-    const medicalClass2Row = page.getByTestId('rating-row').filter({ hasText: 'Visita medica classe 2' });
+    // Story 13.1 (R-13.1-a): the 3 medical-visit standard types live in the
+    // "Visite mediche" card, NOT "Abilitazioni".
+    const medicalClass2Row = page.getByTestId('medical-row').filter({ hasText: 'Visita medica classe 2' });
     await expect(medicalClass2Row).toContainText('Piloti');
     await expect(medicalClass2Row).toContainText('Attivo');
 
-    const medicalLapl = page.getByTestId('rating-row').filter({ hasText: 'Visita medica LAPL' });
+    const medicalLapl = page.getByTestId('medical-row').filter({ hasText: 'Visita medica LAPL' });
     await expect(medicalLapl).toContainText('Allievi');
+    await expect(page.getByTestId('rating-row').filter({ hasText: 'Visita medica' })).toHaveCount(0);
 
-    // Ratifica utente 1: seeded for a fresh install too.
+    // Ratifica utente 1: seeded for a fresh install too — a RATING (scope ALL), stays in "Abilitazioni".
     const membershipRow = page.getByTestId('rating-row').filter({ hasText: 'Quota associativa' });
     await expect(membershipRow).toContainText('12 mesi');
 

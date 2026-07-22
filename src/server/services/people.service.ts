@@ -1,9 +1,13 @@
+import type { Prisma } from '@/generated/prisma/client';
 import type { Role } from '@/generated/prisma/enums';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
+import { parseDateOnlyUtc, todayDateOnlyUtc } from '@/lib/date-only';
 import type { CreatePersonInput, ListPeopleQuery, UpdatePersonInput } from '@/lib/schemas/people';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { ConflictError, ForbiddenError, NotFoundError } from './errors';
+import { sendInviteEmail } from './auth-tokens.service';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
+import { createUserCore, emailLocale } from './users.service';
 
 /** Story 2.2, AC 1: which profiles (pilot/student/instructor) are currently active. */
 export type ProfileFlags = {
@@ -45,12 +49,14 @@ export type ProfileType = 'pilot' | 'student' | 'instructor';
 export type PilotProfileInput = { licenseNumber: string; licenseType: string };
 /** `courseStartDate` arrives as the wire's `YYYY-MM-DD` string (AD-8). */
 export type StudentProfileInput = { courseStartDate: string };
-export type InstructorProfileInput = { ratings: string };
+/** Empty (story 13.1, R-13.1-b): the free-text `ratings` field is gone — activating/reactivating is all this does now. */
+export type InstructorProfileInput = Record<string, never>;
 
 export type PilotProfileDto = { licenseNumber: string; licenseType: string; deactivatedAt: Date | null };
 /** `courseStartDate` stays a `YYYY-MM-DD` string on the way out — never a full datetime (Dev Notes). */
 export type StudentProfileDto = { courseStartDate: string; deactivatedAt: Date | null };
-export type InstructorProfileDto = { ratings: string; deactivatedAt: Date | null };
+/** `ratings` removed (story 13.1, R-13.1-b) — abilitazioni now live as `Expiry` rows on `INSTRUCTORS`-scoped types. */
+export type InstructorProfileDto = { deactivatedAt: Date | null };
 
 const PROFILE_FLAG_SELECT = {
   pilotProfile: { select: { deactivatedAt: true } },
@@ -76,7 +82,7 @@ const PERSON_DETAIL_SELECT = {
   ...PERSON_SELECT,
   pilotProfile: { select: { licenseNumber: true, licenseType: true, deactivatedAt: true } },
   studentProfile: { select: { courseStartDate: true, deactivatedAt: true } },
-  instructorProfile: { select: { ratings: true, deactivatedAt: true } },
+  instructorProfile: { select: { deactivatedAt: true } },
 } as const;
 
 type SelectedPerson = {
@@ -97,7 +103,7 @@ type SelectedPerson = {
 type SelectedPersonDetail = SelectedPerson & {
   pilotProfile: { licenseNumber: string; licenseType: string; deactivatedAt: Date | null } | null;
   studentProfile: { courseStartDate: Date; deactivatedAt: Date | null } | null;
-  instructorProfile: { ratings: string; deactivatedAt: Date | null } | null;
+  instructorProfile: { deactivatedAt: Date | null } | null;
 };
 
 /** `@db.Date` round-trips as a UTC-midnight `Date` — format with UTC parts so no server timezone can shift the calendar day. */
@@ -133,9 +139,7 @@ function toPersonDetail(person: SelectedPersonDetail): PersonDetail {
     studentProfile: person.studentProfile
       ? { courseStartDate: toDateOnlyString(person.studentProfile.courseStartDate), deactivatedAt: person.studentProfile.deactivatedAt }
       : null,
-    instructorProfile: person.instructorProfile
-      ? { ratings: person.instructorProfile.ratings, deactivatedAt: person.instructorProfile.deactivatedAt }
-      : null,
+    instructorProfile: person.instructorProfile ? { deactivatedAt: person.instructorProfile.deactivatedAt } : null,
   };
 }
 
@@ -345,15 +349,16 @@ export async function getPerson(actor: Actor, id: string): Promise<PersonDetail>
   return toPersonDetail(person);
 }
 
-/** Creates a person (AC 1). Write access: `people.manage` (staff/admin). */
-export async function createPerson(actor: Actor, input: CreatePersonInput): Promise<PersonListItem> {
-  authorize(actor, 'people.manage');
-
-  await assertUnique({ email: input.email, fiscalCode: input.fiscalCode });
-
-  let person;
+/**
+ * The raw `Person` insert behind `createPerson` (AC 1) — extracted (story
+ * 13.1, Dev Notes: "helper condivisi, mai duplicazione", same
+ * `getFlightTotals` 12.8 precedent) so the one-step composite below can run
+ * it, and every profile/expiry/access write that follows, inside ONE
+ * transaction (`tx`).
+ */
+async function createPersonCore(tx: Prisma.TransactionClient, input: CreatePersonInput): Promise<SelectedPerson> {
   try {
-    person = await prisma.person.create({
+    return await tx.person.create({
       data: {
         firstName: input.firstName,
         lastName: input.lastName,
@@ -365,15 +370,148 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
       select: PERSON_SELECT,
     });
   } catch (error) {
-    // assertUnique is check-then-write: a concurrent request can win the
-    // race and the unique constraint fires here instead.
+    // assertUnique (below) is check-then-write: a concurrent request can win
+    // the race and the unique constraint fires here instead.
     if (isUniqueViolation(error)) {
       throw new ConflictError('A person with this email or fiscal code already exists.');
     }
     throw error;
   }
+}
 
-  return toListItem(person);
+/**
+ * Pre-validates the composite create's `expiries` block (AC 5, R-13.1-c):
+ * every referenced type must exist, be ACTIVE, and have a scope compatible
+ * with the profiles about to be activated in THIS SAME call. Unlike
+ * `expiries.service.ts#assertScopeCompatible` (which reads the person's
+ * CURRENT profiles from the DB), compatibility here is checked against the
+ * request's OWN `profiles` block — the person doesn't exist yet, so there is
+ * nothing to read. Every failure is a 422 (AC 7: "tipo inesistente/inattivo
+ * → 422"), deliberately NOT the 404/409 `registerExpiry` itself uses — this
+ * validates a batch of a request body, not a single resource lookup.
+ */
+async function assertExpiryTypesValidForComposite(
+  expiries: NonNullable<CreatePersonInput['expiries']>,
+  profiles: CreatePersonInput['profiles'],
+): Promise<void> {
+  const ids = expiries.map((expiry) => expiry.expiryTypeId);
+  const types = await prisma.expiryType.findMany({ where: { id: { in: ids } }, select: { id: true, scope: true, isActive: true } });
+  const typeById = new Map(types.map((type) => [type.id, type]));
+
+  for (const id of ids) {
+    const type = typeById.get(id);
+    if (!type) {
+      throw new ValidationError(`Expiry type ${id} not found.`, undefined, 'EXPIRY_TYPE_NOT_FOUND');
+    }
+    if (!type.isActive) {
+      throw new ValidationError(`Expiry type ${id} is deactivated.`, undefined, 'EXPIRY_TYPE_INACTIVE');
+    }
+    const compatible =
+      type.scope === 'ALL' ||
+      (type.scope === 'PILOTS' && Boolean(profiles?.pilot)) ||
+      (type.scope === 'STUDENTS' && Boolean(profiles?.student)) ||
+      (type.scope === 'INSTRUCTORS' && Boolean(profiles?.instructor));
+    if (!compatible) {
+      throw new ValidationError(`Expiry type ${id}'s scope does not match any profile being activated.`, undefined, 'SCOPE_MISMATCH');
+    }
+  }
+}
+
+/**
+ * Creates a person (AC 1) — and, since story 13.1 (AC 5), OPTIONALLY in the
+ * SAME atomic transaction: activates one or more profiles, registers
+ * expiries against them, and creates a linked user + sends its invite (the
+ * one-step "Aggiungi pilota" flow). Write access: `people.manage`; the
+ * `access` block additionally requires `users.manage` — checked BEFORE any
+ * write, so an actor without it gets a 403 and the block is never silently
+ * dropped (AC 5). A failure in ANY block (duplicate email, unknown/inactive
+ * expiry type, scope mismatch, `access.email` already taken, ...) rolls
+ * back the ENTIRE person — every write below shares the SAME `tx`. The
+ * invite email (only if `access` was given) is sent AFTER the transaction
+ * commits (fire-and-forget, same pattern as the standalone
+ * `POST /api/v1/users`) — never before, so a rolled-back create never sends
+ * an invite for a user that doesn't exist.
+ *
+ * Calling this with none of `profiles`/`expiries`/`access` behaves IDENTICALLY
+ * to the pre-13.1 `createPerson` (retro-compatibility, AC 5) — the pilot
+ * editor's existing "new person" flow is completely unaffected.
+ */
+export async function createPerson(actor: Actor, input: CreatePersonInput): Promise<PersonListItem> {
+  authorize(actor, 'people.manage');
+  if (input.access) {
+    authorize(actor, 'users.manage');
+  }
+
+  await assertUnique({ email: input.email, fiscalCode: input.fiscalCode });
+
+  if (input.access) {
+    const existingUser = await prisma.user.findUnique({ where: { email: input.access.email }, select: { id: true } });
+    if (existingUser) {
+      throw new ConflictError('A user with this email already exists.');
+    }
+  }
+  if (input.expiries) {
+    await assertExpiryTypesValidForComposite(input.expiries, input.profiles);
+  }
+
+  const { person, user } = await prisma.$transaction(async (tx) => {
+    const person = await createPersonCore(tx, input);
+
+    if (input.profiles?.pilot) {
+      await upsertPilotProfileCore(tx, person.id, input.profiles.pilot);
+    }
+    if (input.profiles?.student) {
+      await upsertStudentProfileCore(tx, person.id, input.profiles.student);
+    }
+    if (input.profiles?.instructor) {
+      await upsertInstructorProfileCore(tx, person.id);
+    }
+
+    if (input.expiries) {
+      // A single "issued today" date for every expiry in this batch — the
+      // wire shape (AC 5) only carries `expiresAt`, never `issuedAt` (unlike
+      // `registerExpiry`'s own standalone schema): a person just being
+      // created has no prior issue date to ask for, so "today" is the only
+      // sensible default for a one-step create.
+      const issuedAt = todayDateOnlyUtc();
+      for (const expiry of input.expiries) {
+        await tx.expiry.create({
+          data: {
+            personId: person.id,
+            expiryTypeId: expiry.expiryTypeId,
+            issuedAt,
+            expiresAt: parseDateOnlyUtc(expiry.expiresAt),
+            actorUserId: actor.userId,
+          },
+        });
+      }
+    }
+
+    const user = input.access
+      ? // `locale: 'it'` matches `createUserSchema`'s own default — the
+        // composite's `access` block (AC 5) has no locale field of its own.
+        await createUserCore(tx, { email: input.access.email, roles: input.access.roles, locale: 'it', personId: person.id })
+      : null;
+
+    return { person, user };
+  });
+
+  if (user) {
+    try {
+      await sendInviteEmail(user.id, user.email, emailLocale(user.locale));
+    } catch (error) {
+      console.error('createPerson: failed to send invite email', error);
+    }
+  }
+
+  return {
+    ...toListItem(person),
+    profiles: {
+      pilot: Boolean(input.profiles?.pilot),
+      student: Boolean(input.profiles?.student),
+      instructor: Boolean(input.profiles?.instructor),
+    },
+  };
 }
 
 /** Partial update: name, contact details, fiscal code. Archiving is separate (AC 2). */
@@ -459,13 +597,64 @@ export async function unarchivePerson(actor: Actor, id: string): Promise<PersonL
 }
 
 /**
+ * Story 3.1, AC 1/AD-11: the pilot profile upsert and the Account upsert
+ * must land together — a crash between the two must never leave a pilot
+ * profile active with no account behind it. Extracted (story 13.1, Dev
+ * Notes: "helper condivisi, mai duplicazione") so the one-step composite
+ * `createPerson` can run this INSIDE its own transaction via the SAME `tx`,
+ * instead of duplicating it.
+ */
+async function upsertPilotProfileCore(tx: Prisma.TransactionClient, personId: string, input: PilotProfileInput): Promise<PilotProfileDto> {
+  const profile = await tx.pilotProfile.upsert({
+    where: { personId },
+    create: { personId, licenseNumber: input.licenseNumber, licenseType: input.licenseType },
+    update: { licenseNumber: input.licenseNumber, licenseType: input.licenseType, deactivatedAt: null },
+    select: { licenseNumber: true, licenseType: true, deactivatedAt: true },
+  });
+  await tx.account.upsert({ where: { personId }, create: { personId }, update: {} });
+  return profile;
+}
+
+/** Student twin of {@link upsertPilotProfileCore} — same Account-upsert-alongside rationale. */
+async function upsertStudentProfileCore(tx: Prisma.TransactionClient, personId: string, input: StudentProfileInput): Promise<StudentProfileDto> {
+  const courseStartDate = new Date(input.courseStartDate);
+  const profile = await tx.studentProfile.upsert({
+    where: { personId },
+    create: { personId, courseStartDate },
+    update: { courseStartDate, deactivatedAt: null },
+    select: { courseStartDate: true, deactivatedAt: true },
+  });
+  await tx.account.upsert({ where: { personId }, create: { personId }, update: {} });
+  return { courseStartDate: toDateOnlyString(profile.courseStartDate), deactivatedAt: profile.deactivatedAt };
+}
+
+/**
+ * Instructor twin of {@link upsertPilotProfileCore} — no companion `Account`
+ * (instructors aren't billed like pilots/students, unchanged). No own field
+ * to write either (story 13.1, R-13.1-b: `ratings` removed) — this call is
+ * now a pure activate/reactivate.
+ */
+async function upsertInstructorProfileCore(tx: Prisma.TransactionClient, personId: string): Promise<InstructorProfileDto> {
+  return tx.instructorProfile.upsert({
+    where: { personId },
+    create: { personId },
+    update: { deactivatedAt: null },
+    select: { deactivatedAt: true },
+  });
+}
+
+/**
  * Activates or updates one of a person's profiles (story 2.2, AC 1/2).
  * Creates the profile row if it doesn't exist yet; if it does — active or
  * previously deactivated — updates its data and clears `deactivatedAt`
  * (AC 2: reactivating, e.g. the student→pilot transition, is just an
  * upsert). `Person.id` never changes across this. Write access:
  * `people.manage`. Allowed on an archived person (Dev Notes, consistent with
- * review 2.1 F3: editing an archived person is by-design).
+ * review 2.1 F3: editing an archived person is by-design). Each branch
+ * below wraps its `*Core` helper in a trivial `$transaction` — same
+ * interactive-callback idiom as `accounts.service.ts#readOverview`, kept
+ * even for the instructor branch (no companion write) so all three stay
+ * uniform and reusable by `createPerson`'s composite the same way.
  */
 export async function upsertProfile(actor: Actor, personId: string, type: 'pilot', data: PilotProfileInput): Promise<PilotProfileDto>;
 export async function upsertProfile(actor: Actor, personId: string, type: 'student', data: StudentProfileInput): Promise<StudentProfileDto>;
@@ -490,48 +679,15 @@ export async function upsertProfile(
 
   if (type === 'pilot') {
     const input = data as PilotProfileInput;
-    // Story 3.1, AC 1/AD-11: the profile upsert and the Account upsert must
-    // land together — a crash between the two must never leave a pilot
-    // profile active with no account behind it. Interactive transaction
-    // (story TD-1, AC 3) — same batch-vs-interactive rationale as
-    // `listPeople` above.
-    const [profile] = await prisma.$transaction(async (tx) => {
-      const profile = await tx.pilotProfile.upsert({
-        where: { personId },
-        create: { personId, licenseNumber: input.licenseNumber, licenseType: input.licenseType },
-        update: { licenseNumber: input.licenseNumber, licenseType: input.licenseType, deactivatedAt: null },
-        select: { licenseNumber: true, licenseType: true, deactivatedAt: true },
-      });
-      await tx.account.upsert({ where: { personId }, create: { personId }, update: {} });
-      return [profile] as const;
-    });
-    return profile;
+    return prisma.$transaction((tx) => upsertPilotProfileCore(tx, personId, input));
   }
 
   if (type === 'student') {
     const input = data as StudentProfileInput;
-    const courseStartDate = new Date(input.courseStartDate);
-    const [profile] = await prisma.$transaction(async (tx) => {
-      const profile = await tx.studentProfile.upsert({
-        where: { personId },
-        create: { personId, courseStartDate },
-        update: { courseStartDate, deactivatedAt: null },
-        select: { courseStartDate: true, deactivatedAt: true },
-      });
-      await tx.account.upsert({ where: { personId }, create: { personId }, update: {} });
-      return [profile] as const;
-    });
-    return { courseStartDate: toDateOnlyString(profile.courseStartDate), deactivatedAt: profile.deactivatedAt };
+    return prisma.$transaction((tx) => upsertStudentProfileCore(tx, personId, input));
   }
 
-  const input = data as InstructorProfileInput;
-  const profile = await prisma.instructorProfile.upsert({
-    where: { personId },
-    create: { personId, ratings: input.ratings },
-    update: { ratings: input.ratings, deactivatedAt: null },
-    select: { ratings: true, deactivatedAt: true },
-  });
-  return profile;
+  return prisma.$transaction((tx) => upsertInstructorProfileCore(tx, personId));
 }
 
 /**

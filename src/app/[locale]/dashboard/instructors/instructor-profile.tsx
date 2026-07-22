@@ -3,14 +3,19 @@
 /**
  * Read-only instructor profile slide-over (story 12.7, AC 7) — port of
  * `docs/design-reference/airops/src/InstructorProfile.jsx` onto the real
- * domain: avatar+identity+ratings (as `Badge`s), a KPI grid (ore totali/ore
- * nel mese/dovuto totale/tariffa payout), "Allievi recenti" and "Voli
- * recenti come CFI" (last 5) — the latter two from REAL flights
+ * domain: avatar+identity, a KPI grid (ore totali/ore nel mese/dovuto
+ * totale/tariffa payout), "Allievi recenti" and "Voli recenti come CFI"
+ * (last 5) — the latter two from REAL flights
  * (`GET /api/v1/instructor-compensation?personId=`, never the prototype's
  * mock `LOGBOOK`/`[...new Set(...)]` data). Footer: Chiudi / Modifica.
+ *
+ * Story 13.1 (R-13.1-b): the free-text `ratings` subtitle/chips (the
+ * prototype's `instructor.ratings.split(...)`) are REMOVED along with the
+ * DB field — abilitazioni now live as `Expiry` rows (a catalogue-driven
+ * chip display/picker arrives with the pilot editor's ratings chips,
+ * story 13.2).
  */
 import { useEffect, useState } from 'react';
-import { Badge } from '@/components/ui/badge';
 import { SlideOver } from '@/components/ui/slide-over';
 import { formatCents } from '@/lib/money';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
@@ -39,13 +44,6 @@ async function fetchDetail(personId: string): Promise<InstructorDetail | null> {
 
 function initialsOf(firstName: string, lastName: string): string {
   return `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase();
-}
-
-function ratingsList(ratings: string): string[] {
-  return ratings
-    .split(',')
-    .map((rating) => rating.trim())
-    .filter((rating) => rating.length > 0);
 }
 
 type InstructorProfileProps = {
@@ -80,7 +78,6 @@ export function InstructorProfile({ instructor, onClose, onEdit, locale, labels 
       open={instructor !== null}
       onClose={onClose}
       title={`${instructor.lastName} ${instructor.firstName}`}
-      subtitle={instructor.ratings}
       closeLabel={labels.closeLabel}
       footer={
         <>
@@ -135,13 +132,6 @@ export function InstructorProfile({ instructor, onClose, onEdit, locale, labels 
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 16, letterSpacing: '-0.01em' }}>
             {instructor.lastName} {instructor.firstName}
-          </div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-            {ratingsList(instructor.ratings).map((rating) => (
-              <Badge key={rating} tone="info">
-                {rating}
-              </Badge>
-            ))}
           </div>
         </div>
       </div>

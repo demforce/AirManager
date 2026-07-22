@@ -20,6 +20,40 @@ export type ExpiryTypeRow = {
   validityMonths: number | null;
 };
 
+/**
+ * Test-id namespace for one instance of this card (story 13.1, AC 3) —
+ * defaults below match the ORIGINAL "Abilitazioni" ids verbatim (zero
+ * change for `e2e/expiry-types.spec.ts`'s existing assertions); the new
+ * "Visite mediche" card passes its own set from `settings/page.tsx`.
+ */
+export type ExpiryTypeCardTestIds = {
+  card: string;
+  addButton: string;
+  feedback: string;
+  row: string;
+  editButton: string;
+  form: string;
+  nameInput: string;
+  scopeSelect: string;
+  validityInput: string;
+  formSubmit: string;
+  formError: string;
+};
+
+const DEFAULT_TEST_IDS: ExpiryTypeCardTestIds = {
+  card: 'ratings-settings-card',
+  addButton: 'ratings-add-button',
+  feedback: 'ratings-feedback',
+  row: 'rating-row',
+  editButton: 'rating-edit-button',
+  form: 'rating-form',
+  nameInput: 'rating-name-input',
+  scopeSelect: 'rating-scope-select',
+  validityInput: 'rating-validity-input',
+  formSubmit: 'rating-form-submit',
+  formError: 'rating-form-error',
+};
+
 export type RatingsCardLabels = {
   title: string;
   sub: string;
@@ -52,6 +86,10 @@ export type RatingsCardLabels = {
 type RatingsCardProps = {
   expiryTypes: ExpiryTypeRow[];
   labels: RatingsCardLabels;
+  /** `ExpiryType.kind` this instance manages (story 13.1, AC 3) — sets `kind` on every create, default `'RATING'` (retro-compatible: the pre-13.1 "Abilitazioni" card only ever created RATING types). */
+  kind?: 'RATING' | 'MEDICAL';
+  /** Test-id namespace override for this instance — default is the ORIGINAL "Abilitazioni" ids, unchanged. */
+  testIds?: ExpiryTypeCardTestIds;
 };
 
 type Panel = { mode: 'create' } | { mode: 'edit'; expiryType: ExpiryTypeRow };
@@ -60,14 +98,20 @@ const SCOPE_VALUES: ExpiryScopeValue[] = ['PILOTS', 'STUDENTS', 'INSTRUCTORS', '
 const COLS = '1fr 130px 150px 120px 220px';
 
 /**
- * "Abilitazioni" card (story 12.11, AC 2, ratifica utente 2) — the
- * expiry-type catalogue, moved here from the removed `/dashboard/expiries/types`
- * page (`expiry-types` API unchanged). AirOps `.students` table restyle of
+ * Expiry-type catalogue card (story 12.11, AC 2, ratifica utente 2; story
+ * 13.1, AC 3) — moved here from the removed `/dashboard/expiries/types` page
+ * (`expiry-types` API unchanged). AirOps `.students` table restyle of
  * `types-manager.tsx`'s proven create/edit/deactivate/delete flow, plus the
- * NEW `validityMonths` field (precompiles `expiresAt` at registration —
+ * `validityMonths` field (precompiles `expiresAt` at registration —
  * `people/[id]` scheda persona) and its "senza scadenza" badge (0/absent).
+ *
+ * Story 13.1 (R-13.1-a): this ONE component now backs TWO cards in
+ * Impostazioni — "Abilitazioni" (`kind="RATING"`, the default, unchanged
+ * testids) and "Visite mediche" (`kind="MEDICAL"`, its own testids) — rather
+ * than a duplicated ~250-line twin file, since the two are otherwise
+ * pixel-for-pixel identical (same fields, same CRUD, same service).
  */
-export function RatingsCard({ expiryTypes, labels }: RatingsCardProps) {
+export function RatingsCard({ expiryTypes, labels, kind = 'RATING', testIds = DEFAULT_TEST_IDS }: RatingsCardProps) {
   const router = useRouter();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; isError: boolean } | null>(null);
@@ -112,18 +156,18 @@ export function RatingsCard({ expiryTypes, labels }: RatingsCardProps) {
   }
 
   return (
-    <div className="card" data-testid="ratings-settings-card">
+    <div className="card" data-testid={testIds.card}>
       <div className="card-head">
         <div className="card-title">{labels.title}</div>
         <span className="card-sub">{labels.sub}</span>
         <div className="spacer" />
-        <button type="button" className="btn primary" onClick={() => setPanel({ mode: 'create' })} data-testid="ratings-add-button">
+        <button type="button" className="btn primary" onClick={() => setPanel({ mode: 'create' })} data-testid={testIds.addButton}>
           <Icon.plus /> {labels.addAction}
         </button>
       </div>
 
       {feedback ? (
-        <p role="status" data-testid="ratings-feedback" style={{ padding: '10px 20px 0', fontSize: 12.5, color: feedback.isError ? 'var(--bad)' : 'var(--ok)' }}>
+        <p role="status" data-testid={testIds.feedback} style={{ padding: '10px 20px 0', fontSize: 12.5, color: feedback.isError ? 'var(--bad)' : 'var(--ok)' }}>
           {feedback.text}
         </p>
       ) : null}
@@ -133,7 +177,9 @@ export function RatingsCard({ expiryTypes, labels }: RatingsCardProps) {
           <ExpiryTypeForm
             key={panel.mode === 'edit' ? panel.expiryType.id : 'create'}
             expiryType={panel.mode === 'edit' ? panel.expiryType : null}
+            kind={kind}
             labels={labels}
+            testIds={testIds}
             onCancel={() => setPanel(null)}
             onSuccess={(mode) => handleSuccess(mode === 'create' ? labels.feedback.created : labels.feedback.updated)}
           />
@@ -154,7 +200,7 @@ export function RatingsCard({ expiryTypes, labels }: RatingsCardProps) {
           </div>
         ) : (
           expiryTypes.map((expiryType) => (
-            <div key={expiryType.id} className="student-row" data-testid="rating-row" style={{ gridTemplateColumns: COLS, alignItems: 'center' }}>
+            <div key={expiryType.id} className="student-row" data-testid={testIds.row} style={{ gridTemplateColumns: COLS, alignItems: 'center' }}>
               <div>
                 <div className="student-name">{expiryType.name}</div>
                 {expiryType.blocksBooking ? (
@@ -193,7 +239,7 @@ export function RatingsCard({ expiryTypes, labels }: RatingsCardProps) {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <button type="button" className="btn mini" onClick={() => setPanel({ mode: 'edit', expiryType })} data-testid="rating-edit-button">
+                    <button type="button" className="btn mini" onClick={() => setPanel({ mode: 'edit', expiryType })} data-testid={testIds.editButton}>
                       {labels.actions.edit}
                     </button>
                     <button type="button" className="btn mini" disabled={pendingActionId === expiryType.id} onClick={() => void handleToggleActive(expiryType)}>
@@ -225,12 +271,14 @@ type ExpiryTypeFormValues = z.infer<typeof expiryTypeFormSchema>;
 
 type ExpiryTypeFormProps = {
   expiryType: ExpiryTypeRow | null;
+  kind: 'RATING' | 'MEDICAL';
   labels: RatingsCardLabels;
+  testIds: ExpiryTypeCardTestIds;
   onCancel: () => void;
   onSuccess: (mode: 'create' | 'edit') => void;
 };
 
-function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeFormProps) {
+function ExpiryTypeForm({ expiryType, kind, labels, testIds, onCancel, onSuccess }: ExpiryTypeFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
@@ -250,11 +298,14 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
   async function onSubmit(values: ExpiryTypeFormValues): Promise<void> {
     setFormError(null);
     const validityMonths = Number(values.validityMonths);
+    // `kind` is never a form field (AC 3: implicit per card, not user-chosen)
+    // — set only on CREATE, an edit never re-sends/changes it.
     const body = {
       name: values.name.trim(),
       scope: values.scope,
       blocksBooking: values.blocksBooking,
       validityMonths: Number.isFinite(validityMonths) && validityMonths > 0 ? validityMonths : null,
+      ...(expiryType ? {} : { kind }),
     };
 
     const response = expiryType
@@ -270,16 +321,16 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="rating-form">
+    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid={testIds.form}>
       <div className="fld-label" style={{ marginBottom: 10 }}>
         {expiryType ? labels.form.editTitle : labels.form.createTitle}
       </div>
       <div className="form-grid">
         <Field label={labels.form.name} wide>
-          <Input maxLength={100} aria-invalid={Boolean(errors.name)} data-testid="rating-name-input" {...register('name')} />
+          <Input maxLength={100} aria-invalid={Boolean(errors.name)} data-testid={testIds.nameInput} {...register('name')} />
         </Field>
         <Field label={labels.form.scope}>
-          <Select data-testid="rating-scope-select" {...register('scope')}>
+          <Select data-testid={testIds.scopeSelect} {...register('scope')}>
             {SCOPE_VALUES.map((scope) => (
               <option key={scope} value={scope}>
                 {labels.scope[scope]}
@@ -289,7 +340,7 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
         </Field>
         <Field label={labels.form.validity}>
           <InputGroup suffix={labels.table.monthsSuffix}>
-            <Input type="number" min={0} data-testid="rating-validity-input" {...register('validityMonths')} />
+            <Input type="number" min={0} data-testid={testIds.validityInput} {...register('validityMonths')} />
           </InputGroup>
         </Field>
       </div>
@@ -307,13 +358,13 @@ function ExpiryTypeForm({ expiryType, labels, onCancel, onSuccess }: ExpiryTypeF
 
       {errors.name ? <p style={{ marginTop: 6, fontSize: 12, color: 'var(--bad)' }}>{labels.form.requiredField}</p> : null}
       {formError ? (
-        <p role="alert" data-testid="rating-form-error" style={{ marginTop: 8, fontSize: 12.5, color: 'var(--bad)' }}>
+        <p role="alert" data-testid={testIds.formError} style={{ marginTop: 8, fontSize: 12.5, color: 'var(--bad)' }}>
           {formError}
         </p>
       ) : null}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        <button type="submit" className="btn primary" disabled={isSubmitting} data-testid="rating-form-submit">
+        <button type="submit" className="btn primary" disabled={isSubmitting} data-testid={testIds.formSubmit}>
           {expiryType ? labels.form.submitSave : labels.form.submitCreate}
         </button>
         <button type="button" className="btn" onClick={onCancel}>

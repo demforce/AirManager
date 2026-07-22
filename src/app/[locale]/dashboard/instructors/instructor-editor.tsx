@@ -3,14 +3,19 @@
 /**
  * Instructor slide-over editor (story 12.7, AC 6) — port of
  * `docs/design-reference/airops/src/People.jsx#InstructorEditor` onto the
- * REAL domain: anagrafica (PATCH people, `people.manage`), ratings (PUT
- * profiles/instructor, `people.manage`), payout rate (PUT
+ * REAL domain: anagrafica (PATCH people, `people.manage`), payout rate (PUT
  * instructor-compensation/{id}/rate, `payouts.manage` — the RATIFIED
  * permission, admin-only), the STUDENT-charged rate panel (moved here from
  * `people/[id]`, `settings.manage`, D8 — clearly labeled distinct from the
  * payout rate), and ore/dovuto READ-ONLY. NO "Cadenza pagamenti" (D13 — the
  * prototype's Mensile/Settimanale/Per volo selector has no domain
  * counterpart, not ported).
+ *
+ * Story 13.1 (R-13.1-b): the free-text "abilitazioni" section (PUT
+ * profiles/instructor) is REMOVED along with `InstructorProfile.ratings` —
+ * abilitazioni now live as `Expiry` rows; a catalogue-driven chip
+ * display/picker for them is out of scope here (story 13.2 covers the
+ * pilot editor's own ratings chips).
  */
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
@@ -19,7 +24,7 @@ import { z } from 'zod';
 import { Field, Input, InputGroup } from '@/components/ui/field';
 import { SlideOver } from '@/components/ui/slide-over';
 import { formatCents, parseCents } from '@/lib/money';
-import { instructorProfileRequestSchema, updatePersonSchema, type InstructorProfileRequestInput, type UpdatePersonInput } from '@/lib/schemas/people';
+import { updatePersonSchema, type UpdatePersonInput } from '@/lib/schemas/people';
 import { formatMinutes } from '@/lib/time';
 import { InstructorRatesPanel, type InstructorRatesPanelLabels } from './instructor-rates-panel';
 import type { InstructorRow } from './instructors-console';
@@ -38,14 +43,13 @@ export type InstructorEditorLabels = {
     save: string;
     loadError: string;
   };
-  ratings: { sectionTitle: string; label: string; save: string };
   payoutRate: { sectionTitle: string; label: string; noValue: string; save: string; readOnlyHint: string };
   readOnly: { sectionTitle: string; hoursTotal: string; owedTotal: string };
   studentRate: InstructorRatesPanelLabels & { heading: string };
   errors: { generic: string; invalidRate: string };
 };
 
-type ToastLabels = { genericError: string; ratingsSaved: string; rateSet: string; identitySaved: string };
+type ToastLabels = { genericError: string; rateSet: string; identitySaved: string };
 type ToastHandle = { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
 
 type InstructorEditorProps = {
@@ -90,11 +94,11 @@ export function InstructorEditor({
   // `onMutated` -> `router.refresh()`, which does NOT retroactively update
   // THIS already-open editor's `instructor` prop (`editorTarget` in
   // `instructors-console.tsx` is a stable snapshot captured at click time) —
-  // without a local merge, the payout-rate/ratings fields (and this header)
-  // would keep showing the PRE-save value until the slide-over is closed and
-  // reopened. `initialRateCents`/`initialRatings` react to `current` (not
-  // the original prop) so every sub-form re-syncs immediately after its own
-  // save. The `Ore totali`/`Dovuto` readonly fields are the one exception —
+  // without a local merge, the payout-rate field (and this header) would
+  // keep showing the PRE-save value until the slide-over is closed and
+  // reopened. `initialRateCents` reacts to `current` (not the original prop)
+  // so the sub-form re-syncs immediately after its own save. The
+  // `Ore totali`/`Dovuto` readonly fields are the one exception —
   // they are server-COMPUTED from flight/payout data no sub-form response
   // carries, so they only refresh once the editor is reopened
   // (`onMutated`'s `router.refresh()` already keeps the TABLE row itself
@@ -108,10 +112,9 @@ export function InstructorEditor({
 
   const open = current !== null;
   const title = current ? `${current.lastName} ${current.firstName}` : '';
-  const subtitle = current ? current.ratings : '';
 
   return (
-    <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel}>
+    <SlideOver open={open} onClose={onClose} title={title} closeLabel={labels.closeLabel}>
       {current ? (
         <>
           <IdentitySection
@@ -123,18 +126,6 @@ export function InstructorEditor({
             toastLabels={toastLabels}
             onSaved={(patch) => applyPatch(patch)}
           />
-
-          <Section title={labels.ratings.sectionTitle}>
-            <RatingsForm
-              personId={current.personId}
-              initialRatings={current.ratings}
-              canManagePeople={canManagePeople}
-              labels={labels.ratings}
-              toast={toast}
-              toastLabels={toastLabels}
-              onSaved={(patch) => applyPatch(patch)}
-            />
-          </Section>
 
           <Section title={labels.payoutRate.sectionTitle}>
             <PayoutRateForm
@@ -300,76 +291,6 @@ function IdentitySection({
       ) : null}
       <div style={{ marginTop: 10 }}>
         <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="instructor-identity-submit">
-          {labels.save}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-// --- Abilitazioni (PUT profiles/instructor, `people.manage`) ----------------
-
-function RatingsForm({
-  personId,
-  initialRatings,
-  canManagePeople,
-  labels,
-  toast,
-  toastLabels,
-  onSaved,
-}: {
-  personId: string;
-  initialRatings: string;
-  canManagePeople: boolean;
-  labels: InstructorEditorLabels['ratings'];
-  toast: ToastHandle;
-  toastLabels: ToastLabels;
-  onSaved: (patch: Partial<InstructorRow>) => void;
-}) {
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<InstructorProfileRequestInput>({
-    resolver: zodResolver(instructorProfileRequestSchema),
-    values: { ratings: initialRatings },
-  });
-
-  async function onSubmit(values: InstructorProfileRequestInput): Promise<void> {
-    setFormError(null);
-    const response = await fetch(`/api/v1/people/${personId}/profiles/instructor`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
-    });
-    if (!response.ok) {
-      setFormError(toastLabels.genericError);
-      return;
-    }
-    toast.show(toastLabels.ratingsSaved, 'ok');
-    onSaved({ ratings: values.ratings });
-  }
-
-  if (!canManagePeople) {
-    return <p className="fld-label" style={{ textTransform: 'none' }}>{initialRatings}</p>;
-  }
-
-  return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-ratings-form">
-      <div className="form-grid">
-        <Field label={labels.label} wide>
-          <Input aria-invalid={Boolean(errors.ratings)} {...register('ratings')} />
-        </Field>
-      </div>
-      {formError ? (
-        <p role="alert" data-testid="instructor-ratings-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-          {formError}
-        </p>
-      ) : null}
-      <div style={{ marginTop: 10 }}>
-        <button type="submit" disabled={isSubmitting} className="btn" data-testid="instructor-ratings-submit">
           {labels.save}
         </button>
       </div>

@@ -1,15 +1,19 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { exportQuerySchema } from './common';
+import { roleSchema } from './users';
 import { z } from './zod-with-openapi';
 
 /**
- * Shared by the create/edit person forms and `POST`/`PATCH /api/v1/people`
- * (Consistency Conventions: "Uno schema Zod per input/output per endpoint").
- * `email`/`phone`/`address`/`fiscalCode` are all optional — the story only
- * requires `firstName`/`lastName`; everything else may be filled in later
- * (e.g. via the future profile story 2.2).
+ * Base anagrafica fields, shared by the create/edit person forms and
+ * `POST`/`PATCH /api/v1/people` (Consistency Conventions: "Uno schema Zod
+ * per input/output per endpoint"). `email`/`phone`/`address`/`fiscalCode`
+ * are all optional — the story only requires `firstName`/`lastName`;
+ * everything else may be filled in later (e.g. via the profile story 2.2).
+ * `createPersonSchema` itself (the one-step composite, story 13.1, AC 5) is
+ * assembled further down this file, once the per-profile-type request
+ * schemas it embeds (`pilotProfileRequestSchema` etc.) exist.
  */
-export const createPersonSchema = z.object({
+const createPersonBaseSchema = z.object({
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
   email: z.string().trim().toLowerCase().pipe(z.email()).nullish(),
@@ -17,8 +21,6 @@ export const createPersonSchema = z.object({
   address: z.string().trim().min(1).nullish(),
   fiscalCode: z.string().trim().toUpperCase().min(1).nullish(),
 });
-
-export type CreatePersonInput = z.infer<typeof createPersonSchema>;
 
 /**
  * Partial update — every field optional so a caller can patch just one.
@@ -133,12 +135,69 @@ export const studentProfileRequestSchema = z.object({
 
 export type StudentProfileRequestInput = z.infer<typeof studentProfileRequestSchema>;
 
-/** `PUT /api/v1/people/{id}/profiles/instructor` request body. */
-export const instructorProfileRequestSchema = z.object({
-  ratings: z.string().trim().min(1),
-});
+/**
+ * `PUT /api/v1/people/{id}/profiles/instructor` request body. Empty on
+ * purpose (story 13.1, R-13.1-b): the free-text `ratings` field was
+ * removed — this call now only ACTIVATES/reactivates the profile,
+ * `InstructorProfile` having no own field left (`payoutRateCents` is set
+ * via the separate `instructor-compensation` endpoint). Abilitazioni live
+ * as `Expiry` rows on `INSTRUCTORS`-scoped types instead.
+ */
+export const instructorProfileRequestSchema = z.object({});
 
 export type InstructorProfileRequestInput = z.infer<typeof instructorProfileRequestSchema>;
+
+/**
+ * `POST /api/v1/people` composite create (story 13.1, AC 5) — extends the
+ * base anagrafica with three OPTIONAL blocks, each delegating to the SAME
+ * validation the corresponding standalone route already applies:
+ *
+ * - `profiles`: reuses the exact per-type request schemas above (pilot/
+ *   student/instructor) — a client that only wants the base create keeps
+ *   sending no `profiles` at all, unchanged from before this story.
+ * - `expiries`: `{ expiryTypeId, expiresAt }` pairs — `expiresAt` is
+ *   MANDATORY per entry (R-13.1-c, unlike `registerExpiry`'s own schema
+ *   where the caller also supplies `issuedAt`); type existence/active/scope
+ *   compatibility is a service-level check (needs a DB read). Capped at 50
+ *   (defensive, no real catalogue is anywhere near that size) and each
+ *   `expiryTypeId` must be unique within the array — a duplicate can only
+ *   ever be a client bug, never a legitimate "two expiries of the same
+ *   type" (the DB itself enforces one `Expiry` per person+type).
+ * - `access`: `{ email, roles }` — reuses `roleSchema` (`./users`); the
+ *   service requires `users.manage` on top of `people.manage` for this
+ *   block (checked there, not here — a permission check is not a shape
+ *   check).
+ */
+const createPersonExpirySchema = z.object({
+  expiryTypeId: z.string().min(1),
+  expiresAt: z.iso.date(),
+});
+
+const createPersonExpiriesSchema = z
+  .array(createPersonExpirySchema)
+  .max(50)
+  .refine((items) => new Set(items.map((item) => item.expiryTypeId)).size === items.length, {
+    message: 'Duplicate expiryTypeId entries in expiries.',
+  });
+
+const createPersonAccessSchema = z.object({
+  email: z.string().trim().toLowerCase().pipe(z.email()),
+  roles: z.array(roleSchema).min(1),
+});
+
+export const createPersonSchema = createPersonBaseSchema.extend({
+  profiles: z
+    .object({
+      pilot: pilotProfileRequestSchema.optional(),
+      student: studentProfileRequestSchema.optional(),
+      instructor: instructorProfileRequestSchema.optional(),
+    })
+    .optional(),
+  expiries: createPersonExpiriesSchema.optional(),
+  access: createPersonAccessSchema.optional(),
+});
+
+export type CreatePersonInput = z.infer<typeof createPersonSchema>;
 
 /** Pilot profile as returned by the API — `deactivatedAt: null` means active. */
 export const pilotProfileSchema = z.object({
@@ -157,9 +216,8 @@ export const studentProfileSchema = z.object({
 
 export type StudentProfileDto = z.infer<typeof studentProfileSchema>;
 
-/** Instructor profile as returned by the API. */
+/** Instructor profile as returned by the API — `ratings` removed (story 13.1, R-13.1-b). */
 export const instructorProfileSchema = z.object({
-  ratings: z.string(),
   deactivatedAt: z.iso.datetime().nullable(),
 });
 

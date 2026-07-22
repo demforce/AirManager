@@ -419,7 +419,9 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/v1/people',
-  summary: 'Create a person',
+  summary: 'Create a person — optionally one-step (profiles + expiries + access)',
+  description:
+    'The base anagrafica create (`firstName`/`lastName`/...) is unchanged; three OPTIONAL blocks (story 13.1, AC 5) turn this into the one-step "Aggiungi pilota" flow, all inside ONE atomic transaction (any failure rolls back the whole person): `profiles` activates pilot/student/instructor (same per-type shape as `PUT /people/{id}/profiles/{type}`); `expiries` registers `{ expiryTypeId, expiresAt }` pairs against the just-activated profiles (`expiresAt` mandatory, R-13.1-c; unknown/inactive type or scope mismatch → 422); `access` creates a linked user + sends the invite email (requires `users.manage` on top of `people.manage` — 403 if missing, never silently dropped).',
   tags: ['People'],
   security,
   request: { body: { content: jsonContent(createPersonSchema), required: true } },

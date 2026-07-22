@@ -37,6 +37,8 @@ export type ExpiryTypeListItem = {
   id: string;
   name: string;
   scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
+  /** RATING vs MEDICAL (story 13.1, AC 1, R-13.1-a). */
+  kind: 'RATING' | 'MEDICAL';
   isActive: boolean;
   /** Whether an expired `Expiry` of this type blocks a new booking (epic 7, story 7.4; FR-21). */
   blocksBooking: boolean;
@@ -49,6 +51,7 @@ const EXPIRY_TYPE_SELECT = {
   id: true,
   name: true,
   scope: true,
+  kind: true,
   isActive: true,
   blocksBooking: true,
   validityMonths: true,
@@ -61,15 +64,24 @@ const EXPIRY_TYPE_SELECT = {
  * will register scadenze from this catalogue in story 6.2 and must see it;
  * a pilot/student/instructor gets nothing here (they will see their OWN
  * scadenze via `self.read` in 6.2/6.4, never this admin/staff catalogue).
- * Default active-only, `includeInactive` for the management view. Ordered by
+ * Default active-only, `includeInactive` for the management view. `kind`
+ * (story 13.1, AC 2) is an OPTIONAL filter — omitted, every kind is
+ * returned (retro-compatible with every pre-13.1 consumer). Ordered by
  * name; defensively capped at `take: 500` (small, admin-managed catalogue,
  * same choice as `listCashCategories`/`listPackageTypes`).
  */
 export async function listExpiryTypes(actor: Actor, query: ListExpiryTypesQuery): Promise<ExpiryTypeListItem[]> {
   authorize(actor, 'expiries.manage');
 
+  // `undefined` (never `{}`) when neither filter applies — same "no WHERE at
+  // all" shape the pre-13.1 code produced for `includeInactive: true`.
+  const filters: { isActive?: true; kind?: ListExpiryTypesQuery['kind'] } = {};
+  if (!query.includeInactive) filters.isActive = true;
+  if (query.kind) filters.kind = query.kind;
+  const where = Object.keys(filters).length > 0 ? filters : undefined;
+
   return prisma.expiryType.findMany({
-    where: query.includeInactive ? undefined : { isActive: true },
+    where,
     select: EXPIRY_TYPE_SELECT,
     orderBy: { name: 'asc' },
     take: 500,
@@ -95,7 +107,7 @@ export async function createExpiryType(actor: Actor, input: CreateExpiryTypeInpu
 
   try {
     return await prisma.expiryType.create({
-      data: { name, scope: input.scope, blocksBooking: input.blocksBooking, validityMonths: input.validityMonths },
+      data: { name, scope: input.scope, kind: input.kind, blocksBooking: input.blocksBooking, validityMonths: input.validityMonths },
       select: EXPIRY_TYPE_SELECT,
     });
   } catch (error) {

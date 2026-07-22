@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Actor } from '@/server/auth/rbac';
-import { ForbiddenError } from './errors';
+import { ForbiddenError, ValidationError } from './errors';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
@@ -38,12 +38,31 @@ vi.mock('@/server/db/prisma', () => ({
     user: {
       findMany: vi.fn(),
       count: vi.fn(),
+      // Story 13.1: the one-step composite's `access` block (pre-check + `createUserCore`'s write inside the transaction).
+      findUnique: vi.fn(),
+      create: vi.fn(),
+    },
+    // Story 13.1: the one-step composite's `expiries` block.
+    expiryType: {
+      findMany: vi.fn(),
+    },
+    expiry: {
+      create: vi.fn(),
     },
     $transaction: vi.fn(),
   },
 }));
 
+// Story 13.1: `createPerson`'s `access` block sends the invite email via the
+// REAL `sendInviteEmail` (only this one call is mocked out — `createUserCore`
+// itself is the real function from `users.service.ts`, running against the
+// same fake `prisma` above).
+vi.mock('./auth-tokens.service', () => ({
+  sendInviteEmail: vi.fn(),
+}));
+
 const { prisma } = await import('@/server/db/prisma');
+const { sendInviteEmail } = await import('./auth-tokens.service');
 const {
   archivePerson,
   createPerson,
@@ -76,6 +95,11 @@ const accountMovementGroupByMock = vi.mocked(prisma.accountMovement.groupBy);
 const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
 const userFindManyMock = vi.mocked(prisma.user.findMany);
 const userCountMock = vi.mocked(prisma.user.count);
+const userFindUniqueMock = vi.mocked(prisma.user.findUnique);
+const userCreateMock = vi.mocked(prisma.user.create);
+const expiryTypeFindManyMock = vi.mocked(prisma.expiryType.findMany);
+const expiryCreateMock = vi.mocked(prisma.expiry.create);
+const sendInviteEmailMock = vi.mocked(sendInviteEmail);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as users.service.test.ts): narrow each
@@ -105,9 +129,18 @@ const accountMovementGroupBy = accountMovementGroupByMock as unknown as { mockRe
 const flightGroupBy = flightGroupByMock as unknown as { mockResolvedValue: (v: PersonFixture[]) => void };
 const userFindMany = userFindManyMock as unknown as { mockResolvedValue: (v: PersonFixture[]) => void };
 const userCount = userCountMock as unknown as { mockResolvedValue: (v: number) => void };
+const userFindUnique = userFindUniqueMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+const userCreate = userCreateMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
+const expiryTypeFindMany = expiryTypeFindManyMock as unknown as { mockResolvedValue: (v: PersonFixture[]) => void };
+const expiryCreate = expiryCreateMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 
 function staffActor(): Actor {
   return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
+}
+
+/** `people.manage` AND `users.manage` (STAFF only has the former) — needed for the composite create's `access` block. */
+function adminActor(): Actor {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
 function pilotActor(): Actor {
@@ -157,6 +190,11 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     flightGroupByMock.mockReset();
     userFindManyMock.mockReset();
     userCountMock.mockReset();
+    userFindUniqueMock.mockReset();
+    userCreateMock.mockReset();
+    expiryTypeFindManyMock.mockReset();
+    expiryCreateMock.mockReset();
+    sendInviteEmailMock.mockReset();
 
     // Story 3.1 (interactive-callback form since story TD-1, AC 3):
     // `upsertProfile`'s pilot/student branches run their profile upsert
@@ -480,6 +518,126 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     });
   });
 
+  describe('createPerson — one-step composite (story 13.1, AC 5/7)', () => {
+    const input = { firstName: 'Maria', lastName: 'Bianchi' };
+
+    it('with none of profiles/expiries/access: behaves exactly like the pre-13.1 create (retro-compatibility) — no new-block queries at all', async () => {
+      personFindFirst.mockResolvedValue(null);
+      personCreate.mockResolvedValue(SELECTED_PERSON);
+
+      await createPerson(staffActor(), input);
+
+      expect(expiryTypeFindManyMock).not.toHaveBeenCalled();
+      expect(userFindUniqueMock).not.toHaveBeenCalled();
+      expect(userCreateMock).not.toHaveBeenCalled();
+      expect(sendInviteEmailMock).not.toHaveBeenCalled();
+    });
+
+    it('activates pilot+student+instructor, registers an expiry per profile scope, and creates+invites the linked user — all in ONE $transaction, invite sent only AFTER it resolves', async () => {
+      personFindFirst.mockResolvedValue(null);
+      personCreate.mockResolvedValue(SELECTED_PERSON);
+      pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
+      studentProfileUpsert.mockResolvedValue({ courseStartDate: new Date('2026-01-01'), deactivatedAt: null });
+      instructorProfileUpsert.mockResolvedValue({ deactivatedAt: null });
+      expiryTypeFindMany.mockResolvedValue([{ id: 'et_pilot', scope: 'PILOTS', isActive: true }]);
+      expiryCreate.mockResolvedValue({ id: 'expiry_1' });
+      userFindUnique.mockResolvedValue(null);
+      userCreate.mockResolvedValue({ id: 'user_1', email: 'maria@airmanager.local', locale: 'it' });
+      sendInviteEmailMock.mockResolvedValue(undefined);
+
+      const result = await createPerson(adminActor(), {
+        ...input,
+        profiles: {
+          pilot: { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' },
+          student: { courseStartDate: '2026-01-01' },
+          instructor: {},
+        },
+        expiries: [{ expiryTypeId: 'et_pilot', expiresAt: '2027-01-01' }],
+        access: { email: 'maria@airmanager.local', roles: ['PILOT'] },
+      });
+
+      // Every write shares the SAME transaction (AC 5: atomic).
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+
+      expect(pilotProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
+      expect(studentProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
+      expect(instructorProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
+      expect(expiryCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ personId: 'person_1', expiryTypeId: 'et_pilot', actorUserId: 'admin_1' }) }),
+      );
+      expect(userCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ email: 'maria@airmanager.local', roles: ['PILOT'], personId: 'person_1' }) }),
+      );
+
+      // The invite is sent AFTER the transaction resolves (fire-and-forget), never inside it.
+      expect(sendInviteEmailMock).toHaveBeenCalledWith('user_1', 'maria@airmanager.local', 'it');
+
+      expect(result.profiles).toEqual({ pilot: true, student: true, instructor: true });
+    });
+
+    it('access without users.manage → 403, before any read/write (the block is never silently dropped)', async () => {
+      await expect(
+        createPerson(staffActor(), { ...input, access: { email: 'maria@airmanager.local', roles: ['PILOT'] } }),
+      ).rejects.toThrow(ForbiddenError);
+
+      expect(findFirstMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('access.email already taken by another user → ConflictError, before the transaction opens', async () => {
+      personFindFirst.mockResolvedValue(null);
+      userFindUnique.mockResolvedValue({ id: 'existing_user' });
+
+      await expect(
+        createPerson(adminActor(), { ...input, access: { email: 'maria@airmanager.local', roles: ['PILOT'] } }),
+      ).rejects.toThrow(ConflictError);
+
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('an unknown expiryTypeId → 422 ValidationError, before the transaction opens', async () => {
+      personFindFirst.mockResolvedValue(null);
+      expiryTypeFindMany.mockResolvedValue([]); // nothing matches
+
+      await expect(
+        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_ghost', expiresAt: '2027-01-01' }] }),
+      ).rejects.toThrow(ValidationError);
+
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('a deactivated expiry type → 422 ValidationError', async () => {
+      personFindFirst.mockResolvedValue(null);
+      expiryTypeFindMany.mockResolvedValue([{ id: 'et_1', scope: 'ALL', isActive: false }]);
+
+      await expect(
+        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2027-01-01' }] }),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('a scope not matched by any activated profile → 422 ValidationError (PILOTS type, no pilot profile in this call)', async () => {
+      personFindFirst.mockResolvedValue(null);
+      expiryTypeFindMany.mockResolvedValue([{ id: 'et_pilot', scope: 'PILOTS', isActive: true }]);
+
+      await expect(
+        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_pilot', expiresAt: '2027-01-01' }] }),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('atomicity: a failure INSIDE the shared transaction (e.g. the expiry write) propagates and the invite is NEVER sent', async () => {
+      personFindFirst.mockResolvedValue(null);
+      personCreate.mockResolvedValue(SELECTED_PERSON);
+      expiryTypeFindMany.mockResolvedValue([{ id: 'et_1', scope: 'ALL', isActive: true }]);
+      expiryCreateMock.mockRejectedValue(new Error('db unavailable'));
+
+      await expect(
+        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2027-01-01' }] }),
+      ).rejects.toThrow('db unavailable');
+
+      expect(sendInviteEmailMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updatePerson', () => {
     it('throws NotFoundError for a missing person', async () => {
       personFindUnique.mockResolvedValue(null);
@@ -613,20 +771,20 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expect(result).toEqual({ courseStartDate: '2026-03-01', deactivatedAt: null });
     });
 
-    it('upserts the instructor profile with its free-text ratings', async () => {
+    it('upserts (activates/reactivates) the instructor profile — no own field left (story 13.1, R-13.1-b)', async () => {
       personFindUnique.mockResolvedValue({ id: 'person_1' });
-      instructorProfileUpsert.mockResolvedValue({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+      instructorProfileUpsert.mockResolvedValue({ deactivatedAt: null });
 
-      const result = await upsertProfile(staffActor(), 'person_1', 'instructor', { ratings: 'SEP(land), FI(A)' });
+      const result = await upsertProfile(staffActor(), 'person_1', 'instructor', {});
 
       expect(instructorProfileUpsertMock).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { personId: 'person_1' },
-          create: { personId: 'person_1', ratings: 'SEP(land), FI(A)' },
-          update: { ratings: 'SEP(land), FI(A)', deactivatedAt: null },
+          create: { personId: 'person_1' },
+          update: { deactivatedAt: null },
         }),
       );
-      expect(result).toEqual({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+      expect(result).toEqual({ deactivatedAt: null });
     });
 
     describe('Account creation on activation (story 3.1, AC 1, AD-11)', () => {
@@ -654,9 +812,9 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
 
       it('does NOT create an Account for the instructor profile', async () => {
         personFindUnique.mockResolvedValue({ id: 'person_1' });
-        instructorProfileUpsert.mockResolvedValue({ ratings: 'SEP(land), FI(A)', deactivatedAt: null });
+        instructorProfileUpsert.mockResolvedValue({ deactivatedAt: null });
 
-        await upsertProfile(staffActor(), 'person_1', 'instructor', { ratings: 'SEP(land), FI(A)' });
+        await upsertProfile(staffActor(), 'person_1', 'instructor', {});
 
         expect(accountUpsertMock).not.toHaveBeenCalled();
       });

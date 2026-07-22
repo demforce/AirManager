@@ -191,8 +191,8 @@ async function seedInstructorProfile(): Promise<void> {
 
   await prisma.instructorProfile.upsert({
     where: { personId: instructorUser.personId },
-    update: { ratings: 'SEP(land), FI(A)', deactivatedAt: null },
-    create: { personId: instructorUser.personId, ratings: 'SEP(land), FI(A)' },
+    update: { deactivatedAt: null },
+    create: { personId: instructorUser.personId },
   });
 
   console.log(`Seed: instructor profile ready for ${INSTRUCTOR_EMAIL}.`);
@@ -309,10 +309,19 @@ async function seedPilotAccount(): Promise<void> {
 // types — the migration's own backfill UPDATE uses these EXACT same names.
 // `update: {}` stays untouched below (existing seed pattern): an admin's own
 // `blocksBooking` toggle (`types-manager.tsx`) is never overwritten by a re-seed.
-const STANDARD_EXPIRY_TYPES: Array<{ name: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL'; blocksBooking: boolean; validityMonths?: number }> = [
-  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true },
-  { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true },
-  { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true },
+// Story 13.1 (AC 1, R-13.1-a): `kind` defaults to `RATING` in the Prisma
+// schema, so only the 3 medical-visit types need it spelled out here —
+// same exact names the migration's own data-backfill matches on.
+const STANDARD_EXPIRY_TYPES: Array<{
+  name: string;
+  scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
+  blocksBooking: boolean;
+  validityMonths?: number;
+  kind?: 'RATING' | 'MEDICAL';
+}> = [
+  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true, kind: 'MEDICAL' },
   { name: 'Licenza', scope: 'PILOTS', blocksBooking: true },
   { name: 'Rating SEP', scope: 'PILOTS', blocksBooking: false },
   { name: 'Inglese ICAO', scope: 'PILOTS', blocksBooking: false },
@@ -323,11 +332,11 @@ const STANDARD_EXPIRY_TYPES: Array<{ name: string; scope: 'PILOTS' | 'STUDENTS' 
 ];
 
 async function seedExpiryTypes(): Promise<void> {
-  for (const { name, scope, blocksBooking, validityMonths } of STANDARD_EXPIRY_TYPES) {
+  for (const { name, scope, blocksBooking, validityMonths, kind } of STANDARD_EXPIRY_TYPES) {
     await prisma.expiryType.upsert({
       where: { name },
       update: {},
-      create: { name, scope, blocksBooking, validityMonths: validityMonths ?? null },
+      create: { name, scope, blocksBooking, validityMonths: validityMonths ?? null, kind: kind ?? 'RATING' },
     });
   }
 

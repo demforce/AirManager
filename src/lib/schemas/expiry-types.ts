@@ -17,6 +17,17 @@ export const expiryScopeSchema = z.enum(['PILOTS', 'STUDENTS', 'INSTRUCTORS', 'A
 export type ExpiryScopeDto = z.infer<typeof expiryScopeSchema>;
 
 /**
+ * RATING vs MEDICAL (story 13.1, AC 1, R-13.1-a) — a SEPARATE axis from
+ * `scope` (who it's for): `kind` is WHAT it is. Mirrors the Prisma
+ * `ExpiryTypeKind` enum. Defaults `RATING` at creation (below) — the
+ * "Abilitazioni" card in Impostazioni only ever creates `RATING`, the new
+ * "Visite mediche" card only ever creates `MEDICAL`.
+ */
+export const expiryTypeKindSchema = z.enum(['RATING', 'MEDICAL']);
+
+export type ExpiryTypeKindDto = z.infer<typeof expiryTypeKindSchema>;
+
+/**
  * `POST /api/v1/expiry-types` body (AC 1/2). `name` unique (enforced in the
  * service, P2002 → `Conflict`), trimmed, capped at 100 chars — same
  * defense-in-depth as `createCashCategorySchema.name`/
@@ -38,6 +49,7 @@ export const expiryTypeValidityMonthsSchema = z.number().int().nonnegative().max
 export const createExpiryTypeSchema = z.object({
   name: z.string().trim().min(1).max(100),
   scope: expiryScopeSchema,
+  kind: expiryTypeKindSchema.default('RATING'),
   blocksBooking: z.boolean().default(false),
   validityMonths: expiryTypeValidityMonthsSchema.default(null),
 });
@@ -70,10 +82,13 @@ export type UpdateExpiryTypeInput = z.infer<typeof updateExpiryTypeSchema>;
  * (a future registration picker, story 6.2, only wants active types); the
  * management page passes `true`. Same `z.preprocess` footgun-avoidance as
  * `listCashCategoriesQuerySchema.includeInactive` — `z.coerce.boolean()`
- * would treat the string `"false"` as truthy.
+ * would treat the string `"false"` as truthy. `kind` (story 13.1, AC 2) is
+ * an OPTIONAL filter — omitted, every existing consumer (scadenze page,
+ * editor, seed/fixtures) keeps seeing every kind, unchanged.
  */
 export const listExpiryTypesQuerySchema = z.object({
   includeInactive: z.preprocess((value) => value === 'true' || value === true, z.boolean()).default(false),
+  kind: expiryTypeKindSchema.optional(),
 });
 
 export type ListExpiryTypesQuery = z.infer<typeof listExpiryTypesQuerySchema>;
@@ -88,6 +103,7 @@ export const expiryTypeItemSchema = z.object({
   id: z.string(),
   name: z.string(),
   scope: expiryScopeSchema,
+  kind: expiryTypeKindSchema,
   isActive: z.boolean(),
   blocksBooking: z.boolean(),
   validityMonths: z.number().int().nullable(),

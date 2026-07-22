@@ -470,7 +470,6 @@ export async function exportInstructorCompensationXlsx(actor: Actor, query: Inst
 
   const columns: ExportColumn<(typeof items)[number]>[] = [
     { header: t('table.name'), value: (row) => `${row.lastName} ${row.firstName}` },
-    { header: t('table.ratings'), value: (row) => row.ratings },
     { header: t('table.rate'), value: (row) => (row.payoutRateCents === null ? null : row.payoutRateCents / 100), numFmt: MONEY_NUM_FMT },
     { header: t('table.hours'), value: (row) => formatMinutes(row.totalMinutes) },
     { header: t('table.owed'), value: (row) => (row.owedTotalCents === null ? null : row.owedTotalCents / 100), numFmt: MONEY_NUM_FMT },

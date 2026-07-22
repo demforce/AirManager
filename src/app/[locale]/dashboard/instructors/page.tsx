@@ -64,7 +64,6 @@ export default async function InstructorsPage({ params }: PageProps) {
     personId: row.personId,
     firstName: row.firstName,
     lastName: row.lastName,
-    ratings: row.ratings,
     payoutRateCents: row.payoutRateCents,
     totalMinutes: row.totalMinutes,
     owedTotalCents: row.owedTotalCents,
@@ -115,7 +114,6 @@ export default async function InstructorsPage({ params }: PageProps) {
             searchLabel: t('addInstructor.searchLabel'),
             searchPlaceholder: t('addInstructor.searchPlaceholder'),
             noResults: t('addInstructor.noResults'),
-            ratings: t('addInstructor.ratings'),
             submit: t('addInstructor.submit'),
             cancel: t('addInstructor.cancel'),
             requiredField: t('addInstructor.requiredField'),
@@ -134,11 +132,6 @@ export default async function InstructorsPage({ params }: PageProps) {
               fiscalCode: t('editor.identity.fiscalCode'),
               save: t('editor.identity.save'),
               loadError: t('editor.identity.loadError'),
-            },
-            ratings: {
-              sectionTitle: t('editor.ratings.sectionTitle'),
-              label: t('editor.ratings.label'),
-              save: t('editor.ratings.save'),
             },
             payoutRate: {
               sectionTitle: t('editor.payoutRate.sectionTitle'),
@@ -211,7 +204,6 @@ export default async function InstructorsPage({ params }: PageProps) {
           },
           toast: {
             rateSet: t('toast.rateSet'),
-            ratingsSaved: t('toast.ratingsSaved'),
             payoutRecorded: t('toast.payoutRecorded'),
             instructorAdded: t('toast.instructorAdded'),
             genericError: t('toast.genericError'),
