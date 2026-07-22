@@ -10,6 +10,62 @@ import { ValidationError } from './errors';
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const PASSWORD_RESET_TTL_MS = 2 * 60 * 60 * 1000;
 
+// --- H4 (CWE-799/307) throttle: mail-bomb / token-churn on forgot-password,
+// `docs/security/owasp-audit-2026-07-22.md` — same "count recent rows in a
+// window" pattern as `ppr.service.ts`'s per-IP rate limit and
+// `login-throttle.ts`'s login lockout.
+
+const PASSWORD_RESET_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+
+/** Per-email cap — the finding's own number (`docs/security/...md`, H4 fix). */
+const PASSWORD_RESET_MAX_PER_EMAIL = 3;
+
+/** Per-IP cap, higher than the per-email one for the same reason as `login-throttle.ts#LOGIN_MAX_FAILED_PER_IP`: one IP can legitimately host several different accounts requesting a reset within the window. */
+const PASSWORD_RESET_MAX_PER_IP = 10;
+
+/**
+ * `true` when the email or the IP has reached its cap of recent
+ * `PasswordResetAttempt` rows. Exported for direct unit-testing (same
+ * rationale as `ppr.service.ts#extractSubmitterIp`). `ip: null` (no
+ * resolvable `x-forwarded-for`) skips the per-IP check but never the
+ * per-email one — the email always comes from the request body itself, so
+ * a missing IP can't bypass the throttle entirely (H5 lesson).
+ */
+export async function isPasswordResetThrottled(email: string, ip: string | null): Promise<boolean> {
+  const windowStart = new Date(Date.now() - PASSWORD_RESET_RATE_LIMIT_WINDOW_MS);
+
+  const emailCount = await prisma.passwordResetAttempt.count({
+    where: { email, createdAt: { gt: windowStart } },
+  });
+  if (emailCount >= PASSWORD_RESET_MAX_PER_EMAIL) {
+    return true;
+  }
+
+  if (ip) {
+    const ipCount = await prisma.passwordResetAttempt.count({
+      where: { ip, createdAt: { gt: windowStart } },
+    });
+    if (ipCount >= PASSWORD_RESET_MAX_PER_IP) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Records one allowed reset request. Recorded for EVERY email, real or not
+ * (before the account-existence check below) — both so the throttle itself
+ * never becomes an enumeration/timing signal (identical DB cost regardless
+ * of whether the account exists) and so a probe of a nonexistent email
+ * still gets capped. Only called on a path that already checked
+ * `isPasswordResetThrottled` and found it `false` — same "don't let a flood
+ * re-extend its own window" reasoning as `login-throttle.ts`.
+ */
+async function recordPasswordResetAttempt(email: string, ip: string | null): Promise<void> {
+  await prisma.passwordResetAttempt.create({ data: { email, ip } });
+}
+
 const TOKEN_BYTES = 32;
 
 function generateRawToken(): string {
@@ -81,8 +137,21 @@ async function dummyEquivalentDbWork(): Promise<void> {
  * write transaction on the response path, so a low-noise timing oracle is
  * not fully closed — `dummyEquivalentDbWork` only equalizes the lookup, not
  * the writes. Never throws.
+ *
+ * H4 (CWE-799/307): throttled BEFORE the account lookup (`ip` is the
+ * caller's address, `null` when unresolvable — see
+ * `isPasswordResetThrottled`'s doc-comment). A throttled call returns the
+ * SAME `undefined`/no-op as every other branch here — no token, no email,
+ * no new `PasswordResetAttempt` row — so the throttle itself adds no
+ * enumeration or timing signal on top of the residual one already accepted
+ * above.
  */
-export async function requestPasswordReset(email: string): Promise<void> {
+export async function requestPasswordReset(email: string, ip: string | null = null): Promise<void> {
+  if (await isPasswordResetThrottled(email, ip)) {
+    return;
+  }
+  await recordPasswordResetAttempt(email, ip);
+
   const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user || !user.isActive) {

@@ -506,6 +506,53 @@ model AuthToken {
   @@index([userId])
 }
 
+/// Login brute-force / credential-stuffing throttle (H1, CWE-307,
+/// `docs/security/owasp-audit-2026-07-22.md`) — one row per Credentials
+/// provider `authorize()` outcome, counted in a rolling window by
+/// `login-throttle.ts`. No relation to `User`: `identifier` is the raw
+/// (lowercased) email from the login form, recorded even when it matches no
+/// account — an unknown-email guess must count toward its own throttle
+/// bucket exactly like a wrong password, or an attacker could distinguish
+/// "locked" from "unknown" by which one never accumulates failures.
+model LoginAttempt {
+  id         String   @id @default(cuid())
+  identifier String
+  /// `null` when no `x-forwarded-for` is resolvable (same trust caveat as
+  /// `PprRequest.submitterIp`) — `login-throttle.ts` then falls back to the
+  /// per-identifier check alone rather than skipping the throttle (H5
+  /// lesson: a missing IP must never be a free pass).
+  ip         String?
+  succeeded  Boolean
+  createdAt  DateTime @default(now())
+
+  /// Backs the per-identifier rolling-window failure count.
+  @@index([identifier, createdAt])
+  /// Backs the per-IP rolling-window failure count.
+  @@index([ip, createdAt])
+}
+
+/// `forgot-password` mail-bomb / token-churn throttle (H4, CWE-799/307,
+/// `docs/security/owasp-audit-2026-07-22.md`) — one row per ALLOWED
+/// `requestPasswordReset` call (throttled calls write nothing, same
+/// "don't let a flood re-extend its own window" reasoning as
+/// `LoginAttempt`), counted in a rolling window by
+/// `auth-tokens.service.ts#isPasswordResetThrottled`. No relation to
+/// `User`: `email` is recorded whether or not it matches an account, so the
+/// throttle itself never becomes an enumeration signal.
+model PasswordResetAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  /// `null` when no `x-forwarded-for` is resolvable — the per-email check
+  /// still applies (same fallback reasoning as `LoginAttempt.ip`).
+  ip        String?
+  createdAt DateTime @default(now())
+
+  /// Backs the per-email rolling-window request count.
+  @@index([email, createdAt])
+  /// Backs the per-IP rolling-window request count.
+  @@index([ip, createdAt])
+}
+
 /// Prepaid account movement types (story 3.1, AD-3's ledger). `TOP_UP` (3.1)
 /// and `ADJUSTMENT` (story 3.3 — a motivated correction, AC 1) are populated
 /// today; `PACKAGE_PURCHASE` (story 4.4, AC 1) is the estratto-conto row a

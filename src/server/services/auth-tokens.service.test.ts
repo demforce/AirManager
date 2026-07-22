@@ -22,6 +22,10 @@ vi.mock('@/server/db/prisma', () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
     },
+    passwordResetAttempt: {
+      count: vi.fn(),
+      create: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }));
@@ -43,8 +47,14 @@ vi.mock('@/server/adapters/mail/templates', () => ({
 const { prisma } = await import('@/server/db/prisma');
 const { hashPassword } = await import('@/server/auth/password');
 const { buildInviteEmail, buildPasswordResetEmail } = await import('@/server/adapters/mail/templates');
-const { requestPasswordReset, sendInviteEmail, setPasswordWithToken, INVITE_TTL_MS, PASSWORD_RESET_TTL_MS } =
-  await import('./auth-tokens.service');
+const {
+  requestPasswordReset,
+  sendInviteEmail,
+  setPasswordWithToken,
+  isPasswordResetThrottled,
+  INVITE_TTL_MS,
+  PASSWORD_RESET_TTL_MS,
+} = await import('./auth-tokens.service');
 const { ValidationError } = await import('./errors');
 
 const findUniqueUserMock = vi.mocked(prisma.user.findUnique);
@@ -54,6 +64,8 @@ const createTokenMock = vi.mocked(prisma.authToken.create);
 const findUniqueTokenMock = vi.mocked(prisma.authToken.findUnique);
 const findFirstTokenMock = vi.mocked(prisma.authToken.findFirst);
 const transactionMock = vi.mocked(prisma.$transaction);
+const resetAttemptCountMock = vi.mocked(prisma.passwordResetAttempt.count);
+const resetAttemptCreateMock = vi.mocked(prisma.passwordResetAttempt.create);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as me.service.test.ts): narrow to the
@@ -76,6 +88,9 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
     findUniqueTokenMock.mockReset();
     findFirstTokenMock.mockReset();
     transactionMock.mockReset();
+    resetAttemptCountMock.mockReset();
+    resetAttemptCountMock.mockResolvedValue(0);
+    resetAttemptCreateMock.mockReset();
     sendMock.mockReset();
     sendMock.mockResolvedValue(undefined);
     vi.mocked(hashPassword).mockClear();
@@ -193,6 +208,88 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
       sendMock.mockRejectedValue(new Error('SMTP down'));
 
       await expect(requestPasswordReset('pilot@airmanager.local')).resolves.toBeUndefined();
+    });
+
+    it('records the attempt (email + ip) for an allowed call, before the account lookup', async () => {
+      userFindUnique.mockResolvedValue(null);
+
+      await requestPasswordReset('nobody@airmanager.local', '203.0.113.5');
+
+      expect(resetAttemptCreateMock).toHaveBeenCalledWith({
+        data: { email: 'nobody@airmanager.local', ip: '203.0.113.5' },
+      });
+    });
+  });
+
+  describe('H4 (CWE-799/307) forgot-password throttle', () => {
+    describe('isPasswordResetThrottled', () => {
+      it('is false with no recent attempts', async () => {
+        await expect(isPasswordResetThrottled('pilot@airmanager.local', null)).resolves.toBe(false);
+      });
+
+      it('is true once the per-email cap is reached — checked BEFORE the per-IP cap (single count call)', async () => {
+        resetAttemptCountMock.mockResolvedValueOnce(3); // PASSWORD_RESET_MAX_PER_EMAIL
+
+        await expect(isPasswordResetThrottled('pilot@airmanager.local', '203.0.113.5')).resolves.toBe(true);
+        expect(resetAttemptCountMock).toHaveBeenCalledTimes(1);
+      });
+
+      it('is true once the per-IP cap is reached, even with few attempts on this specific email', async () => {
+        resetAttemptCountMock.mockResolvedValueOnce(0); // email count, under cap
+        resetAttemptCountMock.mockResolvedValueOnce(10); // ip count, PASSWORD_RESET_MAX_PER_IP
+
+        await expect(isPasswordResetThrottled('pilot@airmanager.local', '203.0.113.5')).resolves.toBe(true);
+        expect(resetAttemptCountMock).toHaveBeenCalledTimes(2);
+      });
+
+      it('skips the per-IP check (not an unlimited pass) when ip is null — the per-email cap alone still applies', async () => {
+        resetAttemptCountMock.mockResolvedValueOnce(0);
+
+        await expect(isPasswordResetThrottled('pilot@airmanager.local', null)).resolves.toBe(false);
+        expect(resetAttemptCountMock).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('requestPasswordReset throttled path', () => {
+      it('over-limit: returns the identical undefined result, issues no token, sends no mail, and does not even look up the account', async () => {
+        resetAttemptCountMock.mockResolvedValueOnce(3); // per-email cap reached
+
+        await expect(requestPasswordReset('victim@airmanager.local', '203.0.113.5')).resolves.toBeUndefined();
+
+        expect(userFindUnique).not.toHaveBeenCalled();
+        expect(createTokenMock).not.toHaveBeenCalled();
+        expect(sendMock).not.toHaveBeenCalled();
+        expect(resetAttemptCreateMock).not.toHaveBeenCalled();
+      });
+
+      it('under-limit: still issues the token and sends, same as before the throttle existed', async () => {
+        userFindUnique.mockResolvedValue({
+          id: 'user_1',
+          email: 'pilot@airmanager.local',
+          isActive: true,
+          locale: 'it',
+        });
+
+        await requestPasswordReset('pilot@airmanager.local', '203.0.113.5');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(createTokenMock).toHaveBeenCalled();
+        expect(sendMock).toHaveBeenCalled();
+      });
+
+      it('the response is identical (both resolve to undefined) whether throttled or not — no signal leaks through the return value', async () => {
+        userFindUnique.mockResolvedValue(null);
+        resetAttemptCountMock.mockResolvedValueOnce(0);
+        const underLimit = await requestPasswordReset('a@airmanager.local', '203.0.113.5');
+
+        resetAttemptCountMock.mockReset();
+        resetAttemptCountMock.mockResolvedValueOnce(3);
+        const overLimit = await requestPasswordReset('b@airmanager.local', '203.0.113.5');
+
+        expect(underLimit).toBeUndefined();
+        expect(overLimit).toBeUndefined();
+        expect(underLimit).toEqual(overLimit);
+      });
     });
   });
 

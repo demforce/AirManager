@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
+import { extractClientIp } from '@/lib/api/client-ip';
 import { authConfig } from './auth.config';
 import { authorizeCredentials } from './authorize';
 import { applyActiveRecheck } from './jwt-active-check';
@@ -26,7 +27,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: {},
         password: {},
       },
-      authorize: authorizeCredentials,
+      // H1 (CWE-307): the Credentials provider's `authorize()` receives the
+      // original `Request` as its second argument — extract the client IP
+      // from it (same `x-forwarded-for` convention as `ppr.service.ts`) and
+      // forward it to `authorizeCredentials` so the login throttle can
+      // apply its per-IP dimension.
+      authorize: (credentials, request) => authorizeCredentials(credentials, extractClientIp(request.headers.get('x-forwarded-for'))),
     }),
   ],
   callbacks: {
