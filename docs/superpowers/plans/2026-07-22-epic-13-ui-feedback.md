@@ -10,6 +10,8 @@
 - **R2 — ratings picker**: clickable chips (toggle buttons), one per rating defined in Settings — no free text, no dropdown.
 - **R3 — aircraft rate/adjustment histories**: show last 5 entries + a "mostra tutte" expander; full history stays reachable.
 - **R4 — legacy stack**: with `people/{id}` and `people/{id}/account` ported to AirOps, RETIRE Tailwind, Geist, TanStack Table, `data-table.tsx`, `export-button.tsx` (keep `search-combobox` — already AirOps-themed and used by new pages).
+- **R5 (2026-07-23, in review 13.1) — naming**: the catalog concept is called **"Ratings" in BOTH languages, everywhere** (IT "Abilitazioni"/"Certificazioni" → "Ratings": settings card, pilot editor, any other occurrence).
+- **R6 (2026-07-23, in review 13.1) — issuedAt**: the emission date is irrelevant to the club — **drop `Expiry.issuedAt` from the DB entirely** (migration + full consumer sweep: forms, views, exports, validityMonths prefill, membership-fee renewal). Only `expiresAt` exists.
 
 **Branch:** `epic-13-ui-feedback`, stacked on `epic-12-airops-ui` (PR #20 still open → stacked PR per project rule).
 

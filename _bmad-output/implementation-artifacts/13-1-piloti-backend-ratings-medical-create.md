@@ -4,7 +4,7 @@ baseline_commit: eab82c8
 
 # Story 13.1: Piloti backend — separazione ratings/visite mediche + creazione persona one-step
 
-Status: review
+Status: done
 
 ## Story
 
