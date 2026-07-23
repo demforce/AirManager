@@ -149,7 +149,7 @@ development_status:
   # Piano: docs/superpowers/plans/2026-07-22-epic-13-ui-feedback.md
   epic-13: in-progress
   13-1-piloti-backend-ratings-medical-create: done
-  13-2-piloti-ui-form-unico: backlog
+  13-2-piloti-ui-form-unico: in-progress
   13-3-scheda-persona-estratto-conto-ritiro-legacy: backlog
   13-4-flotta-toggle-storici-owner: backlog
   13-5-polish-tabelle-billing-logbook-expiries: backlog
