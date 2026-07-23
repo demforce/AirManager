@@ -156,8 +156,7 @@ export type InstructorProfileRequestInput = z.infer<typeof instructorProfileRequ
  *   student/instructor) — a client that only wants the base create keeps
  *   sending no `profiles` at all, unchanged from before this story.
  * - `expiries`: `{ expiryTypeId, expiresAt }` pairs — `expiresAt` is
- *   MANDATORY per entry (R-13.1-c, unlike `registerExpiry`'s own schema
- *   where the caller also supplies `issuedAt`); type existence/active/scope
+ *   MANDATORY per entry (R-13.1-c); type existence/active/scope
  *   compatibility is a service-level check (needs a DB read). Capped at 50
  *   (defensive, no real catalogue is anywhere near that size) and each
  *   `expiryTypeId` must be unique within the array — a duplicate can only

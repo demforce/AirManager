@@ -20,7 +20,6 @@ export type ExpiriesPanelLabels = {
   feedback: { registered: string; updated: string; deleted: string };
   table: {
     type: string;
-    issuedAt: string;
     expiresAt: string;
     notes: string;
     noNotes: string;
@@ -33,7 +32,6 @@ export type ExpiriesPanelLabels = {
     title: string;
     type: string;
     noCompatibleTypes: string;
-    issuedAt: string;
     expiresAt: string;
     notes: string;
     submit: string;
@@ -41,7 +39,6 @@ export type ExpiriesPanelLabels = {
     save: string;
     edit: string;
     requiredField: string;
-    invalidRange: string;
     scopeMismatchError: string;
     conflictError: string;
     genericError: string;
@@ -199,7 +196,6 @@ export function ExpiriesPanel({ personId, canManage, activeProfiles, labels }: E
               <thead>
                 <tr className="border-b border-[#EAEAEA] text-xs uppercase tracking-[0.05em] text-[#787774]">
                   <th className="py-2 pr-4 font-medium">{labels.table.type}</th>
-                  <th className="py-2 pr-4 font-medium">{labels.table.issuedAt}</th>
                   <th className="py-2 pr-4 font-medium">{labels.table.expiresAt}</th>
                   <th className="py-2 pr-4 font-medium">{labels.table.statusHeader}</th>
                   <th className="py-2 pr-4 font-medium">{labels.table.notes}</th>
@@ -264,7 +260,7 @@ function ExpiryRow({
   if (isEditing) {
     return (
       <tr data-testid="expiry-row-editing" className="border-b border-[#EAEAEA]">
-        <td colSpan={canManage ? 6 : 5} className="py-4">
+        <td colSpan={canManage ? 5 : 4} className="py-4">
           <EditExpiryRowForm expiry={expiry} labels={labels.form} onCancel={onCancelEdit} onSuccess={onSaved} />
         </td>
       </tr>
@@ -284,7 +280,6 @@ function ExpiryRow({
           </span>
         ) : null}
       </td>
-      <td className="py-3 pr-4 whitespace-nowrap">{formatDateOnly(expiry.issuedAt, moneyLocale)}</td>
       <td className="py-3 pr-4 whitespace-nowrap">{formatDateOnly(expiry.expiresAt, moneyLocale)}</td>
       <td className="py-3 pr-4">
         <ExpiryStatusBadge status={expiry.status} label={labels.table.status[expiry.status]} data-testid="expiry-status-badge" />
@@ -334,14 +329,11 @@ function ExpiryRow({
   );
 }
 
-const registerExpiryFormSchema = z
-  .object({
-    expiryTypeId: z.string().trim().min(1),
-    issuedAt: z.string().trim().min(1),
-    expiresAt: z.string().trim().min(1),
-    notes: z.string(),
-  })
-  .refine((value) => value.expiresAt >= value.issuedAt, { message: 'invalidRange', path: ['expiresAt'] });
+const registerExpiryFormSchema = z.object({
+  expiryTypeId: z.string().trim().min(1),
+  expiresAt: z.string().trim().min(1),
+  notes: z.string(),
+});
 
 type RegisterExpiryFormValues = z.infer<typeof registerExpiryFormSchema>;
 
@@ -399,18 +391,18 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
     register,
     handleSubmit,
     setValue,
-    getValues,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<RegisterExpiryFormValues>({
     resolver: zodResolver(registerExpiryFormSchema),
-    defaultValues: { expiryTypeId: '', issuedAt: todayDateOnly(), expiresAt: '', notes: '' },
+    defaultValues: { expiryTypeId: '', expiresAt: '', notes: '' },
   });
 
-  // Story 12.11, ratifica utente 2: precompiles `expiresAt` from the
-  // selected type's `validityMonths` (`issuedAt + validityMonths`, clamped
-  // to the target month's real last day). Fires ONLY when the TYPE
-  // selection itself changes (not on every `issuedAt` keystroke) — the
+  // Story 12.11 (ratifica utente 2) / story 13.1 review R6: precompiles
+  // `expiresAt` from the selected type's `validityMonths` (`today +
+  // validityMonths`, clamped to the target month's real last day — R6
+  // dropped the `issuedAt` base this used to read, see `Expiry`'s Prisma
+  // doc-comment). Fires ONLY when the TYPE selection itself changes — the
   // field stays a normal, editable input afterwards (Contesto: "editabile").
   // A type with `validityMonths` 0/null (or a type not yet loaded) leaves
   // `expiresAt` untouched.
@@ -420,9 +412,8 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
     const type = (types ?? []).find((candidate) => candidate.id === selectedTypeId);
     if (!type || !type.validityMonths) return;
 
-    const issuedAtValue = getValues('issuedAt') || todayDateOnly();
-    setValue('expiresAt', toDateOnlyString(addMonthsClampUtc(parseDateOnlyUtc(issuedAtValue), type.validityMonths)), { shouldValidate: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the TYPE selection retriggers precompilation (Dev Notes above); `types`/`getValues`/`setValue` are stable across the component's lifetime for this purpose.
+    setValue('expiresAt', toDateOnlyString(addMonthsClampUtc(parseDateOnlyUtc(todayDateOnly()), type.validityMonths)), { shouldValidate: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the TYPE selection retriggers precompilation (Dev Notes above); `types`/`setValue` are stable across the component's lifetime for this purpose.
   }, [selectedTypeId]);
 
   async function onSubmit(values: RegisterExpiryFormValues): Promise<void> {
@@ -433,7 +424,6 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
       body: JSON.stringify({
         personId,
         expiryTypeId: values.expiryTypeId,
-        issuedAt: values.issuedAt,
         expiresAt: values.expiresAt,
         notes: values.notes.trim() === '' ? undefined : values.notes.trim(),
       }),
@@ -481,18 +471,11 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
           {errors.expiryTypeId ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
         </div>
         <div>
-          <label htmlFor="expiry-issued-at" className="block text-sm font-medium text-[#2F3437]">
-            {labels.issuedAt}
-          </label>
-          <DateInput id="expiry-issued-at" aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
-          {errors.issuedAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
-        </div>
-        <div>
           <label htmlFor="expiry-expires-at" className="block text-sm font-medium text-[#2F3437]">
             {labels.expiresAt}
           </label>
           <DateInput id="expiry-expires-at" aria-invalid={Boolean(errors.expiresAt)} className={inputClasses} {...register('expiresAt')} />
-          {errors.expiresAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidRange}</p> : null}
+          {errors.expiresAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
         </div>
         <div>
           <label htmlFor="expiry-notes" className="block text-sm font-medium text-[#2F3437]">
@@ -528,13 +511,10 @@ function RegisterExpiryForm({ personId, activeProfiles, labels, onCancel, onSucc
   );
 }
 
-const editExpiryFormSchema = z
-  .object({
-    issuedAt: z.string().trim().min(1),
-    expiresAt: z.string().trim().min(1),
-    notes: z.string(),
-  })
-  .refine((value) => value.expiresAt >= value.issuedAt, { message: 'invalidRange', path: ['expiresAt'] });
+const editExpiryFormSchema = z.object({
+  expiresAt: z.string().trim().min(1),
+  notes: z.string(),
+});
 
 type EditExpiryFormValues = z.infer<typeof editExpiryFormSchema>;
 
@@ -561,7 +541,7 @@ function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRo
     formState: { errors, isSubmitting },
   } = useForm<EditExpiryFormValues>({
     resolver: zodResolver(editExpiryFormSchema),
-    defaultValues: { issuedAt: expiry.issuedAt, expiresAt: expiry.expiresAt, notes: expiry.notes ?? '' },
+    defaultValues: { expiresAt: expiry.expiresAt, notes: expiry.notes ?? '' },
   });
 
   async function onSubmit(values: EditExpiryFormValues): Promise<void> {
@@ -570,14 +550,13 @@ function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRo
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        issuedAt: values.issuedAt,
         expiresAt: values.expiresAt,
         notes: values.notes.trim() === '' ? null : values.notes.trim(),
       }),
     });
 
     if (!response.ok) {
-      setFormError(response.status === 422 ? labels.invalidRange : labels.genericError);
+      setFormError(labels.genericError);
       return;
     }
 
@@ -595,12 +574,6 @@ function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRo
       data-testid="edit-expiry-form"
     >
       <div>
-        <label htmlFor={`edit-issued-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
-          {labels.issuedAt}
-        </label>
-        <DateInput id={`edit-issued-at-${expiry.id}`} aria-invalid={Boolean(errors.issuedAt)} className={inputClasses} {...register('issuedAt')} />
-      </div>
-      <div>
         <label htmlFor={`edit-expires-at-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">
           {labels.expiresAt}
         </label>
@@ -610,7 +583,7 @@ function EditExpiryRowForm({ expiry, labels, onCancel, onSuccess }: EditExpiryRo
           className={inputClasses}
           {...register('expiresAt')}
         />
-        {errors.expiresAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.invalidRange}</p> : null}
+        {errors.expiresAt ? <p className="mt-1 text-xs text-[#9F2F2D]">{labels.requiredField}</p> : null}
       </div>
       <div className="sm:col-span-2">
         <label htmlFor={`edit-notes-${expiry.id}`} className="block text-sm font-medium text-[#2F3437]">

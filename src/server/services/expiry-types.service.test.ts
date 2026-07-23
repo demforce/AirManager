@@ -288,6 +288,17 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { blocksBooking: true }, select: expect.anything() });
       expect(findFirstMock).not.toHaveBeenCalled();
     });
+
+    it('patches kind independently of every other field (story 13.1 review F3 — a misclassified type is recoverable via PATCH)', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      update.mockResolvedValue(fixture({ kind: 'RATING' }));
+      const input = updateExpiryTypeSchema.parse({ kind: 'RATING' });
+
+      await updateExpiryType(adminActor(), 'et_1', input);
+
+      expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { kind: 'RATING' }, select: expect.anything() });
+      expect(findFirstMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteExpiryType (Task 2, AC 2 — P2003 backstop ready for 6.2)', () => {
@@ -373,6 +384,14 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
     it('accepts a partial update body with just blocksBooking', () => {
       expect(updateExpiryTypeSchema.safeParse({ blocksBooking: true }).success).toBe(true);
+    });
+
+    it('accepts a partial update body with just kind (story 13.1 review F3)', () => {
+      expect(updateExpiryTypeSchema.safeParse({ kind: 'MEDICAL' }).success).toBe(true);
+    });
+
+    it('rejects a kind outside the enum on update', () => {
+      expect(updateExpiryTypeSchema.safeParse({ kind: 'OTHER' }).success).toBe(false);
     });
   });
 });

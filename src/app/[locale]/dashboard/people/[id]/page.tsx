@@ -283,7 +283,6 @@ export default async function PersonDetailPage({ params }: PageProps) {
               },
               table: {
                 type: tExpiries('table.type'),
-                issuedAt: tExpiries('table.issuedAt'),
                 expiresAt: tExpiries('table.expiresAt'),
                 notes: tExpiries('table.notes'),
                 noNotes: tExpiries('table.noNotes'),
@@ -300,7 +299,6 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 title: tExpiries('form.title'),
                 type: tExpiries('form.type'),
                 noCompatibleTypes: tExpiries('form.noCompatibleTypes'),
-                issuedAt: tExpiries('form.issuedAt'),
                 expiresAt: tExpiries('form.expiresAt'),
                 notes: tExpiries('form.notes'),
                 submit: tExpiries('form.submit'),
@@ -308,7 +306,6 @@ export default async function PersonDetailPage({ params }: PageProps) {
                 save: tExpiries('form.save'),
                 edit: tExpiries('form.edit'),
                 requiredField: tExpiries('form.requiredField'),
-                invalidRange: tExpiries('form.invalidRange'),
                 scopeMismatchError: tExpiries('form.scopeMismatchError'),
                 conflictError: tExpiries('form.conflictError'),
                 genericError: tExpiries('form.genericError'),

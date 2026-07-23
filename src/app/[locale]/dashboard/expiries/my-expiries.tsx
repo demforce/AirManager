@@ -9,7 +9,6 @@ export type MyExpiriesLabels = {
   empty: string;
   table: {
     type: string;
-    issuedAt: string;
     expiresAt: string;
     notes: string;
     noNotes: string;
@@ -25,7 +24,7 @@ type MyExpiriesProps = {
 };
 
 const STATUS_TONE: Record<ExpiryStatusDto, BadgeTone> = { ok: 'ok', expiring: 'warn', expired: 'bad' };
-const COLS = 'minmax(150px,1.4fr) 120px 120px 130px minmax(140px,1.4fr)';
+const COLS = 'minmax(150px,1.4fr) 120px 130px minmax(140px,1.4fr)';
 
 /**
  * "Le mie scadenze" (story 6.2, AC 2; AirOps restyle, story 12.11 AC 3) —
@@ -49,7 +48,6 @@ export function MyExpiries({ expiries, labels }: MyExpiriesProps) {
       <div className="students">
         <div className="student-row header" style={{ gridTemplateColumns: COLS }}>
           <div>{labels.table.type}</div>
-          <div>{labels.table.issuedAt}</div>
           <div>{labels.table.expiresAt}</div>
           <div>{labels.table.statusHeader}</div>
           <div>{labels.table.notes}</div>
@@ -79,9 +77,6 @@ function MyExpiryRow({ expiry, labels }: MyExpiryRowProps) {
             {labels.table.pendingBadge}
           </span>
         ) : null}
-      </div>
-      <div className="mono" style={{ fontSize: 12 }}>
-        {formatDateOnly(expiry.issuedAt, moneyLocale)}
       </div>
       <div className="mono" style={{ fontSize: 12 }}>
         {formatDateOnly(expiry.expiresAt, moneyLocale)}

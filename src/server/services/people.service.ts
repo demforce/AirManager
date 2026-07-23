@@ -1,7 +1,7 @@
 import type { Prisma } from '@/generated/prisma/client';
 import type { Role } from '@/generated/prisma/enums';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
-import { parseDateOnlyUtc, todayDateOnlyUtc } from '@/lib/date-only';
+import { parseDateOnlyUtc } from '@/lib/date-only';
 import type { CreatePersonInput, ListPeopleQuery, UpdatePersonInput } from '@/lib/schemas/people';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
@@ -435,6 +435,16 @@ async function assertExpiryTypesValidForComposite(
  * Calling this with none of `profiles`/`expiries`/`access` behaves IDENTICALLY
  * to the pre-13.1 `createPerson` (retro-compatibility, AC 5) — the pilot
  * editor's existing "new person" flow is completely unaffected.
+ *
+ * The `expiries` block's `expiresAt` can be in the past (Contesto: an
+ * already-expired scadenza is legal to register — same stance
+ * `registerExpiry`'s own doc-comment takes). Before review R6 this batch
+ * ALSO stamped `issuedAt` as today, which for a caller-supplied past
+ * `expiresAt` produced a row `expiresAt < issuedAt` the standalone `POST
+ * /api/v1/expiries` would have rejected (review F1) — R6 (PO ratifica
+ * 2026-07-23) removed `issuedAt` from the domain entirely, so that
+ * inconsistency no longer exists: there is nothing left to compare
+ * `expiresAt` against.
  */
 export async function createPerson(actor: Actor, input: CreatePersonInput): Promise<PersonListItem> {
   authorize(actor, 'people.manage');
@@ -468,18 +478,11 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
     }
 
     if (input.expiries) {
-      // A single "issued today" date for every expiry in this batch — the
-      // wire shape (AC 5) only carries `expiresAt`, never `issuedAt` (unlike
-      // `registerExpiry`'s own standalone schema): a person just being
-      // created has no prior issue date to ask for, so "today" is the only
-      // sensible default for a one-step create.
-      const issuedAt = todayDateOnlyUtc();
       for (const expiry of input.expiries) {
         await tx.expiry.create({
           data: {
             personId: person.id,
             expiryTypeId: expiry.expiryTypeId,
-            issuedAt,
             expiresAt: parseDateOnlyUtc(expiry.expiresAt),
             actorUserId: actor.userId,
           },

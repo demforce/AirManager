@@ -95,7 +95,6 @@ function expiryFixture(overrides: Partial<Record<string, unknown>> = {}): Record
     id: 'exp_1',
     expiryTypeId: 'type_1',
     expiryType: { name: 'Visita medica classe 2', scope: 'PILOTS' },
-    issuedAt: parseDateOnlyUtc('2026-01-01'),
     expiresAt: parseDateOnlyUtc('2026-12-31'),
     notes: null,
     proposals: [],
@@ -110,7 +109,6 @@ function dashboardExpiryFixture(overrides: Partial<Record<string, unknown>> = {}
     person: { firstName: 'Mario', lastName: 'Rossi' },
     expiryTypeId: 'type_1',
     expiryType: { name: 'Visita medica classe 2', scope: 'PILOTS' },
-    issuedAt: parseDateOnlyUtc('2026-01-01'),
     expiresAt: parseDateOnlyUtc('2026-12-31'),
     notes: null,
     ...overrides,
@@ -137,7 +135,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
   describe('authorization matrix', () => {
     it('registerExpiry rejects a pilot (needs expiries.manage) without querying anything', async () => {
       await expect(
-        registerExpiry(pilotActor(), { personId: 'person_1', expiryTypeId: 'type_1', issuedAt: '2026-01-01', expiresAt: '2026-12-31' }),
+        registerExpiry(pilotActor(), { personId: 'person_1', expiryTypeId: 'type_1', expiresAt: '2026-12-31' }),
       ).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
@@ -224,7 +222,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
         expiryTypeId: 'type_1',
         typeName: 'Visita medica classe 2',
         typeScope: 'PILOTS',
-        issuedAt: '2026-01-01',
         expiresAt: '2020-01-01',
         status: 'expired',
       });
@@ -436,7 +433,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
   // --- registerExpiry: verification order + guards ----------------------
 
   describe('registerExpiry — verification order (404 -> 409 -> 422, no state leak)', () => {
-    const input = { personId: 'person_1', expiryTypeId: 'type_1', issuedAt: '2026-01-01', expiresAt: '2026-12-31' };
+    const input = { personId: 'person_1', expiryTypeId: 'type_1', expiresAt: '2026-12-31' };
 
     it('person not found -> NotFoundError, before the type is even looked up', async () => {
       personFindUnique.mockResolvedValue(null);
@@ -497,7 +494,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
           data: expect.objectContaining({
             personId: 'person_1',
             expiryTypeId: 'type_1',
-            issuedAt: parseDateOnlyUtc('2026-01-01'),
             expiresAt: parseDateOnlyUtc('2026-12-31'),
             notes: null,
             actorUserId: 'staff_1',
@@ -508,7 +504,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
   });
 
   describe('registerExpiry — SCOPE_MISMATCH (422, stable code)', () => {
-    const baseInput = { personId: 'person_1', expiryTypeId: 'type_1', issuedAt: '2026-01-01', expiresAt: '2026-12-31' };
+    const baseInput = { personId: 'person_1', expiryTypeId: 'type_1', expiresAt: '2026-12-31' };
 
     it.each(['PILOTS', 'STUDENTS', 'INSTRUCTORS'] as const)('scope %s with no matching profile -> 422 SCOPE_MISMATCH', async (scope) => {
       personFindUnique.mockResolvedValue(personFixture());
@@ -562,21 +558,8 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       await expect(updateExpiry(staffActor(), 'missing', { notes: 'x' })).rejects.toThrow(NotFoundError);
     });
 
-    it('patching only expiresAt to before the CURRENT issuedAt -> 422 (merge-validation against stored issuedAt)', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', issuedAt: parseDateOnlyUtc('2026-06-01'), expiresAt: parseDateOnlyUtc('2026-12-31') });
-
-      await expect(updateExpiry(staffActor(), 'exp_1', { expiresAt: '2026-01-01' })).rejects.toThrow(ValidationError);
-      expect(expiryUpdateMock).not.toHaveBeenCalled();
-    });
-
-    it('patching only issuedAt to after the CURRENT expiresAt -> 422 (merge-validation against stored expiresAt)', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', issuedAt: parseDateOnlyUtc('2026-01-01'), expiresAt: parseDateOnlyUtc('2026-06-01') });
-
-      await expect(updateExpiry(staffActor(), 'exp_1', { issuedAt: '2026-12-31' })).rejects.toThrow(ValidationError);
-    });
-
     it('patches notes to null explicitly (distinct from leaving it untouched)', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', issuedAt: parseDateOnlyUtc('2026-01-01'), expiresAt: parseDateOnlyUtc('2026-12-31') });
+      expiryFindUnique.mockResolvedValue({ id: 'exp_1', expiresAt: parseDateOnlyUtc('2026-12-31') });
       expiryUpdate.mockResolvedValue(expiryFixture({ notes: null }));
 
       await updateExpiry(staffActor(), 'exp_1', { notes: null });
@@ -589,7 +572,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     // --- SentAlert wipe-on-renewal (story 6.3, AD-9) -----------------------
 
     it('expiresAt CHANGES value -> wipes SentAlert in the same transaction (renewal re-earns its alert cycle)', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', issuedAt: parseDateOnlyUtc('2026-01-01'), expiresAt: parseDateOnlyUtc('2026-12-31') });
+      expiryFindUnique.mockResolvedValue({ id: 'exp_1', expiresAt: parseDateOnlyUtc('2026-12-31') });
       sentAlertDeleteMany.mockResolvedValue({ count: 2 });
       expiryUpdate.mockResolvedValue(expiryFixture({ expiresAt: parseDateOnlyUtc('2027-06-30') }));
 
@@ -600,7 +583,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     });
 
     it('expiresAt stays the SAME value (re-submitted, or only notes patched) -> does NOT touch SentAlert', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', issuedAt: parseDateOnlyUtc('2026-01-01'), expiresAt: parseDateOnlyUtc('2026-12-31') });
+      expiryFindUnique.mockResolvedValue({ id: 'exp_1', expiresAt: parseDateOnlyUtc('2026-12-31') });
       expiryUpdate.mockResolvedValue(expiryFixture());
 
       await updateExpiry(staffActor(), 'exp_1', { expiresAt: '2026-12-31', notes: 'stessa data' });
@@ -609,7 +592,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     });
 
     it('only notes patched (expiresAt absent from the input) -> does NOT touch SentAlert', async () => {
-      expiryFindUnique.mockResolvedValue({ id: 'exp_1', issuedAt: parseDateOnlyUtc('2026-01-01'), expiresAt: parseDateOnlyUtc('2026-12-31') });
+      expiryFindUnique.mockResolvedValue({ id: 'exp_1', expiresAt: parseDateOnlyUtc('2026-12-31') });
       expiryUpdate.mockResolvedValue(expiryFixture());
 
       await updateExpiry(staffActor(), 'exp_1', { notes: 'solo note' });
@@ -647,20 +630,16 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
   // --- Schema validation (422s at the Zod boundary, before the service) ---
 
   describe('schema validation', () => {
-    it('registerExpirySchema rejects a malformed date', () => {
-      expect(
-        registerExpirySchema.safeParse({ personId: 'p', expiryTypeId: 't', issuedAt: '01-01-2026', expiresAt: '2026-12-31' }).success,
-      ).toBe(false);
+    it('registerExpirySchema rejects a malformed expiresAt date (story 13.1 review R6: the format check on expiresAt itself is NOT removed, only the cross-field issuedAt one)', () => {
+      expect(registerExpirySchema.safeParse({ personId: 'p', expiryTypeId: 't', expiresAt: '31-12-2026' }).success).toBe(false);
     });
 
-    it('registerExpirySchema rejects a missing issuedAt', () => {
-      expect(registerExpirySchema.safeParse({ personId: 'p', expiryTypeId: 't', expiresAt: '2026-12-31' }).success).toBe(false);
+    it('registerExpirySchema rejects a missing expiresAt', () => {
+      expect(registerExpirySchema.safeParse({ personId: 'p', expiryTypeId: 't' }).success).toBe(false);
     });
 
-    it('registerExpirySchema rejects expiresAt before issuedAt', () => {
-      expect(
-        registerExpirySchema.safeParse({ personId: 'p', expiryTypeId: 't', issuedAt: '2026-12-31', expiresAt: '2026-01-01' }).success,
-      ).toBe(false);
+    it('registerExpirySchema accepts an expiresAt in the past (R6: an already-expired scadenza is legal to register, no more issuedAt to compare against)', () => {
+      expect(registerExpirySchema.safeParse({ personId: 'p', expiryTypeId: 't', expiresAt: '2020-01-01' }).success).toBe(true);
     });
 
     it('registerExpirySchema rejects notes over 500 chars', () => {
@@ -668,7 +647,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
         registerExpirySchema.safeParse({
           personId: 'p',
           expiryTypeId: 't',
-          issuedAt: '2026-01-01',
           expiresAt: '2026-12-31',
           notes: 'x'.repeat(501),
         }).success,
@@ -677,10 +655,6 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
 
     it('updateExpirySchema rejects an empty body', () => {
       expect(updateExpirySchema.safeParse({}).success).toBe(false);
-    });
-
-    it('updateExpirySchema rejects expiresAt before issuedAt WHEN BOTH are in the body', () => {
-      expect(updateExpirySchema.safeParse({ issuedAt: '2026-12-31', expiresAt: '2026-01-01' }).success).toBe(false);
     });
 
     it('updateExpirySchema accepts a single-field patch (no cross-field check possible here — the service merges)', () => {

@@ -48,7 +48,6 @@ export const expiryItemSchema = z.object({
   expiryTypeId: z.string(),
   typeName: z.string(),
   typeScope: z.enum(['PILOTS', 'STUDENTS', 'INSTRUCTORS', 'ALL']),
-  issuedAt: z.iso.date(),
   expiresAt: z.iso.date(),
   notes: z.string().nullable(),
   status: expiryStatusSchema,
@@ -70,24 +69,20 @@ export type ExpiryListResponseDto = z.infer<typeof expiryListResponseSchema>;
 /**
  * `POST /api/v1/expiries` body (AC 1). `personId`/`expiryTypeId` reference
  * existing rows (404/409 checked in the service — scope compatibility,
- * duplicate, deactivated type); `issuedAt`/`expiresAt` are calendar dates
+ * duplicate, deactivated type); `expiresAt` is a calendar date
  * (`z.iso.date()`, same convention as `createAircraftRateSchema.validFrom`).
- * `.refine`: `expiresAt` must not be BEFORE `issuedAt` — string comparison
- * is safe here because `z.iso.date()` guarantees the fixed-width
- * `YYYY-MM-DD` format (same pattern as `cashReportQuerySchema`'s
- * `from`/`to` refine). No future/past constraint beyond this (Contesto: an
- * already-expired scadenza can legitimately be registered — it is the real
- * state of the world).
+ * No future/past constraint (Contesto: an already-expired scadenza can
+ * legitimately be registered — it is the real state of the world). There
+ * used to be an `issuedAt` alongside it plus a cross-field `expiresAt >=
+ * issuedAt` refine (story 6.2); story 13.1's review (R6, PO ratifica
+ * 2026-07-23) dropped `issuedAt` — see `Expiry`'s Prisma doc-comment.
  */
-export const registerExpirySchema = z
-  .object({
-    personId: z.string().min(1),
-    expiryTypeId: z.string().min(1),
-    issuedAt: z.iso.date(),
-    expiresAt: z.iso.date(),
-    notes: z.string().trim().max(500).optional(),
-  })
-  .refine((value) => value.expiresAt >= value.issuedAt, { message: 'expiresAt must not be before issuedAt', path: ['expiresAt'] });
+export const registerExpirySchema = z.object({
+  personId: z.string().min(1),
+  expiryTypeId: z.string().min(1),
+  expiresAt: z.iso.date(),
+  notes: z.string().trim().max(500).optional(),
+});
 
 export type RegisterExpiryInput = z.infer<typeof registerExpirySchema>;
 
@@ -98,22 +93,14 @@ export type RegisterExpiryInput = z.infer<typeof registerExpirySchema>;
  * undefined-vs-null convention as `updatePackageTypeSchema.validityMonths`,
  * story 4.3). `personId`/`expiryTypeId` are NOT patchable here (Contesto: a
  * wrong type/person is corrected by delete + re-register, never an edit in
- * place). The cross-field `expiresAt >= issuedAt` refine below only fires
- * when BOTH are present in THIS body — a request patching just one of the
- * two is validated against the OTHER's CURRENT stored value in the service
- * (`updateExpiry`'s merge-validation, Dev Notes), not here.
+ * place).
  */
 export const updateExpirySchema = z
   .object({
-    issuedAt: z.iso.date().optional(),
     expiresAt: z.iso.date().optional(),
     notes: z.string().trim().max(500).nullable().optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, { message: 'At least one field must be provided.' })
-  .refine((value) => value.issuedAt === undefined || value.expiresAt === undefined || value.expiresAt >= value.issuedAt, {
-    message: 'expiresAt must not be before issuedAt',
-    path: ['expiresAt'],
-  });
+  .refine((value) => Object.keys(value).length > 0, { message: 'At least one field must be provided.' });
 
 export type UpdateExpiryInput = z.infer<typeof updateExpirySchema>;
 
@@ -172,7 +159,6 @@ export const expiryDashboardItemSchema = z.object({
   expiryTypeId: z.string(),
   typeName: z.string(),
   typeScope: expiryScopeSchema,
-  issuedAt: z.iso.date(),
   expiresAt: z.iso.date(),
   notes: z.string().nullable(),
   status: expiryStatusSchema,

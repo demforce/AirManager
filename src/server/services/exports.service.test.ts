@@ -338,7 +338,7 @@ describe('exportCashMovementsXlsx (T2 — signed amount column mapping)', () => 
 });
 
 describe('exportExpiriesXlsx (T2 — date-only column mapping)', () => {
-  it('formats issuedAt/expiresAt as DD/MM/YYYY (formatDateOnly), never a raw ISO string', async () => {
+  it('formats expiresAt as DD/MM/YYYY (formatDateOnly), never a raw ISO string', async () => {
     listAllExpiriesMock.mockResolvedValue({
       total: 1,
       page: 1,
@@ -352,7 +352,6 @@ describe('exportExpiriesXlsx (T2 — date-only column mapping)', () => {
           expiryTypeId: 'type_1',
           typeName: 'Visita medica',
           typeScope: 'PILOTS',
-          issuedAt: '2026-01-15',
           expiresAt: '2027-01-15',
           notes: null,
           status: 'ok',
@@ -367,9 +366,8 @@ describe('exportExpiriesXlsx (T2 — date-only column mapping)', () => {
     expect(row.getCell(1).value).toBe('Rossi Mario');
     expect(row.getCell(2).value).toBe('Visita medica');
     expect(row.getCell(3).value).toBe('Piloti');
-    expect(row.getCell(4).value).toBe('15/01/2026');
-    expect(row.getCell(5).value).toBe('15/01/2027');
-    expect(row.getCell(6).value).toBe('In regola');
+    expect(row.getCell(4).value).toBe('15/01/2027');
+    expect(row.getCell(5).value).toBe('In regola');
   });
 });
 
@@ -771,7 +769,6 @@ describe('exportExpiriesPdf (story 10.2, AC 2/3)', () => {
           expiryTypeId: 'type_1',
           typeName: 'Visita medica',
           typeScope: 'PILOTS',
-          issuedAt: '2026-01-15',
           expiresAt: '2026-08-01',
           notes: null,
           status: 'expired',

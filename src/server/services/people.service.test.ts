@@ -636,6 +636,24 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
 
       expect(sendInviteEmailMock).not.toHaveBeenCalled();
     });
+
+    it('an expiresAt in the PAST succeeds (review F1, closed at the root by R6: `Expiry.issuedAt` no longer exists, so there is nothing left for a past `expiresAt` to be inconsistent with — the resulting scadenza is simply already `expired`, the real state of the world)', async () => {
+      personFindFirst.mockResolvedValue(null);
+      personCreate.mockResolvedValue(SELECTED_PERSON);
+      expiryTypeFindMany.mockResolvedValue([{ id: 'et_1', scope: 'ALL', isActive: true }]);
+      expiryCreate.mockResolvedValue({ id: 'expiry_past' });
+
+      await expect(
+        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2020-01-01' }] }),
+      ).resolves.toBeDefined();
+
+      expect(expiryCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ expiryTypeId: 'et_1', expiresAt: expect.any(Date) }) }),
+      );
+      // No `issuedAt` is ever written (the column is gone from the domain).
+      const writtenData = expiryCreateMock.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+      expect(writtenData).not.toHaveProperty('issuedAt');
+    });
   });
 
   describe('updatePerson', () => {

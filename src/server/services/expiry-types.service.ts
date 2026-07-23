@@ -128,7 +128,9 @@ export async function createExpiryType(actor: Actor, input: CreateExpiryTypeInpu
  * Editing a type already in use is deliberately LEGAL (see `ExpiryType`
  * doc-comment: a registered `Expiry`, story 6.2, references this row by id
  * and never snapshots the name) — there is no "in use" guard here, only the
- * 404/409 shape checks below.
+ * 404/409 shape checks below. `kind` (story 13.1 review F3) is patchable
+ * like every other field — a type misclassified by the backfill migration's
+ * name match is recoverable here instead of only by delete + re-create.
  */
 export async function updateExpiryType(actor: Actor, id: string, input: UpdateExpiryTypeInput): Promise<ExpiryTypeListItem> {
   authorize(actor, 'settings.manage');
@@ -152,6 +154,7 @@ export async function updateExpiryType(actor: Actor, id: string, input: UpdateEx
       data: {
         ...(name !== undefined ? { name } : {}),
         ...(input.scope !== undefined ? { scope: input.scope } : {}),
+        ...(input.kind !== undefined ? { kind: input.kind } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         ...(input.blocksBooking !== undefined ? { blocksBooking: input.blocksBooking } : {}),
         ...(input.validityMonths !== undefined ? { validityMonths: input.validityMonths } : {}),

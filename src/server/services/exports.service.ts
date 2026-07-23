@@ -447,7 +447,6 @@ export async function exportExpiriesXlsx(actor: Actor, query: ListAllExpiriesQue
     { header: t('dashboard.table.person'), value: (row) => `${row.personLastName} ${row.personFirstName}` },
     { header: t('dashboard.table.type'), value: (row) => row.typeName },
     { header: t('dashboard.table.scope'), value: (row) => tScope(`scope.${row.typeScope}`) },
-    { header: t('dashboard.table.issuedAt'), value: (row) => formatDateOnly(row.issuedAt, locale) },
     { header: t('dashboard.table.expiresAt'), value: (row) => formatDateOnly(row.expiresAt, locale) },
     { header: t('dashboard.table.status'), value: (row) => t(`own.table.status.${row.status}`) },
   ];
@@ -698,7 +697,6 @@ export async function exportExpiriesPdf(actor: Actor, query: ListAllExpiriesQuer
     { header: t('dashboard.table.person'), value: (row) => `${row.personLastName} ${row.personFirstName}` },
     { header: t('dashboard.table.type'), value: (row) => row.typeName },
     { header: t('dashboard.table.scope'), value: (row) => tScope(`scope.${row.typeScope}`) },
-    { header: t('dashboard.table.issuedAt'), value: (row) => formatDateOnly(row.issuedAt, locale) },
     { header: t('dashboard.table.expiresAt'), value: (row) => formatDateOnly(row.expiresAt, locale) },
     {
       header: t('dashboard.table.status'),

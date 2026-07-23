@@ -12,7 +12,6 @@ export type ChargeMembershipFeeResult = {
   balanceCents: number;
   expiryId: string;
   expiresAt: string;
-  issuedAt: string;
 };
 
 /**
@@ -41,7 +40,10 @@ export type ChargeMembershipFeeResult = {
  * **Rolling renewal (ratifica 1b)**: `expiresAt = max(today, current
  * expiresAt) + 12 months` — an early renewal EXTENDS from the current
  * expiry (never shortens it to `today + 12`), a lapsed one restarts from
- * today. `issuedAt` is always stamped as today (the payment date).
+ * today. There used to be an `issuedAt` stamped as today alongside it
+ * (the payment date) — story 13.1's review (R6, PO ratifica 2026-07-23)
+ * dropped `Expiry.issuedAt` from the domain entirely (see that model's
+ * Prisma doc-comment).
  *
  * **`SentAlert` wipe (ratifica 1a)**: same "a renewal re-earns its alert
  * cycle" rule as `updateExpiry` (the unique `[expiryId, threshold]`
@@ -132,7 +134,7 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
       await tx.sentAlert.deleteMany({ where: { expiryId: existingExpiry.id } });
       expiry = await tx.expiry.update({
         where: { id: existingExpiry.id },
-        data: { expiresAt: addMonthsClampUtc(base, MEMBERSHIP_FEE_VALIDITY_MONTHS), issuedAt: today, actorUserId: actor.userId },
+        data: { expiresAt: addMonthsClampUtc(base, MEMBERSHIP_FEE_VALIDITY_MONTHS), actorUserId: actor.userId },
         select: { id: true, expiresAt: true },
       });
     } else {
@@ -140,7 +142,6 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
         data: {
           personId,
           expiryTypeId: expiryType.id,
-          issuedAt: today,
           expiresAt: addMonthsClampUtc(today, MEMBERSHIP_FEE_VALIDITY_MONTHS),
           actorUserId: actor.userId,
         },
@@ -157,6 +158,5 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
     balanceCents: result.balanceCents,
     expiryId: result.expiryId,
     expiresAt: toDateOnlyString(result.expiresAt),
-    issuedAt: toDateOnlyString(today),
   };
 }

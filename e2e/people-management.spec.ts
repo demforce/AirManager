@@ -198,7 +198,7 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     const { id: expiryTypeId } = (await expiryTypeResponse.json()) as { id: string };
 
     const expiryResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId, expiryTypeId, issuedAt: '2026-01-01', expiresAt: '2027-01-31' },
+      data: { personId, expiryTypeId, expiresAt: '2027-01-31' },
     });
     expect(expiryResponse.status()).toBe(201);
 

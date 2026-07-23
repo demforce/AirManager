@@ -22,7 +22,6 @@ export const chargeMembershipFeeResponseSchema = z.object({
   balanceCents: z.number().int(),
   expiryId: z.string(),
   expiresAt: z.iso.date(),
-  issuedAt: z.iso.date(),
 });
 
 export type ChargeMembershipFeeResponseDto = z.infer<typeof chargeMembershipFeeResponseSchema>;

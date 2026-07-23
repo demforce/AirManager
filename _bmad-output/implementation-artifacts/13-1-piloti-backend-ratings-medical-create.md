@@ -78,6 +78,56 @@ so that il flusso "Aggiungi pilota" non richieda più il doppio step creazione�
 
 Vedi il campo `filesChanged` del report strutturato del dev agent (elenco completo, ~45 file).
 
-## Review Record
+### Fix post-review (2026-07-23)
 
-_(compilato dopo la review adversarial)_
+Applicati i findings della review adversarial (F1-F4) + due ratifiche PO (R5, R6). Nota bene: F1/F2 sono chiusi ALLA RADICE dalle ratifiche R6/R5 rispettivamente, non da un fix locale — vedi sotto.
+
+- **R6 (drop `Expiry.issuedAt`, chiude F1-major)**: nuova migrazione hand-written `20260723120000_drop_expiry_issued_at` (`ALTER TABLE "Expiry" DROP COLUMN "issuedAt"`, doc-comment cita la ratifica). Sweep completo dei consumer (inventario, tutti aggiornati nello stesso commit):
+  - `prisma/schema.prisma`: campo rimosso dal model `Expiry`, doc-comment aggiornato (era già annotato "review 3.5 F1's lesson" sul binding via `date-only.ts`, ora nota anche la rimozione).
+  - `src/lib/schemas/expiries.ts`: `expiryItemSchema`/`expiryDashboardItemSchema` senza `issuedAt`; `registerExpirySchema`/`updateExpirySchema` senza il campo E senza il `.refine` cross-field `expiresAt >= issuedAt` (decade per costruzione: non c'è più nulla da confrontare — una scadenza nel passato diventa semplicemente "scaduta", mai un 422).
+  - `src/server/services/expiries.service.ts`: `registerExpiry`/`updateExpiry`/`listPersonExpiries`/`listAllExpiries` — rimossi `EXPIRY_SELECT`/`DASHBOARD_SELECT`/tipi/mapping per `issuedAt`; `updateExpiry` non fa più merge-validation contro il valore corrente.
+  - `src/server/services/people.service.ts`: il composite `createPerson` non stampa più `issuedAt: todayDateOnlyUtc()` sulle expiries del batch (import `todayDateOnlyUtc` rimosso, non più usato in questo file) — **F1 risolto alla radice**: verificato con un nuovo unit test che un `expiresAt` nel passato viene accettato (201, nessun campo `issuedAt` scritto).
+  - `src/server/services/membership.service.ts` (quota associativa, 12.11): `chargeMembershipFee` non scrive più `issuedAt` su create/update dell'Expiry; `ChargeMembershipFeeResult`/`chargeMembershipFeeResponseSchema` senza il campo (il consumer UI, `scadenze-console.tsx`, non lo leggeva già).
+  - `src/server/services/exports.service.ts`: colonna "Rilascio" rimossa da export Excel e PDF delle scadenze (`exportExpiriesXlsx`/`exportExpiriesPdf`).
+  - `src/server/services/expiry-types.service.ts` / `src/lib/schemas/expiry-types.ts`: solo il doc-comment del precompile (ora "oggi + mesi", non più "data rilascio + mesi").
+  - UI scadenze-console/legacy: `expiries-panel.tsx` (scheda persona, pagina LEGACY Tailwind) — rimossi il campo "Data rilascio" dal form registra E dal form modifica, la colonna dalla tabella, e il refine cross-field lato client; il prefill da `validityMonths` ora usa `today + validityMonths` (verificato il comportamento PRE-fix prima di cambiarlo: prima leggeva il valore del campo issuedAt del form, ora legge `todayDateOnly()` direttamente); `my-expiries.tsx` (vista own-access "Le mie scadenze") — colonna rimossa; `expiries/page.tsx` e `people/[id]/page.tsx` — wiring dei label aggiornato.
+  - `chargeMembershipFee`/rinnovo quota (12.11): verificato — scriveva `issuedAt: today`, ora non lo scrive più (vedi sopra).
+  - Export Excel/PDF: colonna "Rilascio"/"Issued" rimossa (vedi sopra).
+  - OpenAPI (`registry.ts`): descrizione di `PATCH /api/v1/expiries/{id}` aggiornata (non menziona più il merge-validation cross-field).
+  - `prisma/seed.ts`: NON crea righe `Expiry` (solo `ExpiryType`) — nessuna modifica necessaria. `prisma/seed-demo.ts`: `ExpiryPlan` e tutte le 28 righe `EXPIRIES` senza `issuedAt`; la create non lo scrive più.
+  - Fixture e asserzioni: `expiries.service.test.ts` (rimossi i 2 test di merge-validation ORA IMPOSSIBILI — non esiste più uno stato "corrente" da confrontare — sostituiti da test di formato su `expiresAt` e un test esplicito "accetta expiresAt nel passato"), `people.service.test.ts` (nuovo test dedicato F1), `membership.service.test.ts` (4 assert aggiornate), `exports.service.test.ts` (2 fixture + assert colonna), `expiry-types.service.test.ts` (nessuna modifica issuedAt-relata, non tocca questo campo). e2e: `expiry-registration.spec.ts` (riscritto — il form non ha più "Data rilascio"; il test di precompile ora verifica `oggi + mesi`), `bookings.spec.ts`/`expiry-dashboard.spec.ts`/`expiry-alerts.spec.ts`/`pdf-exports.spec.ts`/`membership-fee.spec.ts`/`people-management.spec.ts` (rimosso `issuedAt` dai payload — era già silenziosamente stripped da Zod, rimosso per pulizia/coerenza).
+  - i18n: rimosse le chiavi `ExpiriesPanel.table/form.issuedAt` e `.form.invalidRange` (il messaggio "la scadenza non può precedere il rilascio" non ha più senso — l'unico errore residuo su `expiresAt` è "campo obbligatorio"), `ExpiriesPage.dashboard.table.issuedAt`, `ExpiriesPage.own.table.issuedAt` (IT/EN).
+  - **NON toccato** (fuori scope R6, deliberato): `ExpiryUpdateProposal.proposedIssuedAt` — modello DORMIENTE (story 12.13 ha ritirato il flusso titolare-facing), colonna DB separata, nessuna ratifica la menziona; `pendingProposalSummarySchema` continua a esporla in lettura per compatibilità con proposte pre-cutover ancora PENDING.
+
+- **R5 ("Ratings" bilingue ovunque, chiude F2-minor)**: sweep IT completo di "Abilitazioni/abilitazioni"/"Certificazioni" nel senso di CONCETTO DI CATALOGO → "Ratings" (token sostituito 1:1, articoli/genere della frase originale lasciati invariati — coerente con l'approccio "rename cheap" già usato per l'AC6 EN, non una riscrittura di copy):
+  - `SettingsPage.ratings.*` (title/sub/addAction/table.name/table.empty/form.createTitle/form.editTitle/form.name/form.validityHint/feedback.*/hint) — IT.
+  - `PilotsPage.editor.ratings.sectionTitle` e `PilotsPage.profile.ratings.sectionTitle` — "Certificazioni"→"Ratings".
+  - `InstructorsPage.searchPlaceholder` ("Cerca per nome o abilitazioni…"→"…o Ratings…", EN già "ratings" minuscolo — mantenuta la stessa convenzione di case).
+  - `ExpiriesPage.sub` ("Scadenze certificati e abilitazioni"→"…e Ratings").
+  - `SettingsPage.medical.hint` — rimosso il parentetico ridondante "(Ratings)" (il dev originale l'aveva già anticipato accostandolo ad "abilitazioni"; ora che "Ratings" è l'UNICO termine, il parentetico duplicava la stessa parola).
+  - **Caso ambiguo lasciato invariato**: `ExpiriesPage.registry.table.certificate` ("Certificato"/"Certificate") — intestazione di colonna GENERICA per il nome di QUALSIASI tipo di scadenza (medica O rating) nella tabella `scadenze-console.tsx`, non un riferimento al concetto-catalogo "Ratings" specificamente — lasciata invariata.
+  - Nessun'altra occorrenza IT di "abilitare/abilitato" nel senso di azione (attivare un utente/permesso) trovata nella sweep — nessun caso da escludere.
+  - EN non toccato dalla sweep R5 (era già "Ratings"/coerente); solo il `validityHint` EN aggiornato per R6 ("issue date"→"today").
+  - e2e: commenti in `expiry-registration.spec.ts`/`settings.spec.ts` aggiornati per accuratezza (non erano assert su testo, solo commenti — nessuna e2e asseriva letteralmente "Abilitazioni" come testo visibile).
+
+- **F3-minor (PATCH kind)**: `updateExpiryTypeSchema` guadagna `kind: expiryTypeKindSchema.optional()`; `expiry-types.service.ts#updateExpiryType` lo persiste (`...(input.kind !== undefined ? { kind: input.kind } : {})`); OpenAPI invariata di per sé (referenzia lo schema direttamente, propagazione automatica) ma il doc-comment di `updateExpiryType` aggiornato. Unit test aggiunti: `expiry-types.service.test.ts` ("patches kind independently of every other field" + 2 test schema-level: accetta `kind` da solo, rifiuta un valore fuori enum). Backfill name-match della migrazione `20260722190000` confermato ACCETTATO com'è (nessuna modifica) per stato greenfield, come da istruzione.
+
+- **F4-note (e2e card medica)**: nuovo test in `e2e/expiry-types.spec.ts` — crea un tipo custom via `medical-add-button`/`medical-name-input`/`medical-scope-select`/`medical-form-submit`, verifica che NON compaia sulla card "Abilitazioni" (`rating-row`, `toHaveCount(0)`), lo rinomina via `medical-edit-button`, lo disattiva. Selettori scoped (`medicalCard.getByTestId(...)`, righe filtrate per nome run-unique via `filter({ hasText: name })` — mai su valori data/ora), simmetrico al test esistente della card Abilitazioni.
+
+## Review Record (adversarial, Opus 4.8 xhigh — 2026-07-23)
+
+**Verdetto**: shippable-with-fixes.
+
+**Priorità zero**: VERDE — 233/233 e2e in CI-mode su build prod (4.9m, 0 flake), vitest 1438 passed, tsc/eslint puliti.
+
+**Findings**:
+- **F1 (major)**: il composite one-step (`createPerson`) stampava `issuedAt` come "oggi" per ogni expiry del batch, ma non validava `expiresAt >= issuedAt` come fa lo standalone `POST /api/v1/expiries` — un `expiresAt` nel passato produceva una riga persistita `issuedAt > expiresAt`, uno stato che lo standalone avrebbe rifiutato con 422. **RISOLTO alla radice da R6** (drop di `Expiry.issuedAt`): non esistendo più la colonna, non esiste più l'inconsistenza — un `expiresAt` nel passato è semplicemente legale ovunque, con un unico comportamento condiviso da ogni entry point.
+- **F2 (minor)**: il concetto di catalogo abilitazioni/ratings aveva 3 nomi diversi nell'app: "Certificazioni" (editor/profilo pilota IT), "Abilitazioni" (card Impostazioni IT), "Ratings" (EN ovunque). **RISOLTO da R5** ("Ratings" bilingue, ovunque) — un solo termine in entrambe le lingue.
+- **F3 (minor)**: il backfill name-match della migrazione `20260722190000` (marca MEDICAL per nome esatto seed) non aveva modo di essere corretto via API se un tipo veniva classificato male — `PATCH /api/v1/expiry-types/{id}` accettava `kind` nel body ma Zod lo stripava silenziosamente (200 OK, campo ignorato). Backfill ACCETTATO com'è (stato greenfield, già documentato nel SQL); **PATCH kind FIXATO** (schema + service + test).
+- **F4 (note)**: nessuna e2e esercitava la card "Visite mediche" in isolamento (solo assertion incidentali nel test della card Abilitazioni). **AGGIUNTA** una e2e dedicata simmetrica.
+
+**Chiusura note dev**:
+- **N2** (ordine dei controlli nel composite create): CONFORME — verificato empiricamente end-to-end con una race concorrente (1 persona + 1 utente + 1 invito), nessuna violazione dell'ordine 403→404→409→422 dichiarato.
+- **N3** (sweep instructor ratings free-text): CONFORME — sweep completo, nessun riferimento pendente trovato in questa review.
+- **N4** (RatingsCard parametrizzata invece di file duplicato): ACCETTATA — deviazione a rischio zero (default identico al comportamento pre-13.1), motivata da "helper condivisi, mai duplicazione".
+- **N6** (stato intermedio istruttori — free-text rimosso, nessuna UI chip-based di sostituzione): CONFORME — non rompe nulla di esistente; l'abilitazione istruttore resta gestibile/visibile dalla pagina Scadenze generale; la UI chip-based è esplicitamente a carico della story 13.2.

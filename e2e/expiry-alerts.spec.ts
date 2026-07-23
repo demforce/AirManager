@@ -137,7 +137,7 @@ test.describe('Automatic expiry alert emails, idempotent job (Story 6.3, AC 1/2,
     const expiryType = await createExpiryType(page);
 
     const registerResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId: person.id, expiryTypeId: expiryType.id, issuedAt: addDaysUtc(-10), expiresAt: addDaysUtc(7) },
+      data: { personId: person.id, expiryTypeId: expiryType.id, expiresAt: addDaysUtc(7) },
     });
     expect(registerResponse.status()).toBe(201);
 
@@ -198,7 +198,7 @@ test.describe('Automatic expiry alert emails, idempotent job (Story 6.3, AC 1/2,
 
     const expiryType = await createExpiryType(page);
     const registerResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId: person.id, expiryTypeId: expiryType.id, issuedAt: addDaysUtc(-10), expiresAt: addDaysUtc(7) },
+      data: { personId: person.id, expiryTypeId: expiryType.id, expiresAt: addDaysUtc(7) },
     });
     expect(registerResponse.status()).toBe(201);
 
@@ -223,7 +223,7 @@ test.describe('Session-authenticated trigger (Story 12.11, AC 3; ratifica utente
     const person = await createPersonWithEmail(page, 'SessionTrigger');
     const expiryType = await createExpiryType(page);
     const registerResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId: person.id, expiryTypeId: expiryType.id, issuedAt: addDaysUtc(-10), expiresAt: addDaysUtc(7) },
+      data: { personId: person.id, expiryTypeId: expiryType.id, expiresAt: addDaysUtc(7) },
     });
     expect(registerResponse.status()).toBe(201);
 

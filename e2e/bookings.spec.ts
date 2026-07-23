@@ -239,8 +239,8 @@ async function createExpiryTypeForBooking(page: Page, blocksBooking: boolean): P
 }
 
 /** Registers a scadenza for a person via the staff API (story 7.4; `expiries` API of story 6.2). */
-async function registerExpiry(page: Page, personId: string, expiryTypeId: string, issuedAt: string, expiresAt: string): Promise<void> {
-  const response = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId, issuedAt, expiresAt } });
+async function registerExpiry(page: Page, personId: string, expiryTypeId: string, expiresAt: string): Promise<void> {
+  const response = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId, expiresAt } });
   expect(response.status()).toBe(201);
 }
 
@@ -267,7 +267,6 @@ function runUniqueFutureDay(): string {
 
 // Story 7.4: an expiry dated well before FUTURE_DAY — genuinely expired for
 // any booking made on FUTURE_DAY, regardless of DST/timezone edge cases.
-const EXPIRED_ISSUED_AT = '2020-01-01';
 const EXPIRED_EXPIRES_AT = '2020-06-01';
 
 /**
@@ -995,7 +994,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const blockingType = await createExpiryTypeForBooking(page, true);
     const pilotPassword = 'PilotaBloccato123!';
     const pilot = await createPilotWithLogin(page, pilotPassword);
-    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_ISSUED_AT, EXPIRED_EXPIRES_AT);
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_EXPIRES_AT);
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
@@ -1021,7 +1020,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const warningType = await createExpiryTypeForBooking(page, false);
     const pilotPassword = 'PilotaWarning123!';
     const pilot = await createPilotWithLogin(page, pilotPassword);
-    await registerExpiry(page, pilot.personId, warningType.id, EXPIRED_ISSUED_AT, EXPIRED_EXPIRES_AT);
+    await registerExpiry(page, pilot.personId, warningType.id, EXPIRED_EXPIRES_AT);
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
@@ -1057,7 +1056,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // lastName — with 169+ active people accumulated in this never-reset
     // dev DB, a "Pilota-..." (mid-alphabet) name is no longer a safe bet.
     const pilot = await createPilotPerson(page, '0Pilota');
-    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_ISSUED_AT, EXPIRED_EXPIRES_AT);
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_EXPIRES_AT);
 
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
@@ -1132,7 +1131,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const pilot = await createPilotPerson(page);
     // FUTURE_DAY's own date, in Europe/Rome: a 09:00Z start on 2031-03-10 is
     // 10:00 CET (before that year's DST transition) — same calendar day.
-    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_ISSUED_AT, FUTURE_DAY);
+    await registerExpiry(page, pilot.personId, blockingType.id, FUTURE_DAY);
 
     const response = await page.request.post('/api/v1/bookings', {
       data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` },
@@ -1164,7 +1163,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const pilotPassword = 'PilotaSpostaScaduto123!';
     const pilot = await createPilotWithLogin(page, pilotPassword);
     // Valid exactly ON DAY_1 (boundary), expired the day AFTER.
-    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_ISSUED_AT, DAY_1);
+    await registerExpiry(page, pilot.personId, blockingType.id, DAY_1);
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);

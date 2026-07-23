@@ -225,7 +225,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           empty: t('own.empty'),
           table: {
             type: t('own.table.type'),
-            issuedAt: t('own.table.issuedAt'),
             expiresAt: t('own.table.expiresAt'),
             notes: t('own.table.notes'),
             noNotes: t('own.table.noNotes'),

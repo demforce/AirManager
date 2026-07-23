@@ -114,7 +114,7 @@ async function createExpiryType(page: Page): Promise<string> {
 
 async function registerExpiry(page: Page, personId: string, expiryTypeId: string): Promise<void> {
   const response = await page.request.post('/api/v1/expiries', {
-    data: { personId, expiryTypeId, issuedAt: '2026-01-01', expiresAt: '2027-01-01' },
+    data: { personId, expiryTypeId, expiresAt: '2027-01-01' },
   });
   expect(response.status()).toBe(201);
 }

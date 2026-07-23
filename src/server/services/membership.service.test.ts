@@ -158,7 +158,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     );
   });
 
-  it('FIRST charge (no existing Expiry): creates one, issuedAt/expiresAt = today/today+12mo, NO SentAlert wipe (nothing to wipe)', async () => {
+  it('FIRST charge (no existing Expiry): creates one, expiresAt = today+12mo, NO SentAlert wipe (nothing to wipe)', async () => {
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
@@ -169,13 +169,12 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
         data: expect.objectContaining({
           personId: 'person_1',
           expiryTypeId: 'expirytype_membership',
-          issuedAt: new Date('2027-03-10T00:00:00.000Z'),
           expiresAt: new Date('2028-03-10T00:00:00.000Z'),
         }),
       }),
     );
     expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
-    expect(result).toEqual({ balanceCents: -5000, expiryId: 'expiry_new', expiresAt: '2028-03-10', issuedAt: '2027-03-10' });
+    expect(result).toEqual({ balanceCents: -5000, expiryId: 'expiry_new', expiresAt: '2028-03-10' });
   });
 
   it('RENEWAL, current expiry still in the future (early renewal): rolls forward from the CURRENT expiresAt, never from today (ratifica 1b)', async () => {
@@ -188,7 +187,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expect(expiryUpdateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'expiry_existing' },
-        data: expect.objectContaining({ expiresAt: new Date('2028-09-01T00:00:00.000Z'), issuedAt: new Date('2027-03-10T00:00:00.000Z') }),
+        data: expect.objectContaining({ expiresAt: new Date('2028-09-01T00:00:00.000Z') }),
       }),
     );
   });
@@ -220,7 +219,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
 
     const result = await chargeMembershipFee(staffActor(), 'person_1', { amountCents: 5000, override: false });
 
-    expect(result).toEqual({ balanceCents: -12000, expiryId: 'expiry_existing', expiresAt: '2028-09-01', issuedAt: '2027-03-10' });
+    expect(result).toEqual({ balanceCents: -12000, expiryId: 'expiry_existing', expiresAt: '2028-09-01' });
   });
 
   it('upserts (never re-creates) the Account — a first-time payer with no prior movements is not blocked', async () => {

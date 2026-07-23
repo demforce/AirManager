@@ -40,6 +40,17 @@ function addDaysUtc(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** Mirrors `src/lib/date-only.ts#addMonthsClampUtc` (month-add, day clamped to the target month's real last day) — a self-contained copy, no `@/lib` import (e2e specs stay decoupled from server-side app modules). Used to predict the register form's `validityMonths` precompile (story 13.1 review R6: `today + months`, not `issuedAt + months` anymore). */
+function addMonthsUtc(base: string, months: number): string {
+  const [year, month, day] = base.split('-').map(Number);
+  const targetMonthIndex = month - 1 + months;
+  const targetYear = year + Math.floor(targetMonthIndex / 12);
+  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(day, daysInTargetMonth);
+  return new Date(Date.UTC(targetYear, targetMonth, clampedDay)).toISOString().slice(0, 10);
+}
+
 type MailpitMessageSummary = { ID: string; Subject: string };
 type MailpitFullMessage = { Text: string; Subject: string };
 
@@ -117,15 +128,11 @@ async function createExpiryType(
   return { id: created.id, name };
 }
 
-/** Drives the "Registra scadenza" form on the scheda persona through the actual UI (AC 1). */
-async function registerExpiryViaUi(
-  page: Page,
-  values: { typeName: string; issuedAt: string; expiresAt: string },
-): Promise<void> {
+/** Drives the "Registra scadenza" form on the scheda persona through the actual UI (AC 1). Story 13.1 review R6 dropped the "Data rilascio" field — only the type and `expiresAt` remain. */
+async function registerExpiryViaUi(page: Page, values: { typeName: string; expiresAt: string }): Promise<void> {
   await page.getByRole('button', { name: 'Registra scadenza' }).click();
   const form = page.getByTestId('register-expiry-form');
   await form.getByLabel('Tipo di scadenza').selectOption(values.typeName);
-  await form.getByLabel('Data rilascio').fill(values.issuedAt);
   await form.getByLabel('Data scadenza').fill(values.expiresAt);
   await form.getByRole('button', { name: 'Registra' }).click();
 }
@@ -157,11 +164,14 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
 
     await page.goto(`/it/dashboard/people/${personId}`);
 
-    await registerExpiryViaUi(page, { typeName: okType.name, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(400) });
+    await registerExpiryViaUi(page, { typeName: okType.name, expiresAt: addDaysUtc(400) });
     await expect(page.getByTestId('expiries-panel-feedback')).toBeVisible();
 
-    await registerExpiryViaUi(page, { typeName: expiringType.name, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(20) });
-    await registerExpiryViaUi(page, { typeName: expiredType.name, issuedAt: addDaysUtc(-1000), expiresAt: addDaysUtc(-30) });
+    await registerExpiryViaUi(page, { typeName: expiringType.name, expiresAt: addDaysUtc(20) });
+    // R6 (`Expiry.issuedAt` dropped): an already-expired scadenza is simply
+    // legal to register — no more "issue date" to compare `expiresAt`
+    // against (review F1's root cause).
+    await registerExpiryViaUi(page, { typeName: expiredType.name, expiresAt: addDaysUtc(-30) });
 
     const okRow = page.getByTestId('expiry-row').filter({ hasText: okType.name });
     await expect(okRow.getByTestId('expiry-status-badge')).toHaveText('In regola');
@@ -174,7 +184,7 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
 
     // AC 1: a duplicate (person, type) — shown IN-FORM as the shared
     // conflict message ("one message per 409 cause" convention).
-    await registerExpiryViaUi(page, { typeName: okType.name, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(500) });
+    await registerExpiryViaUi(page, { typeName: okType.name, expiresAt: addDaysUtc(500) });
     await expect(page.getByTestId('register-expiry-form-error')).toBeVisible();
     await page.getByTestId('register-expiry-form').getByRole('button', { name: 'Annulla' }).click();
 
@@ -186,7 +196,7 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
     // the only way to actually reach that guard, same as the story's own
     // service-level scope-check unit tests.
     const mismatchResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId, expiryTypeId: instructorsType.id, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(400) },
+      data: { personId, expiryTypeId: instructorsType.id, expiresAt: addDaysUtc(400) },
     });
     expect(mismatchResponse.status()).toBe(422);
     const mismatchBody = await mismatchResponse.json();
@@ -195,7 +205,7 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
     // Story 6.1's delete-constraint contract, completed here (Task 3) —
     // `settings.manage` only, so back to admin: a type now in use cannot be
     // deleted (409, "in use" message); it CAN still be deactivated. Story
-    // 12.11: the catalogue moved onto the Impostazioni "Abilitazioni" card.
+    // 12.11: the catalogue moved onto the Impostazioni "Ratings" card.
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.goto('/it/dashboard/settings');
@@ -209,7 +219,7 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
     await expect(page.getByTestId('rating-row').filter({ hasText: okType.name })).toContainText('Disattivato');
   });
 
-  test('story 12.11, ratifica utente 2: selecting a type with a configured validityMonths precompiles "Data scadenza" (issuedAt + months), still editable, and a validityMonths=0 type leaves it untouched', async ({
+  test('story 12.11/13.1 (review R6): selecting a type with a configured validityMonths precompiles "Data scadenza" (today + months), still editable, and a validityMonths=0 type leaves it untouched', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -223,10 +233,9 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
     await page.getByRole('button', { name: 'Registra scadenza' }).click();
     const form = page.getByTestId('register-expiry-form');
 
-    await form.getByLabel('Data rilascio').fill('2026-01-15');
+    // R6 dropped the "Data rilascio" field — the precompile base is TODAY, not a caller-entered issue date.
     await form.getByLabel('Tipo di scadenza').selectOption(sixMonthType.name);
-    // issuedAt (2026-01-15) + 6 months = 2026-07-15.
-    await expect(form.getByLabel('Data scadenza')).toHaveValue('2026-07-15');
+    await expect(form.getByLabel('Data scadenza')).toHaveValue(addMonthsUtc(addDaysUtc(0), 6));
 
     // Still editable — the precompiled value is a default, not a locked field.
     await form.getByLabel('Data scadenza').fill('2026-08-01');

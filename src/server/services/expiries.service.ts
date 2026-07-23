@@ -51,7 +51,6 @@ export type ExpiryListItem = {
   expiryTypeId: string;
   typeName: string;
   typeScope: ExpiryScope;
-  issuedAt: string;
   expiresAt: string;
   notes: string | null;
   status: ExpiryStatus;
@@ -62,7 +61,6 @@ const EXPIRY_SELECT = {
   id: true,
   expiryTypeId: true,
   expiryType: { select: { name: true, scope: true } },
-  issuedAt: true,
   expiresAt: true,
   notes: true,
   proposals: {
@@ -78,7 +76,6 @@ type SelectedExpiry = {
   id: string;
   expiryTypeId: string;
   expiryType: { name: string; scope: ExpiryScope };
-  issuedAt: Date;
   expiresAt: Date;
   notes: string | null;
   proposals: Array<{ id: string; proposedIssuedAt: Date; proposedExpiresAt: Date; proposedNotes: string | null; createdAt: Date }>;
@@ -92,7 +89,6 @@ function toListItem(expiry: SelectedExpiry, today: Date): ExpiryListItem {
     expiryTypeId: expiry.expiryTypeId,
     typeName: expiry.expiryType.name,
     typeScope: expiry.expiryType.scope,
-    issuedAt: toDateOnlyString(expiry.issuedAt),
     expiresAt: toDateOnlyString(expiry.expiresAt),
     notes: expiry.notes,
     status: computeExpiryStatus(expiry.expiresAt, today),
@@ -231,7 +227,6 @@ export async function registerExpiry(actor: Actor, input: RegisterExpiryInput): 
       data: {
         personId: input.personId,
         expiryTypeId: input.expiryTypeId,
-        issuedAt: parseDateOnlyUtc(input.issuedAt),
         expiresAt: parseDateOnlyUtc(input.expiresAt),
         notes: input.notes ?? null,
         actorUserId: actor.userId,
@@ -250,13 +245,13 @@ export async function registerExpiry(actor: Actor, input: RegisterExpiryInput): 
 /**
  * Partially updates a scadenza (AC 1). `expiries.manage` only. `personId`/
  * `expiryTypeId` are NOT patchable (Contesto: a wrong type/person is
- * corrected by delete + re-register). The cross-field `expiresAt >=
- * issuedAt` check runs against the RESULTING (merged current + patch)
- * values — a request patching only `expiresAt` is still validated against
- * the CURRENT `issuedAt`, and vice versa (Dev Notes' merge-validation). A
- * PENDING proposal already filed against this scadenza is left untouched —
- * staff will see it in the queue alongside the freshly updated current
- * values (doc-comment, not a guard: there is no conflict to prevent here).
+ * corrected by delete + re-register). A PENDING proposal already filed
+ * against this scadenza is left untouched — staff will see it in the queue
+ * alongside the freshly updated current values (doc-comment, not a guard:
+ * there is no conflict to prevent here). There used to be a cross-field
+ * `expiresAt >= issuedAt` check here (story 6.2); story 13.1's review (R6,
+ * PO ratifica 2026-07-23) dropped `issuedAt` entirely — see `Expiry`'s
+ * Prisma doc-comment.
  *
  * Story 6.3 (AD-9): when `expiresAt` actually CHANGES value (a renewal),
  * this scadenza's `SentAlert` rows are wiped in the SAME transaction as the
@@ -267,17 +262,12 @@ export async function registerExpiry(actor: Actor, input: RegisterExpiryInput): 
 export async function updateExpiry(actor: Actor, id: string, input: UpdateExpiryInput): Promise<ExpiryListItem> {
   authorize(actor, 'expiries.manage');
 
-  const existing = await prisma.expiry.findUnique({ where: { id }, select: { id: true, issuedAt: true, expiresAt: true } });
+  const existing = await prisma.expiry.findUnique({ where: { id }, select: { id: true, expiresAt: true } });
   if (!existing) {
     throw new NotFoundError('Expiry not found.');
   }
 
-  const nextIssuedAt = input.issuedAt !== undefined ? parseDateOnlyUtc(input.issuedAt) : existing.issuedAt;
   const nextExpiresAt = input.expiresAt !== undefined ? parseDateOnlyUtc(input.expiresAt) : existing.expiresAt;
-  if (nextExpiresAt < nextIssuedAt) {
-    throw new ValidationError('expiresAt must not be before issuedAt.', { path: ['expiresAt'] });
-  }
-
   const expiresAtChanged = nextExpiresAt.getTime() !== existing.expiresAt.getTime();
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -288,7 +278,6 @@ export async function updateExpiry(actor: Actor, id: string, input: UpdateExpiry
     return tx.expiry.update({
       where: { id },
       data: {
-        ...(input.issuedAt !== undefined ? { issuedAt: nextIssuedAt } : {}),
         ...(input.expiresAt !== undefined ? { expiresAt: nextExpiresAt } : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         actorUserId: actor.userId,
@@ -336,7 +325,6 @@ export type ExpiryDashboardItem = {
   expiryTypeId: string;
   typeName: string;
   typeScope: ExpiryScope;
-  issuedAt: string;
   expiresAt: string;
   notes: string | null;
   status: ExpiryStatus;
@@ -356,7 +344,6 @@ const DASHBOARD_SELECT = {
   person: { select: { firstName: true, lastName: true } },
   expiryTypeId: true,
   expiryType: { select: { name: true, scope: true } },
-  issuedAt: true,
   expiresAt: true,
   notes: true,
 } as const;
@@ -367,7 +354,6 @@ type SelectedDashboardExpiry = {
   person: { firstName: string; lastName: string };
   expiryTypeId: string;
   expiryType: { name: string; scope: ExpiryScope };
-  issuedAt: Date;
   expiresAt: Date;
   notes: string | null;
 };
@@ -381,7 +367,6 @@ function toDashboardItem(expiry: SelectedDashboardExpiry, today: Date): ExpiryDa
     expiryTypeId: expiry.expiryTypeId,
     typeName: expiry.expiryType.name,
     typeScope: expiry.expiryType.scope,
-    issuedAt: toDateOnlyString(expiry.issuedAt),
     expiresAt: toDateOnlyString(expiry.expiresAt),
     notes: expiry.notes,
     status: computeExpiryStatus(expiry.expiresAt, today),

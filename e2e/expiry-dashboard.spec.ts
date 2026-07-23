@@ -60,10 +60,7 @@ async function createPilotPerson(page: Page, person: { firstName: string; lastNa
   return created.id;
 }
 
-async function registerExpiry(
-  page: Page,
-  input: { personId: string; expiryTypeId: string; issuedAt: string; expiresAt: string },
-): Promise<void> {
+async function registerExpiry(page: Page, input: { personId: string; expiryTypeId: string; expiresAt: string }): Promise<void> {
   const response = await page.request.post('/api/v1/expiries', { data: input });
   expect(response.status()).toBe(201);
 }
@@ -96,9 +93,9 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const within30PersonId = await createPilotPerson(page, within30Person);
     const expiredPersonId = await createPilotPerson(page, expiredPerson);
 
-    await registerExpiry(page, { personId: okPersonId, expiryTypeId: type.id, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(120) });
-    await registerExpiry(page, { personId: within30PersonId, expiryTypeId: type.id, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(20) });
-    await registerExpiry(page, { personId: expiredPersonId, expiryTypeId: type.id, issuedAt: addDaysUtc(-1000), expiresAt: addDaysUtc(-10) });
+    await registerExpiry(page, { personId: okPersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(120) });
+    await registerExpiry(page, { personId: within30PersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(20) });
+    await registerExpiry(page, { personId: expiredPersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(-10) });
 
     // window=all (the default ≤60g window would exclude the +120d "ok" row) + the run-unique type filter (isolation on a dirty DB).
     await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${type.id}`);
@@ -131,7 +128,7 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const type = await createExpiryType(page, 'ALL');
     const person = uniquePerson('FarFuture');
     const personId = await createPilotPerson(page, person);
-    await registerExpiry(page, { personId, expiryTypeId: type.id, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(200) });
+    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysUtc(200) });
 
     await page.goto(`/it/dashboard/expiries?expiryTypeId=${type.id}`);
     await expect(page.getByTestId('scadenze-row')).toHaveCount(0);
@@ -150,7 +147,7 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const type = await createExpiryType(page, 'ALL');
     const person = uniquePerson('StatCard');
     const personId = await createPilotPerson(page, person);
-    await registerExpiry(page, { personId, expiryTypeId: type.id, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(3) });
+    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysUtc(3) });
 
     await page.goto('/it/dashboard/expiries');
     const before = await page.getByTestId('scadenze-stat-within7').locator('.kpi-value').innerText();
@@ -168,7 +165,7 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
 
     const pilotPersonId = await getSeedPilotPersonId(page);
     const type = await createExpiryType(page, 'ALL');
-    await registerExpiry(page, { personId: pilotPersonId, expiryTypeId: type.id, issuedAt: addDaysUtc(0), expiresAt: addDaysUtc(30) });
+    await registerExpiry(page, { personId: pilotPersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(30) });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);

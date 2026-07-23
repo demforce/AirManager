@@ -98,7 +98,7 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     // Visible in the Scadenze registry: a "Quota associativa" expiry, ~12 months out.
     const expiriesResponse = await page.request.get(`/api/v1/people/${pilot.personId}/expiries`);
     expect(expiriesResponse.status()).toBe(200);
-    const expiries = (await expiriesResponse.json()) as { typeName: string; expiresAt: string; issuedAt: string }[];
+    const expiries = (await expiriesResponse.json()) as { typeName: string; expiresAt: string }[];
     const membershipExpiry = expiries.find((e) => e.typeName === 'Quota associativa');
     expect(membershipExpiry).toBeDefined();
     const expectedYear = new Date().getUTCFullYear() + 1;

@@ -641,7 +641,6 @@
     },
     "table": {
       "type": "Type",
-      "issuedAt": "Issued",
       "expiresAt": "Expires",
       "notes": "Notes",
       "noNotes": "—",
@@ -658,7 +657,6 @@
       "title": "Register expiry",
       "type": "Expiry type",
       "noCompatibleTypes": "No active expiry type is compatible with this person's profiles.",
-      "issuedAt": "Issued on",
       "expiresAt": "Expires on",
       "notes": "Notes",
       "submit": "Register",
@@ -666,7 +664,6 @@
       "save": "Save",
       "edit": "Edit",
       "requiredField": "This field is required.",
-      "invalidRange": "The expiry date cannot be before the issue date.",
       "scopeMismatchError": "This expiry type is not compatible with the person's active profiles.",
       "conflictError": "Could not register the expiry: the person is archived, the type is deactivated, or an expiry of this type is already registered for this person.",
       "genericError": "Could not save the expiry. Please try again."
@@ -1254,7 +1251,6 @@
         "person": "Person",
         "type": "Type",
         "scope": "Scope",
-        "issuedAt": "Issued",
         "expiresAt": "Expires",
         "status": "Status"
       }
@@ -1336,7 +1332,6 @@
       "empty": "No expiry registered.",
       "table": {
         "type": "Type",
-        "issuedAt": "Issued",
         "expiresAt": "Expires",
         "notes": "Notes",
         "noNotes": "—",
@@ -1896,7 +1891,7 @@
         "name": "Rating name",
         "scope": "Scope",
         "validity": "Validity",
-        "validityHint": "Prefills the expiry at registration (issue date + months). Set 0 for ratings that never expire.",
+        "validityHint": "Prefills the expiry at registration (today + months). Set 0 for ratings that never expire.",
         "blocksBooking": "Blocks bookings",
         "blocksBookingHint": "An expired document of this type prevents new bookings.",
         "submitCreate": "Create",
@@ -1959,7 +1954,7 @@
         "name": "Medical check name",
         "scope": "Scope",
         "validity": "Validity",
-        "validityHint": "Prefills the expiry at registration (issue date + months). Set 0 for medical checks that never expire.",
+        "validityHint": "Prefills the expiry at registration (today + months). Set 0 for medical checks that never expire.",
         "blocksBooking": "Blocks bookings",
         "blocksBookingHint": "An expired document of this type prevents new bookings.",
         "submitCreate": "Create",

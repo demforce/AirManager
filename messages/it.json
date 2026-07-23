@@ -350,7 +350,7 @@
         "sectionTitle": "Profili"
       },
       "ratings": {
-        "sectionTitle": "Certificazioni",
+        "sectionTitle": "Ratings",
         "empty": "Nessuna scadenza registrata.",
         "manageLink": "Gestisci in Scadenze",
         "status": {
@@ -399,7 +399,7 @@
       "noAccount": "—",
       "archivedBadge": "Archiviato",
       "ratings": {
-        "sectionTitle": "Certificazioni",
+        "sectionTitle": "Ratings",
         "empty": "Nessuna scadenza registrata."
       },
       "recentFlights": {
@@ -433,7 +433,7 @@
       "avgRate": "Tariffa media payout"
     },
     "cardTitle": "Elenco istruttori",
-    "searchPlaceholder": "Cerca per nome o abilitazioni…",
+    "searchPlaceholder": "Cerca per nome o Ratings…",
     "empty": "Nessun istruttore trovato.",
     "newInstructor": "Aggiungi istruttore",
     "paymentCycleButton": "Ciclo pagamenti",
@@ -641,7 +641,6 @@
     },
     "table": {
       "type": "Tipo",
-      "issuedAt": "Rilascio",
       "expiresAt": "Scadenza",
       "notes": "Note",
       "noNotes": "—",
@@ -658,7 +657,6 @@
       "title": "Registra scadenza",
       "type": "Tipo di scadenza",
       "noCompatibleTypes": "Nessun tipo di scadenza attivo compatibile con i profili di questa persona.",
-      "issuedAt": "Data rilascio",
       "expiresAt": "Data scadenza",
       "notes": "Note",
       "submit": "Registra",
@@ -666,7 +664,6 @@
       "save": "Salva",
       "edit": "Modifica",
       "requiredField": "Campo obbligatorio.",
-      "invalidRange": "La data di scadenza non può precedere la data di rilascio.",
       "scopeMismatchError": "Questo tipo di scadenza non è compatibile con i profili attivi della persona.",
       "conflictError": "Impossibile registrare la scadenza: la persona è archiviata, il tipo è disattivato, oppure una scadenza di questo tipo è già registrata per questa persona.",
       "genericError": "Impossibile salvare la scadenza. Riprova."
@@ -1245,7 +1242,7 @@
   },
   "ExpiriesPage": {
     "title": "Scadenze",
-    "sub": "Scadenze certificati e abilitazioni · {count} da gestire",
+    "sub": "Scadenze certificati e Ratings · {count} da gestire",
     "titleOwn": "Le mie scadenze",
     "descriptionOwn": "Le tue scadenze registrate, con lo stato calcolato.",
     "dashboard": {
@@ -1254,7 +1251,6 @@
         "person": "Persona",
         "type": "Tipo",
         "scope": "Ambito",
-        "issuedAt": "Rilascio",
         "expiresAt": "Scadenza",
         "status": "Stato"
       }
@@ -1336,7 +1332,6 @@
       "empty": "Nessuna scadenza registrata.",
       "table": {
         "type": "Tipo",
-        "issuedAt": "Rilascio",
         "expiresAt": "Scadenza",
         "notes": "Note",
         "noNotes": "—",
@@ -1855,16 +1850,16 @@
       "error": "Non è stato possibile salvare. Riprova."
     },
     "ratings": {
-      "title": "Abilitazioni",
-      "sub": "Tipi di abilitazione e durata di validità",
-      "addAction": "Aggiungi abilitazione",
+      "title": "Ratings",
+      "sub": "Tipi di Ratings e durata di validità",
+      "addAction": "Aggiungi Ratings",
       "table": {
-        "name": "Nome abilitazione",
+        "name": "Nome Ratings",
         "scope": "Ambito",
         "validity": "Validità",
         "status": "Stato",
         "actions": "Azioni",
-        "empty": "Nessuna abilitazione configurata.",
+        "empty": "Nessuna Ratings configurata.",
         "monthsSuffix": "mesi",
         "noExpiry": "senza scadenza"
       },
@@ -1891,12 +1886,12 @@
         "confirmCancel": "Annulla"
       },
       "form": {
-        "createTitle": "Nuova abilitazione",
-        "editTitle": "Modifica abilitazione",
-        "name": "Nome abilitazione",
+        "createTitle": "Nuova Ratings",
+        "editTitle": "Modifica Ratings",
+        "name": "Nome Ratings",
         "scope": "Ambito",
         "validity": "Validità",
-        "validityHint": "Precompila la scadenza alla registrazione (data rilascio + mesi). Imposta 0 per le abilitazioni che non scadono mai.",
+        "validityHint": "Precompila la scadenza alla registrazione (oggi + mesi). Imposta 0 per le Ratings che non scadono mai.",
         "blocksBooking": "Blocca prenotazioni",
         "blocksBookingHint": "Una scadenza di questo tipo, se scaduta, impedisce nuove prenotazioni.",
         "submitCreate": "Crea",
@@ -1907,15 +1902,15 @@
         "genericError": "Non è stato possibile salvare. Riprova."
       },
       "feedback": {
-        "created": "Abilitazione creata.",
-        "updated": "Abilitazione aggiornata.",
-        "deactivated": "Abilitazione disattivata.",
-        "reactivated": "Abilitazione riattivata.",
-        "deleted": "Abilitazione eliminata.",
+        "created": "Ratings creata.",
+        "updated": "Ratings aggiornata.",
+        "deactivated": "Ratings disattivata.",
+        "reactivated": "Ratings riattivata.",
+        "deleted": "Ratings eliminata.",
         "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
         "genericError": "Non è stato possibile completare l'operazione."
       },
-      "hint": "Imposta la validità a 0 per le abilitazioni che non scadono mai (es. Abilitazione notturna). Le scadenze compaiono nella pagina Scadenze."
+      "hint": "Imposta la validità a 0 per le Ratings che non scadono mai (es. Ratings notturna). Le scadenze compaiono nella pagina Scadenze."
     },
     "medical": {
       "title": "Visite mediche",
@@ -1959,7 +1954,7 @@
         "name": "Nome visita",
         "scope": "Ambito",
         "validity": "Validità",
-        "validityHint": "Precompila la scadenza alla registrazione (data rilascio + mesi). Imposta 0 per le visite che non scadono mai.",
+        "validityHint": "Precompila la scadenza alla registrazione (oggi + mesi). Imposta 0 per le visite che non scadono mai.",
         "blocksBooking": "Blocca prenotazioni",
         "blocksBookingHint": "Una scadenza di questo tipo, se scaduta, impedisce nuove prenotazioni.",
         "submitCreate": "Crea",
@@ -1978,7 +1973,7 @@
         "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
         "genericError": "Non è stato possibile completare l'operazione."
       },
-      "hint": "Le visite mediche sono separate dalle abilitazioni (Ratings): hanno una propria scadenza e non sono mai testo libero. Le scadenze compaiono nella pagina Scadenze."
+      "hint": "Le visite mediche sono separate dai Ratings: hanno una propria scadenza e non sono mai testo libero. Le scadenze compaiono nella pagina Scadenze."
     },
     "cashCategories": {
       "title": "Categorie di cassa",

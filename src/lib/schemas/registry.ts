@@ -1366,7 +1366,7 @@ registry.registerPath({
   path: '/api/v1/expiries/{id}',
   summary: 'Update a scadenza (partial patch, AC 1)',
   description:
-    "Every field optional; `personId`/`expiryTypeId` are NOT patchable (a wrong type/person is corrected by delete + re-register). The cross-field `expiresAt >= issuedAt` check validates against the RESULTING (merged current + patch) values. A PENDING proposal already filed against this scadenza is left untouched. Requires `expiries.manage`.",
+    "Every field optional; `personId`/`expiryTypeId` are NOT patchable (a wrong type/person is corrected by delete + re-register). A PENDING proposal already filed against this scadenza is left untouched. Requires `expiries.manage`.",
   tags: ['Expiries'],
   security,
   request: { params: expiryIdParams, body: { content: jsonContent(updateExpirySchema), required: true } },

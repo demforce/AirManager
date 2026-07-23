@@ -38,7 +38,8 @@ export type ExpiryTypeKindDto = z.infer<typeof expiryTypeKindSchema>;
  */
 /**
  * Validity window in months (story 12.11, ratifica utente 2) — precompiles
- * `expiresAt` at registration time (`issuedAt + validityMonths`, editable).
+ * `expiresAt` at registration time (`today + validityMonths`, editable;
+ * story 13.1 review R6 dropped the `issuedAt` base this used to read).
  * `null`/`0` both mean "no expiry" — the catalogue UI shows a "senza
  * scadenza" badge for either. Bounded at 600 (50 years, generously above
  * any real-world validity window — a defensive `Int` guard, not a domain
@@ -64,11 +65,18 @@ export type CreateExpiryTypeInput = z.infer<typeof createExpiryTypeSchema>;
  * silent no-op PATCH. `blocksBooking` (story 7.4) is patchable
  * independently of every other field — the admin can toggle "Blocca
  * prenotazioni" on an existing type without touching its name/scope.
+ * `kind` (story 13.1 review F3) is ALSO independently patchable — the
+ * backfill migration (`20260722190000_add_expiry_type_kind`) classifies
+ * `kind` by an exact-name match on the seed's medical-visit types; without
+ * this field a type that fell on the wrong side of that match (or a custom
+ * type an admin later wants to move between Ratings/Visite mediche) would
+ * be stuck — the create-only `kind` left the PATCH silently stripping it.
  */
 export const updateExpiryTypeSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     scope: expiryScopeSchema.optional(),
+    kind: expiryTypeKindSchema.optional(),
     isActive: z.boolean().optional(),
     blocksBooking: z.boolean().optional(),
     validityMonths: expiryTypeValidityMonthsSchema.optional(),

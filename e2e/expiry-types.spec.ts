@@ -159,6 +159,44 @@ test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Sto
     await expect(page.getByTestId('rating-row').filter({ hasText: name })).toHaveCount(0);
   });
 
+  test('admin creates a custom type via the "Visite mediche" card, renames it, and deactivates it (review F4 — symmetric to the "Abilitazioni" card flow, via medical-* testids)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/settings');
+
+    const medicalCard = page.getByTestId('medical-settings-card');
+    await expect(medicalCard).toBeVisible();
+
+    const name = uniqueTypeName('Visita idoneità');
+    await medicalCard.getByTestId('medical-add-button').click();
+    await page.getByTestId('medical-name-input').fill(name);
+    await page.getByTestId('medical-scope-select').selectOption('PILOTS');
+    await page.getByTestId('medical-form-submit').click();
+    await expect(page.getByTestId('medical-feedback')).toBeVisible();
+
+    const row = page.getByTestId('medical-row').filter({ hasText: name });
+    await expect(row).toContainText('Piloti');
+    await expect(row).toContainText('Attivo');
+
+    // Created via the "Visite mediche" card -> kind=MEDICAL -> never shows on the "Abilitazioni" card.
+    await expect(page.getByTestId('rating-row').filter({ hasText: name })).toHaveCount(0);
+
+    // Rename via edit — the row reflects the new name.
+    const renamed = uniqueTypeName('Visita idoneità rinominata');
+    await row.getByTestId('medical-edit-button').click();
+    await page.getByTestId('medical-name-input').fill(renamed);
+    await page.getByTestId('medical-form-submit').click();
+    await expect(page.getByTestId('medical-feedback')).toBeVisible();
+    const renamedRow = page.getByTestId('medical-row').filter({ hasText: renamed });
+    await expect(renamedRow).toBeVisible();
+    await expect(page.getByTestId('medical-row').filter({ hasText: name })).toHaveCount(0);
+
+    // Deactivate — the status badge flips to "Disattivato".
+    await renamedRow.getByRole('button', { name: 'Disattiva' }).click();
+    await expect(page.getByTestId('medical-row').filter({ hasText: renamed })).toContainText('Disattivato');
+  });
+
   test('a validity of 0 shows the "senza scadenza" badge instead of a month count', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.goto('/it/dashboard/settings');

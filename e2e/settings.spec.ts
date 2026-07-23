@@ -29,7 +29,7 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
 /**
  * Same hydration-race hardening as `bookings.spec.ts`'s
  * `gotoBookingsAndWaitForHydration`: the Impostazioni page mounts several
- * client-component cards (Club/Pianificazione/SMTP/Abilitazioni), each with
+ * client-component cards (Club/Pianificazione/SMTP/Ratings), each with
  * its own controlled inputs. A `.fill()` that lands BEFORE React attaches
  * its event listeners updates the DOM value but never reaches the
  * component's state (React never re-renders that field since its own state

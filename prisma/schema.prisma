@@ -1321,10 +1321,14 @@ enum ExpiryProposalStatus {
 /// itself is still valid, the same boundary convention as
 /// `HourPackage.expiresAt` vs `flightDate`).
 ///
-/// `issuedAt`/`expiresAt` are calendar-only (`@db.Date`, same convention as
+/// `expiresAt` is calendar-only (`@db.Date`, same convention as
 /// `AccountMovement.effectiveDate`) — bound ONLY via `date-only.ts`'s
 /// `parseDateOnlyUtc`/`todayDateOnlyUtc` helpers, never a raw
-/// `new Date(string)` (review 3.5 F1's lesson).
+/// `new Date(string)` (review 3.5 F1's lesson). There used to be an
+/// `issuedAt` alongside it (story 6.2); story 13.1's review (R6, PO
+/// ratifica 2026-07-23) dropped it — it carried no domain meaning (status
+/// derives from `expiresAt` alone) and its only effect was a cross-field
+/// guard the one-step composite create forgot to apply (review F1).
 ///
 /// `expiryTypeId`'s FK is EXPLICIT `onDelete: Restrict` (this already
 /// matches the Prisma default for a required relation — spelled out here to
@@ -1338,7 +1342,6 @@ model Expiry {
   person       Person     @relation(fields: [personId], references: [id])
   expiryTypeId String
   expiryType   ExpiryType @relation(fields: [expiryTypeId], references: [id], onDelete: Restrict)
-  issuedAt     DateTime   @db.Date
   expiresAt    DateTime   @db.Date
   notes        String?
   /// Who registered/last updated this scadenza (`Actor.userId`, always
