@@ -1,11 +1,11 @@
 import { addMonthsClampUtc, todayDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
+import { MEMBERSHIP_FEE_TYPE_NAME } from '@/lib/expiry-scope';
 import type { ChargeMembershipFeeInput } from '@/lib/schemas/membership';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { NotFoundError, ValidationError } from './errors';
 
-/** Upserted by NAME (not seeded via migration, Contesto) — also added to `prisma/seed.ts` so a fresh install's catalogue already lists it. */
-const MEMBERSHIP_FEE_TYPE_NAME = 'Quota associativa';
+/** Upserted by NAME (not seeded via migration, Contesto) — also added to `prisma/seed.ts` so a fresh install's catalogue already lists it. `MEMBERSHIP_FEE_TYPE_NAME` lives in `@/lib/expiry-scope` (single source of truth, story 13.2 F3) so the create-form/inline-editor chip pickers can exclude it by the SAME name without importing this server-only service. */
 const MEMBERSHIP_FEE_VALIDITY_MONTHS = 12;
 
 export type ChargeMembershipFeeResult = {

@@ -422,6 +422,28 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
 
   const profileFlags: ProfileFlags = { pilot: activatePilot, student: activateStudent, instructor: activateInstructor };
 
+  /**
+   * Review F1 (story 13.2): deselecting a profile can make a previously
+   * selected chip scope-incompatible (`isExpiryScopeCompatible`) — it
+   * disappears from view, but its entry lingered in `selections` and the
+   * submit handler sent it anyway, so the server rejected the whole
+   * composite with a 422 `SCOPE_MISMATCH` the user had no visible chip left
+   * to fix. Called from the three profile checkboxes' `onChange` (the ONLY
+   * places `profileFlags` changes) with the flags AS THEY WILL BE after this
+   * toggle, so a selection is pruned the instant its chip would leave view.
+   */
+  function pruneSelectionsForFlags(nextFlags: ProfileFlags): void {
+    const visibleIds = new Set(
+      [...(ratingCatalog ?? []), ...(medicalCatalog ?? [])]
+        .filter((type) => type.isActive && isExpiryScopeCompatible(type.scope, nextFlags))
+        .map((type) => type.id),
+    );
+    setSelections((current) => {
+      const next = Object.fromEntries(Object.entries(current).filter(([typeId]) => visibleIds.has(typeId)));
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }
+
   function toggleSelection(typeId: string): void {
     setSelections((current) => {
       if (typeId in current) {
@@ -537,7 +559,16 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
-              <input type="checkbox" checked={activatePilot} onChange={(event) => setActivatePilot(event.target.checked)} data-testid="new-person-activate-pilot" />
+              <input
+                type="checkbox"
+                checked={activatePilot}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setActivatePilot(checked);
+                  pruneSelectionsForFlags({ ...profileFlags, pilot: checked });
+                }}
+                data-testid="new-person-activate-pilot"
+              />
               {labels.profiles.pilot.title}
             </label>
             {activatePilot ? (
@@ -569,7 +600,16 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
 
           <div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
-              <input type="checkbox" checked={activateStudent} onChange={(event) => setActivateStudent(event.target.checked)} data-testid="new-person-activate-student" />
+              <input
+                type="checkbox"
+                checked={activateStudent}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setActivateStudent(checked);
+                  pruneSelectionsForFlags({ ...profileFlags, student: checked });
+                }}
+                data-testid="new-person-activate-student"
+              />
               {labels.profiles.student.title}
             </label>
             {activateStudent ? (
@@ -592,7 +632,16 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
           </div>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
-            <input type="checkbox" checked={activateInstructor} onChange={(event) => setActivateInstructor(event.target.checked)} data-testid="new-person-activate-instructor" />
+            <input
+              type="checkbox"
+              checked={activateInstructor}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setActivateInstructor(checked);
+                pruneSelectionsForFlags({ ...profileFlags, instructor: checked });
+              }}
+              data-testid="new-person-activate-instructor"
+            />
             {labels.profiles.instructor.title}
           </label>
         </div>

@@ -322,25 +322,162 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await createPilot(page, person);
 
     // No profile activated on this bare pilot -> only `ALL`-scoped chips are offered (the scope filter, AC 1/2).
-    const ratingTypesResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
-    const ratingTypes = (await ratingTypesResponse.json()) as Array<{ id: string; scope: string }>;
-    const ratingType = ratingTypes.find((type) => type.scope === 'ALL');
-    expect(ratingType).toBeDefined();
+    // A run-unique ALL-scope type — NOT the seeded "Quota associativa" (also ALL-scope, kind=RATING), which
+    // review F3 (PO decision 2026-07-24) excludes from this picker (asserted below).
+    const typeName = `Rating ALL ${Date.now()}`;
+    const typeResponse = await page.request.post('/api/v1/expiry-types', { data: { name: typeName, scope: 'ALL' } });
+    expect(typeResponse.status()).toBe(201);
+    const { id: ratingTypeId } = (await typeResponse.json()) as { id: string };
 
     const row = rowFor(page, person.lastName);
     await row.getByRole('button', { name: 'Modifica' }).click();
 
     const ratingsEditor = page.getByTestId('pilot-ratings-editor');
-    await ratingsEditor.getByTestId(`expiry-chip-${ratingType!.id}`).click();
+    await ratingsEditor.getByTestId(`expiry-chip-${ratingTypeId}`).click();
     await ratingsEditor.getByTestId('expiry-add-date').fill('2099-03-01');
     await ratingsEditor.getByTestId('expiry-add-confirm').click();
-    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingType!.id}`)).toBeVisible();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toBeVisible();
 
     // The link to the standalone Scadenze page is gone (AC 2).
     await expect(page.getByText('Gestisci in Scadenze')).toHaveCount(0);
 
-    await ratingsEditor.getByTestId(`expiry-remove-${ratingType!.id}`).click();
-    await ratingsEditor.getByTestId(`expiry-remove-confirm-${ratingType!.id}`).click();
-    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingType!.id}`)).toHaveCount(0);
+    // Regression-guard (review F3, PO decision 2026-07-24): "Quota associativa" is a financial
+    // obligation, not a rating — it must never be offered as a chip here (only in Impostazioni/Scadenze).
+    const catalogResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    const catalog = (await catalogResponse.json()) as Array<{ id: string; name: string }>;
+    const membershipFeeType = catalog.find((type) => type.name === 'Quota associativa');
+    expect(membershipFeeType).toBeDefined();
+    await expect(ratingsEditor.getByTestId(`expiry-chip-${membershipFeeType!.id}`)).toHaveCount(0);
+    await expect(ratingsEditor.getByTestId(`expiry-row-${membershipFeeType!.id}`)).toHaveCount(0);
+
+    await ratingsEditor.getByTestId(`expiry-remove-${ratingTypeId}`).click();
+    await ratingsEditor.getByTestId(`expiry-remove-confirm-${ratingTypeId}`).click();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toHaveCount(0);
+  });
+
+  test('inline editor: edits the date of an existing rating via the "Modifica" action (PATCH, AC 2)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('EditDate');
+
+    const personResponse = await page.request.post('/api/v1/people', {
+      data: { firstName: person.firstName, lastName: person.lastName, email: person.email },
+    });
+    expect(personResponse.status()).toBe(201);
+    const { id: personId } = (await personResponse.json()) as { id: string };
+
+    const typeName = `Rating Edit ${Date.now()}`;
+    const typeResponse = await page.request.post('/api/v1/expiry-types', { data: { name: typeName, scope: 'ALL' } });
+    expect(typeResponse.status()).toBe(201);
+    const { id: ratingTypeId } = (await typeResponse.json()) as { id: string };
+
+    const expiryResponse = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId: ratingTypeId, expiresAt: '2099-01-01' } });
+    expect(expiryResponse.status()).toBe(201);
+
+    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(person.lastName)}`);
+    const row = rowFor(page, person.lastName);
+    await row.getByRole('button', { name: 'Modifica' }).click();
+
+    const ratingsEditor = page.getByTestId('pilot-ratings-editor');
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toBeVisible();
+    await ratingsEditor.getByTestId(`expiry-edit-${ratingTypeId}`).click();
+    await ratingsEditor.getByTestId(`expiry-edit-date-${ratingTypeId}`).fill('2099-12-31');
+    await ratingsEditor.getByTestId(`expiry-edit-save-${ratingTypeId}`).click();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toContainText('31/12/2099');
+  });
+
+  test('instructor editor: adds a Rating from the catalogue chips (AC 5, gap N6 from 13.1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('InstrRating');
+
+    const personResponse = await page.request.post('/api/v1/people', {
+      data: { firstName: person.firstName, lastName: person.lastName, email: person.email },
+    });
+    expect(personResponse.status()).toBe(201);
+    const { id: personId } = (await personResponse.json()) as { id: string };
+
+    const instructorProfileResponse = await page.request.put(`/api/v1/people/${personId}/profiles/instructor`, { data: {} });
+    expect(instructorProfileResponse.status()).toBe(200);
+
+    // The seed has no INSTRUCTORS-scope RATING type — a run-unique one, same convention as the pilot tests above.
+    const typeName = `Abilitazione istruttore ${Date.now()}`;
+    const typeResponse = await page.request.post('/api/v1/expiry-types', { data: { name: typeName, scope: 'INSTRUCTORS' } });
+    expect(typeResponse.status()).toBe(201);
+    const { id: ratingTypeId } = (await typeResponse.json()) as { id: string };
+
+    await page.goto('/it/dashboard/instructors');
+    await page.getByTestId(`instructor-edit-${personId}`).click();
+
+    await page.getByTestId(`expiry-chip-${ratingTypeId}`).click();
+    await page.getByTestId('expiry-add-date').fill('2099-05-01');
+    await page.getByTestId('expiry-add-confirm').click();
+    await expect(page.getByTestId(`expiry-row-${ratingTypeId}`)).toBeVisible();
+  });
+
+  test('client blocks submit when a selected Ratings chip has no date — no create request fires (AC 1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('NoDate');
+
+    const ratingTypesResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    const ratingTypes = (await ratingTypesResponse.json()) as Array<{ id: string; scope: string }>;
+    const ratingType = ratingTypes.find((type) => type.scope === 'PILOTS');
+    expect(ratingType).toBeDefined();
+
+    const createRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith('/api/v1/people')) createRequests.push(request.url());
+    });
+
+    await page.goto('/it/dashboard/pilots');
+    await page.getByTestId('pilots-new-button').click();
+    const form = page.getByTestId('pilot-identity-form');
+    await form.getByLabel('Nome', { exact: true }).fill(person.firstName);
+    await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
+    await form.getByLabel('Email', { exact: true }).fill(person.email);
+
+    await form.getByTestId('new-person-activate-pilot').check();
+    await form.getByTestId('new-person-pilot-license-number').fill('IT-PPL-NODATE');
+    await form.getByTestId('new-person-pilot-license-type').fill('PPL(A)');
+
+    // Select the chip but leave the mandatory date empty (R-13.1-c).
+    await form.getByTestId(`rating-chip-${ratingType!.id}`).click();
+
+    await page.getByTestId('pilot-identity-submit').click();
+
+    await expect(form.getByText('La data di scadenza è obbligatoria.')).toBeVisible();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toHaveCount(0);
+    expect(createRequests).toHaveLength(0);
+  });
+
+  test('creates a person with STUDENT and INSTRUCTOR profiles together in ONE composite submit (multi-profile)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('MultiProfile');
+
+    await page.goto('/it/dashboard/pilots');
+    await page.getByTestId('pilots-new-button').click();
+    const form = page.getByTestId('pilot-identity-form');
+    await form.getByLabel('Nome', { exact: true }).fill(person.firstName);
+    await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
+    await form.getByLabel('Email', { exact: true }).fill(person.email);
+
+    await form.getByTestId('new-person-activate-student').check();
+    await form.getByTestId('new-person-student-course-start').fill('2026-01-15');
+    await form.getByTestId('new-person-activate-instructor').check();
+
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toBeVisible();
+
+    const searchResponse = await page.request.get(`/api/v1/people?q=${encodeURIComponent(person.email)}`);
+    expect(searchResponse.status()).toBe(200);
+    const { items } = (await searchResponse.json()) as { items: Array<{ id: string }> };
+    expect(items).toHaveLength(1);
+
+    const detailResponse = await page.request.get(`/api/v1/people/${items[0]!.id}`);
+    expect(detailResponse.status()).toBe(200);
+    const detail = (await detailResponse.json()) as {
+      studentProfile: { deactivatedAt: string | null } | null;
+      instructorProfile: { deactivatedAt: string | null } | null;
+    };
+    expect(detail.studentProfile?.deactivatedAt).toBeNull();
+    expect(detail.instructorProfile?.deactivatedAt).toBeNull();
   });
 });

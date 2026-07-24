@@ -22,17 +22,19 @@ import { useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { DateInput } from '@/components/ui/date-input';
 import { formatDateOnly } from '@/lib/time';
-import { isExpiryScopeCompatible, type ProfileFlags } from '@/lib/expiry-scope';
+import { isExpiryScopeCompatible, MEMBERSHIP_FEE_TYPE_NAME, type ProfileFlags } from '@/lib/expiry-scope';
 import type { ExpiryScopeDto } from '@/lib/schemas/expiry-types';
 
 export type ExpiryCatalogEntry = { id: string; name: string; scope: ExpiryScopeDto; isActive: boolean };
 
 type PersonExpiryItem = { id: string; expiryTypeId: string; typeName: string; expiresAt: string; status: 'ok' | 'expiring' | 'expired' };
 
+/** Excludes "Quota associativa" (story 13.2 review F3): a financial obligation, never a selectable chip in this editor — it stays managed by the Impostazioni quota card + addebito flow. Filtering here (the single catalogue fetch this component uses) also drops any already-registered quota `Expiry` from the "current" list below, since it's derived from `catalogIds`. */
 export async function fetchExpiryTypes(kind: 'RATING' | 'MEDICAL', includeInactive = false): Promise<ExpiryCatalogEntry[]> {
   const response = await fetch(`/api/v1/expiry-types?kind=${kind}&includeInactive=${includeInactive}`);
   if (!response.ok) return [];
-  return (await response.json()) as ExpiryCatalogEntry[];
+  const types = (await response.json()) as ExpiryCatalogEntry[];
+  return types.filter((type) => type.name !== MEMBERSHIP_FEE_TYPE_NAME);
 }
 
 async function fetchPersonExpiries(personId: string): Promise<PersonExpiryItem[]> {
