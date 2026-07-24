@@ -87,6 +87,19 @@ Applicati i findings della review adversarial (F1-F3) + una decisione PO (F3).
 
 Verifica interattiva: MCP `mcp__playwright__*` provato per primo (server Docker, come da istruzione) — non raggiungibile da questa sessione subagent; fallback sanzionato, script `@playwright/test` throwaway in `/tmp` contro `next dev` locale (cancellato prima del commit), screenshot del form di creazione con Pilota+chip selezionato poi deselezionato (nessun chip orfano residuo) e dell'editor Ratings piloti/istruttori senza il chip "Quota associativa".
 
-## Review Record
+## Review Record (adversarial, Opus 4.8 xhigh — 2026-07-24)
 
-_(compilato dopo la review adversarial)_
+**Verdetto**: shippable-with-fixes. Priorità zero VERDE: full suite e2e in CI-mode contro build prod 236/236, 8.3m, 0 flake; `vitest` 1443/1443; `tsc`/`eslint` puliti.
+
+**Findings**:
+
+- **F1 (minor, selezione orfana)**: in `NewPersonForm` una selezione rating/medical con data sopravviveva alla deselezione del profilo pilota/allievo/istruttore che l'aveva resa visibile — restava in `selections` e finiva comunque nell'array `expiries` del submit, causando un 422 `SCOPE_MISMATCH` server-side senza alcun chip visibile all'utente per correggerlo (dati salvi, atomicità del composite non compromessa, ma UX rotta). → **FIXATO**: potatura sincrona (`pruneSelectionsForFlags`) sui tre `onChange` dei checkbox profilo.
+- **F2 (minor, buchi e2e)**: copertura e2e mancante (lezione 12.6, omissioni silenziose) per percorsi verificati funzionanti ma non protetti in CI: modifica data inline di una expiry esistente (PATCH), aggiunta di un Rating nell'editor ISTRUTTORE (AC5/gap N6), blocco client "data obbligatoria" su un chip selezionato senza data, create multi-profilo (allievo+istruttore) in un solo submit. → **AGGIUNTI** 4 test in `e2e/people-management.spec.ts`.
+- **F3 (nota → DECISIONE PO 2026-07-24)**: la "Quota associativa" (`kind=RATING`, `scope=ALL`) compariva tra i chip Ratings di piloti E istruttori, editabile/eliminabile inline — un'obbligazione finanziaria, non un'abilitazione di volo. PO: escluderla dal catalogo chip in entrambi i consumer, riusando l'identificazione per nome già esistente (`MEMBERSHIP_FEE_TYPE_NAME`), lasciandola gestita solo dalla card quota in Impostazioni + flusso di addebito, senza toccare la sua visibilità nella pagina Scadenze. → **FIXATO**: costante spostata in `src/lib/expiry-scope.ts` (single source of truth condivisa client/server), filtro applicato nel fetch condiviso `fetchExpiryTypes`; assert di non-regressione aggiunto in e2e.
+
+**Chiusura note dev** (Dev Agent Record, story originale):
+
+- **N1** (atomicità composite create): CONFORME, salvo F1 (fixato) — l'errore di scope-mismatch non lasciava mai una riga parziale, ma impediva il retry senza un giro completo del form.
+- **N2/N3** (gap copertura e2e AC2/AC5): → coperti da F2.
+- **N4** (nessuna regressione sulle e2e esistenti/adiacenti): CONFORME.
+- **N5** (deviazione "chip unificati" per Ratings e Visita medica invece di un widget select dedicato): ACCETTATA — coerente con AC1 (selezione da elenco con data obbligatoria in entrambi i casi), nessuna perdita funzionale, un solo pattern di interazione invece di due.
