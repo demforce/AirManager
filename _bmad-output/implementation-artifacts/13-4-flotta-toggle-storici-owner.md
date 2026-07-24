@@ -4,7 +4,7 @@ baseline_commit: a90c22c
 
 # Story 13.4: Flotta — toggle archiviati on/off, storici a 5+"mostra tutte", rimozione owner/private
 
-Status: review
+Status: done
 
 ## Story
 
@@ -85,6 +85,12 @@ so that la pagina Flotta resti pulita e coerente col resto dell'app senza campi 
 
 - 2026-07-24: Story 13.4 implementata (toggle archiviati Flotta on/off pattern Piloti, storici tariffe/contaore limitati a 5 righe + espansione, rimozione completa campo `owner`/`AircraftOwner` da UI+backend+DB con migrazione hand-written verificata su psql). `npm run gates`: PASS (lint/typecheck/test 1443 verdi/build). e2e: 3 spec toccati, 16/16 verdi a `--workers=1` (vedi Interactive verification per l'analisi della flakiness a concorrenza piena, non imputabile a questa story).
 
-## Review Record
+## Review Record (adversarial, Opus 4.8 xhigh — 2026-07-24)
 
-_(compilato dopo la review adversarial)_
+**Verdetto**: **shippable** (zero fix richiesti). Priorità zero VERDE: full suite `CI=1` su build prod, DB fresco → **242 passed, exit 0, 0 failed, 0 flaky, 0 did-not-run**; la catena `settings`+`booking-window` (9 test dependent) CONFERMATA girata e verde (grep `[settings]`/`[booking-window]` nel log — niente cascata alla 13.3), inclusi i 2 nuovi e2e (rates 5+"mostra tutte", contaore 5+"carica altri") e il toggle archiviati.
+
+**Verifiche empiriche** (tutte CHIUSE): (N1) migrazione — psql conferma colonna `owner` assente + enum `AircraftOwner` inesistente (0 righe) + FK/campi restanti intatti, `prisma migrate diff` = zero drift; (N2) sweep owner completo — grep repo-wide pulito (unici residui: migrazione storica immutabile + commenti code-ownership non-aircraft; il consumer extra `dashboard/page.tsx` è gestito), wire/DTO/form senza owner; (N3) pricing/contaore ISOLATI — `rates.service.ts`/`adjustHourMeter` 0 righe, diff `aircraft.service.ts` limitato ai campi anagrafici, live: 6 rettifiche → contaore corretto in psql; (N4) storici troncamento REALE — rates slice client di array già fetchato (6→5+espandi a 6), contaore `pageSize=5` a livello WIRE (verificato network: `?pageSize=5&page=1` poi `page=2`); (N5) scelta carica-altri vs mostra-tutte contaore corretta (paginazione reale perché lo schema cappa pageSize a 100); (N6) toggle parità Piloti 1:1; (N7) flakiness del dev era ambientale (`next dev`), non riprodotta sotto `next start`.
+
+**Findings**: solo 2 NOTE non bloccanti, ACCETTATE (nessun cambio codice per shippare):
+- **N1 (nota, copy)**: la label rates "Mostra tutte (1)" mostra il conteggio delle righe NASCOSTE (non il totale) — corretta ma diverge dall'idiom "+N altre · Vedi tutte" già usato in `scadenze-widget`. Un utente potrebbe leggere "(1)" come totale. ACCETTATA: eventuale allineamento copy in una passata futura (13.9/13.10 o copy pass), non vale un giro suite dedicato.
+- **N2 (nota)**: lo storico rates si appoggia al cap server `take:500` pre-esistente (a differenza del contaore che pagina davvero); per un aeromobile con >500 tariffe (irrealistico, ~1/anno) "Mostra tutte" non rivelerebbe oltre. PRE-ESISTENTE, non una regressione; "storico completo raggiungibile" vale per ogni dataset realistico. Nessuna azione.

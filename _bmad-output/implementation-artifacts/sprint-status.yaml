@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-24 (story 13.3 DONE — scheda persona + estratto conto (sezione) in AirOps, click nome → people/{id}, slide-over profilo eliminato, modifica via PilotEditor 13.2. Review Opus shippable-with-fixes: F1 major (full suite ROSSA deterministica, non flake — test conto pilota-seed su conto vuoto) fixato + 2° fix clearCookies re-login → full suite CI=1 build prod 240 passed exit 0. F2 feature-loss (precompile validityMonths) = action item follow-up. N4 confermato: 0 consumer legacy residui → 13.11 più piccola. Prossima: dev 13.4 flotta)
+last_updated: 2026-07-25 (story 13.4 DONE — flotta: toggle archiviati on/off (parità Piloti), storici tariffe/contaore a 5+espandi (R3), rimozione Aircraft.owner UI+backend (migrazione drop-column+enum, sweep completo, pricing intatto). Review Opus SHIPPABLE zero-fix: full suite CI=1 build prod 242 passed exit 0, catena settings/booking-window confermata girata (no cascata 13.3), 2 note cosmetiche accettate. Prossima: dev 13.5 polish tabelle. Deciso: statement billing = togli solo il dialog, endpoint /account/pdf resta (lo usa la scheda persona 13.3))
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -151,8 +151,8 @@ development_status:
   13-1-piloti-backend-ratings-medical-create: done
   13-2-piloti-ui-form-unico: done
   13-3-scheda-persona-estratto-conto-airops: done
-  13-4-flotta-toggle-storici-owner: in-progress
-  13-5-polish-tabelle-billing-logbook-expiries: backlog
+  13-4-flotta-toggle-storici-owner: done
+  13-5-polish-tabelle-billing-logbook-expiries: in-progress
   13-6-ppr-movimenti: backlog
   13-7-pianificazione: backlog
   13-8-shell-misc: backlog
