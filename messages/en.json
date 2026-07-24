@@ -897,11 +897,6 @@
           "jetA1": "Jet A-1",
           "mogas": "Mogas"
         },
-        "owner": "Owner",
-        "ownerOptions": {
-          "club": "Club",
-          "private": "Private"
-        },
         "based": "Based",
         "basedOptions": {
           "based": "Based",
@@ -932,7 +927,8 @@
         "submit": "Add rate",
         "readOnlyHint": "Only an administrator can add new rates.",
         "historyTitle": "Rate history",
-        "historyEmpty": "No rates recorded yet."
+        "historyEmpty": "No rates recorded yet.",
+        "showAll": "Show all ({count})"
       },
       "hourMeter": {
         "sectionTitle": "Hour meter",

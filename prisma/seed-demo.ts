@@ -117,19 +117,19 @@ const STANDARD_EXPIRY_TYPES: Array<{ name: string; scope: 'PILOTS' | 'STUDENTS' 
 const AIRCRAFT = [
   {
     registration: 'I-B412', type: 'Ultraleggero 3 assi', model: 'Tecnam P92 Echo Super',
-    hourMeterMinutes: 1847 * 60 + 30, seats: 2, fuelType: 'Mogas', owner: 'CLUB' as const,
+    hourMeterMinutes: 1847 * 60 + 30, seats: 2, fuelType: 'Mogas',
     notes: 'Revisione 100h eseguita a giugno; prossima prevista a 1900h.',
     rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 12500 }, { validFrom: '2026-01-01', priceCentsPerHour: 13200, dryHourlyRateCents: 10500 }],
   },
   {
     registration: 'I-A661', type: 'Ultraleggero 3 assi', model: 'Tecnam P2002 Sierra',
-    hourMeterMinutes: 932 * 60 + 10, seats: 2, fuelType: 'Mogas', owner: 'CLUB' as const,
+    hourMeterMinutes: 932 * 60 + 10, seats: 2, fuelType: 'Mogas',
     notes: 'Radio nuova (COMM2) installata a maggio.',
     rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 13000 }, { validFrom: '2026-01-01', priceCentsPerHour: 13800, dryHourlyRateCents: 11000 }],
   },
   {
     registration: 'I-PDVB', type: 'Aereo certificato', model: 'Piper PA-28-161 Warrior II',
-    hourMeterMinutes: 4210 * 60 + 45, seats: 4, fuelType: 'AVGAS 100LL', owner: 'PRIVATE' as const,
+    hourMeterMinutes: 4210 * 60 + 45, seats: 4, fuelType: 'AVGAS 100LL',
     notes: 'Di proprietà di un socio, in gestione al club con accordo di esercenza.',
     rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 17900 }, { validFrom: '2026-01-01', priceCentsPerHour: 18900, dryHourlyRateCents: 15200 }],
   },

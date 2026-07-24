@@ -257,15 +257,6 @@ enum AircraftStatus {
   OUT_OF_SERVICE
 }
 
-/// Aircraft ownership (story 12.5, AC 1) — presentation/anagrafica only, no
-/// pricing/booking behavior keys off this: a CLUB aircraft belongs to the
-/// flying club's own fleet, PRIVATE is a member-owned airframe based at (or
-/// visiting) the field.
-enum AircraftOwner {
-  CLUB
-  PRIVATE
-}
-
 /// Aircraft fleet registry (story 2.4, AC 1/2; FR-7). `registration` (marche,
 /// e.g. "I-ABCD") is the unique human-facing identifier — normalized
 /// (`trim().toUpperCase()`) at the Zod boundary so the DB-level uniqueness is
@@ -302,9 +293,6 @@ model Aircraft {
   /// column itself stays plain text, no DB-level enum, so an unusual fuel
   /// isn't blocked.
   fuelType         String?
-  /// Ownership (story 12.5, AC 1) — CLUB (default, matches every
-  /// pre-existing row) or PRIVATE.
-  owner            AircraftOwner  @default(CLUB)
   /// Whether the aircraft is based at the field vs. a visiting/guest
   /// airframe (story 12.5, AC 1). Defaults to `true` (matches every
   /// pre-existing row, all of which are field-based).

@@ -235,4 +235,38 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2; dry rate added
     const body = await response.json();
     expect(body.error.code).toBe('FORBIDDEN');
   });
+
+  test('rate history shows only the last 5 by default, with "mostra tutte" revealing the rest (AC 2, story 13.4)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = uniqueAircraft('R5');
+    await createAndOpenAircraft(page, aircraft);
+
+    const listResponse = await page.request.get('/api/v1/aircraft', { params: { q: aircraft.registration } });
+    const listed = (await listResponse.json()) as { items: Array<{ id: string }> };
+    const aircraftId = listed.items[0]?.id;
+    expect(aircraftId).toBeTruthy();
+
+    // Seed 6 historicized rates directly via the API (distinct past `validFrom` dates,
+    // AC 2's 409-on-duplicate-date guard) — enough to trip the "last 5" default.
+    const validFroms = ['2015-01-01', '2016-01-01', '2017-01-01', '2018-01-01', '2019-01-01', '2020-01-01'];
+    for (const [index, validFrom] of validFroms.entries()) {
+      const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraftId}/rates`, {
+        data: { priceCentsPerHour: 10000 + index * 100, validFrom },
+      });
+      expect(rateResponse.status()).toBe(201);
+    }
+
+    // Reopen the editor — a fresh fetch of the now 6-row history.
+    await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+    await cardFor(page, aircraft.registration).click();
+
+    const historyRows = page.getByTestId('rate-history-row');
+    await expect(historyRows).toHaveCount(5);
+    const showAllButton = page.getByTestId('rates-history-show-all');
+    await expect(showAllButton).toContainText('1');
+
+    await showAllButton.click();
+    await expect(historyRows).toHaveCount(6);
+    await expect(showAllButton).toHaveCount(0);
+  });
 });

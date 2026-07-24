@@ -28,7 +28,6 @@ export type FleetCardItem = {
   statusReason: string | null;
   seats: number | null;
   fuelType: string | null;
-  owner: 'CLUB' | 'PRIVATE';
   based: boolean;
   /** ISO string or `null` — active. */
   archivedAt: string | null;

@@ -2,11 +2,6 @@ import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagina
 import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
-/** Mirrors the Prisma `AircraftOwner` enum (story 12.5, AC 1). */
-export const aircraftOwnerSchema = z.enum(['CLUB', 'PRIVATE']);
-
-export type AircraftOwnerDto = z.infer<typeof aircraftOwnerSchema>;
-
 /**
  * Shared by the create/edit aircraft forms and `POST`/`PATCH /api/v1/aircraft`
  * (Consistency Conventions: "Uno schema Zod per input/output per endpoint").
@@ -16,9 +11,9 @@ export type AircraftOwnerDto = z.infer<typeof aircraftOwnerSchema>;
  * registrations and ultralight schemes vary too much for a rigid format).
  * `hourMeterMinutes` is an integer number of minutes (AD-2, the cardinal
  * constraint of this story) — never a decimal-hours float. `seats`/`fuelType`/
- * `owner`/`based` (story 12.5, AC 1) are all additive and optional — an
- * omitted `owner`/`based` falls back to the DB default (CLUB/`true`, same as
- * every pre-existing row); `fuelType` is free text (the fleet editor offers a
+ * `based` (story 12.5, AC 1) are all additive and optional — an
+ * omitted `based` falls back to the DB default (`true`, same as every
+ * pre-existing row); `fuelType` is free text (the fleet editor offers a
  * closed set of common options, the column itself does not enforce one).
  */
 export const createAircraftSchema = z.object({
@@ -31,7 +26,6 @@ export const createAircraftSchema = z.object({
   notes: z.string().trim().min(1).nullish(),
   seats: z.number().int().min(0).max(100).nullish(),
   fuelType: z.string().trim().min(1).nullish(),
-  owner: aircraftOwnerSchema.optional(),
   based: z.boolean().optional(),
 });
 
@@ -53,7 +47,6 @@ export const updateAircraftSchema = z.object({
   notes: z.string().trim().min(1).nullish(),
   seats: z.number().int().min(0).max(100).nullish(),
   fuelType: z.string().trim().min(1).nullish(),
-  owner: aircraftOwnerSchema.optional(),
   based: z.boolean().optional(),
 });
 
@@ -157,7 +150,6 @@ export const aircraftListItemSchema = z.object({
   statusReason: z.string().nullable(),
   seats: z.number().int().min(0).nullable(),
   fuelType: z.string().nullable(),
-  owner: aircraftOwnerSchema,
   based: z.boolean(),
   archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),

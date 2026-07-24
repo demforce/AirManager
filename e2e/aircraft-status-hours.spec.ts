@@ -105,6 +105,38 @@ test.describe('Aircraft operational status and audited hour meter adjustments (S
     await expect(historyRow).toContainText('Errore di lettura precedente');
   });
 
+  test('hour-meter history shows only the last 5 by default, with "carica altri" revealing the rest (AC 3, story 13.4)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = uniqueAircraft('GGG');
+    await createAndOpenAircraft(page, aircraft);
+
+    const listResponse = await page.request.get('/api/v1/aircraft', { params: { q: aircraft.registration } });
+    const listed = (await listResponse.json()) as { items: Array<{ id: string }> };
+    const aircraftId = listed.items[0]?.id;
+    expect(aircraftId).toBeTruthy();
+
+    // Seed 6 rectifications directly via the API — enough to trip the "last 5" default.
+    for (let i = 0; i < 6; i += 1) {
+      const adjustResponse = await page.request.post(`/api/v1/aircraft/${aircraftId}/hour-meter-adjustments`, {
+        data: { newMinutes: 750 + (i + 1) * 10, reason: `Rettifica ${i + 1}` },
+      });
+      expect(adjustResponse.status()).toBe(200);
+    }
+
+    // Reopen the editor — a fresh fetch of the now 6-row history.
+    await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+    await cardFor(page, aircraft.registration).click();
+
+    const historyRows = page.getByTestId('hour-meter-history-row');
+    await expect(historyRows).toHaveCount(5);
+    const loadMoreButton = page.getByTestId('hour-meter-load-more');
+    await expect(loadMoreButton).toBeVisible();
+
+    await loadMoreButton.click();
+    await expect(historyRows).toHaveCount(6);
+    await expect(loadMoreButton).toHaveCount(0);
+  });
+
   test('a pilot gets a 403 AD-8 envelope from POST /api/v1/aircraft/{id}/out-of-service (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = uniqueAircraft('FFF');

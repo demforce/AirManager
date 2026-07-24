@@ -277,7 +277,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     statusReason: aircraft.statusReason,
     seats: aircraft.seats,
     fuelType: aircraft.fuelType,
-    owner: aircraft.owner,
     based: aircraft.based,
     archivedAt: null,
     wetRateCents: currentRatesById.get(aircraft.id)?.priceCentsPerHour ?? null,

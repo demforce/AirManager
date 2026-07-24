@@ -897,11 +897,6 @@
           "jetA1": "Jet A-1",
           "mogas": "Mogas"
         },
-        "owner": "Proprietario",
-        "ownerOptions": {
-          "club": "Club",
-          "private": "Privato"
-        },
         "based": "Basato",
         "basedOptions": {
           "based": "Basato",
@@ -932,7 +927,8 @@
         "submit": "Aggiungi tariffa",
         "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe.",
         "historyTitle": "Storico tariffe",
-        "historyEmpty": "Nessuna tariffa registrata."
+        "historyEmpty": "Nessuna tariffa registrata.",
+        "showAll": "Mostra tutte ({count})"
       },
       "hourMeter": {
         "sectionTitle": "Contaore",

@@ -58,6 +58,8 @@ async function createAircraft(
   await page.goto('/it/dashboard/fleet');
   await page.getByTestId('fleet-new-button').click();
   const form = page.getByTestId('identity-form');
+  // AC 4, story 13.4: the "Proprietario" (owner) field is removed entirely — scoped to the form, never present.
+  await expect(form.getByLabel('Proprietario')).toHaveCount(0);
   await form.getByLabel('Marche').fill(aircraft.registration);
   await form.getByLabel('Tipo').fill(aircraft.type);
   await form.getByLabel('Modello').fill(aircraft.model);
@@ -120,8 +122,8 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
     await gotoSearched(page, aircraft.registration);
     await expect(cardFor(page, aircraft.registration)).toHaveCount(0);
 
-    // With the archived filter: still there, shown as archived.
-    await page.getByLabel('Mostra archiviati').check();
+    // With the archived filter (AC 1, story 13.4: a toggle button, not a checkbox).
+    await page.getByTestId('fleet-toggle-archived').click();
     const archivedCard = cardFor(page, aircraft.registration);
     await expect(archivedCard).toBeVisible();
     await expect(archivedCard.getByText('Archiviato')).toBeVisible();
@@ -133,7 +135,7 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
     await expect(page.getByTestId('toast').filter({ hasText: 'Velivolo ripristinato' })).toBeVisible();
     await page.keyboard.press('Escape');
 
-    await page.getByLabel('Mostra archiviati').uncheck();
+    await page.getByTestId('fleet-toggle-archived').click();
     await expect(cardFor(page, aircraft.registration)).toBeVisible();
   });
 

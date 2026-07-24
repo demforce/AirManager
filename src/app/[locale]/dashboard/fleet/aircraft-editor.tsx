@@ -27,7 +27,6 @@ import {
   createAircraftSchema,
   createHourMeterAdjustmentSchema,
   updateAircraftSchema,
-  type AircraftOwnerDto,
   type AircraftRateItemDto,
   type CreateAircraftInput,
   type CreateHourMeterAdjustmentInput,
@@ -51,8 +50,6 @@ export type AircraftEditorLabels = {
     seats: string;
     fuelType: string;
     fuelOptions: { avgas: string; jetA1: string; mogas: string };
-    owner: string;
-    ownerOptions: { club: string; private: string };
     based: string;
     basedOptions: { based: string; guest: string };
     notes: string;
@@ -81,6 +78,8 @@ export type AircraftEditorLabels = {
     readOnlyHint: string;
     historyTitle: string;
     historyEmpty: string;
+    /** `t.raw` template, `"Mostra tutte ({count})"` — client-interpolated (AC 2, story 13.4: default shows only the last 5). */
+    showAll: string;
   };
   hourMeter: {
     sectionTitle: string;
@@ -154,7 +153,6 @@ type AircraftApiResponse = {
   statusReason: string | null;
   seats: number | null;
   fuelType: string | null;
-  owner: AircraftOwnerDto;
   based: boolean;
   archivedAt: string | null;
 };
@@ -171,7 +169,6 @@ function toEditable(aircraft: AircraftApiResponse): EditableAircraft {
     statusReason: aircraft.statusReason,
     seats: aircraft.seats,
     fuelType: aircraft.fuelType,
-    owner: aircraft.owner,
     based: aircraft.based,
     archivedAt: aircraft.archivedAt,
   };
@@ -306,7 +303,7 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
 
   const isNew = props.mode === 'new';
   const defaultValues = isNew
-    ? { registration: '', type: '', model: '', hourMeterMinutes: 0, notes: null, seats: null, fuelType: null, owner: 'CLUB' as const, based: true }
+    ? { registration: '', type: '', model: '', hourMeterMinutes: 0, notes: null, seats: null, fuelType: null, based: true }
     : {
         registration: props.aircraft.registration,
         type: props.aircraft.type,
@@ -314,7 +311,6 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
         notes: props.aircraft.notes,
         seats: props.aircraft.seats,
         fuelType: props.aircraft.fuelType,
-        owner: props.aircraft.owner,
         based: props.aircraft.based,
       };
 
@@ -386,12 +382,6 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
             <option value="Jet A-1">{labels.identity.fuelOptions.jetA1}</option>
             <option value="Mogas">{labels.identity.fuelOptions.mogas}</option>
             {extraFuelOption ? <option value={extraFuelOption}>{extraFuelOption}</option> : null}
-          </Select>
-        </Field>
-        <Field label={labels.identity.owner}>
-          <Select {...register('owner')} defaultValue={defaultValues.owner}>
-            <option value="CLUB">{labels.identity.ownerOptions.club}</option>
-            <option value="PRIVATE">{labels.identity.ownerOptions.private}</option>
           </Select>
         </Field>
         <Field label={labels.identity.based} wide>
@@ -602,6 +592,9 @@ const newRateFormSchema = z
 
 type NewRateFormValues = z.infer<typeof newRateFormSchema>;
 
+/** Default visible window for the rates/hour-meter histories (R3, story 13.4) — full history stays reachable via "mostra tutte"/"carica altri". */
+const HISTORY_VISIBLE_COUNT = 5;
+
 /** Pure fetch, no setState (see the effect's own doc-comment for why). */
 async function fetchRatesHistory(aircraftId: string): Promise<AircraftRateItemDto[]> {
   const response = await fetch(`/api/v1/aircraft/${aircraftId}/rates`);
@@ -630,6 +623,10 @@ function RatesSection({
 }) {
   const [history, setHistory] = useState<AircraftRateItemDto[] | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  // AC 2 (R3): the full history is already fetched (defensively capped at
+  // 500 server-side) — showing only the last 5 by default is a pure
+  // client-side slice, no extra round-trip needed to "show all".
+  const [showAllRates, setShowAllRates] = useState(false);
 
   const {
     register,
@@ -730,7 +727,7 @@ function RatesSection({
           </p>
         ) : (
           <div style={{ marginTop: 6 }}>
-            {history.map((rate) => (
+            {(showAllRates ? history : history.slice(0, HISTORY_VISIBLE_COUNT)).map((rate) => (
               <div key={rate.id} data-testid="rate-history-row" className="meter-row" style={{ padding: '4px 0' }}>
                 <span>{formatDateOnly(rate.validFrom, locale)}</span>
                 <span className="v mono">
@@ -738,6 +735,17 @@ function RatesSection({
                 </span>
               </div>
             ))}
+            {!showAllRates && history.length > HISTORY_VISIBLE_COUNT ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setShowAllRates(true)}
+                data-testid="rates-history-show-all"
+                style={{ marginTop: 8 }}
+              >
+                {labels.rates.showAll.replace('{count}', String(history.length - HISTORY_VISIBLE_COUNT))}
+              </button>
+            ) : null}
           </div>
         )}
       </div>
@@ -747,7 +755,11 @@ function RatesSection({
 
 // --- Hour meter (contaore) ---------------------------------------------------
 
-const HOUR_METER_HISTORY_PAGE_SIZE = 50;
+// R3 (story 13.4): default window shrunk from 50 to 5 — "carica altri"
+// (the pre-existing `loadMore` mechanism, unchanged) reaches the rest a
+// page at a time, staying under the shared pagination cap (`pageSize` <=
+// 100, `paginationQuerySchema`) regardless of how large the history grows.
+const HOUR_METER_HISTORY_PAGE_SIZE = HISTORY_VISIBLE_COUNT;
 
 type HourMeterHistoryPage = { items: HourMeterAdjustmentListItemDto[]; total: number };
 
