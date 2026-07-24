@@ -137,7 +137,7 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 
-  test('opens the read-only pilot profile slide-over and renders saldo, ultimo volo, certificazioni and voli recenti from real fixtures (AC 5/7)', async ({
+  test('clicking the name navigates to the scheda persona, which renders saldo, ultimo volo, certificazioni and voli recenti from real fixtures (Story 13.3, AC 3 — the read-only profile slide-over is retired)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -205,15 +205,19 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(person.lastName)}`);
     await page.getByTestId(`pilot-name-${personId}`).click();
 
-    // Saldo: a real currency value, not the loading "…".
-    await expect(page.getByText(/\d,\d{2}\s*€/).first()).toBeVisible();
-    // Ultimo volo.
-    await expect(page.getByText('15/06/2026').first()).toBeVisible();
-    // Certificazioni: filter by the unique expiry-type name to disambiguate.
-    const cert = page.getByTestId('pilot-profile-certification-row').filter({ hasText: expiryTypeName });
+    // Story 13.3, AC 3: the name is now a plain navigation link to the
+    // scheda persona — no more slide-over.
+    await expect(page).toHaveURL(new RegExp(`/it/dashboard/people/${personId}$`));
+    await expect(page.getByRole('heading', { name: `${person.lastName} ${person.firstName}` })).toBeVisible();
+
+    // Saldo (the "Estratto conto" section's balance).
+    await expect(page.getByTestId('account-balance')).toHaveText(/\d,\d{2}\s*€/);
+    // Certificazioni: the read-only "Scadenze" list, filtered by the unique expiry-type name to disambiguate.
+    const cert = page.getByTestId('person-expiry-row').filter({ hasText: expiryTypeName });
     await expect(cert).toContainText('31/01/2027');
-    // Voli recenti.
-    const flightRow = page.getByTestId('pilot-profile-flight-row');
+    // Ultimo volo / voli recenti: the "Ultimi voli" panel.
+    const flightRow = page.getByTestId('recent-flight-row');
+    await expect(flightRow).toContainText('15/06/2026');
     await expect(flightRow).toContainText('LIMW → LIME');
     await expect(flightRow).toContainText('1:30');
   });

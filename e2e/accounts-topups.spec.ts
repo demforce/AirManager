@@ -57,7 +57,7 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     const personId = await createPilotPerson(page, person);
 
     await page.goto(`/it/dashboard/people/${personId}`);
-    await expect(page.getByRole('heading', { name: 'Saldo conto' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Estratto conto' })).toBeVisible();
     await expect(page.getByTestId('account-balance')).toHaveText(/0,00\s€/);
     await expect(page.getByText('Nessun movimento registrato.')).toBeVisible();
   });
@@ -107,7 +107,7 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     await page.getByRole('link', { name: 'La mia scheda' }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
 
-    await expect(page.getByRole('heading', { name: 'Saldo conto' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Estratto conto' })).toBeVisible();
     // The seeded pilot has an Account: a real formatted amount, never the no-account label.
     await expect(page.getByTestId('account-balance')).toHaveText(/€/);
     // No finance.manage → the action is hidden (the API is the real guardian, tested below).

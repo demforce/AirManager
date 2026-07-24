@@ -4,7 +4,7 @@ baseline_commit: e22eeee
 
 # Story 13.3: Scheda persona + estratto conto in AirOps, click sul nome, rimozione slide-over profilo
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -43,7 +43,67 @@ so that non ci siano più pagine con la vecchia UI Tailwind e ci sia UNA destina
 
 ## Dev Agent Record
 
-_(compilato dal dev subagent)_
+### Implementation Plan
+
+- `people/[id]/page.tsx` rebuilt server-side in AirOps: intestazione (h1 + badge ruoli/archiviata), card "Dati anagrafici" (`.info-row`), card "Profili" (read-only mini-cards, no activate/edit/deactivate control — moved to the editor), card "Scadenze" (read-only `.students`/`.student-row` list — type/scadenza/stato/note, no add/edit/delete), embedded "Estratto conto" section (`account-section.tsx`), "Ultimi voli" panel (unchanged logic, restyled) + "Prossime prenotazioni" placeholder.
+- `account-section.tsx` (new client component): merges the legacy `AccountPanel` (balance + "Registra ricarica") and `account/page.tsx` + `AccountStatementTable` (paginated statement + "Registra rettifica" + adjustment badges) into ONE card — `.students`/`.student-row` grid (no `DataTable`), `ExportMenu` (no `ExportButton`). Movements/pagination are server-fetched by the page (`listAccountMovements`, `?page=` on the SAME `/people/{id}` URL) and passed as props; the component only owns the interactive top-up/rettifica panels, `router.refresh()` on success (same eventually-consistent pattern the legacy `AccountStatementTable` already used).
+- `people/[id]/account/page.tsx` → thin redirect to `people/[id]` (R-13.3-b, "meno invasivo": no incoming link/bookmark breaks, `?page=` preserved for the embedded statement's own pagination) — chosen over a duplicate standalone page because the two legacy pages are being consolidated into ONE.
+- `edit-person-button.tsx` (new client component, R-13.3-c): mounts the SAME `PilotEditor` (13.2) via a "Modifica" button (`people.manage`-gated). `onClose` ALSO calls `router.refresh()` (not just `onMutated`) — unlike `pilots-console.tsx` (whose table never shows ratings inline), this dossier renders a read-only "Scadenze" card and `LiveExpiryEditor` (13.2) has no `onMutated`-style callback of its own; closing is the only reliable moment to pick up a rating change made during the session.
+- `pilot-editor-labels.ts` (new, extracted from `pilots/page.tsx` — `booking-labels.ts` precedent): `buildPilotEditorLabels`/`buildPilotEditorToastLabels`, reused by both `pilots/page.tsx` and the new `people/[id]/page.tsx` so the `PilotEditor` label wiring has ONE implementation.
+- `people.service.ts`: added `getPersonUser(personId)` (same derivation as `listPilotsPageData`'s per-row `user`) so the scheda persona can build the `PilotRow`-shaped object the embedded editor needs, without touching the `GET /api/v1/people/{id}` wire contract.
+- `pilots-console.tsx`: removed `PilotProfile` import/state (`profileTarget`)/render; the pilot NAME is now a `Link` to `/dashboard/people/{id}` (same pattern as `billing-console.tsx`'s negative-balance link). The "Modifica" row action (opens `PilotEditor`) is untouched.
+- Deleted: `pilots/pilot-profile.tsx` (the read-only slide-over), `pilots/expiry-grouping.ts` (its only consumer), `people/account-panel.tsx`, `people/expiries-panel.tsx`, `people/profiles-panel.tsx`, `people/[id]/account/account-statement-table.tsx`. `data-table.tsx`/`export-button.tsx` themselves are NOT deleted (13.11 cleanup) — after this story they have ZERO remaining consumers anywhere in `src/` (verified by repo-wide grep), including `new-booking-form.tsx`/`aircraft-editor.tsx` (the Contesto's "altri consumer" no longer reference them either — pre-existing state, not something this story touched).
+- i18n: removed the orphaned `PilotsPage.profile.*` subtree (it/en) — was only consumed by the deleted `pilot-profile.tsx`. No other new/removed keys: the new page/section reuse `PersonDetailPage`, `AccountStatementPage`, `PeoplePage.profilesPanel`, `ExpiriesPanel`, `PilotsPage.editor`/`toast`/`pagination`, `Export` verbatim (all already bilingual IT/EN).
+- CLAUDE.md: updated the AirOps/dormant-stack paragraph, the "Stories con UI" rule, and the route-map line — the two legacy pages no longer exist; Tailwind/TanStack Table/Geist remain installed but now serve ZERO page consumers (only `data-table.tsx`/`export-button.tsx` themselves), until story 13.11.
+
+### Completion Notes
+
+- AC 1 (scheda persona AirOps): done — no hardcoded hex, no Tailwind utilities, `airops.css` primitives (`Badge`, `.card`, `.info-row`, `.students`/`.student-row`) throughout; light/dark verified interactively (Playwright, see notes below). "Modifica" opens the 13.2 `PilotEditor`.
+- AC 2 (estratto conto come sezione): done — merged section, `.student-row` grid, `ExportMenu` (xlsx+pdf), same RBAC (`getAccountOverview`/`listAccountMovements` re-check `people.read`/own-access, unchanged). `/account` redirects, `?page=` preserved.
+- AC 3 (click sul nome): done — `pilots-console.tsx` name cell is a `Link`; `pilot-profile.tsx` + all wiring + orphaned i18n removed.
+- AC 4 (nessun consumer legacy residuo): done — verified by repo-wide grep for `DataTable`/`ExportButton`/`components/data-table`/`components/export-button`: zero hits under `people/[id]/**` after this story (only the definition files + this story's own doc-comments mention the names). CLAUDE.md updated.
+- AC 5 (e2e + skill UI): `karpathy-guidelines`, `design-taste-frontend`, `ui-ux-pro-max` read and applied. e2e updated for the new architecture — see Deviations below for the one dropped scenario (no UI surface left to exercise it) and File List for the full set of touched specs. Interactive verification via Playwright MCP (see notes below); `npm run gates` PASS (lint/typecheck/vitest/build).
+
+### File List
+
+- `src/app/[locale]/dashboard/people/[id]/page.tsx` (rewritten, AirOps)
+- `src/app/[locale]/dashboard/people/[id]/account-section.tsx` (new)
+- `src/app/[locale]/dashboard/people/[id]/edit-person-button.tsx` (new)
+- `src/app/[locale]/dashboard/people/[id]/account/page.tsx` (rewritten → redirect)
+- `src/app/[locale]/dashboard/people/[id]/account/account-statement-table.tsx` (deleted)
+- `src/app/[locale]/dashboard/people/account-panel.tsx` (deleted)
+- `src/app/[locale]/dashboard/people/expiries-panel.tsx` (deleted)
+- `src/app/[locale]/dashboard/people/profiles-panel.tsx` (deleted)
+- `src/app/[locale]/dashboard/pilots/pilots-console.tsx` (`PilotProfile` wiring removed, name → `Link`)
+- `src/app/[locale]/dashboard/pilots/pilot-editor.tsx` (`ToastLabels` exported)
+- `src/app/[locale]/dashboard/pilots/pilot-editor-labels.ts` (new, extracted)
+- `src/app/[locale]/dashboard/pilots/pilot-profile.tsx` (deleted)
+- `src/app/[locale]/dashboard/pilots/expiry-grouping.ts` (deleted, orphaned)
+- `src/app/[locale]/dashboard/pilots/page.tsx` (uses `pilot-editor-labels.ts`, drops orphaned `profile` labels)
+- `src/server/services/people.service.ts` (added `getPersonUser`)
+- `src/server/services/exports.service.ts` (doc-comment path fixes only)
+- `messages/it.json`, `messages/en.json` (removed orphaned `PilotsPage.profile.*`)
+- `CLAUDE.md` (dormant-stack / UI-story-rule / route-map updated)
+- `e2e/person-detail.spec.ts` (rewritten for read-only dossier + "Modifica"/editor smoke test)
+- `e2e/people-management.spec.ts` (pilot-profile slide-over test → navigation + new page assertions)
+- `e2e/account-statement.spec.ts` (rewritten: redirect route, `.student-row` grid, testid renames)
+- `e2e/account-adjustments.spec.ts` (testid renames: `account-balance`, `account-movement-row`)
+- `e2e/accounts-topups.spec.ts` (heading rename "Saldo conto" → "Estratto conto")
+- `e2e/flights.spec.ts`, `e2e/flight-reversal.spec.ts` (testid renames only)
+- `e2e/expiry-registration.spec.ts` (registration flow rewritten through "Modifica" → `LiveExpiryEditor`; validityMonths-precompile test dropped, see Deviations)
+
+### Interactive verification (Playwright)
+
+`mcp__playwright__*` tried first: unreachable from this subagent session (`Chromium distribution 'chrome' is not found at /opt/google/chrome/chrome`) — fell back to throwaway `@playwright/test` scripts (deleted before commit) driving the real dev server (Playwright's own bundled Chromium, the same binary the e2e suite already uses — no `playwright install` run).
+
+- **Bug found and fixed during verification**: the FIRST pass (screenshot + `getByLabel('Nome').inputValue()`) showed the `PilotEditor` slide-over opening but rendering EMPTY (just the "✕" close button, no anagrafica/profili/ratings content). Root cause: `edit-person-button.tsx` mounted `<PilotEditor target={...}>` WITHOUT a `key` that changes between closed/open — `PilotEditor`'s internal `current` is a `useState` whose initializer only runs on MOUNT, so the ONE long-lived instance (this button never unmounts it) kept the `target: null`-time initial value forever, even after `target` became `{mode:'edit', pilot}`. Fixed by adding `key={open ? \`editor-${person.id}\` : 'editor-closed'}` (same remount-per-target convention `pilots-console.tsx` already uses for its own `PilotEditor` mount). Re-verified: editor now renders fully populated (anagrafica/profili/ratings/visita medica/accesso/archivio), light AND dark theme, both via screenshot and `.innerText()` dump.
+- Also fixed during verification: the "Registra rettifica" panel's `amountHint` text was rendering BELOW the whole 2-column form-grid (disconnected from "Importo") instead of directly under the amount field, because `.fld-ctrl` is `display:flex` (row) — a bare extra `<p>` sibling inside `Field`'s children would have sat side-by-side with the `<input>`, not stacked. Fixed by wrapping each field's input+hint/error in an inner `flexDirection:'column'` div (single flex child of `.fld-ctrl`), matching the legacy `AdjustmentForm`'s layout precision.
+- **Full flow verification** (screenshots + scripted assertions, light AND dark via the real theme-toggle button, `data-theme` confirmed `dark` server-side via cookie): scheda persona for a pilot with profile/ratings/balance/movements data — anagrafica/profili/scadenze/estratto conto render correctly, no Tailwind/hardcoded-hex remnants; "Modifica" opens the `PilotEditor` pre-filled and a save refreshes the dossier; estratto conto — top-up (balance updates, `router.refresh()`), standalone rettifica (balance updates, `adjustment-feedback` visible), row-level rettifica on the top-up row (`adjustment-badge` appears, the original row's "Rettifica questo movimento" action disappears once `hasReversal`), export menu (`Esporta Excel`/`Esporta PDF` hrefs correct, `?format=xlsx|pdf&locale=it`); `/account?page=1` redirects to `/people/{id}?page=1` preserving the param; Piloti table name click navigates to the scheda (no more slide-over).
+- **e2e** (foreground, `--no-deps`, real dev server): all 8 touched spec files run individually AND together at `--workers=1` (serial — `--workers>1` against `next dev` reproduces the pre-existing "cold-compile timeout flakiness" `playwright.config.ts` already documents, manifesting as login timeouts on UNRELATED/untouched tests too, e.g. story-13.2 tests never touched by this story; confirmed environmental, not a regression, by re-running the affected tests in isolation where they pass). Final serial run: 44/46 passed; the 2 remaining failures are the same login-flake class (one a pure-API test, one an untouched 13.2 test), each independently confirmed passing on a solo re-run. One genuine e2e bug found and fixed along the way: `expiry-registration.spec.ts`'s new `registerExpiryViaUi` helper didn't wait for an add to settle before starting the next one — two chip-adds back to back could race the first's `refresh()`; fixed by asserting the add-form closes and the new row appears before returning.
+
+### Change Log
+
+- 2026-07-24: Story 13.3 implemented (scheda persona + estratto conto AirOps, click sul nome, rimozione slide-over profilo). Interactive Playwright verification found and fixed a real bug (`PilotEditor` missing remount `key` in `edit-person-button.tsx` — see above). `npm run gates`: PASS. e2e: 8 touched spec files green serially (see notes above for the pre-existing `next dev` parallel-flake class encountered and ruled out).
 
 ## Review Record
 

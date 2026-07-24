@@ -50,20 +50,20 @@ async function ownPersonId(page: Page): Promise<string> {
   return body.person.id as string;
 }
 
-test.describe('Person detail page (Story 2.3)', () => {
-  test('staff opens the scheda from the list: anagrafica, profiles and the 5 structural placeholders (AC 1)', async ({ page }) => {
+test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)', () => {
+  test('staff opens the scheda from the list: anagrafica, profiles, estratto conto and the placeholder (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Chiara');
     const personId = await createPerson(page, person);
 
     await page.goto(`/it/dashboard/people/${personId}`);
     await expect(page.getByRole('heading', { name: `${person.lastName} ${person.firstName}` })).toBeVisible();
-    await expect(page.getByText('Dati anagrafici')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Dati anagrafici' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Profili' })).toBeVisible();
 
-    // The heading "Ultimi voli" + "Prossime prenotazioni" (the ONE remaining
-    // structural placeholder — story 11.2 turns "Ultimi voli" into a real panel).
-    for (const title of ['Scadenze', 'Saldo conto', 'Ultimi voli', 'Prossime prenotazioni']) {
+    // Story 13.3, AC 2: the standalone "estratto conto" drill-down is now a
+    // SECTION here ("Estratto conto"), replacing the old "Saldo conto" panel.
+    for (const title of ['Scadenze', 'Estratto conto', 'Ultimi voli', 'Prossime prenotazioni']) {
       await expect(page.getByRole('heading', { name: title })).toBeVisible();
     }
     // "Prossime prenotazioni" is still a placeholder — "Ultimi voli" is now real (Story 11.2, AC 4).
@@ -77,25 +77,31 @@ test.describe('Person detail page (Story 2.3)', () => {
     await expect(flightsPanel.getByText('Nessun volo registrato.')).toBeVisible();
     await expect(flightsPanel.getByTestId('recent-flights-view-all')).toHaveAttribute('href', `/it/dashboard/logbook?personId=${personId}`);
 
-    // Staff has people.manage: the pilot profile section is interactive (activate control present).
+    // Story 13.3 (AC 1/R-13.3-c): the dossier is READ-ONLY — a fresh person has
+    // no pilot profile activated ("Non attivato"), and activating it happens
+    // through "Modifica" (people.manage), never an inline control here.
     const pilotSection = page.getByTestId('profile-section-pilot');
-    await expect(pilotSection.getByRole('button', { name: 'Attiva' })).toBeVisible();
+    await expect(pilotSection).toContainText('Non attivato');
+    await expect(pilotSection.getByRole('button')).toHaveCount(0);
+    await expect(page.getByTestId('person-edit-button')).toBeVisible();
   });
 
-  test('a pilot opens their own scheda: data visible, profiles read-only, no edit controls (AC 2)', async ({ page }) => {
+  test('a pilot opens their own scheda: data visible, profiles read-only, no "Modifica" (AC 2)', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
     await page.getByRole('link', { name: 'La mia scheda' }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
 
     await expect(page.getByRole('heading', { name: 'Volante Piero' })).toBeVisible();
-    await expect(page.getByText('Dati anagrafici')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Dati anagrafici' })).toBeVisible();
 
-    // The seeded pilot profile is active — data shows, but with no activate/edit/deactivate controls (Task 3).
+    // The seeded pilot profile is active — data shows, no edit affordance
+    // anywhere on the page (Story 13.3: editing lives ONLY behind "Modifica",
+    // itself hidden for an own-access viewer without `people.manage`).
     const pilotSection = page.getByTestId('profile-section-pilot');
     await expect(pilotSection.getByText('IT-PPL-100200', { exact: false })).toBeVisible();
-    await expect(pilotSection.getByRole('button', { name: 'Modifica' })).toHaveCount(0);
-    await expect(pilotSection.getByRole('button', { name: 'Disattiva' })).toHaveCount(0);
+    await expect(pilotSection.getByRole('button')).toHaveCount(0);
+    await expect(page.getByTestId('person-edit-button')).toHaveCount(0);
 
     // Titolare (own access, no flights.manage): also a REAL "Ultimi voli" panel,
     // but its "Vedi tutti" link has NO personId (own-scope is automatic on the
@@ -180,5 +186,31 @@ test.describe('Person detail page (Story 2.3)', () => {
     await viewAllLink.click();
     await expect(page).toHaveURL(new RegExp(`/it/dashboard/logbook\\?personId=${personId}`));
     await expect(page.getByTestId('flight-row').filter({ hasText: 'Campo Prova' })).toBeVisible();
+  });
+
+  test('"Modifica" opens the SAME PilotEditor slide-over the Piloti table uses, pre-filled, and a save refreshes the read-only dossier (Story 13.3, AC 1/R-13.3-c)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('Edoardo');
+    const personId = await createPerson(page, person);
+
+    await page.goto(`/it/dashboard/people/${personId}`);
+    await page.getByTestId('person-edit-button').click();
+
+    const form = page.getByTestId('pilot-identity-form');
+    await expect(form.getByLabel('Nome', { exact: true })).toHaveValue(person.firstName);
+    await expect(form.getByLabel('Cognome', { exact: true })).toHaveValue(person.lastName);
+
+    const updatedPhone = '333' + Date.now().toString().slice(-7);
+    await form.getByLabel('Telefono').fill(updatedPhone);
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Dati aggiornati' })).toBeVisible();
+
+    // The slide-over's own save refreshes the server-rendered dossier
+    // (`router.refresh()`) — the anagrafica card shows the new value with no
+    // manual reload. The run-unique suffix makes the phone number safe to
+    // match anywhere on the page.
+    await expect(page.getByText(updatedPhone)).toBeVisible();
   });
 });

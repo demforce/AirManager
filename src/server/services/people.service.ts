@@ -350,6 +350,24 @@ export async function getPerson(actor: Actor, id: string): Promise<PersonDetail>
 }
 
 /**
+ * Story 13.3 (R-13.3-c): the linked-user summary for a SINGLE person — same
+ * shape/derivation as `listPilotsPageData`'s per-row `user` (`PilotUserInfo`),
+ * extracted here so the scheda persona page can build the `PilotRow`-shaped
+ * object its embedded `PilotEditor` (13.2) needs without a second N+1-style
+ * batched reader. No RBAC of its own: callers only reach this after their own
+ * `people.read`/own-access check (same convention as `getPerson`'s callers
+ * mirroring the page-level redirect, AD-5) and the value only ever feeds the
+ * editor's `AccessSection`, itself gated by `canManageUsers` at render time.
+ */
+export async function getPersonUser(personId: string): Promise<PilotUserInfo> {
+  const user = await prisma.user.findUnique({
+    where: { personId },
+    select: { id: true, email: true, roles: true, isActive: true, passwordHash: true },
+  });
+  return user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null } : null;
+}
+
+/**
  * The raw `Person` insert behind `createPerson` (AC 1) — extracted (story
  * 13.1, Dev Notes: "helper condivisi, mai duplicazione", same
  * `getFlightTotals` 12.8 precedent) so the one-step composite below can run

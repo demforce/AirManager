@@ -415,27 +415,6 @@
         "conflictEmail": "A person with this email or fiscal code already exists."
       }
     },
-    "profile": {
-      "closeLabel": "Close",
-      "edit": "Edit pilot",
-      "kpi": {
-        "balance": "Balance",
-        "lastFlight": "Last flight",
-        "recentFlights": "Recent flights"
-      },
-      "noAccount": "—",
-      "archivedBadge": "Archived",
-      "ratings": {
-        "sectionTitle": "Ratings",
-        "empty": "No expiry on file."
-      },
-      "recentFlights": {
-        "sectionTitle": "Recent flights",
-        "empty": "No flights on file.",
-        "viewAll": "View all",
-        "statement": "Account statement"
-      }
-    },
     "toast": {
       "created": "Pilot created.",
       "updated": "Details updated.",

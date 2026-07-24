@@ -347,9 +347,10 @@ export async function exportAccountMovementsXlsx(actor: Actor, personId: string,
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'AccountStatementPage' });
-  // Same conditional column as `showActor` in `account-statement-table.tsx` — the
-  // service already omits `actorEmail` from the DTO for a non-`people.read`
-  // actor (AD-5); the export additionally drops the whole COLUMN for them.
+  // Same conditional column as `showActor` in `people/[id]/account-section.tsx`
+  // (story 13.3) — the service already omits `actorEmail` from the DTO for a
+  // non-`people.read` actor (AD-5); the export additionally drops the whole
+  // COLUMN for them.
   const includeActor = hasPermission(actor, 'people.read');
 
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
@@ -523,7 +524,7 @@ export async function exportAccountStatementPdf(actor: Actor, personId: string, 
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'AccountStatementPage' });
-  // Same conditional column as the xlsx export / `account-statement-table.tsx`'s `showActor`.
+  // Same conditional column as the xlsx export / `account-section.tsx`'s `showActor`.
   const includeActor = hasPermission(actor, 'people.read');
   const hasPeriod = Boolean(query.from || query.to);
 

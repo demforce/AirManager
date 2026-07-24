@@ -36,7 +36,6 @@ import { formatCents, parseCents } from '@/lib/money';
 import { formatDateOnly } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { PilotEditor, type PilotEditorLabels } from './pilot-editor';
-import { PilotProfile, type PilotProfileLabels } from './pilot-profile';
 
 export type PilotUser = { id: string; email: string; roles: Role[]; isActive: boolean; passwordSet: boolean } | null;
 
@@ -82,8 +81,6 @@ export type PilotsConsoleLabels = {
     genericError: string;
   };
   editor: PilotEditorLabels;
-  /** `role`/`status` are injected from this same object's own top-level `role`/`status` fields at render time — not duplicated here. */
-  profile: Omit<PilotProfileLabels, 'role' | 'status'>;
   toast: {
     created: string;
     updated: string;
@@ -156,7 +153,6 @@ export function PilotsConsole({
   const [queryInput, setQueryInput] = useState(initialQuery);
   const [includeArchived, setIncludeArchived] = useState(initialIncludeArchived);
   const [editorTarget, setEditorTarget] = useState<EditorTarget | null>(null);
-  const [profileTarget, setProfileTarget] = useState<PilotRow | null>(null);
   const [topUpTarget, setTopUpTarget] = useState<PilotRow | null>(null);
   const [suspendConfirm, setSuspendConfirm] = useState<SuspendConfirm | null>(null);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
@@ -281,14 +277,15 @@ export function PilotsConsole({
               return (
                 <div key={pilot.id} className="student-row" data-testid={`pilot-row-${pilot.id}`} style={{ gridTemplateColumns: cols }}>
                   <div>
-                    <div
+                    <Link
+                      href={`/dashboard/people/${pilot.id}`}
+                      locale={locale as AppLocale}
                       className="student-name"
-                      style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--border-strong)', textUnderlineOffset: 3 }}
-                      onClick={() => setProfileTarget(pilot)}
+                      style={{ textDecoration: 'underline', textDecorationColor: 'var(--border-strong)', textUnderlineOffset: 3 }}
                       data-testid={`pilot-name-${pilot.id}`}
                     >
                       {pilot.lastName} {pilot.firstName}
-                    </div>
+                    </Link>
                   </div>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {pilot.email ?? labels.table.noValue}
@@ -394,10 +391,9 @@ export function PilotsConsole({
       </div>
 
       <PilotEditor
-        // Distinct key NAMESPACE from `PilotProfile` below (`editor-`/`profile-`
-        // prefixes) — React validates key uniqueness across ALL keyed
-        // siblings at this level regardless of element type, so both
-        // components resting on a bare `'closed'` at once would collide.
+        // Remounts per target (new vs a specific pilot) so `useState`'s
+        // initial values are always fresh for the row just opened — same
+        // convention as `TopUpSlideOver`'s own `key` below.
         key={editorTarget === null ? 'editor-closed' : editorTarget.mode === 'new' ? 'editor-new' : `editor-${editorTarget.pilot.id}`}
         target={editorTarget}
         onClose={() => setEditorTarget(null)}
@@ -406,15 +402,6 @@ export function PilotsConsole({
         locale={locale}
         labels={labels.editor}
         toastLabels={labels.toast}
-      />
-
-      <PilotProfile
-        key={profileTarget === null ? 'profile-closed' : `profile-${profileTarget.id}`}
-        pilot={profileTarget}
-        onClose={() => setProfileTarget(null)}
-        onEdit={(pilot) => setEditorTarget({ mode: 'edit', pilot })}
-        locale={locale}
-        labels={{ ...labels.profile, role: labels.role, status: labels.status }}
       />
 
       <TopUpSlideOver

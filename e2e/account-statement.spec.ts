@@ -52,7 +52,7 @@ async function recordTopUp(page: Page, personId: string, amountCents: number): P
   expect(response.status()).toBe(200);
 }
 
-test.describe('Account statement (Story 3.2)', () => {
+test.describe('Account statement (Story 3.2; "Estratto conto" section, Story 13.3)', () => {
   test('staff records 2 top-ups then opens the estratto: 2 rows, reverse-chronological, signed amounts, "registrato da" column (AC 2)', async ({
     page,
   }) => {
@@ -63,14 +63,18 @@ test.describe('Account statement (Story 3.2)', () => {
     await recordTopUp(page, personId, 10000); // 100,00 €
     await recordTopUp(page, personId, 5000); // 50,00 €
 
+    // Story 13.3 (R-13.3-b): the standalone `/account` route now redirects
+    // to the consolidated scheda persona — the estratto conto is a SECTION
+    // there, not a separate page.
     await page.goto(`/it/dashboard/people/${personId}/account`);
+    await expect(page).toHaveURL(new RegExp(`/it/dashboard/people/${personId}$`));
     await expect(page.getByRole('heading', { name: `${person.lastName} ${person.firstName}` })).toBeVisible();
-    await expect(page.getByTestId('account-statement-balance')).toHaveText(/150,00\s€/);
+    await expect(page.getByTestId('account-balance')).toHaveText(/150,00\s€/);
 
     // Staff sees the operational "registrato da" column (AC 2).
-    await expect(page.getByRole('columnheader', { name: 'Registrato da' })).toBeVisible();
+    await expect(page.getByTestId('account-statement-header-row')).toContainText('Registrato da');
 
-    const rows = page.locator('tbody tr');
+    const rows = page.getByTestId('account-movement-row');
     await expect(rows).toHaveCount(2);
     // Reverse-chronological: the SECOND top-up (50 €) registered last appears FIRST.
     await expect(rows.nth(0)).toContainText('+50,00');
@@ -83,11 +87,13 @@ test.describe('Account statement (Story 3.2)', () => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
     await page.getByRole('link', { name: 'Il mio conto' }).click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+\/account$/);
+    // Story 13.3: lands on the scheda persona itself (the account link's
+    // `/account` suffix redirects there — R-13.3-b).
+    await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
 
-    await expect(page.getByTestId('account-statement-balance')).toHaveText(/€/);
-    await expect(page.locator('tbody tr').first()).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Registrato da' })).toHaveCount(0);
+    await expect(page.getByTestId('account-balance')).toHaveText(/€/);
+    await expect(page.getByTestId('account-movement-row').first()).toBeVisible();
+    await expect(page.getByTestId('account-statement-header-row')).not.toContainText('Registrato da');
   });
 
   test('a pilot gets a 403 AD-8 envelope from GET /api/v1/people/{other}/account/movements (AC 1)', async ({ page }) => {
@@ -115,7 +121,8 @@ test.describe('Account statement (Story 3.2)', () => {
     await recordTopUp(page, personId, 10000); // 100,00 €
 
     await page.goto(`/en/dashboard/people/${personId}/account`);
-    await expect(page.getByTestId('account-statement-balance')).toHaveText(/€100\.00/);
-    await expect(page.locator('tbody tr').first()).toContainText('+€100.00');
+    await expect(page).toHaveURL(new RegExp(`/en/dashboard/people/${personId}$`));
+    await expect(page.getByTestId('account-balance')).toHaveText(/€100\.00/);
+    await expect(page.getByTestId('account-movement-row').first()).toContainText('+€100.00');
   });
 });

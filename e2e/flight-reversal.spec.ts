@@ -229,10 +229,10 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
 
     // Balance back to 0,00 € (pre-volo value) — estratto conto shows FLIGHT_CHARGE negative + linked STORNO positive.
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
-    await expect(page.getByTestId('account-statement-balance')).toContainText(/0,00\s€/);
-    const chargeRow = page.locator('tbody tr').filter({ hasText: 'Addebito volo' }).first();
+    await expect(page.getByTestId('account-balance')).toContainText(/0,00\s€/);
+    const chargeRow = page.getByTestId('account-movement-row').filter({ hasText: 'Addebito volo' }).first();
     await expect(chargeRow).toContainText(/-190,00\s€/);
-    const reversalRow = page.locator('tbody tr').filter({ hasText: 'Storno volo' }).first();
+    const reversalRow = page.getByTestId('account-movement-row').filter({ hasText: 'Storno volo' }).first();
     await expect(reversalRow).toContainText(/\+190,00\s€/);
     await expect(page.getByTestId('reversal-badge')).toBeVisible();
 
@@ -303,7 +303,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
 
     // Net balance: 0,00 € (first flight, cancelled) - 75,00 € (corrected second flight) = -75,00 €.
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
-    await expect(page.getByTestId('account-statement-balance')).toContainText(/-75,00\s€/);
+    await expect(page.getByTestId('account-balance')).toContainText(/-75,00\s€/);
   });
 
   test('a pilot gets a 403 AD-8 envelope from both POST /cancel and POST /correct', async ({ page }) => {

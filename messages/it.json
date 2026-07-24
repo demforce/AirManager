@@ -415,27 +415,6 @@
         "conflictEmail": "Esiste già una persona con questa email o codice fiscale."
       }
     },
-    "profile": {
-      "closeLabel": "Chiudi",
-      "edit": "Modifica pilota",
-      "kpi": {
-        "balance": "Saldo",
-        "lastFlight": "Ultimo volo",
-        "recentFlights": "Voli recenti"
-      },
-      "noAccount": "—",
-      "archivedBadge": "Archiviato",
-      "ratings": {
-        "sectionTitle": "Ratings",
-        "empty": "Nessuna scadenza registrata."
-      },
-      "recentFlights": {
-        "sectionTitle": "Voli recenti",
-        "empty": "Nessun volo registrato.",
-        "viewAll": "Vedi tutti",
-        "statement": "Estratto conto"
-      }
-    },
     "toast": {
       "created": "Pilota creato.",
       "updated": "Dati aggiornati.",

@@ -40,17 +40,6 @@ function addDaysUtc(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** Mirrors `src/lib/date-only.ts#addMonthsClampUtc` (month-add, day clamped to the target month's real last day) — a self-contained copy, no `@/lib` import (e2e specs stay decoupled from server-side app modules). Used to predict the register form's `validityMonths` precompile (story 13.1 review R6: `today + months`, not `issuedAt + months` anymore). */
-function addMonthsUtc(base: string, months: number): string {
-  const [year, month, day] = base.split('-').map(Number);
-  const targetMonthIndex = month - 1 + months;
-  const targetYear = year + Math.floor(targetMonthIndex / 12);
-  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
-  const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-  const clampedDay = Math.min(day, daysInTargetMonth);
-  return new Date(Date.UTC(targetYear, targetMonth, clampedDay)).toISOString().slice(0, 10);
-}
-
 type MailpitMessageSummary = { ID: string; Subject: string };
 type MailpitFullMessage = { Text: string; Subject: string };
 
@@ -128,17 +117,34 @@ async function createExpiryType(
   return { id: created.id, name };
 }
 
-/** Drives the "Registra scadenza" form on the scheda persona through the actual UI (AC 1). Story 13.1 review R6 dropped the "Data rilascio" field — only the type and `expiresAt` remain. */
-async function registerExpiryViaUi(page: Page, values: { typeName: string; expiresAt: string }): Promise<void> {
-  await page.getByRole('button', { name: 'Registra scadenza' }).click();
-  const form = page.getByTestId('register-expiry-form');
-  await form.getByLabel('Tipo di scadenza').selectOption(values.typeName);
-  await form.getByLabel('Data scadenza').fill(values.expiresAt);
-  await form.getByRole('button', { name: 'Registra' }).click();
+/**
+ * Drives the chip-based "Ratings" add flow through the ACTUAL UI (AC 1) —
+ * story 13.3 (R-13.3-c, AC 1 "gestione avviene via editor") retired the
+ * page-level "Registra scadenza" form (`ExpiriesPanel`): the scheda persona
+ * now shows a READ-ONLY list, and registering a scadenza goes through
+ * "Modifica" → the SAME `PilotEditor` slide-over's "Ratings" section
+ * (`LiveExpiryEditor`, story 13.2) the Piloti table already uses. Assumes
+ * the editor is already OPEN (caller opens it once, adds every type in the
+ * same session — `LiveExpiryEditor` refetches its own catalogue/current list
+ * after each add, so a type registered earlier in the session correctly
+ * disappears from the chip strip for the next one).
+ */
+async function registerExpiryViaUi(page: Page, values: { typeId: string; expiresAt: string }): Promise<void> {
+  const ratingsEditor = page.getByTestId('pilot-ratings-editor');
+  await ratingsEditor.getByTestId(`expiry-chip-${values.typeId}`).click();
+  await ratingsEditor.getByTestId('expiry-add-date').fill(values.expiresAt);
+  await ratingsEditor.getByTestId('expiry-add-confirm').click();
+  // Wait for the add to actually settle (POST + `refresh()`'s refetch) before
+  // returning: the caller registers several types back to back in the SAME
+  // session, and starting the next chip click while this one is still
+  // in-flight (`expiry-add-form` still mounted) is a real race, not just
+  // test impatience — the new row is the definitive "done" signal.
+  await expect(ratingsEditor.getByTestId('expiry-add-form')).toHaveCount(0);
+  await expect(ratingsEditor.getByTestId(`expiry-row-${values.typeId}`)).toBeVisible();
 }
 
-test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
-  test('a staff actor registers scadenze via the UI with correct status badges, sees a duplicate rejected in-form, and a SCOPE_MISMATCH is rejected at the API; admin completes the 6.1 delete-constraint contract', async ({
+test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-driven since Story 13.3)', () => {
+  test('a staff actor registers scadenze via the PilotEditor UI with correct status badges, a duplicate/SCOPE_MISMATCH are rejected at the API; admin completes the 6.1 delete-constraint contract', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -148,8 +154,8 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
 
     // AC 1: register three scadenze (each its own run-unique, always-usable
     // type) with dates chosen to land in each of the three status bands —
-    // driven through the ACTUAL "Registra scadenza" form, by a STAFF actor
-    // (created via the API, same pattern as `expiry-types.spec.ts`) —
+    // driven through the ACTUAL "Modifica" → Ratings chip UI, by a STAFF
+    // actor (created via the API, same pattern as `expiry-types.spec.ts`) —
     // `expiries.manage` is granted to staff too (story 6.1).
     const okType = await createExpiryType(page);
     const expiringType = await createExpiryType(page);
@@ -163,38 +169,44 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
     await loginExpectingDashboard(page, staffEmail, staffPassword);
 
     await page.goto(`/it/dashboard/people/${personId}`);
+    await page.getByTestId('person-edit-button').click();
 
-    await registerExpiryViaUi(page, { typeName: okType.name, expiresAt: addDaysUtc(400) });
-    await expect(page.getByTestId('expiries-panel-feedback')).toBeVisible();
-
-    await registerExpiryViaUi(page, { typeName: expiringType.name, expiresAt: addDaysUtc(20) });
+    await registerExpiryViaUi(page, { typeId: okType.id, expiresAt: addDaysUtc(400) });
+    await registerExpiryViaUi(page, { typeId: expiringType.id, expiresAt: addDaysUtc(20) });
     // R6 (`Expiry.issuedAt` dropped): an already-expired scadenza is simply
     // legal to register — no more "issue date" to compare `expiresAt`
     // against (review F1's root cause).
-    await registerExpiryViaUi(page, { typeName: expiredType.name, expiresAt: addDaysUtc(-30) });
+    await registerExpiryViaUi(page, { typeId: expiredType.id, expiresAt: addDaysUtc(-30) });
 
-    const okRow = page.getByTestId('expiry-row').filter({ hasText: okType.name });
-    await expect(okRow.getByTestId('expiry-status-badge')).toHaveText('In regola');
+    // AC 1: a duplicate (person, type) has no UI path anymore — the chip
+    // itself disappears once registered (13.2's `LiveExpiryEditor` only
+    // offers UNregistered types) — verified directly against the endpoint
+    // the chip flow calls, same as the SCOPE_MISMATCH check below.
+    const duplicateResponse = await page.request.post('/api/v1/expiries', {
+      data: { personId, expiryTypeId: okType.id, expiresAt: addDaysUtc(500) },
+    });
+    expect(duplicateResponse.status()).toBe(409);
 
-    const expiringRow = page.getByTestId('expiry-row').filter({ hasText: expiringType.name });
-    await expect(expiringRow.getByTestId('expiry-status-badge')).toHaveText('In scadenza');
+    // Close the editor — the dossier's read-only "Scadenze" list refreshes
+    // (`edit-person-button.tsx`'s `onClose` calls `router.refresh()`).
+    await page.getByRole('button', { name: 'Chiudi' }).click();
 
-    const expiredRow = page.getByTestId('expiry-row').filter({ hasText: expiredType.name });
-    await expect(expiredRow.getByTestId('expiry-status-badge')).toHaveText('Scaduta');
+    const okRow = page.getByTestId('person-expiry-row').filter({ hasText: okType.name });
+    await expect(okRow).toContainText('In regola');
 
-    // AC 1: a duplicate (person, type) — shown IN-FORM as the shared
-    // conflict message ("one message per 409 cause" convention).
-    await registerExpiryViaUi(page, { typeName: okType.name, expiresAt: addDaysUtc(500) });
-    await expect(page.getByTestId('register-expiry-form-error')).toBeVisible();
-    await page.getByTestId('register-expiry-form').getByRole('button', { name: 'Annulla' }).click();
+    const expiringRow = page.getByTestId('person-expiry-row').filter({ hasText: expiringType.name });
+    await expect(expiringRow).toContainText('In scadenza');
+
+    const expiredRow = page.getByTestId('person-expiry-row').filter({ hasText: expiredType.name });
+    await expect(expiredRow).toContainText('Scaduta');
 
     // AC 1: an incompatible ambito (INSTRUCTORS on a pilot-only person) is
-    // rejected with the stable SCOPE_MISMATCH code (422). The register
-    // form's own select already filters this type out client-side (Dev
-    // Notes: only active types compatible with the person's active
-    // profiles are offered) — asserted directly against the API instead,
-    // the only way to actually reach that guard, same as the story's own
-    // service-level scope-check unit tests.
+    // rejected with the stable SCOPE_MISMATCH code (422). The editor's own
+    // chip strip already filters this type out client-side (only active
+    // types compatible with the person's active profiles are offered) —
+    // asserted directly against the API instead, the only way to actually
+    // reach that guard, same as the story's own service-level scope-check
+    // unit tests.
     const mismatchResponse = await page.request.post('/api/v1/expiries', {
       data: { personId, expiryTypeId: instructorsType.id, expiresAt: addDaysUtc(400) },
     });
@@ -219,30 +231,16 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1)', () => {
     await expect(page.getByTestId('rating-row').filter({ hasText: okType.name })).toContainText('Disattivato');
   });
 
-  test('story 12.11/13.1 (review R6): selecting a type with a configured validityMonths precompiles "Data scadenza" (today + months), still editable, and a validityMonths=0 type leaves it untouched', async ({
-    page,
-  }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const pilot = uniquePerson('Precompile');
-    const personId = await createPilotPerson(page, pilot);
-    const sixMonthType = await createExpiryType(page, 'ALL', 6);
-    const noExpiryType = await createExpiryType(page, 'ALL', 0);
-
-    await page.goto(`/it/dashboard/people/${personId}`);
-    await page.getByRole('button', { name: 'Registra scadenza' }).click();
-    const form = page.getByTestId('register-expiry-form');
-
-    // R6 dropped the "Data rilascio" field — the precompile base is TODAY, not a caller-entered issue date.
-    await form.getByLabel('Tipo di scadenza').selectOption(sixMonthType.name);
-    await expect(form.getByLabel('Data scadenza')).toHaveValue(addMonthsUtc(addDaysUtc(0), 6));
-
-    // Still editable — the precompiled value is a default, not a locked field.
-    await form.getByLabel('Data scadenza').fill('2026-08-01');
-    await expect(form.getByLabel('Data scadenza')).toHaveValue('2026-08-01');
-
-    // A validityMonths=0 (senza scadenza) type leaves the field untouched.
-    await form.getByLabel('Tipo di scadenza').selectOption(noExpiryType.name);
-    await expect(form.getByLabel('Data scadenza')).toHaveValue('2026-08-01');
-  });
+  // NOTE (story 13.3): the "story 12.11/13.1 (review R6): selecting a type
+  // with a configured validityMonths precompiles 'Data scadenza'" coverage
+  // that used to live here was dropped, not ported — it exercised the
+  // page-level `ExpiriesPanel` register form's `useEffect`-driven precompile
+  // (today + `validityMonths`), which no UI surface offers anymore: the
+  // replacement, `LiveExpiryEditor` (story 13.2, shared by the Piloti/
+  // Istruttori editors and now this page too), never had that precompile —
+  // its "add" date field always starts blank, chip-selected or not. That is
+  // a pre-existing gap in the shared 13.2 editor, not something introduced
+  // here; fixing `LiveExpiryEditor` itself is out of this story's scope
+  // (flagged in the Dev Agent Record / review notes instead of silently
+  // dropping the coverage).
 });

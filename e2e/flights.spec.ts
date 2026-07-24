@@ -250,9 +250,9 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
 
     // Estratto conto: a FLIGHT_CHARGE row, negative, same total.
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
-    const statementRow = page.locator('tbody tr').filter({ hasText: 'Addebito volo' });
+    const statementRow = page.getByTestId('account-movement-row').filter({ hasText: 'Addebito volo' });
     await expect(statementRow).toContainText(/-200,00\s€/);
-    await expect(page.getByTestId('account-statement-balance')).toContainText(/-200,00\s€/);
+    await expect(page.getByTestId('account-balance')).toContainText(/-200,00\s€/);
   });
 
   test('orari decollo/atterraggio derivano la durata (contaore ormai solo informativo); a SCHOOL flight with an instructor charges both and sums the total', async ({

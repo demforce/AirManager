@@ -97,7 +97,7 @@ export type PilotEditorLabels = {
   errors: { required: string; generic: string; conflictEmail: string };
 };
 
-type ToastLabels = {
+export type ToastLabels = {
   created: string;
   updated: string;
   archived: string;

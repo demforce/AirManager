@@ -93,15 +93,15 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     const personId = await createPilotPerson(page, person);
 
     await page.goto(`/it/dashboard/people/${personId}/account`);
-    await expect(page.getByTestId('account-statement-balance')).toHaveText(/0,00\s€/);
+    await expect(page.getByTestId('account-balance')).toHaveText(/0,00\s€/);
 
     // Rettifica from the header action (standalone, AC 1: motivo obbligatorio).
     await page.getByRole('button', { name: 'Registra rettifica' }).click();
     await submitAdjustment(page, '-250', 'Addebito pacchetto ore errato');
 
     // Balance and statement refresh server-side (router.refresh).
-    await expect(page.getByTestId('account-statement-balance')).toHaveText(/-250,00\s€/);
-    const rows = page.locator('tbody tr');
+    await expect(page.getByTestId('account-balance')).toHaveText(/-250,00\s€/);
+    const rows = page.getByTestId('account-movement-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('Rettifica');
     await expect(rows.first()).toContainText('Addebito pacchetto ore errato');
@@ -128,7 +128,7 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     await page.goto(`/it/dashboard/people/${personId}/account`);
     await page.getByRole('button', { name: 'Registra rettifica' }).click();
     await submitAdjustment(page, '-10', 'Conguaglio carburante');
-    await expect(page.getByTestId('account-statement-balance')).toHaveText(/-260,00\s€/);
+    await expect(page.getByTestId('account-balance')).toHaveText(/-260,00\s€/);
 
     // Give a would-be (wrong) second email time to arrive, then assert the count is unchanged.
     await page.waitForTimeout(1_500);
@@ -144,7 +144,7 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     await recordTopUp(page, personId, 10000); // +100,00 € — the movement to correct.
 
     await page.goto(`/it/dashboard/people/${personId}/account`);
-    const topUpRow = page.locator('tbody tr').filter({ hasText: 'Ricarica' });
+    const topUpRow = page.getByTestId('account-movement-row').filter({ hasText: 'Ricarica' });
     await topUpRow.getByRole('button', { name: 'Rettifica questo movimento' }).click();
     // The panel names the linked original movement.
     await expect(page.getByTestId('account-adjustment-form')).toContainText('Collegata al movimento del');
@@ -156,8 +156,8 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     await expect(page.getByTestId('adjustment-badge')).toHaveText(/Rettifica del movimento del/);
     // The original is intact (still listed) but can no longer be adjusted
     // again — the row action disappears (reversalOfId is unique).
-    await expect(page.locator('tbody tr')).toHaveCount(2);
-    await expect(page.locator('tbody tr').filter({ hasText: 'Ricarica' }).getByRole('button', { name: 'Rettifica questo movimento' })).toHaveCount(0);
+    await expect(page.getByTestId('account-movement-row')).toHaveCount(2);
+    await expect(page.getByTestId('account-movement-row').filter({ hasText: 'Ricarica' }).getByRole('button', { name: 'Rettifica questo movimento' })).toHaveCount(0);
     // 100 → 0 stays in the "ok" band: no alert email for this person.
     expect(await countMailpitMessagesTo(person.email)).toBe(0);
   });
