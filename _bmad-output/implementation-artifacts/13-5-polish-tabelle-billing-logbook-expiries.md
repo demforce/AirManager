@@ -1,5 +1,5 @@
 ---
-baseline_commit: b57b26b
+baseline_commit: f62151d
 ---
 
 # Story 13.5: Polish tabelle — billing + logbook + expiries (filtri free-text, export dropdown, rinomine, colonne)
