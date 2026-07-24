@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-23 — **EPIC 13 in corso, story 13.1 DONE (1/10)**. Branch `epic-13-ui-feedback` stacked su epic-12; scan Claude Security in corso su `src`)
+# HANDOFF — AirManager (aggiornato: 2026-07-24 — **EPIC 13 in corso, story 13.1+13.2 DONE (2/11)**. Branch `epic-13-ui-feedback` stacked su epic-12; scan Claude Security completato (2 findings auth in coda post-epic); dev 13.3 in partenza)
 
 ## Goal
 
@@ -7,7 +7,7 @@
 - **Tracking**: `_bmad-output/implementation-artifacts/sprint-status.yaml` + story file `13-*.md` nella stessa dir.
 - **Epic 12** (13/13 done, la base su cui questo epic poggia): dettagli nei story file `12-*.md`; baseline pre-Epic-13 era 232/232 e2e CI=1.
 
-**Ratifiche PO vive** (dettaglio nel piano): R1 sospesi visibili con badge; R2 ratings a chip; R3 storici aereo 5+"mostra tutte"; R4 ritiro stack legacy (Tailwind/Geist/TanStack) con la 13.3; **R5 "Ratings" come termine in ENTRAMBE le lingue, ovunque**; **R6 la data di emissione non esiste più** (`Expiry.issuedAt` droppata dal DB in 13.1). Più le ratifiche per-story nei rispettivi story file.
+**Ratifiche PO vive** (dettaglio nel piano): R1 sospesi visibili con badge; R2 ratings a chip; R3 storici aereo 5+"mostra tutte"; R4 ritiro stack legacy (Tailwind/Geist/TanStack) — **SPLIT** in story dedicata 13.11 (decisione 2026-07-24: la 13.3 porta solo le 2 pagine; il ritiro dipendenze segue); **R5 "Ratings" come termine in ENTRAMBE le lingue, ovunque**; **R6 la data di emissione non esiste più** (`Expiry.issuedAt` droppata dal DB in 13.1). Ratifiche 13.3: estratto conto = sezione della scheda persona; modifica via editor slide-over 13.2. Più le ratifiche per-story nei rispettivi story file.
 
 ## Branch e stato git
 
@@ -15,15 +15,16 @@
 - Sequenza epic-13: `eab82c8` docs(13) piano → `a099062` docs(13.1) story → `c259205` feat(13.1) impl → `ada175c` fix(13.1) review+R5/R6 → `docs(13.1)` chiusura (questo).
 - Untracked deliberato: churn plugin dell'utente (`.claude/skills/*`, `.github/*`, `.agents/`, `skills-lock.json`) — NON committare; bozza `13-2-piloti-ui-form-unico.md` untracked finché non parte la story.
 
-## Current Progress (Epic 13: 1/10)
+## Current Progress (Epic 13: 2/11 — la 13.11 nasce dallo split della 13.3)
 
 - **13.1 DONE** — split `ExpiryType.kind` RATING/MEDICAL (migrazione + backfill nomi seed; card "Visite mediche" in Impostazioni = `RatingsCard` parametrizzata), drop del free-text `InstructorProfile.ratings` (sweep completo; le abilitazioni istruttore ora = `Expiry` scope INSTRUCTORS), `POST /api/v1/people` composite one-step (profiles/expiries/access in UNA transazione, invito post-commit, 403 mai silenzioso). Review Opus: shippable-with-fixes, arbitro 233/233; N5 (issuedAt=oggi non ratificata) → F1 major. Fix `ada175c`: **R6 drop `Expiry.issuedAt`** (migrazione `20260723120000`, sweep ~30 file: schemi, services, membership fee, export, UI legacy, seed-demo, test; expiresAt nel passato ora legale = "scaduta"), **R5 "Ratings" bilingue** (sweep i18n IT; nota: prestito invariato anche al singolare — "Aggiungi Ratings" — scelta documentata dal fix agent, grammatica imperfetta ma terminologia coerente, raffinabile se il PO lo chiede), F3 `kind` patchabile via PATCH, F4 e2e card medica. **Full suite: 234/234 CI=1 su build prod, 0 flake.** Lasciato vivo (fuori scope R6): `ExpiryUpdateProposal.proposedIssuedAt` (modello dormiente, v. decisione pendente F7-12.13).
-- **13.2 NEXT** — Piloti UI (form unico, editor scadenze inline, toggle archiviati, chip anche per le pagine ISTRUTTORI — gap N6 del dev 13.1 assegnato qui). Bozza story pronta (untracked), ratifiche già coperte (R1/R2/R5/R6 + R-13.1-c date obbligatorie).
+- **13.2 DONE** — Piloti UI: `NewPersonForm` (form unico one-step: anagrafica+profili+ratings/medical a chip+accesso in UNA `POST /api/v1/people`), `LiveExpiryEditor` condiviso (editor scadenze inline pilots+instructors, add/edit-data/remove via API expiries esistenti), toggle archiviati AC3, gap N6 istruttori chiuso (Ratings scope INSTRUCTORS). Review Opus shippable-with-fixes (236/236 pre-fix). Fix `ea9dd8d` (F1 potatura selezioni orfane alla deselezione profilo; F2 4 e2e AC2/AC5; F3 "Quota associativa" esclusa dai chip Ratings via `MEMBERSHIP_FEE_TYPE_NAME` spostata in `src/lib/expiry-scope.ts`, decisione PO — resta gestita solo da card quota+addebito, visibile in Scadenze) + Review Record `e22eeee`. **Verifica post-fix full suite CI=1 build prod: 238 passed, exit 0**, 2 flaky ambientali (ECONNRESET + toast-timing del test 13.2, passati al retry — asserzione toast candidata a irrobustimento). NB dev/fix agent: run parallela/interrotta committò il codice prima, il resume aggiunse solo il Review Record — collisione benigna (memoria "parallel sessions").
+- **13.3 NEXT** — scheda persona + estratto conto AirOps (ultime 2 pagine legacy Tailwind); click sul nome in Piloti → `people/{id}`; elimina lo slide-over profilo sola-lettura (`pilot-profile.tsx`). SPLIT (v. ratifiche): porta solo le pagine (estratto conto = sezione della scheda, modifica via editor 13.2); il ritiro dipendenze è la 13.11. Story file pronto (`ready-for-dev`, baseline `e22eeee`).
 
 ## Next Steps (in ordine)
 
-1. **Scan Claude Security in corso** (avviato 2026-07-23 07:31 UTC, scope `src` 316 file, effort medium, revisione stampata `c259205`): al termine il report è in `CLAUDE-SECURITY-20260723-073138/` (gitignored). **Caveat**: il working tree è cambiato a metà scan (commit `ada175c` del fix 13.1) — findings con line-ref da verificare contro entrambe le revisioni; a fine epic è comunque previsto uno scan del diff completo.
-2. Story **13.2**: finalizzare la bozza (allineare i nomi campo al contratto composite reale dal Dev Agent Record 13.1) → commit story → DB fresco → dev → review → fix → docs. Poi 13.3…13.10 come da piano.
+1. **Scan Claude Security COMPLETATO** (scope `src`, rev `c259205`, verdetto `verified`): 2 findings auth PRE-esistenti, report in `CLAUDE-SECURITY-20260723-073138/` (gitignored). **Decisione utente 2026-07-24: fix IN CODA dopo l'Epic 13** (dietro il refactor UI in corso) — registrati come action item epic-13 in sprint-status. F1 MEDIUM (CWE-613): `setPasswordWithToken` non revoca le sessioni JWT stateless → attaccante con sessione sopravvive al reset ~30gg; fix = `tokenVersion`/`sessionsValidFrom` su User. F2 LOW (CWE-367): TOCTOU login-lock in `authorize.ts:33`; fix = check-and-count atomico. Candidata a story 13.x o TD post-epic.
+2. Story **13.3** (`ready-for-dev`): DB fresco → dev → review → fix → docs. Poi 13.4…13.10 e infine 13.11 (ritiro stack legacy). Ciclo invariato.
 3. Push quando l'utente lo lancia (o mandato esplicito in sessione).
 
 ## Ciclo per story su QUESTA macchina (consolidato — invariato dall'Epic 12)

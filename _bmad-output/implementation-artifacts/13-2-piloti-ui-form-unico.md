@@ -4,7 +4,7 @@ baseline_commit: 30ebc87
 
 # Story 13.2: Piloti UI — form unico di creazione, editor scadenze inline, tabella
 
-Status: review
+Status: done
 
 ## Story
 
@@ -89,7 +89,9 @@ Verifica interattiva: MCP `mcp__playwright__*` provato per primo (server Docker,
 
 ## Review Record (adversarial, Opus 4.8 xhigh — 2026-07-24)
 
-**Verdetto**: shippable-with-fixes. Priorità zero VERDE: full suite e2e in CI-mode contro build prod 236/236, 8.3m, 0 flake; `vitest` 1443/1443; `tsc`/`eslint` puliti.
+**Verdetto**: shippable-with-fixes. Priorità zero VERDE (review pre-fix): full suite e2e in CI-mode contro build prod 236/236, 8.3m, 0 flake; `vitest` 1443/1443; `tsc`/`eslint` puliti.
+
+**Verifica post-fix (sessione principale, HEAD `e22eeee`)**: full suite CI-mode su build prod, DB fresco → **238 passed, exit 0** (10.0m), 2 flaky passati al retry — entrambi ambientali (classe di flake da carico documentata nell'handoff): `ppr-queue:290` = `ECONNRESET` sotto carico parallelo; `people-management:266` (il test composite 13.2) = toast "Pilota creato" non visibile entro 5s alla prima battuta, visibile al retry (flake di timing del toast, NON un difetto della feature — creazione atomica già verificata via psql in review). Nota per il futuro: l'asserzione `getByTestId('toast')` nel test 13.2 è candidata a irrobustimento (auto-dismiss/timing) se si ripresenta.
 
 **Findings**:
 

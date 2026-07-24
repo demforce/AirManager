@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-24 (story 13.2 dev complete, in review — form unico one-step create (NewPersonForm: anagrafica+profili+ratings/medical chip+accesso in UNA POST /api/v1/people), editor scadenze inline (LiveExpiryEditor condiviso pilots/instructors, aggiungi/modifica/rimuovi via API expiries esistenti), toggle archiviati AC3, gap N6 istruttori chiuso (Ratings scope INSTRUCTORS). npm run gates verde, e2e toccate 52/52 verdi. Prossima: review adversarial 13.2)
+last_updated: 2026-07-24 (story 13.2 DONE — form unico one-step create + editor scadenze inline + toggle archiviati + gap N6 istruttori; review Opus shippable-with-fixes, fix ea9dd8d (F1 potatura selezioni orfane, F2 4 e2e AC2/AC5, F3 quota esclusa dai chip via MEMBERSHIP_FEE_TYPE_NAME) + Review Record e22eeee; verifica post-fix full suite CI=1 build prod 238 passed exit 0, 2 flaky ambientali. Split 13.3: nasce 13.11 (ritiro stack legacy). Prossima: dev 13.3 scheda persona/estratto conto AirOps)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -149,8 +149,8 @@ development_status:
   # Piano: docs/superpowers/plans/2026-07-22-epic-13-ui-feedback.md
   epic-13: in-progress
   13-1-piloti-backend-ratings-medical-create: done
-  13-2-piloti-ui-form-unico: review
-  13-3-scheda-persona-estratto-conto-ritiro-legacy: backlog
+  13-2-piloti-ui-form-unico: done
+  13-3-scheda-persona-estratto-conto-airops: ready-for-dev
   13-4-flotta-toggle-storici-owner: backlog
   13-5-polish-tabelle-billing-logbook-expiries: backlog
   13-6-ppr-movimenti: backlog
@@ -158,6 +158,10 @@ development_status:
   13-8-shell-misc: backlog
   13-9-dark-theme-pass: backlog
   13-10-mobile-pass: backlog
+  # 13.11: nata dallo split della 13.3 (decisione utente 2026-07-24) — ritiro completo
+  # stack legacy: DataTable in new-booking-form/aircraft-editor, ExportButton in ExportMenu,
+  # search-combobox->airops.css (+ fix font logbook), poi Tailwind/Geist/TanStack fuori da package.json
+  13-11-ritiro-stack-legacy: backlog
   epic-13-retrospective: optional
 
 action_items:
