@@ -9,8 +9,12 @@ if (!SEED_PASSWORD) {
   throw new Error('e2e/account-statement.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
 
-/** Same login helper as person-detail.spec.ts / accounts-topups.spec.ts. */
+/** Same login helper as person-detail.spec.ts / accounts-topups.spec.ts.
+ * Clears cookies first so a re-login (this spec switches roles mid-test) is not
+ * bounced back to /dashboard by the previous session — which would leave the
+ * login form absent and time out the field fill. Harmless on a first login. */
 async function loginExpectingDashboard(page: Page, email: string): Promise<void> {
+  await page.context().clearCookies();
   await page.goto('/it/login');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(SEED_PASSWORD!);
