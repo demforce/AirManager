@@ -86,11 +86,14 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
     return;
   }
 
-  // Story 13.3 (AC 2): `getAccountOverview`/`listAccountMovements`/
-  // `listPersonExpiries` share the EXACT same `people.read`-OR-own-access
-  // rule as `getPerson` (`assertReadAccess`/`listPersonExpiries`'s own
-  // check) — grouped in the same try/catch as defense in depth (AD-5),
-  // same convention the retired standalone `/account` page used.
+  // Story 13.3 (AC 2): the readers re-check access themselves, grouped in one
+  // try/catch as defense in depth (AD-5), same convention the retired
+  // standalone `/account` page used. Note the rules are NOT identical:
+  // `getPerson`/`getAccountOverview`/`listAccountMovements` gate on
+  // `people.read`-OR-own, while `listPersonExpiries` gates on
+  // `expiries.manage`-OR-own. Harmless today (no role holds `people.read`
+  // without `expiries.manage`), but if that ever diverges, an expiries
+  // Forbidden would redirect the whole dossier — a latent coupling to revisit.
   let person;
   let overview;
   let statement;

@@ -84,6 +84,15 @@ test.describe('Account statement (Story 3.2; "Estratto conto" section, Story 13.
   });
 
   test('the seeded pilot opens "Il mio conto": balance and movements visible, "registrato da" column absent (AC 1)', async ({ page }) => {
+    // The seeded pilot's base account has no movements (only seed-demo records
+    // top-ups, and e2e does not use it), so give it a real one as admin — the
+    // pilot cannot top up their own account. Story 13.3: the AirOps estratto
+    // renders an empty-state <p> instead of a placeholder row, so the movement
+    // row assertion below needs an actual movement to exist.
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    const pilotPersonId = await ownPersonId(page);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await recordTopUp(page, pilotPersonId, 10000); // 100,00 €
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
     await page.getByRole('link', { name: 'Il mio conto' }).click();
