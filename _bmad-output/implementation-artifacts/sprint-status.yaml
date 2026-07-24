@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-24 (story 13.2 DONE — form unico one-step create + editor scadenze inline + toggle archiviati + gap N6 istruttori; review Opus shippable-with-fixes, fix ea9dd8d (F1 potatura selezioni orfane, F2 4 e2e AC2/AC5, F3 quota esclusa dai chip via MEMBERSHIP_FEE_TYPE_NAME) + Review Record e22eeee; verifica post-fix full suite CI=1 build prod 238 passed exit 0, 2 flaky ambientali. Split 13.3: nasce 13.11 (ritiro stack legacy). Prossima: dev 13.3 scheda persona/estratto conto AirOps)
+last_updated: 2026-07-24 (story 13.3 DONE — scheda persona + estratto conto (sezione) in AirOps, click nome → people/{id}, slide-over profilo eliminato, modifica via PilotEditor 13.2. Review Opus shippable-with-fixes: F1 major (full suite ROSSA deterministica, non flake — test conto pilota-seed su conto vuoto) fixato + 2° fix clearCookies re-login → full suite CI=1 build prod 240 passed exit 0. F2 feature-loss (precompile validityMonths) = action item follow-up. N4 confermato: 0 consumer legacy residui → 13.11 più piccola. Prossima: dev 13.4 flotta)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -150,8 +150,8 @@ development_status:
   epic-13: in-progress
   13-1-piloti-backend-ratings-medical-create: done
   13-2-piloti-ui-form-unico: done
-  13-3-scheda-persona-estratto-conto-airops: ready-for-dev
-  13-4-flotta-toggle-storici-owner: backlog
+  13-3-scheda-persona-estratto-conto-airops: done
+  13-4-flotta-toggle-storici-owner: in-progress
   13-5-polish-tabelle-billing-logbook-expiries: backlog
   13-6-ppr-movimenti: backlog
   13-7-pianificazione: backlog
@@ -165,6 +165,10 @@ development_status:
   epic-13-retrospective: optional
 
 action_items:
+  - epic: 13
+    action: "F2 review 13.3 (feature-loss, follow-up ACCETTATO): registrando una scadenza dalla scheda persona/Piloti/Istruttori il campo 'Data scadenza' non si precompila più da ExpiryType.validityMonths (comodità che il vecchio ExpiriesPanel a pagina aveva; LiveExpiryEditor 13.2 non l'ha mai avuta). Fix = aggiungere il precompile all'add-row del LiveExpiryEditor condiviso (src/components/dashboard/expiry-editor.tsx) — beneficia tutti e 3 i consumer. Da riproporre all'utente per decidere se farlo (mini-story) o lasciarlo."
+    owner: "post-13.3 (decisione utente)"
+    status: open
   - epic: 13
     action: "Claude Security scan 2026-07-23 (scope src, rev c259205, verified): 2 findings auth PRE-esistenti da fixare DOPO l'Epic 13 (decisione utente 2026-07-24: in coda dietro il refactor/UI in corso). F1 (MEDIUM CWE-613): setPasswordWithToken (auth-tokens.service.ts:207) non revoca le sessioni JWT stateless -> attaccante con sessione sopravvive al reset password ~30gg; fix = tokenVersion/sessionsValidFrom su User, bump in transazione, check in applyActiveRecheck. F2 (LOW CWE-367): TOCTOU isLoginLocked/recordFailedLoginAttempt (authorize.ts:33) -> burst concorrente supera il cap 10/finestra; fix = check-and-count atomico. Report completo (gitignored): CLAUDE-SECURITY-20260723-073138/. Candidata a story 13.x dedicata o TD post-epic."
     owner: "post-Epic 13"

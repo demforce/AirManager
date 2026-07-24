@@ -4,7 +4,7 @@ baseline_commit: e22eeee
 
 # Story 13.3: Scheda persona + estratto conto in AirOps, click sul nome, rimozione slide-over profilo
 
-Status: review
+Status: done
 
 ## Story
 
@@ -116,4 +116,4 @@ so that non ci siano più pagine con la vecchia UI Tailwind e ci sia UNA destina
 
 **Chiusura note dev** (verificate LIVE dal reviewer): N1 RBAC estratto conto CHIUSA (matrice 5 ruoli corretta, degrada a redirect/404, nessun leak cross-persona; solo il commento era impreciso → F3); N2 bugfix key-remount CHIUSO (Modifica apre l'editor popolato, salva, la scheda si aggiorna); N3 `/account` redirect CHIUSO (preserva `?page=`, NON è un bypass RBAC — la destinazione ri-autorizza); **N4 CONFERMATO: ZERO consumer legacy residui in `src/`** — `DataTable`/`ExportButton` non sono più importati da nessuna pagina, INCLUSI `new-booking-form`/`aircraft-editor` (rilevante per lo scope della 13.11: il ritiro delle dipendenze non ha più consumer applicativi da portare, solo i 2 componenti + il wiring in `layout.tsx`/`ExportMenu`); N5 feature-loss → F2; N6 flakiness ambientale (ma il vero rosso era F1, deterministico); N7 tema dark CONFERMATO; N8 i18n (solo rimozione `PilotsPage.profile.*`).
 
-**Verifica post-fix**: `npm run gates` + full suite `CI=1` su build prod → v. Change Log sotto.
+**Verifica post-fix** (sessione principale): `npm run gates` verde (1443 unit). Full suite `CI=1` su build prod, DB fresco: primo giro ancora rosso (il fix F1 introduceva 3 login e senza logout il re-login veniva rimbalzato dalla sessione attiva → timeout `fill`, deterministico), secondo fix `a90c22c` (`clearCookies()` in testa al login helper) → **240 passed, exit 0, 0 flaky**, catena `settings`+`booking-window` (i 9 test prima saltati) girata e verde. Lezione: un fix di test può introdurre un nuovo fallimento deterministico — sempre ri-verificare la full suite, mai chiudere su un run parziale.
