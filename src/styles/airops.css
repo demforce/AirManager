@@ -322,6 +322,8 @@ button{ font: inherit; color: inherit; }
   border-color: var(--ink);
 }
 .btn.primary:hover{ background: oklch(from var(--ink) calc(l + 0.05) c h); }
+.btn.on{ background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.on:hover{ background: var(--accent-soft); }
 .btn svg{ width: 14px; height: 14px; }
 a{ color: var(--info); text-decoration: none; }
 a:hover{ color: var(--ink); }
@@ -662,6 +664,27 @@ html[data-theme="dark"] .badge.ok{ color: oklch(0.88 0.1 155); }
 html[data-theme="dark"] .badge.warn{ color: oklch(0.9 0.1 75); }
 html[data-theme="dark"] .badge.bad{ color: oklch(0.85 0.12 25); }
 html[data-theme="dark"] .badge.info{ color: oklch(0.86 0.1 245); }
+
+/* ---------- expiry chips (story 13.2 — Ratings/Visita medica pickers) ---------- */
+.expiry-chip{
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t), color var(--t);
+}
+.expiry-chip:hover{ border-color: var(--border-strong); }
+.expiry-chip.selected{
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
 
 /* ---------- fleet ---------- */
 .fleet-grid{

@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-23 (story 13.1 DONE — split ExpiryType.kind RATING/MEDICAL, composite create one-step, review Opus shippable-with-fixes con arbitro 233/233; fix ada175c: R6 drop Expiry.issuedAt dal DB con sweep ~30 file, R5 "Ratings" bilingue ovunque, F3 kind patchabile, F4 e2e card medica → full suite 234/234 CI=1 build prod. Prossima: 13.2 Piloti UI)
+last_updated: 2026-07-24 (story 13.2 dev complete, in review — form unico one-step create (NewPersonForm: anagrafica+profili+ratings/medical chip+accesso in UNA POST /api/v1/people), editor scadenze inline (LiveExpiryEditor condiviso pilots/instructors, aggiungi/modifica/rimuovi via API expiries esistenti), toggle archiviati AC3, gap N6 istruttori chiuso (Ratings scope INSTRUCTORS). npm run gates verde, e2e toccate 52/52 verdi. Prossima: review adversarial 13.2)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -149,7 +149,7 @@ development_status:
   # Piano: docs/superpowers/plans/2026-07-22-epic-13-ui-feedback.md
   epic-13: in-progress
   13-1-piloti-backend-ratings-medical-create: done
-  13-2-piloti-ui-form-unico: in-progress
+  13-2-piloti-ui-form-unico: review
   13-3-scheda-persona-estratto-conto-ritiro-legacy: backlog
   13-4-flotta-toggle-storici-owner: backlog
   13-5-polish-tabelle-billing-logbook-expiries: backlog
@@ -161,6 +161,10 @@ development_status:
   epic-13-retrospective: optional
 
 action_items:
+  - epic: 13
+    action: "Claude Security scan 2026-07-23 (scope src, rev c259205, verified): 2 findings auth PRE-esistenti da fixare DOPO l'Epic 13 (decisione utente 2026-07-24: in coda dietro il refactor/UI in corso). F1 (MEDIUM CWE-613): setPasswordWithToken (auth-tokens.service.ts:207) non revoca le sessioni JWT stateless -> attaccante con sessione sopravvive al reset password ~30gg; fix = tokenVersion/sessionsValidFrom su User, bump in transazione, check in applyActiveRecheck. F2 (LOW CWE-367): TOCTOU isLoginLocked/recordFailedLoginAttempt (authorize.ts:33) -> burst concorrente supera il cap 10/finestra; fix = check-and-count atomico. Report completo (gitignored): CLAUDE-SECURITY-20260723-073138/. Candidata a story 13.x dedicata o TD post-epic."
+    owner: "post-Epic 13"
+    status: open
   - epic: 12
     action: "F5 review 12.11: registrare nel registry OpenAPI le 8 route nuove della 12.11 (settings/{club,scheduling,smtp,smtp/test-email,metar-station,membership-fee}, metar, expiry-alerts/trigger, people/{id}/membership-fee) — registry.test.ts usa arrayContaining e non lo segnala"
     owner: "story 12.13 (cleanup sweep)"

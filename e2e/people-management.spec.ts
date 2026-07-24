@@ -113,8 +113,8 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(person.lastName)}`);
     await expect(rowFor(page, person.lastName)).toHaveCount(0);
 
-    // With the archived filter: still there.
-    await page.getByLabel('Mostra archiviati').check();
+    // With the archived filter (AC 3, story 13.2: a toggle button, not a checkbox).
+    await page.getByTestId('pilots-toggle-archived').click();
     const archivedRow = rowFor(page, person.lastName);
     await expect(archivedRow).toBeVisible();
 
@@ -126,7 +126,7 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     await expect(page.getByTestId('toast').filter({ hasText: 'ripristinata' })).toBeVisible();
     await page.getByRole('button', { name: 'Chiudi' }).first().click();
 
-    await page.getByLabel('Mostra archiviati').uncheck();
+    await page.getByTestId('pilots-toggle-archived').click();
     await expect(rowFor(page, person.lastName)).toBeVisible();
   });
 
@@ -233,5 +233,114 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     expect(await response.json()).toEqual({
       error: { code: 'UNAUTHENTICATED', message: expect.any(String) },
     });
+  });
+});
+
+// --- One-step create form + inline expiries editor (Story 13.2) ------------
+
+type MailpitMessageSummary = { ID: string; Subject: string };
+type MailpitFullMessage = { Text: string; Subject: string };
+const MAILPIT_API = 'http://localhost:8025/api/v1';
+
+/** Same Mailpit-polling helper as `e2e/api-v1.spec.ts`'s `waitForMailpitMessage`. */
+async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
+    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
+    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
+
+    if (found) {
+      const messageResponse = await fetch(`${MAILPIT_API}/message/${found.ID}`);
+      return (await messageResponse.json()) as MailpitFullMessage;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
+}
+
+test.describe('One-step create form + inline expiries editor (Story 13.2)', () => {
+  test('creates a pilot with profile, a rating, a medical expiry and access in ONE composite submit (AC 1/6)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('Composite');
+
+    // Real catalogue ids, scoped to PILOTS (the profile this test activates) — same convention as `e2e/api-v1.spec.ts`'s own composite-create test.
+    const ratingTypesResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    const ratingTypes = (await ratingTypesResponse.json()) as Array<{ id: string; scope: string }>;
+    const ratingType = ratingTypes.find((type) => type.scope === 'PILOTS');
+    expect(ratingType).toBeDefined();
+
+    const medicalTypesResponse = await page.request.get('/api/v1/expiry-types?kind=MEDICAL');
+    const medicalTypes = (await medicalTypesResponse.json()) as Array<{ id: string; scope: string }>;
+    const medicalType = medicalTypes.find((type) => type.scope === 'PILOTS');
+    expect(medicalType).toBeDefined();
+
+    const accessEmail = `composite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
+
+    await page.goto('/it/dashboard/pilots');
+    await page.getByTestId('pilots-new-button').click();
+    const form = page.getByTestId('pilot-identity-form');
+    await form.getByLabel('Nome', { exact: true }).fill(person.firstName);
+    await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
+    await form.getByLabel('Email', { exact: true }).fill(person.email);
+
+    // Profile activation (pilot), inline in the SAME form (AC 1).
+    await form.getByTestId('new-person-activate-pilot').check();
+    await form.getByTestId('new-person-pilot-license-number').fill('IT-PPL-E2E');
+    await form.getByTestId('new-person-pilot-license-type').fill('PPL(A)');
+
+    // A rating chip + mandatory date (R-13.1-c), and a medical chip + date, both in the SAME section (AC 1/2).
+    await form.getByTestId(`rating-chip-${ratingType!.id}`).click();
+    await form.getByTestId(`rating-date-${ratingType!.id}`).fill('2099-01-01');
+    await form.getByTestId(`medical-chip-${medicalType!.id}`).click();
+    await form.getByTestId(`medical-date-${medicalType!.id}`).fill('2099-06-01');
+
+    // Access (admin-only), bundled into the same composite payload.
+    await form.getByTestId('new-person-grant-access').check();
+    await form.getByTestId('new-person-access-email').fill(accessEmail);
+    await form.getByTestId('new-person-access-role-PILOT').check();
+
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toBeVisible();
+
+    // ONE row, created by the ONE composite call (no partial creation visible).
+    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(person.lastName)}`);
+    const row = rowFor(page, person.lastName);
+    await expect(row).toBeVisible();
+    await expect(row.getByText('Senza accesso')).toHaveCount(0);
+
+    const inviteEmail = await waitForMailpitMessage(accessEmail, 'invitato');
+    expect(inviteEmail.Text).toContain('set-password');
+  });
+
+  test('inline editor: adds and removes a rating via chip + date, without leaving the person editor (AC 2)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('Inline');
+    await createPilot(page, person);
+
+    // No profile activated on this bare pilot -> only `ALL`-scoped chips are offered (the scope filter, AC 1/2).
+    const ratingTypesResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    const ratingTypes = (await ratingTypesResponse.json()) as Array<{ id: string; scope: string }>;
+    const ratingType = ratingTypes.find((type) => type.scope === 'ALL');
+    expect(ratingType).toBeDefined();
+
+    const row = rowFor(page, person.lastName);
+    await row.getByRole('button', { name: 'Modifica' }).click();
+
+    const ratingsEditor = page.getByTestId('pilot-ratings-editor');
+    await ratingsEditor.getByTestId(`expiry-chip-${ratingType!.id}`).click();
+    await ratingsEditor.getByTestId('expiry-add-date').fill('2099-03-01');
+    await ratingsEditor.getByTestId('expiry-add-confirm').click();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingType!.id}`)).toBeVisible();
+
+    // The link to the standalone Scadenze page is gone (AC 2).
+    await expect(page.getByText('Gestisci in Scadenze')).toHaveCount(0);
+
+    await ratingsEditor.getByTestId(`expiry-remove-${ratingType!.id}`).click();
+    await ratingsEditor.getByTestId(`expiry-remove-confirm-${ratingType!.id}`).click();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingType!.id}`)).toHaveCount(0);
   });
 });

@@ -352,12 +352,37 @@
       "ratings": {
         "sectionTitle": "Ratings",
         "empty": "Nessuna scadenza registrata.",
-        "manageLink": "Gestisci in Scadenze",
         "status": {
           "ok": "Valida",
           "expiring": "In scadenza",
           "expired": "Scaduta"
-        }
+        },
+        "dateLabel": "Data di scadenza",
+        "addAction": "Aggiungi",
+        "cancel": "Annulla",
+        "save": "Salva",
+        "edit": "Modifica",
+        "remove": "Rimuovi",
+        "confirmRemove": "Rimuovere questa scadenza?",
+        "confirmYes": "Conferma",
+        "confirmCancel": "Annulla",
+        "requiredDate": "La data di scadenza è obbligatoria.",
+        "genericError": "Si è verificato un errore. Riprova."
+      },
+      "medical": {
+        "subHeading": "Visita medica",
+        "empty": "Nessuna visita medica registrata.",
+        "dateLabel": "Data di scadenza",
+        "addAction": "Aggiungi",
+        "cancel": "Annulla",
+        "save": "Salva",
+        "edit": "Modifica",
+        "remove": "Rimuovi",
+        "confirmRemove": "Rimuovere questa visita medica?",
+        "confirmYes": "Conferma",
+        "confirmCancel": "Annulla",
+        "requiredDate": "La data di scadenza è obbligatoria.",
+        "genericError": "Si è verificato un errore. Riprova."
       },
       "access": {
         "sectionTitle": "Accesso",
@@ -371,7 +396,9 @@
         "statusPending": "Invito in sospeso",
         "resendInvite": "Reinvia invito",
         "emailConflict": "Esiste già un utente con questa email.",
-        "genericError": "Si è verificato un errore. Riprova."
+        "genericError": "Si è verificato un errore. Riprova.",
+        "grantLabel": "Crea un accesso per questa persona",
+        "invalidEmail": "Inserisci un'email valida."
       },
       "archive": {
         "sectionTitle": "Archivio",
@@ -481,6 +508,26 @@
         "noValue": "—",
         "save": "Salva",
         "readOnlyHint": "Solo un amministratore può impostare la tariffa payout."
+      },
+      "ratings": {
+        "sectionTitle": "Ratings",
+        "empty": "Nessuna scadenza registrata.",
+        "status": {
+          "ok": "Valida",
+          "expiring": "In scadenza",
+          "expired": "Scaduta"
+        },
+        "dateLabel": "Data di scadenza",
+        "addAction": "Aggiungi",
+        "cancel": "Annulla",
+        "save": "Salva",
+        "edit": "Modifica",
+        "remove": "Rimuovi",
+        "confirmRemove": "Rimuovere questa scadenza?",
+        "confirmYes": "Conferma",
+        "confirmCancel": "Annulla",
+        "requiredDate": "La data di scadenza è obbligatoria.",
+        "genericError": "Si è verificato un errore. Riprova."
       },
       "readOnly": {
         "sectionTitle": "Riepilogo (sola lettura)",

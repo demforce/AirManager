@@ -13,7 +13,7 @@ import { z } from './zod-with-openapi';
  * assembled further down this file, once the per-profile-type request
  * schemas it embeds (`pilotProfileRequestSchema` etc.) exist.
  */
-const createPersonBaseSchema = z.object({
+export const createPersonBaseSchema = z.object({
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
   email: z.string().trim().toLowerCase().pipe(z.email()).nullish(),

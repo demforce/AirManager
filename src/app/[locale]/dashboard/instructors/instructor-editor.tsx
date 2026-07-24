@@ -13,9 +13,11 @@
  *
  * Story 13.1 (R-13.1-b): the free-text "abilitazioni" section (PUT
  * profiles/instructor) is REMOVED along with `InstructorProfile.ratings` —
- * abilitazioni now live as `Expiry` rows; a catalogue-driven chip
- * display/picker for them is out of scope here (story 13.2 covers the
- * pilot editor's own ratings chips).
+ * abilitazioni now live as `Expiry` rows. Story 13.2 (AC 5, gap N6 from
+ * 13.1) restores their display/editing here as a catalogue-driven chip
+ * picker (`LiveExpiryEditor`, `kind="RATING"`, scope INSTRUCTORS — the same
+ * component the pilot editor's own Ratings section uses, AC 2) — never free
+ * text.
  */
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
@@ -23,11 +25,16 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Field, Input, InputGroup } from '@/components/ui/field';
 import { SlideOver } from '@/components/ui/slide-over';
+import { LiveExpiryEditor, type LiveExpiryEditorLabels } from '@/components/dashboard/expiry-editor';
+import type { ProfileFlags } from '@/lib/expiry-scope';
 import { formatCents, parseCents } from '@/lib/money';
 import { updatePersonSchema, type UpdatePersonInput } from '@/lib/schemas/people';
 import { formatMinutes } from '@/lib/time';
 import { InstructorRatesPanel, type InstructorRatesPanelLabels } from './instructor-rates-panel';
 import type { InstructorRow } from './instructors-console';
+
+/** Instructor editor viewers are, by construction, an active INSTRUCTORS profile (this console only lists those) — no OTHER profile flag is known here, so the ratings picker only ever offers `INSTRUCTORS`/`ALL`-scoped catalogue types (AC 5's literal scope). */
+const INSTRUCTOR_PROFILE_FLAGS: ProfileFlags = { pilot: false, student: false, instructor: true };
 
 export type InstructorEditorLabels = {
   closeLabel: string;
@@ -44,6 +51,7 @@ export type InstructorEditorLabels = {
     loadError: string;
   };
   payoutRate: { sectionTitle: string; label: string; noValue: string; save: string; readOnlyHint: string };
+  ratings: { sectionTitle: string } & LiveExpiryEditorLabels;
   readOnly: { sectionTitle: string; hoursTotal: string; owedTotal: string };
   studentRate: InstructorRatesPanelLabels & { heading: string };
   errors: { generic: string; invalidRate: string };
@@ -126,6 +134,10 @@ export function InstructorEditor({
             toastLabels={toastLabels}
             onSaved={(patch) => applyPatch(patch)}
           />
+
+          <Section title={labels.ratings.sectionTitle}>
+            <LiveExpiryEditor personId={current.personId} kind="RATING" profiles={INSTRUCTOR_PROFILE_FLAGS} locale={locale} labels={labels.ratings} />
+          </Section>
 
           <Section title={labels.payoutRate.sectionTitle}>
             <PayoutRateForm

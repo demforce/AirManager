@@ -233,10 +233,16 @@ export function PilotsConsole({
         <div className="card-head">
           <div className="card-title">{labels.cardTitle}</div>
           <div className="spacer" />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--ink-2)' }}>
-            <input type="checkbox" checked={includeArchived} onChange={(event) => handleIncludeArchivedChange(event.target.checked)} />
+          <button
+            type="button"
+            className={`btn ${includeArchived ? 'on' : ''}`}
+            aria-pressed={includeArchived}
+            onClick={() => handleIncludeArchivedChange(!includeArchived)}
+            data-testid="pilots-toggle-archived"
+          >
+            {includeArchived ? <Icon.check /> : null}
             {labels.includeArchivedLabel}
-          </label>
+          </button>
           <div className="search" style={{ width: 260 }}>
             <Icon.search />
             <input

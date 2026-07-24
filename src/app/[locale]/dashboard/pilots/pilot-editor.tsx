@@ -1,17 +1,21 @@
 'use client';
 
 /**
- * Pilot slide-over editor (story 12.6, AC 3/4) — port of
+ * Pilot slide-over editor (story 12.6, AC 3/4; rebuilt story 13.2) — port of
  * `docs/design-reference/airops/src/People.jsx#PilotEditor` extended to
  * sections carrying the REAL domain concepts the prototype's flat
  * name/license/medical form has no counterpart for (same rationale as
  * `fleet/aircraft-editor.tsx`'s own extension over its own prototype):
- * anagrafica, profili (pilota/allievo/istruttore), certificazioni
- * (READ-ONLY — the registration write-path stays on the Scadenze page,
- * D13), accesso (ADMIN-only), archivio. Only the identity section shares a
- * Cancel/Submit pair with the create flow; every other section is
- * self-contained, closed only via the slide-over's own `X` — same
- * convention as `AircraftEditor`.
+ * anagrafica, profili (pilota/allievo/istruttore), ratings + visita medica
+ * (EDITABLE inline, story 13.2 AC 2 — was READ-ONLY through story 12.6),
+ * accesso (ADMIN-only), archivio.
+ *
+ * Story 13.2 (AC 1, "form unico"): the CREATE flow (`NewPersonForm` below)
+ * is ONE form bundling anagrafica + profile activation + ratings/medical
+ * chips + accesso into a SINGLE `POST /api/v1/people` composite call (the
+ * one-step API story 13.1 already built) — no more two-step
+ * create-then-edit. The EDIT flow keeps the existing per-section
+ * activate/save/deactivate forms (`ProfilesSection` etc., unchanged).
  */
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
@@ -23,10 +27,11 @@ import { Field, Input } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
-import { Link } from '@/i18n/navigation';
+import { fetchExpiryTypes, LiveExpiryEditor, type ExpiryCatalogEntry, type LiveExpiryEditorLabels } from '@/components/dashboard/expiry-editor';
+import { isExpiryScopeCompatible, type ProfileFlags } from '@/lib/expiry-scope';
 import { formatDateOnly } from '@/lib/time';
 import {
-  createPersonSchema,
+  createPersonBaseSchema,
   instructorProfileRequestSchema,
   pilotProfileRequestSchema,
   studentProfileRequestSchema,
@@ -37,7 +42,6 @@ import {
   type StudentProfileRequestInput,
   type UpdatePersonInput,
 } from '@/lib/schemas/people';
-import { groupExpiriesByTypeName, type ExpiryGroupSource } from './expiry-grouping';
 import type { PilotRow, PilotUser } from './pilots-console';
 
 export type PilotEditorLabels = {
@@ -67,7 +71,10 @@ export type PilotEditorLabels = {
     student: { title: string; courseStartDate: string };
     instructor: { title: string };
   };
-  ratings: { sectionTitle: string; empty: string; manageLink: string; status: { ok: string; expiring: string; expired: string } };
+  /** `sectionTitle` wraps BOTH the Ratings and the Visita medica editors (AC 2: "stessa sezione") — the rest mirrors `LiveExpiryEditorLabels`. */
+  ratings: { sectionTitle: string } & LiveExpiryEditorLabels;
+  /** `subHeading` is the in-section label above the medical picker (AC 2/1) — the rest mirrors `LiveExpiryEditorLabels`. */
+  medical: { subHeading: string } & LiveExpiryEditorLabels;
   access: {
     sectionTitle: string;
     noUser: string;
@@ -82,6 +89,9 @@ export type PilotEditorLabels = {
     resendInvite: string;
     emailConflict: string;
     genericError: string;
+    /** New person form only (story 13.2, AC 1): the "grant access" checkbox that folds the `access` block into the composite create. */
+    grantLabel: string;
+    invalidEmail: string;
   };
   archive: { sectionTitle: string; archive: string; unarchive: string; confirmArchive: string; confirmUnarchive: string; confirmYes: string; confirmCancel: string };
   errors: { required: string; generic: string; conflictEmail: string };
@@ -137,17 +147,17 @@ export function PilotEditor({ target, onClose, onMutated, canManageUsers, locale
   return (
     <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel}>
       {isNew ? (
-        <IdentitySection mode="new" labels={labels} toast={toast} toastLabels={toastLabels} onClose={onClose} onCreated={onMutated} />
+        <NewPersonForm labels={labels} toast={toast} toastLabels={toastLabels} canManageUsers={canManageUsers} onClose={onClose} onCreated={onMutated} />
       ) : current ? (
         <>
-          <IdentitySection mode="edit" pilot={current} labels={labels} toast={toast} toastLabels={toastLabels} onClose={onClose} onSaved={applyPatch} />
+          <IdentitySection pilot={current} labels={labels} toast={toast} toastLabels={toastLabels} onClose={onClose} onSaved={applyPatch} />
 
           <Section title={labels.profiles.sectionTitle}>
             <ProfilesSection personId={current.id} locale={locale} labels={labels.profiles} onChanged={(profiles) => applyPatch({ profiles })} />
           </Section>
 
           <Section title={labels.ratings.sectionTitle}>
-            <RatingsSection personId={current.id} labels={labels.ratings} locale={locale} />
+            <RatingsSection personId={current.id} profiles={current.profiles} ratingsLabels={labels.ratings} medicalLabels={labels.medical} locale={locale} />
           </Section>
 
           {canManageUsers ? (
@@ -185,55 +195,49 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-// --- Identity (anagrafica) --------------------------------------------------
+// --- Identity (anagrafica, EDIT mode) ---------------------------------------
 
-type IdentitySectionProps =
-  | { mode: 'new'; labels: PilotEditorLabels; toast: ToastHandle; toastLabels: ToastLabels; onClose: () => void; onCreated: () => void }
-  | {
-      mode: 'edit';
-      pilot: PilotRow;
-      labels: PilotEditorLabels;
-      toast: ToastHandle;
-      toastLabels: ToastLabels;
-      onClose: () => void;
-      onSaved: (patch: Partial<PilotRow>) => void;
-    };
-
-function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
-  const { labels } = props;
+function IdentitySection({
+  pilot,
+  labels,
+  toast,
+  toastLabels,
+  onClose,
+  onSaved,
+}: {
+  pilot: PilotRow;
+  labels: PilotEditorLabels;
+  toast: ToastHandle;
+  toastLabels: ToastLabels;
+  onClose: () => void;
+  onSaved: (patch: Partial<PilotRow>) => void;
+}): React.JSX.Element {
   const [formError, setFormError] = useState<string | null>(null);
-  const isNew = props.mode === 'new';
-
-  const defaultValues = isNew
-    ? { firstName: '', lastName: '', email: null, phone: null, address: null, fiscalCode: null }
-    : {
-        firstName: props.pilot.firstName,
-        lastName: props.pilot.lastName,
-        email: props.pilot.email,
-        phone: props.pilot.phone,
-        address: props.pilot.address,
-        fiscalCode: props.pilot.fiscalCode,
-      };
 
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<z.input<typeof createPersonSchema> | UpdatePersonInput, unknown, CreatePersonInput | UpdatePersonInput>({
-    resolver: zodResolver(isNew ? createPersonSchema : updatePersonSchema),
-    defaultValues,
+  } = useForm<UpdatePersonInput>({
+    resolver: zodResolver(updatePersonSchema),
+    defaultValues: {
+      firstName: pilot.firstName,
+      lastName: pilot.lastName,
+      email: pilot.email,
+      phone: pilot.phone,
+      address: pilot.address,
+      fiscalCode: pilot.fiscalCode,
+    },
   });
 
-  async function onSubmit(values: CreatePersonInput | UpdatePersonInput): Promise<void> {
+  async function onSubmit(values: UpdatePersonInput): Promise<void> {
     setFormError(null);
 
-    const response = isNew
-      ? await fetch('/api/v1/people', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) })
-      : await fetch(`/api/v1/people/${props.pilot.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(values),
-        });
+    const response = await fetch(`/api/v1/people/${pilot.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(values),
+    });
 
     if (!response.ok) {
       const code = await errorCodeOf(response);
@@ -252,23 +256,17 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
       profiles: { pilot: boolean; student: boolean; instructor: boolean };
     };
 
-    if (props.mode === 'new') {
-      props.toast.show(props.toastLabels.created, 'ok');
-      props.onClose();
-      props.onCreated();
-    } else {
-      props.toast.show(props.toastLabels.updated, 'ok');
-      props.onSaved({
-        firstName: updated.firstName,
-        lastName: updated.lastName,
-        email: updated.email,
-        phone: updated.phone,
-        address: updated.address,
-        fiscalCode: updated.fiscalCode,
-        archivedAt: updated.archivedAt,
-        profiles: updated.profiles,
-      });
-    }
+    toast.show(toastLabels.updated, 'ok');
+    onSaved({
+      firstName: updated.firstName,
+      lastName: updated.lastName,
+      email: updated.email,
+      phone: updated.phone,
+      address: updated.address,
+      fiscalCode: updated.fiscalCode,
+      archivedAt: updated.archivedAt,
+      profiles: updated.profiles,
+    });
   }
 
   return (
@@ -301,11 +299,374 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
       ) : null}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-        <button type="button" className="btn" onClick={props.onClose}>
+        <button type="button" className="btn" onClick={onClose}>
           {labels.cancel}
         </button>
         <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="pilot-identity-submit">
-          {isNew ? labels.submitCreate : labels.submitEdit}
+          {labels.submitEdit}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// --- New person — form unico (story 13.2, AC 1) ------------------------------
+
+const ALL_ROLES: readonly Role[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
+
+type NewPersonFormProps = {
+  labels: PilotEditorLabels;
+  toast: ToastHandle;
+  toastLabels: ToastLabels;
+  canManageUsers: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+};
+
+/** Chip strip + inline date fields for the CREATE form (story 13.2, AC 1) — no API call per selection (unlike `LiveExpiryEditor`): the whole batch travels in the ONE composite `POST /api/v1/people` at submit. */
+function NewExpiryChipGroup({
+  types,
+  selections,
+  onToggle,
+  onDateChange,
+  dateLabel,
+  testPrefix,
+}: {
+  types: ExpiryCatalogEntry[];
+  selections: Record<string, string>;
+  onToggle: (typeId: string) => void;
+  onDateChange: (typeId: string, date: string) => void;
+  dateLabel: string;
+  testPrefix: string;
+}) {
+  if (types.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {types.map((type) => (
+          <button
+            key={type.id}
+            type="button"
+            className={`expiry-chip${type.id in selections ? ' selected' : ''}`}
+            onClick={() => onToggle(type.id)}
+            data-testid={`${testPrefix}-chip-${type.id}`}
+          >
+            {type.name}
+          </button>
+        ))}
+      </div>
+      {types
+        .filter((type) => type.id in selections)
+        .map((type) => (
+          <Field key={type.id} label={`${type.name} — ${dateLabel}`}>
+            <DateInput inline value={selections[type.id]} onChange={(event) => onDateChange(type.id, event.target.value)} data-testid={`${testPrefix}-date-${type.id}`} />
+          </Field>
+        ))}
+    </div>
+  );
+}
+
+/**
+ * ONE form, ONE submit (AC 1): anagrafica + profile activation (with the
+ * SAME per-type fields the edit-mode `ProfileSubShell` forms use) + Ratings/
+ * Visita medica chips + accesso, all bundled into the SAME
+ * `POST /api/v1/people` composite payload the 13.1 API already accepts.
+ * Only the base identity fields go through `react-hook-form`+zod (matches
+ * the edit form's own validation); the conditional composite blocks are
+ * plain controlled state, validated imperatively at submit (client mirror of
+ * the server's 422 rules — R-13.1-c's "expiresAt required per selection",
+ * `pilotProfileRequestSchema`'s required license fields) — simpler than
+ * fighting react-hook-form over deeply-nested, conditionally-rendered
+ * optional objects for a one-shot form.
+ */
+function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, onCreated }: NewPersonFormProps) {
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<z.input<typeof createPersonBaseSchema>, unknown, z.infer<typeof createPersonBaseSchema>>({
+    resolver: zodResolver(createPersonBaseSchema),
+    defaultValues: { firstName: '', lastName: '', email: null, phone: null, address: null, fiscalCode: null },
+  });
+
+  const [activatePilot, setActivatePilot] = useState(false);
+  const [pilotLicenseNumber, setPilotLicenseNumber] = useState('');
+  const [pilotLicenseType, setPilotLicenseType] = useState('');
+  const [pilotFieldError, setPilotFieldError] = useState(false);
+
+  const [activateStudent, setActivateStudent] = useState(false);
+  const [studentCourseStartDate, setStudentCourseStartDate] = useState('');
+  const [studentFieldError, setStudentFieldError] = useState(false);
+
+  const [activateInstructor, setActivateInstructor] = useState(false);
+
+  const [ratingCatalog, setRatingCatalog] = useState<ExpiryCatalogEntry[] | null>(null);
+  const [medicalCatalog, setMedicalCatalog] = useState<ExpiryCatalogEntry[] | null>(null);
+  const [selections, setSelections] = useState<Record<string, string>>({});
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchExpiryTypes('RATING').then((types) => {
+      if (!cancelled) setRatingCatalog(types);
+    });
+    void fetchExpiryTypes('MEDICAL').then((types) => {
+      if (!cancelled) setMedicalCatalog(types);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const profileFlags: ProfileFlags = { pilot: activatePilot, student: activateStudent, instructor: activateInstructor };
+
+  function toggleSelection(typeId: string): void {
+    setSelections((current) => {
+      if (typeId in current) {
+        const next = { ...current };
+        delete next[typeId];
+        return next;
+      }
+      return { ...current, [typeId]: '' };
+    });
+    setSelectionError(null);
+  }
+
+  function setSelectionDate(typeId: string, date: string): void {
+    setSelections((current) => ({ ...current, [typeId]: date }));
+  }
+
+  const [grantAccess, setGrantAccess] = useState(false);
+  const [accessEmail, setAccessEmail] = useState('');
+  const [accessRoles, setAccessRoles] = useState<Role[]>([]);
+  const [accessEmailError, setAccessEmailError] = useState(false);
+  const [accessRolesError, setAccessRolesError] = useState(false);
+
+  function toggleAccessRole(role: Role, checked: boolean): void {
+    setAccessRoles((current) => (checked ? [...current, role] : current.filter((r) => r !== role)));
+  }
+
+  async function onSubmit(base: z.infer<typeof createPersonBaseSchema>): Promise<void> {
+    setFormError(null);
+
+    const nextPilotFieldError = activatePilot && (!pilotLicenseNumber.trim() || !pilotLicenseType.trim());
+    setPilotFieldError(nextPilotFieldError);
+
+    const nextStudentFieldError = activateStudent && !studentCourseStartDate;
+    setStudentFieldError(nextStudentFieldError);
+
+    const expiries = Object.entries(selections).map(([expiryTypeId, expiresAt]) => ({ expiryTypeId, expiresAt }));
+    const missingDate = expiries.some((entry) => !entry.expiresAt);
+    setSelectionError(missingDate ? labels.ratings.requiredDate : null);
+
+    const emailValid = !grantAccess || z.string().trim().toLowerCase().pipe(z.email()).safeParse(accessEmail).success;
+    setAccessEmailError(grantAccess && !emailValid);
+    const rolesValid = !grantAccess || accessRoles.length > 0;
+    setAccessRolesError(grantAccess && !rolesValid);
+
+    if (nextPilotFieldError || nextStudentFieldError || missingDate || !emailValid || !rolesValid) {
+      return;
+    }
+
+    const payload: CreatePersonInput = {
+      firstName: base.firstName,
+      lastName: base.lastName,
+      email: base.email ?? null,
+      phone: base.phone ?? null,
+      address: base.address ?? null,
+      fiscalCode: base.fiscalCode ?? null,
+      ...(activatePilot || activateStudent || activateInstructor
+        ? {
+            profiles: {
+              ...(activatePilot ? { pilot: { licenseNumber: pilotLicenseNumber.trim(), licenseType: pilotLicenseType.trim() } } : {}),
+              ...(activateStudent ? { student: { courseStartDate: studentCourseStartDate } } : {}),
+              ...(activateInstructor ? { instructor: {} } : {}),
+            },
+          }
+        : {}),
+      ...(expiries.length > 0 ? { expiries } : {}),
+      ...(grantAccess ? { access: { email: accessEmail.trim().toLowerCase(), roles: accessRoles } } : {}),
+    };
+
+    const response = await fetch('/api/v1/people', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const code = await errorCodeOf(response);
+      setFormError(code === 'CONFLICT' ? labels.errors.conflictEmail : labels.errors.generic);
+      return;
+    }
+
+    toast.show(toastLabels.created, 'ok');
+    onClose();
+    onCreated();
+  }
+
+  const ratingChips = (ratingCatalog ?? []).filter((type) => type.isActive && isExpiryScopeCompatible(type.scope, profileFlags));
+  const medicalChips = (medicalCatalog ?? []).filter((type) => type.isActive && isExpiryScopeCompatible(type.scope, profileFlags));
+
+  return (
+    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="pilot-identity-form">
+      <div className="form-grid">
+        <Field label={labels.identity.firstName}>
+          <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
+        </Field>
+        <Field label={labels.identity.lastName}>
+          <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
+        </Field>
+        <Field label={labels.identity.email} wide>
+          <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
+        </Field>
+        <Field label={labels.identity.phone}>
+          <Input type="tel" {...register('phone')} />
+        </Field>
+        <Field label={labels.identity.address} wide>
+          <Input {...register('address')} />
+        </Field>
+        <Field label={labels.identity.fiscalCode}>
+          <Input {...register('fiscalCode')} />
+        </Field>
+      </div>
+
+      <Section title={labels.profiles.sectionTitle}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
+              <input type="checkbox" checked={activatePilot} onChange={(event) => setActivatePilot(event.target.checked)} data-testid="new-person-activate-pilot" />
+              {labels.profiles.pilot.title}
+            </label>
+            {activatePilot ? (
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <Field label={labels.profiles.pilot.licenseNumber}>
+                  <Input
+                    value={pilotLicenseNumber}
+                    onChange={(event) => setPilotLicenseNumber(event.target.value)}
+                    aria-invalid={pilotFieldError}
+                    data-testid="new-person-pilot-license-number"
+                  />
+                </Field>
+                <Field label={labels.profiles.pilot.licenseType}>
+                  <Input
+                    value={pilotLicenseType}
+                    onChange={(event) => setPilotLicenseType(event.target.value)}
+                    aria-invalid={pilotFieldError}
+                    data-testid="new-person-pilot-license-type"
+                  />
+                </Field>
+              </div>
+            ) : null}
+            {pilotFieldError ? (
+              <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 6 }}>
+                {labels.profiles.errors.requiredField}
+              </p>
+            ) : null}
+          </div>
+
+          <div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
+              <input type="checkbox" checked={activateStudent} onChange={(event) => setActivateStudent(event.target.checked)} data-testid="new-person-activate-student" />
+              {labels.profiles.student.title}
+            </label>
+            {activateStudent ? (
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <Field label={labels.profiles.student.courseStartDate}>
+                  <DateInput
+                    value={studentCourseStartDate}
+                    onChange={(event) => setStudentCourseStartDate(event.target.value)}
+                    aria-invalid={studentFieldError}
+                    data-testid="new-person-student-course-start"
+                  />
+                </Field>
+              </div>
+            ) : null}
+            {studentFieldError ? (
+              <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 6 }}>
+                {labels.profiles.errors.requiredField}
+              </p>
+            ) : null}
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
+            <input type="checkbox" checked={activateInstructor} onChange={(event) => setActivateInstructor(event.target.checked)} data-testid="new-person-activate-instructor" />
+            {labels.profiles.instructor.title}
+          </label>
+        </div>
+      </Section>
+
+      <Section title={labels.ratings.sectionTitle}>
+        <NewExpiryChipGroup types={ratingChips} selections={selections} onToggle={toggleSelection} onDateChange={setSelectionDate} dateLabel={labels.ratings.dateLabel} testPrefix="rating" />
+        <div className="fld-label" style={{ fontWeight: 600, fontSize: 13, marginTop: 16, marginBottom: 8 }}>
+          {labels.medical.subHeading}
+        </div>
+        <NewExpiryChipGroup types={medicalChips} selections={selections} onToggle={toggleSelection} onDateChange={setSelectionDate} dateLabel={labels.medical.dateLabel} testPrefix="medical" />
+        {selectionError ? (
+          <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
+            {selectionError}
+          </p>
+        ) : null}
+      </Section>
+
+      {canManageUsers ? (
+        <Section title={labels.access.sectionTitle}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13.5 }}>
+            <input type="checkbox" checked={grantAccess} onChange={(event) => setGrantAccess(event.target.checked)} data-testid="new-person-grant-access" />
+            {labels.access.grantLabel}
+          </label>
+          {grantAccess ? (
+            <div style={{ marginTop: 10 }}>
+              <div className="form-grid">
+                <Field label={labels.access.email} wide>
+                  <Input type="email" value={accessEmail} onChange={(event) => setAccessEmail(event.target.value)} aria-invalid={accessEmailError} data-testid="new-person-access-email" />
+                </Field>
+              </div>
+              {accessEmailError ? (
+                <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
+                  {labels.access.invalidEmail}
+                </p>
+              ) : null}
+              <div className="fld-label" style={{ marginTop: 10, marginBottom: 6 }}>
+                {labels.access.roles}
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {ALL_ROLES.map((role) => (
+                  <label key={role} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--ink-2)' }}>
+                    <input
+                      type="checkbox"
+                      checked={accessRoles.includes(role)}
+                      onChange={(event) => toggleAccessRole(role, event.target.checked)}
+                      data-testid={`new-person-access-role-${role}`}
+                    />
+                    {labels.access.roleOptions[role]}
+                  </label>
+                ))}
+              </div>
+              {accessRolesError ? (
+                <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
+                  {labels.access.rolesRequired}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </Section>
+      ) : null}
+
+      {formError ? (
+        <p role="alert" data-testid="pilot-identity-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
+          {formError}
+        </p>
+      ) : null}
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+        <button type="button" className="btn" onClick={onClose}>
+          {labels.cancel}
+        </button>
+        <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="pilot-identity-submit">
+          {labels.submitCreate}
         </button>
       </div>
     </form>
@@ -768,77 +1129,38 @@ function InstructorProfileForm({
   );
 }
 
-// --- Certificazioni (read-only) ---------------------------------------------
+// --- Ratings + Visita medica (EDITABLE inline, story 13.2 AC 2) -------------
 
-type ExpiryListEntry = { typeName: string; status: 'ok' | 'expiring' | 'expired'; expiresAt: string };
-
-async function fetchExpiries(personId: string): Promise<ExpiryListEntry[]> {
-  const response = await fetch(`/api/v1/people/${personId}/expiries`);
-  if (!response.ok) return [];
-  return (await response.json()) as ExpiryListEntry[];
-}
-
-function expiryStatusTone(status: 'ok' | 'expiring' | 'expired'): BadgeTone {
-  if (status === 'expired') return 'bad';
-  if (status === 'expiring') return 'warn';
-  return 'ok';
-}
-
-/**
- * READ-ONLY (D13, AC 4): registering/editing a scadenza stays on the
- * Scadenze page — this section only surfaces what already exists, grouped
- * by `typeName` (`groupExpiriesByTypeName`, shared with `pilot-profile.tsx`).
- */
-function RatingsSection({ personId, labels, locale }: { personId: string; labels: PilotEditorLabels['ratings']; locale: 'it' | 'en' }) {
-  const [groups, setGroups] = useState<Array<ExpiryGroupSource> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchExpiries(personId).then((result) => {
-      if (cancelled) return;
-      setGroups(groupExpiriesByTypeName(result));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [personId]);
-
-  const statusLabelOf = (status: 'ok' | 'expiring' | 'expired'): string =>
-    status === 'expired' ? labels.status.expired : status === 'expiring' ? labels.status.expiring : labels.status.ok;
-
+/** `manageLink`/link-to-Scadenze is GONE (AC 2): both editors below write directly via `LiveExpiryEditor`. */
+function RatingsSection({
+  personId,
+  profiles,
+  ratingsLabels,
+  medicalLabels,
+  locale,
+}: {
+  personId: string;
+  profiles: ProfileFlags;
+  ratingsLabels: PilotEditorLabels['ratings'];
+  medicalLabels: PilotEditorLabels['medical'];
+  locale: 'it' | 'en';
+}) {
   return (
     <div>
-      {groups === null ? (
-        <p className="fld-label">…</p>
-      ) : groups.length === 0 ? (
-        <p className="fld-label" style={{ textTransform: 'none' }}>
-          {labels.empty}
-        </p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {groups.map((group) => (
-            <div key={group.typeName} className="meter-row" data-testid={`pilot-certification-${group.typeName}`}>
-              <span>{group.typeName}</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="mono">{formatDateOnly(group.expiresAt, locale)}</span>
-                <Badge tone={expiryStatusTone(group.status)}>{statusLabelOf(group.status)}</Badge>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      <div style={{ marginTop: 10 }}>
-        <Link href="/dashboard/expiries" className="fld-label" style={{ textTransform: 'none', textDecoration: 'underline' }}>
-          {labels.manageLink}
-        </Link>
+      <div data-testid="pilot-ratings-editor">
+        <LiveExpiryEditor personId={personId} kind="RATING" profiles={profiles} locale={locale} labels={ratingsLabels} />
+      </div>
+      <div className="fld-label" style={{ fontWeight: 600, fontSize: 13, marginTop: 20, marginBottom: 10 }}>
+        {medicalLabels.subHeading}
+      </div>
+      <div data-testid="pilot-medical-editor">
+        <LiveExpiryEditor personId={personId} kind="MEDICAL" profiles={profiles} locale={locale} labels={medicalLabels} />
       </div>
     </div>
   );
 }
 
 // --- Accesso (ADMIN-only) ----------------------------------------------------
-
-const ALL_ROLES: readonly Role[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
 
 const createAccessUserSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()),

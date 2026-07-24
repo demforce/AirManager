@@ -352,12 +352,37 @@
       "ratings": {
         "sectionTitle": "Ratings",
         "empty": "No expiry on file.",
-        "manageLink": "Manage in Expiries",
         "status": {
           "ok": "Valid",
           "expiring": "Expiring",
           "expired": "Expired"
-        }
+        },
+        "dateLabel": "Expiry date",
+        "addAction": "Add",
+        "cancel": "Cancel",
+        "save": "Save",
+        "edit": "Edit",
+        "remove": "Remove",
+        "confirmRemove": "Remove this expiry?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel",
+        "requiredDate": "The expiry date is required.",
+        "genericError": "Something went wrong. Please try again."
+      },
+      "medical": {
+        "subHeading": "Medical",
+        "empty": "No medical expiry on file.",
+        "dateLabel": "Expiry date",
+        "addAction": "Add",
+        "cancel": "Cancel",
+        "save": "Save",
+        "edit": "Edit",
+        "remove": "Remove",
+        "confirmRemove": "Remove this medical expiry?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel",
+        "requiredDate": "The expiry date is required.",
+        "genericError": "Something went wrong. Please try again."
       },
       "access": {
         "sectionTitle": "Access",
@@ -371,7 +396,9 @@
         "statusPending": "Invite pending",
         "resendInvite": "Resend invite",
         "emailConflict": "A user with this email already exists.",
-        "genericError": "Something went wrong. Please try again."
+        "genericError": "Something went wrong. Please try again.",
+        "grantLabel": "Create access for this person",
+        "invalidEmail": "Enter a valid email address."
       },
       "archive": {
         "sectionTitle": "Archive",
@@ -481,6 +508,26 @@
         "noValue": "—",
         "save": "Save",
         "readOnlyHint": "Only an administrator can set the payout rate."
+      },
+      "ratings": {
+        "sectionTitle": "Ratings",
+        "empty": "No expiry on file.",
+        "status": {
+          "ok": "Valid",
+          "expiring": "Expiring",
+          "expired": "Expired"
+        },
+        "dateLabel": "Expiry date",
+        "addAction": "Add",
+        "cancel": "Cancel",
+        "save": "Save",
+        "edit": "Edit",
+        "remove": "Remove",
+        "confirmRemove": "Remove this expiry?",
+        "confirmYes": "Confirm",
+        "confirmCancel": "Cancel",
+        "requiredDate": "The expiry date is required.",
+        "genericError": "Something went wrong. Please try again."
       },
       "readOnly": {
         "sectionTitle": "Summary (read-only)",
