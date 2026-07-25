@@ -4,7 +4,7 @@ baseline_commit: e04cccd
 
 # Story 13.10: Mobile pass — sweep sistematico usabilità a viewport mobile
 
-Status: review
+Status: done
 
 ## Story
 
