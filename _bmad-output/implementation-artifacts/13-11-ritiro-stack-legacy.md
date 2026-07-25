@@ -4,7 +4,7 @@ baseline_commit: 0439757
 
 # Story 13.11: Ritiro stack legacy — Tailwind/Geist/TanStack + componenti e glife orfane
 
-Status: review
+Status: done
 
 ## Story
 
@@ -197,3 +197,5 @@ Diff di chiusura (`diff2.mjs`, entrambi i temi, 11 pagine dashboard + login + pp
 - **F7**: 258 test verdi non intercettavano né F1 né F2 — nessun assert su stato disabled/visually-hidden in tutta la suite e2e esistente.
 
 **Lezione**: una suite 258/258 verde non garantisce l'assenza di regressioni visive quando il fix rimuove un intero framework CSS — serve un metodo di verifica ORTOGONALE ai test funzionali esistenti (diff dei computed style contro il bundle baseline realmente prodotto pre-rimozione), non solo screenshot "a occhio" senza baseline. I 2 guard e2e aggiunti in F7 chiudono la lacuna PER QUESTI due casi specifici, non in generale.
+
+**Chiusura (sessione principale, 2026-07-26)**: la full suite post-fix, che il fix-subagent non aveva potuto portare a termine (48/259 verdi al momento del report, run morta con la sessione), è stata RIESEGUITA dalla sessione principale su DB fresco, build di produzione: **259 passed (7.4m), EXITCODE=0, 0 fail, 0 flaky, catena settings 6/6 + booking-window 3/3 confermata** (delta +1 vs 258 = il nuovo guard F7). Story DONE.
