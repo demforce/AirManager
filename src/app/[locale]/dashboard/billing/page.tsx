@@ -17,7 +17,7 @@ import { BillingConsole, type BillingFilters } from './billing-console';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; dateFrom?: string; dateTo?: string; type?: string; personId?: string }>;
+  searchParams: Promise<{ page?: string; dateFrom?: string; dateTo?: string; type?: string; personQuery?: string }>;
 };
 
 /** Form pickers' seed candidates (story TD-3 convention, same as logbook/fleet/pilots). */
@@ -72,7 +72,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const typeParam = sp.type || undefined;
   const movementType = typeParam && (ACCOUNT_MOVEMENT_TYPES as readonly string[]).includes(typeParam) ? (typeParam as AccountMovementTypeDto) : undefined;
   const categoryId = typeParam && !movementType ? typeParam : undefined;
-  const personId = sp.personId || undefined;
+  const personQuery = sp.personQuery || undefined;
 
   // Sequential (not `Promise.all`): `listPeople` runs an interactive
   // `$transaction` internally — same "never concurrent with another
@@ -88,7 +88,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const compensation = await getCompensationSummary(actor);
   const negativeBalances = await listNegativeBalances(actor);
 
-  const txQuery = { pageSize: TX_PAGE_SIZE, from: dateFrom, to: dateTo, personId, movementType, categoryId };
+  const txQuery = { pageSize: TX_PAGE_SIZE, from: dateFrom, to: dateTo, personQuery, movementType, categoryId };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   let result = await listTransactions(actor, { ...txQuery, page });
   const lastPage = Math.max(1, Math.ceil(result.total / TX_PAGE_SIZE));
@@ -105,7 +105,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
     ...(typeParam ? { type: typeParam } : {}),
-    ...(personId ? { personId } : {}),
+    ...(personQuery ? { personQuery } : {}),
   };
   const exportHref = buildExportHref('/api/v1/transactions', filterQuery, locale);
   const reportPeriod = dateFrom && dateTo ? { from: dateFrom, to: dateTo } : currentMonthRange();
@@ -129,7 +129,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
     dateFrom: dateFrom ?? '',
     dateTo: dateTo ?? '',
     type: typeParam ?? '',
-    personId: personId ?? '',
+    personQuery: personQuery ?? '',
   };
 
   return (
@@ -173,7 +173,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
         locale={displayLocale}
         labels={{
           newTransaction: t('newTransaction'),
-          statements: t('statements'),
           revenueByCategory: { title: t('revenueByCategory.title'), sub: t('revenueByCategory.sub', { month: monthLabel }), empty: t('revenueByCategory.empty') },
           instructorCompensation: { title: t('instructorCompensation.title'), sub: t('instructorCompensation.sub'), noRate: t('instructorCompensation.noRate'), empty: t('instructorCompensation.empty') },
           negativeBalances: { title: t('negativeBalances.title'), empty: t('negativeBalances.empty'), link: t('negativeBalances.link') },
@@ -209,11 +208,10 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             accountGroup: t('filters.accountGroup'),
             cashGroup: t('filters.cashGroup'),
             pilot: t('filters.pilot'),
-            allPilots: t('filters.allPilots'),
+            personSearchPlaceholder: t('filters.personSearchPlaceholder'),
             reset: t('filters.reset'),
           },
           pagination: { prev: '←', next: '→' },
-          picker: { placeholder: t('newTransactionForm.picker.placeholder'), noResults: t('newTransactionForm.picker.noResults') },
           actions: { adjust: t('actions.adjust'), reverse: t('actions.reverse') },
           adjustModal: {
             title: t('adjustModal.title'),
@@ -270,17 +268,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             genericError: t('newTransactionForm.genericError'),
             result: { title: t('newTransactionForm.result.title'), newBalance: t('newTransactionForm.result.newBalance'), close: t('newTransactionForm.result.close') },
             picker: { placeholder: t('newTransactionForm.picker.placeholder'), noResults: t('newTransactionForm.picker.noResults') },
-          },
-          statementsDialog: {
-            title: t('statementsDialog.title'),
-            subtitle: t('statementsDialog.subtitle'),
-            pilot: t('statementsDialog.pilot'),
-            dateFrom: t('statementsDialog.dateFrom'),
-            dateTo: t('statementsDialog.dateTo'),
-            picker: { placeholder: t('newTransactionForm.picker.placeholder'), noResults: t('newTransactionForm.picker.noResults') },
-            submit: t('statementsDialog.submit'),
-            cancel: t('statementsDialog.cancel'),
-            requiredField: t('statementsDialog.requiredField'),
           },
         }}
       />

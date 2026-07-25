@@ -428,8 +428,11 @@ function expiresAtRangeForWindow(window: ExpiryWindowDto, today: Date): { lt: Da
  * that does not exist simply yields an empty page, not a 404); `scope` (the
  * TYPE's ambito, via the `expiryType` relation — NOT the `Expiry` itself,
  * which has no scope of its own); `status` (mapped to an `expiresAt` date
- * range by `expiresAtRangeForStatus` above, never post-filtered in JS).
- * Ordered `expiresAt asc, id asc` — the scadute sort first by construction
+ * range by `expiresAtRangeForStatus` above, never post-filtered in JS);
+ * `personQuery` (story 13.5, AC 9) — a case-insensitive substring match on
+ * the person's `firstName`/`lastName`, the registry's free-text pilot
+ * filter (replacing its old `SearchCombobox` picker), AND-combined with
+ * `personId`. Ordered `expiresAt asc, id asc` — the scadute sort first by construction
  * (the most urgent items are the smallest/most-negative `expiresAt`), `id`
  * only breaks ties for stable pagination across identical dates. `total`
  * reflects the SAME filtered `where` (AD-8 paginated envelope, pattern
@@ -443,6 +446,16 @@ export async function listAllExpiries(actor: Actor, query: ListAllExpiriesQuery)
   const where = {
     ...(query.expiryTypeId ? { expiryTypeId: query.expiryTypeId } : {}),
     ...(query.personId ? { personId: query.personId } : {}),
+    ...(query.personQuery
+      ? {
+          person: {
+            OR: [
+              { firstName: { contains: query.personQuery, mode: 'insensitive' as const } },
+              { lastName: { contains: query.personQuery, mode: 'insensitive' as const } },
+            ],
+          },
+        }
+      : {}),
     ...(query.scope ? { expiryType: { scope: query.scope } } : {}),
     ...(query.window
       ? { expiresAt: expiresAtRangeForWindow(query.window, today) }

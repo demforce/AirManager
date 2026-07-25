@@ -8,7 +8,7 @@
  * `.card-head` filters/export/new-button, `.logbook`/`.lb-row` table).
  *
  * `canManage` (`flights.manage`, staff/admin) sees the full manager: velivolo/
- * persona filters, "Nuova voce", per-row Storna/Correggi. Everyone else
+ * persona filters, "Nuova voce", per-row Annulla/Modifica. Everyone else
  * (`self.read`, own-access) sees a READ-ONLY registry of just their own
  * flights, filtered to period/tipo/stato only (Contesto: no staff-only
  * `listAircraft`/`listPeople` picker to source aircraft/persona options
@@ -23,8 +23,9 @@
  * the prototype's own 10 columns, needed to satisfy this exact assertion
  * (flights.spec.ts).
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { DateInput } from '@/components/ui/date-input';
 import { Link, useRouter } from '@/i18n/navigation';
@@ -38,23 +39,42 @@ import { FlightEditor, type FlightEditorLabels, type FlightEditorTarget } from '
 type AircraftOption = { id: string; registration: string };
 type PersonOption = { id: string; firstName: string; lastName: string };
 type AircraftFilterOption = AircraftOption & { archived: boolean };
-type PersonFilterOption = PersonOption & { archived: boolean };
 
 export type LogbookFilters = {
   dateFrom: string;
   dateTo: string;
   aircraftId: string;
+  /** Deep-link-only (story 11.2's "Vedi tutti" from the scheda persona) — no visible filter control sets this anymore (story 13.5, AC 7); kept for URL round-tripping. */
   personId: string;
+  /** Free-text pilot filter (story 13.5, AC 7) — replaces the old native `<select>` of every person, same idiom as `pilots-console.tsx`'s own name filter. */
+  personQuery: string;
   flightType: '' | FlightTypeDto;
   status: '' | FlightStatusDto;
 };
+
+/** Same debounce-before-navigating idiom as `pilots-console.tsx`/`fleet-console.tsx`. */
+function useDebouncedCallback(callback: (value: string) => void, delayMs: number): (value: string) => void {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  return (value: string) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => callback(value), delayMs);
+  };
+}
 
 export type LogbookConsoleLabels = {
   cardTitle: string;
   newEntry: string;
   empty: string;
-  exportLabel: string;
-  exportPdfLabel: string;
+  /** Story 13.5, AC 6 — single `ExportMenu` dropdown (pattern already used by fleet/pilots/billing), replacing the two separate export buttons. */
+  exportMenu: { label: string; xlsLabel: string; pdfLabel: string };
   pagination: { prev: string; next: string };
   flightTypes: { private: string; school: string; other: string };
   table: {
@@ -86,7 +106,7 @@ export type LogbookConsoleLabels = {
     aircraft: string;
     allAircraft: string;
     person: string;
-    allPeople: string;
+    personSearchPlaceholder: string;
     flightType: string;
     allTypes: string;
     status: string;
@@ -130,7 +150,6 @@ export type LogbookConsoleProps = {
   personOptions: PersonOption[];
   instructorOptions: PersonOption[];
   aircraftFilterOptions: AircraftFilterOption[];
-  personFilterOptions: PersonFilterOption[];
   airfieldName: string;
   moneyLocale: 'it' | 'en';
   locale: 'it' | 'en';
@@ -163,7 +182,6 @@ export function LogbookConsole({
   personOptions,
   instructorOptions,
   aircraftFilterOptions,
-  personFilterOptions,
   airfieldName,
   moneyLocale,
   locale,
@@ -173,6 +191,7 @@ export function LogbookConsole({
 }: LogbookConsoleProps) {
   const router = useRouter();
   const [filters, setFilters] = useState<LogbookFilters>(initialFilters);
+  const [personQueryInput, setPersonQueryInput] = useState(initialFilters.personQuery);
   const [editorTarget, setEditorTarget] = useState<FlightEditorTarget | null>(null);
   const [cancellingFlight, setCancellingFlight] = useState<FlightListItemDto | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -181,13 +200,14 @@ export function LogbookConsole({
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [cancelFeedback, setCancelFeedback] = useState<string | null>(null);
 
-  /** Builds the query string from the 6 editable filters (dropping `instructorPersonId` — same as the legacy manager, Dev Notes). */
+  /** Builds the query string from the 7 editable filters (dropping `instructorPersonId` — same as the legacy manager, Dev Notes). `personId` is deep-link-only (no filter-bar control sets it, AC 7) but still round-trips here so an incoming "Vedi tutti" scope survives an unrelated filter tweak. */
   function buildFilterQuery(next: LogbookFilters): Record<string, string> {
     const query: Record<string, string> = {};
     if (next.dateFrom) query['dateFrom'] = next.dateFrom;
     if (next.dateTo) query['dateTo'] = next.dateTo;
     if (canManage && next.aircraftId) query['aircraftId'] = next.aircraftId;
     if (canManage && next.personId) query['personId'] = next.personId;
+    if (canManage && next.personQuery) query['personQuery'] = next.personQuery;
     if (next.flightType) query['flightType'] = next.flightType;
     if (next.status) query['status'] = next.status;
     return query;
@@ -205,9 +225,19 @@ export function LogbookConsole({
     navigate(next);
   }
 
+  const debouncedPersonQuery = useDebouncedCallback((value: string) => {
+    handleFilterChange({ personQuery: value });
+  }, 400);
+
+  function handlePersonQueryChange(value: string): void {
+    setPersonQueryInput(value);
+    debouncedPersonQuery(value);
+  }
+
   function handleReset(): void {
-    const cleared: LogbookFilters = { dateFrom: '', dateTo: '', aircraftId: '', personId: '', flightType: '', status: '' };
+    const cleared: LogbookFilters = { dateFrom: '', dateTo: '', aircraftId: '', personId: '', personQuery: '', flightType: '', status: '' };
     setFilters(cleared);
+    setPersonQueryInput('');
     navigate(cleared);
   }
 
@@ -219,21 +249,15 @@ export function LogbookConsole({
 
   const hasActiveFilter = Object.values(filters).some((value) => value !== '');
 
-  // Plain-select option lists (user decision 2026-07-21: the velivolo/persona
-  // filters use the SAME control as the tipo/stato ones, no typeahead) — the
-  // server page already loads the full candidate lists (`OPTIONS_PAGE_SIZE`).
+  // Plain-select option list (user decision 2026-07-21: the velivolo filter
+  // uses the SAME control as the tipo/stato ones, no typeahead) — the server
+  // page already loads the full candidate list (`OPTIONS_PAGE_SIZE`). The
+  // persona filter is now free-text (story 13.5, AC 7), no options list needed.
   const aircraftSelectOptions: { id: string; label: string }[] = [
     { id: '', label: labels.filters.allAircraft },
     ...aircraftFilterOptions.map((aircraft) => ({
       id: aircraft.id,
       label: aircraft.registration + (aircraft.archived ? labels.filters.archivedSuffix : ''),
-    })),
-  ];
-  const personSelectOptions: { id: string; label: string }[] = [
-    { id: '', label: labels.filters.allPeople },
-    ...personFilterOptions.map((person) => ({
-      id: person.id,
-      label: personLabel(person) + (person.archived ? labels.filters.archivedSuffix : ''),
     })),
   ];
 
@@ -338,20 +362,17 @@ export function LogbookConsole({
             </select>
           ) : null}
           {canManage ? (
-            <select
-              className="input"
-              style={{ width: 'auto', minWidth: 150, fontSize: 12 }}
-              value={filters.personId}
-              onChange={(event) => handleFilterChange({ personId: event.target.value })}
-              data-testid="flight-filter-person"
-              aria-label={labels.filters.person}
-            >
-              {personSelectOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <div className="search" style={{ width: 190 }}>
+              <Icon.search />
+              <input
+                className="bare-input"
+                placeholder={labels.filters.personSearchPlaceholder}
+                aria-label={labels.filters.person}
+                value={personQueryInput}
+                onChange={(event) => handlePersonQueryChange(event.target.value)}
+                data-testid="flight-filter-person"
+              />
+            </div>
           ) : null}
           <select
             className="input"
@@ -383,12 +404,7 @@ export function LogbookConsole({
               {labels.filters.reset}
             </button>
           ) : null}
-          <a className="btn" href={pdfExportHref} target="_blank" rel="noopener noreferrer" data-testid="flights-export-pdf-button">
-            <Icon.doc /> {labels.exportPdfLabel}
-          </a>
-          <a className="btn" href={exportHref} target="_blank" rel="noopener noreferrer" data-testid="flights-export-button">
-            <Icon.doc /> {labels.exportLabel}
-          </a>
+          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={pdfExportHref} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} />
           {canManage ? (
             <button type="button" className="btn primary" onClick={() => setEditorTarget({ mode: 'new' })} data-testid="logbook-new-button">
               <Icon.plus /> {labels.newEntry}

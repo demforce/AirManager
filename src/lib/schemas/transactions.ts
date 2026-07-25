@@ -61,13 +61,18 @@ export type TransactionListResponseDto = z.infer<typeof transactionListResponseS
  * (the `.refine` below), same "narrow to one source's own vocabulary" rule
  * the Tipo filter's two optgroups present in the UI. `direction` filters on
  * the NORMALIZED (club-centric) sign: `charge` = positive, `payment` =
- * negative.
+ * negative. `personQuery` (story 13.5, AC 1) is a SEPARATE, free-text
+ * narrowing filter — a case-insensitive substring match on the linked
+ * person's `firstName`/`lastName` (the billing console's free-text pilot
+ * filter, replacing its old `SearchCombobox` picker) — AND-combined with
+ * every other filter, `personId` included.
  */
 export const listTransactionsQuerySchema = paginationQuerySchema
   .extend({
     from: z.iso.date().optional(),
     to: z.iso.date().optional(),
     personId: z.string().trim().min(1).optional(),
+    personQuery: z.string().trim().min(1).optional(),
     movementType: accountMovementTypeSchema.optional(),
     categoryId: z.string().trim().min(1).optional(),
     direction: z.enum(['charge', 'payment']).optional(),

@@ -305,25 +305,26 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
 
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-aircraft'), aircraftA.id);
 
-    // Persona filter: only personB's flight.
-    await page.getByTestId('flight-filter-person').selectOption({ label: `${personB.lastName} ${personB.firstName}` });
+    // Persona filter: free-text like Piloti (story 13.5, AC 7) — only personB's flight.
+    await page.getByTestId('flight-filter-person').fill(personB.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(personB.lastName)}`));
     rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(personB.lastName);
 
-    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-person'), personB.personId);
+    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-person'), personB.lastName);
 
     // Combined persona + periodo + tipo: the RUN-UNIQUE person keyed with
     // dateFrom/dateTo bracketing only the June flight and tipo AERIAL_WORK -> that
     // one flight. The person filter is what keeps the assertion run-unique
     // (lesson 6.3 F1): periodo+tipo alone match the June/AERIAL_WORK flights EVERY
     // past execution of this very test left in an accumulated DB.
-    await page.getByTestId('flight-filter-person').selectOption({ label: `${personB.lastName} ${personB.firstName}` });
+    await page.getByTestId('flight-filter-person').fill(personB.lastName);
     // EVERY filter change navigates and remounts the subtree (same M1 race
     // as the reset) — settle each step on its URL effect before touching the
     // next control, or the next fill can land on the node the remount is
     // about to discard.
-    await expect(page).toHaveURL(/personId=/);
+    await expect(page).toHaveURL(/personQuery=/);
     await page.getByTestId('flight-filter-date-from').fill('2020-06-01');
     await expect(page).toHaveURL(/dateFrom=2020-06-01/);
     await page.getByTestId('flight-filter-date-to').fill('2020-06-30');

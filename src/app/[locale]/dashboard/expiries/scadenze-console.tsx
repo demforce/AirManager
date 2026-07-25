@@ -10,7 +10,7 @@
  * pagination, unlike the prototype's unpaginated client table (D13: domain
  * wins, a real club's history can exceed one page).
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
@@ -27,13 +27,31 @@ type PersonOption = { id: string; firstName: string; lastName: string };
 type TypeOption = { id: string; name: string };
 type Category = 'Medico' | 'Licenza' | 'Abilitazione';
 
-export type ScadenzeFilters = { window: ExpiryWindowDto | 'all'; expiryTypeId: string; personId: string };
+/** Free-text pilot filter (story 13.5, AC 9) — `personQuery` replaces the old `SearchCombobox`-driven `personId`, same idiom as `pilots-console.tsx`'s own name filter. */
+export type ScadenzeFilters = { window: ExpiryWindowDto | 'all'; expiryTypeId: string; personQuery: string };
+
+/** Same debounce-before-navigating idiom as `pilots-console.tsx`/`fleet-console.tsx`. */
+function useDebouncedCallback(callback: (value: string) => void, delayMs: number): (value: string) => void {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  return (value: string) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => callback(value), delayMs);
+  };
+}
 
 export type ScadenzeConsoleLabels = {
   cardTitle: string;
   shown: string;
   segmented: { win60: string; win30: string; win7: string; expired: string; all: string };
-  filters: { allTypes: string; allPilots: string; reset: string; picker: { placeholder: string; noResults: string } };
+  filters: { allTypes: string; allPilots: string; pilot: string; personSearchPlaceholder: string; reset: string };
   table: { pilot: string; type: string; certificate: string; expiresAt: string; daysLeft: string; status: string; empty: string };
   statCards: { expired: string; expiredNote: string; within7: string; within7Note: string; within30: string; within30Note: string; within60: string; within60Note: string };
   status: { expired: string; within7: string; within30: string; within60: string; ok: string };
@@ -123,6 +141,7 @@ export function ScadenzeConsole({
 }: ScadenzeConsoleProps) {
   const router = useRouter();
   const [filters, setFilters] = useState(initialFilters);
+  const [personQueryInput, setPersonQueryInput] = useState(initialFilters.personQuery);
   const [remindersSending, setRemindersSending] = useState(false);
   const [remindersFeedback, setRemindersFeedback] = useState<string | null>(null);
   const [feeModalOpen, setFeeModalOpen] = useState(false);
@@ -131,7 +150,7 @@ export function ScadenzeConsole({
     const query: Record<string, string> = {};
     if (next.window !== '60') query['window'] = next.window;
     if (next.expiryTypeId) query['expiryTypeId'] = next.expiryTypeId;
-    if (next.personId) query['personId'] = next.personId;
+    if (next.personQuery) query['personQuery'] = next.personQuery;
     return query;
   }
 
@@ -145,6 +164,15 @@ export function ScadenzeConsole({
     const next = { ...filters, ...patch };
     setFilters(next);
     navigate(next);
+  }
+
+  const debouncedPersonQuery = useDebouncedCallback((value: string) => {
+    handleFilterChange({ personQuery: value });
+  }, 400);
+
+  function handlePersonQueryChange(value: string): void {
+    setPersonQueryInput(value);
+    debouncedPersonQuery(value);
   }
 
   function pageHref(targetPage: number) {
@@ -211,16 +239,15 @@ export function ScadenzeConsole({
               </option>
             ))}
           </select>
-          <div style={{ width: 190 }}>
-            <SearchCombobox
-              id="scadenze-filter-pilot"
-              label={labels.filters.allPilots}
-              value={filters.personId}
-              onChange={(id) => handleFilterChange({ personId: id })}
-              fetchOptions={searchPersonFilter}
-              initialOptions={personComboOptions}
-              placeholder={labels.filters.picker.placeholder}
-              emptyText={labels.filters.picker.noResults}
+          <div className="search" style={{ width: 190 }}>
+            <Icon.search />
+            <input
+              className="bare-input"
+              placeholder={labels.filters.personSearchPlaceholder}
+              aria-label={labels.filters.pilot}
+              value={personQueryInput}
+              onChange={(event) => handlePersonQueryChange(event.target.value)}
+              data-testid="scadenze-filter-pilot"
             />
           </div>
           <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={exportPdfHref} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} />

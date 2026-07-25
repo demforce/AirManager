@@ -250,7 +250,7 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     expect(otherBody.error.code).toBe('FORBIDDEN');
   });
 
-  test('clicking "Esporta Excel" on the flights registry triggers a real file download with the applied filter (AC 5)', async ({ page }) => {
+  test('clicking "Voli (Excel)" in the flights registry\'s ExportMenu dropdown triggers a real file download with the applied filter (AC 5; story 13.5 AC 6)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 8000);
     const pilot = await createPilotPerson(page, 'UiClick');
@@ -259,9 +259,13 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
 
+    // Story 13.5, AC 6: the two separate export buttons became ONE
+    // `ExportMenu` dropdown (pattern already used by fleet/pilots/billing) —
+    // open it, then click the XLS row.
+    await page.getByRole('button', { name: 'Esporta' }).click();
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.getByTestId('flights-export-button').click(),
+      page.getByRole('link', { name: 'Voli (Excel)' }).click(),
     ]);
 
     expect(download.suggestedFilename()).toMatch(/^airmanager-flights-\d{4}-\d{2}-\d{2}\.xlsx$/);

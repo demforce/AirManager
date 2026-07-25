@@ -28,10 +28,17 @@ type LedgerFilters = {
   from?: string;
   to?: string;
   personId?: string;
+  /** Free-text narrowing filter (story 13.5, AC 1) — case-insensitive substring match on the linked person's name, AND-combined with `personId`. */
+  personQuery?: string;
   movementType?: AccountMovementType;
   categoryId?: string;
   direction?: 'charge' | 'payment';
 };
+
+/** Shared `person.firstName`/`lastName` substring OR-clause for `personQuery` (story 13.5, AC 1) — same shape for both the account and cash sides, just nested under a different relation path. */
+function personNameMatch(query: string): Prisma.PersonWhereInput {
+  return { OR: [{ firstName: { contains: query, mode: 'insensitive' } }, { lastName: { contains: query, mode: 'insensitive' } }] };
+}
 
 const ACCOUNT_ROW_SELECT = {
   id: true,
@@ -79,6 +86,7 @@ function buildAccountWhere(filters: LedgerFilters): Prisma.AccountMovementWhereI
   if (filters.from) and.push({ effectiveDate: { gte: parseDateOnlyUtc(filters.from) } });
   if (filters.to) and.push({ effectiveDate: { lte: parseDateOnlyUtc(filters.to) } });
   if (filters.personId) and.push({ account: { personId: filters.personId } });
+  if (filters.personQuery) and.push({ account: { person: personNameMatch(filters.personQuery) } });
   if (filters.movementType) and.push({ type: filters.movementType });
   if (filters.direction === 'charge') and.push({ amountCents: { lt: 0 } });
   if (filters.direction === 'payment') and.push({ amountCents: { gt: 0 } });
@@ -91,6 +99,7 @@ function buildCashWhere(filters: LedgerFilters): Prisma.CashMovementWhereInput {
   if (filters.from) and.push({ effectiveDate: { gte: parseDateOnlyUtc(filters.from) } });
   if (filters.to) and.push({ effectiveDate: { lte: parseDateOnlyUtc(filters.to) } });
   if (filters.personId) and.push({ accountMovement: { account: { personId: filters.personId } } });
+  if (filters.personQuery) and.push({ accountMovement: { account: { person: personNameMatch(filters.personQuery) } } });
   if (filters.categoryId) and.push({ categoryId: filters.categoryId });
   if (filters.direction === 'charge') and.push({ amountCents: { gt: 0 } });
   if (filters.direction === 'payment') and.push({ amountCents: { lt: 0 } });
@@ -223,6 +232,7 @@ export async function listTransactions(actor: Actor, query: ListTransactionsQuer
     from: query.from,
     to: query.to,
     personId: query.personId,
+    personQuery: query.personQuery,
     movementType: query.movementType,
     categoryId: query.categoryId,
     direction: query.direction,

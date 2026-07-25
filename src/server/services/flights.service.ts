@@ -1134,6 +1134,9 @@ function buildFlightsWhere(actor: Actor, query: ListFlightsQuery, canManage: boo
       : {}),
     ...(query.aircraftId ? { aircraftId: query.aircraftId } : {}),
     ...(query.personId ? { personId: query.personId } : {}),
+    ...(query.personQuery
+      ? { person: { OR: [{ firstName: { contains: query.personQuery, mode: 'insensitive' } }, { lastName: { contains: query.personQuery, mode: 'insensitive' } }] } }
+      : {}),
     ...(query.instructorPersonId ? { instructorProfile: { personId: query.instructorPersonId } } : {}),
     ...(query.flightType ? { flightType: query.flightType } : {}),
     ...(query.status ? { status: query.status } : {}),

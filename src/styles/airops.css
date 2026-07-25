@@ -1163,6 +1163,41 @@ textarea.input{ font-family: var(--font-ui); resize: vertical; }
 .pop-row{ display: flex; flex-direction: column; gap: 6px; }
 .pop-foot{ display: flex; gap: 8px; justify-content: flex-end; padding-top: 6px; border-top: 1px solid var(--border); }
 
+/* ---------- combobox dropdown (search-combobox.tsx, story 13.5 AC 8) ----------
+   Was raw Tailwind utility classes (text-sm, bg-[var(--panel)], …) with no
+   explicit font-family, unlike every OTHER AirOps control (`.input`, `.btn`,
+   …), which all set `font-family: var(--font-ui)` themselves rather than
+   leaning on inheritance from <body> (itself Inter Tight only via airops.css's
+   own `body{font-family:var(--font-ui)}` rule outranking the Geist utility
+   class `[locale]/layout.tsx` also puts on <body> — a global CSS-cascade
+   detail this ONE dropdown was implicitly, fragile-ly depending on instead of
+   setting its own font like the rest of the design system does). Ported to
+   these explicit, token-based classes so the dropdown's font is deterministic
+   and self-contained — verified via computed style to match `--font-ui`. */
+.combo-listbox{
+  position: absolute;
+  z-index: 20;
+  margin-top: 4px;
+  max-height: 240px;
+  width: 100%;
+  overflow: auto;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 4px 0;
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-ui);
+}
+.combo-option{
+  cursor: pointer;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.combo-option-empty{ cursor: default; color: var(--ink-3); }
+.combo-option.active{ background: var(--panel-2); color: var(--ink); }
+.combo-meta{ margin-left: 8px; font-size: 12px; color: var(--ink-3); }
+
 /* ---------- schedule week view ---------- */
 .week-grid{
   display: grid;

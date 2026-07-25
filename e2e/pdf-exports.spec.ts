@@ -262,7 +262,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     expect((await flightsResponse.json()).error.code).toBe('VALIDATION_ERROR');
   });
 
-  test('clicking "Esporta PDF" on the flight log triggers a real file download with the applied filter (AC 5)', async ({ page }) => {
+  test('clicking "Voli (PDF)" in the flight log\'s ExportMenu dropdown triggers a real file download with the applied filter (AC 5; story 13.5 AC 6)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 9000);
     const pilot = await createPilotPerson(page, 'UiPdfClick');
@@ -271,7 +271,11 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
 
-    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('flights-export-pdf-button').click()]);
+    // Story 13.5, AC 6: the two separate export buttons became ONE
+    // `ExportMenu` dropdown (pattern already used by fleet/pilots/billing) —
+    // open it, then click the PDF row.
+    await page.getByRole('button', { name: 'Esporta' }).click();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Voli (PDF)' }).click()]);
 
     expect(download.suggestedFilename()).toMatch(/^airmanager-flights-\d{4}-\d{2}-\d{2}\.pdf$/);
     const downloadedPath = await download.path();

@@ -1126,8 +1126,11 @@
     "subOwn": "{count, plural, one {# entry} other {# entries}} · your flights only",
     "newEntry": "New entry",
     "cardTitle": "Flight log",
-    "exportLabel": "Export Excel",
-    "exportPdfLabel": "Export PDF",
+    "exportMenu": {
+      "label": "Export",
+      "xlsLabel": "Flights (Excel)",
+      "pdfLabel": "Flights (PDF)"
+    },
     "kpi": {
       "entries": "Entries",
       "hours": "Flight hours",
@@ -1160,7 +1163,7 @@
       "correctionOf": "Correction of a previous flight",
       "correctedBy": "Corrected by a later flight",
       "cancelAction": "Cancel",
-      "correctAction": "Correct",
+      "correctAction": "Edit",
       "empty": "No flights logged yet."
     },
     "filters": {
@@ -1169,7 +1172,7 @@
       "aircraft": "Aircraft",
       "allAircraft": "All aircraft",
       "person": "Person",
-      "allPeople": "All people",
+      "personSearchPlaceholder": "Search by name…",
       "flightType": "Type",
       "allTypes": "All types",
       "status": "Status",
@@ -1290,11 +1293,9 @@
       "filters": {
         "allTypes": "All types",
         "allPilots": "All pilots",
-        "reset": "Clear filters",
-        "picker": {
-          "placeholder": "Search pilot…",
-          "noResults": "No results"
-        }
+        "pilot": "Pilot",
+        "personSearchPlaceholder": "Search pilot…",
+        "reset": "Clear filters"
       },
       "table": {
         "pilot": "Pilot",
@@ -2096,7 +2097,6 @@
     "sub": "{count, plural, one {# transaction} other {# transactions}} · {period}",
     "periodAll": "full history",
     "newTransaction": "New transaction",
-    "statements": "Statements",
     "kpi": {
       "revenue": "Revenue this month",
       "revenueDelta": "{value}% vs last month",
@@ -2147,7 +2147,7 @@
       "accountGroup": "Account movements",
       "cashGroup": "Cash categories",
       "pilot": "Pilot",
-      "allPilots": "All pilots",
+      "personSearchPlaceholder": "Search by name…",
       "reset": "Reset filters"
     },
     "exportMenu": {
@@ -2241,16 +2241,6 @@
         "placeholder": "Search...",
         "noResults": "No results."
       }
-    },
-    "statementsDialog": {
-      "title": "Statements",
-      "subtitle": "Billing",
-      "pilot": "Pilot",
-      "dateFrom": "From",
-      "dateTo": "To",
-      "submit": "Download PDF",
-      "cancel": "Cancel",
-      "requiredField": "Select a pilot."
     }
   },
   "ReportsPage": {

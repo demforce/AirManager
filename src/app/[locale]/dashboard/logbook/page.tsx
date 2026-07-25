@@ -22,6 +22,7 @@ type PageProps = {
     dateTo?: string;
     aircraftId?: string;
     personId?: string;
+    personQuery?: string;
     instructorPersonId?: string;
     flightType?: string;
     status?: string;
@@ -90,6 +91,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   const status = sanitizeFlightStatus(sp.status);
   const aircraftId = canManage ? (sp.aircraftId || undefined) : undefined;
   const personId = canManage ? (sp.personId || undefined) : undefined;
+  const personQuery = canManage ? (sp.personQuery || undefined) : undefined;
   const instructorPersonIdParam = sp.instructorPersonId || undefined;
   const instructorPersonId = canManage
     ? instructorPersonIdParam
@@ -106,11 +108,9 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   let personOptions: { id: string; firstName: string; lastName: string }[] = [];
   let instructorOptions: { id: string; firstName: string; lastName: string }[] = [];
   let aircraftFilterOptions: { id: string; registration: string; archived: boolean }[] = [];
-  let personFilterOptions: { id: string; firstName: string; lastName: string; archived: boolean }[] = [];
 
   if (canManage) {
     const aircraftResult = await listAircraft(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: true });
-    const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: true });
     const pilotStudentResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
     const instructorResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'instructor', includeArchived: false });
 
@@ -124,15 +124,9 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     }));
     personOptions = pilotStudentResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
     instructorOptions = instructorResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
-    personFilterOptions = peopleResult.items.map((person) => ({
-      id: person.id,
-      firstName: person.firstName,
-      lastName: person.lastName,
-      archived: person.archivedAt !== null,
-    }));
   }
 
-  const flightsQuery = { pageSize: FLIGHTS_PAGE_SIZE, dateFrom, dateTo, aircraftId, personId, instructorPersonId, flightType, status };
+  const flightsQuery = { pageSize: FLIGHTS_PAGE_SIZE, dateFrom, dateTo, aircraftId, personId, personQuery, instructorPersonId, flightType, status };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   let flightsResult = await listFlights(actor, { ...flightsQuery, page });
   const lastPage = Math.max(1, Math.ceil(flightsResult.total / FLIGHTS_PAGE_SIZE));
@@ -164,6 +158,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     dateTo: dateTo ?? '',
     aircraftId: aircraftId ?? '',
     personId: personId ?? '',
+    personQuery: personQuery ?? '',
     flightType: flightType ?? '',
     status: status ?? '',
   };
@@ -173,6 +168,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     ...(dateTo ? { dateTo } : {}),
     ...(aircraftId ? { aircraftId } : {}),
     ...(personId ? { personId } : {}),
+    ...(personQuery ? { personQuery } : {}),
     ...(flightType ? { flightType } : {}),
     ...(status ? { status } : {}),
   };
@@ -236,7 +232,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
         personOptions={personOptions}
         instructorOptions={instructorOptions}
         aircraftFilterOptions={aircraftFilterOptions}
-        personFilterOptions={personFilterOptions}
         airfieldName={branding.name}
         moneyLocale={displayLocale}
         locale={displayLocale}
@@ -246,8 +241,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
           cardTitle: t('cardTitle'),
           newEntry: t('newEntry'),
           empty: t('table.empty'),
-          exportLabel: t('exportLabel'),
-          exportPdfLabel: t('exportPdfLabel'),
+          exportMenu: { label: t('exportMenu.label'), xlsLabel: t('exportMenu.xlsLabel'), pdfLabel: t('exportMenu.pdfLabel') },
           pagination: { prev: '←', next: '→' },
           flightTypes: { private: t('flightTypes.private'), school: t('flightTypes.school'), other: t('flightTypes.other') },
           table: {
@@ -279,7 +273,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             aircraft: t('filters.aircraft'),
             allAircraft: t('filters.allAircraft'),
             person: t('filters.person'),
-            allPeople: t('filters.allPeople'),
+            personSearchPlaceholder: t('filters.personSearchPlaceholder'),
             flightType: t('filters.flightType'),
             allTypes: t('filters.allTypes'),
             status: t('filters.status'),

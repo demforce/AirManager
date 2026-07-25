@@ -17,7 +17,7 @@ type PageProps = {
     page?: string;
     window?: string;
     expiryTypeId?: string;
-    personId?: string;
+    personQuery?: string;
   }>;
 };
 
@@ -71,7 +71,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
 
     const window = sanitizeWindow(sp.window);
     const expiryTypeId = sp.expiryTypeId || undefined;
-    const personId = sp.personId || undefined;
+    const personQuery = sp.personQuery || undefined;
 
     // Sequential (not `Promise.all`): `listPeople` runs its own interactive
     // `$transaction` internally — same "never concurrent with another
@@ -88,7 +88,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     const registryQuery = {
       ...(window !== 'all' ? { window } : {}),
       expiryTypeId,
-      personId,
+      personQuery,
       pageSize: REGISTRY_PAGE_SIZE,
     };
     let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
@@ -104,7 +104,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     const exportHref = buildExportHref('/api/v1/expiries', exportFilterQuery, locale);
     const exportPdfHref = buildPdfExportHref('/api/v1/expiries/pdf', exportFilterQuery, locale);
 
-    const filters: ScadenzeFilters = { window, expiryTypeId: expiryTypeId ?? '', personId: personId ?? '' };
+    const filters: ScadenzeFilters = { window, expiryTypeId: expiryTypeId ?? '', personQuery: personQuery ?? '' };
 
     return (
       <main className="page">
@@ -147,8 +147,9 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             filters: {
               allTypes: t('registry.filters.allTypes'),
               allPilots: t('registry.filters.allPilots'),
+              pilot: t('registry.filters.pilot'),
+              personSearchPlaceholder: t('registry.filters.personSearchPlaceholder'),
               reset: t('registry.filters.reset'),
-              picker: { placeholder: t('registry.filters.picker.placeholder'), noResults: t('registry.filters.picker.noResults') },
             },
             table: {
               pilot: t('registry.table.pilot'),

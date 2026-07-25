@@ -1126,8 +1126,11 @@
     "subOwn": "{count, plural, one {# voce} other {# voci}} · solo i tuoi voli",
     "newEntry": "Nuova voce",
     "cardTitle": "Diario di volo",
-    "exportLabel": "Esporta Excel",
-    "exportPdfLabel": "Esporta PDF",
+    "exportMenu": {
+      "label": "Esporta",
+      "xlsLabel": "Voli (Excel)",
+      "pdfLabel": "Voli (PDF)"
+    },
     "kpi": {
       "entries": "Voci",
       "hours": "Ore di volo",
@@ -1159,8 +1162,8 @@
       "cancelledDetail": "Annullato il {date} — {reason}",
       "correctionOf": "Correzione di un volo precedente",
       "correctedBy": "Corretto da un volo successivo",
-      "cancelAction": "Storna",
-      "correctAction": "Correggi",
+      "cancelAction": "Annulla",
+      "correctAction": "Modifica",
       "empty": "Nessun volo registrato."
     },
     "filters": {
@@ -1169,7 +1172,7 @@
       "aircraft": "Velivolo",
       "allAircraft": "Tutti i velivoli",
       "person": "Persona",
-      "allPeople": "Tutte le persone",
+      "personSearchPlaceholder": "Cerca per nome…",
       "flightType": "Tipo",
       "allTypes": "Tutti i tipi",
       "status": "Stato",
@@ -1290,11 +1293,9 @@
       "filters": {
         "allTypes": "Tutti i tipi",
         "allPilots": "Tutti i piloti",
-        "reset": "Azzera filtri",
-        "picker": {
-          "placeholder": "Cerca pilota…",
-          "noResults": "Nessun risultato"
-        }
+        "pilot": "Pilota",
+        "personSearchPlaceholder": "Cerca pilota…",
+        "reset": "Azzera filtri"
       },
       "table": {
         "pilot": "Pilota",
@@ -2096,7 +2097,6 @@
     "sub": "{count, plural, one {# transazione} other {# transazioni}} · {period}",
     "periodAll": "storico completo",
     "newTransaction": "Nuova transazione",
-    "statements": "Estratti conto",
     "kpi": {
       "revenue": "Ricavi del mese",
       "revenueDelta": "{value}% su mese prec.",
@@ -2147,7 +2147,7 @@
       "accountGroup": "Movimenti conto",
       "cashGroup": "Categorie cassa",
       "pilot": "Pilota",
-      "allPilots": "Tutti i piloti",
+      "personSearchPlaceholder": "Cerca per nome…",
       "reset": "Azzera filtri"
     },
     "exportMenu": {
@@ -2241,16 +2241,6 @@
         "placeholder": "Cerca...",
         "noResults": "Nessun risultato."
       }
-    },
-    "statementsDialog": {
-      "title": "Estratti conto",
-      "subtitle": "Contabilità",
-      "pilot": "Pilota",
-      "dateFrom": "Dal",
-      "dateTo": "Al",
-      "submit": "Scarica PDF",
-      "cancel": "Annulla",
-      "requiredField": "Seleziona un pilota."
     }
   },
   "ReportsPage": {

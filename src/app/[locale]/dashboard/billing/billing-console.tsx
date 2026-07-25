@@ -25,7 +25,7 @@
  * `POST /api/v1/transactions`, which only backs the "Nuova transazione"
  * SlideOver's 3 STANDALONE branches (AC 4).
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
@@ -37,8 +37,6 @@ import { formatCents, parseCents } from '@/lib/money';
 import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
 import type { TransactionRowDto } from '@/lib/schemas/transactions';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
-import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
-import { StatementDialog, type StatementDialogLabels } from './statement-dialog';
 import { TransactionEditor, type TransactionEditorLabels } from './transaction-editor';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
@@ -46,11 +44,28 @@ type CategoryOption = { id: string; name: string };
 type CompensationRow = { personId: string; firstName: string; lastName: string; mtdMinutes: number; payoutRateCents: number | null; owedMtdCents: number | null };
 type NegativeBalanceRow = { personId: string; firstName: string; lastName: string; balanceCents: number };
 
-export type BillingFilters = { dateFrom: string; dateTo: string; type: string; personId: string };
+/** Free-text pilot filter (story 13.5, AC 1) — `personQuery` replaces the old `SearchCombobox`-driven `personId`, same idiom as `pilots-console.tsx`'s own name filter. */
+export type BillingFilters = { dateFrom: string; dateTo: string; type: string; personQuery: string };
+
+/** Same debounce-before-navigating idiom as `pilots-console.tsx`/`fleet-console.tsx`. */
+function useDebouncedCallback(callback: (value: string) => void, delayMs: number): (value: string) => void {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  return (value: string) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => callback(value), delayMs);
+  };
+}
 
 export type BillingConsoleLabels = {
   newTransaction: string;
-  statements: string;
   revenueByCategory: { title: string; sub: string; empty: string };
   instructorCompensation: { title: string; sub: string; noRate: string; empty: string };
   negativeBalances: { title: string; empty: string; link: string };
@@ -80,11 +95,10 @@ export type BillingConsoleLabels = {
     accountGroup: string;
     cashGroup: string;
     pilot: string;
-    allPilots: string;
+    personSearchPlaceholder: string;
     reset: string;
   };
   pagination: { prev: string; next: string };
-  picker: { placeholder: string; noResults: string };
   actions: { adjust: string; reverse: string };
   adjustModal: {
     title: string;
@@ -111,7 +125,6 @@ export type BillingConsoleLabels = {
     success: string;
   };
   newTransactionForm: TransactionEditorLabels;
-  statementsDialog: StatementDialogLabels;
 };
 
 export type BillingConsoleProps = {
@@ -131,7 +144,8 @@ export type BillingConsoleProps = {
   labels: BillingConsoleLabels;
 };
 
-const COLS = '92px 1.2fr 108px minmax(190px,1.6fr) 92px 108px 104px 72px';
+/* Story 13.5, AC 3: the Tipo column was 108px, truncating the longest kind label ("Flight charge reversal", EN) — widened to 170px so every kind reads in full. */
+const COLS = '92px 1.2fr 170px minmax(190px,1.6fr) 92px 108px 104px 72px';
 
 const ACCOUNT_MOVEMENT_TYPES: readonly AccountMovementTypeDto[] = ['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE', 'FLIGHT_CHARGE', 'FLIGHT_CHARGE_REVERSAL'];
 
@@ -170,23 +184,11 @@ function statusInfo(row: TransactionRowDto, labels: BillingConsoleLabels): { ton
   return { tone: '', label: labels.table.statusOptions.registered };
 }
 
-function personLabel(person: PersonOption): string {
-  return `${person.lastName} ${person.firstName}`;
-}
-
 function initialsFor(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
   return `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
-}
-
-async function searchPersonFilter(query: string): Promise<SearchComboboxOption[]> {
-  const params = new URLSearchParams({ q: query, pageSize: '50', profile: 'pilot-or-student' });
-  const response = await fetch(`/api/v1/people?${params.toString()}`);
-  if (!response.ok) return [];
-  const body = (await response.json()) as { items: { id: string; firstName: string; lastName: string }[] };
-  return body.items.map((person) => ({ id: person.id, label: personLabel(person) }));
 }
 
 export function BillingConsole({
@@ -207,8 +209,8 @@ export function BillingConsole({
 }: BillingConsoleProps) {
   const router = useRouter();
   const [filters, setFilters] = useState<BillingFilters>(initialFilters);
+  const [personQueryInput, setPersonQueryInput] = useState(initialFilters.personQuery);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [statementsOpen, setStatementsOpen] = useState(false);
 
   const [adjustingRow, setAdjustingRow] = useState<TransactionRowDto | null>(null);
   const [adjustAmount, setAdjustAmount] = useState('');
@@ -231,7 +233,7 @@ export function BillingConsole({
     if (next.dateFrom) query['dateFrom'] = next.dateFrom;
     if (next.dateTo) query['dateTo'] = next.dateTo;
     if (next.type) query['type'] = next.type;
-    if (next.personId) query['personId'] = next.personId;
+    if (next.personQuery) query['personQuery'] = next.personQuery;
     return query;
   }
 
@@ -247,9 +249,19 @@ export function BillingConsole({
     navigate(next);
   }
 
+  const debouncedPersonQuery = useDebouncedCallback((value: string) => {
+    handleFilterChange({ personQuery: value });
+  }, 400);
+
+  function handlePersonQueryChange(value: string): void {
+    setPersonQueryInput(value);
+    debouncedPersonQuery(value);
+  }
+
   function handleReset(): void {
-    const cleared: BillingFilters = { dateFrom: '', dateTo: '', type: '', personId: '' };
+    const cleared: BillingFilters = { dateFrom: '', dateTo: '', type: '', personQuery: '' };
     setFilters(cleared);
+    setPersonQueryInput('');
     navigate(cleared);
   }
 
@@ -258,11 +270,6 @@ export function BillingConsole({
   }
 
   const hasActiveFilter = Object.values(filters).some((value) => value !== '');
-
-  const personComboOptions: SearchComboboxOption[] = [
-    { id: '', label: labels.filters.allPilots },
-    ...personOptions.map((person) => ({ id: person.id, label: personLabel(person) })),
-  ];
 
   function openAdjust(row: TransactionRowDto): void {
     setAdjustFeedback(null);
@@ -427,16 +434,15 @@ export function BillingConsole({
               ))}
             </optgroup>
           </select>
-          <div style={{ width: 190 }}>
-            <SearchCombobox
-              id="billing-filter-person"
-              label={labels.filters.pilot}
-              value={filters.personId}
-              onChange={(id) => handleFilterChange({ personId: id })}
-              fetchOptions={searchPersonFilter}
-              initialOptions={personComboOptions}
-              placeholder={labels.picker.placeholder}
-              emptyText={labels.picker.noResults}
+          <div className="search" style={{ width: 190 }}>
+            <Icon.search />
+            <input
+              className="bare-input"
+              placeholder={labels.filters.personSearchPlaceholder}
+              aria-label={labels.filters.pilot}
+              value={personQueryInput}
+              onChange={(event) => handlePersonQueryChange(event.target.value)}
+              data-testid="billing-filter-person"
             />
           </div>
           {hasActiveFilter ? (
@@ -445,9 +451,6 @@ export function BillingConsole({
             </button>
           ) : null}
           <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={cashReportPdfHref} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} />
-          <button type="button" className="btn" onClick={() => setStatementsOpen(true)} data-testid="billing-statements-button">
-            <Icon.doc /> {labels.statements}
-          </button>
           <button type="button" className="btn primary" onClick={() => setEditorOpen(true)} data-testid="billing-new-transaction-button">
             <Icon.plus /> {labels.newTransaction}
           </button>
@@ -476,12 +479,7 @@ export function BillingConsole({
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
                     {formatDateOnly(row.date, moneyLocale)}
                   </div>
-                  <div>
-                    <div className="student-name">{row.personName ?? labels.table.noValue}</div>
-                    <div className="student-sub mono" style={{ fontSize: 10.5 }}>
-                      {row.id}
-                    </div>
-                  </div>
+                  <div className="student-name">{row.personName ?? labels.table.noValue}</div>
                   <div>
                     <Badge tone={kindBadgeTone(row)}>{kindLabel(row, labels)}</Badge>
                   </div>
@@ -641,8 +639,6 @@ export function BillingConsole({
         moneyLocale={moneyLocale}
         labels={labels.newTransactionForm}
       />
-
-      <StatementDialog open={statementsOpen} onClose={() => setStatementsOpen(false)} personOptions={personOptions} locale={locale} labels={labels.statementsDialog} />
 
       {adjustingRow ? (
         <div className="mini-modal">

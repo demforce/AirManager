@@ -140,7 +140,7 @@ test.describe('Unified billing ledger (Story 12.9)', () => {
     await expect(billingRows(page).first()).toContainText('Riga categoria A');
   });
 
-  test('Pilota filter (typed picker, URL-driven) narrows to that person only', async ({ page }) => {
+  test('Pilota filter (free-text, debounced like Piloti, URL-driven) narrows to that person only (story 13.5, AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilotA = await createPilotPerson(page, 'FiltroA');
     const pilotB = await createPilotPerson(page, 'FiltroB');
@@ -148,10 +148,36 @@ test.describe('Unified billing ledger (Story 12.9)', () => {
     await recordTopUp(page, pilotA.personId, 5000, day1);
     await recordTopUp(page, pilotB.personId, 6000, day1);
 
-    await gotoBilling(page, { dateFrom: day1, dateTo: day1, personId: pilotA.personId });
-    await expect(page).toHaveURL(new RegExp(`personId=${pilotA.personId}`));
+    await gotoBilling(page, { dateFrom: day1, dateTo: day1 });
+    await expect(billingRows(page)).toHaveCount(2);
+
+    await page.getByTestId('billing-filter-person').fill(pilotA.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(pilotA.lastName)}`));
     await expect(billingRows(page)).toHaveCount(1);
     await expect(billingRows(page).first()).toContainText(pilotA.lastName);
+  });
+
+  test('the pilot cell shows only the name, no raw row id underneath (story 13.5, AC 2)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const pilot = await createPilotPerson(page, 'NoRowId');
+    const { day1 } = uniqueDatePair();
+    await recordTopUp(page, pilot.personId, 5000, day1);
+
+    await gotoBilling(page, { dateFrom: day1, dateTo: day1 });
+    const row = billingRows(page).first();
+    await expect(row).toContainText(pilot.lastName);
+    await expect(row.locator('.student-sub')).toHaveCount(0);
+  });
+
+  test('the Tipo column is wide enough that even the longest kind label is not clipped (story 13.5, AC 3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await gotoBilling(page, {});
+    // Header row cols: Data / Pilota / Tipo / Descrizione / ... — Tipo is the 3rd cell.
+    const typeHeaderCell = page.locator('.student-row.header > div').nth(2);
+    const width = await typeHeaderCell.evaluate((el) => el.getBoundingClientRect().width);
+    // "Flight charge reversal" (EN, 23 chars) in 10.5px JetBrains Mono + badge
+    // padding/border needs ~160px — the pre-13.5 column was a clipping 108px.
+    expect(width).toBeGreaterThanOrEqual(150);
   });
 
   test('KPI row is the TRUE current-month aggregate and does NOT change when the table filters do (ratifica 2)', async ({ page }) => {
@@ -285,29 +311,11 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
   });
 });
 
-test.describe('Estratti conto PDF + RBAC (Story 12.9, AC 5/8)', () => {
-  test('the statements dialog builds a working PDF download link (200, application/pdf)', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const pilot = await createPilotPerson(page, 'Estratto');
-    const { day1, day2 } = uniqueDatePair();
-
-    await gotoBilling(page, {});
-    await page.getByTestId('billing-statements-button').click();
-    await page.waitForSelector('[data-testid="statement-dialog"]');
-    await selectFromCombobox(page.getByTestId('statement-person'), pilot.lastName, personOptionLabel(pilot));
-    await page.getByTestId('statement-date-from').fill(day1);
-    await page.getByTestId('statement-date-to').fill(day2);
-
-    const href = await page.getByTestId('statement-submit').getAttribute('href');
-    expect(href).toContain(`/api/v1/people/${pilot.personId}/account/pdf`);
-    expect(href).toContain(`from=${day1}`);
-    expect(href).toContain(`to=${day2}`);
-
-    const response = await page.request.get(href!);
-    expect(response.status()).toBe(200);
-    expect(response.headers()['content-type']).toBe('application/pdf');
-  });
-
+// Story 13.5, AC 4: the "Estratti conto" dialog is REMOVED from billing (UI
+// only — `/api/v1/people/{id}/account/pdf` itself stays, exercised by the
+// scheda persona's own estratto conto section, `pdf-exports.spec.ts` and
+// `person-detail.spec.ts` — never touched here).
+test.describe('Billing RBAC (Story 12.9, AC 8)', () => {
   test('a pilot is redirected away from /dashboard/billing and gets a 403 AD-8 envelope from GET /api/v1/transactions', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
 

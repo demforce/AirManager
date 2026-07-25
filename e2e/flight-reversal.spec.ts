@@ -212,6 +212,8 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraft.registration }); // native select since the 2026-07-21 filter-UI change
     await expect(page).toHaveURL(/aircraftId=/);
     const flightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).first();
+    // Story 13.5, AC 5: the row action reads "Annulla" (IT), not "Storna".
+    await expect(flightRow.getByTestId('flight-cancel-action')).toHaveText('Annulla');
     await flightRow.getByTestId('flight-cancel-action').click();
     const cancelPanel = page.getByTestId('flight-cancel-panel');
     await expect(cancelPanel).toContainText(aircraft.registration);
@@ -277,13 +279,17 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await page.getByTestId('flight-result-close').click();
 
     // Correct it: 60' -> 30' (a genuine "dati sbagliati" fix) — same takeoff (prefilled from the original), landing moved an hour earlier.
-    // Disambiguated by the presence of a still-available "Correggi" action
-    // (the REGISTERED row) rather than an H:MM duration substring: `textContent`
-    // concatenates adjacent cells with NO separator, so a `\b`-anchored regex
-    // can still land mid-word right after the preceding cell's own text
-    // (e.g. the type badge "Turismo" butting straight up against "0:30") —
-    // a structural filter has no such gotcha.
+    // Disambiguated by the presence of a still-available "Modifica" action
+    // (story 13.5, AC 5 renamed the row button; the modal it opens is still
+    // titled "Correggi volo", see below) on the REGISTERED row, rather than
+    // an H:MM duration substring: `textContent` concatenates adjacent cells
+    // with NO separator, so a `\b`-anchored regex can still land mid-word
+    // right after the preceding cell's own text (e.g. the type badge
+    // "Turismo" butting straight up against "0:30") — a structural filter
+    // has no such gotcha.
     const secondFlightRow = page.getByTestId('flight-row').filter({ hasText: '02/01/2020' }).filter({ has: page.getByTestId('flight-correct-action') });
+    // Story 13.5, AC 5: the row action reads "Modifica" (IT), not "Correggi".
+    await expect(secondFlightRow.getByTestId('flight-correct-action')).toHaveText('Modifica');
     await secondFlightRow.getByTestId('flight-correct-action').click();
     await expect(page.locator('.so-title')).toHaveText('Correggi volo');
     await page.getByLabel('Ora atterraggio').fill('10:30');

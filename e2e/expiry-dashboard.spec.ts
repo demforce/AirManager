@@ -186,6 +186,27 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     expect((await forbiddenResponse.json()).error.code).toBe('FORBIDDEN');
   });
 
+  test('Pilota filter (free-text, debounced like Piloti, URL-driven) narrows to that person only (story 13.5, AC 9)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const type = await createExpiryType(page, 'ALL');
+    const personA = uniquePerson('FiltroA');
+    const personB = uniquePerson('FiltroB');
+    const personAId = await createPilotPerson(page, personA);
+    const personBId = await createPilotPerson(page, personB);
+    await registerExpiry(page, { personId: personAId, expiryTypeId: type.id, expiresAt: addDaysUtc(20) });
+    await registerExpiry(page, { personId: personBId, expiryTypeId: type.id, expiresAt: addDaysUtc(20) });
+
+    await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${type.id}`);
+    await expect(page.getByTestId('scadenze-row')).toHaveCount(2);
+
+    await page.getByTestId('scadenze-filter-pilot').fill(personA.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(personA.lastName)}`));
+    const rows = page.getByTestId('scadenze-row');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText(personA.lastName);
+  });
+
   test('expiryTypeId filter for an id that does not exist yields an empty page (a filter, never a lookup)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 

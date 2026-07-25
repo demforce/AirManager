@@ -30,7 +30,13 @@ export type FlightStatusDto = z.infer<typeof flightStatusSchema>;
  * drill-down from the school hour summaries). A non-staff actor's `personId`/
  * `instructorPersonId` filter is further constrained server-side
  * (`flights.service.ts#listFlights`, AC 4): providing anyone else's id is a
- * 403, never silently ignored or narrowed.
+ * 403, never silently ignored or narrowed. `personQuery` (story 13.5, AC 7)
+ * is a SEPARATE, free-text narrowing filter — a case-insensitive substring
+ * match on the flight's own `person.firstName`/`lastName` (the logbook
+ * console's free-text pilot filter, replacing its old native `<select>`) —
+ * AND-combined with every other filter, `personId` included; it carries no
+ * own-access guard (the own-access base scope already restricts the result
+ * set, so it can only ever narrow further, never leak another person's row).
  */
 export const listFlightsQuerySchema = paginationQuerySchema
   .extend({
@@ -38,6 +44,7 @@ export const listFlightsQuerySchema = paginationQuerySchema
     dateTo: z.iso.date().optional(),
     aircraftId: z.string().trim().min(1).optional(),
     personId: z.string().trim().min(1).optional(),
+    personQuery: z.string().trim().min(1).optional(),
     instructorPersonId: z.string().trim().min(1).optional(),
     flightType: flightTypeSchema.optional(),
     status: flightStatusSchema.optional(),

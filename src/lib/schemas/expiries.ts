@@ -118,7 +118,12 @@ export type UpdateExpiryInput = z.infer<typeof updateExpirySchema>;
  * AND-combinable (pattern `listFlightsQuerySchema`, story 5.4).
  * `expiryTypeId` is an exact-match filter, not a lookup — an id that does
  * not exist yields an empty page, never a 404 (same convention as
- * `personId`/`aircraftId` on `listFlightsQuerySchema`).
+ * `personId`/`aircraftId` on `listFlightsQuerySchema`). `personQuery`
+ * (story 13.5, AC 9) is a SEPARATE, free-text narrowing filter —
+ * case-insensitive substring match on the linked person's
+ * `firstName`/`lastName` (the Scadenze registry's free-text pilot filter,
+ * replacing its old `SearchCombobox` picker) — AND-combined with every
+ * other filter, `personId` included.
  */
 /**
  * The Scadenze registry's "finestra" segmented filter (story 12.11, AC 3) —
@@ -140,6 +145,7 @@ export const listAllExpiriesQuerySchema = paginationQuerySchema.extend({
   status: expiryStatusSchema.optional(),
   window: expiryWindowSchema.optional(),
   personId: z.string().trim().min(1).optional(),
+  personQuery: z.string().trim().min(1).optional(),
   ...exportQuerySchema.shape,
 });
 

@@ -286,13 +286,17 @@ export function SearchCombobox({
           // (mousedown fires before click) — without this, `onBlur` would
           // close the popup and revert the query before `onClick` ever runs.
           onMouseDown={(event) => event.preventDefault()}
-          // Review F6: same CSS-var swap as the input above — the popup and
-          // its rows (empty state, option hover, meta) all used light-only
-          // hardcoded colors, invisible against a dark-theme background.
-          className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-[6px] border border-[var(--border)] bg-[var(--panel)] py-1 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+          // Story 13.5, AC 8: ported off raw Tailwind utilities onto
+          // airops.css (`.combo-listbox`/`.combo-option`) — the previous
+          // classes never set `font-family` of their own, unlike every other
+          // AirOps control; this dropdown's font depended entirely on
+          // inheritance reaching <body> instead (see the CSS block's own
+          // doc-comment). Now explicit and self-contained, same as the rest
+          // of the design system.
+          className="combo-listbox"
         >
           {options.length === 0 ? (
-            <li role="option" aria-disabled="true" aria-selected="false" className="px-3 py-2 text-sm text-[var(--ink-3)]">
+            <li role="option" aria-disabled="true" aria-selected="false" className="combo-option combo-option-empty">
               {emptyText}
             </li>
           ) : (
@@ -304,10 +308,10 @@ export function SearchCombobox({
                 aria-selected={option.id === value}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => selectOption(option)}
-                className={`cursor-pointer px-3 py-2 text-sm ${index === activeIndex ? 'bg-[var(--panel-2)] text-[var(--ink)]' : 'text-[var(--ink-2)]'}`}
+                className={`combo-option${index === activeIndex ? ' active' : ''}`}
               >
                 {option.label}
-                {option.meta ? <span className="ml-2 text-xs text-[var(--ink-3)]">{option.meta}</span> : null}
+                {option.meta ? <span className="combo-meta">{option.meta}</span> : null}
               </li>
             ))
           )}
