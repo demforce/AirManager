@@ -4,7 +4,7 @@ baseline_commit: 31e65ae
 
 # Story 13.6: PPR & Voli in transito — istruzioni operative in Settings, telefono, calendario, export PDF
 
-Status: review
+Status: done
 
 ## Story
 
@@ -107,4 +107,4 @@ L'AC4 dice testualmente "supporto `?format=pdf` sulla route `/api/v1/ppr-request
 
 **Chiusura note dev**: N4 (telefono — movements fixato, ppr-console latente) → F2 fixato; N8 (movements date-filter dev-mode-only) CONFERMATA (verde in CI). Tutte le altre note verificate e chiuse (v. sopra).
 
-**Verifica post-fix**: `npm run gates` + full suite `CI=1` → v. Change Log.
+**Verifica post-fix** (sessione principale): `npm run gates` verde (1445 unit). Il primo fix F1 (`173429a`) aggiungeva una guardia di regressione che usava `createPendingRequest` — ma una richiesta PENDING vive solo nella console PPR, nei Voli in transito compaiono i transiti APPROVED → la riga non esisteva e l'assert falliva 3/3 (cascata sul blocco seriale, suite rossa). Secondo fix `94211e7`: `createApprovedRequest` (esteso per ritornare l'email), verificato in isolamento (movements 12/12 CI-mode). Full suite finale `CI=1` su build prod, DB fresco → **246 passed, exit 0**, 1 flaky ambientale (`movements:299` fee-cleared, `toBeVisible` timeout, verde al retry), catena `settings`+`booking-window` girata. Lezione ribadita: la full suite va SEMPRE ri-eseguita dopo ogni fix, anche i miei — un test aggiunto in review può rompere la suite tanto quanto il codice.

@@ -29,7 +29,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-25 (story 13.5 DONE — polish tabelle: filtri pilota free-text (personQuery additivo, deep-link personId preservato) su billing/logbook/expiries, billing via-id-sotto-nome + col Tipo 170px + rimozione dialog Estratti conto (endpoint /account/pdf intatto), logbook rinomine + export dropdown + fix font dropdown search-combobox, email promemoria provata Mailpit. Review Opus shippable-with-fixes: fix 31e65ae F1 (rinomina estesa ai titoli modal/editor logbook per coerenza), F2/F3 note accettate; full suite CI=1 build prod 243 passed exit 0. Prossima: dev 13.6 PPR/movimenti. SCOPERTA: operating-instructions GIÀ in Settings (12.11), duplicato nella console PPR → 13.6 lo rimuove dalla console)
+last_updated: 2026-07-25 (story 13.6 DONE — PPR/movimenti: editor istruzioni+landing-fee duplicato rimosso dalla console PPR (Settings/ClubCard resta la sede, endpoint+email intatti), telefono su righe separate in Voli in transito (+F2 stessa fix in ppr-console), filtri data → CalendarPopover, export PDF (nuovo exportPprRequestsPdf + route dedicata /ppr-requests/pdf, deviazione accettata) su movimenti + console PPR. Review Opus shippable-with-fixes: fix 173429a (F1/F2) + 94211e7 (guardia telefono usava PENDING→APPROVED); full suite CI=1 build prod 246 passed exit 0. Prossima: dev 13.7 Pianificazione. Deciso: bookings sort già OK (solo popover fix + PDF export))
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -153,8 +153,8 @@ development_status:
   13-3-scheda-persona-estratto-conto-airops: done
   13-4-flotta-toggle-storici-owner: done
   13-5-polish-tabelle-billing-logbook-expiries: done
-  13-6-ppr-movimenti: in-progress
-  13-7-pianificazione: backlog
+  13-6-ppr-movimenti: done
+  13-7-pianificazione: in-progress
   13-8-shell-misc: backlog
   13-9-dark-theme-pass: backlog
   13-10-mobile-pass: backlog
