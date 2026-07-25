@@ -152,15 +152,15 @@ async function findPendingId(page: Page, registration: string): Promise<string> 
 }
 
 /** Creates + approves a request in one call (caller must already be logged in as an actor with `ppr.manage`). */
-async function createApprovedRequest(page: Page, hoursFromNow = 5): Promise<{ id: string; pprNumber: string; registration: string; eta: string }> {
-  const { registration, eta } = await createPendingRequest(page, hoursFromNow);
+async function createApprovedRequest(page: Page, hoursFromNow = 5): Promise<{ id: string; pprNumber: string; registration: string; email: string; eta: string }> {
+  const { registration, email, eta } = await createPendingRequest(page, hoursFromNow);
   const id = await findPendingId(page, registration);
 
   const approveResponse = await page.request.post(`/api/v1/ppr-requests/${id}/approve`);
   expect(approveResponse.status()).toBe(200);
   const approveBody = (await approveResponse.json()) as { pprNumber: string };
 
-  return { id, pprNumber: approveBody.pprNumber, registration, eta };
+  return { id, pprNumber: approveBody.pprNumber, registration, email, eta };
 }
 
 const UI_MOVEMENTS_PAGE_SIZE = 20;
@@ -238,7 +238,10 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
 
   test('the register row shows the requester email AND phone, each on its own line (story 13.6, AC 2 — regression guard: `.student-sub` nowrap/ellipsis must not clip the phone off)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const { registration, email } = await createPendingRequest(page);
+    // An APPROVED request is what surfaces as a transit movement in this
+    // register (a PENDING one lives only in the PPR console) — so its row is
+    // the one that renders the requester's email + phone.
+    const { registration, email } = await createApprovedRequest(page);
     await page.goto('/it/dashboard/movements');
     const row = movementsRows(page).filter({ hasText: registration });
     await expect(row.getByText(email)).toBeVisible();
