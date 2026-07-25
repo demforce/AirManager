@@ -4,7 +4,7 @@ baseline_commit: 19f5b33
 
 # Story 13.9: Dark theme pass — sweep sistematico leggibilità
 
-Status: review
+Status: done
 
 ## Story
 
@@ -150,4 +150,4 @@ Tutte le verifiche sotto sono state fatte con l'audit di contrasto computazional
 - **F6 po-decision** — famiglia `--ink-4` (header colonna, label gruppo, 10.5px): numeri del dev ESATTI (dark 2.78-2.96, light 2.34-2.48 — light peggio), unica famiglia residua sotto 3:1 → **PO: alzare il token ORA in entrambi i temi**: light 0.72→0.62 (3.5-3.6:1), dark 0.50→0.58 (4.1-4.5:1).
 - **F7 note** — avatar istruttore 3.85:1 identico nei due temi: classificazione del dev corretta, pre-esistente e theme-independent, **nessuna azione** (backlog design-system).
 
-**Fix post-review applicati dalla sessione principale** (chirurgici — v. diff del commit `fix(13.9)`): `airops.css` (F1, F2+now-line, F5, F6), `layout.tsx` + `login.spec.ts` + questo story file (F3, F4). Tutti i valori nuovi verificati aritmeticamente (oklch→sRGB→WCAG) prima del commit; full suite CI=1 rieseguita dopo il commit (esito nel log di chiusura).
+**Fix post-review applicati dalla sessione principale** (chirurgici — v. diff del commit `fix(13.9)`): `airops.css` (F1, F2+now-line, F5, F6), `layout.tsx` + `login.spec.ts` + questo story file (F3, F4). Tutti i valori nuovi verificati aritmeticamente (oklch→sRGB→WCAG) prima del commit; **full suite CI=1 rieseguita dopo il commit `e04cccd` su DB fresco: 256 passed (8.1m), 0 fail, 0 flaky, catena settings 6/6 + booking-window 3/3 confermata.**
