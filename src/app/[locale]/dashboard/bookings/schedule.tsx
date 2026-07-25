@@ -165,10 +165,23 @@ const CAL_POPOVER_WIDTH = 280;
  * 139px past the left edge, calendar popover 12px past the right edge).
  * Shared by both popovers below, same "one mechanism, not duplicated"
  * reasoning as `useFixedPopover` itself.
+ *
+ * Review fix (F6): below `width + 2*gutter` (336px for the 320px filter
+ * popover) the two bounds cross — the upper bound
+ * (`window.innerWidth - width - gutter`) drops below the lower bound
+ * (`gutter`), and `Math.min(Math.max(desired, gutter), upperBound)`
+ * evaluates the upper bound LAST, so it wins and can return a NEGATIVE
+ * `left` (measured: -8 at a 320px viewport) — the popover clips past the
+ * left edge again, the exact bug this function exists to prevent.
+ * `Math.max(gutter, Math.min(...))` evaluates the lower bound last instead,
+ * so it always wins: `left` is never < `gutter`, at the cost of accepting
+ * overflow on the RIGHT when the viewport is narrower than the popover
+ * itself (no width left to satisfy both edges — a real constraint, not a
+ * bug this function can fix).
  */
 function clampPopoverLeft(desiredLeft: number, width: number): number {
   const gutter = 8;
-  return Math.min(Math.max(desiredLeft, gutter), window.innerWidth - width - gutter);
+  return Math.max(gutter, Math.min(desiredLeft, window.innerWidth - width - gutter));
 }
 
 /**

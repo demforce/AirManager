@@ -391,7 +391,7 @@ export function BillingConsole({
               {reverseFeedback}
             </p>
           ) : null}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }} title={`${labels.filters.dateFrom} – ${labels.filters.dateTo}`}>
+          <div className="filter-date-range" style={{ display: 'flex', alignItems: 'center', gap: 5 }} title={`${labels.filters.dateFrom} – ${labels.filters.dateTo}`}>
             <DateInput
               inline
               style={{ width: 'auto', fontSize: 12 }}

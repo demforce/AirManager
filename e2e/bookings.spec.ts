@@ -761,6 +761,43 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn')).toBe(true);
   });
 
+  test('story 13.10 review F2: at 375px the week view is unreachable-day-free — `.week-grid` scrolls horizontally so the 7th day becomes reachable', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto('/it/dashboard/bookings?view=week');
+
+    const grid = page.locator('.week-grid');
+    const lastDay = page.getByTestId('schedule-week-day').last();
+
+    // Pre-fix repro (F2): `.week-grid` had no scroll container of its own —
+    // day 7 was clipped by the ancestor `.card{overflow:hidden}`, outside
+    // both the viewport and the hit-testable area.
+    function reachable(el: HTMLElement): boolean {
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const atPoint = document.elementFromPoint(cx, cy);
+      return rect.left >= 0 && rect.right <= window.innerWidth && (atPoint === el || el.contains(atPoint));
+    }
+    expect(await lastDay.evaluate(reachable)).toBe(false);
+    expect(await grid.evaluate((el) => el.scrollLeft)).toBe(0);
+
+    // A real wheel scroll on the grid (not Playwright's own
+    // `scrollIntoViewIfNeeded`, which would mask a container that isn't
+    // actually scrollable).
+    const box = await grid.boundingBox();
+    if (!box) throw new Error('`.week-grid` not found');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(1000, 0);
+    await expect(async () => {
+      expect(await grid.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+    }).toPass({ timeout: 2000 });
+    expect(await lastDay.evaluate(reachable)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  });
+
   test('calendar mobile viewport (375x812, Task 4): day view is usable, no page-level horizontal overflow, primary action reachable', async ({
     page,
   }) => {

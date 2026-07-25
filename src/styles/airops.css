@@ -799,6 +799,19 @@ html[data-theme="dark"] .alert-box.info{ color: oklch(0.86 0.1 245); }
 .util-bar .seg.flown{ background: var(--ok); }
 .util-bar .seg.mx{ background: repeating-linear-gradient(135deg, var(--accent) 0 4px, transparent 4px 8px); opacity: 0.9;}
 .util-value{ font-family: var(--font-mono); font-size: 11.5px; text-align: right; color: var(--ink-2); }
+/* Story 13.10 review F5: all 3 call sites (`rank-bars.tsx` + 2 raw usages in
+   `reports-console.tsx`) set their OWN `grid-template-columns` inline
+   (label/value column widths vary per row), fixed px values that don't
+   shrink at narrow viewports — at 375px the fixed label+value columns left
+   too little room for the value text, clipping it 26-50px inside
+   `.card{overflow:hidden}`. Switching the row to `display: flex` makes the
+   inline `grid-template-columns` inert (grid-only property, ignored on a
+   flex container) without touching the 3 call sites — label/bar/value stack
+   vertically instead, each full-width so nothing needs to shrink below its
+   content. */
+@media (max-width: 640px){
+  .util-row{ display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+}
 
 /* ---------- tweaks panel ---------- */
 .tweaks{
@@ -1235,12 +1248,22 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
 .combo-meta{ margin-left: 8px; font-size: 12px; color: var(--ink-3); }
 
 /* ---------- schedule week view ---------- */
+/* Story 13.10 review F2: unlike `.schedule` (day view), this grid had no
+   scrollable container of its own — its 7 `minmax(120px, 1fr)` tracks (840px
+   content minimum) simply got clipped by the parent `.card{overflow:hidden}`
+   at narrow viewports (4 of 7 days unreachable at 375px, wheel/drag did
+   nothing: nothing here was a scroll container). Same fix as `.schedule`:
+   `overflow-x: auto` + `min-width: 0` turn `.week-grid` into its OWN
+   horizontal scroll container, so the clipped days become reachable by
+   scrolling instead of invisible. */
 .week-grid{
   display: grid;
   grid-template-columns: repeat(7, minmax(120px, 1fr));
   gap: 1px;
   background: var(--border);
   padding: 1px;
+  overflow-x: auto;
+  min-width: 0;
 }
 .week-day{
   background: var(--panel);
@@ -1309,7 +1332,20 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
 @media (max-width: 900px){
   .app{ grid-template-columns: 64px 1fr; }
   .sidebar .nav-label, .brand-name, .brand-sub, .nav-item .label-txt, .weather-card{ display: none; }
-  .kpi-row{ grid-template-columns: repeat(2, 1fr); }
+  /* Story 13.10 review F1: bare `1fr` tracks (and `.kpi`'s own default
+     `min-width: auto`) carry a content-based automatic minimum size — a
+     realistic long `.kpi-value` (e.g. "12.480,50 €", a fresh-seed DB never
+     produces this, which is why the sweep missed it) forces its column
+     wider than the 2-column grid can fit at 375px, pushing PAGE
+     `scrollWidth` past `clientWidth` (measured pre-fix: 86px overflow on the
+     admin home, 63px on the pilot home — `.kpi-row` sits directly on the
+     page, not inside a `.card`, so this is real page-level overflow, not
+     clipped content). `minmax(0, 1fr)` + `min-width: 0` let the column (and
+     the `.kpi` box, which already has `overflow: hidden`) shrink below that
+     content minimum; the value then clips inside its own box instead of
+     widening the grid. */
+  .kpi-row{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi{ min-width: 0; }
 }
 
 /* ---------- ppr public form (extracted from docs/design-reference/airops/PPR Request.html <style>, story 12.1 AC 1b) ---------- */
@@ -1398,12 +1434,20 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
    pre-fix: `.so-body` scrollWidth 382px vs 344px clientWidth, the
    Istruttore `<select>` rendered at `left:239 right:413` (38px past the
    375px viewport). Single column below 640px (same threshold as the
-   topbar rule above) keeps every field full-width and directly reachable.
-   `.ppr-form-grid` (public PPR request form) has the same 2-column shape
-   but was measured NOT to overflow at 375px (no sidebar eating into the
-   viewport, `.ppr-grid` already 1-col below 820px) — left as-is. */
+   topbar rule above) keeps every field full-width and directly reachable. */
 @media (max-width: 640px){
   .form-grid{ grid-template-columns: 1fr; }
+}
+
+/* Story 13.10 review F3: `.ppr-form-grid` (public `/ppr` request form) has
+   the same 2-column shape as `.form-grid` above — the original sweep's
+   comment here claimed it was "measured NOT to overflow at 375px", which
+   the review disproved: at 375px the grid's two 174px columns leave the
+   ETD field's time input clipped ~60px by the card (the time segment +
+   picker icon rendered outside the visible/hit-testable area). Same fix,
+   same threshold, as `.form-grid`. */
+@media (max-width: 640px){
+  .ppr-form-grid{ grid-template-columns: 1fr; }
 }
 
 /* Story 13.10 (mobile pass): `.page-head`'s title/actions row (13 page
@@ -1430,13 +1474,23 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
    cells reads a false ~0px even at desktop widths) drops to ~0.6-0.7px at
    375px, reading as one continuous run ("AgoSetOttNov…", no perceptible
    break) — tighter than the ~1.8-2px baseline 13.8's review measured
-   (different Chromium build's font metrics). Comfortable again (>=3.6px)
-   from 414px up, so the cutoff sits just below that. `visibility: hidden`
-   (not `display: none`) keeps the hidden label's grid/flex slot, so the
+   (different Chromium build's font metrics). `visibility: hidden` (not
+   `display: none`) keeps the hidden label's grid/flex slot, so the
    remaining ones stay aligned under their own bar/point — only the
-   RENDERING is thinned out, `shortMonthLabel`/date logic is untouched. */
-@media (max-width: 400px){
-  .chart-label:nth-child(even){ visibility: hidden; }
+   RENDERING is thinned out, `shortMonthLabel`/date logic is untouched.
+   Review fixes:
+   - F7: `:nth-child(even)` hides whichever label lands on an even DOM
+     index — with 12 labels that's index 12, the LAST one (the current
+     month, the one a chart most wants to emphasize). `:nth-last-child(even)`
+     counts from the end instead, so the last label (1st from the end, odd)
+     always survives regardless of the total count.
+   - F8: the 400px cutoff left the 401-413px band at 12 labels with a
+     2.6-3.5px gap — short of the "comfortable" >=3.6px this comment
+     originally (incorrectly) claimed started at 414px. Raised to 413px so
+     the thinned 6-label layout (~17px gap) covers that band too; comfortable
+     12-label spacing genuinely starts at 414px now. */
+@media (max-width: 413px){
+  .chart-label:nth-last-child(even){ visibility: hidden; }
 }
 
 /* Custom date field (user decision 2026-07-21): the browser's native
@@ -1457,3 +1511,18 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
 }
 .date-input-btn:hover{ color: var(--ink); background: var(--panel-2); }
 .date-input-btn svg{ width: 14px; height: 14px; }
+
+/* Story 13.10 review F4: `logbook-console.tsx`/`billing-console.tsx` each
+   put a "date from – date to" pair (`.filter-date-range`, identical
+   structure/inline-style in both files, no shared class before this fix)
+   in `.card-head`. `.card-head` itself already wraps (`flex-wrap: wrap`,
+   above), but that only pushes the WHOLE pair onto its own row — the pair's
+   OWN content (2 native date inputs, each ~150px, non-wrapping) still
+   exceeded the row's available width at 375px, so it overflowed and got
+   clipped by `.card{overflow:hidden}`: the date-to calendar button
+   measured entirely past the visible edge, its input clipped 36px. Letting
+   the pair itself wrap moves "date to" onto its own line instead of
+   spilling past the card. */
+@media (max-width: 640px){
+  .filter-date-range{ flex-wrap: wrap; }
+}
