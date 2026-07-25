@@ -1594,7 +1594,6 @@
     "sub": "{pending} pending · {approved} approved · {rejected} rejected",
     "header": {
       "publicForm": "Public form",
-      "rules": "Published rules",
       "manual": "Manual PPR"
     },
     "filters": {
@@ -1671,23 +1670,8 @@
         "generic": "We could not complete the operation. Please try again."
       }
     },
-    "instructions": {
-      "heading": "Operating instructions",
-      "description": "Text included in the approval email, in the requester's language. Leave a field empty to omit the section in that language.",
-      "it": "Italian",
-      "en": "English",
-      "save": "Save instructions",
-      "saved": "Instructions saved.",
-      "error": "We could not save the instructions. Please try again."
-    },
-    "landingFee": {
-      "heading": "Default landing fee",
-      "description": "Amount prefilled in the PPR register's completion panel (editable case by case). 0 is allowed.",
-      "amountLabel": "Amount",
-      "invalidAmount": "Enter a valid amount (0.00 is allowed).",
-      "save": "Save fee",
-      "saved": "Fee saved.",
-      "error": "We could not save the fee. Please try again."
+    "export": {
+      "label": "Export"
     }
   },
   "MovementsPage": {

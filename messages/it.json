@@ -1594,7 +1594,6 @@
     "sub": "{pending} in attesa · {approved} approvate · {rejected} rifiutate",
     "header": {
       "publicForm": "Modulo pubblico",
-      "rules": "Regole pubblicate",
       "manual": "PPR manuale"
     },
     "filters": {
@@ -1671,23 +1670,8 @@
         "generic": "Non è stato possibile completare l'operazione. Riprova."
       }
     },
-    "instructions": {
-      "heading": "Istruzioni operative",
-      "description": "Testo incluso nell'email di approvazione, nella lingua del richiedente. Lascia vuoto un campo per omettere la sezione in quella lingua.",
-      "it": "Italiano",
-      "en": "Inglese",
-      "save": "Salva istruzioni",
-      "saved": "Istruzioni salvate.",
-      "error": "Non è stato possibile salvare le istruzioni. Riprova."
-    },
-    "landingFee": {
-      "heading": "Tassa di atterraggio predefinita",
-      "description": "Importo prefillato nel pannello di completamento del registro PPR (modificabile caso per caso). 0 ammesso.",
-      "amountLabel": "Importo",
-      "invalidAmount": "Inserisci un importo valido (anche 0,00).",
-      "save": "Salva tassa",
-      "saved": "Tassa salvata.",
-      "error": "Non è stato possibile salvare la tassa. Riprova."
+    "export": {
+      "label": "Esporta"
     }
   },
   "MovementsPage": {

@@ -37,6 +37,7 @@ const { listFlights } = await import('./flights.service');
 const { listCashMovements, getCashReport } = await import('./cash.service');
 const { listAllExpiries } = await import('./expiries.service');
 const { listAccountMovements, getAccountOverview } = await import('./accounts.service');
+const { listPprRequests } = await import('./ppr.service');
 const { getAirfieldBranding } = await import('./app-settings.service');
 const { renderReportPdf } = await import('@/server/adapters/pdf/document');
 const { getCompensationSummary } = await import('./instructor-compensation.service');
@@ -56,6 +57,7 @@ const {
   exportCashReportPdf,
   exportFlightsPdf,
   exportExpiriesPdf,
+  exportPprRequestsPdf,
 } = await import('./exports.service');
 
 const listPeopleMock = vi.mocked(listPeople);
@@ -65,6 +67,7 @@ const listAllExpiriesMock = vi.mocked(listAllExpiries);
 const listAccountMovementsMock = vi.mocked(listAccountMovements);
 const getAccountOverviewMock = vi.mocked(getAccountOverview);
 const getPersonMock = vi.mocked(getPerson);
+const listPprRequestsMock = vi.mocked(listPprRequests);
 const getCashReportMock = vi.mocked(getCashReport);
 const getAirfieldBrandingMock = vi.mocked(getAirfieldBranding);
 const renderReportPdfMock = vi.mocked(renderReportPdf);
@@ -94,6 +97,7 @@ beforeEach(() => {
   listAccountMovementsMock.mockReset();
   getAccountOverviewMock.mockReset();
   getPersonMock.mockReset();
+  listPprRequestsMock.mockReset();
   getCashReportMock.mockReset();
   renderReportPdfMock.mockClear();
   getAirfieldBrandingMock.mockReset();
@@ -788,5 +792,107 @@ describe('exportExpiriesPdf (story 10.2, AC 2/3)', () => {
     const row = props.rows[0];
     expect(statusColumn.value(row)).toBe('Scaduta');
     expect(statusColumn.color!(row)).toBe('#9F2F2D');
+  });
+});
+
+describe('exportPprRequestsPdf (story 13.6, AC 4/5)', () => {
+  it('reuses listPprRequests with page:1/pageSize:PDF_EXPORT_MAX_ROWS, rejects EXPORT_TOO_LARGE, maps the same columns as the xlsx export (incl. a null pprNumber/fee), and has no totals', async () => {
+    listPprRequestsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+    await expect(exportPprRequestsPdf(ACTOR, { page: 1, pageSize: 20, status: 'PENDING' })).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
+
+    listPprRequestsMock.mockReset();
+    listPprRequestsMock.mockResolvedValue({
+      total: 1,
+      page: 1,
+      pageSize: PDF_EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'ppr_1',
+          status: 'PENDING',
+          firstName: 'Mario',
+          lastName: 'Rossi',
+          email: 'mario@example.com',
+          phone: '+39 333 0000000',
+          aircraftRegistration: 'I-ABCD',
+          aircraftType: 'Cessna 172',
+          origin: 'LIRN',
+          destination: 'LIRU',
+          eta: new Date('2026-07-01T09:00:00Z'),
+          etd: null,
+          personsOnBoard: 1,
+          notes: null,
+          pprNumber: null,
+          rejectionReason: null,
+          decidedAt: null,
+          decidedByUserId: null,
+          landingFeeCents: null,
+          closedAt: null,
+          createdAt: new Date('2026-06-30T09:00:00Z'),
+          createdByUserId: null,
+        },
+      ],
+    } as never);
+
+    const { buffer, filename } = await exportPprRequestsPdf(ACTOR, { page: 1, pageSize: 20, status: 'PENDING', locale: 'it' });
+
+    expect(buffer.toString('latin1').startsWith('%PDF-')).toBe(true);
+    expect(filename).toMatch(/^airmanager-ppr-requests-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(listPprRequestsMock).toHaveBeenLastCalledWith(ACTOR, expect.objectContaining({ page: 1, pageSize: PDF_EXPORT_MAX_ROWS, status: 'PENDING' }));
+
+    const props = lastPdfProps();
+    expect(props.title).toBe('Registro movimenti');
+    expect(props.subtitle).toBeNull();
+    expect(props.totals).toBeUndefined();
+
+    const row = props.rows[0];
+    expect(props.columns.find((c) => c.header === 'Numero PPR')!.value(row)).toBe(''); // null pprNumber -> empty string, never null
+    expect(props.columns.find((c) => c.header === 'Richiedente · contatto')!.value(row)).toBe('Mario Rossi');
+    expect(props.columns.find((c) => c.header === 'Nominativo')!.value(row)).toBe('I-ABCD');
+    expect(props.columns.find((c) => c.header === 'ETA')!.value(row)).toBe('01/07/2026, 11:00'); // 09:00Z -> CEST +2
+    expect(props.columns.find((c) => c.header === 'Stato')!.value(row)).toBe('In attesa');
+    expect(props.columns.find((c) => c.header === 'Tassa')!.value(row)).toBe(''); // null landingFeeCents -> empty string, never null
+  });
+
+  it('formats a non-null landing fee and applies the period subtitle when both from/to are given', async () => {
+    listPprRequestsMock.mockResolvedValue({
+      total: 1,
+      page: 1,
+      pageSize: PDF_EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'ppr_2',
+          status: 'COMPLETED',
+          firstName: 'Luigi',
+          lastName: 'Verdi',
+          email: null,
+          phone: '+39 333 1111111',
+          aircraftRegistration: 'I-EFGH',
+          aircraftType: 'TB-20',
+          origin: 'LIRN',
+          destination: 'LIRU',
+          eta: new Date('2026-07-02T09:00:00Z'),
+          etd: null,
+          personsOnBoard: 2,
+          notes: null,
+          pprNumber: 'PPR-2026-0001',
+          rejectionReason: null,
+          decidedAt: new Date('2026-07-02T08:00:00Z'),
+          decidedByUserId: 'user_1',
+          landingFeeCents: 4321,
+          closedAt: new Date('2026-07-02T09:30:00Z'),
+          createdAt: new Date('2026-07-01T09:00:00Z'),
+          createdByUserId: 'user_1',
+        },
+      ],
+    } as never);
+
+    const { buffer } = await exportPprRequestsPdf(ACTOR, { page: 1, pageSize: 20, status: 'COMPLETED', from: '2026-07-01', to: '2026-07-31', locale: 'it' });
+    expect(buffer.toString('latin1').startsWith('%PDF-')).toBe(true);
+
+    const props = lastPdfProps();
+    expect(props.subtitle).toBe('01/07/2026 – 31/07/2026');
+    const row = props.rows[0];
+    expect(props.columns.find((c) => c.header === 'Numero PPR')!.value(row)).toBe('PPR-2026-0001');
+    expect(props.columns.find((c) => c.header === 'Tassa')!.value(row)).toBe('43,21 €');
   });
 });

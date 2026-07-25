@@ -300,13 +300,12 @@ export async function exportBookingsXlsx(actor: Actor, query: ListBookingsQuery)
   return toXlsxExport('bookings', t('list.cardTitle'), columns, result.items);
 }
 
-// --- PPR requests (`GET /api/v1/ppr-requests`) ------------------------------
-// Wired from the MOVEMENTS view (`dashboard/movements`, epic 12 story 12.4 —
-// replaces the pre-12.4 `dashboard/ppr/register`, filterable by
-// stato/periodo) rather than the approval console (`dashboard/ppr`, a
-// PENDING-default action list) — see `export-button.tsx`'s callers; both
-// read the SAME endpoint, this is which page's table shape the columns
-// mirror.
+// --- PPR requests (`GET /api/v1/ppr-requests`, `GET /api/v1/ppr-requests/pdf`) ---
+// Column set mirrors the MOVEMENTS view (`dashboard/movements`, epic 12
+// story 12.4 — replaces the pre-12.4 `dashboard/ppr/register`, filterable by
+// stato/periodo); the approval console (`dashboard/ppr`, a PENDING-default
+// action list) reuses the SAME two export functions with its own status
+// filter (story 13.6, AC 5) rather than a second, dedicated column set.
 
 const PPR_STATUS_KEYS = { PENDING: 'pending', APPROVED: 'approved', REJECTED: 'rejected', COMPLETED: 'completed', CANCELLED: 'cancelled' } as const;
 
@@ -708,4 +707,34 @@ export async function exportExpiriesPdf(actor: Actor, query: ListAllExpiriesQuer
 
   // No `totals` (Dev Notes: "nessun totale, non pertinente" — a status list has nothing summable).
   return toPdfExport('expiries', locale, branding, t('dashboard.heading'), null, columns, result.items, undefined);
+}
+
+// --- PPR queue/register (`GET /api/v1/ppr-requests/pdf`) -------------------
+// Story 13.6, AC 4/5 — dedicated PDF route (spine :105), same filters
+// (status/from/to) and SAME columns as `exportPprRequestsXlsx` above. Wired
+// from both the movements view (Voli in transito) and the PPR approval
+// console's own new export menu.
+
+export async function exportPprRequestsPdf(actor: Actor, query: ListPprRequestsQuery): Promise<PdfExport> {
+  const result = await listPprRequests(actor, { ...query, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+  assertWithinPdfExportCap(result.total);
+  const branding = await getAirfieldBranding();
+
+  const locale = resolveLocale(query);
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'MovementsPage' });
+
+  const columns: PdfColumn<(typeof result.items)[number]>[] = [
+    { header: t('export.pprNumber'), value: (row) => row.pprNumber ?? '' },
+    { header: t('table.requester'), value: (row) => `${row.firstName} ${row.lastName}` },
+    { header: t('table.aircraft'), value: (row) => row.aircraftRegistration },
+    { header: t('table.eta'), value: (row) => formatDateTime(row.eta, locale) },
+    { header: t('table.status'), value: (row) => t(`filters.statusOptions.${PPR_STATUS_KEYS[row.status]}`) },
+    { header: t('table.fee'), value: (row) => (row.landingFeeCents === null ? '' : formatCents(row.landingFeeCents, locale)) },
+  ];
+
+  // Both bounds present (same rule as `exportFlightsPdf`) -> a period subtitle.
+  const subtitle = query.from && query.to ? periodSubtitle(query.from, query.to, locale) : null;
+
+  return toPdfExport('ppr-requests', locale, branding, t('card.title'), subtitle, columns, result.items, undefined);
 }

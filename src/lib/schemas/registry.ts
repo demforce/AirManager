@@ -1581,6 +1581,21 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'get',
+  path: '/api/v1/ppr-requests/pdf',
+  summary: 'PDF export of the PPR queue/register (story 13.6, AC 4/5)',
+  description:
+    "Dedicated PDF route (spine :105), NOT `?format=pdf` on the endpoint above — same query schema and status/from/to filters as `GET /api/v1/ppr-requests` (`page`/`pageSize`/`format`, also present on that schema, are ignored here; this always re-pages internally up to the PDF cap). Same columns as the `?format=xlsx` export, reused from both the movements view and the PPR approval console's own export menu. Requires `ppr.manage`.",
+  tags: ['Ppr'],
+  security,
+  request: { query: listPprRequestsQuerySchema },
+  responses: {
+    200: { description: 'The PPR queue/register as a PDF document.', content: pdfContent() },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
   method: 'post',
   path: '/api/v1/ppr-requests/{id}/approve',
   summary: 'Approve a pending PPR request (AC 1)',

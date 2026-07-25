@@ -14,10 +14,10 @@
 import { useState } from 'react';
 import { useRouter } from '@/i18n/navigation';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { ExportMenu } from '@/components/ui/export-menu';
 import { useToast } from '@/components/ui/toast';
 import { formatDateTime } from '@/lib/time';
-import { parseCents } from '@/lib/money';
-import type { PprOperatingInstructionsDto, PprRequestItemDto, PprStatusDto } from '@/lib/schemas/ppr';
+import type { PprRequestItemDto, PprStatusDto } from '@/lib/schemas/ppr';
 import type { QueueStatus } from './page';
 
 export type PprConsoleLabels = {
@@ -34,26 +34,8 @@ export type PprConsoleLabels = {
   /** `{pprNumber}` unresolved placeholder — client `.replace()`, same pattern as the pre-12.4 page. */
   toast: { approved: string; rejected: string; conflictError: string; genericError: string };
   empty: string;
-};
-
-export type PprOperatingInstructionsLabels = {
-  heading: string;
-  description: string;
-  it: string;
-  en: string;
-  save: string;
-  saved: string;
-  error: string;
-};
-
-export type PprLandingFeeLabels = {
-  heading: string;
-  description: string;
-  amountLabel: string;
-  invalidAmount: string;
-  save: string;
-  saved: string;
-  error: string;
+  /** Story 13.6, AC 5 — single `ExportMenu` dropdown (pattern already used by fleet/pilots/billing), same `ppr-requests` endpoint as Voli in transito, filtered by the console's own status filter. */
+  exportMenu: { label: string; xlsLabel: string; pdfLabel: string };
 };
 
 type PprConsoleProps = {
@@ -61,11 +43,8 @@ type PprConsoleProps = {
   locale: 'it' | 'en';
   status: QueueStatus;
   labels: PprConsoleLabels;
-  instructionsEditor: {
-    initial: PprOperatingInstructionsDto;
-    labels: PprOperatingInstructionsLabels;
-    landingFee: { initialCents: number; labels: PprLandingFeeLabels };
-  } | null;
+  xlsHref: string;
+  pdfHref: string;
 };
 
 type ApiErrorBody = { error?: { code?: string } };
@@ -103,7 +82,7 @@ function contactLine(request: PprRequestItemDto): string {
   return [request.email, request.phone].filter((value): value is string => Boolean(value && value.length > 0)).join(' · ');
 }
 
-export function PprConsole({ requests, locale, status, labels, instructionsEditor }: PprConsoleProps) {
+export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref }: PprConsoleProps) {
   const router = useRouter();
   const toast = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -179,7 +158,6 @@ export function PprConsole({ requests, locale, status, labels, instructionsEdito
         <div className="card-head">
           <div className="card-title">{labels.card.title}</div>
           <span className="card-sub">{labels.card.subTemplate.replace('{total}', String(requests.length))}</span>
-          <div className="spacer" />
           <div className="fld" style={{ minWidth: 0 }}>
             <select
               className="input"
@@ -196,6 +174,8 @@ export function PprConsole({ requests, locale, status, labels, instructionsEdito
               <option value="ALL">{labels.filters.statusAll}</option>
             </select>
           </div>
+          <div className="spacer" />
+          <ExportMenu label={labels.exportMenu.label} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={xlsHref} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={pdfHref} />
         </div>
 
         {requests.length === 0 ? (
@@ -306,193 +286,6 @@ export function PprConsole({ requests, locale, status, labels, instructionsEdito
           </div>
         </div>
       ) : null}
-
-      {instructionsEditor ? (
-        <PprOperatingInstructionsEditor
-          initial={instructionsEditor.initial}
-          labels={instructionsEditor.labels}
-          landingFee={instructionsEditor.landingFee}
-        />
-      ) : null}
     </>
-  );
-}
-
-type PprOperatingInstructionsEditorProps = {
-  initial: PprOperatingInstructionsDto;
-  labels: PprOperatingInstructionsLabels;
-  landingFee: { initialCents: number; labels: PprLandingFeeLabels };
-};
-
-/**
- * Admin-only operating-instructions editor (story 8.2, AC 1) — a section of
- * THIS page, not a general `/settings` page. Reachable via the "Regole
- * pubblicate" header anchor link (`id="ppr-instructions"` below); the
- * section itself is unconditionally rendered when `settings.manage` allows
- * it (same "visibile con settings.manage come oggi" contract as before this
- * story — only the DISCOVERY path changed, from always-inline to
- * anchor-scrolled).
- */
-function PprOperatingInstructionsEditor({ initial, labels, landingFee }: PprOperatingInstructionsEditorProps) {
-  const [it, setIt] = useState(initial.it);
-  const [en, setEn] = useState(initial.en);
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  async function save(): Promise<void> {
-    setSaving(true);
-    setFeedback(null);
-    const response = await fetch('/api/v1/settings/ppr-operating-instructions', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ it, en }),
-    });
-    setSaving(false);
-
-    if (!response.ok) {
-      setFeedback(labels.error);
-      return;
-    }
-
-    setFeedback(labels.saved);
-  }
-
-  return (
-    <section className="card" id="ppr-instructions" data-testid="ppr-instructions-editor">
-      <div className="card-head">
-        <div className="card-title">{labels.heading}</div>
-      </div>
-      <div className="card-body">
-        <p className="fld-label">{labels.description}</p>
-
-        <div className="form-grid" style={{ marginTop: 12 }}>
-          <label className="fld wide">
-            <span className="fld-label">{labels.it}</span>
-            <textarea
-              className="input"
-              rows={5}
-              maxLength={2000}
-              value={it}
-              onChange={(event) => setIt(event.target.value)}
-              data-testid="ppr-instructions-it"
-            />
-          </label>
-          <label className="fld wide">
-            <span className="fld-label">{labels.en}</span>
-            <textarea
-              className="input"
-              rows={5}
-              maxLength={2000}
-              value={en}
-              onChange={(event) => setEn(event.target.value)}
-              data-testid="ppr-instructions-en"
-            />
-          </label>
-        </div>
-
-        {feedback ? (
-          <p role="status" data-testid="ppr-instructions-feedback" className="fld-label" style={{ color: 'var(--ok)', marginTop: 10 }}>
-            {feedback}
-          </p>
-        ) : null}
-
-        <div style={{ marginTop: 10 }}>
-          <button type="button" disabled={saving} onClick={() => void save()} className="btn primary" data-testid="ppr-instructions-save">
-            {labels.save}
-          </button>
-        </div>
-
-        <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
-          <LandingFeeEditor initialCents={landingFee.initialCents} labels={landingFee.labels} />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** Euro string (comma decimal), the exact inverse of `parseCents`. */
-function centsToEuroInput(cents: number): string {
-  return `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, '0')}`;
-}
-
-type LandingFeeEditorProps = { initialCents: number; labels: PprLandingFeeLabels };
-
-/** Default landing fee editor (story 8.3, AC 1) — second, independent save action within the same settings section. */
-function LandingFeeEditor({ initialCents, labels }: LandingFeeEditorProps) {
-  const [amount, setAmount] = useState(centsToEuroInput(initialCents));
-  const [fieldError, setFieldError] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  async function save(): Promise<void> {
-    setFeedback(null);
-    let landingFeeCents: number;
-    try {
-      landingFeeCents = parseCents(amount);
-    } catch {
-      setFieldError(true);
-      return;
-    }
-    if (!Number.isInteger(landingFeeCents) || landingFeeCents < 0 || landingFeeCents > 2_147_483_647) {
-      setFieldError(true);
-      return;
-    }
-    setFieldError(false);
-
-    setSaving(true);
-    const response = await fetch('/api/v1/settings/ppr-landing-fee', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ landingFeeCents }),
-    });
-    setSaving(false);
-
-    if (!response.ok) {
-      setFeedback(labels.error);
-      return;
-    }
-
-    setFeedback(labels.saved);
-  }
-
-  return (
-    <div data-testid="ppr-landing-fee-editor">
-      <div className="fld-label" style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)' }}>
-        {labels.heading}
-      </div>
-      <p className="fld-label" style={{ marginTop: 4 }}>
-        {labels.description}
-      </p>
-
-      <label className="fld" style={{ marginTop: 10, maxWidth: 200 }}>
-        <span className="fld-label">{labels.amountLabel}</span>
-        <input
-          className="input"
-          inputMode="decimal"
-          placeholder="0,00"
-          aria-invalid={fieldError}
-          value={amount}
-          onChange={(event) => setAmount(event.target.value)}
-          data-testid="ppr-landing-fee-amount"
-        />
-      </label>
-      {fieldError ? (
-        <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 4 }}>
-          {labels.invalidAmount}
-        </p>
-      ) : null}
-
-      {feedback ? (
-        <p role="status" data-testid="ppr-landing-fee-feedback" className="fld-label" style={{ color: 'var(--ok)', marginTop: 10 }}>
-          {feedback}
-        </p>
-      ) : null}
-
-      <div style={{ marginTop: 10 }}>
-        <button type="button" disabled={saving} onClick={() => void save()} className="btn primary" data-testid="ppr-landing-fee-save">
-          {labels.save}
-        </button>
-      </div>
-    </div>
   );
 }

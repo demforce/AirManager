@@ -219,22 +219,44 @@ test('the eliminated /dashboard/ppr/register route answers 404, no redirect (rat
   expect(response?.status()).toBe(404);
 });
 
+test('clicking "Esporta PDF" in Voli in transito\'s ExportMenu triggers a real file download (story 13.6, AC 4) — read-only, runs standalone outside the serial block', async ({ page }) => {
+  await loginExpectingDashboard(page, ADMIN_EMAIL);
+  await page.goto('/it/dashboard/movements');
+
+  await page.getByRole('button', { name: 'Esporta' }).click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Esporta PDF' }).click()]);
+
+  expect(download.suggestedFilename()).toMatch(/^airmanager-ppr-requests-\d{4}-\d{2}-\d{2}\.pdf$/);
+  const downloadedPath = await download.path();
+  expect(downloadedPath).toBeTruthy();
+});
+
 test.describe('Voli in transito / movements register: closure, landing fee, filters, derived status (Story 8.3, AC 1/2, FR-24; epic 12 story 12.4, AC 3)', () => {
   // Module doc-comment: the shared, paginated per-status register views are
   // mutable, global state that decisions in THIS file's own tests shift.
   test.describe.configure({ mode: 'serial' });
 
-  test('admin sets the default landing fee via the settings section; staff completes an APPROVED request from the register with the PREFILLED default: the row turns COMPLETED with the formatted fee, and a matching cash movement lands in the "PPR" category (AC 1)', async ({
+  test('admin sets the default landing fee via Impostazioni; staff completes an APPROVED request from the register with the PREFILLED default: the row turns COMPLETED with the formatted fee, and a matching cash movement lands in the "PPR" category (AC 1)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const created = await createApprovedRequest(page);
 
-    // --- Admin: set the default landing fee via the UI (AC 1) ------------
-    await page.goto('/it/dashboard/ppr');
-    await page.getByTestId('ppr-landing-fee-amount').fill('43,21');
-    await page.getByTestId('ppr-landing-fee-save').click();
-    await expect(page.getByTestId('ppr-landing-fee-feedback')).toHaveText('Tassa salvata.');
+    // --- Admin: set the default landing fee (story 13.6, AC 1 — the
+    // console's own duplicate landing-fee editor was removed together with
+    // the operating-instructions one, Impostazioni/ClubCard is now the only
+    // UI that edits it; `settings.spec.ts` covers THAT UI's own PUT
+    // round-trip). Via the API directly here, not the ClubCard UI: its
+    // single "Salva" bundles icao/contactEmail/landingFee/instructions/
+    // membershipFee into ONE save, which would make this test (running in
+    // the main `chromium` project) write the SAME global keys
+    // `settings.spec.ts` writes from its own serialized `settings` project
+    // — exactly the cross-project race `playwright.config.ts` quarantines
+    // settings.spec.ts to avoid (lesson 12.11 F1). This test's own concern
+    // is the DOWNSTREAM effect (the completion panel's prefill), not the
+    // settings UI.
+    const feePutResponse = await page.request.put('/api/v1/settings/ppr-landing-fee', { data: { landingFeeCents: 4321 } });
+    expect(feePutResponse.status()).toBe(200);
     await logout(page);
 
     // --- Staff: complete from the register, fee PREFILLED from the default ---

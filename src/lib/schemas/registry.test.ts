@@ -72,6 +72,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/bookings/{id}',
         '/api/v1/bookings/{id}/cancel',
         '/api/v1/ppr-requests',
+        '/api/v1/ppr-requests/pdf',
         '/api/v1/ppr-requests/{id}/approve',
         '/api/v1/ppr-requests/{id}/reject',
         '/api/v1/ppr-requests/{id}/complete',
@@ -245,8 +246,8 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       expect(route?.responses?.['200']).toMatchObject({ content: { 'application/pdf': {} } });
     });
 
-    it('documents 200/401/403/422/500 on the cash report, flights, and expiries PDF routes', () => {
-      for (const path of ['/api/v1/cash-report/pdf', '/api/v1/flights/pdf', '/api/v1/expiries/pdf'] as const) {
+    it('documents 200/401/403/422/500 on the cash report, flights, expiries, and PPR requests PDF routes', () => {
+      for (const path of ['/api/v1/cash-report/pdf', '/api/v1/flights/pdf', '/api/v1/expiries/pdf', '/api/v1/ppr-requests/pdf'] as const) {
         const route = paths[path]?.['get'];
         expect(Object.keys(route?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
       }

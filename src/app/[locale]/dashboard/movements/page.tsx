@@ -1,7 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { buildExportHref } from '@/lib/export-href';
+import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { currentMonthRange } from '@/lib/period-presets';
 import { deriveApprovedPprMovementStatus } from '@/lib/ppr-movement-status';
 import type { PprStatusDto } from '@/lib/schemas/ppr';
@@ -141,6 +141,8 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
   }));
 
   const exportHref = buildExportHref('/api/v1/ppr-requests', { status: filters.status, from: filters.from, to: filters.to }, locale);
+  // Story 13.6, AC 4 — dedicated PDF route (spine :105), same filters as the xlsx export above.
+  const pdfExportHref = buildPdfExportHref('/api/v1/ppr-requests/pdf', { status: filters.status, from: filters.from, to: filters.to }, locale);
 
   return (
     <main className="page">
@@ -219,6 +221,8 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
         exportTriggerLabel={t('export.label')}
         exportXlsLabel={tExport('button')}
         exportHref={exportHref}
+        exportPdfLabel={tExport('buttonPdf')}
+        exportPdfHref={pdfExportHref}
         labels={{
           filters: {
             status: t('filters.status'),

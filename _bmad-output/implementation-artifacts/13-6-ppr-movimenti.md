@@ -4,7 +4,7 @@ baseline_commit: 31e65ae
 
 # Story 13.6: PPR & Voli in transito — istruzioni operative in Settings, telefono, calendario, export PDF
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -38,7 +38,62 @@ so that le due pagine siano coerenti e complete come il resto dell'app.
 
 ## Dev Agent Record
 
-_(compilato dal dev subagent)_
+### Implementation Plan
+
+- **AC1 (rimozione editor duplicato)**: verificato via grep che `ppr-console.tsx` (import in `ppr/page.tsx`, unica renderizzata) è la copia VIVA; `ppr-queue.tsx` (`PprQueue`) non è importata da nessun file del repo — **dead code già scollegato, NON toccato** (segnalato sotto). Rimossi da `ppr-console.tsx`: prop `instructionsEditor`, i tipi `PprOperatingInstructionsLabels`/`PprLandingFeeLabels`, i componenti `PprOperatingInstructionsEditor`/`LandingFeeEditor`, l'helper `centsToEuroInput`, l'import `parseCents`. La rimozione include ANCHE il `LandingFeeEditor` (non solo le istruzioni): nel codice erano UN SOLO blocco duplicato (il landing fee è annidato dentro l'editor istruzioni, stesso `instructionsEditor` prop, stessa card) e Impostazioni/ClubCard (story 12.11) gestisce GIÀ entrambi in un solo salva — rimuovere solo metà avrebbe lasciato un frammento orfano non richiesto da nessuna AC. `ppr/page.tsx`: rimossi `canEditInstructions`, le due query `getPprOperatingInstructions`/`getPprLandingFeeDefaultCents`, il link header "Regole pubblicate" (`#ppr-instructions`, ora un anchor morto). i18n: rimosse `PprQueuePage.header.rules`/`instructions.*`/`landingFee.*` (IT+EN, orfane), aggiunta `PprQueuePage.export.label`. **Intatti, verificati**: `/api/v1/settings/ppr-operating-instructions` (route + service, diff vuoto), ClubCard di Impostazioni (`settings.spec.ts` invariato, ancora verde), l'uso in `ppr.service.ts:547` (email di approvazione, invariato — provato end-to-end in `ppr-queue.spec.ts`).
+- **AC2 (telefono)**: root cause = `contactLine()` univa email+telefono in UNA riga `.student-sub mono` (troncata da `nowrap`+`ellipsis`), che perdeva il telefono quando l'email era già larga. Fix SOLO in `movements-table.tsx` (l'AC lo scopa esplicitamente a `movements-table.tsx:239`; `ppr-console.tsx` ha la stessa `contactLine` con lo stesso limite ma NON è nella AC — segnalato sotto come follow-up potenziale, non toccato). Sostituita la riga unica con DUE `<div className="student-sub mono">` indipendenti (email se presente, telefono se presente) — niente CSS globale toccato (`.student-sub` resta invariato, usato altrove). Verificato via script Playwright: il DOM contiene il testo COMPLETO di entrambi i campi; a viewport realistico (1440px) il telefono (~15 caratteri) rientra SENZA troncamento nella colonna, l'email (specialmente quelle sintetiche lunghe delle fixture e2e) può ancora troncare visivamente in casi estremi — non è il difetto originale (sparizione totale del telefono), è un'ellissi normale come altrove nell'app.
+- **AC3 (CalendarPopover)**: `DateInput` (`src/components/ui/date-input.tsx`, già usato da `logbook-console.tsx`) è un wrapper TRASPARENTE pensato apposta per sostituire `<input type="date">` "senza cambiare nient'altro" (proprio doc-comment) — swap 1:1 nei due filtri `from`/`to` di `movements-table.tsx`, stessi `value`/`onChange`/`data-testid`/`className`. Nessun cambio a `CalendarPopover` stesso (già Pianificazione/bookings). Verificato interattivamente: popover si apre, mese/giorni-settimana localizzati IT, "25" (oggi) evidenziato.
+- **AC4 (PDF movimenti) — DEVIAZIONE dal testo letterale dell'AC, vedi sezione Deviazioni**: creato `exportPprRequestsPdf` in `exports.service.ts` (pattern `exportExpiriesPdf`: stesse colonne dell'xlsx, nessun totale, subtitle solo se `from`+`to` presenti) e una ROUTE DEDICATA `GET /api/v1/ppr-requests/pdf` (`src/app/api/v1/ppr-requests/pdf/route.ts`), NON `?format=pdf` su `/api/v1/ppr-requests`. Registrata in `registry.ts` + `registry.test.ts`. `movements/page.tsx` costruisce `pdfExportHref` via `buildPdfExportHref('/api/v1/ppr-requests/pdf', ...)`; `movements-table.tsx` passa `exportPdfLabel`/`exportPdfHref` all'`ExportMenu` esistente (era `pdfLabel=""`).
+- **AC5 (export console PPR)**: `ppr-console.tsx` guadagna un `ExportMenu` (Excel+PDF) riusando lo STESSO `exportPprRequestsXlsx`/`exportPprRequestsPdf` filtrati dal proprio `status`; `ppr/page.tsx` costruisce `xlsHref`/`pdfHref` (`buildExportHref`/`buildPdfExportHref`) e le label `exportMenu.{label,xlsLabel,pdfLabel}` (label riusa il namespace condiviso `Export.{button,buttonPdf}`, stesso pattern già usato da `movements/page.tsx`).
+- **e2e (AC6)**: `ppr-queue.spec.ts`/`movements.spec.ts` — i due test che impostavano istruzioni/tassa di default tramite la console (testid ora rimossi) riscritti per usare **direttamente l'API** (`PUT /api/v1/settings/ppr-operating-instructions`/`ppr-landing-fee`) invece della UI di Impostazioni: la ClubCard di Impostazioni ha UN SOLO "Salva" che scrive INSIEME icao/contactEmail/landingFee/instructions/membershipFee — guidarla dalla UI in questi due file (che girano nel project `chromium` principale, in parallelo) avrebbe fatto scrivere le STESSE chiavi globali che `settings.spec.ts` scrive dal proprio project `settings` serializzato — esattamente la race che `playwright.config.ts` mette in quarantena `settings.spec.ts` per evitare (lezione 12.11 F1). L'evidenza "Impostazioni gestisce ancora" resta comunque coperta da `settings.spec.ts` (invariato); questi due test provano l'effetto a valle (email di approvazione / prefill tassa), non la UI di Impostazioni stessa. Aggiunti: nuovo test export console PPR (`ppr-queue.spec.ts`), nuovo test export PDF movimenti (`movements.spec.ts`), estensione `pdf-exports.spec.ts` (5° report PDF nel test principale, 401/403/422 su `ppr-requests/pdf`). Nuovo `describe`/unit test `exportPprRequestsPdf` in `exports.service.test.ts`.
+
+### Deviazione dal testo letterale dell'AC4
+
+L'AC4 dice testualmente "supporto `?format=pdf` sulla route `/api/v1/ppr-requests`" — ho implementato invece una **route dedicata** `/api/v1/ppr-requests/pdf`. Motivo: è l'UNICO pattern PDF esistente nel repo (4/4 export PDF precedenti — account statement, cash report, flights, expiries — usano tutti una route dedicata `/api/v1/<vista>/pdf`), è il pattern esplicitamente codificato in `src/lib/schemas/common.ts#pdfQuerySchema` ("NEVER behind `?format=pdf`... that convention is xlsx-only") e ripetuto verbatim nel doc-comment di OGNI route/registry PDF esistente, ed è l'UNICO modo per cui `buildPdfExportHref` (che l'AC stessa chiede di usare: "ExportMenu con pdfLabel + pdfHref (buildPdfExportHref)") produce un URL funzionante — quella funzione non emette MAI un parametro `format` (per design, vedi il suo doc-comment), quindi usarla contro `/api/v1/ppr-requests` con `?format=pdf` letterale non avrebbe MAI prodotto un PDF. Inoltre `exportQuerySchema.format` è tipizzato `z.enum(['xlsx'])`: aggiungere `'pdf'` avrebbe richiesto una modifica di schema condivisa da TUTTI gli endpoint xlsx, non menzionata da nessuna parte nella story. Segnalo la deviazione esplicitamente per il PO/reviewer; comportamento visibile identico (ExportMenu → PDF corretto, filtri rispettati), solo l'URL interno differisce da quanto scritto alla lettera nell'AC.
+
+### Completion Notes
+
+- AC1: done — `ppr-instructions-editor` assente dal DOM della console per QUALSIASI attore (era prima condizionato a `settings.manage`); Impostazioni resta l'unica sede (screenshot + `settings.spec.ts` verde); email di approvazione verificata end-to-end (Mailpit) con istruzioni impostate via API.
+- AC2: done — email e telefono su righe separate, DOM completo per entrambi, telefono non troncato a viewport realistico; verificato con un richiedente con email+telefono reali (screenshot + misura pixel `scrollWidth`/`clientWidth`).
+- AC3: done — `DateInput`/`CalendarPopover` funzionante (screenshot popover), `.fill()` e2e esistente (`ppr-register-filter-to`) verde, formato date invariato (`formatDateOnly`/`formatDateTime`, DD/MM/YYYY, non toccato da questa story).
+- AC4: done — `exportPprRequestsPdf` + route dedicata (vedi Deviazione sopra), PDF reale scaricato e ispezionato (2 pagine, `%PDF-1.3`, contenuto testuale decodificato dallo stream: titolo "Registro movimenti", header colonne corretti, righe reali con SOLO status APPROVED — filtro rispettato).
+- AC5: done — `ExportMenu` sulla console, PDF reale scaricato e ispezionato (3 pagine, contenuto con TUTTI gli stati — filtro `ALL` rispettato correttamente, a differenza del PDF movimenti sopra).
+- AC6: done — e2e nuovi/aggiornati passano; selettori scoped/exact (nessun `hasText` su date/H:MM introdotto); skill applicate (`karpathy-guidelines`, `design-taste-frontend`, `ui-ux-pro-max`); coerenza AirOps assoluta (stessi componenti `ExportMenu`/`DateInput`/`Badge` del resto dell'app, nessuna classe nuova).
+
+### File List
+
+- `src/app/[locale]/dashboard/ppr/ppr-console.tsx` (AC1: rimosso editor duplicato+landing fee; AC5: `ExportMenu`)
+- `src/app/[locale]/dashboard/ppr/page.tsx` (AC1: rimossa query/wiring istruzioni+landing fee, link header; AC5: `xlsHref`/`pdfHref`/`exportMenu` labels)
+- `src/app/[locale]/dashboard/movements/movements-table.tsx` (AC2: email/telefono su righe separate; AC3: `DateInput`; AC4: `exportPdfLabel`/`exportPdfHref`)
+- `src/app/[locale]/dashboard/movements/page.tsx` (AC4: `pdfExportHref` via `buildPdfExportHref`)
+- `src/app/api/v1/ppr-requests/pdf/route.ts` (**nuovo** — AC4, route dedicata PDF)
+- `src/server/services/exports.service.ts` (AC4/5: `exportPprRequestsPdf`)
+- `src/server/services/exports.service.test.ts` (AC4/5: nuovo `describe('exportPprRequestsPdf ...')`)
+- `src/lib/schemas/registry.ts` (AC4: registrata `GET /api/v1/ppr-requests/pdf`)
+- `src/lib/schemas/registry.test.ts` (AC4: path + response-set test estesi)
+- `messages/it.json`, `messages/en.json` (AC1: rimosse `header.rules`/`instructions.*`/`landingFee.*`, aggiunta `export.label`)
+- `e2e/ppr-queue.spec.ts` (AC1: precondizione istruzioni via API invece di UI console; AC5: nuovo test export)
+- `e2e/movements.spec.ts` (AC1: precondizione tassa via API invece di UI console; AC4: nuovo test export PDF)
+- `e2e/pdf-exports.spec.ts` (AC4: `ppr-requests/pdf` nel test dei 5 report, 401/403/422)
+
+### Interactive verification (Playwright)
+
+`mcp__playwright__*` non raggiungibile da questa sessione (Chromium non trovato in `/opt/google/chrome/chrome`) → fallback a script `@playwright/test` throwaway (cancellati prima del commit, mai in staging), contro il dev server reale:
+
+- Screenshot console PPR (`?status=ALL`): nessuna sezione istruzioni/landing-fee residua, `ExportMenu` presente accanto al filtro stato.
+- Screenshot Voli in transito: colonna "Richiedente · contatto" con email+telefono su righe separate.
+- Screenshot CalendarPopover aperto sul filtro "Dal": mese IT ("luglio 2026"), oggi evidenziato.
+- Screenshot Impostazioni → Club: "Tassa PPR di default" popolata (43,21, scritta via API nel test precedente), istruzioni IT/EN presenti (fuori dallo screenshot ma coperte da `settings.spec.ts`).
+- Due PDF reali scaricati (movimenti status=APPROVED, console status=ALL) e decodificati a mano (stream `FlateDecode` + estrazione run di testo `TJ`/`Tj`): entrambi contengono titolo "Registro movimenti", header colonne (Numero PPR/Richiedente · contatto/Nominativo/ETA/Stato/Tassa), righe reali con date DD/MM/YYYY e tasse in formato IT (es. "43,21"), footer "Generato il … Pag. X di Y" + branding club. Il PDF movimenti mostra SOLO righe "Approvato" (filtro status=APPROVED rispettato); il PDF console mostra TUTTI gli stati (filtro ALL rispettato).
+
+### Note per il reviewer / segnalazioni
+
+- **`ppr-queue.tsx`** (`PprQueue`, gemello di `ppr-console.tsx`) è dead code NON collegato a nessuna route — non importato da nessun file del repo (verificato via grep). Contiene lo STESSO editor istruzioni/landing-fee duplicato che ho rimosso dalla copia viva. Non l'ho toccato (fuori dallo scope letterale dell'AC1, che chiede di rimuovere solo dalla copia effettivamente renderizzata) — segnalo per una eventuale pulizia futura (story di hard-delete dead-code, come già fatto altrove nell'epic 12/13).
+- **`ppr-console.tsx`** ha la STESSA `contactLine()` (email+telefono su una riga, stesso rischio di troncamento del telefono) dell'AC2 — l'AC la scopa esplicitamente solo a `movements-table.tsx:239`, quindi non l'ho toccata. Segnalo per coerenza/eventuale follow-up.
+- Deviazione route PDF dedicata vs `?format=pdf` letterale — vedi sezione dedicata sopra, con motivazione tecnica completa.
+- Durante la verifica e2e ho scoperto (e corretto via API, non è uno stato committato) che la finestra di scheduling (`sched.*`) nel DB dev era rimasta ristretta (`07:00-21:00`) da un run precedente non-13.6, causando 422 `BOOKING_OUTSIDE_WINDOW` spurii su `bookings.spec.ts`/`api-v1.spec.ts` quando ho girato l'intera suite fuori dalla catena di project seriale (`--project=chromium` da solo, senza `settings`→`booking-window`) — l'ho ripristinata a permissiva (`00:00-23:59`) per lasciare l'ambiente pulito; nessun file toccato, zero relazione con questa story.
+- `npm run gates`: PASS (lint/typecheck/test 1445 verdi/build) — rieseguito pulito come ultimo controllo dopo tutte le verifiche interattive.
+- e2e: gli spec toccati/aggiunti (`ppr-queue`, `movements`, `pdf-exports`, `settings` invariato) passano 24/24 contro sia `next dev` (a `--workers=1`) sia una build di produzione locale (`next build && next start`, più veloce e stabile). **Nota di trasparenza**: contro `next dev` a piena concorrenza (`--workers=2`) ho osservato lo stesso login-timeout flaky class già documentato nelle story precedenti (cold-compile), e — SOLO in dev mode, mai in build di produzione, 3/3 riproducibile — un fallimento deterministico del test "register filters by status and period" (`movements.spec.ts`) sul filtro `to`: il `.fill()` di Playwright imposta il DOM ma l'evento `onChange` non raggiunge mai `router.push`. Isolato con uno script debug: contro la build di produzione lo STESSO identico scenario passa in 3.5s, 0 retry. Root cause più probabile: interferenza di Next.js Fast Refresh/Turbopack HMR durante la compilazione on-demand di `next dev` (non imputabile al codice — lo stesso identico componente `DateInput` è già in produzione su `logbook-console.tsx` da story precedenti). Segnalo per trasparenza; non ho modificato il test (già verde, 33/33 tentativi con timeout SOLO in dev mode).
 
 ## Review Record
 

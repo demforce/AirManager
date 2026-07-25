@@ -14,6 +14,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useRouter } from '@/i18n/navigation';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { DateInput } from '@/components/ui/date-input';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { useToast } from '@/components/ui/toast';
 import { formatCents, parseCents } from '@/lib/money';
@@ -75,6 +76,9 @@ type MovementsTableProps = {
   exportTriggerLabel: string;
   exportXlsLabel: string;
   exportHref: string;
+  /** Story 13.6, AC 4 — the PDF counterpart of `exportXlsLabel`/`exportHref` (was `pdfLabel=""`, xlsx-only). */
+  exportPdfLabel: string;
+  exportPdfHref: string;
   labels: MovementsTableLabels;
 };
 
@@ -96,14 +100,19 @@ const MOVEMENT_STATUS_TONE: Record<MovementStatusLabel, BadgeTone> = {
   CANCELLED: '',
 };
 
-/** `email`/`phone` joined into one contact line — same helper as `ppr-console.tsx#contactLine`, duplicated (not shared) since the two tables live in unrelated route directories with no existing cross-route utility module for this one-liner. */
-function contactLine(request: PprRequestItemDto): string {
-  return [request.email, request.phone].filter((value): value is string => Boolean(value && value.length > 0)).join(' · ');
-}
-
 const inputClasses = 'input';
 
-export function MovementsTable({ rows, locale, filters, exportTriggerLabel, exportXlsLabel, exportHref, labels }: MovementsTableProps) {
+export function MovementsTable({
+  rows,
+  locale,
+  filters,
+  exportTriggerLabel,
+  exportXlsLabel,
+  exportHref,
+  exportPdfLabel,
+  exportPdfHref,
+  labels,
+}: MovementsTableProps) {
   const router = useRouter();
   const toast = useToast();
   const [rowAction, setRowAction] = useState<{ id: string; mode: 'complete' | 'cancelConfirm' } | null>(null);
@@ -182,11 +191,11 @@ export function MovementsTable({ rows, locale, filters, exportTriggerLabel, expo
         </div>
         <div className="fld" style={{ minWidth: 0 }}>
           <span className="fld-label">{labels.filters.from}</span>
-          <input type="date" className={inputClasses} value={filters.from} onChange={(event) => handleFilterChange({ from: event.target.value })} data-testid="ppr-register-filter-from" />
+          <DateInput className={inputClasses} value={filters.from} onChange={(event) => handleFilterChange({ from: event.target.value })} data-testid="ppr-register-filter-from" />
         </div>
         <div className="fld" style={{ minWidth: 0 }}>
           <span className="fld-label">{labels.filters.to}</span>
-          <input type="date" className={inputClasses} value={filters.to} onChange={(event) => handleFilterChange({ to: event.target.value })} data-testid="ppr-register-filter-to" />
+          <DateInput className={inputClasses} value={filters.to} onChange={(event) => handleFilterChange({ to: event.target.value })} data-testid="ppr-register-filter-to" />
         </div>
         {hasActiveFilter ? (
           <button type="button" className="btn" onClick={handleResetFilters} data-testid="ppr-register-filter-reset">
@@ -194,7 +203,7 @@ export function MovementsTable({ rows, locale, filters, exportTriggerLabel, expo
           </button>
         ) : null}
         <div className="spacer" />
-        <ExportMenu label={exportTriggerLabel} xlsLabel={exportXlsLabel} xlsHref={exportHref} pdfLabel="" />
+        <ExportMenu label={exportTriggerLabel} xlsLabel={exportXlsLabel} xlsHref={exportHref} pdfLabel={exportPdfLabel} pdfHref={exportPdfHref} />
       </div>
       {/* `<div className="students">` below is a CSS-grid list, not a real `<table>` (`airops.css`'s `.student-row` convention, same as `ppr-console.tsx`/`bookings-table.tsx`) — every row is a `<div>`. */}
 
@@ -236,7 +245,9 @@ export function MovementsTable({ rows, locale, filters, exportTriggerLabel, expo
                     <div className="student-name">
                       {row.firstName} {row.lastName}
                     </div>
-                    <div className="student-sub mono">{contactLine(row)}</div>
+                    {/* Story 13.6, AC 2: email and phone each get their OWN line (instead of one `.student-sub`-truncated "email · phone" string) — `.student-sub`'s `nowrap`/`ellipsis` (`airops.css`) was clipping the 2nd segment (the phone) off entirely. */}
+                    {row.email ? <div className="student-sub mono">{row.email}</div> : null}
+                    {row.phone ? <div className="student-sub mono">{row.phone}</div> : null}
                   </div>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
                     {formatDateTime(new Date(row.eta), locale)}

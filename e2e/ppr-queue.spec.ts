@@ -175,18 +175,26 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
   // mutable, global state that decisions in THIS file's own tests shift.
   test.describe.configure({ mode: 'serial' });
 
-  test('admin sets run-unique operating instructions via UI; staff sees the pending queue populated on the dashboard widget, opens the console, sees the run-unique request, and approves it: toast shows the assigned number, the row leaves the PENDING view, and the outcome email carries BOTH the number and the instructions (IT form)', async ({
+  test('admin sets run-unique operating instructions via Impostazioni; staff sees the pending queue populated on the dashboard widget, opens the console (no duplicate editor there, story 13.6 AC 1), sees the run-unique request, and approves it: toast shows the assigned number, the row leaves the PENDING view, and the outcome email carries BOTH the number and the instructions (IT form)', async ({
     page,
   }) => {
     const created = await createPendingRequest(page, { firstName: 'Giulia', locale: 'it' });
     const instructionsMarker = `Verifica e2e istruzioni ${uniqueSuffix()}, presentarsi in torre.`;
 
-    // --- Admin: set the operating instructions via the UI (AC 1) ---------
+    // --- Admin: set the operating instructions (story 13.6, AC 1 — the
+    // console's own duplicate editor was removed, Impostazioni/ClubCard is
+    // now the ONLY UI that edits them; `settings.spec.ts` covers THAT UI's
+    // own PUT round-trip). Via the API directly here, not the ClubCard UI:
+    // its single "Salva" bundles icao/contactEmail/landingFee/instructions/
+    // membershipFee into ONE save, which would make this test (running in
+    // the main `chromium` project) write the SAME global keys
+    // `settings.spec.ts` writes from its own serialized `settings` project
+    // — exactly the cross-project race `playwright.config.ts` quarantines
+    // settings.spec.ts to avoid (lesson 12.11 F1). This test's own concern
+    // is the DOWNSTREAM effect (the approval email), not the settings UI.
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.goto('/it/dashboard/ppr');
-    await page.getByTestId('ppr-instructions-it').fill(instructionsMarker);
-    await page.getByTestId('ppr-instructions-save').click();
-    await expect(page.getByTestId('ppr-instructions-feedback')).toBeVisible();
+    const instructionsPutResponse = await page.request.put('/api/v1/settings/ppr-operating-instructions', { data: { it: instructionsMarker, en: '' } });
+    expect(instructionsPutResponse.status()).toBe(200);
     await logout(page);
 
     // --- Staff: dashboard KPI reflects the pending queue (AC 2, FR-41) ---
@@ -202,7 +210,8 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     // --- Staff: open the console, see the run-unique request (AC 1) ------
     await gotoQueueLastPage(page);
     await expect(page.getByText(created.registration)).toBeVisible();
-    // Staff (ppr.manage, not settings.manage) never sees the editor section.
+    // Story 13.6, AC 1: the duplicate operating-instructions editor is GONE
+    // from the console entirely (for every actor, not just non-settings.manage staff).
     await expect(page.getByTestId('ppr-instructions-editor')).toHaveCount(0);
 
     // --- Staff: approve, DIRECT action (AC 1, no confirm step) -----------
@@ -327,4 +336,17 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
 
     await expectNoMailpitMessage(email);
   });
+});
+
+test('the PPR console\'s new ExportMenu (Excel + PDF, story 13.6, AC 5) triggers real file downloads for the current status filter', async ({ page }) => {
+  await loginExpectingDashboard(page, ADMIN_EMAIL);
+  await page.goto('/it/dashboard/ppr?status=ALL');
+
+  await page.getByRole('button', { name: 'Esporta' }).click();
+  const [pdfDownload] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Esporta PDF' }).click()]);
+  expect(pdfDownload.suggestedFilename()).toMatch(/^airmanager-ppr-requests-\d{4}-\d{2}-\d{2}\.pdf$/);
+
+  await page.getByRole('button', { name: 'Esporta' }).click();
+  const [xlsDownload] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Esporta Excel' }).click()]);
+  expect(xlsDownload.suggestedFilename()).toMatch(/^airmanager-ppr-requests-\d{4}-\d{2}-\d{2}\.xlsx$/);
 });
