@@ -178,7 +178,7 @@ export function FleetConsole({
               locale={locale as AppLocale}
               aria-disabled={page <= 1}
               data-testid="fleet-page-prev"
-              className={`btn ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
+              className="btn"
             >
               {labels.pagination.prev}
             </Link>
@@ -190,7 +190,7 @@ export function FleetConsole({
               locale={locale as AppLocale}
               aria-disabled={page >= totalPages}
               data-testid="fleet-page-next"
-              className={`btn ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
+              className="btn"
             >
               {labels.pagination.next}
             </Link>

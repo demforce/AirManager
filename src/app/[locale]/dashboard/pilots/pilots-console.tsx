@@ -370,7 +370,7 @@ export function PilotsConsole({
               locale={locale as AppLocale}
               aria-disabled={page <= 1}
               data-testid="pilots-page-prev"
-              className={`btn ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
+              className="btn"
             >
               {labels.pagination.prev}
             </Link>
@@ -382,7 +382,7 @@ export function PilotsConsole({
               locale={locale as AppLocale}
               aria-disabled={page >= totalPages}
               data-testid="pilots-page-next"
-              className={`btn ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
+              className="btn"
             >
               {labels.pagination.next}
             </Link>

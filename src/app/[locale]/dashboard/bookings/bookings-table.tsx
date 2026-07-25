@@ -455,7 +455,7 @@ export function BookingsTable({
             locale={locale as AppLocale}
             aria-disabled={page <= 1}
             data-testid="booking-page-prev"
-            className={`btn ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
+            className="btn"
           >
             &larr;
           </Link>
@@ -467,7 +467,7 @@ export function BookingsTable({
             locale={locale as AppLocale}
             aria-disabled={page >= totalPages}
             data-testid="booking-page-next"
-            className={`btn ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
+            className="btn"
           >
             &rarr;
           </Link>

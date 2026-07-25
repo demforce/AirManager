@@ -27,7 +27,7 @@ import { Icon } from './icons';
 export type DateInputProps = {
   inline?: boolean;
   ref?: Ref<HTMLInputElement>;
-  /** Input class — defaults to the AirOps `.input`; the legacy Tailwind pages (`people/{id}[…/account]`) pass their own classes and keep their frozen styling. */
+  /** Input class — defaults to the AirOps `.input`; kept overridable for call sites that need a different look, though none currently do (story 13.11 review F6: the pages that used to pass their own class are gone). */
   className?: string;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'className'>;
 

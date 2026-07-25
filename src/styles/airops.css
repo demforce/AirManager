@@ -64,8 +64,19 @@ html[data-theme="dark"]{
   --shadow-md: 0 1px 0 oklch(0.12 0.01 250), 0 12px 30px oklch(0 0 0 / 0.35);
 }
 
-*,*::before,*::after{ box-sizing: border-box; }
-html,body{ margin:0; padding:0; height:100%; }
+/* story 13.11 review F3: minimal explicit reset for the load-bearing pieces of
+   Tailwind's preflight (`@layer base`), removed with Tailwind itself in 13.11
+   without a replacement. Not a full preflight port — only the rules proven
+   load-bearing by injecting the pre-13.11 baseline CSS on real pages
+   (/ppr public, /settings, /login, /dashboard) and diffing computed styles
+   until the diff was empty, both themes. See story Dev Agent Record. */
+*,*::before,*::after{ box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
+ol,ul,menu{ list-style: none; }
+p,h1,h2,h3,h4,h5,h6,figure,blockquote{ margin: 0; }
+button,input,select,optgroup,textarea{ letter-spacing: inherit; font-weight: inherit; }
+svg{ display: block; vertical-align: middle; }
+
+html,body{ height:100%; }
 body{
   font-family: var(--font-ui);
   background: var(--bg);
@@ -78,6 +89,19 @@ body{
   text-rendering: optimizeLegibility;
 }
 button{ font: inherit; color: inherit; }
+/* story 13.11 review F2: token-based replacement for the dead Tailwind utility
+   `sr-only` (schedule.tsx clamped-block hints) — same declarations as the
+   removed Tailwind rule, so the hint text is hidden visually but still in the DOM. */
+.sr-only{
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border-width: 0;
+}
 .mono{ font-family: var(--font-mono); font-feature-settings: "tnum" 1, "zero" 1; }
 .num{ font-variant-numeric: tabular-nums; }
 
@@ -329,6 +353,11 @@ button{ font: inherit; color: inherit; }
 a{ color: var(--info); text-decoration: none; }
 a:hover{ color: var(--ink); }
 a.btn{ color: var(--ink); text-decoration: none; }
+/* story 13.11 review F1: token-based replacement for the dead Tailwind utilities
+   `pointer-events-none opacity-40` — pagination prev/next links already carry
+   `aria-disabled` when at a boundary (9 consoles), so hook the disabled look to
+   the attribute instead of a removed utility class. */
+.btn[aria-disabled="true"]{ opacity: .4; pointer-events: none; }
 
 /* ---------- kpis ---------- */
 .kpi-row{

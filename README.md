@@ -4,7 +4,7 @@ Gestionale per aviosuperficie: piloti, velivoli, voli, PPR, finanze, scuola volo
 
 ## Stack
 
-Next.js 16 (App Router) + TypeScript, Prisma 7 + PostgreSQL 16, next-intl (IT/EN), Tailwind CSS 4, Vitest + Playwright.
+Next.js 16 (App Router) + TypeScript, Prisma 7 + PostgreSQL 16, next-intl (IT/EN), design system AirOps custom (CSS + primitive React), Vitest + Playwright.
 
 Vedi `CLAUDE.md` per le convenzioni di progetto e `_bmad-output/planning-artifacts/architecture/` per l'architettura completa.
 

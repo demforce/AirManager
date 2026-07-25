@@ -883,6 +883,39 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(blockBox.x + blockBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
   });
 
+  test('story 13.11 review F2/F7: a booking crossing midnight forces `clampedBottom` — its `.sr-only` hint stays visually hidden (the dead Tailwind `sr-only` utility briefly rendered it at full size)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+
+    // A booking starting before Rome-local midnight and ending after it is
+    // `clampedBottom` on its start day REGARDLESS of the configured
+    // `sched.openTime`/`closeTime` window (`booking-schedule.ts#projectDayBlocks`:
+    // `endsAtOrAfterDay` forces `endMinutesOfDay` to `MINUTES_PER_DAY`, which
+    // always exceeds any HH:MM-bounded window span) — unlike a window-edge
+    // scenario, this does not depend on this long-lived DB's current
+    // scheduling settings. 21:00Z–23:59Z lands at 22:00–00:59 (CET) or
+    // 23:00–01:59 (CEST) local — past local midnight in BOTH DST regimes.
+    const response = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T21:00:00.000Z`, endsAt: `${FUTURE_DAY}T23:59:00.000Z` },
+    });
+    expect(response.status()).toBe(201);
+
+    await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
+    const row = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
+    const block = row.getByTestId('schedule-block').filter({ hasText: pilot.lastName });
+    await expect(block).toBeVisible();
+
+    const hint = block.locator('.sr-only');
+    await expect(hint).toHaveCount(1);
+    const hintBox = await hint.boundingBox();
+    if (!hintBox) throw new Error('Missing bounding box for the clamped-end .sr-only hint');
+    expect(hintBox.width).toBeLessThanOrEqual(1);
+    expect(hintBox.height).toBeLessThanOrEqual(1);
+  });
+
   test('concurrency (AC 2): two parallel POSTs for the same run-unique aircraft/interval yield exactly one 201 and one 409', async ({
     page,
   }) => {
@@ -1181,6 +1214,22 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
       });
       expect(response.status()).toBe(201);
     }
+
+    // Story 13.11 review F1/F7: page 1's "Precedente" link is disabled via
+    // `aria-disabled="true"` + the `.btn[aria-disabled="true"]` CSS token
+    // (the dead Tailwind `pointer-events-none opacity-40` utilities this
+    // replaced) — must be genuinely unclickable, not just visually dimmed.
+    await page.goto('/it/dashboard/bookings?page=1');
+    const prevLink = page.getByTestId('booking-page-prev');
+    await expect(prevLink).toHaveAttribute('aria-disabled', 'true');
+    expect(await prevLink.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none');
+    const urlBeforeClick = page.url();
+    // `force: true` skips Playwright's own "receives events" wait (which
+    // would otherwise time out on a genuinely `pointer-events: none`
+    // element) but still dispatches a real browser mouse event — CSS
+    // pointer-events, not Playwright, is what should stop the navigation.
+    await prevLink.click({ force: true });
+    expect(page.url()).toBe(urlBeforeClick);
 
     await page.goto(`/it/dashboard/bookings?view=week&date=${FUTURE_DAY}&page=2`);
 

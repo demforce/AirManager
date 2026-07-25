@@ -196,13 +196,13 @@ export default async function PprConsolePage({ params, searchParams }: PageProps
 
       {totalPages > 1 ? (
         <nav style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }} data-testid="ppr-queue-pagination">
-          <Link href={pageHref(page - 1)} locale={locale as AppLocale} aria-disabled={page <= 1} className={`btn ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}>
+          <Link href={pageHref(page - 1)} locale={locale as AppLocale} aria-disabled={page <= 1} className="btn">
             &larr;
           </Link>
           <span className="mono" data-testid="ppr-queue-pagination-status">
             {page} / {totalPages}
           </span>
-          <Link href={pageHref(page + 1)} locale={locale as AppLocale} aria-disabled={page >= totalPages} className={`btn ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}>
+          <Link href={pageHref(page + 1)} locale={locale as AppLocale} aria-disabled={page >= totalPages} className="btn">
             &rarr;
           </Link>
         </nav>

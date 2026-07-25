@@ -329,7 +329,7 @@ export function ScadenzeConsole({
               href={pageHref(page - 1)}
               locale={locale as AppLocale}
               aria-disabled={page <= 1}
-              className={`btn ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
+              className="btn"
               data-testid="scadenze-page-prev"
             >
               {labels.pagination.prev}
@@ -341,7 +341,7 @@ export function ScadenzeConsole({
               href={pageHref(page + 1)}
               locale={locale as AppLocale}
               aria-disabled={page >= totalPages}
-              className={`btn ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
+              className="btn"
               data-testid="scadenze-page-next"
             >
               {labels.pagination.next}

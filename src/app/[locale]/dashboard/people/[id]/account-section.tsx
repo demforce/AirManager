@@ -292,7 +292,7 @@ export function AccountSection({
               locale={locale}
               aria-disabled={page <= 1}
               data-testid="account-statement-page-prev"
-              className={`btn ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
+              className="btn"
             >
               {labels.pagination.prev}
             </Link>
@@ -304,7 +304,7 @@ export function AccountSection({
               locale={locale}
               aria-disabled={page >= totalPages}
               data-testid="account-statement-page-next"
-              className={`btn ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
+              className="btn"
             >
               {labels.pagination.next}
             </Link>
