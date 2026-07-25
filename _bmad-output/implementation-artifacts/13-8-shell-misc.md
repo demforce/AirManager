@@ -4,7 +4,7 @@ baseline_commit: ea917a1
 
 # Story 13.8: Shell & misc trasversali — switcher lingua, icone sidebar, label reports, rimozione logo, precompile scadenze
 
-Status: review
+Status: done
 
 ## Story
 

@@ -155,12 +155,16 @@ development_status:
   13-5-polish-tabelle-billing-logbook-expiries: done
   13-6-ppr-movimenti: done
   13-7-pianificazione: done
-  13-8-shell-misc: backlog
+  13-8-shell-misc: done
   13-9-dark-theme-pass: backlog
+  # 13.10: includere i punti rimandati dalle review — F4-13.7 (popover filtri sfora a sinistra a 375px,
+  # clamp banale in schedule.tsx) e F8-13.8 (label bar chart minGap 1.83px @375 = soglia di partenza)
   13-10-mobile-pass: backlog
   # 13.11: nata dallo split della 13.3 (decisione utente 2026-07-24) — ritiro completo
   # stack legacy: DataTable in new-booking-form/aircraft-editor, ExportButton in ExportMenu,
-  # search-combobox->airops.css (+ fix font logbook), poi Tailwind/Geist/TanStack fuori da package.json
+  # search-combobox->airops.css (+ fix font logbook), poi Tailwind/Geist/TanStack fuori da package.json.
+  # Aggiunta review 13.8 (F6): anche Icon.fleet (icons.tsx:48) + entry 'fleet' di NavIconKey
+  # (route-registry.ts:42), orfane dopo il passaggio della sidebar a 'plane'.
   13-11-ritiro-stack-legacy: backlog
   epic-13-retrospective: optional
 
