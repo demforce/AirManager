@@ -1,7 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import { clampToWindowPercent, projectDayBlocks, projectWeekChips, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
-import { buildExportHref } from '@/lib/export-href';
+import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
@@ -262,6 +262,8 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   // `listFrom`, not a bare `nowIso`, so the export never diverges from what
   // the list actually shows).
   const exportHref = buildExportHref('/api/v1/bookings', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale);
+  // Story 13.7, AC 2 — the PDF counterpart, same filters (dedicated route, spine :105).
+  const exportPdfHref = buildPdfExportHref('/api/v1/bookings/pdf', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale);
 
   // Story 7.3/12.3: serialize the already status-filtered, service-side rows
   // into plain wire DTOs before crossing the server -> client boundary
@@ -340,6 +342,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         page={page}
         totalPages={totalPages}
         exportHref={exportHref}
+        exportPdfHref={exportPdfHref}
         canCreate={canCreate}
         formMode={formMode}
         personOptions={personOptions}

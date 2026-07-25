@@ -586,6 +586,35 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(targetDayCell.getByTestId('schedule-week-day-count')).toContainText('2');
   });
 
+  test('story 13.7 AC 1: the filter popover is not clipped by the card — its bottom-most control ("Fatto") is genuinely clickable, not just present in the DOM', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    // A tall filter popover (many wrapped aircraft badges) against the
+    // week-grid's fixed, roughly constant card height (`.week-grid` cells
+    // are `min-height: 200px`, unlike the day view where each aircraft adds
+    // its OWN row and the card grows to match) is the scenario ricognizione
+    // found clipped — 20 run-unique aircraft (long registrations, few badges
+    // per wrapped row) reliably make the popover taller than the card
+    // regardless of anything else already in the DB.
+    for (let i = 0; i < 20; i++) {
+      await createAircraft(page);
+    }
+
+    await page.goto('/it/dashboard/bookings?view=week');
+    await page.getByTestId('schedule-filter-toggle').click();
+    const doneButton = page.getByTestId('schedule-filter-done');
+    // Before the fix, `.card{overflow:hidden}` clips the popover's bottom
+    // portion — the clipped-away region is not hit-testable, so a real
+    // Playwright click on a button living there times out (actionability
+    // check never resolves). After the fix (position: fixed, escaping the
+    // card's clip), the click resolves normally and the popover closes.
+    await doneButton.click();
+    await expect(page.getByTestId('schedule-filter-toggle')).toBeVisible();
+    await expect(doneButton).toHaveCount(0);
+  });
+
   test('calendar mobile viewport (375x812, Task 4): day view is usable, no page-level horizontal overflow, primary action reachable', async ({
     page,
   }) => {

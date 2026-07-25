@@ -1414,6 +1414,21 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'get',
+  path: '/api/v1/bookings/pdf',
+  summary: 'PDF export of the bookings list (story 13.7, AC 2)',
+  description:
+    "Dedicated PDF route (spine :105), NOT `?format=pdf` on the endpoint above — same query schema and period/aircraft/person/status filters as `GET /api/v1/bookings` (`page`/`pageSize`/`format`, also present on that schema, are ignored here; this always re-pages internally up to the PDF cap). Same columns as the `?format=xlsx` export. Readable with `self.read` (every authenticated role, same as the list).",
+  tags: ['Bookings'],
+  security,
+  request: { query: listBookingsQuerySchema },
+  responses: {
+    200: { description: 'The bookings list as a PDF document.', content: pdfContent() },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
   method: 'post',
   path: '/api/v1/bookings',
   summary: 'Book an aircraft for a person over a future interval (AC 1/2/3, FR-18; story 7.4 AC 1/2: expiry block + staff force)',

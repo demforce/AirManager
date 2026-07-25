@@ -34,6 +34,7 @@ vi.mock('./app-settings.service', () => ({ getAirfieldBranding: vi.fn() }));
 
 const { listPeople, getPerson } = await import('./people.service');
 const { listFlights } = await import('./flights.service');
+const { listBookings } = await import('./bookings.service');
 const { listCashMovements, getCashReport } = await import('./cash.service');
 const { listAllExpiries } = await import('./expiries.service');
 const { listAccountMovements, getAccountOverview } = await import('./accounts.service');
@@ -58,10 +59,12 @@ const {
   exportFlightsPdf,
   exportExpiriesPdf,
   exportPprRequestsPdf,
+  exportBookingsPdf,
 } = await import('./exports.service');
 
 const listPeopleMock = vi.mocked(listPeople);
 const listFlightsMock = vi.mocked(listFlights);
+const listBookingsMock = vi.mocked(listBookings);
 const listCashMovementsMock = vi.mocked(listCashMovements);
 const listAllExpiriesMock = vi.mocked(listAllExpiries);
 const listAccountMovementsMock = vi.mocked(listAccountMovements);
@@ -92,6 +95,7 @@ function lastPdfProps() {
 beforeEach(() => {
   listPeopleMock.mockReset();
   listFlightsMock.mockReset();
+  listBookingsMock.mockReset();
   listCashMovementsMock.mockReset();
   listAllExpiriesMock.mockReset();
   listAccountMovementsMock.mockReset();
@@ -894,5 +898,57 @@ describe('exportPprRequestsPdf (story 13.6, AC 4/5)', () => {
     const row = props.rows[0];
     expect(props.columns.find((c) => c.header === 'Numero PPR')!.value(row)).toBe('PPR-2026-0001');
     expect(props.columns.find((c) => c.header === 'Tassa')!.value(row)).toBe('43,21 €');
+  });
+});
+
+describe('exportBookingsPdf (story 13.7, AC 2)', () => {
+  it('reuses listBookings with page:1/pageSize:PDF_EXPORT_MAX_ROWS and the SAME filters, rejects EXPORT_TOO_LARGE, maps the same columns as the xlsx export (incl. a null instructorName), and has no totals/subtitle', async () => {
+    listBookingsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+    await expect(exportBookingsPdf(ACTOR, { page: 1, pageSize: 20, status: ['PENDING'] })).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
+
+    listBookingsMock.mockReset();
+    listBookingsMock.mockResolvedValue({
+      total: 1,
+      page: 1,
+      pageSize: PDF_EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'booking_1',
+          aircraftId: 'ac_1',
+          aircraftRegistration: 'I-ABCD',
+          personId: 'p_1',
+          personName: 'Mario Rossi',
+          instructorProfileId: null,
+          instructorName: null,
+          startsAt: new Date('2026-07-01T09:00:00Z'),
+          endsAt: new Date('2026-07-01T10:00:00Z'),
+          notes: null,
+          status: 'APPROVED',
+          cancelledAt: null,
+          forcedAt: null,
+          denyReason: null,
+          decidedAt: null,
+          createdAt: new Date('2026-06-30T09:00:00Z'),
+        },
+      ],
+    } as never);
+
+    const { buffer, filename } = await exportBookingsPdf(ACTOR, { page: 1, pageSize: 20, aircraftId: 'ac_1', locale: 'it' });
+
+    expect(buffer.toString('latin1').startsWith('%PDF-')).toBe(true);
+    expect(filename).toMatch(/^airmanager-bookings-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(listBookingsMock).toHaveBeenLastCalledWith(ACTOR, expect.objectContaining({ page: 1, pageSize: PDF_EXPORT_MAX_ROWS, aircraftId: 'ac_1' }));
+
+    const props = lastPdfProps();
+    expect(props.title).toBe('Prenotazioni');
+    expect(props.subtitle).toBeNull();
+    expect(props.totals).toBeUndefined();
+
+    const row = props.rows[0];
+    expect(props.columns.find((c) => c.header === 'Aereo')!.value(row)).toBe('I-ABCD');
+    expect(props.columns.find((c) => c.header === 'Pilota')!.value(row)).toBe('Mario Rossi');
+    expect(props.columns.find((c) => c.header === 'Istruttore')!.value(row)).toBe(''); // null instructorName -> empty string, never null
+    expect(props.columns.find((c) => c.header === 'Inizio')!.value(row)).toBe('01/07/2026, 11:00'); // 09:00Z -> CEST +2
+    expect(props.columns.find((c) => c.header === 'Stato')!.value(row)).toBe('Approvato');
   });
 });

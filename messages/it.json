@@ -1440,6 +1440,7 @@
       "newButton": "Nuova prenotazione",
       "exportLabel": "Esporta",
       "exportXls": "Esporta XLS",
+      "exportPdf": "Esporta PDF",
       "empty": "Nessuna prenotazione.",
       "table": {
         "pilot": "Pilota",

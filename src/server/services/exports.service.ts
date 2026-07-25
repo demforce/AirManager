@@ -738,3 +738,31 @@ export async function exportPprRequestsPdf(actor: Actor, query: ListPprRequestsQ
 
   return toPdfExport('ppr-requests', locale, branding, t('card.title'), subtitle, columns, result.items, undefined);
 }
+
+// --- Bookings (`GET /api/v1/bookings/pdf`) ----------------------------------
+// Story 13.7, AC 2 — dedicated PDF route (spine :105), SAME filters and SAME
+// columns as `exportBookingsXlsx` above (domain note ratified in-story: the
+// list is shared, `self.read` — no restriction beyond what `listBookings`
+// already enforces for every role).
+
+export async function exportBookingsPdf(actor: Actor, query: ListBookingsQuery): Promise<PdfExport> {
+  const result = await listBookings(actor, { ...query, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+  assertWithinPdfExportCap(result.total);
+  const branding = await getAirfieldBranding();
+
+  const locale = resolveLocale(query);
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'BookingsPage' });
+
+  const columns: PdfColumn<(typeof result.items)[number]>[] = [
+    { header: t('list.table.aircraft'), value: (row) => row.aircraftRegistration },
+    { header: t('list.table.pilot'), value: (row) => row.personName },
+    { header: t('list.table.instructor'), value: (row) => row.instructorName ?? '' },
+    { header: t('list.table.startsAt'), value: (row) => formatDateTime(row.startsAt, locale) },
+    { header: t('list.table.endsAt'), value: (row) => formatDateTime(row.endsAt, locale) },
+    { header: t('list.table.status'), value: (row) => t(`list.status.${row.status}`) },
+  ];
+
+  // No `totals` (same as `exportExpiriesPdf`: a status list has nothing summable).
+  return toPdfExport('bookings', locale, branding, t('list.cardTitle'), null, columns, result.items, undefined);
+}

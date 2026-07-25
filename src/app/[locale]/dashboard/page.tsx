@@ -8,7 +8,7 @@ import { ScadenzeWidget } from '@/components/dashboard/scadenze-widget';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { clampToWindowPercent, projectDayBlocks, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
-import { buildExportHref } from '@/lib/export-href';
+import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { categoryOf } from '@/lib/expiry-status';
 import { formatCents } from '@/lib/money';
 import { deriveApprovedPprMovementStatus } from '@/lib/ppr-movement-status';
@@ -363,6 +363,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         page={1}
         totalPages={embedTotalPages}
         exportHref={buildExportHref('/api/v1/bookings', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale)}
+        exportPdfHref={buildPdfExportHref('/api/v1/bookings/pdf', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale)}
         canCreate
         formMode="staff"
         personOptions={staffPersonOptions}

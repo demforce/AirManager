@@ -23,7 +23,7 @@
  * projection already computes are reused verbatim as `left`/`width` here,
  * since both are just "how far through the 06:00-22:00 window" percentages.
  */
-import { useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { getPathname, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { CalendarPopover } from '@/components/ui/calendar-popover';
@@ -187,6 +187,18 @@ export function Schedule({
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterAircraftId, setFilterAircraftId] = useState('all');
   const [filterInstructorId, setFilterInstructorId] = useState('all');
+  // AC 1 fix: the filter popover is `position: fixed` (viewport-anchored,
+  // coordinates computed from the trigger button below) rather than the
+  // shared `.popover` class's default `position: absolute` — `.card` clips
+  // an absolutely-positioned descendant that overflows its own box
+  // (`overflow: hidden`, `airops.css:402`, needed elsewhere for the
+  // timeline/week-grid's rounded corners), same reason `SlideOver` already
+  // uses `position: fixed` to escape the SAME card boundary. The calendar
+  // popover above is left untouched (same absolute pattern, already fits
+  // within the card today).
+  const filterTriggerRef = useRef<HTMLButtonElement>(null);
+  const filterPopoverRef = useRef<HTMLDivElement>(null);
+  const [filterPos, setFilterPos] = useState<{ top: number; right: number; maxHeight: number } | null>(null);
 
   const filterCount = (filterAircraftId !== 'all' ? 1 : 0) + (filterInstructorId !== 'all' ? 1 : 0);
   const visibleAircraft = aircraft.filter((ac) => filterAircraftId === 'all' || ac.id === filterAircraftId);
@@ -216,6 +228,55 @@ export function Schedule({
     }
     setCalOpen((open) => !open);
   }
+
+  /**
+   * AC 1 fix: measures the trigger's viewport position on open (mirrors
+   * `toggleCalendarPopover`'s "read the pre-toggle value, then toggle"
+   * shape) — `filterPos` feeds the fixed popover's inline `top`/`right`
+   * below, since a `position: fixed` element has no CSS equivalent of the
+   * old `top: calc(100% + 6px); right: 0` (relative-to-parent) rule.
+   * `maxHeight` caps the popover to whatever vertical room is left below the
+   * trigger in the VIEWPORT (18px bottom margin) — found via a real e2e run
+   * against a fleet large enough to wrap the aircraft/instructor badges past
+   * one screenful: a `position: fixed` element does not scroll with the
+   * page, so without a height cap + its own `overflow-y: auto` a popover
+   * taller than the viewport would leave its footer buttons permanently
+   * unreachable (no amount of page-scrolling brings them into view).
+   */
+  function toggleFilterPopover() {
+    setCalOpen(false);
+    if (!filterOpen && filterTriggerRef.current) {
+      const rect = filterTriggerRef.current.getBoundingClientRect();
+      const top = rect.bottom + 6;
+      setFilterPos({ top, right: window.innerWidth - rect.right, maxHeight: window.innerHeight - top - 18 });
+    }
+    setFilterOpen((open) => !open);
+  }
+
+  // AC 1 fix: a `position: fixed` popover no longer scrolls WITH the page
+  // (unlike the old `absolute` one) — closing it on scroll/resize avoids it
+  // visually detaching from its trigger button. Capture phase so a scroll
+  // inside `.schedule`'s own horizontal scrollbar (a nested container, not
+  // the window) is caught too — EXCEPT the popover's own internal scroll
+  // (its `overflow-y: auto`, the `maxHeight` fix above): that scroll also
+  // fires a capture-phase 'scroll' event on `window` (found via a real e2e
+  // run against a tall popover — Playwright's own `scrollIntoView` to reach
+  // an off-screen footer button scrolled the popover, which this listener
+  // then immediately closed before the click could land), so a scroll whose
+  // target is inside the popover itself must NOT close it.
+  useEffect(() => {
+    if (!filterOpen) return;
+    function close(event: Event) {
+      if (event.target instanceof Node && filterPopoverRef.current?.contains(event.target)) return;
+      setFilterOpen(false);
+    }
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [filterOpen]);
 
   return (
     <div className="card" data-testid="schedule-section">
@@ -266,21 +327,23 @@ export function Schedule({
 
         <div style={{ position: 'relative' }}>
           <button
+            ref={filterTriggerRef}
             type="button"
             className={`btn ${filterCount ? 'primary' : ''}`}
-            onClick={() => {
-              setCalOpen(false);
-              setFilterOpen((open) => !open);
-            }}
+            onClick={toggleFilterPopover}
             data-testid="schedule-filter-toggle"
           >
             <Icon.filter /> {labels.filters}
             {filterCount ? ` · ${filterCount}` : ''}
           </button>
-          {filterOpen && (
+          {filterOpen && filterPos && (
             <>
               <div className="popover-scrim" onClick={() => setFilterOpen(false)} />
-              <div className="popover">
+              <div
+                ref={filterPopoverRef}
+                className="popover"
+                style={{ position: 'fixed', top: filterPos.top, right: filterPos.right, maxHeight: filterPos.maxHeight, overflowY: 'auto' }}
+              >
                 <div className="pop-row">
                   <div className="fld-label">{labels.filtersAircraft}</div>
                   <div className="segmented" style={{ flexWrap: 'wrap' }}>
@@ -330,7 +393,7 @@ export function Schedule({
                   >
                     {labels.filtersReset}
                   </button>
-                  <button type="button" className="btn primary" onClick={() => setFilterOpen(false)}>
+                  <button type="button" className="btn primary" onClick={() => setFilterOpen(false)} data-testid="schedule-filter-done">
                     {labels.filtersDone}
                   </button>
                 </div>

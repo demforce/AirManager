@@ -49,6 +49,8 @@ export type BookingsTableLabels = {
   newButton: string;
   exportLabel: string;
   exportXls: string;
+  /** Story 13.7, AC 2 — the PDF counterpart of `exportXls` (was `pdfLabel=""`, xlsx-only). */
+  exportPdf: string;
   empty: string;
   table: { pilot: string; startsAt: string; endsAt: string; aircraft: string; status: string; actions: string };
   status: Record<BookingStatusDto, string>;
@@ -111,6 +113,8 @@ type BookingsTableProps = {
   date: string;
   today: string;
   exportHref: string;
+  /** Story 13.7, AC 2 — the PDF counterpart of `exportHref` (`GET /api/v1/bookings/pdf`, dedicated route, same filters). */
+  exportPdfHref: string;
   canCreate: boolean;
   formMode: NewBookingFormMode;
   personOptions: PersonOption[];
@@ -152,6 +156,7 @@ export function BookingsTable({
   date,
   today,
   exportHref,
+  exportPdfHref,
   canCreate,
   formMode,
   personOptions,
@@ -307,7 +312,7 @@ export function BookingsTable({
           {labels.pendingSummary.replace('{pending}', String(pendingCount)).replace('{total}', String(total))}
         </span>
         <div className="spacer" />
-        <ExportMenu label={labels.exportLabel} xlsLabel={labels.exportXls} xlsHref={exportHref} pdfLabel="" />
+        <ExportMenu label={labels.exportLabel} xlsLabel={labels.exportXls} xlsHref={exportHref} pdfLabel={labels.exportPdf} pdfHref={exportPdfHref} />
         {canCreate ? (
           <button type="button" className="btn primary" onClick={() => setShowNew(true)} data-testid="new-booking-button">
             {labels.newButton}

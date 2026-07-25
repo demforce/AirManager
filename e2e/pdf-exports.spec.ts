@@ -32,6 +32,25 @@ function dateAt(daysFromBase: number): string {
   return new Date(Date.UTC(2021, 0, 1) + daysFromBase * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** Story 13.7 — the OPPOSITE of `dateAt` above: `POST /api/v1/bookings` rejects a past `startsAt` (`BOOKING_IN_PAST`, unlike a flight's historical logbook entry), so its own PDF fixture needs a genuinely future day — same fixed far-future convention as `bookings.spec.ts`'s own `FUTURE_DAY`. Fine for the plain API-level fixture below (never asserted as a visible UI row), but NOT for a UI row-visibility assertion — see `soonestFutureBookingSlot` for that case. */
+const FUTURE_BOOKING_DAY = '2031-03-10';
+
+/**
+ * `bookings.spec.ts#soonestFutureSlot`'s ISO-instant counterpart (this file
+ * creates bookings via the raw API, not a `datetime-local` form input): the
+ * "Prenotazioni" list orders `startsAt asc` GLOBALLY and shows only page 1 —
+ * `FUTURE_BOOKING_DAY` above is reused by dozens of bookings across this
+ * long-lived dev DB's every past run, so a booking placed there is not
+ * reliably on page 1. Minutes-from-now beats every other booking except a
+ * genuinely imminent one, and self-cleans once in the past.
+ */
+function soonestFutureBookingSlot(): { startsAt: string; endsAt: string } {
+  return {
+    startsAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    endsAt: new Date(Date.now() + 70 * 60 * 1000).toISOString(),
+  };
+}
+
 async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-PD${suffix}`.toUpperCase().slice(0, 20);
@@ -159,7 +178,7 @@ async function createApprovedPprRequest(page: Page): Promise<{ registration: str
 test.describe.configure({ mode: 'serial' });
 
 test.describe('PDF exports (Story 10.2, FR-40)', () => {
-  test('admin exports the 5 report PDFs: 200, application/pdf, attachment filename, %PDF- magic bytes (AC 2/3; story 13.6 AC 4)', async ({ page }) => {
+  test('admin exports the 6 report PDFs: 200, application/pdf, attachment filename, %PDF- magic bytes (AC 2/3; story 13.6 AC 4; story 13.7 AC 2)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const aircraft = await createAircraftWithRate(page, 15000);
@@ -181,12 +200,31 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
 
     await createApprovedPprRequest(page);
 
+    // Story 13.7, AC 2 — the bookings PDF's own fixture (`bookingsAircraft`,
+    // kept separate from `aircraft` above so its rate/flight setup stays
+    // untouched). ADMIN (`bookings.manage.any`) creates it — `bookings.service.ts#createBooking`
+    // stamps `bookings.manage.any` creations APPROVED immediately, matching
+    // `listBookings`' own default status filter (absent `status` -> APPROVED
+    // only), so the route's own filter narrows to exactly this row with no
+    // separate approval step.
+    const bookingsAircraft = await createAircraftWithRate(page, 8000);
+    const bookingCreateResponse = await page.request.post('/api/v1/bookings', {
+      data: {
+        aircraftId: bookingsAircraft.id,
+        personId: pilot.personId,
+        startsAt: `${FUTURE_BOOKING_DAY}T09:00:00.000Z`,
+        endsAt: `${FUTURE_BOOKING_DAY}T10:00:00.000Z`,
+      },
+    });
+    expect(bookingCreateResponse.status()).toBe(201);
+
     const routes: { url: string; filenamePrefix: string }[] = [
       { url: `/api/v1/people/${pilot.personId}/account/pdf`, filenamePrefix: 'account-statement' },
       { url: `/api/v1/cash-report/pdf?from=${cashDate}&to=${cashDate}`, filenamePrefix: 'cash-report' },
       { url: `/api/v1/flights/pdf?aircraftId=${aircraft.id}`, filenamePrefix: 'flights' },
       { url: `/api/v1/expiries/pdf?expiryTypeId=${expiryTypeId}`, filenamePrefix: 'expiries' },
       { url: `/api/v1/ppr-requests/pdf?status=APPROVED`, filenamePrefix: 'ppr-requests' },
+      { url: `/api/v1/bookings/pdf?aircraftId=${bookingsAircraft.id}`, filenamePrefix: 'bookings' },
     ];
 
     for (const route of routes) {
@@ -281,6 +319,15 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     expect(pprResponse.status()).toBe(403);
   });
 
+  test('GET /api/v1/bookings/pdf is self.read — every authenticated role gets 200, unlike the staff-only report PDFs above (story 13.7, AC 2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    const response = await page.request.get('/api/v1/bookings/pdf');
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toBe(PDF_CONTENT_TYPE);
+  });
+
   test('unauthenticated requests to every PDF export route get the AD-8 401 envelope', async ({ request }) => {
     for (const url of [
       '/api/v1/people/anyone/account/pdf',
@@ -288,6 +335,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
       '/api/v1/flights/pdf',
       '/api/v1/expiries/pdf',
       '/api/v1/ppr-requests/pdf',
+      '/api/v1/bookings/pdf',
     ]) {
       const response = await request.get(url);
       expect(response.status(), url).toBe(401);
@@ -329,5 +377,33 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     expect(download.suggestedFilename()).toMatch(/^airmanager-flights-\d{4}-\d{2}-\d{2}\.pdf$/);
     const downloadedPath = await download.path();
     expect(downloadedPath).toBeTruthy();
+  });
+
+  test('story 13.7 AC 2: the bookings ExportMenu now has BOTH "Esporta PDF" (real download) and "Esporta XLS" (unchanged, still xlsx) entries', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 7000);
+    const pilot = await createPilotPerson(page, 'UiBookingsPdfClick');
+    const createResponse = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, ...soonestFutureBookingSlot() },
+    });
+    expect(createResponse.status()).toBe(201);
+
+    await page.goto('/it/dashboard/bookings');
+    const list = page.getByTestId('bookings-list-section');
+    await expect(list.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toBeVisible();
+
+    await list.getByRole('button', { name: 'Esporta' }).click();
+    const [download] = await Promise.all([page.waitForEvent('download'), list.getByRole('link', { name: 'Esporta PDF' }).click()]);
+    expect(download.suggestedFilename()).toMatch(/^airmanager-bookings-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(await download.path()).toBeTruthy();
+
+    // Was `pdfLabel=""` (xlsx-only) before this story — the XLS entry must
+    // still be there and still work, unchanged.
+    await list.getByRole('button', { name: 'Esporta' }).click();
+    const [xlsDownload] = await Promise.all([page.waitForEvent('download'), list.getByRole('link', { name: 'Esporta XLS' }).click()]);
+    expect(xlsDownload.suggestedFilename()).toMatch(/^airmanager-bookings-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    expect(await xlsDownload.path()).toBeTruthy();
   });
 });

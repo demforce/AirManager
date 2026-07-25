@@ -1440,6 +1440,7 @@
       "newButton": "New booking",
       "exportLabel": "Export",
       "exportXls": "Export XLS",
+      "exportPdf": "Export PDF",
       "empty": "No bookings.",
       "table": {
         "pilot": "Pilot",

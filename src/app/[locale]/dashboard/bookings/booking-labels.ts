@@ -121,6 +121,7 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
     newButton: t('list.newButton'),
     exportLabel: t('list.exportLabel'),
     exportXls: t('list.exportXls'),
+    exportPdf: t('list.exportPdf'),
     empty: t('list.empty'),
     table: {
       pilot: t('list.table.pilot'),
