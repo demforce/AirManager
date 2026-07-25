@@ -1,18 +1,5 @@
-@import 'tailwindcss';
 /* AirOps design system (story 12.1, AC 1) — port of docs/design-reference/airops/styles.css. */
 @import '../styles/airops.css';
-
-:root {
-  /* Self-hosted Geist (geist npm package) — no build-time font fetch. */
-  --font-sans: var(--font-geist-sans);
-  /* System serif stack for display headings (no external font download). */
-  --font-serif: 'Iowan Old Style', Georgia, 'Times New Roman', serif;
-}
-
-@theme inline {
-  --font-sans: var(--font-sans);
-  --font-serif: var(--font-serif);
-}
 
 /* Story 13.9: no `body{ background/color }` override here — this Tailwind-
    scaffold rule used to hardcode light-only colors (`#fbfbfa`/`#2f3437`) that
@@ -20,3 +7,17 @@
    var(--ink) }` rule (same specificity, but this one was later in the
    cascade, so it always won). Removed: airops.css's body rule is now the
    only one setting these, so it flips correctly with `data-theme`. */
+
+/* Story 13.11: Tailwind CSS retired — `@import 'tailwindcss'`, the
+   Geist-backed `--font-sans`/`--font-serif` theme tokens (`@theme inline`),
+   and the `flex min-h-full flex-col` utilities on `layout.tsx`'s `<body>`
+   are gone. This rule reproduces that body geometry in plain CSS: real shell
+   layout (see airops.css's `.ppr-page` `flex-shrink:0` comment, which
+   documents callers relying on it), not a stray Tailwind leftover.
+   `min-height: 100%` is redundant with airops.css's `html,body{height:100%}`
+   but kept for a literal match of the old utility's semantics. */
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}

@@ -1,12 +1,10 @@
 import type { Metadata } from 'next';
 import { hasLocale, NextIntlClientProvider } from 'next-intl';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { GeistSans } from 'geist/font/sans';
 import { notFound } from 'next/navigation';
 import { cookies } from 'next/headers';
 // AirOps design system fonts (story 12.1, AC 1) — self-hosted via
-// @fontsource, no build-time/runtime font fetch. Geist stays imported above
-// until every legacy page is gone (epic 12, story 12.13).
+// @fontsource, no build-time/runtime font fetch.
 import '@fontsource/inter-tight/400.css';
 import '@fontsource/inter-tight/500.css';
 import '@fontsource/inter-tight/600.css';
@@ -54,7 +52,7 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
   const theme = (await cookies()).get(THEME_COOKIE)?.value === 'dark' ? 'dark' : 'light';
 
   return (
-    <html lang={locale} data-theme={theme} className={`${GeistSans.variable} h-full antialiased`}>
+    <html lang={locale} data-theme={theme}>
       {/* Story 13.9 fix (mechanism corrected in review F3): the light-mode pin came
           from globals.css's own `body{ background/color }` rule — unlayered and later
           in the cascade than airops.css's @import, so it beat the theme-aware
@@ -62,8 +60,15 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
           text at light-mode colors (~1.5:1 on dark panels). The hardcoded Tailwind
           color classes that also sat here were INERT, not the culprit — Tailwind v4
           emits utilities in `@layer utilities`, which loses to unlayered CSS
-          regardless of specificity — and were removed as dead, misleading code. */}
-      <body className="flex min-h-full flex-col font-[family-name:var(--font-sans)]">
+          regardless of specificity — and were removed as dead, misleading code.
+          Story 13.11: `h-full`/`antialiased` (Tailwind) dropped from `<html>` — both
+          were already redundant with airops.css (`html,body{height:100%}` line 68,
+          `body{-webkit-font-smoothing:antialiased}` line 76); the one non-redundant
+          bit (`-moz-osx-font-smoothing:grayscale`) moved into that same airops.css
+          body rule. `flex min-h-full flex-col` (real shell geometry, see `.ppr-page`'s
+          `flex-shrink:0` comment above) moved to a plain `body{}` rule in
+          globals.css. */}
+      <body>
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
       </body>
     </html>

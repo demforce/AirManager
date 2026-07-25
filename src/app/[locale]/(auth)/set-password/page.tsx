@@ -21,7 +21,17 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
   const t = await getTranslations('auth.setPassword');
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-16" style={{ background: 'var(--bg)', color: 'var(--ink)' }}>
+    <main
+      style={{
+        display: 'flex',
+        minHeight: '100vh',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '64px 24px',
+        background: 'var(--bg)',
+        color: 'var(--ink)',
+      }}
+    >
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 28 }}>
           <div className="brand-mark">

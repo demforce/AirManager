@@ -331,7 +331,7 @@ export function BookingsTable({
         </div>
 
         {items.length === 0 ? (
-          <p className="mt-4 text-sm" style={{ padding: '12px 18px' }}>
+          <p style={{ marginTop: 16, fontSize: 14, lineHeight: '20px', padding: '12px 18px' }}>
             {labels.empty}
           </p>
         ) : null}
@@ -372,8 +372,8 @@ export function BookingsTable({
               </div>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                 {confirmingCancelId === booking.id ? (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                       <span className="student-sub">{labels.actions.cancelPrompt}</span>
                       <button
                         type="button"
@@ -490,7 +490,7 @@ export function BookingsTable({
               data-testid="booking-deny-reason"
             />
             {denyError ? (
-              <p role="alert" data-testid="booking-deny-error" className="text-xs" style={{ color: 'var(--bad)' }}>
+              <p role="alert" data-testid="booking-deny-error" style={{ fontSize: 12, lineHeight: '16px', color: 'var(--bad)' }}>
                 {denyError}
               </p>
             ) : null}

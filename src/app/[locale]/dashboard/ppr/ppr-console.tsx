@@ -268,7 +268,7 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
               data-testid="ppr-reject-reason"
             />
             {rejectError ? (
-              <p role="alert" data-testid="ppr-reject-error" className="text-xs" style={{ color: 'var(--bad)' }}>
+              <p role="alert" data-testid="ppr-reject-error" style={{ fontSize: 12, lineHeight: '16px', color: 'var(--bad)' }}>
                 {rejectError}
               </p>
             ) : null}

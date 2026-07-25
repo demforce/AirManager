@@ -45,11 +45,6 @@ export const Icon = {
       <path d="M15 14c3-.3 5 1.3 6 4" />
     </svg>
   ),
-  fleet: (p) => (
-    <svg viewBox="0 0 24 24" {...STROKE} {...p}>
-      <path d="M2 15h20M4 15l2-4h12l2 4M8 11V7h8v4M10 15v3M14 15v3" />
-    </svg>
-  ),
   book: (p) => (
     <svg viewBox="0 0 24 24" {...STROKE} {...p}>
       <path d="M4 4h11a4 4 0 014 4v12H8a4 4 0 01-4-4V4z" />

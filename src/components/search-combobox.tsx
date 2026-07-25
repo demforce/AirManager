@@ -237,13 +237,14 @@ export function SearchCombobox({
   // column by CSS Grid's default `justify-items: stretch`, no explicit
   // width needed — but the SAME `w-full` on a `flex flex-wrap` row (the
   // filter bar) resolves against the whole row's width and forces the item
-  // onto its own line. `min-w-[200px]` alone gives the filter bar a sane
-  // floor while staying correct in the grid.
+  // onto its own line. `minWidth: 200` (inline style, story 13.11 — Tailwind
+  // retired) alone gives the filter bar a sane floor while staying correct
+  // in the grid.
   return (
     // `.fld` (airops.css) gives the same label/control stack as every other
     // slide-over field — the combobox label/input must read EXACTLY like a
     // `Field`+`Input` pair (user decision 2026-07-21: uniform form typography).
-    <div className="fld relative min-w-[200px]">
+    <div className="fld" style={{ position: 'relative', minWidth: 200 }}>
       <label htmlFor={id} className="fld-label">
         {label}
       </label>

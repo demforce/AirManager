@@ -544,7 +544,7 @@ export function Schedule({
       </div>
 
       {aircraft.length === 0 ? (
-        <p className="mt-4 text-sm" style={{ padding: '0 18px 18px' }}>
+        <p style={{ marginTop: 16, fontSize: 14, lineHeight: '20px', padding: '0 18px 18px' }}>
           {labels.noAircraft}
         </p>
       ) : view === 'day' ? (
@@ -623,7 +623,7 @@ export function Schedule({
             );
           })}
           {dayBlocks.length === 0 && visibleAircraft.every((ac) => ac.status !== 'OUT_OF_SERVICE') ? (
-            <p className="mt-4 text-sm" style={{ padding: '0 18px' }}>
+            <p style={{ marginTop: 16, fontSize: 14, lineHeight: '20px', padding: '0 18px' }}>
               {labels.dayEmpty}
             </p>
           ) : null}
