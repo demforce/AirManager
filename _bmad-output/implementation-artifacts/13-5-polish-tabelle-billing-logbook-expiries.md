@@ -4,7 +4,7 @@ baseline_commit: f62151d
 
 # Story 13.5: Polish tabelle — billing + logbook + expiries (filtri free-text, export dropdown, rinomine, colonne)
 
-Status: review
+Status: done
 
 # Story
 
@@ -126,3 +126,5 @@ so that le pagine dati siano coerenti e leggibili come il resto dell'app.
 - **F3 (nota, ACCETTATA)**: il test AC3 verifica la larghezza colonna (proxy), non lo scrollWidth del badge; i nomi delle categorie cassa (arbitrari) possono ancora eccedere i 170px — PRE-esistente, fuori ambito AC3 (mirava al badge reversal). Nessuna azione.
 
 **Chiusura note dev**: N4 (filtri coerenti Piloti) CONFERMATA (markup `.bare-input`/`.search` + debounce 400ms identici); N5 (export dropdown) CONFERMATA; N6 (colonna Tipo 170px) CONFERMATA; N8 (scope rinomine) → F1 fixato; N9 (responsive 1440px) osservazione, 13.5 RIDUCE i controlli nella card-head → rinviato a 13.10.
+
+**Verifica post-fix** (sessione principale, fix `31e65ae`): `npm run gates` verde (1443 unit); full suite `CI=1` su build prod, DB fresco → **243 passed, exit 0** (l'assert `flight-reversal.spec.ts:294` aggiornato a "Modifica volo" verde), 1 flaky ambientale `settings:133` (Scheduling round-trip, timeout URL nella catena settings, verde al retry), catena `settings`+`booking-window` girata.
