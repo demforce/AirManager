@@ -60,13 +60,14 @@ so that la shell sia completa e le Impostazioni riflettano ciò che l'app usa da
 
 ### File List
 
-- `src/components/shell/top-bar.tsx` — switcher IT/EN (AC1)
+- `src/components/shell/top-bar.tsx` — switcher IT/EN (AC1); preserva la query string (fix review F1)
 - `src/app/[locale]/dashboard/layout.tsx` — prop `localeSwitchLabel` (AC1)
 - `messages/it.json`, `messages/en.json` — chiave `shell.localeSwitch.label` (AC1); rimozione chiavi `SettingsPage.club.form.logo*` (AC4)
 - `src/components/shell/route-registry.ts` — icona fleet → `plane` (AC2)
-- `src/components/charts/bar-chart.tsx` — label asse X fuori dall'SVG (AC3)
-- `src/lib/schemas/settings.ts` — `airfieldBrandingSchema` name-only (AC4)
-- `src/lib/schemas/registry.ts`, `src/lib/schemas/registry.test.ts` — OpenAPI + test name-only (AC4)
+- `src/components/charts/bar-chart.tsx` — label asse X fuori dall'SVG (AC3); `aria-hidden` sulla riga label (fix review F7)
+- `src/components/charts/line-chart.tsx` — label asse X fuori dall'SVG, `aria-hidden` (fix review F2/F7)
+- `src/lib/schemas/settings.ts` — `airfieldBrandingSchema` name-only (AC4); doc-comment `airfield.logo` rimosso (fix review F3)
+- `src/lib/schemas/registry.ts`, `src/lib/schemas/registry.test.ts` — OpenAPI + test name-only (AC4); description `airfield.logo` rimosso (fix review F3)
 - `src/server/services/app-settings.service.ts`, `src/server/services/app-settings.service.test.ts` — `getAirfieldBranding`/`setAirfieldBranding` name-only (AC4)
 - `src/server/adapters/pdf/document.tsx`, `src/server/adapters/pdf/document.test.ts` — branding name-only, `<Image>` rimosso (AC4)
 - `src/server/services/exports.service.ts`, `src/server/services/exports.service.test.ts` — `toPdfExport` branding type (AC4)
@@ -77,7 +78,7 @@ so that la shell sia completa e le Impostazioni riflettano ciò che l'app usa da
 - `e2e/pdf-exports.spec.ts` — test logo → name-only (AC4)
 - `src/components/dashboard/expiry-editor.tsx` — precompile data scadenza (AC5)
 - `e2e/expiry-registration.spec.ts` — nuovo test precompile (AC5/AC6)
-- `e2e/shell-misc.spec.ts` — nuovo file, switcher lingua + icona fleet (AC1/AC2/AC6)
+- `e2e/shell-misc.spec.ts` — nuovo file, switcher lingua + icona fleet (AC1/AC2/AC6); test query-preservation aggiunto (fix review F1)
 
 ### Note per il reviewer (assunzioni esplicite)
 
@@ -87,6 +88,38 @@ so that la shell sia completa e le Impostazioni riflettano ciò che l'app usa da
 - **AC5, scope deliberatamente ristretto**: il precompile è stato aggiunto SOLO al `LiveExpiryEditor` condiviso, come esplicitamente delimitato dalla story ("Beneficia scheda persona + Piloti + Istruttori, stesso componente"). Il form di CREAZIONE persona (`NewExpiryChipGroup` dentro `pilot-editor.tsx`'s `NewPersonForm`, story 13.2) usa lo stesso `ExpiryCatalogEntry[]` ma un flusso di selezione/state completamente separato e NON precompila — non è stato toccato. Segnalo perché è una superficie sorella facilmente confondibile con quella in scope: se il PO la considera un gap, è materiale per una story successiva, non una svista di questa.
 - **Ambiente**: la flakiness e2e da "cold compile" di `next dev` sotto Playwright multi-worker (vedi Completion Notes) è stata riprodotta anche su spec NON toccate da questa story — non è una regressione introdotta qui.
 
+### Fix post-review (2026-07-25)
+
+Applicati i finding F1/F2/F3/F7 della review adversarial (v. Review Record sotto). F4/F5 sono decisioni PO/note senza codice.
+
+- **F1 (major) — query string persa dallo switcher lingua**: `top-bar.tsx` ora legge `useSearchParams()` (`next/navigation`) e passa `<Link href={{ pathname, query: Object.fromEntries(searchParams.entries()) }} locale={otherLocale} …>` (stessa forma-oggetto già usata in `reports/page.tsx:112,120`) invece di `href={pathname}`. Nessun boundary `Suspense` richiesto: `npm run gates` (build compreso) resta verde senza modifiche — il layout `dashboard` è già dinamico/session-gated, quindi la route non viene mai prerenderizzata staticamente. Verifica reale: script scratchpad (adattato da `rev-ac1b.cjs` del reviewer) su build di produzione, click reali → le 6 rotte con query string riportate dal reviewer ora leggono `query kept: YES` (bookings?view=week&date, reports?period, billing?type&page, expiries?window, movements?status, più il caso `pilots?page&q` dell'href SSR/DOM). Nuovo test e2e `e2e/shell-misc.spec.ts` ("preserves the query string … round-trip (review F1)"): naviga `/it/dashboard/bookings?view=week&date=2026-08-05`, click sullo switcher, assert `/en/dashboard/bookings?view=week&date=2026-08-05`, click di nuovo, assert ritorno a `/it/…` con la stessa query — verde.
+- **F2 (minor) — LineChart "Ricavi" con label ancora dentro l'SVG scalato**: stesso fix chirurgico già applicato al `BarChart` per AC3, esteso a `line-chart.tsx`: le label escono dall'SVG in una riga HTML sotto il grafico. I punti del `LineChart` sono a `i/(n-1)` (non colonne `1fr`), quindi la riga usa `display:flex; justify-content:space-between` sullo stesso inset `pad`-derivato (`padPercent`) invece del `grid` a colonne del BarChart. Misura programmatica (script scratchpad, stesso pattern di `rev-ac3.cjs` del reviewer ma con i marker `<circle>` del LineChart al posto dei `<rect>`): `maxAlignDelta` = **7.39px, costante a 1201/1440/1920/375px** (= metà della larghezza di un glifo monospace a 9px, `glyphBoxW=14.8` — l'offset non dipende dal viewport, a differenza della distorsione precedente che cresceva con la larghezza). A 375px le label sono a grandezza reale (non scalate, `glyphBoxW` invariato) con `minGap≈2px`, leggibilità paragonabile al BarChart fixato (F8, `minGap=1.83px` alla stessa viewport). Screenshot prima/dopo a 1201/1440/1920/375 confermano le label non più "stirate" a viewport larghi.
+- **F3 (minor) — doc OpenAPI/schema citavano ancora `airfield.logo`**: rimossa la clausola `/airfield.logo` da `src/lib/schemas/registry.ts:1767` (description SERVITA in `/api/v1/openapi.json`, endpoint pubblico) e da `src/lib/schemas/settings.ts:25` (doc-comment interno). Verifica runtime: `curl http://localhost:3000/api/v1/openapi.json` → `airfield.logo in doc: false` (prima del fix: `true`), `logoDataUrl in doc: false` (invariato).
+- **F7 (note) — label row nell'albero a11y**: aggiunto `aria-hidden="true"` alla riga HTML delle label sia in `bar-chart.tsx` sia nella nuova riga di `line-chart.tsx`, ripristinando la semantica pre-story (il grafico resta interamente decorativo, coerente con l'SVG `role="img" aria-hidden="true"` già esistente). Verifica: `ariaSnapshot()` (script scratchpad, pattern `rev-a11y.cjs`) sulle card "Ore volate" e "Ricavi" ora mostra solo `text: <titolo> <sub> · <unità>`, zero abbreviazioni di mese nell'albero di accessibilità.
+- **F4/F5**: nessun codice — v. Review Record.
+
+Verifica trasversale post-fix: `npm run gates` verde (lint/typecheck/1446 test/build); sweep console browser (stesse pagine del reviewer + round-trip switcher) → 0 errori/warning; e2e mirati (`shell-misc.spec.ts` 3/3, `expiry-registration.spec.ts`, `pdf-exports.spec.ts` 9/9, `reports.spec.ts` 5/5) verdi contro il build di produzione.
+
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+### Review adversarial (Opus 5 xhigh — 2026-07-25)
+
+**Verdetto**: shippable-with-fixes.
+
+**Priority zero**: full suite CI=1 su build di produzione, DB fresco — VERDE **254/254** (8.3m, 0 flake, 0 retry). Catena serializzata confermata via grep sul log: `settings.spec.ts` 6/6 ✓ e `booking-window.spec.ts` 3/3 ✓, entrambi dopo il progetto `chromium` come da `playwright.config.ts`. Delta esatto vs baseline 251 = **+3**, tutto spiegato: `shell-misc.spec.ts` nuovo (+2), `expiry-registration.spec.ts` +1 (precompile), `pdf-exports.spec.ts` invariato 9→9 (test del logo riscritto in-place name-only, nessuna assert indebolita — verificato via `git diff` sulle sole righe rimosse: tutte e sole coperture della feature eliminata).
+
+**Gates**: PASS lint · PASS typecheck · PASS test 1446/1446 · PASS build. Sweep console browser (5 pagine + round-trip switcher): 0 errori/warning.
+
+**Findings**:
+- **F1 (major)** — lo switcher lingua butta via la query string (`href={pathname}` senza `useSearchParams`), verificato su 11 pagine/6 rotte con click reali su build di produzione. → **FIXATO** (`useSearchParams` + `Link` object-form, e2e query-preservation dedicato).
+- **F2 (minor)** — il `LineChart` "Ricavi" della stessa riga reports aveva ancora le label dentro l'SVG `viewBox` scalato (stessa causa già risolta nel `BarChart` per AC3) — distorte a desktop, illeggibili a 375px. → **FIXATO per estensione** (stesso pattern, adattato a `justify-content:space-between` per i punti a `i/(n-1)`; pattern 13.6-F2/13.7-F1 di "estendere il fix al gemello").
+- **F3 (minor)** — il documento OpenAPI pubblico e un doc-comment interno citavano ancora la chiave `airfield.logo` dopo la sua rimozione (AC4). → **FIXATO** (2 righe, una per file).
+- **F4 (po-decision)** — il wizard di creazione persona (`NewExpiryChipGroup` in `pilot-editor.tsx`'s `NewPersonForm`) non precompila la data scadenza, mentre le 3 superfici del `LiveExpiryEditor` condiviso (people/{id}, Piloti, Istruttori) sì — comportamento dichiarato/scope ristretto dal dev, non una svista. **Decisione PO (2026-07-25): ACCETTATO DEFINITIVAMENTE, nessun follow-up.**
+- **F5 (note)** — `PUT /api/v1/settings/airfield` non è `.strict()`: un body con `logoDataUrl` viene ignorato in silenzio (200) invece di rifiutato (422); comportamento pre-esistente (lo schema non è mai stato strict), non introdotto da questa story. **ACCETTATO**, nessuna azione.
+- **F6 (note)** — la glifa `Icon.fleet` e la entry `'fleet'` di `NavIconKey` sono ormai orfane (nessun consumer dopo il cambio icona AC2) — confermato, lasciate al loro posto per design (fuori scope). **In carico alla story 13.11** (ritiro stack legacy).
+- **F7 (note)** — la nuova riga HTML delle label del `BarChart` entrava nell'albero di accessibilità come testo nudo (12 abbreviazioni di mese senza valori), mentre prima della 13.8 erano dentro l'SVG `aria-hidden`. → **FIXATO** (`aria-hidden` sulla riga label di `bar-chart.tsx` e sulla nuova riga di `line-chart.tsx`, ripristino della semantica pre-story).
+- **F8 (note)** — a 375px il `BarChart` ha `minGap=1.83px` tra le label (nessuna sovrapposizione, ma è il caso limite più stretto misurato). Nessuna azione richiesta in questa story (il mobile pass è la 13.10) — **soglia di partenza documentata per la 13.10**.
+
+**Dev Notes chiuse** (verificate empiricamente dal reviewer, tutte confermate): scelta del chip testuale target-locale per lo switcher (coerente col pattern `/ppr`) CONFERMATA; `useLocale()` in client component legittimo (precedenti reali: `calendar-popover.tsx`, `my-expiries.tsx`, `instructor-rates-panel.tsx`) CONFERMATO; il seed non ha mai scritto `airfield.logo` CONFERMATO; nessuna deviazione non dichiarata nel diff del file story.
+
+**Esito fix**: F1/F2/F3/F7 applicati in questo stesso giro (v. "Fix post-review" sopra nel Dev Agent Record) e riverificati su build di produzione (script scratchpad + e2e dedicati). F4/F5/F6/F8 restano note/decisioni senza codice, registrate qui.

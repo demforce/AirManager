@@ -1764,7 +1764,7 @@ registry.registerPath({
   path: '/api/v1/settings/club',
   summary: 'Read the club identity (ICAO + contact email, story 12.11, AC 1)',
   description:
-    "`{ icao, contactEmail }` — two `AppSetting` keys read/written together as one DTO (`airfield.name`/`airfield.logo` stay on the separate `settings/airfield` above). NO permission gate beyond an authenticated session (same asymmetry as `settings/airfield`).",
+    "`{ icao, contactEmail }` — two `AppSetting` keys read/written together as one DTO (`airfield.name` stays on the separate `settings/airfield` above). NO permission gate beyond an authenticated session (same asymmetry as `settings/airfield`).",
   tags: ['Settings'],
   security,
   responses: {

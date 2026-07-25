@@ -9,6 +9,7 @@
  * (house convention — no `useTranslations` in client components).
  */
 import { useLocale } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import type { AvatarColor } from '@/components/ui/avatar';
 import { Avatar } from '@/components/ui/avatar';
 import { Link, usePathname } from '@/i18n/navigation';
@@ -62,6 +63,11 @@ export function TopBar({
 
   const locale = useLocale();
   const otherLocale: AppLocale = locale === 'it' ? 'en' : 'it';
+  // Story 13.8 fix (review F1): `usePathname()` alone drops the query string
+  // (view/date/page/filters — 11 dashboard pages read `searchParams`),
+  // silently resetting the user's filters/view on every language switch.
+  const searchParams = useSearchParams();
+  const query = Object.fromEntries(searchParams.entries());
 
   return (
     <header className="topbar">
@@ -78,7 +84,7 @@ export function TopBar({
       </div>
       <div className="topbar-spacer" />
       <Link
-        href={pathname}
+        href={{ pathname, query }}
         locale={otherLocale}
         className="iconbtn mono"
         title={localeSwitchLabel}

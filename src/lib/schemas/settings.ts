@@ -22,7 +22,7 @@ export const airfieldBrandingSchema = z.object({
 export type AirfieldBrandingDto = z.infer<typeof airfieldBrandingSchema>;
 
 // --- Club identity: ICAO + contact email (story 12.11, AC 1/2) -------------
-// `airfield.name`/`airfield.logo` stay on the schema/route above (untouched,
+// `airfield.name` stays on the schema/route above (untouched,
 // "PUT settings/airfield resta") — ICAO gets its first WRITE path here (the
 // key itself already existed read-only, story 12.1) and contact email is a
 // brand-new key. Both live on the same Impostazioni "Club" card.

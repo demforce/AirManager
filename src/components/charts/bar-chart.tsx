@@ -18,7 +18,9 @@
  * card, reading as cramped/illegible at a 12-bar (year) period. Labels now
  * render as a plain HTML row BELOW the SVG (a `grid` with one column per
  * bar, same `pad`-derived side inset as the bars) — real DOM text, so its
- * font-size is never affected by the chart's own scale.
+ * font-size is never affected by the chart's own scale. `aria-hidden`
+ * (review F7) restores the pre-story semantics: the label row is a
+ * sighted-only decoration, same as the SVG's own `aria-hidden`.
  */
 export type BarChartProps = {
   data: number[];
@@ -57,7 +59,7 @@ export function BarChart({ data, labels, height = 180, color = 'var(--ink)' }: B
           return <rect key={i} x={x} y={y} width={bw - 8} height={barH} rx="2" fill={color} opacity={i === data.length - 1 ? 1 : 0.85} />;
         })}
       </svg>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${data.length}, 1fr)`, padding: `0 ${padPercent}%` }}>
+      <div aria-hidden="true" style={{ display: 'grid', gridTemplateColumns: `repeat(${data.length}, 1fr)`, padding: `0 ${padPercent}%` }}>
         {labels.map((label, i) => (
           <span key={i} style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--ink-4)', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {label}

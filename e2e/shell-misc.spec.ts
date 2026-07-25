@@ -46,6 +46,17 @@ test.describe('Top bar — language switcher (story 13.8, AC 1)', () => {
     await expect(page).toHaveURL(/\/it\/dashboard\/pilots$/);
     await expect(page.getByRole('heading', { name: 'Piloti' })).toBeVisible();
   });
+
+  test('preserves the query string (view/date filters) across a locale switch, round-trip (review F1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    await page.goto('/it/dashboard/bookings?view=week&date=2026-08-05');
+    await page.getByTestId('locale-switch').click();
+    await expect(page).toHaveURL(/\/en\/dashboard\/bookings\?view=week&date=2026-08-05$/);
+
+    await page.getByTestId('locale-switch').click();
+    await expect(page).toHaveURL(/\/it\/dashboard\/bookings\?view=week&date=2026-08-05$/);
+  });
 });
 
 test.describe('Sidebar — fleet icon (story 13.8, AC 2)', () => {
