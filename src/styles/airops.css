@@ -22,7 +22,7 @@ html[data-theme="light"]{
   --ink: oklch(0.18 0.012 250);
   --ink-2: oklch(0.38 0.01 250);
   --ink-3: oklch(0.55 0.008 250);
-  --ink-4: oklch(0.72 0.006 250);
+  --ink-4: oklch(0.62 0.006 250); /* story 13.9 review F6 (PO): raised from 0.72 — keep ≥3:1 on --panel/--bg (table headers, sidebar group labels) */
   --accent: oklch(0.78 0.14 75);    /* runway amber */
   --accent-ink: oklch(0.32 0.08 60);
   --accent-soft: oklch(0.95 0.04 75);
@@ -48,7 +48,7 @@ html[data-theme="dark"]{
   --ink: oklch(0.96 0.005 250);
   --ink-2: oklch(0.80 0.008 250);
   --ink-3: oklch(0.66 0.008 250);
-  --ink-4: oklch(0.50 0.01 250);
+  --ink-4: oklch(0.58 0.01 250); /* story 13.9 review F6 (PO): raised from 0.50 — same ≥3:1 floor as light */
   --accent: oklch(0.82 0.14 75);
   --accent-ink: oklch(0.92 0.1 75);
   --accent-soft: oklch(0.32 0.08 75);
@@ -396,6 +396,14 @@ a.btn{ color: var(--ink); text-decoration: none; }
 .toast.bad .toast-dot{ background: var(--bad); }
 .toast.warn .toast-dot{ background: var(--warn); }
 .toast.info .toast-dot{ background: var(--info); }
+/* Story 13.9 review F5: `.toast` inverts with the theme (background:var(--ink)
+   is near-WHITE in dark), so the tone tokens — calibrated to sit on dark-ish
+   panels in dark mode — drop under the 3:1 graphics floor there (measured
+   2.38:1). Darkened per-tone constants for the inverted surface (all ≥4:1). */
+html[data-theme="dark"] .toast-dot{ background: oklch(0.55 0.12 155); }
+html[data-theme="dark"] .toast.bad .toast-dot{ background: oklch(0.55 0.18 25); }
+html[data-theme="dark"] .toast.warn .toast-dot{ background: oklch(0.55 0.14 75); }
+html[data-theme="dark"] .toast.info .toast-dot{ background: oklch(0.55 0.1 245); }
 @keyframes toast-in{ from{ opacity: 0; transform: translateY(6px); } to{ opacity: 1; transform: none; } }
 
 /* ---------- card ---------- */
@@ -520,7 +528,9 @@ a.btn{ color: var(--ink); text-decoration: none; }
   transform: translateX(-50%);
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--bg);
+  /* story 13.9 review F2 (PO): fixed dark ink on the always-bright --accent
+     fill (var(--bg) was 1.96:1 in light) — same constant as .cal-cell.sel */
+  color: oklch(0.28 0.09 60);
   background: var(--accent);
   padding: 1px 6px;
   border-radius: 3px;
@@ -1155,18 +1165,15 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
 }
 .cal-cell.sel{
   background: var(--accent);
-  color: white;
+  /* Story 13.9 (+ review F2, PO 2026-07-25): `--accent` stays bright in BOTH
+     themes (by design, for visual "pop"), so the ink on it must be a fixed
+     dark constant, not theme-flipped — the old hardcoded `white` was ~2:1 in
+     light and ~1.8:1 in dark; `--accent-ink`'s dark value flips light too
+     (~1.35:1). This is `--accent-ink`'s LIGHT value reused verbatim,
+     theme-agnostic: 7.3:1 light / 8.4:1 dark. */
+  color: oklch(0.28 0.09 60);
 }
 .cal-cell.sel:hover{ background: var(--accent); }
-/* Story 13.9: `--accent` stays bright in both themes (by design, for
-   visual "pop") but is even brighter in dark (L .82 vs L .78 light) — the
-   hardcoded `white` text above drops to ~1.8:1 there (already weak at
-   ~2:1 in light). `--accent-ink`'s own dark value doesn't help either (it
-   flips light-to-dark too, ending up just as bright as `--accent` itself:
-   ~1.35:1). Fixed with a dark-only override reusing `--accent-ink`'s LIGHT
-   value verbatim — a fixed dark ink, deliberately not theme-flipped, since
-   the accent fill itself never goes dark. ~8.4:1 against dark's --accent. */
-html[data-theme="dark"] .cal-cell.sel{ color: oklch(0.28 0.09 60); }
 
 .cal-foot{
   display: flex; justify-content: flex-end;
@@ -1312,6 +1319,9 @@ html[data-theme="dark"] .cal-cell.sel{ color: oklch(0.28 0.09 60); }
 .ppr-top-in{max-width:1060px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:12px}
 .ppr-mark{width:32px;height:32px;border-radius:8px;background:var(--accent);color:var(--ink);display:grid;place-items:center}
 .ppr-mark svg{width:19px;height:19px}
+/* story 13.9 review F1: same always-bright --accent fill pattern as .btn.accent
+   below — --ink flips near-white in dark (1.58:1 measured), the fill doesn't */
+html[data-theme="dark"] .ppr-mark{ color: oklch(0.28 0.09 60); }
 .ppr-brand-name{font-weight:600;font-size:15px;letter-spacing:-0.01em;line-height:1.1}
 /* Story 13.9: `.ppr-top`'s background/text are `--ink`/`--bg` — a
    deliberately REVERSED bar that inverts fully with the theme (dark bar in

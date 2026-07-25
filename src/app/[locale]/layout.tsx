@@ -55,11 +55,14 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
 
   return (
     <html lang={locale} data-theme={theme} className={`${GeistSans.variable} h-full antialiased`}>
-      {/* Story 13.9 fix: no hardcoded bg/text color classes here — they used to beat
-          airops.css's theme-aware `body{ background:var(--bg); color:var(--ink) }`
-          rule (a class selector always outranks the element selector, dark or light),
-          which made the app's default/inherited text color a permanently light-mode
-          #2F3437 — nearly invisible on a dark background (contrast ~1.4:1). */}
+      {/* Story 13.9 fix (mechanism corrected in review F3): the light-mode pin came
+          from globals.css's own `body{ background/color }` rule — unlayered and later
+          in the cascade than airops.css's @import, so it beat the theme-aware
+          `body{ background:var(--bg); color:var(--ink) }` rule and froze inherited
+          text at light-mode colors (~1.5:1 on dark panels). The hardcoded Tailwind
+          color classes that also sat here were INERT, not the culprit — Tailwind v4
+          emits utilities in `@layer utilities`, which loses to unlayered CSS
+          regardless of specificity — and were removed as dead, misleading code. */}
       <body className="flex min-h-full flex-col font-[family-name:var(--font-sans)]">
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
       </body>

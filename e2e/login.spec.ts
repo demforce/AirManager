@@ -124,14 +124,16 @@ test.describe('AirOps theme toggle (story 12.1, AC 2, 6)', () => {
   test('dark theme: <body> inherits the theme-aware --ink color, not a hardcoded light-mode literal (story 13.9 regression guard)', async ({
     page,
   }) => {
-    // Story 13.9: the root layout's <body> used to carry hardcoded Tailwind
-    // classes (`bg-[#FBFBFA] text-[#2F3437]`) that beat airops.css's own
-    // theme-aware `body{ color: var(--ink) }` rule (class selector always
-    // outranks the element selector) — every element inheriting its color
-    // from <body> (headings, card titles, nav labels, ...) stayed pinned to
-    // #2F3437 regardless of theme, ~1.4:1 against the dark panel instead of
-    // flipping to --ink's near-white dark value. Direct computed-style pin
-    // against that pre-fix literal, plus a luminance floor for "clearly light".
+    // Story 13.9 (mechanism corrected in review F3): globals.css used to ship
+    // its own unlayered `body{ color }` rule, later in the cascade than
+    // airops.css's @import, beating the theme-aware `body{ color: var(--ink) }`
+    // rule — every element inheriting its color from <body> (headings, card
+    // titles, nav labels, ...) stayed pinned to the light-mode literal
+    // #2F3437 regardless of theme, ~1.5:1 against the dark panel. (The
+    // Tailwind color classes also removed from <body> were inert: Tailwind v4
+    // utilities live in `@layer utilities`, which loses to unlayered CSS.)
+    // Direct computed-style pin against that pre-fix literal, plus a
+    // luminance floor for "clearly light".
     await page.goto('/it/login');
     await page.getByLabel('Email').fill(ADMIN_EMAIL);
     await page.getByLabel('Password').fill(ADMIN_PASSWORD);
