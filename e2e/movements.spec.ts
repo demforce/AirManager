@@ -236,6 +236,15 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
   // mutable, global state that decisions in THIS file's own tests shift.
   test.describe.configure({ mode: 'serial' });
 
+  test('the register row shows the requester email AND phone, each on its own line (story 13.6, AC 2 — regression guard: `.student-sub` nowrap/ellipsis must not clip the phone off)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const { registration, email } = await createPendingRequest(page);
+    await page.goto('/it/dashboard/movements');
+    const row = movementsRows(page).filter({ hasText: registration });
+    await expect(row.getByText(email)).toBeVisible();
+    await expect(row.getByText('+39 333 0000000')).toBeVisible();
+  });
+
   test('admin sets the default landing fee via Impostazioni; staff completes an APPROVED request from the register with the PREFILLED default: the row turns COMPLETED with the formatted fee, and a matching cash movement lands in the "PPR" category (AC 1)', async ({
     page,
   }) => {

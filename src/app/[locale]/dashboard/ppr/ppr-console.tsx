@@ -77,11 +77,6 @@ function statusOptionLabel(status: PprStatusDto, labels: PprConsoleLabels['filte
   }
 }
 
-/** `email`/`phone` joined into one contact line — `email` is `null` for a phone-only manual entry (story 12.4, AC 1); an empty `phone` (email-only manual entry) is filtered out rather than shown as a blank segment. */
-function contactLine(request: PprRequestItemDto): string {
-  return [request.email, request.phone].filter((value): value is string => Boolean(value && value.length > 0)).join(' · ');
-}
-
 export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref }: PprConsoleProps) {
   const router = useRouter();
   const toast = useToast();
@@ -207,7 +202,9 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
                     <div className="student-name">
                       {request.firstName} {request.lastName}
                     </div>
-                    <div className="student-sub mono">{contactLine(request)}</div>
+                    {/* Story 13.6 (review F2): email and phone each get their OWN line, matching movements-table — `.student-sub`'s nowrap/ellipsis (airops.css) otherwise clips the 2nd segment (the phone). */}
+                    {request.email ? <div className="student-sub mono">{request.email}</div> : null}
+                    {request.phone ? <div className="student-sub mono">{request.phone}</div> : null}
                     {request.fromPublicForm ? (
                       <span className="badge info" style={{ marginTop: 3, fontSize: 9.5 }} data-testid="ppr-from-public-badge">
                         {labels.badge.fromPublicForm}
