@@ -1193,7 +1193,7 @@
     "editor": {
       "newTitle": "New entry",
       "newSubtitle": "Flight log",
-      "correctTitle": "Correct flight",
+      "correctTitle": "Edit flight",
       "closeLabel": "Close",
       "cancel": "Cancel",
       "submit": "Log flight",

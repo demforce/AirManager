@@ -280,8 +280,8 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
 
     // Correct it: 60' -> 30' (a genuine "dati sbagliati" fix) — same takeoff (prefilled from the original), landing moved an hour earlier.
     // Disambiguated by the presence of a still-available "Modifica" action
-    // (story 13.5, AC 5 renamed the row button; the modal it opens is still
-    // titled "Correggi volo", see below) on the REGISTERED row, rather than
+    // (story 13.5, AC 5 renamed the row button AND the modal title it opens,
+    // now "Modifica volo", see below) on the REGISTERED row, rather than
     // an H:MM duration substring: `textContent` concatenates adjacent cells
     // with NO separator, so a `\b`-anchored regex can still land mid-word
     // right after the preceding cell's own text (e.g. the type badge
@@ -291,7 +291,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     // Story 13.5, AC 5: the row action reads "Modifica" (IT), not "Correggi".
     await expect(secondFlightRow.getByTestId('flight-correct-action')).toHaveText('Modifica');
     await secondFlightRow.getByTestId('flight-correct-action').click();
-    await expect(page.locator('.so-title')).toHaveText('Correggi volo');
+    await expect(page.locator('.so-title')).toHaveText('Modifica volo');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByLabel('Motivo della correzione').fill('Durata inserita per errore');
     await page.getByRole('button', { name: 'Conferma correzione' }).click();

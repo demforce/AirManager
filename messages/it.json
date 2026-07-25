@@ -1193,7 +1193,7 @@
     "editor": {
       "newTitle": "Nuova voce",
       "newSubtitle": "Registro voli",
-      "correctTitle": "Correggi volo",
+      "correctTitle": "Modifica volo",
       "closeLabel": "Chiudi",
       "cancel": "Annulla",
       "submit": "Registra volo",
@@ -1255,7 +1255,7 @@
       }
     },
     "cancelModal": {
-      "title": "Storna volo",
+      "title": "Annulla volo",
       "reason": "Motivo",
       "requiredReason": "Il motivo è obbligatorio.",
       "submit": "Conferma storno",
