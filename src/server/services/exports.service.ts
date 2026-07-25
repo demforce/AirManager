@@ -15,7 +15,7 @@ import type { InstructorCompensationQuery } from '@/lib/schemas/instructor-compe
 import type { ListPeopleQuery } from '@/lib/schemas/people';
 import type { ListPprRequestsQuery } from '@/lib/schemas/ppr';
 import type { ListTransactionsQuery } from '@/lib/schemas/transactions';
-import { todayDateOnlyInZone } from '@/lib/zoned-time';
+import { dateOnlyInZone, todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
 import { getAccountOverview, listAccountMovements } from './accounts.service';
 import { listAircraft } from './aircraft.service';
@@ -763,6 +763,29 @@ export async function exportBookingsPdf(actor: Actor, query: ListBookingsQuery):
     { header: t('list.table.status'), value: (row) => t(`list.status.${row.status}`) },
   ];
 
+  // Review fix (PO decision 2026-07-25, F7): unlike every other PDF report's
+  // `periodSubtitle`, which needs BOTH bounds, the bookings UI only ever
+  // sends `from` (never `to` — this list has no `to` filter), so the
+  // two-bound-only pattern would always have produced `null` here (the
+  // dev's original, correct observation). Open-ended variant covering
+  // from-only/to-only too — SAME `periodSubtitle`/`formatDateOnly`
+  // presentation, reused verbatim below; `from`/`to` are full ISO instants
+  // here (`z.iso.datetime()`, unlike the date-only `z.iso.date()` bounds
+  // the other PDF reports filter by), so `dateOnlyInZone` (already used for
+  // `todayDateOnlyInZone` above) reads the calendar date they fall on in
+  // `APP_TIMEZONE` before handing off to the existing date-only helpers —
+  // no date-formatting logic duplicated.
+  const fromDateOnly = query.from ? dateOnlyInZone(new Date(query.from), APP_TIMEZONE) : null;
+  const toDateOnly = query.to ? dateOnlyInZone(new Date(query.to), APP_TIMEZONE) : null;
+  const subtitle =
+    fromDateOnly && toDateOnly
+      ? periodSubtitle(fromDateOnly, toDateOnly, locale)
+      : fromDateOnly
+        ? t('list.periodFrom', { date: formatDateOnly(fromDateOnly, locale) })
+        : toDateOnly
+          ? t('list.periodUntil', { date: formatDateOnly(toDateOnly, locale) })
+          : null;
+
   // No `totals` (same as `exportExpiriesPdf`: a status list has nothing summable).
-  return toPdfExport('bookings', locale, branding, t('list.cardTitle'), null, columns, result.items, undefined);
+  return toPdfExport('bookings', locale, branding, t('list.cardTitle'), subtitle, columns, result.items, undefined);
 }

@@ -9,7 +9,7 @@
  * hardcoded Italian strings, so the component reads correctly on `/en` too.
  */
 import { useLocale } from 'next-intl';
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties, type Ref } from 'react';
 import { buildCalendarGrid } from './calendar-grid';
 import { Icon } from './icons';
 
@@ -23,6 +23,16 @@ export type CalendarPopoverProps = {
   todayLabel: string;
   prevMonthLabel: string;
   nextMonthLabel: string;
+  /**
+   * Story 13.7 review fix (F1): optional override for the popover's own
+   * `.cal-popover` CSS anchor (`position:absolute`) — lets `schedule.tsx`
+   * escape the same `.card{overflow:hidden}` clip its filter popover was
+   * fixed for in AC1, by switching to `position:fixed` with viewport
+   * coordinates. Additive/optional so `date-input.tsx`'s existing usage
+   * (no clipping card there) is unaffected.
+   */
+  style?: CSSProperties;
+  ref?: Ref<HTMLDivElement>;
 };
 
 function sameDay(a: Date, b: Date): boolean {
@@ -39,6 +49,8 @@ export function CalendarPopover({
   todayLabel,
   prevMonthLabel,
   nextMonthLabel,
+  style,
+  ref,
 }: CalendarPopoverProps) {
   const rawLocale = useLocale();
   const intlLocale = rawLocale === 'en' ? 'en-IE' : 'it-IT';
@@ -61,7 +73,7 @@ export function CalendarPopover({
   }
 
   return (
-    <div className="cal-popover" onClick={(event) => event.stopPropagation()}>
+    <div className="cal-popover" style={style} ref={ref} onClick={(event) => event.stopPropagation()}>
       <div className="cal-head">
         <button type="button" className="iconbtn" onClick={() => stepMonth(-1)} aria-label={prevMonthLabel}>
           <Icon.chevL />

@@ -902,7 +902,7 @@ describe('exportPprRequestsPdf (story 13.6, AC 4/5)', () => {
 });
 
 describe('exportBookingsPdf (story 13.7, AC 2)', () => {
-  it('reuses listBookings with page:1/pageSize:PDF_EXPORT_MAX_ROWS and the SAME filters, rejects EXPORT_TOO_LARGE, maps the same columns as the xlsx export (incl. a null instructorName), and has no totals/subtitle', async () => {
+  it('reuses listBookings with page:1/pageSize:PDF_EXPORT_MAX_ROWS and the SAME filters, rejects EXPORT_TOO_LARGE, maps the same columns as the xlsx export (incl. a null instructorName), and has no totals/no subtitle when from/to are absent', async () => {
     listBookingsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
     await expect(exportBookingsPdf(ACTOR, { page: 1, pageSize: 20, status: ['PENDING'] })).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
 
@@ -950,5 +950,28 @@ describe('exportBookingsPdf (story 13.7, AC 2)', () => {
     expect(props.columns.find((c) => c.header === 'Istruttore')!.value(row)).toBe(''); // null instructorName -> empty string, never null
     expect(props.columns.find((c) => c.header === 'Inizio')!.value(row)).toBe('01/07/2026, 11:00'); // 09:00Z -> CEST +2
     expect(props.columns.find((c) => c.header === 'Stato')!.value(row)).toBe('Approvato');
+  });
+
+  it('open-ended subtitle (PO decision, review F7): from-only — the real UI case, since the booking list has no `to` filter — reads "Dal <date>"/"From <date>"', async () => {
+    listBookingsMock.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+
+    await exportBookingsPdf(ACTOR, { page: 1, pageSize: 20, from: '2026-07-01T09:00:00.000Z', locale: 'it' });
+    expect(lastPdfProps().subtitle).toBe('Dal 01/07/2026');
+
+    await exportBookingsPdf(ACTOR, { page: 1, pageSize: 20, from: '2026-07-01T09:00:00.000Z', locale: 'en' });
+    expect(lastPdfProps().subtitle).toBe('From 01/07/2026');
+  });
+
+  it('open-ended subtitle: from+to uses the SAME period format as every other PDF report ("DD/MM/YYYY – DD/MM/YYYY")', async () => {
+    listBookingsMock.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+
+    await exportBookingsPdf(ACTOR, {
+      page: 1,
+      pageSize: 20,
+      from: '2026-07-01T09:00:00.000Z',
+      to: '2026-07-31T09:00:00.000Z',
+      locale: 'it',
+    });
+    expect(lastPdfProps().subtitle).toBe('01/07/2026 – 31/07/2026');
   });
 });

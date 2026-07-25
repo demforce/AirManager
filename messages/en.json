@@ -1441,6 +1441,8 @@
       "exportLabel": "Export",
       "exportXls": "Export XLS",
       "exportPdf": "Export PDF",
+      "periodFrom": "From {date}",
+      "periodUntil": "Until {date}",
       "empty": "No bookings.",
       "table": {
         "pilot": "Pilot",

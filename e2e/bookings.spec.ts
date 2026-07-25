@@ -97,6 +97,43 @@ async function createAircraft(page: Page): Promise<{ id: string; registration: s
   return { id: aircraft.id, registration };
 }
 
+/** Archives an aircraft via the admin API — review F5: test-created aircraft must not pile up in the shared dev DB across runs. */
+async function archiveAircraft(page: Page, id: string): Promise<void> {
+  const response = await page.request.post(`/api/v1/aircraft/${id}/archive`);
+  expect(response.status()).toBe(200);
+}
+
+/**
+ * Review F2: hit-tests `controlTestId` at its RENDERED position after
+ * scrolling ONLY `popoverSelector`'s own internal scrollbox to its bottom
+ * (`el.scrollTop = el.scrollHeight` — a no-op if the popover isn't
+ * `overflow-y: auto`/doesn't need it). This is the discriminator a plain
+ * Playwright `.click()` cannot provide: `.click()` calls
+ * `scrollIntoViewIfNeeded` first, which — proven by the review — scrolls the
+ * CARD's `overflow: hidden` container too (a `overflow: hidden` box is
+ * still a scroll container), silently bringing an otherwise-clipped control
+ * into view and making the click succeed even on the PRE-fix, still-clipped
+ * rendering. Scrolling only the popover's own box sidesteps that: on the
+ * real (`position: fixed`) popover the control ends up inside the capped,
+ * scrollable box and is hit; on a `position: absolute` popover clipped by
+ * the card, there is no internal scrollbox to move, so the control stays
+ * wherever the card's clip left it — off-screen or behind the scrim.
+ */
+async function hitTestsOwnControl(page: Page, popoverSelector: string, controlSelector: string): Promise<boolean> {
+  return page.evaluate(
+    ({ popoverSelector, controlSelector }) => {
+      const popover = document.querySelector(popoverSelector);
+      const control = document.querySelector(controlSelector);
+      if (!popover || !control) return false;
+      (popover as HTMLElement).scrollTop = (popover as HTMLElement).scrollHeight;
+      const rect = control.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return hit === control || control.contains(hit);
+    },
+    { popoverSelector, controlSelector },
+  );
+}
+
 /** Creates a run-unique person with an active pilot profile, no login (used as the staff form's "for" target). */
 async function createPilotPerson(
   page: Page,
@@ -586,7 +623,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(targetDayCell.getByTestId('schedule-week-day-count')).toContainText('2');
   });
 
-  test('story 13.7 AC 1: the filter popover is not clipped by the card — its bottom-most control ("Fatto") is genuinely clickable, not just present in the DOM', async ({
+  test('story 13.7 AC 1 (review F2/F3/F5): the filter popover escapes the card clip and its bottom-most control ("Fatto") is genuinely hit-testable — not just present in the DOM or reachable via Playwright\'s own auto-scroll', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -595,24 +632,98 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // week-grid's fixed, roughly constant card height (`.week-grid` cells
     // are `min-height: 200px`, unlike the day view where each aircraft adds
     // its OWN row and the card grows to match) is the scenario ricognizione
-    // found clipped — 20 run-unique aircraft (long registrations, few badges
-    // per wrapped row) reliably make the popover taller than the card
-    // regardless of anything else already in the DB.
-    for (let i = 0; i < 20; i++) {
-      await createAircraft(page);
-    }
+    // found clipped. Review F5: 6 run-unique aircraft (long registrations,
+    // 2/row at the fixed 320px popover width, review F3) already give a
+    // comfortable margin over the card's ~268px height (measured: ~356px of
+    // content vs. ~214px of room below the trigger) — down from the
+    // original 20, and archived in `finally` so they don't accumulate in
+    // the shared dev DB across runs (review F5).
+    const created: Array<{ id: string }> = [];
+    try {
+      for (let i = 0; i < 6; i++) {
+        created.push(await createAircraft(page));
+      }
 
+      await page.goto('/it/dashboard/bookings?view=week');
+      await page.getByTestId('schedule-filter-toggle').click();
+
+      // Review F2: a plain `.click()` on "Fatto" is NOT a valid regression
+      // guard — Playwright's `scrollIntoViewIfNeeded` scrolls the CARD's
+      // `overflow: hidden` box too (still a scroll container), so the click
+      // succeeds even against the PRE-fix, still-clipped rendering (proven
+      // empirically by the review). The three assertions below are geometry/
+      // hit-testability, not falsifiable by that auto-scroll.
+      const geometry = await page.evaluate(() => {
+        const card = document.querySelector('[data-testid="schedule-section"]');
+        const popover = document.querySelector('.popover');
+        if (!card || !popover) return null;
+        return {
+          position: getComputedStyle(popover).position,
+          escapesCard: popover.getBoundingClientRect().bottom > card.getBoundingClientRect().bottom,
+        };
+      });
+      expect(geometry?.position).toBe('fixed');
+      expect(geometry?.escapesCard).toBe(true);
+      expect(await hitTestsOwnControl(page, '.popover', '[data-testid="schedule-filter-done"]')).toBe(true);
+
+      // Functional sanity check (not the regression guard above): the
+      // control is still a real, working button — clicking it closes the
+      // popover, same behavior as before the fix.
+      const doneButton = page.getByTestId('schedule-filter-done');
+      await doneButton.click();
+      await expect(page.getByTestId('schedule-filter-toggle')).toBeVisible();
+      await expect(doneButton).toHaveCount(0);
+    } finally {
+      for (const aircraft of created) {
+        await archiveAircraft(page, aircraft.id);
+      }
+    }
+  });
+
+  test('story 13.7 review F1: the calendar popover (same toolbar, same card clip) also escapes the card and its last grid row + "Oggi" are genuinely hit-testable', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    // Unlike the filter popover above, `CalendarPopover`'s grid is a
+    // CONSTANT 6-row/42-cell layout (`buildCalendarGrid`) regardless of
+    // which month is shown — no extra fixtures needed, it reliably exceeds
+    // the week-grid card's ~268px height on its own.
     await page.goto('/it/dashboard/bookings?view=week');
-    await page.getByTestId('schedule-filter-toggle').click();
-    const doneButton = page.getByTestId('schedule-filter-done');
-    // Before the fix, `.card{overflow:hidden}` clips the popover's bottom
-    // portion — the clipped-away region is not hit-testable, so a real
-    // Playwright click on a button living there times out (actionability
-    // check never resolves). After the fix (position: fixed, escaping the
-    // card's clip), the click resolves normally and the popover closes.
-    await doneButton.click();
-    await expect(page.getByTestId('schedule-filter-toggle')).toBeVisible();
-    await expect(doneButton).toHaveCount(0);
+    await page.getByTestId('schedule-date-pick').click();
+
+    const geometry = await page.evaluate(() => {
+      const card = document.querySelector('[data-testid="schedule-section"]');
+      const popover = document.querySelector('.cal-popover');
+      if (!card || !popover) return null;
+      return {
+        position: getComputedStyle(popover).position,
+        escapesCard: popover.getBoundingClientRect().bottom > card.getBoundingClientRect().bottom,
+      };
+    });
+    expect(geometry?.position).toBe('fixed');
+    expect(geometry?.escapesCard).toBe(true);
+
+    // Last grid row (cells 36-42 of the 42-cell grid) + the "Oggi" footer —
+    // exactly the controls the review found behind the scrim, pre-fix.
+    const lastRowHit = await page.evaluate(() => {
+      const popover = document.querySelector('.cal-popover');
+      if (!popover) return false;
+      const cells = Array.from(popover.querySelectorAll('.cal-cell'));
+      const lastRow = cells.slice(-7);
+      if (lastRow.length !== 7) return false;
+      return lastRow.every((cell) => {
+        const rect = cell.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return hit === cell || cell.contains(hit);
+      });
+    });
+    expect(lastRowHit).toBe(true);
+    expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn')).toBe(true);
+
+    // Functional sanity check: "Oggi" still works — closes the popover and navigates to today.
+    await page.locator('.cal-foot .btn').click();
+    await expect(page.locator('.cal-popover')).toHaveCount(0);
   });
 
   test('calendar mobile viewport (375x812, Task 4): day view is usable, no page-level horizontal overflow, primary action reachable', async ({

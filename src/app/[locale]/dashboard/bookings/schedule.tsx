@@ -23,7 +23,7 @@
  * projection already computes are reused verbatim as `left`/`width` here,
  * since both are just "how far through the 06:00-22:00 window" percentages.
  */
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { getPathname, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { CalendarPopover } from '@/components/ui/calendar-popover';
@@ -151,6 +151,90 @@ function localDateToDateOnly(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+type FixedPopoverAnchor = { top: number; maxHeight: number; triggerRect: DOMRect };
+
+/**
+ * Shared "fixed, viewport-anchored popover" mechanism (review F1, story
+ * 13.7): the CALENDAR popover turned out to share the exact clipping bug
+ * the FILTER popover was fixed for in AC1 (`.card{overflow:hidden}`,
+ * `airops.css:402`, ritaglia qualunque discendente `position:absolute` che
+ * eccede il box della card) — same fix, same mechanism, extracted here
+ * instead of duplicated per popover (two popovers, one mechanism). Vertical
+ * anchor + open/close mechanics are shared; horizontal placement differs
+ * (filter: right-aligned under its trigger; calendar: centered, via
+ * `.cal-popover`'s own CSS `transform:translateX(-50%)`) and stays at each
+ * call site.
+ *
+ * - `toggle(onOpen?)`: mirrors `toggleCalendarPopover`'s original
+ *   "read-the-pre-toggle-value, then toggle" shape — measures the
+ *   trigger's VIEWPORT position (`getBoundingClientRect`) before flipping
+ *   `open`, since a `position:fixed` popover has no CSS equivalent of the
+ *   old `top: calc(100% + 6px)` (relative-to-parent) rule. `maxHeight` caps
+ *   the popover to whatever vertical room is left below the trigger in the
+ *   viewport (18px bottom margin, found via a real e2e run against a fleet
+ *   large enough to wrap the aircraft/instructor badges past one
+ *   screenful): a `position:fixed` element does not scroll WITH the page,
+ *   so an uncapped popover taller than the viewport would leave its footer
+ *   permanently unreachable. `onOpen` runs only when the popover is about
+ *   to OPEN (never on close), for a caller's own pre-open side effect
+ *   (calendar: snapping the month cursor to the selected date).
+ * - the scroll/resize effect below closes the popover so a `position:fixed`
+ *   element (which no longer scrolls WITH the page like the old `absolute`
+ *   one did) doesn't visually detach from its trigger. Capture phase so a
+ *   scroll inside `.schedule`'s own horizontal scrollbar (a nested
+ *   container, not the window) is caught too — EXCEPT the popover's own
+ *   internal `overflow-y:auto` scroll (the `maxHeight` fix above): that
+ *   scroll also fires a capture-phase 'scroll' event on `window` (found via
+ *   a real e2e run — Playwright's own `scrollIntoView` to reach an
+ *   off-screen footer button scrolled the popover, which this listener
+ *   would otherwise close before the click could land), so a scroll whose
+ *   target is inside the popover itself must NOT close it — `popoverRef`
+ *   (created by the CALLER, same convention as `triggerRef`, and attached
+ *   to the popover's own root DOM node) is what that exemption reads.
+ *   Deliberately NOT created/returned by this hook itself: the
+ *   `react-hooks/refs` lint rule flags ANY property read on an object
+ *   returned by a custom hook once that object also carries a ref field,
+ *   even a plain, non-`.current` read like `anchor.top` below — keeping
+ *   both refs caller-owned params avoids that false positive without
+ *   losing the "one mechanism" extraction. NOTE for future e2e authors
+ *   (F6): a click on the TRIGGER that itself causes the page to
+ *   scroll-into-view (e.g. Playwright's own actionability check on an
+ *   off-screen trigger) opens and immediately closes the popover in the
+ *   same instant — harmless for a real user (who scrolls to see the
+ *   trigger BEFORE clicking it), but a trap for automation that clicks a
+ *   trigger while the page is scrolled.
+ */
+function useFixedPopover(triggerRef: RefObject<HTMLElement | null>, popoverRef: RefObject<HTMLElement | null>) {
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<FixedPopoverAnchor | null>(null);
+
+  function toggle(onOpen?: () => void) {
+    if (!open && triggerRef.current) {
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const top = triggerRect.bottom + 6;
+      setAnchor({ top, maxHeight: window.innerHeight - top - 18, triggerRect });
+      onOpen?.();
+    }
+    setOpen((wasOpen) => !wasOpen);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function close(event: Event) {
+      if (event.target instanceof Node && popoverRef.current?.contains(event.target)) return;
+      setOpen(false);
+    }
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open, popoverRef]);
+
+  return { open, setOpen, anchor, toggle };
+}
+
 /** Small client-only duplicate of `page.tsx#calendarHref`'s day-view case — see module doc-comment. */
 function buildDateHref(dateOnly: string, view: BookingCalendarView, listPage: number, today: string): string {
   const params = new URLSearchParams();
@@ -182,23 +266,24 @@ export function Schedule({
   const router = useRouter();
   const HOURS = Array.from({ length: windowEndHour - windowStartHour + 1 }, (_, i) => windowStartHour + i);
   const hourLeftPercent = (hour: number) => ((hour - windowStartHour) / (windowEndHour - windowStartHour)) * 100;
-  const [calOpen, setCalOpen] = useState(false);
   const [calCursor, setCalCursor] = useState(() => dateOnlyToLocalDate(date));
-  const [filterOpen, setFilterOpen] = useState(false);
   const [filterAircraftId, setFilterAircraftId] = useState('all');
   const [filterInstructorId, setFilterInstructorId] = useState('all');
-  // AC 1 fix: the filter popover is `position: fixed` (viewport-anchored,
-  // coordinates computed from the trigger button below) rather than the
-  // shared `.popover` class's default `position: absolute` — `.card` clips
-  // an absolutely-positioned descendant that overflows its own box
+  // AC 1 fix (+ review F1: the SAME fix extended to the calendar popover,
+  // its twin — see `useFixedPopover` above): both popovers are
+  // `position: fixed` (viewport-anchored, coordinates computed from their
+  // trigger button) rather than the shared `.popover`/`.cal-popover`
+  // classes' default `position: absolute` — `.card` clips an
+  // absolutely-positioned descendant that overflows its own box
   // (`overflow: hidden`, `airops.css:402`, needed elsewhere for the
   // timeline/week-grid's rounded corners), same reason `SlideOver` already
-  // uses `position: fixed` to escape the SAME card boundary. The calendar
-  // popover above is left untouched (same absolute pattern, already fits
-  // within the card today).
+  // uses `position: fixed` to escape the SAME card boundary.
+  const calTriggerRef = useRef<HTMLButtonElement>(null);
+  const calPopoverRef = useRef<HTMLDivElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   const filterPopoverRef = useRef<HTMLDivElement>(null);
-  const [filterPos, setFilterPos] = useState<{ top: number; right: number; maxHeight: number } | null>(null);
+  const calPopover = useFixedPopover(calTriggerRef, calPopoverRef);
+  const filterPopover = useFixedPopover(filterTriggerRef, filterPopoverRef);
 
   const filterCount = (filterAircraftId !== 'all' ? 1 : 0) + (filterInstructorId !== 'all' ? 1 : 0);
   const visibleAircraft = aircraft.filter((ac) => filterAircraftId === 'all' || ac.id === filterAircraftId);
@@ -213,70 +298,22 @@ export function Schedule({
 
   /**
    * Opening the popover snaps its cursor to the month of the currently
-   * selected date (prototype's own behavior) — done here, in the click
-   * handler, rather than an effect keyed on `calOpen` (react-hooks/set-state-in-effect:
-   * a setState call synchronous in an effect body is a lint error in this
-   * codebase). `calOpen` read here is still the PRE-toggle value (this
-   * closure runs before the state update below applies), so `!calOpen`
-   * correctly means "about to open".
+   * selected date (prototype's own behavior) — the `onOpen` callback below
+   * runs only on a real open (never on close), same "act only when about to
+   * open" shape the original inline check had.
    */
   function toggleCalendarPopover() {
-    setFilterOpen(false);
-    if (!calOpen) {
+    filterPopover.setOpen(false);
+    calPopover.toggle(() => {
       const selected = dateOnlyToLocalDate(date);
       setCalCursor(new Date(selected.getFullYear(), selected.getMonth(), 1));
-    }
-    setCalOpen((open) => !open);
+    });
   }
 
-  /**
-   * AC 1 fix: measures the trigger's viewport position on open (mirrors
-   * `toggleCalendarPopover`'s "read the pre-toggle value, then toggle"
-   * shape) — `filterPos` feeds the fixed popover's inline `top`/`right`
-   * below, since a `position: fixed` element has no CSS equivalent of the
-   * old `top: calc(100% + 6px); right: 0` (relative-to-parent) rule.
-   * `maxHeight` caps the popover to whatever vertical room is left below the
-   * trigger in the VIEWPORT (18px bottom margin) — found via a real e2e run
-   * against a fleet large enough to wrap the aircraft/instructor badges past
-   * one screenful: a `position: fixed` element does not scroll with the
-   * page, so without a height cap + its own `overflow-y: auto` a popover
-   * taller than the viewport would leave its footer buttons permanently
-   * unreachable (no amount of page-scrolling brings them into view).
-   */
   function toggleFilterPopover() {
-    setCalOpen(false);
-    if (!filterOpen && filterTriggerRef.current) {
-      const rect = filterTriggerRef.current.getBoundingClientRect();
-      const top = rect.bottom + 6;
-      setFilterPos({ top, right: window.innerWidth - rect.right, maxHeight: window.innerHeight - top - 18 });
-    }
-    setFilterOpen((open) => !open);
+    calPopover.setOpen(false);
+    filterPopover.toggle();
   }
-
-  // AC 1 fix: a `position: fixed` popover no longer scrolls WITH the page
-  // (unlike the old `absolute` one) — closing it on scroll/resize avoids it
-  // visually detaching from its trigger button. Capture phase so a scroll
-  // inside `.schedule`'s own horizontal scrollbar (a nested container, not
-  // the window) is caught too — EXCEPT the popover's own internal scroll
-  // (its `overflow-y: auto`, the `maxHeight` fix above): that scroll also
-  // fires a capture-phase 'scroll' event on `window` (found via a real e2e
-  // run against a tall popover — Playwright's own `scrollIntoView` to reach
-  // an off-screen footer button scrolled the popover, which this listener
-  // then immediately closed before the click could land), so a scroll whose
-  // target is inside the popover itself must NOT close it.
-  useEffect(() => {
-    if (!filterOpen) return;
-    function close(event: Event) {
-      if (event.target instanceof Node && filterPopoverRef.current?.contains(event.target)) return;
-      setFilterOpen(false);
-    }
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [filterOpen]);
 
   return (
     <div className="card" data-testid="schedule-section">
@@ -294,28 +331,50 @@ export function Schedule({
           <a href={buildHrefString(nav.todayHref, locale)} onClick={(e) => navigateOnClick(e, router, nav.todayHref)} data-testid="calendar-today" className="today-btn">
             {labels.today}
           </a>
-          <button type="button" className="btn date-pick-btn" onClick={toggleCalendarPopover} title={formatDayFull(date, locale)} data-testid="schedule-date-pick">
+          <button
+            ref={calTriggerRef}
+            type="button"
+            className="btn date-pick-btn"
+            onClick={toggleCalendarPopover}
+            title={formatDayFull(date, locale)}
+            data-testid="schedule-date-pick"
+          >
             <Icon.calendar />
             <span>{view === 'week' ? `${formatDayMonth(weekDates[0]!.dateOnly, locale)}–${formatDayMonth(weekDates[6]!.dateOnly, locale)}` : formatDayShort(date, locale)}</span>
           </button>
           <a href={buildHrefString(nav.nextHref, locale)} onClick={(e) => navigateOnClick(e, router, nav.nextHref)} aria-label={labels.next} data-testid="calendar-next" className="iconbtn">
             <Icon.chevR />
           </a>
-          {calOpen && (
+          {calPopover.open && calPopover.anchor && (
             <>
-              <div className="popover-scrim" onClick={() => setCalOpen(false)} />
+              <div className="popover-scrim" onClick={() => calPopover.setOpen(false)} />
               <CalendarPopover
+                ref={calPopoverRef}
+                style={{
+                  position: 'fixed',
+                  top: calPopover.anchor.top,
+                  // Centered under the trigger button — same visual anchor
+                  // `.cal-popover`'s own CSS (`left:50%; transform:
+                  // translateX(-50%)`) gave it relative to its old
+                  // `position:relative` parent; the `transform` half of
+                  // that rule is left untouched (still applies from the
+                  // CSS class), only `left` is overridden here to the
+                  // trigger's own viewport-space center.
+                  left: calPopover.anchor.triggerRect.left + calPopover.anchor.triggerRect.width / 2,
+                  maxHeight: calPopover.anchor.maxHeight,
+                  overflowY: 'auto',
+                }}
                 cursor={calCursor}
                 onCursorChange={setCalCursor}
                 selected={dateOnlyToLocalDate(date)}
                 today={dateOnlyToLocalDate(today)}
                 onPick={(picked) => {
                   navigateToDate(localDateToDateOnly(picked));
-                  setCalOpen(false);
+                  calPopover.setOpen(false);
                 }}
                 onToday={() => {
                   navigateToDate(today);
-                  setCalOpen(false);
+                  calPopover.setOpen(false);
                 }}
                 todayLabel={labels.today}
                 prevMonthLabel={labels.prevMonth}
@@ -336,13 +395,28 @@ export function Schedule({
             <Icon.filter /> {labels.filters}
             {filterCount ? ` · ${filterCount}` : ''}
           </button>
-          {filterOpen && filterPos && (
+          {filterPopover.open && filterPopover.anchor && (
             <>
-              <div className="popover-scrim" onClick={() => setFilterOpen(false)} />
+              <div className="popover-scrim" onClick={() => filterPopover.setOpen(false)} />
               <div
                 ref={filterPopoverRef}
                 className="popover"
-                style={{ position: 'fixed', top: filterPos.top, right: filterPos.right, maxHeight: filterPos.maxHeight, overflowY: 'auto' }}
+                style={{
+                  position: 'fixed',
+                  top: filterPopover.anchor.top,
+                  right: window.innerWidth - filterPopover.anchor.triggerRect.right,
+                  // Review F3: `position: fixed`'s containing block is the
+                  // VIEWPORT, not the old `position: relative` wrapper — the
+                  // shrink-to-fit width this popover relied on (collapsing
+                  // onto `.popover`'s `min-width: 320px`, `airops.css:1155`)
+                  // now grows with the fleet/instructor list instead
+                  // (measured: up to viewport-width with a large fleet).
+                  // Pinning the width back to the design system's 320px
+                  // restores the original geometry regardless of list size.
+                  width: 320,
+                  maxHeight: filterPopover.anchor.maxHeight,
+                  overflowY: 'auto',
+                }}
               >
                 <div className="pop-row">
                   <div className="fld-label">{labels.filtersAircraft}</div>
@@ -393,7 +467,7 @@ export function Schedule({
                   >
                     {labels.filtersReset}
                   </button>
-                  <button type="button" className="btn primary" onClick={() => setFilterOpen(false)} data-testid="schedule-filter-done">
+                  <button type="button" className="btn primary" onClick={() => filterPopover.setOpen(false)} data-testid="schedule-filter-done">
                     {labels.filtersDone}
                   </button>
                 </div>
