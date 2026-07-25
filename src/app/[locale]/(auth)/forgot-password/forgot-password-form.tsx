@@ -51,19 +51,7 @@ export function ForgotPasswordForm({ locale, labels }: ForgotPasswordFormProps) 
   if (submitted) {
     return (
       <div>
-        <p
-          role="status"
-          data-testid="forgot-password-confirmation"
-          style={{
-            margin: 0,
-            padding: '10px 14px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--info-soft)',
-            color: 'oklch(0.38 0.12 245)',
-            fontSize: 12.5,
-            lineHeight: 1.5,
-          }}
-        >
+        <p role="status" data-testid="forgot-password-confirmation" className="alert-box info" style={{ lineHeight: 1.5 }}>
           {labels.confirmation}
         </p>
         <Link href="/login" locale={locale} style={{ marginTop: 20, display: 'inline-block', fontSize: 12.5 }}>

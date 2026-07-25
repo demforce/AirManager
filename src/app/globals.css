@@ -3,8 +3,6 @@
 @import '../styles/airops.css';
 
 :root {
-  --background: #fbfbfa;
-  --foreground: #2f3437;
   /* Self-hosted Geist (geist npm package) — no build-time font fetch. */
   --font-sans: var(--font-geist-sans);
   /* System serif stack for display headings (no external font download). */
@@ -12,13 +10,13 @@
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-serif: var(--font-serif);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-}
+/* Story 13.9: no `body{ background/color }` override here — this Tailwind-
+   scaffold rule used to hardcode light-only colors (`#fbfbfa`/`#2f3437`) that
+   fought airops.css's own theme-aware `body{ background:var(--bg); color:
+   var(--ink) }` rule (same specificity, but this one was later in the
+   cascade, so it always won). Removed: airops.css's body rule is now the
+   only one setting these, so it flips correctly with `data-theme`. */

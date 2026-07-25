@@ -74,18 +74,7 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
   if (success) {
     return (
       <div>
-        <p
-          role="status"
-          data-testid="set-password-success"
-          style={{
-            margin: 0,
-            padding: '10px 14px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--ok-soft)',
-            color: 'oklch(0.35 0.1 155)',
-            fontSize: 12.5,
-          }}
-        >
+        <p role="status" data-testid="set-password-success" className="alert-box ok">
           {labels.success}
         </p>
         <Link href="/login" locale={locale} style={{ marginTop: 20, display: 'inline-block', fontSize: 12.5 }}>
@@ -112,18 +101,7 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
       ) : null}
 
       {formError ? (
-        <p
-          role="alert"
-          data-testid="set-password-error"
-          style={{
-            margin: 0,
-            padding: '10px 14px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--bad-soft)',
-            color: 'oklch(0.4 0.17 25)',
-            fontSize: 12.5,
-          }}
-        >
+        <p role="alert" data-testid="set-password-error" className="alert-box bad">
           {formError}
         </p>
       ) : null}

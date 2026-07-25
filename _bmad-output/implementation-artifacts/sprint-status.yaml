@@ -156,7 +156,7 @@ development_status:
   13-6-ppr-movimenti: done
   13-7-pianificazione: done
   13-8-shell-misc: done
-  13-9-dark-theme-pass: backlog
+  13-9-dark-theme-pass: review
   # 13.10: includere i punti rimandati dalle review — F4-13.7 (popover filtri sfora a sinistra a 375px,
   # clamp banale in schedule.tsx) e F8-13.8 (label bar chart minGap 1.83px @375 = soglia di partenza)
   13-10-mobile-pass: backlog

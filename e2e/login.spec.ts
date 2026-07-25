@@ -120,4 +120,42 @@ test.describe('AirOps theme toggle (story 12.1, AC 2, 6)', () => {
     // carries data-theme="dark", no flash.
     await expect(html).toHaveAttribute('data-theme', 'dark');
   });
+
+  test('dark theme: <body> inherits the theme-aware --ink color, not a hardcoded light-mode literal (story 13.9 regression guard)', async ({
+    page,
+  }) => {
+    // Story 13.9: the root layout's <body> used to carry hardcoded Tailwind
+    // classes (`bg-[#FBFBFA] text-[#2F3437]`) that beat airops.css's own
+    // theme-aware `body{ color: var(--ink) }` rule (class selector always
+    // outranks the element selector) — every element inheriting its color
+    // from <body> (headings, card titles, nav labels, ...) stayed pinned to
+    // #2F3437 regardless of theme, ~1.4:1 against the dark panel instead of
+    // flipping to --ink's near-white dark value. Direct computed-style pin
+    // against that pre-fix literal, plus a luminance floor for "clearly light".
+    await page.goto('/it/login');
+    await page.getByLabel('Email').fill(ADMIN_EMAIL);
+    await page.getByLabel('Password').fill(ADMIN_PASSWORD);
+    await page.getByRole('button', { name: 'Accedi' }).click();
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
+
+    await page.getByRole('button', { name: 'Cambia tema' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+    // Chromium's computed `color` can come back as `lab(...)`/`oklch(...)`
+    // rather than `rgb(...)` for wide-gamut CSS colors (this app's tokens are
+    // all `oklch()`) — rasterizing through a 1x1 canvas is the robust way to
+    // read back plain 0-255 RGB regardless of the reported notation.
+    const [r, g, b] = await page.evaluate(() => {
+      const color = getComputedStyle(document.body).color;
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, 1, 1);
+      return [...ctx.getImageData(0, 0, 1, 1).data];
+    });
+    expect(`rgb(${r}, ${g}, ${b})`).not.toBe('rgb(47, 52, 55)');
+    expect(Math.min(r, g, b)).toBeGreaterThan(200);
+  });
 });

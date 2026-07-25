@@ -55,7 +55,12 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
 
   return (
     <html lang={locale} data-theme={theme} className={`${GeistSans.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col bg-[#FBFBFA] font-[family-name:var(--font-sans)] text-[#2F3437]">
+      {/* Story 13.9 fix: no hardcoded bg/text color classes here — they used to beat
+          airops.css's theme-aware `body{ background:var(--bg); color:var(--ink) }`
+          rule (a class selector always outranks the element selector, dark or light),
+          which made the app's default/inherited text color a permanently light-mode
+          #2F3437 — nearly invisible on a dark background (contrast ~1.4:1). */}
+      <body className="flex min-h-full flex-col font-[family-name:var(--font-sans)]">
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
       </body>
     </html>

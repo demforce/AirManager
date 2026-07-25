@@ -77,18 +77,7 @@ export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
       </Field>
 
       {formError ? (
-        <p
-          role="alert"
-          data-testid="login-error"
-          style={{
-            margin: 0,
-            padding: '10px 14px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--bad-soft)',
-            color: 'oklch(0.4 0.17 25)',
-            fontSize: 12.5,
-          }}
-        >
+        <p role="alert" data-testid="login-error" className="alert-box bad">
           {formError}
         </p>
       ) : null}

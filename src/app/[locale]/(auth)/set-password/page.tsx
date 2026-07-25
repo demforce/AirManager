@@ -56,18 +56,7 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
               }}
             />
           ) : (
-            <p
-              role="alert"
-              data-testid="set-password-missing-token"
-              style={{
-                margin: 0,
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--bad-soft)',
-                color: 'oklch(0.4 0.17 25)',
-                fontSize: 12.5,
-              }}
-            >
+            <p role="alert" data-testid="set-password-missing-token" className="alert-box bad">
               {t('missingToken')}
             </p>
           )}
