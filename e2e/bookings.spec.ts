@@ -726,6 +726,41 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(page.locator('.cal-popover')).toHaveCount(0);
   });
 
+  test('story 13.10 (F4-13.7): at 375px both popovers stay clamped inside the viewport (no left/right edge overflow)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto('/it/dashboard/bookings?view=week');
+
+    // Filter popover: pre-fix, its `right`-anchored math (no clamp) pushed the
+    // popover's LEFT edge 139px past the viewport's left edge at this width
+    // (measured, review 13.7 F4).
+    await page.getByTestId('schedule-filter-toggle').click();
+    const filterGeometry = await page.evaluate(() => {
+      const popover = document.querySelector('.popover');
+      const rect = popover?.getBoundingClientRect();
+      return rect ? { left: rect.left, right: rect.right } : null;
+    });
+    expect(filterGeometry?.left).toBeGreaterThanOrEqual(0);
+    expect(filterGeometry?.right).toBeLessThanOrEqual(375);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    expect(await hitTestsOwnControl(page, '.popover', '[data-testid="schedule-filter-done"]')).toBe(true);
+    await page.getByTestId('schedule-filter-done').click();
+
+    // Calendar popover: pre-fix, its center-under-trigger math (no clamp)
+    // pushed the popover's RIGHT edge 12px past the viewport's right edge at
+    // this width (measured, story 13.10 sweep — same twin-popover shape as F4).
+    await page.getByTestId('schedule-date-pick').click();
+    const calGeometry = await page.evaluate(() => {
+      const popover = document.querySelector('.cal-popover');
+      const rect = popover?.getBoundingClientRect();
+      return rect ? { left: rect.left, right: rect.right } : null;
+    });
+    expect(calGeometry?.left).toBeGreaterThanOrEqual(0);
+    expect(calGeometry?.right).toBeLessThanOrEqual(375);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn')).toBe(true);
+  });
+
   test('calendar mobile viewport (375x812, Task 4): day view is usable, no page-level horizontal overflow, primary action reachable', async ({
     page,
   }) => {

@@ -153,6 +153,24 @@ function localDateToDateOnly(date: Date): string {
 
 type FixedPopoverAnchor = { top: number; maxHeight: number; triggerRect: DOMRect };
 
+/** `.popover`'s explicit `width` (review F3, story 13.7) / `.cal-popover`'s CSS `width` (`airops.css`) — pinned here too so the clamp math below (story 13.10) and the inline style share one source instead of two literal `320`/`280`s drifting apart. */
+const FILTER_POPOVER_WIDTH = 320;
+const CAL_POPOVER_WIDTH = 280;
+
+/**
+ * Clamps a `position: fixed` popover's LEFT edge to stay inside the
+ * viewport with an 8px gutter on both sides — story 13.10 (F4-13.7): at
+ * narrow viewports (375px) a trigger button near an edge pushed a
+ * fixed-width popover partway off-screen (measured pre-fix: filter popover
+ * 139px past the left edge, calendar popover 12px past the right edge).
+ * Shared by both popovers below, same "one mechanism, not duplicated"
+ * reasoning as `useFixedPopover` itself.
+ */
+function clampPopoverLeft(desiredLeft: number, width: number): number {
+  const gutter = 8;
+  return Math.min(Math.max(desiredLeft, gutter), window.innerWidth - width - gutter);
+}
+
 /**
  * Shared "fixed, viewport-anchored popover" mechanism (review F1, story
  * 13.7): the CALENDAR popover turned out to share the exact clipping bug
@@ -353,14 +371,19 @@ export function Schedule({
                 style={{
                   position: 'fixed',
                   top: calPopover.anchor.top,
-                  // Centered under the trigger button — same visual anchor
-                  // `.cal-popover`'s own CSS (`left:50%; transform:
-                  // translateX(-50%)`) gave it relative to its old
-                  // `position:relative` parent; the `transform` half of
-                  // that rule is left untouched (still applies from the
-                  // CSS class), only `left` is overridden here to the
-                  // trigger's own viewport-space center.
-                  left: calPopover.anchor.triggerRect.left + calPopover.anchor.triggerRect.width / 2,
+                  // Centered under the trigger button, clamped to the
+                  // viewport (story 13.10, F4-13.7 twin) — the un-clamped
+                  // version relied on `.cal-popover`'s own CSS (`left:50%;
+                  // transform:translateX(-50%)`) for centering; `left` is
+                  // now the popover's own LEFT edge (desired center minus
+                  // half its width), clamped by `clampPopoverLeft`, and
+                  // `transform` is cleared so the CSS class's centering
+                  // transform (still active otherwise) doesn't double-offset it.
+                  left: clampPopoverLeft(
+                    calPopover.anchor.triggerRect.left + calPopover.anchor.triggerRect.width / 2 - CAL_POPOVER_WIDTH / 2,
+                    CAL_POPOVER_WIDTH,
+                  ),
+                  transform: 'none',
                   maxHeight: calPopover.anchor.maxHeight,
                   overflowY: 'auto',
                 }}
@@ -404,7 +427,16 @@ export function Schedule({
                 style={{
                   position: 'fixed',
                   top: filterPopover.anchor.top,
-                  right: window.innerWidth - filterPopover.anchor.triggerRect.right,
+                  // Story 13.10 (F4-13.7): clamped LEFT instead of the old
+                  // `right: viewportWidth - triggerRect.right` — at 375px a
+                  // trigger sitting left of the popover's fixed width pushed
+                  // the popover's own left edge 139px past the viewport's
+                  // left edge (measured pre-fix). `right: 'auto'` disables
+                  // the CSS class's own `right: 0` so it can't compete with
+                  // the explicit `left`+`width` below (over-constrained
+                  // otherwise).
+                  left: clampPopoverLeft(filterPopover.anchor.triggerRect.right - FILTER_POPOVER_WIDTH, FILTER_POPOVER_WIDTH),
+                  right: 'auto',
                   // Review F3: `position: fixed`'s containing block is the
                   // VIEWPORT, not the old `position: relative` wrapper — the
                   // shrink-to-fit width this popover relied on (collapsing
@@ -413,7 +445,7 @@ export function Schedule({
                   // (measured: up to viewport-width with a large fleet).
                   // Pinning the width back to the design system's 320px
                   // restores the original geometry regardless of list size.
-                  width: 320,
+                  width: FILTER_POPOVER_WIDTH,
                   maxHeight: filterPopover.anchor.maxHeight,
                   overflowY: 'auto',
                 }}

@@ -21,6 +21,10 @@
  * within half a glyph's width at the row's two end points — a constant
  * ~7.4px offset (glyph width / 2), independent of viewport, measured at
  * 1201/1440/1920/375px (see story 13.8 Review Record for the numbers).
+ *
+ * Story 13.10 (F8-13.8 follow-up, mobile pass): same `chart-label` class /
+ * `airops.css` narrow-viewport thinning as `bar-chart.tsx` — see that
+ * file's doc-comment.
  */
 export type LineChartProps = {
   data: number[];
@@ -65,7 +69,7 @@ export function LineChart({ data, labels, height = 180, color = 'var(--accent)' 
       </svg>
       <div aria-hidden="true" style={{ display: 'flex', justifyContent: 'space-between', padding: `0 ${padPercent}%` }}>
         {labels.map((label, i) => (
-          <span key={i} style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>
+          <span key={i} className="chart-label" style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>
             {label}
           </span>
         ))}

@@ -1388,6 +1388,57 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
   .user-chip{ padding: 4px; }
 }
 
+/* Story 13.10 (mobile pass): `.form-grid`'s 2-column layout (18 consumers —
+   every SlideOver form, editor, and Settings card) doesn't collapse at
+   narrow viewports. Inside a `.slideover-panel` (`width: min(520px, 92vw)`,
+   ~305px of content left at 375px) a 2-column grid forces its `<select>`s
+   past their `1fr` column's width (grid items don't shrink below
+   min-content by default), pushing the SECOND column off-screen and
+   forcing a horizontal scroll INSIDE `.so-body` to reach it — measured
+   pre-fix: `.so-body` scrollWidth 382px vs 344px clientWidth, the
+   Istruttore `<select>` rendered at `left:239 right:413` (38px past the
+   375px viewport). Single column below 640px (same threshold as the
+   topbar rule above) keeps every field full-width and directly reachable.
+   `.ppr-form-grid` (public PPR request form) has the same 2-column shape
+   but was measured NOT to overflow at 375px (no sidebar eating into the
+   viewport, `.ppr-grid` already 1-col below 820px) — left as-is. */
+@media (max-width: 640px){
+  .form-grid{ grid-template-columns: 1fr; }
+}
+
+/* Story 13.10 (mobile pass): `.page-head`'s title/actions row (13 page
+   headers) doesn't wrap — `.btn`'s own `display:inline-flex` (icon+label
+   alignment) makes its automatic min-size the FULL unwrapped text width
+   (a flex formatting context doesn't let its own text content wrap the
+   way a plain block/inline element would), so a header with two actions
+   (e.g. `people/{id}`'s "Modifica" + "Torna all'elenco") can't shrink
+   below their combined natural width. Measured pre-fix on `people/{id}`
+   at 375px: `document.documentElement.scrollWidth` 406px vs 375px
+   viewport (31px page-level overflow, the actions pushed past the right
+   edge). `flex-wrap: wrap` drops the actions to their own row instead of
+   forcing the page wider — both rows then fit inside the 255px content
+   width available at 375px (measured after fix: title row 133px, actions
+   row 162px, both < 255px). */
+@media (max-width: 640px){
+  .page-head{ flex-wrap: wrap; }
+}
+
+/* Story 13.10 (F8-13.8 follow-up): `bar-chart.tsx`/`line-chart.tsx`'s
+   12-month label row (`.chart-label`) — glyph-level gap between adjacent
+   labels (measured with `Range.getBoundingClientRect()` on the text node,
+   not the flex/grid item's own box, which for `BarChart`'s stretched grid
+   cells reads a false ~0px even at desktop widths) drops to ~0.6-0.7px at
+   375px, reading as one continuous run ("AgoSetOttNov…", no perceptible
+   break) — tighter than the ~1.8-2px baseline 13.8's review measured
+   (different Chromium build's font metrics). Comfortable again (>=3.6px)
+   from 414px up, so the cutoff sits just below that. `visibility: hidden`
+   (not `display: none`) keeps the hidden label's grid/flex slot, so the
+   remaining ones stay aligned under their own bar/point — only the
+   RENDERING is thinned out, `shortMonthLabel`/date logic is untouched. */
+@media (max-width: 400px){
+  .chart-label:nth-child(even){ visibility: hidden; }
+}
+
 /* Custom date field (user decision 2026-07-21): the browser's native
    calendar popup is replaced by `CalendarPopover` (`ui/date-input.tsx`) —
    the UA picker indicator is hidden, the sibling button is the only

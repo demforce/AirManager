@@ -21,6 +21,13 @@
  * font-size is never affected by the chart's own scale. `aria-hidden`
  * (review F7) restores the pre-story semantics: the label row is a
  * sighted-only decoration, same as the SVG's own `aria-hidden`.
+ *
+ * Story 13.10 (F8-13.8 follow-up, mobile pass): each label carries a
+ * `chart-label` class so `airops.css` can thin the row out at very narrow
+ * viewports (`<=400px`) — glyph-level gap between adjacent 12-month labels
+ * measured at ~0.6px there, reading as one continuous run. See `airops.css`
+ * for the `nth-child(even)` rule; `shortMonthLabel`/date logic (the
+ * caller's own concern) is untouched.
  */
 export type BarChartProps = {
   data: number[];
@@ -61,7 +68,7 @@ export function BarChart({ data, labels, height = 180, color = 'var(--ink)' }: B
       </svg>
       <div aria-hidden="true" style={{ display: 'grid', gridTemplateColumns: `repeat(${data.length}, 1fr)`, padding: `0 ${padPercent}%` }}>
         {labels.map((label, i) => (
-          <span key={i} style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--ink-4)', textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <span key={i} className="chart-label" style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--ink-4)', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {label}
           </span>
         ))}
