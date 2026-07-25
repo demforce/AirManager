@@ -14,7 +14,7 @@ Software di gestione per un'aviosuperficie: piloti, velivoli, voli, PPR, finanze
 ## Processo di sviluppo (metodo BMAD, v6 in `_bmad/`)
 
 - Workflow: PRD → architettura → epics → stories → dev → review. Artefatti in `_bmad-output/`, conoscenza di progetto in `docs/`.
-- **Ruoli modello** (config utente 2026-07-07): stories = sessione principale **Fable 5 xhigh**; dev = **UN SOLO subagent Sonnet 5 xhigh** per story; review = subagent **Opus 4.8 xhigh** adversarial (l'unico layer adversarial — mai abbassarlo). Definizioni operative in `.claude/agents/` (`dev-story`, `adversarial-reviewer`); dettagli del ciclo corrente in `docs/handoffs/HANDOFF.md`.
+- **Ruoli modello** (config utente 2026-07-07): stories = sessione principale **Fable 5 xhigh**; dev = **UN SOLO subagent Sonnet 5 xhigh** per story; review = subagent **Opus 5 xhigh** adversarial (l'unico layer adversarial — mai abbassarlo). Definizioni operative in `.claude/agents/` (`dev-story`, `adversarial-reviewer`); dettagli del ciclo corrente in `docs/handoffs/HANDOFF.md`.
 - **Assumption di dominio** (retro Epic 9, 2026-07-10): un'assumption scoperta in ricognizione/story si ratifica con l'utente (AskUserQuestion) PRIMA di implementare — mai spedirla "da confermare" (il rework 9.4 nasceva da lì).
 - **Regole PR/commit/sessione** (fissate dall'utente):
   - Ogni **epic** ha la sua **PR** (branch dedicato; PR stacked sulla precedente se non ancora merged).

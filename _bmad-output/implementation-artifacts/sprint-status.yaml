@@ -154,7 +154,7 @@ development_status:
   13-4-flotta-toggle-storici-owner: done
   13-5-polish-tabelle-billing-logbook-expiries: done
   13-6-ppr-movimenti: done
-  13-7-pianificazione: in-progress
+  13-7-pianificazione: done
   13-8-shell-misc: backlog
   13-9-dark-theme-pass: backlog
   13-10-mobile-pass: backlog
@@ -168,7 +168,7 @@ action_items:
   - epic: 13
     action: "F2 review 13.3 (feature-loss, follow-up ACCETTATO): registrando una scadenza dalla scheda persona/Piloti/Istruttori il campo 'Data scadenza' non si precompila più da ExpiryType.validityMonths (comodità che il vecchio ExpiriesPanel a pagina aveva; LiveExpiryEditor 13.2 non l'ha mai avuta). Fix = aggiungere il precompile all'add-row del LiveExpiryEditor condiviso (src/components/dashboard/expiry-editor.tsx) — beneficia tutti e 3 i consumer. Da riproporre all'utente per decidere se farlo (mini-story) o lasciarlo."
     owner: "post-13.3 (decisione utente)"
-    status: open
+    status: done  # decisione PO 2026-07-25: ACCORPATO alla story 13.8 come AC5 (precompile nel LiveExpiryEditor)
   - epic: 13
     action: "Claude Security scan 2026-07-23 (scope src, rev c259205, verified): 2 findings auth PRE-esistenti da fixare DOPO l'Epic 13 (decisione utente 2026-07-24: in coda dietro il refactor/UI in corso). F1 (MEDIUM CWE-613): setPasswordWithToken (auth-tokens.service.ts:207) non revoca le sessioni JWT stateless -> attaccante con sessione sopravvive al reset password ~30gg; fix = tokenVersion/sessionsValidFrom su User, bump in transazione, check in applyActiveRecheck. F2 (LOW CWE-367): TOCTOU isLoginLocked/recordFailedLoginAttempt (authorize.ts:33) -> burst concorrente supera il cap 10/finestra; fix = check-and-count atomico. Report completo (gitignored): CLAUDE-SECURITY-20260723-073138/. Candidata a story 13.x dedicata o TD post-epic."
     owner: "post-Epic 13"

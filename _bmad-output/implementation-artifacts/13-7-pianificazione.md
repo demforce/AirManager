@@ -4,7 +4,7 @@ baseline_commit: 94211e7
 
 # Story 13.7: Pianificazione — popover filtri (z-index/overflow) + export PDF prenotazioni
 
-Status: review
+Status: done
 
 ## Story
 

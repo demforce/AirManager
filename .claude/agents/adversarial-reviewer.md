@@ -1,6 +1,6 @@
 ---
 name: adversarial-reviewer
-description: Adversarial review of a completed BMAD story (Opus 4.8). The ONLY adversarial layer in the pipeline — never downgrade its model or skip it.
+description: Adversarial review of a completed BMAD story (Opus 5). The ONLY adversarial layer in the pipeline — never downgrade its model or skip it.
 model: opus
 tools: Read, Grep, Glob, Bash, ToolSearch, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_fill_form, mcp__playwright__browser_evaluate, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests
 ---
