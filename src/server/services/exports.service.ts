@@ -125,7 +125,7 @@ export type PdfExport = { buffer: Buffer; filename: string };
 async function toPdfExport<T>(
   view: string,
   locale: AppLocale,
-  branding: { name: string; logoDataUrl: string | null },
+  branding: { name: string },
   title: string,
   subtitle: string | null,
   columns: PdfColumn<T>[],

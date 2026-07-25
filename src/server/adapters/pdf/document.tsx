@@ -1,4 +1,4 @@
-import { Document, Image, Page, StyleSheet, Text, View, renderToBuffer } from '@react-pdf/renderer';
+import { Document, Page, StyleSheet, Text, View, renderToBuffer } from '@react-pdf/renderer';
 import type { DocumentProps } from '@react-pdf/renderer';
 import type { ReactElement } from 'react';
 
@@ -37,7 +37,7 @@ export type PdfTotal = {
 };
 
 export type PdfReportDocumentProps<T> = {
-  branding: { name: string; logoDataUrl: string | null };
+  branding: { name: string };
   title: string;
   /** Period/filters summary (AC 2) — omitted entirely when the report has none (e.g. the account statement, which is always the full history). */
   subtitle?: string | null;
@@ -61,7 +61,6 @@ const COLOR = {
 const styles = StyleSheet.create({
   page: { paddingTop: 36, paddingBottom: 48, paddingHorizontal: 36, fontSize: 9, color: COLOR.text },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 18 },
-  logo: { width: 32, height: 32, objectFit: 'contain' },
   airfieldName: { fontSize: 11, fontWeight: 700 },
   title: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
   subtitle: { fontSize: 10, color: COLOR.muted, marginBottom: 14 },
@@ -93,10 +92,6 @@ export function PdfReportDocument<T>(props: PdfReportDocumentProps<T>): ReactEle
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
-          {props.branding.logoDataUrl ? (
-            // eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's <Image> is a PDF primitive, not an HTML <img>; it has no `alt` prop.
-            <Image src={props.branding.logoDataUrl} style={styles.logo} />
-          ) : null}
           <Text style={styles.airfieldName}>{props.branding.name}</Text>
         </View>
 

@@ -78,7 +78,7 @@ const getCompensationSummaryMock = vi.mocked(getCompensationSummary);
 const listTransactionsMock = vi.mocked(listTransactions);
 
 const ACTOR: Actor = { userId: 'user_1', personId: null, roles: ['ADMIN'] };
-const BRANDING = { name: 'Aviosuperficie di Test', logoDataUrl: null };
+const BRANDING = { name: 'Aviosuperficie di Test' };
 
 async function readSheet(buffer: Buffer): Promise<ExcelJS.Worksheet> {
   const workbook = new ExcelJS.Workbook();

@@ -12,7 +12,8 @@ import {
  * beyond the default authenticated session (same asymmetry as
  * `settings/airfield`); PUT is `settings.manage` (real gate in the service,
  * AD-5). Two separate `AppSetting` keys read/written together as one DTO —
- * `airfield.name`/`airfield.logo` stay on `settings/airfield`, untouched.
+ * `airfield.name` stays on `settings/airfield`, untouched (name-only since
+ * story 13.8, AC 4).
  */
 export const GET = apiRoute({
   handle: async () => {

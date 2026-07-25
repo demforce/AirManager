@@ -45,6 +45,9 @@
     "themeToggle": {
       "label": "Cambia tema"
     },
+    "localeSwitch": {
+      "label": "Cambia lingua"
+    },
     "logout": "Esci",
     "roles": {
       "ADMIN": "Admin",
@@ -1808,13 +1811,6 @@
       "error": "Non è stato possibile salvare. Riprova.",
       "form": {
         "nameLabel": "Nome aviosuperficie",
-        "logoLabel": "Logo",
-        "logoHint": "PNG o JPEG, max 200 KB. Usato nell'intestazione dei PDF esportati.",
-        "logoUpload": "Carica logo",
-        "logoRemove": "Rimuovi logo",
-        "logoPreviewAlt": "Anteprima logo",
-        "logoTooLarge": "Il file supera i 200 KB.",
-        "logoInvalidType": "Formato non supportato: usa PNG o JPEG.",
         "save": "Salva",
         "saved": "Impostazioni salvate.",
         "error": "Non è stato possibile salvare le impostazioni. Riprova."

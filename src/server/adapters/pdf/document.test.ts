@@ -17,12 +17,13 @@ const NOOP_PAGE_LABEL = (pageNumber: number, totalPages: number) => `Pag. ${page
  * parsing the rendered PDF back (Dev Notes: no `pdf-parse` dependency).
  * This file only proves the adapter itself produces a valid, non-empty
  * `%PDF-` buffer for the shapes every `export<Report>Pdf` function feeds
- * it: with/without a logo, with/without rows, with/without totals.
+ * it: with/without rows, with/without totals. Branding is name-only since
+ * story 13.8 (AC 4) — no more logo variant to cover.
  */
 describe('renderReportPdf / renderPdfBuffer (story 10.2, AC 2, T3)', () => {
-  it('renders a valid PDF buffer (magic bytes) with a logo, rows, and totals', async () => {
+  it('renders a valid PDF buffer (magic bytes) with rows and totals', async () => {
     const buffer = await renderReportPdf<Row>({
-      branding: { name: 'Aviosuperficie di Test', logoDataUrl: 'data:image/png;base64,iVBORw0KGgo=' },
+      branding: { name: 'Aviosuperficie di Test' },
       title: 'Test report',
       subtitle: '01/01/2026 – 31/01/2026',
       columns: COLUMNS,
@@ -39,9 +40,9 @@ describe('renderReportPdf / renderPdfBuffer (story 10.2, AC 2, T3)', () => {
     expect(buffer.length).toBeGreaterThan(0);
   });
 
-  it('renders without a logo (null logoDataUrl) and without totals', async () => {
+  it('renders without totals', async () => {
     const buffer = await renderReportPdf<Row>({
-      branding: { name: 'AirManager', logoDataUrl: null },
+      branding: { name: 'AirManager' },
       title: 'Test report',
       columns: COLUMNS,
       rows: [{ name: 'Mario Rossi', status: 'ok' }],
@@ -54,7 +55,7 @@ describe('renderReportPdf / renderPdfBuffer (story 10.2, AC 2, T3)', () => {
 
   it('renders an empty-rows report without throwing (AC 2: an empty result set is still a valid PDF)', async () => {
     const buffer = await renderReportPdf<Row>({
-      branding: { name: 'AirManager', logoDataUrl: null },
+      branding: { name: 'AirManager' },
       title: 'Test report',
       columns: COLUMNS,
       rows: [],

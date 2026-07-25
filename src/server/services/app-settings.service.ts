@@ -18,16 +18,16 @@ import { prisma } from '@/server/db/prisma';
  * generic settings CRUD: each caller gets its own narrow get/set pair —
  * PPR's `ppr.operatingInstructions.*`/`ppr.landingFeeCents` (epic 8,
  * stories 8.2/8.3) and (story 10.2, AC 1) the airfield PDF branding's
- * `airfield.name`/`airfield.logo`. A future story that needs another
- * setting adds its own pair here rather than widening these into something
- * generic.
+ * `airfield.name` (name-only since story 13.8, AC 4 — the `airfield.logo`
+ * key some installs may still carry from before that story is never read or
+ * written here anymore). A future story that needs another setting adds its
+ * own pair here rather than widening these into something generic.
  */
 
 const PPR_OPERATING_INSTRUCTIONS_IT_KEY = 'ppr.operatingInstructions.it';
 const PPR_OPERATING_INSTRUCTIONS_EN_KEY = 'ppr.operatingInstructions.en';
 const PPR_LANDING_FEE_CENTS_KEY = 'ppr.landingFeeCents';
 const AIRFIELD_NAME_KEY = 'airfield.name';
-const AIRFIELD_LOGO_KEY = 'airfield.logo';
 const AIRFIELD_ICAO_KEY = 'airfield.icao';
 const AIRFIELD_CONTACT_EMAIL_KEY = 'airfield.contactEmail';
 
@@ -162,25 +162,17 @@ export async function setPprLandingFeeDefaultCents(actor: Actor, cents: number):
 
 /**
  * Reads the admin-configured airfield branding (story 10.2, AC 1) — the
- * name + optional logo shown in every exported PDF's header. Deliberately
- * NO permission gate (unlike every other getter in this module): the
- * header must render for whichever role is exporting a report (pilot,
- * instructor, staff, admin alike), and the branding itself is not
+ * name shown in every exported PDF's header (name-only since story 13.8,
+ * AC 4). Deliberately NO permission gate (unlike every other getter in this
+ * module): the header must render for whichever role is exporting a report
+ * (pilot, instructor, staff, admin alike), and the branding itself is not
  * sensitive data. The route's own `apiRoute` (`auth: 'required'` default)
- * is the only guard — an authenticated session, nothing more. Absent
- * `AppSetting` rows read as the fresh-install default: name
- * `'AirManager'`, no logo — never a missing field.
+ * is the only guard — an authenticated session, nothing more. An absent
+ * `AppSetting` row reads as the fresh-install default: name `'AirManager'`.
  */
 export async function getAirfieldBranding(): Promise<AirfieldBrandingDto> {
-  const rows = await prisma.appSetting.findMany({
-    where: { key: { in: [AIRFIELD_NAME_KEY, AIRFIELD_LOGO_KEY] } },
-    select: { key: true, value: true },
-  });
-
-  const name = rows.find((row) => row.key === AIRFIELD_NAME_KEY)?.value || DEFAULT_AIRFIELD_NAME;
-  const logoDataUrl = rows.find((row) => row.key === AIRFIELD_LOGO_KEY)?.value || null;
-
-  return { name, logoDataUrl };
+  const row = await prisma.appSetting.findUnique({ where: { key: AIRFIELD_NAME_KEY }, select: { value: true } });
+  return { name: row?.value || DEFAULT_AIRFIELD_NAME };
 }
 
 /**
@@ -490,28 +482,18 @@ export async function setMembershipFeeCents(actor: Actor, cents: number): Promis
 }
 
 /**
- * Sets the airfield branding (AC 1). Gated `settings.manage` — admin-only,
- * same write-vs-read asymmetry as every other setter in this module.
- * `logoDataUrl: null` (AC 1: "rimozione logo") stores an empty string —
- * {@link getAirfieldBranding} reads an empty value back as `null`, the same
- * "empty string in storage, `null`/default at the read boundary" shape as
- * `getPprOperatingInstructions`'s `''`.
+ * Sets the airfield branding (AC 1; name-only since story 13.8, AC 4).
+ * Gated `settings.manage` — admin-only, same write-vs-read asymmetry as
+ * every other setter in this module.
  */
 export async function setAirfieldBranding(actor: Actor, input: AirfieldBrandingDto): Promise<AirfieldBrandingDto> {
   authorize(actor, 'settings.manage');
 
-  await prisma.$transaction([
-    prisma.appSetting.upsert({
-      where: { key: AIRFIELD_NAME_KEY },
-      update: { value: input.name },
-      create: { key: AIRFIELD_NAME_KEY, value: input.name },
-    }),
-    prisma.appSetting.upsert({
-      where: { key: AIRFIELD_LOGO_KEY },
-      update: { value: input.logoDataUrl ?? '' },
-      create: { key: AIRFIELD_LOGO_KEY, value: input.logoDataUrl ?? '' },
-    }),
-  ]);
+  await prisma.appSetting.upsert({
+    where: { key: AIRFIELD_NAME_KEY },
+    update: { value: input.name },
+    create: { key: AIRFIELD_NAME_KEY, value: input.name },
+  });
 
   return input;
 }

@@ -45,6 +45,9 @@
     "themeToggle": {
       "label": "Toggle theme"
     },
+    "localeSwitch": {
+      "label": "Change language"
+    },
     "logout": "Log out",
     "roles": {
       "ADMIN": "Admin",
@@ -1808,13 +1811,6 @@
       "error": "Could not save. Please try again.",
       "form": {
         "nameLabel": "Airfield name",
-        "logoLabel": "Logo",
-        "logoHint": "PNG or JPEG, max 200 KB. Used in the header of exported PDFs.",
-        "logoUpload": "Upload logo",
-        "logoRemove": "Remove logo",
-        "logoPreviewAlt": "Logo preview",
-        "logoTooLarge": "The file exceeds 200 KB.",
-        "logoInvalidType": "Unsupported format: use PNG or JPEG.",
         "save": "Save",
         "saved": "Settings saved.",
         "error": "Could not save the settings. Please try again."

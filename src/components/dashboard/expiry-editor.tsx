@@ -21,11 +21,18 @@
 import { useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { DateInput } from '@/components/ui/date-input';
+import { addMonthsClampUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
 import { formatDateOnly } from '@/lib/time';
 import { isExpiryScopeCompatible, MEMBERSHIP_FEE_TYPE_NAME, type ProfileFlags } from '@/lib/expiry-scope';
 import type { ExpiryScopeDto } from '@/lib/schemas/expiry-types';
 
-export type ExpiryCatalogEntry = { id: string; name: string; scope: ExpiryScopeDto; isActive: boolean };
+export type ExpiryCatalogEntry = { id: string; name: string; scope: ExpiryScopeDto; isActive: boolean; validityMonths: number | null };
+
+/** `today + validityMonths`, clamped to the target month's real last day (story 13.8, AC 5 — F2, review 13.3: the pre-13.3 page-level form precompiled this; `LiveExpiryEditor` never did). `null`/`0` both mean "no expiry" (same convention as `expiryTypeValidityMonthsSchema`) — no precompile for either. */
+function precompileExpiresAt(validityMonths: number | null): string {
+  if (!validityMonths) return '';
+  return toDateOnlyString(addMonthsClampUtc(todayDateOnlyUtc(), validityMonths));
+}
 
 type PersonExpiryItem = { id: string; expiryTypeId: string; typeName: string; expiresAt: string; status: 'ok' | 'expiring' | 'expired' };
 
@@ -272,8 +279,9 @@ export function LiveExpiryEditor({ personId, kind, profiles, locale, labels }: L
               type="button"
               className={`expiry-chip${addingTypeId === type.id ? ' selected' : ''}`}
               onClick={() => {
-                setAddingTypeId(addingTypeId === type.id ? null : type.id);
-                setAddDate('');
+                const selecting = addingTypeId !== type.id;
+                setAddingTypeId(selecting ? type.id : null);
+                setAddDate(selecting ? precompileExpiresAt(type.validityMonths) : '');
                 setAddError(null);
               }}
               data-testid={`expiry-chip-${type.id}`}

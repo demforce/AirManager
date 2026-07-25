@@ -4,7 +4,7 @@ baseline_commit: ea917a1
 
 # Story 13.8: Shell & misc trasversali — switcher lingua, icone sidebar, label reports, rimozione logo, precompile scadenze
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -42,7 +42,50 @@ so that la shell sia completa e le Impostazioni riflettano ciò che l'app usa da
 
 ## Dev Agent Record
 
-_(da compilare)_
+### Implementation Plan
+
+1. **AC1 — switcher lingua**: `top-bar.tsx` resta client-only (nessun `useTranslations`). Locale corrente via `useLocale()` (`next-intl`, GIA' usato in client component altrove — `calendar-popover.tsx`, `my-expiries.tsx` — non è una lookup di messaggi, quindi non viola la convenzione). `otherLocale` calcolato client-side; `Link` di `@/i18n/navigation` con `href={pathname}` (stesso `pathname` già letto da `usePathname()` per il breadcrumb) e `locale={otherLocale}` preserva la route corrente. Aria/title (`localeSwitchLabel`) risolti server-side in `dashboard/layout.tsx` via `t('localeSwitch.label')`, passati come prop — nuova chiave i18n `shell.localeSwitch.label` speculare IT/EN. Verifica: `npx tsc --noEmit` pulito, verifica interattiva Playwright (screenshot + click reale IT↔EN con pathname preservato).
+2. **AC2 — icona fleet**: one-liner in `route-registry.ts:78`, `icon: 'fleet' → 'plane'`. Verificato via script Playwright: `Icon.fleet` (glifa in `icons.tsx`) non è più referenziata da nessuna voce di `NAV_ITEMS` → ORFANA (segnalata sotto, non rimossa: fuori scope).
+3. **AC3 — reports label leggibilità**: diagnosi con screenshot reali (viewport 1024–1920, period=year, 12 barre) — l'"Ore volate" (BarChart nella colonna stretta `1fr` di `.split{grid-template-columns:2fr 1fr}`) mostrava glifi compressi in orizzontale (fino a ~8px di larghezza per "Ago" contro i ~19-24px del "Ricavi" nella colonna larga) perché il testo era un `<text>` SVG dentro un `viewBox` fisso (600 unità) scalato NON uniformemente (`preserveAspectRatio="none"`, altezza CSS fissa, larghezza fluida) — la larghezza del carattere scala con il contenitore, l'altezza no. Fix chirurgico in `bar-chart.tsx`: le label escono dall'SVG e diventano una riga HTML reale (`grid` con una colonna per barra, stesso inset percentuale derivato da `pad`) sotto il grafico — font-size reale, mai scalato dal viewBox. ZERO modifiche a `shortMonthLabel`/logica date (`reports/page.tsx` intatto). Verifica: screenshot prima/dopo a 1024/1280/1366/1440/1600/1920px + misura programmatica `getBoundingClientRect()` (0 collisioni prima E dopo, ma larghezza glifo prima ~8px dopo colonna piena ~26px).
+4. **AC4 — rimozione logo**: sweep completo (v. File List) — schema (`airfieldBrandingSchema` name-only), registry OpenAPI + test, servizio (`getAirfieldBranding`/`setAirfieldBranding` → singola chiave `airfield.name`, `AIRFIELD_LOGO_KEY` rimossa), adapter PDF (`PdfReportDocumentProps.branding` name-only, `<Image>` rimosso), `exports.service.ts` (`toPdfExport`'s branding type), UI (`settings-form.tsx` riscritto name-only, `club-card.tsx`/`page.tsx` prop type), i18n (chiavi `club.form.logo*` rimosse speculari IT/EN), e2e (`pdf-exports.spec.ts` aggiornato, stesso testid `airfield-settings-form`/`airfield-name-input`/`airfield-settings-save`/`airfield-settings-feedback`, nessun indebolimento delle altre assert). Verificato con grep finale: zero riferimenti a `logoDataUrl`/`AIRFIELD_LOGO_KEY`/`airfield-logo` restanti nel codice (a parte i doc-comment che raccontano la rimozione). Seed: verificato che né `seed.ts` né `seed-demo.ts` scrivevano `airfield.logo` — già vero prima di questa story, nessuna modifica necessaria.
+5. **AC5 — precompile scadenza**: portato in `expiry-editor.tsx` lo stesso calcolo del form pre-13.3 (`today + validityMonths`, clamp all'ultimo giorno reale del mese target) usando gli helper GIA' esistenti `@/lib/date-only` (`todayDateOnlyUtc`/`addMonthsClampUtc`/`toDateOnlyString` — zero nuovo codice di date-math). `ExpiryCatalogEntry` esteso con `validityMonths: number | null` (il campo è GIA' nel payload reale di `GET /api/v1/expiry-types`, solo il tipo TS non lo esponeva). Precompile SOLO alla selezione del chip (non al deselezionare), campo resta uno state normale quindi resta editabile. `NewExpiryChipGroup`/`NewPersonForm` (wizard di creazione persona, `pilot-editor.tsx`) NON toccato: la story delimita esplicitamente lo scope al `LiveExpiryEditor` condiviso — segnalato in Note per il reviewer.
+6. **AC6 — e2e**: nuovo file `e2e/shell-misc.spec.ts` (switcher lingua round-trip IT→EN→IT con pathname preservato; icona fleet, confronto `svg.innerHTML()` fleet vs movements, con sanity-check negativo contro piloti per escludere falsi positivi). `e2e/expiry-registration.spec.ts`: sostituita la NOTE che documentava la copertura droppata in 13.3 con un test reale (precompile 24 mesi con clamp, editabilità, e nessun precompile senza validityMonths) — helper locali `addMonthsUtc`/`todayUtc` (mai import di codice server negli e2e, stessa convenzione di `addDaysUtc`). `e2e/pdf-exports.spec.ts` aggiornato per AC4. Selettori: scoped al landmark `navigation[name="Aree operative"]` o exact-match su testid, mai `hasText` su date/orari.
+
+### Completion Notes
+
+- Tutti gli AC implementati e verificati (screenshot reali per AC1/AC3, comparazione programmatica DOM per AC2, sweep grep per AC4, e2e dedicati per AC1/AC2/AC5, e2e aggiornati per AC4).
+- `npm run gates`: PASS (lint, typecheck, 1446 test unitari, build).
+- e2e toccati/correlati (`shell-misc.spec.ts`, `expiry-registration.spec.ts`, `pdf-exports.spec.ts`, `reports.spec.ts`, `settings.spec.ts` via progetto `settings --no-deps`): 24 test totali, tutti PASS su server "caldo" (vedi nota ambientale sotto).
+- **Nota ambientale (non un difetto della story)**: su questa macchina Fedora locale, `next dev` (Turbopack) sotto contesa multi-worker Playwright soffre di flakiness da "cold compile" — la primissima richiesta a una route non ancora compilata può superare i 5s del timeout di default di `expect().toHaveURL()`, facendo fallire il login iniziale di un test SENZA alcuna relazione con le modifiche di questa story. Riprodotto anche su file COMPLETAMENTE non toccati da questa story (`account-adjustments.spec.ts`) lanciati in coppia — prova che è una caratteristica dell'ambiente, non una regressione. Mitigazione usata per la verifica: pre-scaldare il dev server (alcune navigazioni autenticate reali) prima di lanciare gli e2e, che poi passano in modo affidabile. `npm run gates` non esegue e2e (solo lint/typecheck/vitest/build), quindi questo non blocca il gate.
+
+### File List
+
+- `src/components/shell/top-bar.tsx` — switcher IT/EN (AC1)
+- `src/app/[locale]/dashboard/layout.tsx` — prop `localeSwitchLabel` (AC1)
+- `messages/it.json`, `messages/en.json` — chiave `shell.localeSwitch.label` (AC1); rimozione chiavi `SettingsPage.club.form.logo*` (AC4)
+- `src/components/shell/route-registry.ts` — icona fleet → `plane` (AC2)
+- `src/components/charts/bar-chart.tsx` — label asse X fuori dall'SVG (AC3)
+- `src/lib/schemas/settings.ts` — `airfieldBrandingSchema` name-only (AC4)
+- `src/lib/schemas/registry.ts`, `src/lib/schemas/registry.test.ts` — OpenAPI + test name-only (AC4)
+- `src/server/services/app-settings.service.ts`, `src/server/services/app-settings.service.test.ts` — `getAirfieldBranding`/`setAirfieldBranding` name-only (AC4)
+- `src/server/adapters/pdf/document.tsx`, `src/server/adapters/pdf/document.test.ts` — branding name-only, `<Image>` rimosso (AC4)
+- `src/server/services/exports.service.ts`, `src/server/services/exports.service.test.ts` — `toPdfExport` branding type (AC4)
+- `src/app/[locale]/dashboard/settings/settings-form.tsx` — riscritto name-only (AC4)
+- `src/app/[locale]/dashboard/settings/club-card.tsx` — prop type name-only (AC4)
+- `src/app/[locale]/dashboard/settings/page.tsx` — label logo* rimosse (AC4)
+- `src/app/api/v1/settings/club/route.ts` — doc-comment aggiornato (AC4)
+- `e2e/pdf-exports.spec.ts` — test logo → name-only (AC4)
+- `src/components/dashboard/expiry-editor.tsx` — precompile data scadenza (AC5)
+- `e2e/expiry-registration.spec.ts` — nuovo test precompile (AC5/AC6)
+- `e2e/shell-misc.spec.ts` — nuovo file, switcher lingua + icona fleet (AC1/AC2/AC6)
+
+### Note per il reviewer (assunzioni esplicite)
+
+- **AC1, scelta chip testuale vs icona**: `icons.tsx` non ha un `globe`. Scelto un chip testuale (classe `.iconbtn` esistente, stessa dimensione/bordo/hover del `ThemeToggle` adiacente, contenuto = codice ISO del locale TARGET in maiuscolo — "EN" quando sei in IT, coerente col pattern già in `/ppr` dove `t('switchTo')` mostra il nome del locale target, non quello corrente). Alternativa scartata: disegnare una nuova icona `globe` nel set — più invasivo (tocca `icons.tsx`, file condiviso da tutta l'app) per un guadagno visivo marginale rispetto a un chip mono coerente con lo stile "badge" già presente nell'app.
+- **AC2, orfano `Icon.fleet`**: dopo il cambio, la glifa `fleet` in `icons.tsx` (e la entry `'fleet'` nel literal union `NavIconKey`) non è più raggiunta da nessuna voce di `NAV_ITEMS` — verificato via grep e via script Playwright (nessun altro consumer nel codebase). Lasciata al suo posto (fuori scope, la story lo richiede esplicitamente) — candidata per il ritiro nella story 13.11 o in un cleanup dedicato.
+- **AC4, superfici del sweep che meritano attacco in review**: (a) `PUT /api/v1/settings/airfield` non fa più `.strict()` sul body — un client che mandasse ancora `logoDataUrl` verrebbe silenziosamente IGNORATO da Zod (comportamento di default, non introdotto da questa story) invece di un 422; è il comportamento wire-contract ratificato dalla punch-list, ma vale la pena controllare che nessun altro consumer interno si affidi ancora al campo. (b) La riga `AppSetting` `airfield.logo` (se presente da installazioni pre-13.8) resta orfana nel DB per design (nessuna migrazione distruttiva) — confermato che il seed non la scrive (mai lo ha fatto). (c) I 6 call-site di `toPdfExport` in `exports.service.ts` non hanno richiesto modifiche di codice (solo la firma del parametro `branding` è cambiata) perché passano sempre la variabile `branding` (mai un literal) — compatibilità strutturale TypeScript, verificata con `tsc --noEmit`.
+- **AC5, scope deliberatamente ristretto**: il precompile è stato aggiunto SOLO al `LiveExpiryEditor` condiviso, come esplicitamente delimitato dalla story ("Beneficia scheda persona + Piloti + Istruttori, stesso componente"). Il form di CREAZIONE persona (`NewExpiryChipGroup` dentro `pilot-editor.tsx`'s `NewPersonForm`, story 13.2) usa lo stesso `ExpiryCatalogEntry[]` ma un flusso di selezione/state completamente separato e NON precompila — non è stato toccato. Segnalo perché è una superficie sorella facilmente confondibile con quella in scope: se il PO la considera un gap, è materiale per una story successiva, non una svista di questa.
+- **Ambiente**: la flakiness e2e da "cold compile" di `next dev` sotto Playwright multi-worker (vedi Completion Notes) è stata riprodotta anche su spec NON toccate da questa story — non è una regressione introdotta qui.
 
 ## Review Record
 

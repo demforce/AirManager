@@ -139,6 +139,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             fallbackTitle={t('breadcrumb.fallback')}
             initialTheme={theme}
             themeToggleLabel={t('themeToggle.label')}
+            localeSwitchLabel={t('localeSwitch.label')}
             userChip={{
               displayName,
               fullLabel: `${displayName} · ${roleLabel}`,

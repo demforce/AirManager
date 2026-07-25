@@ -11,8 +11,6 @@ if (!SEED_PASSWORD) {
 }
 
 const PDF_CONTENT_TYPE = 'application/pdf';
-/** A valid, minimal (68-byte) transparent PNG — well under the ~200KB logo cap. */
-const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 /** Same login helper as the other e2e specs. */
 async function loginExpectingDashboard(page: Page, email: string): Promise<void> {
@@ -239,7 +237,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     }
   });
 
-  test('admin configures the airfield name and logo on /dashboard/settings: saved, re-read via the API, and a PDF export still succeeds (AC 1, 5)', async ({
+  test('admin configures the airfield name on /dashboard/settings: saved, re-read via the API, and a PDF export still succeeds (AC 1; name-only since story 13.8, AC 4)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -249,34 +247,19 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     await expect(page.getByTestId('airfield-settings-form')).toBeVisible();
 
     await page.getByTestId('airfield-name-input').fill(airfieldName);
-    await page.getByTestId('airfield-logo-input').setInputFiles({
-      name: 'logo.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(TINY_PNG_BASE64, 'base64'),
-    });
-    await expect(page.getByTestId('airfield-logo-preview')).toBeVisible();
     await page.getByTestId('airfield-settings-save').click();
     await expect(page.getByTestId('airfield-settings-feedback')).toBeVisible();
 
     const getResponse = await page.request.get('/api/v1/settings/airfield');
     expect(getResponse.status()).toBe(200);
-    const saved = (await getResponse.json()) as { name: string; logoDataUrl: string | null };
+    const saved = (await getResponse.json()) as { name: string };
     expect(saved.name).toBe(airfieldName);
-    expect(saved.logoDataUrl).toMatch(/^data:image\/png;base64,/);
 
-    // The branding renders into every PDF header (unit-covered content) — here just a smoke check the export still succeeds with a real logo configured.
+    // The branding renders into every PDF header (unit-covered content) — here just a smoke check the export still succeeds.
     const pilot = await createPilotPerson(page, 'Branding');
     const exportResponse = await page.request.get(`/api/v1/people/${pilot.personId}/account/pdf`);
     expect(exportResponse.status()).toBe(200);
     expect((await exportResponse.body()).subarray(0, 5).toString('latin1')).toBe('%PDF-');
-
-    // Remove the logo again: preview disappears, and PUT persists `logoDataUrl: null`.
-    await page.getByTestId('airfield-logo-remove').click();
-    await expect(page.getByTestId('airfield-logo-preview')).toHaveCount(0);
-    await page.getByTestId('airfield-settings-save').click();
-    await expect(page.getByTestId('airfield-settings-feedback')).toBeVisible();
-    const afterRemoval = (await (await page.request.get('/api/v1/settings/airfield')).json()) as { logoDataUrl: string | null };
-    expect(afterRemoval.logoDataUrl).toBeNull();
   });
 
   test('/dashboard/settings redirects staff and pilot to /dashboard; PUT /api/v1/settings/airfield answers 403 for both (AC 1)', async ({ page }) => {
@@ -285,7 +268,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
       await page.goto('/it/dashboard/settings');
       await expect(page).toHaveURL(/\/it\/dashboard$/);
 
-      const putResponse = await page.request.put('/api/v1/settings/airfield', { data: { name: 'Should not save', logoDataUrl: null } });
+      const putResponse = await page.request.put('/api/v1/settings/airfield', { data: { name: 'Should not save' } });
       expect(putResponse.status()).toBe(403);
 
       await page.context().clearCookies();

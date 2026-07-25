@@ -268,10 +268,10 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       expect(get?.security).toEqual([{ cookieAuth: [] }]);
     });
 
-    it('documents the AirfieldBranding schema with name/logoDataUrl', () => {
+    it('documents the AirfieldBranding schema as name-only (story 13.8, AC 4 — logoDataUrl removed)', () => {
       const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
       expect(schemas?.['AirfieldBranding']?.properties).toHaveProperty('name');
-      expect(schemas?.['AirfieldBranding']?.properties).toHaveProperty('logoDataUrl');
+      expect(schemas?.['AirfieldBranding']?.properties).not.toHaveProperty('logoDataUrl');
     });
   });
 

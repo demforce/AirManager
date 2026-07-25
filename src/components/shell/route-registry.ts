@@ -75,7 +75,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // Story 12.7: the instructors compensation page ships in the AirOps visual language directly.
   { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: STAFF_ROLES, enabled: true },
   // Story 12.5: the fleet page ships in the AirOps visual language directly.
-  { id: 'fleet', href: '/dashboard/fleet', icon: 'fleet', group: 'directory', roles: STAFF_ROLES, enabled: true },
+  // Story 13.8 (AC 2): 'plane' — same small-aircraft glyph as `visiting`
+  // (Movimenti) above, per the user's "aereo piccolo per entrambe" item.
+  // `icon: 'fleet'` is now unused by any NAV_ITEMS entry (the `fleet` glyph
+  // in `icons.tsx` itself stays defined — story 13.8 dev notes flag it as an
+  // orphan, out of this story's scope to remove).
+  { id: 'fleet', href: '/dashboard/fleet', icon: 'plane', group: 'directory', roles: STAFF_ROLES, enabled: true },
   // Story 12.11: the scadenze registry ships in the AirOps visual language
   // directly. Story 12.12 fix: widened to ALL_ROLES — the legacy home's own
   // in-page nav (permission-based, `nav-items.ts`, removed in story 12.13)

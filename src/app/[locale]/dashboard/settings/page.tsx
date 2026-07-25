@@ -97,9 +97,10 @@ function expiryTypeCardLabels(t: Translator, ns: 'ratings' | 'medical'): Ratings
 
 /**
  * Impostazioni (epic 12, story 12.11, AC 2) — AirOps-native, complete
- * rewrite of the branding-only legacy page (`SettingsForm`'s name/logo
- * control survives UNCHANGED inside the new "Club" card, same
- * `data-testid`s — `pdf-exports.spec.ts` drives it). Port of
+ * rewrite of the branding-only legacy page (`SettingsForm`'s name control
+ * survives inside the new "Club" card, same `data-testid`s —
+ * `pdf-exports.spec.ts` drives it; name-only since story 13.8, AC 4). Port
+ * of
  * `docs/design-reference/airops/src/SettingsView.jsx`: Club (identity +
  * ICAO + contact email + METAR station + PPR default fee/instructions +
  * quota associativa default), Pianificazione (booking window), Email
@@ -181,13 +182,6 @@ export default async function SettingsPage({ params }: PageProps) {
           identityHeading: t('club.identityHeading'),
           settingsForm: {
             nameLabel: t('club.form.nameLabel'),
-            logoLabel: t('club.form.logoLabel'),
-            logoHint: t('club.form.logoHint'),
-            logoUpload: t('club.form.logoUpload'),
-            logoRemove: t('club.form.logoRemove'),
-            logoPreviewAlt: t('club.form.logoPreviewAlt'),
-            logoTooLarge: t('club.form.logoTooLarge'),
-            logoInvalidType: t('club.form.logoInvalidType'),
             save: t('club.form.save'),
             saved: t('club.form.saved'),
             error: t('club.form.error'),

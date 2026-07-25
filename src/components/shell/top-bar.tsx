@@ -8,9 +8,11 @@
  * current route from; every string is resolved server-side and passed in
  * (house convention — no `useTranslations` in client components).
  */
+import { useLocale } from 'next-intl';
 import type { AvatarColor } from '@/components/ui/avatar';
 import { Avatar } from '@/components/ui/avatar';
-import { usePathname } from '@/i18n/navigation';
+import { Link, usePathname } from '@/i18n/navigation';
+import type { AppLocale } from '@/i18n/routing';
 import { ThemeToggle, type Theme } from './theme-toggle';
 import { findNavItemByPathname, type NavItemId } from './route-registry';
 
@@ -28,6 +30,8 @@ export type TopBarProps = {
   fallbackTitle: string;
   initialTheme: Theme;
   themeToggleLabel: string;
+  /** Aria-label/title for the IT/EN switcher (AC 1, house convention: resolved server-side, never `useTranslations` in a client component) — the visible chip text is the target locale's own ISO code (`otherLocale.toUpperCase()`), not a translated string. */
+  localeSwitchLabel: string;
   userChip: TopBarUserChip;
   /**
    * Server Action (story 12.12 fix — see `layout.tsx`'s own doc-comment):
@@ -40,10 +44,24 @@ export type TopBarProps = {
   logoutLabel: string;
 };
 
-export function TopBar({ brandName, icao, pageTitles, fallbackTitle, initialTheme, themeToggleLabel, userChip, logoutAction, logoutLabel }: TopBarProps) {
+export function TopBar({
+  brandName,
+  icao,
+  pageTitles,
+  fallbackTitle,
+  initialTheme,
+  themeToggleLabel,
+  localeSwitchLabel,
+  userChip,
+  logoutAction,
+  logoutLabel,
+}: TopBarProps) {
   const pathname = usePathname();
   const activeItem = findNavItemByPathname(pathname);
   const currentTitle = activeItem ? pageTitles[activeItem.id] : fallbackTitle;
+
+  const locale = useLocale();
+  const otherLocale: AppLocale = locale === 'it' ? 'en' : 'it';
 
   return (
     <header className="topbar">
@@ -59,6 +77,17 @@ export function TopBar({ brandName, icao, pageTitles, fallbackTitle, initialThem
         <span className="cur">{currentTitle}</span>
       </div>
       <div className="topbar-spacer" />
+      <Link
+        href={pathname}
+        locale={otherLocale}
+        className="iconbtn mono"
+        title={localeSwitchLabel}
+        aria-label={localeSwitchLabel}
+        data-testid="locale-switch"
+        style={{ fontSize: 11, fontWeight: 600 }}
+      >
+        {otherLocale.toUpperCase()}
+      </Link>
       <ThemeToggle initialTheme={initialTheme} label={themeToggleLabel} />
       <div className="user-chip" title={userChip.fullLabel}>
         <Avatar init={userChip.initials} color={userChip.color} />

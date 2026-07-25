@@ -26,7 +26,7 @@ export type ClubCardLabels = {
 };
 
 export type ClubCardProps = {
-  branding: { name: string; logoDataUrl: string | null };
+  branding: { name: string };
   icao: string;
   contactEmail: string;
   metarStation: string;
@@ -37,8 +37,9 @@ export type ClubCardProps = {
 };
 
 /**
- * "Club" card (story 12.11, AC 2) — identity (nome/logo, the pre-existing
- * `SettingsForm`, own save action for e2e compatibility) plus, in ONE
+ * "Club" card (story 12.11, AC 2) — identity (nome, name-only since story
+ * 13.8 AC 4; the pre-existing `SettingsForm`, own save action for e2e
+ * compatibility) plus, in ONE
  * second save action: ICAO, email di contatto, tassa PPR di default,
  * istruzioni operative PPR (IT/EN), and quota associativa (ratifica 1).
  * These 4 settings are functionally independent (different keys, different

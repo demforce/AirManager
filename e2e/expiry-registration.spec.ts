@@ -40,6 +40,22 @@ function addDaysUtc(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** `YYYY-MM-DD` for "now", UTC — story 13.8 (AC 5) precompile fixture's base date. */
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Local mirror of `src/lib/date-only.ts#addMonthsClampUtc` (e2e specs never import server code, same convention as `addDaysUtc` above) — CLAMPS to the target month's real last day (e.g. 31 Jan + 1 month -> 28/29 Feb), matching `LiveExpiryEditor`'s own precompile (story 13.8, AC 5). */
+function addMonthsUtc(dateOnly: string, months: number): string {
+  const [year, month, day] = dateOnly.split('-').map(Number) as [number, number, number];
+  const targetMonthIndex = month - 1 + months;
+  const targetYear = year + Math.floor(targetMonthIndex / 12);
+  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(day, daysInTargetMonth);
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`;
+}
+
 type MailpitMessageSummary = { ID: string; Subject: string };
 type MailpitFullMessage = { Text: string; Subject: string };
 
@@ -231,16 +247,48 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-dri
     await expect(page.getByTestId('rating-row').filter({ hasText: okType.name })).toContainText('Disattivato');
   });
 
-  // NOTE (story 13.3): the "story 12.11/13.1 (review R6): selecting a type
-  // with a configured validityMonths precompiles 'Data scadenza'" coverage
-  // that used to live here was dropped, not ported — it exercised the
-  // page-level `ExpiriesPanel` register form's `useEffect`-driven precompile
-  // (today + `validityMonths`), which no UI surface offers anymore: the
-  // replacement, `LiveExpiryEditor` (story 13.2, shared by the Piloti/
-  // Istruttori editors and now this page too), never had that precompile —
-  // its "add" date field always starts blank, chip-selected or not. That is
-  // a pre-existing gap in the shared 13.2 editor, not something introduced
-  // here; fixing `LiveExpiryEditor` itself is out of this story's scope
-  // (flagged in the Dev Agent Record / review notes instead of silently
-  // dropping the coverage).
+  // Story 13.8 (AC 5 — F2, review 13.3): revives the coverage the note above
+  // used to explain away. `LiveExpiryEditor` now precompiles `expiresAt`
+  // from the selected type's `validityMonths` (`today + validityMonths`,
+  // clamped to the target month's real last day) the same way the
+  // pre-13.3 page-level form did — still fully EDITABLE afterwards, and a
+  // type with no `validityMonths` leaves the field blank.
+  test('selecting an ExpiryType with validityMonths precompiles "Data scadenza" to today+validityMonths (still editable); a type without validityMonths leaves it blank', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const withValidity = await createExpiryType(page, 'ALL', 24);
+    const withoutValidity = await createExpiryType(page);
+
+    const pilot = uniquePerson('Precompile');
+    const personId = await createPilotPerson(page, pilot);
+
+    await page.goto(`/it/dashboard/people/${personId}`);
+    await page.getByTestId('person-edit-button').click();
+
+    const ratingsEditor = page.getByTestId('pilot-ratings-editor');
+
+    // No validityMonths: selecting the chip leaves the date field blank.
+    await ratingsEditor.getByTestId(`expiry-chip-${withoutValidity.id}`).click();
+    await expect(ratingsEditor.getByTestId('expiry-add-date')).toHaveValue('');
+    // Deselect (collapses the add form) before picking the next chip.
+    await ratingsEditor.getByTestId(`expiry-chip-${withoutValidity.id}`).click();
+
+    // validityMonths: 24 -> precompiled to today + 24 months.
+    await ratingsEditor.getByTestId(`expiry-chip-${withValidity.id}`).click();
+    await expect(ratingsEditor.getByTestId('expiry-add-date')).toHaveValue(addMonthsUtc(todayUtc(), 24));
+
+    // Still EDITABLE: override it, save, and the PERSISTED value is the override, not the precompiled default.
+    const overrideDate = addDaysUtc(500);
+    await ratingsEditor.getByTestId('expiry-add-date').fill(overrideDate);
+    await ratingsEditor.getByTestId('expiry-add-confirm').click();
+    await expect(ratingsEditor.getByTestId('expiry-add-form')).toHaveCount(0);
+    await expect(ratingsEditor.getByTestId(`expiry-row-${withValidity.id}`)).toBeVisible();
+
+    const expiriesResponse = await page.request.get(`/api/v1/people/${personId}/expiries`);
+    expect(expiriesResponse.status()).toBe(200);
+    const expiries = (await expiriesResponse.json()) as { expiryTypeId: string; expiresAt: string }[];
+    expect(expiries.find((item) => item.expiryTypeId === withValidity.id)?.expiresAt).toBe(overrideDate);
+  });
 });

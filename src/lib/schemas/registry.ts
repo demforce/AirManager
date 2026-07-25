@@ -1731,9 +1731,9 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/settings/airfield',
-  summary: 'Read the airfield branding used in exported PDFs (story 10.2, AC 1)',
+  summary: 'Read the airfield branding used in exported PDFs (story 10.2, AC 1; name-only since story 13.8, AC 4)',
   description:
-    "`{ name, logoDataUrl }` — the name/logo shown in every exported PDF's header. Absent/never-configured reads as `{ name: 'AirManager', logoDataUrl: null }`. NO permission gate beyond an authenticated session: every role that can export a PDF needs the header, and the branding itself is not sensitive.",
+    "`{ name }` — the name shown in every exported PDF's header. Absent/never-configured reads as `{ name: 'AirManager' }`. NO permission gate beyond an authenticated session: every role that can export a PDF needs the header, and the branding itself is not sensitive.",
   tags: ['Settings'],
   security,
   responses: {
@@ -1745,9 +1745,8 @@ registry.registerPath({
 registry.registerPath({
   method: 'put',
   path: '/api/v1/settings/airfield',
-  summary: 'Set the airfield branding (story 10.2, AC 1)',
-  description:
-    "Body `{ name, logoDataUrl }` — `name` 1..200 chars; `logoDataUrl` a PNG/JPEG base64 data URL (~200KB cap) or `null` to remove the logo. Admin-only (`settings.manage`).",
+  summary: 'Set the airfield branding (story 10.2, AC 1; name-only since story 13.8, AC 4)',
+  description: "Body `{ name }` — `name` 1..200 chars. Admin-only (`settings.manage`).",
   tags: ['Settings'],
   security,
   request: { body: { content: jsonContent(airfieldBrandingSchema), required: true } },

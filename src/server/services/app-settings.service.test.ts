@@ -226,75 +226,52 @@ describe('app-settings.service — default PPR landing fee (story 8.3, AC 1)', (
 });
 
 /**
- * Airfield PDF branding (story 10.2, AC 1) — minimal targeted coverage:
- * NO read gate (unlike every other getter above), the fresh-install
- * default, the empty-string-in-storage/`null`-at-read-boundary shape for a
- * removed logo, write gating, and both keys upserted together.
+ * Airfield PDF branding (story 10.2, AC 1; name-only since story 13.8,
+ * AC 4) — minimal targeted coverage: NO read gate (unlike every other
+ * getter above), the fresh-install default, and write gating.
  */
-describe('app-settings.service — airfield branding (story 10.2, AC 1)', () => {
+describe('app-settings.service — airfield branding (story 10.2, AC 1; story 13.8, AC 4)', () => {
   beforeEach(() => {
-    findManyMock.mockReset();
+    findUniqueMock.mockReset();
     upsertMock.mockReset();
-    transactionMock.mockReset();
   });
 
   describe('getAirfieldBranding', () => {
     it('has NO permission gate — a pilot (no settings.manage, no ppr.manage) reads it', async () => {
-      findMany.mockResolvedValue([]);
-      await expect(getAirfieldBranding()).resolves.toEqual({ name: 'AirManager', logoDataUrl: null });
+      findUnique.mockResolvedValue(null);
+      await expect(getAirfieldBranding()).resolves.toEqual({ name: 'AirManager' });
     });
 
-    it('defaults to name "AirManager" and no logo when no AppSetting rows exist yet', async () => {
-      findMany.mockResolvedValue([]);
+    it('defaults to name "AirManager" when no AppSetting row exists yet', async () => {
+      findUnique.mockResolvedValue(null);
 
       const result = await getAirfieldBranding();
 
-      expect(result).toEqual({ name: 'AirManager', logoDataUrl: null });
-      expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: { in: ['airfield.name', 'airfield.logo'] } } }));
+      expect(result).toEqual({ name: 'AirManager' });
+      expect(findUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'airfield.name' } }));
     });
 
-    it('reads back a configured name and logo', async () => {
-      findMany.mockResolvedValue([
-        { key: 'airfield.name', value: 'Aviosuperficie di Test' },
-        { key: 'airfield.logo', value: 'data:image/png;base64,AAA=' },
-      ]);
+    it('reads back a configured name', async () => {
+      findUnique.mockResolvedValue({ value: 'Aviosuperficie di Test' });
 
-      await expect(getAirfieldBranding()).resolves.toEqual({ name: 'Aviosuperficie di Test', logoDataUrl: 'data:image/png;base64,AAA=' });
-    });
-
-    it('an empty stored logo value (removed logo) reads back as null, never an empty string', async () => {
-      findMany.mockResolvedValue([{ key: 'airfield.name', value: 'X' }, { key: 'airfield.logo', value: '' }]);
-
-      await expect(getAirfieldBranding()).resolves.toEqual({ name: 'X', logoDataUrl: null });
+      await expect(getAirfieldBranding()).resolves.toEqual({ name: 'Aviosuperficie di Test' });
     });
   });
 
   describe('setAirfieldBranding', () => {
     it('is gated settings.manage — staff is forbidden, no write runs', async () => {
-      await expect(setAirfieldBranding(staffActor(), { name: 'X', logoDataUrl: null })).rejects.toBeInstanceOf(ForbiddenError);
-      expect(transactionMock).not.toHaveBeenCalled();
+      await expect(setAirfieldBranding(staffActor(), { name: 'X' })).rejects.toBeInstanceOf(ForbiddenError);
+      expect(upsertMock).not.toHaveBeenCalled();
     });
 
-    it('admin (settings.manage) writes name + logo together in one transaction', async () => {
+    it('admin (settings.manage) writes the name', async () => {
       upsert.mockResolvedValue({});
-      transaction.mockResolvedValue([{}, {}]);
 
-      const result = await setAirfieldBranding(adminActor(), { name: 'Aviosuperficie', logoDataUrl: 'data:image/png;base64,AAA=' });
+      const result = await setAirfieldBranding(adminActor(), { name: 'Aviosuperficie' });
 
-      expect(result).toEqual({ name: 'Aviosuperficie', logoDataUrl: 'data:image/png;base64,AAA=' });
-      expect(transactionMock).toHaveBeenCalledTimes(1);
-      const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
-      expect(batch).toHaveLength(2);
-    });
-
-    it('logoDataUrl: null (removal) stores an empty string, not literal null', async () => {
-      upsert.mockResolvedValue({});
-      transaction.mockResolvedValue([{}, {}]);
-
-      await setAirfieldBranding(adminActor(), { name: 'X', logoDataUrl: null });
-
+      expect(result).toEqual({ name: 'Aviosuperficie' });
       expect(upsertMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { key: 'airfield.logo' }, update: { value: '' }, create: { key: 'airfield.logo', value: '' } }),
+        expect.objectContaining({ where: { key: 'airfield.name' }, update: { value: 'Aviosuperficie' }, create: { key: 'airfield.name', value: 'Aviosuperficie' } }),
       );
     });
   });
