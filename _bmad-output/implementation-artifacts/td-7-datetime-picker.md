@@ -83,9 +83,9 @@ Round-trip reale verificato (click bottone calendario → mese +2 → click gior
 
 - Unit: `src/components/ui/datetime-value.test.ts` (12 casi: validità `HH:MM` su tutto il range 24h/60min inclusi i minuti "non arrotondati" tipo `:07`, formati malformati, round-trip parse/compose).
 - e2e nuovi: `e2e/datetime-picker.spec.ts` (5 test) — creazione prenotazione REALE guidando SOLO il picker (bottone calendario → mese → giorno → ora → conferma → submit → 201, mai `fill()`), stesso flusso sul form pubblico `/ppr`, ratifica 3 (conferma disabilitata / nessuna scrittura), guard di regressione clipping (posizione `fixed` + portato su `document.body`, hit-test reale) e un pass mobile 375px sul form pubblico. Selettori: `span.date-input:has(input[name="..."])` per isolare il wrapper del campo, giorno selezionato con regex ancorata (`^15$`), mai `hasText` su stringhe data/ora.
-- Regressione (esistenti, `fill()` diretto sull'input): `bookings.spec.ts` (35 test), `ppr-public.spec.ts` (6), `ppr-queue.spec.ts` (6) rieseguiti — vedi nota sotto sull'ambiente dev.
+- Regressione (esistenti, `fill()` diretto sull'input): `bookings.spec.ts`, `ppr-public.spec.ts`, `ppr-queue.spec.ts`, `movements.spec.ts`, `aircraft-rates.spec.ts`, `instructor-rates.spec.ts` e l'intera suite rieseguiti sulla build di produzione (vedi esito finale sotto).
 
-### Nota sull'ambiente dev durante la verifica (non un difetto del codice)
+### Nota sull'ambiente dev durante la verifica (non un difetto del codice di prodotto)
 
 Due run consecutivi della suite sopra CONTRO IL DEV SERVER (non la build prod) hanno mostrato fallimenti — TUTTI con la stessa identica firma: `expect(page).toHaveURL(/\/it\/dashboard$/)` timeout, pagina rimasta su `/it/login` dopo un login altrimenti corretto. Investigato PRIMA di scartarlo come flake (regola esplicita: mai attribuire fail a flake senza prova):
 1. Query diretta su `LoginAttempt`: **zero** righe `succeeded:false` per `admin@airmanager.local` nella finestra — il login-throttle (`TD-6`) NON è la causa (era la mia prima ipotesi, smentita dai dati).
@@ -94,7 +94,23 @@ Due run consecutivi della suite sopra CONTRO IL DEV SERVER (non la build prod) h
 4. Un secondo run completo, più tardi, ha fallito ANCORA DI PIÙ (24 vs 15) — degrado progressivo coerente con un `next dev`/Turbopack sotto ore di uso pesante (le mie stesse verifiche manuali ripetute), non con un bug deterministico introdotto da questa story.
 5. `e2e/movements.spec.ts` documenta GIÀ questa classe di flake ("stesso tempo di tolleranza del flake di login documentato... sotto il carico di cold-compile/concurrent-worker") — non è nuovo, è una caratteristica nota di questo ambiente dev-mode.
 
-Conclusione: nessuna delle mie modifiche tocca `auth`/login; la causa è degrado del server di sviluppo sotto il carico generato dalle mie stesse verifiche manuali estese, non un difetto di TD-7. **Riprodotto pulito e verificato definitivamente sulla build di produzione CI=1** (vedi report finale del dev agent per i numeri verbatim).
+Conclusione: nessuna delle mie modifiche tocca `auth`/login; la causa era degrado del server di sviluppo sotto il carico generato dalle mie stesse verifiche manuali estese, non un difetto di TD-7.
+
+### Due bug REALI trovati (e corretti) dalla suite CI=1 su build prod, DB fresco
+
+Il primo run completo (fresh DB, build prod, `CI=1`, TUTTI i project incl. `settings`/`booking-window`) ha isolato 2 fallimenti reali, ENTRAMBI nel mio nuovo `e2e/datetime-picker.spec.ts` (mai nel codice applicativo):
+1. **Race popover-non-ancora-renderizzato**: un `page.evaluate` immediatamente dopo `.click()` può leggere `.cal-popover` PRIMA che il render del portal (`createPortal`, un tick React successivo) sia committato — riprodotto come `querySelector` che ritorna `null`. Fix: `await expect(page.locator('.cal-popover')).toBeVisible()` prima di ogni lettura di geometria (commit `d841cc7`).
+2. **Race scroll-into-view vs `useFixedPopover`**: sul form pubblico `/ppr` (i campi ETA/ETD sono sotto la piega, specialmente a 375px) un `.click()` su un trigger fuori viewport innesca il proprio `scrollIntoViewIfNeeded`; se quello scroll arriva DOPO che il popover si è aperto, il listener di scroll di `useFixedPopover` lo richiude nello stesso istante — esattamente la trappola che il commento del `useFixedPopover` di `schedule.tsx` documenta già (il file NON è stato toccato, la lezione si applicava anche al mio nuovo mechanism). Riprodotto deterministicamente (fallito su TUTTI i tentativi/retry) sia per "public /ppr: ETA…" sia per "mobile 375px…". Fix: `scrollIntoViewIfNeeded()` come step ESPLICITO e separato prima del click, in ogni punto del file di test (commit `a0a5635`).
+
+Entrambi i fix sono SOLO nel file di test (`e2e/datetime-picker.spec.ts`) — zero righe di codice applicativo toccate per questi fix.
+
+### Esito finale — FULL SUITE, CI=1, build di produzione, DB fresco
+
+```
+264 passed (8.3m)
+```
+
+Zero falliti, zero flaky, TUTTI e 3 i project (`chromium` 255 + `settings` 6 + `booking-window` 3 = 264, che include i 5 e2e nuovi di questa story). Run precedente allo stesso identico comando (prima dei 2 fix sopra) aveva mostrato 2 fallimenti reali (uno dei quali flaky-poi-passato al retry) SOLO nel mio file di test nuovo — root cause isolata, corretta, e il run successivo (fresh DB, fresh build) è tornato completamente pulito.
 
 ### Assunzioni esplicite
 
@@ -123,7 +139,9 @@ Conclusione: nessuna delle mie modifiche tocca `auth`/login; la causa è degrado
 
 ### Change Log
 
-- feat(td-7): `CalendarPopover` esteso con modalità data+ora (additiva); nuovo `DateTimeInput`; sweep dei 10 consumer nativi → componenti custom; fix clipping (portal + fixed-popover) esteso a `DateInput`/`DateTimeInput` incluso il consumer pre-esistente di `billing-console.tsx`.
+- `3831067` feat(td-7): `CalendarPopover` esteso con modalità data+ora (additiva); nuovo `DateTimeInput`; sweep dei 10 consumer nativi → componenti custom; fix clipping (portal + fixed-popover) esteso a `DateInput`/`DateTimeInput` incluso il consumer pre-esistente di `billing-console.tsx`.
+- `d841cc7` fix(td-7): e2e — atteso esplicito che il popover portato sia visibile prima di leggerne la geometria (race trovata dalla suite CI=1 su build prod).
+- `a0a5635` fix(td-7): e2e — scroll esplicito e separato del bottone calendario prima del click (stessa trappola già documentata in `schedule.tsx#useFixedPopover`, riprodotta sul form pubblico `/ppr`).
 
 ## Review Record
 
