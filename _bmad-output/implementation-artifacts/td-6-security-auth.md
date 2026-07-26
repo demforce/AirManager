@@ -4,7 +4,7 @@ baseline_commit: a1bbfb9
 
 # Story TD-6: Security findings post-Epic 13 — revoca sessioni al reset password (F1) + login-lock atomico (F2)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -37,7 +37,77 @@ so that la rotazione delle credenziali sia un rimedio efficace e il brute-force 
 
 ## Dev Agent Record
 
-_(da compilare)_
+### Implementation summary
+
+**F1 — `tokenVersion` watermark (CWE-613).**
+
+- `User.tokenVersion Int @default(0)` (Prisma migration `20260726074237_add_user_token_version`, auto-generated via `prisma migrate dev`, applied to the fresh dev DB — plain `ALTER TABLE ... ADD COLUMN ... DEFAULT 0`, no data migration needed).
+- Sign-in: `authorizeCredentials` (`src/server/auth/authorize.ts`) now returns `tokenVersion: user.tokenVersion` alongside `roles`/`personId` (the user row was already fetched unselected, so the new column comes along for free). `auth.config.ts`'s `jwt` callback stamps `token.tokenVersion = user.tokenVersion` in the same `if (user)` branch that already sets `lastActiveCheck`.
+- Recheck: `applyActiveRecheck` (`src/server/auth/jwt-active-check.ts`) extends its `select` to `{ isActive, roles, tokenVersion }` and, once a recheck is due, compares `token.tokenVersion !== user.tokenVersion` — a mismatch returns `null` (same eviction path as a deactivated user). Because a plain JS `!==` compares `undefined` (a claim-less pre-migration JWT) against a `number` and is always `true`, "claim missing" and "claim stale" fall out of the SAME comparison — no separate branch needed. Documented one-time logout of every session alive at deploy, exactly as the AC accepts.
+- Bump: `setPasswordWithToken` (`src/server/services/auth-tokens.service.ts`) now does `tx.user.update({ where: { id: authToken.userId }, data: { passwordHash, tokenVersion: { increment: 1 } } })` — ONE update call, inside the SAME transaction as the token's atomic single-use claim. Covers INVITE and PASSWORD_RESET identically (the function never branches on `AuthToken.type`), closing the report's "admin re-invite doesn't end sessions" gap for free.
+- Type augmentation (`src/server/auth/types.d.ts`): added `tokenVersion: number` to the `next-auth` `User` interface and to `JWT` in both `next-auth/jwt` and `@auth/core/jwt` (the latter is load-bearing — see the file's own pre-existing comment on why both declarations are needed).
+- `src/proxy.ts` untouched, as the AC requires — it only ever calls edge-safe `getToken()`, never `applyActiveRecheck`.
+
+**F2 — atomic login-lock reservation (CWE-367).** Chose **option (a), atomic reservation**, not (b) advisory-lock-around-verify. Rationale (asked for explicitly in the AC):
+
+- (b) would hold the identifier's advisory lock for the FULL duration of the Argon2id verify, serializing every concurrent login attempt for the same identifier — including legitimate ones (e.g., two browser tabs, a retried request). Under the story's own numbers (cap 10/15 min), that's a rare path, but there was no reason to pay an Argon2-shaped latency tax on it when (a) avoids it entirely.
+- (a) keeps the lock scoped to the count-then-insert only (a few ms of DB round-trips), releasing it before the CPU-heavy verify runs. This preserves the existing cost profile of `authorizeCredentials` almost exactly — the only added cost is the reservation transaction itself (one extra round-trip on the hot path), not a serialization point across concurrent requests for DIFFERENT identifiers.
+- (a) also maps cleanly onto the EXISTING code shape: `recordSuccessfulLogin` already deletes every failed row for the identifier, so a successful login's cleanup of the pessimistic reservation is free, zero new code.
+
+  Mechanism (`reserveLoginAttempt`, `src/server/auth/login-throttle.ts`, replacing `isLoginLocked` + `recordFailedLoginAttempt`): one `prisma.$transaction(async (tx) => …)` that (1) runs `SELECT pg_advisory_xact_lock(hashtext(${identifier})::bigint)` — Postgres session-scoped-to-the-transaction lock, released automatically on commit/rollback; (2) counts identifier failures in the rolling window; if `>= LOGIN_MAX_FAILED_PER_IDENTIFIER`, returns `false` with NO insert; (3) else counts IP failures (same as before, unchanged semantics, NOT lock-protected across identifiers — the AC only asks for the identifier dimension to become atomic; "cap per-IP invariato" reads as "keep its existing behavior", not "also close its race"); if `>= LOGIN_MAX_FAILED_PER_IP`, returns `false`, no insert; (4) else inserts the pessimistic `succeeded: false` row and returns `true`. `authorizeCredentials` calls this ONCE, up front, in place of `isLoginLocked`; the two call sites that used to call `recordFailedLoginAttempt` (unknown user, wrong password) were deleted — the reservation already IS the failure record by the time either branch runs. `recordSuccessfulLogin` is unchanged.
+
+  Invariants verified: anti-enumeration unchanged (the reservation's cost depends only on `LoginAttempt` history, never on whether the email maps to a real `User` row — same as before); per-IP cap unchanged (30, same window, same null-IP fallback); generic error unchanged (`authorizeCredentials` still only ever returns `null`, no new branch reachable from the client); anti-DoS "flood doesn't re-extend the window" preserved (verified directly — see Testing below, "above cap: further reservations insert no additional row").
+
+### Assumptions made explicit
+
+1. `token.tokenVersion !== user.tokenVersion` is the WHOLE mismatch check — no special-cased "claim missing" branch. This relies on `!==` on `undefined` vs a `number` always being `true` in JS, which is guaranteed language behavior, not an edge case that could silently pass.
+2. The per-IP cap's own TOCTOU race (a concurrent burst from one IP spread across many DIFFERENT identifiers) is explicitly OUT of scope — the report's exploit scenario and prescribed fix both talk about the per-IDENTIFIER cap only (`pg_advisory_xact_lock` "sull'hash dell'identifier"); AC2's "cap per-IP invariato" is read as a preservation constraint, not an extension request. Flagged for the reviewer, not silently fixed (that would be the exact kind of speculative hardening `karpathy-guidelines` and the story's "Fuori scope" section forbid — the panel didn't verify an IP-race finding, and none of the 13 rejected candidates asked for one).
+3. `hashtext(identifier)::bigint` as the advisory-lock key: `hashtext()` is a stable, deterministic Postgres builtin (int4); a hash collision between two different identifiers would only cause them to serialize against each other unnecessarily (a performance hit, not a correctness bug) — never a false shared cap, since the counts/inserts inside the lock still filter by the real `identifier` string.
+4. `setPasswordWithToken` bumping `tokenVersion` unconditionally (INVITE and PASSWORD_RESET alike) is correct per AC1's own text ("copre sia INVITE sia PASSWORD_RESET, esattamente il gap del report") — a brand-new INVITE user has no prior session to evict, so the bump is a no-op eviction-wise for that case, but harmless (nothing to evict) and keeps the function branch-free.
+
+### Testing (AC3)
+
+- `src/server/auth/jwt-active-check.test.ts`: added a dedicated `describe` for the `tokenVersion` watermark — match (session survives), mismatch (evicted), claim entirely absent from the token object (evicted, built without `makeToken`'s default so the field is truly missing, not `0`), and "no DB call at all when the recheck isn't due yet" (proves the comparison never runs prematurely).
+- `src/server/services/auth-tokens.service.test.ts`: extended the existing valid-token test's assertion to include `tokenVersion: { increment: 1 }` in the same `user.update` call, plus a dedicated test asserting `updateUserMock` is called exactly ONCE with both `passwordHash` and the increment in one `data` object (proves same-call, hence same-transaction, atomicity — not two separate writes).
+- `src/server/auth/login-throttle.test.ts`: rewritten around `reserveLoginAttempt` (mocked `$transaction`/`$executeRaw`, same interactive-callback stand-in pattern as `auth-tokens.service.test.ts`). Covers: reserves with no history; locks at the identifier cap; per-identifier isolation; success clears history so a real user isn't blocked by earlier typos; many successes never lock; IP cap across different identifiers; success does NOT clear the IP bucket; window aging; **and, TD-6-specific**: "above cap, no additional row is inserted" (anti-DoS invariant, directly re-verified against the new mechanism) and "acquires the advisory lock, scoped to the identifier, before counting" (asserts `$executeRaw`'s SQL text and bound value).
+- `src/server/auth/authorize.test.ts`: updated the throttle-wiring mock from `isLoginLocked`/`recordFailedLoginAttempt` to `reserveLoginAttempt`; two tests that asserted an explicit `recordFailedLoginAttempt` call were replaced with tests asserting `recordSuccessfulLogin` is NOT called on the failure paths (the mechanism moved, the wiring guarantee — "authorize never confuses a failure for a success" — is preserved).
+- Documented limit, as the story explicitly allows: the vitest suite above proves the reservation's CONDITIONAL atomicity (count-then-insert as one step, nothing inserted above cap) against a mocked, single-threaded Prisma client — it cannot exercise genuine Postgres transaction serialization. **That gap was closed separately, outside the committed test suite**, with a real concurrency probe against the actual dev Postgres (throwaway script, `npx tsx`, never committed — deleted after use, per the "no throwaway in the repo" rule): `Promise.all` of 30 truly concurrent `reserveLoginAttempt()` calls for one fresh identifier, run 4 times. Result, every time: exactly 10 (`LOGIN_MAX_FAILED_PER_IDENTIFIER`) resolved `true`, exactly 10 rows persisted in `LoginAttempt` — never more. This is the strongest evidence available that the fix actually closes the race under real concurrent load; the reviewer is encouraged to reproduce it (or go further — e.g. burst against the real `/api/auth/callback/credentials` HTTP endpoint with a wrong password, which this dev pass did not do).
+
+### Interactive verification
+
+- Real browser + real Mailpit, via the project's OWN e2e specs run directly (`npx playwright test e2e/user-management.spec.ts -g "..."`, foreground, output to a file) — the Playwright MCP tool was unavailable in this environment (`Chromium distribution 'chrome' is not found at /opt/google/chrome/chrome`), so this is the sanctioned equivalent: it drives the real app (create pilot → invite email via Mailpit → `/set-password` → login with the new password; then forgot-password → reset email via Mailpit → `/set-password` → login with the newest password), which is a stronger signal than a hand-driven MCP session for this exact flow.
+- First attempt, against `next dev`, running these two specs with 2 parallel workers, FAILED both — both stayed on `/it/login` after a correct-credentials submit. Took this seriously per the dispatch instructions (do not wave off a login e2e failure on this story) and investigated before concluding anything:
+  - `LoginAttempt` rows for the admin identifier during the failing runs showed `succeeded: true` for BOTH concurrent logins — i.e., `authorizeCredentials` DID return a valid user both times; the failure was not in the throttle/auth logic.
+  - Isolated with `--workers=1`: the exact same test passes solo.
+  - Isolated again by running the SAME 2-worker command against a `next build && next start` production server instead of `next dev`: **both tests pass**, reproducibly.
+  - Conclusion: this is the pre-existing, already-documented `next dev`/Turbopack cold-compile contention flake class (`playwright.config.ts`'s own comment: "next dev's on-demand compilation under CI-runner contention causes timeout flakiness and hangs (known cold-compile flaky class)") — not a regression from this story. CI always runs e2e against a production build, so it never hits this. Verified henceforth against the prod build.
+- Against the prod build (with `JOBS_SECRET` set to a non-placeholder value): both specs passed. DB check afterward (`docker exec airmanager-postgres-1 psql …`) on the users those specs created showed `tokenVersion = 1` after ONE `/set-password` (invite) and `tokenVersion = 2` after a SECOND one (the same user's subsequent forgot-password reset) — confirms the bump is real, cumulative, and that the post-bump login (asserted by the spec reaching `/dashboard`) genuinely works with the fresh `tokenVersion` stamped into the new JWT.
+- Not verified interactively (explicitly out of scope per the AC — "l'eviction a 15 min NON si e2e-izza con un wait"): actually waiting out `ACTIVE_RECHECK_INTERVAL_MS` with a live stolen session to watch it get evicted. Covered by the unit tests with injected `now` instead.
+
+### Notes for the reviewer
+
+- **Surfaces to attack**: (1) a real concurrent burst against the actual `/api/auth/callback/credentials` HTTP endpoint (CSRF + cookies + real Argon2 cost included, not just `reserveLoginAttempt()` in isolation) — this dev pass proved the DB-level primitive is atomic under real Postgres concurrency but did not go all the way through the HTTP/NextAuth layer under load; (2) replay of a JWT issued before a password reset — the case this story's F1 is FOR; confirm it's rejected at the next recheck (mock `Date.now()`/inject `now` past the interval, or wait it out) and confirmed NOT rejected before the interval (the accepted grace window); (3) the per-IP TOCTOU race explicitly left open (assumption 2 above) — confirm this reading of the AC's "cap per-IP invariato" is the one intended, not a missed requirement; (4) double-check `hashtext(...)::bigint` — Postgres resolves this via an implicit int4→int8 cast on a single-arg call to `pg_advisory_xact_lock`; worth confirming there's no ambiguity with the two-int-arg overload on your Postgres version (16, per this repo).
+- The migration is purely additive (`ADD COLUMN … DEFAULT 0`) — no backfill risk, no down-migration written (matches the repo's existing migration convention, e.g. `20260723120000_drop_expiry_issued_at`).
+- `LOGIN_RATE_LIMIT_WINDOW_MS`, `LOGIN_MAX_FAILED_PER_IDENTIFIER` (10), `LOGIN_MAX_FAILED_PER_IP` (30), and `ACTIVE_RECHECK_INTERVAL_MS` (15 min) are all UNCHANGED — per the story's "Fuori scope" section, these are ratified by earlier stories and were not touched.
+
+### File List
+
+- `prisma/schema.prisma` — `User.tokenVersion Int @default(0)` (F1).
+- `prisma/migrations/20260726074237_add_user_token_version/migration.sql` — new, auto-generated additive migration.
+- `src/server/auth/types.d.ts` — `tokenVersion` added to `next-auth`'s `User`, and to `JWT` in both `next-auth/jwt` and `@auth/core/jwt`.
+- `src/server/auth/auth.config.ts` — `jwt` callback stamps `token.tokenVersion` at sign-in.
+- `src/server/auth/authorize.ts` — returns `tokenVersion` on the NextAuth user object; throttle call site switched from `isLoginLocked` to `reserveLoginAttempt`; dropped the now-redundant `recordFailedLoginAttempt` calls.
+- `src/server/auth/authorize.test.ts` — throttle mock + assertions updated for `reserveLoginAttempt`; `tokenVersion` added to user fixtures and the expected returned-user shape.
+- `src/server/auth/jwt-active-check.ts` — selects `tokenVersion`, compares it, evicts on mismatch/missing claim.
+- `src/server/auth/jwt-active-check.test.ts` — new `tokenVersion` describe block (match/mismatch/missing-claim/no-premature-DB-call).
+- `src/server/auth/login-throttle.ts` — `isLoginLocked` + `recordFailedLoginAttempt` replaced by the atomic `reserveLoginAttempt` (F2).
+- `src/server/auth/login-throttle.test.ts` — rewritten around `reserveLoginAttempt`; added atomicity-specific tests.
+- `src/server/services/auth-tokens.service.ts` — `setPasswordWithToken` bumps `tokenVersion` in the same `user.update` call as the password change.
+- `src/server/services/auth-tokens.service.test.ts` — assertion + dedicated test for the same-call `tokenVersion` bump.
+
+### Change Log
+
+- 2026-07-26: F1 (`tokenVersion` watermark) + F2 (atomic login-lock reservation) implemented per `CLAUDE-SECURITY-20260723-073138/CLAUDE-SECURITY-RESULTS.md`. Gates pass (lint/typecheck/test 1453 passed/build). Real-DB concurrency probe (30 concurrent, 4 runs) confirms F2's atomicity. Interactive Mailpit verification (invite + forgot-password, prod build) confirms F1's `tokenVersion` bump and post-reset login. Status → review.
 
 ## Review Record
 

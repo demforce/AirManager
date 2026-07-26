@@ -1,7 +1,7 @@
 import type { User as NextAuthUser } from 'next-auth';
 import { loginSchema } from '@/lib/schemas/login';
 import { prisma } from '@/server/db/prisma';
-import { isLoginLocked, recordFailedLoginAttempt, recordSuccessfulLogin } from './login-throttle';
+import { recordSuccessfulLogin, reserveLoginAttempt } from './login-throttle';
 import { hashPassword, verifyPassword } from './password';
 
 // Verified against when the email doesn't match an active user, so the
@@ -21,7 +21,7 @@ async function getTimingDummyHash(): Promise<string> {
  * throttled identifier/IP (H1, CWE-307 — `login-throttle.ts`). `ip` is the
  * caller's address (from `x-forwarded-for`, resolved by `auth.ts`) or
  * `null` when unresolvable; passing `null` never disables the throttle,
- * only its per-IP dimension (see `isLoginLocked`'s doc-comment).
+ * only its per-IP dimension (see `reserveLoginAttempt`'s doc-comment).
  */
 export async function authorizeCredentials(rawCredentials: unknown, ip: string | null = null): Promise<NextAuthUser | null> {
   const parsed = loginSchema.safeParse(rawCredentials);
@@ -30,15 +30,20 @@ export async function authorizeCredentials(rawCredentials: unknown, ip: string |
   }
   const { email, password } = parsed.data;
 
-  if (await isLoginLocked(email, ip)) {
+  // TD-6, F2 (CWE-367): the reservation atomically checks BOTH caps and, if
+  // under them, immediately records this as a failed attempt — BEFORE the
+  // real verify below runs. See `reserveLoginAttempt`'s doc-comment for why
+  // this closes the concurrent-burst race that a separate check-then-record
+  // could not.
+  if (!(await reserveLoginAttempt(email, ip))) {
     // Same generic `null` as every other failure path (AC 2), and still runs
     // the constant-time dummy verify so the CredentialsSignin outcome carries
     // no password-shaped timing. This path is measurably FASTER than the
-    // paths below (it skips the user lookup and the LoginAttempt write) — but
-    // that only reveals *lock-state*, which the attacker themselves caused;
-    // it does NOT reveal email validity (an unknown and a real email lock
-    // identically). No new LoginAttempt row here (see
-    // `recordFailedLoginAttempt`'s doc-comment for why).
+    // paths below (it skips the user lookup) — but that only reveals
+    // *lock-state*, which the attacker themselves caused; it does NOT
+    // reveal email validity (an unknown and a real email lock identically).
+    // No new LoginAttempt row here (see `reserveLoginAttempt`'s doc-comment
+    // for why).
     await verifyPassword(await getTimingDummyHash(), password);
     return null;
   }
@@ -48,14 +53,15 @@ export async function authorizeCredentials(rawCredentials: unknown, ip: string |
     // Same outcome for "no such user", "inactive user", and "invited user
     // who hasn't set a password yet" (story 1.4: `passwordHash` is nullable)
     // as for a wrong password below — never reveal which case it was (AC 2).
+    // The reservation above already recorded this identifier/IP pair as a
+    // failed attempt — nothing further to write here.
     await verifyPassword(await getTimingDummyHash(), password);
-    await recordFailedLoginAttempt(email, ip);
     return null;
   }
 
   const passwordValid = await verifyPassword(user.passwordHash, password);
   if (!passwordValid) {
-    await recordFailedLoginAttempt(email, ip);
+    // Reservation already recorded the failure — nothing further here.
     return null;
   }
 
@@ -66,5 +72,6 @@ export async function authorizeCredentials(rawCredentials: unknown, ip: string |
     email: user.email,
     roles: user.roles,
     personId: user.personId,
+    tokenVersion: user.tokenVersion,
   };
 }

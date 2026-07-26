@@ -349,7 +349,29 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
       expect(hashPassword).toHaveBeenCalledWith('a-long-enough-password');
       expect(transactionMock).toHaveBeenCalled();
       expect(updateManyTokenMock).toHaveBeenCalledWith({ where: { id: 'token_1', usedAt: null }, data: { usedAt: expect.any(Date) } });
-      expect(updateUserMock).toHaveBeenCalledWith({ where: { id: 'user_1' }, data: { passwordHash: expect.any(String) } });
+      expect(updateUserMock).toHaveBeenCalledWith({
+        where: { id: 'user_1' },
+        data: { passwordHash: expect.any(String), tokenVersion: { increment: 1 } },
+      });
+    });
+
+    it('bumps tokenVersion (TD-6, F1, CWE-613) in the SAME user.update call as the password change — same transaction, same atomicity as the token claim', async () => {
+      tokenFindUnique.mockResolvedValue({
+        id: 'token_2',
+        userId: 'user_2',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      });
+      (updateManyTokenMock as unknown as { mockResolvedValue: (v: { count: number }) => void }).mockResolvedValue({ count: 1 });
+
+      await setPasswordWithToken('another-valid-raw-token', 'a-long-enough-password');
+
+      // A single `user.update` call carries both fields — not two separate
+      // writes — so the DB guarantees they commit or roll back together.
+      expect(updateUserMock).toHaveBeenCalledTimes(1);
+      const [call] = updateUserMock.mock.calls;
+      expect(call[0]).toMatchObject({ where: { id: 'user_2' }, data: { tokenVersion: { increment: 1 } } });
+      expect(call[0].data).toHaveProperty('passwordHash');
     });
   });
 });

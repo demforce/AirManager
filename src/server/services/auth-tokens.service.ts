@@ -181,6 +181,15 @@ export async function requestPasswordReset(email: string, ip: string | null = nu
  * password", AC 1/3) and sets the user's password. Throws `ValidationError`
  * for a token that is unknown, expired, or already used — intentionally the
  * same error for all three so a probing client can't tell them apart.
+ *
+ * Also bumps `User.tokenVersion` (story TD-6, F1, CWE-613), in the SAME
+ * update call as the password change, so the bump shares the transaction's
+ * atomicity with the token's single-use claim. This is what makes the
+ * password change actually evict every other live session: the sign-in
+ * `jwt` callback stamps `tokenVersion` into new tokens, and
+ * `applyActiveRecheck` evicts any token whose stamped value no longer
+ * matches the DB — covering INVITE and PASSWORD_RESET alike, including an
+ * admin re-sending an invite to a user who already has a session.
  */
 export async function setPasswordWithToken(rawToken: string, newPassword: string): Promise<void> {
   const tokenHash = hashToken(rawToken);
@@ -204,6 +213,9 @@ export async function setPasswordWithToken(rawToken: string, newPassword: string
     if (claimed.count === 0) {
       throw new ValidationError('Invalid or expired token.');
     }
-    await tx.user.update({ where: { id: authToken.userId }, data: { passwordHash } });
+    await tx.user.update({
+      where: { id: authToken.userId },
+      data: { passwordHash, tokenVersion: { increment: 1 } },
+    });
   });
 }

@@ -40,6 +40,11 @@ export const authConfig = {
         // logic reads this; this edge-safe callback only ever *sets* it at
         // sign-in (no DB access happens here, or in `src/proxy.ts`).
         token.lastActiveCheck = Date.now();
+        // Story TD-6, F1 (CWE-613): snapshot of `User.tokenVersion` at
+        // sign-in time. `authorizeCredentials` already fetched the user row,
+        // so `user.tokenVersion` here is fresh — `applyActiveRecheck`
+        // compares it against the DB on every future recheck.
+        token.tokenVersion = user.tokenVersion;
       }
       return token;
     },

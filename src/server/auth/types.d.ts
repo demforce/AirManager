@@ -5,11 +5,15 @@ import type { DefaultSession } from 'next-auth';
 import type { Role } from '@/generated/prisma/client';
 
 declare module 'next-auth' {
-  // Returned by `authorize()` — `id` (standard) doubles as userId; `roles`
-  // and `personId` are custom fields carried through to the JWT.
+  // Returned by `authorize()` — `id` (standard) doubles as userId; `roles`,
+  // `personId` and `tokenVersion` are custom fields carried through to the
+  // JWT. `tokenVersion` (story TD-6, F1) is the sign-in-time snapshot of
+  // `User.tokenVersion`, stamped into the token by `auth.config.ts`'s `jwt`
+  // callback for `applyActiveRecheck` to compare against the DB later.
   interface User {
     roles: Role[];
     personId: string | null;
+    tokenVersion: number;
   }
 
   interface Session {
@@ -28,6 +32,13 @@ declare module 'next-auth/jwt' {
     personId: string | null;
     /** Epoch ms of the last `User.isActive` DB recheck (story 1.4, AC 2). */
     lastActiveCheck: number;
+    /**
+     * Sign-in-time snapshot of `User.tokenVersion` (story TD-6, F1,
+     * CWE-613). `applyActiveRecheck` evicts the session (returns `null`) if
+     * this no longer matches the DB — the mechanism `setPasswordWithToken`
+     * relies on to end every other live session on a password change.
+     */
+    tokenVersion: number;
   }
 }
 
@@ -44,5 +55,6 @@ declare module '@auth/core/jwt' {
     roles: Role[];
     personId: string | null;
     lastActiveCheck: number;
+    tokenVersion: number;
   }
 }
