@@ -129,4 +129,6 @@ so that la rotazione delle credenziali sia un rimedio efficace e il brute-force 
 
 ### Fix post-review (2026-07-26, sessione principale)
 
-Solo documentazione — **nessun cambiamento di comportamento**: `login-throttle.ts` (doc-comment di `reserveLoginAttempt`: scopo reale dell'atomicità per TD6-R1 + trade-off dei tentativi in volo per TD6-R3), questo Review Record, e la nota operativa del logout una-tantum in HANDOFF/sprint-status (TD6-R4). Gates rieseguiti dopo le modifiche.
+Solo documentazione — **nessun cambiamento di comportamento**: `login-throttle.ts` (doc-comment di `reserveLoginAttempt`: scopo reale dell'atomicità per TD6-R1 + trade-off dei tentativi in volo per TD6-R3), questo Review Record, e la nota operativa del logout una-tantum in HANDOFF/sprint-status (TD6-R4). Gates rieseguiti dopo le modifiche (PASS, 1453 unit).
+
+**Verifica finale di chiusura** (sessione principale, DB resettato dopo gli artefatti d'attacco della review — TD6-R6): full suite CI=1 su build di produzione → **259 passed (7.8m), EXITCODE=0, 0 fail, 0 flaky**, catena settings 6/6 + booking-window 3/3. Story DONE.
