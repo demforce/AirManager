@@ -23,7 +23,17 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 vi.mock('./app-settings.service', () => ({ getTreasuryOpeningInternal: vi.fn() }));
 vi.mock('./cash.service', () => ({ getCashReport: vi.fn() }));
-vi.mock('./transactions.service', () => ({ getLedgerRevenueCents: vi.fn() }));
+// `CASH_NOT_ALREADY_ON_ACCOUNT` (review Billing-1 F5, dedup) is a plain
+// object export, not a function — it MUST be included here too, or
+// `computeCostCents`'s `...CASH_NOT_ALREADY_ON_ACCOUNT` spread would silently
+// spread `undefined` (a no-op, `{...undefined}` === `{}`), dropping the twin-
+// dedup `NOT` clause from every where-clause assertion below without ANY of
+// them failing loudly (exactly the kind of silent gap review Billing-1 F4
+// asks these tests to close).
+vi.mock('./transactions.service', () => ({
+  getLedgerRevenueCents: vi.fn(),
+  CASH_NOT_ALREADY_ON_ACCOUNT: { NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] } },
+}));
 
 const { prisma } = await import('@/server/db/prisma');
 const { getTreasuryOpeningInternal } = await import('./app-settings.service');
@@ -100,18 +110,43 @@ describe('getBillingSummary (story Billing-1, AC 5)', () => {
     expect(getLedgerRevenueCentsMock).toHaveBeenCalledWith(expect.anything(), '2026-07-01', '2026-07-31');
   });
 
-  it('result.costCents is the month\'s negative cash movements, negated to a positive figure — includes an instructor payout gemello (AC 4) exactly like any other cost category', async () => {
+  it('result.costCents is the month\'s negative cash movements (normal uscite), FULL where clause asserted (review Billing-1 F4 — discriminant) — includes an instructor payout gemello (AC 4) exactly like any other cost category', async () => {
     // -7500 raw (the instructor payout's uscita, AC 4) -> costCents 7500.
     mockCashAggregates({ costRawSum: -7500 });
 
     const summary = await getBillingSummary(adminActor(), REF);
 
     expect(summary.result.costCents).toBe(7500);
-    const costCall = cashAggregateMock.mock.calls.find((call) => (call[0] as { where: Record<string, unknown> }).where['amountCents']);
-    expect((costCall?.[0] as { where: Record<string, unknown> }).where).toMatchObject({
-      amountCents: { lt: 0 },
-      NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] },
+    const costCall = cashAggregateMock.mock.calls.find((call) => Array.isArray((call[0] as { where: Record<string, unknown> }).where['OR']));
+    expect(costCall?.[0]).toEqual({
+      where: {
+        effectiveDate: { gte: new Date('2026-07-01'), lte: new Date('2026-07-31') },
+        OR: [{ reversalOfId: null, amountCents: { lt: 0 } }, { reversalOfId: { not: null }, amountCents: { gt: 0 } }],
+        NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] },
+      },
+      _sum: { amountCents: true },
     });
+  });
+
+  it('review Billing-1 F3: a storno of an uscita in the SAME period nets costCents to ZERO (never left as a positive cost)', async () => {
+    // -3000 (the original uscita) + 3000 (its storno, reversalOfId set, same period) = 0.
+    mockCashAggregates({ costRawSum: -3000 + 3000 });
+
+    const summary = await getBillingSummary(adminActor(), REF);
+
+    // `-(0)` is `-0` in JS (`Object.is(-0, 0)` is false) — `===` treats them
+    // as equal, which is the semantically correct check here (an integer
+    // cents value, never a signed-zero-sensitive computation).
+    expect(summary.result.costCents === 0).toBe(true);
+  });
+
+  it('review Billing-1 F3: a storno of an uscita in a LATER period shows as a NEGATIVE costCents there ("riduzione dei costi nel suo mese", never retroactive on the original\'s own month)', async () => {
+    // Only the +3000 storno row falls inside THIS period's aggregate.
+    mockCashAggregates({ costRawSum: 3000 });
+
+    const summary = await getBillingSummary(adminActor(), REF);
+
+    expect(summary.result.costCents).toBe(-3000);
   });
 
   it('result.netCents = revenueCents - costCents', async () => {
@@ -123,7 +158,7 @@ describe('getBillingSummary (story Billing-1, AC 5)', () => {
     expect(summary.result.netCents).toBe(20000 - 7500);
   });
 
-  it('treasury.cashCents/bankCents = opening balance + Σ matching-method movements from openingDate onward', async () => {
+  it('treasury.cashCents/bankCents = opening balance + Σ matching-method movements from openingDate onward, FULL where clause asserted (review Billing-1 F4)', async () => {
     getTreasuryOpeningInternalMock.mockResolvedValue({ openingCashCents: 100000, openingBankCents: 500000, openingDate: '2026-01-01' });
     mockCashAggregates({ cashSum: 15000, bankSum: -3000 });
 
@@ -132,11 +167,14 @@ describe('getBillingSummary (story Billing-1, AC 5)', () => {
     expect(summary.treasury.cashCents).toBe(100000 + 15000);
     expect(summary.treasury.bankCents).toBe(500000 - 3000);
     const cashCall = cashAggregateMock.mock.calls.find((call) => (call[0] as { where: Record<string, unknown> }).where['paymentMethod'] === 'CASH');
-    expect((cashCall?.[0] as { where: { effectiveDate?: { gte: Date } } }).where.effectiveDate?.gte).toEqual(new Date('2026-01-01'));
+    expect(cashCall?.[0]).toEqual({ where: { paymentMethod: 'CASH', effectiveDate: { gte: new Date('2026-01-01') } }, _sum: { amountCents: true } });
     const bankCall = cashAggregateMock.mock.calls.find(
       (call) => typeof (call[0] as { where: Record<string, unknown> }).where['paymentMethod'] === 'object',
     );
-    expect((bankCall?.[0] as { where: { paymentMethod: unknown } }).where.paymentMethod).toEqual({ in: ['BANK_TRANSFER', 'POS'] });
+    expect(bankCall?.[0]).toEqual({
+      where: { paymentMethod: { in: ['BANK_TRANSFER', 'POS'] }, effectiveDate: { gte: new Date('2026-01-01') } },
+      _sum: { amountCents: true },
+    });
   });
 
   it('no openingDate configured yet -> cash/bank aggregates are ALL-TIME (no effectiveDate filter at all), opening balances default to 0', async () => {
@@ -147,10 +185,10 @@ describe('getBillingSummary (story Billing-1, AC 5)', () => {
 
     expect(summary.treasury.cashCents).toBe(5000);
     const cashCall = cashAggregateMock.mock.calls.find((call) => (call[0] as { where: Record<string, unknown> }).where['paymentMethod'] === 'CASH');
-    expect((cashCall?.[0] as { where: Record<string, unknown> }).where).not.toHaveProperty('effectiveDate');
+    expect(cashCall?.[0]).toEqual({ where: { paymentMethod: 'CASH' }, _sum: { amountCents: true } });
   });
 
-  it('a movement with NO method at all lands in unattributedCents, NEVER in cash/bank — queried ALL-TIME regardless of openingDate', async () => {
+  it('a movement with NO method at all lands in unattributedCents, NEVER in cash/bank — queried ALL-TIME regardless of openingDate, FULL where clause asserted (review Billing-1 F4)', async () => {
     getTreasuryOpeningInternalMock.mockResolvedValue({ openingCashCents: 0, openingBankCents: 0, openingDate: '2026-01-01' });
     mockCashAggregates({ cashSum: 0, bankSum: 0, unattributedSum: 4200 });
 
@@ -160,7 +198,7 @@ describe('getBillingSummary (story Billing-1, AC 5)', () => {
     expect(summary.treasury.cashCents).toBe(0);
     expect(summary.treasury.bankCents).toBe(0);
     const unattributedCall = cashAggregateMock.mock.calls.find((call) => (call[0] as { where: Record<string, unknown> }).where['paymentMethod'] === null);
-    expect((unattributedCall?.[0] as { where: Record<string, unknown> }).where).not.toHaveProperty('effectiveDate');
+    expect(unattributedCall?.[0]).toEqual({ where: { paymentMethod: null }, _sum: { amountCents: true } });
   });
 
   it('a cash top-up (paymentMethod CASH, accountMovementId pointing at a NON-zero TOP_UP) feeds treasury.cashCents AND deposits.totalCents, but revenueCents is untouched (delegated separately, never re-derived from cash movements)', async () => {
@@ -175,7 +213,7 @@ describe('getBillingSummary (story Billing-1, AC 5)', () => {
     expect(summary.result.revenueCents).toBe(0);
   });
 
-  it('deposits: positive account balances sum into totalCents, negative ones into exposureCents + inRedCount', async () => {
+  it('deposits: positive account balances sum into totalCents, negative ones into exposureCents + inRedCount, FULL groupBy args asserted (review Billing-1 F4 — the 5th aggregate)', async () => {
     accountGroupBy.mockResolvedValue([
       { accountId: 'acc_1', _sum: { amountCents: 8000 } },
       { accountId: 'acc_2', _sum: { amountCents: 150 } },
@@ -185,6 +223,7 @@ describe('getBillingSummary (story Billing-1, AC 5)', () => {
     const summary = await getBillingSummary(adminActor(), REF);
 
     expect(summary.deposits).toEqual({ totalCents: 8150, exposureCents: 180, inRedCount: 1 });
+    expect(accountGroupByMock).toHaveBeenCalledWith({ by: ['accountId'], _sum: { amountCents: true } });
   });
 
   it('treasury.availableCents = cash + bank - deposits.totalCents', async () => {

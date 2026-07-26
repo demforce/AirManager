@@ -1,3 +1,4 @@
+import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { PprOperatingInstructionsDto } from '@/lib/schemas/ppr';
 import type {
   AirfieldBrandingDto,
@@ -514,20 +515,34 @@ const TREASURY_OPENING_DATE_KEY = 'treasury.openingDate';
 /** `Int` ceiling (AD-2) — an opening balance is bounded like any other stored cents value. */
 const MAX_TREASURY_OPENING_CENTS = 2_147_483_647;
 
+/**
+ * Review Billing-1 F8: `Number.parseInt` TRUNCATES a fractional string
+ * ("12.5" -> 12) instead of rejecting it — `Number(value)` + `Number.isInteger`
+ * catches that (12.5 is not an integer) while still accepting a clean
+ * integer string, negative included.
+ */
 function parseStoredOpeningCents(value: string | undefined, label: string): number {
   if (value === undefined) return 0;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || Math.abs(parsed) > MAX_TREASURY_OPENING_CENTS) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || Math.abs(parsed) > MAX_TREASURY_OPENING_CENTS) {
     console.warn(`getTreasurySettings: stored ${label} "${value}" is not a valid integer — defaulting to 0.`);
     return 0;
   }
   return parsed;
 }
 
+/**
+ * Review Billing-1 F8: the shape check alone (`YYYY-MM-DD`) let an
+ * impossible calendar date ("2026-13-45") through — `Date.UTC` silently
+ * ROLLS OVER an out-of-range month/day into some other, unintended date
+ * instead of rejecting it. A round-trip through {@link parseDateOnlyUtc}/
+ * {@link toDateOnlyString} catches this: a rolled-over date never formats
+ * back to the SAME string it was parsed from.
+ */
 function parseStoredOpeningDate(value: string | undefined): string | null {
   if (value === undefined) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    console.warn(`getTreasurySettings: stored openingDate "${value}" is not YYYY-MM-DD — defaulting to null.`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || toDateOnlyString(parseDateOnlyUtc(value)) !== value) {
+    console.warn(`getTreasurySettings: stored openingDate "${value}" is not a valid calendar date (YYYY-MM-DD) — defaulting to null.`);
     return null;
   }
   return value;

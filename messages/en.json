@@ -1741,6 +1741,12 @@
       "confirmNo": "No",
       "feeLabel": "Landing fee",
       "feeHint": "Amount in euros, prefilled from the default (editable). 0 is allowed.",
+      "methodLabel": "Method",
+      "methods": {
+        "CASH": "Cash",
+        "BANK_TRANSFER": "Bank transfer",
+        "POS": "Card"
+      },
       "invalidFee": "Enter a valid amount (0.00 is allowed).",
       "submitComplete": "Confirm completion",
       "closePanel": "Cancel"

@@ -34,16 +34,22 @@ function isRecordNotFound(error: unknown): boolean {
 // --- Categories (Task 1, AC 1) ---------------------------------------------
 
 /**
- * Categories owned by automated flows — currently only "Ricariche", the
- * top-up twin's category (story 3.1, `accounts.service.ts`'s
- * `TOP_UP_CASH_CATEGORY_NAME`). Guarded here (review 3.4 F1/F2): a MANUAL
- * movement in one of these would inflate a cash line no account reflects
+ * Categories owned by automated flows: "Ricariche" (top-up twin, story 3.1,
+ * `accounts.service.ts`'s `TOP_UP_CASH_CATEGORY_NAME`), "Compensi istruttori"
+ * (instructor-payout twin, story Billing-1 AC 4,
+ * `instructor-compensation.service.ts`'s `INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME`)
+ * and "PPR" (landing-fee twin, `ppr.service.ts`'s `PPR_CASH_CATEGORY_NAME`).
+ * Guarded here (review 3.4 F1/F2; review Billing-1 F2 extended the set to
+ * the latter two — same exposure, pre-existing): a MANUAL movement in one of
+ * these would inflate a cash line no account/payout/PPR request reflects
  * (the exact conto/cassa divergence the storno rules defend against), and
  * DELETING one — legal per AC 1 while unused — would 500 every subsequent
- * top-up until the seed is re-run. Deactivation stays allowed: it fails
- * loudly in `recordTopUp` by design (story 3.4 Task 1).
+ * automatic movement until the seed is re-run. Deactivation stays allowed:
+ * it fails loudly in the respective writer by design (story 3.4 Task 1).
+ * `isSystem` (below) is a PURE function of this Set, never a stored column —
+ * there is nothing to seed for it.
  */
-const SYSTEM_CASH_CATEGORY_NAMES = new Set(['Ricariche']);
+const SYSTEM_CASH_CATEGORY_NAMES = new Set(['Ricariche', 'Compensi istruttori', 'PPR']);
 
 export type CashCategoryListItem = {
   id: string;
@@ -366,7 +372,9 @@ export async function recordCashMovement(actor: Actor, input: RecordCashMovement
  *    (Dev Notes: otherwise conto and cassa diverge).
  * `effectiveDate` is always today (server clock, UTC calendar date) — same
  * choice as `recordAdjustment` (story 3.3): a storno is dated when it is
- * recorded, never backdated to the original's date.
+ * recorded, never backdated to the original's date. `paymentMethod` is
+ * INHERITED from the original (review Billing-1 F1) — the treasury balance
+ * it affects is the original's own cash/bank pot.
  */
 export async function reverseCashMovement(actor: Actor, id: string, reason: string): Promise<CashMovementListItem> {
   authorize(actor, 'finance.manage');
@@ -377,6 +385,7 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
       id: true,
       categoryId: true,
       amountCents: true,
+      paymentMethod: true,
       reversalOfId: true,
       accountMovementId: true,
       reversal: { select: { id: true } },
@@ -406,6 +415,12 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
       data: {
         categoryId: original.categoryId,
         amountCents: -original.amountCents,
+        // Review Billing-1 F1: inherits the ORIGINAL's payment method — a
+        // storno moves the SAME cash/bank pot the original entrata/uscita
+        // did, so leaving it `null` used to make `unattributedCents` go
+        // negative (the storno landed in the "no method at all" bucket
+        // while the treasury running balance never subtracted it back out).
+        paymentMethod: original.paymentMethod,
         description: reason,
         effectiveDate: todayDateOnlyUtc(),
         actorUserId: actor.userId,

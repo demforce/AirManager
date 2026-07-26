@@ -1741,6 +1741,12 @@
       "confirmNo": "No",
       "feeLabel": "Tassa di atterraggio",
       "feeHint": "Importo in euro, prefillato dal default (modificabile). 0 ammesso.",
+      "methodLabel": "Metodo",
+      "methods": {
+        "CASH": "Contanti",
+        "BANK_TRANSFER": "Bonifico",
+        "POS": "POS"
+      },
       "invalidFee": "Inserisci un importo valido (anche 0,00).",
       "submitComplete": "Conferma completamento",
       "closePanel": "Annulla"

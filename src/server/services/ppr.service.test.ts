@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { completePprRequestSchema } from '@/lib/schemas/ppr';
 import type { CreateManualPprRequestInput, CreatePprRequestInput } from '@/lib/schemas/ppr';
 
 // `app-settings.service.ts` (imported below, real — only its Prisma calls
@@ -467,7 +468,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
     });
 
     it('completePprRequest throws ForbiddenError before any query for an actor lacking ppr.manage', async () => {
-      await expect(completePprRequest(pilotActor(), 'ppr_1', { landingFeeCents: 1000 })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(completePprRequest(pilotActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(ForbiddenError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -776,7 +777,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
     it('404 NotFoundError when the id does not exist (lock finds no row)', async () => {
       mockLockedRow(undefined);
 
-      await expect(completePprRequest(staffActor(), 'missing', { landingFeeCents: 1000 })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(completePprRequest(staffActor(), 'missing', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(NotFoundError);
       expect(cashMovementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -785,7 +786,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       async (status) => {
         mockLockedRow(status);
 
-        const result = completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000 });
+        const result = completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' });
         await expect(result).rejects.toBeInstanceOf(ConflictError);
         await expect(result).rejects.toMatchObject({ code: 'PPR_NOT_APPROVED' });
         expect(updateMock).not.toHaveBeenCalled();
@@ -801,7 +802,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       cashCategoryFindUnique.mockResolvedValue({ id: 'category_ppr', isActive: true });
       cashMovementCreate.mockResolvedValue({});
 
-      const result = await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 2500 });
+      const result = await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 2500, paymentMethod: 'CASH' });
 
       expect(result.status).toBe('COMPLETED');
       const updateArg = updateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
@@ -821,7 +822,15 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       expect(movementArg?.data?.effectiveDate).toBeInstanceOf(Date);
     });
 
-    it('paymentMethod (story Billing-1, AC 2, OPTIONAL here) is set on the movement when given, null when omitted', async () => {
+    it('paymentMethod (story Billing-1, AC 2; review D2 ratification, now MANDATORY) is rejected by the schema when omitted, and set on the movement when given', () => {
+      // The schema boundary rejects an omitted paymentMethod (422) BEFORE the
+      // service ever runs — there is no "persist null" path left to test at
+      // the service level (review D2: "omesso -> 422/parse error").
+      expect(completePprRequestSchema.safeParse({ landingFeeCents: 1500 }).success).toBe(false);
+      expect(completePprRequestSchema.safeParse({ landingFeeCents: 1500, paymentMethod: 'CASH' }).success).toBe(true);
+    });
+
+    it('the given paymentMethod is persisted onto the cash movement', async () => {
       mockLockedRow('APPROVED');
       pprUpdate.mockResolvedValue(closedRow({ pprNumber: 'PPR-2026-0008', landingFeeCents: 1500 }));
       cashCategoryFindUnique.mockResolvedValue({ id: 'category_ppr', isActive: true });
@@ -830,19 +839,13 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1500, paymentMethod: 'CASH' });
       const withMethodArg = cashMovementCreateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
       expect(withMethodArg?.data?.['paymentMethod']).toBe('CASH');
-
-      cashMovementCreateMock.mockClear();
-      mockLockedRow('APPROVED');
-      await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1500 });
-      const withoutMethodArg = cashMovementCreateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
-      expect(withoutMethodArg?.data?.['paymentMethod']).toBeNull();
     });
 
     it('fee === 0: COMPLETED with landingFeeCents:0 stamped, but NO cash movement created (branch checked BEFORE the category lookup)', async () => {
       mockLockedRow('APPROVED');
       pprUpdate.mockResolvedValue(closedRow({ landingFeeCents: 0 }));
 
-      const result = await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 0 });
+      const result = await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 0, paymentMethod: 'CASH' });
 
       expect(result.landingFeeCents).toBe(0);
       const updateArg = updateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
@@ -856,7 +859,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       pprUpdate.mockResolvedValue(closedRow());
       cashCategoryFindUnique.mockResolvedValue(null);
 
-      await expect(completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000 })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(NotFoundError);
       expect(cashMovementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -865,7 +868,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       pprUpdate.mockResolvedValue(closedRow());
       cashCategoryFindUnique.mockResolvedValue({ id: 'category_ppr', isActive: false });
 
-      await expect(completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000 })).rejects.toBeInstanceOf(ConflictError);
+      await expect(completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(ConflictError);
       expect(cashMovementCreateMock).not.toHaveBeenCalled();
     });
   });

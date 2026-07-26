@@ -346,7 +346,7 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     const { registration } = await createPendingRequest(page);
     const id = await findPendingId(page, registration);
 
-    const response = await page.request.post(`/api/v1/ppr-requests/${id}/complete`, { data: { landingFeeCents: 1000 } });
+    const response = await page.request.post(`/api/v1/ppr-requests/${id}/complete`, { data: { landingFeeCents: 1000, paymentMethod: 'CASH' } });
     expect(response.status()).toBe(409);
     const body = await response.json();
     expect(body).toMatchObject({ error: { code: 'PPR_NOT_APPROVED' } });
@@ -358,7 +358,7 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const created = await createApprovedRequest(page);
     const key = crypto.randomUUID();
-    const body = { landingFeeCents: 2500 };
+    const body = { landingFeeCents: 2500, paymentMethod: 'CASH' };
 
     const first = await page.request.post(`/api/v1/ppr-requests/${created.id}/complete`, {
       data: body,

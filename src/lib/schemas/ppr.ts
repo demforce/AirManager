@@ -216,15 +216,17 @@ export type RejectPprRequestInput = z.infer<typeof rejectPprRequestSchema>;
  * `recordCashMovementSchema.amountCents` (AD-2's `Int` ceiling). No default:
  * the caller (the register's completion panel) always sends a value,
  * prefilled from `GET /api/v1/settings/ppr-landing-fee` but editable.
- * `paymentMethod` (story Billing-1, AC 2) is OPTIONAL — unlike
- * `recordCashMovementSchema`'s mandatory one: this schema has no dedicated
- * "obbligatorio" ratification, and a landing fee recorded without a method
- * simply lands its `CashMovement` at `paymentMethod: null` (the same
- * "unattributed" bucket every historical manual movement is already in).
+ * `paymentMethod` (story Billing-1, AC 2; review D2 ratification, 2026-07-27)
+ * is MANDATORY, same as `recordCashMovementSchema`'s — every completion,
+ * even a waived (`landingFeeCents: 0`) one where no `CashMovement` is even
+ * created, states how the fee would have been collected, so the "PPR"
+ * category never grows `unattributedCents`. The completion panel's Select
+ * defaults to `CASH` (`movements-table.tsx`), same default as every other
+ * method picker in the app.
  */
 export const completePprRequestSchema = z.object({
   landingFeeCents: z.number().int().min(0).max(2_147_483_647),
-  paymentMethod: paymentMethodSchema.optional(),
+  paymentMethod: paymentMethodSchema,
 });
 
 export type CompletePprRequestInput = z.infer<typeof completePprRequestSchema>;

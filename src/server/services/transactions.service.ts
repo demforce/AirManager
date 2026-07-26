@@ -93,9 +93,26 @@ function buildAccountWhere(filters: LedgerFilters): Prisma.AccountMovementWhereI
   return { AND: and };
 }
 
+/**
+ * The "already counted by a non-zero account movement" exclusion (AC 1's
+ * twin-dedup, the other half of `buildAccountWhere`'s own doc-comment) — a
+ * `CashMovement` whose `accountMovementId` points at a NON-ZERO
+ * `AccountMovement` (today, only a `TOP_UP`'s twin) is already valued on the
+ * account side, so it must never ALSO be counted here. Exported (review
+ * Billing-1 F5, dedup): the SAME fragment used to exist as three textual
+ * copies (this one inline in `buildCashWhere` below, a second `const` further
+ * down this file, and a third, identical, in
+ * `billing-summary.service.ts#computeCostCents`) — now the ONE definition
+ * every aggregate-shaped caller (which cannot reuse `buildCashWhere` itself,
+ * a `findMany`-shaped where) imports.
+ */
+export const CASH_NOT_ALREADY_ON_ACCOUNT: Prisma.CashMovementWhereInput = {
+  NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] },
+};
+
 /** The other half of the twin-dedup rule above — hides a twin whose linked `AccountMovement` carries the real (non-zero) value. */
 function buildCashWhere(filters: LedgerFilters): Prisma.CashMovementWhereInput {
-  const and: Prisma.CashMovementWhereInput[] = [{ NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] } }];
+  const and: Prisma.CashMovementWhereInput[] = [CASH_NOT_ALREADY_ON_ACCOUNT];
   if (filters.from) and.push({ effectiveDate: { gte: parseDateOnlyUtc(filters.from) } });
   if (filters.to) and.push({ effectiveDate: { lte: parseDateOnlyUtc(filters.to) } });
   if (filters.personId) and.push({ accountMovement: { account: { personId: filters.personId } } });
@@ -279,16 +296,6 @@ function revenueByKindOf(rows: InternalRow[]): { kind: string; amountCents: numb
 }
 
 /**
- * The SAME "already counted by a non-zero account movement" exclusion
- * `buildCashWhere` above uses for the unified ledger's twin-dedup, as a
- * plain Prisma `NOT` fragment for `aggregate` callers (`buildCashWhere`
- * itself returns a `findMany`-shaped where, not reusable as-is here).
- */
-const CASH_NOT_ALREADY_ON_ACCOUNT: Prisma.CashMovementWhereInput = {
-  NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] },
-};
-
-/**
  * The corrected "Ricavi" definition (story Billing-1, AC 5/6 — replaces the
  * old `sumPositive(fetchAllLedgerRows(...))`, which silently counted a
  * charge reversed in the SAME period as full revenue, since it only ever
@@ -297,6 +304,23 @@ const CASH_NOT_ALREADY_ON_ACCOUNT: Prisma.CashMovementWhereInput = {
  * `FLIGHT_CHARGE_REVERSAL`, PLUS cash entrate not already counted on the
  * account side (PPR contante, rivendite, ...; see
  * `CASH_NOT_ALREADY_ON_ACCOUNT`'s doc-comment for the twin-dedup rule).
+ *
+ * **Review Billing-1 F3** — "uno storno appartiene al libro del suo
+ * originale, con segno opposto, nel mese in cui avviene" (same rule
+ * `FLIGHT_CHARGE_REVERSAL` already modeled, generalized to cash and to the
+ * `ADJUSTMENT` rettifica):
+ *  - account side: the debit aggregate ALSO sums a POSITIVE `ADJUSTMENT`
+ *    that is a storno (`reversalOfId != null`) — e.g. reversing a "Quota
+ *    associativa" debit — so it nets that reversal's OWN month's revenue,
+ *    never the month the original debit was recorded in.
+ *  - cash side: a normal entrata (`reversalOfId == null`, positive) still
+ *    adds to revenue; a storno OF an entrata (`reversalOfId != null`,
+ *    negative — `reverseCashMovement` always negates the original) is
+ *    SUMMED alongside it (not routed to costs) — same month => nets to
+ *    zero, later month => shows as negative revenue there. A storno of an
+ *    USCITA (`reversalOfId != null`, positive) is deliberately EXCLUDED
+ *    here — it reduces `computeCostCents` instead
+ *    (`billing-summary.service.ts`), never revenue.
  */
 async function computeRevenueCents(from: string, to: string): Promise<number> {
   const fromDate = parseDateOnlyUtc(from);
@@ -305,19 +329,25 @@ async function computeRevenueCents(from: string, to: string): Promise<number> {
   const debitAggregate = await prisma.accountMovement.aggregate({
     where: {
       effectiveDate: { gte: fromDate, lte: toDate },
-      OR: [{ type: 'FLIGHT_CHARGE' }, { type: 'FLIGHT_CHARGE_REVERSAL' }, { type: 'ADJUSTMENT', amountCents: { lt: 0 } }],
+      OR: [
+        { type: 'FLIGHT_CHARGE' },
+        { type: 'FLIGHT_CHARGE_REVERSAL' },
+        { type: 'ADJUSTMENT', amountCents: { lt: 0 } },
+        { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null } },
+      ],
     },
     _sum: { amountCents: true },
   });
-  // These are all raw NEGATIVE-for-a-debit amounts (a `FLIGHT_CHARGE_REVERSAL`
-  // in the same period cancels its original charge back to 0) — negate the
-  // sum to get a positive "ricavi" figure.
+  // These are all raw NEGATIVE-for-a-debit amounts (a `FLIGHT_CHARGE_REVERSAL`,
+  // or a positive reversal `ADJUSTMENT`, in the same period cancels its
+  // original charge back to 0) — negate the sum to get a positive "ricavi"
+  // figure.
   const accountRevenueCents = -(debitAggregate._sum.amountCents ?? 0);
 
   const cashAggregate = await prisma.cashMovement.aggregate({
     where: {
       effectiveDate: { gte: fromDate, lte: toDate },
-      amountCents: { gt: 0 },
+      OR: [{ reversalOfId: null, amountCents: { gt: 0 } }, { reversalOfId: { not: null }, amountCents: { lt: 0 } }],
       ...CASH_NOT_ALREADY_ON_ACCOUNT,
     },
     _sum: { amountCents: true },
@@ -341,6 +371,18 @@ async function computeRevenueCents(from: string, to: string): Promise<number> {
  * `paymentsCents`/`chargesCount`/`paymentsCount`/`revenueByKind` are
  * UNCHANGED, still derived from the raw ledger rows — this story's AC 6 only
  * targets the Ricavi/Costi figure, not those.
+ *
+ * **Review Billing-1 F6 (annotated, deliberately NOT aligned)**: `chargesCount`
+ * (`countPositive`) and `revenueByKind` (`revenueByKindOf`) are the OLD
+ * Σ-positivi counting (every positive row, unconditionally) — after a
+ * same-period storno they now diverge from the corrected `revenueCents`
+ * (e.g. an entrata reversed the same month reads `revenueCents: 0` but still
+ * contributes to `chargesCount`/`revenueByKind`, since a storno row itself is
+ * NEGATIVE and never subtracts from a Σ-of-positives). Left AS-IS on
+ * purpose: the `/dashboard/billing` KPI row/"per categoria" panel these feed
+ * is REPLACED wholesale by Story Billing-2 (three-book page, not this
+ * Σ-signed one) and the app is not yet deployed — realigning them here would
+ * be speculative work with a lifespan of one story.
  */
 export async function getBillingKpis(actor: Actor, ref: Date = new Date()): Promise<BillingKpisDto> {
   authorize(actor, 'finance.manage');

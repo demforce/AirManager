@@ -162,7 +162,7 @@ async function createCompletedTransit(page: Page, landingFeeCents: number): Prom
   expect(approveResponse.status()).toBe(200);
 
   const completeResponse = await page.request.post(`/api/v1/ppr-requests/${match.id}/complete`, {
-    data: { landingFeeCents },
+    data: { landingFeeCents, paymentMethod: 'CASH' },
     headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
   });
   expect(completeResponse.status()).toBe(200);

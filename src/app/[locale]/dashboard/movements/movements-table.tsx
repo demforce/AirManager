@@ -16,6 +16,7 @@ import { useRouter } from '@/i18n/navigation';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { DateInput } from '@/components/ui/date-input';
 import { ExportMenu } from '@/components/ui/export-menu';
+import { Field, Select } from '@/components/ui/field';
 import { useToast } from '@/components/ui/toast';
 import { formatCents, parseCents } from '@/lib/money';
 import type { PprRequestItemDto } from '@/lib/schemas/ppr';
@@ -61,6 +62,9 @@ export type MovementsTableLabels = {
     feeLabel: string;
     feeHint: string;
     invalidFee: string;
+    /** Story Billing-1 review D2: the completion panel's mandatory payment-method Select — same pattern as `billing/transaction-editor.tsx`'s own method field. */
+    methodLabel: string;
+    methods: { CASH: string; BANK_TRANSFER: string; POS: string };
     submitComplete: string;
     closePanel: string;
   };
@@ -335,6 +339,8 @@ type CompleteFormProps = {
 function CompleteForm({ id, pprNumber, labels, genericErrorLabel, onCancel, onSuccess, onConflict }: CompleteFormProps) {
   const [feeInput, setFeeInput] = useState('');
   const [fieldError, setFieldError] = useState(false);
+  // Story Billing-1 review D2: mandatory payment method, default CASH — same default as `billing/transaction-editor.tsx`'s own method Select.
+  const [method, setMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'POS'>('CASH');
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
@@ -380,7 +386,7 @@ function CompleteForm({ id, pprNumber, labels, genericErrorLabel, onCancel, onSu
       response = await fetch(`/api/v1/ppr-requests/${id}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-        body: JSON.stringify({ landingFeeCents }),
+        body: JSON.stringify({ landingFeeCents, paymentMethod: method }),
       });
     } catch {
       setSubmitting(false);
@@ -426,6 +432,16 @@ function CompleteForm({ id, pprNumber, labels, genericErrorLabel, onCancel, onSu
           {labels.invalidFee}
         </p>
       ) : null}
+
+      <div style={{ maxWidth: 200 }}>
+        <Field label={labels.methodLabel}>
+          <Select value={method} onChange={(event) => setMethod(event.target.value as 'CASH' | 'BANK_TRANSFER' | 'POS')} data-testid="ppr-complete-method">
+            <option value="CASH">{labels.methods.CASH}</option>
+            <option value="BANK_TRANSFER">{labels.methods.BANK_TRANSFER}</option>
+            <option value="POS">{labels.methods.POS}</option>
+          </Select>
+        </Field>
+      </div>
 
       {formError ? (
         <p role="alert" className="fld-label" style={{ color: 'var(--bad)' }}>

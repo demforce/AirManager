@@ -137,6 +137,17 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(result).toHaveLength(2);
       expect(result[1]).toEqual({ id: 'cat_2', name: 'Obsoleta', isActive: false, movementCount: 0, isSystem: false });
     });
+
+    it.each(['Ricariche', 'PPR', 'Compensi istruttori'])(
+      '"%s" is flagged isSystem: true — a pure function of the name, nothing seeded (review Billing-1 F2)',
+      async (name) => {
+        categoryFindMany.mockResolvedValue([{ id: 'cat_sys', name, isActive: true, _count: { movements: 0 } }]);
+
+        const [result] = await listCashCategories(staffActor(), { includeInactive: false });
+
+        expect(result?.isSystem).toBe(true);
+      },
+    );
   });
 
   describe('createCashCategory (Task 1, AC 1 — settings.manage only)', () => {
@@ -180,6 +191,16 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       await expect(renameCashCategory(adminActor(), 'cat_sys', { name: 'Altro nome' })).rejects.toThrow(ConflictError);
       expect(categoryUpdateMock).not.toHaveBeenCalled();
     });
+
+    it.each(['PPR', 'Compensi istruttori'])(
+      'the system category "%s" is never renameable either (review Billing-1 F2 — same exposure as "Ricariche")',
+      async (name) => {
+        categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name });
+
+        await expect(renameCashCategory(adminActor(), 'cat_sys', { name: 'Altro nome' })).rejects.toThrow(ConflictError);
+        expect(categoryUpdateMock).not.toHaveBeenCalled();
+      },
+    );
 
     it('renames the category', async () => {
       categoryFindUnique.mockResolvedValue({ id: 'cat_1' });
@@ -292,6 +313,16 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       await expect(deleteCashCategory(adminActor(), 'cat_sys')).rejects.toThrow(ConflictError);
       expect(categoryDeleteMock).not.toHaveBeenCalled();
     });
+
+    it.each(['PPR', 'Compensi istruttori'])(
+      'the system category "%s" is never deletable either, even when unused (review Billing-1 F2 — same exposure as "Ricariche")',
+      async (name) => {
+        categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name, _count: { movements: 0 } });
+
+        await expect(deleteCashCategory(adminActor(), 'cat_sys')).rejects.toThrow(ConflictError);
+        expect(categoryDeleteMock).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('recordCashMovement (Task 2, AC 2; story Billing-1, AC 2 — paymentMethod mandatory)', () => {
@@ -310,6 +341,18 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       ).rejects.toThrow(ConflictError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
+
+    it.each(['PPR', 'Compensi istruttori'])(
+      'rejects a manual movement in the system category "%s" too (review Billing-1 F2 — same exposure as "Ricariche")',
+      async (name) => {
+        categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name, isActive: true });
+
+        await expect(
+          recordCashMovement(staffActor(), { categoryId: 'cat_sys', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
+        ).rejects.toThrow(ConflictError);
+        expect(movementCreateMock).not.toHaveBeenCalled();
+      },
+    );
 
     it('throws NotFoundError for an unknown category', async () => {
       categoryFindUnique.mockResolvedValue(null);
@@ -501,6 +544,40 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       );
       expect(result.reversalOfId).toBe('move_1');
       expect(result.amountCents).toBe(-5000);
+    });
+
+    it('inherits the original movement\'s paymentMethod onto the reversal (review Billing-1 F1 — a null method here used to make unattributedCents go negative after a storno)', async () => {
+      movementFindUnique.mockResolvedValue({
+        id: 'move_1',
+        categoryId: 'cat_1',
+        amountCents: 5000,
+        paymentMethod: 'BANK_TRANSFER',
+        reversalOfId: null,
+        accountMovementId: null,
+        reversal: null,
+      });
+      movementCreate.mockResolvedValue({
+        id: 'move_reversal',
+        categoryId: 'cat_1',
+        category: { name: 'Carburante' },
+        amountCents: -5000,
+        effectiveDate: new Date(),
+        description: 'Errore',
+        actorUser: { email: 'staff@airmanager.local' },
+        createdAt: new Date(),
+        reversalOfId: 'move_1',
+        reversal: null,
+        accountMovementId: null,
+      });
+
+      await reverseCashMovement(staffActor(), 'move_1', 'Errore');
+
+      expect(movementCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ paymentMethod: 'BANK_TRANSFER' }) }),
+      );
+      expect(movementFindUniqueMock).toHaveBeenCalledWith(
+        expect.objectContaining({ select: expect.objectContaining({ paymentMethod: true }) }),
+      );
     });
 
     it('reverses an inactive category’s movement too (storno corrects existing history even after deactivation)', async () => {

@@ -409,20 +409,33 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     expect(accountAggregateMock).not.toHaveBeenCalled();
   });
 
-  it('queries accountMovement.aggregate for FLIGHT_CHARGE ∪ FLIGHT_CHARGE_REVERSAL ∪ debit ADJUSTMENT, and cashMovement.aggregate for positive cash entrate not already counted on the account side', async () => {
+  it('queries the FULL where clause on both aggregates (review Billing-1 F4 — discriminant: a regression on any predicate here must fail loudly, not pass on a partial match)', async () => {
     accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
     cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
 
     await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
 
-    const accountWhere = accountAggregateMock.mock.calls[0]?.[0] as { where: { OR: Record<string, unknown>[] } };
-    expect(accountWhere.where.OR).toContainEqual({ type: 'FLIGHT_CHARGE' });
-    expect(accountWhere.where.OR).toContainEqual({ type: 'FLIGHT_CHARGE_REVERSAL' });
-    expect(accountWhere.where.OR).toContainEqual({ type: 'ADJUSTMENT', amountCents: { lt: 0 } });
+    expect(accountAggregateMock.mock.calls[0]?.[0]).toEqual({
+      where: {
+        effectiveDate: { gte: new Date('2026-07-01'), lte: new Date('2026-07-31') },
+        OR: [
+          { type: 'FLIGHT_CHARGE' },
+          { type: 'FLIGHT_CHARGE_REVERSAL' },
+          { type: 'ADJUSTMENT', amountCents: { lt: 0 } },
+          { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null } },
+        ],
+      },
+      _sum: { amountCents: true },
+    });
 
-    const cashWhere = cashAggregateMock.mock.calls[0]?.[0] as { where: Record<string, unknown> };
-    expect(cashWhere.where['amountCents']).toEqual({ gt: 0 });
-    expect(cashWhere.where['NOT']).toEqual({ AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] });
+    expect(cashAggregateMock.mock.calls[0]?.[0]).toEqual({
+      where: {
+        effectiveDate: { gte: new Date('2026-07-01'), lte: new Date('2026-07-31') },
+        OR: [{ reversalOfId: null, amountCents: { gt: 0 } }, { reversalOfId: { not: null }, amountCents: { lt: 0 } }],
+        NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] },
+      },
+      _sum: { amountCents: true },
+    });
   });
 
   it('a FLIGHT_CHARGE reversed in the SAME period nets to ZERO revenue (storno annulla il ricavo — the bug the old Σ-positivi definition had: it only ever summed the positive side and never subtracted a same-period storno)', async () => {
@@ -442,6 +455,36 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
 
     expect(revenueCents).toBe(18500);
+  });
+
+  it('review Billing-1 F3 (the review\'s own case): a 5000c cash entrata reversed in the SAME period nets revenue 5000 -> 0, never counted as a cost', async () => {
+    // The cash aggregate's OR now sums the +5000 entrata AND its -5000 storno together (same query) -> 0.
+    accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
+    cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 5000 + -5000 } }));
+
+    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+
+    expect(revenueCents).toBe(0);
+  });
+
+  it('review Billing-1 F3: a cash entrata reversed in a LATER period shows as NEGATIVE revenue in that later period (storno nel mese in cui avviene, mai retroattivo)', async () => {
+    // Only the storno row (-5000, reversalOfId set) falls inside THIS period's query — the original +5000 entrata was recorded, and stays counted, in the earlier period.
+    accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
+    cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: -5000 } }));
+
+    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-08-01', '2026-08-31');
+
+    expect(revenueCents).toBe(-5000);
+  });
+
+  it('review Billing-1 F3: a positive ADJUSTMENT reversal (e.g. stornoing a "Quota associativa" debit) nets revenue in ITS OWN period, not the original debit\'s', async () => {
+    // Only the +800 reversal ADJUSTMENT falls inside THIS period's query.
+    accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 800 } }));
+    cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
+
+    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-08-01', '2026-08-31');
+
+    expect(revenueCents).toBe(-800);
   });
 });
 

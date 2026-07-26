@@ -269,6 +269,12 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
             feeLabel: t('actions.feeLabel'),
             feeHint: t('actions.feeHint'),
             invalidFee: t('actions.invalidFee'),
+            methodLabel: t('actions.methodLabel'),
+            methods: {
+              CASH: t('actions.methods.CASH'),
+              BANK_TRANSFER: t('actions.methods.BANK_TRANSFER'),
+              POS: t('actions.methods.POS'),
+            },
             submitComplete: t('actions.submitComplete'),
             closePanel: t('actions.closePanel'),
           },

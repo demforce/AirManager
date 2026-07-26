@@ -1,11 +1,10 @@
-import type { Prisma } from '@/generated/prisma/client';
 import { parseDateOnlyUtc } from '@/lib/date-only';
 import { currentMonthRange } from '@/lib/period-presets';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { getTreasuryOpeningInternal } from './app-settings.service';
 import { getCashReport, type CashReport } from './cash.service';
-import { getLedgerRevenueCents } from './transactions.service';
+import { CASH_NOT_ALREADY_ON_ACCOUNT, getLedgerRevenueCents } from './transactions.service';
 
 /**
  * The three-book calculation service (story Billing-1, AC 5) that replaces
@@ -61,23 +60,25 @@ export type BillingSummary = {
 };
 
 /**
- * The SAME "already counted by a non-zero account movement" exclusion
- * `transactions.service.ts#buildCashWhere` uses for the unified ledger's
- * twin-dedup — duplicated here as a plain Prisma `NOT` clause (not exported
- * from that module, which returns a `findMany`-shaped where, not an
- * `aggregate`-shaped one) rather than reshaping that function's return type
- * for one shared fragment.
+ * The month's cash uscite (AC 5's `costCents`) — every negative `CashMovement`
+ * not already valued on the account side (`CASH_NOT_ALREADY_ON_ACCOUNT`,
+ * imported from `transactions.service.ts` rather than duplicated here —
+ * review Billing-1 F5), compenso istruttori included via its AC 4 gemello.
+ *
+ * **Review Billing-1 F3** — mirrors `transactions.service.ts#computeRevenueCents`'s
+ * own storno rule: a normal uscita (`reversalOfId == null`, negative) still
+ * adds to cost; a storno OF an uscita (`reversalOfId != null`, positive —
+ * `reverseCashMovement` always negates the original) is SUMMED alongside it
+ * in the SAME aggregate — same month => nets to zero, later month => a
+ * negative `costCents` there ("riduzione dei costi nel suo mese"). A storno
+ * of an ENTRATA (`reversalOfId != null`, negative) is deliberately EXCLUDED
+ * here — it nets revenue instead (`computeRevenueCents`), never costs.
  */
-const CASH_NOT_ALREADY_ON_ACCOUNT: Prisma.CashMovementWhereInput = {
-  NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] },
-};
-
-/** The month's cash uscite (AC 5's `costCents`) — every negative `CashMovement` not already valued on the account side (see the module doc-comment), compenso istruttori included via its AC 4 gemello. */
 async function computeCostCents(from: string, to: string): Promise<number> {
   const aggregate = await prisma.cashMovement.aggregate({
     where: {
       effectiveDate: { gte: parseDateOnlyUtc(from), lte: parseDateOnlyUtc(to) },
-      amountCents: { lt: 0 },
+      OR: [{ reversalOfId: null, amountCents: { lt: 0 } }, { reversalOfId: { not: null }, amountCents: { gt: 0 } }],
       ...CASH_NOT_ALREADY_ON_ACCOUNT,
     },
     _sum: { amountCents: true },

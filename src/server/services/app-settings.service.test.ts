@@ -620,6 +620,27 @@ describe('treasury opening balances (story Billing-1, AC 3)', () => {
       ]);
       await expect(getTreasuryOpeningInternal()).resolves.toEqual({ openingCashCents: 0, openingBankCents: 0, openingDate: null });
     });
+
+    it.each(['12.5', '-3.2', 'abc', '99999999999999'])(
+      'review Billing-1 F8: a fractional/malformed openingCashCents %j is REJECTED (Number.parseInt used to truncate "12.5" to 12 silently) — falls back to 0, logged, never thrown',
+      async (corrupted) => {
+        findMany.mockResolvedValue([{ key: 'treasury.openingCashCents', value: corrupted }]);
+        const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+        await expect(getTreasuryOpeningInternal()).resolves.toMatchObject({ openingCashCents: 0 });
+        expect(consoleWarnSpy).toHaveBeenCalled();
+        consoleWarnSpy.mockRestore();
+      },
+    );
+
+    it('review Billing-1 F8: an impossible calendar date ("2026-13-45", right shape but rolls over via Date.UTC) fails the round-trip check — falls back to null, logged, never thrown', async () => {
+      findMany.mockResolvedValue([{ key: 'treasury.openingDate', value: '2026-13-45' }]);
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await expect(getTreasuryOpeningInternal()).resolves.toMatchObject({ openingDate: null });
+      expect(consoleWarnSpy).toHaveBeenCalled();
+      consoleWarnSpy.mockRestore();
+    });
   });
 
   describe('getTreasurySettings / setTreasurySettings (actor-facing pair, both settings.manage)', () => {

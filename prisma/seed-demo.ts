@@ -499,7 +499,7 @@ async function main(): Promise<void> {
     eta: daysFromNow(-1, 11, 20).toISOString(), etd: daysFromNow(-1, 16, 0).toISOString(),
     personsOnBoard: 2, notes: 'Sosta pranzo e rifornimento.', locale: 'en', approveImmediately: true,
   }, { approveImmediately: true });
-  await completePprRequest(admin, completedPpr.id, { landingFeeCents: 2500 });
+  await completePprRequest(admin, completedPpr.id, { landingFeeCents: 2500, paymentMethod: 'CASH' });
   await createManualPprRequest(admin, {
     firstName: 'Jean', lastName: 'Moreau', email: 'j.moreau@orange.fr', phone: '+33 6 44 71 08 92',
     aircraftRegistration: 'F-HBGA', aircraftType: 'Robin DR401', origin: 'Cannes (LFMD)', destination: AIRFIELD_NAME,
