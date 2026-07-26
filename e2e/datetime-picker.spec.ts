@@ -176,6 +176,12 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     const form = page.getByTestId('new-booking-form');
     const startsAtWrapper = form.locator('span.date-input:has(input[name="startsAt"])');
     await startsAtWrapper.getByRole('button', { name: 'Apri calendario' }).click();
+    // `.click()` resolving only means the DOM event fired — the portal's
+    // render (React state update -> `createPortal`) is a subsequent tick,
+    // so a bare `page.evaluate` right after can race a still-absent
+    // `.cal-popover` (reproduced: `querySelector` returned null once under
+    // CI's production build). Wait for it explicitly before reading geometry.
+    await expect(page.locator('.cal-popover')).toBeVisible();
 
     const geometry = await page.evaluate(() => {
       const soBody = document.querySelector('.so-body');
@@ -203,6 +209,9 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     expect(fieldBox.x + fieldBox.width).toBeLessThanOrEqual(375);
 
     await etdWrapper.getByRole('button', { name: 'Apri calendario' }).click();
+    // Same race as the clipping regression guard above — wait for the
+    // portaled popover to actually be in the DOM before reading its rect.
+    await expect(page.locator('.cal-popover')).toBeVisible();
     const popoverGeometry = await page.evaluate(() => {
       const popover = document.querySelector('.cal-popover');
       const rect = popover?.getBoundingClientRect();
