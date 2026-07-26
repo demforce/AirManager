@@ -172,10 +172,30 @@ development_status:
 
   # Tech-debt: 2 findings security post-epic-13 (scan 2026-07-23, decisione utente 2026-07-24,
   # mandato "procedi" 2026-07-26). Branch dedicato td-6-security-auth stacked su epic-13.
-  # ATTENZIONE OPERATIVA AL RILASCIO: il fix F1 (User.tokenVersion nel JWT) DISCONNETTE
-  # TUTTE le sessioni vive entro 15 minuti dal deploy (i JWT preesistenti non portano il
-  # claim → trattati come stale, per design). Logout una-tantum, non un bug: avvisare gli utenti.
+  # Nota tecnica (NON un rischio: l'app non e' mai stata deployata, nessuna sessione viva
+  # esiste). Il fix F1 (User.tokenVersion nel JWT) tratterebbe come stale i JWT emessi prima
+  # del claim: rilevante solo a un PRIMO deploy con utenti gia' in produzione — non e' il caso.
   td-6-security-auth: done
+
+  # Post-epic-13, richieste utente 2026-07-26. Branch propri, stacked in sequenza.
+  # TD-7: picker data/ora custom su tutti i form (CalendarPopover esteso + DateTimeInput).
+  # Review Opus 5: 1 blocker (popover senza flip verticale, /ppr) + F2/F3 major, tutti fixati
+  # (bf39082). Portal su body confermato legittimo (transform su .slideover-panel intrappola i
+  # fixed). Follow-up F7: restano 4 input type="time" nativi (scheduling-card, flight-editor).
+  # Full suite 265/265. schedule.tsx deduplicato (F6).
+  td-7-datetime-picker: done
+
+  # Fix-batch feedback utente 2026-07-26 (branch fix-post-epic-13-feedback):
+  # card prenotazioni dashboard ordinata per data, seed demo kind=MEDICAL, storico
+  # tariffe istruttore capped a 5.
+  fix-post-epic-13-feedback: done
+
+  # Rework Contabilita (brainstorming 2026-07-26, spec docs/superpowers/specs/2026-07-26-billing-rework-design.md).
+  # 2 story sul branch dedicato billing-rework. Story 1 = fondamenta (backend/servizio,
+  # invisibile); Story 2 = pagina (3 riquadri risultato/tesoreria/acconti + registro entrate/uscite).
+  # NON parte finche TD-7 non e' chiusa (diff di review puliti).
+  billing-1-fondamenta: draft
+  billing-2-pagina: backlog
 
 action_items:
   - epic: 13

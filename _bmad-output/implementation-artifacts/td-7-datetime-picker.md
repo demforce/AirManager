@@ -4,7 +4,7 @@ baseline_commit: 6afc0de
 
 # Story TD-7: Picker custom su TUTTI i form — `CalendarPopover` esteso con l'ora
 
-Status: review
+Status: done
 
 ## Story
 
@@ -219,3 +219,7 @@ Nota emersa in verifica: con F2(b) applicato (`aria-disabled` + `pointer-events:
 ### F9 (note) — elenco consumer `DateInput` corretto
 
 I file che importano `<DateInput` sono **12** (non 10, l'AC4 "10 punti" era ed è corretto ma si riferisce SOLO ai NUOVI consumer datetime-local/date convertiti in questa story — è un numero diverso, non lo stesso): `people/[id]/account-section.tsx`, `movements/movements-table.tsx`, `fleet/aircraft-editor.tsx`, `pilots/pilots-console.tsx`, `pilots/pilot-editor.tsx`, `instructors/instructors-console.tsx`, `instructors/instructor-rates-panel.tsx` (il file mancante nell'elenco originale), `logbook/flight-editor.tsx`, `logbook/logbook-console.tsx`, `billing/transaction-editor.tsx`, `billing/billing-console.tsx`, `components/dashboard/expiry-editor.tsx` — tutti destinatari del fix universale del portal (v. sezione clipping sopra), tutti verificati OK dal reviewer.
+
+### Chiusura (sessione principale, 2026-07-26)
+
+Tutti i findings F1-F9 applicati e verificati dal fix-subagent (commit `bf39082`), F1 blocker incluso (flip verticale). **Full suite finale CI=1 su build di produzione, DB fresco: 265 passed (7.8m), 0 fail, 0 flaky** (264 + il nuovo test-guardia F8 che riproduce il blocker con trigger a <100px dal fondo senza scrollIntoView); catena chromium(256)+settings(6)+booking-window(3) confermata. Regression-guard di `schedule.tsx` verdi dopo il dedup F6. Story **done**. Il picker data/ora custom copre ora tutti i form; restano 4 input `type="time"` nativi (F7, follow-up fuori scope).
