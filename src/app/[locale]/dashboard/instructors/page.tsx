@@ -180,6 +180,11 @@ export default async function InstructorsPage({ params }: PageProps) {
               historyEmpty: t('studentRate.historyEmpty'),
               historyActor: t('studentRate.historyActor'),
               historyWhen: t('studentRate.historyWhen'),
+              // `t.raw`, not `t`: the `{count}` placeholder is filled CLIENT-side
+              // (the hidden-row count is only known there), and `t()` would try to
+              // resolve it as an ICU variable here and throw FORMATTING_ERROR —
+              // same reason `fleet/page.tsx:180` reads its own `showAll` raw.
+              historyShowAll: t.raw('studentRate.historyShowAll') as string,
             },
             errors: { generic: t('editor.errors.generic'), invalidRate: t('editor.errors.invalidRate') },
           },

@@ -183,7 +183,7 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
 });
 
 test.describe('Home dashboard — data-driven (story 12.12, AC 1)', () => {
-  test('a fresh PENDING booking appears pending-first in the AdminOverview\'s embedded "Prenotazioni" card and is reflected in the KPI', async ({ page }) => {
+  test('a fresh PENDING booking appears in the AdminOverview\'s embedded "Prenotazioni" card, which reads startsAt-ascending like /dashboard/bookings, and is reflected in the KPI', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page, 'PF');
     const password = 'PendingFirstHome123!';
@@ -207,19 +207,17 @@ test.describe('Home dashboard — data-driven (story 12.12, AC 1)', () => {
     await expect(ourRow).toBeVisible();
     await expect(ourRow.getByText('In attesa', { exact: true })).toBeVisible();
 
-    // Pending-first invariant: no row with a NON-pending status badge may
-    // precede a PENDING row among the visible embedded rows.
-    const rows = page.getByTestId('booking-row');
-    const rowCount = await rows.count();
-    let sawNonPending = false;
-    for (let i = 0; i < rowCount; i += 1) {
-      const isPending = (await rows.nth(i).getByText('In attesa', { exact: true }).count()) > 0;
-      if (isPending) {
-        expect(sawNonPending, `row ${i} is PENDING but appears after a non-PENDING row`).toBe(false);
-      } else {
-        sawNonPending = true;
-      }
-    }
+    // Ordering invariant (PO decision 2026-07-26, replacing story 12.12's
+    // pending-first ordering): the embedded card reads `startsAt` ascending,
+    // exactly like `/dashboard/bookings`. Read from the row's own start cell
+    // (`booking-row-starts-at`) and compare the underlying ISO instants, never
+    // the rendered `DD/MM · HH:MM` text — a string compare on that format
+    // would order 01/08 before 27/07.
+    const startCells = page.getByTestId('booking-row').getByTestId('booking-row-starts-at');
+    const startsAt = await startCells.evaluateAll((cells) => cells.map((cell) => cell.getAttribute('data-starts-at') ?? ''));
+    expect(startsAt.length).toBeGreaterThan(0);
+    const sorted = [...startsAt].sort();
+    expect(startsAt, `embedded card rows must be startsAt-ascending, got ${startsAt.join(' | ')}`).toEqual(sorted);
 
     // The "Prenotazioni in attesa" KPI reflects the real pending count (>= 1: this fixture, possibly more from concurrent specs).
     const kpiValue = page.getByTestId('kpi-bookings-pending').locator('.kpi-value');

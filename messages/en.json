@@ -541,7 +541,8 @@
       "historyValidFrom": "In effect from",
       "historyPrice": "Price",
       "historyActor": "Who",
-      "historyWhen": "Recorded on"
+      "historyWhen": "Recorded on",
+      "historyShowAll": "Show all ({count})"
     },
     "pay": {
       "title": "Record payout",

@@ -58,10 +58,8 @@ const OPTIONS_PAGE_SIZE = 100;
 const PPR_GROUND_SCAN_LIMIT = 500;
 /** The embedded "Prenotazioni" card shows a handful of rows — "next page" deep-links into the full `/dashboard/bookings` list (`bookings-table.tsx#pageHref` is hardcoded to that route regardless of caller). */
 const EMBED_BOOKINGS_PAGE_SIZE = 8;
-/** Same set `bookings/page.tsx#ALL_BOOKING_STATUSES` shows — the embedded table is the SAME "Prenotazioni" card, just pending-first ordered and row-capped. */
+/** Same set `bookings/page.tsx#ALL_BOOKING_STATUSES` shows — the embedded table is the SAME "Prenotazioni" card, same `startsAt`-ascending order, just row-capped. */
 const ALL_BOOKING_STATUSES: readonly BookingStatusDto[] = ['PENDING', 'APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED'];
-/** `ALL_BOOKING_STATUSES` minus `PENDING` — the "fill the rest" query once every PENDING booking in-window is already fetched (see the pending-first fetch below). */
-const NON_PENDING_BOOKING_STATUSES: readonly BookingStatusDto[] = ['APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED'];
 /**
  * Generous cap on scadenze fetched for the widest widget window (60 days) —
  * the widget then filters/slices client-side per the 7/30/60 toggle without a
@@ -173,7 +171,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     flightsTodayTotals,
     calendarBookingsToday,
     embedPendingResult,
-    embedRestResult,
+    embedBookingsResult,
     expiriesResult,
     scheduleAircraftOptions,
     instructorOptions,
@@ -189,11 +187,14 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     getStats(actor, { period: 'month' }),
     getFlightTotals(actor, { dateFrom: today, dateTo: today, status: 'REGISTERED', page: 1, pageSize: 1 }),
     listCalendarBookings(actor, { from: todayStart.toISOString(), to: tomorrowStart.toISOString() }),
-    // Pending-first (AC 1): fetched as its OWN top-priority query, never a
-    // local re-sort of one page — a page-scoped sort would silently drop a
-    // PENDING booking that fell outside the FIRST `startsAt`-ordered page.
-    listBookings(actor, { from: listFrom, status: ['PENDING'], page: 1, pageSize: EMBED_BOOKINGS_PAGE_SIZE }),
-    listBookings(actor, { from: listFrom, status: [...NON_PENDING_BOOKING_STATUSES], page: 1, pageSize: EMBED_BOOKINGS_PAGE_SIZE }),
+    // Windowed PENDING count for the card's "N in attesa" summary (review
+    // 12.12 F3) — only its `total` is read, hence `pageSize: 1`.
+    listBookings(actor, { from: listFrom, status: ['PENDING'], page: 1, pageSize: 1 }),
+    // The card's ROWS: one `startsAt`-ascending query over every status, so
+    // the embedded table reads in the same order as `/dashboard/bookings`
+    // (PO decision 2026-07-26, replacing story 12.12's pending-first
+    // ordering — two concatenated queries made the dates look unsorted).
+    listBookings(actor, { from: listFrom, status: [...ALL_BOOKING_STATUSES], page: 1, pageSize: EMBED_BOOKINGS_PAGE_SIZE }),
     listAllExpiries(actor, { window: '60', page: 1, pageSize: EXPIRIES_WIDGET_SCAN_LIMIT }),
     listBookableAircraft(actor),
     listActiveInstructors(actor),
@@ -228,12 +229,11 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     weekViewHref: bookingsHref({ view: 'week' }, today),
   };
 
-  // --- Embedded BookingsTable (pending-first, AC 1) -----------------------
-  // Every PENDING booking in-window comes first (up to the page size), THEN
-  // non-pending bookings fill whatever slots remain — a TRUE priority
-  // ordering, not a same-page re-sort (see the fetch comment above).
-  const embedRemainingSlots = Math.max(0, EMBED_BOOKINGS_PAGE_SIZE - embedPendingResult.items.length);
-  const embedBookingItems: BookingListItem[] = [...embedPendingResult.items, ...embedRestResult.items.slice(0, embedRemainingSlots)];
+  // --- Embedded BookingsTable (startsAt ascending) ------------------------
+  // Same order as `/dashboard/bookings` (PO decision 2026-07-26): the card is
+  // a window onto that list, so it must not reorder it. Pending bookings stay
+  // findable via their badge, the "N in attesa" card summary and the KPI.
+  const embedBookingItems: BookingListItem[] = embedBookingsResult.items;
   const embedBookingRows: BookingRowDto[] = embedBookingItems.map((booking) => ({
     id: booking.id,
     aircraftId: booking.aircraftId,
@@ -250,7 +250,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     status: booking.status,
     denyReason: booking.denyReason,
   }));
-  const embedTotal = embedPendingResult.total + embedRestResult.total;
+  const embedTotal = embedBookingsResult.total;
   const embedTotalPages = Math.max(1, Math.ceil(embedTotal / EMBED_BOOKINGS_PAGE_SIZE));
 
   const staffPersonOptions: PersonOption[] = peopleResult.items

@@ -351,7 +351,8 @@ export function BookingsTable({
                   </div>
                 ) : null}
               </div>
-              <div className="mono" style={{ fontSize: 11.5 }}>
+              {/* `data-starts-at` carries the raw ISO instant so an ordering assert compares instants, never the localized `DD/MM · HH:MM` text (which sorts 01/08 before 27/07) — see `e2e/home-dashboard.spec.ts`. */}
+              <div className="mono" style={{ fontSize: 11.5 }} data-testid="booking-row-starts-at" data-starts-at={booking.startsAt}>
                 {formatDateOnly(booking.startsAtDateOnly, locale)} · {formatTimeOfDay(new Date(booking.startsAt), locale)}
               </div>
               <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>

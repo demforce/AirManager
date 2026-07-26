@@ -541,7 +541,8 @@
       "historyValidFrom": "In vigore da",
       "historyPrice": "Prezzo",
       "historyActor": "Chi",
-      "historyWhen": "Registrata il"
+      "historyWhen": "Registrata il",
+      "historyShowAll": "Mostra tutte ({count})"
     },
     "pay": {
       "title": "Registra pagamento",

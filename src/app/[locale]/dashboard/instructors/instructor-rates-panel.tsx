@@ -29,6 +29,8 @@ export type InstructorRatesPanelLabels = {
   historyEmpty: string;
   historyActor: string;
   historyWhen: string;
+  /** `{count}` placeholder, client-filled — the hidden-row count behind the "show all" button. */
+  historyShowAll: string;
 };
 
 type ToastHandle = { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
@@ -87,6 +89,9 @@ async function fetchRatesHistory(personId: string): Promise<InstructorRateItemDt
   return (await response.json()) as InstructorRateItemDto[];
 }
 
+/** Rate history is append-only (AD-4), so it only ever grows: show the most recent rows and keep the rest one click away — same cap and "Mostra tutte (N)" affordance as the fleet editor's own twin (`fleet/aircraft-editor.tsx#HISTORY_VISIBLE_COUNT`, story 13.4/R3). */
+const HISTORY_VISIBLE_COUNT = 5;
+
 /** The row with the MAXIMUM `validFrom <= today` (AD-4) — `history` is already `validFrom desc` from the API, so the first match IS the current one. Derived client-side, same pattern as `fleet/aircraft-editor.tsx#currentRateOf` (its own twin), rather than a separate server-computed prop. */
 function currentRateOf(history: InstructorRateItemDto[]): InstructorRateItemDto | null {
   const today = todayDateOnly();
@@ -111,6 +116,7 @@ export function InstructorRatesPanel({ personId, toast, canAddRate, labels }: In
   // renders Italian separators on /en too.
   const moneyLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [history, setHistory] = useState<InstructorRateItemDto[] | null>(null);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
@@ -208,7 +214,7 @@ export function InstructorRatesPanel({ personId, toast, canAddRate, labels }: In
           </p>
         ) : (
           <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 1, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-            {history.map((rate, i) => (
+            {(showAllHistory ? history : history.slice(0, HISTORY_VISIBLE_COUNT)).map((rate, i) => (
               <div
                 key={rate.id}
                 data-testid="instructor-rate-history-row"
@@ -236,6 +242,17 @@ export function InstructorRatesPanel({ personId, toast, canAddRate, labels }: In
             ))}
           </div>
         )}
+        {history !== null && !showAllHistory && history.length > HISTORY_VISIBLE_COUNT ? (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setShowAllHistory(true)}
+            data-testid="instructor-rate-history-show-all"
+            style={{ marginTop: 8 }}
+          >
+            {labels.historyShowAll.replace('{count}', String(history.length - HISTORY_VISIBLE_COUNT))}
+          </button>
+        ) : null}
       </div>
     </div>
   );

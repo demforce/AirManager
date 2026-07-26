@@ -102,10 +102,20 @@ const DEMO_PEOPLE: DemoPerson[] = [
 
 const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro'];
 
-const STANDARD_EXPIRY_TYPES: Array<{ name: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL'; blocksBooking: boolean; validityMonths?: number }> = [
-  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true },
-  { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true },
-  { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true },
+// Story 13.1 (AC 1): `kind` splits RATING from MEDICAL — the person editor
+// renders them as two separate chip groups, so a medical typed as a rating
+// shows up among the ratings. Mirrors `prisma/seed.ts`'s own catalogue;
+// `kind` defaults to `RATING` in the schema, hence only medicals set it.
+const STANDARD_EXPIRY_TYPES: Array<{
+  name: string;
+  scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
+  blocksBooking: boolean;
+  validityMonths?: number;
+  kind?: 'RATING' | 'MEDICAL';
+}> = [
+  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true, kind: 'MEDICAL' },
   { name: 'Licenza', scope: 'PILOTS', blocksBooking: true },
   { name: 'Rating SEP', scope: 'PILOTS', blocksBooking: false },
   { name: 'Inglese ICAO', scope: 'PILOTS', blocksBooking: false },
@@ -281,11 +291,14 @@ async function main(): Promise<void> {
     await prisma.cashCategory.upsert({ where: { name }, update: {}, create: { name } });
   }
   const expiryTypeIdByName = new Map<string, string>();
-  for (const { name, scope, blocksBooking, validityMonths } of STANDARD_EXPIRY_TYPES) {
+  for (const { name, scope, blocksBooking, validityMonths, kind } of STANDARD_EXPIRY_TYPES) {
     const type = await prisma.expiryType.upsert({
       where: { name },
-      update: {},
-      create: { name, scope, blocksBooking, validityMonths: validityMonths ?? null },
+      // `update` also carries `kind`: re-running the demo seed over a DB
+      // seeded before story 13.1 repairs the catalogue instead of leaving
+      // medicals silently typed as ratings.
+      update: { kind: kind ?? 'RATING' },
+      create: { name, scope, blocksBooking, validityMonths: validityMonths ?? null, kind: kind ?? 'RATING' },
       select: { id: true },
     });
     expiryTypeIdByName.set(name, type.id);
