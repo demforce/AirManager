@@ -71,10 +71,22 @@ function futureDateOnly(monthsForward: number, day: number): string {
  * lesson), types the `HH:MM` time, and clicks the confirm action. The
  * popover is portaled to `document.body` (story TD-7 clipping fix), so it's
  * looked up globally on `page`, not as a descendant of `fieldWrapper`.
+ *
+ * The button is scrolled into view as an EXPLICIT, separate step before the
+ * click — same lesson `schedule.tsx#useFixedPopover`'s own doc comment
+ * documents: a `.click()` whose OWN `scrollIntoViewIfNeeded` actionability
+ * check fires the page scroll AFTER the popover has already opened races the
+ * `useFixedPopover` scroll-listener that closes it on any window scroll,
+ * opening and immediately closing it in the same instant (reproduced on the
+ * long public `/ppr` form, whose ETA/ETD fields sit below the fold — the
+ * short SlideOver forms never needed this because their fields are already
+ * in view).
  */
 async function pickDateTimeViaPicker(fieldWrapper: Locator, monthsForward: number, day: number, time: string): Promise<void> {
   const page = fieldWrapper.page();
-  await fieldWrapper.getByRole('button', { name: 'Apri calendario' }).click();
+  const calendarButton = fieldWrapper.getByRole('button', { name: 'Apri calendario' });
+  await calendarButton.scrollIntoViewIfNeeded();
+  await calendarButton.click();
   const popover = page.locator('.cal-popover');
   await expect(popover).toBeVisible();
   for (let i = 0; i < monthsForward; i++) {
@@ -158,9 +170,12 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
     const startsAtWrapper = form.locator('span.date-input:has(input[name="startsAt"])');
+    const startsAtButton = startsAtWrapper.getByRole('button', { name: 'Apri calendario' });
 
-    await startsAtWrapper.getByRole('button', { name: 'Apri calendario' }).click();
+    await startsAtButton.scrollIntoViewIfNeeded();
+    await startsAtButton.click();
     const popover = page.locator('.cal-popover');
+    await expect(popover).toBeVisible();
     await popover.locator('.cal-head .iconbtn').last().click();
     await popover.locator('.cal-grid .cal-cell:not(.out)', { hasText: /^12$/ }).click();
 
@@ -175,7 +190,9 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
     const startsAtWrapper = form.locator('span.date-input:has(input[name="startsAt"])');
-    await startsAtWrapper.getByRole('button', { name: 'Apri calendario' }).click();
+    const startsAtButton = startsAtWrapper.getByRole('button', { name: 'Apri calendario' });
+    await startsAtButton.scrollIntoViewIfNeeded();
+    await startsAtButton.click();
     // `.click()` resolving only means the DOM event fired — the portal's
     // render (React state update -> `createPortal`) is a subsequent tick,
     // so a bare `page.evaluate` right after can race a still-absent
@@ -208,7 +225,9 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     expect(fieldBox.x).toBeGreaterThanOrEqual(0);
     expect(fieldBox.x + fieldBox.width).toBeLessThanOrEqual(375);
 
-    await etdWrapper.getByRole('button', { name: 'Apri calendario' }).click();
+    const etdButton = etdWrapper.getByRole('button', { name: 'Apri calendario' });
+    await etdButton.scrollIntoViewIfNeeded();
+    await etdButton.click();
     // Same race as the clipping regression guard above — wait for the
     // portaled popover to actually be in the DOM before reading its rect.
     await expect(page.locator('.cal-popover')).toBeVisible();
