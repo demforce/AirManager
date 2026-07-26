@@ -98,19 +98,28 @@ async function pickDateTimeViaPicker(fieldWrapper: Locator, monthsForward: numbe
   await expect(popover).toHaveCount(0);
 }
 
-/** Same technique as `bookings.spec.ts#hitTestsOwnControl` (review 13.7 F2): scrolls ONLY the popover's own internal scrollbox (a no-op if it doesn't need one) before hit-testing — the discriminator a plain `.click()` cannot provide, since Playwright's own `scrollIntoViewIfNeeded` would mask a still-clipped popover. */
-async function hitTestsOwnControl(page: Page, popoverSelector: string, controlSelector: string): Promise<boolean> {
+/**
+ * Same technique as `bookings.spec.ts#hitTestsOwnControl` (review 13.7 F2):
+ * scrolls the popover's own internal scrollbox to top/bottom (a no-op if it
+ * doesn't need one) before hit-testing — the discriminator a plain
+ * `.click()` cannot provide, since Playwright's own `scrollIntoViewIfNeeded`
+ * would mask a still-clipped popover. `edge` picks which end of the
+ * scrollbox to check: the day grid sits at the TOP of the popover's content,
+ * the time field/confirm action at the BOTTOM (review TD7-F8: the day grid
+ * wasn't checked at all before, only the confirm button was).
+ */
+async function hitTestsOwnControl(page: Page, popoverSelector: string, controlSelector: string, edge: 'top' | 'bottom' = 'bottom'): Promise<boolean> {
   return page.evaluate(
-    ({ popoverSelector, controlSelector }) => {
+    ({ popoverSelector, controlSelector, edge }) => {
       const popover = document.querySelector(popoverSelector);
       const control = document.querySelector(controlSelector);
       if (!popover || !control) return false;
-      (popover as HTMLElement).scrollTop = (popover as HTMLElement).scrollHeight;
+      (popover as HTMLElement).scrollTop = edge === 'bottom' ? (popover as HTMLElement).scrollHeight : 0;
       const rect = control.getBoundingClientRect();
       const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
       return hit === control || control.contains(hit);
     },
-    { popoverSelector, controlSelector },
+    { popoverSelector, controlSelector, edge },
   );
 }
 
@@ -183,7 +192,7 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     await expect(form.locator('input[name="startsAt"]')).toHaveValue('');
   });
 
-  test('clipping regression guard: the SlideOver popover escapes .so-body\'s clip (portaled to document.body, position:fixed) and its confirm control is genuinely hit-testable', async ({ page }) => {
+  test('clipping regression guard: the SlideOver popover escapes .so-body\'s clip (position:fixed, entirely inside the viewport) and its day cell/time field/confirm control are genuinely hit-testable', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.goto('/it/dashboard/bookings');
     await page.waitForLoadState('networkidle');
@@ -200,18 +209,29 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     // CI's production build). Wait for it explicitly before reading geometry.
     await expect(page.locator('.cal-popover')).toBeVisible();
 
+    // Review TD7-F8: `popover.parentElement === document.body` is an
+    // IMPLEMENTATION detail (any future fix not based on a portal — e.g. a
+    // pure flip-above — would fail this even while being correct). Assert
+    // the EFFECT instead: the popover is `position:fixed` and its box sits
+    // entirely inside the viewport.
     const geometry = await page.evaluate(() => {
-      const soBody = document.querySelector('.so-body');
       const popover = document.querySelector('.cal-popover');
-      if (!soBody || !popover) return null;
-      return {
-        position: getComputedStyle(popover).position,
-        isPortaledToBody: popover.parentElement === document.body,
-      };
+      if (!popover) return null;
+      const rect = popover.getBoundingClientRect();
+      return { position: getComputedStyle(popover).position, top: rect.top, bottom: rect.bottom, innerHeight: window.innerHeight };
     });
     expect(geometry?.position).toBe('fixed');
-    expect(geometry?.isPortaledToBody).toBe(true);
-    expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn.primary')).toBe(true);
+    expect(geometry?.top).toBeGreaterThanOrEqual(0);
+    expect(geometry?.bottom).toBeLessThanOrEqual(geometry!.innerHeight);
+    expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-grid .cal-cell:not(.out)', 'top')).toBe(true);
+    expect(await hitTestsOwnControl(page, '.cal-popover', '.fld input[type="text"]', 'bottom')).toBe(true);
+    // Confirm starts `aria-disabled` (ratifica 3) — genuinely NOT
+    // hit-testable while disabled (`pointer-events: none`, review TD7-F2b).
+    // Pick a day + valid time first so this checks reachability once
+    // enabled, the same thing that matters for a real user.
+    await page.locator('.cal-popover .cal-grid .cal-cell:not(.out)').first().click();
+    await page.locator('.cal-popover .fld input[type="text"]').fill('08:00');
+    expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn.primary', 'bottom')).toBe(true);
   });
 
   test('mobile 375px: the public /ppr ETD field and its popover both stay inside the viewport (13.10-F3 regression twin)', async ({ page }) => {
@@ -239,6 +259,62 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     expect(popoverGeometry?.left).toBeGreaterThanOrEqual(0);
     expect(popoverGeometry?.right).toBeLessThanOrEqual(375);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    // Confirm starts `aria-disabled` (ratifica 3) — not hit-testable while
+    // disabled (`pointer-events: none`, review TD7-F2b); pick a day + time first.
+    await page.locator('.cal-popover .cal-grid .cal-cell:not(.out)').first().click();
+    await page.locator('.cal-popover .fld input[type="text"]').fill('08:00');
     expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn.primary')).toBe(true);
+  });
+
+  test('blocker regression guard (TD7-F1): trigger deliberately near the bottom of the viewport, opened WITHOUT scrollIntoView — the popover flips/clamps and every control stays hit-testable', async ({ page }) => {
+    // Review TD7-F1/TD7-F8: every OTHER test above scrolls the trigger into
+    // view before clicking it (`scrollIntoViewIfNeeded`), which is exactly
+    // what masked the blocker — a real popover reproduction needs the
+    // trigger sitting deliberately close to the bottom of the viewport, with
+    // NO scroll-to-reveal step. `page.locator(...).click()` would itself
+    // auto-scroll via its own actionability check, so the click below is
+    // dispatched directly on the DOM node instead (`evaluate` + `.click()`),
+    // the same technique the review used to reproduce the failure.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/it/ppr');
+    const form = page.getByTestId('ppr-form');
+    await form.waitFor({ state: 'visible' });
+    // Unlike every other test here, nothing below is a Playwright locator
+    // action (which auto-waits for actionability) — a raw DOM `.click()` on
+    // a button whose React handler hasn't hydrated yet would silently no-op,
+    // so wait for the page to settle first.
+    await page.waitForLoadState('networkidle');
+
+    await page.evaluate(() => {
+      const button = document.querySelector('input[name="eta"]')!.closest('span.date-input')!.querySelector<HTMLElement>('button.date-input-btn')!;
+      const rect = button.getBoundingClientRect();
+      window.scrollBy(0, rect.bottom - (window.innerHeight - 80));
+    });
+    await page.evaluate(() => {
+      const button = document.querySelector('input[name="eta"]')!.closest('span.date-input')!.querySelector<HTMLElement>('button.date-input-btn')!;
+      button.click();
+    });
+    await expect(page.locator('.cal-popover')).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const popover = document.querySelector('.cal-popover');
+      if (!popover) return null;
+      const rect = popover.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, innerHeight: window.innerHeight };
+    });
+    expect(geometry).not.toBeNull();
+    expect(geometry!.top).toBeGreaterThanOrEqual(0);
+    expect(geometry!.bottom).toBeLessThanOrEqual(geometry!.innerHeight);
+    expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-grid .cal-cell:not(.out)', 'top')).toBe(true);
+    expect(await hitTestsOwnControl(page, '.cal-popover', '.fld input[type="text"]', 'bottom')).toBe(true);
+
+    // Confirm is `aria-disabled` (ratifica 3: no day/time picked yet) and
+    // therefore correctly NOT hit-testable while disabled (`pointer-events:
+    // none`) — pick a day and a valid time first so this checks the SAME
+    // thing the other controls just proved: reachable once enabled, not
+    // "reachable while inert".
+    await page.locator('.cal-popover .cal-grid .cal-cell:not(.out)').first().click();
+    await page.locator('.cal-popover .fld input[type="text"]').fill('08:00');
+    expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn.primary', 'bottom')).toBe(true);
   });
 });

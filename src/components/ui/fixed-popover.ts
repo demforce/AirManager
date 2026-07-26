@@ -15,19 +15,12 @@
  * This is the SAME algorithm as `schedule.tsx#useFixedPopover`/
  * `#clampPopoverLeft` (measure the trigger's viewport rect, position the
  * popover `fixed` from it, cap its height to whatever room is left below,
- * clamp its left edge inside the viewport) — extracted here rather than
- * imported FROM `schedule.tsx` because that file is pinned "do not modify"
- * for this story (Dev Notes: verified only via its own existing e2e
- * regression tests). `schedule.tsx` keeps its own copy of both functions,
- * byte-identical to before; this module exists so `date-input.tsx`/
- * `datetime-input.tsx` reuse the SAME mechanism instead of a THIRD
- * reinvention, per the story's own instruction.
- */
-import { useEffect, useState, type RefObject } from 'react';
-
-export type FixedPopoverAnchor = { top: number; maxHeight: number; triggerRect: DOMRect };
-
-/**
+ * clamp its left edge inside the viewport) — `schedule.tsx` now imports
+ * `useFixedPopover`/`clampPopoverLeft`/`CAL_POPOVER_WIDTH` straight from
+ * here (review F1's fix — a below-only anchor — would otherwise have
+ * diverged silently between two copies; review finding TD7-F6, PO decision
+ * 2026-07-26: dedup now).
+ *
  * Portal target/z-index for `date-input.tsx`/`datetime-input.tsx` (story
  * TD-7 finding, NOT needed by `schedule.tsx`'s own two popovers): CSS
  * `transform` on an ancestor makes IT the containing block for a
@@ -45,33 +38,98 @@ export type FixedPopoverAnchor = { top: number; maxHeight: number; triggerRect: 
  * both with room to spare (only the toast's 200, `airops.css`, ranks higher
  * app-wide).
  */
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { CAL_POPOVER_WIDTH } from './calendar-popover';
+
+// Re-exported so `schedule.tsx` (story TD-7 review F6) can import all three
+// previously-duplicated symbols from this one module — `CAL_POPOVER_WIDTH`
+// itself stays DEFINED in `calendar-popover.tsx` (it's that component's own
+// CSS width), just re-exported here for a single import path.
+export { CAL_POPOVER_WIDTH };
+
+/**
+ * `top`/`bottom` are mutually exclusive (exactly one is `null`) — below-anchor
+ * sets `top`, above-anchor (review F1) sets `bottom` instead, since a
+ * `position:fixed` box anchored by `bottom` grows upward from the trigger
+ * regardless of how tall it actually renders, which `top` cannot express.
+ */
+export type FixedPopoverAnchor = { top: number | null; bottom: number | null; maxHeight: number; triggerRect: DOMRect };
+
 export const POPOVER_PORTAL_SCRIM_Z_INDEX = 65;
 export const POPOVER_PORTAL_Z_INDEX = 66;
 
-/** Clamps a `position:fixed` popover's LEFT edge to stay inside the viewport with an 8px gutter on both sides — see `schedule.tsx#clampPopoverLeft`'s doc comment for the full reasoning (in particular why the lower bound must win when the two bounds cross on a narrow viewport). */
+/** Clamps a `position:fixed` popover's LEFT edge to stay inside the viewport with an 8px gutter on both sides — see `schedule.tsx#clampPopoverLeft`'s (former) doc comment for the full reasoning (in particular why the lower bound must win when the two bounds cross on a narrow viewport). */
 export function clampPopoverLeft(desiredLeft: number, width: number): number {
   const gutter = 8;
   return Math.max(gutter, Math.min(desiredLeft, window.innerWidth - width - gutter));
 }
 
+/** Turns a `FixedPopoverAnchor` into the `top`/`bottom` pair for the popover's inline `style` — whichever side wasn't chosen is pinned to `'auto'` so it overrides the `.cal-popover`/`.popover` CSS classes' own `top: calc(100% + 6px)` (and, for `.popover`, `right: 0`) rules, which would otherwise still apply for a `position:fixed` box that only sets one of the two. */
+export function anchorPositionStyle(anchor: FixedPopoverAnchor): Pick<CSSProperties, 'top' | 'bottom'> {
+  return anchor.top !== null ? { top: anchor.top, bottom: 'auto' } : { top: 'auto', bottom: anchor.bottom! };
+}
+
+/** Gap kept between the trigger and the popover, whichever side it ends up anchored on. */
+const POPOVER_GAP = 6;
+/** Safety margin from the viewport edge that `maxHeight` never eats into. */
+const VIEWPORT_MARGIN = 18;
 /**
- * See `schedule.tsx#useFixedPopover`'s doc comment for the full design
- * rationale (identical here): `toggle(onOpen?)` measures the trigger's
- * viewport rect and caps `maxHeight` to the room left below it BEFORE
- * flipping `open`; the scroll/resize effect closes the popover so a
- * `position:fixed` element never visually detaches from a trigger that has
- * scrolled away, except for scroll events that target the popover's OWN
- * `overflow-y:auto` box (exempted via `popoverRef`).
+ * Floor for `maxHeight` (story TD-7 review F1, blocker): the popover
+ * scrolls internally (`overflow-y:auto`, already in place) below this
+ * rather than being driven to zero/negative — a negative CSS `max-height`
+ * is invalid and gets silently IGNORED (`max-height: none`), which is what
+ * let the popover render fully off-screen with no usable fallback.
+ */
+const MIN_POPOVER_HEIGHT = 200;
+
+/**
+ * `toggle(neededHeight, onOpen?)` measures the trigger's viewport rect and
+ * computes where the popover should sit BEFORE flipping `open`:
+ *
+ * - `neededHeight` is the CALLER's own estimate of how tall the popover
+ *   naturally renders (`CalendarPopover`'s date-only vs date+time mode
+ *   render at different heights — see `CAL_POPOVER_HEIGHT_DATE_ONLY`/
+ *   `_DATE_TIME` next to the component). It is used ONLY to decide whether
+ *   flipping above the trigger is worth it; it never shrinks `maxHeight`
+ *   below what's genuinely available when there IS enough room (the `else`
+ *   branch below reduces to the exact pre-fix formula whenever
+ *   `spaceBelow >= neededHeight`, so an existing consumer whose trigger
+ *   never sits near the bottom — `schedule.tsx`'s two popovers, `date-input`/
+ *   `datetime-input` call sites with plenty of room — renders byte-for-byte
+ *   the same as before this fix).
+ * - Not enough room below AND more room above → anchor the popover ABOVE
+ *   the trigger instead (`bottom`, not `top` — see `anchorPositionStyle`).
+ * - Otherwise (including "tight on both sides", where flipping wouldn't
+ *   help either) → stay below, but clamp `top` down so the popover can
+ *   never run past the bottom of the viewport.
+ * - `maxHeight` is NEVER allowed below `MIN_POPOVER_HEIGHT`: with little
+ *   room the popover scrolls internally instead of vanishing or escaping
+ *   the viewport (review F1's actual failure mode — 26-45px slivers with
+ *   zero hit-testable controls).
+ *
+ * `onOpen` runs only when the popover is about to OPEN (never on close),
+ * for a caller's own pre-open side effect (e.g. snapping the month cursor
+ * to the selected date).
  */
 export function useFixedPopover(triggerRef: RefObject<HTMLElement | null>, popoverRef: RefObject<HTMLElement | null>) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<FixedPopoverAnchor | null>(null);
 
-  function toggle(onOpen?: () => void) {
+  function toggle(neededHeight: number, onOpen?: () => void) {
     if (!open && triggerRef.current) {
       const triggerRect = triggerRef.current.getBoundingClientRect();
-      const top = triggerRect.bottom + 6;
-      setAnchor({ top, maxHeight: window.innerHeight - top - 18, triggerRect });
+      const spaceBelow = window.innerHeight - triggerRect.bottom - POPOVER_GAP - VIEWPORT_MARGIN;
+      const spaceAbove = triggerRect.top - POPOVER_GAP - VIEWPORT_MARGIN;
+
+      if (spaceBelow < neededHeight && spaceAbove > spaceBelow) {
+        const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove);
+        setAnchor({ top: null, bottom: window.innerHeight - triggerRect.top + POPOVER_GAP, maxHeight, triggerRect });
+      } else {
+        const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceBelow);
+        const naturalTop = triggerRect.bottom + POPOVER_GAP;
+        const top = Math.min(naturalTop, Math.max(8, window.innerHeight - maxHeight - VIEWPORT_MARGIN));
+        setAnchor({ top, bottom: null, maxHeight, triggerRect });
+      }
       onOpen?.();
     }
     setOpen((wasOpen) => !wasOpen);
@@ -90,6 +148,60 @@ export function useFixedPopover(triggerRef: RefObject<HTMLElement | null>, popov
       window.removeEventListener('resize', close);
     };
   }, [open, popoverRef]);
+
+  // Story TD-7 review F4 (minor): the popover is portaled to `document.body`
+  // (see the module doc comment) — a SIBLING of `SlideOver`'s panel rather
+  // than a descendant — so an Esc press used to skip it entirely and close
+  // the SlideOver instead (`SlideOver`'s own listener, a plain bubble-phase
+  // `window` listener), leaving the popover orphaned and still interactive
+  // above the now-closed form. Capture phase + `stopPropagation` means THIS
+  // listener sees the key FIRST and stops the same dispatch from ever
+  // reaching the SlideOver's bubble-phase listener on that same `window`
+  // node — a second Esc is needed to close the SlideOver, the expected
+  // nested-overlay behavior.
+  useEffect(() => {
+    if (!open) return;
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setOpen(false);
+    }
+    window.addEventListener('keydown', handleEscape, true);
+    return () => window.removeEventListener('keydown', handleEscape, true);
+  }, [open]);
+
+  // Story TD-7 review F5 (minor): portaled to the end of `<body>`, the
+  // popover no longer sits right after its trigger button in DOM/tab order —
+  // Tab used to walk straight into it, now it skips past it. Move focus INTO
+  // the popover on open (the time field in date+time mode, the most useful
+  // place to land, or the popover's own root otherwise — see the `tabIndex`
+  // on `.cal-popover`) and back onto the trigger's own BUTTON on close.
+  // `triggerRef` isn't always the button itself: `schedule.tsx` attaches it
+  // directly to a `<button>`, but `date-input.tsx`/`datetime-input.tsx`
+  // attach it to the `.date-input` WRAPPER `<span>` (its rect is what
+  // centers the popover, matching the pre-TD-7 CSS centering) — the actual
+  // `.date-input-btn` is one of its children. `querySelector` finds it when
+  // present; falling back to the trigger element itself covers `schedule.tsx`.
+  // `{ preventScroll: true }` on BOTH calls (found empirically, not in the
+  // review's own recommendation): a plain `.focus()` on the time field makes
+  // the BROWSER auto-scroll it into view inside the popover's own
+  // `overflow-y:auto` box whenever `maxHeight` (F1's fix) makes that box
+  // shorter than its content — which scrolls the day grid ABOVE it clean out
+  // of view the instant the popover opens, undoing F1's "every control
+  // reachable" guarantee for whichever control focus lands on. `preventScroll`
+  // still moves keyboard focus (F5's actual goal) without moving the
+  // scrollbox — the popover opens at `scrollTop: 0`, day grid visible first.
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (open) {
+      const target = popoverRef.current?.querySelector<HTMLElement>('input[type="text"]') ?? popoverRef.current;
+      target?.focus({ preventScroll: true });
+    } else if (wasOpenRef.current && triggerRef.current) {
+      const trigger = triggerRef.current;
+      (trigger.querySelector<HTMLElement>('.date-input-btn') ?? trigger).focus({ preventScroll: true });
+    }
+    wasOpenRef.current = open;
+  }, [open, popoverRef, triggerRef]);
 
   return { open, setOpen, anchor, toggle };
 }

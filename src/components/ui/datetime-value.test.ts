@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composeDatetimeLocal, isValidTimeText, parseDatetimeLocal } from './datetime-value';
+import { composeDatetimeLocal, isValidTimeText, normalizeTimeText, parseDatetimeLocal } from './datetime-value';
 
 describe('isValidTimeText', () => {
   it('accepts strict 2-digit HH:MM across the full 24h/60min range', () => {
@@ -20,6 +20,28 @@ describe('isValidTimeText', () => {
     expect(isValidTimeText('ab:cd')).toBe(false);
     expect(isValidTimeText('')).toBe(false);
     expect(isValidTimeText('09:30:00')).toBe(false);
+  });
+});
+
+describe('normalizeTimeText', () => {
+  it('composes HH:MM from a colon-less 3 or 4 digit value (story TD-7 review F3, mobile numeric keypad)', () => {
+    expect(normalizeTimeText('930')).toBe('09:30');
+    expect(normalizeTimeText('0930')).toBe('09:30');
+    expect(normalizeTimeText('1234')).toBe('12:34');
+  });
+
+  it('leaves an already-punctuated or malformed value unchanged', () => {
+    expect(normalizeTimeText('9:30')).toBe('9:30');
+    expect(normalizeTimeText('09:30')).toBe('09:30');
+    expect(normalizeTimeText('')).toBe('');
+    expect(normalizeTimeText('12')).toBe('12'); // too short — still mid-typing
+    expect(normalizeTimeText('12345')).toBe('12345'); // too long
+    expect(normalizeTimeText('ab:cd')).toBe('ab:cd');
+  });
+
+  it('composes into what isValidTimeText accepts for a valid digit sequence, and into something it still rejects for an out-of-range one', () => {
+    expect(isValidTimeText(normalizeTimeText('0930'))).toBe(true);
+    expect(isValidTimeText(normalizeTimeText('2500'))).toBe(false); // hour 25 — out of range even after composing
   });
 });
 

@@ -39,7 +39,8 @@ export type CalendarPopoverTimeProps = {
 export type CalendarPopoverProps = {
   cursor: Date;
   onCursorChange: (next: Date) => void;
-  selected: Date;
+  /** `null` = no day picked yet (story TD-7 review F2: passing `today` as a stand-in used to render it as visually SELECTED — full accent fill — even with nothing chosen; `null` renders no `.sel` cell at all, while `.today`'s own border stays a separate, always-on indicator). */
+  selected: Date | null;
   today: Date;
   onPick: (date: Date) => void;
   onToday: () => void;
@@ -60,8 +61,12 @@ export type CalendarPopoverProps = {
   time?: CalendarPopoverTimeProps;
 };
 
-/** `.cal-popover`'s CSS `width` (`airops.css`) — pinned here so `date-input.tsx`/`datetime-input.tsx`'s fixed-popover left-clamp math (story TD-7) shares one source instead of a literal drifting out of sync with the CSS (same reasoning as `schedule.tsx#CAL_POPOVER_WIDTH`, kept separate per-file there since that file is pinned "do not modify" for this story). */
+/** `.cal-popover`'s CSS `width` (`airops.css`) — pinned here so `fixed-popover.ts`'s left-clamp math shares one source instead of a literal drifting out of sync with the CSS. `schedule.tsx` imports this (and the two constants below) from `fixed-popover.ts`, which re-exports it (story TD-7 review F6, PO decision 2026-07-26: dedup the three symbols that used to be duplicated verbatim there). */
 export const CAL_POPOVER_WIDTH = 280;
+
+/** `CalendarPopover`'s own natural rendered height (`scrollHeight`, measured in a real browser — story TD-7 review F1) in each of its two modes. `useFixedPopover#toggle` uses these only to decide whether flipping the popover above its trigger is worth it, never as a hard cap — see `fixed-popover.ts`. */
+export const CAL_POPOVER_HEIGHT_DATE_ONLY = 359;
+export const CAL_POPOVER_HEIGHT_DATE_TIME = 427;
 
 function sameDay(a: Date, b: Date): boolean {
   return a.toDateString() === b.toDateString();
@@ -102,7 +107,7 @@ export function CalendarPopover({
   }
 
   return (
-    <div className="cal-popover" style={style} ref={ref} onClick={(event) => event.stopPropagation()}>
+    <div className="cal-popover" style={style} ref={ref} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
       <div className="cal-head">
         <button type="button" className="iconbtn" onClick={() => stepMonth(-1)} aria-label={prevMonthLabel}>
           <Icon.chevL />
@@ -122,7 +127,7 @@ export function CalendarPopover({
       <div className="cal-grid">
         {cells.map((date) => {
           const inMonth = date.getMonth() === cursor.getMonth();
-          const isSel = sameDay(date, selected);
+          const isSel = selected !== null && sameDay(date, selected);
           const isToday = sameDay(date, today);
           return (
             <button
@@ -143,7 +148,6 @@ export function CalendarPopover({
             <span className="fld-ctrl">
               <input
                 type="text"
-                inputMode="numeric"
                 autoComplete="off"
                 placeholder="09:30"
                 className="input"
@@ -175,7 +179,22 @@ export function CalendarPopover({
           {todayLabel}
         </button>
         {time ? (
-          <button type="button" className="btn primary" onClick={time.onConfirm} disabled={time.confirmDisabled}>
+          // Story TD-7 review F2(b): the native `disabled` attribute has NO
+          // visual effect here — the design system's only disabled look is
+          // keyed off `aria-disabled` (`airops.css`, `.btn[aria-disabled="true"]`,
+          // lesson 13.11-F1) — so a disabled `disabled` button rendered fully
+          // opaque and apparently clickable while actually inert. `aria-disabled`
+          // + a guard in the handler (same pattern the rest of the app's
+          // disabled buttons use) gives it both the dimmed look AND blocks
+          // activation.
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => {
+              if (!time.confirmDisabled) time.onConfirm();
+            }}
+            aria-disabled={time.confirmDisabled}
+          >
             {time.confirmLabel}
           </button>
         ) : null}

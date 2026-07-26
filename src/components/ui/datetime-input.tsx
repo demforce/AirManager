@@ -37,9 +37,9 @@
 import { useRef, useState, type InputHTMLAttributes, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslations } from 'next-intl';
-import { CAL_POPOVER_WIDTH, CalendarPopover } from './calendar-popover';
-import { composeDatetimeLocal, isValidTimeText, parseDatetimeLocal } from './datetime-value';
-import { clampPopoverLeft, POPOVER_PORTAL_SCRIM_Z_INDEX, POPOVER_PORTAL_Z_INDEX, useFixedPopover } from './fixed-popover';
+import { CAL_POPOVER_HEIGHT_DATE_TIME, CAL_POPOVER_WIDTH, CalendarPopover } from './calendar-popover';
+import { composeDatetimeLocal, isValidTimeText, normalizeTimeText, parseDatetimeLocal } from './datetime-value';
+import { anchorPositionStyle, clampPopoverLeft, POPOVER_PORTAL_SCRIM_Z_INDEX, POPOVER_PORTAL_Z_INDEX, useFixedPopover } from './fixed-popover';
 import { Icon } from './icons';
 
 export type DateTimeInputProps = {
@@ -91,7 +91,7 @@ export function DateTimeInput({ inline = false, ref: externalRef, disabled, clas
     // Re-anchor on every open (same reasoning as `DateInput#toggle`): the
     // value may have changed since the popover was last shown. Only runs on
     // a real OPEN (`useFixedPopover.toggle` never invokes this on close).
-    fixedPopover.toggle(() => {
+    fixedPopover.toggle(CAL_POPOVER_HEIGHT_DATE_TIME, () => {
       const value = inputRef.current?.value ?? '';
       const parsed = parseDatetimeLocal(value);
       setContent(
@@ -111,12 +111,17 @@ export function DateTimeInput({ inline = false, ref: externalRef, disabled, clas
     setContent((current) => ({ ...current, time: value }));
   }
 
-  const confirmDisabled = !content.selectedDay || !isValidTimeText(content.time);
+  // Story TD-7 review F3: `normalizeTimeText` turns a colon-less 3/4-digit
+  // value (what a mobile numeric keypad produces — see the time field's
+  // missing `inputMode` below) into `HH:MM` before it's checked/written; the
+  // field itself still shows exactly what the user typed until confirm.
+  const normalizedTime = normalizeTimeText(content.time);
+  const confirmDisabled = !content.selectedDay || !isValidTimeText(normalizedTime);
 
   /** The ONLY path that writes the underlying input — requires both a day and a valid time (ratifica 2/3). */
   function confirm(): void {
-    if (!content.selectedDay || !isValidTimeText(content.time)) return;
-    if (inputRef.current) setInputDatetime(inputRef.current, composeDatetimeLocal(localDateToDateOnly(content.selectedDay), content.time));
+    if (!content.selectedDay || !isValidTimeText(normalizedTime)) return;
+    if (inputRef.current) setInputDatetime(inputRef.current, composeDatetimeLocal(localDateToDateOnly(content.selectedDay), normalizedTime));
     fixedPopover.setOpen(false);
   }
 
@@ -135,7 +140,7 @@ export function DateTimeInput({ inline = false, ref: externalRef, disabled, clas
                 style={{
                   position: 'fixed',
                   zIndex: POPOVER_PORTAL_Z_INDEX,
-                  top: fixedPopover.anchor.top,
+                  ...anchorPositionStyle(fixedPopover.anchor),
                   left: clampPopoverLeft(
                     fixedPopover.anchor.triggerRect.left + fixedPopover.anchor.triggerRect.width / 2 - CAL_POPOVER_WIDTH / 2,
                     CAL_POPOVER_WIDTH,
@@ -146,7 +151,7 @@ export function DateTimeInput({ inline = false, ref: externalRef, disabled, clas
                 }}
                 cursor={content.cursor}
                 onCursorChange={(next) => setContent((current) => ({ ...current, cursor: next }))}
-                selected={content.selectedDay ?? today}
+                selected={content.selectedDay}
                 today={today}
                 onPick={pickDay}
                 onToday={() => pickDay(new Date())}
@@ -158,7 +163,7 @@ export function DateTimeInput({ inline = false, ref: externalRef, disabled, clas
                   onChange: changeTime,
                   onConfirm: confirm,
                   confirmDisabled,
-                  invalid: content.time.length > 0 && !isValidTimeText(content.time),
+                  invalid: content.time.length > 0 && !isValidTimeText(normalizedTime),
                   label: t('time'),
                   confirmLabel: t('confirm'),
                   invalidLabel: t('invalidTime'),

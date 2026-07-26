@@ -23,10 +23,11 @@
  * projection already computes are reused verbatim as `left`/`width` here,
  * since both are just "how far through the 06:00-22:00 window" percentages.
  */
-import { useEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
+import { useRef, useState, type MouseEvent } from 'react';
 import { getPathname, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { CalendarPopover } from '@/components/ui/calendar-popover';
+import { CAL_POPOVER_HEIGHT_DATE_ONLY, CalendarPopover } from '@/components/ui/calendar-popover';
+import { anchorPositionStyle, CAL_POPOVER_WIDTH, clampPopoverLeft, useFixedPopover } from '@/components/ui/fixed-popover';
 import { Icon } from '@/components/ui/icons';
 // Story 12.12 AC 1: the projection ITSELF (`projectDayBlocks`/`projectWeekChips`)
 // moved to `@/lib/booking-schedule`, shared with the Overview's embedded day
@@ -151,120 +152,10 @@ function localDateToDateOnly(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-type FixedPopoverAnchor = { top: number; maxHeight: number; triggerRect: DOMRect };
-
-/** `.popover`'s explicit `width` (review F3, story 13.7) / `.cal-popover`'s CSS `width` (`airops.css`) — pinned here too so the clamp math below (story 13.10) and the inline style share one source instead of two literal `320`/`280`s drifting apart. */
+/** `.popover`'s explicit `width` (review F3, story 13.7) — pinned here so the clamp math below (story 13.10) and the inline style share one source instead of a literal drifting out of sync. `CAL_POPOVER_WIDTH`, `clampPopoverLeft` and `useFixedPopover` used to be duplicated verbatim here; they now come from `@/components/ui/fixed-popover` (story TD-7 review F6, PO decision 2026-07-26: dedup, so this file also inherits the F1 flip/clamp fix instead of the two copies silently diverging). */
 const FILTER_POPOVER_WIDTH = 320;
-const CAL_POPOVER_WIDTH = 280;
-
-/**
- * Clamps a `position: fixed` popover's LEFT edge to stay inside the
- * viewport with an 8px gutter on both sides — story 13.10 (F4-13.7): at
- * narrow viewports (375px) a trigger button near an edge pushed a
- * fixed-width popover partway off-screen (measured pre-fix: filter popover
- * 139px past the left edge, calendar popover 12px past the right edge).
- * Shared by both popovers below, same "one mechanism, not duplicated"
- * reasoning as `useFixedPopover` itself.
- *
- * Review fix (F6): below `width + 2*gutter` (336px for the 320px filter
- * popover) the two bounds cross — the upper bound
- * (`window.innerWidth - width - gutter`) drops below the lower bound
- * (`gutter`), and `Math.min(Math.max(desired, gutter), upperBound)`
- * evaluates the upper bound LAST, so it wins and can return a NEGATIVE
- * `left` (measured: -8 at a 320px viewport) — the popover clips past the
- * left edge again, the exact bug this function exists to prevent.
- * `Math.max(gutter, Math.min(...))` evaluates the lower bound last instead,
- * so it always wins: `left` is never < `gutter`, at the cost of accepting
- * overflow on the RIGHT when the viewport is narrower than the popover
- * itself (no width left to satisfy both edges — a real constraint, not a
- * bug this function can fix).
- */
-function clampPopoverLeft(desiredLeft: number, width: number): number {
-  const gutter = 8;
-  return Math.max(gutter, Math.min(desiredLeft, window.innerWidth - width - gutter));
-}
-
-/**
- * Shared "fixed, viewport-anchored popover" mechanism (review F1, story
- * 13.7): the CALENDAR popover turned out to share the exact clipping bug
- * the FILTER popover was fixed for in AC1 (`.card{overflow:hidden}`,
- * `airops.css:402`, ritaglia qualunque discendente `position:absolute` che
- * eccede il box della card) — same fix, same mechanism, extracted here
- * instead of duplicated per popover (two popovers, one mechanism). Vertical
- * anchor + open/close mechanics are shared; horizontal placement differs
- * (filter: right-aligned under its trigger; calendar: centered, via
- * `.cal-popover`'s own CSS `transform:translateX(-50%)`) and stays at each
- * call site.
- *
- * - `toggle(onOpen?)`: mirrors `toggleCalendarPopover`'s original
- *   "read-the-pre-toggle-value, then toggle" shape — measures the
- *   trigger's VIEWPORT position (`getBoundingClientRect`) before flipping
- *   `open`, since a `position:fixed` popover has no CSS equivalent of the
- *   old `top: calc(100% + 6px)` (relative-to-parent) rule. `maxHeight` caps
- *   the popover to whatever vertical room is left below the trigger in the
- *   viewport (18px bottom margin, found via a real e2e run against a fleet
- *   large enough to wrap the aircraft/instructor badges past one
- *   screenful): a `position:fixed` element does not scroll WITH the page,
- *   so an uncapped popover taller than the viewport would leave its footer
- *   permanently unreachable. `onOpen` runs only when the popover is about
- *   to OPEN (never on close), for a caller's own pre-open side effect
- *   (calendar: snapping the month cursor to the selected date).
- * - the scroll/resize effect below closes the popover so a `position:fixed`
- *   element (which no longer scrolls WITH the page like the old `absolute`
- *   one did) doesn't visually detach from its trigger. Capture phase so a
- *   scroll inside `.schedule`'s own horizontal scrollbar (a nested
- *   container, not the window) is caught too — EXCEPT the popover's own
- *   internal `overflow-y:auto` scroll (the `maxHeight` fix above): that
- *   scroll also fires a capture-phase 'scroll' event on `window` (found via
- *   a real e2e run — Playwright's own `scrollIntoView` to reach an
- *   off-screen footer button scrolled the popover, which this listener
- *   would otherwise close before the click could land), so a scroll whose
- *   target is inside the popover itself must NOT close it — `popoverRef`
- *   (created by the CALLER, same convention as `triggerRef`, and attached
- *   to the popover's own root DOM node) is what that exemption reads.
- *   Deliberately NOT created/returned by this hook itself: the
- *   `react-hooks/refs` lint rule flags ANY property read on an object
- *   returned by a custom hook once that object also carries a ref field,
- *   even a plain, non-`.current` read like `anchor.top` below — keeping
- *   both refs caller-owned params avoids that false positive without
- *   losing the "one mechanism" extraction. NOTE for future e2e authors
- *   (F6): a click on the TRIGGER that itself causes the page to
- *   scroll-into-view (e.g. Playwright's own actionability check on an
- *   off-screen trigger) opens and immediately closes the popover in the
- *   same instant — harmless for a real user (who scrolls to see the
- *   trigger BEFORE clicking it), but a trap for automation that clicks a
- *   trigger while the page is scrolled.
- */
-function useFixedPopover(triggerRef: RefObject<HTMLElement | null>, popoverRef: RefObject<HTMLElement | null>) {
-  const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<FixedPopoverAnchor | null>(null);
-
-  function toggle(onOpen?: () => void) {
-    if (!open && triggerRef.current) {
-      const triggerRect = triggerRef.current.getBoundingClientRect();
-      const top = triggerRect.bottom + 6;
-      setAnchor({ top, maxHeight: window.innerHeight - top - 18, triggerRect });
-      onOpen?.();
-    }
-    setOpen((wasOpen) => !wasOpen);
-  }
-
-  useEffect(() => {
-    if (!open) return;
-    function close(event: Event) {
-      if (event.target instanceof Node && popoverRef.current?.contains(event.target)) return;
-      setOpen(false);
-    }
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [open, popoverRef]);
-
-  return { open, setOpen, anchor, toggle };
-}
+/** Rough estimate of the filter popover's own rendered height (two `.pop-row` segmented-button groups) — same "decide whether to flip, never a hard cap" role as `CAL_POPOVER_HEIGHT_DATE_ONLY` (`calendar-popover.tsx`); both of this file's triggers sit near the TOP of the card, so `useFixedPopover#toggle` never actually needs to flip either popover in practice. */
+const FILTER_POPOVER_HEIGHT = 320;
 
 /** Small client-only duplicate of `page.tsx#calendarHref`'s day-view case — see module doc-comment. */
 function buildDateHref(dateOnly: string, view: BookingCalendarView, listPage: number, today: string): string {
@@ -335,7 +226,7 @@ export function Schedule({
    */
   function toggleCalendarPopover() {
     filterPopover.setOpen(false);
-    calPopover.toggle(() => {
+    calPopover.toggle(CAL_POPOVER_HEIGHT_DATE_ONLY, () => {
       const selected = dateOnlyToLocalDate(date);
       setCalCursor(new Date(selected.getFullYear(), selected.getMonth(), 1));
     });
@@ -343,7 +234,7 @@ export function Schedule({
 
   function toggleFilterPopover() {
     calPopover.setOpen(false);
-    filterPopover.toggle();
+    filterPopover.toggle(FILTER_POPOVER_HEIGHT);
   }
 
   return (
@@ -383,7 +274,7 @@ export function Schedule({
                 ref={calPopoverRef}
                 style={{
                   position: 'fixed',
-                  top: calPopover.anchor.top,
+                  ...anchorPositionStyle(calPopover.anchor),
                   // Centered under the trigger button, clamped to the
                   // viewport (story 13.10, F4-13.7 twin) — the un-clamped
                   // version relied on `.cal-popover`'s own CSS (`left:50%;
@@ -439,7 +330,7 @@ export function Schedule({
                 className="popover"
                 style={{
                   position: 'fixed',
-                  top: filterPopover.anchor.top,
+                  ...anchorPositionStyle(filterPopover.anchor),
                   // Story 13.10 (F4-13.7): clamped LEFT instead of the old
                   // `right: viewportWidth - triggerRect.right` — at 375px a
                   // trigger sitting left of the popover's fixed width pushed

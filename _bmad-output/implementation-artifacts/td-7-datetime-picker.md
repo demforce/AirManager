@@ -143,6 +143,79 @@ Zero falliti, zero flaky, TUTTI e 3 i project (`chromium` 255 + `settings` 6 + `
 - `d841cc7` fix(td-7): e2e — atteso esplicito che il popover portato sia visibile prima di leggerne la geometria (race trovata dalla suite CI=1 su build prod).
 - `a0a5635` fix(td-7): e2e — scroll esplicito e separato del bottone calendario prima del click (stessa trappola già documentata in `schedule.tsx#useFixedPopover`, riprodotta sul form pubblico `/ppr`).
 
-## Review Record
+## Review Record (adversarial, Opus 5 xhigh — 2026-07-26)
 
-_(compilato dopo la review adversarial)_
+**Verdetto**: `shippable-with-fixes` con **1 BLOCKER (F1)** → story NON shippable finché F1 non è chiuso. Priority zero rieseguita in autonomia dal reviewer (non fidandosi del report dev): full suite `CI=1` su build di produzione, DB fresco → `264 passed`, zero failed/flaky/retry, delta esatto +5 (i test nuovi di `e2e/datetime-picker.spec.ts`), nessun test pre-esistente indebolito. **Questo risultato NON è discriminante rispetto a F1-F8**: i 5 e2e nuovi scrollano sempre il trigger in vista prima di cliccare (`scrollIntoViewIfNeeded`), quindi non riproducono lo scenario "trigger vicino al fondo senza scroll" in cui F1 si manifesta — da qui il finding F8.
+
+**Deviazione portal universale (AC1 "date-input.tsx non cambia di un pixel")**: CONFERMATA legittima dal reviewer. Causa verificata empiricamente: `.slideover-panel{transform:translateX(...)}` (sempre attivo mentre il pannello è aperto) rende quell'elemento il containing block per i discendenti `position:fixed` — un popover `fixed` lasciato in-place dentro uno SlideOver non raggiunge le coordinate di viewport reali e resta soggetto al clip di `.so-body`. Il portal è quindi necessario, non over-engineering, e il bug di clipping pre-fix è stato riprodotto anche fuori dai 10 punti dell'AC4 (form pubblico `/ppr`, ~167px oltre `.card{overflow:hidden}`). Nessuna regressione sui consumer `DateInput` pre-esistenti (12/12 sondati dal reviewer: posizione fixed, portalato, `clipAncestor:null`, cella giorno/"Oggi" hit-testabili).
+
+**Findings e stato dopo i fix di questa sessione**:
+
+| # | Severità | Titolo | Esito |
+|---|---|---|---|
+| F1 | **blocker** | Nessun fallback verso l'alto: trigger in metà bassa del viewport → popover a 26-45px o fuori schermo, zero controlli hit-testabili (form pubblico `/ppr`, desktop e mobile) | **FIXATO** — flip verticale + clamp in `fixed-popover.ts#toggle` |
+| F2 | major | Nessun giorno scelto ma "oggi" appare selezionato (`.sel`); Conferma disabilitato con l'attributo nativo `disabled`, visivamente identico all'abilitato (il design system stila solo `aria-disabled`) | **FIXATO** — `selected: Date \| null` + `aria-disabled` con guardia `onClick` |
+| F3 | major | Campo ora `inputMode="numeric"`: la tastiera numerica mobile non ha `:`, nessuna auto-composizione | **FIXATO** — `inputMode` rimosso + `normalizeTimeText` (3-4 cifre → `HH:MM`) |
+| F4 | minor | Esc chiude lo SlideOver ma lascia il popover portalato orfano e interattivo | **FIXATO** — Esc intercettato in capture phase dentro `useFixedPopover`, `stopPropagation` |
+| F5 | minor | Il portal sposta il popover in fondo a `<body>`: Tab dal bottone calendario non raggiunge i controlli | **FIXATO** — focus nel popover all'apertura, ritorno al bottone alla chiusura (+ fix aggiuntivo non previsto dalla review: `{preventScroll:true}`, v. sotto) |
+| F6 | minor | `useFixedPopover`/`clampPopoverLeft`/`CAL_POPOVER_WIDTH` duplicati verbatim in `schedule.tsx` e `fixed-popover.ts` | **FATTO (decisione PO 2026-07-26)** — dedup: `schedule.tsx` importa i 3 simboli da `fixed-popover.ts`, copie locali cancellate; eredita anche il fix F1 |
+| F7 | po-decision | 4 input `type="time"` nativi residui (scheduling-card, flight-editor), incoerenti col nuovo campo ora custom | **NESSUNA AZIONE** — fuori scope TD-7 (l'inventario AC4 era solo `date`/`datetime-local`); tracciato come follow-up |
+| F8 | minor | La guardia e2e anti-clipping asserisce un dettaglio implementativo (`parentElement === document.body`) e non è discriminante rispetto al blocker F1 | **RISCRITTA** — assert di effetto (popover dentro il viewport) + nuovo caso senza `scrollIntoView` con trigger a <100px dal fondo |
+| F9 | note | L'elenco dei consumer `DateInput` toccati dal portal è incompleto (12 file, non 10) | **CORRETTO** nel Dev Agent Record (v. sotto) |
+
+## Fix post-review (2026-07-26)
+
+Fix-subagent Sonnet 5 xhigh, applicati in quest'ordine (F1→F8), verificati interattivamente (Playwright/`playwright-core` headless, script throwaway nello scratchpad, mai committati) e via `npm run gates`.
+
+### F1 (blocker) — flip verticale + clamp in `fixed-popover.ts#toggle`
+
+`useFixedPopover#toggle` prende ora un parametro `neededHeight` (l'altezza naturale stimata del popover: `CAL_POPOVER_HEIGHT_DATE_ONLY = 359`, `CAL_POPOVER_HEIGHT_DATE_TIME = 427`, misurate via `scrollHeight` reale — nuove costanti in `calendar-popover.tsx`) usato SOLO per decidere se ribaltare sopra il trigger, mai per accorciare `maxHeight` quando c'è spazio a sufficienza (il ramo "resta sotto" con spazio abbondante si riduce esattamente alla formula pre-fix, quindi zero pixel di differenza per `schedule.tsx` e per ogni contesto già a posto). Se lo spazio sotto è insufficiente E sopra ce n'è di più, il popover ancora `bottom` invece di `top` (nuovo `FixedPopoverAnchor.{top,bottom}: number | null`, helper `anchorPositionStyle` per applicarlo nello style inline); altrimenti resta sotto ma `top` è clampato per non superare il fondo del viewport. `maxHeight` non scende mai sotto 200px (mai `max-height:none`).
+
+Misure hit-test (`elementFromPoint`) PRIMA/DOPO nei 4 contesti richiesti, browser reale (playwright-core, Chromium headless):
+
+| Contesto | Prima (riprodotto) | Dopo |
+|---|---|---|
+| `/ppr` desktop 1440×900, campo ETA a <20px dal fondo (senza scroll) | popover fuori schermo, day/time/confirm = NOT-HIT | popover FLIPPATO sopra (`top:393 bottom:823`, dentro `[0,900]`), day/time/confirm = **true** |
+| `/ppr` mobile 375×667, campo ETD a <70px dal fondo | popover alto ~26px, tutto NOT-HIT | FLIPPATO sopra (`top:171 bottom:600`, dentro `[0,667]`), day/time/confirm = **true** |
+| SlideOver "Nuova prenotazione", campo Fine, viewport basso (900×620) forzato apposta | (non riproducibile senza portare la story pre-fix: per costruzione con `.so-foot` il campo sta quasi sempre in alto) | resta SOTTO ma `maxHeight` clampato a 292px (< 427 necessari) → scroll interno; day/time/confirm = **true** una volta scrollati nel box del popover |
+| Filtro data Contabilità (`billing-console.tsx`, pre-esistente, sola data) | — | `insideViewport:true`, day/today hit = **true** (consumer non toccato dallo sweep AC4 ma coperto dal fix universale, come nel Dev Agent Record originale) |
+
+### F2 (major) — stato vuoto onesto + Conferma davvero disabilitato
+
+(a) `CalendarPopoverProps.selected` esteso a `Date | null`; `calendar-popover.tsx` calcola `isSel = selected !== null && sameDay(...)` — nessuna cella `.sel` quando non è stato scelto un giorno. `datetime-input.tsx` passa `content.selectedDay` direttamente (non più `?? today`). Il giorno corrente resta distinguibile solo via `.today` (bordo), separato da `.sel`. `date-input.tsx` (modalità sola-data, nessun passaggio di "bozza visibile prima della conferma": un click scrive e chiude nello stesso gesto) non è stato toccato — non è nel perimetro del finding, che riguarda specificamente lo stato-bozza di `datetime-input.tsx`.
+
+(b) Il bottone Conferma usa ora `aria-disabled` + guardia `onClick` (`if (!time.confirmDisabled) time.onConfirm()`), stesso pattern del resto dell'app per gli elementi disabilitati; rimosso l'attributo nativo `disabled`. Verificato via `getComputedStyle`: `opacity:"0.4"`, `pointerEvents:"none"` quando disabilitato (prima: `opacity:"1"`, identico all'abilitato).
+
+### F3 (major) — normalizzazione ora + tastiera mobile
+
+`datetime-value.ts` guadagna `normalizeTimeText` (pura, testata): 3-4 cifre senza `:` → `HH:MM` (`930`→`09:30`, `0930`→`09:30`); qualunque altro valore (già con `:`, lunghezza diversa, non numerico) passa invariato. Applicata in `datetime-input.tsx` prima di validare/comporre (il campo mostra comunque quello che l'utente digita, la normalizzazione è "sotto il cofano" — evita di riformattare a metà digitazione un input a 4 cifre). Rimosso `inputMode="numeric"` dal campo ora in `calendar-popover.tsx` (il default mostra una tastiera con `:`).
+
+Verifica (emulazione, non essendo osservabile una tastiera virtuale reale in Chromium headless — stesso limite dichiarato dal reviewer): digitato `"0930"` (solo cifre, esattamente ciò che una tastiera numerica produce) nel campo ora di una prenotazione nuova, senza mai digitare `:` → `aria-disabled` del Conferma passa a `"false"` dopo aver scelto un giorno, click Conferma → valore scritto nell'input `2026-09-15T09:30` (composto correttamente da `"0930"`). `inputmode` dell'elemento verificato `null` (attributo assente).
+
+### F4 (minor) — Esc chiude prima il popover
+
+`useFixedPopover` aggiunge un listener `keydown` su `window` in **capture phase**: se `Escape` e il popover è aperto, `stopPropagation()` + chiusura. Poiché `SlideOver` registra il proprio listener Esc in bubble phase sullo stesso `window`, il capture-phase fa sì che il primo Esc sia consumato dal popover PRIMA che l'evento raggiunga il listener dello SlideOver nello stesso dispatch. Verificato: 1° Esc → popover chiuso, SlideOver ancora aperto; 2° Esc → SlideOver chiuso.
+
+### F5 (minor) — focus nel popover all'apertura, ritorno al bottone alla chiusura
+
+Due effect in `useFixedPopover`: all'apertura porta il focus sul campo ora (`input[type="text"]` dentro il popover) se presente, altrimenti sul popover stesso (`tabIndex={-1}` aggiunto a `.cal-popover`); alla chiusura riporta il focus sul bottone calendario. `triggerRef` non è sempre il bottone stesso: in `schedule.tsx` lo è, ma in `date-input.tsx`/`datetime-input.tsx` è il sua `<span class="date-input">` wrapper (serve per il calcolo delle coordinate) — il codice cerca `.date-input-btn` al suo interno, con fallback sull'elemento stesso (copre `schedule.tsx`).
+
+**Fix aggiuntivo scoperto in verifica, non previsto dalla review**: un plain `.focus()` sul campo ora fa sì che il BROWSER scrolli automaticamente quel campo dentro il proprio scrollbox interno (`overflow-y:auto` di F1) ogni volta che `maxHeight` lo rende più basso del contenuto naturale — il che spinge la griglia giorni (sopra il campo ora nel DOM) fuori dall'area visibile nello STESSO istante in cui il popover si apre, vanificando la garanzia "ogni controllo raggiungibile" di F1 proprio nello scenario a spazio ridotto (SlideOver, viewport basso). Misurato: `popover.scrollTop` risultava `137` subito dopo l'apertura, senza alcuna interazione dell'utente. Fix: `{ preventScroll: true }` su entrambe le chiamate `.focus()` — il focus si sposta comunque (obiettivo di F5), lo scrollbox no (il popover si apre sempre a `scrollTop:0`, griglia giorni visibile per prima).
+
+### F6 (minor → decisione PO, dedup ora)
+
+`schedule.tsx` importa `useFixedPopover`, `clampPopoverLeft`, `CAL_POPOVER_WIDTH` da `@/components/ui/fixed-popover` (che ri-esporta `CAL_POPOVER_WIDTH`, definito in `calendar-popover.tsx`); le copie locali (~115 righe: tipo, costanti, le due funzioni) sono state cancellate. I due `toggle()` di `schedule.tsx` passano ora un `neededHeight` (`CAL_POPOVER_HEIGHT_DATE_ONLY` per il calendario, una nuova costante locale `FILTER_POPOVER_HEIGHT = 320` per il popover filtri) — irrilevante in pratica perché entrambi i trigger di `schedule.tsx` stanno in alto nella card (mai spazio-sotto insufficiente), verificato: nessun cambiamento visivo, popover calendario e filtri invariati (`insideViewport:true`, day/today hit-testabili, stessa geometria di prima). Regression-guard e2e coperti: `e2e/bookings.spec.ts` (13.7-F1/13.10) verde, v. sotto.
+
+### F7 (po-decision) — nessuna azione
+
+4 input nativi `type="time"` (`settings/scheduling-card.tsx:81,84`, `logbook/flight-editor.tsx:522,529`) restano fuori scope: l'inventario AC4 copriva solo `date`/`datetime-local`. Registrato come follow-up, non toccato in questa story.
+
+### F8 (minor) — guardia e2e riscritta
+
+In `e2e/datetime-picker.spec.ts`: l'assert `popover.parentElement === document.body` (dettaglio implementativo) è sostituito da un assert di effetto (`rect.top >= 0 && rect.bottom <= innerHeight`) nel test "clipping regression guard", esteso con hit-test su cella giorno e campo ora oltre al Conferma (prima solo quest'ultimo). Aggiunto un test NUOVO ("blocker regression guard (TD7-F1)") che apre il picker sul form pubblico `/ppr` con il trigger portato deliberatamente a <100px dal fondo, click dispatchato via `page.evaluate` + `HTMLElement.click()` (MAI `scrollIntoViewIfNeeded`, che mascherava esattamente questo scenario) — assert su viewport bounds + `elementFromPoint` su cella giorno, campo ora e Conferma (quest'ultimo dopo aver scelto giorno+ora, perché disabilitato altrimenti — v. nota sotto).
+
+Nota emersa in verifica: con F2(b) applicato (`aria-disabled` + `pointer-events:none`), un Conferma DISABILITATO non è più hit-testable per costruzione (il browser esclude gli elementi `pointer-events:none` da `elementFromPoint`) — comportamento corretto, ma ha reso il check "confirmHit" dei test esistenti (che aprivano il popover senza scegliere nulla) un falso negativo. Aggiornati i 3 test che controllano `confirmHit` per scegliere prima un giorno e digitare un'ora valida, così il check misura "raggiungibile una volta abilitato", non "raggiungibile mentre inerte".
+
+### F9 (note) — elenco consumer `DateInput` corretto
+
+I file che importano `<DateInput` sono **12** (non 10, l'AC4 "10 punti" era ed è corretto ma si riferisce SOLO ai NUOVI consumer datetime-local/date convertiti in questa story — è un numero diverso, non lo stesso): `people/[id]/account-section.tsx`, `movements/movements-table.tsx`, `fleet/aircraft-editor.tsx`, `pilots/pilots-console.tsx`, `pilots/pilot-editor.tsx`, `instructors/instructors-console.tsx`, `instructors/instructor-rates-panel.tsx` (il file mancante nell'elenco originale), `logbook/flight-editor.tsx`, `logbook/logbook-console.tsx`, `billing/transaction-editor.tsx`, `billing/billing-console.tsx`, `components/dashboard/expiry-editor.tsx` — tutti destinatari del fix universale del portal (v. sezione clipping sopra), tutti verificati OK dal reviewer.

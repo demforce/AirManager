@@ -44,8 +44,8 @@
 import { useRef, useState, type InputHTMLAttributes, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslations } from 'next-intl';
-import { CAL_POPOVER_WIDTH, CalendarPopover } from './calendar-popover';
-import { clampPopoverLeft, POPOVER_PORTAL_SCRIM_Z_INDEX, POPOVER_PORTAL_Z_INDEX, useFixedPopover } from './fixed-popover';
+import { CAL_POPOVER_HEIGHT_DATE_ONLY, CAL_POPOVER_WIDTH, CalendarPopover } from './calendar-popover';
+import { anchorPositionStyle, clampPopoverLeft, POPOVER_PORTAL_SCRIM_Z_INDEX, POPOVER_PORTAL_Z_INDEX, useFixedPopover } from './fixed-popover';
 import { Icon } from './icons';
 
 export type DateInputProps = {
@@ -102,7 +102,7 @@ export function DateInput({ inline = false, ref: externalRef, disabled, classNam
     // `useFixedPopover.toggle` only invokes this callback on a real OPEN
     // (never on close), same "act only when about to open" shape the
     // pre-TD-7 inline check had.
-    fixedPopover.toggle(() => {
+    fixedPopover.toggle(CAL_POPOVER_HEIGHT_DATE_ONLY, () => {
       const value = inputRef.current?.value ?? '';
       const selected = value ? dateOnlyToLocalDate(value) : null;
       setContent({ cursor: selected ?? new Date(), selected });
@@ -129,7 +129,7 @@ export function DateInput({ inline = false, ref: externalRef, disabled, classNam
                 style={{
                   position: 'fixed',
                   zIndex: POPOVER_PORTAL_Z_INDEX,
-                  top: fixedPopover.anchor.top,
+                  ...anchorPositionStyle(fixedPopover.anchor),
                   // Centered under the trigger (this wrapper's own box) —
                   // matches the pre-TD-7 CSS centering (`left:50%;
                   // transform:translateX(-50%)` relative to `.date-input`),
