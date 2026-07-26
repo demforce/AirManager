@@ -172,7 +172,10 @@ development_status:
 
   # Tech-debt: 2 findings security post-epic-13 (scan 2026-07-23, decisione utente 2026-07-24,
   # mandato "procedi" 2026-07-26). Branch dedicato td-6-security-auth stacked su epic-13.
-  td-6-security-auth: ready-for-dev
+  # ATTENZIONE OPERATIVA AL RILASCIO: il fix F1 (User.tokenVersion nel JWT) DISCONNETTE
+  # TUTTE le sessioni vive entro 15 minuti dal deploy (i JWT preesistenti non portano il
+  # claim → trattati come stale, per design). Logout una-tantum, non un bug: avvisare gli utenti.
+  td-6-security-auth: done
 
 action_items:
   - epic: 13

@@ -33,24 +33,45 @@ export const LOGIN_MAX_FAILED_PER_IDENTIFIER = 10;
 export const LOGIN_MAX_FAILED_PER_IP = 30;
 
 /**
- * Atomically checks both caps and, if under them, immediately records a
- * pessimistic "failed" `LoginAttempt` row for `identifier`/`ip` — BEFORE the
- * caller runs the (slow) Argon2 verify. This closes a TOCTOU race (story
- * TD-6, F2, LOW, CWE-367, `CLAUDE-SECURITY-20260723-073138`): the previous
- * separate check-then-record (`isLoginLocked` followed later by
+ * Checks both caps and, if under them, immediately records a pessimistic
+ * "failed" `LoginAttempt` row for `identifier`/`ip` — BEFORE the caller runs
+ * the (slow) Argon2 verify. This closes a TOCTOU race (story TD-6, F2, LOW,
+ * CWE-367, `CLAUDE-SECURITY-20260723-073138`): the previous separate
+ * check-then-record (`isLoginLocked` followed later by
  * `recordFailedLoginAttempt`) let a burst of concurrent requests for the
  * same identifier all read the same pre-burst count, all pass the gate, and
  * all run a verify before any of them wrote its failure row — admitting
  * more than `LOGIN_MAX_FAILED_PER_IDENTIFIER` guesses into one window.
  *
- * The count-then-insert runs inside a Postgres transaction serialized on
+ * SCOPE OF THE ATOMICITY GUARANTEE (measured, review TD6-R1): the
+ * serialization covers the PER-IDENTIFIER cap only. The count-then-insert
+ * runs inside a Postgres transaction serialized on
  * `pg_advisory_xact_lock(hashtext(identifier))`: concurrent reservations for
  * the SAME identifier queue behind the lock and each sees the previous
- * one's committed insert before counting; different identifiers use
- * different lock keys and proceed in parallel. The lock is held only for
- * the count-then-insert, never across the verify — Argon2's CPU cost stays
- * outside the critical section (the Dev Agent Record explains why this was
- * chosen over locking around the whole check+verify+record).
+ * one's committed insert before counting (verified under a real 40-request
+ * HTTP burst: exactly `LOGIN_MAX_FAILED_PER_IDENTIFIER` verifies admitted).
+ * Different identifiers use different lock keys and proceed in parallel —
+ * so the per-IP count below is NOT serialized across identifiers and keeps
+ * the same best-effort character it had before TD-6: a burst spread over
+ * many identifiers from one IP can overshoot `LOGIN_MAX_FAILED_PER_IP` by
+ * roughly one burst's width (measured 35 vs a cap of 30), once per window,
+ * without compounding. Deliberately not closed: the identifier comes from
+ * the form and cannot be forged away, whereas the IP is read from
+ * `x-forwarded-for` and is already an accepted residual without a trusted
+ * proxy in front (`docs/security/owasp-audit-2026-07-22.md`, residual D-D).
+ * The lock is held only for the count-then-insert, never across the verify —
+ * Argon2's CPU cost stays outside the critical section (the Dev Agent Record
+ * explains why this was chosen over locking the whole check+verify+record).
+ *
+ * TRADE-OFF of reserving up front (review TD6-R3): the cap now counts
+ * attempts IN FLIGHT, not just failures. More than
+ * `LOGIN_MAX_FAILED_PER_IDENTIFIER` simultaneous logins for the SAME
+ * identifier are refused even when the password is CORRECT, because their
+ * reservations land before the first verify finishes and
+ * `recordSuccessfulLogin` gets to clear them (measured: 20 concurrent
+ * correct logins → 10 sessions, 10 refused; 12 → all 12 fine). Harmless for
+ * humans and for this repo's e2e suite (2 workers), but a real constraint
+ * for any client that fans out logins for one account.
  *
  * Returns `false` — and inserts NOTHING — once either cap is already at its
  * limit. Preserves the existing anti-DoS property: a continued flood

@@ -4,7 +4,7 @@ baseline_commit: a1bbfb9
 
 # Story TD-6: Security findings post-Epic 13 — revoca sessioni al reset password (F1) + login-lock atomico (F2)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -109,6 +109,24 @@ so that la rotazione delle credenziali sia un rimedio efficace e il brute-force 
 
 - 2026-07-26: F1 (`tokenVersion` watermark) + F2 (atomic login-lock reservation) implemented per `CLAUDE-SECURITY-20260723-073138/CLAUDE-SECURITY-RESULTS.md`. Gates pass (lint/typecheck/test 1453 passed/build). Real-DB concurrency probe (30 concurrent, 4 runs) confirms F2's atomicity. Interactive Mailpit verification (invite + forgot-password, prod build) confirms F1's `tokenVersion` bump and post-reset login. Status → review.
 
-## Review Record
+## Review Record (adversarial, Opus 5 xhigh — 2026-07-26)
 
-_(compilato dopo la review adversarial)_
+**Verdetto: shippable-with-fixes** (nessun blocker/major; 2 minor + 4 note, tutti chiusi qui — v. "Fix post-review").
+
+**Priority zero**: full suite CI=1 su build prod, DB fresco → **258 passed + 1 flaky, 0 failed, exit 0** (delta 0 vs 259 atteso: nessun e2e nuovo). L'unico flaky è `person-profiles.spec.ts:120` con errore `read ECONNRESET` sulla PUT (classe TRASPORTO, non auth — verificato: il cookie di sessione era presente, retry verde). Controprova indipendente che il login regge sotto la suite: 308 righe `LoginAttempt succeeded=true` e **3 sole failed residue**, tutte da login genuinamente falliti degli spec — la prenotazione pessimista non ha cambiato i conteggi visti dagli spec né lasciato prenotazioni orfane. Catena `chromium → settings (6/6) → booking-window (3/3)` integra. Gates PASS (1453 unit). Migrazione additiva pulita (`prisma migrate status`: 43 migrazioni, no drift; `\d "User"` mostra `tokenVersion integer not null default 0`). Nessun test indebolito (confronto nome-per-nome: gli 8 test storici del throttle sopravvivono rinominati + 2 nuovi; i 2 assert rimossi in `authorize.test.ts` riguardavano una funzione che non esiste più, proprietà ricoperta altrove).
+
+**Verifica EMPIRICA dei 2 fix** (non lettura di codice):
+- **F1 provato end-to-end sul percorso HTTP reale**: claim nel cookie DECIFRATO (`{userId, roles, tokenVersion:0}`) su tutti e 5 i ruoli; exploit del report riprodotto (login pilota → cookie conservato → forgot-password reale via Mailpit → set-password → `tokenVersion 0→1` a DB); cookie vecchio entro il grace → `200` (semantica accettata), con `lastActiveCheck` invecchiato di 16 min → **401 UNAUTHENTICATED**, e **controllo decisivo**: stesso invecchiamento ma `tokenVersion` corrente → `200` (⇒ l'eviction è causata dal mismatch di versione, non dall'invecchiamento). Claim mancante/null/stringa/db±1 → tutti NULL (fail-closed). A livello pagina: `/it/dashboard` con cookie stale → 307 verso login. Bump atomico: 4 set-password CONCORRENTI con lo stesso token → 1×200 + 3×422 e `tokenVersion` +1 ESATTO.
+- **F2 provato con burst HTTP reali** (25-40 POST concorrenti a `/api/auth/callback/credentials`, CSRF+cookie veri): cap per-identifier **esattamente 10** in 3 scenari (stesso IP; IP diversi; identifier diverso) — 10 lookup utente = 10 verify Argon2 nel log Postgres, con 30/40/25 `pg_advisory_xact_lock`. Discriminanza vs pre-fix MISURATA: riesecuzione dell'algoritmo baseline (count→attesa→insert) sullo stesso Postgres, 30 concorrenti → **30 verify ammessi (3× il cap)**; con `reserveLoginAttempt` → **10**. Anti-DoS confermata (identifier già lockato: 20 tentativi → 0 righe nuove) e anti-enumeration invariata (identifier esistente vs inesistente indistinguibili).
+
+**Findings → esiti:**
+- **TD6-R1 (minor)** — il doc-comment dichiarava atomicità su ENTRAMBI i cap, ma solo il per-identifier è serializzato (per-IP misurato 35 con cap 30, overshoot ~17% non componibile) → **FIXATO**: doc-comment riscritto con la garanzia REALE, misure incluse e rimando al residuo D-D già accettato in `docs/security/owasp-audit-2026-07-22.md`.
+- **TD6-R2 (note)** — per-IP TOCTOU lasciato aperto: la lettura di scope del dev è **LEGITTIMA** (il report prescrive la dimensione identifier — exploit scenario e fix «advisory lock keyed on the identifier»; l'AC2 dice «cap per-IP invariato»; e un contatore aggirabile via `x-forwarded-for` non guadagna sicurezza reale dall'atomicità — il reviewer ha scritto 10 IP arbitrari dal client per dimostrarlo). **ACCETTATO come residuo esplicito**: se il PO lo vorrà chiudere sarà una story a sé (né il panel né i 13 candidate scartati l'hanno mai sollevato).
+- **TD6-R3 (minor)** — trade-off inerente all'opzione (a) NON dichiarato dal dev: il cap conta i tentativi IN VOLO, quindi >cap login CORRETTI simultanei sullo stesso identifier vengono rifiutati (misurato: 20 concorrenti → 10 sessioni + 10 rifiuti; 12 → tutti ok). Pre-TD-6 non poteva accadere. Nessun rimedio di codice esiste che non riapra la race o non serializzi l'Argon2 (opzione (b) scartata) → **FIXATO come documentazione**: trade-off esplicitato nel doc-comment di `reserveLoginAttempt`. Esposizione oggi bassa e verificata (suite a 2 worker, 259/259); da rivalutare se la CI passasse a runner molto multi-core.
+- **TD6-R4 (note)** — il logout globale una-tantum al deploy viveva solo nei commenti → **FIXATO**: registrato in `docs/handoffs/HANDOFF.md` e in `sprint-status.yaml` come fatto OPERATIVO per il committente.
+- **TD6-R5 (note)** — `DeprecationWarning` di `pg` sotto concorrenza: PRE-esistente, provato NON attribuibile a TD-6 con A/B (60 login concorrenti → 0 warning; traffico Prisma ordinario concorrente → 1, stack in `@prisma/adapter-pg`). Nessuna azione; diventerà un errore in `pg@9`, annotato per il futuro.
+- **TD6-R6 (note)** — stato DB dopo gli attacchi della review (password di 2 utenti seed ruotate dalla riproduzione dell'exploit, righe `LoginAttempt` sintetiche): il reset DB standard del ciclo lo assorbe.
+
+### Fix post-review (2026-07-26, sessione principale)
+
+Solo documentazione — **nessun cambiamento di comportamento**: `login-throttle.ts` (doc-comment di `reserveLoginAttempt`: scopo reale dell'atomicità per TD6-R1 + trade-off dei tentativi in volo per TD6-R3), questo Review Record, e la nota operativa del logout una-tantum in HANDOFF/sprint-status (TD6-R4). Gates rieseguiti dopo le modifiche.
