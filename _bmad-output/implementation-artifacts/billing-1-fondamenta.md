@@ -4,7 +4,7 @@ baseline_commit: 973485f
 
 # Story Billing-1: Fondamenta — metodo di pagamento, saldi di apertura, gemello payout, servizio di calcolo
 
-Status: in dev (branch `billing-rework`, partita 2026-07-26 dopo la chiusura di TD-7)
+Status: review (implementazione completa, branch `billing-rework`, dev 2026-07-26 — in attesa di review adversarial)
 
 ## Story
 
@@ -49,7 +49,54 @@ so that la pagina Contabilità (Story Billing-2) possa mostrarli senza mescolarl
 
 ## Dev Agent Record
 
-_(da compilare)_
+**Sviluppatore**: Claude Sonnet 5 (dev subagent, xhigh) — 2026-07-26.
+
+### Scelte chiave
+
+1. **AC5** — `getBillingSummary` in un nuovo `billing-summary.service.ts` (opzione esplicita dell'AC, scelta per pulizia). Riusa `getLedgerRevenueCents` (`transactions.service.ts`) per `result.revenueCents`, `getCashReport` (`cash.service.ts`) per `byCategory`, `getTreasuryOpeningInternal` (`app-settings.service.ts`) per i saldi di apertura — zero reimplementazioni (ratifica utente 4, "MAI reimplementarle").
+2. **AC5/AC6** — `getLedgerRevenueCents` RIDEFINITO (stessa firma/export, "sostituito" per AC6): non più `sumPositive(fetchAllLedgerRows(...))` (bug: un addebito stornato nello STESSO mese contava comunque per intero come ricavo, perché lo storno finiva solo tra i "pagamenti", mai sottratto dai ricavi). Ora due aggregate Prisma: addebiti conto (`FLIGHT_CHARGE` + `FLIGHT_CHARGE_REVERSAL` + `ADJUSTMENT` a debito, sommati e nettati) + entrate di cassa non già contate lato conto (stesso predicate `NOT` già usato da `buildCashWhere` per il twin-dedup del ledger unificato, generalizzato — v. Deviazione D3). `getBillingKpis` ora chiama `getLedgerRevenueCents` per `revenueCents`/`chargesCents`/`prevMonthRevenueCents`; `paymentsCents`/`chargesCount`/`paymentsCount`/`revenueByKind` restano INVARIATI (fuori dal perimetro letterale dell'AC6, che parla solo della cifra Ricavi/Costi-alias). Rimossa `sumPositive` (diventata morta).
+3. **AC4** — `recordPayout` ora apre una `$transaction`: crea l'`InstructorPayout` + il `CashMovement` gemello (categoria "Compensi istruttori", risolta PRIMA della transazione — stesso fail-fast di `recordTopUp` su "Ricariche"), `amountCents` negativo, `paymentMethod = input.method`, `effectiveDate` = oggi (Europe/Rome — nessun input esplicito di data sul payout, stessa scelta di `recordAdjustment`).
+4. **AC3** — getter/setter treasury ENTRAMBI gated `settings.manage` (lettura letterale dell'AC), ma `getBillingSummary` legge tramite un reader interno SENZA `Actor` (`getTreasuryOpeningInternal`) — stesso precedente già in questo file di `getSmtpSettingsForMailer` vs `getSmtpSettings`: evita che il servizio di calcolo (gated il più ampio `finance.manage`) debba richiedere anche `settings.manage`.
+5. Registrato SOLO l'endpoint `PUT /api/v1/settings/treasury` (l'AC3 cita esplicitamente solo "endpoint PUT", nessun GET) — `getBillingSummary` legge i valori con una chiamata diretta al servizio, senza round-trip HTTP.
+6. Il campo "metodo" richiesto dalla riga di apertura della story ("invisibile all'utente salvo il campo metodo nei form di registrazione") è stato aggiunto al ramo cash della SlideOver "Nuova transazione" (`transaction-editor.tsx`) RIUSANDO il `<Select>`/stato `method` già esistente per il ramo TOP_UP (bastava allargare la condizione di render) — zero markup nuovo.
+
+### Deviazioni dallo story file (motivate — da verificare in review)
+
+- **D1 (AC6, la più rilevante)**: l'AC dice testualmente "`getBillingKpis` ... va SOSTITUITO da `getBillingSummary`". L'ho interpretato come "la sua DEFINIZIONE di Ricavi/Costi (il bug Σ-positivi) va sostituita", non "la funzione va cancellata e la pagina Contabilità va riscritta sullo shape di `getBillingSummary`" — perché i due DTO sono strutturalmente incompatibili (`getBillingKpis` alimenta i 5 KPI-tile della pagina `/dashboard/billing` già in produzione dalla story 12.9; `getBillingSummary` è `result`/`treasury`/`deposits`/`byCategory`, il nuovo modello a 3 libri che la Story 2 porterà in UI). Ho quindi mantenuto `getBillingKpis` con lo stesso export/shape, ma la sua cifra "Ricavi" ora delega a `getLedgerRevenueCents` — la STESSA funzione che `getBillingSummary.result.revenueCents` usa — così esiste UNA SOLA definizione di ricavo nel codebase (la vera sostanza del difetto AC6 voleva chiudere). La pagina `billing/page.tsx` resta INTATTA, zero righe toccate — coerente con l'apertura della story ("invisibile all'utente salvo il campo metodo") e con "Fuori scope: i tre riquadri ... Story 1 fornisce solo i numeri e gli endpoint". **Segnalo esplicitamente per la review**: se l'intento del PO era la cancellazione letterale di `getBillingKpis` con conseguente rework del KPI-row della pagina esistente, è una decisione di prodotto più ampia (impatterebbe anche la Story 2) da riconfermare, non qualcosa che ho deciso di silenziare.
+- **D2 (AC2, `paymentMethod` su `completePprRequest`)**: reso OPZIONALE (non "obbligatorio" come su `recordCashMovementSchema`) — l'AC lo dice testualmente solo per "il form movimento manuale"; per il ramo PPR dice solo "accettano/impostano". Reso opzionale anche per non rompere `e2e/movements.spec.ts`/`e2e/reports.spec.ts` (POST diretti con solo `{ landingFeeCents }`, mai citati da AC7 tra gli spec da aggiornare) — un fee registrato senza metodo finisce con `paymentMethod: null` ("non attribuito"), stesso trattamento dei movimenti manuali storici. Nessuna UI aggiunta al pannello di completamento PPR (`movements-table.tsx`) — solo schema/servizio accettano il campo, pronti per un caller futuro.
+- **D3 (AC5, anti-doppio-conteggio generalizzato)**: l'AC scrive testualmente "entrate di denaro con `accountMovementId IS NULL`". L'ho generalizzato al predicate GIÀ ESISTENTE in `buildCashWhere` (escludi il gemello SOLO se il movimento di conto collegato ha importo NON-zero) perché la lettura letterale avrebbe fatto SPARIRE dai ricavi le vendite di pacchetti ore (`PACKAGE_PURCHASE`, il cui lato conto è SEMPRE zero per costruzione — v. doc-comment del tipo in `schema.prisma`) rispetto al calcolo legacy, che le contava correttamente come ricavo. Stessa generalizzazione applicata anche al lato costi, per simmetria/difesa (oggi vacua: nessun `CashMovement` negativo ha `accountMovementId` valorizzato).
+- **D4 (AC5, `unattributedCents` non delimitato da `openingDate`)**: l'AC non lo qualifica con una data ("Σ movimenti senza metodo"); letto come somma ALL-TIME — non ha senso legarlo alla data di apertura tesoreria, dato che rappresenta denaro di destinazione ignota, non un saldo corrente che quella data serve a rendere confrontabile.
+- **D5 (nessuna route GET treasury)**: l'AC3 cita solo "endpoint PUT" — nessun GET registrato in questa story; Story 2 lo aggiungerà quando costruirà la card Impostazioni (se le servirà prefillare il form via HTTP invece che via server component).
+- **D6 (5 e2e esistenti aggiornati, nessuno nuovo)**: AC2 rende `paymentMethod` obbligatorio su `recordCashMovementSchema` — questo rompe ogni test e2e che POSTa `/api/v1/cash-movements` direttamente senza il campo. Aggiornati aggiungendo `paymentMethod: 'CASH'` ai loro helper di fixture (nessun assert indebolito, solo il campo obbligatorio aggiunto): `e2e/billing.spec.ts`, `e2e/cash-register.spec.ts`, `e2e/cash-report.spec.ts`, `e2e/pdf-exports.spec.ts`, `e2e/settings.spec.ts`. Il test e2e della SlideOver "Nuova transazione" → cash (già in `billing.spec.ts`) non ha richiesto modifiche: il `<Select>` "Metodo" riusato dal ramo TOP_UP parte già selezionato su "CASH" di default.
+
+### Risultati test (verbatim)
+
+`npm run gates`:
+```
+PASS  lint (23s)
+PASS  typecheck (3s)
+PASS  test (9s) — Tests  1489 passed (1489)
+PASS  build (35s)
+```
+
+Full suite `CI=1 npx playwright test` (build prod, DB fresco — `migrate deploy` + `prisma db seed`, `JOBS_SECRET` esportato non-placeholder):
+```
+Running 265 tests using 2 workers
+...
+265 passed (7.3m)
+```
+Exit code: `0`. Zero retry/flaky in questo run.
+
+**Verifica manuale del backfill (AC1)** — nessun precedente di test automatico per un backfill di migrazione in questa codebase (nessuna storia precedente ne ha uno): dentro una transazione POI `ROLLBACK` (zero dati residui nel DB), inserito un `AccountMovement` TOP_UP con `paymentMethod=BANK_TRANSFER` + il suo `CashMovement` gemello sotto "Ricariche" con `paymentMethod=NULL` (a simulare lo stato pre-migrazione), ri-eseguita la STESSA `UPDATE` della migrazione: il gemello passa da `NULL` a `BANK_TRANSFER`, confermando la logica. Verificato anche `seed-demo.ts` (su un DB fresco dedicato): il payout demo crea correttamente il gemello `CashMovement` (`-7500`, `BANK_TRANSFER`, categoria "Compensi istruttori", `instructorPayoutId` valorizzato); i 13 top-up propagano il loro metodo al gemello cassa (8 `BANK_TRANSFER` + 3 `CASH` + 3 `POS` = 14 righe con metodo, la 14ª essendo il payout); 1 sola riga resta `NULL` (il landing fee PPR del seed demo, registrato senza metodo — D2).
+
+### File List
+
+- `prisma/schema.prisma`, `prisma/migrations/20260726090000_billing1_payment_method_payout_twin/` (nuova), `prisma/seed.ts`, `prisma/seed-demo.ts`
+- `src/lib/schemas/{cash,ppr,transactions,settings}.ts`, `src/lib/schemas/registry.{ts,test.ts}`
+- `src/server/services/transactions.service.ts` (+ `.test.ts`), `src/server/services/billing-summary.service.ts` (nuovo, + `.test.ts`), `src/server/services/cash.service.ts` (+ `.test.ts`), `src/server/services/accounts.service.ts` (+ `.test.ts`), `src/server/services/ppr.service.ts` (+ `.test.ts`), `src/server/services/instructor-compensation.service.ts` (+ `.test.ts`), `src/server/services/app-settings.service.ts` (+ `.test.ts`)
+- `src/app/api/v1/settings/treasury/route.ts` (nuovo)
+- `src/app/[locale]/dashboard/billing/transaction-editor.tsx`
+- `e2e/{billing,cash-register,cash-report,pdf-exports,settings}.spec.ts` (fixture helper aggiornati, nessun assert indebolito)
 
 ## Review Record
 
