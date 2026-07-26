@@ -1,10 +1,10 @@
 ---
-baseline_commit: TBD-alla-chiusura-di-billing-1
+baseline_commit: 2d0167a
 ---
 
 # Story Billing-2: La pagina — tre riquadri, registro entrate/uscite, secchiello, card tesoreria
 
-Status: draft (parte DOPO la chiusura di Billing-1 sullo stesso branch `billing-rework`)
+Status: in dev (branch `billing-rework`, partita 2026-07-27 dopo la chiusura di Billing-1)
 
 ## Story
 
@@ -26,7 +26,7 @@ so that non devo più decifrare una colonna firmata che mescola ricavi, costi e 
 3. **(Secchiello non attribuiti)** I movimenti con `paymentMethod IS NULL` sono raggiungibili dalla pagina (filtro dedicato o vista) e un admin può assegnare il metodo al singolo movimento storico: serve un endpoint di riclassificazione (`PATCH` sul movimento, solo `paymentMethod`, gated `finance.manage`, OpenAPI + test) — unico pezzo di backend nuovo di questa story. Il secchiello è VISIBILE finché non è vuoto (spec §8: mai nascosto).
 4. **(Card tesoreria in Impostazioni)** Nuova card nel pattern delle esistenti (`club-card`, `smtp-card`): saldi di apertura cassa/banca (in euro, persistiti in cents) + data di apertura, su `getTreasurySettings`/`setTreasurySettings` di Billing-1 (ratifica 2 per il GET). Validazione client coerente con lo schema Zod.
 5. **(AirOps + i18n)** Tutto nel design system AirOps (token, primitive `KPI`/`Badge`/`SlideOver`...), bilingue IT/EN (`messages/it.json` + `en.json`), dark theme verificato (lezione 13.9: contrasto misurato, non giudicato).
-6. **(e2e)** Scenari e2e nuovi: tre riquadri con numeri veri da scenario seminato (ricarica + volo + payout → i tre blocchi mostrano i valori attesi), filtro tipo, riclassificazione di un movimento dal secchiello (il saldo cassa/banca si aggiorna), card tesoreria (set apertura → la Liquidità cambia). Full suite CI=1 verde.
+6. **(e2e)** Scenari e2e nuovi: tre riquadri con numeri veri da scenario seminato (ricarica + volo + payout → i tre blocchi mostrano i valori attesi), filtro tipo, riclassificazione di un movimento dal secchiello (il saldo cassa/banca si aggiorna), card tesoreria (set apertura → la Liquidità cambia). **ATTENZIONE**: lo spec che SCRIVE i saldi di apertura muta AppSettings GLOBALI → DEVE entrare nella catena di project serializzati di `playwright.config.ts` (`dependencies`, come `settings.spec.ts`/`booking-window.spec.ts`) con restore in `afterAll` — con `fullyParallel` uno spec "verde da solo" rompe le create concorrenti degli altri (lezione 12.11 F1). Full suite CI=1 verde.
 7. **(Invarianti §6)** Estratto conto della scheda persona INTATTO (pilota-centrico); export e route esistenti INTATTI; nessun cambiamento a come nascono i movimenti.
 
 ## Contesto (puntatori — ricognizione 2026-07-26, da rifinire alla partenza)
