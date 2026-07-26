@@ -1,10 +1,10 @@
 ---
-baseline_commit: TBD-alla-partenza (dopo la chiusura di TD-7)
+baseline_commit: 973485f
 ---
 
 # Story Billing-1: Fondamenta — metodo di pagamento, saldi di apertura, gemello payout, servizio di calcolo
 
-Status: draft (NON parte finché TD-7 non è chiusa — tiene i diff di review puliti; branch dedicato `billing-rework`)
+Status: in dev (branch `billing-rework`, partita 2026-07-26 dopo la chiusura di TD-7)
 
 ## Story
 
