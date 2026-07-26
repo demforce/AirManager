@@ -170,6 +170,10 @@ development_status:
   13-11-ritiro-stack-legacy: done
   epic-13-retrospective: optional
 
+  # Tech-debt: 2 findings security post-epic-13 (scan 2026-07-23, decisione utente 2026-07-24,
+  # mandato "procedi" 2026-07-26). Branch dedicato td-6-security-auth stacked su epic-13.
+  td-6-security-auth: ready-for-dev
+
 action_items:
   - epic: 13
     action: "F2 review 13.3 (feature-loss, follow-up ACCETTATO): registrando una scadenza dalla scheda persona/Piloti/Istruttori il campo 'Data scadenza' non si precompila più da ExpiryType.validityMonths (comodità che il vecchio ExpiriesPanel a pagina aveva; LiveExpiryEditor 13.2 non l'ha mai avuta). Fix = aggiungere il precompile all'add-row del LiveExpiryEditor condiviso (src/components/dashboard/expiry-editor.tsx) — beneficia tutti e 3 i consumer. Da riproporre all'utente per decidere se farlo (mini-story) o lasciarlo."
