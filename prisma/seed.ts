@@ -254,7 +254,9 @@ async function seedAircraft(): Promise<void> {
 // feature that used to record cash movements under it is retired; existing
 // historical movements under that category (if any, on a real DB) are
 // untouched (no destructive migration, §9).
-const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro'];
+// Story Billing-1 (AC 4): "Compensi istruttori" — the instructor payout's
+// automatic money twin (`instructor-compensation.service.ts#recordPayout`).
+const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
 
 async function seedCashCategories(): Promise<void> {
   for (const name of CASH_CATEGORY_NAMES) {

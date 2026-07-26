@@ -294,10 +294,10 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
     });
   });
 
-  describe('recordCashMovement (Task 2, AC 2)', () => {
+  describe('recordCashMovement (Task 2, AC 2; story Billing-1, AC 2 — paymentMethod mandatory)', () => {
     it('rejects a pilot (finance.manage required)', async () => {
       await expect(
-        recordCashMovement(pilotActor(), { categoryId: 'cat_1', amountCents: 5000, effectiveDate: '2026-07-01', description: null }),
+        recordCashMovement(pilotActor(), { categoryId: 'cat_1', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
       ).rejects.toThrow(ForbiddenError);
       expect(categoryFindUniqueMock).not.toHaveBeenCalled();
     });
@@ -306,7 +306,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name: 'Ricariche', isActive: true });
 
       await expect(
-        recordCashMovement(staffActor(), { categoryId: 'cat_sys', amountCents: 5000, effectiveDate: '2026-07-01', description: null }),
+        recordCashMovement(staffActor(), { categoryId: 'cat_sys', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
       ).rejects.toThrow(ConflictError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
@@ -315,7 +315,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       categoryFindUnique.mockResolvedValue(null);
 
       await expect(
-        recordCashMovement(staffActor(), { categoryId: 'missing', amountCents: 5000, effectiveDate: '2026-07-01', description: null }),
+        recordCashMovement(staffActor(), { categoryId: 'missing', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
       ).rejects.toThrow(NotFoundError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
@@ -324,12 +324,12 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       categoryFindUnique.mockResolvedValue({ id: 'cat_1', isActive: false });
 
       await expect(
-        recordCashMovement(staffActor(), { categoryId: 'cat_1', amountCents: 5000, effectiveDate: '2026-07-01', description: null }),
+        recordCashMovement(staffActor(), { categoryId: 'cat_1', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
       ).rejects.toThrow(ConflictError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
 
-    it('records an entrata (positive) with the actor and normalizes a null description', async () => {
+    it('records an entrata (positive) with the actor, the payment method, and normalizes a null description', async () => {
       categoryFindUnique.mockResolvedValue({ id: 'cat_1', isActive: true });
       movementCreate.mockResolvedValue({
         id: 'move_1',
@@ -348,6 +348,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       const result = await recordCashMovement(staffActor(), {
         categoryId: 'cat_1',
         amountCents: 5000,
+        paymentMethod: 'CASH',
         effectiveDate: '2026-07-01',
         description: null,
       });
@@ -357,6 +358,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
           data: expect.objectContaining({
             categoryId: 'cat_1',
             amountCents: 5000,
+            paymentMethod: 'CASH',
             description: null,
             effectiveDate: new Date('2026-07-01'),
             actorUserId: 'staff_1',
@@ -397,6 +399,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       const result = await recordCashMovement(staffActor(), {
         categoryId: 'cat_1',
         amountCents: -3000,
+        paymentMethod: 'BANK_TRANSFER',
         effectiveDate: '2026-07-01',
         description: 'Rifornimento',
       });
@@ -699,6 +702,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       const result = recordCashMovementSchema.safeParse({
         categoryId: 'cat_1',
         amountCents: 0,
+        paymentMethod: 'CASH',
         effectiveDate: '2026-07-01',
       });
       expect(result.success).toBe(false);
@@ -708,6 +712,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       const result = recordCashMovementSchema.safeParse({
         categoryId: 'cat_1',
         amountCents: -1500,
+        paymentMethod: 'CASH',
         effectiveDate: '2026-07-01',
         description: null,
       });
@@ -718,6 +723,16 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       const result = recordCashMovementSchema.safeParse({
         categoryId: 'cat_1',
         amountCents: 3_000_000_000,
+        paymentMethod: 'CASH',
+        effectiveDate: '2026-07-01',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('recordCashMovementSchema rejects a missing paymentMethod (story Billing-1, AC 2 — mandatory on new registrations)', () => {
+      const result = recordCashMovementSchema.safeParse({
+        categoryId: 'cat_1',
+        amountCents: -1500,
         effectiveDate: '2026-07-01',
       });
       expect(result.success).toBe(false);

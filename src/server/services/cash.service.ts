@@ -335,6 +335,7 @@ export async function recordCashMovement(actor: Actor, input: RecordCashMovement
     data: {
       categoryId: input.categoryId,
       amountCents: input.amountCents,
+      paymentMethod: input.paymentMethod,
       description: input.description ?? null,
       effectiveDate: new Date(input.effectiveDate),
       actorUserId: actor.userId,

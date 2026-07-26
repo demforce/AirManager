@@ -255,7 +255,7 @@ test.describe('Impostazioni — Categorie di cassa card (story 12.13 review, F2)
     expect(createResponse.status()).toBe(201);
     const created = (await createResponse.json()) as { id: string };
     const movementResponse = await page.request.post('/api/v1/cash-movements', {
-      data: { categoryId: created.id, amountCents: 1000, effectiveDate: '2026-07-01' },
+      data: { categoryId: created.id, amountCents: 1000, paymentMethod: 'CASH', effectiveDate: '2026-07-01' },
     });
     expect(movementResponse.status()).toBe(201);
 

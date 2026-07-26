@@ -254,10 +254,6 @@ export async function listTransactions(actor: Actor, query: ListTransactionsQuer
   return paginate(page, accountTotal + cashTotal, query);
 }
 
-function sumPositive(rows: InternalRow[]): number {
-  return rows.reduce((sum, row) => sum + (row.amountCents > 0 ? row.amountCents : 0), 0);
-}
-
 function sumNegativeAbs(rows: InternalRow[]): number {
   return rows.reduce((sum, row) => sum + (row.amountCents < 0 ? -row.amountCents : 0), 0);
 }
@@ -283,13 +279,68 @@ function revenueByKindOf(rows: InternalRow[]): { kind: string; amountCents: numb
 }
 
 /**
+ * The SAME "already counted by a non-zero account movement" exclusion
+ * `buildCashWhere` above uses for the unified ledger's twin-dedup, as a
+ * plain Prisma `NOT` fragment for `aggregate` callers (`buildCashWhere`
+ * itself returns a `findMany`-shaped where, not reusable as-is here).
+ */
+const CASH_NOT_ALREADY_ON_ACCOUNT: Prisma.CashMovementWhereInput = {
+  NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] },
+};
+
+/**
+ * The corrected "Ricavi" definition (story Billing-1, AC 5/6 — replaces the
+ * old `sumPositive(fetchAllLedgerRows(...))`, which silently counted a
+ * charge reversed in the SAME period as full revenue, since it only ever
+ * summed the POSITIVE side and never subtracted a same-period storno):
+ * addebiti conto (`FLIGHT_CHARGE`, `ADJUSTMENT` a debito) netti dei
+ * `FLIGHT_CHARGE_REVERSAL`, PLUS cash entrate not already counted on the
+ * account side (PPR contante, rivendite, ...; see
+ * `CASH_NOT_ALREADY_ON_ACCOUNT`'s doc-comment for the twin-dedup rule).
+ */
+async function computeRevenueCents(from: string, to: string): Promise<number> {
+  const fromDate = parseDateOnlyUtc(from);
+  const toDate = parseDateOnlyUtc(to);
+
+  const debitAggregate = await prisma.accountMovement.aggregate({
+    where: {
+      effectiveDate: { gte: fromDate, lte: toDate },
+      OR: [{ type: 'FLIGHT_CHARGE' }, { type: 'FLIGHT_CHARGE_REVERSAL' }, { type: 'ADJUSTMENT', amountCents: { lt: 0 } }],
+    },
+    _sum: { amountCents: true },
+  });
+  // These are all raw NEGATIVE-for-a-debit amounts (a `FLIGHT_CHARGE_REVERSAL`
+  // in the same period cancels its original charge back to 0) — negate the
+  // sum to get a positive "ricavi" figure.
+  const accountRevenueCents = -(debitAggregate._sum.amountCents ?? 0);
+
+  const cashAggregate = await prisma.cashMovement.aggregate({
+    where: {
+      effectiveDate: { gte: fromDate, lte: toDate },
+      amountCents: { gt: 0 },
+      ...CASH_NOT_ALREADY_ON_ACCOUNT,
+    },
+    _sum: { amountCents: true },
+  });
+  const cashRevenueCents = cashAggregate._sum.amountCents ?? 0;
+
+  return accountRevenueCents + cashRevenueCents;
+}
+
+/**
  * `getBillingKpis` (AC 1/2, ratifica utente 2) — TRUE server-side aggregates
  * over the WHOLE ledger for the CURRENT Europe/Rome calendar month,
  * INDEPENDENT of any table filter (the page never passes the table's
  * filters here). `ref` overrides "now" for tests (same pattern as
  * `period-presets.ts` callers). `revenueCents`/`chargesCents` are, by the
- * ratified definition, the SAME figure (Σ positives of the month) — two KPI
- * tiles surfacing one number with different sub-labels, not a bug.
+ * ratified definition, the SAME figure — two KPI tiles surfacing one number
+ * with different sub-labels, not a bug — now sourced from
+ * `getLedgerRevenueCents` (story Billing-1, AC 6: the old
+ * `sumPositive(fetchAllLedgerRows(...))` definition is RETIRED, not
+ * affiancata — see that function's own doc-comment for the bug it fixed).
+ * `paymentsCents`/`chargesCount`/`paymentsCount`/`revenueByKind` are
+ * UNCHANGED, still derived from the raw ledger rows — this story's AC 6 only
+ * targets the Ricavi/Costi figure, not those.
  */
 export async function getBillingKpis(actor: Actor, ref: Date = new Date()): Promise<BillingKpisDto> {
   authorize(actor, 'finance.manage');
@@ -297,43 +348,42 @@ export async function getBillingKpis(actor: Actor, ref: Date = new Date()): Prom
   const current = currentMonthRange(ref);
   const previous = previousMonthRange(ref);
 
-  const [rows, prevRows] = await Promise.all([
+  const [rows, revenueCents, prevMonthRevenueCents] = await Promise.all([
     fetchAllLedgerRows({ from: current.from, to: current.to }),
-    fetchAllLedgerRows({ from: previous.from, to: previous.to }),
+    getLedgerRevenueCents(actor, current.from, current.to),
+    getLedgerRevenueCents(actor, previous.from, previous.to),
   ]);
 
-  const chargesCents = sumPositive(rows);
   const paymentsCents = sumNegativeAbs(rows);
 
   return {
-    revenueCents: chargesCents,
-    prevMonthRevenueCents: sumPositive(prevRows),
-    chargesCents,
+    revenueCents,
+    prevMonthRevenueCents,
+    chargesCents: revenueCents,
     chargesCount: countPositive(rows),
     paymentsCents,
     paymentsCount: countNegative(rows),
-    netCents: chargesCents - paymentsCents,
+    netCents: revenueCents - paymentsCents,
     revenueByKind: revenueByKindOf(rows),
   };
 }
 
 /**
- * Total club-centric ledger revenue (Σ positive normalized amounts, twin
- * dedup applied) over an ARBITRARY `[from, to]` period — story 12.10's stats
- * API reuses this so its "Ricavi" KPI/series can NEVER drift from
- * `getBillingKpis`'s own definition (ratifica utente 4: "MAI reimplementarle",
- * the two-reader-divergence lesson from story 12.8). A thin wrapper over the
- * SAME `fetchAllLedgerRows`/`sumPositive` this file's own `getBillingKpis`
- * uses — `getBillingKpis` itself is UNCHANGED (still current-month-only, via
- * `currentMonthRange`); this is the general-period variant callers outside
- * this module need. Self-authorizes (same permission `getBillingKpis`
+ * Total CORRECTED ledger revenue over an ARBITRARY `[from, to]` period
+ * (story Billing-1, AC 5/6) — addebiti conto netti degli storni PLUS cash
+ * entrate non già contate lato conto (see `computeRevenueCents`'s own
+ * doc-comment for the exact rule and the same-period-storno bug it fixes
+ * over the old Σ-positivi definition). Story 12.10's stats API reuses this
+ * so its "Ricavi" KPI/series can NEVER drift from `getBillingKpis`'s/
+ * `billing-summary.service.ts#getBillingSummary`'s own definition (ratifica
+ * utente 4: "MAI reimplementarle") — ALL THREE readers now share this ONE
+ * implementation. Self-authorizes (same permission `getBillingKpis`
  * requires) — the "coarser-permission" cross-service call convention
  * `flights.service.ts#registerFlight`'s own doc-comment documents.
  */
 export async function getLedgerRevenueCents(actor: Actor, from: string, to: string): Promise<number> {
   authorize(actor, 'finance.manage');
-  const rows = await fetchAllLedgerRows({ from, to });
-  return sumPositive(rows);
+  return computeRevenueCents(from, to);
 }
 
 export type RecordTransactionResult =
@@ -374,6 +424,7 @@ export async function recordTransaction(actor: Actor, input: RecordTransactionIn
   const cashMovement = await recordCashMovement(actor, {
     categoryId: input.categoryId,
     amountCents: input.direction === 'in' ? input.amountCents : -input.amountCents,
+    paymentMethod: input.paymentMethod,
     effectiveDate: input.effectiveDate,
     description: input.description,
   });

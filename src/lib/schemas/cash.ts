@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { paymentMethodSchema } from './accounts';
 import { exportQuerySchema, pdfQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
@@ -75,7 +76,10 @@ export type CashCategoryListResponseDto = z.infer<typeof cashCategoryListRespons
  * (same defense-in-depth as `recordAdjustmentSchema`, story 3.3).
  * `effectiveDate` is a calendar date only (`YYYY-MM-DD`), same `z.iso.date()`
  * pattern as `recordTopUpSchema`. `description` follows the domain's
- * ''→null convention (Dev Notes) via `.nullish()`.
+ * ''→null convention (Dev Notes) via `.nullish()`. `paymentMethod` (story
+ * Billing-1, AC 2) is MANDATORY on every new manual movement — unlike the
+ * `CashMovement.paymentMethod` column itself, which stays nullable for the
+ * pre-existing rows this field didn't exist for.
  */
 export const recordCashMovementSchema = z.object({
   categoryId: z.string().trim().min(1),
@@ -85,6 +89,7 @@ export const recordCashMovementSchema = z.object({
     .min(-2_147_483_647)
     .max(2_147_483_647)
     .refine((value) => value !== 0, { message: 'amountCents must not be zero' }),
+  paymentMethod: paymentMethodSchema,
   effectiveDate: z.iso.date(),
   description: z.string().trim().min(1).max(500).nullish(),
 });

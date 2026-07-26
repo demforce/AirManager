@@ -124,9 +124,9 @@ model StudentProfile {
 /// old free text into `Expiry` rows automatically (unreliable name parsing);
 /// existing instructors' abilitazioni are reassigned manually.
 model InstructorProfile {
-  id            String    @id @default(cuid())
-  personId      String    @unique
-  person        Person    @relation(fields: [personId], references: [id])
+  id              String    @id @default(cuid())
+  personId        String    @unique
+  person          Person    @relation(fields: [personId], references: [id])
   /// Hourly PAYOUT rate (epic 12, story 12.7) — what the airfield pays THIS
   /// instructor per hour taught, in euro cents. Deliberately a single
   /// mutable column, NOT historicized like `InstructorRate` (the rate
@@ -137,9 +137,9 @@ model InstructorProfile {
   /// `payouts.manage`) — the UI shows "—" and `owed` is always `null` for
   /// that instructor until then.
   payoutRateCents Int?
-  deactivatedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  deactivatedAt   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   /// Historicized hourly rates (epic 4, story 4.2, AD-4) — see `InstructorRate` doc.
   rates                 InstructorRate[]
@@ -183,6 +183,14 @@ model InstructorPayout {
   actorUserId         String
   actorUser           User              @relation("InstructorPayoutActor", fields: [actorUserId], references: [id])
   createdAt           DateTime          @default(now())
+
+  /// The automatic cash-ledger counterpart created in the same transaction
+  /// (story Billing-1, AC 4) — the outbound money side of the payout, under
+  /// the "Compensi istruttori" category, so the payout finally shows up as a
+  /// cost/uscita (before this it only ever created this row, never touching
+  /// `CashMovement`). Same 1-to-0/1 traceability pattern as
+  /// `AccountMovement.cashMovement`.
+  cashMovement CashMovement?
 
   @@index([instructorProfileId, periodEnd])
 }
@@ -477,7 +485,7 @@ model User {
   /// Student-instructor assignments this user CREATED (epic 9, story 9.1) — `StudentInstructorAssignment.assignedByUserId`.
   studentInstructorAssignmentsCreated StudentInstructorAssignment[]
   /// Instructor payouts this user recorded (epic 12, story 12.7) — `InstructorPayout.actorUserId`.
-  instructorPayouts                   InstructorPayout[]             @relation("InstructorPayoutActor")
+  instructorPayouts                   InstructorPayout[]            @relation("InstructorPayoutActor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -677,30 +685,47 @@ model CashCategory {
 /// two identical POSTs still create two independent movement pairs (review
 /// 3.1 F2, deferred); manual cash movements (story 3.4) leave it `null`.
 model CashMovement {
-  id                String           @id @default(cuid())
-  categoryId        String
-  category          CashCategory     @relation(fields: [categoryId], references: [id])
-  amountCents       Int
-  description       String?
+  id                 String            @id @default(cuid())
+  categoryId         String
+  category           CashCategory      @relation(fields: [categoryId], references: [id])
+  amountCents        Int
+  description        String?
   /// Value date (data valuta) — same calendar-only convention as `AccountMovement.effectiveDate`.
-  effectiveDate     DateTime         @db.Date
-  actorUserId       String
-  actorUser         User             @relation(fields: [actorUserId], references: [id])
-  accountMovementId String?          @unique
-  accountMovement   AccountMovement? @relation(fields: [accountMovementId], references: [id])
+  effectiveDate      DateTime          @db.Date
+  /// How this movement moved money (story Billing-1, AC 1) — nullable for
+  /// the historical rows recorded before this field existed ("non
+  /// attribuito", surfaced as a dedicated bucket by the Billing-2 UI). New
+  /// registrations always set it: `recordCashMovement`'s form makes it
+  /// mandatory, `recordTopUp`'s twin inherits it from the `TOP_UP`'s own
+  /// `paymentMethod`, and `completePprRequest`'s landing-fee movement
+  /// accepts it optionally. Backfilled once, in the migration that added
+  /// this column, for every "Ricariche" twin from its linked
+  /// `AccountMovement.paymentMethod` — every other historical row stays `null`.
+  paymentMethod      PaymentMethod?
+  actorUserId        String
+  actorUser          User              @relation(fields: [actorUserId], references: [id])
+  accountMovementId  String?           @unique
+  accountMovement    AccountMovement?  @relation(fields: [accountMovementId], references: [id])
   /// Self-FK to the original movement this one reverses (AD-3 storno, story 3.3/3.4).
-  reversalOfId      String?          @unique
-  reversalOf        CashMovement?    @relation("CashMovementReversal", fields: [reversalOfId], references: [id])
-  reversal          CashMovement?    @relation("CashMovementReversal")
+  reversalOfId       String?           @unique
+  reversalOf         CashMovement?     @relation("CashMovementReversal", fields: [reversalOfId], references: [id])
+  reversal           CashMovement?     @relation("CashMovementReversal")
   /// The `PprRequest` this movement is the landing-fee twin of (epic 8, story
   /// 8.3, AC 1) — present only for the automatic "PPR" movement
   /// `completePprRequest` creates when `landingFeeCents > 0`. NOT unique
   /// (same precedent as `AccountMovement.flightId`, not the
   /// `accountMovementId @unique` twin pattern above): more than one movement
   /// could reference the same PPR request in the future (e.g. a storno).
-  pprRequestId      String?
-  pprRequest        PprRequest?      @relation(fields: [pprRequestId], references: [id])
-  createdAt         DateTime         @default(now())
+  pprRequestId       String?
+  pprRequest         PprRequest?       @relation(fields: [pprRequestId], references: [id])
+  /// The `InstructorPayout` this movement is the money twin of (story
+  /// Billing-1, AC 4) — present only for the automatic "Compensi istruttori"
+  /// movement `recordPayout` creates, negative (an uscita). Same
+  /// `accountMovementId @unique` twin-traceability pattern above, mirrored
+  /// for this second kind of automatic twin.
+  instructorPayoutId String?           @unique
+  instructorPayout   InstructorPayout? @relation(fields: [instructorPayoutId], references: [id])
+  createdAt          DateTime          @default(now())
 
   @@index([pprRequestId])
 }
@@ -983,9 +1008,9 @@ model Flight {
   /// (every flight has at least one of each; historical `landings`
   /// backfilled NULL -> 1, `takeoffs` is a brand-new column so no backfill
   /// is needed).
-  takeoffs Int @default(1)
-  landings Int @default(1)
-  notes    String?
+  takeoffs       Int     @default(1)
+  landings       Int     @default(1)
+  notes          String?
 
   aircraftRateCentsPerHour   Int
   /// Snapshot (AD-4) of the amount ACTUALLY CHARGED for the aircraft
@@ -1138,9 +1163,9 @@ model Booking {
   denyReason      String?
   /// Closure tracking (story 12.2, AC 3): set TOGETHER on `APPROVED ->
   /// FLOWN | NO_SHOW`; reset to `null` on a "riapri" back to `PENDING`.
-  closedAt       DateTime?
-  closedByUserId String?
-  closedByUser   User?     @relation("BookingClosedBy", fields: [closedByUserId], references: [id])
+  closedAt        DateTime?
+  closedByUserId  String?
+  closedByUser    User?     @relation("BookingClosedBy", fields: [closedByUserId], references: [id])
 
   /// Who created this booking (`Actor.userId`, always present) — same
   /// rationale as every other ledger's `actorUserId` (e.g. `Flight`).
@@ -1261,15 +1286,15 @@ enum ExpiryTypeKind {
 /// change only affects FUTURE registration-time compatibility checks
 /// (story 6.2), never past ones.
 model ExpiryType {
-  id            String      @id @default(cuid())
-  name          String      @unique
-  scope         ExpiryScope
+  id             String         @id @default(cuid())
+  name           String         @unique
+  scope          ExpiryScope
   /// RATING vs MEDICAL (story 13.1, R-13.1-a). Defaults `RATING` — every
   /// existing type keeps behaving as an abilitazione unless the migration's
   /// data-backfill (or an admin, going forward, via the dedicated card)
   /// marks it MEDICAL.
-  kind          ExpiryTypeKind @default(RATING)
-  isActive      Boolean     @default(true)
+  kind           ExpiryTypeKind @default(RATING)
+  isActive       Boolean        @default(true)
   /// Whether an EXPIRED `Expiry` of this type blocks a NEW booking (epic 7,
   /// story 7.4; FR-21 `[ASSUMPTION]`: medica/licenza block, ratings only
   /// warn). Default `false` (a new/custom type never blocks until an admin
@@ -1279,15 +1304,15 @@ model ExpiryType {
   /// Consumed ONLY by `bookings.service.ts#createBooking` — see that
   /// function's doc-comment for the flight-day comparison and force/warning
   /// semantics.
-  blocksBooking Boolean     @default(false)
+  blocksBooking  Boolean        @default(false)
   /// Validity window in months, used to PRECOMPILE `Expiry.expiresAt` at
   /// registration time (story 12.11, ratifica utente 2) — `null`/`0` means
   /// "no expiry" (badge shown in the catalogue UI). ADDITIVE: existing rows
   /// read `null` (no backfill, no retroactive recalculation of already
   /// registered `Expiry` rows) until an admin sets it from Impostazioni.
   validityMonths Int?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   /// Scadenze registered against this type (epic 6, story 6.2) — a non-empty
   /// set is exactly what makes this type non-deletable (FK RESTRICT, story
@@ -1582,8 +1607,8 @@ model PprRequest {
   /// (`createManualPprRequestSchema`'s "at least one contact" refine). Every
   /// email-sending path (receipt/approval/rejection, `ppr.service.ts`) skips
   /// silently when this is `null`.
-  email String?
-  phone String
+  email     String?
+  phone     String
 
   aircraftRegistration String
   aircraftType         String

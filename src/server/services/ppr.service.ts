@@ -637,6 +637,9 @@ export async function rejectPprRequest(actor: Actor, id: string, reason: string)
  * `@db.Date` column, review 3.5's lesson: never a raw instant), computed
  * from the SAME `closedAt` instant the row itself is stamped with, never a
  * second independent `new Date()` call that could tick a millisecond apart.
+ * `input.paymentMethod` (story Billing-1, AC 2) is OPTIONAL — when omitted,
+ * the movement's `paymentMethod` stays `null` ("unattributed", same bucket
+ * every pre-Billing-1 manual movement already sits in).
  */
 export async function completePprRequest(actor: Actor, id: string, input: CompletePprRequestInput): Promise<PprRequestListItem> {
   authorize(actor, 'ppr.manage');
@@ -673,6 +676,7 @@ export async function completePprRequest(actor: Actor, id: string, input: Comple
         data: {
           categoryId: category.id,
           amountCents: input.landingFeeCents,
+          paymentMethod: input.paymentMethod ?? null,
           description: `PPR ${closed.pprNumber} landing fee`,
           effectiveDate,
           actorUserId: actor.userId,

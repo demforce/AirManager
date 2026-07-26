@@ -6,6 +6,8 @@ import type {
   SmtpSecurityDto,
   SmtpSettingsDto,
   SmtpSettingsInput,
+  TreasurySettingsDto,
+  TreasurySettingsInput,
 } from '@/lib/schemas/settings';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { decryptSecret, encryptSecret } from '@/server/crypto/secret-box';
@@ -496,4 +498,92 @@ export async function setAirfieldBranding(actor: Actor, input: AirfieldBrandingD
   });
 
   return input;
+}
+
+// --- Treasury opening balances (story Billing-1, AC 3) ----------------------
+// `treasury.*` — the baseline `getBillingSummary` (`billing-summary.service.ts`)
+// adds every `CASH`/`BANK_TRANSFER`+`POS` `CashMovement` from `openingDate`
+// onward to, turning a mere sum-of-registered-movements into a real,
+// bank-statement-comparable balance. No Impostazioni card in this story
+// (Billing-2's job) — only the getter/setter pair and the PUT route.
+
+const TREASURY_OPENING_CASH_CENTS_KEY = 'treasury.openingCashCents';
+const TREASURY_OPENING_BANK_CENTS_KEY = 'treasury.openingBankCents';
+const TREASURY_OPENING_DATE_KEY = 'treasury.openingDate';
+
+/** `Int` ceiling (AD-2) — an opening balance is bounded like any other stored cents value. */
+const MAX_TREASURY_OPENING_CENTS = 2_147_483_647;
+
+function parseStoredOpeningCents(value: string | undefined, label: string): number {
+  if (value === undefined) return 0;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || Math.abs(parsed) > MAX_TREASURY_OPENING_CENTS) {
+    console.warn(`getTreasurySettings: stored ${label} "${value}" is not a valid integer — defaulting to 0.`);
+    return 0;
+  }
+  return parsed;
+}
+
+function parseStoredOpeningDate(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    console.warn(`getTreasurySettings: stored openingDate "${value}" is not YYYY-MM-DD — defaulting to null.`);
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Reads the treasury opening balances with NO `Actor` at all (Billing-1, AC
+ * 3) — internal use only, for `billing-summary.service.ts#getBillingSummary`
+ * (itself gated `finance.manage`, STAFF+ADMIN) to read without ALSO needing
+ * `settings.manage`. Same "unguarded internal reader alongside a
+ * permission-gated actor-facing pair" precedent as
+ * `getSmtpSettingsForMailer` vs `getSmtpSettings` above. Parsing is robust
+ * (missing/invalid -> default 0 / `null`, logged, never thrown) — same
+ * pattern as every other financial getter in this module.
+ */
+export async function getTreasuryOpeningInternal(): Promise<TreasurySettingsDto> {
+  const rows = await prisma.appSetting.findMany({
+    where: { key: { in: [TREASURY_OPENING_CASH_CENTS_KEY, TREASURY_OPENING_BANK_CENTS_KEY, TREASURY_OPENING_DATE_KEY] } },
+    select: { key: true, value: true },
+  });
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+
+  return {
+    openingCashCents: parseStoredOpeningCents(byKey.get(TREASURY_OPENING_CASH_CENTS_KEY), 'openingCashCents'),
+    openingBankCents: parseStoredOpeningCents(byKey.get(TREASURY_OPENING_BANK_CENTS_KEY), 'openingBankCents'),
+    openingDate: parseStoredOpeningDate(byKey.get(TREASURY_OPENING_DATE_KEY)),
+  };
+}
+
+/** Actor-facing getter (AC 3). Gated `settings.manage` — admin-only end to end (unlike `getMembershipFeeCents`'s broader `finance.manage` read: the treasury opening balances are pure admin configuration, never read by a day-to-day `finance.manage` flow directly — `getBillingSummary` uses {@link getTreasuryOpeningInternal} instead). */
+export async function getTreasurySettings(actor: Actor): Promise<TreasurySettingsDto> {
+  authorize(actor, 'settings.manage');
+  return getTreasuryOpeningInternal();
+}
+
+/** Sets the treasury opening balances (AC 3) — all 3 fields together (Billing-2's future card always submits the whole set, same single-card-save shape as `setSchedulingSettings`). Gated `settings.manage`. */
+export async function setTreasurySettings(actor: Actor, input: TreasurySettingsInput): Promise<TreasurySettingsDto> {
+  authorize(actor, 'settings.manage');
+
+  await prisma.$transaction([
+    prisma.appSetting.upsert({
+      where: { key: TREASURY_OPENING_CASH_CENTS_KEY },
+      update: { value: String(input.openingCashCents) },
+      create: { key: TREASURY_OPENING_CASH_CENTS_KEY, value: String(input.openingCashCents) },
+    }),
+    prisma.appSetting.upsert({
+      where: { key: TREASURY_OPENING_BANK_CENTS_KEY },
+      update: { value: String(input.openingBankCents) },
+      create: { key: TREASURY_OPENING_BANK_CENTS_KEY, value: String(input.openingBankCents) },
+    }),
+    prisma.appSetting.upsert({
+      where: { key: TREASURY_OPENING_DATE_KEY },
+      update: { value: input.openingDate },
+      create: { key: TREASURY_OPENING_DATE_KEY, value: input.openingDate },
+    }),
+  ]);
+
+  return { openingCashCents: input.openingCashCents, openingBankCents: input.openingBankCents, openingDate: input.openingDate };
 }

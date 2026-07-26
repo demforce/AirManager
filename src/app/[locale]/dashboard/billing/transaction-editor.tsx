@@ -156,7 +156,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     } else if (kind === 'adjustment') {
       body = { kind: 'ADJUSTMENT', personId, amountCents: parsedAmount, reason: reason.trim() };
     } else {
-      body = { kind: 'CASH', categoryId, direction, amountCents: parsedAmount, effectiveDate: date, description: trimmedDescription || undefined };
+      body = { kind: 'CASH', categoryId, direction, amountCents: parsedAmount, paymentMethod: method, effectiveDate: date, description: trimmedDescription || undefined };
     }
 
     setSubmitting(true);
@@ -264,7 +264,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
               </InputGroup>
             </Field>
 
-            {kind === 'payment' ? (
+            {kind === 'payment' || kind === 'cash' ? (
               <Field label={labels.fields.method}>
                 <Select value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod)} data-testid="transaction-method">
                   <option value="CASH">{labels.fields.methods.CASH}</option>

@@ -96,6 +96,8 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/metar',
         '/api/v1/expiry-alerts/trigger',
         '/api/v1/people/{id}/membership-fee',
+        // Story Billing-1, AC 3.
+        '/api/v1/settings/treasury',
       ]),
     );
   });
@@ -272,6 +274,20 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
       expect(schemas?.['AirfieldBranding']?.properties).toHaveProperty('name');
       expect(schemas?.['AirfieldBranding']?.properties).not.toHaveProperty('logoDataUrl');
+    });
+  });
+
+  describe('Treasury opening balances (story Billing-1, AC 3)', () => {
+    it('documents 200/401/403/422/500 PUT (no GET route this story) and the openingCashCents/openingBankCents/openingDate fields', () => {
+      const paths = doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>;
+      const put = paths['/api/v1/settings/treasury']?.['put'];
+      expect(Object.keys(put?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+      expect(paths['/api/v1/settings/treasury']?.['get']).toBeUndefined();
+
+      const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+      expect(schemas?.['TreasurySettings']?.properties).toHaveProperty('openingCashCents');
+      expect(schemas?.['TreasurySettings']?.properties).toHaveProperty('openingBankCents');
+      expect(schemas?.['TreasurySettings']?.properties).toHaveProperty('openingDate');
     });
   });
 

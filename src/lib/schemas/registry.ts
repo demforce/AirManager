@@ -127,6 +127,7 @@ import {
   smtpSettingsDtoSchema,
   smtpSettingsInputSchema,
   testEmailResultSchema,
+  treasurySettingsSchema,
 } from './settings';
 import { statsQuerySchema, statsResponseSchema } from './stats';
 import {
@@ -326,6 +327,9 @@ registry.register('MembershipFeeSetting', membershipFeeSettingSchema);
 registry.register('MetarData', metarResponseSchema);
 registry.register('ChargeMembershipFeeRequest', chargeMembershipFeeSchema);
 registry.register('ChargeMembershipFeeResponse', chargeMembershipFeeResponseSchema);
+// Story Billing-1, AC 3 — the treasury opening balances (getter/setter +
+// this PUT route only; the Impostazioni card is Billing-2's job).
+registry.register('TreasurySettings', treasurySettingsSchema);
 
 const idParams = z.object({ id: z.string().meta({ description: 'User id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
 const personIdParams = z.object({ id: z.string().meta({ description: 'Person id (cuid).', example: 'clx1a2b3c4d5e6f7g8h9' }) });
@@ -1907,6 +1911,21 @@ registry.registerPath({
   request: { body: { content: jsonContent(membershipFeeSettingSchema), required: true } },
   responses: {
     200: { description: 'The saved default membership fee.', content: jsonContent(membershipFeeSettingSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/treasury',
+  summary: 'Set the treasury opening balances (story Billing-1, AC 3)',
+  description:
+    'Body `{ openingCashCents, openingBankCents, openingDate }` — the baseline `getBillingSummary`\'s cash/bank running balances add every subsequent `CASH`/`BANK_TRANSFER`+`POS` `CashMovement` from `openingDate` onward to. Admin-only (`settings.manage`). No GET route yet (Billing-2\'s Impostazioni card is the first reader-through-HTTP; `getBillingSummary` reads the stored values directly, server-side).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(treasurySettingsSchema), required: true } },
+  responses: {
+    200: { description: 'The saved treasury opening balances.', content: jsonContent(treasurySettingsSchema) },
     ...errorResponses(401, 403, 422),
   },
 });

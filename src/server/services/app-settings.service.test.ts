@@ -41,6 +41,9 @@ const {
   setMetarStation,
   getMembershipFeeCents,
   setMembershipFeeCents,
+  getTreasuryOpeningInternal,
+  getTreasurySettings,
+  setTreasurySettings,
 } = await import('./app-settings.service');
 
 const findManyMock = vi.mocked(prisma.appSetting.findMany);
@@ -585,5 +588,66 @@ describe('app-settings.service — membership fee default (story 12.11, AC 1)', 
     upsert.mockResolvedValue({});
     await expect(setMembershipFeeCents(adminActor(), 5000)).resolves.toBe(5000);
     expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ update: { value: '5000' } }));
+  });
+});
+
+describe('treasury opening balances (story Billing-1, AC 3)', () => {
+  beforeEach(() => {
+    findManyMock.mockReset();
+    upsertMock.mockReset();
+    transactionMock.mockReset();
+  });
+
+  describe('getTreasuryOpeningInternal (NO Actor — internal reader for getBillingSummary)', () => {
+    it('defaults to 0/0/null when no AppSetting rows exist yet, never throws', async () => {
+      findMany.mockResolvedValue([]);
+      await expect(getTreasuryOpeningInternal()).resolves.toEqual({ openingCashCents: 0, openingBankCents: 0, openingDate: null });
+    });
+
+    it('reads back stored values', async () => {
+      findMany.mockResolvedValue([
+        { key: 'treasury.openingCashCents', value: '150000' },
+        { key: 'treasury.openingBankCents', value: '-2500' },
+        { key: 'treasury.openingDate', value: '2026-01-01' },
+      ]);
+      await expect(getTreasuryOpeningInternal()).resolves.toEqual({ openingCashCents: 150000, openingBankCents: -2500, openingDate: '2026-01-01' });
+    });
+
+    it('falls back to 0/null (logged, never thrown) on a corrupted stored value', async () => {
+      findMany.mockResolvedValue([
+        { key: 'treasury.openingCashCents', value: 'not-a-number' },
+        { key: 'treasury.openingDate', value: '01-01-2026' },
+      ]);
+      await expect(getTreasuryOpeningInternal()).resolves.toEqual({ openingCashCents: 0, openingBankCents: 0, openingDate: null });
+    });
+  });
+
+  describe('getTreasurySettings / setTreasurySettings (actor-facing pair, both settings.manage)', () => {
+    it('getTreasurySettings is gated settings.manage — staff (finance.manage only) is forbidden', async () => {
+      await expect(getTreasurySettings(staffActor())).rejects.toBeInstanceOf(ForbiddenError);
+      expect(findManyMock).not.toHaveBeenCalled();
+    });
+
+    it('getTreasurySettings (admin) delegates to the same internal reader', async () => {
+      findMany.mockResolvedValue([{ key: 'treasury.openingCashCents', value: '1000' }]);
+      await expect(getTreasurySettings(adminActor())).resolves.toEqual({ openingCashCents: 1000, openingBankCents: 0, openingDate: null });
+    });
+
+    it('setTreasurySettings is gated settings.manage — staff is forbidden, no write runs', async () => {
+      await expect(
+        setTreasurySettings(staffActor(), { openingCashCents: 1000, openingBankCents: 2000, openingDate: '2026-01-01' }),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('setTreasurySettings (admin) writes all 3 keys together in one transaction and echoes them back', async () => {
+      transaction.mockResolvedValue([{}, {}, {}]);
+      const result = await setTreasurySettings(adminActor(), { openingCashCents: 150000, openingBankCents: -2500, openingDate: '2026-01-01' });
+
+      expect(result).toEqual({ openingCashCents: 150000, openingBankCents: -2500, openingDate: '2026-01-01' });
+      expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'treasury.openingCashCents' }, update: { value: '150000' } }));
+      expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'treasury.openingBankCents' }, update: { value: '-2500' } }));
+      expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'treasury.openingDate' }, update: { value: '2026-01-01' } }));
+    });
   });
 });

@@ -252,6 +252,7 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
       data: {
         categoryId: category.id,
         amountCents: input.amountCents,
+        paymentMethod: input.paymentMethod,
         description,
         effectiveDate,
         actorUserId: actor.userId,

@@ -6,6 +6,9 @@ import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError } from './errors';
 
+/** The seeded cash category (`prisma/seed.ts`/`seed-demo.ts`) the payout's money twin is recorded under (story Billing-1, AC 4) — resolved BY NAME before the transaction opens, same "fails loudly by design" contract as `accounts.service.ts#recordTopUp`'s "Ricariche". */
+const INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME = 'Compensi istruttori';
+
 /**
  * Instructor compensation (epic 12, story 12.7) — payout RATE (what the
  * airfield pays the instructor per hour, `InstructorProfile.payoutRateCents`)
@@ -328,27 +331,69 @@ async function resolveActiveInstructorProfileId(personId: string): Promise<strin
 }
 
 /**
- * `POST /api/v1/instructor-payouts` (AC 5) — records a payout against the
- * resolved instructor. `amountCents > 0` and `periodStart <= periodEnd` are
- * enforced at the Zod boundary (`recordInstructorPayoutSchema`); this
- * function only resolves the instructor and persists the row. `payouts.manage`
- * (ADMIN-only).
+ * `POST /api/v1/instructor-payouts` (AC 5; story Billing-1, AC 4) — records
+ * a payout against the resolved instructor AND, in the SAME transaction, its
+ * automatic money twin: a `CashMovement` under the seeded "Compensi
+ * istruttori" category, `amountCents` NEGATIVE (an uscita — the airfield
+ * paying the instructor), `paymentMethod` = `input.method`, `effectiveDate`
+ * = today (server clock, Europe/Rome calendar — same "no explicit date
+ * input, values as of today" convention as `recordAdjustment`/
+ * `reverseCashMovement`), linked via `instructorPayoutId` for traceability
+ * (same pattern as `accountMovementId`). Before this story, `recordPayout`
+ * only ever wrote the `InstructorPayout` row — the payment never showed up
+ * as a cost or a cash/bank outflow anywhere.
+ *
+ * The category is resolved BEFORE the transaction opens (fail-fast, same
+ * "never silently create it" contract as `accounts.service.ts#recordTopUp`'s
+ * "Ricariche" lookup) — a missing/inactive seed is an operational
+ * misconfiguration, not a `DomainError` the caller can retry past.
+ *
+ * `amountCents > 0` and `periodStart <= periodEnd` are enforced at the Zod
+ * boundary (`recordInstructorPayoutSchema`). `payouts.manage` (ADMIN-only).
  */
 export async function recordPayout(actor: Actor, input: RecordInstructorPayoutInput): Promise<InstructorPayoutDto> {
   authorize(actor, 'payouts.manage');
 
   const instructorProfileId = await resolveActiveInstructorProfileId(input.instructorPersonId);
 
-  const payout = await prisma.instructorPayout.create({
-    data: {
-      instructorProfileId,
-      amountCents: input.amountCents,
-      periodStart: parseDateOnlyUtc(input.periodStart),
-      periodEnd: parseDateOnlyUtc(input.periodEnd),
-      method: input.method,
-      notes: input.notes ?? null,
-      actorUserId: actor.userId,
-    },
+  const category = await prisma.cashCategory.findUnique({
+    where: { name: INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME, isActive: true },
+    select: { id: true },
+  });
+  if (!category) {
+    throw new Error(
+      `Cash category "${INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME}" is missing or inactive — seed/reactivate it before recording a payout.`,
+    );
+  }
+
+  const effectiveDate = parseDateOnlyUtc(todayDateOnlyInZone(APP_TIMEZONE));
+
+  const payout = await prisma.$transaction(async (tx) => {
+    const created = await tx.instructorPayout.create({
+      data: {
+        instructorProfileId,
+        amountCents: input.amountCents,
+        periodStart: parseDateOnlyUtc(input.periodStart),
+        periodEnd: parseDateOnlyUtc(input.periodEnd),
+        method: input.method,
+        notes: input.notes ?? null,
+        actorUserId: actor.userId,
+      },
+    });
+
+    await tx.cashMovement.create({
+      data: {
+        categoryId: category.id,
+        amountCents: -input.amountCents,
+        paymentMethod: input.method,
+        description: `Instructor payout ${input.periodStart} – ${input.periodEnd}`,
+        effectiveDate,
+        actorUserId: actor.userId,
+        instructorPayoutId: created.id,
+      },
+    });
+
+    return created;
   });
 
   return {

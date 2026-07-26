@@ -198,3 +198,27 @@ export const membershipFeeSettingSchema = z.object({
 });
 
 export type MembershipFeeSettingDto = z.infer<typeof membershipFeeSettingSchema>;
+
+// --- Treasury opening balances (story Billing-1, AC 3) ----------------------
+// `treasury.*` — the baseline `getBillingSummary`'s cash/bank running
+// balances add up from (two values + one date, ratifica utente 2026-07-26).
+
+/** Same `Int` ceiling as `membershipFeeSettingSchema` (AD-2). Cents can be negative here (an opening balance is a real bank/cash figure, not a charge). */
+const MAX_TREASURY_OPENING_CENTS = 2_147_483_647;
+
+export const treasurySettingsSchema = z.object({
+  openingCashCents: z.number().int().min(-MAX_TREASURY_OPENING_CENTS).max(MAX_TREASURY_OPENING_CENTS),
+  openingBankCents: z.number().int().min(-MAX_TREASURY_OPENING_CENTS).max(MAX_TREASURY_OPENING_CENTS),
+  openingDate: z.iso.date(),
+});
+
+export type TreasurySettingsInput = z.infer<typeof treasurySettingsSchema>;
+
+/** `GET`-shape read by `getTreasuryOpeningInternal`/`getTreasurySettings` — `openingDate` is `null` (and both cents default to `0`) until an admin saves the Billing-2 card once, same backward-safe "absent -> no constraint yet" convention as `schedulingSettingsDtoSchema`. Not itself registered in OpenAPI this story (no GET route yet — Billing-1, AC 3 only registers the PUT). */
+export const treasurySettingsDtoSchema = z.object({
+  openingCashCents: z.number().int(),
+  openingBankCents: z.number().int(),
+  openingDate: z.iso.date().nullable(),
+});
+
+export type TreasurySettingsDto = z.infer<typeof treasurySettingsDtoSchema>;

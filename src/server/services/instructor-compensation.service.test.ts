@@ -16,6 +16,9 @@ vi.mock('@/server/db/prisma', () => ({
     flight: { groupBy: vi.fn(), findMany: vi.fn() },
     instructorPayout: { groupBy: vi.fn(), create: vi.fn() },
     instructorProfile: { update: vi.fn() },
+    cashCategory: { findUnique: vi.fn() },
+    cashMovement: { create: vi.fn() },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -32,6 +35,9 @@ const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const payoutGroupByMock = vi.mocked(prisma.instructorPayout.groupBy);
 const payoutCreateMock = vi.mocked(prisma.instructorPayout.create);
 const profileUpdateMock = vi.mocked(prisma.instructorProfile.update);
+const cashCategoryFindUniqueMock = vi.mocked(prisma.cashCategory.findUnique);
+const cashMovementCreateMock = vi.mocked(prisma.cashMovement.create);
+const transactionMock = vi.mocked(prisma.$transaction);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as instructor-rates.service.test.ts)
@@ -45,6 +51,14 @@ const flightFindMany = flightFindManyMock as unknown as { mockResolvedValue: (v:
 const payoutGroupBy = payoutGroupByMock as unknown as { mockResolvedValue: (v: Fixture[]) => void; mockImplementation: (fn: ImplFn) => void };
 const payoutCreate = payoutCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const profileUpdate = profileUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const cashMovementCreate = cashMovementCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+
+/** Same "`$transaction(fn)` invoked with the mocked `prisma` itself as `tx`" stand-in as `accounts.service.test.ts#mockTransaction`. */
+const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
+function mockTransaction(): void {
+  transaction.mockImplementation((arg: unknown) => (typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[])));
+}
 
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
@@ -84,6 +98,10 @@ describe('instructor-compensation.service (story 12.7)', () => {
     payoutGroupByMock.mockReset();
     payoutCreateMock.mockReset();
     profileUpdateMock.mockReset();
+    cashCategoryFindUniqueMock.mockReset();
+    cashMovementCreateMock.mockReset();
+    transactionMock.mockReset();
+    mockTransaction();
     vi.useRealTimers();
   });
 
@@ -317,7 +335,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
     });
   });
 
-  describe('recordPayout (AC 2, AC 5)', () => {
+  describe('recordPayout (AC 2, AC 5; story Billing-1, AC 4 — cash movement gemello)', () => {
     const validInput = {
       instructorPersonId: 'person_ines',
       amountCents: 5000,
@@ -342,8 +360,19 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(payoutCreateMock).not.toHaveBeenCalled();
     });
 
-    it('creates the payout row against the resolved instructorProfileId, actor as actorUserId', async () => {
+    it('throws an explicit error when the "Compensi istruttori" cash category is missing (never silently create it) — resolved BEFORE the transaction', async () => {
       personFindUnique.mockResolvedValue({ instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
+      cashCategoryFindUnique.mockResolvedValue(null);
+
+      await expect(recordPayout(adminActor(), validInput)).rejects.toThrow(/Compensi istruttori/);
+      expect(cashCategoryFindUniqueMock).toHaveBeenCalledWith({ where: { name: 'Compensi istruttori', isActive: true }, select: { id: true } });
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(payoutCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('creates the payout row AND its cash movement gemello (negative uscita, same method, linked via instructorPayoutId) inside ONE transaction', async () => {
+      personFindUnique.mockResolvedValue({ instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
+      cashCategoryFindUnique.mockResolvedValue({ id: 'cat_compensi' });
       payoutCreate.mockResolvedValue({
         id: 'payout_1',
         instructorProfileId: 'profile_ines',
@@ -355,16 +384,27 @@ describe('instructor-compensation.service (story 12.7)', () => {
         actorUserId: 'admin_1',
         createdAt: new Date('2026-07-15T08:00:00.000Z'),
       });
+      cashMovementCreate.mockResolvedValue({ id: 'cm_1' });
 
       const result = await recordPayout(adminActor(), validInput);
 
       expect(result.id).toBe('payout_1');
       expect(result.periodStart).toBe('2026-07-01');
       expect(result.periodEnd).toBe('2026-07-15');
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+
       const createArgs = payoutCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> };
       expect(createArgs.data['instructorProfileId']).toBe('profile_ines');
       expect(createArgs.data['actorUserId']).toBe('admin_1');
       expect(createArgs.data['amountCents']).toBe(5000);
+
+      const movementArgs = cashMovementCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> };
+      expect(movementArgs.data['categoryId']).toBe('cat_compensi');
+      expect(movementArgs.data['amountCents']).toBe(-5000); // a cost/uscita, negated from the payout's positive amount
+      expect(movementArgs.data['paymentMethod']).toBe('CASH'); // input.method
+      expect(movementArgs.data['instructorPayoutId']).toBe('payout_1');
+      expect(movementArgs.data['actorUserId']).toBe('admin_1');
+      expect(movementArgs.data['effectiveDate']).toBeInstanceOf(Date);
     });
   });
 

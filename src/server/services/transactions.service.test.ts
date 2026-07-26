@@ -5,8 +5,8 @@ import { ForbiddenError } from './errors';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
-    accountMovement: { findMany: vi.fn(), count: vi.fn() },
-    cashMovement: { findMany: vi.fn(), count: vi.fn() },
+    accountMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
+    cashMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
   },
 }));
 
@@ -20,14 +20,16 @@ vi.mock('./accounts.service', () => ({ recordTopUp: vi.fn(), recordAdjustment: v
 vi.mock('./cash.service', () => ({ recordCashMovement: vi.fn() }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { getBillingKpis, listTransactions, recordTransaction } = await import('./transactions.service');
+const { getBillingKpis, getLedgerRevenueCents, listTransactions, recordTransaction } = await import('./transactions.service');
 const { recordTopUp, recordAdjustment } = await import('./accounts.service');
 const { recordCashMovement } = await import('./cash.service');
 
 const accountFindManyMock = vi.mocked(prisma.accountMovement.findMany);
 const accountCountMock = vi.mocked(prisma.accountMovement.count);
+const accountAggregateMock = vi.mocked(prisma.accountMovement.aggregate);
 const cashFindManyMock = vi.mocked(prisma.cashMovement.findMany);
 const cashCountMock = vi.mocked(prisma.cashMovement.count);
+const cashAggregateMock = vi.mocked(prisma.cashMovement.aggregate);
 const recordTopUpMock = vi.mocked(recordTopUp);
 const recordAdjustmentMock = vi.mocked(recordAdjustment);
 const recordCashMovementMock = vi.mocked(recordCashMovement);
@@ -39,6 +41,22 @@ const accountFindMany = accountFindManyMock as unknown as { mockResolvedValue: (
 const accountCount = accountCountMock as unknown as { mockResolvedValue: (v: number) => void; mockResolvedValueOnce: (v: number) => void };
 const cashFindMany = cashFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void; mockResolvedValueOnce: (v: Fixture[]) => void };
 const cashCount = cashCountMock as unknown as { mockResolvedValue: (v: number) => void; mockResolvedValueOnce: (v: number) => void };
+
+type AggregateArgs = { where?: { effectiveDate?: { gte: Date; lte: Date } } };
+/** Keys an `aggregate` mock implementation by the `[from,to]` bounds of its call — robust to `Promise.all` interleaving order, same rationale as `instructor-compensation.service.test.ts#payoutGroupBy`'s `mockImplementation` (never a brittle `mockResolvedValueOnce` chain). */
+function aggregateByRange(mock: { mockImplementation: (fn: (args: AggregateArgs) => Promise<{ _sum: { amountCents: number | null } }>) => void }, sums: Record<string, number | null>): void {
+  mock.mockImplementation(async (args) => {
+    const gte = args.where?.effectiveDate?.gte;
+    const key = gte ? gte.toISOString().slice(0, 10) : 'unbounded';
+    return { _sum: { amountCents: sums[key] ?? null } };
+  });
+}
+const accountAggregate = accountAggregateMock as unknown as {
+  mockImplementation: (fn: (args: AggregateArgs) => Promise<{ _sum: { amountCents: number | null } }>) => void;
+};
+const cashAggregate = cashAggregateMock as unknown as {
+  mockImplementation: (fn: (args: AggregateArgs) => Promise<{ _sum: { amountCents: number | null } }>) => void;
+};
 
 function staffActor(): Actor {
   return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
@@ -85,6 +103,13 @@ const baseCashRow: Fixture = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default zero-sum stub for BOTH aggregate mocks (`getLedgerRevenueCents`'s
+  // new revenue computation) — `vi.clearAllMocks()` clears calls but NOT a
+  // previously-set `mockImplementation`, so every test gets an explicit,
+  // predictable baseline here; tests that care about the actual numbers
+  // override it via `aggregateByRange`.
+  accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
+  cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
 });
 
 describe('listTransactionsQuerySchema (AC 1 — movementType XOR categoryId)', () => {
@@ -312,18 +337,22 @@ describe('getBillingKpis (AC 1/2 — TRUE server-side month aggregates, Europe/R
     expect(accountFindManyMock).not.toHaveBeenCalled();
   });
 
-  it('uses the current AND previous Europe/Rome calendar month bounds (mid-month ref, no DST edge)', async () => {
+  it('uses the current calendar month bounds for the raw ledger rows (paymentsCents/chargesCount/revenueByKind), AND both current+previous for the aggregate-based revenueCents (mid-month ref, no DST edge)', async () => {
     accountFindMany.mockResolvedValue([]);
     cashFindMany.mockResolvedValue([]);
 
     // 2026-07-15 12:00 UTC is unambiguously July in Europe/Rome (CEST, no DST edge).
     await getBillingKpis(staffActor(), new Date('2026-07-15T12:00:00.000Z'));
 
-    const accountWhereCalls = accountFindManyMock.mock.calls.map((call) => call[0]?.where);
-    expect(accountWhereCalls[0]?.AND).toContainEqual({ effectiveDate: { gte: new Date('2026-07-01') } });
-    expect(accountWhereCalls[0]?.AND).toContainEqual({ effectiveDate: { lte: new Date('2026-07-31') } });
-    expect(accountWhereCalls[1]?.AND).toContainEqual({ effectiveDate: { gte: new Date('2026-06-01') } });
-    expect(accountWhereCalls[1]?.AND).toContainEqual({ effectiveDate: { lte: new Date('2026-06-30') } });
+    // `fetchAllLedgerRows` is only ever called for the CURRENT month now (story Billing-1: the previous month's raw rows are no longer needed — `prevMonthRevenueCents` comes from `getLedgerRevenueCents`'s aggregate query instead).
+    expect(accountFindManyMock).toHaveBeenCalledTimes(1);
+    const accountWhere = accountFindManyMock.mock.calls[0]?.[0]?.where;
+    expect(accountWhere?.AND).toContainEqual({ effectiveDate: { gte: new Date('2026-07-01') } });
+    expect(accountWhere?.AND).toContainEqual({ effectiveDate: { lte: new Date('2026-07-31') } });
+
+    const accountAggregateDates = accountAggregateMock.mock.calls.map((call) => (call[0] as { where: { effectiveDate: { gte: Date; lte: Date } } }).where.effectiveDate);
+    expect(accountAggregateDates).toContainEqual({ gte: new Date('2026-07-01'), lte: new Date('2026-07-31') });
+    expect(accountAggregateDates).toContainEqual({ gte: new Date('2026-06-01'), lte: new Date('2026-06-30') });
   });
 
   it('rolls the previous-month bound back across a year boundary (ref = January)', async () => {
@@ -332,21 +361,20 @@ describe('getBillingKpis (AC 1/2 — TRUE server-side month aggregates, Europe/R
 
     await getBillingKpis(staffActor(), new Date('2026-01-15T12:00:00.000Z'));
 
-    const accountWhereCalls = accountFindManyMock.mock.calls.map((call) => call[0]?.where);
-    expect(accountWhereCalls[1]?.AND).toContainEqual({ effectiveDate: { gte: new Date('2025-12-01') } });
-    expect(accountWhereCalls[1]?.AND).toContainEqual({ effectiveDate: { lte: new Date('2025-12-31') } });
+    const accountAggregateDates = accountAggregateMock.mock.calls.map((call) => (call[0] as { where: { effectiveDate: { gte: Date; lte: Date } } }).where.effectiveDate);
+    expect(accountAggregateDates).toContainEqual({ gte: new Date('2025-12-01'), lte: new Date('2025-12-31') });
   });
 
   it('revenueCents/chargesCents/paymentsCents/netCents/counts — same fixture used across a positive ACCOUNT row and a negative+positive CASH pair', async () => {
-    // Current month: one ACCOUNT charge (normalized +18500 from a -18500 db FLIGHT_CHARGE), one CASH entrata +5000, one CASH uscita -2000.
-    accountFindMany.mockResolvedValueOnce([{ ...baseAccountRow, id: 'am_charge', type: 'FLIGHT_CHARGE', amountCents: -18500 }]);
-    cashFindMany.mockResolvedValueOnce([
+    // Current month's raw rows (for paymentsCents/chargesCount/revenueByKind): one ACCOUNT charge (normalized +18500 from a -18500 db FLIGHT_CHARGE), one CASH entrata +5000, one CASH uscita -2000.
+    accountFindMany.mockResolvedValue([{ ...baseAccountRow, id: 'am_charge', type: 'FLIGHT_CHARGE', amountCents: -18500 }]);
+    cashFindMany.mockResolvedValue([
       { ...baseCashRow, id: 'cm_in', amountCents: 5000 },
       { ...baseCashRow, id: 'cm_out', amountCents: -2000 },
     ]);
-    // Previous month: empty.
-    accountFindMany.mockResolvedValueOnce([]);
-    cashFindMany.mockResolvedValueOnce([]);
+    // getLedgerRevenueCents's own aggregate-based computation, same fixture: -18500 debit (FLIGHT_CHARGE) + 5000 non-twin cash entrata = 23500 current, 0 previous.
+    aggregateByRange(accountAggregate, { '2026-07-01': -18500, '2026-06-01': 0 });
+    aggregateByRange(cashAggregate, { '2026-07-01': 5000, '2026-06-01': 0 });
 
     const kpis = await getBillingKpis(staffActor(), new Date('2026-07-15T12:00:00.000Z'));
 
@@ -360,13 +388,11 @@ describe('getBillingKpis (AC 1/2 — TRUE server-side month aggregates, Europe/R
   });
 
   it('revenueByKind groups by kind (AccountMovementType or CashCategory name), positives only, largest first', async () => {
-    accountFindMany.mockResolvedValueOnce([
+    accountFindMany.mockResolvedValue([
       { ...baseAccountRow, id: 'am_a', type: 'FLIGHT_CHARGE', amountCents: -1000 },
       { ...baseAccountRow, id: 'am_b', type: 'FLIGHT_CHARGE', amountCents: -500 },
     ]);
-    cashFindMany.mockResolvedValueOnce([{ ...baseCashRow, id: 'cm_a', amountCents: 4000, category: { name: 'Carburante' } }]);
-    accountFindMany.mockResolvedValueOnce([]);
-    cashFindMany.mockResolvedValueOnce([]);
+    cashFindMany.mockResolvedValue([{ ...baseCashRow, id: 'cm_a', amountCents: 4000, category: { name: 'Carburante' } }]);
 
     const kpis = await getBillingKpis(staffActor(), new Date('2026-07-15T12:00:00.000Z'));
 
@@ -374,6 +400,48 @@ describe('getBillingKpis (AC 1/2 — TRUE server-side month aggregates, Europe/R
       { kind: 'Carburante', amountCents: 4000 },
       { kind: 'FLIGHT_CHARGE', amountCents: 1500 },
     ]);
+  });
+});
+
+describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ-positivi definition)', () => {
+  it('rejects a pilot (finance.manage required), no query issued', async () => {
+    await expect(getLedgerRevenueCents(pilotActor(), '2026-07-01', '2026-07-31')).rejects.toThrow(ForbiddenError);
+    expect(accountAggregateMock).not.toHaveBeenCalled();
+  });
+
+  it('queries accountMovement.aggregate for FLIGHT_CHARGE ∪ FLIGHT_CHARGE_REVERSAL ∪ debit ADJUSTMENT, and cashMovement.aggregate for positive cash entrate not already counted on the account side', async () => {
+    accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
+    cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
+
+    await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+
+    const accountWhere = accountAggregateMock.mock.calls[0]?.[0] as { where: { OR: Record<string, unknown>[] } };
+    expect(accountWhere.where.OR).toContainEqual({ type: 'FLIGHT_CHARGE' });
+    expect(accountWhere.where.OR).toContainEqual({ type: 'FLIGHT_CHARGE_REVERSAL' });
+    expect(accountWhere.where.OR).toContainEqual({ type: 'ADJUSTMENT', amountCents: { lt: 0 } });
+
+    const cashWhere = cashAggregateMock.mock.calls[0]?.[0] as { where: Record<string, unknown> };
+    expect(cashWhere.where['amountCents']).toEqual({ gt: 0 });
+    expect(cashWhere.where['NOT']).toEqual({ AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] });
+  });
+
+  it('a FLIGHT_CHARGE reversed in the SAME period nets to ZERO revenue (storno annulla il ricavo — the bug the old Σ-positivi definition had: it only ever summed the positive side and never subtracted a same-period storno)', async () => {
+    // -18500 (the original FLIGHT_CHARGE) + 18500 (its FLIGHT_CHARGE_REVERSAL, same period) = 0.
+    accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: -18500 + 18500 } }));
+    cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: null } }));
+
+    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+
+    expect(revenueCents).toBe(0);
+  });
+
+  it('an unreversed FLIGHT_CHARGE counts in full (negated from its negative raw amount)', async () => {
+    accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: -18500 } }));
+    cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: null } }));
+
+    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+
+    expect(revenueCents).toBe(18500);
   });
 });
 
@@ -411,7 +479,7 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
     expect(result).toMatchObject({ kind: 'ADJUSTMENT', account: { balanceCents: -5000 } });
   });
 
-  it('CASH direction=in keeps the positive sign; direction=out negates it', async () => {
+  it('CASH direction=in keeps the positive sign; direction=out negates it; paymentMethod is forwarded as-is', async () => {
     recordCashMovementMock.mockResolvedValue({
       id: 'cm_1',
       categoryId: 'cat_1',
@@ -431,17 +499,19 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
       categoryId: 'cat_1',
       direction: 'in',
       amountCents: 5000,
+      paymentMethod: 'CASH',
       effectiveDate: '2026-07-10',
     });
-    expect(recordCashMovementMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountCents: 5000 }));
+    expect(recordCashMovementMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountCents: 5000, paymentMethod: 'CASH' }));
 
     await recordTransaction(staffActor(), {
       kind: 'CASH',
       categoryId: 'cat_1',
       direction: 'out',
       amountCents: 5000,
+      paymentMethod: 'BANK_TRANSFER',
       effectiveDate: '2026-07-10',
     });
-    expect(recordCashMovementMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountCents: -5000 }));
+    expect(recordCashMovementMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountCents: -5000, paymentMethod: 'BANK_TRANSFER' }));
   });
 });

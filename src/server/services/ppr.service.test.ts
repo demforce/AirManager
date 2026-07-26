@@ -821,6 +821,23 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       expect(movementArg?.data?.effectiveDate).toBeInstanceOf(Date);
     });
 
+    it('paymentMethod (story Billing-1, AC 2, OPTIONAL here) is set on the movement when given, null when omitted', async () => {
+      mockLockedRow('APPROVED');
+      pprUpdate.mockResolvedValue(closedRow({ pprNumber: 'PPR-2026-0008', landingFeeCents: 1500 }));
+      cashCategoryFindUnique.mockResolvedValue({ id: 'category_ppr', isActive: true });
+      cashMovementCreate.mockResolvedValue({});
+
+      await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1500, paymentMethod: 'CASH' });
+      const withMethodArg = cashMovementCreateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
+      expect(withMethodArg?.data?.['paymentMethod']).toBe('CASH');
+
+      cashMovementCreateMock.mockClear();
+      mockLockedRow('APPROVED');
+      await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1500 });
+      const withoutMethodArg = cashMovementCreateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
+      expect(withoutMethodArg?.data?.['paymentMethod']).toBeNull();
+    });
+
     it('fee === 0: COMPLETED with landingFeeCents:0 stamped, but NO cash movement created (branch checked BEFORE the category lookup)', async () => {
       mockLockedRow('APPROVED');
       pprUpdate.mockResolvedValue(closedRow({ landingFeeCents: 0 }));

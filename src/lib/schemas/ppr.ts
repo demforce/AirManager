@@ -1,4 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
+import { paymentMethodSchema } from './accounts';
 import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
@@ -215,9 +216,15 @@ export type RejectPprRequestInput = z.infer<typeof rejectPprRequestSchema>;
  * `recordCashMovementSchema.amountCents` (AD-2's `Int` ceiling). No default:
  * the caller (the register's completion panel) always sends a value,
  * prefilled from `GET /api/v1/settings/ppr-landing-fee` but editable.
+ * `paymentMethod` (story Billing-1, AC 2) is OPTIONAL — unlike
+ * `recordCashMovementSchema`'s mandatory one: this schema has no dedicated
+ * "obbligatorio" ratification, and a landing fee recorded without a method
+ * simply lands its `CashMovement` at `paymentMethod: null` (the same
+ * "unattributed" bucket every historical manual movement is already in).
  */
 export const completePprRequestSchema = z.object({
   landingFeeCents: z.number().int().min(0).max(2_147_483_647),
+  paymentMethod: paymentMethodSchema.optional(),
 });
 
 export type CompletePprRequestInput = z.infer<typeof completePprRequestSchema>;

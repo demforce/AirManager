@@ -516,6 +516,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
           data: expect.objectContaining({
             categoryId: 'category_ricariche',
             amountCents: 10000,
+            paymentMethod: 'CASH',
             description: 'Contanti in segreteria',
             effectiveDate: new Date('2026-03-01'),
             actorUserId: 'staff_1',

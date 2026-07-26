@@ -38,7 +38,7 @@ async function createCategory(page: Page, name: string): Promise<string> {
 /** Records a manual movement via the API. */
 async function recordMovement(page: Page, categoryId: string, amountCents: number, effectiveDate: string): Promise<void> {
   const response = await page.request.post('/api/v1/cash-movements', {
-    data: { categoryId, amountCents, effectiveDate },
+    data: { categoryId, amountCents, paymentMethod: 'CASH', effectiveDate },
   });
   expect(response.status()).toBe(201);
 }

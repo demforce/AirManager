@@ -142,6 +142,7 @@ export const recordTransactionSchema = z.discriminatedUnion('kind', [
     categoryId: z.string().trim().min(1),
     direction: z.enum(['in', 'out']),
     amountCents: z.number().int().positive().max(2_147_483_647),
+    paymentMethod: paymentMethodSchema,
     effectiveDate: z.iso.date(),
     description: z.string().trim().min(1).max(500).nullish(),
   }),

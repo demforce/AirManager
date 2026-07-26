@@ -60,7 +60,7 @@ async function recordTopUp(page: Page, personId: string, amountCents: number, ef
 }
 
 async function recordCashMovement(page: Page, categoryId: string, amountCents: number, effectiveDate: string, description: string): Promise<void> {
-  const response = await page.request.post('/api/v1/cash-movements', { data: { categoryId, amountCents, effectiveDate, description } });
+  const response = await page.request.post('/api/v1/cash-movements', { data: { categoryId, amountCents, paymentMethod: 'CASH', effectiveDate, description } });
   expect(response.status()).toBe(201);
 }
 

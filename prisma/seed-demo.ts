@@ -22,6 +22,7 @@ import { recordTopUp } from '../src/server/services/accounts.service';
 import { registerFlight } from '../src/server/services/flights.service';
 import { createBooking, transitionBooking } from '../src/server/services/bookings.service';
 import { createManualPprRequest, completePprRequest } from '../src/server/services/ppr.service';
+import { recordPayout } from '../src/server/services/instructor-compensation.service';
 import { setSchedulingSettings, setMetarStation, setMembershipFeeCents } from '../src/server/services/app-settings.service';
 import type { Role, PaymentMethod, FlightType } from '../src/generated/prisma/client';
 
@@ -100,7 +101,9 @@ const DEMO_PEOPLE: DemoPerson[] = [
 
 // --- catalogue (kept aligned with `prisma/seed.ts`, the canonical list) -----
 
-const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro'];
+// Story Billing-1 (AC 4): "Compensi istruttori" — the instructor payout's
+// automatic money twin (`instructor-compensation.service.ts#recordPayout`).
+const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
 
 // Story 13.1 (AC 1): `kind` splits RATING from MEDICAL — the person editor
 // renders them as two separate chip groups, so a medical typed as a rating
@@ -450,6 +453,18 @@ async function main(): Promise<void> {
     });
   }
   console.log(`Seed: ${FLIGHTS.length} flights registered.`);
+
+  // Instructor payout (story Billing-1, AC 4) — its automatic "Compensi
+  // istruttori" CashMovement gemello is created by `recordPayout` itself.
+  await recordPayout(admin, {
+    instructorPersonId: personIdByEmail.get('luca.bianchi.fi@gmail.com')!,
+    amountCents: 7500,
+    periodStart: dateOnly(-30),
+    periodEnd: dateOnly(-1),
+    method: 'BANK_TRANSFER',
+    notes: 'Compenso mensile scuola volo.',
+  });
+  console.log('Seed: 1 instructor payout recorded (with its cash movement gemello).');
 
   // Upcoming bookings — every workflow state represented. Staff-created
   // bookings are born APPROVED (story 12.2); a pilot's own request is born
