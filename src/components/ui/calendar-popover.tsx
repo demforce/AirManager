@@ -13,6 +13,29 @@ import { useMemo, type CSSProperties, type Ref } from 'react';
 import { buildCalendarGrid } from './calendar-grid';
 import { Icon } from './icons';
 
+/**
+ * Story TD-7 (AC 1/2/6, additive): opts a consumer into date+TIME mode —
+ * renders a typable `HH:MM` field plus a confirm action below the grid.
+ * `CalendarPopover` stays a dumb, controlled-value widget (same convention
+ * as every other prop here): parsing/validity/draft-state all live in the
+ * consumer (`datetime-input.tsx`), this just renders what it's told and
+ * reports keystrokes/clicks back.
+ */
+export type CalendarPopoverTimeProps = {
+  /** Raw `HH:MM` text as typed so far — may be empty or invalid; the consumer decides. */
+  value: string;
+  onChange: (value: string) => void;
+  /** Ratifica 3: the ONLY path that ever writes to the underlying input — never a bare day click. */
+  onConfirm: () => void;
+  /** True until both a day AND a valid time are present (ratifica 2/3). */
+  confirmDisabled: boolean;
+  /** True only for a NON-empty, malformed value (an empty field is "not yet filled", not "invalid"). */
+  invalid: boolean;
+  label: string;
+  confirmLabel: string;
+  invalidLabel: string;
+};
+
 export type CalendarPopoverProps = {
   cursor: Date;
   onCursorChange: (next: Date) => void;
@@ -33,7 +56,12 @@ export type CalendarPopoverProps = {
    */
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
+  /** Story TD-7: omitted entirely by every date-ONLY consumer (`date-input.tsx`, both `schedule.tsx` popovers) — their render stays byte-identical (AC 1). */
+  time?: CalendarPopoverTimeProps;
 };
+
+/** `.cal-popover`'s CSS `width` (`airops.css`) — pinned here so `date-input.tsx`/`datetime-input.tsx`'s fixed-popover left-clamp math (story TD-7) shares one source instead of a literal drifting out of sync with the CSS (same reasoning as `schedule.tsx#CAL_POPOVER_WIDTH`, kept separate per-file there since that file is pinned "do not modify" for this story). */
+export const CAL_POPOVER_WIDTH = 280;
 
 function sameDay(a: Date, b: Date): boolean {
   return a.toDateString() === b.toDateString();
@@ -51,6 +79,7 @@ export function CalendarPopover({
   nextMonthLabel,
   style,
   ref,
+  time,
 }: CalendarPopoverProps) {
   const rawLocale = useLocale();
   const intlLocale = rawLocale === 'en' ? 'en-IE' : 'it-IT';
@@ -107,10 +136,49 @@ export function CalendarPopover({
           );
         })}
       </div>
+      {time ? (
+        <>
+          <label className="fld">
+            <span className="fld-label">{time.label}</span>
+            <span className="fld-ctrl">
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="09:30"
+                className="input"
+                value={time.value}
+                onChange={(event) => time.onChange(event.target.value)}
+                onKeyDown={(event) => {
+                  // A bare text input inside the surrounding `<form>` would
+                  // otherwise submit it on Enter (the browser's implicit-
+                  // submit rule) — Enter here means "confirm the picker",
+                  // never "submit the whole booking/PPR form".
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (!time.confirmDisabled) time.onConfirm();
+                  }
+                }}
+                aria-invalid={time.invalid}
+              />
+            </span>
+          </label>
+          {time.invalid ? (
+            <p className="fld-label" style={{ color: 'var(--bad)' }}>
+              {time.invalidLabel}
+            </p>
+          ) : null}
+        </>
+      ) : null}
       <div className="cal-foot">
         <button type="button" className="btn" onClick={onToday}>
           {todayLabel}
         </button>
+        {time ? (
+          <button type="button" className="btn primary" onClick={time.onConfirm} disabled={time.confirmDisabled}>
+            {time.confirmLabel}
+          </button>
+        ) : null}
       </div>
     </div>
   );

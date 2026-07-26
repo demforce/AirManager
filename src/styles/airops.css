@@ -1219,7 +1219,7 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
 .cal-cell.sel:hover{ background: var(--accent); }
 
 .cal-foot{
-  display: flex; justify-content: flex-end;
+  display: flex; justify-content: flex-end; gap: 8px;
   padding-top: 6px;
   border-top: 1px solid var(--border);
 }
@@ -1524,9 +1524,10 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
 }
 
 /* Custom date field (user decision 2026-07-21): the browser's native
-   calendar popup is replaced by `CalendarPopover` (`ui/date-input.tsx`) —
-   the UA picker indicator is hidden, the sibling button is the only
-   calendar affordance. Typing into the input still works. */
+   calendar popup is replaced by `CalendarPopover` (`ui/date-input.tsx`,
+   plus its date+time sibling `ui/datetime-input.tsx` — story TD-7) — the
+   UA picker indicator is hidden, the sibling button is the only calendar
+   affordance. Typing into the input still works. */
 .date-input{ position: relative; display: inline-flex; align-items: center; }
 .date-input.grow{ width: 100%; }
 .date-input input::-webkit-calendar-picker-indicator{ display: none; }

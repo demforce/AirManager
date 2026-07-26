@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input, Select } from '@/components/ui/field';
 import { SlideOver } from '@/components/ui/slide-over';
 import type { AircraftOption } from './new-booking-form';
@@ -200,12 +201,12 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
             {fieldErrorLabel(errors.aircraftId) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftId)}</p> : null}
 
             <Field label={labels.startsAt}>
-              <Input type="datetime-local" step={300} aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />
+              <DateTimeInput aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />
             </Field>
             {fieldErrorLabel(errors.startsAt) ? <p className="fld-label">{fieldErrorLabel(errors.startsAt)}</p> : null}
 
             <Field label={labels.endsAt}>
-              <Input type="datetime-local" step={300} aria-invalid={Boolean(errors.endsAt)} {...register('endsAt')} />
+              <DateTimeInput aria-invalid={Boolean(errors.endsAt)} {...register('endsAt')} />
             </Field>
             {fieldErrorLabel(errors.endsAt) ? <p className="fld-label">{fieldErrorLabel(errors.endsAt)}</p> : null}
 

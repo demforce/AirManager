@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { AppLocale } from '@/i18n/routing';
+import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Icon } from '@/components/ui/icons';
 
 export type PprFormLabels = {
@@ -319,13 +320,13 @@ export function PprForm({ locale, labels }: PprFormProps) {
         <div className="ppr-form-grid">
           <label className="fld">
             <span className="fld-label">{labels.eta}</span>
-            <input className="input" type="datetime-local" step={300} aria-invalid={Boolean(errors.eta)} {...register('eta')} />
+            <DateTimeInput aria-invalid={Boolean(errors.eta)} {...register('eta')} />
           </label>
           {fieldErrorLabel(errors.eta) ? <p className="fld-label">{fieldErrorLabel(errors.eta)}</p> : null}
 
           <label className="fld">
             <span className="fld-label">{labels.etd}</span>
-            <input className="input" type="datetime-local" step={300} aria-invalid={Boolean(errors.etd)} {...register('etd')} />
+            <DateTimeInput aria-invalid={Boolean(errors.etd)} {...register('etd')} />
           </label>
           {fieldErrorLabel(errors.etd) ? <p className="fld-label">{fieldErrorLabel(errors.etd)}</p> : null}
         </div>

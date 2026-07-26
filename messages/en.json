@@ -2300,7 +2300,10 @@
       "openCalendar": "Open calendar",
       "today": "Today",
       "prevMonth": "Previous month",
-      "nextMonth": "Next month"
+      "nextMonth": "Next month",
+      "time": "Time",
+      "confirm": "Confirm",
+      "invalidTime": "Enter a valid time (e.g. 09:30)."
     }
   }
 }

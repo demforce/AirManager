@@ -2300,7 +2300,10 @@
       "openCalendar": "Apri calendario",
       "today": "Oggi",
       "prevMonth": "Mese precedente",
-      "nextMonth": "Mese successivo"
+      "nextMonth": "Mese successivo",
+      "time": "Ora",
+      "confirm": "Conferma",
+      "invalidTime": "Inserisci un orario valido (es. 09:30)."
     }
   }
 }

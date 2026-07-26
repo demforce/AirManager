@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
+import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
@@ -447,12 +448,12 @@ export function NewBookingForm({
           {mode === 'instructor' && bookingTarget === 'student' && fieldErrorLabel(errors.studentId) ? <p className="fld-label">{fieldErrorLabel(errors.studentId)}</p> : null}
 
           <Field label={labels.startsAt}>
-            <Input type="datetime-local" step={300} aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />
+            <DateTimeInput aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />
           </Field>
           {fieldErrorLabel(errors.startsAt) ? <p className="fld-label">{fieldErrorLabel(errors.startsAt)}</p> : null}
 
           <Field label={labels.endsAt}>
-            <Input type="datetime-local" step={300} aria-invalid={Boolean(errors.endsAt)} {...register('endsAt')} />
+            <DateTimeInput aria-invalid={Boolean(errors.endsAt)} {...register('endsAt')} />
           </Field>
           {fieldErrorLabel(errors.endsAt) ? <p className="fld-label">{fieldErrorLabel(errors.endsAt)}</p> : null}
 

@@ -12,6 +12,7 @@
  * model (Dev Notes/`accounts.service.ts`).
  */
 import { useMemo, useState } from 'react';
+import { DateInput } from '@/components/ui/date-input';
 import { Field, Input, InputGroup, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
@@ -284,11 +285,11 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
 
             {kind === 'payment' || kind === 'cash' ? (
               <Field label={labels.fields.date}>
-                <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} data-testid="transaction-date" />
+                <DateInput value={date} onChange={(event) => setDate(event.target.value)} data-testid="transaction-date" />
               </Field>
             ) : (
               <Field label={labels.fields.date}>
-                <Input type="date" value={todayDateOnly()} disabled data-testid="transaction-date" />
+                <DateInput value={todayDateOnly()} disabled data-testid="transaction-date" />
               </Field>
             )}
 

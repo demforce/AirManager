@@ -29,6 +29,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input } from '@/components/ui/field';
 import { SlideOver } from '@/components/ui/slide-over';
 import type { AppLocale } from '@/i18n/routing';
@@ -283,12 +284,12 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
           {fieldErrorLabel(errors.destination) ? <p className="fld-label">{fieldErrorLabel(errors.destination)}</p> : null}
 
           <Field label={labels.eta}>
-            <Input type="datetime-local" step={300} aria-invalid={Boolean(errors.eta)} {...register('eta')} />
+            <DateTimeInput aria-invalid={Boolean(errors.eta)} {...register('eta')} />
           </Field>
           {fieldErrorLabel(errors.eta) ? <p className="fld-label">{fieldErrorLabel(errors.eta)}</p> : null}
 
           <Field label={labels.etd}>
-            <Input type="datetime-local" step={300} aria-invalid={Boolean(errors.etd)} {...register('etd')} />
+            <DateTimeInput aria-invalid={Boolean(errors.etd)} {...register('etd')} />
           </Field>
           {fieldErrorLabel(errors.etd) ? <p className="fld-label">{fieldErrorLabel(errors.etd)}</p> : null}
 
