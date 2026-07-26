@@ -4,7 +4,7 @@ baseline_commit: 973485f
 
 # Story Billing-1: Fondamenta — metodo di pagamento, saldi di apertura, gemello payout, servizio di calcolo
 
-Status: review (implementazione completa, branch `billing-rework`, dev 2026-07-26 — in attesa di review adversarial)
+Status: done (review Opus 5 shippable-with-fixes → fix F1-F8 + D2 applicati `13fcc86`, arbitro 265/265 — 2026-07-27)
 
 ## Story
 
@@ -100,4 +100,103 @@ Exit code: `0`. Zero retry/flaky in questo run.
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+**Reviewer**: Claude Opus 5 (subagent adversarial, xhigh) — 2026-07-26. Skill di progetto applicate: `bmad-code-review`, `karpathy-guidelines`.
+
+**Perimetro**: `git diff 973485f..HEAD` (commit `bdf15ec` docs, `47db63e` feat, `f37c2bd` docs record) — 32 file, +1107/−124. Riferimenti vincolanti: AC1-AC7 dello story file e `docs/superpowers/specs/2026-07-26-billing-rework-design.md` §3/§4/§7.
+
+### Metodologia (empirica, non solo lettura del codice)
+
+- **Suite completa come arbitro**: build di produzione + `CI=1 npx playwright test` su DB resettato (`migrate deploy` + `prisma db seed`), foreground con output su file, `JOBS_SECRET` non-placeholder esportato. `npm run gates` rieseguito a fine review.
+- **Scenari contabili su DB reale** (script tsx throwaway sui servizi veri, poi rimossi): ricarica in contanti, volo addebitato, storno del volo nello stesso mese, rettifica a debito e suo storno, movimento manuale di cassa e suo storno, payout istruttore, PPR con e senza metodo, saldi di apertura.
+- **Backfill AC1 riprodotto**: la `UPDATE` viene estratta dal file di migrazione committato ed eseguita su un set di fixture pre-migrazione dentro una transazione poi rolled back.
+- **API reale via HTTP** (build prod, login reale con le 5 utenze seed): matrice RBAC del nuovo endpoint, validazioni 422, 4 POST payout concorrenti con la stessa Idempotency-Key, rename di categoria dalla API della card Impostazioni.
+- **UI reale** guidata con script `playwright-core` throwaway (MCP non raggiungibile dai subagent): pagina Contabilità e SlideOver "Nuova transazione".
+- **Ispezione DB** con `psql` (via `docker exec`) per il conteggio dei gemelli, dei metodi di pagamento e dello stato del demo seed.
+
+### Esito suite completa (verbatim)
+
+```
+Running 265 tests using 2 workers
+...
+  265 passed (8.1m)
+```
+Exit code `0`, zero retry/flaky. `npm run gates`: `PASS lint (43s)` · `PASS typecheck (5s)` · `PASS test (12s) — Tests 1489 passed (1489)` · `PASS build (47s)`, exit `0`.
+
+### Findings
+
+| id | sev | titolo |
+|---|---|---|
+| F1 | major | `reverseCashMovement` (`cash.service.ts:405-415`) è il 5° writer di `CashMovement` e non valorizza `paymentMethod`: dopo uno storno il saldo di cassa non scende mai e il "secchiello" `unattributedCents` va in negativo |
+| F2 | major | "Compensi istruttori" non è in `SYSTEM_CASH_CATEGORY_NAMES` (`cash.service.ts:46`): un rename dalla card Impostazioni (200) rende 500 ogni payout successivo; movimenti manuali accettati nella categoria automatica |
+| F3 | major | "Lo storno annulla il ricavo" implementato solo per `FLIGHT_CHARGE_REVERSAL`: lo storno di un'entrata di cassa resta nei ricavi e diventa anche un costo; lo storno di un `ADJUSTMENT` a debito (quota associativa inclusa) non è mai nettato |
+| F4 | minor | Gli unit test di `getBillingSummary` (AC7) sono interamente mock-driven: gli scenari nominati dall'AC non possono fallire se la `where` è sbagliata (prova: F1/F3 non fanno fallire nessuno dei 1489 test) |
+| F5 | minor | Il predicato anti-doppio-conteggio è ora triplicato (`transactions.service.ts:98`, `:287`, `billing-summary.service.ts:71`) — drift risk sulla regola centrale |
+| F6 | minor | D1 lascia la pagina Contabilità in contraddizione: KPI "Ricavi" 136,00 € vs pannello "Ricavi per categoria" 256,00 € dopo uno storno |
+| F7 | nit | `prisma format` ha riallineato 6 modelli estranei alla story in `schema.prisma` (karpathy §3) |
+| F8 | nit | Parsing dei saldi di apertura: `"12.5"` accettato come 12 senza warning; una data shape-valida ma impossibile azzera cassa/banca in silenzio (mai throw: contratto AC3 rispettato) |
+
+**Evidenze principali.**
+
+F1 — scenario su DB fresco:
+```
+after create  -> cash= 5000 unattributed= 0     revenue= 5000 cost= 0
+after storno  -> cash= 5000 unattributed= -5000 revenue= 5000 cost= 5000
+storno row    -> { amountCents: -5000, paymentMethod: null, reversalOfId: ... }
+```
+
+F2 — HTTP reale, sessione admin:
+```
+POST /api/v1/instructor-payouts                                   -> 201
+PATCH /api/v1/cash-categories/{id} {"name":"Compensi istruttori 2026"} -> 200 (isSystem:false)
+POST /api/v1/instructor-payouts                                   -> 500 INTERNAL_ERROR
+POST /api/v1/cash-movements  (categoria "Compensi istruttori")     -> 201
+POST /api/v1/cash-movements  (categoria "Ricariche")               -> 409 (guardia 3.4 F1)
+```
+
+F3 — misure:
+```
+ADJUSTMENT -3000 (debito)                  -> revenue 8000
++ storno (ADJUSTMENT +3000, reversalOfId)  -> revenue 8000  (invariato)
+cash entrata +5000 -> revenue 5000; + storno -> revenue 5000, cost 5000
+quadro finale: result {"revenueCents":13600,"costCents":125200} — 8.000 da operazioni annullate
+```
+
+F6 — UI reale: KPI "RICAVI DEL MESE 136,00 €" e, nella stessa pagina, "Ricavi per categoria": Addebito volo 120,00 + PPR 56,00 + Altro 50,00 + Rettifica 30,00 = 256,00 €.
+
+### Verdetti sulle deviazioni dichiarate
+
+- **D1** (getBillingKpis non cancellato) — **conforme**, delega reale e misurata: `summary.revenue = kpis.revenue = ledger` in ogni stato, incluso lo storno nello stesso mese (17000 → 5000). `billing/page.tsx` intatta (diff vuoto). Riserva: F6.
+- **D2** (`paymentMethod` opzionale su PPR) — **conforme al dichiarato**; il fix (select obbligatorio) tocca: `movements-table.tsx:380-384` (UI), `e2e/movements.spec.ts:280-282` e `:309-311` (pannello), `e2e/movements.spec.ts:349` (il 422 anticiperebbe il 409 atteso), `e2e/movements.spec.ts:362-372` (idempotency), `e2e/reports.spec.ts:164`, `prisma/seed-demo.ts:502`, `src/server/services/ppr.service.test.ts` (asserisce `null` quando omesso).
+- **D3** (predicato generalizzato) — **conforme e identico** a `buildCashWhere`, ma per copia (F5); il caso storno è coperto da test solo sul lato conto (F3).
+- **D4** (`unattributedCents` all-time) — **accettabile** nel merito; regge solo se F1 viene chiuso (oggi il secchiello va in negativo).
+- **D5** (nessuna GET treasury) — **accettabile**: GET 405, nessun consumatore, `getBillingSummary` legge server-side.
+- **D6** (5 e2e aggiornati) — **conforme**: 5 hunk da una riga, solo aggiunta di `paymentMethod: 'CASH'`; nessun assert modificato, rimosso o indebolito.
+
+### Conclusione
+
+**Shippable with fixes.** Le fondamenta reggono: migrazione + backfill deterministici e riprodotti, gemello payout atomico e idempotente sotto contesa, RBAC del nuovo endpoint corretto su tutte e 5 le utenze, definizione di ricavo davvero unica e allineata fra Contabilità, `getBillingSummary` e Statistiche, suite completa e gates verdi. Restano tre difetti major da chiudere nel commit di review-fix, tutti chirurgici: F1 (una riga in `reverseCashMovement` + test), F2 (una riga in `SYSTEM_CASH_CATEGORY_NAMES` + test), F3 (simmetria della regola di storno su cassa e rettifiche — richiede una ratifica PO perché lo spec §4 è letteralmente più stretto). F4/F5/F6 sono migliorie di robustezza e coerenza da valutare insieme alla Story 2; F7/F8 sono nit.
+
+### Fix post-review (2026-07-27, fix-subagent Sonnet 5 xhigh — commit `13fcc86`)
+
+**Ratifiche PO (AskUserQuestion, pre-fix)**: F3 → OGNI storno annulla ricavi/costi, non solo i voli (semantica: lo storno appartiene al libro del suo originale, con segno opposto, nel mese in cui AVVIENE — i mesi chiusi non vengono riscritti retroattivamente); F2 → guardia estesa nello stesso commit anche a "PPR" (falla gemella pre-esistente); F6 → solo annotazione (il pannello legacy muore con la Story 2, app mai deployata); D2 → select metodo obbligatorio nel pannello di completamento PPR. Ratifica inoltre su D3, sopraggiunta in sessione: i pacchetti ore sono RITIRATI (12.13), i marker storici restano — il predicato generalizzato è confermato per coerenza con `buildCashWhere`.
+
+- **F1 fixed** — `reverseCashMovement` eredita `paymentMethod` dall'originale (select + create) + unit test sull'ereditarietà.
+- **F2 fixed** — `SYSTEM_CASH_CATEGORY_NAMES = {Ricariche, Compensi istruttori, PPR}`; `isSystem` è funzione pura del Set (nessuna colonna DB, niente seed da toccare); it.each guard test (rename/delete/movimento manuale rifiutati, isSystem:true) per le 2 nuove; verificato che nessun fixture esistente scriva a mano nelle categorie protette.
+- **F3 fixed** — `computeRevenueCents`: gli storni di entrate non-gemelle sommati come ricavo NEGATIVO nel loro mese (stessa query), gli `ADJUSTMENT` stornati nettano il loro mese; `computeCostCents` speculare per le uscite; treasury NON toccata (si netta da sola una volta chiuso F1). Test espliciti: storno stesso mese → netto zero; mese successivo → ricavo/costo negativo lì; il caso della review (entrata 5000 + storno → revenue 5000→0, cost 0).
+- **F4 fixed** — where-clause asserite integralmente (`toEqual`) su tutte e 5 le aggregate di `getBillingSummary` + su `getLedgerRevenueCents`. NIENTE test d'integrazione su DB reale: zero precedenti nel repo (ogni `*.service.test.ts` mocka Prisma) — scelta motivata con l'escape hatch concesso dalla review.
+- **F5 fixed** — `CASH_NOT_ALREADY_ON_ACCOUNT` unica const esportata da `transactions.service.ts`, usata nei 3 punti (incluso `buildCashWhere`); aggiunta anche al mock factory dei test (ometterla avrebbe spread `undefined` silenzioso).
+- **F6 fixed (annotazione)** — doc-comment su `getBillingKpis`: `revenueByKind`/`chargesCount` legacy Σ-positivi fino alla Story 2 (che cancella la funzione). Nota ripresa nello story file Billing-2.
+- **F7 n/a** — nessun edit a `schema.prisma` in questo giro.
+- **F8 fixed** — `Number()` + `Number.isInteger` (niente troncamento "12.5"→12), round-trip `parseDateOnlyUtc`/`toDateOnlyString` sulla data (una "2026-13-45" ora logga e defaulta a null), warning loggati, unit test per entrambi.
+- **D2 fixed** — `paymentMethod` OBBLIGATORIO su `completePprRequestSchema`; Select nel pannello di completamento (`movements-table.tsx`, stesso pattern/label del Select di `transaction-editor.tsx`, i18n IT/EN nuove key `MovementsPage.actions`); TUTTI i punti dell'enumerazione del reviewer coperti (e2e :349/:362-372, reports helper, seed-demo :502, unit riscritto come safeParse-rejection). I 2 e2e UI-driven lasciati invariati (il default CASH del Select basta — verificato). Verifica UI interattiva reale: Select nel linguaggio AirOps, submit con BANK_TRANSFER → 200 + toast.
+
+**Gates post-fix**: PASS lint/typecheck/test/build — **1510 unit passed** (baseline pre-fix: 1489).
+
+**Full suite finale (arbitro = sessione principale; il run del fix-subagent è morto col cap foreground 120s a 127/265, pattern noto)**: build prod, DB fresco, `export JOBS_SECRET` non-placeholder, `CI=1 npx playwright test` →
+
+```
+265 passed (7.8m)
+```
+Exit code `0`, zero flaky/retry.
+
+**Esito finale: tutti i findings chiusi (F7 n/a). Story DONE.**

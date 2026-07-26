@@ -193,9 +193,10 @@ development_status:
   # Rework Contabilita (brainstorming 2026-07-26, spec docs/superpowers/specs/2026-07-26-billing-rework-design.md).
   # 2 story sul branch dedicato billing-rework. Story 1 = fondamenta (backend/servizio,
   # invisibile); Story 2 = pagina (3 riquadri risultato/tesoreria/acconti + registro entrate/uscite).
-  # NON parte finche TD-7 non e' chiusa (diff di review puliti).
-  billing-1-fondamenta: draft
-  billing-2-pagina: backlog
+  # Story 1 chiusa 2026-07-27 (dev Sonnet 5, review Opus 5 shippable-with-fixes,
+  # fix F1-F8 + D2, arbitro 265/265 exit 0). Story 2: file pronto (billing-2-pagina.md).
+  billing-1-fondamenta: done
+  billing-2-pagina: ready-for-dev
 
 action_items:
   - epic: 13
