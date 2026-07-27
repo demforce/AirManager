@@ -194,9 +194,12 @@ development_status:
   # 2 story sul branch dedicato billing-rework. Story 1 = fondamenta (backend/servizio,
   # invisibile); Story 2 = pagina (3 riquadri risultato/tesoreria/acconti + registro entrate/uscite).
   # Story 1 chiusa 2026-07-27 (dev Sonnet 5, review Opus 5 shippable-with-fixes,
-  # fix F1-F8 + D2, arbitro 265/265 exit 0). Story 2: file pronto (billing-2-pagina.md).
+  # fix F1-F8 + D2, arbitro 265/265 exit 0). Story 2 chiusa 2026-07-27 (review Opus 5
+  # shippable-with-fixes, fix F1-F11 con 2 ratifiche PO: prospettiva club sul registro
+  # [supera il mock §5 dello spec, aggiornato] e libro dell'originale sulle rettifiche;
+  # full suite 270/270 x2, 0 flaky). REWORK CONTABILITA' COMPLETO.
   billing-1-fondamenta: done
-  billing-2-pagina: ready-for-dev
+  billing-2-pagina: done
 
 action_items:
   - epic: 13
