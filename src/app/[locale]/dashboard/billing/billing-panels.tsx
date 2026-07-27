@@ -32,7 +32,7 @@ export type BillingPanelsProps = {
   monthLabel: string;
   moneyLocale: 'it' | 'en';
   locale: 'it' | 'en';
-  /** The secchiello's own filter link (story Billing-2, AC 3) — only rendered when `treasury.unattributedCents !== 0` (spec §8: never hidden while non-zero, but nothing to reach when it IS zero). */
+  /** The secchiello's own filter link (story Billing-2, AC 3) — only rendered when `treasury.unattributedCount > 0` (spec §8: never hidden while non-empty; review F1 — gated on count, not the summed amount, since two opposite-signed unattributed rows sum to 0 but leave the secchiello reachable). */
   unattributedHref: { pathname: '/dashboard/billing'; query: Record<string, string> };
   labels: BillingPanelsLabels;
 };
@@ -100,7 +100,8 @@ export function BillingPanels({ summary, monthLabel, moneyLocale, locale, unattr
           <StatRow label={labels.treasury.bank} value={formatCents(treasury.bankCents, moneyLocale)} testId="billing-panel-bank" />
           <StatRow label={labels.treasury.deposits} value={formatCents(deposits.totalCents, moneyLocale)} testId="billing-panel-deposits-note" />
           <TotalRow label={labels.treasury.available} value={formatCents(treasury.availableCents, moneyLocale)} testId="billing-panel-available" tone={treasury.availableCents >= 0 ? 'ok' : 'bad'} />
-          {treasury.unattributedCents !== 0 ? (
+          {/* Review F1: gated on COUNT, not the summed amount — two unattributed rows of opposite sign sum to 0 but the secchiello is still non-empty (spec §8: never hidden while non-empty). */}
+          {treasury.unattributedCount > 0 ? (
             <Link
               href={unattributedHref}
               locale={locale as AppLocale}

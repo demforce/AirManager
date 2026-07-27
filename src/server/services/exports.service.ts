@@ -14,7 +14,7 @@ import type { ListFlightsQuery } from '@/lib/schemas/flights';
 import type { InstructorCompensationQuery } from '@/lib/schemas/instructor-compensation';
 import type { ListPeopleQuery } from '@/lib/schemas/people';
 import type { ListPprRequestsQuery } from '@/lib/schemas/ppr';
-import type { ListTransactionsQuery } from '@/lib/schemas/transactions';
+import { ledgerClubAmountCents, type ListTransactionsQuery } from '@/lib/schemas/transactions';
 import { dateOnlyInZone, todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
 import { getAccountOverview, listAccountMovements } from './accounts.service';
@@ -427,8 +427,9 @@ export async function exportTransactionsXlsx(actor: Actor, query: ListTransactio
     { header: t('table.type'), value: (row) => t(`table.bookTypes.${row.bookType}`) },
     { header: t('table.description'), value: (row) => (row.description ? `${kindText(row)} — ${row.description}` : kindText(row)) },
     { header: t('table.method'), value: methodLabel },
-    { header: t('table.entrate'), value: (row) => (row.amountCents > 0 ? row.amountCents / 100 : null), numFmt: MONEY_NUM_FMT },
-    { header: t('table.uscite'), value: (row) => (row.amountCents < 0 ? -row.amountCents / 100 : null), numFmt: MONEY_NUM_FMT },
+    // Review F7: club perspective, the SAME shared helper the console's own Entrate/Uscite cells call — never a second copy of the split.
+    { header: t('table.entrate'), value: (row) => (ledgerClubAmountCents(row) > 0 ? ledgerClubAmountCents(row) / 100 : null), numFmt: MONEY_NUM_FMT },
+    { header: t('table.uscite'), value: (row) => (ledgerClubAmountCents(row) < 0 ? -ledgerClubAmountCents(row) / 100 : null), numFmt: MONEY_NUM_FMT },
     { header: t('table.status'), value: statusLabel },
   ];
 

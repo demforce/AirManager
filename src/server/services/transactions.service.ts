@@ -60,6 +60,12 @@ const ACCOUNT_ROW_SELECT = {
   createdAt: true,
   flightId: true,
   reversalOfId: true,
+  // Review F3: two levels deep — `reversalOf.type` catches a DIRECT rettifica
+  // of a TOP_UP, `reversalOf.reversalOf.type` catches the SYMMETRIC case (a
+  // storno of THAT rettifica, verified reachable via the per-row "Rettifica"
+  // action, which never restricts its target to TOP_UP/FLIGHT_CHARGE rows —
+  // see `accountBookType`'s own doc-comment).
+  reversalOf: { select: { type: true, reversalOf: { select: { type: true } } } },
   reversal: { select: { id: true } },
   cashMovement: { select: { id: true } },
   account: { select: { personId: true, person: { select: { firstName: true, lastName: true } } } },
@@ -103,6 +109,18 @@ type SelectedCashRow = Prisma.CashMovementGetPayload<{ select: typeof CASH_ROW_S
  *   storno's OWN month, review Billing-1 F3). `PACKAGE_PURCHASE` never
  *   reaches this predicate (its `AccountMovement` amount is always 0 — the
  *   twin-dedup above hides it; the value lives on its `CASH` twin instead).
+ *   **Review Billing-2 F3**: an `ADJUSTMENT` whose original (or, one level
+ *   further, whose original's own original) is a `TOP_UP` belongs to the
+ *   ACCONTI book, never revenue — "lo storno appartiene al libro del suo
+ *   originale" (Billing-1's own ratifica), generalized here to a ricarica: a
+ *   rettifica-di-ricarica is excluded from the negative-`ADJUSTMENT` clause
+ *   (any storno of a `TOP_UP` is negative, reducing the deposit), and the
+ *   SYMMETRIC positive case — a storno OF that rettifica — is excluded from
+ *   the positive-reversal clause, checking one level deeper
+ *   (`reversalOf.reversalOf`) since that positive row's own `reversalOf` is
+ *   the ADJUSTMENT, not the TOP_UP itself. Without this, correcting a wrong
+ *   ricarica showed up as ghost ricavo (the reviewer's own measured case:
+ *   +50,00 €).
  * - `CASH_REVENUE_OR` / `CASH_COST_OR`: a normal entrata/uscita
  *   (`reversalOfId` null) keeps its own sign; a storno of one
  *   (`reversalOfId` set) is DB-opposite-signed by construction
@@ -112,8 +130,13 @@ type SelectedCashRow = Prisma.CashMovementGetPayload<{ select: typeof CASH_ROW_S
 export const ACCOUNT_REVENUE_OR: Prisma.AccountMovementWhereInput[] = [
   { type: 'FLIGHT_CHARGE' },
   { type: 'FLIGHT_CHARGE_REVERSAL' },
-  { type: 'ADJUSTMENT', amountCents: { lt: 0 } },
-  { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null } },
+  { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
+  {
+    type: 'ADJUSTMENT',
+    amountCents: { gt: 0 },
+    reversalOfId: { not: null },
+    NOT: { OR: [{ reversalOf: { type: 'TOP_UP' } }, { reversalOf: { reversalOf: { type: 'TOP_UP' } } }] },
+  },
 ];
 
 /** A standalone credit `ADJUSTMENT` (no `reversalOfId`) — the "giroconto" bucket, no P&L role either way (story Billing-2, AC 2). */
@@ -129,17 +152,54 @@ export const CASH_COST_OR: Prisma.CashMovementWhereInput[] = [
   { reversalOfId: { not: null }, amountCents: { gt: 0 } },
 ];
 
-/** Row-level mirror of `ACCOUNT_REVENUE_OR`/`ACCOUNT_TRANSFER_WHERE` (see their own doc-comment — same predicate, expressed in JS instead of a Prisma `where`, for the per-row `bookType` the console displays/filters by). */
-function accountBookType(row: Pick<SelectedAccountRow, 'type' | 'amountCents' | 'reversalOfId'>): BookTypeDto {
+/**
+ * Row-level mirror of `ACCOUNT_REVENUE_OR`/`ACCOUNT_TRANSFER_WHERE` (see
+ * their own doc-comment — same predicate, expressed in JS instead of a
+ * Prisma `where`, for the per-row `bookType` the console displays/filters
+ * by) — kept branch-for-branch aligned with `ACCOUNT_REVENUE_OR`'s two
+ * `ADJUSTMENT` clauses so the row badge and the aggregate can never drift
+ * (review Billing-1 F6's lesson).
+ *
+ * Review Billing-2 F9(1): `PACKAGE_PURCHASE` is a zero-amount marker (the
+ * real value lives on its `CASH` twin, feature retired in 12.13) — TRANSFER,
+ * never REVENUE (unreachable today, the twin-dedup already hides it, but the
+ * classifier must not claim otherwise).
+ * F9(2): an `ADJUSTMENT` with `amountCents === 0` AND `reversalOfId` set is a
+ * zero-effect storno — no book role either way (also unreachable today, same
+ * defensive reasoning).
+ * F3(3): a rettifica whose DIRECT original is a `TOP_UP` is DEPOSIT
+ * (mirrors `ACCOUNT_REVENUE_OR`'s negative-clause exclusion); its SYMMETRIC
+ * case — a positive storno of THAT rettifica — is also DEPOSIT, checked one
+ * level deeper (mirrors the positive-clause exclusion). Sign-gated on
+ * purpose, not a blanket "any TOP_UP ancestor" check: it must match
+ * `ACCOUNT_REVENUE_OR`'s own two clauses exactly, or the badge and the
+ * aggregate would drift on a case neither clause actually excludes (a
+ * negative storno of a rettifica-of-TOP_UP, out of scope — see the
+ * predicate's own doc-comment).
+ */
+function accountBookType(row: Pick<SelectedAccountRow, 'type' | 'amountCents' | 'reversalOfId' | 'reversalOf'>): BookTypeDto {
   if (row.type === 'TOP_UP') return 'DEPOSIT';
-  if (row.type === 'FLIGHT_CHARGE' || row.type === 'FLIGHT_CHARGE_REVERSAL' || row.type === 'PACKAGE_PURCHASE') return 'REVENUE';
-  // ADJUSTMENT: matches ACCOUNT_REVENUE_OR's last two clauses exactly.
-  if (row.amountCents < 0 || row.reversalOfId !== null) return 'REVENUE';
+  if (row.type === 'FLIGHT_CHARGE' || row.type === 'FLIGHT_CHARGE_REVERSAL') return 'REVENUE';
+  if (row.type === 'PACKAGE_PURCHASE') return 'TRANSFER';
+  // ADJUSTMENT only from here — matches ACCOUNT_REVENUE_OR's last two clauses exactly.
+  if (row.amountCents === 0 && row.reversalOfId !== null) return 'TRANSFER';
+  if (row.amountCents < 0) return row.reversalOf?.type === 'TOP_UP' ? 'DEPOSIT' : 'REVENUE';
+  if (row.reversalOfId !== null) {
+    return row.reversalOf?.type === 'TOP_UP' || row.reversalOf?.reversalOf?.type === 'TOP_UP' ? 'DEPOSIT' : 'REVENUE';
+  }
   return 'TRANSFER';
 }
 
-/** Row-level mirror of `CASH_REVENUE_OR`/`CASH_COST_OR` — a normal entrata/uscita keeps its own sign, a storno flips to the ORIGINAL's book. */
+/**
+ * Row-level mirror of `CASH_REVENUE_OR`/`CASH_COST_OR` — a normal
+ * entrata/uscita keeps its own sign, a storno flips to the ORIGINAL's book.
+ * Review Billing-2 F9(3): a zero-amount movement is a marker, not a cost
+ * (`effective > 0 ? REVENUE : COST` would otherwise badge it COST) —
+ * unreachable today (no writer records a zero-amount `CashMovement`), same
+ * defensive reasoning as `accountBookType`'s own F9(1)/(2) edges.
+ */
 function cashBookType(row: Pick<SelectedCashRow, 'amountCents' | 'reversalOfId'>): BookTypeDto {
+  if (row.amountCents === 0) return 'TRANSFER';
   const effective = row.reversalOfId === null ? row.amountCents : -row.amountCents;
   return effective > 0 ? 'REVENUE' : 'COST';
 }

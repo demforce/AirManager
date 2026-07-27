@@ -2112,7 +2112,7 @@
         "bank": "Bank",
         "deposits": "of which deposits",
         "available": "Available",
-        "unattributed": "Unattributed"
+        "unattributed": "Unattributed ({count})"
       },
       "deposits": {
         "title": "Pilot deposits",
@@ -2170,7 +2170,9 @@
       "allCategories": "All categories",
       "pilot": "Pilot",
       "personSearchPlaceholder": "Search by name…",
-      "reset": "Reset filters"
+      "reset": "Reset filters",
+      "unattributedChip": "Unattributed",
+      "unattributedChipDismiss": "Remove the unattributed filter"
     },
     "exportMenu": {
       "label": "Export",

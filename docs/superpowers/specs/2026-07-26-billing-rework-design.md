@@ -64,10 +64,19 @@ Costi     −2.310 €      Banca        10.250 €     Esposizione  −180 €
                         Disponibile   4.250 €     → dettaglio
 
 REGISTRO                    ENTRATE     USCITE   TIPO
-26/07  Volo I-B412                 —    132,00   ricavo
+26/07  Volo I-B412           132,00         —    ricavo
 26/07  Ricarica Rossi        500,00         —    acconto ▸ non incide sul risultato
 25/07  Carburante                  —    240,00   costo
 ```
+
+> **Ratifica PO 2026-07-27** (review Billing-2, F7): prospettiva club uniforme
+> per TUTTO il registro — supera il mock originale di questa sezione (che
+> mostrava "Volo I-B412" in Uscite, prospettiva pilota-centrica). Oggi
+> l'addebito volo è un'Entrata (il club matura ricavo), il suo storno
+> un'Uscita, la ricarica un'Entrata (acconto, non incide sul risultato), la
+> rettifica di una ricarica un'Uscita (acconto), payout/carburante un'Uscita
+> (costo) — un solo helper condiviso (`ledgerClubAmountCents`) applica la
+> ripartizione sia nella console sia nell'export xlsx.
 
 - Colonne **Entrate/Uscite** separate al posto dell'importo firmato: sparisce l'ambiguità del segno.
 - Colonna **tipo** (ricavo · costo · acconto · giroconto), che è anche filtro.

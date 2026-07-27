@@ -17,8 +17,8 @@ import { CASH_COST_OR, CASH_NOT_ALREADY_ON_ACCOUNT, getLedgerRevenueCents } from
  * - **`result`** (risultato economico, for `ref`'s Europe/Rome calendar
  *   month): `revenueCents` reuses `transactions.service.ts#getLedgerRevenueCents`
  *   (ratifica utente 4, "MAI reimplementarle" — the SAME revenue definition
- *   `getBillingKpis`/`stats.service.ts` use, so the three readers can never
- *   drift). `costCents` is the month's cash OUSCITE (uscite di cassa per
+ *   `stats.service.ts` reuses, so the two readers can never drift, F8).
+ *   `costCents` is the month's cash OUSCITE (uscite di cassa per
  *   categoria, compensi istruttori included via their AC 4 gemello).
  * - **`treasury`** (dove sono i soldi, a running balance, NOT month-scoped):
  *   `cashCents`/`bankCents` = the configured opening balance (Billing-1, AC
@@ -26,8 +26,12 @@ import { CASH_COST_OR, CASH_NOT_ALREADY_ON_ACCOUNT, getLedgerRevenueCents } from
  *   `unattributedCents` is the "secchiello" of movements with no method at
  *   all (the Billing-2 UI's job to let an admin attribute them) —
  *   ALL-TIME, not bounded by `openingDate` (the design's own formula never
- *   qualifies it with one). `availableCents` = cash + bank − deposits (the
- *   pilots' money mixed in with the club's own).
+ *   qualifies it with one). `unattributedCount` (review F1) is the row COUNT
+ *   of that same bucket — the UI gates the secchiello's own link on the
+ *   count, not the summed amount, since two unattributed rows of opposite
+ *   sign sum to 0 while the secchiello is still non-empty. `availableCents`
+ *   = cash + bank − deposits (the pilots' money mixed in with the club's
+ *   own).
  * - **`deposits`** (acconti/debito verso i piloti): `totalCents` = Σ of
  *   every POSITIVE account balance (money the club owes back); `exposureCents`
  *   = Σ ABS of every NEGATIVE one (who flew uncovered); `inRedCount` is how
@@ -49,7 +53,7 @@ import { CASH_COST_OR, CASH_NOT_ALREADY_ON_ACCOUNT, getLedgerRevenueCents } from
  */
 
 export type BillingSummaryResult = { revenueCents: number; costCents: number; netCents: number };
-export type BillingSummaryTreasury = { cashCents: number; bankCents: number; unattributedCents: number; availableCents: number };
+export type BillingSummaryTreasury = { cashCents: number; bankCents: number; unattributedCents: number; unattributedCount: number; availableCents: number };
 export type BillingSummaryDeposits = { totalCents: number; exposureCents: number; inRedCount: number };
 
 export type BillingSummary = {
@@ -89,14 +93,14 @@ async function computeCostCents(from: string, to: string): Promise<number> {
   return -(aggregate._sum.amountCents ?? 0);
 }
 
-type TreasuryTotals = { cashCents: number; bankCents: number; unattributedCents: number };
+type TreasuryTotals = { cashCents: number; bankCents: number; unattributedCents: number; unattributedCount: number };
 
-/** The running cash/bank balances plus the unattributed bucket (AC 5's `treasury`, minus `availableCents` — computed by the caller once `deposits` is known too). */
+/** The running cash/bank balances plus the unattributed bucket (AC 5's `treasury`, minus `availableCents` — computed by the caller once `deposits` is known too). Review F1: `unattributedCount` is a plain row COUNT over the SAME `paymentMethod: null` scope as the sum — added to the same `Promise.all`, never a second round-trip. */
 async function computeTreasuryTotals(): Promise<TreasuryTotals> {
   const opening = await getTreasuryOpeningInternal();
   const openingDateFilter = opening.openingDate ? { gte: parseDateOnlyUtc(opening.openingDate) } : undefined;
 
-  const [cashAgg, bankAgg, unattributedAgg] = await Promise.all([
+  const [cashAgg, bankAgg, unattributedAgg, unattributedCount] = await Promise.all([
     prisma.cashMovement.aggregate({
       where: { paymentMethod: 'CASH', ...(openingDateFilter ? { effectiveDate: openingDateFilter } : {}) },
       _sum: { amountCents: true },
@@ -110,12 +114,14 @@ async function computeTreasuryTotals(): Promise<TreasuryTotals> {
       where: { paymentMethod: null },
       _sum: { amountCents: true },
     }),
+    prisma.cashMovement.count({ where: { paymentMethod: null } }),
   ]);
 
   return {
     cashCents: opening.openingCashCents + (cashAgg._sum.amountCents ?? 0),
     bankCents: opening.openingBankCents + (bankAgg._sum.amountCents ?? 0),
     unattributedCents: unattributedAgg._sum.amountCents ?? 0,
+    unattributedCount,
   };
 }
 
@@ -145,8 +151,9 @@ async function computeDeposits(): Promise<BillingSummaryDeposits> {
 /**
  * The three-book summary for `ref`'s Europe/Rome calendar month (default:
  * now) — see the module doc-comment for the full breakdown. `finance.manage`
- * (STAFF+ADMIN), same permission `getBillingKpis`/`getCashReport` already
- * require.
+ * (STAFF+ADMIN), same permission `stats.service.ts`/`getCashReport` already
+ * require (review F8: `getBillingKpis`, retired by this story, is no longer
+ * a real consumer to cite here).
  */
 export async function getBillingSummary(actor: Actor, ref: Date = new Date()): Promise<BillingSummary> {
   authorize(actor, 'finance.manage');

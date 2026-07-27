@@ -159,7 +159,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             bank: t('panels.treasury.bank'),
             deposits: t('panels.treasury.deposits'),
             available: t('panels.treasury.available'),
-            unattributed: t('panels.treasury.unattributed'),
+            unattributed: t('panels.treasury.unattributed', { count: summary.treasury.unattributedCount }),
           },
           deposits: {
             title: t('panels.deposits.title'),
@@ -247,6 +247,8 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             pilot: t('filters.pilot'),
             personSearchPlaceholder: t('filters.personSearchPlaceholder'),
             reset: t('filters.reset'),
+            unattributedChip: t('filters.unattributedChip'),
+            unattributedChipDismiss: t('filters.unattributedChipDismiss'),
           },
           pagination: { prev: '←', next: '→' },
           actions: {

@@ -11,21 +11,27 @@
  * the ONLY door, every consumer here already has full access.
  *
  * Story Billing-2 rework (AC 2/3): the old single signed "Importo" column
- * is gone — Entrate/Uscite columns instead (`row.amountCents > 0`/`< 0`,
- * RAW direction now that `transactions.service.ts#toAccountRow`'s club-
- * centric flip is retired) — plus a "Tipo" column/filter on the coarse
- * `bookType` classification (ricavo/costo/acconto/giroconto), REPLACING the
- * old raw-kind/cash-category "Tipo" select (two confusing optgroups behind
- * one control) with two separate, single-purpose selects: "Tipo" (bookType)
- * and "Categoria" (cash categories only — the account-side raw kind filter,
- * `movementType`, has no UI control anymore; still supported at the
- * schema/service level for API consumers, per-category detail lives in the
- * "Per categoria" panel below instead). The secchiello (AC 3, unattributed
- * CASH rows) is reached via the Liquidità riquadro's own link
- * (`billing-panels.tsx`) — no separate filter-bar control needed, since it
- * is only ever worth reaching when non-empty. A `CASH` row with no
- * `paymentMethod` shows an inline reclassify `<select>` in the Metodo
- * column instead of "—", regardless of which filter is active.
+ * is gone — Entrate/Uscite columns instead, plus a "Tipo" column/filter on
+ * the coarse `bookType` classification (ricavo/costo/acconto/giroconto),
+ * REPLACING the old raw-kind/cash-category "Tipo" select (two confusing
+ * optgroups behind one control) with two separate, single-purpose selects:
+ * "Tipo" (bookType) and "Categoria" (cash categories only — the
+ * account-side raw kind filter, `movementType`, has no UI control anymore;
+ * still supported at the schema/service level for API consumers,
+ * per-category detail lives in the "Per categoria" panel below instead). The
+ * secchiello (AC 3, unattributed CASH rows) is reached via the Liquidità
+ * riquadro's own link (`billing-panels.tsx`) — no separate filter-bar
+ * control needed, since it is only ever worth reaching when non-empty; a
+ * `?unattributed=true` arrival is declared in the filter bar via a
+ * dismissible chip (review F11). A `CASH` row with no `paymentMethod` shows
+ * an inline reclassify `<select>` in the Metodo column instead of "—",
+ * regardless of which filter is active.
+ *
+ * Entrate/Uscite (review F7, PO ratifica 2026-07-27 — SUPERSEDES the design
+ * mock's pilot-centric example): the split is CLUB PERSPECTIVE for every
+ * row, both `ACCOUNT` and `CASH` — `lib/schemas/transactions.ts#ledgerClubAmountCents`,
+ * the ONE shared helper this table and the xlsx export both call, never two
+ * copies of the rule (see its own doc-comment for the full sign derivation).
  *
  * Per-row Rettifica/Storna (AC 3, story 12.9) reuse the EXISTING,
  * already-tested endpoints directly (`POST /account/adjustments` with
@@ -43,7 +49,7 @@ import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import type { PaymentMethodDto } from '@/lib/schemas/accounts';
 import { formatCents, parseCents } from '@/lib/money';
-import type { BookTypeDto, TransactionRowDto } from '@/lib/schemas/transactions';
+import { ledgerClubAmountCents, type BookTypeDto, type TransactionRowDto } from '@/lib/schemas/transactions';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { TransactionEditor, type TransactionEditorLabels } from './transaction-editor';
 
@@ -110,6 +116,9 @@ export type BillingConsoleLabels = {
     pilot: string;
     personSearchPlaceholder: string;
     reset: string;
+    /** Review F11: the active-filter chip shown when arriving via `?unattributed=true` (the secchiello link) — otherwise only "Azzera filtri" hinted an active filter with no name attached to it. */
+    unattributedChip: string;
+    unattributedChipDismiss: string;
   };
   pagination: { prev: string; next: string };
   actions: { adjust: string; reverse: string; reclassifyPlaceholder: string; reclassifySuccess: string; reclassifyError: string };
@@ -487,6 +496,20 @@ export function BillingConsole({
               data-testid="billing-filter-person"
             />
           </div>
+          {filters.unattributed ? (
+            <Badge tone="info">
+              {labels.filters.unattributedChip}
+              <button
+                type="button"
+                onClick={() => handleFilterChange({ unattributed: false })}
+                aria-label={labels.filters.unattributedChipDismiss}
+                data-testid="billing-filter-unattributed-dismiss"
+                style={{ marginLeft: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit', lineHeight: 1 }}
+              >
+                ×
+              </button>
+            </Badge>
+          ) : null}
           {hasActiveFilter ? (
             <button type="button" className="btn" onClick={handleReset} data-testid="billing-filter-reset">
               {labels.filters.reset}
@@ -518,6 +541,8 @@ export function BillingConsole({
             {items.map((row) => {
               const status = statusInfo(row, labels);
               const unattributedCash = row.source === 'CASH' && row.method === null;
+              // Review F7: club perspective for BOTH Entrate/Uscite columns, shared with the xlsx export — never `row.amountCents` directly.
+              const clubAmountCents = ledgerClubAmountCents(row);
               return (
                 <div key={row.id} className="student-row" data-testid="transaction-row" style={{ gridTemplateColumns: COLS }}>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
@@ -558,11 +583,11 @@ export function BillingConsole({
                       </span>
                     )}
                   </div>
-                  <div className="mono num" style={{ fontWeight: 600, textAlign: 'right', color: 'var(--ok)' }}>
-                    {row.amountCents > 0 ? formatCents(row.amountCents, moneyLocale) : labels.table.noValue}
+                  <div className="mono num stat-tone-ok" style={{ fontWeight: 600, textAlign: 'right' }}>
+                    {clubAmountCents > 0 ? formatCents(clubAmountCents, moneyLocale) : labels.table.noValue}
                   </div>
-                  <div className="mono num" style={{ fontWeight: 600, textAlign: 'right', color: 'var(--bad)' }}>
-                    {row.amountCents < 0 ? formatCents(-row.amountCents, moneyLocale) : labels.table.noValue}
+                  <div className="mono num stat-tone-bad" style={{ fontWeight: 600, textAlign: 'right' }}>
+                    {clubAmountCents < 0 ? formatCents(-clubAmountCents, moneyLocale) : labels.table.noValue}
                   </div>
                   <div>
                     <Badge tone={status.tone} dot>

@@ -272,26 +272,12 @@ test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType col
     await expect(chargeRow.getByText('Ricavo', { exact: true })).toBeVisible();
   });
 
-  test('the three riquadri (Risultato/Liquidità/Acconti) do NOT change when the table filters do (they are always the whole current month, story Billing-2, AC 1 — same invariant getBillingKpis had)', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await gotoBilling(page, {});
-    await page.waitForSelector('[data-testid="billing-panel-result"]');
-    const before = await Promise.all(
-      ['billing-panel-revenue', 'billing-panel-cost', 'billing-panel-net', 'billing-panel-cash', 'billing-panel-bank'].map((id) => page.getByTestId(id).innerText()),
-    );
-
-    // A date filter that excludes everything (far future) — table goes empty, panels must stay identical.
-    const emptyDay = dateAt(50_000);
-    await page.getByTestId('billing-filter-date-from').fill(emptyDay);
-    await page.getByTestId('billing-filter-date-to').fill(emptyDay);
-    await expect(page).toHaveURL(new RegExp(`dateFrom=${emptyDay}`));
-    await expect(page.getByTestId('billing-empty')).toBeVisible();
-
-    const after = await Promise.all(
-      ['billing-panel-revenue', 'billing-panel-cost', 'billing-panel-net', 'billing-panel-cash', 'billing-panel-bank'].map((id) => page.getByTestId(id).innerText()),
-    );
-    expect(after).toEqual(before);
-  });
+  // Review F4: the "three riquadri stay put under table filters" invariant
+  // MOVED to e2e/billing-global.spec.ts (its own serialized `billing-global`
+  // Playwright project) — it reads before/after ALL-TIME aggregates with
+  // nothing but a client-side filter change in between, and flaked 2/2 runs
+  // here under fullyParallel whenever a concurrent worker wrote to the
+  // ledger in that window.
 });
 
 test.describe('Tre riquadri con numeri veri da scenario seminato (story Billing-2, AC 6)', () => {
@@ -458,48 +444,12 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
   });
 });
 
-test.describe('Secchiello dei non attribuiti — reclassify (story Billing-2, AC 3)', () => {
-  test('the seeded unattributed historical movement is reachable via the Liquidità riquadro\'s link; reclassifying it via the inline select PATCHes the method and drops it out of the secchiello', async ({ page }) => {
-    // Every LIVE writer now requires a paymentMethod (Billing-1 AC2 + review
-    // F8/D2 closed the last gap, `completePprRequest`) — the ONLY reachable
-    // unattributed row on a test DB is the ONE seeded directly via Prisma in
-    // `prisma/seed.ts` (simulating a genuinely pre-migration historical
-    // entry, exactly what this feature exists for).
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    await gotoBilling(page, {});
-    await page.waitForSelector('[data-testid="billing-panel-treasury"]');
-    const unattributedLink = page.getByTestId('billing-panel-unattributed-link');
-
-    // The link only renders while the secchiello is non-empty (spec §8). If
-    // a PREVIOUS run of this exact test already reclassified the one seeded
-    // row (no fresh DB reset in between), there is nothing left to reach —
-    // skip rather than fail spuriously on a re-run against a dirty DB.
-    if ((await unattributedLink.count()) === 0) {
-      test.skip(true, 'The seeded unattributed movement was already reclassified by a previous run (no DB reset in between).');
-    }
-
-    await unattributedLink.click();
-    await expect(page).toHaveURL(/unattributed=true/);
-
-    const row = billingRows(page).filter({ hasText: 'Movimento storico pre-Billing-1' });
-    await expect(row).toHaveCount(1);
-    await expect(row).toContainText(/5,00\s€/);
-
-    const select = row.getByTestId('transaction-reclassify-method');
-    await expect(select).toBeVisible();
-    await select.selectOption('CASH');
-    await expect(page.getByTestId('billing-reclassify-feedback')).toHaveText('Metodo assegnato.');
-
-    // `router.refresh()` re-runs the server-side `unattributed=true` filter — the row, now attributed, drops out on its own.
-    await expect(billingRows(page).filter({ hasText: 'Movimento storico pre-Billing-1' })).toHaveCount(0);
-
-    // A direct API check closes the loop independently of the UI's own filtered view.
-    const stillUnattributedResponse = await page.request.get('/api/v1/transactions?unattributed=true&pageSize=100');
-    const stillUnattributed = (await stillUnattributedResponse.json()) as { items: Array<{ description: string | null }> };
-    expect(stillUnattributed.items.some((item) => item.description === 'Movimento storico pre-Billing-1 (seed)')).toBe(false);
-  });
-});
+// Review F4/F5: the secchiello reclassify test ("Secchiello dei non
+// attribuiti") MOVED to e2e/billing-global.spec.ts — it consumes the ONE
+// seeded unattributed fixture (`prisma/seed.ts`) via a real write, and its
+// old guard (skip when the link doesn't render) was indistinguishable from a
+// genuine regression; the new guard checks the seed's own description
+// marker directly via the API instead.
 
 // Story 13.5, AC 4: the "Estratti conto" dialog is REMOVED from billing (UI
 // only — `/api/v1/people/{id}/account/pdf` itself stays, exercised by the

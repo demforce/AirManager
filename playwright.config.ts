@@ -30,16 +30,17 @@ export default defineConfig({
   },
   projects: [
     {
-      // settings.spec.ts, booking-window.spec.ts and treasury-settings.spec.ts
-      // write GLOBAL AppSetting rows (sched.*, club, smtp, treasury.*) that
-      // change server behaviour for EVERY other spec (e.g. a restrictive
-      // sched.openTime/closeTime makes concurrent booking creates fail with
-      // 422 BOOKING_OUTSIDE_WINDOW). They are excluded from the main project
-      // and run serialized, after it, via the 'settings'/'booking-window'/
-      // 'treasury-settings' projects below. Any future spec that writes
-      // global settings must join this chain the same way.
+      // settings.spec.ts, booking-window.spec.ts, treasury-settings.spec.ts
+      // and billing-global.spec.ts write/read GLOBAL state that a
+      // `fullyParallel` concurrent writer would otherwise corrupt (AppSetting
+      // rows — sched.*, club, smtp, treasury.* — or, for billing-global, the
+      // ledger's own ALL-TIME aggregates and a single-use seeded fixture).
+      // They are excluded from the main project and run serialized, after
+      // it, via the 'settings'/'booking-window'/'treasury-settings'/
+      // 'billing-global' projects below. Any future spec with the same
+      // requirement must join this chain the same way.
       name: 'chromium',
-      testIgnore: ['**/settings.spec.ts', '**/booking-window.spec.ts', '**/treasury-settings.spec.ts'],
+      testIgnore: ['**/settings.spec.ts', '**/booking-window.spec.ts', '**/treasury-settings.spec.ts', '**/billing-global.spec.ts'],
       use: sharedUse,
     },
     {
@@ -62,6 +63,20 @@ export default defineConfig({
       name: 'treasury-settings',
       testMatch: '**/treasury-settings.spec.ts',
       dependencies: ['booking-window'],
+      use: sharedUse,
+    },
+    {
+      // Review Billing-2 F4/F5 — two billing.spec.ts cases moved here
+      // because NEITHER can tolerate a concurrent writer touching the
+      // ledger: the three-riquadri invariant reads before/after ALL-TIME
+      // aggregates with nothing but a client-side filter change in between
+      // (flaked 2/2 runs under fullyParallel in the main project), and the
+      // secchiello reclassify test consumes the ONE seeded unattributed
+      // fixture (`prisma/seed.ts`) via a real write. Last in the chain —
+      // nothing downstream reads either.
+      name: 'billing-global',
+      testMatch: '**/billing-global.spec.ts',
+      dependencies: ['treasury-settings'],
       use: sharedUse,
     },
   ],

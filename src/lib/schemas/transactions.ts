@@ -78,6 +78,35 @@ export const transactionRowSchema = z.object({
 
 export type TransactionRowDto = z.infer<typeof transactionRowSchema>;
 
+/**
+ * Club-perspective Entrate/Uscite split (story Billing-2, PO ratifica
+ * 2026-07-27, review F7 — SUPERSEDES the mock in
+ * `docs/superpowers/specs/2026-07-26-billing-rework-design.md` §5). ONE
+ * shared rule for both renderers of a `TransactionRowDto` — the console
+ * table (`billing-console.tsx`) and the xlsx export
+ * (`exports.service.ts#exportTransactionsXlsx`) — never two independent
+ * copies of the split.
+ *
+ * `CASH` rows are already club-centric natively (an entrata di cassa was
+ * always DB-positive) — returned as-is. `ACCOUNT` rows carry the
+ * pilot-account-centric raw direction (a credit to the pilot's balance is
+ * positive, `amountCents`'s own doc-comment above) — for a `REVENUE`-booked
+ * row (`FLIGHT_CHARGE`/`FLIGHT_CHARGE_REVERSAL`/a revenue `ADJUSTMENT`) that
+ * is the OPPOSITE of the club's own book (a debit against the pilot IS the
+ * club's ricavo — addebito volo -> Entrate; its storno -> Uscite), so it is
+ * negated — the SAME negation `transactions.service.ts#computeRevenueCents`
+ * already applies when summing the identical `ACCOUNT_REVENUE_OR` rows into
+ * `result.revenueCents`. A `DEPOSIT`/`TRANSFER` row (ricarica, sua
+ * rettifica, giroconto) is NOT negated: its raw sign already matches the
+ * club's own ledger direction (a ricarica is cash IN — Entrate; a rettifica
+ * riducendo l'acconto is cash OUT — Uscite), the SAME raw balances
+ * `billing-summary.service.ts#computeDeposits` sums with no negation either.
+ */
+export function ledgerClubAmountCents(row: Pick<TransactionRowDto, 'source' | 'bookType' | 'amountCents'>): number {
+  if (row.source === 'CASH') return row.amountCents;
+  return row.bookType === 'REVENUE' ? -row.amountCents : row.amountCents;
+}
+
 /** `GET /api/v1/transactions` response — AD-8 paginated shape. */
 export const transactionListResponseSchema = paginatedResponseSchema(transactionRowSchema);
 
@@ -114,7 +143,18 @@ export const listTransactionsQuerySchema = paginationQuerySchema
     movementType: accountMovementTypeSchema.optional(),
     categoryId: z.string().trim().min(1).optional(),
     bookType: bookTypeSchema.optional(),
-    unattributed: z.preprocess((value) => value === 'true' || value === true, z.boolean()).optional(),
+    // Review Billing-2 F10: only ever coerces a recognized value — a stray
+    // `unattributed=1`/`yes`/anything else used to silently fall through to
+    // `false` (the old `value === 'true' || value === true` predicate never
+    // rejects); it now falls through UNCHANGED to `z.boolean()`, which fails
+    // loudly (422) on anything that isn't a real boolean.
+    unattributed: z
+      .preprocess((value) => {
+        if (value === 'true' || value === '1' || value === true) return true;
+        if (value === 'false' || value === '0' || value === false) return false;
+        return value;
+      }, z.boolean())
+      .optional(),
     direction: z.enum(['charge', 'payment']).optional(),
     ...exportQuerySchema.shape,
   })

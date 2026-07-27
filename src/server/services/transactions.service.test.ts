@@ -82,6 +82,7 @@ const baseAccountRow: Fixture = {
   createdAt: new Date('2026-07-10T09:00:00.000Z'),
   flightId: null,
   reversalOfId: null,
+  reversalOf: null,
   reversal: null,
   cashMovement: null,
   account: { personId: 'person_1', person: { firstName: 'Elena', lastName: 'Nakamura' } },
@@ -125,6 +126,32 @@ describe('listTransactionsQuerySchema (AC 1 — movementType XOR categoryId)', (
   it('rejects both movementType AND categoryId together', () => {
     const result = listTransactionsQuerySchema.safeParse({ page: 1, pageSize: 20, movementType: 'TOP_UP', categoryId: 'cat_1' });
     expect(result.success).toBe(false);
+  });
+
+  describe('unattributed coercion (review F10 — a stray value must 422, never silently become false)', () => {
+    it.each([
+      ['true', true],
+      ['1', true],
+      [true, true],
+      ['false', false],
+      ['0', false],
+      [false, false],
+    ])('coerces %p to %p', (input, expected) => {
+      const result = listTransactionsQuerySchema.safeParse({ page: 1, pageSize: 20, unattributed: input });
+      expect(result.success).toBe(true);
+      expect(result.success && result.data.unattributed).toBe(expected);
+    });
+
+    it('is absent (undefined) when the param itself is absent — never coerced to false', () => {
+      const result = listTransactionsQuerySchema.safeParse({ page: 1, pageSize: 20 });
+      expect(result.success).toBe(true);
+      expect(result.success && result.data.unattributed).toBeUndefined();
+    });
+
+    it.each(['1yes', 'yes', 'TRUE', 2, null])('rejects an unrecognized value (%p) with a 422, instead of silently becoming false', (input) => {
+      const result = listTransactionsQuerySchema.safeParse({ page: 1, pageSize: 20, unattributed: input });
+      expect(result.success).toBe(false);
+    });
   });
 });
 
@@ -227,6 +254,59 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       expect(byId.get('am_storno')).toBe('REVENUE');
     });
 
+    it('review Billing-2 F3: a rettifica whose original is a TOP_UP is DEPOSIT (never REVENUE), any sign — the reviewer\'s own ghost-revenue case (correcting a wrong ricarica must never show +50,00 € of ricavo)', async () => {
+      accountFindMany.mockResolvedValue([
+        { ...baseAccountRow, id: 'am_rettifica_down', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'am_topup', reversalOf: { type: 'TOP_UP', reversalOf: null } },
+        { ...baseAccountRow, id: 'am_rettifica_up', type: 'ADJUSTMENT', amountCents: 5000, reversalOfId: 'am_topup', reversalOf: { type: 'TOP_UP', reversalOf: null } },
+      ]);
+      accountCount.mockResolvedValue(2);
+      cashFindMany.mockResolvedValue([]);
+      cashCount.mockResolvedValue(0);
+
+      const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+
+      const byId = new Map(result.items.map((item) => [item.id, item.bookType]));
+      expect(byId.get('am_rettifica_down')).toBe('DEPOSIT');
+      expect(byId.get('am_rettifica_up')).toBe('DEPOSIT');
+    });
+
+    it('review Billing-2 F3 (symmetric case, verified reachable via the account statement\'s own "Rettifica" row action, which never restricts its target to TOP_UP/FLIGHT_CHARGE rows): a POSITIVE storno of a rettifica-di-ricarica is ALSO DEPOSIT, not REVENUE', async () => {
+      accountFindMany.mockResolvedValue([
+        {
+          ...baseAccountRow,
+          id: 'am_storno_di_rettifica',
+          type: 'ADJUSTMENT',
+          amountCents: 5000,
+          reversalOfId: 'am_rettifica_down',
+          reversalOf: { type: 'ADJUSTMENT', reversalOf: { type: 'TOP_UP' } },
+        },
+      ]);
+      accountCount.mockResolvedValue(1);
+      cashFindMany.mockResolvedValue([]);
+      cashCount.mockResolvedValue(0);
+
+      const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+
+      expect(result.items[0]?.bookType).toBe('DEPOSIT');
+    });
+
+    it('review Billing-2 F9: the three "unreachable today" edges align with their predicate — a zero-amount PACKAGE_PURCHASE-shaped ACCOUNT row and a zero-amount storno ADJUSTMENT are TRANSFER, a zero-amount CASH row is TRANSFER (never badged COST)', async () => {
+      accountFindMany.mockResolvedValue([
+        { ...baseAccountRow, id: 'am_package', type: 'PACKAGE_PURCHASE', amountCents: 0, reversalOfId: null },
+        { ...baseAccountRow, id: 'am_zero_storno', type: 'ADJUSTMENT', amountCents: 0, reversalOfId: 'am_debit', reversalOf: { type: 'ADJUSTMENT', reversalOf: null } },
+      ]);
+      accountCount.mockResolvedValue(2);
+      cashFindMany.mockResolvedValue([{ ...baseCashRow, id: 'cm_zero', amountCents: 0, reversalOfId: null }]);
+      cashCount.mockResolvedValue(1);
+
+      const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+
+      const byId = new Map(result.items.map((item) => [item.id, item.bookType]));
+      expect(byId.get('am_package')).toBe('TRANSFER');
+      expect(byId.get('am_zero_storno')).toBe('TRANSFER');
+      expect(byId.get('cm_zero')).toBe('TRANSFER');
+    });
+
     it('CASH: a normal entrata is REVENUE, a normal uscita is COST; a storno of an entrata (negative, reversalOfId set) is REVENUE, a storno of an uscita (positive, reversalOfId set) is COST', async () => {
       cashFindMany.mockResolvedValue([
         { ...baseCashRow, id: 'cm_in', amountCents: 5000, reversalOfId: null },
@@ -261,8 +341,13 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
         OR: [
           { type: 'FLIGHT_CHARGE' },
           { type: 'FLIGHT_CHARGE_REVERSAL' },
-          { type: 'ADJUSTMENT', amountCents: { lt: 0 } },
-          { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null } },
+          { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
+          {
+            type: 'ADJUSTMENT',
+            amountCents: { gt: 0 },
+            reversalOfId: { not: null },
+            NOT: { OR: [{ reversalOf: { type: 'TOP_UP' } }, { reversalOf: { reversalOf: { type: 'TOP_UP' } } }] },
+          },
         ],
       });
       expect(whereArg(cashFindManyMock).AND).toContainEqual({
@@ -464,8 +549,13 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
         OR: [
           { type: 'FLIGHT_CHARGE' },
           { type: 'FLIGHT_CHARGE_REVERSAL' },
-          { type: 'ADJUSTMENT', amountCents: { lt: 0 } },
-          { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null } },
+          { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
+          {
+            type: 'ADJUSTMENT',
+            amountCents: { gt: 0 },
+            reversalOfId: { not: null },
+            NOT: { OR: [{ reversalOf: { type: 'TOP_UP' } }, { reversalOf: { reversalOf: { type: 'TOP_UP' } } }] },
+          },
         ],
       },
       _sum: { amountCents: true },
@@ -528,6 +618,15 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-08-01', '2026-08-31');
 
     expect(revenueCents).toBe(-800);
+  });
+
+  it('review Billing-2 F3: a ricarica + a rettifica correcting it net to ZERO revenue delta (the reviewer\'s own measured ghost-revenue case, +50,00 €) — proven by the where-clause exclusion above (a TOP_UP never matches ACCOUNT_REVENUE_OR at all; the rettifica-di-ricarica is now excluded from it too, so a real DB sums neither into the aggregate)', async () => {
+    accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
+    cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
+
+    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+
+    expect(revenueCents).toBe(0);
   });
 });
 

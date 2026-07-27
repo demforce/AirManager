@@ -418,7 +418,11 @@ describe('exportTransactionsXlsx (story 12.9, AC 2 — unified ledger; story Bil
           kind: 'FLIGHT_CHARGE',
           bookType: 'REVENUE',
           description: null,
-          amountCents: 18500,
+          // Review F7: raw DB direction — a FLIGHT_CHARGE is a debit against
+          // the pilot's account, always negative; `ledgerClubAmountCents`
+          // negates a REVENUE-booked ACCOUNT row into the club's own
+          // Entrate (185,00 €), the SAME sign `computeRevenueCents` sums.
+          amountCents: -18500,
           method: null,
           reference: 'flight_1',
           reversal: false,

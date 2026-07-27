@@ -2112,7 +2112,7 @@
         "bank": "Banca",
         "deposits": "di cui acconti",
         "available": "Disponibile",
-        "unattributed": "Non attribuiti"
+        "unattributed": "Non attribuiti ({count})"
       },
       "deposits": {
         "title": "Acconti piloti",
@@ -2170,7 +2170,9 @@
       "allCategories": "Tutte le categorie",
       "pilot": "Pilota",
       "personSearchPlaceholder": "Cerca per nome…",
-      "reset": "Azzera filtri"
+      "reset": "Azzera filtri",
+      "unattributedChip": "Non attribuiti",
+      "unattributedChipDismiss": "Rimuovi il filtro non attribuiti"
     },
     "exportMenu": {
       "label": "Esporta",

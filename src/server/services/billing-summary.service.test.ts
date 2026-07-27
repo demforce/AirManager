@@ -17,27 +17,23 @@ import { ForbiddenError } from './errors';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
-    cashMovement: { aggregate: vi.fn() },
+    cashMovement: { aggregate: vi.fn(), count: vi.fn() },
     accountMovement: { groupBy: vi.fn() },
   },
 }));
 vi.mock('./app-settings.service', () => ({ getTreasuryOpeningInternal: vi.fn() }));
 vi.mock('./cash.service', () => ({ getCashReport: vi.fn() }));
-// `CASH_NOT_ALREADY_ON_ACCOUNT` (review Billing-1 F5, dedup) is a plain
-// object export, not a function — it MUST be included here too, or
-// `computeCostCents`'s `...CASH_NOT_ALREADY_ON_ACCOUNT` spread would silently
-// spread `undefined` (a no-op, `{...undefined}` === `{}`), dropping the twin-
-// dedup `NOT` clause from every where-clause assertion below without ANY of
-// them failing loudly (exactly the kind of silent gap review Billing-1 F4
-// asks these tests to close).
-// `CASH_COST_OR` (story Billing-2) is the same class of plain-array export
-// as `CASH_NOT_ALREADY_ON_ACCOUNT` above — same "must be included or the
-// `OR: CASH_COST_OR` spread silently becomes `OR: undefined`" risk.
-vi.mock('./transactions.service', () => ({
-  getLedgerRevenueCents: vi.fn(),
-  CASH_NOT_ALREADY_ON_ACCOUNT: { NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] } },
-  CASH_COST_OR: [{ reversalOfId: null, amountCents: { lt: 0 } }, { reversalOfId: { not: null }, amountCents: { gt: 0 } }],
-}));
+// Review Billing-2 F6: `CASH_NOT_ALREADY_ON_ACCOUNT`/`CASH_COST_OR` are now
+// re-exported from the REAL module (`vi.importActual`), only
+// `getLedgerRevenueCents` is mocked — the OLD literal-copy fixtures below
+// were the SAME hole review Billing-1 F4 closed elsewhere: if the real
+// predicate ever changes, these copies silently stay frozen at the OLD
+// shape and the assertions below would keep passing against a fixture
+// nobody ships, never against the code that actually runs.
+vi.mock('./transactions.service', async () => {
+  const actual = await vi.importActual<typeof import('./transactions.service')>('./transactions.service');
+  return { ...actual, getLedgerRevenueCents: vi.fn() };
+});
 
 const { prisma } = await import('@/server/db/prisma');
 const { getTreasuryOpeningInternal } = await import('./app-settings.service');
@@ -46,6 +42,7 @@ const { getLedgerRevenueCents } = await import('./transactions.service');
 const { getBillingSummary } = await import('./billing-summary.service');
 
 const cashAggregateMock = vi.mocked(prisma.cashMovement.aggregate);
+const cashCountMock = vi.mocked(prisma.cashMovement.count);
 const accountGroupByMock = vi.mocked(prisma.accountMovement.groupBy);
 const getTreasuryOpeningInternalMock = vi.mocked(getTreasuryOpeningInternal);
 const getCashReportMock = vi.mocked(getCashReport);
@@ -96,6 +93,7 @@ beforeEach(() => {
   getTreasuryOpeningInternalMock.mockResolvedValue({ openingCashCents: 0, openingBankCents: 0, openingDate: null });
   accountGroupBy.mockResolvedValue([]);
   mockCashAggregates({});
+  cashCountMock.mockResolvedValue(0);
 });
 
 describe('getBillingSummary (story Billing-1, AC 5)', () => {
@@ -203,6 +201,17 @@ describe('getBillingSummary (story Billing-1, AC 5)', () => {
     expect(summary.treasury.bankCents).toBe(0);
     const unattributedCall = cashAggregateMock.mock.calls.find((call) => (call[0] as { where: Record<string, unknown> }).where['paymentMethod'] === null);
     expect(unattributedCall?.[0]).toEqual({ where: { paymentMethod: null }, _sum: { amountCents: true } });
+  });
+
+  it('review Billing-2 F1: unattributedCount is a plain row COUNT over the SAME paymentMethod:null scope as the sum, from the SAME Promise.all — two opposite-signed unattributed rows (sum 0, count 2) still report count 2 so the UI link never disappears', async () => {
+    mockCashAggregates({ unattributedSum: 0 });
+    cashCountMock.mockResolvedValue(2);
+
+    const summary = await getBillingSummary(adminActor(), REF);
+
+    expect(summary.treasury.unattributedCents).toBe(0);
+    expect(summary.treasury.unattributedCount).toBe(2);
+    expect(cashCountMock).toHaveBeenCalledWith({ where: { paymentMethod: null } });
   });
 
   it('a cash top-up (paymentMethod CASH, accountMovementId pointing at a NON-zero TOP_UP) feeds treasury.cashCents AND deposits.totalCents, but revenueCents is untouched (delegated separately, never re-derived from cash movements)', async () => {
