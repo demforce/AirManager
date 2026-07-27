@@ -30,9 +30,13 @@ vi.mock('./cash.service', () => ({ getCashReport: vi.fn() }));
 // dedup `NOT` clause from every where-clause assertion below without ANY of
 // them failing loudly (exactly the kind of silent gap review Billing-1 F4
 // asks these tests to close).
+// `CASH_COST_OR` (story Billing-2) is the same class of plain-array export
+// as `CASH_NOT_ALREADY_ON_ACCOUNT` above — same "must be included or the
+// `OR: CASH_COST_OR` spread silently becomes `OR: undefined`" risk.
 vi.mock('./transactions.service', () => ({
   getLedgerRevenueCents: vi.fn(),
   CASH_NOT_ALREADY_ON_ACCOUNT: { NOT: { AND: [{ accountMovementId: { not: null } }, { accountMovement: { amountCents: { not: 0 } } }] } },
+  CASH_COST_OR: [{ reversalOfId: null, amountCents: { lt: 0 } }, { reversalOfId: { not: null }, amountCents: { gt: 0 } }],
 }));
 
 const { prisma } = await import('@/server/db/prisma');

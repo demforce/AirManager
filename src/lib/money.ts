@@ -25,12 +25,18 @@ export function formatCents(cents: number, locale: 'it' | 'en' = 'it'): string {
   }
 
   const intlLocale = locale === 'it' ? 'it-IT' : 'en-IE';
+  // Story Billing-2: `-0` (negative zero — e.g. a caller displaying `-someZeroValue`,
+  // as the billing riquadri do for Costi/Esposizione) formats with a stray
+  // minus sign ("-0,00 €") despite being mathematically zero. `cents === 0`
+  // matches BOTH `0` and `-0` (IEEE 754 equality), so this normalizes either
+  // to a plain positive zero before formatting.
+  const normalizedCents = cents === 0 ? 0 : cents;
 
   return new Intl.NumberFormat(intlLocale, {
     style: 'currency',
     currency: 'EUR',
     useGrouping: 'always',
-  }).format(cents / 100);
+  }).format(normalizedCents / 100);
 }
 
 /**

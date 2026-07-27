@@ -69,8 +69,8 @@ function registerRows(page: Page) {
   return page.getByTestId('transaction-row');
 }
 
-test.describe('Cash register with categories and reversals (Story 3.4 — port to billing, story 12.9)', () => {
-  test('staff records a +50 € entrata and a −30 € uscita via "Nuova transazione"; both show signed amounts and the category filter isolates them (AC 2)', async ({
+test.describe('Cash register with categories and reversals (Story 3.4 — port to billing, story 12.9; Entrate/Uscite columns story Billing-2)', () => {
+  test('staff records a +50 € entrata and a −30 € uscita via "Nuova transazione"; each shows in its own Entrate/Uscite column and the category filter isolates them (AC 2)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -93,18 +93,17 @@ test.describe('Cash register with categories and reversals (Story 3.4 — port t
       description: 'Acquisto materiale',
     });
 
-    // Isolate this run's rows through the category filter (URL-driven, "Tipo" select's cash optgroup).
-    await page.getByTestId('billing-filter-type').selectOption(categoryId);
-    await expect(page).toHaveURL(new RegExp(`type=${categoryId}`));
+    // Isolate this run's rows through the "Categoria" filter (URL-driven, story Billing-2 — replaces the old combined "Tipo" select's cash optgroup).
+    await page.getByTestId('billing-filter-category').selectOption(categoryId);
+    await expect(page).toHaveURL(new RegExp(`categoryId=${categoryId}`));
     await expect(registerRows(page)).toHaveCount(2);
 
-    // Signed amounts, club-centric convention (ratifica 1): entrata (positive) plain ink; uscita (negative)
-    // in `var(--bad)` — a cash outflow is a real expense (PO ratification, review 12.9), unlike ACCOUNT
-    // payments whose negative stays `var(--ok)` (money received).
+    // Entrate/Uscite columns (story Billing-2, AC 2): each shows its OWN unsigned amount in its own column — no more
+    // one signed "Importo" column to disambiguate.
     const inflowRow = registerRows(page).filter({ hasText: 'Incasso piazzale' });
     await expect(inflowRow).toContainText(/50,00\s€/);
     const outflowRow = registerRows(page).filter({ hasText: 'Acquisto materiale' });
-    await expect(outflowRow).toContainText(/-30,00\s€/);
+    await expect(outflowRow).toContainText(/30,00\s€/);
 
     // Period filter, INCLUSIVE boundaries: [2026-07-01, 2026-07-01] -> only the entrata.
     await page.getByTestId('billing-filter-date-from').fill('2026-07-01');
@@ -123,7 +122,7 @@ test.describe('Cash register with categories and reversals (Story 3.4 — port t
     const categoryId = await createCategory(page, categoryName);
     await recordMovement(page, categoryId, -3000, '2026-07-02');
 
-    await page.goto(`/it/dashboard/billing?type=${categoryId}`);
+    await page.goto(`/it/dashboard/billing?categoryId=${categoryId}`);
     await expect(registerRows(page)).toHaveCount(1);
 
     // Two-step: the row action only opens the panel; the storno needs a reason.
@@ -155,7 +154,7 @@ test.describe('Cash register with categories and reversals (Story 3.4 — port t
     expect(deactivateResponse.status()).toBe(200);
 
     // Deactivated -> not selectable for new movements (the picker filters to active) NOR
-    // in the Tipo filter's cash optgroup (story 12.9: BOTH read the same active-only list —
+    // in the "Categoria" filter (story 12.9/Billing-2: BOTH read the same active-only list —
     // a deliberate deviation from the legacy register's filter, which kept inactive ones
     // reachable there; the story ratifies "Categorie cassa = categorie attive" for billing).
     await page.goto('/it/dashboard/billing');
@@ -164,7 +163,7 @@ test.describe('Cash register with categories and reversals (Story 3.4 — port t
     await page.getByTestId('transaction-kind').selectOption('cash');
     await expect(page.getByTestId('transaction-category')).toBeVisible();
     await expect(page.locator(`[data-testid="transaction-category"] option:has-text("${categoryName}")`)).toHaveCount(0);
-    await expect(page.locator(`[data-testid="billing-filter-type"] option:has-text("${categoryName}")`)).toHaveCount(0);
+    await expect(page.locator(`[data-testid="billing-filter-category"] option:has-text("${categoryName}")`)).toHaveCount(0);
   });
 
   test('deleting a category in use via the API fails with a clear message suggesting deactivation (AC 1)', async ({ page }) => {

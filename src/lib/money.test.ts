@@ -25,6 +25,11 @@ describe('formatCents', () => {
     expect(formatCents(0, 'it')).toBe(`0,00${NBSP}€`);
   });
 
+  it('formats negative zero (`-0`, e.g. a caller negating an already-zero domain value) WITHOUT a stray minus sign (story Billing-2)', () => {
+    expect(formatCents(-0, 'it')).toBe(`0,00${NBSP}€`);
+    expect(formatCents(-0, 'en')).toBe('€0.00');
+  });
+
   it('formats negative cents (e.g. a reversal)', () => {
     expect(formatCents(-550, 'it')).toBe(`-5,50${NBSP}€`);
   });

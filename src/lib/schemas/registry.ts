@@ -46,6 +46,7 @@ import {
   createCashCategorySchema,
   listCashCategoriesQuerySchema,
   listCashMovementsQuerySchema,
+  reclassifyCashMovementSchema,
   recordCashMovementSchema,
   renameCashCategorySchema,
   reverseCashMovementSchema,
@@ -277,6 +278,7 @@ registry.register('CashMovement', cashMovementItemSchema);
 registry.register('CashMovementList', cashMovementListResponseSchema);
 registry.register('RecordCashMovementRequest', recordCashMovementSchema);
 registry.register('ReverseCashMovementRequest', reverseCashMovementSchema);
+registry.register('ReclassifyCashMovement', reclassifyCashMovementSchema);
 registry.register('CashReport', cashReportResponseSchema);
 registry.register('RegisterFlightRequest', registerFlightSchema);
 registry.register('RegisterFlightResponse', registerFlightResponseSchema);
@@ -870,6 +872,21 @@ registry.registerPath({
   request: { params: cashMovementIdParams, body: { content: jsonContent(reverseCashMovementSchema), required: true } },
   responses: {
     200: { description: 'The reversal movement.', content: jsonContent(cashMovementItemSchema) },
+    ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/cash-movements/{id}',
+  summary: 'Reclassify an unattributed cash movement (assign its payment method)',
+  description:
+    'Story Billing-2, AC 3 — the secchiello: assigns `paymentMethod` to a historical movement recorded/backfilled without one. Only `paymentMethod` changes; the movement must currently have NONE (409 otherwise — reclassification is not a general edit, and every automatic twin/storno already carries a method by construction). Requires `finance.manage`.',
+  tags: ['Cash'],
+  security,
+  request: { params: cashMovementIdParams, body: { content: jsonContent(reclassifyCashMovementSchema), required: true } },
+  responses: {
+    200: { description: 'The reclassified movement.', content: jsonContent(cashMovementItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });

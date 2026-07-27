@@ -15,20 +15,49 @@ export const transactionSourceSchema = z.enum(['ACCOUNT', 'CASH']);
 export type TransactionSourceDto = z.infer<typeof transactionSourceSchema>;
 
 /**
- * One ledger row (AC 1). `amountCents` is CLUB-CENTRIC (ratifica utente 1,
- * 2026-07-16): a charge/ricavo is POSITIVE, a payment received is NEGATIVE —
- * the OPPOSITE sign convention of the raw `AccountMovement.amountCents`
- * column for `ACCOUNT` rows (flipped in the service), while `CASH` rows
- * already match it as-is (entrata > 0). `kind` is either the raw
- * `AccountMovementType` (`ACCOUNT` rows) or the `CashCategory.name`
- * (`CASH` rows) — same free-text badge label either way. `reference` is the
- * linked `flightId` (`ACCOUNT` FLIGHT_CHARGE*) or `PprRequest.pprNumber`
- * (`CASH` landing-fee twin), `null` otherwise. `reversal`/`reversed` drive
- * the Stato lineage badge (AC 3): `reversal` = this row IS a storno/rettifica
- * of another; `reversed` = another row already corrects/reverses THIS one.
- * `actionable` = staff may act on this row (Rettifica/Storna, AC 3) — always
- * `false` on a derived row (FLIGHT_CHARGE*, PACKAGE_PURCHASE, an automatic
- * twin) or one already reversed.
+ * The three-book classification of a single ledger row (story Billing-2,
+ * AC 2) — `ricavo`/`costo`/`acconto`/`giroconto` in the UI, derived
+ * SERVER-SIDE from the same predicates `billing-summary.service.ts`'s
+ * `result`/`deposits` aggregates already use (`transactions.service.ts`'s
+ * `ACCOUNT_REVENUE_OR`/`CASH_REVENUE_OR`/`CASH_COST_OR`), so the per-row
+ * badge and the riquadri totals can never drift (review Billing-1 F6's
+ * lesson, closed at the root by this story instead of left to rot):
+ * `REVENUE` (ricavo), `COST` (costo), `DEPOSIT` (acconto — a `TOP_UP`,
+ * increases the debito verso i piloti, "non incide sul risultato"),
+ * `TRANSFER` (giroconto — a standalone credit `ADJUSTMENT` with no
+ * `reversalOfId`: no P&L role either).
+ */
+export const bookTypeSchema = z.enum(['REVENUE', 'COST', 'DEPOSIT', 'TRANSFER']);
+
+export type BookTypeDto = z.infer<typeof bookTypeSchema>;
+
+/**
+ * One ledger row (AC 1; amount convention rewritten story Billing-2, AC 2).
+ * `amountCents` is now the RAW, natural direction on BOTH sides — positive =
+ * value received (a `TOP_UP` credit, a cash entrata), negative = value given
+ * (a `FLIGHT_CHARGE`/`ADJUSTMENT` debit, a cash uscita). The OLD
+ * club-centric flip (ratifica utente 1, 2026-07-16: a charge/ricavo was
+ * POSITIVE, a payment received was NEGATIVE — `ACCOUNT` rows only) is
+ * RETIRED (`transactions.service.ts#toAccountRow`'s `-row.amountCents` is
+ * gone): the console no longer shows one signed column at all, splitting
+ * into separate Entrate/Uscite columns instead (`amountCents > 0` /
+ * `< 0`) — there is nothing left for a club-centric sign to disambiguate.
+ * `bookType` is the new, coarse classification (see {@link bookTypeSchema})
+ * that replaces the old kind/category badge as both the Tipo column's value
+ * and its filter; `kind` survives alongside it (folded into the
+ * Descrizione cell) for the granular label (raw `AccountMovementType` or
+ * `CashCategory.name`). `reference` is the linked `flightId` (`ACCOUNT`
+ * FLIGHT_CHARGE*) or `PprRequest.pprNumber` (`CASH` landing-fee twin),
+ * `null` otherwise. `reversal`/`reversed` drive the Stato lineage badge
+ * (AC 3): `reversal` = this row IS a storno/rettifica of another; `reversed`
+ * = another row already corrects/reverses THIS one. `actionable` = staff may
+ * act on this row (Rettifica/Storna, AC 3) — always `false` on a derived row
+ * (FLIGHT_CHARGE*, PACKAGE_PURCHASE, an automatic twin) or one already
+ * reversed. `method` (story Billing-2, AC 3) now carries the REAL
+ * `CashMovement.paymentMethod` on `CASH` rows too (previously hardcoded
+ * `null` — pre-dated the field) — `null` there means "non attribuito", the
+ * secchiello a `finance.manage` actor can reclassify via
+ * `PATCH /api/v1/cash-movements/{id}`.
  */
 export const transactionRowSchema = z.object({
   id: z.string(),
@@ -37,6 +66,7 @@ export const transactionRowSchema = z.object({
   personId: z.string().nullable(),
   personName: z.string().nullable(),
   kind: z.string(),
+  bookType: bookTypeSchema,
   description: z.string().nullable(),
   amountCents: z.number().int(),
   method: paymentMethodSchema.nullable(),
@@ -58,14 +88,22 @@ export type TransactionListResponseDto = z.infer<typeof transactionListResponseS
  * `effectiveDate` (same convention as `listCashMovementsQuerySchema`).
  * `movementType` (the 5 `AccountMovementType` values) and `categoryId` (a
  * cash category) are MUTUALLY EXCLUSIVE — a request naming both is a 422
- * (the `.refine` below), same "narrow to one source's own vocabulary" rule
- * the Tipo filter's two optgroups present in the UI. `direction` filters on
- * the NORMALIZED (club-centric) sign: `charge` = positive, `payment` =
- * negative. `personQuery` (story 13.5, AC 1) is a SEPARATE, free-text
- * narrowing filter — a case-insensitive substring match on the linked
- * person's `firstName`/`lastName` (the billing console's free-text pilot
- * filter, replacing its old `SearchCombobox` picker) — AND-combined with
- * every other filter, `personId` included.
+ * (the `.refine` below); both stay available for API/programmatic
+ * consumers, but the console's own "Tipo" filter (story Billing-2) now uses
+ * `bookType` instead (the coarse ricavo/costo/acconto/giroconto
+ * classification, {@link bookTypeSchema}) — the two families are
+ * independent and may combine. `direction` filters on the RAW db sign
+ * (`ACCOUNT`: `charge` = a debit, DB-negative; `CASH`: `charge` = an
+ * entrata, DB-positive — unaffected by AC 2's amount-convention rewrite,
+ * since it was always applied to the pre-normalization column).
+ * `unattributed` (story Billing-2, AC 3) narrows to the "secchiello": `CASH`
+ * rows with no `paymentMethod` at all — `ACCOUNT` rows are skipped entirely
+ * when set (an addebito/rettifica is not a treasury-attribution concern).
+ * `personQuery` (story 13.5, AC 1) is a SEPARATE, free-text narrowing
+ * filter — a case-insensitive substring match on the linked person's
+ * `firstName`/`lastName` (the billing console's free-text pilot filter,
+ * replacing its old `SearchCombobox` picker) — AND-combined with every
+ * other filter, `personId` included.
  */
 export const listTransactionsQuerySchema = paginationQuerySchema
   .extend({
@@ -75,6 +113,8 @@ export const listTransactionsQuerySchema = paginationQuerySchema
     personQuery: z.string().trim().min(1).optional(),
     movementType: accountMovementTypeSchema.optional(),
     categoryId: z.string().trim().min(1).optional(),
+    bookType: bookTypeSchema.optional(),
+    unattributed: z.preprocess((value) => value === 'true' || value === true, z.boolean()).optional(),
     direction: z.enum(['charge', 'payment']).optional(),
     ...exportQuerySchema.shape,
   })
@@ -84,31 +124,6 @@ export const listTransactionsQuerySchema = paginationQuerySchema
   });
 
 export type ListTransactionsQuery = z.infer<typeof listTransactionsQuerySchema>;
-
-/**
- * `getBillingKpis` result (AC 1/2, ratifica utente 2) — TRUE server-side
- * aggregates over the WHOLE ledger for the CURRENT Europe/Rome calendar
- * month, independent of any table filter (lezione 12.8: never a per-page
- * sum). `revenueCents` and `chargesCents` are, BY THE RATIFIED DEFINITION,
- * the SAME sum (Σ positive normalized amounts of the month) — two KPI tiles
- * surfacing one figure with different sub-labels/deltas (revenue: % vs
- * previous month, no count; addebiti: a count, no delta) — not a bug.
- * `netCents = chargesCents - paymentsCents`. `revenueByKind` feeds the
- * "Ricavi per categoria" card, one entry per DISTINCT `kind` with a positive
- * sum this month.
- */
-export const billingKpisSchema = z.object({
-  revenueCents: z.number().int(),
-  prevMonthRevenueCents: z.number().int(),
-  chargesCents: z.number().int(),
-  chargesCount: z.number().int().min(0),
-  paymentsCents: z.number().int(),
-  paymentsCount: z.number().int().min(0),
-  netCents: z.number().int(),
-  revenueByKind: z.array(z.object({ kind: z.string(), amountCents: z.number().int() })),
-});
-
-export type BillingKpisDto = z.infer<typeof billingKpisSchema>;
 
 // --- "Nuova transazione" (AC 4) ---------------------------------------------
 

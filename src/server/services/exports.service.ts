@@ -416,16 +416,19 @@ export async function exportTransactionsXlsx(actor: Actor, query: ListTransactio
     return t('table.methods.CASH');
   }
 
+  /** The granular label (raw AccountMovementType or CashCategory name) — folded into Descrizione (story Billing-2), same as the console's own `kindLabel`: Tipo now carries the coarse bookType instead. */
+  function kindText(row: (typeof result.items)[number]): string {
+    return row.source === 'ACCOUNT' ? tType(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[row.kind as keyof typeof ACCOUNT_MOVEMENT_TYPE_KEYS]}`) : row.kind;
+  }
+
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
     { header: t('table.date'), value: (row) => formatDateOnly(row.date, locale) },
     { header: t('table.pilot'), value: (row) => row.personName },
-    {
-      header: t('table.type'),
-      value: (row) => (row.source === 'ACCOUNT' ? tType(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[row.kind as keyof typeof ACCOUNT_MOVEMENT_TYPE_KEYS]}`) : row.kind),
-    },
-    { header: t('table.description'), value: (row) => row.description },
+    { header: t('table.type'), value: (row) => t(`table.bookTypes.${row.bookType}`) },
+    { header: t('table.description'), value: (row) => (row.description ? `${kindText(row)} — ${row.description}` : kindText(row)) },
     { header: t('table.method'), value: methodLabel },
-    { header: t('table.amount'), value: (row) => row.amountCents / 100, numFmt: MONEY_NUM_FMT },
+    { header: t('table.entrate'), value: (row) => (row.amountCents > 0 ? row.amountCents / 100 : null), numFmt: MONEY_NUM_FMT },
+    { header: t('table.uscite'), value: (row) => (row.amountCents < 0 ? -row.amountCents / 100 : null), numFmt: MONEY_NUM_FMT },
     { header: t('table.status'), value: statusLabel },
   ];
 

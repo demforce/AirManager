@@ -1862,6 +1862,18 @@
       "saved": "Impostazioni salvate.",
       "error": "Non è stato possibile salvare. Riprova."
     },
+    "treasury": {
+      "title": "Tesoreria",
+      "sub": "Saldi di apertura di cassa e banca",
+      "openingCash": "Saldo apertura cassa",
+      "openingBank": "Saldo apertura banca",
+      "openingDate": "Data di apertura",
+      "hint": "I saldi di Liquidità in Contabilità partono da questi importi alla data indicata, sommando i movimenti registrati da allora.",
+      "save": "Salva",
+      "saved": "Impostazioni salvate.",
+      "error": "Non è stato possibile salvare. Riprova.",
+      "invalid": "Inserisci importi validi e una data di apertura."
+    },
     "ratings": {
       "title": "Ratings",
       "sub": "Tipi di Ratings e durata di validità",
@@ -2087,16 +2099,28 @@
     "sub": "{count, plural, one {# transazione} other {# transazioni}} · {period}",
     "periodAll": "storico completo",
     "newTransaction": "Nuova transazione",
-    "kpi": {
-      "revenue": "Ricavi del mese",
-      "revenueDelta": "{value}% su mese prec.",
-      "charges": "Addebiti",
-      "chargesSub": "{count, plural, one {# addebito} other {# addebiti}}",
-      "payments": "Pagamenti ricevuti",
-      "paymentsSub": "{count, plural, one {# pagamento} other {# pagamenti}}",
-      "net": "Credito netto",
-      "instructors": "Compensi istruttori",
-      "instructorsSub": "{count} CFI"
+    "panels": {
+      "result": {
+        "title": "Risultato",
+        "revenue": "Ricavi",
+        "cost": "Costi",
+        "net": "Utile/Perdita"
+      },
+      "treasury": {
+        "title": "Liquidità",
+        "cash": "Cassa",
+        "bank": "Banca",
+        "deposits": "di cui acconti",
+        "available": "Disponibile",
+        "unattributed": "Non attribuiti"
+      },
+      "deposits": {
+        "title": "Acconti piloti",
+        "total": "Totale",
+        "exposure": "Esposizione",
+        "inRed": "Conti in rosso",
+        "detailLink": "→ dettaglio"
+      }
     },
     "table": {
       "cardTitle": "Transazioni",
@@ -2106,7 +2130,8 @@
       "type": "Tipo",
       "description": "Descrizione",
       "method": "Metodo",
-      "amount": "Importo",
+      "entrate": "Entrate",
+      "uscite": "Uscite",
       "status": "Stato",
       "statusOptions": {
         "registered": "Registrato",
@@ -2127,15 +2152,22 @@
         "CASH": "Contanti",
         "BANK_TRANSFER": "Bonifico",
         "POS": "POS"
-      }
+      },
+      "bookTypes": {
+        "REVENUE": "Ricavo",
+        "COST": "Costo",
+        "DEPOSIT": "Acconto",
+        "TRANSFER": "Giroconto"
+      },
+      "noResultImpact": "non incide sul risultato"
     },
     "filters": {
       "dateFrom": "Dal",
       "dateTo": "Al",
-      "type": "Tipo",
-      "allTypes": "Tutti i tipi",
-      "accountGroup": "Movimenti conto",
-      "cashGroup": "Categorie cassa",
+      "bookType": "Tipo",
+      "allBookTypes": "Tutti i tipi",
+      "category": "Categoria",
+      "allCategories": "Tutte le categorie",
       "pilot": "Pilota",
       "personSearchPlaceholder": "Cerca per nome…",
       "reset": "Azzera filtri"
@@ -2145,10 +2177,13 @@
       "xlsLabel": "Transazioni (Excel)",
       "pdfLabel": "Report cassa (PDF)"
     },
-    "revenueByCategory": {
-      "title": "Ricavi per categoria",
+    "byCategory": {
+      "title": "Per categoria",
       "sub": "{month}",
-      "empty": "Nessun ricavo registrato questo mese."
+      "empty": "Nessun movimento registrato questo mese.",
+      "in": "Entrate",
+      "out": "Uscite",
+      "net": "Netto"
     },
     "instructorCompensation": {
       "title": "Compensi istruttori",
@@ -2163,7 +2198,10 @@
     },
     "actions": {
       "adjust": "Rettifica",
-      "reverse": "Storna"
+      "reverse": "Storna",
+      "reclassifyPlaceholder": "Assegna metodo…",
+      "reclassifySuccess": "Metodo assegnato.",
+      "reclassifyError": "Impossibile assegnare il metodo. Riprova."
     },
     "adjustModal": {
       "title": "Registra rettifica",

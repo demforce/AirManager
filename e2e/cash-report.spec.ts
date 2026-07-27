@@ -48,8 +48,8 @@ function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-test.describe('Financial report over the cash ledger — per-category via billing + PDF export (Story 3.5, port to story 12.9)', () => {
-  test('a positive movement recorded TODAY shows up as a bar in billing\'s "Ricavi per categoria" card (ratifica utente 2: month-anchored, not a free period) — a negative one does not contribute (AC 1/2)', async ({
+test.describe('Financial report over the cash ledger — per-category via billing + PDF export (Story 3.5, port to story 12.9; "Per categoria" panel story Billing-2)', () => {
+  test('entrate/uscite/netto recorded TODAY show up in billing\'s "Per categoria" panel (ratifica utente 2: month-anchored, not a free period) — BOTH directions contribute, netted, never just the positive side (AC 1/2; story Billing-2, §2: la categoria dice di cosa, il movimento dice in che direzione)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -60,10 +60,12 @@ test.describe('Financial report over the cash ledger — per-category via billin
     await recordMovement(page, categoryId, -4000, today);
 
     await page.goto('/it/dashboard/billing');
-    const row = page.getByTestId('billing-revenue-by-category-row').filter({ hasText: categoryName });
+    const row = page.getByTestId('billing-by-category-row').filter({ hasText: categoryName });
     await expect(row).toBeVisible();
-    // Only the POSITIVE movement (100,00 €) counts as revenue — the uscita (-40,00 €) never subtracts from it.
+    // Both directions show for the SAME category (entrate 100,00 €, uscite -40,00 €), netted to 60,00 €.
     await expect(row).toContainText(/100,00\s€/);
+    await expect(row).toContainText(/-40,00\s€/);
+    await expect(row).toContainText(/60,00\s€/);
   });
 
   test('"Report cassa (PDF)" from billing\'s ExportMenu downloads (200, application/pdf), defaulting to the current month when no period filter is applied (AC 2, story 10.2)', async ({

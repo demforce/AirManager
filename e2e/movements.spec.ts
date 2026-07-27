@@ -288,9 +288,9 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     await expect(updatedRow).toContainText('Partito');
     await expect(updatedRow).toContainText(/43,21\s€/);
 
-    // --- Billing ledger: the matching movement in the "PPR" category (story 12.9 — pattern cash-register.spec.ts) ---
+    // --- Billing ledger: the matching movement in the "PPR" category (story 12.9 — pattern cash-register.spec.ts; "Categoria" filter, story Billing-2) ---
     await page.goto('/it/dashboard/billing');
-    await page.getByTestId('billing-filter-type').selectOption({ label: 'PPR' });
+    await page.getByTestId('billing-filter-category').selectOption({ label: 'PPR' });
     const movementRow = page.getByTestId('transaction-row').filter({ hasText: created.pprNumber });
     await expect(movementRow).toBeVisible();
     await expect(movementRow).toContainText(/43,21\s€/);

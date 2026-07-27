@@ -1,23 +1,23 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { KPI } from '@/components/ui/kpi';
 import { redirect } from '@/i18n/navigation';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
-import { formatCents } from '@/lib/money';
 import { currentMonthRange } from '@/lib/period-presets';
-import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
+import type { BookTypeDto } from '@/lib/schemas/transactions';
 import { formatDateOnly } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listNegativeBalances } from '@/server/services/accounts.service';
+import { getBillingSummary } from '@/server/services/billing-summary.service';
 import { listCashCategories } from '@/server/services/cash.service';
 import { getCompensationSummary } from '@/server/services/instructor-compensation.service';
 import { listPeople } from '@/server/services/people.service';
-import { getBillingKpis, listTransactions } from '@/server/services/transactions.service';
+import { listTransactions } from '@/server/services/transactions.service';
 import { BillingConsole, type BillingFilters } from './billing-console';
+import { BillingPanels } from './billing-panels';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; dateFrom?: string; dateTo?: string; type?: string; personQuery?: string }>;
+  searchParams: Promise<{ page?: string; dateFrom?: string; dateTo?: string; bookType?: string; categoryId?: string; personQuery?: string; unattributed?: string }>;
 };
 
 /** Form pickers' seed candidates (story TD-3 convention, same as logbook/fleet/pilots). */
@@ -27,30 +27,34 @@ const OPTIONS_PAGE_SIZE = 100;
 const TX_PAGE_SIZE = 20;
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const ACCOUNT_MOVEMENT_TYPES: readonly AccountMovementTypeDto[] = ['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE', 'FLIGHT_CHARGE', 'FLIGHT_CHARGE_REVERSAL'];
+const BOOK_TYPES: readonly BookTypeDto[] = ['REVENUE', 'COST', 'DEPOSIT', 'TRANSFER'];
 
 function sanitizeDateParam(value: string | undefined): string | undefined {
   return value && DATE_ONLY_PATTERN.test(value) ? value : undefined;
 }
 
 /**
- * Contabilità (epic 12, story 12.9) — AirOps-native, port of
- * `docs/design-reference/airops/src/BillingView.jsx`, replacing the legacy
- * `/dashboard/finance` + `/dashboard/finance/report` (deleted by this
- * story). `finance.manage` only (ADMIN+STAFF) — no own-access face, unlike
- * logbook/bookings (the titolare's own estratto conto stays on
- * `people/[id]/account`, untouched).
+ * Contabilità (epic 12, story 12.9; reworked story Billing-2) — AirOps-
+ * native, port of `docs/design-reference/airops/src/BillingView.jsx`,
+ * replacing the legacy `/dashboard/finance` + `/dashboard/finance/report`
+ * (deleted by story 12.9). `finance.manage` only (ADMIN+STAFF) — no
+ * own-access face, unlike logbook/bookings (the titolare's own estratto
+ * conto stays on `people/[id]/account`, untouched — AC 7).
  *
- * KPI row (ratifica utente 2): ALWAYS the current Europe/Rome calendar
- * month's TRUE server aggregates (`getBillingKpis`), completely INDEPENDENT
- * of the table's own filters — computed here with NO query params, never
- * re-derived from `listTransactions`'s (filtered) page.
+ * Story Billing-2, AC 1: the old 5-tile `.kpi-row` (`getBillingKpis`,
+ * ratifica D1, DELETED) is replaced by the three riquadri
+ * (`billing-panels.tsx`) fed by ONE `getBillingSummary` call — Risultato
+ * (the CURRENT Europe/Rome calendar month, always, independent of the
+ * table's own filters — same "never re-derived from the filtered page"
+ * invariant `getBillingKpis` had), Liquidità (a running balance, NOT
+ * month-scoped), Acconti piloti (all-time account balances).
  *
- * The single "Tipo" filter covers BOTH vocabularies behind one URL param
- * (`type`): one of the 5 `AccountMovementType` values resolves to
- * `movementType`, anything else (a cash category id) resolves to
- * `categoryId` — `listTransactionsQuerySchema`'s XOR is therefore never
- * hit from this UI (the two can never both be set at once here).
+ * The single "Tipo" filter (AC 2) is now `bookType` (the coarse
+ * ricavo/costo/acconto/giroconto classification) — a SEPARATE, single-
+ * purpose "Categoria" filter (`categoryId`, cash categories only) replaces
+ * the old combined kind/category select. The old `movementType` param has
+ * no UI control anymore (Dev Notes) — still valid at the schema/service
+ * level, just unused by this page.
  */
 export default async function BillingPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
@@ -69,10 +73,10 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
 
   const dateFrom = sanitizeDateParam(sp.dateFrom);
   const dateTo = sanitizeDateParam(sp.dateTo);
-  const typeParam = sp.type || undefined;
-  const movementType = typeParam && (ACCOUNT_MOVEMENT_TYPES as readonly string[]).includes(typeParam) ? (typeParam as AccountMovementTypeDto) : undefined;
-  const categoryId = typeParam && !movementType ? typeParam : undefined;
+  const bookTypeParam = sp.bookType && (BOOK_TYPES as readonly string[]).includes(sp.bookType) ? (sp.bookType as BookTypeDto) : undefined;
+  const categoryId = sp.categoryId || undefined;
   const personQuery = sp.personQuery || undefined;
+  const unattributed = sp.unattributed === 'true';
 
   // Sequential (not `Promise.all`): `listPeople` runs an interactive
   // `$transaction` internally — same "never concurrent with another
@@ -84,11 +88,11 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const cashCategories = await listCashCategories(actor, { includeInactive: false });
   const categoryOptions = cashCategories.map((category) => ({ id: category.id, name: category.name }));
 
-  const kpis = await getBillingKpis(actor);
+  const summary = await getBillingSummary(actor);
   const compensation = await getCompensationSummary(actor);
   const negativeBalances = await listNegativeBalances(actor);
 
-  const txQuery = { pageSize: TX_PAGE_SIZE, from: dateFrom, to: dateTo, personQuery, movementType, categoryId };
+  const txQuery = { pageSize: TX_PAGE_SIZE, from: dateFrom, to: dateTo, personQuery, bookType: bookTypeParam, categoryId, unattributed };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   let result = await listTransactions(actor, { ...txQuery, page });
   const lastPage = Math.max(1, Math.ceil(result.total / TX_PAGE_SIZE));
@@ -104,8 +108,10 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const filterQuery = {
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
-    ...(typeParam ? { type: typeParam } : {}),
+    ...(bookTypeParam ? { bookType: bookTypeParam } : {}),
+    ...(categoryId ? { categoryId } : {}),
     ...(personQuery ? { personQuery } : {}),
+    ...(unattributed ? { unattributed: 'true' } : {}),
   };
   const exportHref = buildExportHref('/api/v1/transactions', filterQuery, locale);
   const reportPeriod = dateFrom && dateTo ? { from: dateFrom, to: dateTo } : currentMonthRange();
@@ -121,15 +127,13 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
 
   const monthLabel = new Intl.DateTimeFormat(displayLocale === 'en' ? 'en-IE' : 'it-IT', { month: 'long', year: 'numeric' }).format(new Date());
 
-  const revenueDelta = kpis.prevMonthRevenueCents > 0 ? Math.round(((kpis.revenueCents - kpis.prevMonthRevenueCents) / kpis.prevMonthRevenueCents) * 1000) / 10 : null;
-  const revenueDeltaLabel = revenueDelta === null ? undefined : t('kpi.revenueDelta', { value: revenueDelta >= 0 ? `+${revenueDelta}` : `${revenueDelta}` });
-  const revenueTrend: 'up' | 'down' | '' = revenueDelta === null ? '' : revenueDelta >= 0 ? 'up' : 'down';
-
   const filters: BillingFilters = {
     dateFrom: dateFrom ?? '',
     dateTo: dateTo ?? '',
-    type: typeParam ?? '',
+    bookType: bookTypeParam ?? '',
+    categoryId: categoryId ?? '',
     personQuery: personQuery ?? '',
+    unattributed,
   };
 
   return (
@@ -141,13 +145,31 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
         </div>
       </div>
 
-      <div className="kpi-row">
-        <KPI label={t('kpi.revenue')} value={formatCents(kpis.revenueCents, displayLocale)} delta={revenueDeltaLabel} trend={revenueTrend} />
-        <KPI label={t('kpi.charges')} value={formatCents(kpis.chargesCents, displayLocale)} delta={t('kpi.chargesSub', { count: kpis.chargesCount })} />
-        <KPI label={t('kpi.payments')} value={formatCents(kpis.paymentsCents, displayLocale)} delta={t('kpi.paymentsSub', { count: kpis.paymentsCount })} trend="up" />
-        <KPI label={t('kpi.net')} value={formatCents(kpis.netCents, displayLocale)} />
-        <KPI label={t('kpi.instructors')} value={formatCents(compensation.reduce((sum, row) => sum + (row.owedMtdCents ?? 0), 0), displayLocale)} delta={t('kpi.instructorsSub', { count: compensation.length })} />
-      </div>
+      <BillingPanels
+        summary={summary}
+        monthLabel={monthLabel}
+        moneyLocale={displayLocale}
+        locale={displayLocale}
+        unattributedHref={{ pathname: '/dashboard/billing', query: { unattributed: 'true' } }}
+        labels={{
+          result: { title: t('panels.result.title'), revenue: t('panels.result.revenue'), cost: t('panels.result.cost'), net: t('panels.result.net') },
+          treasury: {
+            title: t('panels.treasury.title'),
+            cash: t('panels.treasury.cash'),
+            bank: t('panels.treasury.bank'),
+            deposits: t('panels.treasury.deposits'),
+            available: t('panels.treasury.available'),
+            unattributed: t('panels.treasury.unattributed'),
+          },
+          deposits: {
+            title: t('panels.deposits.title'),
+            total: t('panels.deposits.total'),
+            exposure: t('panels.deposits.exposure'),
+            inRed: t('panels.deposits.inRed'),
+            detailLink: t('panels.deposits.detailLink'),
+          },
+        }}
+      />
 
       <BillingConsole
         key={JSON.stringify({ page, ...filterQuery })}
@@ -157,7 +179,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
         filters={filters}
         personOptions={personOptions}
         categoryOptions={categoryOptions}
-        revenueByKind={kpis.revenueByKind}
+        byCategory={summary.byCategory.categories}
         compensation={compensation.map((row) => ({
           personId: row.personId,
           firstName: row.firstName,
@@ -173,7 +195,14 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
         locale={displayLocale}
         labels={{
           newTransaction: t('newTransaction'),
-          revenueByCategory: { title: t('revenueByCategory.title'), sub: t('revenueByCategory.sub', { month: monthLabel }), empty: t('revenueByCategory.empty') },
+          byCategory: {
+            title: t('byCategory.title'),
+            sub: t('byCategory.sub', { month: monthLabel }),
+            empty: t('byCategory.empty'),
+            in: t('byCategory.in'),
+            out: t('byCategory.out'),
+            net: t('byCategory.net'),
+          },
           instructorCompensation: { title: t('instructorCompensation.title'), sub: t('instructorCompensation.sub'), noRate: t('instructorCompensation.noRate'), empty: t('instructorCompensation.empty') },
           negativeBalances: { title: t('negativeBalances.title'), empty: t('negativeBalances.empty'), link: t('negativeBalances.link') },
           exportMenu: { label: t('exportMenu.label'), xlsLabel: t('exportMenu.xlsLabel'), pdfLabel: t('exportMenu.pdfLabel') },
@@ -185,7 +214,8 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             type: t('table.type'),
             description: t('table.description'),
             method: t('table.method'),
-            amount: t('table.amount'),
+            entrate: t('table.entrate'),
+            uscite: t('table.uscite'),
             status: t('table.status'),
             actions: t('table.actions'),
             noValue: t('table.noValue'),
@@ -199,20 +229,33 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
               FLIGHT_CHARGE_REVERSAL: t('table.kinds.FLIGHT_CHARGE_REVERSAL'),
             },
             methods: { CASH: t('table.methods.CASH'), BANK_TRANSFER: t('table.methods.BANK_TRANSFER'), POS: t('table.methods.POS') },
+            bookTypes: {
+              REVENUE: t('table.bookTypes.REVENUE'),
+              COST: t('table.bookTypes.COST'),
+              DEPOSIT: t('table.bookTypes.DEPOSIT'),
+              TRANSFER: t('table.bookTypes.TRANSFER'),
+            },
+            noResultImpact: t('table.noResultImpact'),
           },
           filters: {
             dateFrom: t('filters.dateFrom'),
             dateTo: t('filters.dateTo'),
-            type: t('filters.type'),
-            allTypes: t('filters.allTypes'),
-            accountGroup: t('filters.accountGroup'),
-            cashGroup: t('filters.cashGroup'),
+            bookType: t('filters.bookType'),
+            allBookTypes: t('filters.allBookTypes'),
+            category: t('filters.category'),
+            allCategories: t('filters.allCategories'),
             pilot: t('filters.pilot'),
             personSearchPlaceholder: t('filters.personSearchPlaceholder'),
             reset: t('filters.reset'),
           },
           pagination: { prev: '←', next: '→' },
-          actions: { adjust: t('actions.adjust'), reverse: t('actions.reverse') },
+          actions: {
+            adjust: t('actions.adjust'),
+            reverse: t('actions.reverse'),
+            reclassifyPlaceholder: t('actions.reclassifyPlaceholder'),
+            reclassifySuccess: t('actions.reclassifySuccess'),
+            reclassifyError: t('actions.reclassifyError'),
+          },
           adjustModal: {
             title: t('adjustModal.title'),
             linkedTo: t.raw('adjustModal.linkedTo') as string,

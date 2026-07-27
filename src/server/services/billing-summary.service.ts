@@ -4,7 +4,7 @@ import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { getTreasuryOpeningInternal } from './app-settings.service';
 import { getCashReport, type CashReport } from './cash.service';
-import { CASH_NOT_ALREADY_ON_ACCOUNT, getLedgerRevenueCents } from './transactions.service';
+import { CASH_COST_OR, CASH_NOT_ALREADY_ON_ACCOUNT, getLedgerRevenueCents } from './transactions.service';
 
 /**
  * The three-book calculation service (story Billing-1, AC 5) that replaces
@@ -64,6 +64,9 @@ export type BillingSummary = {
  * not already valued on the account side (`CASH_NOT_ALREADY_ON_ACCOUNT`,
  * imported from `transactions.service.ts` rather than duplicated here —
  * review Billing-1 F5), compenso istruttori included via its AC 4 gemello.
+ * `CASH_COST_OR` (story Billing-2) is the SAME predicate the ledger's
+ * `bookType: 'COST'` filter and per-row classification use — one
+ * definition, never a second copy to drift.
  *
  * **Review Billing-1 F3** — mirrors `transactions.service.ts#computeRevenueCents`'s
  * own storno rule: a normal uscita (`reversalOfId == null`, negative) still
@@ -78,7 +81,7 @@ async function computeCostCents(from: string, to: string): Promise<number> {
   const aggregate = await prisma.cashMovement.aggregate({
     where: {
       effectiveDate: { gte: parseDateOnlyUtc(from), lte: parseDateOnlyUtc(to) },
-      OR: [{ reversalOfId: null, amountCents: { lt: 0 } }, { reversalOfId: { not: null }, amountCents: { gt: 0 } }],
+      OR: CASH_COST_OR,
       ...CASH_NOT_ALREADY_ON_ACCOUNT,
     },
     _sum: { amountCents: true },

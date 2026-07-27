@@ -402,8 +402,8 @@ describe('exportInstructorCompensationXlsx (story 12.7, AC 3 — payout rate/owe
   });
 });
 
-describe('exportTransactionsXlsx (story 12.9, AC 2 — unified ledger, ACCOUNT type label vs CASH category name)', () => {
-  it('translates an ACCOUNT row\'s enum kind, leaves a CASH row\'s category name verbatim, and derives the Stato label', async () => {
+describe('exportTransactionsXlsx (story 12.9, AC 2 — unified ledger; story Billing-2 — Tipo is now bookType, kind folded into Descrizione, Entrate/Uscite split)', () => {
+  it('Tipo shows the coarse bookType (translated), Descrizione folds in the granular kind (translated for ACCOUNT, verbatim for CASH), Entrate/Uscite are split, and Stato is derived', async () => {
     listTransactionsMock.mockResolvedValue({
       total: 2,
       page: 1,
@@ -416,6 +416,7 @@ describe('exportTransactionsXlsx (story 12.9, AC 2 — unified ledger, ACCOUNT t
           personId: 'p_1',
           personName: 'Nakamura Elena',
           kind: 'FLIGHT_CHARGE',
+          bookType: 'REVENUE',
           description: null,
           amountCents: 18500,
           method: null,
@@ -431,6 +432,7 @@ describe('exportTransactionsXlsx (story 12.9, AC 2 — unified ledger, ACCOUNT t
           personId: null,
           personName: null,
           kind: 'Carburante',
+          bookType: 'COST',
           description: 'Rifornimento',
           amountCents: -5000,
           method: null,
@@ -447,14 +449,18 @@ describe('exportTransactionsXlsx (story 12.9, AC 2 — unified ledger, ACCOUNT t
 
     const accountRow = sheet.getRow(2);
     expect(accountRow.getCell(2).value).toBe('Nakamura Elena');
-    expect(accountRow.getCell(3).value).toBe('Addebito volo'); // AccountStatementPage.movementType.flightCharge
-    expect(accountRow.getCell(6).value).toBe(185);
-    expect(accountRow.getCell(7).value).toBe('Registrato');
+    expect(accountRow.getCell(3).value).toBe('Ricavo'); // BillingPage.table.bookTypes.REVENUE
+    expect(accountRow.getCell(4).value).toBe('Addebito volo'); // AccountStatementPage.movementType.flightCharge, no free-text description to append
+    expect(accountRow.getCell(6).value).toBe(185); // Entrate
+    expect(accountRow.getCell(7).value).toBeNull(); // Uscite
+    expect(accountRow.getCell(8).value).toBe('Registrato');
 
     const cashRow = sheet.getRow(3);
-    expect(cashRow.getCell(3).value).toBe('Carburante'); // verbatim category name, no translation lookup
-    expect(cashRow.getCell(6).value).toBe(-50);
-    expect(cashRow.getCell(7).value).toBe('Stornato');
+    expect(cashRow.getCell(3).value).toBe('Costo'); // BillingPage.table.bookTypes.COST
+    expect(cashRow.getCell(4).value).toBe('Carburante — Rifornimento'); // verbatim category name + free-text description
+    expect(cashRow.getCell(6).value).toBeNull(); // Entrate
+    expect(cashRow.getCell(7).value).toBe(50); // Uscite
+    expect(cashRow.getCell(8).value).toBe('Stornato');
   });
 
   it('rejects with 422 EXPORT_TOO_LARGE when the filtered total exceeds the cap', async () => {

@@ -271,6 +271,50 @@ async function seedCashCategories(): Promise<void> {
 }
 
 /**
+ * Story Billing-2 (AC 3): ONE deliberately UNATTRIBUTED manual `CashMovement`
+ * (`paymentMethod: null`) — simulates the realistic case the Billing-1
+ * migration backfill leaves behind on a real installation, a manual entry
+ * recorded before `paymentMethod` existed ("il secchiello"). Written
+ * directly via Prisma, not `recordCashMovement` (which now REQUIRES a
+ * method) — exactly how a genuinely pre-migration row looks; there is no
+ * live writer left that can produce one (review Billing-1 F8/D2 closed the
+ * last gap). Dated well outside every other spec's `PAST_DATE`/isolation
+ * window (`2020-01-01` is the suite's common "safely in the past" constant)
+ * so it never pollutes a date-scoped count elsewhere. `CashMovement` has no
+ * natural unique key to `upsert` on — idempotent via a fixed marker
+ * description instead (find-or-skip), same rationale every other seed
+ * function's `upsert` serves.
+ */
+const UNATTRIBUTED_SEED_DESCRIPTION = 'Movimento storico pre-Billing-1 (seed)';
+
+async function seedUnattributedHistoricalMovement(): Promise<void> {
+  const existing = await prisma.cashMovement.findFirst({ where: { description: UNATTRIBUTED_SEED_DESCRIPTION }, select: { id: true } });
+  if (existing) {
+    return;
+  }
+
+  const category = await prisma.cashCategory.findUnique({ where: { name: 'Altro' }, select: { id: true } });
+  const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL }, select: { id: true } });
+  if (!category || !admin) {
+    console.warn('Seed: "Altro" category or admin user not found — skipping the unattributed historical movement.');
+    return;
+  }
+
+  await prisma.cashMovement.create({
+    data: {
+      categoryId: category.id,
+      amountCents: 500,
+      paymentMethod: null,
+      description: UNATTRIBUTED_SEED_DESCRIPTION,
+      effectiveDate: new Date('2019-06-15'),
+      actorUserId: admin.id,
+    },
+  });
+
+  console.log('Seed: 1 unattributed historical cash movement ready (story Billing-2, AC 3 secchiello).');
+}
+
+/**
  * Story 3.1, AC 1: the demo pilot's `Person` already has an active
  * `PilotProfile` from `seedPilotProfile` — a real profile activation would
  * also have created the `Account` (AD-11: it belongs to the person, not the
@@ -367,6 +411,7 @@ async function main() {
   await seedStudentProfile();
   await seedAircraft();
   await seedCashCategories();
+  await seedUnattributedHistoricalMovement();
   await seedPilotAccount();
   await seedExpiryTypes();
 }

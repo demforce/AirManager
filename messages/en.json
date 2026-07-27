@@ -1862,6 +1862,18 @@
       "saved": "Settings saved.",
       "error": "Could not save. Please try again."
     },
+    "treasury": {
+      "title": "Treasury",
+      "sub": "Cash and bank opening balances",
+      "openingCash": "Cash opening balance",
+      "openingBank": "Bank opening balance",
+      "openingDate": "Opening date",
+      "hint": "The Billing page's cash position starts from these amounts on the date given, adding every movement recorded since.",
+      "save": "Save",
+      "saved": "Settings saved.",
+      "error": "Could not save. Please try again.",
+      "invalid": "Enter valid amounts and an opening date."
+    },
     "ratings": {
       "title": "Ratings",
       "sub": "Rating types and validity duration",
@@ -2087,16 +2099,28 @@
     "sub": "{count, plural, one {# transaction} other {# transactions}} · {period}",
     "periodAll": "full history",
     "newTransaction": "New transaction",
-    "kpi": {
-      "revenue": "Revenue this month",
-      "revenueDelta": "{value}% vs last month",
-      "charges": "Charges",
-      "chargesSub": "{count, plural, one {# charge} other {# charges}}",
-      "payments": "Payments received",
-      "paymentsSub": "{count, plural, one {# payment} other {# payments}}",
-      "net": "Net credit",
-      "instructors": "Instructor compensation",
-      "instructorsSub": "{count} CFI"
+    "panels": {
+      "result": {
+        "title": "Result",
+        "revenue": "Revenue",
+        "cost": "Cost",
+        "net": "Profit/Loss"
+      },
+      "treasury": {
+        "title": "Cash position",
+        "cash": "Cash",
+        "bank": "Bank",
+        "deposits": "of which deposits",
+        "available": "Available",
+        "unattributed": "Unattributed"
+      },
+      "deposits": {
+        "title": "Pilot deposits",
+        "total": "Total",
+        "exposure": "Exposure",
+        "inRed": "Accounts in the red",
+        "detailLink": "→ details"
+      }
     },
     "table": {
       "cardTitle": "Transactions",
@@ -2106,7 +2130,8 @@
       "type": "Type",
       "description": "Description",
       "method": "Method",
-      "amount": "Amount",
+      "entrate": "In",
+      "uscite": "Out",
       "status": "Status",
       "statusOptions": {
         "registered": "Registered",
@@ -2127,15 +2152,22 @@
         "CASH": "Cash",
         "BANK_TRANSFER": "Bank transfer",
         "POS": "Card"
-      }
+      },
+      "bookTypes": {
+        "REVENUE": "Revenue",
+        "COST": "Cost",
+        "DEPOSIT": "Deposit",
+        "TRANSFER": "Transfer"
+      },
+      "noResultImpact": "does not affect the result"
     },
     "filters": {
       "dateFrom": "From",
       "dateTo": "To",
-      "type": "Type",
-      "allTypes": "All types",
-      "accountGroup": "Account movements",
-      "cashGroup": "Cash categories",
+      "bookType": "Type",
+      "allBookTypes": "All types",
+      "category": "Category",
+      "allCategories": "All categories",
       "pilot": "Pilot",
       "personSearchPlaceholder": "Search by name…",
       "reset": "Reset filters"
@@ -2145,10 +2177,13 @@
       "xlsLabel": "Transactions (Excel)",
       "pdfLabel": "Cash report (PDF)"
     },
-    "revenueByCategory": {
-      "title": "Revenue by category",
+    "byCategory": {
+      "title": "By category",
       "sub": "{month}",
-      "empty": "No revenue recorded this month."
+      "empty": "No movements recorded this month.",
+      "in": "In",
+      "out": "Out",
+      "net": "Net"
     },
     "instructorCompensation": {
       "title": "Instructor compensation",
@@ -2163,7 +2198,10 @@
     },
     "actions": {
       "adjust": "Adjust",
-      "reverse": "Reverse"
+      "reverse": "Reverse",
+      "reclassifyPlaceholder": "Assign method…",
+      "reclassifySuccess": "Method assigned.",
+      "reclassifyError": "Could not assign the method. Try again."
     },
     "adjustModal": {
       "title": "Record adjustment",

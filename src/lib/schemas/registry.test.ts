@@ -43,6 +43,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/cash-categories/{id}/deactivate',
         '/api/v1/cash-categories/{id}/reactivate',
         '/api/v1/cash-movements',
+        '/api/v1/cash-movements/{id}',
         '/api/v1/cash-movements/{id}/reverse',
         '/api/v1/cash-report',
         '/api/v1/expiry-types',
@@ -274,6 +275,26 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
       expect(schemas?.['AirfieldBranding']?.properties).toHaveProperty('name');
       expect(schemas?.['AirfieldBranding']?.properties).not.toHaveProperty('logoDataUrl');
+    });
+  });
+
+  describe('Unified ledger — bookType/unattributed query params (story Billing-2, AC 2/3)', () => {
+    it('GET /api/v1/transactions documents the new bookType and unattributed query parameters, alongside the pre-existing movementType/categoryId', () => {
+      const get = (doc.paths as Record<string, Record<string, { parameters?: Array<{ name?: string; in?: string }> }>>)['/api/v1/transactions']?.['get'];
+      const names = (get?.parameters ?? []).filter((param) => param.in === 'query').map((param) => param.name);
+      expect(names).toEqual(expect.arrayContaining(['bookType', 'unattributed', 'movementType', 'categoryId']));
+    });
+  });
+
+  describe('Reclassify cash movement (story Billing-2, AC 3)', () => {
+    it('documents PATCH /api/v1/cash-movements/{id} with a paymentMethod-only body and 401/403/404/409/422 responses', () => {
+      const paths = doc.paths as Record<string, Record<string, { requestBody?: unknown; responses: Record<string, unknown> }>>;
+      const patch = paths['/api/v1/cash-movements/{id}']?.['patch'];
+      expect(patch).toBeDefined();
+      expect(Object.keys(patch?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
+
+      const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+      expect(schemas?.['ReclassifyCashMovement']?.properties).toEqual({ paymentMethod: expect.anything() });
     });
   });
 

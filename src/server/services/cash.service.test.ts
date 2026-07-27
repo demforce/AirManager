@@ -15,6 +15,7 @@ vi.mock('@/server/db/prisma', () => ({
     },
     cashMovement: {
       create: vi.fn(),
+      update: vi.fn(),
       findUnique: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
@@ -33,6 +34,7 @@ const {
   listCashCategories,
   listCashMovements,
   reactivateCashCategory,
+  reclassifyCashMovement,
   recordCashMovement,
   renameCashCategory,
   reverseCashMovement,
@@ -46,6 +48,7 @@ const categoryUpdateMock = vi.mocked(prisma.cashCategory.update);
 const categoryUpdateManyMock = vi.mocked(prisma.cashCategory.updateMany);
 const categoryDeleteMock = vi.mocked(prisma.cashCategory.delete);
 const movementCreateMock = vi.mocked(prisma.cashMovement.create);
+const movementUpdateMock = vi.mocked(prisma.cashMovement.update);
 const movementFindUniqueMock = vi.mocked(prisma.cashMovement.findUnique);
 const movementFindManyMock = vi.mocked(prisma.cashMovement.findMany);
 const movementCountMock = vi.mocked(prisma.cashMovement.count);
@@ -62,6 +65,7 @@ const categoryUpdate = categoryUpdateMock as unknown as { mockResolvedValue: (v:
 const categoryUpdateMany = categoryUpdateManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
 const categoryDelete = categoryDeleteMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
 const movementCreate = movementCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
+const movementUpdate = movementUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const movementFindUnique = movementFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const movementFindMany = movementFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const movementCount = movementCountMock as unknown as { mockResolvedValue: (v: number) => void };
@@ -620,6 +624,52 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       movementCreate.mockRejectedValue(prismaError('P2002'));
 
       await expect(reverseCashMovement(staffActor(), 'move_1', 'Errore')).rejects.toThrow(ConflictError);
+    });
+  });
+
+  describe('reclassifyCashMovement (story Billing-2, AC 3 — the secchiello)', () => {
+    it('rejects a pilot (finance.manage required)', async () => {
+      await expect(reclassifyCashMovement(pilotActor(), 'move_1', { paymentMethod: 'CASH' })).rejects.toThrow(ForbiddenError);
+      expect(movementFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundError for an unknown movement', async () => {
+      movementFindUnique.mockResolvedValue(null);
+
+      await expect(reclassifyCashMovement(staffActor(), 'missing', { paymentMethod: 'CASH' })).rejects.toThrow(NotFoundError);
+      expect(movementUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects a movement that already has a paymentMethod — reclassification is only for the unattributed', async () => {
+      movementFindUnique.mockResolvedValue({ id: 'move_1', paymentMethod: 'BANK_TRANSFER' });
+
+      await expect(reclassifyCashMovement(staffActor(), 'move_1', { paymentMethod: 'CASH' })).rejects.toThrow(ConflictError);
+      expect(movementUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('assigns the paymentMethod on an unattributed (null) movement — nothing else changes', async () => {
+      movementFindUnique.mockResolvedValue({ id: 'move_1', paymentMethod: null });
+      movementUpdate.mockResolvedValue({
+        id: 'move_1',
+        categoryId: 'cat_1',
+        category: { name: 'PPR' },
+        amountCents: 3500,
+        effectiveDate: new Date('2026-05-01'),
+        description: 'Tassa atterraggio in contanti',
+        actorUser: { email: 'staff@airmanager.local' },
+        createdAt: new Date(),
+        reversalOfId: null,
+        reversal: null,
+        accountMovementId: null,
+      });
+
+      const result = await reclassifyCashMovement(staffActor(), 'move_1', { paymentMethod: 'CASH' });
+
+      expect(movementUpdateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'move_1' }, data: { paymentMethod: 'CASH' } }),
+      );
+      expect(result.id).toBe('move_1');
+      expect(result.amountCents).toBe(3500);
     });
   });
 

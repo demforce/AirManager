@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Billing (Contabilità) console (story 12.9, AC 2/3/4/5/6) — port of
+ * Billing (Contabilità) console (story 12.9, story Billing-2) — port of
  * `docs/design-reference/airops/src/BillingView.jsx` onto the real, unified
  * ledger (`transactions.service.ts`), same shell idiom as
  * `fleet-console.tsx`/`pilots-console.tsx`/`logbook-console.tsx` (`.card` +
@@ -10,20 +10,28 @@
  * own-access face (unlike logbook/bookings): the page.tsx redirect-gate is
  * the ONLY door, every consumer here already has full access.
  *
- * Action buttons (AC 2: "bottoni Estratti conto e Nuova transazione" in the
- * prototype's page-head) live in THIS card's head instead, deliberately
- * matching the established codebase deviation from the prototype's own
- * page-head-button placement (fleet/pilots/instructors all do the same —
- * `docs/design-reference/airops/src/Fleet.jsx` ALSO shows "Aggiungi
- * aeromobile" in its page-head, yet `fleet-console.tsx` moved it into the
- * card-head; the Dev Notes' "come fleet/pilots/logbook" template reference
- * is the binding instruction here, not the prototype's exact DOM position).
+ * Story Billing-2 rework (AC 2/3): the old single signed "Importo" column
+ * is gone — Entrate/Uscite columns instead (`row.amountCents > 0`/`< 0`,
+ * RAW direction now that `transactions.service.ts#toAccountRow`'s club-
+ * centric flip is retired) — plus a "Tipo" column/filter on the coarse
+ * `bookType` classification (ricavo/costo/acconto/giroconto), REPLACING the
+ * old raw-kind/cash-category "Tipo" select (two confusing optgroups behind
+ * one control) with two separate, single-purpose selects: "Tipo" (bookType)
+ * and "Categoria" (cash categories only — the account-side raw kind filter,
+ * `movementType`, has no UI control anymore; still supported at the
+ * schema/service level for API consumers, per-category detail lives in the
+ * "Per categoria" panel below instead). The secchiello (AC 3, unattributed
+ * CASH rows) is reached via the Liquidità riquadro's own link
+ * (`billing-panels.tsx`) — no separate filter-bar control needed, since it
+ * is only ever worth reaching when non-empty. A `CASH` row with no
+ * `paymentMethod` shows an inline reclassify `<select>` in the Metodo
+ * column instead of "—", regardless of which filter is active.
  *
- * Per-row Rettifica/Storna (AC 3) reuse the EXISTING, already-tested
- * endpoints directly (`POST /account/adjustments` with `originalMovementId`,
- * `POST /cash-movements/{id}/reverse`) — NOT the new unified
- * `POST /api/v1/transactions`, which only backs the "Nuova transazione"
- * SlideOver's 3 STANDALONE branches (AC 4).
+ * Per-row Rettifica/Storna (AC 3, story 12.9) reuse the EXISTING,
+ * already-tested endpoints directly (`POST /account/adjustments` with
+ * `originalMovementId`, `POST /cash-movements/{id}/reverse`) — NOT the new
+ * unified `POST /api/v1/transactions`, which only backs the "Nuova
+ * transazione" SlideOver's 3 STANDALONE branches (AC 4).
  */
 import { useEffect, useRef, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
@@ -33,9 +41,9 @@ import { DateInput } from '@/components/ui/date-input';
 import { Avatar } from '@/components/ui/avatar';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import type { PaymentMethodDto } from '@/lib/schemas/accounts';
 import { formatCents, parseCents } from '@/lib/money';
-import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
-import type { TransactionRowDto } from '@/lib/schemas/transactions';
+import type { BookTypeDto, TransactionRowDto } from '@/lib/schemas/transactions';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { TransactionEditor, type TransactionEditorLabels } from './transaction-editor';
 
@@ -43,9 +51,11 @@ type PersonOption = { id: string; firstName: string; lastName: string };
 type CategoryOption = { id: string; name: string };
 type CompensationRow = { personId: string; firstName: string; lastName: string; mtdMinutes: number; payoutRateCents: number | null; owedMtdCents: number | null };
 type NegativeBalanceRow = { personId: string; firstName: string; lastName: string; balanceCents: number };
+/** Mirrors `cash.service.ts#CashReportCategoryTotal` — the "Per categoria" panel's own row (story Billing-2: replaces the old Σ-positivi `revenueByKind` bars). */
+type CategoryTotal = { categoryId: string; categoryName: string; inCents: number; outCents: number; netCents: number };
 
-/** Free-text pilot filter (story 13.5, AC 1) — `personQuery` replaces the old `SearchCombobox`-driven `personId`, same idiom as `pilots-console.tsx`'s own name filter. */
-export type BillingFilters = { dateFrom: string; dateTo: string; type: string; personQuery: string };
+/** Free-text pilot filter (story 13.5, AC 1) — `personQuery` replaces the old `SearchCombobox`-driven `personId`, same idiom as `pilots-console.tsx`'s own name filter. `bookType`/`categoryId`/`unattributed` (story Billing-2) replace the old combined `type` param. */
+export type BillingFilters = { dateFrom: string; dateTo: string; bookType: string; categoryId: string; personQuery: string; unattributed: boolean };
 
 /** Same debounce-before-navigating idiom as `pilots-console.tsx`/`fleet-console.tsx`. */
 function useDebouncedCallback(callback: (value: string) => void, delayMs: number): (value: string) => void {
@@ -66,7 +76,7 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
 
 export type BillingConsoleLabels = {
   newTransaction: string;
-  revenueByCategory: { title: string; sub: string; empty: string };
+  byCategory: { title: string; sub: string; empty: string; in: string; out: string; net: string };
   instructorCompensation: { title: string; sub: string; noRate: string; empty: string };
   negativeBalances: { title: string; empty: string; link: string };
   exportMenu: { label: string; xlsLabel: string; pdfLabel: string };
@@ -78,28 +88,31 @@ export type BillingConsoleLabels = {
     type: string;
     description: string;
     method: string;
-    amount: string;
+    entrate: string;
+    uscite: string;
     status: string;
     actions: string;
     noValue: string;
     empty: string;
     statusOptions: { registered: string; reversed: string; reversal: string };
-    kinds: Record<AccountMovementTypeDto, string>;
+    kinds: Record<string, string>;
     methods: { CASH: string; BANK_TRANSFER: string; POS: string };
+    bookTypes: Record<BookTypeDto, string>;
+    noResultImpact: string;
   };
   filters: {
     dateFrom: string;
     dateTo: string;
-    type: string;
-    allTypes: string;
-    accountGroup: string;
-    cashGroup: string;
+    bookType: string;
+    allBookTypes: string;
+    category: string;
+    allCategories: string;
     pilot: string;
     personSearchPlaceholder: string;
     reset: string;
   };
   pagination: { prev: string; next: string };
-  actions: { adjust: string; reverse: string };
+  actions: { adjust: string; reverse: string; reclassifyPlaceholder: string; reclassifySuccess: string; reclassifyError: string };
   adjustModal: {
     title: string;
     linkedTo: string;
@@ -134,7 +147,7 @@ export type BillingConsoleProps = {
   filters: BillingFilters;
   personOptions: PersonOption[];
   categoryOptions: CategoryOption[];
-  revenueByKind: { kind: string; amountCents: number }[];
+  byCategory: CategoryTotal[];
   compensation: CompensationRow[];
   negativeBalances: NegativeBalanceRow[];
   exportHref: string;
@@ -144,30 +157,23 @@ export type BillingConsoleProps = {
   labels: BillingConsoleLabels;
 };
 
-/* Story 13.5, AC 3: the Tipo column was 108px, truncating the longest kind label ("Flight charge reversal", EN) — widened to 170px so every kind reads in full. */
-const COLS = '92px 1.2fr 170px minmax(190px,1.6fr) 92px 108px 104px 72px';
+/* 9 columns now (story Billing-2): Data/Pilota/Tipo/Descrizione/Metodo/Entrate/Uscite/Stato/Azioni — Metodo widened to fit the inline reclassify <select> (AC 3); Tipo narrowed (ricavo/costo/acconto/giroconto are all short, unlike the old raw kind labels). */
+const COLS = '92px 1.1fr 112px minmax(160px,1.3fr) 126px 96px 96px 104px 72px';
 
-const ACCOUNT_MOVEMENT_TYPES: readonly AccountMovementTypeDto[] = ['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE', 'FLIGHT_CHARGE', 'FLIGHT_CHARGE_REVERSAL'];
+const BOOK_TYPES: readonly BookTypeDto[] = ['REVENUE', 'COST', 'DEPOSIT', 'TRANSFER'];
 
-const ACCOUNT_KIND_TONE: Record<AccountMovementTypeDto, BadgeTone> = {
-  TOP_UP: 'ok',
-  FLIGHT_CHARGE: 'info',
-  ADJUSTMENT: 'warn',
-  FLIGHT_CHARGE_REVERSAL: 'bad',
-  PACKAGE_PURCHASE: '',
+const BOOK_TYPE_TONE: Record<BookTypeDto, BadgeTone> = {
+  REVENUE: 'ok',
+  COST: 'bad',
+  DEPOSIT: 'info',
+  TRANSFER: '',
 };
 
-function isAccountKind(kind: string): kind is AccountMovementTypeDto {
-  return (ACCOUNT_MOVEMENT_TYPES as readonly string[]).includes(kind);
-}
+const ACCOUNT_KIND_KEYS = new Set(['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE', 'FLIGHT_CHARGE', 'FLIGHT_CHARGE_REVERSAL']);
 
-function kindBadgeTone(row: TransactionRowDto): BadgeTone {
-  if (row.source === 'CASH') return '';
-  return isAccountKind(row.kind) ? ACCOUNT_KIND_TONE[row.kind] : '';
-}
-
+/** The granular label (raw AccountMovementType or CashCategory name), folded into the Descrizione cell now that Tipo shows the coarse bookType instead (story Billing-2). */
 function kindLabel(row: TransactionRowDto, labels: BillingConsoleLabels): string {
-  if (row.source === 'ACCOUNT' && isAccountKind(row.kind)) return labels.table.kinds[row.kind];
+  if (row.source === 'ACCOUNT' && ACCOUNT_KIND_KEYS.has(row.kind)) return labels.table.kinds[row.kind] ?? row.kind;
   return row.kind;
 }
 
@@ -198,7 +204,7 @@ export function BillingConsole({
   filters: initialFilters,
   personOptions,
   categoryOptions,
-  revenueByKind,
+  byCategory,
   compensation,
   negativeBalances,
   exportHref,
@@ -228,12 +234,17 @@ export function BillingConsole({
   const [reverseSubmitting, setReverseSubmitting] = useState(false);
   const [reverseFeedback, setReverseFeedback] = useState<string | null>(null);
 
+  const [reclassifyingId, setReclassifyingId] = useState<string | null>(null);
+  const [reclassifyFeedback, setReclassifyFeedback] = useState<{ ok: boolean; message: string } | null>(null);
+
   function buildFilterQuery(next: BillingFilters): Record<string, string> {
     const query: Record<string, string> = {};
     if (next.dateFrom) query['dateFrom'] = next.dateFrom;
     if (next.dateTo) query['dateTo'] = next.dateTo;
-    if (next.type) query['type'] = next.type;
+    if (next.bookType) query['bookType'] = next.bookType;
+    if (next.categoryId) query['categoryId'] = next.categoryId;
     if (next.personQuery) query['personQuery'] = next.personQuery;
+    if (next.unattributed) query['unattributed'] = 'true';
     return query;
   }
 
@@ -259,7 +270,7 @@ export function BillingConsole({
   }
 
   function handleReset(): void {
-    const cleared: BillingFilters = { dateFrom: '', dateTo: '', type: '', personQuery: '' };
+    const cleared: BillingFilters = { dateFrom: '', dateTo: '', bookType: '', categoryId: '', personQuery: '', unattributed: false };
     setFilters(cleared);
     setPersonQueryInput('');
     navigate(cleared);
@@ -269,7 +280,7 @@ export function BillingConsole({
     return { pathname: '/dashboard/billing' as const, query: { page: targetPage, ...buildFilterQuery(filters) } };
   }
 
-  const hasActiveFilter = Object.values(filters).some((value) => value !== '');
+  const hasActiveFilter = filters.dateFrom !== '' || filters.dateTo !== '' || filters.bookType !== '' || filters.categoryId !== '' || filters.personQuery !== '' || filters.unattributed;
 
   function openAdjust(row: TransactionRowDto): void {
     setAdjustFeedback(null);
@@ -372,7 +383,27 @@ export function BillingConsole({
     router.refresh();
   }
 
-  const maxRevenue = revenueByKind.reduce((max, entry) => Math.max(max, entry.amountCents), 1);
+  /** Assigns a payment method to an unattributed CASH row (story Billing-2, AC 3) — immediate on-change, no confirmation modal (a single-field, low-risk correction). */
+  async function handleReclassify(rowId: string, method: PaymentMethodDto): Promise<void> {
+    setReclassifyFeedback(null);
+    setReclassifyingId(rowId);
+
+    const response = await fetch(`/api/v1/cash-movements/${rowId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentMethod: method }),
+    });
+
+    setReclassifyingId(null);
+    if (!response.ok) {
+      setReclassifyFeedback({ ok: false, message: labels.actions.reclassifyError });
+      return;
+    }
+    setReclassifyFeedback({ ok: true, message: labels.actions.reclassifySuccess });
+    router.refresh();
+  }
+
+  const maxCategoryFlow = byCategory.reduce((max, entry) => Math.max(max, Math.abs(entry.inCents), Math.abs(entry.outCents)), 1);
 
   return (
     <>
@@ -389,6 +420,11 @@ export function BillingConsole({
           {reverseFeedback ? (
             <p role="status" data-testid="billing-reverse-feedback" style={{ fontSize: 12.5, color: 'var(--ok)' }}>
               {reverseFeedback}
+            </p>
+          ) : null}
+          {reclassifyFeedback ? (
+            <p role="status" data-testid="billing-reclassify-feedback" style={{ fontSize: 12.5, color: reclassifyFeedback.ok ? 'var(--ok)' : 'var(--bad)' }}>
+              {reclassifyFeedback.message}
             </p>
           ) : null}
           <div className="filter-date-range" style={{ display: 'flex', alignItems: 'center', gap: 5 }} title={`${labels.filters.dateFrom} – ${labels.filters.dateTo}`}>
@@ -412,27 +448,33 @@ export function BillingConsole({
           </div>
           <select
             className="input"
-            style={{ width: 'auto', minWidth: 150, fontSize: 12 }}
-            value={filters.type}
-            onChange={(event) => handleFilterChange({ type: event.target.value })}
-            data-testid="billing-filter-type"
-            aria-label={labels.filters.type}
+            style={{ width: 'auto', minWidth: 120, fontSize: 12 }}
+            value={filters.bookType}
+            onChange={(event) => handleFilterChange({ bookType: event.target.value })}
+            data-testid="billing-filter-booktype"
+            aria-label={labels.filters.bookType}
           >
-            <option value="">{labels.filters.allTypes}</option>
-            <optgroup label={labels.filters.accountGroup}>
-              {ACCOUNT_MOVEMENT_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {labels.table.kinds[type]}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label={labels.filters.cashGroup}>
-              {categoryOptions.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </optgroup>
+            <option value="">{labels.filters.allBookTypes}</option>
+            {BOOK_TYPES.map((bookType) => (
+              <option key={bookType} value={bookType}>
+                {labels.table.bookTypes[bookType]}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input"
+            style={{ width: 'auto', minWidth: 140, fontSize: 12 }}
+            value={filters.categoryId}
+            onChange={(event) => handleFilterChange({ categoryId: event.target.value })}
+            data-testid="billing-filter-category"
+            aria-label={labels.filters.category}
+          >
+            <option value="">{labels.filters.allCategories}</option>
+            {categoryOptions.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
           </select>
           <div className="search" style={{ width: 190 }}>
             <Icon.search />
@@ -468,12 +510,14 @@ export function BillingConsole({
               <div>{labels.table.type}</div>
               <div>{labels.table.description}</div>
               <div>{labels.table.method}</div>
-              <div style={{ textAlign: 'right' }}>{labels.table.amount}</div>
+              <div style={{ textAlign: 'right' }}>{labels.table.entrate}</div>
+              <div style={{ textAlign: 'right' }}>{labels.table.uscite}</div>
               <div>{labels.table.status}</div>
               <div>{labels.table.actions}</div>
             </div>
             {items.map((row) => {
               const status = statusInfo(row, labels);
+              const unattributedCash = row.source === 'CASH' && row.method === null;
               return (
                 <div key={row.id} className="student-row" data-testid="transaction-row" style={{ gridTemplateColumns: COLS }}>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
@@ -481,22 +525,44 @@ export function BillingConsole({
                   </div>
                   <div className="student-name">{row.personName ?? labels.table.noValue}</div>
                   <div>
-                    <Badge tone={kindBadgeTone(row)}>{kindLabel(row, labels)}</Badge>
+                    <Badge tone={BOOK_TYPE_TONE[row.bookType]}>{labels.table.bookTypes[row.bookType]}</Badge>
+                    {row.bookType === 'DEPOSIT' || row.bookType === 'TRANSFER' ? (
+                      <div style={{ fontSize: 9.5, color: 'var(--ink-3)', marginTop: 2 }}>{labels.table.noResultImpact}</div>
+                    ) : null}
                   </div>
-                  <div style={{ fontSize: 12.5, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.description ?? ''}</div>
-                  <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-                    {methodLabel(row, labels)}
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ color: 'var(--ink)' }}>{kindLabel(row, labels)}</span>
+                    {row.description ? <span> — {row.description}</span> : null}
                   </div>
-                  {/* PO ratification (review 12.9): a negative CASH row is a real club expense, not money received — red, not green. */}
-                  <div
-                    className="mono num"
-                    style={{
-                      fontWeight: 600,
-                      textAlign: 'right',
-                      color: row.amountCents < 0 ? (row.source === 'CASH' ? 'var(--bad)' : 'var(--ok)') : 'var(--ink)',
-                    }}
-                  >
-                    {formatCents(row.amountCents, moneyLocale)}
+                  <div>
+                    {unattributedCash ? (
+                      <select
+                        className="input"
+                        style={{ fontSize: 11, padding: '2px 4px', width: '100%' }}
+                        defaultValue=""
+                        disabled={reclassifyingId === row.id}
+                        onChange={(event) => void handleReclassify(row.id, event.target.value as PaymentMethodDto)}
+                        data-testid="transaction-reclassify-method"
+                        aria-label={labels.actions.reclassifyPlaceholder}
+                      >
+                        <option value="" disabled>
+                          {labels.actions.reclassifyPlaceholder}
+                        </option>
+                        <option value="CASH">{labels.table.methods.CASH}</option>
+                        <option value="BANK_TRANSFER">{labels.table.methods.BANK_TRANSFER}</option>
+                        <option value="POS">{labels.table.methods.POS}</option>
+                      </select>
+                    ) : (
+                      <span className="mono" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+                        {methodLabel(row, labels)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mono num" style={{ fontWeight: 600, textAlign: 'right', color: 'var(--ok)' }}>
+                    {row.amountCents > 0 ? formatCents(row.amountCents, moneyLocale) : labels.table.noValue}
+                  </div>
+                  <div className="mono num" style={{ fontWeight: 600, textAlign: 'right', color: 'var(--bad)' }}>
+                    {row.amountCents < 0 ? formatCents(-row.amountCents, moneyLocale) : labels.table.noValue}
                   </div>
                   <div>
                     <Badge tone={status.tone} dot>
@@ -551,23 +617,34 @@ export function BillingConsole({
       <div className="split" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <div className="card">
           <div className="card-head">
-            <div className="card-title">{labels.revenueByCategory.title}</div>
-            <span className="card-sub">{labels.revenueByCategory.sub}</span>
+            <div className="card-title">{labels.byCategory.title}</div>
+            <span className="card-sub">{labels.byCategory.sub}</span>
           </div>
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {revenueByKind.length === 0 ? (
-              <p style={{ fontSize: 12.5, color: 'var(--ink-3)' }} data-testid="billing-revenue-by-category-empty">
-                {labels.revenueByCategory.empty}
+            {byCategory.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: 'var(--ink-3)' }} data-testid="billing-by-category-empty">
+                {labels.byCategory.empty}
               </p>
             ) : (
-              revenueByKind.map((entry) => (
-                <div key={entry.kind} data-testid="billing-revenue-by-category-row">
+              byCategory.map((entry) => (
+                <div key={entry.categoryId} data-testid="billing-by-category-row">
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 11.5, marginBottom: 6 }}>
-                    <span style={{ color: 'var(--ink-2)' }}>{isAccountKind(entry.kind) ? labels.table.kinds[entry.kind] : entry.kind}</span>
-                    <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{formatCents(entry.amountCents, moneyLocale)}</span>
+                    <span style={{ color: 'var(--ink-2)' }}>{entry.categoryName}</span>
+                    <span style={{ display: 'flex', gap: 10 }}>
+                      <span style={{ color: 'var(--ok)' }} title={labels.byCategory.in}>
+                        {formatCents(entry.inCents, moneyLocale)}
+                      </span>
+                      <span style={{ color: 'var(--bad)' }} title={labels.byCategory.out}>
+                        {formatCents(entry.outCents, moneyLocale)}
+                      </span>
+                      <span style={{ fontWeight: 600, color: 'var(--ink)' }} title={labels.byCategory.net}>
+                        {formatCents(entry.netCents, moneyLocale)}
+                      </span>
+                    </span>
                   </div>
-                  <div style={{ height: 10, background: 'var(--bg-sunken)', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                    <div style={{ height: '100%', width: `${(entry.amountCents / maxRevenue) * 100}%`, background: 'var(--accent)' }} />
+                  <div style={{ height: 10, background: 'var(--bg-sunken)', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--border)', display: 'flex' }}>
+                    <div style={{ height: '100%', width: `${(entry.inCents / maxCategoryFlow) * 100}%`, background: 'var(--ok)' }} />
+                    <div style={{ height: '100%', width: `${(Math.abs(entry.outCents) / maxCategoryFlow) * 100}%`, background: 'var(--bad)' }} />
                   </div>
                 </div>
               ))

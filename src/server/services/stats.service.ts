@@ -27,9 +27,10 @@ import { getLedgerRevenueCents } from './transactions.service';
  * `months.slice(-chartN)`, never calendar-year-aligned for the series).
  *
  * **Revenue (ratifica utente 4)** reuses `transactions.service.ts#getLedgerRevenueCents`
- * — the SAME sign-normalization + twin-dedup `getBillingKpis` uses,
- * parametrized on an arbitrary period instead of reimplemented (the
- * two-reader-divergence lesson from story 12.8's `getFlightTotals`).
+ * — the SAME sign-normalization + twin-dedup
+ * `billing-summary.service.ts#getBillingSummary` uses, parametrized on an
+ * arbitrary period instead of reimplemented (the two-reader-divergence
+ * lesson from story 12.8's `getFlightTotals`).
  *
  * **Movements (ratifica utente 1)**: a "movimento" is either a REGISTERED
  * `Flight` or a COMPLETED `PprRequest` (a transit) — counted ONCE each,

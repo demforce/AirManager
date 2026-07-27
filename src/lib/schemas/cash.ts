@@ -107,6 +107,21 @@ export const reverseCashMovementSchema = z.object({
 export type ReverseCashMovementInput = z.infer<typeof reverseCashMovementSchema>;
 
 /**
+ * `PATCH /api/v1/cash-movements/{id}` body (story Billing-2, AC 3) —
+ * reclassifies a single UNATTRIBUTED historical movement (`paymentMethod
+ * IS NULL`, the "secchiello" a pre-Billing-1 manual/PPR entry falls into)
+ * by assigning it a `paymentMethod`. Nothing else about the movement
+ * changes — amount, category, date, and lineage are all immutable here
+ * (bulk reclassification is explicitly out of scope for this story: one
+ * movement at a time).
+ */
+export const reclassifyCashMovementSchema = z.object({
+  paymentMethod: paymentMethodSchema,
+});
+
+export type ReclassifyCashMovementInput = z.infer<typeof reclassifyCashMovementSchema>;
+
+/**
  * `GET /api/v1/cash-movements` query — the shared pagination shape (story
  * 1.5) plus the register's own filters (AC 2): `from`/`to` (inclusive, on
  * `effectiveDate`), `categoryId`, and `sign` (`in` = amountCents > 0, `out`

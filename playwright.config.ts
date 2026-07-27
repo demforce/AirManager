@@ -30,15 +30,16 @@ export default defineConfig({
   },
   projects: [
     {
-      // settings.spec.ts and booking-window.spec.ts write GLOBAL AppSetting rows
-      // (sched.*, club, smtp) that change server behaviour for EVERY other spec
-      // (e.g. a restrictive sched.openTime/closeTime makes concurrent booking
-      // creates fail with 422 BOOKING_OUTSIDE_WINDOW). They are excluded from the
-      // main project and run serialized, after it, via the 'settings' and
-      // 'booking-window' projects below. Any future spec that writes global
-      // settings must join this chain the same way.
+      // settings.spec.ts, booking-window.spec.ts and treasury-settings.spec.ts
+      // write GLOBAL AppSetting rows (sched.*, club, smtp, treasury.*) that
+      // change server behaviour for EVERY other spec (e.g. a restrictive
+      // sched.openTime/closeTime makes concurrent booking creates fail with
+      // 422 BOOKING_OUTSIDE_WINDOW). They are excluded from the main project
+      // and run serialized, after it, via the 'settings'/'booking-window'/
+      // 'treasury-settings' projects below. Any future spec that writes
+      // global settings must join this chain the same way.
       name: 'chromium',
-      testIgnore: ['**/settings.spec.ts', '**/booking-window.spec.ts'],
+      testIgnore: ['**/settings.spec.ts', '**/booking-window.spec.ts', '**/treasury-settings.spec.ts'],
       use: sharedUse,
     },
     {
@@ -51,6 +52,16 @@ export default defineConfig({
       name: 'booking-window',
       testMatch: '**/booking-window.spec.ts',
       dependencies: ['settings'],
+      use: sharedUse,
+    },
+    {
+      // Story Billing-2, AC 6 — `treasury.*` (opening cash/bank balances)
+      // feeds `getBillingSummary`'s Liquidità figures for EVERY other spec
+      // that touches `/dashboard/billing` in the main project: last in the
+      // chain, after `booking-window`.
+      name: 'treasury-settings',
+      testMatch: '**/treasury-settings.spec.ts',
+      dependencies: ['booking-window'],
       use: sharedUse,
     },
   ],

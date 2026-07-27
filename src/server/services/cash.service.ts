@@ -1,5 +1,5 @@
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
-import type { CashReportQuery, ListCashCategoriesQuery, ListCashMovementsQuery, RecordCashMovementInput } from '@/lib/schemas/cash';
+import type { CashReportQuery, ListCashCategoriesQuery, ListCashMovementsQuery, ReclassifyCashMovementInput, RecordCashMovementInput } from '@/lib/schemas/cash';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError } from './errors';
@@ -435,6 +435,39 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
     }
     throw error;
   }
+}
+
+/**
+ * Reclassifies an UNATTRIBUTED historical cash movement (story Billing-2,
+ * AC 3) — assigns a `paymentMethod` to a movement backfilled/recorded as
+ * `null` (pre-Billing-1 manual entries, or a PPR landing fee recorded
+ * without one, D2). `finance.manage` (staff+admin) — same day-to-day gate as
+ * `recordCashMovement`/`reverseCashMovement`, not the stricter
+ * `settings.manage` category CRUD uses. Deliberately scoped to movements
+ * CURRENTLY unattributed (`paymentMethod === null`): every automatic twin
+ * (top-up, package purchase) already inherits a non-null method at creation
+ * time (Billing-1, AC 1/2) and a storno always inherits its original's
+ * (Billing-1 review F1) — so in practice only the secchiello's own rows can
+ * ever reach this guard successfully. Bulk reclassification is out of
+ * scope (Dev Notes) — one movement at a time, by design.
+ */
+export async function reclassifyCashMovement(actor: Actor, id: string, input: ReclassifyCashMovementInput): Promise<CashMovementListItem> {
+  authorize(actor, 'finance.manage');
+
+  const existing = await prisma.cashMovement.findUnique({ where: { id }, select: { id: true, paymentMethod: true } });
+  if (!existing) {
+    throw new NotFoundError('Cash movement not found.');
+  }
+  if (existing.paymentMethod !== null) {
+    throw new ConflictError('This movement already has a payment method — reclassification is only for unattributed movements.');
+  }
+
+  const movement = await prisma.cashMovement.update({
+    where: { id },
+    data: { paymentMethod: input.paymentMethod },
+    select: CASH_MOVEMENT_SELECT,
+  });
+  return toMovementListItem(movement);
 }
 
 /**

@@ -694,12 +694,13 @@ model CashMovement {
   effectiveDate      DateTime          @db.Date
   /// How this movement moved money (story Billing-1, AC 1) — nullable for
   /// the historical rows recorded before this field existed ("non
-  /// attribuito", surfaced as a dedicated bucket by the Billing-2 UI). New
-  /// registrations always set it: `recordCashMovement`'s form makes it
-  /// mandatory, `recordTopUp`'s twin inherits it from the `TOP_UP`'s own
-  /// `paymentMethod`, and `completePprRequest`'s landing-fee movement
-  /// accepts it optionally. Backfilled once, in the migration that added
-  /// this column, for every "Ricariche" twin from its linked
+  /// attribuito", surfaced as a dedicated bucket, reachable/reclassifiable
+  /// via `PATCH /api/v1/cash-movements/{id}`, story Billing-2 AC 3). New
+  /// registrations always set it: `recordCashMovement`'s form and
+  /// `completePprRequest`'s landing-fee movement both make it mandatory
+  /// (review Billing-1 F8/D2), `recordTopUp`'s twin inherits it from the
+  /// `TOP_UP`'s own `paymentMethod`. Backfilled once, in the migration that
+  /// added this column, for every "Ricariche" twin from its linked
   /// `AccountMovement.paymentMethod` — every other historical row stays `null`.
   paymentMethod      PaymentMethod?
   actorUserId        String

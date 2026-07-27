@@ -31,6 +31,27 @@ function uniqueDatePair(): { day1: string; day2: string } {
   return { day1: dateAt(dayOffset), day2: dateAt(dayOffset + 1) };
 }
 
+/**
+ * A run-unique isolation date SAFELY IN THE PAST (unlike `dateAt`/
+ * `uniqueDatePair`'s own far-future scheme) — `registerFlight` rejects a
+ * future `takeoffAt` with a 422 `FLIGHT_DATE_IN_FUTURE`
+ * (`flights.service.ts`), so any scenario involving a real flight charge
+ * needs a past isolation date instead. Counts backward from a fixed 2022
+ * epoch, capped so it never goes earlier than `createAircraftWithRate`'s own
+ * `validFrom` (`2020-01-01`, or the rate lookup finds none) — and stays
+ * clear of the exact `PAST_DATE = '2020-01-01'` constant several OTHER spec
+ * files share, for the same low-collision-probability reason `dateAt` is.
+ */
+function uniquePastDateOnly(): string {
+  const dayOffset = Math.floor(Math.random() * 700);
+  return new Date(Date.UTC(2022, 0, 1) - dayOffset * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Today, `YYYY-MM-DD` (server clock, UTC) — the three riquadri (story Billing-2, AC 1) are ALWAYS the current calendar month, never date-filterable, so a scenario that verifies their arithmetic must be dated today. */
+function todayDateOnly(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 async function createPilotPerson(page: Page, tag: string): Promise<{ personId: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const firstName = 'Billing';
@@ -45,6 +66,35 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
   return { personId: person.id, firstName, lastName };
 }
 
+/** Creates a fresh instructor person (active profile only — `recordPayout` doesn't require an accrued "owed" balance). */
+async function createInstructorPerson(page: Page, tag: string): Promise<{ personId: string; firstName: string; lastName: string }> {
+  const suffix = uniqueSuffix();
+  const firstName = 'Istruttore';
+  const lastName = `${tag}-${suffix}`;
+  const personResponse = await page.request.post('/api/v1/people', { data: { firstName, lastName } });
+  expect(personResponse.status()).toBe(201);
+  const person = (await personResponse.json()) as { id: string };
+  const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: { ratings: 'FI(A)' } });
+  expect(profileResponse.status()).toBe(200);
+  return { personId: person.id, firstName, lastName };
+}
+
+/** Creates an aircraft with a rate in effect since a safely-past date (same pattern as `flight-reversal.spec.ts`). */
+async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
+  const suffix = uniqueSuffix();
+  const registration = `I-BL${suffix}`.toUpperCase().slice(0, 20);
+  const aircraftResponse = await page.request.post('/api/v1/aircraft', {
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 500 },
+  });
+  expect(aircraftResponse.status()).toBe(201);
+  const aircraft = (await aircraftResponse.json()) as { id: string };
+  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
+    data: { priceCentsPerHour, validFrom: '2020-01-01' },
+  });
+  expect(rateResponse.status()).toBe(201);
+  return { id: aircraft.id, registration };
+}
+
 async function createCategory(page: Page, name: string): Promise<string> {
   const response = await page.request.post('/api/v1/cash-categories', { data: { name } });
   expect(response.status()).toBe(201);
@@ -52,15 +102,25 @@ async function createCategory(page: Page, name: string): Promise<string> {
   return created.id;
 }
 
-async function recordTopUp(page: Page, personId: string, amountCents: number, effectiveDate: string): Promise<void> {
+async function recordTopUp(page: Page, personId: string, amountCents: number, effectiveDate: string, method: 'CASH' | 'BANK_TRANSFER' | 'POS' = 'BANK_TRANSFER'): Promise<void> {
   const response = await page.request.post(`/api/v1/people/${personId}/account/top-ups`, {
-    data: { amountCents, paymentMethod: 'BANK_TRANSFER', effectiveDate },
+    data: { amountCents, paymentMethod: method, effectiveDate },
   });
   expect(response.status()).toBe(200);
 }
 
 async function recordCashMovement(page: Page, categoryId: string, amountCents: number, effectiveDate: string, description: string): Promise<void> {
   const response = await page.request.post('/api/v1/cash-movements', { data: { categoryId, amountCents, paymentMethod: 'CASH', effectiveDate, description } });
+  expect(response.status()).toBe(201);
+}
+
+/** Registers a TOURISM flight charge via the API — the "volo" leg of the three-riquadri scenario (AC 6). */
+async function registerTourismFlight(page: Page, aircraftId: string, personId: string, dateOnly: string, minutes: number): Promise<void> {
+  const takeoffAt = `${dateOnly}T10:00:00.000Z`;
+  const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
+  const response = await page.request.post('/api/v1/flights', {
+    data: { aircraftId, personId, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', flightType: 'TOURISM', takeoffAt, landingAt },
+  });
   expect(response.status()).toBe(201);
 }
 
@@ -90,7 +150,24 @@ async function gotoBilling(page: Page, query: Record<string, string>): Promise<v
   await page.goto(`/it/dashboard/billing?${params.toString()}`);
 }
 
-test.describe('Unified billing ledger (Story 12.9)', () => {
+/**
+ * Parses an Intl-formatted EUR string (e.g. "1.234,56 €", "-40,00 €") back to
+ * integer cents — test-only hardening (no application code touched), needed
+ * to assert BEFORE/AFTER deltas on the three riquadri (AC 6) without knowing
+ * the ambient baseline every other spec's run has left behind this month.
+ */
+function parseEuroText(text: string): number {
+  const normalized = text.replace(/−/g, '-').replace(/[^\d,.-]/g, '');
+  const cleaned = normalized.replace(/\./g, '').replace(',', '.');
+  return Math.round(Number.parseFloat(cleaned) * 100);
+}
+
+async function panelValueCents(page: Page, testId: string): Promise<number> {
+  const text = await page.getByTestId(testId).innerText();
+  return parseEuroText(text);
+}
+
+test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType columns, story Billing-2)', () => {
   test('mixed conto+cassa rows ordered effectiveDate desc, and the automatic cash twin of a top-up is deduped to ONE row (AC 1)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilot = await createPilotPerson(page, 'Ledger');
@@ -109,20 +186,24 @@ test.describe('Unified billing ledger (Story 12.9)', () => {
     await expect(billingRows(page).nth(1)).toContainText('Voce cassa manuale');
   });
 
-  test('Tipo filter (movementType via URL) narrows to the account vocabulary only', async ({ page }) => {
+  test('bookType filter (story Billing-2, AC 2): DEPOSIT narrows to acconti (TOP_UP), REVENUE narrows to ricavi — independent of the "Categoria" filter', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilot = await createPilotPerson(page, 'TipoFiltro');
+    const category = await createCategory(page, `TipoFiltro-${uniqueSuffix()}`);
     const { day1 } = uniqueDatePair();
     await recordTopUp(page, pilot.personId, 8000, day1);
+    await recordCashMovement(page, category, 3000, day1, 'Entrata cassa');
 
-    await gotoBilling(page, { dateFrom: day1, dateTo: day1, type: 'TOP_UP' });
+    await gotoBilling(page, { dateFrom: day1, dateTo: day1, bookType: 'DEPOSIT' });
     await expect(billingRows(page)).toHaveCount(1);
+    await expect(billingRows(page).first()).toContainText('Ricarica');
 
-    await gotoBilling(page, { dateFrom: day1, dateTo: day1, type: 'ADJUSTMENT' });
-    await expect(page.getByTestId('billing-empty')).toBeVisible();
+    await gotoBilling(page, { dateFrom: day1, dateTo: day1, bookType: 'REVENUE' });
+    await expect(billingRows(page)).toHaveCount(1);
+    await expect(billingRows(page).first()).toContainText('Entrata cassa');
   });
 
-  test('Categoria cassa filter (Tipo select, cash optgroup) narrows to that category only', async ({ page }) => {
+  test('Categoria filter (cash categories only, replaces the old combined Tipo select) narrows to that category only', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const categoryName = `Cat-${uniqueSuffix()}`;
     const categoryId = await createCategory(page, categoryName);
@@ -134,8 +215,8 @@ test.describe('Unified billing ledger (Story 12.9)', () => {
     await gotoBilling(page, { dateFrom: day1, dateTo: day1 });
     await expect(billingRows(page)).toHaveCount(2);
 
-    await page.getByTestId('billing-filter-type').selectOption(categoryId);
-    await expect(page).toHaveURL(new RegExp(`type=${categoryId}`));
+    await page.getByTestId('billing-filter-category').selectOption(categoryId);
+    await expect(page).toHaveURL(new RegExp(`categoryId=${categoryId}`));
     await expect(billingRows(page)).toHaveCount(1);
     await expect(billingRows(page).first()).toContainText('Riga categoria A');
   });
@@ -169,32 +250,97 @@ test.describe('Unified billing ledger (Story 12.9)', () => {
     await expect(row.locator('.student-sub')).toHaveCount(0);
   });
 
-  test('the Tipo column is wide enough that even the longest kind label is not clipped (story 13.5, AC 3)', async ({ page }) => {
+  test('Entrate/Uscite columns (story Billing-2, AC 2): a TOP_UP (acconto) shows in Entrate, a FLIGHT_CHARGE (ricavo) shows in Uscite — the old signed "Importo" column and its club-centric flip are gone', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await gotoBilling(page, {});
-    // Header row cols: Data / Pilota / Tipo / Descrizione / ... — Tipo is the 3rd cell.
-    const typeHeaderCell = page.locator('.student-row.header > div').nth(2);
-    const width = await typeHeaderCell.evaluate((el) => el.getBoundingClientRect().width);
-    // "Flight charge reversal" (EN, 23 chars) in 10.5px JetBrains Mono + badge
-    // padding/border needs ~160px — the pre-13.5 column was a clipping 108px.
-    expect(width).toBeGreaterThanOrEqual(150);
+    const pilot = await createPilotPerson(page, 'EntUsc');
+    const aircraft = await createAircraftWithRate(page, 12000); // 120,00 €/h
+    // A past isolation date (NOT uniqueDatePair's future one) — registerFlight rejects a future takeoffAt.
+    const day1 = uniquePastDateOnly();
+    await recordTopUp(page, pilot.personId, 5000, day1);
+    await registerTourismFlight(page, aircraft.id, pilot.personId, day1, 30); // 30' @ 120,00 €/h = 60,00 €
+
+    await gotoBilling(page, { dateFrom: day1, dateTo: day1 });
+    await expect(billingRows(page)).toHaveCount(2);
+
+    const depositRow = billingRows(page).filter({ hasText: 'Ricarica' });
+    await expect(depositRow).toContainText(/50,00\s€/);
+    await expect(depositRow.getByText('Acconto', { exact: true })).toBeVisible();
+    await expect(depositRow).toContainText('non incide sul risultato');
+
+    const chargeRow = billingRows(page).filter({ hasText: 'Addebito volo' });
+    await expect(chargeRow).toContainText(/60,00\s€/);
+    await expect(chargeRow.getByText('Ricavo', { exact: true })).toBeVisible();
   });
 
-  test('KPI row is the TRUE current-month aggregate and does NOT change when the table filters do (ratifica 2)', async ({ page }) => {
+  test('the three riquadri (Risultato/Liquidità/Acconti) do NOT change when the table filters do (they are always the whole current month, story Billing-2, AC 1 — same invariant getBillingKpis had)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await gotoBilling(page, {});
-    await page.waitForSelector('.kpi-row');
-    const before = await page.locator('.kpi-row .kpi .kpi-value').allTextContents();
+    await page.waitForSelector('[data-testid="billing-panel-result"]');
+    const before = await Promise.all(
+      ['billing-panel-revenue', 'billing-panel-cost', 'billing-panel-net', 'billing-panel-cash', 'billing-panel-bank'].map((id) => page.getByTestId(id).innerText()),
+    );
 
-    // A date filter that excludes everything (far future) — table goes empty, KPI must stay identical.
+    // A date filter that excludes everything (far future) — table goes empty, panels must stay identical.
     const emptyDay = dateAt(50_000);
     await page.getByTestId('billing-filter-date-from').fill(emptyDay);
     await page.getByTestId('billing-filter-date-to').fill(emptyDay);
     await expect(page).toHaveURL(new RegExp(`dateFrom=${emptyDay}`));
     await expect(page.getByTestId('billing-empty')).toBeVisible();
 
-    const after = await page.locator('.kpi-row .kpi .kpi-value').allTextContents();
+    const after = await Promise.all(
+      ['billing-panel-revenue', 'billing-panel-cost', 'billing-panel-net', 'billing-panel-cash', 'billing-panel-bank'].map((id) => page.getByTestId(id).innerText()),
+    );
     expect(after).toEqual(before);
+  });
+});
+
+test.describe('Tre riquadri con numeri veri da scenario seminato (story Billing-2, AC 6)', () => {
+  test('ricarica + volo + payout, tutti dated today, move Risultato/Liquidità/Acconti by EXACTLY the expected deltas', async ({ page }) => {
+    test.slow();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const pilot = await createPilotPerson(page, 'Riquadri');
+    const instructor = await createInstructorPerson(page, 'Riquadri');
+    const aircraft = await createAircraftWithRate(page, 10000); // 100,00 €/h
+    const today = todayDateOnly();
+
+    await gotoBilling(page, {});
+    await page.waitForSelector('[data-testid="billing-panel-result"]');
+    const revenueBefore = await panelValueCents(page, 'billing-panel-revenue');
+    const costBefore = await panelValueCents(page, 'billing-panel-cost');
+    const netBefore = await panelValueCents(page, 'billing-panel-net');
+    const bankBefore = await panelValueCents(page, 'billing-panel-bank');
+    const depositsTotalBefore = await panelValueCents(page, 'billing-panel-deposits-total');
+
+    // Ricarica: +200,00 € (BANK_TRANSFER) — acconto, entra in banca, aumenta il debito verso il pilota.
+    await recordTopUp(page, pilot.personId, 20000, today, 'BANK_TRANSFER');
+    // Volo: 60' @ 100,00 €/h = 100,00 € — ricavo, addebita il conto del pilota (nessun movimento di cassa).
+    await registerTourismFlight(page, aircraft.id, pilot.personId, today, 60);
+    // Payout istruttore: 30,00 € (BANK_TRANSFER) — costo, esce dalla banca.
+    const payoutResponse = await page.request.post('/api/v1/instructor-payouts', {
+      headers: { 'Idempotency-Key': `e2e-billing2-${uniqueSuffix()}` },
+      data: { instructorPersonId: instructor.personId, amountCents: 3000, periodStart: today, periodEnd: today, method: 'BANK_TRANSFER', notes: null },
+    });
+    expect(payoutResponse.status()).toBe(201);
+
+    await page.reload();
+    await page.waitForSelector('[data-testid="billing-panel-result"]');
+    const revenueAfter = await panelValueCents(page, 'billing-panel-revenue');
+    const costAfter = await panelValueCents(page, 'billing-panel-cost');
+    const netAfter = await panelValueCents(page, 'billing-panel-net');
+    const bankAfter = await panelValueCents(page, 'billing-panel-bank');
+    const depositsTotalAfter = await panelValueCents(page, 'billing-panel-deposits-total');
+
+    expect(revenueAfter - revenueBefore).toBe(10000); // +100,00 € (il volo)
+    // The "Costi" riquadro DISPLAYS the negative of the domain costCents value
+    // (billing-panels.tsx: `formatCents(-result.costCents, ...)`, matching the
+    // design mock "Costi −2.310 €") — a cost INCREASE of 3000 therefore reads
+    // as a DISPLAYED delta of -3000, not +3000.
+    expect(costAfter - costBefore).toBe(-3000); // shown value moves from 0,00 € to -30,00 €
+    expect(netAfter - netBefore).toBe(10000 - 3000);
+    expect(bankAfter - bankBefore).toBe(20000 - 3000); // ricarica in, payout out, stesso metodo
+    // Il pilota parte da saldo 0 (persona nuova): +200,00 (ricarica) - 100,00 (addebito volo) = +100,00 nel suo conto.
+    expect(depositsTotalAfter - depositsTotalBefore).toBe(10000);
   });
 });
 
@@ -240,7 +386,7 @@ test.describe('"Nuova transazione" — 3 branches (Story 12.9, AC 4)', () => {
     expect(after).toBe(before - 3000);
   });
 
-  test('Movimento cassa: a new row appears in the ledger under the chosen category', async ({ page }) => {
+  test('Movimento cassa: a new row appears in the ledger under the chosen category, in the Uscite column (story Billing-2)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const categoryName = `Nuova-${uniqueSuffix()}`;
     const categoryId = await createCategory(page, categoryName);
@@ -257,9 +403,10 @@ test.describe('"Nuova transazione" — 3 branches (Story 12.9, AC 4)', () => {
     await expect(page.getByTestId('transaction-result-panel')).toBeVisible();
     await page.getByTestId('transaction-result-close').click();
 
-    await gotoBilling(page, { type: categoryId });
+    await gotoBilling(page, { categoryId });
     await expect(billingRows(page)).toHaveCount(1);
-    await expect(billingRows(page).first()).toContainText(/-15,00\s€/);
+    await expect(billingRows(page).first()).toContainText(/15,00\s€/);
+    await expect(billingRows(page).first().getByText('Costo', { exact: true })).toBeVisible();
   });
 });
 
@@ -299,7 +446,7 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
     // Filtered by the (unique, single-use) category — NOT by date: `reverseCashMovement`
     // always dates the storno row as TODAY (server clock), not the original's `day1`
     // (a far-future isolation date), so a date-scoped filter would hide the storno row.
-    await gotoBilling(page, { type: categoryId });
+    await gotoBilling(page, { categoryId });
     const row = billingRows(page).filter({ hasText: 'Uscita da stornare' });
     await row.getByTestId('transaction-reverse-action').click();
     await page.waitForSelector('[data-testid="transaction-reverse-panel"]');
@@ -308,6 +455,49 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
     await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
     await expect(billingRows(page)).toHaveCount(2);
     await expect(billingRows(page).filter({ hasText: 'Uscita da stornare' }).getByTestId('transaction-reverse-action')).toHaveCount(0);
+  });
+});
+
+test.describe('Secchiello dei non attribuiti — reclassify (story Billing-2, AC 3)', () => {
+  test('the seeded unattributed historical movement is reachable via the Liquidità riquadro\'s link; reclassifying it via the inline select PATCHes the method and drops it out of the secchiello', async ({ page }) => {
+    // Every LIVE writer now requires a paymentMethod (Billing-1 AC2 + review
+    // F8/D2 closed the last gap, `completePprRequest`) — the ONLY reachable
+    // unattributed row on a test DB is the ONE seeded directly via Prisma in
+    // `prisma/seed.ts` (simulating a genuinely pre-migration historical
+    // entry, exactly what this feature exists for).
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    await gotoBilling(page, {});
+    await page.waitForSelector('[data-testid="billing-panel-treasury"]');
+    const unattributedLink = page.getByTestId('billing-panel-unattributed-link');
+
+    // The link only renders while the secchiello is non-empty (spec §8). If
+    // a PREVIOUS run of this exact test already reclassified the one seeded
+    // row (no fresh DB reset in between), there is nothing left to reach —
+    // skip rather than fail spuriously on a re-run against a dirty DB.
+    if ((await unattributedLink.count()) === 0) {
+      test.skip(true, 'The seeded unattributed movement was already reclassified by a previous run (no DB reset in between).');
+    }
+
+    await unattributedLink.click();
+    await expect(page).toHaveURL(/unattributed=true/);
+
+    const row = billingRows(page).filter({ hasText: 'Movimento storico pre-Billing-1' });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText(/5,00\s€/);
+
+    const select = row.getByTestId('transaction-reclassify-method');
+    await expect(select).toBeVisible();
+    await select.selectOption('CASH');
+    await expect(page.getByTestId('billing-reclassify-feedback')).toHaveText('Metodo assegnato.');
+
+    // `router.refresh()` re-runs the server-side `unattributed=true` filter — the row, now attributed, drops out on its own.
+    await expect(billingRows(page).filter({ hasText: 'Movimento storico pre-Billing-1' })).toHaveCount(0);
+
+    // A direct API check closes the loop independently of the UI's own filtered view.
+    const stillUnattributedResponse = await page.request.get('/api/v1/transactions?unattributed=true&pageSize=100');
+    const stillUnattributed = (await stillUnattributedResponse.json()) as { items: Array<{ description: string | null }> };
+    expect(stillUnattributed.items.some((item) => item.description === 'Movimento storico pre-Billing-1 (seed)')).toBe(false);
   });
 });
 

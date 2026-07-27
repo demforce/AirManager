@@ -409,6 +409,19 @@ a.btn{ color: var(--ink); text-decoration: none; }
 .kpi-spark{
   position: absolute; right: 10px; top: 12px; opacity: 0.5;
 }
+
+/* ---------- billing riquadri (story Billing-2, AC 1) ---------- */
+/* Three independent `.card`s (Risultato/Liquidità/Acconti) — each carries
+   its own head + a handful of stat rows (`billing-panels.tsx`), unlike the
+   compact single-value `.kpi` tile, so this grid gets its own breakpoints
+   instead of reusing `.kpi-row`'s (a `.card`'s head+padding needs more room
+   per column before 3-across starts feeling cramped). */
+.billing-panels{
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
 .toast-host{
   position: fixed; right: 18px; bottom: 18px; z-index: 200;
   display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
@@ -704,6 +717,25 @@ html[data-theme="dark"] .badge.ok{ color: oklch(0.88 0.1 155); }
 html[data-theme="dark"] .badge.warn{ color: oklch(0.9 0.1 75); }
 html[data-theme="dark"] .badge.bad{ color: oklch(0.85 0.12 25); }
 html[data-theme="dark"] .badge.info{ color: oklch(0.86 0.1 245); }
+
+/* ---------- stat-tone (story Billing-2 riquadri, billing-panels.tsx) ---------- */
+/* Plain colored TEXT (a stat-row value, a link) directly on --panel — a
+   DIFFERENT surface than .badge's own tinted chip background above, so the
+   raw --ok/--bad/--warn tokens (tuned for a small accent: a dot, a badge's
+   OWN paired ink, 11px kpi-delta) fail WCAG AA as body-sized text on white
+   in light theme (canvas-measured per lezione 13.9: --ok 2.73:1, --warn
+   2.04:1, --bad 3.96:1 — all below the 4.5:1 floor). Same "darker ink
+   literal in light, raw token in dark" technique as .badge.* above, values
+   picked the same way (canvas round-trip against the ACTUAL rendered
+   backgrounds, not eyeballed): light-mode literals measure 10.63:1 (ok),
+   9.82:1 (bad), 7.58:1 (warn) on white; the dark-mode token overrides reuse
+   the ALREADY-passing raw tokens (9.3/6.6/10:1 on the dark panel). */
+.stat-tone-ok{ color: oklch(0.35 0.1 155); }
+.stat-tone-bad{ color: oklch(0.4 0.17 25); }
+.stat-tone-warn{ color: oklch(0.45 0.14 75); }
+html[data-theme="dark"] .stat-tone-ok{ color: var(--ok); }
+html[data-theme="dark"] .stat-tone-bad{ color: var(--bad); }
+html[data-theme="dark"] .stat-tone-warn{ color: var(--warn); }
 
 /* Story 13.9: block-level alert/confirmation box for the (auth) forms
    (login/forgot-password/set-password) — same soft-bg + colored-text pairs
@@ -1358,6 +1390,7 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
 @media (max-width: 1200px){
   .kpi-row{ grid-template-columns: repeat(3, 1fr); }
   .split{ grid-template-columns: 1fr; }
+  .billing-panels{ grid-template-columns: 1fr; }
 }
 @media (max-width: 900px){
   .app{ grid-template-columns: 64px 1fr; }

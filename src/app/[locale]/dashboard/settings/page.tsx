@@ -12,6 +12,7 @@ import {
   getPprOperatingInstructions,
   getSchedulingSettings,
   getSmtpSettings,
+  getTreasurySettings,
 } from '@/server/services/app-settings.service';
 import { listCashCategories } from '@/server/services/cash.service';
 import { listExpiryTypes } from '@/server/services/expiry-types.service';
@@ -20,6 +21,7 @@ import { ClubCard } from './club-card';
 import { RatingsCard, type RatingsCardLabels } from './ratings-card';
 import { SchedulingCard } from './scheduling-card';
 import { SmtpCard } from './smtp-card';
+import { TreasuryCard } from './treasury-card';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -110,7 +112,11 @@ function expiryTypeCardLabels(t: Translator, ns: 'ratings' | 'medical'): Ratings
  * catalogue moved here from the removed `/dashboard/expiries/types`),
  * Categorie di cassa (story 12.13 review, F2 — a minimal management UI for
  * the `cash-categories` API, whose own page, `/dashboard/finance/categories`,
- * was removed in 12.13 AC1 without one).
+ * was removed in 12.13 AC1 without one), Tesoreria (story Billing-2, AC 4 —
+ * the opening cash/bank balances `getBillingSummary`'s treasury figures run
+ * from; read here via a direct server-component call to
+ * `getTreasurySettings`, no GET route registered — D5, this is the only
+ * consumer).
  *
  * `settings.manage` (ADMIN-only) gates the whole page — `hasPermission`
  * here only decides the redirect; every card's own write action re-checks
@@ -130,7 +136,7 @@ export default async function SettingsPage({ params }: PageProps) {
     return;
   }
 
-  const [branding, icao, contactEmail, metarStation, landingFeeCents, operatingInstructions, membershipFeeCents, schedulingSettings, smtpSettings, expiryTypes, cashCategories] =
+  const [branding, icao, contactEmail, metarStation, landingFeeCents, operatingInstructions, membershipFeeCents, schedulingSettings, smtpSettings, treasurySettings, expiryTypes, cashCategories] =
     await Promise.all([
       getAirfieldBranding(),
       getAirfieldIcao(),
@@ -141,6 +147,7 @@ export default async function SettingsPage({ params }: PageProps) {
       getMembershipFeeCents(actor),
       getSchedulingSettings(),
       getSmtpSettings(actor),
+      getTreasurySettings(actor),
       listExpiryTypes(actor, { includeInactive: true }),
       listCashCategories(actor, { includeInactive: true }),
     ]);
@@ -247,6 +254,24 @@ export default async function SettingsPage({ params }: PageProps) {
           save: t('smtp.save'),
           saved: t('smtp.saved'),
           error: t('smtp.error'),
+        }}
+      />
+
+      <TreasuryCard
+        openingCashCents={treasurySettings.openingCashCents}
+        openingBankCents={treasurySettings.openingBankCents}
+        openingDate={treasurySettings.openingDate}
+        labels={{
+          title: t('treasury.title'),
+          sub: t('treasury.sub'),
+          openingCash: t('treasury.openingCash'),
+          openingBank: t('treasury.openingBank'),
+          openingDate: t('treasury.openingDate'),
+          hint: t('treasury.hint'),
+          save: t('treasury.save'),
+          saved: t('treasury.saved'),
+          error: t('treasury.error'),
+          invalid: t('treasury.invalid'),
         }}
       />
 

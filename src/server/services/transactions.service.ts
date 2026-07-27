@@ -2,8 +2,7 @@ import type { AccountMovementType } from '@/generated/prisma/client';
 import { Prisma } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
-import { currentMonthRange, previousMonthRange } from '@/lib/period-presets';
-import type { BillingKpisDto, ListTransactionsQuery, RecordTransactionInput, TransactionRowDto } from '@/lib/schemas/transactions';
+import type { BookTypeDto, ListTransactionsQuery, RecordTransactionInput, TransactionRowDto } from '@/lib/schemas/transactions';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { recordAdjustment, recordTopUp, type AccountOverview } from './accounts.service';
@@ -11,14 +10,21 @@ import { recordCashMovement, type CashMovementListItem } from './cash.service';
 
 /**
  * Unified billing ledger — `AccountMovement` ∪ `CashMovement` reader (epic
- * 12, story 12.9, AC 1). Two public entry points, `listTransactions` and
- * `getBillingKpis`, share the SAME where-builders (`buildAccountWhere`/
- * `buildCashWhere`) and the SAME row-normalization (`toAccountRow`/
- * `toCashRow`) — the lesson from 12.8's `getFlightTotals`: a list and its
- * aggregate reader must never be able to drift on scope/normalization.
- * `recordTransaction` is a pure dispatcher onto the three PRE-EXISTING
- * writers (`recordTopUp`/`recordAdjustment`/`recordCashMovement`), which
- * keep authorizing themselves (`finance.manage`) — nothing here re-checks it.
+ * 12, story 12.9, AC 1). `listTransactions` and `getLedgerRevenueCents`
+ * share the SAME where-builders (`buildAccountWhere`/`buildCashWhere`) and
+ * row-normalization (`toAccountRow`/`toCashRow`) — the lesson from 12.8's
+ * `getFlightTotals`: a list and its aggregate reader must never be able to
+ * drift on scope/normalization. `recordTransaction` is a pure dispatcher
+ * onto the three PRE-EXISTING writers (`recordTopUp`/`recordAdjustment`/
+ * `recordCashMovement`), which keep authorizing themselves
+ * (`finance.manage`) — nothing here re-checks it.
+ *
+ * `getBillingKpis` (the old 5-tile KPI-row reader) is RETIRED by story
+ * Billing-2 (ratifica D1) — the page it fed is gone, replaced by the three
+ * riquadri on `billing-summary.service.ts#getBillingSummary`. Its own
+ * Σ-positivi helpers (`fetchAllLedgerRows`/`sumNegativeAbs`/`countPositive`/
+ * `countNegative`/`revenueByKindOf`) went with it — dead weight once nothing
+ * called them.
  */
 
 /** Internal row shape carrying the `createdAt` sort tie-break — stripped before the DTO leaves this module. */
@@ -32,6 +38,10 @@ type LedgerFilters = {
   personQuery?: string;
   movementType?: AccountMovementType;
   categoryId?: string;
+  /** The coarse ricavo/costo/acconto/giroconto classification (story Billing-2, AC 2) — independent of `movementType`/`categoryId`, may combine with either. */
+  bookType?: BookTypeDto;
+  /** The "secchiello" (story Billing-2, AC 3): `CASH` rows with no `paymentMethod` at all — `ACCOUNT` rows are always skipped when this is set. */
+  unattributed?: boolean;
   direction?: 'charge' | 'payment';
 };
 
@@ -60,6 +70,9 @@ type SelectedAccountRow = Prisma.AccountMovementGetPayload<{ select: typeof ACCO
 const CASH_ROW_SELECT = {
   id: true,
   amountCents: true,
+  // Story Billing-2, AC 3: previously omitted (the console never surfaced a
+  // CASH row's own attribution) — `null` here IS the secchiello.
+  paymentMethod: true,
   description: true,
   effectiveDate: true,
   createdAt: true,
@@ -72,6 +85,64 @@ const CASH_ROW_SELECT = {
 } as const;
 
 type SelectedCashRow = Prisma.CashMovementGetPayload<{ select: typeof CASH_ROW_SELECT }>;
+
+/**
+ * The four book-type predicates (story Billing-2, AC 2) — the ONE
+ * definition every caller shares (row classification below, the `bookType`
+ * filter, AND `billing-summary.service.ts`'s own `result`/`deposits`
+ * aggregates), so the per-row badge, the filter, and the riquadri totals
+ * can never drift (review Billing-1 F6's lesson, closed at the root: F5's
+ * "never a second copy" discipline extended from the twin-dedup predicate to
+ * this one too).
+ *
+ * - `ACCOUNT_REVENUE_OR`: `FLIGHT_CHARGE`/`FLIGHT_CHARGE_REVERSAL`
+ *   unconditionally (a charge is always DB-negative, its reversal always
+ *   DB-positive — summing both nets correctly with no sign check), a debit
+ *   `ADJUSTMENT` (an addebito, e.g. quota associativa), or a storno OF one
+ *   (`reversalOfId` set, any sign — nets that debit's revenue in the
+ *   storno's OWN month, review Billing-1 F3). `PACKAGE_PURCHASE` never
+ *   reaches this predicate (its `AccountMovement` amount is always 0 — the
+ *   twin-dedup above hides it; the value lives on its `CASH` twin instead).
+ * - `CASH_REVENUE_OR` / `CASH_COST_OR`: a normal entrata/uscita
+ *   (`reversalOfId` null) keeps its own sign; a storno of one
+ *   (`reversalOfId` set) is DB-opposite-signed by construction
+ *   (`reverseCashMovement`) and nets in the ORIGINAL's book, not its own —
+ *   `CASH_COST_OR` is the exact mirror of `CASH_REVENUE_OR`.
+ */
+export const ACCOUNT_REVENUE_OR: Prisma.AccountMovementWhereInput[] = [
+  { type: 'FLIGHT_CHARGE' },
+  { type: 'FLIGHT_CHARGE_REVERSAL' },
+  { type: 'ADJUSTMENT', amountCents: { lt: 0 } },
+  { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null } },
+];
+
+/** A standalone credit `ADJUSTMENT` (no `reversalOfId`) — the "giroconto" bucket, no P&L role either way (story Billing-2, AC 2). */
+const ACCOUNT_TRANSFER_WHERE: Prisma.AccountMovementWhereInput = { type: 'ADJUSTMENT', amountCents: { gte: 0 }, reversalOfId: null };
+
+export const CASH_REVENUE_OR: Prisma.CashMovementWhereInput[] = [
+  { reversalOfId: null, amountCents: { gt: 0 } },
+  { reversalOfId: { not: null }, amountCents: { lt: 0 } },
+];
+
+export const CASH_COST_OR: Prisma.CashMovementWhereInput[] = [
+  { reversalOfId: null, amountCents: { lt: 0 } },
+  { reversalOfId: { not: null }, amountCents: { gt: 0 } },
+];
+
+/** Row-level mirror of `ACCOUNT_REVENUE_OR`/`ACCOUNT_TRANSFER_WHERE` (see their own doc-comment — same predicate, expressed in JS instead of a Prisma `where`, for the per-row `bookType` the console displays/filters by). */
+function accountBookType(row: Pick<SelectedAccountRow, 'type' | 'amountCents' | 'reversalOfId'>): BookTypeDto {
+  if (row.type === 'TOP_UP') return 'DEPOSIT';
+  if (row.type === 'FLIGHT_CHARGE' || row.type === 'FLIGHT_CHARGE_REVERSAL' || row.type === 'PACKAGE_PURCHASE') return 'REVENUE';
+  // ADJUSTMENT: matches ACCOUNT_REVENUE_OR's last two clauses exactly.
+  if (row.amountCents < 0 || row.reversalOfId !== null) return 'REVENUE';
+  return 'TRANSFER';
+}
+
+/** Row-level mirror of `CASH_REVENUE_OR`/`CASH_COST_OR` — a normal entrata/uscita keeps its own sign, a storno flips to the ORIGINAL's book. */
+function cashBookType(row: Pick<SelectedCashRow, 'amountCents' | 'reversalOfId'>): BookTypeDto {
+  const effective = row.reversalOfId === null ? row.amountCents : -row.amountCents;
+  return effective > 0 ? 'REVENUE' : 'COST';
+}
 
 /**
  * Twin-dedup rule (AC 1, "un evento economico = UNA riga"): an `AccountMovement`
@@ -88,6 +159,9 @@ function buildAccountWhere(filters: LedgerFilters): Prisma.AccountMovementWhereI
   if (filters.personId) and.push({ account: { personId: filters.personId } });
   if (filters.personQuery) and.push({ account: { person: personNameMatch(filters.personQuery) } });
   if (filters.movementType) and.push({ type: filters.movementType });
+  if (filters.bookType === 'REVENUE') and.push({ OR: ACCOUNT_REVENUE_OR });
+  if (filters.bookType === 'DEPOSIT') and.push({ type: 'TOP_UP' });
+  if (filters.bookType === 'TRANSFER') and.push(ACCOUNT_TRANSFER_WHERE);
   if (filters.direction === 'charge') and.push({ amountCents: { lt: 0 } });
   if (filters.direction === 'payment') and.push({ amountCents: { gt: 0 } });
   return { AND: and };
@@ -118,18 +192,23 @@ function buildCashWhere(filters: LedgerFilters): Prisma.CashMovementWhereInput {
   if (filters.personId) and.push({ accountMovement: { account: { personId: filters.personId } } });
   if (filters.personQuery) and.push({ accountMovement: { account: { person: personNameMatch(filters.personQuery) } } });
   if (filters.categoryId) and.push({ categoryId: filters.categoryId });
+  if (filters.bookType === 'REVENUE') and.push({ OR: CASH_REVENUE_OR });
+  if (filters.bookType === 'COST') and.push({ OR: CASH_COST_OR });
+  if (filters.unattributed) and.push({ paymentMethod: null });
   if (filters.direction === 'charge') and.push({ amountCents: { gt: 0 } });
   if (filters.direction === 'payment') and.push({ amountCents: { lt: 0 } });
   return { AND: and };
 }
 
 /**
- * Normalizes an `AccountMovement` to the club-centric ledger row (ratifica
- * utente 1): the raw `amountCents` is FLIPPED (TOP_UP > 0 in the DB becomes
- * a negative "payment received" row; FLIGHT_CHARGE < 0 becomes a positive
- * "addebito" row). Actionable (AC 3) only for a manual `TOP_UP`/`ADJUSTMENT`
- * not already reversed — every derived type (`PACKAGE_PURCHASE`,
- * `FLIGHT_CHARGE`, `FLIGHT_CHARGE_REVERSAL`) never is.
+ * Normalizes an `AccountMovement` to a ledger row. Story Billing-2, AC 2:
+ * the OLD club-centric flip (`-row.amountCents`) is GONE — `amountCents` is
+ * now the RAW db direction (a `TOP_UP` credit stays positive, a
+ * `FLIGHT_CHARGE`/debit `ADJUSTMENT` stays negative), matching `CASH` rows'
+ * own always-natural convention; the console splits it into Entrate/Uscite
+ * columns instead of one signed one. Actionable (AC 3) only for a manual
+ * `TOP_UP`/`ADJUSTMENT` not already reversed — every derived type
+ * (`PACKAGE_PURCHASE`, `FLIGHT_CHARGE`, `FLIGHT_CHARGE_REVERSAL`) never is.
  */
 function toAccountRow(row: SelectedAccountRow): InternalRow {
   return {
@@ -140,8 +219,9 @@ function toAccountRow(row: SelectedAccountRow): InternalRow {
     personId: row.account.personId,
     personName: `${row.account.person.lastName} ${row.account.person.firstName}`,
     kind: row.type,
+    bookType: accountBookType(row),
     description: row.description,
-    amountCents: -row.amountCents,
+    amountCents: row.amountCents,
     method: row.paymentMethod,
     reference: row.flightId,
     reversal: row.reversalOfId !== null,
@@ -151,13 +231,15 @@ function toAccountRow(row: SelectedAccountRow): InternalRow {
 }
 
 /**
- * Normalizes a `CashMovement` — already club-centric as-is (entrata > 0, no
- * flip). `personId`/`personName` are derived through the linked
- * `accountMovement.account.person` ONLY when this row is a VISIBLE twin
- * (`PACKAGE_PURCHASE`) — a manual/PPR entry has no person. Actionable (AC 3,
- * parity with the legacy cash register's own rule): manual (no twin), not
- * itself a storno, not already reversed — `pprRequestId` is irrelevant
- * (`reverseCashMovement` never checks it).
+ * Normalizes a `CashMovement` — always its own natural direction (entrata >
+ * 0, uscita < 0), never flipped. `personId`/`personName` are derived through
+ * the linked `accountMovement.account.person` ONLY when this row is a
+ * VISIBLE twin (`PACKAGE_PURCHASE`) — a manual/PPR entry has no person.
+ * `method` (story Billing-2, AC 3) is now the REAL `paymentMethod` — `null`
+ * means unattributed (the secchiello). Actionable (AC 3, parity with the
+ * legacy cash register's own rule): manual (no twin), not itself a storno,
+ * not already reversed — `pprRequestId` is irrelevant (`reverseCashMovement`
+ * never checks it).
  */
 function toCashRow(row: SelectedCashRow): InternalRow {
   return {
@@ -168,9 +250,10 @@ function toCashRow(row: SelectedCashRow): InternalRow {
     personId: row.accountMovement?.account.personId ?? null,
     personName: row.accountMovement ? `${row.accountMovement.account.person.lastName} ${row.accountMovement.account.person.firstName}` : null,
     kind: row.category.name,
+    bookType: cashBookType(row),
     description: row.description,
     amountCents: row.amountCents,
-    method: null,
+    method: row.paymentMethod,
     reference: row.pprRequest?.pprNumber ?? null,
     reversal: row.reversalOfId !== null,
     reversed: row.reversal !== null,
@@ -178,9 +261,15 @@ function toCashRow(row: SelectedCashRow): InternalRow {
   };
 }
 
-/** `categoryId` narrows to CASH only (AC 1's XOR) — the account side has no category, so it is skipped entirely rather than querying for zero rows. */
+/**
+ * `categoryId` narrows to CASH only (AC 1's XOR) — the account side has no
+ * category, so it is skipped entirely rather than querying for zero rows.
+ * `bookType: 'COST'` and `unattributed` (story Billing-2) are the same kind
+ * of skip: no `ACCOUNT` row is EVER a cost or lacks a `paymentMethod`
+ * concern, so both narrow to `CASH` only too.
+ */
 async function fetchAccountRows(filters: LedgerFilters, take?: number): Promise<InternalRow[]> {
-  if (filters.categoryId) return [];
+  if (filters.categoryId || filters.bookType === 'COST' || filters.unattributed) return [];
   const rows = await prisma.accountMovement.findMany({
     where: buildAccountWhere(filters),
     select: ACCOUNT_ROW_SELECT,
@@ -190,9 +279,15 @@ async function fetchAccountRows(filters: LedgerFilters, take?: number): Promise<
   return rows.map(toAccountRow);
 }
 
-/** `movementType` narrows to ACCOUNT only (AC 1's XOR) — same skip rationale as `fetchAccountRows`. */
+/**
+ * `movementType` narrows to ACCOUNT only (AC 1's XOR) — same skip rationale
+ * as `fetchAccountRows`. `bookType: 'DEPOSIT'`/`'TRANSFER'` (story Billing-2)
+ * never occur on the `CASH` side either (a `TOP_UP`'s cash twin is always
+ * hidden by the twin-dedup; a giroconto is an `ACCOUNT`-only concept) — same
+ * skip.
+ */
 async function fetchCashRows(filters: LedgerFilters, take?: number): Promise<InternalRow[]> {
-  if (filters.movementType) return [];
+  if (filters.movementType || filters.bookType === 'DEPOSIT' || filters.bookType === 'TRANSFER') return [];
   const rows = await prisma.cashMovement.findMany({
     where: buildCashWhere(filters),
     select: CASH_ROW_SELECT,
@@ -218,6 +313,7 @@ function stripInternal(row: InternalRow): TransactionRowDto {
     personId: row.personId,
     personName: row.personName,
     kind: row.kind,
+    bookType: row.bookType,
     description: row.description,
     amountCents: row.amountCents,
     method: row.method,
@@ -226,12 +322,6 @@ function stripInternal(row: InternalRow): TransactionRowDto {
     reversed: row.reversed,
     actionable: row.actionable,
   };
-}
-
-/** Every VISIBLE, normalized row across BOTH sources for `filters`, unbounded and unpaginated — used by `getBillingKpis` (a month is always a small volume for an airfield). */
-async function fetchAllLedgerRows(filters: LedgerFilters): Promise<InternalRow[]> {
-  const [accountRows, cashRows] = await Promise.all([fetchAccountRows(filters), fetchCashRows(filters)]);
-  return [...accountRows, ...cashRows];
 }
 
 /**
@@ -252,8 +342,13 @@ export async function listTransactions(actor: Actor, query: ListTransactionsQuer
     personQuery: query.personQuery,
     movementType: query.movementType,
     categoryId: query.categoryId,
+    bookType: query.bookType,
+    unattributed: query.unattributed,
     direction: query.direction,
   };
+
+  const skipAccountSide = Boolean(filters.categoryId) || filters.bookType === 'COST' || Boolean(filters.unattributed);
+  const skipCashSide = Boolean(filters.movementType) || filters.bookType === 'DEPOSIT' || filters.bookType === 'TRANSFER';
 
   const { skip, take } = paginationOffset(query);
   const boundedTake = skip + take;
@@ -261,38 +356,14 @@ export async function listTransactions(actor: Actor, query: ListTransactionsQuer
   const [accountRows, cashRows, accountTotal, cashTotal] = await Promise.all([
     fetchAccountRows(filters, boundedTake),
     fetchCashRows(filters, boundedTake),
-    filters.categoryId ? Promise.resolve(0) : prisma.accountMovement.count({ where: buildAccountWhere(filters) }),
-    filters.movementType ? Promise.resolve(0) : prisma.cashMovement.count({ where: buildCashWhere(filters) }),
+    skipAccountSide ? Promise.resolve(0) : prisma.accountMovement.count({ where: buildAccountWhere(filters) }),
+    skipCashSide ? Promise.resolve(0) : prisma.cashMovement.count({ where: buildCashWhere(filters) }),
   ]);
 
   const merged = [...accountRows, ...cashRows].sort(compareRowsDesc);
   const page = merged.slice(skip, skip + take).map(stripInternal);
 
   return paginate(page, accountTotal + cashTotal, query);
-}
-
-function sumNegativeAbs(rows: InternalRow[]): number {
-  return rows.reduce((sum, row) => sum + (row.amountCents < 0 ? -row.amountCents : 0), 0);
-}
-
-function countPositive(rows: InternalRow[]): number {
-  return rows.filter((row) => row.amountCents > 0).length;
-}
-
-function countNegative(rows: InternalRow[]): number {
-  return rows.filter((row) => row.amountCents < 0).length;
-}
-
-/** "Ricavi per categoria" (AC 2) — Σ positive amounts per `kind`, largest first, over the (already month-scoped) rows given. */
-function revenueByKindOf(rows: InternalRow[]): { kind: string; amountCents: number }[] {
-  const totals = new Map<string, number>();
-  for (const row of rows) {
-    if (row.amountCents <= 0) continue;
-    totals.set(row.kind, (totals.get(row.kind) ?? 0) + row.amountCents);
-  }
-  return Array.from(totals.entries())
-    .map(([kind, amountCents]) => ({ kind, amountCents }))
-    .sort((a, b) => b.amountCents - a.amountCents);
 }
 
 /**
@@ -303,7 +374,10 @@ function revenueByKindOf(rows: InternalRow[]): { kind: string; amountCents: numb
  * addebiti conto (`FLIGHT_CHARGE`, `ADJUSTMENT` a debito) netti dei
  * `FLIGHT_CHARGE_REVERSAL`, PLUS cash entrate not already counted on the
  * account side (PPR contante, rivendite, ...; see
- * `CASH_NOT_ALREADY_ON_ACCOUNT`'s doc-comment for the twin-dedup rule).
+ * `CASH_NOT_ALREADY_ON_ACCOUNT`'s doc-comment for the twin-dedup rule). Both
+ * `OR` clauses are the SAME `ACCOUNT_REVENUE_OR`/`CASH_REVENUE_OR` consts the
+ * `bookType` filter and row classification use above (story Billing-2) — one
+ * definition, never a second copy to drift (review Billing-1 F5's lesson).
  *
  * **Review Billing-1 F3** — "uno storno appartiene al libro del suo
  * originale, con segno opposto, nel mese in cui avviene" (same rule
@@ -329,12 +403,7 @@ async function computeRevenueCents(from: string, to: string): Promise<number> {
   const debitAggregate = await prisma.accountMovement.aggregate({
     where: {
       effectiveDate: { gte: fromDate, lte: toDate },
-      OR: [
-        { type: 'FLIGHT_CHARGE' },
-        { type: 'FLIGHT_CHARGE_REVERSAL' },
-        { type: 'ADJUSTMENT', amountCents: { lt: 0 } },
-        { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null } },
-      ],
+      OR: ACCOUNT_REVENUE_OR,
     },
     _sum: { amountCents: true },
   });
@@ -347,7 +416,7 @@ async function computeRevenueCents(from: string, to: string): Promise<number> {
   const cashAggregate = await prisma.cashMovement.aggregate({
     where: {
       effectiveDate: { gte: fromDate, lte: toDate },
-      OR: [{ reversalOfId: null, amountCents: { gt: 0 } }, { reversalOfId: { not: null }, amountCents: { lt: 0 } }],
+      OR: CASH_REVENUE_OR,
       ...CASH_NOT_ALREADY_ON_ACCOUNT,
     },
     _sum: { amountCents: true },
@@ -358,69 +427,16 @@ async function computeRevenueCents(from: string, to: string): Promise<number> {
 }
 
 /**
- * `getBillingKpis` (AC 1/2, ratifica utente 2) — TRUE server-side aggregates
- * over the WHOLE ledger for the CURRENT Europe/Rome calendar month,
- * INDEPENDENT of any table filter (the page never passes the table's
- * filters here). `ref` overrides "now" for tests (same pattern as
- * `period-presets.ts` callers). `revenueCents`/`chargesCents` are, by the
- * ratified definition, the SAME figure — two KPI tiles surfacing one number
- * with different sub-labels, not a bug — now sourced from
- * `getLedgerRevenueCents` (story Billing-1, AC 6: the old
- * `sumPositive(fetchAllLedgerRows(...))` definition is RETIRED, not
- * affiancata — see that function's own doc-comment for the bug it fixed).
- * `paymentsCents`/`chargesCount`/`paymentsCount`/`revenueByKind` are
- * UNCHANGED, still derived from the raw ledger rows — this story's AC 6 only
- * targets the Ricavi/Costi figure, not those.
- *
- * **Review Billing-1 F6 (annotated, deliberately NOT aligned)**: `chargesCount`
- * (`countPositive`) and `revenueByKind` (`revenueByKindOf`) are the OLD
- * Σ-positivi counting (every positive row, unconditionally) — after a
- * same-period storno they now diverge from the corrected `revenueCents`
- * (e.g. an entrata reversed the same month reads `revenueCents: 0` but still
- * contributes to `chargesCount`/`revenueByKind`, since a storno row itself is
- * NEGATIVE and never subtracts from a Σ-of-positives). Left AS-IS on
- * purpose: the `/dashboard/billing` KPI row/"per categoria" panel these feed
- * is REPLACED wholesale by Story Billing-2 (three-book page, not this
- * Σ-signed one) and the app is not yet deployed — realigning them here would
- * be speculative work with a lifespan of one story.
- */
-export async function getBillingKpis(actor: Actor, ref: Date = new Date()): Promise<BillingKpisDto> {
-  authorize(actor, 'finance.manage');
-
-  const current = currentMonthRange(ref);
-  const previous = previousMonthRange(ref);
-
-  const [rows, revenueCents, prevMonthRevenueCents] = await Promise.all([
-    fetchAllLedgerRows({ from: current.from, to: current.to }),
-    getLedgerRevenueCents(actor, current.from, current.to),
-    getLedgerRevenueCents(actor, previous.from, previous.to),
-  ]);
-
-  const paymentsCents = sumNegativeAbs(rows);
-
-  return {
-    revenueCents,
-    prevMonthRevenueCents,
-    chargesCents: revenueCents,
-    chargesCount: countPositive(rows),
-    paymentsCents,
-    paymentsCount: countNegative(rows),
-    netCents: revenueCents - paymentsCents,
-    revenueByKind: revenueByKindOf(rows),
-  };
-}
-
-/**
  * Total CORRECTED ledger revenue over an ARBITRARY `[from, to]` period
  * (story Billing-1, AC 5/6) — addebiti conto netti degli storni PLUS cash
  * entrate non già contate lato conto (see `computeRevenueCents`'s own
  * doc-comment for the exact rule and the same-period-storno bug it fixes
  * over the old Σ-positivi definition). Story 12.10's stats API reuses this
- * so its "Ricavi" KPI/series can NEVER drift from `getBillingKpis`'s/
+ * so its "Ricavi" KPI/series can NEVER drift from
  * `billing-summary.service.ts#getBillingSummary`'s own definition (ratifica
- * utente 4: "MAI reimplementarle") — ALL THREE readers now share this ONE
- * implementation. Self-authorizes (same permission `getBillingKpis`
- * requires) — the "coarser-permission" cross-service call convention
+ * utente 4: "MAI reimplementarle") — both readers share this ONE
+ * implementation. Self-authorizes (`finance.manage`) — the
+ * "coarser-permission" cross-service call convention
  * `flights.service.ts#registerFlight`'s own doc-comment documents.
  */
 export async function getLedgerRevenueCents(actor: Actor, from: string, to: string): Promise<number> {
