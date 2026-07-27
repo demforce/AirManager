@@ -250,7 +250,7 @@ test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType col
     await expect(row.locator('.student-sub')).toHaveCount(0);
   });
 
-  test('Entrate/Uscite columns (story Billing-2, AC 2): a TOP_UP (acconto) shows in Entrate, a FLIGHT_CHARGE (ricavo) shows in Uscite — the old signed "Importo" column and its club-centric flip are gone', async ({ page }) => {
+  test('Entrate/Uscite columns (story Billing-2, AC 2; review F7 — PO ratifica 2026-07-27, club perspective for EVERY row, SUPERSEDES the design mock\'s pilot-centric example): a TOP_UP (acconto) shows in Entrate, a FLIGHT_CHARGE (ricavo) ALSO shows in Entrate (the club earns the ricavo) — the old signed "Importo" column and its club-centric flip are gone', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilot = await createPilotPerson(page, 'EntUsc');
     const aircraft = await createAircraftWithRate(page, 12000); // 120,00 €/h
@@ -262,13 +262,22 @@ test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType col
     await gotoBilling(page, { dateFrom: day1, dateTo: day1 });
     await expect(billingRows(page)).toHaveCount(2);
 
+    // `.stat-tone-ok`/`.stat-tone-bad` (review F2) scope each assert to its OWN
+    // cell (Entrate/Uscite) — never a row-wide `hasText`, which cannot tell
+    // which COLUMN an amount landed in (lezione 11.2's discriminant class).
     const depositRow = billingRows(page).filter({ hasText: 'Ricarica' });
-    await expect(depositRow).toContainText(/50,00\s€/);
+    await expect(depositRow.locator('.stat-tone-ok')).toContainText(/50,00\s€/);
+    await expect(depositRow.locator('.stat-tone-bad')).toContainText('—');
     await expect(depositRow.getByText('Acconto', { exact: true })).toBeVisible();
     await expect(depositRow).toContainText('non incide sul risultato');
 
     const chargeRow = billingRows(page).filter({ hasText: 'Addebito volo' });
-    await expect(chargeRow).toContainText(/60,00\s€/);
+    // Review F7: club perspective — the addebito volo IS club ricavo, so it
+    // lands in Entrate, never Uscite (the design mock's own §5 example showed
+    // the OLD pilot-centric direction — superseded, see the spec's own
+    // ratifica note).
+    await expect(chargeRow.locator('.stat-tone-ok')).toContainText(/60,00\s€/);
+    await expect(chargeRow.locator('.stat-tone-bad')).toContainText('—');
     await expect(chargeRow.getByText('Ricavo', { exact: true })).toBeVisible();
   });
 
