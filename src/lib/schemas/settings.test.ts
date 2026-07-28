@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 const mockEnv = { SMTP_HOST: 'localhost' };
 vi.mock('@/lib/env', () => ({ env: mockEnv }));
 
-const { smtpSettingsInputSchema } = await import('./settings');
+const { smtpSettingsInputSchema, clubIdentitySchema } = await import('./settings');
 
 /** Fixed valid siblings — every case below varies only `host`. */
 const BASE_INPUT = { port: 587, security: 'STARTTLS' as const, user: '', from: 'Club Ops <ops@example.com>' };
@@ -83,5 +83,36 @@ describe('smtpSettingsInputSchema — SSRF host validation', () => {
     expect(parseHost('10.0.0.6').success).toBe(false);
 
     mockEnv.SMTP_HOST = 'localhost';
+  });
+});
+
+/**
+ * `contactEmail: ''` is the factory default (`getAirfieldContactEmail`
+ * returns `''` when the key is absent) and the club card always sends every
+ * field — rejecting the empty string made the card unsavable on a fresh
+ * install (changing ONLY the ICAO fields answered 422 on the untouched
+ * email, surfaced as the generic "Non è stato possibile salvare").
+ */
+describe('clubIdentitySchema — contactEmail empty-means-unset', () => {
+  it('accepts an empty contactEmail (fresh-install default, clears the setting)', () => {
+    const parsed = clubIdentitySchema.safeParse({ icao: 'LIRB', contactEmail: '' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.contactEmail).toBe('');
+  });
+
+  it('trims whitespace-only contactEmail down to the empty string and accepts it', () => {
+    const parsed = clubIdentitySchema.safeParse({ icao: 'LIRB', contactEmail: '   ' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.contactEmail).toBe('');
+  });
+
+  it('still accepts and lowercases a real email', () => {
+    const parsed = clubIdentitySchema.safeParse({ icao: 'LIRB', contactEmail: 'Ops@Example.COM' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.contactEmail).toBe('ops@example.com');
+  });
+
+  it('still rejects a non-empty, non-email value', () => {
+    expect(clubIdentitySchema.safeParse({ icao: 'LIRB', contactEmail: 'not-an-email' }).success).toBe(false);
   });
 });
