@@ -178,11 +178,11 @@ export function MovementsTable({
         <div className="card-title">{labels.card.title}</div>
         <span className="card-sub">{labels.card.subTemplate.replace('{total}', String(rows.length))}</span>
         <div className="fld" style={{ minWidth: 0 }} data-testid="ppr-register-filter-bar">
-          <span className="fld-label">{labels.filters.status}</span>
           <select
             className={inputClasses}
             value={filters.status}
             onChange={(event) => handleFilterChange({ status: event.target.value })}
+            aria-label={labels.filters.status}
             data-testid="ppr-register-filter-status"
           >
             <option value="ALL">{labels.filters.statusAll}</option>
@@ -194,12 +194,10 @@ export function MovementsTable({
           </select>
         </div>
         <div className="fld" style={{ minWidth: 0 }}>
-          <span className="fld-label">{labels.filters.from}</span>
-          <DateInput className={inputClasses} value={filters.from} onChange={(event) => handleFilterChange({ from: event.target.value })} data-testid="ppr-register-filter-from" />
+          <DateInput className={inputClasses} value={filters.from} onChange={(event) => handleFilterChange({ from: event.target.value })} aria-label={labels.filters.from} data-testid="ppr-register-filter-from" />
         </div>
         <div className="fld" style={{ minWidth: 0 }}>
-          <span className="fld-label">{labels.filters.to}</span>
-          <DateInput className={inputClasses} value={filters.to} onChange={(event) => handleFilterChange({ to: event.target.value })} data-testid="ppr-register-filter-to" />
+          <DateInput className={inputClasses} value={filters.to} onChange={(event) => handleFilterChange({ to: event.target.value })} aria-label={labels.filters.to} data-testid="ppr-register-filter-to" />
         </div>
         {hasActiveFilter ? (
           <button type="button" className="btn" onClick={handleResetFilters} data-testid="ppr-register-filter-reset">
