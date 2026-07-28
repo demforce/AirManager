@@ -51,7 +51,6 @@ export type ScheduleAircraftRow = {
 
 export type CalendarNav = {
   prevHref: { pathname: string; query: Record<string, string | number> };
-  todayHref: { pathname: string; query: Record<string, string | number> };
   nextHref: { pathname: string; query: Record<string, string | number> };
   dayViewHref: { pathname: string; query: Record<string, string | number> };
   weekViewHref: { pathname: string; query: Record<string, string | number> };
@@ -249,9 +248,6 @@ export function Schedule({
         <div className="date-nav" style={{ position: 'relative' }}>
           <a href={buildHrefString(nav.prevHref, locale)} onClick={(e) => navigateOnClick(e, router, nav.prevHref)} aria-label={labels.prev} data-testid="calendar-prev" className="iconbtn">
             <Icon.chevL />
-          </a>
-          <a href={buildHrefString(nav.todayHref, locale)} onClick={(e) => navigateOnClick(e, router, nav.todayHref)} data-testid="calendar-today" className="today-btn">
-            {labels.today}
           </a>
           <button
             ref={calTriggerRef}

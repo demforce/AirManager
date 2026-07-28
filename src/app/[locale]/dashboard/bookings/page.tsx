@@ -232,7 +232,6 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   const calendarNav: CalendarNav = {
     prevHref: calendarHref({ date: prevDate }),
-    todayHref: calendarHref({ date: today }),
     nextHref: calendarHref({ date: nextDate }),
     dayViewHref: calendarHref({ view: 'day' }),
     weekViewHref: calendarHref({ view: 'week' }),

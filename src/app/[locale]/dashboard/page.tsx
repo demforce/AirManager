@@ -223,7 +223,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const nowLinePercent = clampToWindowPercent(wallMinutesOfDay(now) - windowStartMinutes, windowEndMinutes - windowStartMinutes);
   const calendarNav: CalendarNav = {
     prevHref: bookingsHref({ date: addDaysDateOnly(today, -1) }, today),
-    todayHref: bookingsHref({}, today),
     nextHref: bookingsHref({ date: addDaysDateOnly(today, 1) }, today),
     dayViewHref: bookingsHref({ view: 'day' }, today),
     weekViewHref: bookingsHref({ view: 'week' }, today),

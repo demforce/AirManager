@@ -1234,7 +1234,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await page.goto(`/it/dashboard/bookings?view=week&date=${FUTURE_DAY}&page=2`);
 
     // Direction 1: every calendar link preserves the list's ?page=2.
-    for (const testId of ['calendar-prev', 'calendar-today', 'calendar-next', 'calendar-view-day', 'calendar-view-week']) {
+    // Story 14.1 (AC 3): 'calendar-today' (the "Oggi" nav link) was removed.
+    for (const testId of ['calendar-prev', 'calendar-next', 'calendar-view-day', 'calendar-view-week']) {
       const href = await page.getByTestId(testId).getAttribute('href');
       expect(href, `${testId} href should preserve page=2`).toMatch(/[?&]page=2(&|$)/);
     }

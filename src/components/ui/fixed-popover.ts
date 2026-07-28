@@ -83,20 +83,16 @@ const VIEWPORT_MARGIN = 18;
 const MIN_POPOVER_HEIGHT = 200;
 
 /**
- * `toggle(neededHeight, onOpen?)` measures the trigger's viewport rect and
- * computes where the popover should sit BEFORE flipping `open`:
+ * Pure geometry decision, factored out of `useFixedPopover#toggle` (story
+ * 14.1, AC 1) so `SearchCombobox` — whose own open/close lifecycle is driven
+ * by focus/typing/blur, not a single toggle-on-click — can reuse the EXACT
+ * same flip/clamp math against its own trigger rect, instead of a second
+ * copy silently diverging (same dedup rationale as `CAL_POPOVER_WIDTH`/
+ * `clampPopoverLeft` above, PO decision 2026-07-26). `neededHeight` is the
+ * caller's own estimate of how tall the popover naturally renders — used
+ * ONLY to decide whether flipping above the trigger is worth it, see the
+ * three bullets below.
  *
- * - `neededHeight` is the CALLER's own estimate of how tall the popover
- *   naturally renders (`CalendarPopover`'s date-only vs date+time mode
- *   render at different heights — see `CAL_POPOVER_HEIGHT_DATE_ONLY`/
- *   `_DATE_TIME` next to the component). It is used ONLY to decide whether
- *   flipping above the trigger is worth it; it never shrinks `maxHeight`
- *   below what's genuinely available when there IS enough room (the `else`
- *   branch below reduces to the exact pre-fix formula whenever
- *   `spaceBelow >= neededHeight`, so an existing consumer whose trigger
- *   never sits near the bottom — `schedule.tsx`'s two popovers, `date-input`/
- *   `datetime-input` call sites with plenty of room — renders byte-for-byte
- *   the same as before this fix).
  * - Not enough room below AND more room above → anchor the popover ABOVE
  *   the trigger instead (`bottom`, not `top` — see `anchorPositionStyle`).
  * - Otherwise (including "tight on both sides", where flipping wouldn't
@@ -106,6 +102,33 @@ const MIN_POPOVER_HEIGHT = 200;
  *   room the popover scrolls internally instead of vanishing or escaping
  *   the viewport (review F1's actual failure mode — 26-45px slivers with
  *   zero hit-testable controls).
+ */
+export function computeFixedPopoverAnchor(triggerRect: DOMRect, neededHeight: number): FixedPopoverAnchor {
+  const spaceBelow = window.innerHeight - triggerRect.bottom - POPOVER_GAP - VIEWPORT_MARGIN;
+  const spaceAbove = triggerRect.top - POPOVER_GAP - VIEWPORT_MARGIN;
+
+  if (spaceBelow < neededHeight && spaceAbove > spaceBelow) {
+    const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove);
+    return { top: null, bottom: window.innerHeight - triggerRect.top + POPOVER_GAP, maxHeight, triggerRect };
+  }
+  const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceBelow);
+  const naturalTop = triggerRect.bottom + POPOVER_GAP;
+  const top = Math.min(naturalTop, Math.max(8, window.innerHeight - maxHeight - VIEWPORT_MARGIN));
+  return { top, bottom: null, maxHeight, triggerRect };
+}
+
+/**
+ * `toggle(neededHeight, onOpen?)` measures the trigger's viewport rect and
+ * computes where the popover should sit (via `computeFixedPopoverAnchor`
+ * above) BEFORE flipping `open`. `neededHeight` is the CALLER's own estimate
+ * of how tall the popover naturally renders (`CalendarPopover`'s date-only
+ * vs date+time mode render at different heights — see
+ * `CAL_POPOVER_HEIGHT_DATE_ONLY`/`_DATE_TIME` next to the component); it
+ * never shrinks `maxHeight` below what's genuinely available when there IS
+ * enough room (so an existing consumer whose trigger never sits near the
+ * bottom — `schedule.tsx`'s two popovers, `date-input`/`datetime-input` call
+ * sites with plenty of room — renders byte-for-byte the same as before this
+ * fix's predecessor, TD-7 review F1).
  *
  * `onOpen` runs only when the popover is about to OPEN (never on close),
  * for a caller's own pre-open side effect (e.g. snapping the month cursor
@@ -117,19 +140,7 @@ export function useFixedPopover(triggerRef: RefObject<HTMLElement | null>, popov
 
   function toggle(neededHeight: number, onOpen?: () => void) {
     if (!open && triggerRef.current) {
-      const triggerRect = triggerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - triggerRect.bottom - POPOVER_GAP - VIEWPORT_MARGIN;
-      const spaceAbove = triggerRect.top - POPOVER_GAP - VIEWPORT_MARGIN;
-
-      if (spaceBelow < neededHeight && spaceAbove > spaceBelow) {
-        const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove);
-        setAnchor({ top: null, bottom: window.innerHeight - triggerRect.top + POPOVER_GAP, maxHeight, triggerRect });
-      } else {
-        const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceBelow);
-        const naturalTop = triggerRect.bottom + POPOVER_GAP;
-        const top = Math.min(naturalTop, Math.max(8, window.innerHeight - maxHeight - VIEWPORT_MARGIN));
-        setAnchor({ top, bottom: null, maxHeight, triggerRect });
-      }
+      setAnchor(computeFixedPopoverAnchor(triggerRef.current.getBoundingClientRect(), neededHeight));
       onOpen?.();
     }
     setOpen((wasOpen) => !wasOpen);

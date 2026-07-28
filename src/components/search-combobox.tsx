@@ -1,6 +1,17 @@
 'use client';
 
 import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { anchorPositionStyle, computeFixedPopoverAnchor, POPOVER_PORTAL_Z_INDEX, type FixedPopoverAnchor } from './ui/fixed-popover';
+
+/**
+ * Story 14.1, AC 1: the dropdown's own natural rendered height cap (mirrors
+ * `.combo-listbox`'s CSS `max-height`, `airops.css`) — `computeFixedPopoverAnchor`
+ * uses this only to decide whether flipping ABOVE the field is worth it, same
+ * "estimate, never a hard floor" role as `CalendarPopover`'s
+ * `CAL_POPOVER_HEIGHT_*` constants.
+ */
+const COMBO_LISTBOX_HEIGHT = 240;
 
 /**
  * One selectable entry (story TD-3, AC 1/2). `meta` is an optional secondary
@@ -101,6 +112,11 @@ export function SearchCombobox({
   // genuinely EXTERNAL change (a filter reset, a form reset after a
   // successful submit).
   const [reconciledValue, setReconciledValue] = useState(value);
+  // Story 14.1, AC 1: the listbox's viewport-fixed position, measured off
+  // `wrapperRef` (the `.fld` root below) every time it (re)opens — see
+  // `openWithOptions`.
+  const [anchor, setAnchor] = useState<FixedPopoverAnchor | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seqRef = useRef(0);
   const listboxId = `${id}-listbox`;
@@ -136,6 +152,13 @@ export function SearchCombobox({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setOptions(nextOptions);
     setActiveIndex(nextOptions.length > 0 ? 0 : -1);
+    // Story 14.1, AC 1: re-measured on every call (focus, arrow key, or each
+    // keystroke while typing) — cheap (one `getBoundingClientRect` + pure
+    // math) and keeps the popover correctly placed even if the page
+    // scrolled since it last opened.
+    if (wrapperRef.current) {
+      setAnchor(computeFixedPopoverAnchor(wrapperRef.current.getBoundingClientRect(), COMBO_LISTBOX_HEIGHT));
+    }
     setOpen(true);
   }
 
@@ -244,7 +267,10 @@ export function SearchCombobox({
     // `.fld` (airops.css) gives the same label/control stack as every other
     // slide-over field — the combobox label/input must read EXACTLY like a
     // `Field`+`Input` pair (user decision 2026-07-21: uniform form typography).
-    <div className="fld" style={{ position: 'relative', minWidth: 200 }}>
+    // No `position: relative` needed (story 14.1): the listbox below is
+    // `position: fixed` + portaled, measured off `wrapperRef` directly
+    // rather than relying on this box as its containing block.
+    <div className="fld" style={{ minWidth: 200 }} ref={wrapperRef}>
       <label htmlFor={id} className="fld-label">
         {label}
       </label>
@@ -272,52 +298,62 @@ export function SearchCombobox({
         // (`html[data-theme]`), same as the listbox/options below.
         className="input"
       />
-      {open ? (
-        <ul
-          id={listboxId}
-          role="listbox"
-          // Deliberately NO `aria-label` here: the input already carries the
-          // accessible name (its sibling `<label>`) and the combobox/listbox
-          // relationship is established via `aria-controls`/
-          // `aria-activedescendant` — an `aria-label` matching the input's
-          // own label text made Playwright's `getByLabel` resolve TWO
-          // elements (the input AND this listbox) for the same name, a real
-          // strict-mode collision caught empirically by the e2e run.
-          // Prevents the input from blurring when an option is clicked
-          // (mousedown fires before click) — without this, `onBlur` would
-          // close the popup and revert the query before `onClick` ever runs.
-          onMouseDown={(event) => event.preventDefault()}
-          // Story 13.5, AC 8: ported off raw Tailwind utilities onto
-          // airops.css (`.combo-listbox`/`.combo-option`) — the previous
-          // classes never set `font-family` of their own, unlike every other
-          // AirOps control; this dropdown's font depended entirely on
-          // inheritance reaching <body> instead (see the CSS block's own
-          // doc-comment). Now explicit and self-contained, same as the rest
-          // of the design system.
-          className="combo-listbox"
-        >
-          {options.length === 0 ? (
-            <li role="option" aria-disabled="true" aria-selected="false" className="combo-option combo-option-empty">
-              {emptyText}
-            </li>
-          ) : (
-            options.map((option, index) => (
-              <li
-                key={option.id}
-                id={`${id}-option-${option.id}`}
-                role="option"
-                aria-selected={option.id === value}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => selectOption(option)}
-                className={`combo-option${index === activeIndex ? ' active' : ''}`}
-              >
-                {option.label}
-                {option.meta ? <span className="combo-meta">{option.meta}</span> : null}
-              </li>
-            ))
-          )}
-        </ul>
-      ) : null}
+      {open && anchor
+        ? createPortal(
+            <ul
+              id={listboxId}
+              role="listbox"
+              // Deliberately NO `aria-label` here: the input already carries
+              // the accessible name (its sibling `<label>`) and the
+              // combobox/listbox relationship is established via
+              // `aria-controls`/`aria-activedescendant` — an `aria-label`
+              // matching the input's own label text made Playwright's
+              // `getByLabel` resolve TWO elements (the input AND this
+              // listbox) for the same name, a real strict-mode collision
+              // caught empirically by the e2e run.
+              // Prevents the input from blurring when an option is clicked
+              // (mousedown fires before click) — without this, `onBlur`
+              // would close the popup and revert the query before `onClick`
+              // ever runs. Still works across the portal boundary: React
+              // dispatches synthetic events along the REACT tree, not the
+              // DOM tree, so this handler sees the same mousedown it always
+              // did (`react-dom`'s documented portal event behavior).
+              onMouseDown={(event) => event.preventDefault()}
+              className="combo-listbox"
+              style={{
+                position: 'fixed',
+                ...anchorPositionStyle(anchor),
+                left: anchor.triggerRect.left,
+                width: anchor.triggerRect.width,
+                maxHeight: anchor.maxHeight,
+                zIndex: POPOVER_PORTAL_Z_INDEX,
+                overflowY: 'auto',
+              }}
+            >
+              {options.length === 0 ? (
+                <li role="option" aria-disabled="true" aria-selected="false" className="combo-option combo-option-empty">
+                  {emptyText}
+                </li>
+              ) : (
+                options.map((option, index) => (
+                  <li
+                    key={option.id}
+                    id={`${id}-option-${option.id}`}
+                    role="option"
+                    aria-selected={option.id === value}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => selectOption(option)}
+                    className={`combo-option${index === activeIndex ? ' active' : ''}`}
+                  >
+                    {option.label}
+                    {option.meta ? <span className="combo-meta">{option.meta}</span> : null}
+                  </li>
+                ))
+              )}
+            </ul>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

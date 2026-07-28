@@ -156,3 +156,63 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     await expect(row).toContainText(/67,50\s€/);
   });
 });
+
+test.describe('SearchCombobox positioning (story 14.1, AC 1/4 — the dropdown must not cover the field)', () => {
+  test('opens BELOW the field by default, never overlapping it', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+    await page.getByTestId('flight-aircraft').click();
+
+    // Geometry guard, not a mere click (lesson 13.7: a Playwright click can
+    // still succeed on a clipped/overlapping element) — real rects of the
+    // input vs. the portaled listbox.
+    const geometry = await page.evaluate(() => {
+      const input = document.querySelector('[data-testid="flight-aircraft"]');
+      const listbox = document.querySelector('.combo-listbox');
+      if (!input || !listbox) return null;
+      const ir = input.getBoundingClientRect();
+      const lr = listbox.getBoundingClientRect();
+      return {
+        position: getComputedStyle(listbox).position,
+        overlapsInput: lr.top < ir.bottom && lr.bottom > ir.top,
+        rendersBelow: lr.top >= ir.bottom,
+      };
+    });
+    expect(geometry?.position).toBe('fixed');
+    expect(geometry?.overlapsInput).toBe(false);
+    expect(geometry?.rendersBelow).toBe(true);
+  });
+
+  test('flips ABOVE the field when there is not enough room below (and more above), without ever overlapping it', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    // Short viewport: the flight-editor slide-over's 3rd field row (istruttore)
+    // sits far enough down that there is little room left below it, but the
+    // form's own header/earlier fields leave plenty of room above — exactly
+    // the scenario the flip must handle (same geometry-guard idea as
+    // `bookings.spec.ts`'s "story 13.7 review F1" calendar-popover test).
+    await page.setViewportSize({ width: 1280, height: 380 });
+    await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+    await page.getByTestId('flight-instructor').click();
+
+    const geometry = await page.evaluate(() => {
+      const input = document.querySelector('[data-testid="flight-instructor"]');
+      const wrapper = input?.closest('.fld');
+      const listbox = document.querySelector('.combo-listbox');
+      if (!input || !wrapper || !listbox) return null;
+      const wr = wrapper.getBoundingClientRect();
+      const lr = listbox.getBoundingClientRect();
+      return {
+        position: getComputedStyle(listbox).position,
+        flippedAbove: lr.bottom <= wr.top,
+        overlapsField: lr.top < wr.bottom && lr.bottom > wr.top,
+      };
+    });
+    expect(geometry?.position).toBe('fixed');
+    expect(geometry?.flippedAbove).toBe(true);
+    expect(geometry?.overlapsField).toBe(false);
+  });
+});
