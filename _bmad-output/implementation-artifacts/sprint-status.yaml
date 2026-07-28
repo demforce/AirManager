@@ -210,13 +210,17 @@ development_status:
   # tutti fixati e rimisurati; invarianza CalendarPopover provata con stash/rebuild;
   # F5 Firefox ratificato accept-and-document (l'utente usa Chrome). Arbitro 274/274.
   14-1-controlli-form-typeahead-date: done
-  14-2-validazione-form-per-campo: ready-for-dev
+  # 14.2 chiusa 2026-07-28: sweep ~30 file; review Opus 5 con 4 major (campi muti
+  # nella mappa 422, required plain-state al 2° submit, 4 form mancati, 422 PPR nel
+  # banner) — fix in DUE giri (subagent + chirurgico main: il "quarto form" era il
+  # modal Quota associativa). Arbitro finale 276+1 flaky login-class, exit 0.
+  14-2-validazione-form-per-campo: done
   14-3-regole-voli-scuola: backlog
   14-4-guardrail-registrazione-volo: backlog
   14-5-privacy-prenotazioni: backlog
   14-6-area-personale-transazioni-profili: backlog
   14-7-istruttore-prenotazione-compensi: backlog
-  14-8-form-velivolo-unificato: backlog
+  14-8-form-velivolo-unificato: ready-for-dev
   14-9-rimozione-ruolo-staff: backlog
   td-8-indagine-lentezza-salvataggi: backlog
 

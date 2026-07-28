@@ -93,4 +93,69 @@ so that non devo indovinare da una stringa generica in fondo al form quale campo
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+Review adversarial (Opus 5 xhigh, 2026-07-28). Perimetro `git diff 4dfe4a2..HEAD` (`cc6ad26` feat + `45706f3` record), 37 file sorgente + 3 e2e + messages.
+
+**Verdetto: shippable-with-fixes** — 4 major, 3 minor, 1 nit. Il nucleo della story (primitiva `Field` con stato errore, contrasto, fix accessible-name, focus-first-invalid, AC3 sulle 3 card Impostazioni) è solido e verificato empiricamente; le lacune sono di COMPLETEZZA dello sweep (AC2/AC3/AC4), non di correttezza di quanto implementato.
+
+### Priorità zero — full suite arbitro
+
+DB fresco (`docker compose down -v` + migrate + seed), build prod, `JOBS_SECRET` non-placeholder, `CI=1 npx playwright test` foreground su file:
+
+```
+Running 277 tests using 2 workers
+  277 passed (9.9m)
+E2E EXIT=0
+```
+
+Zero fallimenti, **zero flaky, zero retry**. Catena serializzata completa (settings 6/6 incluso il nuovo test 14.2 sul 422 `contactEmail`, booking-window 3/3, treasury-settings 3/3, billing-global 2/2). I 3 e2e nuovi verdi. Falso allarme auto-diagnosticato e NON imputabile alla story: un mio `npm run build` standalone è fallito su `/it/dashboard/ppr` perché il mio script esportava `NODE_ENV=development` dal `.env` — la regola di repo (`env -u NODE_ENV npm run build`, applicata dal webServer CI=1) rende il build verde.
+
+### Findings
+
+| # | Sev | Titolo |
+|---|-----|--------|
+| F1 | major | Campi nella lista `known` del 422 ma senza marker visibile → submit muto (e il banner globale ora sparisce anche dal path 422): `pilot-editor.tsx:252/306-314` (phone/address/fiscalCode), `instructor-editor.tsx:291-299` (gemello, senza nemmeno `aria-invalid`), `aircraft-editor.tsx:354-362/405/408/436` (seats/fuelType/notes). Provato: «Telefono» = spazi → nessun PATCH, nessun bordo, nessun messaggio, nessun banner, focus muto sul campo; «Posti» = 500 → idem. |
+| F2 | major | **AC2 violato**: i required a stato piano vivono nella callback di successo di `handleSubmit`, quindi al PRIMO submit non vengono marcati se un campo RHF è invalido. `flight-editor.tsx:312-324` (il picker «Pilota o allievo» resta bianco al submit #1, si accende solo al #2) e `pilot-editor.tsx:528-541` (licenza pilota/data corso/email-ruoli accesso/date chip). |
+| F3 | major | **AC4 incompleto**: 4 form mai toccati, tutti col vecchio banner in fondo, senza `aria-invalid`, in `var(--bad)` grezzo (3.96:1, sotto il floor 4.5:1 che la story stessa stabilisce): `settings-form.tsx` (nome aviosuperficie — DENTRO la Club card dichiarata fatta: 422 reale `fieldErrors.name` mostrato in **verde** `var(--ok)`), `ppr-console.tsx` (motivo rifiuto PPR — gemello esatto del modal annulla-volo sistemato in D4), `bookings-table.tsx` (motivo rifiuto prenotazione), `scadenze-console.tsx` (quota associativa: pilota mancante e importo invalido condividono la stessa stringa). |
+| F4 | major | **D1 respinta per i 2 form PPR**: gli schemi client non hanno bound `.max()`, il server sì (`aircraftRegistration.max(20)`, ecc.). Marca di 24 caratteri → 422 `fieldErrors.aircraftRegistration` REALE su `/it/ppr` e sul PPR manuale → solo banner generico, campo `aria-invalid=false`. |
+| F5 | minor | Dev Record inesatto: `submitAttempted` attribuito anche a flight-editor/transaction-editor, che usano invece un booleano per campo con clear-on-change manuale (`grep submitAttempted` → solo pilot-editor). |
+| F6 | minor | Il nuovo `e2e/ppr-public.spec.ts` **non discrimina** la modifica della story: tutte e 4 le sue asserzioni erano già vere a `4dfe4a2` (baseline righe 263/265: `aria-invalid` + messaggio per campo già presenti). Guarda solo la regressione di accname. |
+| F7 | minor | `treasury-card.tsx`: la stessa stringa compare 3 volte (2 per-campo + banner) e sotto «Data di apertura» recita «Inserisci importi validi…». |
+| F8 | nit | `.fld-error` senza `aria-describedby`: l'AX name dice `[invalid]` ma non il perché quando si torna sul campo. |
+
+### Giudizio sulle deviazioni dichiarate
+
+- **D1 — RESPINTA per `ppr-form.tsx` e `manual-ppr-form.tsx`** (v. F4, 422 field-shaped riprodotto su entrambi con payload reale). **Accettata** per new/edit-booking-form (notes con `maxLength` nativo, id da select, refine `invalidRange` già mirrorata) e treasury-card: lì non sono riuscito a raggiungere un `fieldErrors`.
+- **D2 — Confermata e verificata.** Audit AX su 14 campi con errore attivo in 3 form: nessun accessible name inquinato; restano solo 2 `<label className="fld">` wrapping in tutto l'albero, entrambi senza errore renderizzato dentro.
+- **D3 — Inesatta nella documentazione** (comportamento corretto). V. F5.
+- **D4 — Confermata.** Solo swap di classe, i 3 file usano già `<label htmlFor>`; contrasto del testo rimisurato 9.82:1 chiaro / 6.61:1 scuro.
+- **D5 — Confermata e accurata.** Le 4 chiavi/prop citate sono orfane pre-esistenti; la story non ne crea di nuove e anzi ne **recupera** una (`PilotsPage.editor.medical.requiredDate`). Parità it/en: 1739 chiavi ciascuno, zero divergenze.
+
+### Verifiche empiriche superate (nessun finding)
+
+- **Contrasto rimisurato due volte** (Python su token + canvas sul DOM reale, chiaro e scuro): LIGHT bordo **3.96:1** / testo **9.82:1**; DARK bordo **6.61:1** / testo **6.61:1**; classe applicata `fld-error`, non lo stile ad hoc. Numeri del dev confermati.
+- **Focus-first-invalid su form a stato piano con SearchCombobox primo invalido**: focus su `INPUT#transaction-person`, entrambi i campi marcati con messaggi distinti, la correzione pulisce solo il proprio.
+- **`.input-group:has(...)`**: wrapper rosso, input interno `border-style: none` — specificità corretta anche contro `:focus-within`.
+- **Layout**: `gridOverflow` vuoto, tutte le `.fld-error` dentro il pannello; il PPR pubblico con 10 errori attivi non spacca la griglia (la ristrutturazione elimina anzi un difetto pre-esistente: il `<p>` d'errore era un item di griglia autonomo).
+- **i18n**: parità perfetta, zero orfane nuove, zero `FORMATTING_ERROR`/`MISSING_MESSAGE` su 15 route IT+EN.
+- **Superficie RBAC**: intatta per costruzione — nessuna modifica a route API, service, schemi Zod o Prisma nel diff.
+
+### Fix post-review (2026-07-28, due giri — fix-subagent Sonnet 5 xhigh `ba90239` + chirurgico sessione principale `9097d18`)
+
+**Giro 1 (`ba90239`, F1-F8):**
+- **F1 fixed** — ogni campo nella mappa 422 ha ora il suo `Field error`/aria-invalid (pilot-editor, instructor-editor — che non aveva NEMMENO la mappatura, aggiunta —, aircraft-editor); regola: `mapped=true` solo con marker effettivamente renderizzato. Extra scope dichiarato: stesso bug latente cablato anche in NewPersonForm (phone/address/fiscalCode). Probe post-fix: telefono di spazi / 500 posti → campo rosso, richiesta mai partita.
+- **F2 fixed** — ramo `onInvalid` di `handleSubmit` su NewPersonForm e flight-editor (marking estratto in `markPlainRequiredFields`): TUTTI i required marcati al PRIMO submit, misto RHF+stato-piano.
+- **F3 parziale nel giro 1** — sistemati settings-form (con separazione errore-rosso/successo-verde: il verde-anche-su-errore era un bug pre-esistente), ppr-console, bookings-table, PIÙ un quinto form auto-identificato (motivo "Forza prenotazione" di new-booking-form, stessa classe) — ma il QUARTO form del reviewer era un altro (v. giro 2).
+- **F4 fixed** — i due form PPR: mapping 422→campo via parseApiError E bound `.max()` client allineati al server + maxLength; marche da 24 char → errore sul campo, POST mai partito.
+- **F5/F6/F7/F8 fixed** — record corretto (submitAttempted solo in NewPersonForm); e2e PPR pubblico reso discriminante (classe `.fld-error` + color diverso dalla label — fallirebbe sul baseline); treasury con `invalidAmount`/`requiredDate` separati e niente banner duplicato; `aria-describedby` in Field (useId) e SearchCombobox.
+- Full suite del giro: 277 passed, 0 flaky, exit 0.
+
+**Giro 2 (`9097d18`, F3.4 — il quarto form vero, mancato dal giro 1):** modal **Quota associativa** (`expiries/scadenze-console.tsx`): pilota e importo avevano UNA stringa condivisa in fondo — ora stati derivati distinti (`submitAttempted` + valore corrente, clear automatico), `error` sul SearchCombobox del pilota, `aria-invalid`+`aria-describedby`+`.fld-error` sull'importo, banner solo per gli errori server (saldo insufficiente); chiavi i18n separate (`requiredPilot`, `invalidAmount` riscritta) it/en. Gates verdi; spec `membership-fee` 7/7 (primo run rosso al login: cold-compile next dev, classe nota).
+
+**Full suite finale (arbitro = sessione principale, albero definitivo con entrambi i giri)**: DB fresco, build prod, `CI=1 npx playwright test` →
+
+```
+276 passed (9.4m), 1 flaky
+```
+Exit code `0`. Il flaky è il test NUOVO della club card ma fallito alla RIGA DI LOGIN dell'helper condiviso (toHaveURL /dashboard, 14 tentativi su /it/login) — classe documentata "login POST ~5s" che colpisce anche le build prod, retry verde; non attribuibile alla story.
+
+**Esito finale: tutti i findings chiusi (F3 completato in due giri). Story DONE.**
