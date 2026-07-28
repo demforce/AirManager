@@ -217,14 +217,21 @@ development_status:
   14-2-validazione-form-per-campo: done
   14-3-regole-voli-scuola: backlog
   14-4-guardrail-registrazione-volo: backlog
-  14-5-privacy-prenotazioni: backlog
+  14-5-privacy-prenotazioni: ready-for-dev
   14-6-area-personale-transazioni-profili: backlog
   14-7-istruttore-prenotazione-compensi: backlog
-  14-8-form-velivolo-unificato: ready-for-dev
+  # 14.8 chiusa 2026-07-28: creazione con tariffe+contaore in un submit composito
+  # transazionale; review Opus 5: 1 major (dry-only scartato in silenzio) + 6 tra
+  # minor/nit, fix chirurgici in sessione. Arbitro 280/280, 0 flaky.
+  14-8-form-velivolo-unificato: done
   14-9-rimozione-ruolo-staff: backlog
   td-8-indagine-lentezza-salvataggi: backlog
 
 action_items:
+  - epic: 14
+    action: "TD (review 14.8 F6, PRE-esistente): date-only.ts#parseDateOnlyUtc — Date.UTC mappa gli anni 0-99 su 1900+anno: validFrom '0001-01-01' passa z.iso.date() e finisce a DB come 1901-01-01 in silenzio (stesso comportamento su POST /aircraft/{id}/rates e tariffe istruttore). Fix quando si tocca date-only.ts: setUTCFullYear post-costruzione o rifiuto anni <1000 nello schema."
+    owner: "backlog TD"
+    status: open
   - epic: 13
     action: "F2 review 13.3 (feature-loss, follow-up ACCETTATO): registrando una scadenza dalla scheda persona/Piloti/Istruttori il campo 'Data scadenza' non si precompila più da ExpiryType.validityMonths (comodità che il vecchio ExpiriesPanel a pagina aveva; LiveExpiryEditor 13.2 non l'ha mai avuta). Fix = aggiungere il precompile all'add-row del LiveExpiryEditor condiviso (src/components/dashboard/expiry-editor.tsx) — beneficia tutti e 3 i consumer. Da riproporre all'utente per decidere se farlo (mini-story) o lasciarlo."
     owner: "post-13.3 (decisione utente)"

@@ -4,7 +4,7 @@ baseline_commit: 9097d18
 
 # Story 14.8: Form velivolo unificato — la creazione espone tutto ciò che espone la modifica
 
-Status: ready-for-dev (branch `dev`, epic 14)
+Status: done (review Opus 5 shippable-with-fixes → fix F1-F5+F7 `0ff9186`, arbitro 280/280, 0 flaky — 2026-07-28)
 
 ## Story
 
@@ -85,4 +85,67 @@ Unica differenza dichiarata: Archivio/Disponibilità assenti in creazione (per c
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+Reviewer adversarial (Opus 5 xhigh), 2026-07-28. Perimetro: `git diff 55baa8f..HEAD` (commit `172471b` feat, `e5a6124` docs). Verdetto: **shippable-with-fixes** — 1 major, 3 minor, 3 nit.
+
+### Priorità zero — full suite (arbitro)
+
+DB fresco verificato prima del run (5 User, 1 Aircraft, 0 AircraftRate). `export JOBS_SECRET=story148-review-secret-not-a-placeholder` → `CI=1 npx playwright test` su build prod (`env -u NODE_ENV npm run build && npm run start` via `webServer`), output su file.
+
+**`279 passed (9.5m)`, exit 0, zero `✘`, zero flaky, zero retry.** Nessuna occorrenza della classe di flake "login POST ~5s". Catena serializzata completa (chromium 264 → settings 271 → booking-window 274 → treasury-settings 277 → billing-global 279). Il claim del dev è confermato alla lettera. Il run ha superato il cap foreground di 600s ed è stato lanciato in background sulla sessione del reviewer e atteso fino al summary — dichiarato.
+
+`npm run gates` rieseguito dal reviewer dopo le sonde: exit 0 — lint 19s, typecheck 3s, **1548 unit passed**, build 45s.
+
+### Verdetto sulle 3 deviazioni dichiarate
+
+1. **Contaore già presente in creazione** — CONFERMATA e ACCETTATA. `git show 55baa8f:.../aircraft-editor.tsx` mostra il ramo `isNew` col Field "Contaore iniziale (minuti)" già alla baseline. Non re-implementarlo è corretto (karpathy §3).
+2. **Composito server-side transazionale** — CONFERMATA EMPIRICAMENTE e ACCETTATA. Trigger Postgres `BEFORE INSERT ON "AircraftRate"` che solleva sempre eccezione, **con controllo di discriminanza**: create senza rate → 201 e riga presente; `POST /aircraft/{id}/rates` → 500 (il trigger colpisce davvero quella tabella); create CON rate → 500 e **l'aereo NON esiste in DB**. Trigger rimosso → 201 con entrambe le righe. Race a 8 POST concorrenti stessa registrazione + rate → 1×201, 7×409, DB con 1 aereo + 1 tariffa e **0 tariffe orfane in tutto il database**; abort client a 0/3/15 ms → nessuna riga; triplo click sul submit → 1 aereo + 1 tariffa. Nessuna `Idempotency-Key` su questo POST, e non serve: l'unicità di `registration` dà idempotenza naturale.
+3. **Path senza rate bit-per-bit invariato** — CONFERMATA e ACCETTATA. Solo hoist di `data` in una const; test unit pre-esistenti invariati (+73/-0) e verdi; nuovo test che asserisce `$transaction` mai chiamata; staff senza rate → 201 sull'API reale.
+
+### RBAC (matrice completa via HTTP, build prod)
+
+| ruolo | POST /aircraft CON rate | POST /aircraft SENZA rate |
+|---|---|---|
+| admin | 201 (aereo + tariffa in DB, actorUserId corretto) | 201 |
+| staff | **403** `settings.manage` — **nessuna riga in DB** | 201 |
+| istruttore / pilota / allievo | 403 `aircraft.manage` | 403 `aircraft.manage` |
+
+UI: lo staff non vede la sezione "Tariffe" nel form di creazione (labels: Marche, Tipo, Modello, Posti, Carburante, Basato, Contaore iniziale, Note).
+
+### Findings
+
+- **F1 (major)** — **Prezzo dry senza prezzo wet: il valore digitato viene scartato in silenzio.** `aircraft-editor.tsx:352` considera il blocco tariffa attivo solo se il wet è non vuoto; con solo il dry compilato il body parte senza `rate`, esce "Velivolo creato.", lo SlideOver si chiude e il prezzo dry non esiste da nessuna parte (DB: `I-DRYONLYU1` con 0 tariffe; card "Tariffa —"). In **modifica** lo stesso input è rifiutato con "Campo obbligatorio." sul wet (`newRateFormSchema.price: min(1)`) → rottura di parità AC3 + perdita dati. Il form è anche internamente incoerente: dry="abc" con wet vuoto **blocca** il submit e marca il campo, dry="95,00" con wet vuoto passa e butta via il valore — valida un campo che poi scarta. *Fix*: `rateTouched` su wet **o** dry, e `ratePriceMissing` mappato sul Field "Prezzo wet" con `labels.errors.required` (chiave esistente, zero i18n nuove) incluso nella guardia di `onSubmit`.
+- **F2 (minor)** — Un 422 sul blocco `rate` cade sul banner generico: la lista `known` (`aircraft-editor.tsx:435-443`) non contiene `rate`, che è la chiave emessa dal server. Raggiungibile dalla UI (anno fuori formato ISO in `<input type=date>`): banner "Si è verificato un errore. Riprova." e nessun marker su "In vigore da". Edit si comporta allo stesso modo → parità salva, ma il blocco nuovo nasce senza il pattern 14.2 completo. *Fix*: validare client-side la forma ISO riusando `labels.errors.invalidDate`.
+- **F3 (minor)** — Contratto OpenAPI: `rate` compare correttamente in `CreateAircraftRequest`, ma la `description` di `POST /api/v1/aircraft` (`registry.ts:1031`) non dice che inviarlo richiede `settings.manage` — su un progetto API-first con client Flutter futuro è un gap. Nessun assert in `registry.test.ts` per il campo nuovo, nonostante il precedente `blocksBooking` (`:151-155`).
+- **F4 (minor)** — I 4 unit nuovi non possono dimostrare l'atomicità: `mockInteractiveTransaction` passa lo stesso `prisma` come `tx`, quindi passerebbero anche con l'atomicità rotta. Il comportamento reale è corretto (provato col trigger), ma il claim portante non ha guardiano in CI. *Fix*: `tx` come oggetto distinto e assert che `prisma.aircraftRate.create` NON venga chiamato.
+- **F5 (nit)** — `catch` di `createAircraft` (`aircraft.service.ts:275-281`): ogni P2002 diventa "conflitto di marche", incluso (in teoria) uno proveniente da `AircraftRate`. Scopare su `error.meta.target`.
+- **F6 (nit, pre-esistente)** — `parseDateOnlyUtc` (`date-only.ts:31-34`): `validFrom: '0001-01-01'` è salvato come `1901-01-01` (`Date.UTC` mappa gli anni 0-99 su 1900+anno). Identico sull'endpoint standalone → fuori perimetro 14.8, da tracciare come TD.
+- **F7 (nit)** — Uno staff non vede alcuna sezione "Tariffe" in creazione, mentre in modifica la vede in sola lettura con `readOnlyHint`. Difendibile; decisione PO.
+
+### Cosa ha retto bene
+
+Prova empirica del rollback con controllo di discriminanza; RBAC pulita su tutte e 5 le utenze con il 403 che non lascia nulla in DB; validazione per-campo 14.2 realmente presente sul blocco nuovo (bordi rossi + messaggi inline + `aria-describedby`, nessun banner); parità dei campi misurata via dump DOM (label/placeholder/inputmode/type identici, zero i18n nuove); tariffa effettiva subito su card ed editor da un solo submit (assert e2e discriminante, controllo "—" verificato); il popover calendario funziona sull'input CONTROLLATO di creazione (2026-07-28 → 2026-07-15) — path che nessun e2e della story copre; edge del blocco rate tutti 422 con `fieldErrors.rate` e zero scritture, chiavi ostili (`aircraftId`, `actorUserId`) strippate da Zod; diff igienico, 7 file, zero test indeboliti (+64/-0 e +73/-0 sui due file di test).
+
+### Nota di ambiente
+
+Le sonde hanno lasciato ~100 velivoli di prova nel DB locale (prefissi `I-RB*`, `I-TX*`, `I-EDG*`, `I-RACE*`, `I-DRYONLY*`, `I-LIVE*`, `I-DBLCLK*`, `I-DRYINV*`): il reset DB prima della prossima story li rimuove. Trigger e funzione `airm_review148_*` rimossi e verificati assenti (`pg_trigger`/`pg_proc` → 0 righe). Nessun file scritto nel repo, nessun push, nessun `playwright install`.
+
+### Fix post-review (2026-07-28, chirurgici in sessione principale — commit `0ff9186`)
+
+- **F1 fixed (major)** — il blocco tariffa conta come "toccato" se QUALSIASI campo lo è (`rateTouched`): prezzo dry senza wet → submit bloccato, wet marcato "Campo obbligatorio." (specchio di `newRateFormSchema.price min(1)` di edit) — la perdita silenziosa di dati e l'incoerenza interna (dry validato-poi-scartato) sono chiuse. **Guard e2e nuovo dedicato** (dry-only → aria-invalid sul wet, editor aperto, zero righe a DB), verde.
+- **F2 fixed** — forma ISO di `validFrom` validata client-side (regex + `labels.errors.invalidDate`, chiave prima inutilizzata): il 422 `fieldErrors.rate` non mappabile è irraggiungibile dalla UI.
+- **F3 fixed** — descrizione OpenAPI di POST /aircraft dichiara il requisito `settings.manage` del blocco `rate` (403 con rate, 201 senza); test di registry àncora `CreateAircraftRequest.rate` al contratto (pattern `blocksBooking`).
+- **F4 fixed** — test di atomicità con client tx DISTINTO (spy propri) + assert che il client globale non venga mai toccato dal path composito: l'atomicità è asserita, non assunta.
+- **F5 fixed** — `isUniqueViolation` controlla `meta.target ∋ registration` (fallback difensivo se target assente): un P2002 della tariffa cade come 500, non più come "marche duplicate".
+- **F6 → TD** — bug PRE-esistente di `date-only.ts` (anni <100 shiftati di 1900 da `Date.UTC`): fuori perimetro, tracciato come action item in sprint-status.
+- **F7 fixed** — la sezione Tariffe si rende anche allo staff in creazione col `readOnlyHint` di edit (principio PO "form identici"); test STAFF rafforzato con l'assert sull'hint.
+
+**Gates post-fix**: PASS lint/typecheck/test/build — 1549 unit (+1 registry). I run dello spec su `next dev` hanno esibito la classe login-flake in forma massiccia (2 worker: 6-8 rossi TUTTI alla riga di login; 1 worker: 7/8 con tutti i test 14.8 verdi) — coerente con la lezione documentata, non attribuibile ai fix.
+
+**Full suite finale (arbitro = sessione principale, build prod, DB fresco)**:
+
+```
+280 passed (9.2m)
+```
+Exit code `0`, zero flaky (280 = 279 + il nuovo guard F1).
+
+**Esito finale: tutti i findings chiusi (F6 tracciato come TD). Story DONE.**
