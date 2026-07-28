@@ -102,7 +102,8 @@ export type BookingListItem = {
   aircraftId: string;
   aircraftRegistration: string;
   personId: string;
-  personName: string;
+  /** `null` on a masked (non-own, no `bookings.read.names`) entry — see `maskBookingNames`'s doc-comment (story 14.5). */
+  personName: string | null;
   instructorProfileId: string | null;
   instructorName: string | null;
   startsAt: Date;
@@ -178,6 +179,35 @@ function toListItem(booking: SelectedBooking): BookingListItem {
     decidedAt: booking.decidedAt,
     createdAt: booking.createdAt,
   };
+}
+
+/**
+ * Masks the personal identifiers on a booking that is NOT the actor's own
+ * (story 14.5, ratifica R3: pilots/students see "Occupato" — aircraft and
+ * time stay visible — on someone else's booking; admin/staff/instructor,
+ * `bookings.read.names`, see everyone's name unmasked). "Own" is simply
+ * `booking.personId === actor.personId`: the only ownership shape a masked
+ * actor's role set (PILOT/STUDENT — see `rbac.ts#ROLE_PERMISSIONS`) can ever
+ * produce, since `bookings.manage.own` on a cross-person (instructor→allievo)
+ * booking always belongs to an actor holding `bookings.read.names` too.
+ *
+ * `personName: null` is the client's ONLY masking signal (Contesto AC 1: "+
+ * flag/shape") — a real booking never has a null person, so the client
+ * renders "Occupato" purely off that, no separate boolean to keep in sync.
+ * `instructorName`/`notes`/`denyReason` are masked TOO, not just the two
+ * name fields (AC 4: "valuta note/tipo e motiva") — all three are free text
+ * (or, for `instructorName`, a second identity) that could reference a
+ * person, so leaving them on the wire would defeat the point of nulling
+ * `personName`; nulling `instructorName` unconditionally also means a masked
+ * dual-instruction booking renders IDENTICALLY to a masked solo one — no
+ * layout tell (AC 4's other requirement). `status`/`cancelledAt`/etc. are
+ * left untouched — none of them name a person, and hiding them would be an
+ * unrequested behavior change (AC 5: admin/staff/instructor/own bookings
+ * stay pixel-identical).
+ */
+function maskBookingNames(actor: Actor, canReadNames: boolean, booking: BookingListItem): BookingListItem {
+  if (canReadNames || booking.personId === actor.personId) return booking;
+  return { ...booking, personName: null, instructorName: null, notes: null, denyReason: null };
 }
 
 type TargetPerson = {
@@ -550,9 +580,12 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
  * Filters `from`/`to` use the SAME semi-open semantics as the overlap check
  * (`endsAt > from`, `startsAt < to`); `aircraftId`/`personId` are exact
  * matches. Ordered `startsAt asc, id asc` (soonest-first, deterministic
- * tie-break). The DTO includes the booking-holder and instructor NAMES
- * (Dev Notes: no privacy requirement in the PRD, an aeroclub is transparent
- * about who has the aircraft when) and `notes`.
+ * tie-break). The DTO includes the booking-holder and instructor NAMES and
+ * `notes` — but MASKED (story 14.5, ratifica R3, superseding the original
+ * "an aeroclub is transparent about who has the aircraft when" call) on
+ * every entry that isn't the actor's own, unless the actor holds
+ * `bookings.read.names` (`maskBookingNames`'s own doc-comment has the full
+ * rationale/shape).
  *
  * `status` (story 12.2, AC 4): defaults to `APPROVED` only — today's "vivi"
  * bookings, same set the legacy UI has always shown (was `ACTIVE`) — an
@@ -561,6 +594,7 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
  */
 export async function listBookings(actor: Actor, query: ListBookingsQuery): Promise<PaginatedResult<BookingListItem>> {
   authorize(actor, 'self.read');
+  const canReadNames = hasPermission(actor, 'bookings.read.names');
 
   const where = {
     status: query.status ? { in: query.status } : ('APPROVED' as const),
@@ -580,7 +614,11 @@ export async function listBookings(actor: Actor, query: ListBookingsQuery): Prom
     prisma.booking.count({ where }),
   ]);
 
-  return paginate(items.map(toListItem), total, query);
+  return paginate(
+    items.map((item) => maskBookingNames(actor, canReadNames, toListItem(item))),
+    total,
+    query,
+  );
 }
 
 /** The calendar's own maximum span (story 7.2, Task 2) — a calendar renders a week at most, so a wider range is always a client error, never a legitimate page. */
@@ -610,9 +648,16 @@ const MAX_CALENDAR_RANGE_MS = 8 * 24 * 60 * 60 * 1000;
  * window with 1000 bookings across every aircraft is already an
  * operationally absurd volume; this only guards against a pathological DB
  * state turning a calendar render into an unbounded response.
+ *
+ * Same masking as `listBookings` (story 14.5, ratifica R3): every entry that
+ * isn't the actor's own is run through `maskBookingNames` too — the
+ * timeline (`schedule.tsx`'s day/week blocks) is fed straight from this
+ * function, so it would otherwise leak names right past the list's own
+ * masking.
  */
 export async function listCalendarBookings(actor: Actor, query: CalendarBookingsQuery): Promise<BookingListItem[]> {
   authorize(actor, 'self.read');
+  const canReadNames = hasPermission(actor, 'bookings.read.names');
 
   const from = new Date(query.from);
   const to = new Date(query.to);
@@ -634,7 +679,7 @@ export async function listCalendarBookings(actor: Actor, query: CalendarBookings
     take: 1000,
   });
 
-  return bookings.map(toListItem);
+  return bookings.map((booking) => maskBookingNames(actor, canReadNames, toListItem(booking)));
 }
 
 // --- Booking edit/cancel (story 7.3, AC 1/2) --------------------------------

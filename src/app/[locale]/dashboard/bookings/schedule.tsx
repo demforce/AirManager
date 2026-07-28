@@ -80,6 +80,8 @@ export type ScheduleLabels = {
   noAircraft: string;
   clampedStartHint: string;
   clampedEndHint: string;
+  /** Story 14.5 (ratifica R3): shown instead of `block.personName` when it's `null` (masked, non-own booking, actor lacks `bookings.read.names`). */
+  occupied: string;
   /** Raw (`t.raw`) `"{count} …"` template — client-interpolated (see `weekBookingsLabel` below), same pattern as `new-booking-form.tsx`'s `outOfServiceSuffix`/`EXPIRED_DOCUMENTS`: the per-day count changes with the client-only aircraft/instructor filter, so it cannot be pre-formatted server-side. */
   weekBookingsCountTemplate: string;
 };
@@ -489,7 +491,7 @@ export function Schedule({
                                 &#9664; <span className="sr-only">{labels.clampedStartHint}</span>
                               </span>
                             ) : null}
-                            {block.personName}
+                            {block.personName ?? labels.occupied}
                           </span>
                           {block.instructorName ? <span className="mono">{block.instructorName}</span> : null}
                         </div>

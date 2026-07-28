@@ -1387,6 +1387,7 @@
   "BookingsPage": {
     "title": "Scheduling",
     "sub": "Aircraft timeline and bookings awaiting approval.",
+    "occupied": "Booked",
     "schedule": {
       "cardTitle": "Schedule",
       "cardTitleToday": "Today's schedule",

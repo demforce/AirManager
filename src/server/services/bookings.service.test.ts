@@ -714,6 +714,73 @@ describe('listBookings (Story 7.1, AC 1, FR-19)', () => {
   });
 });
 
+describe('listBookings — privacy masking (Story 14.5, AC 1/2/6, ratifica R3)', () => {
+  // `CREATED_BOOKING_ROW.personId` is 'person_pilot' — every masking test
+  // below picks an actor `personId` that either matches it (own, unmasked)
+  // or doesn't (masked, unless the actor holds `bookings.read.names`).
+  const OTHERS_BOOKING_ROW = {
+    ...CREATED_BOOKING_ROW,
+    instructorProfileId: 'instr_profile_1',
+    instructorProfile: { person: { firstName: 'Livia', lastName: 'Bernasconi' } },
+    notes: 'Recupero volo di gruppo',
+    status: 'DENIED' as const,
+    denyReason: 'Aeromobile non disponibile',
+  };
+
+  it("masks personName/instructorName/notes/denyReason on a booking that is NOT the actor's own, for a pilot without bookings.read.names", async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]);
+    bookingCount.mockResolvedValue(1);
+
+    const result = await listBookings(pilotActor('someone_else'), { page: 1, pageSize: 20 });
+
+    expect(result.items[0]).toMatchObject({ personName: null, instructorName: null, notes: null, denyReason: null });
+    // Untouched: masking never hides operational fields, only identity-bearing ones.
+    expect(result.items[0]?.status).toBe('DENIED');
+    expect(result.items[0]?.aircraftRegistration).toBe('I-ABCD');
+    expect(result.items[0]?.personId).toBe('person_pilot');
+  });
+
+  it("does NOT mask a pilot's OWN booking (personId === actor.personId)", async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]); // personId: 'person_pilot'
+    bookingCount.mockResolvedValue(1);
+
+    const result = await listBookings(pilotActor('person_pilot'), { page: 1, pageSize: 20 });
+
+    expect(result.items[0]?.personName).toBe('Mario Rossi');
+    expect(result.items[0]?.instructorName).toBe('Livia Bernasconi');
+    expect(result.items[0]?.notes).toBe('Recupero volo di gruppo');
+    expect(result.items[0]?.denyReason).toBe('Aeromobile non disponibile');
+  });
+
+  it('masks the SAME way for a student (no bookings.read.names either)', async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]);
+    bookingCount.mockResolvedValue(1);
+
+    const result = await listBookings(studentActor(), { page: 1, pageSize: 20 }); // personId 'person_student' !== 'person_pilot'
+
+    expect(result.items[0]?.personName).toBeNull();
+  });
+
+  it("does NOT mask for an INSTRUCTOR (holds bookings.read.names) even on a booking that is neither theirs nor their own", async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]);
+    bookingCount.mockResolvedValue(1);
+
+    const result = await listBookings(instructorActor('someone_else'), { page: 1, pageSize: 20 });
+
+    expect(result.items[0]?.personName).toBe('Mario Rossi');
+    expect(result.items[0]?.instructorName).toBe('Livia Bernasconi');
+  });
+
+  it('does NOT mask for STAFF/ADMIN either (bookings.read.names)', async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]);
+    bookingCount.mockResolvedValue(1);
+
+    const result = await listBookings(staffActor(), { page: 1, pageSize: 20 });
+
+    expect(result.items[0]?.personName).toBe('Mario Rossi');
+  });
+});
+
 describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
   const FROM = '2026-08-03T00:00:00.000Z';
   const TO = '2026-08-04T00:00:00.000Z';
@@ -806,6 +873,26 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
     const result = await listCalendarBookings(staffActor(), { from: FROM, to: TO });
 
     expect(result[0]).toMatchObject({ personName: 'Mario Rossi', instructorName: 'Livia Bernasconi', aircraftRegistration: 'I-ABCD' });
+  });
+
+  // --- Privacy masking (Story 14.5, AC 1/2/6, ratifica R3) — the timeline is
+  // fed straight from this function, so it must mask exactly like `listBookings`.
+  it("masks personName/instructorName on a non-own booking for a pilot (the timeline must not leak names either)", async () => {
+    bookingFindMany.mockResolvedValue([
+      { ...CREATED_BOOKING_ROW, instructorProfileId: 'instr_profile_1', instructorProfile: { person: { firstName: 'Livia', lastName: 'Bernasconi' } } },
+    ]);
+
+    const result = await listCalendarBookings(pilotActor('someone_else'), { from: FROM, to: TO });
+
+    expect(result[0]).toMatchObject({ personName: null, instructorName: null });
+  });
+
+  it("does NOT mask the pilot's own booking on the timeline", async () => {
+    bookingFindMany.mockResolvedValue([CREATED_BOOKING_ROW]); // personId: 'person_pilot'
+
+    const result = await listCalendarBookings(pilotActor('person_pilot'), { from: FROM, to: TO });
+
+    expect(result[0]?.personName).toBe('Mario Rossi');
   });
 });
 

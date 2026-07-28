@@ -39,7 +39,14 @@ export type Permission =
   // `settings.manage`'s `InstructorRate` — the amount CHARGED to the
   // student). ADMIN-only, deliberately never granted to STAFF: reading the
   // compensation summary/export stays on the wider `finance.manage`.
-  | 'payouts.manage';
+  | 'payouts.manage'
+  // Story 14.5 (ratifica R3): sees the pilot/instructor NAMES on a booking
+  // that isn't the actor's own — everyone still sees aircraft+time (that's
+  // `self.read`, unconditional); without this permission, a non-own booking
+  // is masked to "Occupato" (`bookings.service.ts#listBookings`/
+  // `listCalendarBookings`). Granted to ADMIN/STAFF/INSTRUCTOR, never
+  // PILOT/STUDENT.
+  | 'bookings.read.names';
 
 const ALL_PERMISSIONS: Permission[] = [
   'people.read',
@@ -55,6 +62,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'users.manage',
   'self.read',
   'payouts.manage',
+  'bookings.read.names',
 ];
 
 /**
@@ -67,15 +75,18 @@ const ALL_PERMISSIONS: Permission[] = [
  *   administration (FR-3 reserves user management to admin).
  * - `instructor`: self-service plus their own bookings (story 12.13: the
  *   diario/assegnazioni scuola were retired — instructors keep the same
- *   permissions as `pilot`, `self.read` + `bookings.manage.own`).
+ *   permissions as `pilot`, `self.read` + `bookings.manage.own`), PLUS
+ *   `bookings.read.names` (story 14.5, ratifica R3: an istruttore sees who
+ *   has booked what, unmasked — pilot/student do not).
  * - `pilot`: pure self-service — their own data, bookings, account,
- *   expiries (FR-2 "pilota: i propri dati").
+ *   expiries (FR-2 "pilota: i propri dati"). Sees "Occupato" (not the
+ *   name) on a booking that isn't their own (story 14.5).
  * - `student`: self-service on their own data/account/expiries — but NOT
  *   `bookings.manage.own` (story 7.1, FR-18 `[ASSUMPTION]`): a school
  *   booking is made by the instructor or staff on the allievo's behalf, an
  *   allievo never books solo. A dual-role pilot+student keeps the
  *   permission via the union with PILOT (`getPermissions`), same as any
- *   other multi-role actor.
+ *   other multi-role actor. Same "Occupato" masking as pilot (story 14.5).
  */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ADMIN: ALL_PERMISSIONS,
@@ -93,8 +104,11 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // above; instructor/pilot/student never hold it.
     'ppr.manage',
     'self.read',
+    // Story 14.5 (ratifica R3): STAFF still exists until 14.9 removes the
+    // role — kept here for coherence in the meantime.
+    'bookings.read.names',
   ],
-  INSTRUCTOR: ['self.read', 'bookings.manage.own'],
+  INSTRUCTOR: ['self.read', 'bookings.manage.own', 'bookings.read.names'],
   PILOT: ['self.read', 'bookings.manage.own'],
   // Story 7.1: no `bookings.manage.own` — see the doc-comment above.
   STUDENT: ['self.read'],

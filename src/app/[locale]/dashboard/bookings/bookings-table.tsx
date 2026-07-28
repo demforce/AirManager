@@ -29,7 +29,8 @@ export type BookingRowDto = {
   aircraftId: string;
   aircraftRegistration: string;
   personId: string;
-  personName: string;
+  /** `null` on a masked (non-own, `bookings.read.names`-less) row — story 14.5, ratifica R3: rendered as `labels.occupied`. */
+  personName: string | null;
   instructorProfileId: string | null;
   instructorName: string | null;
   /** ISO 8601 instant (server `Date` already serialized). */
@@ -47,6 +48,8 @@ export type BookingsTableLabels = {
   cardTitle: string;
   pendingSummary: string;
   newButton: string;
+  /** Story 14.5 (ratifica R3): shown instead of `booking.personName` when it's `null` (masked). */
+  occupied: string;
   exportLabel: string;
   exportXls: string;
   /** Story 13.7, AC 2 — the PDF counterpart of `exportXls` (was `pdfLabel=""`, xlsx-only). */
@@ -344,7 +347,7 @@ export function BookingsTable({
           return (
             <div key={booking.id} className="student-row" style={{ gridTemplateColumns: cols }} data-testid="booking-row">
               <div>
-                <div className="student-name">{booking.personName}</div>
+                <div className="student-name">{booking.personName ?? labels.occupied}</div>
                 {subLine ? (
                   <div className="student-sub mono" style={{ fontSize: 11 }}>
                     {subLine}

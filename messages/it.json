@@ -1387,6 +1387,7 @@
   "BookingsPage": {
     "title": "Pianificazione",
     "sub": "Timeline aeromobili e prenotazioni in attesa di approvazione.",
+    "occupied": "Occupato",
     "schedule": {
       "cardTitle": "Programma",
       "cardTitleToday": "Programma di oggi",

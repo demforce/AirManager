@@ -42,6 +42,7 @@ export function buildScheduleLabels(t: Translator): ScheduleLabels {
     clampedStartHint: t('calendar.clampedStartHint'),
     clampedEndHint: t('calendar.clampedEndHint'),
     weekBookingsCountTemplate: t.raw('schedule.weekBookingsCount') as string,
+    occupied: t('occupied'),
   };
 }
 
@@ -119,6 +120,7 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
     cardTitle: t('list.cardTitle'),
     pendingSummary: t.raw('list.pendingSummary') as string,
     newButton: t('list.newButton'),
+    occupied: t('occupied'),
     exportLabel: t('list.exportLabel'),
     exportXls: t('list.exportXls'),
     exportPdf: t('list.exportPdf'),

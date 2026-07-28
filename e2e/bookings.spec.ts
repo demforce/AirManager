@@ -496,13 +496,15 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
 
   // CONTRACT CHANGE (story 7.2, FR-19): the calendar view opened `bookings`
   // to every authenticated role via `self.read` — an allievo alone now SEES
-  // the "Prenotazioni" nav item and the calendar (with prenotante names,
-  // FR-19), same pattern as story 6.2 did for 6.1's nav test when
-  // `expiries` gained `self.read`. What does NOT change: no create form,
-  // and a direct `POST /api/v1/bookings` still answers 403 (the calendar's
-  // own `GET .../calendar` is `self.read`-gated, creation stays
-  // `bookings.manage.*`-gated).
-  test('an allievo alone sees "Prenotazioni" and the calendar with prenotante names, but no create form; a direct POST still gets 403', async ({
+  // the "Prenotazioni" nav item and the calendar, same pattern as story 6.2
+  // did for 6.1's nav test when `expiries` gained `self.read`. Story 14.5
+  // (ratifica R3) SUPERSEDES the original "with prenotante names" behavior
+  // this test used to assert — an allievo without `bookings.read.names` now
+  // sees "Occupato" (aircraft/time only) on someone else's booking, never
+  // the name. What does NOT change: no create form, and a direct `POST
+  // /api/v1/bookings` still answers 403 (the calendar's own `GET
+  // .../calendar` is `self.read`-gated, creation stays `bookings.manage.*`-gated).
+  test('an allievo alone sees "Prenotazioni" and the calendar with "Occupato" (never the pilot\'s name), but no create form; a direct POST still gets 403', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -517,9 +519,9 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const tomorrow = nextHref?.match(/date=(\d{4}-\d{2}-\d{2})/)?.[1];
     if (!tomorrow) throw new Error(`Could not extract tomorrow's date from calendar-next href: ${nextHref}`);
 
-    // A booking visible to EVERY authenticated role (FR-19) — the allievo
-    // must see the PILOT's name on the calendar despite having no booking
-    // permission at all.
+    // A booking visible to EVERY authenticated role (FR-19) — but story 14.5
+    // (ratifica R3) means the allievo below must NOT see the pilot's name on
+    // it, despite the block itself still being visible.
     const bookingResponse = await page.request.post('/api/v1/bookings', {
       data: {
         aircraftId: aircraft.id,
@@ -545,10 +547,24 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // Story 12.3, AC 2: the day view's aircraft columns became rows (the
     // prototype's horizontal timeline) — `calendar-aircraft-column`/
     // `calendar-block` renamed to `schedule-aircraft-row`/`schedule-block`.
+    // Story 14.5: the block is found by AIRCRAFT alone now (no name on it to
+    // filter by) — there is exactly one block on this run-unique aircraft row.
     const row = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
-    const block = row.getByTestId('schedule-block').filter({ hasText: pilot.lastName });
+    const block = row.getByTestId('schedule-block');
     await expect(block).toBeVisible();
-    await expect(block).toContainText(pilot.firstName);
+    await expect(block).toContainText('Occupato');
+    await expect(block).not.toContainText(pilot.lastName);
+    await expect(block).not.toContainText(pilot.firstName);
+
+    // The RAW API response (AC 1: "verifica sulla risposta API grezza, non
+    // sul render") — the name must never even reach the wire for this actor.
+    const calendarFrom = `${tomorrow}T00:00:00.000Z`;
+    const calendarTo = `${tomorrow}T23:59:59.000Z`;
+    const rawResponse = await page.request.get(`/api/v1/bookings/calendar?from=${calendarFrom}&to=${calendarTo}`);
+    expect(rawResponse.status()).toBe(200);
+    const rawBookings = (await rawResponse.json()) as Array<{ aircraftId: string; personName: string | null }>;
+    const rawBlock = rawBookings.find((item) => item.aircraftId === aircraft.id);
+    expect(rawBlock?.personName).toBeNull();
 
     // Story 12.3, AC 3: `NewBookingForm` (and `EditBookingForm`) are only
     // ever MOUNTED for an actor who could ever open one (`canCreate`) — an
@@ -1659,20 +1675,100 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
 
     // Still logged in as PILOT (own path): sees the shared list (FR-19,
     // `self.read`), with the "other pilot's" row present but action-less.
-    // Disambiguate rows by PERSON NAME, never by H:MM (CLAUDE.md lesson
-    // 11.2, epic 11: a substring time like "11:00" would also match
-    // "1:00" — the two rows here are distinguished by the two run-unique
-    // people involved instead). `findBookingRow` (review 12.3 F5): never
-    // assumes page 1 on a dirty, never-reset dev DB.
+    // Disambiguate the OWN row by its PERSON NAME, never by H:MM (CLAUDE.md
+    // lesson 11.2, epic 11: a substring time like "11:00" would also match
+    // "1:00"). `findBookingRow` (review 12.3 F5): never assumes page 1 on a
+    // dirty, never-reset dev DB.
     const ownRow = await findBookingRow(page, [aircraft.registration, me.person.lastName]);
     await expect(ownRow.getByTestId('booking-move-action')).toBeVisible();
     await expect(ownRow.getByTestId('booking-cancel-action')).toBeVisible();
     await expect(ownRow.getByTestId('booking-approve-action')).toHaveCount(0);
     await expect(ownRow.getByTestId('booking-reject-action')).toHaveCount(0);
 
-    const otherRow = await findBookingRow(page, [aircraft.registration, otherPilot.lastName]);
+    // Story 14.5 (ratifica R3): the OTHER row can no longer be disambiguated
+    // by `otherPilot.lastName` — a plain PILOT actor (no `bookings.read.names`)
+    // now sees "Occupato" instead, so that label is what disambiguates it
+    // (the own row above never reads "Occupato", only a masked one does).
+    const otherRow = await findBookingRow(page, [aircraft.registration, 'Occupato']);
+    await expect(otherRow).not.toContainText(otherPilot.lastName);
     await expect(otherRow.getByTestId('booking-move-action')).toHaveCount(0);
     await expect(otherRow.getByTestId('booking-cancel-action')).toHaveCount(0);
     await expect(otherRow.getByTestId('booking-approve-action')).toHaveCount(0);
+  });
+});
+
+test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () => {
+  test('pilot sees full data on their OWN booking (table AND schedule) and "Occupato" on someone else\'s; an instructor (bookings.read.names) still sees real names on a booking that is neither theirs', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftMine = await createAircraft(page);
+    const aircraftOther = await createAircraft(page);
+    const otherPilot = await createPilotPerson(page);
+    const instructorPassword = `IstruttorePrivacy${uniqueSuffix()}!`;
+    const instructor = await createInstructorWithLogin(page, instructorPassword);
+
+    // `FUTURE_DAY` (shared, deliberately far-future fixture — this file's own
+    // top-of-file constant), NOT "tomorrow": "tomorrow" is a heavily-contended
+    // shared bucket other specs' `EMBED_BOOKINGS_PAGE_SIZE`-capped Overview
+    // card relies on being small (review-discovered contention: this test's
+    // own two extra "tomorrow" bookings pushed a concurrent
+    // `home-dashboard.spec.ts` assertion off that 8-row page under
+    // `fullyParallel`) — `FUTURE_DAY` sorts far enough out that it never
+    // competes for anyone else's "soonest N" window, same reasoning as every
+    // other table-focused test in this file that already uses it.
+    const otherBookingResponse = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraftOther.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T04:00:00.000Z`, endsAt: `${FUTURE_DAY}T05:00:00.000Z` },
+    });
+    expect(otherBookingResponse.status()).toBe(201);
+
+    // The seed PILOT books their OWN slot (own-path -> PENDING), then admin approves it.
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    const me = await (await page.request.get('/api/v1/me')).json();
+    const ownBookingResponse = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraftMine.id, personId: me.person.id, startsAt: `${FUTURE_DAY}T06:00:00.000Z`, endsAt: `${FUTURE_DAY}T07:00:00.000Z` },
+    });
+    expect(ownBookingResponse.status()).toBe(201);
+    const { booking: ownBooking } = (await ownBookingResponse.json()) as { booking: { id: string } };
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const approveResponse = await page.request.post(`/api/v1/bookings/${ownBooking.id}/transition`, { data: { to: 'APPROVED' } });
+    expect(approveResponse.status()).toBe(200);
+
+    // --- Pilot: schedule (day view) ---------------------------------------
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
+
+    const ownScheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraftMine.registration });
+    const ownBlock = ownScheduleRow.getByTestId('schedule-block');
+    await expect(ownBlock).toBeVisible();
+    await expect(ownBlock).toContainText(me.person.firstName);
+    await expect(ownBlock).not.toContainText('Occupato');
+
+    const otherScheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraftOther.registration });
+    const otherBlock = otherScheduleRow.getByTestId('schedule-block');
+    await expect(otherBlock).toBeVisible();
+    await expect(otherBlock).toContainText('Occupato');
+    await expect(otherBlock).not.toContainText(otherPilot.lastName);
+
+    // --- Pilot: table ("Prenotazioni") ------------------------------------
+    await page.goto('/it/dashboard/bookings');
+    const ownTableRow = page.getByTestId('booking-row').filter({ hasText: aircraftMine.registration });
+    await expect(ownTableRow).toContainText(me.person.firstName);
+
+    const otherTableRow = page.getByTestId('booking-row').filter({ hasText: aircraftOther.registration });
+    await expect(otherTableRow).toContainText('Occupato');
+    await expect(otherTableRow).not.toContainText(otherPilot.lastName);
+
+    // --- Instructor: sees real names, on a booking that is NEITHER theirs
+    // nor their own (bookings.read.names, not ownership) ------------------
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, instructorPassword);
+    await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
+    const instructorScheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraftOther.registration });
+    await expect(instructorScheduleRow.getByTestId('schedule-block')).toContainText(otherPilot.firstName);
   });
 });
