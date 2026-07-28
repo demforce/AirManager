@@ -371,25 +371,34 @@ export function Schedule({
                     ))}
                   </div>
                 </div>
-                <div className="pop-row">
-                  <div className="fld-label">{labels.filtersInstructor}</div>
-                  <div className="segmented" style={{ flexWrap: 'wrap' }}>
-                    <button type="button" className={filterInstructorId === 'all' ? 'on' : ''} onClick={() => setFilterInstructorId('all')}>
-                      {labels.filtersAll}
-                    </button>
-                    {instructors.map((instructor) => (
-                      <button
-                        key={instructor.instructorProfileId}
-                        type="button"
-                        className={filterInstructorId === instructor.instructorProfileId ? 'on' : ''}
-                        onClick={() => setFilterInstructorId(instructor.instructorProfileId)}
-                        data-testid={`schedule-filter-instructor-${instructor.instructorProfileId}`}
-                      >
-                        {instructor.lastName}
+                {/* Review F1 (story 14.5): `instructors` arrives EMPTY for an
+                    actor without `bookings.read.names` (`page.tsx` gates the
+                    fetch) — rendering this group off of that, rather than
+                    unconditionally, means a masked actor never sees an
+                    instructor roster (a filter that would match against
+                    masked blocks' now-nulled `instructorProfileId` and so
+                    "filter" nothing anyway) — no anagrafica reaches the DOM. */}
+                {instructors.length > 0 ? (
+                  <div className="pop-row">
+                    <div className="fld-label">{labels.filtersInstructor}</div>
+                    <div className="segmented" style={{ flexWrap: 'wrap' }}>
+                      <button type="button" className={filterInstructorId === 'all' ? 'on' : ''} onClick={() => setFilterInstructorId('all')}>
+                        {labels.filtersAll}
                       </button>
-                    ))}
+                      {instructors.map((instructor) => (
+                        <button
+                          key={instructor.instructorProfileId}
+                          type="button"
+                          className={filterInstructorId === instructor.instructorProfileId ? 'on' : ''}
+                          onClick={() => setFilterInstructorId(instructor.instructorProfileId)}
+                          data-testid={`schedule-filter-instructor-${instructor.instructorProfileId}`}
+                        >
+                          {instructor.lastName}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : null}
                 <div className="pop-foot">
                   <button
                     type="button"

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import ExcelJS from 'exceljs';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -338,6 +339,44 @@ function soonestFutureSlot(): { startsAt: string; endsAt: string } {
   const start = new Date(Date.now() + 10 * 60 * 1000);
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return { startsAt: toDatetimeLocal(start), endsAt: toDatetimeLocal(end) };
+}
+
+/**
+ * Walks the paginated "Prossime prenotazioni" list forward from page 1
+ * until a row matching `filterText` appears (review 12.3 F5): the list is
+ * sorted `startsAt asc` and, on a never-reset dev DB (plus story 12.3 F7's
+ * wider 48h-back window), a fixture booking's exact page number depends on
+ * how many OTHER bookings currently outrank it — never assumed to be page 1
+ * (review F2, story 14.5: `FUTURE_DAY`'s own accumulated volume across every
+ * run of this file makes that assumption fail deterministically once the
+ * pile crosses one page). Hoisted to module scope (was local to the
+ * "Booking approval workflow UI" describe below) so the "Booking privacy
+ * masking" describe can reuse it too — same reason, same fix.
+ */
+async function findBookingRow(page: Page, filterText: string | string[]): Promise<ReturnType<Page['getByTestId']>> {
+  const filterTexts = Array.isArray(filterText) ? filterText : [filterText];
+  const MAX_PAGES = 50;
+  // A direct `?page=N` navigation per attempt, not repeated `booking-page-next`
+  // clicks: clicking a `<Link>` through several client-side (SPA) navigations
+  // in a tight loop proved unreliable in this environment (the "next" link
+  // intermittently reported "not enabled" even with `aria-disabled="false"`,
+  // hanging until the test timeout) — a plain full navigation is the SAME
+  // reliable primitive `gotoBookingsAndWaitForHydration` already uses
+  // elsewhere in this file for the identical hydration-race reason. An
+  // out-of-range `?page` is clamped server-side (`page.tsx`), so this is
+  // always safe even past the real last page.
+  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
+    await page.goto(`/it/dashboard/bookings?page=${pageNumber}`);
+    await page.waitForLoadState('networkidle');
+    const row = filterTexts.reduce((locator, text) => locator.filter({ hasText: text }), page.getByTestId('booking-row'));
+    if ((await row.count()) > 0) return row;
+    const statusLocator = page.getByTestId('booking-pagination-status');
+    if ((await statusLocator.count()) === 0) break; // a single page has no pagination controls at all
+    const statusText = (await statusLocator.textContent()) ?? '';
+    const totalPages = Number.parseInt(statusText.split('/')[1]?.trim() ?? '1', 10);
+    if (pageNumber >= totalPages) break;
+  }
+  throw new Error(`Booking row matching "${filterText}" not found within ${MAX_PAGES} pages of /dashboard/bookings`);
 }
 
 test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
@@ -1487,39 +1526,6 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
 
 test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
   /**
-   * Walks the paginated "Prossime prenotazioni" list forward from page 1
-   * until a row matching `filterText` appears (review 12.3 F5): the list is
-   * sorted `startsAt asc` and, on a never-reset dev DB (plus story 12.3 F7's
-   * wider 48h-back window), a fixture booking's exact page number depends on
-   * how many OTHER bookings currently outrank it — never assumed to be page 1.
-   */
-  async function findBookingRow(page: Page, filterText: string | string[]): Promise<ReturnType<Page['getByTestId']>> {
-    const filterTexts = Array.isArray(filterText) ? filterText : [filterText];
-    const MAX_PAGES = 50;
-    // A direct `?page=N` navigation per attempt, not repeated `booking-page-next`
-    // clicks: clicking a `<Link>` through several client-side (SPA) navigations
-    // in a tight loop proved unreliable in this environment (the "next" link
-    // intermittently reported "not enabled" even with `aria-disabled="false"`,
-    // hanging until the test timeout) — a plain full navigation is the SAME
-    // reliable primitive `gotoBookingsAndWaitForHydration` already uses
-    // elsewhere in this file for the identical hydration-race reason. An
-    // out-of-range `?page` is clamped server-side (`page.tsx`), so this is
-    // always safe even past the real last page.
-    for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
-      await page.goto(`/it/dashboard/bookings?page=${pageNumber}`);
-      await page.waitForLoadState('networkidle');
-      const row = filterTexts.reduce((locator, text) => locator.filter({ hasText: text }), page.getByTestId('booking-row'));
-      if ((await row.count()) > 0) return row;
-      const statusLocator = page.getByTestId('booking-pagination-status');
-      if ((await statusLocator.count()) === 0) break; // a single page has no pagination controls at all
-      const statusText = (await statusLocator.textContent()) ?? '';
-      const totalPages = Number.parseInt(statusText.split('/')[1]?.trim() ?? '1', 10);
-      if (pageNumber >= totalPages) break;
-    }
-    throw new Error(`Booking row matching "${filterText}" not found within ${MAX_PAGES} pages of /dashboard/bookings`);
-  }
-
-  /**
    * Creates a run-unique aircraft plus a PENDING booking (own-path: a
    * freshly logged-in pilot creates it, story 12.2 AC 2 — `bookings.manage.own`
    * always starts PENDING), then logs back in as staff and lands on the
@@ -1754,14 +1760,44 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
     await expect(otherBlock).toContainText('Occupato');
     await expect(otherBlock).not.toContainText(otherPilot.lastName);
 
+    // Review F1 — THE bypass: the instructor filter group must not even be
+    // IN THE DOM for a pilot (no `bookings.read.names`). `page.tsx` no
+    // longer fetches the instructor roster at all for this actor; without
+    // that anagrafica, `schedule.tsx` renders no filter group to leak it
+    // through (its own doc-comment) — previously the roster travelled in
+    // the RSC payload regardless of masking, letting a client-side filter
+    // join id -> surname against the masked blocks' `instructorProfileId`
+    // and de-anonymize every one of them.
+    await page.getByTestId('schedule-filter-toggle').click();
+    await expect(page.locator('[data-testid^="schedule-filter-instructor-"]')).toHaveCount(0);
+
     // --- Pilot: table ("Prenotazioni") ------------------------------------
-    await page.goto('/it/dashboard/bookings');
-    const ownTableRow = page.getByTestId('booking-row').filter({ hasText: aircraftMine.registration });
+    // Review F2: NEVER assume page 1 — `FUTURE_DAY`'s own accumulated volume
+    // across every run of this file (65+ measured by the reviewer) routinely
+    // pushes either row past `BOOKINGS_PAGE_SIZE`; `findBookingRow` (module
+    // scope, hoisted from "Booking approval workflow UI" for exactly this)
+    // walks pages until it finds the row, same as every other lookup in this
+    // file that touches the shared `FUTURE_DAY` pile.
+    const ownTableRow = await findBookingRow(page, [aircraftMine.registration, me.person.firstName]);
     await expect(ownTableRow).toContainText(me.person.firstName);
 
-    const otherTableRow = page.getByTestId('booking-row').filter({ hasText: aircraftOther.registration });
+    const otherTableRow = await findBookingRow(page, [aircraftOther.registration, 'Occupato']);
     await expect(otherTableRow).toContainText('Occupato');
     await expect(otherTableRow).not.toContainText(otherPilot.lastName);
+
+    // --- Pilot: raw API response (AC 1 — "verifica sulla risposta API
+    // grezza, non solo sul render") + review F7: `GET /api/v1/bookings`
+    // itself, not just `/calendar` (the only endpoint the original test
+    // checked raw). Filtered by `aircraftId` (run-unique, review F2's own
+    // lesson) rather than a `FUTURE_DAY`-wide date range — guaranteed
+    // exactly ONE row regardless of how many OTHER bookings this shared
+    // dev DB has accumulated on that same far-future day. ------------------
+    const rawListResponse = await page.request.get(`/api/v1/bookings?aircraftId=${aircraftOther.id}`);
+    expect(rawListResponse.status()).toBe(200);
+    const rawBookings = (await rawListResponse.json()) as { items: Array<{ personName: string | null; instructorName: string | null }> };
+    expect(rawBookings.items).toHaveLength(1);
+    expect(rawBookings.items[0]?.personName).toBeNull();
+    expect(rawBookings.items[0]?.instructorName).toBeNull();
 
     // --- Instructor: sees real names, on a booking that is NEITHER theirs
     // nor their own (bookings.read.names, not ownership) ------------------
@@ -1770,5 +1806,39 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
     await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
     const instructorScheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraftOther.registration });
     await expect(instructorScheduleRow.getByTestId('schedule-block')).toContainText(otherPilot.firstName);
+  });
+
+  // Review F5: AC 6 ("il PDF del pilota senza nomi altrui") had no automated
+  // coverage at all — the unit suite already injects `personName: null`
+  // straight into `exportBookingsPdf`, which can never regress the masking
+  // itself. `?format=xlsx` (same shared `listBookings` masking, same
+  // "Occupato" fallback — `exports.service.ts#exportBookingsXlsx`) is far
+  // easier to assert cell-by-cell than a PDF buffer, same convention as
+  // `exports.spec.ts`'s own ExcelJS-based checks.
+  test('AC 6: a pilot\'s xlsx export shows "Occupato" instead of another pilot\'s surname', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const otherPilot = await createPilotPerson(page);
+
+    const bookingResponse = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T18:00:00.000Z`, endsAt: `${FUTURE_DAY}T19:00:00.000Z` },
+    });
+    expect(bookingResponse.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+
+    // Filtered by the run-unique `aircraftId` (review F2's own lesson) —
+    // exactly one row regardless of the shared `FUTURE_DAY` pile's volume.
+    const xlsxResponse = await page.request.get(`/api/v1/bookings?format=xlsx&aircraftId=${aircraft.id}`);
+    expect(xlsxResponse.status()).toBe(200);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load((await xlsxResponse.body()) as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+    const sheet = workbook.worksheets[0]!;
+    expect(sheet.rowCount).toBe(2); // header + the single masked row
+    const pilotCellValue = sheet.getRow(2).getCell(2).value;
+    expect(pilotCellValue).toBe('Occupato');
+    expect(String(pilotCellValue)).not.toContain(otherPilot.lastName);
   });
 });

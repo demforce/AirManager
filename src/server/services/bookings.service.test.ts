@@ -727,13 +727,17 @@ describe('listBookings — privacy masking (Story 14.5, AC 1/2/6, ratifica R3)',
     denyReason: 'Aeromobile non disponibile',
   };
 
-  it("masks personName/instructorName/notes/denyReason on a booking that is NOT the actor's own, for a pilot without bookings.read.names", async () => {
+  it("masks personName/instructorProfileId/instructorName/notes/denyReason on a booking that is NOT the actor's own, for a pilot without bookings.read.names", async () => {
     bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]);
     bookingCount.mockResolvedValue(1);
 
     const result = await listBookings(pilotActor('someone_else'), { page: 1, pageSize: 20 });
 
-    expect(result.items[0]).toMatchObject({ personName: null, instructorName: null, notes: null, denyReason: null });
+    // Review F1: `instructorProfileId` is masked TOO, not just the two name
+    // fields — this was the actual bypass (a client-side instructor filter
+    // joined the unmasked id against a full instructor roster to
+    // de-anonymize every masked block).
+    expect(result.items[0]).toMatchObject({ personName: null, instructorProfileId: null, instructorName: null, notes: null, denyReason: null });
     // Untouched: masking never hides operational fields, only identity-bearing ones.
     expect(result.items[0]?.status).toBe('DENIED');
     expect(result.items[0]?.aircraftRegistration).toBe('I-ABCD');
@@ -769,6 +773,10 @@ describe('listBookings — privacy masking (Story 14.5, AC 1/2/6, ratifica R3)',
 
     expect(result.items[0]?.personName).toBe('Mario Rossi');
     expect(result.items[0]?.instructorName).toBe('Livia Bernasconi');
+    // Review F4 — a "resolved once per request, only when it can matter"
+    // guard: an actor who already reads every name never needs the extra
+    // `getOwnInstructorProfileId` query at all.
+    expect(instructorProfileFindUniqueMock).not.toHaveBeenCalled();
   });
 
   it('does NOT mask for STAFF/ADMIN either (bookings.read.names)', async () => {
@@ -778,6 +786,48 @@ describe('listBookings — privacy masking (Story 14.5, AC 1/2/6, ratifica R3)',
     const result = await listBookings(staffActor(), { page: 1, pageSize: 20 });
 
     expect(result.items[0]?.personName).toBe('Mario Rossi');
+  });
+
+  it("treats booking.instructorProfileId === the actor's OWN active InstructorProfile as own too (review F4 — aligned with assertOwnAccessAndTiming's own definition, used by update/cancel), even for an actor without bookings.read.names", async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]); // instructorProfileId: 'instr_profile_1'
+    bookingCount.mockResolvedValue(1);
+    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: null });
+
+    const result = await listBookings(pilotActor('someone_else'), { page: 1, pageSize: 20 });
+
+    expect(result.items[0]?.personName).toBe('Mario Rossi');
+    expect(result.items[0]?.instructorName).toBe('Livia Bernasconi');
+  });
+
+  it("does NOT treat a DEACTIVATED own InstructorProfile as own (getOwnInstructorProfileId's own active-only rule applies here too)", async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]); // instructorProfileId: 'instr_profile_1'
+    bookingCount.mockResolvedValue(1);
+    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: new Date('2025-01-01T00:00:00.000Z') });
+
+    const result = await listBookings(pilotActor('someone_else'), { page: 1, pageSize: 20 });
+
+    expect(result.items[0]?.personName).toBeNull();
+  });
+});
+
+describe('listBookings — personId filter guard (Story 14.5 review F3)', () => {
+  it("rejects a PILOT filtering by someone ELSE's personId with a 403, before any query — same guard shape as flights.service.ts#authorizeFlightsQuery (masked names alone would still let this actor enumerate one person's bookings)", async () => {
+    await expect(listBookings(pilotActor('person_pilot'), { page: 1, pageSize: 20, personId: 'someone_else' })).rejects.toThrow(ForbiddenError);
+    expect(bookingFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it('allows a PILOT filtering by their OWN personId', async () => {
+    bookingFindMany.mockResolvedValue([]);
+    bookingCount.mockResolvedValue(0);
+
+    await expect(listBookings(pilotActor('person_pilot'), { page: 1, pageSize: 20, personId: 'person_pilot' })).resolves.toBeDefined();
+  });
+
+  it('allows STAFF (holds bookings.read.names) to filter by ANY personId', async () => {
+    bookingFindMany.mockResolvedValue([]);
+    bookingCount.mockResolvedValue(0);
+
+    await expect(listBookings(staffActor(), { page: 1, pageSize: 20, personId: 'someone_else' })).resolves.toBeDefined();
   });
 });
 
@@ -877,14 +927,17 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
 
   // --- Privacy masking (Story 14.5, AC 1/2/6, ratifica R3) — the timeline is
   // fed straight from this function, so it must mask exactly like `listBookings`.
-  it("masks personName/instructorName on a non-own booking for a pilot (the timeline must not leak names either)", async () => {
+  it("masks personName/instructorProfileId/instructorName on a non-own booking for a pilot (the timeline must not leak names, OR the raw instructor id, either)", async () => {
     bookingFindMany.mockResolvedValue([
       { ...CREATED_BOOKING_ROW, instructorProfileId: 'instr_profile_1', instructorProfile: { person: { firstName: 'Livia', lastName: 'Bernasconi' } } },
     ]);
 
     const result = await listCalendarBookings(pilotActor('someone_else'), { from: FROM, to: TO });
 
-    expect(result[0]).toMatchObject({ personName: null, instructorName: null });
+    // Review F1: `instructorProfileId` masked too — this is the field
+    // `schedule.tsx`'s client-side instructor filter matched against the
+    // (previously unmasked) roster to de-anonymize a masked block.
+    expect(result[0]).toMatchObject({ personName: null, instructorProfileId: null, instructorName: null });
   });
 
   it("does NOT mask the pilot's own booking on the timeline", async () => {
@@ -893,6 +946,26 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
     const result = await listCalendarBookings(pilotActor('person_pilot'), { from: FROM, to: TO });
 
     expect(result[0]?.personName).toBe('Mario Rossi');
+  });
+
+  it("treats booking.instructorProfileId === the actor's OWN active InstructorProfile as own too (review F4, same alignment as listBookings), even without bookings.read.names", async () => {
+    bookingFindMany.mockResolvedValue([
+      { ...CREATED_BOOKING_ROW, instructorProfileId: 'instr_profile_1', instructorProfile: { person: { firstName: 'Livia', lastName: 'Bernasconi' } } },
+    ]);
+    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: null });
+
+    const result = await listCalendarBookings(pilotActor('someone_else'), { from: FROM, to: TO });
+
+    expect(result[0]?.personName).toBe('Mario Rossi');
+    expect(result[0]?.instructorName).toBe('Livia Bernasconi');
+  });
+
+  it('does NOT query getOwnInstructorProfileId for an actor who already holds bookings.read.names (review F4 — once per request, only when it can matter)', async () => {
+    bookingFindMany.mockResolvedValue([CREATED_BOOKING_ROW]);
+
+    await listCalendarBookings(staffActor(), { from: FROM, to: TO });
+
+    expect(instructorProfileFindUniqueMock).not.toHaveBeenCalled();
   });
 });
 

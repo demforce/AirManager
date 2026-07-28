@@ -1422,7 +1422,7 @@ registry.registerPath({
   path: '/api/v1/bookings',
   summary: 'List bookings (paginated, filterable by period/aircraft/person, AC 1)',
   description:
-    'Ordered by `startsAt asc, id asc` (soonest-first, tie-broken for stable pagination). `from`/`to` use the SAME semi-open `[startsAt, endsAt)` semantics as the overlap guard (`endsAt > from`, `startsAt < to`). Readable with `self.read` — every authenticated role holds it (FR-19, anticipated to its minimum for this story).',
+    'Ordered by `startsAt asc, id asc` (soonest-first, tie-broken for stable pagination). `from`/`to` use the SAME semi-open `[startsAt, endsAt)` semantics as the overlap guard (`endsAt > from`, `startsAt < to`). Readable with `self.read` — every authenticated role holds it (FR-19, anticipated to its minimum for this story). Privacy masking (story 14.5): an actor without the `bookings.read.names` permission (PILOT/STUDENT) gets `personName`/`instructorName`/`instructorProfileId`/`notes`/`denyReason` forced to `null` on every booking that is not their own — `null` means "Occupato" (the slot is taken, identity withheld), never "no person". `personId` may only be used as a filter to query the actor\'s OWN bookings for such an actor (403 otherwise); an actor holding `bookings.read.names` sees every field unmasked and may filter by any `personId`.',
   tags: ['Bookings'],
   security,
   request: { query: listBookingsQuerySchema },
@@ -1440,7 +1440,7 @@ registry.registerPath({
   path: '/api/v1/bookings/pdf',
   summary: 'PDF export of the bookings list (story 13.7, AC 2)',
   description:
-    "Dedicated PDF route (spine :105), NOT `?format=pdf` on the endpoint above — same query schema and period/aircraft/person/status filters as `GET /api/v1/bookings` (`page`/`pageSize`/`format`, also present on that schema, are ignored here; this always re-pages internally up to the PDF cap). Same columns as the `?format=xlsx` export. Readable with `self.read` (every authenticated role, same as the list).",
+    "Dedicated PDF route (spine :105), NOT `?format=pdf` on the endpoint above — same query schema and period/aircraft/person/status filters as `GET /api/v1/bookings` (`page`/`pageSize`/`format`, also present on that schema, are ignored here; this always re-pages internally up to the PDF cap). Same columns as the `?format=xlsx` export. Readable with `self.read` (every authenticated role, same as the list). Same privacy masking as `GET /api/v1/bookings` (story 14.5): the Pilota column reads \"Occupato\" — never a name — for every booking that is not the requesting actor's own, unless the actor holds `bookings.read.names`.",
   tags: ['Bookings'],
   security,
   request: { query: listBookingsQuerySchema },
@@ -1473,7 +1473,7 @@ registry.registerPath({
   path: '/api/v1/bookings/calendar',
   summary: 'List every booking overlapping a bounded date/time range, for the calendar view (AC 1, FR-19)',
   description:
-    'Deliberately UNPAGINATED (a calendar renders a bounded window, never "page 2") — see `bookings.service.ts#listCalendarBookings`\'s doc-comment. `from`/`to` are BOTH required and compared as instants; `to` must be strictly after `from` and the range cannot exceed 8 days (`RANGE_TOO_WIDE`). Same semi-open overlap predicate and ordering as `GET /api/v1/bookings`. Readable with `self.read` (every authenticated role, FR-19).',
+    'Deliberately UNPAGINATED (a calendar renders a bounded window, never "page 2") — see `bookings.service.ts#listCalendarBookings`\'s doc-comment. `from`/`to` are BOTH required and compared as instants; `to` must be strictly after `from` and the range cannot exceed 8 days (`RANGE_TOO_WIDE`). Same semi-open overlap predicate and ordering as `GET /api/v1/bookings`. Readable with `self.read` (every authenticated role, FR-19). Same privacy masking as `GET /api/v1/bookings` (story 14.5): `personName`/`instructorName`/`instructorProfileId`/`notes`/`denyReason` are `null` on every entry that is not the requesting actor\'s own, for an actor without `bookings.read.names` — `null` means "Occupato", never "no person"; no `personId` filter exists on this endpoint.',
   tags: ['Bookings'],
   security,
   request: { query: calendarBookingsQuerySchema },
