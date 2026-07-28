@@ -329,6 +329,17 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expect(findManyCall.where.AND ?? []).not.toContainEqual({ archivedAt: null });
     });
 
+    it('returns ONLY archived persons when archivedOnly is true (feedback utente 2026-07-28, toggle pagina Piloti)', async () => {
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
+
+      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, archivedOnly: true });
+
+      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
+      expect(findManyCall.where.AND).toContainEqual({ archivedAt: { not: null } });
+      expect(findManyCall.where.AND).not.toContainEqual({ archivedAt: null });
+    });
+
     it('searches first name, last name and email case-insensitively (AC 1)', async () => {
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);

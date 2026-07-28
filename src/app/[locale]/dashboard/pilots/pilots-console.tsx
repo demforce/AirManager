@@ -101,7 +101,7 @@ type PilotsConsoleProps = {
   page: number;
   totalPages: number;
   initialQuery: string;
-  initialIncludeArchived: boolean;
+  initialArchivedOnly: boolean;
   canManagePeople: boolean;
   canManageFinance: boolean;
   canManageUsers: boolean;
@@ -140,7 +140,7 @@ export function PilotsConsole({
   page,
   totalPages,
   initialQuery,
-  initialIncludeArchived,
+  initialArchivedOnly,
   canManagePeople,
   canManageFinance,
   canManageUsers,
@@ -151,22 +151,22 @@ export function PilotsConsole({
   const router = useRouter();
   const toast = useToast();
   const [queryInput, setQueryInput] = useState(initialQuery);
-  const [includeArchived, setIncludeArchived] = useState(initialIncludeArchived);
+  const [archivedOnly, setArchivedOnly] = useState(initialArchivedOnly);
   const [editorTarget, setEditorTarget] = useState<EditorTarget | null>(null);
   const [topUpTarget, setTopUpTarget] = useState<PilotRow | null>(null);
   const [suspendConfirm, setSuspendConfirm] = useState<SuspendConfirm | null>(null);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
 
-  function navigate(next: { q: string; includeArchived: boolean }): void {
+  function navigate(next: { q: string; archivedOnly: boolean }): void {
     const params = new URLSearchParams();
     if (next.q) params.set('q', next.q);
-    if (next.includeArchived) params.set('includeArchived', 'true');
+    if (next.archivedOnly) params.set('archivedOnly', 'true');
     const search = params.toString();
     router.push(`/dashboard/pilots${search ? `?${search}` : ''}`);
   }
 
   const debouncedSearch = useDebouncedCallback((value: string) => {
-    navigate({ q: value, includeArchived });
+    navigate({ q: value, archivedOnly });
   }, 400);
 
   function handleQueryChange(value: string): void {
@@ -174,15 +174,15 @@ export function PilotsConsole({
     debouncedSearch(value);
   }
 
-  function handleIncludeArchivedChange(checked: boolean): void {
-    setIncludeArchived(checked);
-    navigate({ q: queryInput, includeArchived: checked });
+  function handleArchivedOnlyChange(checked: boolean): void {
+    setArchivedOnly(checked);
+    navigate({ q: queryInput, archivedOnly: checked });
   }
 
   function pageHref(targetPage: number) {
     return {
       pathname: '/dashboard/pilots' as const,
-      query: { page: targetPage, ...(queryInput ? { q: queryInput } : {}), ...(includeArchived ? { includeArchived: 'true' } : {}) },
+      query: { page: targetPage, ...(queryInput ? { q: queryInput } : {}), ...(archivedOnly ? { archivedOnly: 'true' } : {}) },
     };
   }
 
@@ -231,12 +231,12 @@ export function PilotsConsole({
           <div className="spacer" />
           <button
             type="button"
-            className={`btn ${includeArchived ? 'on' : ''}`}
-            aria-pressed={includeArchived}
-            onClick={() => handleIncludeArchivedChange(!includeArchived)}
+            className={`btn ${archivedOnly ? 'on' : ''}`}
+            aria-pressed={archivedOnly}
+            onClick={() => handleArchivedOnlyChange(!archivedOnly)}
             data-testid="pilots-toggle-archived"
           >
-            {includeArchived ? <Icon.check /> : null}
+            {archivedOnly ? <Icon.check /> : null}
             {labels.includeArchivedLabel}
           </button>
           <div className="search" style={{ width: 260 }}>

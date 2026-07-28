@@ -288,7 +288,7 @@
     "sub": "{total} in archivio · {suspended} sospesi",
     "cardTitle": "Anagrafica piloti",
     "searchPlaceholder": "Cerca per nome o email…",
-    "includeArchivedLabel": "Mostra archiviati",
+    "includeArchivedLabel": "Solo archiviati",
     "empty": "Nessun pilota trovato.",
     "newPilot": "Aggiungi pilota",
     "pagination": {

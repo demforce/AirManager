@@ -288,7 +288,7 @@
     "sub": "{total} on file · {suspended} suspended",
     "cardTitle": "Pilots directory",
     "searchPlaceholder": "Search by name or email…",
-    "includeArchivedLabel": "Show archived",
+    "includeArchivedLabel": "Archived only",
     "empty": "No pilots found.",
     "newPilot": "Add pilot",
     "pagination": {

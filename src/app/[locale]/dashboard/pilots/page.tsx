@@ -9,7 +9,7 @@ import { PilotsConsole, type PilotRow } from './pilots-console';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; q?: string; includeArchived?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; archivedOnly?: string }>;
 };
 
 const PAGE_SIZE = 20;
@@ -28,7 +28,7 @@ const PAGE_SIZE = 20;
  */
 export default async function PilotsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { page: pageParam, q, includeArchived: includeArchivedParam } = await searchParams;
+  const { page: pageParam, q, archivedOnly: archivedOnlyParam } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -42,9 +42,9 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
   }
 
   const page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
-  const includeArchived = includeArchivedParam === 'true';
+  const archivedOnly = archivedOnlyParam === 'true';
 
-  const result = await listPilotsPageData(actor, { page, pageSize: PAGE_SIZE, q, includeArchived });
+  const result = await listPilotsPageData(actor, { page, pageSize: PAGE_SIZE, q, includeArchived: false, archivedOnly });
 
   const t = await getTranslations('PilotsPage');
   const tExport = await getTranslations('Export');
@@ -57,7 +57,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
   const tUsers = await getTranslations('UsersPage');
   const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
 
-  const exportHref = buildExportHref('/api/v1/people', { q, includeArchived: includeArchived ? 'true' : undefined }, locale);
+  const exportHref = buildExportHref('/api/v1/people', { q, archivedOnly: archivedOnly ? 'true' : undefined }, locale);
 
   const items: PilotRow[] = result.items.map((item) => ({
     id: item.id,
@@ -84,12 +84,12 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
       </div>
 
       <PilotsConsole
-        key={JSON.stringify({ page, q: q ?? '', includeArchived })}
+        key={JSON.stringify({ page, q: q ?? '', archivedOnly })}
         items={items}
         page={page}
         totalPages={totalPages}
         initialQuery={q ?? ''}
-        initialIncludeArchived={includeArchived}
+        initialArchivedOnly={archivedOnly}
         canManagePeople={hasPermission(actor, 'people.manage')}
         canManageFinance={hasPermission(actor, 'finance.manage')}
         canManageUsers={hasPermission(actor, 'users.manage')}

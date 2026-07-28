@@ -195,7 +195,8 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   // a plain JS object literal), which is exactly the bug this `AND` array
   // avoids.
   const conditions: Array<Record<string, unknown>> = [];
-  if (!query.includeArchived) conditions.push({ archivedAt: null });
+  if (query.archivedOnly) conditions.push({ archivedAt: { not: null } });
+  else if (!query.includeArchived) conditions.push({ archivedAt: null });
   if (q) {
     conditions.push({
       OR: [
