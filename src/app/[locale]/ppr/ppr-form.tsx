@@ -258,77 +258,143 @@ export function PprForm({ locale, labels }: PprFormProps) {
       <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="ppr-form">
         <div className="ppr-section-label">{labels.sections.requester}</div>
         <div className="ppr-form-grid">
-          <label className="fld wide">
-            <span className="fld-label">{labels.firstName}</span>
-            <input className="input" autoComplete="given-name" aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
-          </label>
-          {fieldErrorLabel(errors.firstName) ? <p className="fld-label">{fieldErrorLabel(errors.firstName)}</p> : null}
+          <div className="fld wide">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.firstName}</span>
+              <input className="input" autoComplete="given-name" aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
+            </label>
+            {fieldErrorLabel(errors.firstName) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.firstName)}
+              </span>
+            ) : null}
+          </div>
 
-          <label className="fld">
-            <span className="fld-label">{labels.lastName}</span>
-            <input className="input" autoComplete="family-name" aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
-          </label>
-          {fieldErrorLabel(errors.lastName) ? <p className="fld-label">{fieldErrorLabel(errors.lastName)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.lastName}</span>
+              <input className="input" autoComplete="family-name" aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
+            </label>
+            {fieldErrorLabel(errors.lastName) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.lastName)}
+              </span>
+            ) : null}
+          </div>
 
-          <label className="fld">
-            <span className="fld-label">{labels.email}</span>
-            <input className="input" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
-          </label>
-          {fieldErrorLabel(errors.email) ? <p className="fld-label">{fieldErrorLabel(errors.email)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.email}</span>
+              <input className="input" type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
+            </label>
+            {fieldErrorLabel(errors.email) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.email)}
+              </span>
+            ) : null}
+          </div>
 
-          <label className="fld">
-            <span className="fld-label">{labels.phone}</span>
-            <input className="input" type="tel" autoComplete="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
-          </label>
-          {fieldErrorLabel(errors.phone) ? <p className="fld-label">{fieldErrorLabel(errors.phone)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.phone}</span>
+              <input className="input" type="tel" autoComplete="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
+            </label>
+            {fieldErrorLabel(errors.phone) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.phone)}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="ppr-section-label">{labels.sections.aircraft}</div>
         <div className="ppr-form-grid">
-          <label className="fld">
-            <span className="fld-label">{labels.aircraftRegistration}</span>
-            <input className="input" style={{ textTransform: 'uppercase' }} aria-invalid={Boolean(errors.aircraftRegistration)} {...register('aircraftRegistration')} />
-          </label>
-          {fieldErrorLabel(errors.aircraftRegistration) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftRegistration)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.aircraftRegistration}</span>
+              <input className="input" style={{ textTransform: 'uppercase' }} aria-invalid={Boolean(errors.aircraftRegistration)} {...register('aircraftRegistration')} />
+            </label>
+            {fieldErrorLabel(errors.aircraftRegistration) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.aircraftRegistration)}
+              </span>
+            ) : null}
+          </div>
 
-          <label className="fld">
-            <span className="fld-label">{labels.aircraftType}</span>
-            <input className="input" aria-invalid={Boolean(errors.aircraftType)} {...register('aircraftType')} />
-          </label>
-          {fieldErrorLabel(errors.aircraftType) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftType)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.aircraftType}</span>
+              <input className="input" aria-invalid={Boolean(errors.aircraftType)} {...register('aircraftType')} />
+            </label>
+            {fieldErrorLabel(errors.aircraftType) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.aircraftType)}
+              </span>
+            ) : null}
+          </div>
 
-          <label className="fld">
-            <span className="fld-label">{labels.origin}</span>
-            <input className="input" aria-invalid={Boolean(errors.origin)} {...register('origin')} />
-          </label>
-          {fieldErrorLabel(errors.origin) ? <p className="fld-label">{fieldErrorLabel(errors.origin)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.origin}</span>
+              <input className="input" aria-invalid={Boolean(errors.origin)} {...register('origin')} />
+            </label>
+            {fieldErrorLabel(errors.origin) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.origin)}
+              </span>
+            ) : null}
+          </div>
 
-          <label className="fld">
-            <span className="fld-label">{labels.destination}</span>
-            <input className="input" aria-invalid={Boolean(errors.destination)} {...register('destination')} />
-          </label>
-          {fieldErrorLabel(errors.destination) ? <p className="fld-label">{fieldErrorLabel(errors.destination)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.destination}</span>
+              <input className="input" aria-invalid={Boolean(errors.destination)} {...register('destination')} />
+            </label>
+            {fieldErrorLabel(errors.destination) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.destination)}
+              </span>
+            ) : null}
+          </div>
 
-          <label className="fld">
-            <span className="fld-label">{labels.personsOnBoard}</span>
-            <input className="input" type="number" min={1} max={99} step={1} aria-invalid={Boolean(errors.personsOnBoard)} {...register('personsOnBoard')} />
-          </label>
-          {fieldErrorLabel(errors.personsOnBoard) ? <p className="fld-label">{fieldErrorLabel(errors.personsOnBoard)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.personsOnBoard}</span>
+              <input className="input" type="number" min={1} max={99} step={1} aria-invalid={Boolean(errors.personsOnBoard)} {...register('personsOnBoard')} />
+            </label>
+            {fieldErrorLabel(errors.personsOnBoard) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.personsOnBoard)}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="ppr-section-label">{labels.sections.schedule}</div>
         <div className="ppr-form-grid">
-          <label className="fld">
-            <span className="fld-label">{labels.eta}</span>
-            <DateTimeInput aria-invalid={Boolean(errors.eta)} {...register('eta')} />
-          </label>
-          {fieldErrorLabel(errors.eta) ? <p className="fld-label">{fieldErrorLabel(errors.eta)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.eta}</span>
+              <DateTimeInput aria-invalid={Boolean(errors.eta)} {...register('eta')} />
+            </label>
+            {fieldErrorLabel(errors.eta) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.eta)}
+              </span>
+            ) : null}
+          </div>
 
-          <label className="fld">
-            <span className="fld-label">{labels.etd}</span>
-            <DateTimeInput aria-invalid={Boolean(errors.etd)} {...register('etd')} />
-          </label>
-          {fieldErrorLabel(errors.etd) ? <p className="fld-label">{fieldErrorLabel(errors.etd)}</p> : null}
+          <div className="fld">
+            <label className="fld-label-group">
+              <span className="fld-label">{labels.etd}</span>
+              <DateTimeInput aria-invalid={Boolean(errors.etd)} {...register('etd')} />
+            </label>
+            {fieldErrorLabel(errors.etd) ? (
+              <span className="fld-error" role="alert">
+                {fieldErrorLabel(errors.etd)}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="ppr-section-label">{labels.sections.additional}</div>

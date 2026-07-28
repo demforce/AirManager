@@ -412,24 +412,29 @@ function CompleteForm({ id, pprNumber, labels, genericErrorLabel, onCancel, onSu
         {labels.complete}
         {pprNumber ? <span className="mono" style={{ marginLeft: 8, fontWeight: 400, color: 'var(--ink-3)' }}>{pprNumber}</span> : null}
       </h4>
-      <label className="fld" style={{ maxWidth: 200 }}>
-        <span className="fld-label">{labels.feeLabel}</span>
-        <input
-          className="input"
-          inputMode="decimal"
-          placeholder="0,00"
-          aria-invalid={fieldError}
-          value={feeInput}
-          onChange={(event) => setFeeInput(event.target.value)}
-          data-testid="ppr-complete-fee-input"
-        />
-      </label>
+      <div className="fld" style={{ maxWidth: 200 }}>
+        <label className="fld-label-group">
+          <span className="fld-label">{labels.feeLabel}</span>
+          <input
+            className="input"
+            inputMode="decimal"
+            placeholder="0,00"
+            aria-invalid={fieldError}
+            value={feeInput}
+            onChange={(event) => {
+              setFeeInput(event.target.value);
+              if (fieldError) setFieldError(false);
+            }}
+            data-testid="ppr-complete-fee-input"
+          />
+        </label>
+        {fieldError ? (
+          <span className="fld-error" role="alert">
+            {labels.invalidFee}
+          </span>
+        ) : null}
+      </div>
       <p className="fld-label">{labels.feeHint}</p>
-      {fieldError ? (
-        <p role="alert" className="fld-label" style={{ color: 'var(--bad)' }}>
-          {labels.invalidFee}
-        </p>
-      ) : null}
 
       <div style={{ maxWidth: 200 }}>
         <Field label={labels.methodLabel}>

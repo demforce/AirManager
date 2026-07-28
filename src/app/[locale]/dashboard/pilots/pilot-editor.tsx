@@ -18,7 +18,7 @@
  * activate/save/deactivate forms (`ProfilesSection` etc., unchanged).
  */
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { Role } from '@/generated/prisma/client';
@@ -30,6 +30,8 @@ import { useToast } from '@/components/ui/toast';
 import { fetchExpiryTypes, LiveExpiryEditor, type ExpiryCatalogEntry, type LiveExpiryEditorLabels } from '@/components/dashboard/expiry-editor';
 import { isExpiryScopeCompatible, type ProfileFlags } from '@/lib/expiry-scope';
 import { formatDateOnly } from '@/lib/time';
+import { parseApiError } from '@/lib/api-field-errors';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import {
   createPersonBaseSchema,
   instructorProfileRequestSchema,
@@ -213,10 +215,12 @@ function IdentitySection({
   onSaved: (patch: Partial<PilotRow>) => void;
 }): React.JSX.Element {
   const [formError, setFormError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<UpdatePersonInput>({
     resolver: zodResolver(updatePersonSchema),
@@ -240,6 +244,24 @@ function IdentitySection({
     });
 
     if (!response.ok) {
+      if (response.status === 422) {
+        // Story 14.2, AC 3: a field-shaped 422 (e.g. a malformed email) marks
+        // THAT field instead of only the bottom banner — `labels.errors.required`
+        // is reused per field (same generic string, now targeted).
+        const { fieldErrors } = await parseApiError(response);
+        const known: Array<keyof UpdatePersonInput> = ['firstName', 'lastName', 'email', 'phone', 'address', 'fiscalCode'];
+        let mapped = false;
+        for (const field of known) {
+          if (fieldErrors.has(field)) {
+            setError(field, { type: 'server', message: labels.errors.required });
+            mapped = true;
+          }
+        }
+        if (mapped) {
+          setTimeout(() => focusFirstInvalid(formRef.current), 0);
+          return;
+        }
+      }
       const code = await errorCodeOf(response);
       setFormError(code === 'CONFLICT' ? labels.errors.conflictEmail : labels.errors.generic);
       return;
@@ -270,15 +292,15 @@ function IdentitySection({
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="pilot-identity-form">
+    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="pilot-identity-form">
       <div className="form-grid">
-        <Field label={labels.identity.firstName}>
+        <Field label={labels.identity.firstName} error={errors.firstName ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
         </Field>
-        <Field label={labels.identity.lastName}>
+        <Field label={labels.identity.lastName} error={errors.lastName ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
         </Field>
-        <Field label={labels.identity.email} wide>
+        <Field label={labels.identity.email} wide error={errors.email ? labels.errors.required : undefined}>
           <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
         <Field label={labels.identity.phone}>
@@ -323,13 +345,22 @@ type NewPersonFormProps = {
   onCreated: () => void;
 };
 
-/** Chip strip + inline date fields for the CREATE form (story 13.2, AC 1) — no API call per selection (unlike `LiveExpiryEditor`): the whole batch travels in the ONE composite `POST /api/v1/people` at submit. */
+/**
+ * Chip strip + inline date fields for the CREATE form (story 13.2, AC 1) — no
+ * API call per selection (unlike `LiveExpiryEditor`): the whole batch
+ * travels in the ONE composite `POST /api/v1/people` at submit. Story 14.2
+ * (AC 2): `missingDateIds` marks each row that is STILL missing its date
+ * individually — a form with 2+ selected chips only red-borders the ones
+ * actually empty, not every chip just because one of them is.
+ */
 function NewExpiryChipGroup({
   types,
   selections,
   onToggle,
   onDateChange,
   dateLabel,
+  requiredDateLabel,
+  missingDateIds,
   testPrefix,
 }: {
   types: ExpiryCatalogEntry[];
@@ -337,6 +368,8 @@ function NewExpiryChipGroup({
   onToggle: (typeId: string) => void;
   onDateChange: (typeId: string, date: string) => void;
   dateLabel: string;
+  requiredDateLabel: string;
+  missingDateIds: Set<string>;
   testPrefix: string;
 }) {
   if (types.length === 0) return null;
@@ -358,8 +391,14 @@ function NewExpiryChipGroup({
       {types
         .filter((type) => type.id in selections)
         .map((type) => (
-          <Field key={type.id} label={`${type.name} — ${dateLabel}`}>
-            <DateInput inline value={selections[type.id]} onChange={(event) => onDateChange(type.id, event.target.value)} data-testid={`${testPrefix}-date-${type.id}`} />
+          <Field key={type.id} label={`${type.name} — ${dateLabel}`} error={missingDateIds.has(type.id) ? requiredDateLabel : undefined}>
+            <DateInput
+              inline
+              value={selections[type.id]}
+              onChange={(event) => onDateChange(type.id, event.target.value)}
+              aria-invalid={missingDateIds.has(type.id)}
+              data-testid={`${testPrefix}-date-${type.id}`}
+            />
           </Field>
         ))}
     </div>
@@ -381,31 +420,40 @@ function NewExpiryChipGroup({
  */
 function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, onCreated }: NewPersonFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<z.input<typeof createPersonBaseSchema>, unknown, z.infer<typeof createPersonBaseSchema>>({
     resolver: zodResolver(createPersonBaseSchema),
     defaultValues: { firstName: '', lastName: '', email: null, phone: null, address: null, fiscalCode: null },
   });
 
+  // Story 14.2 (AC 2): a single "did the user try to submit" flag instead of
+  // one imperative boolean per non-RHF field — every `*FieldError` below is
+  // DERIVED from it plus the field's own current value, so a correction
+  // clears its error the instant it becomes valid (no separate onChange
+  // wiring needed to "un-set" anything), and `handleSubmit`'s own resolver
+  // path (the RHF-tracked base fields) is untouched.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+
   const [activatePilot, setActivatePilot] = useState(false);
   const [pilotLicenseNumber, setPilotLicenseNumber] = useState('');
   const [pilotLicenseType, setPilotLicenseType] = useState('');
-  const [pilotFieldError, setPilotFieldError] = useState(false);
+  const pilotFieldError = submitAttempted && activatePilot && (!pilotLicenseNumber.trim() || !pilotLicenseType.trim());
 
   const [activateStudent, setActivateStudent] = useState(false);
   const [studentCourseStartDate, setStudentCourseStartDate] = useState('');
-  const [studentFieldError, setStudentFieldError] = useState(false);
+  const studentFieldError = submitAttempted && activateStudent && !studentCourseStartDate;
 
   const [activateInstructor, setActivateInstructor] = useState(false);
 
   const [ratingCatalog, setRatingCatalog] = useState<ExpiryCatalogEntry[] | null>(null);
   const [medicalCatalog, setMedicalCatalog] = useState<ExpiryCatalogEntry[] | null>(null);
   const [selections, setSelections] = useState<Record<string, string>>({});
-  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -453,7 +501,6 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
       }
       return { ...current, [typeId]: '' };
     });
-    setSelectionError(null);
   }
 
   function setSelectionDate(typeId: string, date: string): void {
@@ -463,8 +510,16 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
   const [grantAccess, setGrantAccess] = useState(false);
   const [accessEmail, setAccessEmail] = useState('');
   const [accessRoles, setAccessRoles] = useState<Role[]>([]);
-  const [accessEmailError, setAccessEmailError] = useState(false);
-  const [accessRolesError, setAccessRolesError] = useState(false);
+
+  function isValidAccessEmail(value: string): boolean {
+    return z.string().trim().toLowerCase().pipe(z.email()).safeParse(value).success;
+  }
+
+  const accessEmailError = submitAttempted && grantAccess && !isValidAccessEmail(accessEmail);
+  const accessRolesError = submitAttempted && grantAccess && accessRoles.length === 0;
+  const missingDateIds = submitAttempted
+    ? new Set(Object.entries(selections).filter(([, expiresAt]) => !expiresAt).map(([typeId]) => typeId))
+    : new Set<string>();
 
   function toggleAccessRole(role: Role, checked: boolean): void {
     setAccessRoles((current) => (checked ? [...current, role] : current.filter((r) => r !== role)));
@@ -472,23 +527,17 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
 
   async function onSubmit(base: z.infer<typeof createPersonBaseSchema>): Promise<void> {
     setFormError(null);
+    setSubmitAttempted(true);
 
     const nextPilotFieldError = activatePilot && (!pilotLicenseNumber.trim() || !pilotLicenseType.trim());
-    setPilotFieldError(nextPilotFieldError);
-
     const nextStudentFieldError = activateStudent && !studentCourseStartDate;
-    setStudentFieldError(nextStudentFieldError);
-
     const expiries = Object.entries(selections).map(([expiryTypeId, expiresAt]) => ({ expiryTypeId, expiresAt }));
     const missingDate = expiries.some((entry) => !entry.expiresAt);
-    setSelectionError(missingDate ? labels.ratings.requiredDate : null);
-
-    const emailValid = !grantAccess || z.string().trim().toLowerCase().pipe(z.email()).safeParse(accessEmail).success;
-    setAccessEmailError(grantAccess && !emailValid);
+    const emailValid = !grantAccess || isValidAccessEmail(accessEmail);
     const rolesValid = !grantAccess || accessRoles.length > 0;
-    setAccessRolesError(grantAccess && !rolesValid);
 
     if (nextPilotFieldError || nextStudentFieldError || missingDate || !emailValid || !rolesValid) {
+      setTimeout(() => focusFirstInvalid(formRef.current), 0);
       return;
     }
 
@@ -519,6 +568,23 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
     });
 
     if (!response.ok) {
+      if (response.status === 422) {
+        // Story 14.2, AC 3: same field-shaped-422 mapping as the edit form's
+        // `IdentitySection` above, reusing `labels.errors.required` per field.
+        const { fieldErrors } = await parseApiError(response);
+        const known: Array<'firstName' | 'lastName' | 'email'> = ['firstName', 'lastName', 'email'];
+        let mapped = false;
+        for (const field of known) {
+          if (fieldErrors.has(field)) {
+            setError(field, { type: 'server', message: labels.errors.required });
+            mapped = true;
+          }
+        }
+        if (mapped) {
+          setTimeout(() => focusFirstInvalid(formRef.current), 0);
+          return;
+        }
+      }
       const code = await errorCodeOf(response);
       setFormError(code === 'CONFLICT' ? labels.errors.conflictEmail : labels.errors.generic);
       return;
@@ -533,15 +599,15 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
   const medicalChips = (medicalCatalog ?? []).filter((type) => type.isActive && isExpiryScopeCompatible(type.scope, profileFlags));
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="pilot-identity-form">
+    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="pilot-identity-form">
       <div className="form-grid">
-        <Field label={labels.identity.firstName}>
+        <Field label={labels.identity.firstName} error={errors.firstName ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
         </Field>
-        <Field label={labels.identity.lastName}>
+        <Field label={labels.identity.lastName} error={errors.lastName ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
         </Field>
-        <Field label={labels.identity.email} wide>
+        <Field label={labels.identity.email} wide error={errors.email ? labels.errors.required : undefined}>
           <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
         <Field label={labels.identity.phone}>
@@ -573,7 +639,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
             </label>
             {activatePilot ? (
               <div className="form-grid" style={{ marginTop: 8 }}>
-                <Field label={labels.profiles.pilot.licenseNumber}>
+                <Field label={labels.profiles.pilot.licenseNumber} error={pilotFieldError ? labels.profiles.errors.requiredField : undefined}>
                   <Input
                     value={pilotLicenseNumber}
                     onChange={(event) => setPilotLicenseNumber(event.target.value)}
@@ -581,7 +647,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
                     data-testid="new-person-pilot-license-number"
                   />
                 </Field>
-                <Field label={labels.profiles.pilot.licenseType}>
+                <Field label={labels.profiles.pilot.licenseType} error={pilotFieldError ? labels.profiles.errors.requiredField : undefined}>
                   <Input
                     value={pilotLicenseType}
                     onChange={(event) => setPilotLicenseType(event.target.value)}
@@ -590,11 +656,6 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
                   />
                 </Field>
               </div>
-            ) : null}
-            {pilotFieldError ? (
-              <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 6 }}>
-                {labels.profiles.errors.requiredField}
-              </p>
             ) : null}
           </div>
 
@@ -614,7 +675,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
             </label>
             {activateStudent ? (
               <div className="form-grid" style={{ marginTop: 8 }}>
-                <Field label={labels.profiles.student.courseStartDate}>
+                <Field label={labels.profiles.student.courseStartDate} error={studentFieldError ? labels.profiles.errors.requiredField : undefined}>
                   <DateInput
                     value={studentCourseStartDate}
                     onChange={(event) => setStudentCourseStartDate(event.target.value)}
@@ -623,11 +684,6 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
                   />
                 </Field>
               </div>
-            ) : null}
-            {studentFieldError ? (
-              <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 6 }}>
-                {labels.profiles.errors.requiredField}
-              </p>
             ) : null}
           </div>
 
@@ -648,16 +704,29 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
       </Section>
 
       <Section title={labels.ratings.sectionTitle}>
-        <NewExpiryChipGroup types={ratingChips} selections={selections} onToggle={toggleSelection} onDateChange={setSelectionDate} dateLabel={labels.ratings.dateLabel} testPrefix="rating" />
+        <NewExpiryChipGroup
+          types={ratingChips}
+          selections={selections}
+          onToggle={toggleSelection}
+          onDateChange={setSelectionDate}
+          dateLabel={labels.ratings.dateLabel}
+          requiredDateLabel={labels.ratings.requiredDate}
+          missingDateIds={missingDateIds}
+          testPrefix="rating"
+        />
         <div className="fld-label" style={{ fontWeight: 600, fontSize: 13, marginTop: 16, marginBottom: 8 }}>
           {labels.medical.subHeading}
         </div>
-        <NewExpiryChipGroup types={medicalChips} selections={selections} onToggle={toggleSelection} onDateChange={setSelectionDate} dateLabel={labels.medical.dateLabel} testPrefix="medical" />
-        {selectionError ? (
-          <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-            {selectionError}
-          </p>
-        ) : null}
+        <NewExpiryChipGroup
+          types={medicalChips}
+          selections={selections}
+          onToggle={toggleSelection}
+          onDateChange={setSelectionDate}
+          dateLabel={labels.medical.dateLabel}
+          requiredDateLabel={labels.medical.requiredDate}
+          missingDateIds={missingDateIds}
+          testPrefix="medical"
+        />
       </Section>
 
       {canManageUsers ? (
@@ -669,15 +738,10 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
           {grantAccess ? (
             <div style={{ marginTop: 10 }}>
               <div className="form-grid">
-                <Field label={labels.access.email} wide>
+                <Field label={labels.access.email} wide error={accessEmailError ? labels.access.invalidEmail : undefined}>
                   <Input type="email" value={accessEmail} onChange={(event) => setAccessEmail(event.target.value)} aria-invalid={accessEmailError} data-testid="new-person-access-email" />
                 </Field>
               </div>
-              {accessEmailError ? (
-                <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-                  {labels.access.invalidEmail}
-                </p>
-              ) : null}
               <div className="fld-label" style={{ marginTop: 10, marginBottom: 6 }}>
                 {labels.access.roles}
               </div>
@@ -695,7 +759,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
                 ))}
               </div>
               {accessRolesError ? (
-                <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
+                <p role="alert" className="fld-error" style={{ marginTop: 8 }}>
                   {labels.access.rolesRequired}
                 </p>
               ) : null}
@@ -895,10 +959,10 @@ function PilotProfileForm({
       {editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
           <div className="form-grid">
-            <Field label={labels.pilot.licenseNumber}>
+            <Field label={labels.pilot.licenseNumber} error={errors.licenseNumber ? labels.errors.requiredField : undefined}>
               <Input aria-invalid={Boolean(errors.licenseNumber)} {...register('licenseNumber')} />
             </Field>
-            <Field label={labels.pilot.licenseType}>
+            <Field label={labels.pilot.licenseType} error={errors.licenseType ? labels.errors.requiredField : undefined}>
               <Input aria-invalid={Boolean(errors.licenseType)} {...register('licenseType')} />
             </Field>
           </div>
@@ -1015,7 +1079,7 @@ function StudentProfileForm({
       {editing ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
           <div className="form-grid">
-            <Field label={labels.student.courseStartDate}>
+            <Field label={labels.student.courseStartDate} error={errors.courseStartDate ? labels.errors.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.courseStartDate)} {...register('courseStartDate')} />
             </Field>
           </div>
@@ -1315,7 +1379,7 @@ function AccessSection({
       </p>
       <form onSubmit={(event) => void handleSubmit(onCreateUser)(event)} noValidate>
         <div className="form-grid">
-          <Field label={labels.email} wide>
+          <Field label={labels.email} wide error={errors.email ? labels.invalidEmail : undefined}>
             <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
           </Field>
         </div>
@@ -1331,7 +1395,7 @@ function AccessSection({
           ))}
         </div>
         {errors.roles ? (
-          <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
+          <p role="alert" className="fld-error" style={{ marginTop: 8 }}>
             {labels.rolesRequired}
           </p>
         ) : null}

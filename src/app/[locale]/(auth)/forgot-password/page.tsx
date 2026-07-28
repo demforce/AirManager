@@ -55,6 +55,7 @@ export default async function ForgotPasswordPage({ params }: PageProps) {
               submitting: t('submitting'),
               confirmation: t('confirmation'),
               backToLogin: t('backToLogin'),
+              requiredField: t('requiredField'),
             }}
           />
         </div>

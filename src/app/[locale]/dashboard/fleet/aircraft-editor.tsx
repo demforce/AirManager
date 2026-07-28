@@ -13,7 +13,7 @@
  * slide-over's own `X`.
  */
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Field, Input, Select } from '@/components/ui/field';
@@ -21,6 +21,8 @@ import { DateInput } from '@/components/ui/date-input';
 import { Segmented } from '@/components/ui/segmented';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
+import { parseApiError } from '@/lib/api-field-errors';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents, parseCents } from '@/lib/money';
 import { formatDateOnly, formatDateTime, formatMinutes } from '@/lib/time';
 import {
@@ -300,6 +302,7 @@ type IdentitySectionProps =
 function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
   const { labels } = props;
   const [formError, setFormError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const isNew = props.mode === 'new';
   const defaultValues = isNew
@@ -318,6 +321,7 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
     register,
     handleSubmit,
     setValue,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<z.input<typeof createAircraftSchema> | UpdateAircraftInput, unknown, CreateAircraftInput | UpdateAircraftInput>({
     resolver: zodResolver(isNew ? createAircraftSchema : updateAircraftSchema),
@@ -344,6 +348,32 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
         });
 
     if (!response.ok) {
+      if (response.status === 422) {
+        // Story 14.2, AC 3: field-shaped 422 mapped onto the matching Field,
+        // reusing `labels.errors.required` (same generic string as client-side
+        // required checks) — the raw server message is never shown (AD-8).
+        const { fieldErrors } = await parseApiError(response);
+        const known: Array<'registration' | 'type' | 'model' | 'seats' | 'fuelType' | 'notes' | 'hourMeterMinutes'> = [
+          'registration',
+          'type',
+          'model',
+          'seats',
+          'fuelType',
+          'notes',
+          'hourMeterMinutes',
+        ];
+        let mapped = false;
+        for (const field of known) {
+          if (fieldErrors.has(field)) {
+            setError(field, { type: 'server', message: labels.errors.required });
+            mapped = true;
+          }
+        }
+        if (mapped) {
+          setTimeout(() => focusFirstInvalid(formRef.current), 0);
+          return;
+        }
+      }
       const code = await errorCodeOf(response);
       setFormError(code === 'CONFLICT' ? labels.errors.conflictRegistration : labels.errors.generic);
       return;
@@ -361,15 +391,15 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="identity-form">
+    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="identity-form">
       <div className="form-grid">
-        <Field label={labels.identity.registration}>
+        <Field label={labels.identity.registration} error={errors.registration ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.registration)} {...register('registration')} />
         </Field>
-        <Field label={labels.identity.type}>
+        <Field label={labels.identity.type} error={errors.type ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.type)} {...register('type')} />
         </Field>
-        <Field label={labels.identity.model} wide>
+        <Field label={labels.identity.model} wide error={errors.model ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.model)} {...register('model')} />
         </Field>
         <Field label={labels.identity.seats}>
@@ -388,7 +418,10 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
           <BasedSegmented defaultValue={defaultValues.based} labels={labels} setValue={setValue} />
         </Field>
         {isNew ? (
-          <Field label={labels.identity.hourMeter}>
+          <Field
+            label={labels.identity.hourMeter}
+            error={(errors as Record<string, unknown>)['hourMeterMinutes'] ? labels.errors.required : undefined}
+          >
             <Input
               type="number"
               min={0}
@@ -534,10 +567,11 @@ function AvailabilitySection({
         </button>
       ) : (
         <div className="form-grid">
-          <Field label={labels.availability.reason} wide>
+          <Field label={labels.availability.reason} wide error={reasonError ?? undefined}>
             <textarea
               className="input"
               rows={2}
+              aria-invalid={Boolean(reasonError)}
               value={reason}
               onChange={(event) => {
                 setReason(event.target.value);
@@ -546,11 +580,6 @@ function AvailabilitySection({
               data-testid="out-of-service-reason"
             />
           </Field>
-          {reasonError ? (
-            <p role="alert" className="fld-label" style={{ color: 'var(--bad)' }}>
-              {reasonError}
-            </p>
-          ) : null}
           <div className="fld wide">
             <button type="button" className="btn" disabled={busy} onClick={() => void submitOutOfService()} data-testid="out-of-service-submit">
               {labels.availability.setOutOfService}
@@ -635,6 +664,12 @@ function RatesSection({
     formState: { errors, isSubmitting },
   } = useForm<NewRateFormValues>({ resolver: zodResolver(newRateFormSchema), defaultValues: { price: '', priceDry: '', validFrom: todayDateOnly() } });
 
+  /** Story 14.2: `newRateFormSchema`'s own `.refine(...)` tags a price violation with the `'invalidPrice'` marker (never shown verbatim) — anything else on the field is the plain `min(1)` required check. */
+  function priceFieldError(fieldError: { message?: string } | undefined): string | undefined {
+    if (!fieldError) return undefined;
+    return fieldError.message === 'invalidPrice' ? labels.errors.invalidPrice : labels.errors.required;
+  }
+
   useEffect(() => {
     // Same `.then(callback)` shape as `account-panel.tsx`'s own fetch effect
     // (not a named async function referenced via `void loadHistory()`, which
@@ -690,13 +725,13 @@ function RatesSection({
       {canManageSettings && !archived ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="new-rate-form" style={{ marginTop: 10 }}>
           <div className="form-grid">
-            <Field label={labels.rates.price}>
+            <Field label={labels.rates.price} error={priceFieldError(errors.price)}>
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.price)} {...register('price')} />
             </Field>
-            <Field label={labels.rates.priceDry}>
+            <Field label={labels.rates.priceDry} error={priceFieldError(errors.priceDry)}>
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.priceDry)} {...register('priceDry')} />
             </Field>
-            <Field label={labels.rates.validFrom}>
+            <Field label={labels.rates.validFrom} error={errors.validFrom ? labels.errors.required : undefined}>
               <DateInput aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
             </Field>
           </div>
@@ -865,7 +900,7 @@ function HourMeterSection({
 
       <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="hour-meter-form" style={{ marginTop: 8 }}>
         <div className="form-grid">
-          <Field label={labels.hourMeter.newValue}>
+          <Field label={labels.hourMeter.newValue} error={errors.newMinutes ? labels.errors.required : undefined}>
             <Input
               type="number"
               min={0}
@@ -885,7 +920,7 @@ function HourMeterSection({
               {formatSignedMinutes(delta)}
             </span>
           </Field>
-          <Field label={labels.hourMeter.reason} wide>
+          <Field label={labels.hourMeter.reason} wide error={errors.reason ? labels.errors.required : undefined}>
             <textarea className="input" rows={2} aria-invalid={Boolean(errors.reason)} {...register('reason')} />
           </Field>
         </div>

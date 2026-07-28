@@ -507,7 +507,7 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
       {pilot ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="topup-form">
           <div className="form-grid">
-            <Field label={labels.amount}>
+            <Field label={labels.amount} error={errors.amount ? labels.requiredField : undefined}>
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.amount)} {...register('amount')} />
             </Field>
             <Field label={labels.paymentMethod}>
@@ -517,7 +517,7 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
                 <option value="POS">{labels.paymentMethods.pos}</option>
               </Select>
             </Field>
-            <Field label={labels.effectiveDate}>
+            <Field label={labels.effectiveDate} error={errors.effectiveDate ? labels.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.effectiveDate)} {...register('effectiveDate')} />
             </Field>
             <Field label={labels.description} wide>

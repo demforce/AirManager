@@ -72,6 +72,7 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
               submit: t('submit'),
               submitting: t('submitting'),
               errorGeneric: t('errorGeneric'),
+              requiredField: t('requiredField'),
             }}
           />
 

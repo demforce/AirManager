@@ -1051,6 +1051,11 @@ html[data-theme="dark"] .alert-box.info{ color: oklch(0.86 0.1 245); }
 .form-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px 14px; }
 .fld{ display: flex; flex-direction: column; gap: 6px; }
 .fld.wide{ grid-column: 1 / -1; }
+/* Story 14.2: the inner label+control wrapper (`Field`'s own `<label>`) —
+   same stacking as `.fld` itself, split out so `.fld-error` (a SIBLING of
+   this label, not nested inside it) never joins the label's accessible
+   name. See `field.tsx`'s doc-comment. */
+.fld-label-group{ display: flex; flex-direction: column; gap: 6px; }
 .fld-label{
   font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
   text-transform: uppercase; letter-spacing: 0.08em;
@@ -1087,6 +1092,35 @@ textarea.input{ font-family: var(--font-ui); resize: vertical; }
 }
 .input-group .prefix{ border-right: 1px solid var(--border); }
 .input-group .suffix{ border-left: 1px solid var(--border); }
+
+/* Story 14.2, AC 1: field-level validation state — bordo rosso sul campo
+   INVALIDO invece della sola stringa generica in fondo al form (feedback
+   utente). A single attribute selector: every call site ALREADY threads
+   `aria-invalid` from react-hook-form's `errors` object (or an equivalent
+   local boolean) onto the real `.input`/`.input-group`, independently of
+   `Field`'s own `error` prop — this rule lights every one of them up with
+   zero further markup. Border contrast measured (lezione 13.9,
+   canvas/oklch round-trip): raw `--bad` vs `--panel`/`--panel-2`/`--bg`
+   is 3.75-3.97:1 in light, 6.2-7.1:1 in dark — both above the WCAG 1.4.11
+   non-text 3:1 floor. */
+.input[aria-invalid="true"],
+.input[aria-invalid="true"]:focus{
+  border-color: var(--bad);
+}
+.input-group:has(> .input[aria-invalid="true"]){ border-color: var(--bad); }
+
+/* `Field`'s own inline message (AC 1) — text contrast measured (same
+   lezione): the raw `--bad` token is only 3.75-3.97:1 as BODY TEXT on
+   --panel/--panel-2/--bg in light theme (below the 4.5:1 floor), so this
+   reuses the SAME "darker ink literal in light, raw token in dark"
+   technique already established by `.stat-tone-bad`/`.badge.bad` above
+   (measured 9.82:1 on white; the dark override reuses the already-passing
+   raw token, 6.2-7.1:1). */
+.fld-error{
+  font-size: 12px;
+  color: oklch(0.4 0.17 25);
+}
+html[data-theme="dark"] .fld-error{ color: var(--bad); }
 
 .segmented{
   display: inline-flex; padding: 2px; border-radius: var(--radius-xs);

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Field, Input, Select } from '@/components/ui/field';
+import { parseApiError } from '@/lib/api-field-errors';
 import type { SmtpSecurityDto } from '@/lib/schemas/settings';
 
 export type SmtpCardLabels = {
@@ -23,6 +24,8 @@ export type SmtpCardLabels = {
   save: string;
   saved: string;
   error: string;
+  /** Story 14.2, AC 3: `smtpSettingsInputSchema`'s own SSRF `.refine` (CWE-918) 422s with `fieldErrors.host` for a private/loopback/link-local address — this card has no client-side check for it, a genuinely reachable field-shaped 422. */
+  invalidHost: string;
 };
 
 export type SmtpCardProps = {
@@ -58,10 +61,12 @@ export function SmtpCard({ initial, labels }: SmtpCardProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [testSending, setTestSending] = useState(false);
   const [testFeedback, setTestFeedback] = useState<string | null>(null);
+  const [hostError, setHostError] = useState(false);
 
   async function save(): Promise<void> {
     setSaving(true);
     setFeedback(null);
+    setHostError(false);
 
     const response = await fetch('/api/v1/settings/smtp', {
       method: 'PUT',
@@ -74,9 +79,18 @@ export function SmtpCard({ initial, labels }: SmtpCardProps) {
       setFeedback(labels.saved);
       if (pass) setHasPassword(true);
       setPass('');
-    } else {
-      setFeedback(labels.error);
+      return;
     }
+
+    if (response.status === 422) {
+      const { fieldErrors } = await parseApiError(response);
+      if (fieldErrors.has('host')) {
+        setHostError(true);
+        setFeedback(labels.error);
+        return;
+      }
+    }
+    setFeedback(labels.error);
   }
 
   async function sendTestEmail(): Promise<void> {
@@ -116,8 +130,17 @@ export function SmtpCard({ initial, labels }: SmtpCardProps) {
         ) : null}
 
         <div className="form-grid">
-          <Field label={labels.host}>
-            <Input value={host} onChange={(event) => setHost(event.target.value)} placeholder="smtp.example.com" data-testid="smtp-host-input" />
+          <Field label={labels.host} error={hostError ? labels.invalidHost : undefined}>
+            <Input
+              value={host}
+              onChange={(event) => {
+                setHost(event.target.value);
+                if (hostError) setHostError(false);
+              }}
+              aria-invalid={hostError}
+              placeholder="smtp.example.com"
+              data-testid="smtp-host-input"
+            />
           </Field>
           <Field label={labels.port}>
             <Input type="number" value={port} onChange={(event) => setPort(event.target.value)} placeholder="587" data-testid="smtp-port-input" />

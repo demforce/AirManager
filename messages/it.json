@@ -70,7 +70,8 @@
       "submit": "Accedi",
       "submitting": "Accesso in corso…",
       "errorGeneric": "Email o password non corretti.",
-      "forgotPassword": "Password dimenticata?"
+      "forgotPassword": "Password dimenticata?",
+      "requiredField": "Campo obbligatorio."
     },
     "setPassword": {
       "kicker": "Imposta password",
@@ -95,7 +96,8 @@
       "submit": "Invia link di reset",
       "submitting": "Invio in corso…",
       "confirmation": "Se l'indirizzo email corrisponde a un account attivo, riceverai a breve un'email con le istruzioni per reimpostare la password.",
-      "backToLogin": "Torna al login"
+      "backToLogin": "Torna al login",
+      "requiredField": "Campo obbligatorio."
     }
   },
   "DashboardPage": {
@@ -482,7 +484,8 @@
         "address": "Indirizzo",
         "fiscalCode": "Codice fiscale",
         "save": "Salva modifiche",
-        "loadError": "Impossibile caricare i dati anagrafici."
+        "loadError": "Impossibile caricare i dati anagrafici.",
+        "requiredField": "Campo obbligatorio."
       },
       "payoutRate": {
         "sectionTitle": "Tariffa payout (pagata all'istruttore)",
@@ -1816,6 +1819,7 @@
       "save": "Salva",
       "saved": "Impostazioni salvate.",
       "error": "Non è stato possibile salvare. Riprova.",
+      "invalidEmail": "Inserisci un indirizzo email valido.",
       "form": {
         "nameLabel": "Nome aviosuperficie",
         "save": "Salva",
@@ -1836,7 +1840,8 @@
       "hint": "Gli aeromobili possono essere prenotati tra le {open} e le {close} locali, in incrementi di {slot} minuti, fino a {days} giorni in anticipo. Durata minima slot e margine di turnaround sono indicativi (non impediscono il salvataggio di una prenotazione).",
       "save": "Salva",
       "saved": "Impostazioni salvate.",
-      "error": "Non è stato possibile salvare. Riprova."
+      "error": "Non è stato possibile salvare. Riprova.",
+      "invalidRange": "L'orario di chiusura deve essere dopo quello di apertura."
     },
     "smtp": {
       "title": "Email (SMTP)",
@@ -1860,7 +1865,8 @@
       "passConfigured": "Password già configurata",
       "save": "Salva",
       "saved": "Impostazioni salvate.",
-      "error": "Non è stato possibile salvare. Riprova."
+      "error": "Non è stato possibile salvare. Riprova.",
+      "invalidHost": "Host non valido: non può essere un indirizzo privato, locale o interno."
     },
     "treasury": {
       "title": "Tesoreria",

@@ -762,7 +762,7 @@ export function BillingConsole({
               data-testid="transaction-adjust-amount"
             />
             <p style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>{labels.adjustModal.amountHint}</p>
-            {adjustAmountError ? <p style={{ color: 'var(--bad)', fontSize: 12 }}>{labels.adjustModal.invalidAmount}</p> : null}
+            {adjustAmountError ? <p className="fld-error">{labels.adjustModal.invalidAmount}</p> : null}
             <label htmlFor="billing-adjust-reason" className="fld-label" style={{ display: 'block', marginTop: 10 }}>
               {labels.adjustModal.reason}
             </label>
@@ -775,7 +775,7 @@ export function BillingConsole({
               maxLength={500}
               data-testid="transaction-adjust-reason"
             />
-            {adjustReasonError ? <p style={{ color: 'var(--bad)', fontSize: 12 }}>{labels.adjustModal.requiredReason}</p> : null}
+            {adjustReasonError ? <p className="fld-error">{labels.adjustModal.requiredReason}</p> : null}
             {adjustFormError ? (
               <p role="alert" data-testid="transaction-adjust-error" style={{ color: 'var(--bad)', fontSize: 12.5, marginTop: 6 }}>
                 {adjustFormError}
@@ -815,7 +815,7 @@ export function BillingConsole({
               maxLength={500}
               data-testid="transaction-reverse-reason"
             />
-            {reverseReasonError ? <p style={{ color: 'var(--bad)', fontSize: 12 }}>{labels.reverseModal.requiredReason}</p> : null}
+            {reverseReasonError ? <p className="fld-error">{labels.reverseModal.requiredReason}</p> : null}
             {reverseFormError ? (
               <p role="alert" data-testid="transaction-reverse-error" style={{ color: 'var(--bad)', fontSize: 12.5 }}>
                 {reverseFormError}

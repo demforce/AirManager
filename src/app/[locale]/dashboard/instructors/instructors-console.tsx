@@ -331,7 +331,7 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
       {instructor ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-pay-form">
           <div className="form-grid">
-            <Field label={labels.amount}>
+            <Field label={labels.amount} error={errors.amount ? labels.requiredField : undefined}>
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.amount)} {...register('amount')} />
             </Field>
             <Field label={labels.method}>
@@ -341,10 +341,10 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
                 <option value="POS">{labels.methods.pos}</option>
               </Select>
             </Field>
-            <Field label={labels.periodStart}>
+            <Field label={labels.periodStart} error={errors.periodStart ? labels.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.periodStart)} {...register('periodStart')} />
             </Field>
-            <Field label={labels.periodEnd}>
+            <Field label={labels.periodEnd} error={errors.periodEnd ? labels.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.periodEnd)} {...register('periodEnd')} />
             </Field>
             <Field label={labels.notes} wide>

@@ -63,6 +63,8 @@ export type SearchComboboxProps = {
   /** Shown as a non-selectable row when a search yields zero matches. */
   emptyText: string;
   disabled?: boolean;
+  /** Story 14.2, AC 1: same contract as `Field`'s own `error` prop (this component renders its OWN `.fld`, see the doc-comment above) — sets `aria-invalid` on the input and an inline `.fld-error` message right below it. */
+  error?: string;
 };
 
 const DEBOUNCE_MS = 250;
@@ -111,6 +113,7 @@ export function SearchCombobox({
   placeholder,
   emptyText,
   disabled = false,
+  error,
 }: SearchComboboxProps) {
   const [committedLabel, setCommittedLabel] = useState<string>(() => findLabel(value, initialOptions));
   const [query, setQuery] = useState<string>(committedLabel);
@@ -331,6 +334,7 @@ export function SearchCombobox({
         aria-controls={listboxId}
         aria-activedescendant={activeOptionId}
         aria-autocomplete="list"
+        aria-invalid={Boolean(error)}
         autoComplete="off"
         disabled={disabled}
         placeholder={placeholder}
@@ -347,6 +351,12 @@ export function SearchCombobox({
         // (`html[data-theme]`), same as the listbox/options below.
         className="input"
       />
+      {/* Story 14.2, AC 1: same `.fld-error` inline message as `Field`. */}
+      {error ? (
+        <span className="fld-error" role="alert">
+          {error}
+        </span>
+      ) : null}
       {open && anchor
         ? createPortal(
             <ul

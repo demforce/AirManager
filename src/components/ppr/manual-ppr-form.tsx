@@ -243,60 +243,49 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
     <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel}>
       <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="manual-ppr-form">
         <div className="form-grid">
-          <Field label={labels.firstName}>
+          <Field label={labels.firstName} error={fieldErrorLabel(errors.firstName) ?? undefined}>
             <Input autoComplete="given-name" aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
           </Field>
-          {fieldErrorLabel(errors.firstName) ? <p className="fld-label">{fieldErrorLabel(errors.firstName)}</p> : null}
 
-          <Field label={labels.lastName}>
+          <Field label={labels.lastName} error={fieldErrorLabel(errors.lastName) ?? undefined}>
             <Input autoComplete="family-name" aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
           </Field>
-          {fieldErrorLabel(errors.lastName) ? <p className="fld-label">{fieldErrorLabel(errors.lastName)}</p> : null}
 
-          <Field label={labels.email}>
+          <Field label={labels.email} error={fieldErrorLabel(errors.email) ?? undefined}>
             <Input type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
           </Field>
-          {fieldErrorLabel(errors.email) ? <p className="fld-label">{fieldErrorLabel(errors.email)}</p> : null}
 
-          <Field label={labels.phone}>
+          <Field label={labels.phone} error={fieldErrorLabel(errors.phone) ?? undefined}>
             <Input type="tel" autoComplete="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
           </Field>
-          {fieldErrorLabel(errors.phone) ? <p className="fld-label">{fieldErrorLabel(errors.phone)}</p> : null}
 
-          <Field label={labels.aircraftRegistration}>
+          <Field label={labels.aircraftRegistration} error={fieldErrorLabel(errors.aircraftRegistration) ?? undefined}>
             <Input aria-invalid={Boolean(errors.aircraftRegistration)} {...register('aircraftRegistration')} style={{ textTransform: 'uppercase' }} />
           </Field>
-          {fieldErrorLabel(errors.aircraftRegistration) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftRegistration)}</p> : null}
 
-          <Field label={labels.aircraftType}>
+          <Field label={labels.aircraftType} error={fieldErrorLabel(errors.aircraftType) ?? undefined}>
             <Input aria-invalid={Boolean(errors.aircraftType)} {...register('aircraftType')} />
           </Field>
-          {fieldErrorLabel(errors.aircraftType) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftType)}</p> : null}
 
-          <Field label={labels.origin}>
+          <Field label={labels.origin} error={fieldErrorLabel(errors.origin) ?? undefined}>
             <Input aria-invalid={Boolean(errors.origin)} {...register('origin')} />
           </Field>
-          {fieldErrorLabel(errors.origin) ? <p className="fld-label">{fieldErrorLabel(errors.origin)}</p> : null}
 
-          <Field label={labels.destination}>
+          <Field label={labels.destination} error={fieldErrorLabel(errors.destination) ?? undefined}>
             <Input aria-invalid={Boolean(errors.destination)} {...register('destination')} />
           </Field>
-          {fieldErrorLabel(errors.destination) ? <p className="fld-label">{fieldErrorLabel(errors.destination)}</p> : null}
 
-          <Field label={labels.eta}>
+          <Field label={labels.eta} error={fieldErrorLabel(errors.eta) ?? undefined}>
             <DateTimeInput aria-invalid={Boolean(errors.eta)} {...register('eta')} />
           </Field>
-          {fieldErrorLabel(errors.eta) ? <p className="fld-label">{fieldErrorLabel(errors.eta)}</p> : null}
 
-          <Field label={labels.etd}>
+          <Field label={labels.etd} error={fieldErrorLabel(errors.etd) ?? undefined}>
             <DateTimeInput aria-invalid={Boolean(errors.etd)} {...register('etd')} />
           </Field>
-          {fieldErrorLabel(errors.etd) ? <p className="fld-label">{fieldErrorLabel(errors.etd)}</p> : null}
 
-          <Field label={labels.personsOnBoard}>
+          <Field label={labels.personsOnBoard} error={fieldErrorLabel(errors.personsOnBoard) ?? undefined}>
             <Input type="number" min={1} max={99} step={1} aria-invalid={Boolean(errors.personsOnBoard)} {...register('personsOnBoard')} />
           </Field>
-          {fieldErrorLabel(errors.personsOnBoard) ? <p className="fld-label">{fieldErrorLabel(errors.personsOnBoard)}</p> : null}
 
           <Field label={labels.notes} wide>
             <Input maxLength={1000} {...register('notes')} />

@@ -186,7 +186,7 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
       {booking ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="move-booking-form">
           <div className="form-grid">
-            <Field label={labels.aircraft}>
+            <Field label={labels.aircraft} error={fieldErrorLabel(errors.aircraftId) ?? undefined}>
               <Select aria-invalid={Boolean(errors.aircraftId)} {...register('aircraftId')}>
                 <option value="">{labels.selectPlaceholder}</option>
                 {aircraftOptions.map((aircraft) => (
@@ -198,17 +198,14 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
                 ))}
               </Select>
             </Field>
-            {fieldErrorLabel(errors.aircraftId) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftId)}</p> : null}
 
-            <Field label={labels.startsAt}>
+            <Field label={labels.startsAt} error={fieldErrorLabel(errors.startsAt) ?? undefined}>
               <DateTimeInput aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />
             </Field>
-            {fieldErrorLabel(errors.startsAt) ? <p className="fld-label">{fieldErrorLabel(errors.startsAt)}</p> : null}
 
-            <Field label={labels.endsAt}>
+            <Field label={labels.endsAt} error={fieldErrorLabel(errors.endsAt) ?? undefined}>
               <DateTimeInput aria-invalid={Boolean(errors.endsAt)} {...register('endsAt')} />
             </Field>
-            {fieldErrorLabel(errors.endsAt) ? <p className="fld-label">{fieldErrorLabel(errors.endsAt)}</p> : null}
 
             <Field label={labels.notes} wide>
               <Input maxLength={500} {...register('notes')} />

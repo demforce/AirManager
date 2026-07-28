@@ -375,7 +375,7 @@ export function NewBookingForm({
       <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="new-booking-form">
         <div className="form-grid">
           {mode === 'staff' ? (
-            <Field label={labels.person} wide>
+            <Field label={labels.person} wide error={fieldErrorLabel(errors.personId) ?? undefined}>
               <Select aria-invalid={Boolean(errors.personId)} {...register('personId')}>
                 <option value="">{labels.selectPlaceholder}</option>
                 {personOptions.map((person) => (
@@ -387,9 +387,8 @@ export function NewBookingForm({
             </Field>
           ) : null}
           {mode === 'staff' && personOptions.length === 0 ? <p className="fld-label">{labels.noPersonAvailable}</p> : null}
-          {mode === 'staff' && fieldErrorLabel(errors.personId) ? <p className="fld-label">{fieldErrorLabel(errors.personId)}</p> : null}
 
-          <Field label={labels.aircraft}>
+          <Field label={labels.aircraft} error={fieldErrorLabel(errors.aircraftId) ?? undefined}>
             <Select aria-invalid={Boolean(errors.aircraftId)} {...register('aircraftId')}>
               <option value="">{labels.selectPlaceholder}</option>
               {aircraftOptions.map((aircraft) => (
@@ -401,7 +400,6 @@ export function NewBookingForm({
               ))}
             </Select>
           </Field>
-          {fieldErrorLabel(errors.aircraftId) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftId)}</p> : null}
 
           {mode === 'staff' ? (
             <Field label={labels.instructorOptional}>
@@ -433,7 +431,7 @@ export function NewBookingForm({
           ) : null}
 
           {mode === 'instructor' && bookingTarget === 'student' ? (
-            <Field label={labels.student}>
+            <Field label={labels.student} error={fieldErrorLabel(errors.studentId) ?? undefined}>
               <Select aria-invalid={Boolean(errors.studentId)} {...register('studentId')}>
                 <option value="">{labels.selectPlaceholder}</option>
                 {studentOptions.map((student) => (
@@ -445,17 +443,14 @@ export function NewBookingForm({
             </Field>
           ) : null}
           {mode === 'instructor' && bookingTarget === 'student' && studentOptions.length === 0 ? <p className="fld-label">{labels.noStudentAvailable}</p> : null}
-          {mode === 'instructor' && bookingTarget === 'student' && fieldErrorLabel(errors.studentId) ? <p className="fld-label">{fieldErrorLabel(errors.studentId)}</p> : null}
 
-          <Field label={labels.startsAt}>
+          <Field label={labels.startsAt} error={fieldErrorLabel(errors.startsAt) ?? undefined}>
             <DateTimeInput aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />
           </Field>
-          {fieldErrorLabel(errors.startsAt) ? <p className="fld-label">{fieldErrorLabel(errors.startsAt)}</p> : null}
 
-          <Field label={labels.endsAt}>
+          <Field label={labels.endsAt} error={fieldErrorLabel(errors.endsAt) ?? undefined}>
             <DateTimeInput aria-invalid={Boolean(errors.endsAt)} {...register('endsAt')} />
           </Field>
-          {fieldErrorLabel(errors.endsAt) ? <p className="fld-label">{fieldErrorLabel(errors.endsAt)}</p> : null}
 
           <Field label={labels.notes} wide>
             <Input maxLength={500} {...register('notes')} />

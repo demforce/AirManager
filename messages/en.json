@@ -70,7 +70,8 @@
       "submit": "Sign in",
       "submitting": "Signing in…",
       "errorGeneric": "Incorrect email or password.",
-      "forgotPassword": "Forgot your password?"
+      "forgotPassword": "Forgot your password?",
+      "requiredField": "Required field."
     },
     "setPassword": {
       "kicker": "Set password",
@@ -95,7 +96,8 @@
       "submit": "Send reset link",
       "submitting": "Sending…",
       "confirmation": "If that email address matches an active account, you'll receive an email shortly with instructions to reset your password.",
-      "backToLogin": "Back to sign in"
+      "backToLogin": "Back to sign in",
+      "requiredField": "Required field."
     }
   },
   "DashboardPage": {
@@ -482,7 +484,8 @@
         "address": "Address",
         "fiscalCode": "Fiscal code",
         "save": "Save changes",
-        "loadError": "Could not load the identity data."
+        "loadError": "Could not load the identity data.",
+        "requiredField": "Required field."
       },
       "payoutRate": {
         "sectionTitle": "Payout rate (paid to the instructor)",
@@ -1816,6 +1819,7 @@
       "save": "Save",
       "saved": "Settings saved.",
       "error": "Could not save. Please try again.",
+      "invalidEmail": "Enter a valid email address.",
       "form": {
         "nameLabel": "Airfield name",
         "save": "Save",
@@ -1836,7 +1840,8 @@
       "hint": "Aircraft can be booked between {open} and {close} local time, in {slot}-minute increments, up to {days} days in advance. Minimum slot duration and turnaround margin are advisory (they never block saving a booking).",
       "save": "Save",
       "saved": "Settings saved.",
-      "error": "Could not save. Please try again."
+      "error": "Could not save. Please try again.",
+      "invalidRange": "The closing time must be after the opening time."
     },
     "smtp": {
       "title": "Email (SMTP)",
@@ -1860,7 +1865,8 @@
       "passConfigured": "Password already configured",
       "save": "Save",
       "saved": "Settings saved.",
-      "error": "Could not save. Please try again."
+      "error": "Could not save. Please try again.",
+      "invalidHost": "Invalid host: it cannot be a private, local, or internal address."
     },
     "treasury": {
       "title": "Treasury",

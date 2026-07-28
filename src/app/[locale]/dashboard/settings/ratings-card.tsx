@@ -326,7 +326,7 @@ function ExpiryTypeForm({ expiryType, kind, labels, testIds, onCancel, onSuccess
         {expiryType ? labels.form.editTitle : labels.form.createTitle}
       </div>
       <div className="form-grid">
-        <Field label={labels.form.name} wide>
+        <Field label={labels.form.name} wide error={errors.name ? labels.form.requiredField : undefined}>
           <Input maxLength={100} aria-invalid={Boolean(errors.name)} data-testid={testIds.nameInput} {...register('name')} />
         </Field>
         <Field label={labels.form.scope}>
@@ -356,7 +356,6 @@ function ExpiryTypeForm({ expiryType, kind, labels, testIds, onCancel, onSuccess
         </span>
       </label>
 
-      {errors.name ? <p style={{ marginTop: 6, fontSize: 12, color: 'var(--bad)' }}>{labels.form.requiredField}</p> : null}
       {formError ? (
         <p role="alert" data-testid={testIds.formError} style={{ marginTop: 8, fontSize: 12.5, color: 'var(--bad)' }}>
           {formError}

@@ -49,6 +49,8 @@ export type InstructorEditorLabels = {
     fiscalCode: string;
     save: string;
     loadError: string;
+    /** Story 14.2, AC 1/4: this section had NO required-field feedback at all (not even `aria-invalid`) — its own `updatePersonSchema` RHF errors were silently dropped. */
+    requiredField: string;
   };
   payoutRate: { sectionTitle: string; label: string; noValue: string; save: string; readOnlyHint: string };
   ratings: { sectionTitle: string } & LiveExpiryEditorLabels;
@@ -229,7 +231,7 @@ function IdentitySection({
   const {
     register,
     handleSubmit,
-    formState: { isSubmitting },
+    formState: { errors, isSubmitting },
   } = useForm<UpdatePersonInput>({
     resolver: zodResolver(updatePersonSchema),
     values: identity ?? undefined,
@@ -277,14 +279,14 @@ function IdentitySection({
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-identity-form">
       <div className="form-grid">
-        <Field label={labels.firstName}>
-          <Input {...register('firstName')} />
+        <Field label={labels.firstName} error={errors.firstName ? labels.requiredField : undefined}>
+          <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
         </Field>
-        <Field label={labels.lastName}>
-          <Input {...register('lastName')} />
+        <Field label={labels.lastName} error={errors.lastName ? labels.requiredField : undefined}>
+          <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
         </Field>
-        <Field label={labels.email} wide>
-          <Input type="email" {...register('email')} />
+        <Field label={labels.email} wide error={errors.email ? labels.requiredField : undefined}>
+          <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
         <Field label={labels.phone}>
           <Input type="tel" {...register('phone')} />
@@ -390,17 +392,12 @@ function PayoutRateForm({
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-payout-rate-form">
       <div className="form-grid">
-        <Field label={labels.label}>
+        <Field label={labels.label} error={errors.rate ? errorLabels.invalidRate : undefined}>
           <InputGroup prefix="€" suffix="/h">
             <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.rate)} {...register('rate')} />
           </InputGroup>
         </Field>
       </div>
-      {errors.rate ? (
-        <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-          {errorLabels.invalidRate}
-        </p>
-      ) : null}
       {formError ? (
         <p role="alert" data-testid="instructor-payout-rate-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
           {formError}

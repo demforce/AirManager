@@ -129,6 +129,12 @@ export function InstructorRatesPanel({ personId, toast, canAddRate, labels }: In
     defaultValues: { price: '', validFrom: todayDateOnly() },
   });
 
+  /** Same "custom message marker vs plain required" split as `fleet/aircraft-editor.tsx#RatesSection`'s own twin form. */
+  function priceFieldError(fieldError: { message?: string } | undefined): string | undefined {
+    if (!fieldError) return undefined;
+    return fieldError.message === 'invalidPrice' ? labels.invalidPrice : labels.requiredField;
+  }
+
   // Fetch-on-mount effect: the async function is declared INSIDE the effect
   // (same pattern as `fleet/aircraft-editor.tsx`'s `RatesSection`) rather
   // than referencing an outer-scope helper — that shape is what keeps the
@@ -180,10 +186,10 @@ export function InstructorRatesPanel({ personId, toast, canAddRate, labels }: In
       {canAddRate ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-rates-form" style={{ marginTop: 10 }}>
           <div className="form-grid">
-            <Field label={labels.price}>
+            <Field label={labels.price} error={priceFieldError(errors.price)}>
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.price)} {...register('price')} />
             </Field>
-            <Field label={labels.validFrom}>
+            <Field label={labels.validFrom} error={errors.validFrom ? labels.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
             </Field>
           </div>

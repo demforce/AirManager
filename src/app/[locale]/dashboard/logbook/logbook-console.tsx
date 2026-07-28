@@ -594,9 +594,7 @@ export function LogbookConsole({
               maxLength={500}
               data-testid="flight-cancel-reason"
             />
-            {cancelReasonError ? (
-              <p style={{ color: 'var(--bad)', fontSize: 12 }}>{labels.cancelModal.requiredReason}</p>
-            ) : null}
+            {cancelReasonError ? <p className="fld-error">{labels.cancelModal.requiredReason}</p> : null}
             {cancelFormError ? (
               <p role="alert" data-testid="flight-cancel-error" style={{ color: 'var(--bad)', fontSize: 12.5 }}>
                 {cancelFormError}

@@ -245,12 +245,11 @@ function CashCategoryForm({ category, labels, onCancel, onSuccess }: CashCategor
         {category ? labels.renameTitle : labels.createTitle}
       </div>
       <div className="form-grid">
-        <Field label={labels.name} wide>
+        <Field label={labels.name} wide error={errors.name ? labels.requiredField : undefined}>
           <Input maxLength={100} aria-invalid={Boolean(errors.name)} data-testid="cash-category-name-input" {...register('name')} />
         </Field>
       </div>
 
-      {errors.name ? <p style={{ marginTop: 6, fontSize: 12, color: 'var(--bad)' }}>{labels.requiredField}</p> : null}
       {formError ? (
         <p role="alert" data-testid="cash-category-form-error" style={{ marginTop: 8, fontSize: 12.5, color: 'var(--bad)' }}>
           {formError}

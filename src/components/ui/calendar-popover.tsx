@@ -167,11 +167,7 @@ export function CalendarPopover({
               />
             </span>
           </label>
-          {time.invalid ? (
-            <p className="fld-label" style={{ color: 'var(--bad)' }}>
-              {time.invalidLabel}
-            </p>
-          ) : null}
+          {time.invalid ? <p className="fld-error">{time.invalidLabel}</p> : null}
         </>
       ) : null}
       <div className="cal-foot">

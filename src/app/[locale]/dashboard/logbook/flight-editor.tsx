@@ -19,7 +19,7 @@
  * toast) — `lastResult` switches the body/footer to a read-only summary
  * view until the user explicitly closes.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -28,6 +28,8 @@ import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
+import { parseApiError } from '@/lib/api-field-errors';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents } from '@/lib/money';
 import { flightTypeSchema, type FlightListItemDto, type FlightTypeDto, type RegisterFlightResponseDto } from '@/lib/schemas/flights';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
@@ -249,17 +251,35 @@ export function FlightEditor({
   const [aircraftId, setAircraftId] = useState(initialPickers.aircraftId);
   const [personId, setPersonId] = useState(initialPickers.personId);
   const [instructorPersonId, setInstructorPersonId] = useState(initialPickers.instructorPersonId);
+  // Story 14.2 (AC 1/2): the aircraft/person pickers are `SearchCombobox`,
+  // not react-hook-form fields — their OWN "required" errors (each marked
+  // independently, not a single combined banner) and cleared the instant a
+  // selection is made.
+  const [aircraftError, setAircraftError] = useState(false);
+  const [personError, setPersonError] = useState(false);
   const [lastResult, setLastResult] = useState<RegisterFlightResponseDto | null>(null);
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<FlightFormValues>({
     resolver: zodResolver(flightFormSchema),
     defaultValues: defaults,
   });
+
+  function handleAircraftChange(id: string): void {
+    setAircraftId(id);
+    if (id.trim() !== '') setAircraftError(false);
+  }
+
+  function handlePersonChange(id: string): void {
+    setPersonId(id);
+    if (id.trim() !== '') setPersonError(false);
+  }
 
   const noAircraft = aircraftOptions.length === 0;
   const noPerson = personOptions.length === 0;
@@ -292,15 +312,16 @@ export function FlightEditor({
   async function onSubmit(values: FlightFormValues): Promise<void> {
     setFormError(null);
 
-    if (aircraftId.trim() === '' || personId.trim() === '') {
-      setFormError(labels.requiredField);
+    const nextAircraftError = aircraftId.trim() === '';
+    const nextPersonError = personId.trim() === '';
+    setAircraftError(nextAircraftError);
+    setPersonError(nextPersonError);
+    const nextReasonError = isCorrecting && reason.trim() === '';
+    setReasonError(nextReasonError);
+    if (nextAircraftError || nextPersonError || nextReasonError) {
+      setTimeout(() => focusFirstInvalid(formRef.current), 0);
       return;
     }
-    if (isCorrecting && reason.trim() === '') {
-      setReasonError(true);
-      return;
-    }
-    setReasonError(false);
 
     const times = composeFlightTimes(values.flightDate, values.takeoffTime, values.landingTime);
     if (!times) {
@@ -368,8 +389,26 @@ export function FlightEditor({
         setFormError(labels.conflictError);
         return;
       }
-      const body: unknown = await response.json().catch(() => null);
-      const code = (body as { error?: { code?: string } } | null)?.error?.code;
+      const { code, fieldErrors } = await parseApiError(response);
+      if (response.status === 422 && fieldErrors.size > 0) {
+        // Story 14.2, AC 3: a field-shaped 422 marks the matching Field
+        // instead of only the bottom banner (`labels.requiredField` reused
+        // per field) — unreachable in normal use today (the client schema
+        // already mirrors the server's required checks) but kept for parity
+        // with every other SlideOver editor's own mapping.
+        const known: Array<keyof FlightFormValues> = ['flightDate', 'departureAirfield', 'arrivalAirfield', 'takeoffTime', 'landingTime'];
+        let mapped = false;
+        for (const field of known) {
+          if (fieldErrors.has(field)) {
+            setError(field, { type: 'server', message: labels.requiredField });
+            mapped = true;
+          }
+        }
+        if (mapped) {
+          setTimeout(() => focusFirstInvalid(formRef.current), 0);
+          return;
+        }
+      }
       const knownErrors: Record<string, string> = labels.errors;
       setFormError((code && knownErrors[code]) ?? labels.errors.generic);
       return;
@@ -446,9 +485,9 @@ export function FlightEditor({
           </dl>
         </div>
       ) : (
-        <form id="flight-editor-form" data-testid="flight-form" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
+        <form id="flight-editor-form" ref={formRef} data-testid="flight-form" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
           <div className="form-grid">
-            <Field label={labels.fields.flightDate}>
+            <Field label={labels.fields.flightDate} error={errors.flightDate ? labels.requiredField : undefined}>
               <DateInput
                 aria-invalid={Boolean(errors.flightDate)}
                 {...register('flightDate', { onChange: (event: { target: { value: string } }) => setFlightDateValue(event.target.value) })}
@@ -463,12 +502,13 @@ export function FlightEditor({
                 id="flight-aircraft"
                 label={labels.fields.aircraft}
                 value={aircraftId}
-                onChange={setAircraftId}
+                onChange={handleAircraftChange}
                 fetchOptions={searchAircraft}
                 initialOptions={aircraftComboOptions}
                 placeholder={labels.picker.placeholder}
                 emptyText={labels.picker.noResults}
                 disabled={noAircraft}
+                error={aircraftError ? labels.requiredField : undefined}
               />
             </div>
             <div className="fld wide">
@@ -476,12 +516,13 @@ export function FlightEditor({
                 id="flight-person"
                 label={labels.fields.person}
                 value={personId}
-                onChange={setPersonId}
+                onChange={handlePersonChange}
                 fetchOptions={(q) => searchPeople(q, 'pilot-or-student')}
                 initialOptions={personComboOptions}
                 placeholder={labels.picker.placeholder}
                 emptyText={labels.picker.noResults}
                 disabled={noPerson}
+                error={personError ? labels.requiredField : undefined}
               />
             </div>
             <div className="fld">
@@ -511,20 +552,20 @@ export function FlightEditor({
                 <option value="AERIAL_WORK">{labels.flightTypes.other}</option>
               </Select>
             </Field>
-            <Field label={labels.fields.departure}>
+            <Field label={labels.fields.departure} error={errors.departureAirfield ? labels.requiredField : undefined}>
               <Input aria-invalid={Boolean(errors.departureAirfield)} {...register('departureAirfield')} />
             </Field>
-            <Field label={labels.fields.arrival}>
+            <Field label={labels.fields.arrival} error={errors.arrivalAirfield ? labels.requiredField : undefined}>
               <Input aria-invalid={Boolean(errors.arrivalAirfield)} {...register('arrivalAirfield')} />
             </Field>
-            <Field label={labels.fields.takeoffTime}>
+            <Field label={labels.fields.takeoffTime} error={errors.takeoffTime ? labels.requiredField : undefined}>
               <Input
                 type="time"
                 aria-invalid={Boolean(errors.takeoffTime)}
                 {...register('takeoffTime', { onChange: (event: { target: { value: string } }) => setTakeoffTimeValue(event.target.value) })}
               />
             </Field>
-            <Field label={labels.fields.landingTime}>
+            <Field label={labels.fields.landingTime} error={errors.landingTime ? labels.requiredField : undefined}>
               <Input
                 type="time"
                 aria-invalid={Boolean(errors.landingTime)}
@@ -547,8 +588,16 @@ export function FlightEditor({
               <Input {...register('notes')} />
             </Field>
             {isCorrecting ? (
-              <Field label={labels.correctReason} wide>
-                <Input value={reason} onChange={(event) => setReason(event.target.value)} aria-invalid={reasonError} maxLength={500} />
+              <Field label={labels.correctReason} wide error={reasonError ? labels.requiredReason : undefined}>
+                <Input
+                  value={reason}
+                  onChange={(event) => {
+                    setReason(event.target.value);
+                    if (reasonError && event.target.value.trim() !== '') setReasonError(false);
+                  }}
+                  aria-invalid={reasonError}
+                  maxLength={500}
+                />
               </Field>
             ) : null}
           </div>
@@ -569,9 +618,6 @@ export function FlightEditor({
             </fieldset>
           ) : null}
 
-          {reasonError ? (
-            <p style={{ color: 'var(--bad)', fontSize: 12, marginTop: 6 }}>{labels.requiredReason}</p>
-          ) : null}
           {noAircraft ? <p style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 10 }}>{labels.fields.noAircraftAvailable}</p> : null}
           {noPerson ? <p style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 4 }}>{labels.fields.noPersonAvailable}</p> : null}
           {formError ? (

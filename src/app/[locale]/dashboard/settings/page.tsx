@@ -206,6 +206,7 @@ export default async function SettingsPage({ params }: PageProps) {
           save: t('club.save'),
           saved: t('club.saved'),
           error: t('club.error'),
+          invalidEmail: t('club.invalidEmail'),
         }}
       />
 
@@ -230,6 +231,7 @@ export default async function SettingsPage({ params }: PageProps) {
           save: t('scheduling.save'),
           saved: t('scheduling.saved'),
           error: t('scheduling.error'),
+          invalidRange: t('scheduling.invalidRange'),
         }}
       />
 
@@ -254,6 +256,7 @@ export default async function SettingsPage({ params }: PageProps) {
           save: t('smtp.save'),
           saved: t('smtp.saved'),
           error: t('smtp.error'),
+          invalidHost: t('smtp.invalidHost'),
         }}
       />
 

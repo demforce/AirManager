@@ -394,7 +394,7 @@ function TopUpForm({
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="account-topup-form">
       <div className="form-grid">
-        <Field label={labels.amount}>
+        <Field label={labels.amount} error={errors.amount ? labels.requiredField : undefined}>
           <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.amount)} {...register('amount')} />
         </Field>
         <Field label={labels.paymentMethod}>
@@ -404,7 +404,7 @@ function TopUpForm({
             <option value="POS">{labels.paymentMethods.pos}</option>
           </Select>
         </Field>
-        <Field label={labels.effectiveDate}>
+        <Field label={labels.effectiveDate} error={errors.effectiveDate ? labels.requiredField : undefined}>
           <DateInput aria-invalid={Boolean(errors.effectiveDate)} {...register('effectiveDate')} />
         </Field>
         <Field label={labels.description} wide>
@@ -516,28 +516,16 @@ function AdjustmentForm({
         </p>
       ) : null}
       <div className="form-grid" style={{ marginTop: 10 }}>
-        <Field label={labels.amount}>
+        <Field label={labels.amount} error={errors.amount ? labels.invalidAmount : undefined}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
             <Input inputMode="decimal" placeholder="-0,00" aria-invalid={Boolean(errors.amount)} {...register('amount')} />
             <p className="fld-label" style={{ textTransform: 'none' }}>
               {labels.amountHint}
             </p>
-            {errors.amount ? (
-              <p role="alert" className="fld-label" style={{ color: 'var(--bad)' }}>
-                {labels.invalidAmount}
-              </p>
-            ) : null}
           </div>
         </Field>
-        <Field label={labels.reason} wide>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
-            <Input aria-invalid={Boolean(errors.reason)} {...register('reason')} />
-            {errors.reason ? (
-              <p role="alert" className="fld-label" style={{ color: 'var(--bad)' }}>
-                {labels.requiredReason}
-              </p>
-            ) : null}
-          </div>
+        <Field label={labels.reason} wide error={errors.reason ? labels.requiredReason : undefined}>
+          <Input aria-invalid={Boolean(errors.reason)} {...register('reason')} />
         </Field>
       </div>
       {formError ? (
