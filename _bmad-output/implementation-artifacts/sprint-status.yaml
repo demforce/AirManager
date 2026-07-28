@@ -205,8 +205,12 @@ development_status:
   # Piano con ratifiche R1-R4 e decisioni D1-D3: docs/superpowers/plans/2026-07-28-epic-14-demo-feedback.md
   # Ordine: 14.1 -> 14.2 -> 14.8 -> 14.5 -> 14.6 -> 14.7 -> 14.3 -> 14.4 -> TD-8 -> 14.9 (STAFF ultima).
   epic-14: in-progress
-  14-1-controlli-form-typeahead-date: ready-for-dev
-  14-2-validazione-form-per-campo: backlog
+  # 14.1 chiusa 2026-07-28: review Opus 5 con 4 major di geometria (cap altezza,
+  # overlap residuo su viewport bassi, flip fuori viewport, listbox orfana su scroll),
+  # tutti fixati e rimisurati; invarianza CalendarPopover provata con stash/rebuild;
+  # F5 Firefox ratificato accept-and-document (l'utente usa Chrome). Arbitro 274/274.
+  14-1-controlli-form-typeahead-date: done
+  14-2-validazione-form-per-campo: ready-for-dev
   14-3-regole-voli-scuola: backlog
   14-4-guardrail-registrazione-volo: backlog
   14-5-privacy-prenotazioni: backlog

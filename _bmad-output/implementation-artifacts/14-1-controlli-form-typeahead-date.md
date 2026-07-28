@@ -4,7 +4,7 @@ baseline_commit: 03213e9
 
 # Story 14.1: Controlli form — typeahead che copre l'input, doppia icona date, tasto "Oggi"
 
-Status: review (branch `dev`, epic 14) — implementazione in `4ac9d3b`
+Status: done (review Opus 5 shippable-with-fixes → fix F1-F7 `44c8fda`, arbitro 274/274, 0 flaky — 2026-07-28)
 
 ## Story
 
@@ -86,4 +86,74 @@ Rimossi anche, perché diventati orfani DALLA mia modifica: il campo `todayHref`
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+**Reviewer**: subagent adversarial Opus 5 xhigh — review di `4ac9d3b` (feat) + `b973510` (record) su baseline `9d12ed9`.
+**Verdetto**: **shippable-with-fixes** — 4 major, 1 minor, 2 nit. Nessun blocker: il percorso desktop principale (1280x800) funziona e la suite è verde; i major sono difetti di geometria riproducibili su viewport bassi/scroll e una regressione visiva sul cap di altezza.
+
+### Priorità zero — full suite arbitro
+
+DB resettato (`docker compose down -v` + migrate + seed), `JOBS_SECRET` esportata, build prod, `CI=1 npx playwright test` in foreground su file:
+
+```
+Running 272 tests using 2 workers
+...
+  272 passed (7.6m)
+```
+`E2E EXIT=0` — **272 passed, 0 failed, 0 flaky** (catena serializzata completa: settings 6/6, booking-window 3/3, treasury-settings 3/3, billing-global 2/2). Coerente col dev (271 + 1 flaky = 272); nel mio run nemmeno il flaky della classe "login POST ~5s".
+`npm run gates` rieseguito: `PASS lint (19s) / PASS typecheck (16s) / PASS test (12s) — 1541 passed / PASS build (47s)`.
+
+> Nota ambiente: `npx next build` con `NODE_ENV=development` ereditato da `.env` fallisce sul prerender di `/it/dashboard/reports` (`TypeError: Cannot read properties of null (reading 'useContext')`). È la regola già codificata in `scripts/gates.sh` (`env -u NODE_ENV`), non un problema della story — ma vale la pena ricordarla nei run manuali.
+
+### Verifica delle deviazioni dichiarate
+
+- **D1 (regola CSS generalizzata per tipo) — CONFERMATA e sicura su Chromium.** Enumerazione indipendente: 21 `<DateInput>`, 8 `<DateTimeInput>` (form pubblico `/ppr` incluso: `ppr-form.tsx:323/:329` — entrambi con trigger custom), 4 `type="time"` nativi, **zero** `month`/`week`, **zero** prop `type={...}` dinamica, **zero** `<datalist>`/`list=` (l'altro possibile bersaglio di `::-webkit-calendar-picker-indicator` in Chrome). Nessun input perde un modo ergonomico di inserimento. Verifica visiva per campo: 1 icona su date/datetime, 0 sui time. **Caveat → F5** (Firefox).
+- **D2 (nessuna label i18n rimossa) — CONFERMATA empiricamente.** Catena `it.json:1510 → booking-labels.ts:24 → schedule.tsx:302 → calendar-popover.tsx:179`; in-browser il footer del calendario mostra "Oggi", lo click chiude il popover e naviga a oggi; coperto da `e2e/bookings.spec.ts:683/:724`, verde.
+- **D3 (Status: review) — CONFERMATA.**
+
+### Verifiche empiriche condotte
+
+1. **Estrazione `computeFixedPopoverAnchor`** (rischio n.1): diff riga per riga vs `9d12ed9` + differential testing su **226.288** combinazioni (vh, top del trigger, altezza, `neededHeight`) → **0 differenze**. L'unica variazione è sintattica (`else` → early return). Nessuna regressione possibile per CalendarPopover/DateInput/DateTimeInput/schedule.
+2. **Discriminanza dei 2 e2e nuovi**: ricostruito il pre-fix in un worktree su `9d12ed9` (build prod reale, stesso DB, repo principale intatto, worktree rimosso a fine review) → **entrambi i test falliscono**; e anche i soli predicati di geometria si invertono (pre-fix: `overlapsInput=true`, `rendersBelow=false`, `flippedAbove=false`, `overlapsField=true`). Controllo sul build fixato: `2 passed (5.2s)`.
+3. **Geometria dei 3 consumer reali** (flight-editor x3, scadenze mini-modal, billing slide-over) su 12 altezze di viewport + mobile 390x844 + landscape 844x390, con `elementFromPoint` come hit-test.
+4. **Matrice ruoli** admin/staff/istruttore/pilota/allievo su `/dashboard` e `/dashboard/bookings?view=day`: toolbar corretta, nessun "Oggi", nessun errore JS.
+5. Nessuna verifica `psql`/concorrenza: **il diff non tocca server, API, schema o RBAC** (verificato sul perimetro `git diff 9d12ed9..HEAD`).
+
+### Findings
+
+| # | Sev | Titolo |
+|---|-----|--------|
+| F1 | major | `maxHeight` inline annulla il cap 240px: dropdown alto fino a **616px** su 1280x800, copre tutto il form (`search-combobox.tsx:328`; `airops.css:1293` diventa morta). Baseline misurata: 240px. |
+| F2 | major | **AC1 non soddisfatto**: su vh=340/360 (velivolo) e vh=410/420/440 (pilota) la listbox copre l'input — `elementFromPoint` al centro dell'input restituisce `combo-option active`. Causa: clamp di `top` verso l'alto in `fixed-popover.ts:116` combinato col pavimento `MIN_POPOVER_HEIGHT` (riga 114). |
+| F3 | major | Flip verso l'alto tagliato dal bordo superiore: a 844x390 (landscape) listbox `[-30.2, 169.8]`, `scrollTop=0`, **prima opzione non hit-testable e irraggiungibile** (`fixed-popover.ts:111`). |
+| F4 | major | Nessuna chiusura su scroll/resize (a differenza di `useFixedPopover`, `fixed-popover.ts:149-161`): scrollando `.so-body` di 186px l'input esce dal viewport (`[-63,-26.2]`) mentre la listbox resta a `[165.8,542]`, sopra il campo "Aeroporto di arrivo". |
+| F5 | minor | AC2 "nascosto OVUNQUE" non vale su Firefox (regola `-webkit-`-only, `airops.css:1579-1583`). Limite **ereditato**, non introdotto — ma l'utente è su Fedora. Non verificabile qui (Playwright Firefox non parte: `libgtk-3.so.0` mancante; nessun Firefox di sistema). Serve una ratifica PO. |
+| F6 | nit | `.combo-listbox` conserva `z-index: 20` e `max-height: 240px` (righe 1292-1293) ormai sempre sovrascritti, e il commento afferma che lo z-index è stato "moved OFF this class". |
+| F7 | nit | Dev Record: "4 file lo importano" → sono 3 (`billing-console.tsx` cita `SearchCombobox` solo in un commento, riga 63). |
+
+### Note positive
+
+- Diagnosi della causa radice **misurata e riproducibile al pixel** sul baseline (listbox top 105.8 < input top 123.0, `position: absolute`, height 240) — fix mirato alla causa, non al sintomo.
+- Riuso invece di duplicazione della math del popover, con equivalenza dimostrabile.
+- z-index del portale corretto anche nel caso più insidioso (mini-modal z-index 60 vs listbox 66); il click su un'opzione non chiude né mini-modal né SlideOver e committa il valore.
+- Diff chirurgico (9 file, +258/-94), ogni riga riconducibile agli AC; `e2e/bookings.spec.ts` non indebolito (rimosso solo un testid che non esiste più); zero churn dei plugin utente.
+
+### Fix post-review (2026-07-28, fix-subagent Sonnet 5 xhigh — commit `44c8fda`)
+
+**Ratifica PO F5 (AskUserQuestion)**: l'utente usa Chrome → il limite Firefox (indicator nativo non nascondibile, regola `-webkit-`-only, limite EREDITATO pre-story) è ACCETTATO e documentato qui: l'AC2 vale sui browser Chromium-based.
+
+- **F1 fixed** — `maxHeight: Math.min(COMBO_LISTBOX_HEIGHT, anchor.maxHeight)`: il cap CSS 240px torna la fonte reale. Misura: 110 velivoli seminati (scrollHeight naturale 3564px) → altezza resa esattamente 240px.
+- **F2 fixed** — `computeFixedPopoverAnchor` ha ora un 3° parametro opzionale `FixedPopoverAnchorOptions` (default {} = comportamento byte-identico per ogni caller esistente): `neverOverlapTrigger` (solo search-combobox) inchioda `top` a `triggerRect.bottom + POPOVER_GAP` nel ramo "sotto". Scansione vh ∈ {340…460} × 2 campi × {DB piccolo, 110 velivoli}: `overlapsInput=false` e input hit-testable OVUNQUE.
+- **F3 fixed** — `minAboveHeight` nello stesso options object (default 200 invariato per il calendario; combobox passa 96): a 844×390 la lista sta interamente nel viewport, prima opzione hittable a scrollTop=0.
+- **F4 fixed** — listener capture scroll+resize che chiudono la listbox (pattern `useFixedPopover`), con lo scroll INTERNO della lista esente (misurato: wheel sul body → chiusa; resize → chiusa; wheel sulle opzioni → resta aperta).
+- **F6/F7 fixed** — `z-index: 20` morto rimosso e commento allineato; Dev Agent Record corretto (3 importatori reali, non 4).
+- **Invarianza CalendarPopover (vincolo trasversale) PROVATA empiricamente**: comportamento misurato sul form `/ppr` pubblico PRIMA del fix (stash dei 3 file + rebuild) e DOPO — byte-identico, incluso il compromesso deliberato TD-7 "stay below + clamp" a viewport 380px.
+
+**Gates post-fix**: PASS lint/typecheck/test/build — 1541 unit. **e2e mirati**: typeahead-pickers 5/5 (incluse le 2 nuove guardie F2/F4).
+
+**Full suite finale (arbitro = sessione principale; il run del fix-subagent è morto col cap foreground a 33/274, pattern noto)**: DB fresco, build prod, `CI=1 npx playwright test` →
+
+```
+274 passed (7.5m)
+```
+Exit code `0`, zero flaky.
+
+**Esito finale: tutti i findings chiusi (F5 ratificato accept-and-document). Story DONE.**
