@@ -402,10 +402,18 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       });
 
       it('creates the aircraft and its first rate in ONE transaction (AC 1/2)', async () => {
-        mockInteractiveTransaction();
+        // Review 14.8 F4: a DISTINCT tx client (instead of echoing the global
+        // `prisma` back, which makes tx.* and prisma.* the SAME spy) lets this
+        // test FAIL if either write ever escapes the transaction onto the
+        // global client — the atomicity is asserted, not assumed.
+        const txAircraftCreate = vi.fn().mockResolvedValue(SELECTED_AIRCRAFT);
+        const txRateCreate = vi.fn().mockResolvedValue({});
+        transaction.mockImplementation((arg: unknown) =>
+          typeof arg === 'function'
+            ? (arg as (tx: unknown) => unknown)({ aircraft: { create: txAircraftCreate }, aircraftRate: { create: txRateCreate } })
+            : arg,
+        );
         aircraftFindFirst.mockResolvedValue(null);
-        aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
-        aircraftRateCreateMock.mockResolvedValue({} as never);
 
         const result = await createAircraft(adminActor(), {
           ...input,
@@ -413,7 +421,8 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         });
 
         expect(transactionMock).toHaveBeenCalledTimes(1);
-        expect(aircraftRateCreateMock).toHaveBeenCalledWith(
+        expect(txAircraftCreate).toHaveBeenCalledTimes(1);
+        expect(txRateCreate).toHaveBeenCalledWith(
           expect.objectContaining({
             data: expect.objectContaining({
               aircraftId: SELECTED_AIRCRAFT.id,
@@ -423,6 +432,9 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
             }),
           }),
         );
+        // The GLOBAL client must never be touched by the composite path.
+        expect(aircraftCreate).not.toHaveBeenCalled();
+        expect(aircraftRateCreateMock).not.toHaveBeenCalled();
         expect(result.id).toBe(SELECTED_AIRCRAFT.id);
       });
 

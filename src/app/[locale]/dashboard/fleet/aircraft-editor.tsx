@@ -328,13 +328,22 @@ type IdentitySectionProps =
       onSaved: (updated: EditableAircraft) => void;
     };
 
+/** Review 14.8 F7 — narrow accessor: `canManageSettings` only exists on the props union's create arm. */
+function isNewModeCanManageSettings(props: IdentitySectionProps): boolean {
+  return props.mode === 'new' && props.canManageSettings;
+}
+
 function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
   const { labels } = props;
   const [formError, setFormError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const isNew = props.mode === 'new';
-  const showRatesSection = props.mode === 'new' && props.canManageSettings;
+  // Review 14.8 F7 — the section renders for EVERY creator (form parity with
+  // edit, user-ratified principle): staff without `settings.manage` sees the
+  // same read-only hint edit's RatesSection shows, admin sees the fields.
+  const showRatesSection = props.mode === 'new';
+  const canEditRates = isNewModeCanManageSettings(props);
 
   // Story 14.8 (AC 1/2): the optional "Tariffe" block folded into the SAME
   // composite submit as identity — plain state + imperative validation, NOT
@@ -350,9 +359,18 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
   const [rateSubmitAttempted, setRateSubmitAttempted] = useState(false);
 
   const hasRate = ratePrice.trim().length > 0;
+  // Review 14.8 F1: the block counts as "touched" if ANY of its fields is —
+  // a dry price without a wet one must BLOCK the submit (mirror of edit's
+  // `newRateFormSchema` `price: min(1)`), never be silently dropped.
+  const rateTouched = hasRate || ratePriceDry.trim().length > 0;
+  const ratePriceMissing = rateTouched && !hasRate;
   const ratePriceInvalid = hasRate && !isValidRatePrice(ratePrice);
   const ratePriceDryInvalid = ratePriceDry.trim().length > 0 && !isValidRatePrice(ratePriceDry);
-  const rateValidFromMissing = hasRate && rateValidFrom.trim().length === 0;
+  const rateValidFromMissing = rateTouched && rateValidFrom.trim().length === 0;
+  // Review 14.8 F2: Chromium's date input accepts >4-digit years that
+  // `z.iso.date()` rejects server-side as an unmappable `rate` fieldError —
+  // enforce the ISO shape client-side so that 422 is unreachable.
+  const rateValidFromInvalid = rateTouched && rateValidFrom.trim().length > 0 && !/^\d{4}-\d{2}-\d{2}$/.test(rateValidFrom.trim());
 
   const defaultValues = isNew
     ? { registration: '', type: '', model: '', hourMeterMinutes: 0, notes: null, seats: null, fuelType: null, based: true }
@@ -395,7 +413,7 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
 
     if (isNew) {
       setRateSubmitAttempted(true);
-      if (ratePriceInvalid || ratePriceDryInvalid || rateValidFromMissing) {
+      if (ratePriceMissing || ratePriceInvalid || ratePriceDryInvalid || rateValidFromMissing || rateValidFromInvalid) {
         setTimeout(() => focusFirstInvalid(formRef.current), 0);
         return;
       }
@@ -528,12 +546,24 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
 
       {showRatesSection ? (
         <Section title={labels.rates.sectionTitle}>
+          {!canEditRates ? (
+            <p className="hint" style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{labels.rates.readOnlyHint}</p>
+          ) : (
           <div className="form-grid">
-            <Field label={labels.rates.price} error={rateSubmitAttempted && ratePriceInvalid ? labels.errors.invalidPrice : undefined}>
+            <Field
+              label={labels.rates.price}
+              error={
+                rateSubmitAttempted && (ratePriceMissing || ratePriceInvalid)
+                  ? ratePriceMissing
+                    ? labels.errors.required
+                    : labels.errors.invalidPrice
+                  : undefined
+              }
+            >
               <Input
                 inputMode="decimal"
                 placeholder="0,00"
-                aria-invalid={rateSubmitAttempted && ratePriceInvalid}
+                aria-invalid={rateSubmitAttempted && (ratePriceMissing || ratePriceInvalid)}
                 value={ratePrice}
                 onChange={(event) => setRatePrice(event.target.value)}
                 data-testid="new-aircraft-rate-price"
@@ -549,15 +579,25 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
                 data-testid="new-aircraft-rate-price-dry"
               />
             </Field>
-            <Field label={labels.rates.validFrom} error={rateSubmitAttempted && rateValidFromMissing ? labels.errors.required : undefined}>
+            <Field
+              label={labels.rates.validFrom}
+              error={
+                rateSubmitAttempted && (rateValidFromMissing || rateValidFromInvalid)
+                  ? rateValidFromMissing
+                    ? labels.errors.required
+                    : labels.errors.invalidDate
+                  : undefined
+              }
+            >
               <DateInput
-                aria-invalid={rateSubmitAttempted && rateValidFromMissing}
+                aria-invalid={rateSubmitAttempted && (rateValidFromMissing || rateValidFromInvalid)}
                 value={rateValidFrom}
                 onChange={(event) => setRateValidFrom(event.target.value)}
                 data-testid="new-aircraft-rate-valid-from"
               />
             </Field>
           </div>
+          )}
         </Section>
       ) : null}
 

@@ -1028,7 +1028,8 @@ registry.registerPath({
   method: 'post',
   path: '/api/v1/aircraft',
   summary: 'Create an aircraft',
-  description: 'Registration (marche) must be unique — conflict is a 409.',
+  description:
+    'Registration (marche) must be unique — conflict is a 409. The optional `rate` block (story 14.8) creates the first hourly rate in the SAME transaction and additionally requires the `settings.manage` permission (admin-only): a caller with only `aircraft.manage` gets 403 when `rate` is present, 201 without it.',
   tags: ['Aircraft'],
   security,
   request: { body: { content: jsonContent(createAircraftSchema), required: true } },

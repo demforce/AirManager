@@ -306,6 +306,28 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2; dry rate added
     await expect(page.getByTestId('rates-current-dry')).toContainText(/95,00\s€/);
   });
 
+  test('a dry price WITHOUT a wet one blocks the submit and marks the wet field — never silently dropped (review 14.8 F1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = uniqueAircraft('F1');
+
+    await page.goto('/it/dashboard/fleet');
+    await page.getByTestId('fleet-new-button').click();
+    const form = page.getByTestId('identity-form');
+    await form.getByLabel('Marche').fill(aircraft.registration);
+    await form.getByLabel('Tipo').fill(aircraft.type);
+    await form.getByLabel('Modello').fill(aircraft.model);
+    await page.getByTestId('new-aircraft-rate-price-dry').fill('95,00');
+    await page.getByTestId('identity-submit').click();
+
+    // The submit is BLOCKED: wet price marked as required, editor stays open,
+    // no toast — and the aircraft was never created.
+    await expect(page.getByTestId('new-aircraft-rate-price')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByTestId('toast').filter({ hasText: 'Velivolo creato' })).toHaveCount(0);
+    const listResponse = await page.request.get(`/api/v1/aircraft?q=${encodeURIComponent(aircraft.registration)}`);
+    const list = (await listResponse.json()) as { items: unknown[] };
+    expect(list.items).toHaveLength(0);
+  });
+
   test('a STAFF actor (aircraft.manage but not settings.manage) sees no "Tariffe" block on the create form, and a `rate` sent directly to the API is rejected (story 14.8, AC 1/2)', async ({
     page,
   }) => {
@@ -320,6 +342,10 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2; dry rate added
     await page.getByTestId('fleet-new-button').click();
     const form = page.getByTestId('identity-form');
     await expect(form.getByTestId('new-aircraft-rate-price')).toHaveCount(0);
+    // Review 14.8 F7 (form parity): the SECTION is still rendered for staff,
+    // with the same read-only hint edit's RatesSection shows — only the
+    // fields are admin-only.
+    await expect(form.getByText('Solo un amministratore può aggiungere nuove tariffe.')).toBeVisible();
 
     // Server-side gate too (AC 2: `settings.manage` checked BEFORE any write).
     const response = await page.request.post('/api/v1/aircraft', {

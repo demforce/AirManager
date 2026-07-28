@@ -125,14 +125,18 @@ function toAdjustmentListItem(adjustment: SelectedHourMeterAdjustment): HourMete
   };
 }
 
-/** Prisma unique-constraint violation (concurrent duplicate registration). */
+/**
+ * Prisma unique-constraint violation ON `registration` (concurrent duplicate).
+ * Review 14.8 F5: the composite create's try now also spans the rate insert —
+ * checking `meta.target` turns "any P2002 in here is a registration clash"
+ * from an assumption into a guarantee (a foreign P2002 falls through as 500).
+ */
 function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: string }).code === 'P2002'
-  );
+  if (typeof error !== 'object' || error === null || !('code' in error) || (error as { code?: string }).code !== 'P2002') {
+    return false;
+  }
+  const target = (error as { meta?: { target?: unknown } }).meta?.target;
+  return Array.isArray(target) ? target.includes('registration') : true;
 }
 
 /**
