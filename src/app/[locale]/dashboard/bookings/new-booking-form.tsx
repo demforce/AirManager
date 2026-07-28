@@ -492,7 +492,7 @@ export function NewBookingForm({
               />
             </div>
             {forceError ? (
-              <p role="alert" data-testid="force-booking-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 6 }}>
+              <p role="alert" data-testid="force-booking-error" className="fld-error" style={{ marginTop: 6 }}>
                 {forceError}
               </p>
             ) : null}

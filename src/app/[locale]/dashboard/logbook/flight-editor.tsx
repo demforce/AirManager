@@ -309,16 +309,34 @@ export function FlightEditor({
     return base;
   }, [instructorOptions, correctingFlight, labels.fields.noInstructor]);
 
-  async function onSubmit(values: FlightFormValues): Promise<void> {
-    setFormError(null);
-
+  /**
+   * Review F2: the aircraft/person/reason checks used to live ONLY inside
+   * `onValid` (RHF's valid-callback) — unreachable while any RHF-tracked
+   * field (`flightDate` etc.) was ALSO empty, so a totally blank submit
+   * left these three plain-state pickers mute. Extracted so BOTH
+   * `handleSubmit`'s valid and invalid branches mark them (`onInvalid`
+   * below) — RHF's own `shouldFocusError` already focuses its first
+   * invalid tracked field in the invalid branch, so only the valid branch
+   * needs the explicit `focusFirstInvalid` call.
+   */
+  function markPlainRequiredFields(): boolean {
     const nextAircraftError = aircraftId.trim() === '';
     const nextPersonError = personId.trim() === '';
     setAircraftError(nextAircraftError);
     setPersonError(nextPersonError);
     const nextReasonError = isCorrecting && reason.trim() === '';
     setReasonError(nextReasonError);
-    if (nextAircraftError || nextPersonError || nextReasonError) {
+    return nextAircraftError || nextPersonError || nextReasonError;
+  }
+
+  function onInvalid(): void {
+    markPlainRequiredFields();
+  }
+
+  async function onValid(values: FlightFormValues): Promise<void> {
+    setFormError(null);
+
+    if (markPlainRequiredFields()) {
       setTimeout(() => focusFirstInvalid(formRef.current), 0);
       return;
     }
@@ -485,7 +503,7 @@ export function FlightEditor({
           </dl>
         </div>
       ) : (
-        <form id="flight-editor-form" ref={formRef} data-testid="flight-form" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate>
+        <form id="flight-editor-form" ref={formRef} data-testid="flight-form" onSubmit={(event) => void handleSubmit(onValid, onInvalid)(event)} noValidate>
           <div className="form-grid">
             <Field label={labels.fields.flightDate} error={errors.flightDate ? labels.requiredField : undefined}>
               <DateInput

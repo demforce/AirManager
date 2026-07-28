@@ -15,7 +15,9 @@ export type TreasuryCardLabels = {
   save: string;
   saved: string;
   error: string;
-  invalid: string;
+  /** Review F7: split from the single `invalid` string ("Inserisci importi validi...") reused (up to 3x, and wrong even under the date field) across all three fields — one message per KIND of field now. */
+  invalidAmount: string;
+  requiredDate: string;
 };
 
 export type TreasuryCardProps = {
@@ -41,7 +43,8 @@ export function TreasuryCard({ openingCashCents, openingBankCents, openingDate, 
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   // Story 14.2 (AC 1/2): one boolean per field instead of a single combined
-  // `labels.invalid` banner — each invalid input is marked individually.
+  // banner — each invalid input is marked individually (review F7: with its
+  // OWN per-kind message, `labels.invalidAmount`/`labels.requiredDate`).
   const [cashError, setCashError] = useState(false);
   const [bankError, setBankError] = useState(false);
   const [dateError, setDateError] = useState(false);
@@ -73,7 +76,8 @@ export function TreasuryCard({ openingCashCents, openingBankCents, openingDate, 
     // `opening*CentsParsed` narrow to `number` below.
     if (nextCashError || nextBankError || nextDateError || openingCashCentsParsed === null || openingBankCentsParsed === null) {
       setSaving(false);
-      setFeedback(labels.invalid);
+      // Review F7: each invalid field already shows its OWN inline message —
+      // a card-wide banner on top would only duplicate it (up to 3x).
       return;
     }
 
@@ -95,7 +99,7 @@ export function TreasuryCard({ openingCashCents, openingBankCents, openingDate, 
       </div>
       <div style={{ padding: '18px 20px' }}>
         <div className="form-grid">
-          <Field label={labels.openingCash} error={cashError ? labels.invalid : undefined}>
+          <Field label={labels.openingCash} error={cashError ? labels.invalidAmount : undefined}>
             <Input
               inputMode="decimal"
               value={cash}
@@ -107,7 +111,7 @@ export function TreasuryCard({ openingCashCents, openingBankCents, openingDate, 
               data-testid="treasury-opening-cash-input"
             />
           </Field>
-          <Field label={labels.openingBank} error={bankError ? labels.invalid : undefined}>
+          <Field label={labels.openingBank} error={bankError ? labels.invalidAmount : undefined}>
             <Input
               inputMode="decimal"
               value={bank}
@@ -119,7 +123,7 @@ export function TreasuryCard({ openingCashCents, openingBankCents, openingDate, 
               data-testid="treasury-opening-bank-input"
             />
           </Field>
-          <Field label={labels.openingDate} error={dateError ? labels.invalid : undefined}>
+          <Field label={labels.openingDate} error={dateError ? labels.requiredDate : undefined}>
             <DateInput
               value={date}
               onChange={(event) => {

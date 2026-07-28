@@ -192,6 +192,7 @@ export default async function SettingsPage({ params }: PageProps) {
             save: t('club.form.save'),
             saved: t('club.form.saved'),
             error: t('club.form.error'),
+            requiredField: t('club.form.requiredField'),
           },
           icao: t('club.icao'),
           contactEmail: t('club.contactEmail'),
@@ -274,7 +275,8 @@ export default async function SettingsPage({ params }: PageProps) {
           save: t('treasury.save'),
           saved: t('treasury.saved'),
           error: t('treasury.error'),
-          invalid: t('treasury.invalid'),
+          invalidAmount: t('treasury.invalidAmount'),
+          requiredDate: t('treasury.requiredDate'),
         }}
       />
 

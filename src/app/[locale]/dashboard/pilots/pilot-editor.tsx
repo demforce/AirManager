@@ -303,14 +303,14 @@ function IdentitySection({
         <Field label={labels.identity.email} wide error={errors.email ? labels.errors.required : undefined}>
           <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
-        <Field label={labels.identity.phone}>
-          <Input type="tel" {...register('phone')} />
+        <Field label={labels.identity.phone} error={errors.phone ? labels.errors.required : undefined}>
+          <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
         </Field>
-        <Field label={labels.identity.address} wide>
-          <Input {...register('address')} />
+        <Field label={labels.identity.address} wide error={errors.address ? labels.errors.required : undefined}>
+          <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
         </Field>
-        <Field label={labels.identity.fiscalCode}>
-          <Input {...register('fiscalCode')} />
+        <Field label={labels.identity.fiscalCode} error={errors.fiscalCode ? labels.errors.required : undefined}>
+          <Input aria-invalid={Boolean(errors.fiscalCode)} {...register('fiscalCode')} />
         </Field>
       </div>
 
@@ -525,6 +525,23 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
     setAccessRoles((current) => (checked ? [...current, role] : current.filter((r) => r !== role)));
   }
 
+  /**
+   * Review F2: `onSubmit` below is RHF's VALID callback — unreachable while
+   * `firstName`/`lastName`/`email` fail their own zodResolver check, so a
+   * submit with BOTH an empty base field AND an empty plain-state field
+   * (e.g. pilot license) never got past `handleSubmit`'s RHF-error branch,
+   * leaving `submitAttempted` `false` and every plain-state field mute.
+   * `handleSubmit(onSubmit, onInvalid)` below runs this in that branch too —
+   * flipping the SAME flag every `*FieldError` derives from is enough (no
+   * separate per-field marking needed here, unlike `flight-editor.tsx`'s
+   * imperative booleans). RHF's own `shouldFocusError` already focuses its
+   * first invalid base field in this branch, so no explicit
+   * `focusFirstInvalid` call is needed here.
+   */
+  function onInvalid(): void {
+    setSubmitAttempted(true);
+  }
+
   async function onSubmit(base: z.infer<typeof createPersonBaseSchema>): Promise<void> {
     setFormError(null);
     setSubmitAttempted(true);
@@ -599,7 +616,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
   const medicalChips = (medicalCatalog ?? []).filter((type) => type.isActive && isExpiryScopeCompatible(type.scope, profileFlags));
 
   return (
-    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="pilot-identity-form">
+    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)} noValidate data-testid="pilot-identity-form">
       <div className="form-grid">
         <Field label={labels.identity.firstName} error={errors.firstName ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
@@ -610,14 +627,14 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
         <Field label={labels.identity.email} wide error={errors.email ? labels.errors.required : undefined}>
           <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
-        <Field label={labels.identity.phone}>
-          <Input type="tel" {...register('phone')} />
+        <Field label={labels.identity.phone} error={errors.phone ? labels.errors.required : undefined}>
+          <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
         </Field>
-        <Field label={labels.identity.address} wide>
-          <Input {...register('address')} />
+        <Field label={labels.identity.address} wide error={errors.address ? labels.errors.required : undefined}>
+          <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
         </Field>
-        <Field label={labels.identity.fiscalCode}>
-          <Input {...register('fiscalCode')} />
+        <Field label={labels.identity.fiscalCode} error={errors.fiscalCode ? labels.errors.required : undefined}>
+          <Input aria-invalid={Boolean(errors.fiscalCode)} {...register('fiscalCode')} />
         </Field>
       </div>
 

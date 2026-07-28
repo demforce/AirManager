@@ -20,12 +20,14 @@
  * text.
  */
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Field, Input, InputGroup } from '@/components/ui/field';
 import { SlideOver } from '@/components/ui/slide-over';
 import { LiveExpiryEditor, type LiveExpiryEditorLabels } from '@/components/dashboard/expiry-editor';
+import { parseApiError } from '@/lib/api-field-errors';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import type { ProfileFlags } from '@/lib/expiry-scope';
 import { formatCents, parseCents } from '@/lib/money';
 import { updatePersonSchema, type UpdatePersonInput } from '@/lib/schemas/people';
@@ -212,6 +214,7 @@ function IdentitySection({
   const [identity, setIdentity] = useState<PersonIdentity | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -231,6 +234,7 @@ function IdentitySection({
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<UpdatePersonInput>({
     resolver: zodResolver(updatePersonSchema),
@@ -245,6 +249,24 @@ function IdentitySection({
       body: JSON.stringify(values),
     });
     if (!response.ok) {
+      if (response.status === 422) {
+        // Review F1: this section had no 422-mapping at all (twin gap to
+        // `pilots/pilot-editor.tsx#IdentitySection`'s own `updatePersonSchema`
+        // form) — same field-shaped 422 handling, reusing `labels.requiredField`.
+        const { fieldErrors } = await parseApiError(response);
+        const known: Array<keyof UpdatePersonInput> = ['firstName', 'lastName', 'email', 'phone', 'address', 'fiscalCode'];
+        let mapped = false;
+        for (const field of known) {
+          if (fieldErrors.has(field)) {
+            setError(field, { type: 'server', message: labels.requiredField });
+            mapped = true;
+          }
+        }
+        if (mapped) {
+          setTimeout(() => focusFirstInvalid(formRef.current), 0);
+          return;
+        }
+      }
       setFormError(toastLabels.genericError);
       return;
     }
@@ -277,7 +299,7 @@ function IdentitySection({
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-identity-form">
+    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-identity-form">
       <div className="form-grid">
         <Field label={labels.firstName} error={errors.firstName ? labels.requiredField : undefined}>
           <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
@@ -288,14 +310,14 @@ function IdentitySection({
         <Field label={labels.email} wide error={errors.email ? labels.requiredField : undefined}>
           <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
-        <Field label={labels.phone}>
-          <Input type="tel" {...register('phone')} />
+        <Field label={labels.phone} error={errors.phone ? labels.requiredField : undefined}>
+          <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
         </Field>
-        <Field label={labels.address} wide>
-          <Input {...register('address')} />
+        <Field label={labels.address} wide error={errors.address ? labels.requiredField : undefined}>
+          <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
         </Field>
-        <Field label={labels.fiscalCode}>
-          <Input {...register('fiscalCode')} />
+        <Field label={labels.fiscalCode} error={errors.fiscalCode ? labels.requiredField : undefined}>
+          <Input aria-invalid={Boolean(errors.fiscalCode)} {...register('fiscalCode')} />
         </Field>
       </div>
       {formError ? (

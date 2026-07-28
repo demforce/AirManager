@@ -488,10 +488,11 @@ export function BookingsTable({
               value={denyReason}
               onChange={(event) => setDenyReason(event.target.value)}
               placeholder={labels.denyModal.reasonPlaceholder}
+              aria-invalid={Boolean(denyError)}
               data-testid="booking-deny-reason"
             />
             {denyError ? (
-              <p role="alert" data-testid="booking-deny-error" style={{ fontSize: 12, lineHeight: '16px', color: 'var(--bad)' }}>
+              <p role="alert" data-testid="booking-deny-error" className="fld-error">
                 {denyError}
               </p>
             ) : null}

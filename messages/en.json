@@ -1824,7 +1824,8 @@
         "nameLabel": "Airfield name",
         "save": "Save",
         "saved": "Settings saved.",
-        "error": "Could not save the settings. Please try again."
+        "error": "Could not save the settings. Please try again.",
+        "requiredField": "Required field."
       }
     },
     "scheduling": {
@@ -1878,7 +1879,8 @@
       "save": "Save",
       "saved": "Settings saved.",
       "error": "Could not save. Please try again.",
-      "invalid": "Enter valid amounts and an opening date."
+      "invalidAmount": "Enter a valid amount.",
+      "requiredDate": "Required field."
     },
     "ratings": {
       "title": "Ratings",

@@ -5,7 +5,7 @@
  * prototype (e.g. `Fleet.jsx`, `Forms.jsx`, `SettingsView.jsx`) into one
  * reusable component.
  */
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import { cloneElement, isValidElement, useId, type InputHTMLAttributes, type ReactElement, type ReactNode, type SelectHTMLAttributes } from 'react';
 
 export type FieldProps = {
   label: ReactNode;
@@ -27,6 +27,13 @@ export type FieldProps = {
 };
 
 export function Field({ label, children, wide = false, error }: FieldProps) {
+  // Review F8: the error text and the control are ARIA-linked (screen reader
+  // announces the message alongside the accessible name), on top of the
+  // already-visible red border/inline text — `useId()` keyed to THIS Field
+  // instance, not the caller's own `id` (many `Input`s here have none).
+  const errorId = useId();
+  const control = error && isValidElement(children) ? cloneElement(children as ReactElement<Record<string, unknown>>, { 'aria-describedby': errorId }) : children;
+
   return (
     <div className={`fld ${wide ? 'wide' : ''}`}>
       {/* The `<label>` wraps ONLY the label text + control (implicit
@@ -38,10 +45,10 @@ export function Field({ label, children, wide = false, error }: FieldProps) {
           (caught by `e2e/ppr-public.spec.ts`'s own AC 1/2 guard). */}
       <label className="fld-label-group">
         <span className="fld-label">{label}</span>
-        <span className="fld-ctrl">{children}</span>
+        <span className="fld-ctrl">{control}</span>
       </label>
       {error ? (
-        <span className="fld-error" role="alert">
+        <span id={errorId} className="fld-error" role="alert">
           {error}
         </span>
       ) : null}

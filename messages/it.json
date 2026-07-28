@@ -1824,7 +1824,8 @@
         "nameLabel": "Nome aviosuperficie",
         "save": "Salva",
         "saved": "Impostazioni salvate.",
-        "error": "Non è stato possibile salvare le impostazioni. Riprova."
+        "error": "Non è stato possibile salvare le impostazioni. Riprova.",
+        "requiredField": "Campo obbligatorio."
       }
     },
     "scheduling": {
@@ -1878,7 +1879,8 @@
       "save": "Salva",
       "saved": "Impostazioni salvate.",
       "error": "Non è stato possibile salvare. Riprova.",
-      "invalid": "Inserisci importi validi e una data di apertura."
+      "invalidAmount": "Inserisci un importo valido.",
+      "requiredDate": "Campo obbligatorio."
     },
     "ratings": {
       "title": "Ratings",

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Field } from '@/components/ui/field';
+import { parseApiError } from '@/lib/api-field-errors';
 import type { AirfieldBrandingDto } from '@/lib/schemas/settings';
 
 export type SettingsFormLabels = {
@@ -9,6 +10,8 @@ export type SettingsFormLabels = {
   save: string;
   saved: string;
   error: string;
+  /** Review F3: `airfieldBrandingSchema.name` is `.trim().min(1)` — an empty save used to 422 with a MUTE field (no client check, no `fieldErrors.name` handling). */
+  requiredField: string;
 };
 
 export type SettingsFormProps = {
@@ -27,11 +30,19 @@ export type SettingsFormProps = {
 export function SettingsForm({ initial, labels }: SettingsFormProps) {
   const [name, setName] = useState(initial.name);
   const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null);
+  const [nameError, setNameError] = useState(false);
 
   async function save(): Promise<void> {
-    setSaving(true);
     setFeedback(null);
+
+    if (name.trim().length === 0) {
+      setNameError(true);
+      return;
+    }
+    setNameError(false);
+
+    setSaving(true);
     const response = await fetch('/api/v1/settings/airfield', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -40,17 +51,26 @@ export function SettingsForm({ initial, labels }: SettingsFormProps) {
     setSaving(false);
 
     if (!response.ok) {
-      setFeedback(labels.error);
+      if (response.status === 422) {
+        const { fieldErrors } = await parseApiError(response);
+        if (fieldErrors.has('name')) {
+          // Review F1's rule: the field marker below IS the feedback — no
+          // redundant (and wrongly-colored, pre-fix) card-wide banner on top.
+          setNameError(true);
+          return;
+        }
+      }
+      setFeedback({ message: labels.error, isError: true });
       return;
     }
 
-    setFeedback(labels.saved);
+    setFeedback({ message: labels.saved, isError: false });
   }
 
   return (
     <div data-testid="airfield-settings-form">
       <div className="form-grid">
-        <Field label={labels.nameLabel}>
+        <Field label={labels.nameLabel} error={nameError ? labels.requiredField : undefined}>
           <input
             id="airfield-name"
             data-testid="airfield-name-input"
@@ -58,14 +78,22 @@ export function SettingsForm({ initial, labels }: SettingsFormProps) {
             maxLength={200}
             className="input"
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+              if (nameError) setNameError(false);
+            }}
+            aria-invalid={nameError}
           />
         </Field>
       </div>
 
       {feedback ? (
-        <p role="status" data-testid="airfield-settings-feedback" style={{ marginTop: 14, fontSize: 12.5, color: 'var(--ok)' }}>
-          {feedback}
+        <p
+          role="status"
+          data-testid="airfield-settings-feedback"
+          style={{ marginTop: 14, fontSize: 12.5, color: feedback.isError ? 'var(--bad)' : 'var(--ok)' }}
+        >
+          {feedback.message}
         </p>
       ) : null}
 

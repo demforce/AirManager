@@ -402,11 +402,15 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
         <Field label={labels.identity.model} wide error={errors.model ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.model)} {...register('model')} />
         </Field>
-        <Field label={labels.identity.seats}>
-          <Input type="number" min={0} step={1} inputMode="numeric" {...seatsField} />
+        <Field label={labels.identity.seats} error={errors.seats ? labels.errors.required : undefined}>
+          <Input type="number" min={0} step={1} inputMode="numeric" aria-invalid={Boolean(errors.seats)} {...seatsField} />
         </Field>
-        <Field label={labels.identity.fuelType}>
-          <Select {...register('fuelType', { setValueAs: (value: string) => (value === '' ? null : value) })} defaultValue={currentFuelType ?? ''}>
+        <Field label={labels.identity.fuelType} error={errors.fuelType ? labels.errors.required : undefined}>
+          <Select
+            aria-invalid={Boolean(errors.fuelType)}
+            {...register('fuelType', { setValueAs: (value: string) => (value === '' ? null : value) })}
+            defaultValue={currentFuelType ?? ''}
+          >
             <option value="">—</option>
             <option value="AVGAS 100LL">{labels.identity.fuelOptions.avgas}</option>
             <option value="Jet A-1">{labels.identity.fuelOptions.jetA1}</option>
@@ -433,8 +437,13 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
             />
           </Field>
         ) : null}
-        <Field label={labels.identity.notes} wide>
-          <textarea className="input" rows={3} {...register('notes', { setValueAs: (value: string) => (value === '' ? null : value) })} />
+        <Field label={labels.identity.notes} wide error={errors.notes ? labels.errors.required : undefined}>
+          <textarea
+            className="input"
+            rows={3}
+            aria-invalid={Boolean(errors.notes)}
+            {...register('notes', { setValueAs: (value: string) => (value === '' ? null : value) })}
+          />
         </Field>
       </div>
 

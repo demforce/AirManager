@@ -311,6 +311,25 @@ test.describe('Public PPR form (Story 8.1)', () => {
       // The client-side validation blocked the submit — no POST ever fired.
       expect(requestSent).toBe(false);
 
+      // Review F6: the assertions above alone would pass identically on the
+      // pre-story baseline too (RHF already set `aria-invalid`, and SOME
+      // "Campo obbligatorio." text existed on the page as the old bottom
+      // banner — matched by the page-wide `getByText` above regardless of
+      // WHERE it renders). Pin the message to the `.fld` block that actually
+      // CONTAINS the firstName input (AC 1's own contract: `.fld-error`
+      // SIBLING of the label, not a banner elsewhere) and assert it is
+      // visually distinct from the field's own label — the pre-story single
+      // banner has neither.
+      const firstNameField = page.locator('.fld', { has: firstNameInput });
+      const firstNameError = firstNameField.locator('.fld-error');
+      await expect(firstNameError).toHaveClass(/fld-error/);
+      await expect(firstNameError).toHaveText('Campo obbligatorio.');
+      const [errorColor, labelColor] = await Promise.all([
+        firstNameError.evaluate((el) => getComputedStyle(el).color),
+        firstNameField.locator('.fld-label').first().evaluate((el) => getComputedStyle(el).color),
+      ]);
+      expect(errorColor).not.toBe(labelColor);
+
       // Fixing ONE field clears just that field's error.
       await firstNameInput.fill('Marco');
       await expect(firstNameInput).toHaveAttribute('aria-invalid', 'false');

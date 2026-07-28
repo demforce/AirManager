@@ -33,6 +33,7 @@ import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input } from '@/components/ui/field';
 import { SlideOver } from '@/components/ui/slide-over';
 import type { AppLocale } from '@/i18n/routing';
+import { parseApiError } from '@/lib/api-field-errors';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import type { PprRequestItemDto } from '@/lib/schemas/ppr';
 import { Icon } from '@/components/ui/icons';
@@ -107,17 +108,28 @@ const BLANK_VALUES: FormValues = {
   notes: '',
 };
 
-/** Same shape as the public `ppr-form.tsx#pprFormSchema` (custom message codes resolved by `fieldErrorLabel` below), plus `contactRequired` — the "at least one of email/phone" rule the server also enforces (`createManualPprRequestSchema`'s `.refine`), checked here client-side FIRST so a bare empty submit never even reaches the network. */
+/**
+ * Same shape as the public `ppr-form.tsx#pprFormSchema` (custom message
+ * codes resolved by `fieldErrorLabel` below), plus `contactRequired` — the
+ * "at least one of email/phone" rule the server also enforces
+ * (`createManualPprRequestSchema`'s `.refine`), checked here client-side
+ * FIRST so a bare empty submit never even reaches the network.
+ *
+ * Review F4: the `.max()` bounds mirror `createManualPprRequestSchema`
+ * (`lib/schemas/ppr.ts`) — same gap/fix as the public form's own schema. A
+ * violation falls through to `fieldErrorLabel`'s generic `requiredField`
+ * fallback (no dedicated "too long" message).
+ */
 const manualPprFormSchema = z
   .object({
-    firstName: z.string(),
-    lastName: z.string(),
+    firstName: z.string().max(100),
+    lastName: z.string().max(100),
     email: z.string(),
-    phone: z.string(),
-    aircraftRegistration: z.string(),
-    aircraftType: z.string(),
-    origin: z.string(),
-    destination: z.string(),
+    phone: z.string().max(30),
+    aircraftRegistration: z.string().max(20),
+    aircraftType: z.string().max(100),
+    origin: z.string().max(100),
+    destination: z.string().max(100),
     eta: z.string(),
     etd: z.string(),
     personsOnBoard: z.string(),
@@ -160,8 +172,6 @@ const manualPprFormSchema = z
     }
   });
 
-type ApiErrorBody = { error?: { code?: string } };
-
 export function ManualPprForm({ open, onClose, approveImmediately, locale, labels, onSuccess }: ManualPprFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
@@ -170,6 +180,7 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
     register,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(manualPprFormSchema), defaultValues: BLANK_VALUES });
 
@@ -222,8 +233,35 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
     regenerateIdempotencyKey();
 
     if (!response.ok) {
-      const errorBody = (await response.json().catch(() => null)) as ApiErrorBody | null;
-      const code = errorBody?.error?.code;
+      const { code, fieldErrors } = await parseApiError(response);
+      if (fieldErrors.size > 0) {
+        // Review F4: a field-shaped 422 marks the matching Field instead of
+        // only the generic banner below (`fieldErrorLabel`'s own fallback
+        // translates it) — same "mapped only where a marker actually
+        // renders" rule as review F1 (every field here except `notes` has a
+        // visible `.fld-error` slot).
+        const known: Array<keyof FormValues> = [
+          'firstName',
+          'lastName',
+          'email',
+          'phone',
+          'aircraftRegistration',
+          'aircraftType',
+          'origin',
+          'destination',
+          'eta',
+          'etd',
+          'personsOnBoard',
+        ];
+        let mapped = false;
+        for (const field of known) {
+          if (fieldErrors.has(field)) {
+            setError(field, { type: 'server', message: 'requiredField' });
+            mapped = true;
+          }
+        }
+        if (mapped) return;
+      }
       if (code === 'ETA_IN_PAST') {
         setFormError(labels.errors.ETA_IN_PAST);
       } else if (code === 'ETD_NOT_AFTER_ETA') {
@@ -244,11 +282,11 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
       <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="manual-ppr-form">
         <div className="form-grid">
           <Field label={labels.firstName} error={fieldErrorLabel(errors.firstName) ?? undefined}>
-            <Input autoComplete="given-name" aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
+            <Input autoComplete="given-name" maxLength={100} aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
           </Field>
 
           <Field label={labels.lastName} error={fieldErrorLabel(errors.lastName) ?? undefined}>
-            <Input autoComplete="family-name" aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
+            <Input autoComplete="family-name" maxLength={100} aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
           </Field>
 
           <Field label={labels.email} error={fieldErrorLabel(errors.email) ?? undefined}>
@@ -256,23 +294,23 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
           </Field>
 
           <Field label={labels.phone} error={fieldErrorLabel(errors.phone) ?? undefined}>
-            <Input type="tel" autoComplete="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
+            <Input type="tel" autoComplete="tel" maxLength={30} aria-invalid={Boolean(errors.phone)} {...register('phone')} />
           </Field>
 
           <Field label={labels.aircraftRegistration} error={fieldErrorLabel(errors.aircraftRegistration) ?? undefined}>
-            <Input aria-invalid={Boolean(errors.aircraftRegistration)} {...register('aircraftRegistration')} style={{ textTransform: 'uppercase' }} />
+            <Input aria-invalid={Boolean(errors.aircraftRegistration)} maxLength={20} {...register('aircraftRegistration')} style={{ textTransform: 'uppercase' }} />
           </Field>
 
           <Field label={labels.aircraftType} error={fieldErrorLabel(errors.aircraftType) ?? undefined}>
-            <Input aria-invalid={Boolean(errors.aircraftType)} {...register('aircraftType')} />
+            <Input maxLength={100} aria-invalid={Boolean(errors.aircraftType)} {...register('aircraftType')} />
           </Field>
 
           <Field label={labels.origin} error={fieldErrorLabel(errors.origin) ?? undefined}>
-            <Input aria-invalid={Boolean(errors.origin)} {...register('origin')} />
+            <Input maxLength={100} aria-invalid={Boolean(errors.origin)} {...register('origin')} />
           </Field>
 
           <Field label={labels.destination} error={fieldErrorLabel(errors.destination) ?? undefined}>
-            <Input aria-invalid={Boolean(errors.destination)} {...register('destination')} />
+            <Input maxLength={100} aria-invalid={Boolean(errors.destination)} {...register('destination')} />
           </Field>
 
           <Field label={labels.eta} error={fieldErrorLabel(errors.eta) ?? undefined}>

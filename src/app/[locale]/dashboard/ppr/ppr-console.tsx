@@ -265,10 +265,11 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
               value={rejectReason}
               onChange={(event) => setRejectReason(event.target.value)}
               placeholder={labels.rejectModal.reasonPlaceholder}
+              aria-invalid={Boolean(rejectError)}
               data-testid="ppr-reject-reason"
             />
             {rejectError ? (
-              <p role="alert" data-testid="ppr-reject-error" style={{ fontSize: 12, lineHeight: '16px', color: 'var(--bad)' }}>
+              <p role="alert" data-testid="ppr-reject-error" className="fld-error">
                 {rejectError}
               </p>
             ) : null}

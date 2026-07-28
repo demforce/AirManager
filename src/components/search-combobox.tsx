@@ -335,6 +335,7 @@ export function SearchCombobox({
         aria-activedescendant={activeOptionId}
         aria-autocomplete="list"
         aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : undefined}
         autoComplete="off"
         disabled={disabled}
         placeholder={placeholder}
@@ -351,9 +352,11 @@ export function SearchCombobox({
         // (`html[data-theme]`), same as the listbox/options below.
         className="input"
       />
-      {/* Story 14.2, AC 1: same `.fld-error` inline message as `Field`. */}
+      {/* Story 14.2, AC 1: same `.fld-error` inline message as `Field`. Review
+          F8: `id` matches the input's own `aria-describedby` above so a
+          screen reader announces this text alongside the accessible name. */}
       {error ? (
-        <span className="fld-error" role="alert">
+        <span id={`${id}-error`} className="fld-error" role="alert">
           {error}
         </span>
       ) : null}
