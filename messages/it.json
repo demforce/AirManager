@@ -21,6 +21,7 @@
       "fleet": "Aeromobili",
       "scadenze": "Scadenze",
       "logbook": "Registro voli",
+      "myAccount": "Le mie transazioni",
       "billing": "Contabilità",
       "reports": "Statistiche",
       "settings": "Impostazioni"
@@ -35,6 +36,7 @@
       "fleet": "Aeromobili",
       "scadenze": "Scadenze",
       "logbook": "Registro voli",
+      "myAccount": "Le mie transazioni",
       "billing": "Contabilità",
       "reports": "Statistiche",
       "settings": "Impostazioni"
@@ -757,6 +759,12 @@
       "balance": "Saldo finale",
       "currentBalance": "Saldo attuale del conto"
     }
+  },
+  "MyAccountPage": {
+    "title": "Le mie transazioni",
+    "sub": "Ricariche, addebiti voli e rettifiche sul tuo conto.",
+    "balanceLabel": "Saldo attuale",
+    "noAccount": "Nessun conto attivo"
   },
   "FinancePage": {
     "cashRegister": {

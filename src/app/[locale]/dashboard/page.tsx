@@ -75,11 +75,20 @@ const EXPIRIES_WIDGET_SCAN_LIMIT = 60;
  * console operativa reale per admin/staff (AC 1), "la mia giornata" per
  * l'istruttore (AC 5), saldo/scadenze/prossimi voli per pilota/allievo (AC
  * 4). The face is chosen from the REAL session role/permessi, never a query
- * param (AC 6) — gate order: `finance.manage` → INSTRUCTOR role (story
- * 12.13: the `school.manage.own` permission this used to read was the
- * feature-scoped "scuola" permission, removed with the school area — an
- * actor's INSTRUCTOR role membership is the same signal, plain and
- * unambiguous) → `me.person`.
+ * param (AC 6) — gate order: `finance.manage` → an ACTIVE `InstructorProfile`
+ * → `me.person`.
+ *
+ * Story 14.6 (D2/item 16 — "profili solo attivi"): the instructor face used
+ * to gate on the coarser INSTRUCTOR *role* alone. A role and a profile's
+ * activation state can diverge — `people.service.ts#deactivateProfile` never
+ * touches `User.roles`, and `users.service.ts#updateUser` can set/clear
+ * roles and the linked `personId` independently of any profile — so role
+ * alone could still land someone whose `InstructorProfile` was deactivated
+ * (or never linked) on the instructor console instead of their own
+ * pilot/student landing. `getOwnInstructorProfileId` already resolves `null`
+ * for exactly that case (deactivated or absent), so it is the correct gate;
+ * resolving it once here also drops the duplicate lookup
+ * `renderInstructorLanding` used to make for the same value.
  *
  * `src/proxy.ts` already blocks unauthenticated requests before they reach
  * this route; the session is re-checked here, close to the data fetch (AD-5).
@@ -98,14 +107,15 @@ export default async function DashboardPage({ params }: PageProps) {
   const me = await getMe(actor);
 
   const canManageFinance = hasPermission(actor, 'finance.manage');
-  const showInstructorFace = !canManageFinance && actor.roles.includes('INSTRUCTOR');
+  const ownInstructorProfileId = canManageFinance ? null : await getOwnInstructorProfileId(actor);
+  const showInstructorFace = !canManageFinance && ownInstructorProfileId !== null;
   const showPersonalFace = !canManageFinance && !showInstructorFace && me.person !== null;
 
   if (canManageFinance) {
     return renderAdminOverview(actor, locale as AppLocale, displayLocale);
   }
-  if (showInstructorFace) {
-    return renderInstructorLanding(actor, me, locale as AppLocale, displayLocale);
+  if (showInstructorFace && ownInstructorProfileId) {
+    return renderInstructorLanding(actor, me, ownInstructorProfileId, locale as AppLocale, displayLocale);
   }
   if (showPersonalFace) {
     return renderPilotLanding(actor, me, locale as AppLocale, displayLocale);
@@ -493,15 +503,20 @@ function dayPhaseOf(startsAt: Date, endsAt: Date, now: Date): DayPhase {
   return 'scheduled';
 }
 
-async function renderInstructorLanding(actor: Actor, me: MeResult, locale: AppLocale, displayLocale: DisplayLocale): Promise<ReactElement> {
+async function renderInstructorLanding(
+  actor: Actor,
+  me: MeResult,
+  ownInstructorProfileId: string,
+  locale: AppLocale,
+  displayLocale: DisplayLocale,
+): Promise<ReactElement> {
   const t = await getTranslations('DashboardPage');
   const now = new Date();
   const today = todayDateOnlyInZone(APP_TIMEZONE);
   const todayStart = zonedMidnightUtc(today, APP_TIMEZONE);
   const tomorrowStart = zonedMidnightUtc(addDaysDateOnly(today, 1), APP_TIMEZONE);
 
-  const [ownInstructorProfileId, compensation, flightsTodayTotals, calendarBookingsToday] = await Promise.all([
-    getOwnInstructorProfileId(actor),
+  const [compensation, flightsTodayTotals, calendarBookingsToday] = await Promise.all([
     getOwnCompensationSummary(actor),
     me.person
       ? getFlightTotals(actor, { dateFrom: today, dateTo: today, status: 'REGISTERED', instructorPersonId: me.person.id, page: 1, pageSize: 1 })

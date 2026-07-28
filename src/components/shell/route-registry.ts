@@ -27,6 +27,7 @@ export type NavItemId =
   | 'fleet'
   | 'scadenze'
   | 'logbook'
+  | 'myAccount'
   | 'billing'
   | 'reports'
   | 'settings';
@@ -59,6 +60,8 @@ export type NavItem = {
 
 const ALL_ROLES: readonly Role[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
 const STAFF_ROLES: readonly Role[] = ['ADMIN', 'STAFF'];
+/** Story 14.6, AC 1: PILOT/STUDENT's own "Le mie transazioni" — INSTRUCTOR gets its own compensation page (story 14.7); admin/staff already have Contabilità + the scheda persona. */
+const SELF_SERVICE_ROLES: readonly Role[] = ['PILOT', 'STUDENT'];
 
 /** Group display order (prototype: Operazioni/Anagrafiche/Archivio/Sistema). Labels are resolved by the caller via `t('groups.<id>')` (`messages/*.json`'s `shell.groups.*`) — this module stays i18n-agnostic. */
 export const NAV_GROUPS: readonly NavGroupId[] = ['operations', 'directory', 'archive', 'system'];
@@ -89,6 +92,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'scadenze', href: '/dashboard/expiries', icon: 'clock', group: 'directory', roles: ALL_ROLES, enabled: true },
   // Story 12.8: the logbook ships in the AirOps visual language directly, replacing the legacy `/dashboard/flights`.
   { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: true },
+  // Story 14.6: dedicated self-service estratto conto — own balance + own movements only (never a staff view).
+  { id: 'myAccount', href: '/dashboard/my-account', icon: 'cash', group: 'archive', roles: SELF_SERVICE_ROLES, enabled: true },
   // Story 12.9: the billing (Contabilità) page ships in the AirOps visual language directly, replacing the legacy `/dashboard/finance`.
   { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: STAFF_ROLES, enabled: true },
   { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: STAFF_ROLES, enabled: true },

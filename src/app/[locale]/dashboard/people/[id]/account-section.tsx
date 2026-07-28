@@ -54,7 +54,14 @@ export type AccountSectionLabels = {
   movementType: { topUp: string; adjustment: string; packagePurchase: string; flightCharge: string; flightChargeReversal: string };
   adjustmentBadge: { ofDate: string; linked: string };
   reversalBadge: { ofDate: string; linked: string };
-  topUp: {
+  /**
+   * Present only when `canManageFinance` is true — the two toggle buttons
+   * that open these forms are themselves gated on the SAME prop (story
+   * 14.6's self-service "Le mie transazioni" page passes `canManageFinance:
+   * false` and omits both: a pilot can never top up their own account,
+   * `accounts.service.ts#recordTopUp`'s own doc-comment).
+   */
+  topUp?: {
     action: string;
     title: string;
     amount: string;
@@ -68,7 +75,8 @@ export type AccountSectionLabels = {
     requiredField: string;
     genericError: string;
   };
-  adjustments: {
+  /** Same "only when `canManageFinance`" contract as {@link AccountSectionLabels.topUp} above. */
+  adjustments?: {
     action: string;
     rowAction: string;
     title: string;
@@ -97,9 +105,20 @@ type AccountSectionProps = {
   totalPages: number;
   showActor: boolean;
   canManageFinance: boolean;
-  exportHref: string;
-  exportPdfHref: string;
+  /** Absent (staff scheda persona, e.g. an actor with no account at all) omits the menu entirely — `ExportMenu` already treats a missing href that way. */
+  exportHref?: string;
+  exportPdfHref?: string;
   exportLabels: { label: string; xls: string; pdf: string };
+  /**
+   * Overrides the statement pagination `Link`'s target pathname (default:
+   * the staff-facing scheda persona this component was built for,
+   * `/dashboard/people/{personId}`). A plain string, not a function — a
+   * Client Component prop crossing the Server→Client boundary must be
+   * serializable. Story 14.6's self-service page passes `/dashboard/my-account`
+   * here instead — same table/pagination chrome, different URL, no logic
+   * duplicated.
+   */
+  statementBasePath?: string;
   labels: AccountSectionLabels;
 };
 
@@ -138,6 +157,7 @@ export function AccountSection({
   exportHref,
   exportPdfHref,
   exportLabels,
+  statementBasePath,
   labels,
 }: AccountSectionProps) {
   const router = useRouter();
@@ -159,7 +179,7 @@ export function AccountSection({
   }
 
   function pageHref(targetPage: number) {
-    return { pathname: `/dashboard/people/${personId}` as const, query: { page: targetPage } };
+    return { pathname: statementBasePath ?? `/dashboard/people/${personId}`, query: { page: targetPage } };
   }
 
   function handleTopUpSuccess(): void {
@@ -169,7 +189,10 @@ export function AccountSection({
 
   function handleAdjustmentSuccess(): void {
     setAdjustPanel(null);
-    setFeedback(labels.adjustments.success);
+    // `adjustPanel` (hence this callback) can only ever fire from the
+    // `AdjustmentForm` rendered below, which itself requires `labels.adjustments`
+    // — reachable only when `canManageFinance` is true, so it is always defined here.
+    if (labels.adjustments) setFeedback(labels.adjustments.success);
     router.refresh();
   }
 
@@ -186,12 +209,12 @@ export function AccountSection({
           </p>
         ) : null}
         <ExportMenu label={exportLabels.label} xlsLabel={exportLabels.xls} xlsHref={exportHref} pdfLabel={exportLabels.pdf} pdfHref={exportPdfHref} />
-        {canManageFinance ? (
+        {canManageFinance && labels.topUp ? (
           <button type="button" className="btn" onClick={() => setTopUpOpen((current) => !current)} data-testid="account-topup-toggle">
             {labels.topUp.action}
           </button>
         ) : null}
-        {canManageFinance ? (
+        {canManageFinance && labels.adjustments ? (
           <button type="button" className="btn" onClick={() => setAdjustPanel({ originalMovement: null })} data-testid="account-adjustment-toggle">
             {labels.adjustments.action}
           </button>
@@ -206,13 +229,13 @@ export function AccountSection({
           </div>
         </div>
 
-        {topUpOpen ? (
+        {topUpOpen && labels.topUp ? (
           <div style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: 14 }}>
             <TopUpForm personId={personId} labels={labels.topUp} onCancel={() => setTopUpOpen(false)} onSuccess={handleTopUpSuccess} />
           </div>
         ) : null}
 
-        {adjustPanel ? (
+        {adjustPanel && labels.adjustments ? (
           <div style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: 14 }}>
             <AdjustmentForm
               // Remount when the target changes (header ↔ row A ↔ row B):
@@ -271,7 +294,7 @@ export function AccountSection({
                     {row.actorEmail ?? labels.table.noValue}
                   </div>
                 ) : null}
-                {canManageFinance ? (
+                {canManageFinance && labels.adjustments ? (
                   <div>
                     {row.hasReversal || row.type === 'PACKAGE_PURCHASE' ? null : (
                       <button type="button" className="btn mini" onClick={() => setAdjustPanel({ originalMovement: row })} data-testid={`account-adjustment-row-${row.id}`}>
@@ -345,7 +368,11 @@ function TopUpForm({
   onSuccess,
 }: {
   personId: string;
-  labels: AccountSectionLabels['topUp'];
+  // `NonNullable`: the caller only ever mounts this form when `labels.topUp`
+  // is defined (guarded at the render site) — `AccountSectionLabels.topUp`
+  // itself is optional only because a self-service, non-`canManageFinance`
+  // caller (story 14.6) never provides it.
+  labels: NonNullable<AccountSectionLabels['topUp']>;
   onCancel: () => void;
   onSuccess: () => void;
 }) {
@@ -461,7 +488,8 @@ function AdjustmentForm({
   personId: string;
   originalMovement: AccountMovementRow | null;
   moneyLocale: 'it' | 'en';
-  labels: AccountSectionLabels['adjustments'];
+  // Same `NonNullable` rationale as `TopUpForm`'s `labels` above.
+  labels: NonNullable<AccountSectionLabels['adjustments']>;
   onCancel: () => void;
   onSuccess: () => void;
 }) {

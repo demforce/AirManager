@@ -400,6 +400,47 @@ export async function listAccountMovements(
   );
 }
 
+// --- Story 14.6: self-service ("Le mie transazioni") ------------------------
+
+/**
+ * Self-service account overview (story 14.6, AC 2) — the ONLY personId ever
+ * read is `actor.personId`. Unlike {@link getAccountOverview}, there is no
+ * personId parameter a caller could substitute: nothing "travels" for an
+ * IDOR probe to override, by construction, not by a check. `self.read` is
+ * granted to every role (same rationale as `me.service.ts#getMe`), so this
+ * never actually 403s a logged-in user; an actor with no linked person
+ * (AC 5 — e.g. an admin-managed login unlinked from any `Person`,
+ * `users.service.ts#updateUser`) gets the same empty shape a person who
+ * never activated a pilot/student profile gets from `getAccountOverview`,
+ * never a query.
+ */
+export async function getOwnAccountOverview(actor: Actor): Promise<AccountOverview> {
+  authorize(actor, 'self.read');
+  if (actor.personId === null) {
+    return { account: null, balanceCents: 0, recentMovements: [] };
+  }
+  return getAccountOverview(actor, actor.personId);
+}
+
+/**
+ * Self-service account statement (story 14.6, AC 2/3) — same "personId
+ * never travels" guarantee as {@link getOwnAccountOverview}. `includeActor`
+ * inside `listAccountMovements` is driven by `people.read`, which a
+ * PILOT/STUDENT actor never holds, so the rows this returns never carry
+ * `actorEmail` — the pilota-centric perspective the page wants (AC 3), not
+ * the staff "registrato da" column, with no separate flag to keep in sync.
+ */
+export async function listOwnAccountMovements(
+  actor: Actor,
+  query: PaginationQuery & { from?: string; to?: string },
+): Promise<AccountStatementResult> {
+  authorize(actor, 'self.read');
+  if (actor.personId === null) {
+    return paginate([], 0, query);
+  }
+  return listAccountMovements(actor, actor.personId, query);
+}
+
 // --- Story 3.3: motivated adjustments and negative-balance band alerts ----
 
 /**

@@ -21,6 +21,7 @@
       "fleet": "Aircraft",
       "scadenze": "Expiries",
       "logbook": "Flight log",
+      "myAccount": "My transactions",
       "billing": "Billing",
       "reports": "Reports",
       "settings": "Settings"
@@ -35,6 +36,7 @@
       "fleet": "Aircraft",
       "scadenze": "Expiries",
       "logbook": "Flight log",
+      "myAccount": "My transactions",
       "billing": "Billing",
       "reports": "Reports",
       "settings": "Settings"
@@ -757,6 +759,12 @@
       "balance": "Final balance",
       "currentBalance": "Current account balance"
     }
+  },
+  "MyAccountPage": {
+    "title": "My transactions",
+    "sub": "Top-ups, flight charges and adjustments on your account.",
+    "balanceLabel": "Current balance",
+    "noAccount": "No active account"
   },
   "FinancePage": {
     "cashRegister": {

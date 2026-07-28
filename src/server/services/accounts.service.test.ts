@@ -49,8 +49,16 @@ vi.mock('@/server/adapters/mail/templates', () => ({
 
 const { prisma } = await import('@/server/db/prisma');
 const { buildNegativeBalanceAlertEmail } = await import('@/server/adapters/mail/templates');
-const { balanceBand, getAccountOverview, listAccountMovements, listNegativeBalances, recordAdjustment, recordTopUp } =
-  await import('./accounts.service');
+const {
+  balanceBand,
+  getAccountOverview,
+  getOwnAccountOverview,
+  listAccountMovements,
+  listOwnAccountMovements,
+  listNegativeBalances,
+  recordAdjustment,
+  recordTopUp,
+} = await import('./accounts.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
 const accountFindUniqueMock = vi.mocked(prisma.account.findUnique);
@@ -433,6 +441,70 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       await listAccountMovements(staffActor(), 'person_1', { page: 1, pageSize: 20 });
 
       expect(accountMovementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'account_1' } }));
+    });
+  });
+
+  describe('getOwnAccountOverview / listOwnAccountMovements (story 14.6, AC 2/5 — self-service, no personId parameter)', () => {
+    it('getOwnAccountOverview reads actor.personId, never an externally supplied id', async () => {
+      accountFindUnique.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 5000 } });
+      accountMovementFindMany.mockResolvedValue([]);
+
+      const result = await getOwnAccountOverview(pilotActor('person_pilot'));
+
+      expect(result.balanceCents).toBe(5000);
+      // The only person looked up is the actor's OWN id — same guard as `getAccountOverview`.
+      expect(personFindUniqueMock).toHaveBeenCalledWith({ where: { id: 'person_pilot' }, select: { id: true } });
+    });
+
+    it('getOwnAccountOverview returns the empty shape for an actor with no linked person, WITHOUT a query (AC 5)', async () => {
+      const result = await getOwnAccountOverview(pilotActor(null));
+
+      expect(result).toEqual({ account: null, balanceCents: 0, recentMovements: [] });
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(accountFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('getOwnAccountOverview never accepts a second id — there is no personId parameter to pass one through', () => {
+      expect(getOwnAccountOverview).toHaveLength(1);
+    });
+
+    it('listOwnAccountMovements paginates the actor\'s OWN statement, without actorEmail', async () => {
+      accountFindUnique.mockResolvedValue({ id: 'account_1' });
+      accountMovementFindMany.mockResolvedValue([
+        {
+          id: 'movement_1',
+          type: 'TOP_UP',
+          amountCents: 10000,
+          description: 'Contanti',
+          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
+          createdAt: new Date('2026-03-01T10:00:00.000Z'),
+          actorUser: { email: 'staff@airmanager.local' },
+          reversalOfId: null,
+          reversal: null,
+        },
+      ]);
+      accountMovementCount.mockResolvedValue(1);
+
+      const result = await listOwnAccountMovements(pilotActor('person_pilot'), { page: 1, pageSize: 20 });
+
+      expect(result.total).toBe(1);
+      expect(result.items[0]).not.toHaveProperty('actorEmail');
+      expect(personFindUniqueMock).toHaveBeenCalledWith({ where: { id: 'person_pilot' }, select: { id: true } });
+    });
+
+    it('listOwnAccountMovements returns an empty page for an actor with no linked person, WITHOUT a query (AC 5 — isolation)', async () => {
+      const result = await listOwnAccountMovements(pilotActor(null), { page: 1, pageSize: 20 });
+
+      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(accountMovementFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects an actor with neither self.read (stale/unknown role) — fails closed like every other self-service reader', async () => {
+      await expect(getOwnAccountOverview(noRoleActor())).rejects.toThrow(ForbiddenError);
+      await expect(listOwnAccountMovements(noRoleActor(), { page: 1, pageSize: 20 })).rejects.toThrow(ForbiddenError);
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
   });
 
