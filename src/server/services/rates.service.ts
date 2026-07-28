@@ -1,3 +1,4 @@
+import type { Prisma } from '@/generated/prisma/client';
 import { parseDateOnlyUtc, todayDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { CreateAircraftRateInput } from '@/lib/schemas/aircraft';
 import { authorize, type Actor } from '@/server/auth/rbac';
@@ -98,6 +99,33 @@ async function assertRateAvailable(aircraftId: string, validFrom: Date): Promise
   if (existing) {
     throw new ConflictError('A rate with this validFrom already exists for this aircraft.');
   }
+}
+
+/**
+ * The raw `AircraftRate` insert behind `createAircraftRate` (story 14.8,
+ * same `createPersonCore` precedent in `people.service.ts`) — extracted so
+ * the aircraft composite-create transaction
+ * (`aircraft.service.ts#createAircraft`, "form velivolo unificato") can run
+ * it inside the SAME `tx` as the aircraft insert, without duplicating the
+ * write. No `assertRateAvailable` pre-check here (unlike the standalone
+ * endpoint above): `aircraftId` is a brand-new id at this point, so the
+ * `[aircraftId, validFrom]` unique constraint can never collide.
+ */
+export async function createAircraftRateCore(
+  tx: Prisma.TransactionClient,
+  aircraftId: string,
+  input: CreateAircraftRateInput,
+  actorUserId: string,
+): Promise<void> {
+  await tx.aircraftRate.create({
+    data: {
+      aircraftId,
+      priceCentsPerHour: input.priceCentsPerHour,
+      dryHourlyRateCents: input.dryHourlyRateCents ?? null,
+      validFrom: parseDateOnlyUtc(input.validFrom),
+      actorUserId,
+    },
+  });
 }
 
 /**

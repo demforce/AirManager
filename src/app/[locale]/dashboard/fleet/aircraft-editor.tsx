@@ -197,6 +197,18 @@ function safeFormatMinutes(totalMinutes: number): string {
   }
 }
 
+/** Same >0/`INT_MAX` validity rule as `newRateFormSchema`'s own `.refine` (`RatesSection`, below) — reused imperatively by the create-mode composite "Tariffe" block (story 14.8), which is plain state rather than react-hook-form. */
+function isValidRatePrice(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  try {
+    const cents = parseCents(trimmed);
+    return cents > 0 && cents <= 2_147_483_647;
+  } catch {
+    return false;
+  }
+}
+
 function formatSignedMinutes(deltaMinutes: number): string {
   if (!Number.isInteger(deltaMinutes)) return '—';
   const sign = deltaMinutes < 0 ? '-' : '+';
@@ -228,7 +240,15 @@ export function AircraftEditor({ target, onClose, onMutated, canManageSettings, 
   return (
     <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel}>
       {isNew ? (
-        <IdentitySection mode="new" labels={labels} toastLabels={toastLabels} toast={toast} onClose={onClose} onCreated={onMutated} />
+        <IdentitySection
+          mode="new"
+          canManageSettings={canManageSettings}
+          labels={labels}
+          toastLabels={toastLabels}
+          toast={toast}
+          onClose={onClose}
+          onCreated={onMutated}
+        />
       ) : current ? (
         <>
           <IdentitySection
@@ -288,7 +308,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 type ToastHandle = { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
 
 type IdentitySectionProps =
-  | { mode: 'new'; labels: AircraftEditorLabels; toastLabels: ToastLabels; toast: ToastHandle; onClose: () => void; onCreated: () => void }
+  | {
+      mode: 'new';
+      /** Story 14.8, AC 1: gates the create-mode "Tariffe" block below, same permission split `RatesSection`'s own add-rate form already enforces (`settings.manage`, admin-only). */
+      canManageSettings: boolean;
+      labels: AircraftEditorLabels;
+      toastLabels: ToastLabels;
+      toast: ToastHandle;
+      onClose: () => void;
+      onCreated: () => void;
+    }
   | {
       mode: 'edit';
       aircraft: EditableAircraft;
@@ -305,6 +334,26 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const isNew = props.mode === 'new';
+  const showRatesSection = props.mode === 'new' && props.canManageSettings;
+
+  // Story 14.8 (AC 1/2): the optional "Tariffe" block folded into the SAME
+  // composite submit as identity — plain state + imperative validation, NOT
+  // react-hook-form, same "conditional block validated against the
+  // mirrored server rule" convention as `pilot-editor.tsx`'s `NewPersonForm`
+  // (its own doc-comment: fighting RHF over a conditionally-relevant,
+  // differently-shaped nested object isn't worth it for a one-shot form).
+  // Untouched (and unused) in edit mode, which keeps its own independent
+  // `RatesSection` form further down this file.
+  const [ratePrice, setRatePrice] = useState('');
+  const [ratePriceDry, setRatePriceDry] = useState('');
+  const [rateValidFrom, setRateValidFrom] = useState(todayDateOnly());
+  const [rateSubmitAttempted, setRateSubmitAttempted] = useState(false);
+
+  const hasRate = ratePrice.trim().length > 0;
+  const ratePriceInvalid = hasRate && !isValidRatePrice(ratePrice);
+  const ratePriceDryInvalid = ratePriceDry.trim().length > 0 && !isValidRatePrice(ratePriceDry);
+  const rateValidFromMissing = hasRate && rateValidFrom.trim().length === 0;
+
   const defaultValues = isNew
     ? { registration: '', type: '', model: '', hourMeterMinutes: 0, notes: null, seats: null, fuelType: null, based: true }
     : {
@@ -336,15 +385,45 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
   const currentFuelType = isNew ? null : props.aircraft.fuelType;
   const extraFuelOption = currentFuelType && !KNOWN_FUEL_TYPES.includes(currentFuelType) ? currentFuelType : null;
 
+  /** RHF's INVALID branch (base fields failed their own zodResolver check) — same `onInvalid` role as `pilot-editor.tsx`'s `NewPersonForm`: flips the plain-state "Tariffe" block's error visibility too, so a submit with BOTH an empty identity field AND an invalid rate field marks both at once instead of leaving the rate block mute. */
+  function onInvalid(): void {
+    if (isNew) setRateSubmitAttempted(true);
+  }
+
   async function onSubmit(values: CreateAircraftInput | UpdateAircraftInput): Promise<void> {
     setFormError(null);
 
+    if (isNew) {
+      setRateSubmitAttempted(true);
+      if (ratePriceInvalid || ratePriceDryInvalid || rateValidFromMissing) {
+        setTimeout(() => focusFirstInvalid(formRef.current), 0);
+        return;
+      }
+    }
+
+    // Story 14.8 (AC 2, "un solo submit"): the optional rate rides along in
+    // the SAME composite body — `createAircraft` runs both writes in one
+    // `$transaction` server-side (`aircraft.service.ts`), so a rejected
+    // rate never leaves a half-created aircraft for this form to recover
+    // from.
+    const body: CreateAircraftInput | UpdateAircraftInput =
+      isNew && hasRate
+        ? {
+            ...(values as CreateAircraftInput),
+            rate: {
+              priceCentsPerHour: parseCents(ratePrice),
+              dryHourlyRateCents: ratePriceDry.trim().length > 0 ? parseCents(ratePriceDry) : undefined,
+              validFrom: rateValidFrom,
+            },
+          }
+        : values;
+
     const response = isNew
-      ? await fetch('/api/v1/aircraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) })
+      ? await fetch('/api/v1/aircraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       : await fetch(`/api/v1/aircraft/${props.aircraft.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(values),
+          body: JSON.stringify(body),
         });
 
     if (!response.ok) {
@@ -391,7 +470,7 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
   }
 
   return (
-    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="identity-form">
+    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)} noValidate data-testid="identity-form">
       <div className="form-grid">
         <Field label={labels.identity.registration} error={errors.registration ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.registration)} {...register('registration')} />
@@ -446,6 +525,41 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
           />
         </Field>
       </div>
+
+      {showRatesSection ? (
+        <Section title={labels.rates.sectionTitle}>
+          <div className="form-grid">
+            <Field label={labels.rates.price} error={rateSubmitAttempted && ratePriceInvalid ? labels.errors.invalidPrice : undefined}>
+              <Input
+                inputMode="decimal"
+                placeholder="0,00"
+                aria-invalid={rateSubmitAttempted && ratePriceInvalid}
+                value={ratePrice}
+                onChange={(event) => setRatePrice(event.target.value)}
+                data-testid="new-aircraft-rate-price"
+              />
+            </Field>
+            <Field label={labels.rates.priceDry} error={rateSubmitAttempted && ratePriceDryInvalid ? labels.errors.invalidPrice : undefined}>
+              <Input
+                inputMode="decimal"
+                placeholder="0,00"
+                aria-invalid={rateSubmitAttempted && ratePriceDryInvalid}
+                value={ratePriceDry}
+                onChange={(event) => setRatePriceDry(event.target.value)}
+                data-testid="new-aircraft-rate-price-dry"
+              />
+            </Field>
+            <Field label={labels.rates.validFrom} error={rateSubmitAttempted && rateValidFromMissing ? labels.errors.required : undefined}>
+              <DateInput
+                aria-invalid={rateSubmitAttempted && rateValidFromMissing}
+                value={rateValidFrom}
+                onChange={(event) => setRateValidFrom(event.target.value)}
+                data-testid="new-aircraft-rate-valid-from"
+              />
+            </Field>
+          </div>
+        </Section>
+      ) : null}
 
       {formError ? (
         <p role="alert" data-testid="identity-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>

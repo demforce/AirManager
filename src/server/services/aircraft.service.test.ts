@@ -19,6 +19,10 @@ vi.mock('@/server/db/prisma', () => ({
       findMany: vi.fn(),
       count: vi.fn(),
     },
+    // Story 14.8: the composite `createAircraft` + rate transaction path.
+    aircraftRate: {
+      create: vi.fn(),
+    },
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
   },
@@ -51,6 +55,7 @@ const updateManyMock = vi.mocked(prisma.aircraft.updateMany);
 const hourMeterAdjustmentCreateMock = vi.mocked(prisma.hourMeterAdjustment.create);
 const hourMeterAdjustmentFindManyMock = vi.mocked(prisma.hourMeterAdjustment.findMany);
 const hourMeterAdjustmentCountMock = vi.mocked(prisma.hourMeterAdjustment.count);
+const aircraftRateCreateMock = vi.mocked(prisma.aircraftRate.create);
 const transactionMock = vi.mocked(prisma.$transaction);
 const queryRawMock = vi.mocked(prisma.$queryRaw);
 
@@ -84,6 +89,11 @@ function mockInteractiveTransaction(): void {
 
 function staffActor(): Actor {
   return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
+}
+
+/** Story 14.8: `settings.manage` (the composite create's `rate` block) is ADMIN-only, unlike `aircraft.manage` (staff+admin). */
+function adminActor(): Actor {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
 function pilotActor(): Actor {
@@ -120,6 +130,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     hourMeterAdjustmentCreateMock.mockReset();
     hourMeterAdjustmentFindManyMock.mockReset();
     hourMeterAdjustmentCountMock.mockReset();
+    aircraftRateCreateMock.mockReset();
     transactionMock.mockReset();
     queryRawMock.mockReset();
   });
@@ -374,6 +385,68 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(dataArg.data.seats).toBeNull();
       expect(dataArg.data.fuelType).toBeNull();
       expect(dataArg.data.based).toBeUndefined();
+    });
+
+    // Story 14.8 ("form velivolo unificato", AC 1/2): the composite create
+    // path — an optional `rate` block written in the SAME transaction as
+    // the aircraft.
+    describe('composite create with a rate (story 14.8)', () => {
+      it('rejects a `rate` block from an actor without settings.manage, before ANY write (AC 2)', async () => {
+        await expect(
+          createAircraft(staffActor(), { ...input, rate: { priceCentsPerHour: 16000, validFrom: '2026-01-01' } }),
+        ).rejects.toThrow(ForbiddenError);
+
+        expect(findFirstMock).not.toHaveBeenCalled();
+        expect(transactionMock).not.toHaveBeenCalled();
+        expect(createMock).not.toHaveBeenCalled();
+      });
+
+      it('creates the aircraft and its first rate in ONE transaction (AC 1/2)', async () => {
+        mockInteractiveTransaction();
+        aircraftFindFirst.mockResolvedValue(null);
+        aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
+        aircraftRateCreateMock.mockResolvedValue({} as never);
+
+        const result = await createAircraft(adminActor(), {
+          ...input,
+          rate: { priceCentsPerHour: 16000, dryHourlyRateCents: 11500, validFrom: '2026-01-01' },
+        });
+
+        expect(transactionMock).toHaveBeenCalledTimes(1);
+        expect(aircraftRateCreateMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              aircraftId: SELECTED_AIRCRAFT.id,
+              priceCentsPerHour: 16000,
+              dryHourlyRateCents: 11500,
+              actorUserId: 'admin_1',
+            }),
+          }),
+        );
+        expect(result.id).toBe(SELECTED_AIRCRAFT.id);
+      });
+
+      it('never touches the transaction/rate insert when `rate` is absent (pre-14.8 shape, unchanged)', async () => {
+        aircraftFindFirst.mockResolvedValue(null);
+        aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
+
+        await createAircraft(adminActor(), input);
+
+        expect(transactionMock).not.toHaveBeenCalled();
+        expect(aircraftRateCreateMock).not.toHaveBeenCalled();
+        expect(createMock).toHaveBeenCalledTimes(1);
+      });
+
+      it('a failure inside the transaction (e.g. the rate insert) propagates — never a silently half-created aircraft (AC 2)', async () => {
+        mockInteractiveTransaction();
+        aircraftFindFirst.mockResolvedValue(null);
+        aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
+        aircraftRateCreateMock.mockRejectedValue(new Error('rate insert failed'));
+
+        await expect(
+          createAircraft(adminActor(), { ...input, rate: { priceCentsPerHour: 16000, validFrom: '2026-01-01' } }),
+        ).rejects.toThrow('rate insert failed');
+      });
     });
   });
 

@@ -10,6 +10,7 @@ import type {
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError } from './errors';
+import { createAircraftRateCore } from './rates.service';
 
 export type AircraftListItem = {
   id: string;
@@ -226,29 +227,50 @@ export async function getAircraft(actor: Actor, id: string): Promise<AircraftLis
   return toListItem(aircraft);
 }
 
-/** Creates an aircraft (AC 1). Write access: `aircraft.manage`. */
+/**
+ * Creates an aircraft (AC 1). Write access: `aircraft.manage`. Story 14.8
+ * ("form velivolo unificato", AC 1/2): the optional `input.rate` block adds
+ * the aircraft's first historicized rate in the SAME request — checked
+ * BEFORE any write against the stricter `settings.manage` (same split
+ * `createAircraftRate` itself enforces), then both writes run inside ONE
+ * `$transaction` so a rejected rate rolls back the aircraft too — never a
+ * silently half-created aircraft (same `createPerson`/`profiles`+`access`
+ * composite precedent, `people.service.ts`). Without `rate` (the pre-14.8
+ * shape, still the common case) the aircraft insert stays a single
+ * non-transactional call, unchanged.
+ */
 export async function createAircraft(actor: Actor, input: CreateAircraftInput): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
+  if (input.rate) {
+    authorize(actor, 'settings.manage');
+  }
 
   await assertRegistrationAvailable(input.registration);
 
+  const data = {
+    registration: input.registration,
+    type: input.type,
+    model: input.model,
+    hourMeterMinutes: input.hourMeterMinutes,
+    notes: input.notes ?? null,
+    seats: input.seats ?? null,
+    fuelType: input.fuelType ?? null,
+    // Omitted (`undefined`) falls back to the Prisma/DB default
+    // (`true`, story 12.5 AC 1) rather than forcing a value here.
+    based: input.based,
+  };
+
+  const rate = input.rate;
+
   let aircraft;
   try {
-    aircraft = await prisma.aircraft.create({
-      data: {
-        registration: input.registration,
-        type: input.type,
-        model: input.model,
-        hourMeterMinutes: input.hourMeterMinutes,
-        notes: input.notes ?? null,
-        seats: input.seats ?? null,
-        fuelType: input.fuelType ?? null,
-        // Omitted (`undefined`) falls back to the Prisma/DB default
-        // (`true`, story 12.5 AC 1) rather than forcing a value here.
-        based: input.based,
-      },
-      select: AIRCRAFT_SELECT,
-    });
+    aircraft = rate
+      ? await prisma.$transaction(async (tx) => {
+          const created = await tx.aircraft.create({ data, select: AIRCRAFT_SELECT });
+          await createAircraftRateCore(tx, created.id, rate, actor.userId);
+          return created;
+        })
+      : await prisma.aircraft.create({ data, select: AIRCRAFT_SELECT });
   } catch (error) {
     // assertRegistrationAvailable is check-then-write: a concurrent request
     // can win the race and the unique constraint fires here instead.

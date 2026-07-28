@@ -269,4 +269,68 @@ test.describe('Historicized aircraft rates (Story 4.1, AD-4/AD-2; dry rate added
     await expect(historyRows).toHaveCount(6);
     await expect(showAllButton).toHaveCount(0);
   });
+
+  // Story 14.8 ("form velivolo unificato" — feedback utente: "il form di
+  // creazione non espone tutte le voci del form di modifica, es. il
+  // costo"): the create slide-over now folds the wet/dry rate AND the
+  // initial hour meter into the SAME composite submit as the identity
+  // fields.
+  test('creates an aircraft with wet+dry rate and hour meter in ONE composite submit — card and editor show them immediately, no edit round-trip (story 14.8, AC 1/2/4)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = uniqueAircraft('C1');
+
+    await page.goto('/it/dashboard/fleet');
+    await page.getByTestId('fleet-new-button').click();
+    const form = page.getByTestId('identity-form');
+    await form.getByLabel('Marche').fill(aircraft.registration);
+    await form.getByLabel('Tipo').fill(aircraft.type);
+    await form.getByLabel('Modello').fill(aircraft.model);
+    await form.getByLabel('Contaore iniziale (minuti)').fill('600');
+    await page.getByTestId('new-aircraft-rate-price').fill('120,00');
+    await page.getByTestId('new-aircraft-rate-price-dry').fill('95,00');
+    // "In vigore da" left at its "today" default.
+    await page.getByTestId('identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Velivolo creato' })).toBeVisible();
+
+    // The fleet card already shows the wet rate — no separate "add a rate" step.
+    await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+    const card = cardFor(page, aircraft.registration);
+    await expect(card).toContainText(/120,00\s€/);
+
+    // Reopening the editor confirms hour meter + wet/dry rate are ALREADY there.
+    await card.click();
+    await expect(page.getByTestId('hour-meter-current')).toContainText('10:00');
+    await expect(page.getByTestId('rates-current')).toContainText(/120,00\s€/);
+    await expect(page.getByTestId('rates-current-dry')).toContainText(/95,00\s€/);
+  });
+
+  test('a STAFF actor (aircraft.manage but not settings.manage) sees no "Tariffe" block on the create form, and a `rate` sent directly to the API is rejected (story 14.8, AC 1/2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const staffPassword = 'StaffCreate148!';
+    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, staffEmail, staffPassword);
+
+    await page.goto('/it/dashboard/fleet');
+    await page.getByTestId('fleet-new-button').click();
+    const form = page.getByTestId('identity-form');
+    await expect(form.getByTestId('new-aircraft-rate-price')).toHaveCount(0);
+
+    // Server-side gate too (AC 2: `settings.manage` checked BEFORE any write).
+    const response = await page.request.post('/api/v1/aircraft', {
+      data: {
+        registration: uniqueAircraft('C2').registration,
+        type: 'Ultraleggero 3 assi',
+        model: 'Test',
+        hourMeterMinutes: 0,
+        rate: { priceCentsPerHour: 16000, validFrom: PAST_DATE },
+      },
+    });
+    expect(response.status()).toBe(403);
+  });
 });

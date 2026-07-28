@@ -3,6 +3,29 @@ import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 /**
+ * `POST /api/v1/aircraft/{id}/rates` body (story 4.1, AC 1/2): a new
+ * historicized rate. `priceCentsPerHour` is an integer number of euro cents
+ * (AD-2) — an HOURLY price, always > 0, capped at the Postgres INTEGER max
+ * (same defense-in-depth as `hourMeterMinutes`). `validFrom` is a calendar
+ * date only (`YYYY-MM-DD`, same `z.iso.date()` pattern as
+ * `recordCashMovementSchema.effectiveDate`) — two rates sharing the same
+ * `(aircraftId, validFrom)` are a 409 (AC 2), never silently overwritten.
+ * `dryHourlyRateCents` (story 12.5, AC 1) is OPTIONAL — the "dry" (fuel
+ * excluded) rate, display-only: it never feeds pricing/flight-cost
+ * computation (`rates.service.ts`/`flights.service.ts` read `priceCentsPerHour`
+ * exclusively). Moved above `createAircraftSchema` (story 14.8) so the
+ * latter can embed it as an optional `rate` block — same shape reused
+ * verbatim for the standalone endpoint and the composite create.
+ */
+export const createAircraftRateSchema = z.object({
+  priceCentsPerHour: z.number().int().positive().max(2_147_483_647),
+  dryHourlyRateCents: z.number().int().positive().max(2_147_483_647).nullish(),
+  validFrom: z.iso.date(),
+});
+
+export type CreateAircraftRateInput = z.infer<typeof createAircraftRateSchema>;
+
+/**
  * Shared by the create/edit aircraft forms and `POST`/`PATCH /api/v1/aircraft`
  * (Consistency Conventions: "Uno schema Zod per input/output per endpoint").
  * `registration` (marche, e.g. "I-ABCD") is normalized (`trim().toUpperCase()`)
@@ -15,6 +38,12 @@ import { z } from './zod-with-openapi';
  * omitted `based` falls back to the DB default (`true`, same as every
  * pre-existing row); `fuelType` is free text (the fleet editor offers a
  * closed set of common options, the column itself does not enforce one).
+ * `rate` (story 14.8, AC 1/2 — "form velivolo unificato") OPTIONALLY
+ * creates the aircraft's first historicized rate in the SAME request,
+ * reusing `createAircraftRateSchema` verbatim — `aircraft.service.ts#createAircraft`
+ * runs both writes in one `$transaction` when present (same
+ * `createPersonSchema`/`createPerson` composite precedent, story 13.1), so a
+ * rejected rate never leaves a half-created aircraft.
  */
 export const createAircraftSchema = z.object({
   registration: z.string().trim().toUpperCase().min(1),
@@ -27,6 +56,7 @@ export const createAircraftSchema = z.object({
   seats: z.number().int().min(0).max(100).nullish(),
   fuelType: z.string().trim().min(1).nullish(),
   based: z.boolean().optional(),
+  rate: createAircraftRateSchema.optional(),
 });
 
 export type CreateAircraftInput = z.infer<typeof createAircraftSchema>;
@@ -161,27 +191,8 @@ export type AircraftListItemDto = z.infer<typeof aircraftListItemSchema>;
 export const aircraftListResponseSchema = paginatedResponseSchema(aircraftListItemSchema);
 
 // --- Rates (story 4.1, Task 1/2/3, AC 1/2) ----------------------------------
-
-/**
- * `POST /api/v1/aircraft/{id}/rates` body (story 4.1, AC 1/2): a new
- * historicized rate. `priceCentsPerHour` is an integer number of euro cents
- * (AD-2) — an HOURLY price, always > 0, capped at the Postgres INTEGER max
- * (same defense-in-depth as `hourMeterMinutes`). `validFrom` is a calendar
- * date only (`YYYY-MM-DD`, same `z.iso.date()` pattern as
- * `recordCashMovementSchema.effectiveDate`) — two rates sharing the same
- * `(aircraftId, validFrom)` are a 409 (AC 2), never silently overwritten.
- * `dryHourlyRateCents` (story 12.5, AC 1) is OPTIONAL — the "dry" (fuel
- * excluded) rate, display-only: it never feeds pricing/flight-cost
- * computation (`rates.service.ts`/`flights.service.ts` read `priceCentsPerHour`
- * exclusively).
- */
-export const createAircraftRateSchema = z.object({
-  priceCentsPerHour: z.number().int().positive().max(2_147_483_647),
-  dryHourlyRateCents: z.number().int().positive().max(2_147_483_647).nullish(),
-  validFrom: z.iso.date(),
-});
-
-export type CreateAircraftRateInput = z.infer<typeof createAircraftRateSchema>;
+// `createAircraftRateSchema`/`CreateAircraftRateInput` moved above
+// `createAircraftSchema` (story 14.8) — see that schema's doc-comment.
 
 /**
  * One entry of `GET /api/v1/aircraft/{id}/rates` (story 4.1). Documentation
