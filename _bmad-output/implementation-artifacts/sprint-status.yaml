@@ -201,6 +201,21 @@ development_status:
   billing-1-fondamenta: done
   billing-2-pagina: done
 
+  # Epic 14 — Feedback demo tour (punch-list utente 2026-07-28, 17 item -> 9 story + TD-8).
+  # Piano con ratifiche R1-R4 e decisioni D1-D3: docs/superpowers/plans/2026-07-28-epic-14-demo-feedback.md
+  # Ordine: 14.1 -> 14.2 -> 14.8 -> 14.5 -> 14.6 -> 14.7 -> 14.3 -> 14.4 -> TD-8 -> 14.9 (STAFF ultima).
+  epic-14: in-progress
+  14-1-controlli-form-typeahead-date: ready-for-dev
+  14-2-validazione-form-per-campo: backlog
+  14-3-regole-voli-scuola: backlog
+  14-4-guardrail-registrazione-volo: backlog
+  14-5-privacy-prenotazioni: backlog
+  14-6-area-personale-transazioni-profili: backlog
+  14-7-istruttore-prenotazione-compensi: backlog
+  14-8-form-velivolo-unificato: backlog
+  14-9-rimozione-ruolo-staff: backlog
+  td-8-indagine-lentezza-salvataggi: backlog
+
 action_items:
   - epic: 13
     action: "F2 review 13.3 (feature-loss, follow-up ACCETTATO): registrando una scadenza dalla scheda persona/Piloti/Istruttori il campo 'Data scadenza' non si precompila più da ExpiryType.validityMonths (comodità che il vecchio ExpiriesPanel a pagina aveva; LiveExpiryEditor 13.2 non l'ha mai avuta). Fix = aggiungere il precompile all'add-row del LiveExpiryEditor condiviso (src/components/dashboard/expiry-editor.tsx) — beneficia tutti e 3 i consumer. Da riproporre all'utente per decidere se farlo (mini-story) o lasciarlo."
