@@ -83,6 +83,40 @@ const VIEWPORT_MARGIN = 18;
 const MIN_POPOVER_HEIGHT = 200;
 
 /**
+ * Per-caller overrides to the shared flip/clamp math (story 14.1 review
+ * F2/F3): both default to CalendarPopover's exact prior constants/behavior,
+ * so calling `computeFixedPopoverAnchor` with no third argument (every
+ * `CalendarPopover`/`date-input`/`datetime-input` call site, via
+ * `useFixedPopover#toggle`) is byte-for-byte unchanged — these two knobs
+ * exist ONLY so `SearchCombobox` can ask for its own, different tradeoffs
+ * without a second copy of the geometry.
+ */
+export type FixedPopoverAnchorOptions = {
+  /**
+   * Review F2 (major): the "stay below" branch used to clamp `top` UPWARD
+   * whenever `maxHeight` (floored at `MIN_POPOVER_HEIGHT`) would otherwise
+   * overrun the viewport bottom — fine for `CalendarPopover` (TD-7's
+   * deliberate compromise: better a slightly clipped popover than one that
+   * never fits), but for `SearchCombobox` it dragged the listbox UP so far
+   * it covered the input itself (measured: `overlapsInput` true, input not
+   * hit-testable at several short-viewport heights). The listbox already
+   * scrolls internally (`overflow-y:auto`) below the fold, so there is
+   * nothing to gain from pulling it up — `true` pins `top` to
+   * `triggerRect.bottom + POPOVER_GAP` unconditionally, never above it.
+   */
+  neverOverlapTrigger?: boolean;
+  /**
+   * Review F3 (major): floor for `maxHeight` in the flip-ABOVE branch.
+   * `MIN_POPOVER_HEIGHT` (200) is sized for `CalendarPopover`'s day grid;
+   * forcing the same floor on `SearchCombobox`'s short option rows pushed
+   * the popover's TOP edge past the viewport's own top edge whenever the
+   * real `spaceAbove` was smaller than 200 (measured: first option
+   * unreachable at any scroll position). Defaults to `MIN_POPOVER_HEIGHT`.
+   */
+  minAboveHeight?: number;
+};
+
+/**
  * Pure geometry decision, factored out of `useFixedPopover#toggle` (story
  * 14.1, AC 1) so `SearchCombobox` — whose own open/close lifecycle is driven
  * by focus/typing/blur, not a single toggle-on-click — can reuse the EXACT
@@ -97,23 +131,32 @@ const MIN_POPOVER_HEIGHT = 200;
  *   the trigger instead (`bottom`, not `top` — see `anchorPositionStyle`).
  * - Otherwise (including "tight on both sides", where flipping wouldn't
  *   help either) → stay below, but clamp `top` down so the popover can
- *   never run past the bottom of the viewport.
- * - `maxHeight` is NEVER allowed below `MIN_POPOVER_HEIGHT`: with little
- *   room the popover scrolls internally instead of vanishing or escaping
- *   the viewport (review F1's actual failure mode — 26-45px slivers with
- *   zero hit-testable controls).
+ *   never run past the bottom of the viewport (unless `neverOverlapTrigger`,
+ *   review F2 above).
+ * - `maxHeight` is NEVER allowed below `MIN_POPOVER_HEIGHT` on the "below"
+ *   branch, nor below `minAboveHeight` on the "above" one: with little room
+ *   the popover scrolls internally instead of vanishing or escaping the
+ *   viewport (review F1's actual failure mode — 26-45px slivers with zero
+ *   hit-testable controls).
  */
-export function computeFixedPopoverAnchor(triggerRect: DOMRect, neededHeight: number): FixedPopoverAnchor {
+export function computeFixedPopoverAnchor(
+  triggerRect: DOMRect,
+  neededHeight: number,
+  options: FixedPopoverAnchorOptions = {},
+): FixedPopoverAnchor {
+  const { neverOverlapTrigger = false, minAboveHeight = MIN_POPOVER_HEIGHT } = options;
   const spaceBelow = window.innerHeight - triggerRect.bottom - POPOVER_GAP - VIEWPORT_MARGIN;
   const spaceAbove = triggerRect.top - POPOVER_GAP - VIEWPORT_MARGIN;
 
   if (spaceBelow < neededHeight && spaceAbove > spaceBelow) {
-    const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove);
+    const maxHeight = Math.max(minAboveHeight, spaceAbove);
     return { top: null, bottom: window.innerHeight - triggerRect.top + POPOVER_GAP, maxHeight, triggerRect };
   }
   const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceBelow);
   const naturalTop = triggerRect.bottom + POPOVER_GAP;
-  const top = Math.min(naturalTop, Math.max(8, window.innerHeight - maxHeight - VIEWPORT_MARGIN));
+  const top = neverOverlapTrigger
+    ? naturalTop
+    : Math.min(naturalTop, Math.max(8, window.innerHeight - maxHeight - VIEWPORT_MARGIN));
   return { top, bottom: null, maxHeight, triggerRect };
 }
 

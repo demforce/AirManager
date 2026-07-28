@@ -40,7 +40,7 @@ so that vedo sempre cosa sto scrivendo e i controlli sono coerenti e puliti.
 
 ### AC1 — SearchCombobox non copre l'input
 
-Enumerati TUTTI i siti d'uso reali (`grep import SearchCombobox`): 4 file lo importano, 3 lo renderizzano davvero —
+Enumerati TUTTI i siti d'uso reali (`grep import SearchCombobox`): 3 file lo importano e lo renderizzano davvero (`billing-console.tsx` NON è tra questi — cita il nome solo in un commento, review F7) —
 - `logbook/flight-editor.tsx` — 3 picker (aircraft, person, instructor), dentro un `SlideOver`.
 - `expiries/scadenze-console.tsx` — 1 picker (pilota), dentro il `mini-modal` "Addebita quota associativa".
 - `billing/transaction-editor.tsx` — 1 picker (pilota), dentro un `SlideOver`.

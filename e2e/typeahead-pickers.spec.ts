@@ -215,4 +215,63 @@ test.describe('SearchCombobox positioning (story 14.1, AC 1/4 — the dropdown m
     expect(geometry?.flippedAbove).toBe(true);
     expect(geometry?.overlapsField).toBe(false);
   });
+
+  test('review F2: never rises above the input even when there is little room below and none above (vh=340)', async ({ page }) => {
+    // Pre-fix repro (F2): with `spaceBelow < MIN_POPOVER_HEIGHT` and no flip
+    // (little room above either), the "stay below" branch clamped `top`
+    // UPWARD to keep `maxHeight` fully inside the viewport — dragging the
+    // listbox ON TOP of the input (`overlapsInput` true, input not
+    // hit-testable at the reviewer's scan of vh 340/360 on this same field).
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize({ width: 1280, height: 340 });
+    await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+    await page.getByTestId('flight-aircraft').click();
+
+    const geometry = await page.evaluate(() => {
+      const input = document.querySelector('[data-testid="flight-aircraft"]') as HTMLElement | null;
+      const listbox = document.querySelector('.combo-listbox');
+      if (!input || !listbox) return null;
+      const ir = input.getBoundingClientRect();
+      const lr = listbox.getBoundingClientRect();
+      const centerX = ir.left + ir.width / 2;
+      const centerY = ir.top + ir.height / 2;
+      const hitAtInputCenter = document.elementFromPoint(centerX, centerY);
+      return {
+        overlapsInput: lr.top < ir.bottom && lr.bottom > ir.top,
+        // The reviewer's actual failure signature: not just an overlapping
+        // rect, but the LISTBOX painting over the input so a click at the
+        // input's own center hits an option instead.
+        inputHitTestable: hitAtInputCenter === input,
+      };
+    });
+    expect(geometry?.overlapsInput).toBe(false);
+    expect(geometry?.inputHitTestable).toBe(true);
+  });
+
+  test('review F4: closes when an ancestor scrolls, without a stale fixed-positioned listbox left behind', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    // Short enough that the SlideOver's `.so-body` genuinely overflows and
+    // scrolls (same viewport the reviewer used for this exact repro).
+    await page.setViewportSize({ width: 1280, height: 560 });
+    await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+    await page.getByTestId('flight-aircraft').click();
+    await expect(page.locator('.combo-listbox')).toBeVisible();
+
+    // A real wheel scroll on `.so-body` (not Playwright's own
+    // `scrollIntoViewIfNeeded`, which wouldn't exercise the `scroll` event
+    // this fix listens for) — the listbox's `position: fixed` rect was
+    // measured off the trigger BEFORE this scroll, so without the fix it
+    // would stay floating over whatever is now under it instead of closing.
+    const soBody = page.locator('.so-body');
+    const box = await soBody.boundingBox();
+    if (!box) throw new Error('.so-body not found');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 240);
+
+    await expect(page.locator('.combo-listbox')).toHaveCount(0);
+  });
 });

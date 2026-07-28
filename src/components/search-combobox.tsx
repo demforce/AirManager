@@ -14,6 +14,17 @@ import { anchorPositionStyle, computeFixedPopoverAnchor, POPOVER_PORTAL_Z_INDEX,
 const COMBO_LISTBOX_HEIGHT = 240;
 
 /**
+ * Story 14.1 review F3: floor for `computeFixedPopoverAnchor`'s flip-ABOVE
+ * `maxHeight`, smaller than `CalendarPopover`'s default `MIN_POPOVER_HEIGHT`
+ * (200) — the listbox's option rows are far shorter than a calendar's day
+ * grid, so there is no reason to force 200px of height even when the real
+ * space above the trigger is smaller, which used to push the popover's top
+ * edge past the viewport's own top edge (measured: first option
+ * unreachable).
+ */
+const COMBO_MIN_ABOVE_HEIGHT = 96;
+
+/**
  * One selectable entry (story TD-3, AC 1/2). `meta` is an optional secondary
  * detail rendered muted next to `label` inside the option row — part of the
  * documented contract, unused by today's consumers (kept for a future
@@ -117,6 +128,11 @@ export function SearchCombobox({
   // `openWithOptions`.
   const [anchor, setAnchor] = useState<FixedPopoverAnchor | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // Story 14.1 review F4: the portaled listbox's own root, so the
+  // scroll/resize close listener below can tell an internal scroll of the
+  // OPTIONS LIST (keep open) apart from a scroll/resize of anything else
+  // (close — the anchor measured on open is now stale).
+  const listboxRef = useRef<HTMLUListElement | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seqRef = useRef(0);
   const listboxId = `${id}-listbox`;
@@ -142,6 +158,31 @@ export function SearchCombobox({
     [],
   );
 
+  // Story 14.1 review F4 (major): the portaled listbox is `position: fixed`
+  // off a rect measured once on open — a scroll of any ANCESTOR (a
+  // `SlideOver`'s `.so-body`, the page itself) or a viewport resize moves or
+  // resizes the trigger without re-measuring, leaving the listbox floating
+  // over unrelated content or (after a resize) partly outside the viewport.
+  // Same pattern as `useFixedPopover`'s own close effect (`fixed-popover.ts`)
+  // — capture-phase `scroll` (bubbling `scroll` events don't fire on
+  // `window` for an inner scrollable container) + `resize`, both closing the
+  // popup, EXCEPT when the scroll originated INSIDE the listbox itself
+  // (`overflow-y: auto`, scrolling through the options must not close it).
+  useEffect(() => {
+    if (!open) return;
+    function close(event: Event) {
+      if (event.target instanceof Node && listboxRef.current?.contains(event.target)) return;
+      setOpen(false);
+      setActiveIndex(-1);
+    }
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
   function openWithOptions(nextOptions: SearchComboboxOption[]): void {
     // Invalidate any pending/in-flight search (review TD-3 D3): without the
     // seq bump, a fetch scheduled by earlier typing could resolve AFTER a
@@ -157,7 +198,15 @@ export function SearchCombobox({
     // math) and keeps the popover correctly placed even if the page
     // scrolled since it last opened.
     if (wrapperRef.current) {
-      setAnchor(computeFixedPopoverAnchor(wrapperRef.current.getBoundingClientRect(), COMBO_LISTBOX_HEIGHT));
+      setAnchor(
+        computeFixedPopoverAnchor(wrapperRef.current.getBoundingClientRect(), COMBO_LISTBOX_HEIGHT, {
+          // Story 14.1 review F2/F3: the combobox's own tradeoffs, see
+          // `FixedPopoverAnchorOptions` — `CalendarPopover`/`date-input`/
+          // `datetime-input` keep the defaults (no options passed) untouched.
+          neverOverlapTrigger: true,
+          minAboveHeight: COMBO_MIN_ABOVE_HEIGHT,
+        }),
+      );
     }
     setOpen(true);
   }
@@ -319,13 +368,20 @@ export function SearchCombobox({
               // DOM tree, so this handler sees the same mousedown it always
               // did (`react-dom`'s documented portal event behavior).
               onMouseDown={(event) => event.preventDefault()}
+              ref={listboxRef}
               className="combo-listbox"
               style={{
                 position: 'fixed',
                 ...anchorPositionStyle(anchor),
                 left: anchor.triggerRect.left,
                 width: anchor.triggerRect.width,
-                maxHeight: anchor.maxHeight,
+                // Story 14.1 review F1 (major): `anchor.maxHeight` is the
+                // SPACE AVAILABLE (up to 616px measured with 80-100 options),
+                // not a rendering cap — capping it to the CSS class's own
+                // `max-height: 240px` (`.combo-listbox`, airops.css) keeps
+                // that rule the one real source of truth instead of dead
+                // code always overridden by this inline style.
+                maxHeight: Math.min(COMBO_LISTBOX_HEIGHT, anchor.maxHeight),
                 zIndex: POPOVER_PORTAL_Z_INDEX,
                 overflowY: 'auto',
               }}

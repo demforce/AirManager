@@ -1289,7 +1289,6 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
    position" per `justify-content` (`flex-start` here → the TOP of the
    flex box, not "after the input"). */
 .combo-listbox{
-  z-index: 20;
   max-height: 240px;
   overflow: auto;
   border-radius: var(--radius-xs);
