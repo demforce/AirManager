@@ -191,6 +191,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               amountHint: t('registry.membershipFee.amountHint'),
               submit: t('registry.membershipFee.submit'),
               cancel: t('registry.membershipFee.cancel'),
+              requiredPilot: t('registry.membershipFee.requiredPilot'),
               invalidAmount: t('registry.membershipFee.invalidAmount'),
               // `t.raw`: `{balance}`/`{expires}` interpolated CLIENT-SIDE (same rationale as `shown` above).
               success: t.raw('registry.membershipFee.success') as string,

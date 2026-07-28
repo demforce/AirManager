@@ -1351,11 +1351,12 @@
         "amountHint": "Precompilato dalle Impostazioni, modificabile.",
         "submit": "Addebita e rinnova",
         "cancel": "Chiudi",
-        "invalidAmount": "Seleziona un pilota e un importo valido.",
+        "invalidAmount": "Inserisci un importo valido.",
         "success": "Addebitato. Nuovo saldo: {balance} · scadenza rinnovata al {expires}.",
         "genericError": "Operazione non riuscita. Riprova.",
         "insufficientBalance": "Saldo insufficiente: il conto è a {balance}, l'addebito di {amount} lo porterebbe sotto zero. Un admin può forzare l'addebito con la casella qui sotto.",
-        "overrideCheckbox": "Forza addebito (saldo insufficiente)"
+        "overrideCheckbox": "Forza addebito (saldo insufficiente)",
+        "requiredPilot": "Seleziona un pilota."
       }
     },
     "own": {

@@ -68,6 +68,8 @@ export type ScadenzeConsoleLabels = {
     amountHint: string;
     submit: string;
     cancel: string;
+    /** Review 14.2 F3.4 — the pilot combobox's own marker (was one string shared with the amount). */
+    requiredPilot: string;
     invalidAmount: string;
     success: string;
     genericError: string;
@@ -403,6 +405,16 @@ type MembershipFeeModalProps = {
  * unless an ADMIN checks "Forza addebito" (`canOverride`, unchecked by
  * default — a deliberate action, never the default path).
  */
+/** `null` = not a positive money amount (review 14.2 F3.4 — drives the amount field's own marker, same parse the submit uses). */
+function parseAmountCents(value: string): number | null {
+  try {
+    const cents = parseCents(value);
+    return cents > 0 ? cents : null;
+  } catch {
+    return null;
+  }
+}
+
 function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, labels, canOverride, onClose, onCharged }: MembershipFeeModalProps) {
   const [personId, setPersonId] = useState('');
   const [amount, setAmount] = useState(() => (defaultAmountCents / 100).toFixed(2));
@@ -410,23 +422,18 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ balanceCents: number; expiresAt: string } | null>(null);
+  // Review 14.2 F3.4 — per-field markers instead of one shared bottom string:
+  // both errors are DERIVED from submitAttempted + current value (clear on
+  // correction is automatic), the `error` banner stays for SERVER failures only.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const pilotMissing = submitAttempted && !personId;
+  const amountInvalid = submitAttempted && parseAmountCents(amount) === null;
 
   async function submit(): Promise<void> {
     setError(null);
-    if (!personId) {
-      setError(labels.invalidAmount);
-      return;
-    }
-    let parsedAmount: number | null;
-    try {
-      parsedAmount = parseCents(amount);
-    } catch {
-      parsedAmount = null;
-    }
-    if (parsedAmount === null || parsedAmount <= 0) {
-      setError(labels.invalidAmount);
-      return;
-    }
+    setSubmitAttempted(true);
+    const parsedAmount = parseAmountCents(amount);
+    if (!personId || parsedAmount === null) return;
 
     setSubmitting(true);
     const response = await fetch(`/api/v1/people/${personId}/membership-fee`, {
@@ -480,11 +487,26 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
               initialOptions={personOptions.filter((option) => option.id !== '')}
               placeholder=""
               emptyText=""
+              error={pilotMissing ? labels.requiredPilot : undefined}
             />
             <label htmlFor="membership-fee-amount" className="fld-label" style={{ display: 'block', marginTop: 10 }}>
               {labels.amount}
             </label>
-            <input id="membership-fee-amount" className="input" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} data-testid="membership-fee-amount" />
+            <input
+              id="membership-fee-amount"
+              className="input"
+              inputMode="decimal"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              aria-invalid={amountInvalid || undefined}
+              aria-describedby={amountInvalid ? 'membership-fee-amount-error' : undefined}
+              data-testid="membership-fee-amount"
+            />
+            {amountInvalid ? (
+              <p id="membership-fee-amount-error" role="alert" className="fld-error">
+                {labels.invalidAmount}
+              </p>
+            ) : null}
             <p style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>{labels.amountHint}</p>
             {canOverride ? (
               <label className="fld-label" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontWeight: 400 }}>
