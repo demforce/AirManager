@@ -217,8 +217,13 @@ development_status:
   14-2-validazione-form-per-campo: done
   14-3-regole-voli-scuola: backlog
   14-4-guardrail-registrazione-volo: backlog
-  14-5-privacy-prenotazioni: ready-for-dev
-  14-6-area-personale-transazioni-profili: backlog
+  # 14.5 chiusa 2026-07-29: masking server-side nel servizio (6 consumer coperti
+  # alla fonte) + permesso bookings.read.names. Review Opus 5: BYPASS REALE (F1) —
+  # instructorProfileId in chiaro + anagrafica istruttori nel payload di tutti +
+  # filtro-oracolo: nome istruttore in 3 click; chiuso su tutti e 3 i canali e
+  # riprodotto post-fix. Anche F2 (e2e verde solo per ordine di esecuzione).
+  14-5-privacy-prenotazioni: done
+  14-6-area-personale-transazioni-profili: ready-for-dev
   14-7-istruttore-prenotazione-compensi: backlog
   # 14.8 chiusa 2026-07-28: creazione con tariffe+contaore in un submit composito
   # transazionale; review Opus 5: 1 major (dry-only scartato in silenzio) + 6 tra

@@ -4,7 +4,7 @@ baseline_commit: 0ff9186
 
 # Story 14.5: Privacy prenotazioni — piloti e allievi vedono "Occupato", non i nomi degli altri
 
-Status: review (branch `dev`, epic 14)
+Status: done (review Opus 5 shippable-with-fixes — bypass privacy reale trovato e chiuso → fix F1-F7 `3073f78`, suite 282/282, 0 flaky — 2026-07-29)
 
 ## Story
 
@@ -89,4 +89,93 @@ Full suite finale (CI=1, build prod, DB fresco): **281 passed (8.7m), exit 0, 0 
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+**Reviewer**: subagent adversarial (Opus 5 xhigh) — 2026-07-28. **Verdetto**: shippable-with-fixes (2 major, 4 minor, 1 nit).
+
+### Priority zero — full suite (arbitro, DB fresco, build prod)
+
+`export JOBS_SECRET=<non-placeholder>` + `CI=1 npx playwright test` (foreground su file). Verbatim:
+
+```
+  2 flaky
+    [chromium] › e2e/aircraft-rates.spec.ts:331:7 › ... a STAFF actor (aircraft.manage but not settings.manage) sees no "Tariffe" block ... (story 14.8, AC 1/2)
+    [chromium] › e2e/cash-register.spec.ts:169:7 › ... deleting a category in use via the API fails with a clear message suggesting deactivation (AC 1)
+  279 passed (9.7m)
+EXIT=0
+```
+
+281 test totali, exit 0. Entrambi i flaky sono classe **trasporto** (`apiRequestContext.post: read ECONNRESET` su `POST /api/v1/users` e `POST /api/v1/cash-categories`, fixture di setup di spec preesistenti), verdi al retry #1 — nessun test della 14.5 coinvolto. Gate rieseguiti a valle: `PASS lint (21s) / PASS typecheck (4s) / PASS test (12s) — 1558 passed / PASS build (53s)`.
+
+### Cosa regge (verificato empiricamente, non per lettura)
+
+- **Masking server-side, sul filo**: da `pilot@` e `student@`, su `GET /api/v1/bookings` e `GET /api/v1/bookings/calendar`, la prenotazione altrui arriva con `personName`, `instructorName`, `notes`, `denyReason` **tutti `null`**; la propria arriva completa.
+- **Export**: PDF scaricato da sessione pilota → `I-ZD2ZK | Occupato | ... | Approvato` (colonna Istruttore vuota) accanto a `I-ZWNT5 | Piero Volante` (la propria). Idem xlsx (`sharedStrings.xml`).
+- **Nessun side-channel nel DOM**: il blocco mascherato è `<div class="flight" title="10:00–11:00">…<span>Occupato</span></div>`; scansione di tutti gli attributi della pagina → zero occorrenze dei nomi mascherati.
+- **Invarianti AC 5**: un allievo vede completa la lezione prenotata per lui dall'istruttore; 403 e 409 non rivelano il proprietario dello slot; la landing pilota non contiene nomi altrui e l'embed Overview è irraggiungibile (gate `finance.manage`).
+
+### Findings
+
+| # | Sev | Titolo |
+|---|-----|--------|
+| F1 | **major** | `instructorName` mascherato ma **ricostruibile in 3 click**: `instructorProfileId` resta in chiaro nel DTO e la pagina serve a tutti l'anagrafica istruttori (id → cognome) |
+| F2 | **major** | Il nuovo e2e fallisce **deterministicamente** su DB non fresco: asserisce pagina 1 mentre le fixture `FUTURE_DAY` ordinano ultime |
+| F3 | minor | `personId` non mascherato + filtro `?personId=` senza guardia (il precedente `listFlights` risponde 403) → linkabilità pseudonima |
+| F4 | minor | Due definizioni divergenti di "own": l'istruttore-di-record vede la propria lezione "Occupato" ma la modifica e **riceve indietro il DTO non mascherato** |
+| F5 | minor | AC 6 chiede un e2e sul PDF del pilota: assente (lo unit test **inietta** `personName: null`, non può fallire su regressione) |
+| F6 | minor | OpenAPI: `personName` diventa nullable (breaking per il client Flutter) senza una riga di contratto; `bookings.read.names` non documentato |
+| F7 | nit | Risposta grezza verificata solo su `/bookings/calendar`, non su `GET /api/v1/bookings` |
+
+**F1 — evidenza decisiva.** `maskBookingNames` (`bookings.service.ts:208-211`) lascia `instructorProfileId`; `bookings/page.tsx:140` chiama `listActiveInstructors(actor)` (servizio `self.read`, `bookings.service.ts:1220-1229`) **incondizionatamente** e lo passa a `Schedule` (`page.tsx:311`), componente client → la mappa id→cognome finisce nel payload RSC di ogni pilota/allievo; il popover filtri rende un bottone per istruttore (`schedule.tsx:386`) e filtra i blocchi via `matchesInstructorFilter(block.instructorProfileId)` (`schedule.tsx:214, 453, 527`).
+
+```
+RAW (pilot@):  "personName":null, "instructorName":null, "instructorProfileId":"cms56tt5x000rbkpvhiawiawz"
+HTML (pilot@): {"instructorProfileId":"cms56tt5x000rbkpvhiawiawz","firstName":"Docente","lastName":"Riservato-…"}
+
+UI (pilot@), senza filtro:  ["I-Q452553 | Occupato | 13:00–14:00", "I-ZD2ZK | Occupato | 10:00–11:00"]
+UI dopo filtro "Riservato-…": ["I-ZD2ZK | Occupato | 10:00–11:00"]   ← il pilota ora sa di chi è quella lezione
+```
+
+Questo falsifica l'affermazione del Dev Agent Record: *"nulling instructorName unconditionally also means a masked dual-instruction booking renders IDENTICALLY to a masked solo one — no layout tell"*. Fix: azzerare anche `instructorProfileId` in `maskBookingNames` e non rendere il gruppo filtro Istruttore per chi non ha `bookings.read.names`.
+
+**F2 — riproduzione.** Con 65 prenotazioni nella finestra della lista (`from = now-48h`, `BOOKINGS_PAGE_SIZE = 20`, ordine `startsAt asc`):
+
+```
+$ npx playwright test e2e/bookings.spec.ts -g "pilot sees full data" --workers=1
+exit=1
+    Locator: getByTestId('booking-row').filter({ hasText: 'I-BK…' })
+    Expected substring: "Piero"   → element(s) not found     (e2e/bookings.spec.ts:1760)
+```
+
+Le asserzioni di *schedule* dello stesso test passano (vista giorno non paginata). Fix: usare `findBookingRow` (già nel file, `:1496`), mantenendo `FUTURE_DAY`.
+
+### Verdetto sulle 3 deviazioni dichiarate
+
+1. **Consumer non toccati direttamente** — ACCETTATA sul meccanismo (tutti e sei i consumer verificati mascherati sul filo), **RESPINTA come enumerazione**: "per costruzione" copre il campo, non la superficie; il join a livello di pagina è sfuggito (F1). È la lezione *"il gemello va MISURATO"* applicata al dato collaterale.
+2. **`denyReason` mascherato** — ACCETTATA: stessa classe di rischio di `notes`, costo operativo nullo, elimina anche un tell di layout sotto il badge DENIED. Tenere visibile lo `status` è corretto.
+3. **`tomorrow` → `FUTURE_DAY`** — ACCETTATA nella diagnosi (la contesa con `home-dashboard.spec` è reale), **RESPINTA nell'implementazione**: nessun assert è stato svuotato, ma il test non è più rieseguibile su DB sporco (F2).
+
+### Nota ambiente
+
+DB lasciato **sporco** (68 prenotazioni, incluse le fixture d'attacco); il server prod avviato per gli attacchi è stato spento (porta 3000 libera). Reset DB prima del prossimo run di suite.
+
+### Fix post-review (2026-07-29, fix-subagent Sonnet 5 xhigh — commit `3073f78`)
+
+- **F1 fixed (IL BYPASS, major)** — chiuso su ENTRAMBE le metà: `maskBookingNames` azzera anche `instructorProfileId`; `bookings/page.tsx` non chiama più `listActiveInstructors` (passa array vuoto) senza `bookings.read.names`, e `schedule.tsx` non rende il gruppo filtro Istruttore con array vuoto (l'emptiness È il segnale di permesso — niente prop ridondante). **Attacco del reviewer riprodotto POST-fix da pilot@ E student@**: (a) nessun cognome istruttore nel payload RSC, (b) zero elementi `schedule-filter-instructor-*`, (c) API calendar con `personName`/`instructorName`/`instructorProfileId` tutti null sulla riga mascherata. Controprova: admin e istruttore vedono tutto come prima. Unit su `instructorProfileId: null` per entrambe le letture.
+- **F2 fixed** — `findBookingRow` promosso a scope modulo e usato dalle due lookup del nuovo describe: il test non assume più pagina 1 (il verde precedente era artefatto dell'ordine di esecuzione su DB fresco).
+- **F3 fixed** — `listBookings` lancia `ForbiddenError` PRIMA di ogni query se un attore senza `bookings.read.names` filtra per un `personId` non suo (stessa forma di `authorizeFlightsQuery`); `listCalendarBookings` non ha quel filtro (documentato). Unit: pilota su altrui 403 senza query, pilota su sé stesso OK, staff OK.
+- **F4 fixed** — le due nozioni di "own" allineate: `maskBookingNames` riceve `ownInstructorProfileId` (risolto una volta per richiesta, SOLO quando `canReadNames` è false — asserito con `not.toHaveBeenCalled()`), e un profilo istruttore DISATTIVATO non conta come own (unit dedicato).
+- **F5 fixed** — e2e AC6 mancante aggiunto: export xlsx da sessione pilota (scelta del reviewer: assert a livello di cella con ExcelJS, stesso path di masking del PDF) filtrato su aircraftId run-unique → "Occupato" al posto del cognome altrui.
+- **F6 fixed** — le 3 description OpenAPI documentano il contratto di masking (quali campi vanno a null, che null = "Occupato" e mai "persona assente", il permesso, e il 403 del filtro personId).
+- **F7 fixed** — assert grezzo anche su `GET /api/v1/bookings` (prima solo `/calendar`).
+
+**Gates post-fix**: PASS lint/typecheck/test/build — **1565 unit**.
+
+**Full suite finale** (fix-subagent, DB fresco + build prod + JOBS_SECRET, foreground):
+
+```
+282 passed (9.5m)
+```
+Exit code `0`, **0 flaky**, entrambi i test toccati verdi (privacy masking 9.2s, nuovo export xlsx 3.2s).
+
+**Nota ambiente registrata dal subagent**: `scripts/reset-db.sh` non funziona in questa sandbox (assume l'utente OS `postgres` del container remoto); equivalente usato: DROP/CREATE via `docker exec ... psql -U airmanager` + `migrate deploy` + `db seed` — deliberatamente NON `prisma migrate reset`.
+
+**Esito finale: tutti i findings chiusi. Story DONE.**
