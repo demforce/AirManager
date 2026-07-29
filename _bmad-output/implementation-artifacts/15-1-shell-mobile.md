@@ -4,7 +4,7 @@ baseline_commit: 806692a
 
 # Story 15.1: Shell mobile — tab bar per-ruolo, sheet "Altro", topbar compatta con menu profilo
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -67,3 +67,75 @@ so that ogni pagina dell'app resta raggiungibile e usabile con una mano su scher
 - KPI strip a scroll-snap (15.2/15.3), dark-pass e a11y-pass completi (15.10), project Playwright mobile dedicato (riesame a fine epic).
 - TD 14.6 F4 (estratto conto non-responsive sotto ~700px — componente condiviso, resta TD).
 - Qualunque modifica al comportamento desktop o alle API.
+
+## Dev Agent Record
+
+**Agente**: dev-story (Opus 5 xhigh — regola modello 2026-07-29: il codice UI lo scrive Opus 5). Skill caricate: `karpathy-guidelines`, `design-taste-frontend`, `ui-ux-pro-max` (query "mobile bottom tab bar…" e "bottom sheet modal focus…": ≥44px, 8px fra i target, 3-5 tab con gli extra dietro "More", chiusura esplicita dello sheet — tutte rispettate).
+
+### Verifica della ricognizione (sessione principale)
+
+Ricognizione **confermata** su tutti i punti verificabili; correzioni e precisazioni:
+
+1. **Conteggi per ruolo — CONFERMATI ma con una precisazione**: ADMIN vede 12 voci → "4 slot + Altro con 8" è corretto (il testo dell'AC 2 dice "4 voci a slot prioritario + quinta tab Altro", ed è quello implementato: `MOBILE_TAB_COUNT - 1` = 4). INSTRUCTOR/PILOT/STUDENT = 5 (4 se `myCompensation` è filtrata): confermato da unit test sul registry reale.
+2. **Icone — CONFERMATO**: mancava solo il glifo "Altro"; aggiunto `Icon.grid` col path del template. Nessun'altra icona serviva (le 8 voci dello sheet riusano `plane/users/compass/clock/book/cash/chart/gear`).
+3. **TRAPPOLA `.app` — CONFERMATA E NECESSARIA**: senza `grid-template-columns: 1fr` a ≤640px `.main` resta nella colonna da 232px. Aggiunta.
+4. **Regola CSS 1526-1530 — CONFERMATA MORTA, rimossa**: `.user-chip`/`.user-chip-name` esistono SOLO dentro `top-bar.tsx` (grep) e `.topbar` è ora `display:none` ≤640px, quindi tutte e tre le dichiarazioni del blocco non potevano più applicarsi a nulla. Le due regole *fuori* media query (`.crumbs`, `.user-chip{flex-shrink}`) restano: valgono ancora da 641px in su. Motivazione lasciata come commento al posto del blocco.
+5. **Geometria della barra — MISURATA, non stimata** (il template dava 6+44+12): l'altezza reale è **67px** con label su una riga (admin) e **78px** con la label più lunga su due righe ("Le mie transazioni", pilota/allievo). Il `padding-bottom` del contenuto usa quindi il valore del template (100px) che copre entrambi i casi con ≥22px di margine; `.toast-host` sale a 92px (valore del template) + safe-area.
+6. **z-index — CORREZIONE alla ricognizione**: la barra sta a **5** (sopra il contenuto, sotto popover 19/20/30, SlideOver 50/60, toast 200) come da AC 6, ma i due sheet NON possono stare appena sopra la barra: un `.popover` (z 19/20/30) può essere aperto mentre si tocca la tab bar, e dipingerebbe **sopra** lo sheet e il suo scrim. Gli sheet stanno quindi a **z 40** — sopra i popover, sotto SlideOver e toast (verificato per hit-test, v. sotto).
+7. **`my-compensation.spec.ts` a 390px — nessun impatto**: la riga IMPORTO non finisce sotto la barra (test verde senza modifiche), come i 3 spec mobile-viewport esistenti.
+
+### Riepilogo per AC
+
+1. **Switch R1** — `.sidebar`/`.topbar` `display:none` ≤640px, albero mobile `display:none` >640px (regole base FUORI dalla media query). Nessun `matchMedia`/UA/route parallele; tutte le regole nuove sono additive dentro `@media (max-width: 640px)`; nessun token esistente cambia valore. Misurato: a 1280px e 800px `app.gridTemplateColumns` resta `232px …` / `64px …`, `.main` padding-bottom 0px, un solo landmark `navigation` "Aree operative" (e2e + misura interattiva).
+2. **Tab bar per-ruolo** — `mobile-nav.tsx` alimentato dallo STESSO `rawItems` della Sidebar (filtro `myCompensation` incluso: `layout.tsx` calcola `mobileNavLayout(rawItems)` DOPO il filtro). Campo `mobileSlot` (1-4) nel registry; `mobileNavLayout()` è la regola ≤5/>5. ADMIN = Panoramica/Pianificazione/Richieste PPR/Aeromobili + Altro; PILOT/STUDENT/INSTRUCTOR = le loro 5 (o 4) senza Altro. Attivo = `pathname === href` (semantica Sidebar) → colore/peso/dot; "Altro" attivo quando la route è una delle sue. Target ≥44px (`min-height: 44px`, colonna 73px a 375px). Label = chiavi `shell.nav.*` esistenti.
+3. **Sheet "Altro"** — scrim + pannello dal fondo, grabber 36×4, label mono "ALTRE SEZIONI", grid 2 colonne ≥44px, voce attiva `--panel-2`; navigare chiude (onClick), scrim chiude, Escape chiude. Interferenza con SlideOver: **impossibile per costruzione** (lo scrim di SlideOver, z 50, copre la tab bar; lo scrim dello sheet copre la pagina) e comunque i due listener sono entrambi su `window` e chiuderebbero solo il proprio pannello — motivazione nel doc-comment di `mobile-sheet.tsx`.
+4. **Topbar compatta** — `.brand-mark` riusato (zero CSS nuovo), titolo dallo stesso lookup `findNavItemByPathname` + `pageTitles` + fallback della TopBar, sotto-riga mono `AirManager · ICAO` (solo brand se l'ICAO non è configurato), `ThemeToggle` riusato, bottone avatar rotondo con `Avatar` (iniziali+colore del user-chip). Niente orologio, niente switch-ruolo.
+5. **Menu profilo** — sheet dal fondo: identità (nome + ruolo primario), riga "Cambia lingua · EN" (stesso `Link href={{pathname, query}}` + `useSearchParams` della TopBar: query preservata, provato in e2e), riga "Esci" (STESSA Server Action del layout). Trigger con `aria-haspopup="dialog"` + `aria-expanded` + `aria-label`; il pannello è `role="dialog"` con nome accessibile, prende il focus all'apertura e lo **restituisce al trigger** alla chiusura (misurato: `document.activeElement` torna `mobile-profile-button` dopo Escape). Deliberatamente NIENTE `aria-modal` finché non c'è un focus trap (15.10).
+6. **Geometria del fondo** — `.main{ padding-bottom: calc(100px + env(safe-area-inset-bottom)) }`, barra con `padding-bottom: calc(12px + env(safe-area-inset-bottom))`, `.toast-host{ bottom: calc(92px + env(...)) }`. Layering verificato per hit-test a 375px: popover `.popover` z 20 → hit-test sul proprio centro OK sopra la barra; `SlideOver` (z 50) dipinge sopra la barra (elementFromPoint all'altezza della barra dentro il pannello NON restituisce `.mobile-tabbar`); toast (z 200) renderizzato a `bottom 726 < barTop 745` e hit-testabile.
+7. **Convenzione testid** — documentata nel doc-comment di `mobile-nav.tsx` e aggiunta a CLAUDE.md (sezione convenzioni e2e) nello stesso commit: desktop invariato, `-mobile` per i duplicati (`logout-button-mobile`, `locale-switch-mobile`), `mobile-*` per ciò che è solo mobile (`mobile-tab-bar`, `mobile-tab-<id>`, `mobile-more-sheet`, `mobile-more-<id>`, `mobile-profile-menu`, `mobile-profile-button`, `mobile-topbar`).
+8. **e2e** — nuovo `e2e/mobile-shell.spec.ts` (4 test, nessuna scrittura di stato globale → resta nel project `fullyParallel`): admin (tab bar + sheet + scrim/Escape + un solo landmark a 375 e a 1280), pilota (le sue 5 tab, niente Altro, niente route admin), menu profilo (lingua con query preservata + logout), geometria del fondo. La guardia di geometria è **provata discriminante** contro una simulazione pre-fix (`.main` senza padding sulla stessa pagina): contentBottom 812 vs 745 di barTop e hit-test a fine contenuto che cade su `.mobile-tabbar`. I 3 spec mobile-viewport esistenti: **verdi senza modifiche**.
+9. **Invarianti** — `npm run gates` verde; nessuna dipendenza nuova; stringhe nuove in `it.json` + `en.json` (`shell.mobile.more/moreSheet/profile`); verifica interattiva desktop 1280/800 su 3 pagine (v. sotto).
+
+### Deviazioni motivate (dove il template era muto o l'app prevale)
+
+- **Label su due righe nella tab bar** (il template ha solo label da una parola): AC 2 impone le chiavi `shell.nav.*` esistenti, e "Le mie transazioni" non entra in 73px. Scelto il wrap a 2 righe invece del troncamento con ellissi (leggibilità); i dot inattivi restano nel flusso con `opacity: 0`, e poiché **un solo dot è mai visibile** non c'è disallineamento da compensare.
+- **Righe del menu profilo senza icona** (il template usa icone nelle righe dello sheet ruolo): l'icon-set dell'app non ha glifi "globo"/"logout" e la regola anti-slop vieta di disegnarne a mano; le righe usano il testo già tradotto ("Cambia lingua" + chip "EN", "Esci"), coerente con la topbar desktop e con nome accessibile = testo visibile.
+- **Radius 12px del template → `var(--radius-sm)` (10px)** per le voci di sheet: stessa regola dei token già ratificata per `--ink-4` (il token dell'app prevale sul literal del template); il pannello resta a `--radius-lg` (= 20px del template).
+- **`mobile-sheet.tsx` come componente condiviso** (non previsto esplicitamente dalla story): due consumatori REALI oggi (Altro + profilo), evita di duplicare scrim/Escape/focus. Non è il `BottomSheet` dettaglio-riga della 15.2 (R3) — nota esplicita nel doc-comment.
+- **z-index degli sheet a 40** invece che "appena sopra la barra" — motivazione al punto 6 della verifica ricognizione.
+- **Bottoni della topbar mobile a 32px** (theme toggle `.iconbtn` + avatar), sotto i 44px della linea guida touch: valore del template E dimensione già in uso su tutta l'app; l'AC 2 chiede ≥44px per la tab bar, che è la superficie di navigazione primaria. Stesso precedente documentato in `bookings.spec.ts` (story 12.3).
+- **`prefers-reduced-motion`**: l'animazione `sheet-up` è disattivata sotto `reduce` (2 righe) — non richiesto dalla story, ma è l'unica animazione nuova ed è la regola della skill `design-taste-frontend`.
+
+### File List
+
+- `src/components/shell/mobile-nav.tsx` (nuovo) — tab bar + sheet "Altro"; doc-comment con la convenzione testid dell'epic.
+- `src/components/shell/mobile-top-bar.tsx` (nuovo) — topbar compatta + menu profilo (lingua + logout).
+- `src/components/shell/mobile-sheet.tsx` (nuovo) — sheet dal fondo condiviso (scrim/Escape/focus).
+- `src/components/shell/route-registry.ts` — campo `mobileSlot`, `MOBILE_TAB_COUNT`, `mobileNavLayout()`.
+- `src/components/shell/route-registry.test.ts` (nuovo) — 3 unit test sulla regola ≤5/>5 (verde anche in shell pulita: `env -u DATABASE_URL -u AUTH_SECRET`).
+- `src/app/[locale]/dashboard/layout.tsx` — monta `MobileTopBar` e `MobileNav` con lo stesso array filtrato della Sidebar.
+- `src/components/ui/icons.tsx` — `Icon.grid` (glifo "Altro").
+- `src/styles/airops.css` — sezione "mobile shell" additiva + rimozione del blocco ≤640px ormai morto della topbar desktop.
+- `messages/it.json`, `messages/en.json` — `shell.mobile.*`.
+- `e2e/mobile-shell.spec.ts` (nuovo) — 4 test.
+- `CLAUDE.md` — convenzione testid mobile (AC 7).
+
+### Test
+
+- `npm run gates`: **PASS** (lint 20s, typecheck 11s, test 1603/1603, build 31s).
+- e2e mirati su build prod (`CI=1`, `JOBS_SECRET` esportato): `mobile-shell.spec.ts` **4/4**; `bookings.spec.ts` (3 test a 375px), `datetime-picker.spec.ts` (375px), `my-compensation.spec.ts` (390px) **verdi senza modifiche** — run congiunto 50 passed / 1 failed (il fallito era la sola guardia di geometria nuova, poi corretta e riverificata 4/4).
+- Verifica interattiva (script `@playwright/test` throwaway, mai committato): 375×812 admin + pilota (tab bar, sheet, menu profilo, tema scuro), 390×844, 1280×900 e 800×900 su Panoramica/Pianificazione/Aeromobili.
+
+### Suite completa (CI=1, build prod) — esito ONESTO
+
+`275 passed / 11 failed / 1 flaky / 15 did not run` in 13.5 min (i 15 "did not run" sono i project serializzati `settings`→`billing-global`, saltati perché il project `chromium` è rosso). **La suite NON è verde su questo DB, e la causa è la SATURAZIONE DEL DB, non il diff di questa story** — misurata, non narrata:
+
+- `Aircraft` = **166** righe, ma ogni picker/filtro velivolo carica `OPTIONS_PAGE_SIZE = 100` (es. `logbook/page.tsx:33`): il velivolo run-unique creato da uno spec non entra più nelle `<option>` → `selectOption` va in timeout ("did not find some options"). `Person` = 339 (stesso cap 100), `Booking` = 132 con `BOOKINGS_PAGE_SIZE = 20` e ordine `startsAt` asc da oggi: pagina 1 è satura (8 righe oggi + 11 domani + 1 = 20 esatte), quindi le fixture fresche cadono fuori pagina → `getByTestId('booking-row')… element(s) not found` (7 fallimenti su 11 sono esattamente questo, più `home-dashboard` con la sua card da 8 righe e `reports` coi delta su aggregati globali).
+- **Prova decisiva**: `flight-log.spec.ts:289` rieseguito **DA SOLO** (zero concorrenza, 3 tentativi) fallisce identico sullo stesso DB. Un test desktop, single-worker, che fallisce per mancanza di una `<option>`: nessuna riga di questa story (CSS ≤640px + un campo di registry + due componenti mobile `display:none` sopra i 640px) può produrlo.
+- Il DB è stato saturato dalle esecuzioni e2e ripetute di questa sessione (run mirato dei 4 spec + suite completa creano ognuno decine di velivoli/persone). **Il ciclo prevede DB fresco prima della review**: l'arbitro deve rieseguire la suite su DB pulito.
+
+### Note per la review
+
+- Punto più delicato: lo **z-index 40** degli sheet (v. correzione 6). Vale la pena rifare l'hit-test con un `.popover`/`SlideOver` aperto sotto lo sheet.
+- Secondo punto: il **wrap a 2 righe** della label lunga cambia l'altezza della barra (67→78px); il `padding-bottom` di `.main` (100px) e il `bottom` del `.toast-host` (92px) sono dimensionati sul caso peggiore misurato — se una story futura allunga una label `shell.nav.*`, quei due numeri vanno rimisurati.
+- Terzo: `MobileSheet` non ha focus trap (scelta esplicita, 15.10) — verificare che questo non sia considerato bloccante per l'AC 5.
