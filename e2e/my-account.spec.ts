@@ -14,7 +14,6 @@ import { ensureValidSeedExpiries } from './helpers';
  */
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const STUDENT_EMAIL = 'student@airmanager.local';
 const INSTRUCTOR_EMAIL = 'instructor@airmanager.local';
@@ -148,7 +147,7 @@ function myAccountNavLink(page: Page) {
 }
 
 test.describe('Sidebar visibility (AC 1)', () => {
-  test('PILOT and STUDENT see "Le mie transazioni"; ADMIN/STAFF/INSTRUCTOR do not', async ({ page }) => {
+  test('PILOT and STUDENT see "Le mie transazioni"; ADMIN/INSTRUCTOR do not', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
     await expect(myAccountNavLink(page)).toBeVisible();
 
@@ -156,9 +155,6 @@ test.describe('Sidebar visibility (AC 1)', () => {
     await expect(myAccountNavLink(page)).toBeVisible();
 
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await expect(myAccountNavLink(page)).toHaveCount(0);
-
-    await loginExpectingDashboard(page, STAFF_EMAIL);
     await expect(myAccountNavLink(page)).toHaveCount(0);
 
     await loginExpectingDashboard(page, INSTRUCTOR_EMAIL);

@@ -2,9 +2,9 @@
 //
 // Deliberately SEPARATE from `prisma/seed.ts` (the e2e fixture base wired to
 // `prisma db seed`): this script populates a realistic aviosuperficie —
-// 1 admin + 10 members (staff, 2 instructors, 6 pilots, 1 student), 3 aircraft
-// with rate history, expiries, top-ups, ~24 registered flights, upcoming
-// bookings in every workflow state, and PPR traffic.
+// 2 admin (owner + operations) + 9 members (2 instructors, 6 pilots, 1
+// student), 3 aircraft with rate history, expiries, top-ups, ~24 registered
+// flights, upcoming bookings in every workflow state, and PPR traffic.
 //
 // Domain data goes through the REAL services (registerFlight, recordTopUp,
 // createBooking, ...) so every invariant holds (charges, hour meters, balances,
@@ -59,7 +59,7 @@ type DemoPerson = {
 };
 
 const DEMO_PEOPLE: DemoPerson[] = [
-  { firstName: 'Giulia', lastName: 'Ferraro', email: 'giulia.ferraro@libero.it', phone: '+39 338 214 7765', role: 'STAFF' },
+  { firstName: 'Giulia', lastName: 'Ferraro', email: 'giulia.ferraro@libero.it', phone: '+39 338 214 7765', role: 'ADMIN' },
   {
     firstName: 'Luca', lastName: 'Bianchi', email: 'luca.bianchi.fi@gmail.com', phone: '+39 347 660 1183',
     address: 'Via delle Colline 14, Pontedera (PI)', role: 'INSTRUCTOR',

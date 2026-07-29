@@ -62,15 +62,16 @@ export type ChargeMembershipFeeResult = {
  * run in the SAME transaction, skipped on a first-ever charge (no `Expiry`
  * row existed yet, so no `SentAlert` could either).
  *
- * Gated `finance.manage` (STAFF+ADMIN) — a day-to-day staff action, not
+ * Gated `finance.manage` (ADMIN-only) — a day-to-day operational action, not
  * `settings.manage` (reserved for changing the DEFAULT fee amount itself,
  * `setMembershipFeeCents`).
  *
  * **Insufficient-balance guard (PO decision 2026-07-17, review F3)**: an
  * addebito that would take the balance BELOW zero is refused (`422
  * MEMBERSHIP_FEE_INSUFFICIENT_BALANCE`) unless `input.override` is set,
- * which requires `settings.manage` (ADMIN-only — a STAFF actor passing
- * `override: true` gets a plain 403, same proxy-permission pattern as the
+ * which requires `settings.manage` — a permission distinct from `finance.manage`
+ * (story 14.9: both are ADMIN-only today, but the gate stays on this specific
+ * permission, not a role literal, same proxy-permission pattern as the
  * "Invia promemoria" trigger, ratifica utente 4). Landing EXACTLY on zero is
  * allowed. The balance is read with a `SELECT ... FOR UPDATE` lock on the
  * `Account` row (same pattern as `recordAdjustment`, `accounts.service.ts`,

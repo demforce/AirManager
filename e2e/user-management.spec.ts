@@ -14,7 +14,6 @@ import type { Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -230,9 +229,7 @@ test.describe('User management (Story 1.4)', () => {
 
 /**
  * Suspend/reactivate from the Piloti row (story 12.6, AC 3) — `users.manage`
- * is ADMIN-only (RBAC INVARIANT, D13): staff (`people.manage`/`finance.manage`
- * but no `users.manage`) must see Modifica/Registra but NEVER
- * Sospendi/Riattiva, even on a row with a linked user.
+ * is ADMIN-only (RBAC INVARIANT, D13).
  */
 test.describe('Suspend/reactivate from the Piloti row (Story 12.6)', () => {
   test('admin suspends and reactivates the linked user from the row', async ({ page }) => {
@@ -252,21 +249,5 @@ test.describe('Suspend/reactivate from the Piloti row (Story 12.6)', () => {
     await row.getByTestId(/^pilot-suspend-confirm-/).click();
     await expect(page.getByTestId('toast').filter({ hasText: 'riattivato' })).toBeVisible();
     await expect(row.getByText('Attivo', { exact: true })).toBeVisible();
-  });
-
-  test('staff sees Modifica/Registra but no Sospendi/Riattiva on a row with a linked user', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const { lastName } = await createPilotWithAccess(page, uniqueEmail('pilotaccess'));
-    await page.context().clearCookies();
-
-    await loginExpectingDashboard(page, STAFF_EMAIL);
-    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
-    const row = rowFor(page, lastName);
-    await expect(row).toBeVisible();
-
-    await expect(row.getByRole('button', { name: 'Modifica' })).toBeVisible();
-    await expect(row.getByRole('button', { name: 'Registra' })).toBeVisible();
-    await expect(row.getByRole('button', { name: 'Sospendi' })).toHaveCount(0);
-    await expect(row.getByRole('button', { name: 'Riattiva' })).toHaveCount(0);
   });
 });

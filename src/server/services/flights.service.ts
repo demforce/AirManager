@@ -445,10 +445,9 @@ async function findMissingBlockingDocuments(
  * story 12.13 retired package consumption.
  *
  * **Blocking-expiry guard-rail (story 14.4, AC 1/2; ratifica R4)**: `force`
- * without `flights.forceExpiry` (ADMIN-only, never STAFF — the gate lives on
- * this PERMISSION, not a role literal, so story 14.9's STAFF removal needs no
- * change here) is a 403, checked FIRST, before any query — same "force-403
- * before any further query" ordering as `bookings.service.ts#createBooking`'s
+ * without `flights.forceExpiry` (ADMIN-only — the gate lives on this
+ * PERMISSION, not a role literal) is a 403, checked FIRST, before any query —
+ * same "force-403 before any further query" ordering as `bookings.service.ts#createBooking`'s
  * AC 2. Once the instructor (if any) is resolved, BOTH the pilot/student's
  * AND the instructor's REGISTERED expiries are scanned against `flightDate`
  * (not "today") via the SAME shared core the booking expiry-block already
@@ -634,9 +633,9 @@ async function resolveFlightInput(
   // ever supplied by `correctFlight` (its own recorded identity); a
   // brand-new `registerFlight` call never passes it, so it is always fully
   // checked. Without this, a notes/hour-meter-only correction of a
-  // HISTORICAL flight becomes a permanent dead end for STAFF (422, no
-  // legitimate bypass) the moment a document expires AFTER the flight was
-  // flown, and forces the ADMIN path into stamping a fake "Deroga" on a
+  // HISTORICAL flight becomes a permanent dead end (422, no legitimate
+  // bypass) the moment a document expires AFTER the flight was flown, and
+  // forces the ADMIN force-override path to stamp a fake "Deroga" on a
   // flight that was never actually an operational override.
   const identityUnchanged =
     original !== undefined &&
@@ -880,7 +879,7 @@ function isUniqueViolation(error: unknown): boolean {
 
 /**
  * Registers a flight and its automatic charge in one shot (AC 1/2/3/4).
- * `flights.manage` (STAFF/ADMIN, FR-14) — every read this function performs
+ * `flights.manage` (ADMIN-only, FR-14) — every read this function performs
  * through `getEffectiveRate`/`getEffectiveInstructorRate`/
  * `getAccountOverview` re-checks its own coarser permission
  * (`aircraft.manage`/`people.read`), which every actor holding

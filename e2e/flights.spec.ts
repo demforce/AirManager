@@ -88,23 +88,6 @@ function extractSetPasswordUrl(emailText: string): URL {
   return new URL(match[1]);
 }
 
-/** Creates a STAFF-only user (via the admin users API) and sets its password — same pattern as `aircraft-rates.spec.ts`. */
-async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
-  const email = uniqueEmail('staff-flights');
-  const response = await page.request.post('/api/v1/users', { data: { email, roles: ['STAFF'] } });
-  expect(response.status()).toBe(201);
-
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
-  const url = extractSetPasswordUrl(inviteEmail.Text);
-  await page.goto(url.pathname + url.search);
-  await page.getByLabel('Nuova password').fill(password);
-  await page.getByLabel('Conferma password').fill(password);
-  await page.getByRole('button', { name: 'Imposta password' }).click();
-  await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-  return email;
-}
-
 /**
  * Creates a fresh pilot person (with an active pilot profile, so an
  * `Account` exists) plus a linked login user — avoids the shared seeded
@@ -238,7 +221,7 @@ async function openNewEntryForm(page: Page): Promise<void> {
 }
 
 test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Story 11.1, AC 1/2; Story 12.8: AirOps logbook)', () => {
-  test('staff registers a flight with takeoff/landing times: duration auto-derived and shown live, breakdown shown INSIDE the slide-over, balance drops in the estratto conto (FLIGHT_CHARGE, negative), aircraft hour meter advances', async ({
+  test('admin registers a flight with takeoff/landing times: duration auto-derived and shown live, breakdown shown INSIDE the slide-over, balance drops in the estratto conto (FLIGHT_CHARGE, negative), aircraft hour meter advances', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -246,13 +229,6 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // Admin defines the aircraft rate (API) — 150,00 €/h.
     const aircraft = await createAircraftWithRate(page, 15000);
     const pilot = await createPilotWithLogin(page, 'PilotFlights123!');
-
-    const staffPassword = 'StaffFlights123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-
-    // Still authenticated as admin (visiting the public set-password page never touched the session cookie).
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
 
     await page.goto('/it/dashboard/logbook');
     await openNewEntryForm(page);
@@ -730,39 +706,6 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
   // ALL-scope types in this file.
   test.describe.configure({ mode: 'serial' });
 
-  test('STAFF: a pilot with a BLOCKING expired document (at the FLIGHT DATE) is rejected naming the document and its date, with NO override affordance (admin-only)', async ({
-    page,
-  }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const aircraft = await createAircraftWithRate(page, 15000);
-    // The pilot MUST exist before the custom blocking type below — see
-    // `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts) on the
-    // ordering/collision rationale.
-    const pilot = await createPilotWithLogin(page, 'PilotBlocked123!');
-    const blockingType = await createExpiryTypeForFlights(page, true);
-    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
-
-    const staffPassword = 'StaffBlocked123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
-    await page.goto('/it/dashboard/logbook');
-    await openNewEntryForm(page);
-    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
-    await page.getByLabel('Data volo').fill(PAST_DATE);
-    await page.getByLabel('Ora decollo').fill('10:00');
-    await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
-
-    await expect(page.getByTestId('flight-form-error')).toContainText(blockingType.name);
-    await expect(page.getByTestId('flight-form-error')).toContainText('01/06/2019'); // EXPIRED_BEFORE_PAST_DATE, IT date format (DD/MM/YYYY).
-    await expect(page.getByTestId('force-flight-section')).toHaveCount(0);
-    await expect(page.getByTestId('flight-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
-    await deactivateBlockingType(page, blockingType.id);
-  });
-
   test('ADMIN: a blocked pilot triggers 422 naming the document, "Forza registrazione" appears, empty motivo is rejected client-side, and a motivated force succeeds (201) with forcedAt/forceReason tracked and shown as a badge in the registry', async ({
     page,
   }) => {
@@ -825,10 +768,8 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     const blockingType = await createExpiryTypeForFlights(page, true);
     await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
 
-    const staffPassword = 'StaffForceApi123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
+    await loginExpectingDashboard(page, pilot.email, 'PilotForceApi123!');
 
     const response = await page.request.post('/api/v1/flights', {
       data: {

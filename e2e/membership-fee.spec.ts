@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -164,22 +163,20 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     expect(movements.items.filter((m) => m.type === 'ADJUSTMENT' && m.description?.startsWith('Quota associativa'))).toHaveLength(1);
   });
 
-  test('the endpoint requires an Idempotency-Key header (422 without it); gated finance.manage (STAFF may charge, matching the UI button)', async ({ page }) => {
+  test('the endpoint requires an Idempotency-Key header (422 without it); gated finance.manage', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilot = await createPilotPerson(page);
-    await topUpAccount(page, pilot.personId, 100_000); // review F3: sufficient balance for the staff addebito below
+    await topUpAccount(page, pilot.personId, 100_000); // sufficient balance for the addebito below
 
     const missingKey = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, { data: { amountCents: 1000 } });
     expect(missingKey.status()).toBe(422);
     expect((await missingKey.json()).error.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
 
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, STAFF_EMAIL);
-    const staffCharge = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, {
+    const withKey = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
       data: { amountCents: 1000 },
     });
-    expect(staffCharge.status()).toBe(200);
+    expect(withKey.status()).toBe(200);
   });
 
   test('an addebito that would take a ZERO-balance pilot below zero shows a clear error, no override checked (PO decision 2026-07-17, review F3)', async ({ page }) => {

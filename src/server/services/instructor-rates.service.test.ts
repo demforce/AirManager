@@ -37,10 +37,6 @@ function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
-}
-
 function pilotActor(): Actor {
   return { userId: 'pilot_1', personId: 'person_pilot', roles: ['PILOT'] };
 }
@@ -73,9 +69,9 @@ describe('instructor-rates.service (story 4.2 — historicized instructor rates,
   });
 
   describe('authorization (AD-5)', () => {
-    it('createInstructorRate rejects a staff actor (needs settings.manage)', async () => {
+    it('createInstructorRate rejects a non-admin actor (needs settings.manage)', async () => {
       await expect(
-        createInstructorRate(staffActor(), 'person_1', { priceCentsPerHour: 4500, validFrom: '2026-07-07' }),
+        createInstructorRate(pilotActor(), 'person_1', { priceCentsPerHour: 4500, validFrom: '2026-07-07' }),
       ).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
@@ -182,7 +178,7 @@ describe('instructor-rates.service (story 4.2 — historicized instructor rates,
       personFindUnique.mockResolvedValue(ACTIVE_INSTRUCTOR_PERSON);
       rateFindMany.mockResolvedValue([rateFixture()]);
 
-      const result = await listInstructorRates(staffActor(), 'person_1');
+      const result = await listInstructorRates(adminActor(), 'person_1');
 
       expect(rateFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { instructorProfileId: 'instructor_1' }, orderBy: [{ validFrom: 'desc' }], take: 500 }),

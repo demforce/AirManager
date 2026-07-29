@@ -35,34 +35,6 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     expect(() => authorize(admin, 'payouts.manage')).not.toThrow();
   });
 
-  it('lets staff read/manage operational data but never manage users or settings (admin-only)', () => {
-    const staff = actorWith(['STAFF']);
-
-    expect(hasPermission(staff, 'people.read')).toBe(true);
-    expect(hasPermission(staff, 'people.manage')).toBe(true);
-    expect(hasPermission(staff, 'aircraft.manage')).toBe(true);
-    expect(hasPermission(staff, 'finance.manage')).toBe(true);
-    expect(hasPermission(staff, 'flights.manage')).toBe(true);
-    expect(hasPermission(staff, 'bookings.manage.any')).toBe(true);
-    expect(hasPermission(staff, 'expiries.manage')).toBe(true);
-
-    // Story 8.2 (FR-23): staff decides the PPR approval queue.
-    expect(hasPermission(staff, 'ppr.manage')).toBe(true);
-    // Story 14.5 (ratifica R3): staff sees booking-holder names, unmasked.
-    expect(hasPermission(staff, 'bookings.read.names')).toBe(true);
-
-    expect(hasPermission(staff, 'users.manage')).toBe(false);
-    expect(hasPermission(staff, 'settings.manage')).toBe(false);
-    expect(() => authorize(staff, 'users.manage')).toThrow(ForbiddenError);
-    expect(() => authorize(staff, 'settings.manage')).toThrow(ForbiddenError);
-
-    // Story 12.7: registering an instructor payout / setting the payout
-    // rate is ADMIN-only — staff reads the compensation summary via
-    // `finance.manage` (asserted above) but never holds `payouts.manage`.
-    expect(hasPermission(staff, 'payouts.manage')).toBe(false);
-    expect(() => authorize(staff, 'payouts.manage')).toThrow(ForbiddenError);
-  });
-
   it('scopes a pilot to self-service and their own bookings only — no access to other people’s data', () => {
     const pilot = actorWith(['PILOT']);
 
@@ -142,7 +114,7 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
   });
 
   it('authorize() does not throw when the actor has the permission', () => {
-    const staff = actorWith(['STAFF']);
-    expect(() => authorize(staff, 'flights.manage')).not.toThrow();
+    const admin = actorWith(['ADMIN']);
+    expect(() => authorize(admin, 'flights.manage')).not.toThrow();
   });
 });

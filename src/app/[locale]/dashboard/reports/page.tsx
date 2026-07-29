@@ -25,7 +25,7 @@ function shortMonthLabel(yyyymm: string, locale: 'it' | 'en'): string {
 /**
  * Statistiche / reports (epic 12, story 12.10) — AirOps-native, port of
  * `docs/design-reference/airops/src/ReportsView.jsx`. `finance.manage` only
- * (ADMIN+STAFF, same perimeter as `/dashboard/billing`). The page itself
+ * (ADMIN-only, same perimeter as `/dashboard/billing`). The page itself
  * only ever requests the CURRENT period (`ref` defaults server-side) — the
  * `?ref=` history support lives in the API for now (ratifica utente 3), no
  * UI picker for it in this story.

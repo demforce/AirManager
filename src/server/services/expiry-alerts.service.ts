@@ -48,7 +48,7 @@ import { prisma } from '@/server/db/prisma';
  * in the staff digest, flagged, which is the deliberate recovery channel
  * (Contesto).
  *
- * **Staff digest**: ONE email per active `ADMIN`/`STAFF` user, in their OWN
+ * **Staff digest**: ONE email per active `ADMIN` user, in their OWN
  * locale, listing every alert this run actually consumed — sent ONLY when
  * the run consumed at least one alert (`alertsCreated > 0`); a run that
  * consumes nothing sends no digest to anyone (this is what makes AC 2 true
@@ -191,7 +191,7 @@ export async function runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult> {
   let digestEmailsSent = 0;
   if (digestItems.length > 0) {
     const staffUsers = await prisma.user.findMany({
-      where: { isActive: true, roles: { hasSome: ['ADMIN', 'STAFF'] } },
+      where: { isActive: true, roles: { has: 'ADMIN' } },
       select: { email: true, locale: true },
     });
 

@@ -165,10 +165,6 @@ function mockTransaction(): void {
   );
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
-}
-
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
@@ -341,7 +337,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('throws NotFoundError for an unknown aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toThrow(NotFoundError);
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toThrow(NotFoundError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
       expect(transactionMock).not.toHaveBeenCalled();
     });
@@ -350,7 +346,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(null);
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toThrow(NotFoundError);
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toThrow(NotFoundError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -358,7 +354,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, archivedAt: new Date('2026-01-01T00:00:00.000Z') });
       personFindUnique.mockResolvedValue(PILOT_PERSON);
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -366,7 +362,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue({ ...PILOT_PERSON, archivedAt: new Date('2026-01-01T00:00:00.000Z') });
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'PERSON_ARCHIVED' });
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'PERSON_ARCHIVED' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -374,7 +370,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue({ ...PILOT_PERSON, pilotProfile: null, studentProfile: null });
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'PERSON_NOT_PILOT_OR_STUDENT' });
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'PERSON_NOT_PILOT_OR_STUDENT' });
     });
 
     it('throws a 422 PERSON_NOT_PILOT_OR_STUDENT when the only profile is DEACTIVATED', async () => {
@@ -385,7 +381,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         studentProfile: null,
       });
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'PERSON_NOT_PILOT_OR_STUDENT' });
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'PERSON_NOT_PILOT_OR_STUDENT' });
     });
 
     // Story 14.3 (AC 1/5, ratifica R1): a person with only an active STUDENT
@@ -400,7 +396,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         studentProfile: { deactivatedAt: null },
       });
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'STUDENT_FLIGHT_MUST_BE_SCHOOL' });
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'STUDENT_FLIGHT_MUST_BE_SCHOOL' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -417,7 +413,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
     });
 
     it('accepts a TOURISM flight for a person with BOTH an active pilot AND an active student profile (double profile, unrestricted)', async () => {
@@ -433,7 +429,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+      await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
     });
 
     // Ratifica R-14.3-b (PO, 2026-07-29): "un pilota deve poter essere
@@ -456,7 +452,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
     });
 
     it('throws a 422 FLIGHT_DATE_IN_FUTURE for a flight date after today (server UTC clock)', async () => {
@@ -465,7 +461,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       // Always in the future, regardless of when this suite runs.
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('9999-12-31', 80) });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_DATE_IN_FUTURE' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_DATE_IN_FUTURE' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -479,7 +475,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes(toDateOnlyString(todayDateOnlyUtc()), 80) });
 
-      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
     });
 
     it('throws a 422 FLIGHT_TIMES_INVALID when landingAt <= takeoffAt', async () => {
@@ -491,7 +487,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         landingAt: '2020-01-15T10:00:00.000Z',
       });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_TIMES_INVALID' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_TIMES_INVALID' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -500,7 +496,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 1441) });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_TIMES_INVALID' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_TIMES_INVALID' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -514,7 +510,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 1440) });
 
-      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
     });
 
     it('derives minutes as round((landingAt - takeoffAt) / 60000), never from hourMeterStart/hourMeterEnd', async () => {
@@ -532,7 +528,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         hourMeterEnd: 1050,
       });
 
-      await registerFlight(staffActor(), input);
+      await registerFlight(adminActor(), input);
 
       expect(flightCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -555,7 +551,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       // 80' from takeoffAt/landingAt, but a 200-unit hourMeter reading — no cross-validation anymore.
       const input = registerFlightSchema.parse({ ...BASE_INPUT, hourMeterStart: 1000, hourMeterEnd: 1200 });
 
-      await registerFlight(staffActor(), input);
+      await registerFlight(adminActor(), input);
 
       expect(flightCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ minutes: 80, hourMeterStart: 1000, hourMeterEnd: 1200 }) }),
@@ -569,7 +565,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, hourMeterStart: 1000 });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -578,7 +574,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, hourMeterEnd: 1050 });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -587,7 +583,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const input: RegisterFlightInput = { ...BASE_INPUT, hourMeterStart: 1050, hourMeterEnd: 1050 };
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -606,7 +602,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         landingAt: '2020-01-16T00:10:00.000Z',
       });
 
-      await registerFlight(staffActor(), input);
+      await registerFlight(adminActor(), input);
 
       expect(flightCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ flightDate: new Date('2020-01-16'), minutes: 40 }) }),
@@ -618,7 +614,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL' });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -630,7 +626,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: true });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -640,7 +636,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'TOURISM', isSolo: true });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'SOLO_REQUIRES_SCHOOL' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'SOLO_REQUIRES_SCHOOL' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -655,7 +651,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: true, instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
       expect(flightCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ isSolo: true }) }));
     });
 
@@ -664,7 +660,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_1' });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_SAME_AS_PILOT' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_SAME_AS_PILOT' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -673,7 +669,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(null);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_NOT_FOUND' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_NOT_FOUND' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -687,7 +683,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_NOT_FOUND' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_NOT_FOUND' });
     });
 
     it('throws a 422 INSTRUCTOR_NOT_FOUND (folded, anti-enumeration) when the instructor Person is ARCHIVED, even with an active InstructorProfile (TD-1, AC 9)', async () => {
@@ -700,7 +696,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_NOT_FOUND' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'INSTRUCTOR_NOT_FOUND' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -709,7 +705,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       getEffectiveRateMock.mockResolvedValue(null);
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'NO_AIRCRAFT_RATE' });
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'NO_AIRCRAFT_RATE' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -719,7 +715,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       getEffectiveInstructorRateMock.mockResolvedValue(null);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'NO_INSTRUCTOR_RATE' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'NO_INSTRUCTOR_RATE' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
   });
@@ -738,7 +734,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
 
-      await registerFlight(staffActor(), BASE_INPUT);
+      await registerFlight(adminActor(), BASE_INPUT);
 
       expect(flightCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ aircraftAmountCents: 20000 }) }),
@@ -753,7 +749,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 333 });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 30) });
 
-      await registerFlight(staffActor(), input);
+      await registerFlight(adminActor(), input);
 
       expect(flightCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ aircraftAmountCents: 167 }) }),
@@ -768,7 +764,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 101 });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 50), instructorPersonId: 'person_instructor' });
 
-      await registerFlight(staffActor(), input);
+      await registerFlight(adminActor(), input);
 
       expect(flightCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -794,7 +790,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     it('creates the Flight snapshot, the FLIGHT_CHARGE movement linked via flightId, and advances the aircraft hour meter — all inside one transaction', async () => {
-      await registerFlight(staffActor(), BASE_INPUT);
+      await registerFlight(adminActor(), BASE_INPUT);
 
       expect(flightCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -808,7 +804,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
             aircraftAmountCents: 20000,
             instructorRateCentsPerHour: null,
             instructorAmountCents: null,
-            actorUserId: 'staff_1',
+            actorUserId: 'admin_1',
           }),
         }),
       );
@@ -820,7 +816,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
             amountCents: -20000,
             flightId: 'flight_1',
             effectiveDate: new Date('2020-01-15'),
-            actorUserId: 'staff_1',
+            actorUserId: 'admin_1',
           }),
         }),
       );
@@ -831,7 +827,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     it('locks the Aircraft row (FOR UPDATE) inside the transaction', async () => {
-      await registerFlight(staffActor(), BASE_INPUT);
+      await registerFlight(adminActor(), BASE_INPUT);
 
       expect(queryRawMock).toHaveBeenCalledTimes(2);
       const [firstStrings] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray];
@@ -840,7 +836,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     it('locks the Account row (FOR UPDATE) inside the transaction (recordAdjustment pattern)', async () => {
-      await registerFlight(staffActor(), BASE_INPUT);
+      await registerFlight(adminActor(), BASE_INPUT);
 
       const [secondStrings] = queryRawMock.mock.calls[1] as unknown as [TemplateStringsArray];
       expect(secondStrings.join('?')).toContain('FOR UPDATE');
@@ -848,7 +844,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     it('returns the flight DTO (with breakdown) plus the refreshed account overview', async () => {
-      const result = await registerFlight(staffActor(), BASE_INPUT);
+      const result = await registerFlight(adminActor(), BASE_INPUT);
 
       expect(result.flight.id).toBe('flight_1');
       expect(result.flight.breakdown).toEqual({
@@ -857,12 +853,12 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         totalAmountCents: 20000,
       });
       expect(result.account).toEqual(ACCOUNT_OVERVIEW);
-      expect(getAccountOverviewMock).toHaveBeenCalledWith(staffActor(), 'person_1');
+      expect(getAccountOverviewMock).toHaveBeenCalledWith(adminActor(), 'person_1');
     });
 
     it('effectiveDate on the movement equals the flight date', async () => {
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-02-01', 80) });
-      await registerFlight(staffActor(), input);
+      await registerFlight(adminActor(), input);
 
       expect(accountMovementCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ effectiveDate: new Date('2020-02-01') }) }),
@@ -886,7 +882,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       getAccountOverviewMock.mockRejectedValueOnce(new Error('transient read failure'));
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      const result = await registerFlight(staffActor(), BASE_INPUT);
+      const result = await registerFlight(adminActor(), BASE_INPUT);
 
       // The flight + charge + hour-meter write already happened — exactly
       // once — before the failing read.
@@ -927,7 +923,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
 
-      const result = await registerFlight(staffActor(), input);
+      const result = await registerFlight(adminActor(), input);
 
       expect(flightCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -954,7 +950,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL', instructorRateCentsPerHour: 10000, instructorAmountCents: 13333 });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
     });
 
     // Story 9.4 (AC 1): "stesso importo istruttore su DC e solista a parità di
@@ -965,13 +961,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL', isSolo: false });
       const dualInput = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: false, instructorPersonId: 'person_instructor' });
-      await registerFlight(staffActor(), dualInput);
+      await registerFlight(adminActor(), dualInput);
 
       personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL', isSolo: true });
       const soloInput = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: true, instructorPersonId: 'person_instructor' });
-      await registerFlight(staffActor(), soloInput);
+      await registerFlight(adminActor(), soloInput);
 
       expect(flightCreateMock).toHaveBeenCalledTimes(2);
       const dualData = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
@@ -988,7 +984,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, instructorRateCentsPerHour: 10000, instructorAmountCents: 13333 });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'TOURISM', instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
     });
   });
 
@@ -1003,7 +999,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
 
-      const result = await registerFlight(staffActor(), BASE_INPUT);
+      const result = await registerFlight(adminActor(), BASE_INPUT);
 
       expect(getEffectiveInstructorRateMock).not.toHaveBeenCalled();
       expect(result.flight.instructor).toBeNull();
@@ -1034,7 +1030,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 5000 } });
       getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: -15000 });
 
-      const result = await registerFlight(staffActor(), BASE_INPUT);
+      const result = await registerFlight(adminActor(), BASE_INPUT);
 
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledTimes(1);
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledWith(
@@ -1054,7 +1050,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 1_000_000 } });
       getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: 980_000 });
 
-      const result = await registerFlight(staffActor(), BASE_INPUT);
+      const result = await registerFlight(adminActor(), BASE_INPUT);
 
       expect(sendNegativeBalanceAlertMock).not.toHaveBeenCalled();
       expect(result.balanceAlert).toBe(false);
@@ -1070,7 +1066,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: -100_000 } }); // already belowThreshold (< -20000)
       getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: -120_000 }); // still belowThreshold after the 20000-cent charge
 
-      const result = await registerFlight(staffActor(), BASE_INPUT);
+      const result = await registerFlight(adminActor(), BASE_INPUT);
 
       expect(sendNegativeBalanceAlertMock).not.toHaveBeenCalled();
       expect(result.balanceAlert).toBe(true);
@@ -1095,7 +1091,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         warnings: [],
       });
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
         code: 'FLIGHT_BLOCKED_BY_EXPIRY',
         details: { documents: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }] },
       });
@@ -1112,7 +1108,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
 
-      await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+      await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
 
       expect(findBlockingExpiredDocumentsMock).toHaveBeenCalledWith('person_1', '2020-01-15');
     });
@@ -1125,21 +1121,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         .mockResolvedValueOnce({ blockingDocuments: [{ typeName: 'Visita medica classe 1', expiresAt: '2019-06-01' }], warnings: [] }); // instructor: blocked
       const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
 
-      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({
         code: 'FLIGHT_BLOCKED_BY_EXPIRY',
         details: { documents: [{ typeName: 'Visita medica classe 1', expiresAt: '2019-06-01' }] },
       });
       expect(findBlockingExpiredDocumentsMock).toHaveBeenCalledWith('person_1', '2020-01-15');
       expect(findBlockingExpiredDocumentsMock).toHaveBeenCalledWith('person_instructor', '2020-01-15');
       expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it('force: true without flights.forceExpiry (a non-admin STAFF actor) -> 403, before any query — even with a real block', async () => {
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Autorizzato dal direttore' });
-
-      await expect(registerFlight(staffActor(), input)).rejects.toThrow(ForbiddenError);
-      expect(aircraftFindUniqueMock).not.toHaveBeenCalled();
-      expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
 
     it('an ADMIN forcing past a real block succeeds and stamps forcedAt/forcedByUserId/forceReason on the Flight row', async () => {
@@ -1203,7 +1191,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         expiryTypeFindMany.mockResolvedValue([{ id: 'type_licenza', name: 'Licenza' }]);
         expiryFindMany.mockResolvedValue([]);
 
-        await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({
+        await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
           code: 'FLIGHT_BLOCKED_BY_EXPIRY',
           details: { documents: [{ typeName: 'Licenza', expiresAt: null, role: 'person', personName: 'Mario Rossi' }] },
         });
@@ -1220,14 +1208,14 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         expiryTypeFindMany.mockResolvedValue([{ id: 'type_licenza', name: 'Licenza' }]);
         expiryFindMany.mockResolvedValue([{ expiryTypeId: 'type_licenza' }]);
 
-        await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+        await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
       });
 
       it('no applicable blocksBooking type at all -> never even reads the registered Expiry rows (short-circuits)', async () => {
         personFindUnique.mockResolvedValue(PILOT_PERSON);
         expiryTypeFindMany.mockResolvedValue([]);
 
-        await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+        await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
         expect(expiryFindManyMock).not.toHaveBeenCalled();
       });
 
@@ -1240,7 +1228,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         expiryFindMany.mockResolvedValue([]);
         const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
 
-        await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({
+        await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({
           code: 'FLIGHT_BLOCKED_BY_EXPIRY',
           details: { documents: [{ typeName: 'Visita medica classe 1', expiresAt: null, role: 'instructor', personName: 'Anna Bianchi' }] },
         });
@@ -1267,14 +1255,14 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('throws NotFoundError for an unknown flight', async () => {
       flightFindUnique.mockResolvedValue(null);
 
-      await expect(cancelFlight(staffActor(), 'nope', CANCEL_INPUT)).rejects.toThrow(NotFoundError);
+      await expect(cancelFlight(adminActor(), 'nope', CANCEL_INPUT)).rejects.toThrow(NotFoundError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('throws ConflictError (409) when the flight is already CANCELLED', async () => {
       flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, status: 'CANCELLED' });
 
-      await expect(cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ConflictError);
+      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ConflictError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -1284,7 +1272,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: { id: 'adj_1' } }],
       });
 
-      await expect(cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(
+      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(
         /already been reversed by a manual adjustment/,
       );
       expect(transactionMock).not.toHaveBeenCalled();
@@ -1293,19 +1281,19 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('P2002 on reversalOfId (concurrent double-cancel) surfaces as ConflictError (backstop for the pre-check)', async () => {
       accountMovementCreate.mockRejectedValueOnce({ code: 'P2002' });
 
-      await expect(cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ConflictError);
+      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ConflictError);
     });
 
     // Story 14.4, AC 3 — module doc-comment: a storno only ever improves or
     // holds the balance band, so there is never a worsening signal here.
     it('balanceAlert is always false (a storno never worsens the band)', async () => {
-      const result = await cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT);
+      const result = await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
 
       expect(result.balanceAlert).toBe(false);
     });
 
     it('creates the FLIGHT_CHARGE_REVERSAL movement: +|original amount|, reversalOfId, flightId, description with the reason', async () => {
-      await cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT);
+      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
 
       expect(accountMovementCreateMock).toHaveBeenCalledWith({
         data: {
@@ -1316,13 +1304,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
           flightId: 'flight_orig',
           effectiveDate: todayDateOnlyUtc(),
           description: 'Storno volo I-ABCD 2020-01-15 — Errore inserimento',
-          actorUserId: 'staff_1',
+          actorUserId: 'admin_1',
         },
       });
     });
 
     it('sets status CANCELLED, cancelledAt and cancelReason on the flight', async () => {
-      await cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT);
+      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
 
       expect(flightUpdateMock).toHaveBeenCalledWith({
         where: { id: 'flight_orig' },
@@ -1332,7 +1320,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     it('reduces the aircraft hour meter by the flight minutes', async () => {
-      await cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT);
+      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
 
       expect(aircraftUpdateMock).toHaveBeenCalledWith({
         where: { id: 'aircraft_1' },
@@ -1344,28 +1332,28 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       queryRawMock.mockReset();
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 50 }]).mockResolvedValueOnce([]); // 50 - 80 would be negative
 
-      await cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT);
+      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
 
       expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 0 } });
     });
 
     it('sends NO negative-balance alert (a storno only ever adds money back)', async () => {
-      await cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT);
+      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
 
       expect(getNegativeBalanceThresholdCentsMock).not.toHaveBeenCalled();
       expect(sendNegativeBalanceAlertMock).not.toHaveBeenCalled();
     });
 
     it('returns the updated flight DTO plus the refreshed account overview', async () => {
-      const result = await cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT);
+      const result = await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
 
       expect(result.flight.status).toBe('CANCELLED');
       expect(result.account).toEqual(ACCOUNT_OVERVIEW);
-      expect(getAccountOverviewMock).toHaveBeenCalledWith(staffActor(), 'person_1');
+      expect(getAccountOverviewMock).toHaveBeenCalledWith(adminActor(), 'person_1');
     });
 
     it('locks the Aircraft row then the Account row (FOR UPDATE, same macro order as registerFlight)', async () => {
-      await cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT);
+      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
 
       expect(queryRawMock).toHaveBeenCalledTimes(2);
       const [firstStrings] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray];
@@ -1425,7 +1413,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         warnings: [],
       });
 
-      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT_NEW_DATE)).rejects.toMatchObject({ code: 'FLIGHT_BLOCKED_BY_EXPIRY' });
+      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT_NEW_DATE)).rejects.toMatchObject({ code: 'FLIGHT_BLOCKED_BY_EXPIRY' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -1449,14 +1437,14 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('throws NotFoundError for an unknown flight', async () => {
       flightFindUnique.mockResolvedValue(null);
 
-      await expect(correctFlight(staffActor(), 'nope', CORRECT_INPUT)).rejects.toThrow(NotFoundError);
+      await expect(correctFlight(adminActor(), 'nope', CORRECT_INPUT)).rejects.toThrow(NotFoundError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('throws ConflictError (409) when the flight is already CANCELLED', async () => {
       flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, status: 'CANCELLED' });
 
-      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(ConflictError);
+      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(ConflictError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -1466,7 +1454,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: { id: 'adj_1' } }],
       });
 
-      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(
+      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(
         /already been reversed by a manual adjustment/,
       );
       expect(transactionMock).not.toHaveBeenCalled();
@@ -1476,7 +1464,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_2', registration: 'I-ARCH', archivedAt: new Date('2026-01-01T00:00:00.000Z') });
       const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2' });
 
-      await expect(correctFlight(staffActor(), 'flight_orig', input)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -1489,7 +1477,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it("a correction that keeps the flight's OWN recorded flightType is allowed for a person who is student-only today (R-14.3-a: correcting is not registering anew)", async () => {
       personFindUnique.mockResolvedValue({ ...PILOT_PERSON, pilotProfile: null, studentProfile: { deactivatedAt: null } });
 
-      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).resolves.toBeDefined();
+      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).resolves.toBeDefined();
     });
 
     // Review F3 (ratifica R-14.3-a): the exemption above is narrow — it
@@ -1502,18 +1490,18 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue({ ...PILOT_PERSON, pilotProfile: null, studentProfile: { deactivatedAt: null } });
 
       // CORRECT_INPUT.flightType is 'TOURISM' — a change from the original SCHOOL.
-      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).rejects.toMatchObject({ code: 'STUDENT_FLIGHT_MUST_BE_SCHOOL' });
+      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).rejects.toMatchObject({ code: 'STUDENT_FLIGHT_MUST_BE_SCHOOL' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('P2002 on reversalOfId (concurrent double-cancel/-correct) surfaces as ConflictError (backstop for the pre-check)', async () => {
       accountMovementCreate.mockRejectedValueOnce({ code: 'P2002' });
 
-      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(ConflictError);
+      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(ConflictError);
     });
 
     it('ONE transaction, in order: lock -> storno (status + REVERSAL movement) -> saldo-prima -> nuova registrazione', async () => {
-      await correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT);
+      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
 
       // Lock (both queryRaw calls) before the storno write.
       expect(queryRawMock.mock.invocationCallOrder[1]).toBeLessThan(flightUpdateMock.mock.invocationCallOrder[0]);
@@ -1529,13 +1517,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     it('sets Flight.correctionOfId on the new flight to the ORIGINAL flight id', async () => {
-      await correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT);
+      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
 
       expect(flightCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ correctionOfId: 'flight_orig' }) }));
     });
 
     it("storno's reversal movement carries the ORIGINAL amount and links to the original flight/movement", async () => {
-      await correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT);
+      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
 
       expect(accountMovementCreateMock).toHaveBeenNthCalledWith(1, {
         data: {
@@ -1546,13 +1534,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
           flightId: 'flight_orig',
           effectiveDate: todayDateOnlyUtc(),
           description: 'Storno volo I-ABCD 2020-01-15 — Errore minuti',
-          actorUserId: 'staff_1',
+          actorUserId: 'admin_1',
         },
       });
     });
 
     it('the ORIGINAL flight is stornoed (status CANCELLED + cancelledAt/cancelReason) and its aircraft hour meter reduced', async () => {
-      await correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT);
+      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
 
       expect(flightUpdateMock).toHaveBeenCalledWith({
         where: { id: 'flight_orig' },
@@ -1567,7 +1555,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 200, aircraftAmountCents: 50000 });
       const input = correctFlightSchema.parse({ ...CORRECT_INPUT, ...buildTimes('2020-01-15', 200) });
 
-      await correctFlight(staffActor(), 'flight_orig', input);
+      await correctFlight(adminActor(), 'flight_orig', input);
 
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledTimes(1);
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledWith(
@@ -1581,17 +1569,17 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 1_000_000 } });
       getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: 980_000 });
 
-      await correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT);
+      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
 
       expect(sendNegativeBalanceAlertMock).not.toHaveBeenCalled();
     });
 
     it('returns the NEW flight DTO plus the corrected data\'s account overview', async () => {
-      const result = await correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT);
+      const result = await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
 
       expect(result.flight.id).toBe('flight_new');
       expect(result.flight.correctionOfId).toBe('flight_orig');
-      expect(getAccountOverviewMock).toHaveBeenCalledWith(staffActor(), 'person_1');
+      expect(getAccountOverviewMock).toHaveBeenCalledWith(adminActor(), 'person_1');
     });
 
     it('locks ALL involved Aircraft ids in ONE IN (...) ORDER BY id query, then ALL involved Account ids the same way (deterministic order, Aircraft before Account)', async () => {
@@ -1609,7 +1597,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue({ ...PILOT_PERSON, id: 'person_2' });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', aircraft: secondAircraft });
 
-      await correctFlight(staffActor(), 'flight_orig', input);
+      await correctFlight(adminActor(), 'flight_orig', input);
 
       expect(queryRawMock).toHaveBeenCalledTimes(2);
       const [aircraftStrings] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray];
@@ -1645,7 +1633,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         expiryTypeFindMany.mockResolvedValue([{ id: 'type_licenza', name: 'Licenza' }]);
         expiryFindMany.mockResolvedValue([]);
 
-        await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).resolves.toBeDefined();
+        await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).resolves.toBeDefined();
 
         expect(findBlockingExpiredDocumentsMock).not.toHaveBeenCalled();
         expect(expiryTypeFindManyMock).not.toHaveBeenCalled();
@@ -1671,7 +1659,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightFindMany.mockResolvedValue([]);
       flightCount.mockResolvedValue(0);
 
-      await listFlights(staffActor(), baseQuery());
+      await listFlights(adminActor(), baseQuery());
 
       expect(flightFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1704,7 +1692,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(selfResult.items[0]?.forcedAt).not.toBeNull();
       expect(selfResult.items[0]?.forceReason).toBeNull();
 
-      const manageResult = await listFlights(staffActor(), baseQuery());
+      const manageResult = await listFlights(adminActor(), baseQuery());
       expect(manageResult.items[0]?.forcedAt).not.toBeNull();
       expect(manageResult.items[0]?.forceReason).toBe('Motivo riservato');
     });
@@ -1714,7 +1702,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightCount.mockResolvedValue(0);
 
       await listFlights(
-        staffActor(),
+        adminActor(),
         baseQuery({ dateFrom: '2026-01-01', dateTo: '2026-01-31', aircraftId: 'aircraft_9', personId: 'person_9', flightType: 'SCHOOL', status: 'REGISTERED' }),
       );
 
@@ -1733,7 +1721,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightFindMany.mockResolvedValue([]);
       flightCount.mockResolvedValue(0);
 
-      await listFlights(staffActor(), baseQuery());
+      await listFlights(adminActor(), baseQuery());
 
       const [callArgs] = flightFindManyMock.mock.calls.at(-1)!;
       expect((callArgs as { where: object }).where).not.toHaveProperty('OR');
@@ -1794,7 +1782,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightFindMany.mockResolvedValue([]);
       flightCount.mockResolvedValue(0);
 
-      await listFlights(staffActor(), baseQuery({ instructorPersonId: 'person_instructor_9' }));
+      await listFlights(adminActor(), baseQuery({ instructorPersonId: 'person_instructor_9' }));
 
       expect(flightFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1867,7 +1855,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('sums aircraft + instructor amounts into revenueCents, defaulting null sums to 0', async () => {
       flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
 
-      const result = await getFlightTotals(staffActor(), baseQuery());
+      const result = await getFlightTotals(adminActor(), baseQuery());
 
       expect(result).toEqual({ count: 25, minutes: 3000, takeoffs: 25, landings: 25, revenueCents: 600000 });
     });
@@ -1878,7 +1866,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         _sum: { minutes: null, takeoffs: null, landings: null, aircraftAmountCents: null, instructorAmountCents: null },
       });
 
-      const result = await getFlightTotals(staffActor(), baseQuery());
+      const result = await getFlightTotals(adminActor(), baseQuery());
 
       expect(result).toEqual({ count: 0, minutes: 0, takeoffs: 0, landings: 0, revenueCents: 0 });
     });
@@ -1886,7 +1874,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('forces status: REGISTERED in the WHERE even when the query filters status: CANCELLED', async () => {
       flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
 
-      await getFlightTotals(staffActor(), baseQuery({ status: 'CANCELLED' }));
+      await getFlightTotals(adminActor(), baseQuery({ status: 'CANCELLED' }));
 
       expect(flightAggregateMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'REGISTERED' }) }));
     });
@@ -1894,7 +1882,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('forces status: REGISTERED even with no status filter at all (query.status undefined)', async () => {
       flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
 
-      await getFlightTotals(staffActor(), baseQuery());
+      await getFlightTotals(adminActor(), baseQuery());
 
       expect(flightAggregateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'REGISTERED' } }));
     });
@@ -1903,7 +1891,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
 
       await getFlightTotals(
-        staffActor(),
+        adminActor(),
         baseQuery({ dateFrom: '2026-01-01', dateTo: '2026-01-31', aircraftId: 'aircraft_9', flightType: 'SCHOOL' }),
       );
 

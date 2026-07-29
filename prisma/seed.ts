@@ -11,7 +11,6 @@ const prisma = new PrismaClient({ adapter });
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const INSTRUCTOR_EMAIL = 'instructor@airmanager.local';
 const STUDENT_EMAIL = 'student@airmanager.local';
 
@@ -66,37 +65,9 @@ async function seedPilotUser(passwordHash: string): Promise<void> {
 }
 
 /**
- * Story 8.2: a STAFF test user — needed so the e2e suite can exercise
- * `ppr.manage` through a REAL staff role, not an ADMIN-who-has-everything
- * (Contesto). Same idempotent upsert pattern, same seed password, as
- * `seedPilotUser`; useful to the whole epic, not just this story.
- */
-async function seedStaffUser(passwordHash: string): Promise<void> {
-  await prisma.user.upsert({
-    where: { email: STAFF_EMAIL },
-    update: { passwordHash, isActive: true, roles: ['STAFF'] },
-    create: {
-      email: STAFF_EMAIL,
-      passwordHash,
-      isActive: true,
-      roles: ['STAFF'],
-      person: {
-        create: {
-          firstName: 'Staff',
-          lastName: 'AirManager',
-          email: STAFF_EMAIL,
-        },
-      },
-    },
-  });
-
-  console.log(`Seed: demo staff user ready (${STAFF_EMAIL}).`);
-}
-
-/**
  * Story 9.1 (AC 5): an INSTRUCTOR test user with an active `InstructorProfile`
  * so `/dashboard/instructors` and the e2e suite have a real instructor to
- * log in as. Same idempotent upsert pattern as `seedStaffUser`.
+ * log in as. Same idempotent upsert pattern as `seedPilotUser`.
  */
 async function seedInstructorUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
@@ -123,7 +94,7 @@ async function seedInstructorUser(passwordHash: string): Promise<void> {
 /**
  * Story 9.1 (AC 5): a STUDENT test user with an active `StudentProfile`
  * (`courseStartDate` valorizzata) — the demo allievo assignable to the demo
- * instructor. Same idempotent upsert pattern as `seedStaffUser`.
+ * instructor. Same idempotent upsert pattern as `seedPilotUser`.
  */
 async function seedStudentUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
@@ -403,7 +374,6 @@ async function main() {
 
   await seedAdminUser(passwordHash);
   await seedPilotUser(passwordHash);
-  await seedStaffUser(passwordHash);
   await seedInstructorUser(passwordHash);
   await seedStudentUser(passwordHash);
   await seedPilotProfile();

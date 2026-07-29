@@ -37,7 +37,7 @@ function sanitizeDateParam(value: string | undefined): string | undefined {
  * Contabilità (epic 12, story 12.9; reworked story Billing-2) — AirOps-
  * native, port of `docs/design-reference/airops/src/BillingView.jsx`,
  * replacing the legacy `/dashboard/finance` + `/dashboard/finance/report`
- * (deleted by story 12.9). `finance.manage` only (ADMIN+STAFF) — no
+ * (deleted by story 12.9). `finance.manage` only (ADMIN-only, story 14.9) — no
  * own-access face, unlike logbook/bookings (the titolare's own estratto
  * conto stays on `people/[id]/account`, untouched — AC 7).
  *

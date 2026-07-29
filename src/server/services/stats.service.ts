@@ -13,8 +13,8 @@ import { getLedgerRevenueCents } from './transactions.service';
 
 /**
  * Statistics/reports (epic 12, story 12.10) — read-only aggregation over
- * flights/PPR/ledger/compensation, staff-only (`finance.manage`, ADMIN+
- * STAFF). No new model, no write path.
+ * flights/PPR/ledger/compensation, `finance.manage` (ADMIN-only). No new
+ * model, no write path.
  *
  * **`ref` supports full history** (ratifica utente 3): `ref` (`YYYY-MM`,
  * Europe/Rome calendar) defaults to the current Rome month and may be any

@@ -101,8 +101,8 @@ function mockTransaction(): void {
   transaction.mockImplementation((arg: unknown) => (typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[])));
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
+function adminActor(): Actor {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
 const AIRCRAFT = { id: 'aircraft_1', registration: 'I-ABCD', archivedAt: null };
@@ -205,13 +205,13 @@ describe('flights.service — AC 6 boundary, through the REAL findBlockingExpire
   it('expiresAt === flightDate (2020-01-15) -> still VALID, registers normally (201)', async () => {
     expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-15T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
 
-    await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+    await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
   });
 
   it('expiresAt === flightDate - 1 day (2020-01-14) -> 422 FLIGHT_BLOCKED_BY_EXPIRY', async () => {
     expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-14T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
 
-    await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({
+    await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
       code: 'FLIGHT_BLOCKED_BY_EXPIRY',
       details: { documents: [{ typeName: 'Licenza', expiresAt: '2020-01-14' }] },
     });
@@ -225,6 +225,6 @@ describe('flights.service — AC 6 boundary, through the REAL findBlockingExpire
     // "today" instead of `flightDate`, this document would wrongly block.
     expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-06-01T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
 
-    await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+    await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
   });
 });

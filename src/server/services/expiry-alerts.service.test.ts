@@ -277,13 +277,13 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
       expect(buildExpiryDigestEmail).toHaveBeenCalledWith('en', expect.anything());
     });
 
-    it('queries only ACTIVE admin/staff users (inactive excluded at the query)', async () => {
+    it('queries only ACTIVE admin users (inactive excluded at the query)', async () => {
       expiryFindMany.mockResolvedValue([candidateFixture({ sentAlerts: [] })]);
 
       await runExpiryAlertsJob();
 
       expect(userFindManyMock).toHaveBeenCalledWith({
-        where: { isActive: true, roles: { hasSome: ['ADMIN', 'STAFF'] } },
+        where: { isActive: true, roles: { has: 'ADMIN' } },
         select: { email: true, locale: true },
       });
     });

@@ -61,10 +61,6 @@ function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
-}
-
 function pilotActor(): Actor {
   return { userId: 'pilot_1', personId: 'person_1', roles: ['PILOT'] };
 }
@@ -79,11 +75,6 @@ describe('app-settings.service (story 8.2, AC 1)', () => {
     it('is gated ppr.manage — a pilot is forbidden, no query runs', async () => {
       await expect(getPprOperatingInstructions(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
       expect(findManyMock).not.toHaveBeenCalled();
-    });
-
-    it('staff (ppr.manage, not settings.manage) CAN read', async () => {
-      findMany.mockResolvedValue([]);
-      await expect(getPprOperatingInstructions(staffActor())).resolves.toEqual({ it: '', en: '' });
     });
 
     it('defaults BOTH locales to the empty string when no AppSetting rows exist yet (never null)', async () => {
@@ -118,8 +109,8 @@ describe('app-settings.service (story 8.2, AC 1)', () => {
   });
 
   describe('setPprOperatingInstructions', () => {
-    it('is gated settings.manage — staff (ppr.manage only) is forbidden, no write runs', async () => {
-      await expect(setPprOperatingInstructions(staffActor(), { it: 'x', en: 'y' })).rejects.toBeInstanceOf(ForbiddenError);
+    it('is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
+      await expect(setPprOperatingInstructions(pilotActor(), { it: 'x', en: 'y' })).rejects.toBeInstanceOf(ForbiddenError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -161,11 +152,6 @@ describe('app-settings.service — default PPR landing fee (story 8.3, AC 1)', (
       expect(findUniqueMock).not.toHaveBeenCalled();
     });
 
-    it('staff (ppr.manage, not settings.manage) CAN read', async () => {
-      findUnique.mockResolvedValue(null);
-      await expect(getPprLandingFeeDefaultCents(staffActor())).resolves.toBe(0);
-    });
-
     it('defaults to 0 when no AppSetting row exists yet', async () => {
       findUnique.mockResolvedValue(null);
 
@@ -199,8 +185,8 @@ describe('app-settings.service — default PPR landing fee (story 8.3, AC 1)', (
   });
 
   describe('setPprLandingFeeDefaultCents', () => {
-    it('is gated settings.manage — staff (ppr.manage only) is forbidden, no write runs', async () => {
-      await expect(setPprLandingFeeDefaultCents(staffActor(), 1000)).rejects.toBeInstanceOf(ForbiddenError);
+    it('is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
+      await expect(setPprLandingFeeDefaultCents(pilotActor(), 1000)).rejects.toBeInstanceOf(ForbiddenError);
       expect(upsertMock).not.toHaveBeenCalled();
     });
 
@@ -262,8 +248,8 @@ describe('app-settings.service — airfield branding (story 10.2, AC 1; story 13
   });
 
   describe('setAirfieldBranding', () => {
-    it('is gated settings.manage — staff is forbidden, no write runs', async () => {
-      await expect(setAirfieldBranding(staffActor(), { name: 'X' })).rejects.toBeInstanceOf(ForbiddenError);
+    it('is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
+      await expect(setAirfieldBranding(pilotActor(), { name: 'X' })).rejects.toBeInstanceOf(ForbiddenError);
       expect(upsertMock).not.toHaveBeenCalled();
     });
 
@@ -315,8 +301,8 @@ describe('app-settings.service — setAirfieldIcao / airfield contact email (sto
     upsertMock.mockReset();
   });
 
-  it('setAirfieldIcao is gated settings.manage — staff is forbidden, no write runs', async () => {
-    await expect(setAirfieldIcao(staffActor(), 'LIML')).rejects.toBeInstanceOf(ForbiddenError);
+  it('setAirfieldIcao is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
+    await expect(setAirfieldIcao(pilotActor(), 'LIML')).rejects.toBeInstanceOf(ForbiddenError);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
@@ -334,7 +320,7 @@ describe('app-settings.service — setAirfieldIcao / airfield contact email (sto
   });
 
   it('setAirfieldContactEmail is gated settings.manage', async () => {
-    await expect(setAirfieldContactEmail(staffActor(), 'ops@example.com')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setAirfieldContactEmail(pilotActor(), 'ops@example.com')).rejects.toBeInstanceOf(ForbiddenError);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
@@ -385,9 +371,9 @@ describe('app-settings.service — scheduling window (story 12.11, AC 1/4)', () 
     });
   });
 
-  it('setSchedulingSettings is gated settings.manage — staff is forbidden, no write runs', async () => {
+  it('setSchedulingSettings is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
     await expect(
-      setSchedulingSettings(staffActor(), { openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 }),
+      setSchedulingSettings(pilotActor(), { openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 }),
     ).rejects.toBeInstanceOf(ForbiddenError);
     expect(transactionMock).not.toHaveBeenCalled();
   });
@@ -426,7 +412,7 @@ describe('app-settings.service — SMTP settings (story 12.11, AC 1/2)', () => {
   const SMTP_INPUT = { host: 'smtp.example.com', port: 587, security: 'STARTTLS' as const, user: 'ops@example.com', from: 'Club Ops <ops@example.com>' };
 
   it('getSmtpSettings is gated settings.manage', async () => {
-    await expect(getSmtpSettings(staffActor())).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(getSmtpSettings(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
     expect(findManyMock).not.toHaveBeenCalled();
   });
 
@@ -448,7 +434,7 @@ describe('app-settings.service — SMTP settings (story 12.11, AC 1/2)', () => {
   });
 
   it('setSmtpSettings is gated settings.manage', async () => {
-    await expect(setSmtpSettings(staffActor(), SMTP_INPUT)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setSmtpSettings(pilotActor(), SMTP_INPUT)).rejects.toBeInstanceOf(ForbiddenError);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
@@ -539,7 +525,7 @@ describe('app-settings.service — METAR station (story 12.11, AC 1/5)', () => {
   });
 
   it('setMetarStation is gated settings.manage', async () => {
-    await expect(setMetarStation(staffActor(), 'LIRF')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setMetarStation(pilotActor(), 'LIRF')).rejects.toBeInstanceOf(ForbiddenError);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
@@ -563,11 +549,6 @@ describe('app-settings.service — membership fee default (story 12.11, AC 1)', 
     expect(findUniqueMock).not.toHaveBeenCalled();
   });
 
-  it('staff (finance.manage, not settings.manage) CAN read', async () => {
-    findUnique.mockResolvedValue(null);
-    await expect(getMembershipFeeCents(staffActor())).resolves.toBe(0);
-  });
-
   it('defaults to 0 when no AppSetting row exists yet', async () => {
     findUnique.mockResolvedValue(null);
     await expect(getMembershipFeeCents(adminActor())).resolves.toBe(0);
@@ -579,8 +560,8 @@ describe('app-settings.service — membership fee default (story 12.11, AC 1)', 
     await expect(getMembershipFeeCents(adminActor())).resolves.toBe(5000);
   });
 
-  it('setMembershipFeeCents is gated settings.manage — staff (finance.manage only) is forbidden', async () => {
-    await expect(setMembershipFeeCents(staffActor(), 5000)).rejects.toBeInstanceOf(ForbiddenError);
+  it('setMembershipFeeCents is gated settings.manage — a non-admin actor is forbidden', async () => {
+    await expect(setMembershipFeeCents(pilotActor(), 5000)).rejects.toBeInstanceOf(ForbiddenError);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
@@ -644,8 +625,8 @@ describe('treasury opening balances (story Billing-1, AC 3)', () => {
   });
 
   describe('getTreasurySettings / setTreasurySettings (actor-facing pair, both settings.manage)', () => {
-    it('getTreasurySettings is gated settings.manage — staff (finance.manage only) is forbidden', async () => {
-      await expect(getTreasurySettings(staffActor())).rejects.toBeInstanceOf(ForbiddenError);
+    it('getTreasurySettings is gated settings.manage — a non-admin actor is forbidden', async () => {
+      await expect(getTreasurySettings(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
       expect(findManyMock).not.toHaveBeenCalled();
     });
 
@@ -654,9 +635,9 @@ describe('treasury opening balances (story Billing-1, AC 3)', () => {
       await expect(getTreasurySettings(adminActor())).resolves.toEqual({ openingCashCents: 1000, openingBankCents: 0, openingDate: null });
     });
 
-    it('setTreasurySettings is gated settings.manage — staff is forbidden, no write runs', async () => {
+    it('setTreasurySettings is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
       await expect(
-        setTreasurySettings(staffActor(), { openingCashCents: 1000, openingBankCents: 2000, openingDate: '2026-01-01' }),
+        setTreasurySettings(pilotActor(), { openingCashCents: 1000, openingBankCents: 2000, openingDate: '2026-01-01' }),
       ).rejects.toBeInstanceOf(ForbiddenError);
       expect(transactionMock).not.toHaveBeenCalled();
     });

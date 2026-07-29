@@ -23,7 +23,6 @@ model AppSetting {
 /// enum only exists so `User.roles` can be populated at login time.
 enum Role {
   ADMIN
-  STAFF
   INSTRUCTOR
   PILOT
   STUDENT
@@ -1625,8 +1624,9 @@ model PprRequest {
   firstName String
   lastName  String
   /// NULLABLE (epic 12, story 12.4, AC 1) — the public form still REQUIRES
-  /// it (Zod, `createPprRequestSchema`), so this is only ever `null` for a
-  /// STAFF-entered manual request that gave a phone but no email
+  /// it (Zod, `createPprRequestSchema`), so this is only ever `null` for an
+  /// ADMIN-entered manual request (`ppr.manage`, ADMIN-only since story
+  /// 14.9) that gave a phone but no email
   /// (`createManualPprRequestSchema`'s "at least one contact" refine). Every
   /// email-sending path (receipt/approval/rejection, `ppr.service.ts`) skips
   /// silently when this is `null`.

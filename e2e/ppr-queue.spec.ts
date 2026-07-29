@@ -31,7 +31,6 @@ import type { Page } from '@playwright/test';
 const MAILPIT_API = 'http://localhost:8025/api/v1';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
@@ -202,7 +201,7 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     // gone with the widget-grid dashboard — staff lands on the AdminOverview
     // console, whose "PPR in attesa" KPI is a real count over the SAME
     // pending queue (never zero here: this run's own request is PENDING).
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pprKpiValue = page.getByTestId('kpi-ppr-pending').locator('.kpi-value');
     await expect(pprKpiValue).toBeVisible();
     expect(Number(await pprKpiValue.innerText())).toBeGreaterThanOrEqual(1);
@@ -235,7 +234,7 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     const created = await createPendingRequest(page, { firstName: 'John', locale: 'en' });
     const reason = `Documentazione mancante (verifica e2e ${uniqueSuffix()}).`;
 
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await gotoQueueLastPage(page);
     await expect(page.getByText(created.registration)).toBeVisible();
 
@@ -299,7 +298,7 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
   test('"PPR manuale" (epic 12, story 12.4, AC 1): staff enters a manual request with an email — it appears PENDING in the console, badge-free ("da modulo web" is only for public-form rows), and NO receipt email is ever sent', async ({
     page,
   }) => {
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.goto('/it/dashboard/ppr');
 
     const suffix = uniqueSuffix();

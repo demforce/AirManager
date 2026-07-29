@@ -334,7 +334,7 @@ function IdentitySection({
 
 // --- New person — form unico (story 13.2, AC 1) ------------------------------
 
-const ALL_ROLES: readonly Role[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
+const ALL_ROLES: readonly Role[] = ['ADMIN', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
 
 type NewPersonFormProps = {
   labels: PilotEditorLabels;
@@ -1294,7 +1294,7 @@ function RatingsSection({
 
 const createAccessUserSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()),
-  roles: z.array(z.enum(['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'])).min(1),
+  roles: z.array(z.enum(['ADMIN', 'INSTRUCTOR', 'PILOT', 'STUDENT'])).min(1),
 });
 
 type CreateAccessUserValues = z.infer<typeof createAccessUserSchema>;

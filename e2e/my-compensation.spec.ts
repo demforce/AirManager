@@ -14,7 +14,6 @@ import { ensureValidSeedExpiries } from './helpers';
  */
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const STUDENT_EMAIL = 'student@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -196,7 +195,7 @@ function myCompensationNavLink(page: Page) {
 }
 
 test.describe('Sidebar + profile-active visibility (AC 2/4)', () => {
-  test('INSTRUCTOR sees "I miei compensi"; PILOT/STUDENT/ADMIN/STAFF do not', async ({ page }) => {
+  test('INSTRUCTOR sees "I miei compensi"; PILOT/STUDENT/ADMIN do not', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
     await expect(myCompensationNavLink(page)).toHaveCount(0);
 
@@ -204,9 +203,6 @@ test.describe('Sidebar + profile-active visibility (AC 2/4)', () => {
     await expect(myCompensationNavLink(page)).toHaveCount(0);
 
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await expect(myCompensationNavLink(page)).toHaveCount(0);
-
-    await loginExpectingDashboard(page, STAFF_EMAIL);
     await expect(myCompensationNavLink(page)).toHaveCount(0);
 
     await loginExpectingDashboard(page, ADMIN_EMAIL);

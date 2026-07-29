@@ -106,8 +106,8 @@ function mockCounterSeq(seq: number): void {
   queryRaw.mockResolvedValueOnce([{ lastSeq: seq }]);
 }
 
-function staffActor() {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF' as const] };
+function adminActor() {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN' as const] };
 }
 
 function pilotActor() {
@@ -484,7 +484,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
       pprCountFn.mockResolvedValue(0);
 
-      await listPprRequests(staffActor(), { status: 'PENDING', page: 1, pageSize: 20 });
+      await listPprRequests(adminActor(), { status: 'PENDING', page: 1, pageSize: 20 });
 
       expect(findManyMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -502,7 +502,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
       pprCountFn.mockResolvedValue(0);
 
-      await listPprRequests(staffActor(), { status: 'APPROVED', page: 1, pageSize: 20 });
+      await listPprRequests(adminActor(), { status: 'APPROVED', page: 1, pageSize: 20 });
 
       expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'APPROVED' } }));
     });
@@ -512,7 +512,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
       pprCountFn.mockResolvedValue(0);
 
-      await listPprRequests(staffActor(), { status: 'ALL', page: 1, pageSize: 20 });
+      await listPprRequests(adminActor(), { status: 'ALL', page: 1, pageSize: 20 });
 
       const whereArg = findManyMock.mock.calls[0]?.[0]?.where as Record<string, unknown> | undefined;
       expect(whereArg).not.toHaveProperty('status');
@@ -523,7 +523,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
       pprCountFn.mockResolvedValue(0);
 
-      await listPprRequests(staffActor(), { status: 'ALL', page: 1, pageSize: 20, from: '2026-03-01', to: '2026-03-02' });
+      await listPprRequests(adminActor(), { status: 'ALL', page: 1, pageSize: 20, from: '2026-03-01', to: '2026-03-02' });
 
       const whereArg = findManyMock.mock.calls[0]?.[0]?.where as { eta?: { gte?: Date; lt?: Date } } | undefined;
       // 2026-03-01/02 are outside any DST transition — plain CET (UTC+1).
@@ -537,7 +537,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
       pprCountFn.mockResolvedValue(0);
 
-      await listPprRequests(staffActor(), { status: 'ALL', page: 1, pageSize: 20, from: '2026-03-01' });
+      await listPprRequests(adminActor(), { status: 'ALL', page: 1, pageSize: 20, from: '2026-03-01' });
 
       const whereArg = findManyMock.mock.calls[0]?.[0]?.where as { eta?: { gte?: Date; lt?: Date } } | undefined;
       expect(whereArg?.eta?.gte).toBeInstanceOf(Date);
@@ -549,7 +549,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
       pprCountFn.mockResolvedValue(0);
 
-      await listPprRequests(staffActor(), { status: 'PENDING', page: 1, pageSize: 20 });
+      await listPprRequests(adminActor(), { status: 'PENDING', page: 1, pageSize: 20 });
 
       const whereArg = findManyMock.mock.calls[0]?.[0]?.where as Record<string, unknown> | undefined;
       expect(whereArg).not.toHaveProperty('eta');
@@ -560,14 +560,14 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
     it('404 NotFoundError when the id does not exist (lock finds no row)', async () => {
       mockLockedRow(undefined);
 
-      await expect(approvePprRequest(staffActor(), 'missing')).rejects.toBeInstanceOf(NotFoundError);
+      await expect(approvePprRequest(adminActor(), 'missing')).rejects.toBeInstanceOf(NotFoundError);
       expect(sendMock).not.toHaveBeenCalled();
     });
 
     it('409 ConflictError with code PPR_ALREADY_DECIDED when already APPROVED, and the counter is never touched', async () => {
       mockLockedRow('APPROVED');
 
-      const result = approvePprRequest(staffActor(), 'ppr_1');
+      const result = approvePprRequest(adminActor(), 'ppr_1');
       await expect(result).rejects.toBeInstanceOf(ConflictError);
       await expect(result).rejects.toMatchObject({ code: 'PPR_ALREADY_DECIDED' });
       // Only ONE raw query ran (the lock) — the counter upsert never fired.
@@ -578,7 +578,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
     it('409 ConflictError with code PPR_ALREADY_DECIDED when already REJECTED', async () => {
       mockLockedRow('REJECTED');
 
-      await expect(approvePprRequest(staffActor(), 'ppr_1')).rejects.toMatchObject({
+      await expect(approvePprRequest(adminActor(), 'ppr_1')).rejects.toMatchObject({
         code: 'PPR_ALREADY_DECIDED',
       });
     });
@@ -590,7 +590,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       mockCounterSeq(1);
       pprUpdate.mockResolvedValue(decidedRow({ pprNumber: 'PPR-2026-0001' }));
 
-      const result = await approvePprRequest(staffActor(), 'ppr_1');
+      const result = await approvePprRequest(adminActor(), 'ppr_1');
 
       expect(result.pprNumber).toBe('PPR-2026-0001');
       const updateArg = updateMock.mock.calls[0]?.[0] as { data?: { pprNumber?: string; status?: string } } | undefined;
@@ -603,7 +603,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       mockCounterSeq(42);
       pprUpdate.mockResolvedValue(decidedRow({ pprNumber: 'PPR-2026-0042' }));
 
-      await approvePprRequest(staffActor(), 'ppr_1');
+      await approvePprRequest(adminActor(), 'ppr_1');
 
       const updateArg = updateMock.mock.calls[0]?.[0] as { data?: { pprNumber?: string } } | undefined;
       expect(updateArg?.data?.pprNumber).toBe('PPR-2026-0042');
@@ -616,7 +616,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       mockCounterSeq(1);
       pprUpdate.mockResolvedValue(decidedRow({ pprNumber: 'PPR-2027-0001' }));
 
-      await approvePprRequest(staffActor(), 'ppr_1');
+      await approvePprRequest(adminActor(), 'ppr_1');
 
       const updateArg = updateMock.mock.calls[0]?.[0] as { data?: { pprNumber?: string } } | undefined;
       // getUTCFullYear() at this instant would (wrongly) still say 2026.
@@ -634,7 +634,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
         { key: 'ppr.operatingInstructions.en', value: 'Report to the tower.' },
       ]);
 
-      await approvePprRequest(staffActor(), 'ppr_1');
+      await approvePprRequest(adminActor(), 'ppr_1');
 
       expect(buildPprApprovalEmail).toHaveBeenCalledWith(
         'it',
@@ -649,7 +649,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       pprUpdate.mockResolvedValue(decidedRow({ locale: 'it' }));
       appSettingFindMany.mockResolvedValue([]);
 
-      await approvePprRequest(staffActor(), 'ppr_1');
+      await approvePprRequest(adminActor(), 'ppr_1');
 
       expect(buildPprApprovalEmail).toHaveBeenCalledWith('it', expect.objectContaining({ operatingInstructions: '' }));
     });
@@ -661,7 +661,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       sendMock.mockRejectedValue(new Error('SMTP down'));
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      const result = await approvePprRequest(staffActor(), 'ppr_1');
+      const result = await approvePprRequest(adminActor(), 'ppr_1');
 
       expect(result.pprNumber).toBe('PPR-2026-0001');
       expect(consoleErrorSpy).toHaveBeenCalled();
@@ -673,13 +673,13 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
     it('404 NotFoundError when the id does not exist', async () => {
       mockLockedRow(undefined);
 
-      await expect(rejectPprRequest(staffActor(), 'missing', 'Reason')).rejects.toBeInstanceOf(NotFoundError);
+      await expect(rejectPprRequest(adminActor(), 'missing', 'Reason')).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it('409 ConflictError with code PPR_ALREADY_DECIDED when already decided', async () => {
       mockLockedRow('APPROVED');
 
-      const result = rejectPprRequest(staffActor(), 'ppr_1', 'Reason');
+      const result = rejectPprRequest(adminActor(), 'ppr_1', 'Reason');
       await expect(result).rejects.toBeInstanceOf(ConflictError);
       await expect(result).rejects.toMatchObject({ code: 'PPR_ALREADY_DECIDED' });
     });
@@ -688,7 +688,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       mockLockedRow('PENDING');
       pprUpdate.mockResolvedValue(decidedRow({ status: 'REJECTED', pprNumber: null, rejectionReason: 'No slot available.' }));
 
-      await rejectPprRequest(staffActor(), 'ppr_1', 'No slot available.');
+      await rejectPprRequest(adminActor(), 'ppr_1', 'No slot available.');
 
       expect(queryRawMock).toHaveBeenCalledTimes(1);
       const updateArg = updateMock.mock.calls[0]?.[0] as { data?: { status?: string; pprNumber?: unknown } } | undefined;
@@ -702,7 +702,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
         decidedRow({ status: 'REJECTED', pprNumber: null, rejectionReason: 'Missing insurance.', locale: 'en', email: 'anna@example.com' }),
       );
 
-      await rejectPprRequest(staffActor(), 'ppr_1', 'Missing insurance.');
+      await rejectPprRequest(adminActor(), 'ppr_1', 'Missing insurance.');
 
       expect(buildPprRejectionEmail).toHaveBeenCalledWith('en', expect.objectContaining({ reason: 'Missing insurance.' }));
       expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'anna@example.com' }));
@@ -714,7 +714,7 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       sendMock.mockRejectedValue(new Error('SMTP down'));
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      const result = await rejectPprRequest(staffActor(), 'ppr_1', 'Reason.');
+      const result = await rejectPprRequest(adminActor(), 'ppr_1', 'Reason.');
 
       expect(result.status).toBe('REJECTED');
       expect(consoleErrorSpy).toHaveBeenCalled();
@@ -777,7 +777,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
     it('404 NotFoundError when the id does not exist (lock finds no row)', async () => {
       mockLockedRow(undefined);
 
-      await expect(completePprRequest(staffActor(), 'missing', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(completePprRequest(adminActor(), 'missing', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(NotFoundError);
       expect(cashMovementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -786,7 +786,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       async (status) => {
         mockLockedRow(status);
 
-        const result = completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' });
+        const result = completePprRequest(adminActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' });
         await expect(result).rejects.toBeInstanceOf(ConflictError);
         await expect(result).rejects.toMatchObject({ code: 'PPR_NOT_APPROVED' });
         expect(updateMock).not.toHaveBeenCalled();
@@ -802,11 +802,11 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       cashCategoryFindUnique.mockResolvedValue({ id: 'category_ppr', isActive: true });
       cashMovementCreate.mockResolvedValue({});
 
-      const result = await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 2500, paymentMethod: 'CASH' });
+      const result = await completePprRequest(adminActor(), 'ppr_1', { landingFeeCents: 2500, paymentMethod: 'CASH' });
 
       expect(result.status).toBe('COMPLETED');
       const updateArg = updateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
-      expect(updateArg?.data).toMatchObject({ status: 'COMPLETED', landingFeeCents: 2500, closedByUserId: 'staff_1' });
+      expect(updateArg?.data).toMatchObject({ status: 'COMPLETED', landingFeeCents: 2500, closedByUserId: 'admin_1' });
       expect(updateArg?.data?.closedAt).toBeInstanceOf(Date);
 
       expect(cashCategoryFindUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { name: 'PPR' } }));
@@ -816,7 +816,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
         categoryId: 'category_ppr',
         amountCents: 2500,
         description: 'PPR PPR-2026-0007 landing fee',
-        actorUserId: 'staff_1',
+        actorUserId: 'admin_1',
         pprRequestId: 'ppr_1',
       });
       expect(movementArg?.data?.effectiveDate).toBeInstanceOf(Date);
@@ -836,7 +836,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       cashCategoryFindUnique.mockResolvedValue({ id: 'category_ppr', isActive: true });
       cashMovementCreate.mockResolvedValue({});
 
-      await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1500, paymentMethod: 'CASH' });
+      await completePprRequest(adminActor(), 'ppr_1', { landingFeeCents: 1500, paymentMethod: 'CASH' });
       const withMethodArg = cashMovementCreateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
       expect(withMethodArg?.data?.['paymentMethod']).toBe('CASH');
     });
@@ -845,7 +845,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       mockLockedRow('APPROVED');
       pprUpdate.mockResolvedValue(closedRow({ landingFeeCents: 0 }));
 
-      const result = await completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 0, paymentMethod: 'CASH' });
+      const result = await completePprRequest(adminActor(), 'ppr_1', { landingFeeCents: 0, paymentMethod: 'CASH' });
 
       expect(result.landingFeeCents).toBe(0);
       const updateArg = updateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
@@ -859,7 +859,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       pprUpdate.mockResolvedValue(closedRow());
       cashCategoryFindUnique.mockResolvedValue(null);
 
-      await expect(completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(completePprRequest(adminActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(NotFoundError);
       expect(cashMovementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -868,7 +868,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       pprUpdate.mockResolvedValue(closedRow());
       cashCategoryFindUnique.mockResolvedValue({ id: 'category_ppr', isActive: false });
 
-      await expect(completePprRequest(staffActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(ConflictError);
+      await expect(completePprRequest(adminActor(), 'ppr_1', { landingFeeCents: 1000, paymentMethod: 'CASH' })).rejects.toBeInstanceOf(ConflictError);
       expect(cashMovementCreateMock).not.toHaveBeenCalled();
     });
   });
@@ -877,7 +877,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
     it('404 NotFoundError when the id does not exist', async () => {
       mockLockedRow(undefined);
 
-      await expect(cancelPprRequest(staffActor(), 'missing')).rejects.toBeInstanceOf(NotFoundError);
+      await expect(cancelPprRequest(adminActor(), 'missing')).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it.each(['PENDING', 'REJECTED', 'COMPLETED', 'CANCELLED'])(
@@ -885,7 +885,7 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       async (status) => {
         mockLockedRow(status);
 
-        const result = cancelPprRequest(staffActor(), 'ppr_1');
+        const result = cancelPprRequest(adminActor(), 'ppr_1');
         await expect(result).rejects.toBeInstanceOf(ConflictError);
         await expect(result).rejects.toMatchObject({ code: 'PPR_NOT_APPROVED' });
       },
@@ -895,11 +895,11 @@ describe('ppr.service — closure (story 8.3, AC 1/2; FR-24)', () => {
       mockLockedRow('APPROVED');
       pprUpdate.mockResolvedValue(closedRow({ status: 'CANCELLED', landingFeeCents: null }));
 
-      const result = await cancelPprRequest(staffActor(), 'ppr_1');
+      const result = await cancelPprRequest(adminActor(), 'ppr_1');
 
       expect(result.status).toBe('CANCELLED');
       const updateArg = updateMock.mock.calls[0]?.[0] as { data?: Record<string, unknown> } | undefined;
-      expect(updateArg?.data).toMatchObject({ status: 'CANCELLED', closedByUserId: 'staff_1' });
+      expect(updateArg?.data).toMatchObject({ status: 'CANCELLED', closedByUserId: 'admin_1' });
       expect(updateArg?.data).not.toHaveProperty('landingFeeCents');
       expect(cashCategoryFindUniqueMock).not.toHaveBeenCalled();
       expect(cashMovementCreateMock).not.toHaveBeenCalled();
@@ -955,7 +955,7 @@ describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', (
     pprCreate.mockResolvedValue(createdRow(baseInput()));
     const input = manualInput({ eta: new Date(Date.now() - 60_000).toISOString() });
 
-    await createManualPprRequest(staffActor(), input);
+    await createManualPprRequest(adminActor(), input);
 
     expect(createMock).toHaveBeenCalled();
   });
@@ -964,14 +964,14 @@ describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', (
     const eta = new Date(Date.now() + 3_600_000).toISOString();
     const input = manualInput({ eta, etd: eta });
 
-    await expect(createManualPprRequest(staffActor(), input)).rejects.toMatchObject({ code: 'ETD_NOT_AFTER_ETA' });
+    await expect(createManualPprRequest(adminActor(), input)).rejects.toMatchObject({ code: 'ETD_NOT_AFTER_ETA' });
     expect(createMock).not.toHaveBeenCalled();
   });
 
   it('never queries the rate-limit count or checks a honeypot — staff, not public (AC 1)', async () => {
     pprCreate.mockResolvedValue(createdRow(baseInput()));
 
-    await createManualPprRequest(staffActor(), manualInput());
+    await createManualPprRequest(adminActor(), manualInput());
 
     expect(countMock).not.toHaveBeenCalled();
   });
@@ -979,10 +979,10 @@ describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', (
   it('phone-only (email absent): stored as email=null, createdByUserId=actor, submitterIp=null, stays PENDING', async () => {
     pprCreate.mockResolvedValue(createdRow(baseInput()));
 
-    await createManualPprRequest(staffActor(), manualInput({ email: undefined, phone: '+39 333 0000000' }));
+    await createManualPprRequest(adminActor(), manualInput({ email: undefined, phone: '+39 333 0000000' }));
 
     expect(createMock).toHaveBeenCalledWith({
-      data: expect.objectContaining({ email: null, phone: '+39 333 0000000', createdByUserId: 'staff_1', submitterIp: null }),
+      data: expect.objectContaining({ email: null, phone: '+39 333 0000000', createdByUserId: 'admin_1', submitterIp: null }),
       select: expect.anything(),
     });
     expect(updateMock).not.toHaveBeenCalled();
@@ -991,7 +991,7 @@ describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', (
   it('email-only (phone absent): stored as phone=""', async () => {
     pprCreate.mockResolvedValue(createdRow(baseInput()));
 
-    await createManualPprRequest(staffActor(), manualInput({ email: 'mario@example.com', phone: undefined }));
+    await createManualPprRequest(adminActor(), manualInput({ email: 'mario@example.com', phone: undefined }));
 
     expect(createMock).toHaveBeenCalledWith({
       data: expect.objectContaining({ email: 'mario@example.com', phone: '' }),
@@ -1002,7 +1002,7 @@ describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', (
   it('never sends a receipt email, even when email is present (Dev Notes: "niente email di ricevuta")', async () => {
     pprCreate.mockResolvedValue(createdRow(baseInput()));
 
-    await createManualPprRequest(staffActor(), manualInput({ email: 'mario@example.com' }));
+    await createManualPprRequest(adminActor(), manualInput({ email: 'mario@example.com' }));
 
     expect(sendMock).not.toHaveBeenCalled();
   });
@@ -1012,13 +1012,13 @@ describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', (
     mockCounterSeq(1);
     pprUpdate.mockResolvedValue(decidedRow({ pprNumber: 'PPR-2026-0001', status: 'APPROVED' }));
 
-    const result = await createManualPprRequest(staffActor(), manualInput({ approveImmediately: false }), { approveImmediately: true });
+    const result = await createManualPprRequest(adminActor(), manualInput({ approveImmediately: false }), { approveImmediately: true });
 
     expect(result.status).toBe('APPROVED');
     expect(result.pprNumber).toBe('PPR-2026-0001');
     expect(updateMock).toHaveBeenCalledWith({
       where: { id: 'ppr_1' },
-      data: expect.objectContaining({ status: 'APPROVED', pprNumber: 'PPR-2026-0001', decidedByUserId: 'staff_1' }),
+      data: expect.objectContaining({ status: 'APPROVED', pprNumber: 'PPR-2026-0001', decidedByUserId: 'admin_1' }),
       select: expect.anything(),
     });
     expect(sendMock).not.toHaveBeenCalled();
@@ -1027,7 +1027,7 @@ describe('ppr.service — createManualPprRequest (epic 12, story 12.4, AC 1)', (
   it('approveImmediately omitted (default false): stays PENDING, never touches the PprCounter', async () => {
     pprCreate.mockResolvedValue(createdRow(baseInput()));
 
-    const result = await createManualPprRequest(staffActor(), manualInput());
+    const result = await createManualPprRequest(adminActor(), manualInput());
 
     expect(result.status).toBe('PENDING');
     expect(queryRawMock).not.toHaveBeenCalled();

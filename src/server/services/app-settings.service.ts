@@ -445,8 +445,8 @@ const MEMBERSHIP_ANNUAL_FEE_CENTS_KEY = 'membership.annualFeeCents';
 /**
  * Reads the default annual membership-fee amount, in integer euro cents
  * (ratifica utente 1) — precompiles the "Quota associativa" action's amount
- * field (`chargeMembershipFee`'s caller). Gated `finance.manage` (STAFF+
- * ADMIN): the SAME actors who can trigger the charge itself need to see the
+ * field (`chargeMembershipFee`'s caller). Gated `finance.manage` (ADMIN-only):
+ * the SAME actors who can trigger the charge itself need to see the
  * default; `settings.manage` (ADMIN-only) is reserved for CHANGING it
  * (`setMembershipFeeCents` below), same read/write asymmetry as
  * `getPprLandingFeeDefaultCents`. Absent key -> `0` (Contesto: a fresh
@@ -551,7 +551,7 @@ function parseStoredOpeningDate(value: string | undefined): string | null {
 /**
  * Reads the treasury opening balances with NO `Actor` at all (Billing-1, AC
  * 3) — internal use only, for `billing-summary.service.ts#getBillingSummary`
- * (itself gated `finance.manage`, STAFF+ADMIN) to read without ALSO needing
+ * (itself gated `finance.manage`, ADMIN-only) to read without ALSO needing
  * `settings.manage`. Same "unguarded internal reader alongside a
  * permission-gated actor-facing pair" precedent as
  * `getSmtpSettingsForMailer` vs `getSmtpSettings` above. Parsing is robust

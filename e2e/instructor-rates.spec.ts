@@ -9,8 +9,6 @@ if (!SEED_PASSWORD) {
   throw new Error('e2e/instructor-rates.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
 
-const MAILPIT_API = 'http://localhost:8025/api/v1';
-
 /** Same login helper as the other rate e2e specs (aircraft-rates.spec.ts). */
 async function loginExpectingDashboard(page: Page, email: string, password: string = SEED_PASSWORD!): Promise<void> {
   await page.goto('/it/login');
@@ -58,65 +56,6 @@ const PAST_DATE = '2020-01-01';
 function ddmmyyyy(iso: string): string {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
-}
-
-function uniqueEmail(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
-}
-
-type MailpitMessageSummary = { ID: string; Subject: string };
-type MailpitFullMessage = { Text: string; Subject: string };
-
-/** Same Mailpit-polling helper as user-management.spec.ts/aircraft-rates.spec.ts. */
-async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
-    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
-    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
-
-    if (found) {
-      const messageResponse = await fetch(`${MAILPIT_API}/message/${found.ID}`);
-      return (await messageResponse.json()) as MailpitFullMessage;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-
-  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
-}
-
-function extractSetPasswordUrl(emailText: string): URL {
-  const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(emailText);
-  if (!match) {
-    throw new Error(`Email body did not contain a /set-password link:\n${emailText}`);
-  }
-  return new URL(match[1]);
-}
-
-/**
- * Creates a STAFF-only user (via the admin users API — same helper as
- * `aircraft-rates.spec.ts`) and returns credentials once the password is set
- * — the seed only ships admin + pilot, and the 403 test below needs an
- * actor with `people.read` but deliberately WITHOUT `settings.manage` to
- * prove the permission split (`createInstructorRate` requires the stricter
- * one, same as `createAircraftRate`).
- */
-async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
-  const email = uniqueEmail('staff');
-  const response = await page.request.post('/api/v1/users', { data: { email, roles: ['STAFF'] } });
-  expect(response.status()).toBe(201);
-
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
-  const url = extractSetPasswordUrl(inviteEmail.Text);
-  await page.goto(url.pathname + url.search);
-  await page.getByLabel('Nuova password').fill(password);
-  await page.getByLabel('Conferma password').fill(password);
-  await page.getByRole('button', { name: 'Imposta password' }).click();
-  await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-  return email;
 }
 
 /**
@@ -190,27 +129,6 @@ test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4
     await expect(panel.getByTestId('instructor-rates-form-error')).toContainText(
       'Esiste già una tariffa con questa data di decorrenza',
     );
-  });
-
-  test('a STAFF actor (people.read but not settings.manage) gets a 403 AD-8 envelope from POST instructor-rates', async ({
-    page,
-  }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const person = uniquePerson('Sara');
-    const personId = await createInstructorPerson(page, person);
-
-    const staffPassword = 'StaffInstructorRates123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
-    const response = await page.request.post(`/api/v1/people/${personId}/instructor-rates`, {
-      data: { priceCentsPerHour: 4500, validFrom: PAST_DATE },
-    });
-    expect(response.status()).toBe(403);
-    const body = await response.json();
-    expect(body.error.code).toBe('FORBIDDEN');
   });
 
   test('a pilot gets a 403 AD-8 envelope from POST /api/v1/people/{id}/instructor-rates', async ({ page }) => {

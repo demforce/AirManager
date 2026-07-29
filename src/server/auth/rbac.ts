@@ -37,23 +37,24 @@ export type Permission =
   // Epic 12, story 12.7: registering an instructor payout AND setting an
   // instructor's payout rate (the amount PAID to them, distinct from
   // `settings.manage`'s `InstructorRate` — the amount CHARGED to the
-  // student). ADMIN-only, deliberately never granted to STAFF: reading the
-  // compensation summary/export stays on the wider `finance.manage`.
+  // student). ADMIN-only, deliberately a distinct permission from the wider
+  // `finance.manage`: reading the compensation summary/export stays on that
+  // wider permission.
   | 'payouts.manage'
   // Story 14.5 (ratifica R3): sees the pilot/instructor NAMES on a booking
   // that isn't the actor's own — everyone still sees aircraft+time (that's
   // `self.read`, unconditional); without this permission, a non-own booking
   // is masked to "Occupato" (`bookings.service.ts#listBookings`/
-  // `listCalendarBookings`). Granted to ADMIN/STAFF/INSTRUCTOR, never
+  // `listCalendarBookings`). Granted to ADMIN/INSTRUCTOR, never
   // PILOT/STUDENT.
   | 'bookings.read.names'
   // Story 14.4 (ratifica R4): forces a flight registration/correction past a
   // BLOCKING expired document (pilot's or instructor's) with a mandatory
   // motivo — `flights.service.ts#resolveFlightInput`'s `FLIGHT_BLOCKED_BY_EXPIRY`
-  // bypass. Deliberately granted to ADMIN ONLY (never STAFF, unlike
-  // `flights.manage` itself) — the gate lives on THIS permission, not on a
-  // role literal, so story 14.9's eventual STAFF removal needs no change
-  // here.
+  // bypass. Deliberately a permission distinct from `flights.manage` itself —
+  // the gate lives on THIS permission, not on a role literal, so ADMIN being
+  // (since story 14.9) the only role holding either is incidental, not the
+  // reason the split exists.
   | 'flights.forceExpiry';
 
 const ALL_PERMISSIONS: Permission[] = [
@@ -79,9 +80,8 @@ const ALL_PERMISSIONS: Permission[] = [
  * what" — nothing outside this file (and no external RBAC library) decides
  * that.
  *
- * - `admin`: everything (FR-2 "admin: tutto").
- * - `staff`: operational management + finance, but never user/settings
- *   administration (FR-3 reserves user management to admin).
+ * - `admin`: everything (FR-2 "admin: tutto") — the sole administrative role
+ *   (story 14.9 removed `staff`, never a distinct figure in practice).
  * - `instructor`: self-service plus their own bookings (story 12.13: the
  *   diario/assegnazioni scuola were retired — instructors keep the same
  *   permissions as `pilot`, `self.read` + `bookings.manage.own`), PLUS
@@ -99,24 +99,6 @@ const ALL_PERMISSIONS: Permission[] = [
  */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ADMIN: ALL_PERMISSIONS,
-  STAFF: [
-    'people.read',
-    'people.manage',
-    'aircraft.manage',
-    'finance.manage',
-    'flights.manage',
-    'bookings.manage.any',
-    'expiries.manage',
-    // Story 8.2 (FR-23): staff approves/rejects PPR requests — the queue at
-    // `/dashboard/ppr` and the operating-instructions GET (edit stays
-    // `settings.manage`, admin-only). ADMIN inherits it via `ALL_PERMISSIONS`
-    // above; instructor/pilot/student never hold it.
-    'ppr.manage',
-    'self.read',
-    // Story 14.5 (ratifica R3): STAFF still exists until 14.9 removes the
-    // role — kept here for coherence in the meantime.
-    'bookings.read.names',
-  ],
   INSTRUCTOR: ['self.read', 'bookings.manage.own', 'bookings.read.names'],
   PILOT: ['self.read', 'bookings.manage.own'],
   // Story 7.1: no `bookings.manage.own` — see the doc-comment above.

@@ -93,10 +93,6 @@ function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
-}
-
 function pilotActor(): Actor {
   return { userId: 'pilot_1', personId: 'person_pilot', roles: ['PILOT'] };
 }
@@ -147,9 +143,9 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
 
-    it('recordPayout rejects a staff actor (needs payouts.manage, ADMIN-only)', async () => {
+    it('recordPayout rejects a non-admin actor (needs payouts.manage, ADMIN-only)', async () => {
       await expect(
-        recordPayout(staffActor(), {
+        recordPayout(pilotActor(), {
           instructorPersonId: 'person_ines',
           amountCents: 10000,
           periodStart: '2026-07-01',
@@ -161,8 +157,8 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
 
-    it('setPayoutRate rejects a staff actor (needs payouts.manage, ADMIN-only)', async () => {
-      await expect(setPayoutRate(staffActor(), 'person_ines', 3000)).rejects.toThrow(ForbiddenError);
+    it('setPayoutRate rejects a non-admin actor (needs payouts.manage, ADMIN-only)', async () => {
+      await expect(setPayoutRate(pilotActor(), 'person_ines', 3000)).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
   });
@@ -319,7 +315,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', payoutRateCents: null } })]);
       stubZeroAggregates();
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       expect(row?.payoutRateCents).toBeNull();
       expect(row?.totalMinutes).toBe(0);
@@ -333,7 +329,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 130 } }]); // same for every call (mtd/ytd/total) in this fixture
       payoutGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { amountCents: 2000 } }]);
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       // 130 min / 60 * 3000 = 6500.0 (round -> 6500) - 2000 already paid = 4500
       expect(row?.totalMinutes).toBe(130);
@@ -346,7 +342,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 25 } }]);
       payoutGroupBy.mockResolvedValue([]);
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       expect(row?.owedTotalCents).toBe(1875);
     });
@@ -356,7 +352,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       flightGroupBy.mockResolvedValue([]);
       payoutGroupBy.mockResolvedValue([]);
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       expect(row?.mtdMinutes).toBe(0);
       expect(row?.owedMtdCents).toBe(0);
@@ -366,7 +362,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       personFindMany.mockResolvedValue([instructorPersonRow()]);
       stubZeroAggregates();
 
-      await getCompensationSummary(staffActor());
+      await getCompensationSummary(adminActor());
 
       for (const call of flightGroupByMock.mock.calls) {
         const args = call[0] as { by: string[]; where: Record<string, unknown> };
@@ -386,7 +382,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       personFindMany.mockResolvedValue([instructorPersonRow()]);
       stubZeroAggregates();
 
-      await getCompensationSummary(staffActor());
+      await getCompensationSummary(adminActor());
 
       const today = todayDateOnlyInZone(APP_TIMEZONE);
       expect(today).toBe('2027-01-01');
@@ -421,7 +417,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
         return [];
       });
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       expect(row?.owedMtdCents).toBe(0 - 3000);
       expect(row?.owedTotalCents).toBe(0 - 5000);
@@ -433,12 +429,12 @@ describe('instructor-compensation.service (story 12.7)', () => {
   describe('getInstructorCompensationDetail (AC 3, AC 7)', () => {
     it('404s on an unknown person', async () => {
       personFindUnique.mockResolvedValue(null);
-      await expect(getInstructorCompensationDetail(staffActor(), 'unknown')).rejects.toThrow(NotFoundError);
+      await expect(getInstructorCompensationDetail(adminActor(), 'unknown')).rejects.toThrow(NotFoundError);
     });
 
     it('404s on a person with no active instructor profile', async () => {
       personFindUnique.mockResolvedValue({ id: 'person_x', firstName: 'X', lastName: 'Y', instructorProfile: null });
-      await expect(getInstructorCompensationDetail(staffActor(), 'person_x')).rejects.toThrow(NotFoundError);
+      await expect(getInstructorCompensationDetail(adminActor(), 'person_x')).rejects.toThrow(NotFoundError);
     });
 
     it('returns recentFlights (max 5, SCHOOL, non-cancelled) and DISTINCT recentStudents derived from them', async () => {
@@ -456,7 +452,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
         { id: 'flight_3', flightDate: new Date('2026-07-08T00:00:00.000Z'), minutes: 30, personId: 'student_b', person: { firstName: 'Bruno', lastName: 'Barone' } },
       ]);
 
-      const detail = await getInstructorCompensationDetail(staffActor(), 'person_ines');
+      const detail = await getInstructorCompensationDetail(adminActor(), 'person_ines');
 
       expect(detail.recentFlights).toHaveLength(3);
       expect(detail.recentStudents).toEqual([

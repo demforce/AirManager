@@ -34,7 +34,6 @@ import type { Page } from '@playwright/test';
  */
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -272,7 +271,7 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     await logout(page);
 
     // --- Staff: complete from the register, fee PREFILLED from the default ---
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await gotoMovementsLastPage(page, 'APPROVED');
     await expect(page.getByText(created.registration)).toBeVisible();
 
@@ -472,7 +471,7 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
   test('"Registra arrivo" (epic 12, story 12.4, AC 3): a past eta is accepted (logging a just-landed arrival) and the row appears immediately as "al suolo" with an assigned pprNumber, no separate approval step', async ({
     page,
   }) => {
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.goto('/it/dashboard/movements');
 
     const suffix = uniqueSuffix();

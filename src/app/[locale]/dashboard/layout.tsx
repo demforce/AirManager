@@ -30,11 +30,10 @@ const THEME_COOKIE = 'am-theme';
 
 // Most-privileged-first — decides which role's label/avatar color the user
 // chip shows for a multi-role actor (e.g. pilot+instructor sees "Istruttore").
-const ROLE_PRIORITY: readonly Role[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
+const ROLE_PRIORITY: readonly Role[] = ['ADMIN', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
 
 const AVATAR_COLOR_BY_ROLE: Record<Role, AvatarColor> = {
   ADMIN: 'amber',
-  STAFF: 'amber',
   INSTRUCTOR: '',
   PILOT: 'green',
   STUDENT: 'violet',

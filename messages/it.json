@@ -55,7 +55,6 @@
     "logout": "Esci",
     "roles": {
       "ADMIN": "Admin",
-      "STAFF": "Staff",
       "INSTRUCTOR": "Istruttore",
       "PILOT": "Pilota",
       "STUDENT": "Allievo"
@@ -1579,7 +1578,6 @@
   "UsersPage": {
     "roles": {
       "ADMIN": "Admin",
-      "STAFF": "Staff",
       "INSTRUCTOR": "Istruttore",
       "PILOT": "Pilota",
       "STUDENT": "Allievo"

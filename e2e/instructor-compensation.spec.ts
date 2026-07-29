@@ -3,13 +3,13 @@ import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
+const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
   throw new Error('e2e/instructor-compensation.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
 
-const MAILPIT_API = 'http://localhost:8025/api/v1';
 const PAST_DATE = '2020-01-01';
 const XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -24,37 +24,6 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
 
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function uniqueEmail(prefix: string): string {
-  return `${prefix}-${uniqueSuffix()}@airmanager.local`;
-}
-
-type MailpitMessageSummary = { ID: string; Subject: string };
-type MailpitFullMessage = { Text: string; Subject: string };
-
-/** Same Mailpit-polling helper as the other e2e specs (school.spec.ts, instructor-rates.spec.ts). */
-async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
-    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
-    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
-    if (found) {
-      const messageResponse = await fetch(`${MAILPIT_API}/message/${found.ID}`);
-      return (await messageResponse.json()) as MailpitFullMessage;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
-}
-
-function extractSetPasswordUrl(emailText: string): URL {
-  const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(emailText);
-  if (!match) {
-    throw new Error(`Email body did not contain a /set-password link:\n${emailText}`);
-  }
-  return new URL(match[1]);
 }
 
 /** Creates a fresh person with an active INSTRUCTOR profile — a BRAND NEW person every call (never the shared seed, `fullyParallel: true`), same helper shape as `school.spec.ts#createInstructorPerson`. */
@@ -148,23 +117,6 @@ async function registerSchoolFlight(
     },
   });
   expect(response.status()).toBe(201);
-}
-
-/** Creates a STAFF-only user (Mailpit invite flow), same helper as `instructor-rates.spec.ts`. */
-async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
-  const email = uniqueEmail('staff-comp');
-  const response = await page.request.post('/api/v1/users', { data: { email, roles: ['STAFF'] } });
-  expect(response.status()).toBe(201);
-
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
-  const url = extractSetPasswordUrl(inviteEmail.Text);
-  await page.goto(url.pathname + url.search);
-  await page.getByLabel('Nuova password').fill(password);
-  await page.getByLabel('Conferma password').fill(password);
-  await page.getByRole('button', { name: 'Imposta password' }).click();
-  await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-  return email;
 }
 
 test.describe('Instructor compensation (story 12.7)', () => {
@@ -276,24 +228,12 @@ test.describe('Instructor compensation (story 12.7)', () => {
     await expect(page.getByTestId(`payment-cycle-row-${unratedInstructor.personId}`)).toHaveCount(0);
   });
 
-  test('RBAC: staff sees the summary but NOT "Paga" or the payout-rate field; POST payout / PUT rate answer 403 (AC 3/4/6)', async ({ page }) => {
+  test('RBAC: POST payout / PUT rate answer 403 for a non-admin actor (AC 3/4/6, payouts.manage)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const instructor = await createInstructorPerson(page, 'Rbac');
 
-    const staffPassword = 'StaffComp123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
-    await page.goto('/it/dashboard/instructors');
-    const row = page.getByTestId(`instructor-row-${instructor.personId}`);
-    await expect(row).toBeVisible();
-    await expect(row.getByTestId(`instructor-pay-${instructor.personId}`)).toHaveCount(0);
-    await expect(page.getByTestId('instructors-payment-cycle-button')).toHaveCount(0);
-
-    await row.getByTestId(`instructor-edit-${instructor.personId}`).click();
-    await expect(page.getByTestId('instructor-payout-rate-form')).toHaveCount(0);
+    await loginExpectingDashboard(page, PILOT_EMAIL);
 
     const payoutResponse = await page.request.post('/api/v1/instructor-payouts', {
       headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
@@ -305,20 +245,11 @@ test.describe('Instructor compensation (story 12.7)', () => {
     expect(rateResponse.status()).toBe(403);
   });
 
-  test('the compensation summary export answers xlsx 200 for both staff and admin (AC 3/8, finance.manage)', async ({ page }) => {
+  test('the compensation summary export answers xlsx 200 (AC 3/8, finance.manage)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const adminExport = await page.request.get('/api/v1/instructor-compensation?format=xlsx&locale=it');
     expect(adminExport.status()).toBe(200);
     expect(adminExport.headers()['content-type']).toBe(XLSX_CONTENT_TYPE);
-
-    const staffPassword = 'StaffExportComp123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
-    const staffExport = await page.request.get('/api/v1/instructor-compensation?format=xlsx&locale=it');
-    expect(staffExport.status()).toBe(200);
-    expect(staffExport.headers()['content-type']).toBe(XLSX_CONTENT_TYPE);
   });
 });

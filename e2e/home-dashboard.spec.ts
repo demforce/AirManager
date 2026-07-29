@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 
 /**
  * Home dashboard per ruolo (story 12.12, AC 1/4/5/6/7). The home
- * (`/dashboard`) is now AirOps-native: admin/staff land on the AdminOverview
+ * (`/dashboard`) is now AirOps-native: admin lands on the AdminOverview
  * console (real KPIs + embedded Schedule/BookingsTable + Scadenze/Fleet
  * widgets), an istruttore lands on "la mia giornata" (own compensation KPIs,
  * no creation CTA — ratifica 3), a pilota/allievo land on the personal
@@ -13,7 +13,6 @@ import type { Page } from '@playwright/test';
  */
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const STUDENT_EMAIL = 'student@airmanager.local';
 const INSTRUCTOR_EMAIL = 'instructor@airmanager.local';
@@ -146,14 +145,6 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
     await expect(page.getByTestId('bookings-list-section')).toBeVisible();
     await expect(page.getByTestId('scadenze-widget')).toBeVisible();
     await expect(page.getByTestId('fleet-card-widget')).toBeVisible();
-  });
-
-  test('staff sees the SAME AdminOverview console as admin (both hold finance.manage)', async ({ page }) => {
-    await loginExpectingDashboard(page, STAFF_EMAIL);
-    await expect(page.getByRole('heading', { name: 'Panoramica operativa' })).toBeVisible();
-    for (const testId of ADMIN_OVERVIEW_KPI_TESTIDS) {
-      await expect(page.getByTestId(testId)).toBeVisible();
-    }
   });
 
   test('a pilot lands on the personal landing: greeting, 4 real KPIs, "Prenota volo" CTA visible (bookings.manage.own)', async ({ page }) => {

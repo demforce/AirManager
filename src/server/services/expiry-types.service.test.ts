@@ -41,10 +41,6 @@ function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
-}
-
 function pilotActor(): Actor {
   return { userId: 'pilot_1', personId: 'person_pilot', roles: ['PILOT'] };
 }
@@ -89,10 +85,10 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       expect(findManyMock).not.toHaveBeenCalled();
     });
 
-    it('a staff actor (expiries.manage) can list — active only by default', async () => {
+    it('lists — active only by default', async () => {
       findMany.mockResolvedValue([fixture()]);
 
-      const result = await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({}));
+      const result = await listExpiryTypes(adminActor(), listExpiryTypesQuerySchema.parse({}));
 
       expect(findManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { isActive: true }, orderBy: { name: 'asc' }, take: 500 }),
@@ -108,7 +104,7 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
     it('includeInactive: true also lists deactivated types (admin management page)', async () => {
       findMany.mockResolvedValue([]);
 
-      await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({ includeInactive: 'true' }));
+      await listExpiryTypes(adminActor(), listExpiryTypesQuerySchema.parse({ includeInactive: 'true' }));
 
       expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }));
     });
@@ -116,7 +112,7 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
     it('kind omitted (story 13.1, AC 2): every kind is returned, retro-compatible with every pre-13.1 consumer', async () => {
       findMany.mockResolvedValue([]);
 
-      await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({}));
+      await listExpiryTypes(adminActor(), listExpiryTypesQuerySchema.parse({}));
 
       expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { isActive: true } }));
     });
@@ -124,7 +120,7 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
     it('kind=MEDICAL filters the query to only medical-visit types', async () => {
       findMany.mockResolvedValue([fixture({ name: 'Visita medica classe 2', kind: 'MEDICAL' })]);
 
-      const result = await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({ kind: 'MEDICAL' }));
+      const result = await listExpiryTypes(adminActor(), listExpiryTypesQuerySchema.parse({ kind: 'MEDICAL' }));
 
       expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { isActive: true, kind: 'MEDICAL' } }));
       expect(result).toEqual([fixture({ name: 'Visita medica classe 2', kind: 'MEDICAL' })]);
@@ -133,16 +129,16 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
     it('kind=RATING combines with includeInactive', async () => {
       findMany.mockResolvedValue([]);
 
-      await listExpiryTypes(staffActor(), listExpiryTypesQuerySchema.parse({ includeInactive: 'true', kind: 'RATING' }));
+      await listExpiryTypes(adminActor(), listExpiryTypesQuerySchema.parse({ includeInactive: 'true', kind: 'RATING' }));
 
       expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { kind: 'RATING' } }));
     });
   });
 
   describe('createExpiryType (Task 2, AC 1/2 — settings.manage only)', () => {
-    it('rejects a staff actor (expiries.manage is not enough — settings.manage required)', async () => {
+    it('rejects a non-admin actor (settings.manage required)', async () => {
       const input = createExpiryTypeSchema.parse({ name: 'Nuovo tipo', scope: 'ALL' });
-      await expect(createExpiryType(staffActor(), input)).rejects.toThrow(ForbiddenError);
+      await expect(createExpiryType(pilotActor(), input)).rejects.toThrow(ForbiddenError);
       expect(findFirstMock).not.toHaveBeenCalled();
     });
 
@@ -209,9 +205,9 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
   });
 
   describe('updateExpiryType (Task 2, AC 1/2)', () => {
-    it('rejects a staff actor (settings.manage required)', async () => {
+    it('rejects a non-admin actor (settings.manage required)', async () => {
       const input = updateExpiryTypeSchema.parse({ isActive: false });
-      await expect(updateExpiryType(staffActor(), 'et_1', input)).rejects.toThrow(ForbiddenError);
+      await expect(updateExpiryType(pilotActor(), 'et_1', input)).rejects.toThrow(ForbiddenError);
       expect(findUniqueMock).not.toHaveBeenCalled();
     });
 
@@ -302,8 +298,8 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
   });
 
   describe('deleteExpiryType (Task 2, AC 2 — P2003 backstop ready for 6.2)', () => {
-    it('rejects a staff actor (settings.manage required)', async () => {
-      await expect(deleteExpiryType(staffActor(), 'et_1')).rejects.toThrow(ForbiddenError);
+    it('rejects a non-admin actor (settings.manage required)', async () => {
+      await expect(deleteExpiryType(pilotActor(), 'et_1')).rejects.toThrow(ForbiddenError);
     });
 
     it('throws NotFoundError for an unknown id', async () => {

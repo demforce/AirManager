@@ -59,9 +59,10 @@ export type NavItem = {
   enabled: boolean;
 };
 
-const ALL_ROLES: readonly Role[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
-const STAFF_ROLES: readonly Role[] = ['ADMIN', 'STAFF'];
-/** Story 14.6, AC 1: PILOT/STUDENT's own "Le mie transazioni" — INSTRUCTOR gets its own compensation page (story 14.7); admin/staff already have Contabilità + the scheda persona. */
+const ALL_ROLES: readonly Role[] = ['ADMIN', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
+/** Story 14.9: renamed from the old two-role list once its second entry (the never-really-distinct administrative role) was removed. */
+const ADMIN_ROLES: readonly Role[] = ['ADMIN'];
+/** Story 14.6, AC 1: PILOT/STUDENT's own "Le mie transazioni" — INSTRUCTOR gets its own compensation page (story 14.7); admin already has Contabilità + the scheda persona. */
 const SELF_SERVICE_ROLES: readonly Role[] = ['PILOT', 'STUDENT'];
 /** Story 14.7, AC 2: INSTRUCTOR's own "I miei compensi" — same rationale as `SELF_SERVICE_ROLES` above, one role only. */
 const INSTRUCTOR_ROLES: readonly Role[] = ['INSTRUCTOR'];
@@ -73,18 +74,18 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // Story 12.12: the home ships in the AirOps visual language directly, replacing the legacy widget-grid dashboard.
   { id: 'overview', href: '/dashboard', icon: 'dashboard', group: 'operations', roles: ALL_ROLES, enabled: true },
   { id: 'schedule', href: '/dashboard/bookings', icon: 'calendar', group: 'operations', roles: ALL_ROLES, enabled: true },
-  { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: STAFF_ROLES, enabled: true },
-  { id: 'visiting', href: '/dashboard/movements', icon: 'plane', group: 'operations', roles: STAFF_ROLES, enabled: true },
+  { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: ADMIN_ROLES, enabled: true },
+  { id: 'visiting', href: '/dashboard/movements', icon: 'plane', group: 'operations', roles: ADMIN_ROLES, enabled: true },
   // Story 12.6: the pilots registry ships in the AirOps visual language directly.
-  { id: 'pilots', href: '/dashboard/pilots', icon: 'users', group: 'directory', roles: STAFF_ROLES, enabled: true },
+  { id: 'pilots', href: '/dashboard/pilots', icon: 'users', group: 'directory', roles: ADMIN_ROLES, enabled: true },
   // Story 12.7: the instructors compensation page ships in the AirOps visual language directly.
-  { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: STAFF_ROLES, enabled: true },
+  { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: ADMIN_ROLES, enabled: true },
   // Story 12.5: the fleet page ships in the AirOps visual language directly.
   // Story 13.8 (AC 2): 'plane' — same small-aircraft glyph as `visiting`
   // (Movimenti) above, per the user's "aereo piccolo per entrambe" item.
   // The dedicated `fleet` icon/NavIconKey entry was removed as an orphan
   // (story 13.11, AC 2).
-  { id: 'fleet', href: '/dashboard/fleet', icon: 'plane', group: 'directory', roles: STAFF_ROLES, enabled: true },
+  { id: 'fleet', href: '/dashboard/fleet', icon: 'plane', group: 'directory', roles: ADMIN_ROLES, enabled: true },
   // Story 12.11: the scadenze registry ships in the AirOps visual language
   // directly. Story 12.12 fix: widened to ALL_ROLES — the legacy home's own
   // in-page nav (permission-based, `nav-items.ts`, removed in story 12.13)
@@ -100,8 +101,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // Story 14.7: dedicated self-service compensation page — own accrual + own payout history only (never the staff roster). This ROLE filter is coarse/presentation-only like every other entry (module doc comment); AC 4's stronger "active profile, not role" requirement is enforced by `dashboard/layout.tsx` filtering this ONE item out for an INSTRUCTOR-role actor whose own profile is deactivated (14.6 F2's lesson: never point a nav item where the destination would then have nothing to show).
   { id: 'myCompensation', href: '/dashboard/my-compensation', icon: 'cash', group: 'archive', roles: INSTRUCTOR_ROLES, enabled: true },
   // Story 12.9: the billing (Contabilità) page ships in the AirOps visual language directly, replacing the legacy `/dashboard/finance`.
-  { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: STAFF_ROLES, enabled: true },
-  { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: STAFF_ROLES, enabled: true },
+  { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: ADMIN_ROLES, enabled: true },
+  { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: ADMIN_ROLES, enabled: true },
   // ADMIN-only: matches `settings.manage` in rbac.ts (review 12.1 F2 — nav must never
   // point where the page guard bounces; D13: the domain contract wins over the prototype).
   // Story 12.11: ships in the AirOps visual language directly.

@@ -9,8 +9,6 @@ if (!SEED_PASSWORD) {
   throw new Error('e2e/expiry-types.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
 
-const MAILPIT_API = 'http://localhost:8025/api/v1';
-
 /** Same login helper as the other e2e specs. */
 async function loginExpectingDashboard(page: Page, email: string, password: string = SEED_PASSWORD!): Promise<void> {
   await page.goto('/it/login');
@@ -23,62 +21,6 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
 /** Run-unique expiry-type name (same pattern as `uniquePackageName` in `package-types.spec.ts`, for the dirty DB). */
 function uniqueTypeName(prefix: string): string {
   return `${prefix} ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function uniqueEmail(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
-}
-
-type MailpitMessageSummary = { ID: string; Subject: string };
-type MailpitFullMessage = { Text: string; Subject: string };
-
-/** Same Mailpit-polling helper as `package-types.spec.ts`. */
-async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
-    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
-    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
-
-    if (found) {
-      const messageResponse = await fetch(`${MAILPIT_API}/message/${found.ID}`);
-      return (await messageResponse.json()) as MailpitFullMessage;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-
-  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
-}
-
-function extractSetPasswordUrl(emailText: string): URL {
-  const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(emailText);
-  if (!match) {
-    throw new Error(`Email body did not contain a /set-password link:\n${emailText}`);
-  }
-  return new URL(match[1]);
-}
-
-/**
- * Creates a STAFF-only user (via the admin users API) and returns credentials
- * once the password is set — `expiries.manage` but deliberately WITHOUT
- * `settings.manage` (same helper shape as `package-types.spec.ts`).
- */
-async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
-  const email = uniqueEmail('staff-exp');
-  const response = await page.request.post('/api/v1/users', { data: { email, roles: ['STAFF'] } });
-  expect(response.status()).toBe(201);
-
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
-  const url = extractSetPasswordUrl(inviteEmail.Text);
-  await page.goto(url.pathname + url.search);
-  await page.getByLabel('Nuova password').fill(password);
-  await page.getByLabel('Conferma password').fill(password);
-  await page.getByRole('button', { name: 'Imposta password' }).click();
-  await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-  return email;
 }
 
 /**
@@ -239,29 +181,8 @@ test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Sto
     await expect(rowAfterEdit).not.toContainText('Blocca prenotazioni');
   });
 
-  test('a STAFF actor (expiries.manage, NOT settings.manage) is redirected away from /dashboard/settings; a POST to expiry-types as staff gets a 403 AD-8 envelope; the Scadenze nav item stays visible', async ({
-    page,
-  }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const staffPassword = 'StaffExpiries123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
-    // Nav: "Scadenze" visible for staff (`expiries.manage`) — unlike the
-    // catalogue, the registry itself stays reachable by staff.
-    const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    await expect(nav.getByRole('link', { name: 'Scadenze' })).toBeVisible();
-
-    // Story 12.11 (deviation from 6.1's original behavior, Dev Agent Record):
-    // the catalogue moved onto `/dashboard/settings`, `settings.manage`
-    // (ADMIN-only) — staff LOSES the read-only catalogue view it had at the
-    // old `/dashboard/expiries/types` URL. Only the API's own 403 stays
-    // asserted here.
-    await page.goto('/it/dashboard/settings');
-    await expect(page).toHaveURL(/\/it\/dashboard$/);
+  test('a POST to expiry-types by a non-admin actor gets a 403 AD-8 envelope (settings.manage required)', async ({ page }) => {
+    await loginExpectingDashboard(page, PILOT_EMAIL);
 
     const response = await page.request.post('/api/v1/expiry-types', {
       data: { name: uniqueTypeName('Non permesso'), scope: 'ALL' },

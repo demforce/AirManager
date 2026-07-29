@@ -61,8 +61,8 @@ const getCompensationSummaryMock = vi.mocked(getCompensationSummary);
 const getLedgerRevenueCentsMock = vi.mocked(getLedgerRevenueCents);
 const getSchedulingSettingsMock = vi.mocked(getSchedulingSettings);
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
+function adminActor(): Actor {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
 function pilotActor(): Actor {
@@ -100,18 +100,18 @@ describe('getStats (story 12.10, AC 1)', () => {
   });
 
   it('422s a FUTURE ref (month after the current Rome month)', async () => {
-    await expect(getStats(staffActor(), { period: 'month', ref: '2026-08' }, NOW)).rejects.toThrow(ValidationError);
+    await expect(getStats(adminActor(), { period: 'month', ref: '2026-08' }, NOW)).rejects.toThrow(ValidationError);
   });
 
   it('accepts ref === the current Rome month (not "future")', async () => {
-    await expect(getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW)).resolves.toBeDefined();
+    await expect(getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW)).resolves.toBeDefined();
   });
 
   it('builds a 6-point rolling series ending at ref for period=month, and a 12-point one for period=year', async () => {
-    const monthResult = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const monthResult = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
     expect(monthResult.series.months).toEqual(['2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07']);
 
-    const yearResult = await getStats(staffActor(), { period: 'year', ref: '2026-07' }, NOW);
+    const yearResult = await getStats(adminActor(), { period: 'year', ref: '2026-07' }, NOW);
     expect(yearResult.series.months).toEqual([
       '2025-08', '2025-09', '2025-10', '2025-11', '2025-12',
       '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07',
@@ -119,7 +119,7 @@ describe('getStats (story 12.10, AC 1)', () => {
   });
 
   it('rolls the series across a year boundary (ref=2026-02, period=month)', async () => {
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-02' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-02' }, NOW);
     expect(result.series.months).toEqual(['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02']);
   });
 
@@ -127,7 +127,7 @@ describe('getStats (story 12.10, AC 1)', () => {
     // 2026-10-31T23:30Z is already CET (DST ended 2026-10-25) -> Rome wall-clock 2026-11-01T00:30, i.e. NOVEMBER.
     pprFindManyMock.mockResolvedValue([{ eta: new Date('2026-10-31T23:30:00.000Z') }] as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-11' }, new Date('2026-11-15T10:00:00.000Z'));
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-11' }, new Date('2026-11-15T10:00:00.000Z'));
     const novIndex = result.series.months.indexOf('2026-11');
     const octIndex = result.series.months.indexOf('2026-10');
     expect(result.series.transitMovements[novIndex]).toBe(1);
@@ -147,7 +147,7 @@ describe('getStats (story 12.10, AC 1)', () => {
     }) as never);
     pprCountMock.mockResolvedValue(2);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.kpis.movements).toBe(8); // 3 + 2 + 1 flights + 2 transits
     expect(result.kpis.flightMinutes).toBe(300);
@@ -161,7 +161,7 @@ describe('getStats (story 12.10, AC 1)', () => {
   });
 
   it('transitShare is 0 when there are no movements at all (never NaN/Infinity)', async () => {
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
     expect(result.kpis.movements).toBe(0);
     expect(result.kpis.transitShare).toBe(0);
   });
@@ -175,7 +175,7 @@ describe('getStats (story 12.10, AC 1)', () => {
     }) as never);
     instructorProfileFindManyMock.mockResolvedValue([{ id: 'ip_1', personId: 'person_instr', person: { firstName: 'Elena', lastName: 'Nakamura' } }] as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-01' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-01' }, NOW);
 
     expect(getCompensationSummaryMock).not.toHaveBeenCalled();
     expect(result.instructors).toEqual([{ name: 'Elena Nakamura', minutes: 120, owedCents: null }]);
@@ -193,7 +193,7 @@ describe('getStats (story 12.10, AC 1)', () => {
       { personId: 'person_instr', firstName: 'Elena', lastName: 'Nakamura', payoutRateCents: 4000, mtdMinutes: 60, ytdMinutes: 60, totalMinutes: 60, owedMtdCents: 4000, owedYtdCents: 4000, owedTotalCents: 4000 },
     ] as never);
 
-    const monthResult = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const monthResult = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
     expect(getCompensationSummaryMock).toHaveBeenCalledTimes(1);
     expect(monthResult.instructors).toEqual([{ name: 'Elena Nakamura', minutes: 60, owedCents: 4000 }]);
   });
@@ -211,7 +211,7 @@ describe('getStats (story 12.10, AC 1)', () => {
       Array.from({ length: 12 }, (_, i) => ({ id: `p_${i}`, firstName: 'Pilot', lastName: `${i}` })) as never,
     );
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.topPilots).toHaveLength(10);
     expect(result.topPilots[0]).toEqual({ name: 'Pilot 0', minutes: 100, spentCents: 1200 });
@@ -239,7 +239,7 @@ describe('getStats (story 12.10, AC 1)', () => {
       return [];
     }) as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.fleet).toEqual([{ registration: 'I-AERO', minutes: 240, revenueCents: 50000 }]);
   });
@@ -249,7 +249,7 @@ describe('getStats (story 12.10, AC 1)', () => {
   it('fleetUtilization is null when sched.openTime/closeTime are not configured (default)', async () => {
     listAircraftMock.mockResolvedValue({ items: [{ id: 'ac_1', registration: 'I-AERO', status: 'OPERATIONAL' }], total: 1, page: 1, pageSize: 100 } as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.kpis.fleetUtilization).toBeNull();
   });
@@ -258,7 +258,7 @@ describe('getStats (story 12.10, AC 1)', () => {
     getSchedulingSettingsMock.mockResolvedValue({ openTime: '08:00', closeTime: '20:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
     listAircraftMock.mockResolvedValue({ items: [{ id: 'ac_1', registration: 'I-OOS', status: 'OUT_OF_SERVICE' }], total: 1, page: 1, pageSize: 100 } as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.kpis.fleetUtilization).toBeNull();
   });
@@ -271,7 +271,7 @@ describe('getStats (story 12.10, AC 1)', () => {
       return [];
     }) as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     // July = 31 days; window = 08:00-20:00 = 12h/day; 1 aircraft -> 31 * 12 * 60 = 22320 available minutes.
     expect(result.kpis.fleetUtilization).toBeCloseTo(6696 / 22320);
@@ -280,7 +280,7 @@ describe('getStats (story 12.10, AC 1)', () => {
   it('revenue reuses getLedgerRevenueCents for every series bucket AND the kpi window, with the correct [from,to] per call', async () => {
     getLedgerRevenueCentsMock.mockImplementation(async (_actor, from: string) => (from === '2026-07-01' ? 123456 : 0));
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(getLedgerRevenueCentsMock).toHaveBeenCalledTimes(7); // 6 series months + 1 kpi window
     expect(getLedgerRevenueCentsMock).toHaveBeenCalledWith(expect.anything(), '2026-07-01', '2026-07-31');

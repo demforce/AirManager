@@ -87,11 +87,7 @@ function mockInteractiveTransaction(): void {
   transaction.mockImplementation((arg: unknown) => (typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : arg));
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
-}
-
-/** Story 14.8: `settings.manage` (the composite create's `rate` block) is ADMIN-only, unlike `aircraft.manage` (staff+admin). */
+/** Story 14.9: the only role left with `aircraft.manage` — also holds `settings.manage`, so the composite create's `rate` block (story 14.8) never sees the two permissions apart. */
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
@@ -209,7 +205,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     it('returns the AD-8 paginated shape', async () => {
       transaction.mockResolvedValue([[SELECTED_AIRCRAFT], 1]);
 
-      const result = await listAircraft(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+      const result = await listAircraft(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
       expect(result).toEqual({
         items: [
@@ -245,7 +241,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listAircraft(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+      await listAircraft(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
       const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: Record<string, unknown> };
       expect(findManyCall.where).toMatchObject({ archivedAt: null });
@@ -256,7 +252,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listAircraft(staffActor(), { page: 1, pageSize: 20, includeArchived: true });
+      await listAircraft(adminActor(), { page: 1, pageSize: 20, includeArchived: true });
 
       const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: Record<string, unknown> };
       expect(findManyCall.where).not.toHaveProperty('archivedAt');
@@ -267,7 +263,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listAircraft(staffActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'abcd' });
+      await listAircraft(adminActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'abcd' });
 
       const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: Record<string, unknown> };
       expect(findManyCall.where).toMatchObject({
@@ -285,7 +281,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         { ...SELECTED_AIRCRAFT, status: 'OUT_OF_SERVICE', statusReason: 'Engine inspection' },
       ]);
 
-      const result = await listOutOfServiceAircraft(staffActor());
+      const result = await listOutOfServiceAircraft(adminActor());
 
       expect(findManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { status: 'OUT_OF_SERVICE', archivedAt: null } }),
@@ -296,7 +292,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     it('returns an empty array when nothing is out of service', async () => {
       aircraftFindMany.mockResolvedValue([]);
 
-      const result = await listOutOfServiceAircraft(staffActor());
+      const result = await listOutOfServiceAircraft(adminActor());
 
       expect(result).toEqual([]);
     });
@@ -305,12 +301,12 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   describe('getAircraft', () => {
     it('throws NotFoundError for a missing id', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(getAircraft(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      await expect(getAircraft(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
     });
 
     it('returns the mapped aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
-      const result = await getAircraft(staffActor(), 'aircraft_1');
+      const result = await getAircraft(adminActor(), 'aircraft_1');
       expect(result.id).toBe('aircraft_1');
       expect(result.hourMeterMinutes).toBe(750);
     });
@@ -329,7 +325,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindFirst.mockResolvedValue(null); // no existing conflict
       aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
 
-      const result = await createAircraft(staffActor(), input);
+      const result = await createAircraft(adminActor(), input);
 
       expect(createMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -342,7 +338,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     it('throws ConflictError when the registration is already taken', async () => {
       aircraftFindFirst.mockResolvedValue({ id: 'other_aircraft' });
 
-      await expect(createAircraft(staffActor(), input)).rejects.toThrow(ConflictError);
+      await expect(createAircraft(adminActor(), input)).rejects.toThrow(ConflictError);
       expect(createMock).not.toHaveBeenCalled();
     });
 
@@ -350,14 +346,14 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindFirst.mockResolvedValue(null);
       createMock.mockRejectedValue(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
 
-      await expect(createAircraft(staffActor(), input)).rejects.toThrow(ConflictError);
+      await expect(createAircraft(adminActor(), input)).rejects.toThrow(ConflictError);
     });
 
     it('never stores hourMeterMinutes as anything but the integer provided (AD-2)', async () => {
       aircraftFindFirst.mockResolvedValue(null);
       aircraftCreate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 90 });
 
-      await createAircraft(staffActor(), { ...input, hourMeterMinutes: 90 });
+      await createAircraft(adminActor(), { ...input, hourMeterMinutes: 90 });
 
       expect(createMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ hourMeterMinutes: 90 }) }),
@@ -368,7 +364,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindFirst.mockResolvedValue(null);
       aircraftCreate.mockResolvedValue({ ...SELECTED_AIRCRAFT, seats: 4, fuelType: 'Jet A-1', based: false });
 
-      await createAircraft(staffActor(), { ...input, seats: 4, fuelType: 'Jet A-1', based: false });
+      await createAircraft(adminActor(), { ...input, seats: 4, fuelType: 'Jet A-1', based: false });
 
       expect(createMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ seats: 4, fuelType: 'Jet A-1', based: false }) }),
@@ -379,7 +375,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindFirst.mockResolvedValue(null);
       aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
 
-      await createAircraft(staffActor(), input);
+      await createAircraft(adminActor(), input);
 
       const dataArg = createMock.mock.calls[0]?.[0] as { data: Record<string, unknown> };
       expect(dataArg.data.seats).toBeNull();
@@ -391,16 +387,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     // path — an optional `rate` block written in the SAME transaction as
     // the aircraft.
     describe('composite create with a rate (story 14.8)', () => {
-      it('rejects a `rate` block from an actor without settings.manage, before ANY write (AC 2)', async () => {
-        await expect(
-          createAircraft(staffActor(), { ...input, rate: { priceCentsPerHour: 16000, validFrom: '2026-01-01' } }),
-        ).rejects.toThrow(ForbiddenError);
-
-        expect(findFirstMock).not.toHaveBeenCalled();
-        expect(transactionMock).not.toHaveBeenCalled();
-        expect(createMock).not.toHaveBeenCalled();
-      });
-
       it('creates the aircraft and its first rate in ONE transaction (AC 1/2)', async () => {
         // Review 14.8 F4: a DISTINCT tx client (instead of echoing the global
         // `prisma` back, which makes tx.* and prisma.* the SAME spy) lets this
@@ -465,14 +451,14 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   describe('updateAircraft', () => {
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(updateAircraft(staffActor(), 'missing', { notes: 'x' })).rejects.toThrow(NotFoundError);
+      await expect(updateAircraft(adminActor(), 'missing', { notes: 'x' })).rejects.toThrow(NotFoundError);
     });
 
     it('updates only the provided fields', async () => {
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
       aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, model: 'Tecnam P2008' });
 
-      const result = await updateAircraft(staffActor(), 'aircraft_1', { model: 'Tecnam P2008' });
+      const result = await updateAircraft(adminActor(), 'aircraft_1', { model: 'Tecnam P2008' });
 
       expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'aircraft_1' }, data: { model: 'Tecnam P2008' } }));
       expect(result.model).toBe('Tecnam P2008');
@@ -485,7 +471,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       // UpdateAircraftInput no longer has this field at the type level; cast
       // to simulate a caller (e.g. a stale client) still sending it — it must
       // be silently ignored, never forwarded to Prisma.
-      await updateAircraft(staffActor(), 'aircraft_1', { notes: 'x', hourMeterMinutes: 999 } as unknown as Parameters<
+      await updateAircraft(adminActor(), 'aircraft_1', { notes: 'x', hourMeterMinutes: 999 } as unknown as Parameters<
         typeof updateAircraft
       >[2]);
 
@@ -496,7 +482,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
       aircraftUpdate.mockResolvedValue(SELECTED_AIRCRAFT);
 
-      await updateAircraft(staffActor(), 'aircraft_1', { notes: 'updated' });
+      await updateAircraft(adminActor(), 'aircraft_1', { notes: 'updated' });
 
       expect(findFirstMock).not.toHaveBeenCalled();
     });
@@ -506,7 +492,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindFirst.mockResolvedValue({ id: 'someone_else' });
 
       await expect(
-        updateAircraft(staffActor(), 'aircraft_1', { registration: 'I-TAKEN' }),
+        updateAircraft(adminActor(), 'aircraft_1', { registration: 'I-TAKEN' }),
       ).rejects.toThrow(ConflictError);
     });
 
@@ -514,7 +500,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
       aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, seats: 4, based: false });
 
-      await updateAircraft(staffActor(), 'aircraft_1', { seats: 4, based: false });
+      await updateAircraft(adminActor(), 'aircraft_1', { seats: 4, based: false });
 
       expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { seats: 4, based: false } }));
     });
@@ -523,19 +509,19 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   describe('archiveAircraft', () => {
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(archiveAircraft(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      await expect(archiveAircraft(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
     });
 
     it('throws ConflictError when already archived', async () => {
       aircraftFindUnique.mockResolvedValue({ ...SELECTED_AIRCRAFT, archivedAt: new Date('2026-02-01T00:00:00.000Z') });
-      await expect(archiveAircraft(staffActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
+      await expect(archiveAircraft(adminActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
     });
 
     it('sets archivedAt (AC 2)', async () => {
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
       aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, archivedAt: new Date('2026-02-01T00:00:00.000Z') });
 
-      const result = await archiveAircraft(staffActor(), 'aircraft_1');
+      const result = await archiveAircraft(adminActor(), 'aircraft_1');
 
       expect(updateMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'aircraft_1' }, data: { archivedAt: expect.any(Date) } }),
@@ -547,19 +533,19 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   describe('unarchiveAircraft', () => {
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(unarchiveAircraft(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      await expect(unarchiveAircraft(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
     });
 
     it('throws ConflictError when not archived', async () => {
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
-      await expect(unarchiveAircraft(staffActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
+      await expect(unarchiveAircraft(adminActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
     });
 
     it('clears archivedAt', async () => {
       aircraftFindUnique.mockResolvedValue({ ...SELECTED_AIRCRAFT, archivedAt: new Date('2026-02-01T00:00:00.000Z') });
       aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, archivedAt: null });
 
-      const result = await unarchiveAircraft(staffActor(), 'aircraft_1');
+      const result = await unarchiveAircraft(adminActor(), 'aircraft_1');
 
       expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { archivedAt: null } }));
       expect(result.archivedAt).toBeNull();
@@ -569,7 +555,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   describe('setOutOfService (story 2.5, AC 1)', () => {
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(setOutOfService(staffActor(), 'missing', 'Engine inspection')).rejects.toThrow(NotFoundError);
+      await expect(setOutOfService(adminActor(), 'missing', 'Engine inspection')).rejects.toThrow(NotFoundError);
       expect(updateManyMock).not.toHaveBeenCalled();
     });
 
@@ -582,7 +568,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         statusReason: 'Engine inspection',
       });
 
-      const result = await setOutOfService(staffActor(), 'aircraft_1', 'Engine inspection');
+      const result = await setOutOfService(adminActor(), 'aircraft_1', 'Engine inspection');
 
       expect(updateManyMock).toHaveBeenCalledWith({
         where: { id: 'aircraft_1', status: 'OPERATIONAL' },
@@ -596,7 +582,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
       aircraftUpdateMany.mockResolvedValue({ count: 0 });
 
-      await expect(setOutOfService(staffActor(), 'aircraft_1', 'Engine inspection')).rejects.toThrow(ConflictError);
+      await expect(setOutOfService(adminActor(), 'aircraft_1', 'Engine inspection')).rejects.toThrow(ConflictError);
       expect(findUniqueOrThrowMock).not.toHaveBeenCalled();
     });
   });
@@ -604,7 +590,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   describe('returnToService (story 2.5, AC 1)', () => {
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(returnToService(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      await expect(returnToService(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
       expect(updateManyMock).not.toHaveBeenCalled();
     });
 
@@ -613,7 +599,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftUpdateMany.mockResolvedValue({ count: 1 });
       aircraftFindUniqueOrThrow.mockResolvedValue({ ...SELECTED_AIRCRAFT, status: 'OPERATIONAL', statusReason: null });
 
-      const result = await returnToService(staffActor(), 'aircraft_1');
+      const result = await returnToService(adminActor(), 'aircraft_1');
 
       expect(updateManyMock).toHaveBeenCalledWith({
         where: { id: 'aircraft_1', status: 'OUT_OF_SERVICE' },
@@ -627,7 +613,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
       aircraftUpdateMany.mockResolvedValue({ count: 0 });
 
-      await expect(returnToService(staffActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
+      await expect(returnToService(adminActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
     });
   });
 
@@ -636,7 +622,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       mockInteractiveTransaction();
       queryRaw.mockResolvedValue([]);
 
-      await expect(adjustHourMeter(staffActor(), 'missing', { newMinutes: 800, reason: 'Correction' })).rejects.toThrow(
+      await expect(adjustHourMeter(adminActor(), 'missing', { newMinutes: 800, reason: 'Correction' })).rejects.toThrow(
         NotFoundError,
       );
       expect(hourMeterAdjustmentCreateMock).not.toHaveBeenCalled();
@@ -648,12 +634,12 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       hourMeterAdjustmentCreate.mockResolvedValue({});
       aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 800 });
 
-      const result = await adjustHourMeter(staffActor(), 'aircraft_1', { newMinutes: 800, reason: 'Correction' });
+      const result = await adjustHourMeter(adminActor(), 'aircraft_1', { newMinutes: 800, reason: 'Correction' });
 
       expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith({
         data: {
           aircraftId: 'aircraft_1',
-          actorUserId: 'staff_1',
+          actorUserId: 'admin_1',
           previousMinutes: 750,
           newMinutes: 800,
           reason: 'Correction',
@@ -671,7 +657,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       hourMeterAdjustmentCreate.mockResolvedValue({});
       aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 600 });
 
-      await adjustHourMeter(staffActor(), 'aircraft_1', { newMinutes: 600, reason: 'Reset after gauge swap' });
+      await adjustHourMeter(adminActor(), 'aircraft_1', { newMinutes: 600, reason: 'Reset after gauge swap' });
 
       expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ previousMinutes: 750, newMinutes: 600 }) }),
@@ -693,7 +679,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(listHourMeterAdjustments(staffActor(), 'missing', { page: 1, pageSize: 20 })).rejects.toThrow(
+      await expect(listHourMeterAdjustments(adminActor(), 'missing', { page: 1, pageSize: 20 })).rejects.toThrow(
         NotFoundError,
       );
     });
@@ -711,7 +697,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       hourMeterAdjustmentFindManyMock.mockResolvedValue([ADJUSTMENT]);
       hourMeterAdjustmentCountMock.mockResolvedValue(1);
 
-      const result = await listHourMeterAdjustments(staffActor(), 'aircraft_1', { page: 1, pageSize: 20 });
+      const result = await listHourMeterAdjustments(adminActor(), 'aircraft_1', { page: 1, pageSize: 20 });
 
       expect(result).toEqual({
         items: [

@@ -102,7 +102,6 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       roles: t('editor.access.roles'),
       roleOptions: {
         ADMIN: tUsers('roles.ADMIN'),
-        STAFF: tUsers('roles.STAFF'),
         INSTRUCTOR: tUsers('roles.INSTRUCTOR'),
         PILOT: tUsers('roles.PILOT'),
         STUDENT: tUsers('roles.STUDENT'),

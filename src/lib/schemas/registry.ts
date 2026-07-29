@@ -1548,7 +1548,7 @@ registry.registerPath({
   path: '/api/v1/jobs/expiry-alerts',
   summary: 'Run the automatic expiry-alert job (FR-37)',
   description:
-    "Story 6.3, AC 1/2 — for every scadenza whose 60/30/7/0-day alert threshold(s) are newly due, sends ONE email to the titolare (their own locale) plus, if the run consumed at least one alert, ONE digest email to every active ADMIN/STAFF user (their own locale). Idempotent (AD-9): `SentAlert` has a unique `(expiryId, threshold)` constraint, so running this twice for the same day sends no duplicate email and creates no duplicate row. Authenticated with a `JOBS_SECRET` bearer token — NOT a user session/RBAC (401 on missing/wrong token; 500 if `JOBS_SECRET` itself is unconfigured, never an insecure fallback).",
+    "Story 6.3, AC 1/2 — for every scadenza whose 60/30/7/0-day alert threshold(s) are newly due, sends ONE email to the titolare (their own locale) plus, if the run consumed at least one alert, ONE digest email to every active ADMIN user (their own locale). Idempotent (AD-9): `SentAlert` has a unique `(expiryId, threshold)` constraint, so running this twice for the same day sends no duplicate email and creates no duplicate row. Authenticated with a `JOBS_SECRET` bearer token — NOT a user session/RBAC (401 on missing/wrong token; 500 if `JOBS_SECRET` itself is unconfigured, never an insecure fallback).",
   tags: ['Jobs'],
   security: jobsSecurity,
   responses: {
@@ -1912,7 +1912,7 @@ registry.registerPath({
   path: '/api/v1/settings/membership-fee',
   summary: 'Read the default annual membership fee (ratifica utente 1, story 12.11, AC 1)',
   description:
-    '`{ annualFeeCents }` — the admin-configured default, prefilled by the Scadenze "Quota associativa" action. Requires `finance.manage` (STAFF+ADMIN).',
+    '`{ annualFeeCents }` — the admin-configured default, prefilled by the Scadenze "Quota associativa" action. Requires `finance.manage` (ADMIN-only).',
   tags: ['Settings'],
   security,
   responses: {

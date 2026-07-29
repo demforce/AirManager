@@ -78,10 +78,6 @@ function mockTransaction(): void {
   );
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
-}
-
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
@@ -118,10 +114,10 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(categoryFindManyMock).not.toHaveBeenCalled();
     });
 
-    it('a staff actor (finance.manage) can list — active only by default', async () => {
+    it('an admin actor (finance.manage) can list — active only by default', async () => {
       categoryFindMany.mockResolvedValue([{ id: 'cat_1', name: 'Carburante', isActive: true, _count: { movements: 3 } }]);
 
-      const result = await listCashCategories(staffActor(), { includeInactive: false });
+      const result = await listCashCategories(adminActor(), { includeInactive: false });
 
       expect(categoryFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { isActive: true }, orderBy: { name: 'asc' } }),
@@ -135,7 +131,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         { id: 'cat_2', name: 'Obsoleta', isActive: false, _count: { movements: 0 } },
       ]);
 
-      const result = await listCashCategories(staffActor(), { includeInactive: true });
+      const result = await listCashCategories(adminActor(), { includeInactive: true });
 
       expect(categoryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: undefined }));
       expect(result).toHaveLength(2);
@@ -147,7 +143,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       async (name) => {
         categoryFindMany.mockResolvedValue([{ id: 'cat_sys', name, isActive: true, _count: { movements: 0 } }]);
 
-        const [result] = await listCashCategories(staffActor(), { includeInactive: false });
+        const [result] = await listCashCategories(adminActor(), { includeInactive: false });
 
         expect(result?.isSystem).toBe(true);
       },
@@ -155,8 +151,8 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
   });
 
   describe('createCashCategory (Task 1, AC 1 — settings.manage only)', () => {
-    it('rejects a staff actor (finance.manage is not enough — settings.manage required)', async () => {
-      await expect(createCashCategory(staffActor(), { name: 'Nuova' })).rejects.toThrow(ForbiddenError);
+    it('rejects a non-admin actor (settings.manage required)', async () => {
+      await expect(createCashCategory(pilotActor(), { name: 'Nuova' })).rejects.toThrow(ForbiddenError);
       expect(categoryCreateMock).not.toHaveBeenCalled();
     });
 
@@ -177,8 +173,8 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
   });
 
   describe('renameCashCategory (Task 1, AC 1)', () => {
-    it('rejects a staff actor (settings.manage required)', async () => {
-      await expect(renameCashCategory(staffActor(), 'cat_1', { name: 'Nuovo nome' })).rejects.toThrow(ForbiddenError);
+    it('rejects a non-admin actor (settings.manage required)', async () => {
+      await expect(renameCashCategory(pilotActor(), 'cat_1', { name: 'Nuovo nome' })).rejects.toThrow(ForbiddenError);
       expect(categoryFindUniqueMock).not.toHaveBeenCalled();
     });
 
@@ -227,9 +223,9 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
   });
 
   describe('deactivateCashCategory / reactivateCashCategory (Task 1, AC 1 — atomic guard, review 2.2 F1 pattern)', () => {
-    it('rejects a staff actor (settings.manage required)', async () => {
-      await expect(deactivateCashCategory(staffActor(), 'cat_1')).rejects.toThrow(ForbiddenError);
-      await expect(reactivateCashCategory(staffActor(), 'cat_1')).rejects.toThrow(ForbiddenError);
+    it('rejects a non-admin actor (settings.manage required)', async () => {
+      await expect(deactivateCashCategory(pilotActor(), 'cat_1')).rejects.toThrow(ForbiddenError);
+      await expect(reactivateCashCategory(pilotActor(), 'cat_1')).rejects.toThrow(ForbiddenError);
     });
 
     it('deactivateCashCategory: NotFoundError for an unknown category', async () => {
@@ -271,8 +267,8 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
   });
 
   describe('deleteCashCategory (Task 1, AC 1 — delete only if unused, FK RESTRICT backstop)', () => {
-    it('rejects a staff actor (settings.manage required)', async () => {
-      await expect(deleteCashCategory(staffActor(), 'cat_1')).rejects.toThrow(ForbiddenError);
+    it('rejects a non-admin actor (settings.manage required)', async () => {
+      await expect(deleteCashCategory(pilotActor(), 'cat_1')).rejects.toThrow(ForbiddenError);
     });
 
     it('throws NotFoundError for an unknown category', async () => {
@@ -341,7 +337,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name: 'Ricariche', isActive: true });
 
       await expect(
-        recordCashMovement(staffActor(), { categoryId: 'cat_sys', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
+        recordCashMovement(adminActor(), { categoryId: 'cat_sys', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
       ).rejects.toThrow(ConflictError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
@@ -352,7 +348,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name, isActive: true });
 
         await expect(
-          recordCashMovement(staffActor(), { categoryId: 'cat_sys', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
+          recordCashMovement(adminActor(), { categoryId: 'cat_sys', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
         ).rejects.toThrow(ConflictError);
         expect(movementCreateMock).not.toHaveBeenCalled();
       },
@@ -362,7 +358,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       categoryFindUnique.mockResolvedValue(null);
 
       await expect(
-        recordCashMovement(staffActor(), { categoryId: 'missing', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
+        recordCashMovement(adminActor(), { categoryId: 'missing', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
       ).rejects.toThrow(NotFoundError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
@@ -371,7 +367,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       categoryFindUnique.mockResolvedValue({ id: 'cat_1', isActive: false });
 
       await expect(
-        recordCashMovement(staffActor(), { categoryId: 'cat_1', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
+        recordCashMovement(adminActor(), { categoryId: 'cat_1', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null }),
       ).rejects.toThrow(ConflictError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
@@ -392,7 +388,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         accountMovementId: null,
       });
 
-      const result = await recordCashMovement(staffActor(), {
+      const result = await recordCashMovement(adminActor(), {
         categoryId: 'cat_1',
         amountCents: 5000,
         paymentMethod: 'CASH',
@@ -408,7 +404,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
             paymentMethod: 'CASH',
             description: null,
             effectiveDate: new Date('2026-07-01'),
-            actorUserId: 'staff_1',
+            actorUserId: 'admin_1',
           }),
         }),
       );
@@ -443,7 +439,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         accountMovementId: null,
       });
 
-      const result = await recordCashMovement(staffActor(), {
+      const result = await recordCashMovement(adminActor(), {
         categoryId: 'cat_1',
         amountCents: -3000,
         paymentMethod: 'BANK_TRANSFER',
@@ -464,7 +460,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
     it('throws NotFoundError for an unknown movement', async () => {
       movementFindUnique.mockResolvedValue(null);
 
-      await expect(reverseCashMovement(staffActor(), 'missing', 'Errore')).rejects.toThrow(NotFoundError);
+      await expect(reverseCashMovement(adminActor(), 'missing', 'Errore')).rejects.toThrow(NotFoundError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -478,7 +474,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         reversal: null,
       });
 
-      await expect(reverseCashMovement(staffActor(), 'move_1', 'Errore')).rejects.toThrow(ConflictError);
+      await expect(reverseCashMovement(adminActor(), 'move_1', 'Errore')).rejects.toThrow(ConflictError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -492,7 +488,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         reversal: null,
       });
 
-      await expect(reverseCashMovement(staffActor(), 'move_reversal', 'Errore')).rejects.toThrow(ConflictError);
+      await expect(reverseCashMovement(adminActor(), 'move_reversal', 'Errore')).rejects.toThrow(ConflictError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -506,7 +502,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         reversal: { id: 'move_existing_reversal' },
       });
 
-      await expect(reverseCashMovement(staffActor(), 'move_1', 'Errore')).rejects.toThrow(ConflictError);
+      await expect(reverseCashMovement(adminActor(), 'move_1', 'Errore')).rejects.toThrow(ConflictError);
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -533,7 +529,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         accountMovementId: null,
       });
 
-      const result = await reverseCashMovement(staffActor(), 'move_1', 'Importo errato');
+      const result = await reverseCashMovement(adminActor(), 'move_1', 'Importo errato');
 
       expect(movementCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -541,7 +537,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
             categoryId: 'cat_1',
             amountCents: -5000,
             description: 'Importo errato',
-            actorUserId: 'staff_1',
+            actorUserId: 'admin_1',
             reversalOfId: 'move_1',
           }),
         }),
@@ -574,7 +570,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         accountMovementId: null,
       });
 
-      await reverseCashMovement(staffActor(), 'move_1', 'Errore');
+      await reverseCashMovement(adminActor(), 'move_1', 'Errore');
 
       expect(movementCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ paymentMethod: 'BANK_TRANSFER' }) }),
@@ -607,7 +603,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         accountMovementId: null,
       });
 
-      await reverseCashMovement(staffActor(), 'move_1', 'Storno');
+      await reverseCashMovement(adminActor(), 'move_1', 'Storno');
 
       expect(movementCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ categoryId: 'cat_inactive' }) }));
     });
@@ -623,7 +619,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       });
       movementCreate.mockRejectedValue(prismaError('P2002'));
 
-      await expect(reverseCashMovement(staffActor(), 'move_1', 'Errore')).rejects.toThrow(ConflictError);
+      await expect(reverseCashMovement(adminActor(), 'move_1', 'Errore')).rejects.toThrow(ConflictError);
     });
   });
 
@@ -636,14 +632,14 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
     it('throws NotFoundError for an unknown movement', async () => {
       movementFindUnique.mockResolvedValue(null);
 
-      await expect(reclassifyCashMovement(staffActor(), 'missing', { paymentMethod: 'CASH' })).rejects.toThrow(NotFoundError);
+      await expect(reclassifyCashMovement(adminActor(), 'missing', { paymentMethod: 'CASH' })).rejects.toThrow(NotFoundError);
       expect(movementUpdateMock).not.toHaveBeenCalled();
     });
 
     it('rejects a movement that already has a paymentMethod — reclassification is only for the unattributed', async () => {
       movementFindUnique.mockResolvedValue({ id: 'move_1', paymentMethod: 'BANK_TRANSFER' });
 
-      await expect(reclassifyCashMovement(staffActor(), 'move_1', { paymentMethod: 'CASH' })).rejects.toThrow(ConflictError);
+      await expect(reclassifyCashMovement(adminActor(), 'move_1', { paymentMethod: 'CASH' })).rejects.toThrow(ConflictError);
       expect(movementUpdateMock).not.toHaveBeenCalled();
     });
 
@@ -663,7 +659,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         accountMovementId: null,
       });
 
-      const result = await reclassifyCashMovement(staffActor(), 'move_1', { paymentMethod: 'CASH' });
+      const result = await reclassifyCashMovement(adminActor(), 'move_1', { paymentMethod: 'CASH' });
 
       expect(movementUpdateMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'move_1' }, data: { paymentMethod: 'CASH' } }),
@@ -697,7 +693,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       movementFindMany.mockResolvedValue([baseRow]);
       movementCount.mockResolvedValue(1);
 
-      await listCashMovements(staffActor(), { page: 1, pageSize: 20 });
+      await listCashMovements(adminActor(), { page: 1, pageSize: 20 });
 
       expect(movementFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }] }),
@@ -708,7 +704,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       movementFindMany.mockResolvedValue([baseRow]);
       movementCount.mockResolvedValue(1);
 
-      await listCashMovements(staffActor(), { page: 1, pageSize: 20, from: '2026-07-01', to: '2026-07-31' });
+      await listCashMovements(adminActor(), { page: 1, pageSize: 20, from: '2026-07-01', to: '2026-07-31' });
 
       expect(movementFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -723,7 +719,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       movementFindMany.mockResolvedValue([baseRow]);
       movementCount.mockResolvedValue(1);
 
-      await listCashMovements(staffActor(), { page: 1, pageSize: 20, categoryId: 'cat_1' });
+      await listCashMovements(adminActor(), { page: 1, pageSize: 20, categoryId: 'cat_1' });
 
       expect(movementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ categoryId: 'cat_1' }) }));
     });
@@ -732,7 +728,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       movementFindMany.mockResolvedValue([baseRow]);
       movementCount.mockResolvedValue(1);
 
-      await listCashMovements(staffActor(), { page: 1, pageSize: 20, sign: 'in' });
+      await listCashMovements(adminActor(), { page: 1, pageSize: 20, sign: 'in' });
 
       expect(movementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ amountCents: { gt: 0 } }) }));
     });
@@ -741,7 +737,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       movementFindMany.mockResolvedValue([baseRow]);
       movementCount.mockResolvedValue(1);
 
-      await listCashMovements(staffActor(), { page: 1, pageSize: 20, sign: 'out' });
+      await listCashMovements(adminActor(), { page: 1, pageSize: 20, sign: 'out' });
 
       expect(movementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ amountCents: { lt: 0 } }) }));
     });
@@ -754,7 +750,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       ]);
       movementCount.mockResolvedValue(3);
 
-      const result = await listCashMovements(staffActor(), { page: 1, pageSize: 20 });
+      const result = await listCashMovements(adminActor(), { page: 1, pageSize: 20 });
 
       expect(result.items[0]).toMatchObject({ id: 'move_auto', isAutomatic: true });
       expect(result.items[1]).toMatchObject({ id: 'move_reversed', hasReversal: true });
@@ -775,7 +771,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         { categoryId: 'cat_fuel', categoryName: 'Carburante', movementCount: 1, inCents: 0, outCents: -3000 },
       ]);
 
-      const result = await getCashReport(staffActor(), { from: '2026-07-01', to: '2026-07-31' });
+      const result = await getCashReport(adminActor(), { from: '2026-07-01', to: '2026-07-31' });
 
       expect(result.categories).toEqual([
         { categoryId: 'cat_ppr', categoryName: 'PPR', inCents: 10000, outCents: -2000, netCents: 8000 },
@@ -798,7 +794,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         { categoryId: 'cat_b', categoryName: 'Categoria B', movementCount: 2, inCents: 2000, outCents: -500 },
       ]);
 
-      const result = await getCashReport(staffActor(), { from: '2026-07-01', to: '2026-07-31' });
+      const result = await getCashReport(adminActor(), { from: '2026-07-01', to: '2026-07-31' });
 
       const sumOfCategoryNet = result.categories.reduce((sum, category) => sum + category.netCents, 0);
       expect(result.netCents).toBe(sumOfCategoryNet);
@@ -810,7 +806,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
     it('empty period: no rows → all totals zero and an empty categories array', async () => {
       queryRawMock.mockResolvedValue([]);
 
-      const result = await getCashReport(staffActor(), { from: '2026-08-01', to: '2026-08-31' });
+      const result = await getCashReport(adminActor(), { from: '2026-08-01', to: '2026-08-31' });
 
       expect(result).toEqual({
         from: '2026-08-01',

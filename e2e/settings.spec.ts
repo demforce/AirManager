@@ -8,7 +8,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
+const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -92,8 +92,8 @@ test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 
     await page.close();
   });
 
-  test('redirects a non-ADMIN (staff) actor away from /dashboard/settings', async ({ page }) => {
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+  test('redirects a non-ADMIN (pilot) actor away from /dashboard/settings', async ({ page }) => {
+    await loginExpectingDashboard(page, PILOT_EMAIL);
     await gotoSettingsAndWaitForHydration(page);
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });

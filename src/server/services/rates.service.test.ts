@@ -37,10 +37,6 @@ function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
-}
-
 function pilotActor(): Actor {
   return { userId: 'pilot_1', personId: 'person_pilot', roles: ['PILOT'] };
 }
@@ -70,9 +66,9 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
   });
 
   describe('authorization (AD-5)', () => {
-    it('createAircraftRate rejects a staff actor (needs settings.manage, not aircraft.manage)', async () => {
+    it('createAircraftRate rejects a non-admin actor (needs settings.manage)', async () => {
       await expect(
-        createAircraftRate(staffActor(), 'aircraft_1', { priceCentsPerHour: 16000, validFrom: '2026-07-07' }),
+        createAircraftRate(pilotActor(), 'aircraft_1', { priceCentsPerHour: 16000, validFrom: '2026-07-07' }),
       ).rejects.toThrow(ForbiddenError);
       expect(aircraftFindUniqueMock).not.toHaveBeenCalled();
     });
@@ -183,7 +179,7 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       rateFindMany.mockResolvedValue([rateFixture()]);
 
-      const result = await listAircraftRates(staffActor(), 'aircraft_1');
+      const result = await listAircraftRates(adminActor(), 'aircraft_1');
 
       expect(rateFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { aircraftId: 'aircraft_1' }, orderBy: [{ validFrom: 'desc' }], take: 500 }),
@@ -197,7 +193,7 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       rateFindMany.mockResolvedValue([rateFixture({ dryHourlyRateCents: 11500 })]);
 
-      const result = await listAircraftRates(staffActor(), 'aircraft_1');
+      const result = await listAircraftRates(adminActor(), 'aircraft_1');
 
       expect(result[0]?.dryHourlyRateCents).toBe(11500);
     });
