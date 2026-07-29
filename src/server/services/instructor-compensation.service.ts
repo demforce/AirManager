@@ -163,11 +163,16 @@ async function sumPayoutsByProfile(instructorProfileIds: string[], bounds: Varia
   return map;
 }
 
+/** `round(minutes/60 * payoutRateCents)`, or `null` when there is no rate to accrue against — the GROSS accrual for a period, shared by `computeOwed` (net = gross - paid) and the self-service "maturato" KPI (story 14.7, review F4: same formula, no new definition). */
+function computeGrossCents(minutes: number, payoutRateCents: number | null): number | null {
+  if (payoutRateCents === null) return null;
+  return Math.round((minutes / 60) * payoutRateCents);
+}
+
 /** `owed = round(minutes/60 * payoutRateCents) - paidCents`, or `null` when there is no rate to owe against (AC 2). */
 function computeOwed(minutes: number, payoutRateCents: number | null, paidCents: number): number | null {
-  if (payoutRateCents === null) return null;
-  const gross = Math.round((minutes / 60) * payoutRateCents);
-  return gross - paidCents;
+  const gross = computeGrossCents(minutes, payoutRateCents);
+  return gross === null ? null : gross - paidCents;
 }
 
 /** Computes the mtd/ytd/total minutes+owed rows for a given instructor platea — 6 batched queries total, regardless of platea size. Shared by the summary and the detail (single-instructor platea). */
@@ -259,12 +264,45 @@ export type OwnPayoutHistoryItem = {
 export type OwnCompensationOverview = {
   payoutRateCents: number | null;
   mtdMinutes: number;
+  /** GROSS accrual this month (`round(mtdMinutes/60 * payoutRateCents)`, "Maturato nel mese" — ratifica PO, review F4): a value DERIVED from the same rate/minutes already computed, not a new calculation. */
+  mtdGrossCents: number | null;
+  /** NET owed this month (accrual minus payouts already made this month, "Dovuto nel mese") — same number the staff-facing roster card already shows for this instructor. */
   mtdOwedCents: number | null;
   /** All-time residual owed ("saldo residuo dovuto", AC 2) — same `owedTotalCents` the staff roster row already computes. */
   totalOwedCents: number | null;
-  /** Newest first — every individual payout ever recorded against this instructor. */
+  /** Newest first — every individual payout ever recorded against this instructor, capped (AC 2 is a history view, not an export — same cap convention as the rate history, `instructor-rates.service.ts`). */
   payouts: OwnPayoutHistoryItem[];
 };
+
+/** History rows fetched for the self-service page (review F8) — a reasonable cap for a read-only recap, not a paginated/exportable ledger. */
+const OWN_PAYOUT_HISTORY_LIMIT = 50;
+
+/**
+ * Resolves the person + payout rate behind an ACTIVE instructor profile id
+ * (review F5/F7): the self-service read already knows its OWN
+ * `instructorProfileId` (`getOwnInstructorProfileId`) and has no reason to
+ * re-check `Person.archivedAt` — an instructor's payout history is about the
+ * PROFILE, not the person's current archival/employment status, the same
+ * convention `getInstructorCompensationDetail`'s `resolveActiveInstructorRow`
+ * already follows (it does not check `archivedAt` either). This also removes
+ * the `listActiveInstructors(actor.personId ?? undefined)` call this
+ * function used to make — there is no longer an `undefined` fallback to
+ * reason about.
+ */
+async function resolveInstructorRowByProfileId(instructorProfileId: string): Promise<InstructorRow | null> {
+  const profile = await prisma.instructorProfile.findUnique({
+    where: { id: instructorProfileId },
+    select: { id: true, payoutRateCents: true, person: { select: { id: true, firstName: true, lastName: true } } },
+  });
+  if (!profile) return null;
+  return {
+    personId: profile.person.id,
+    firstName: profile.person.firstName,
+    lastName: profile.person.lastName,
+    instructorProfileId: profile.id,
+    payoutRateCents: profile.payoutRateCents,
+  };
+}
 
 /**
  * `getOwnCompensationOverview` (story 14.7, AC 2/3) — the self-service "I
@@ -289,14 +327,15 @@ export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompe
   const instructorProfileId = await getOwnInstructorProfileId(actor);
   if (!instructorProfileId) return null;
 
-  const instructors = await listActiveInstructors(actor.personId ?? undefined);
-  if (instructors.length === 0) return null;
+  const instructor = await resolveInstructorRowByProfileId(instructorProfileId);
+  if (!instructor) return null;
 
   const [[row], payouts] = await Promise.all([
-    computeSummaryRows(instructors),
+    computeSummaryRows([instructor]),
     prisma.instructorPayout.findMany({
       where: { instructorProfileId },
       orderBy: [{ createdAt: 'desc' }],
+      take: OWN_PAYOUT_HISTORY_LIMIT,
       select: { id: true, amountCents: true, periodStart: true, periodEnd: true, method: true, createdAt: true },
     }),
   ]);
@@ -304,6 +343,7 @@ export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompe
   return {
     payoutRateCents: row!.payoutRateCents,
     mtdMinutes: row!.mtdMinutes,
+    mtdGrossCents: computeGrossCents(row!.mtdMinutes, row!.payoutRateCents),
     mtdOwedCents: row!.owedMtdCents,
     totalOwedCents: row!.owedTotalCents,
     payouts: payouts.map((payout) => ({

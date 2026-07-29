@@ -35,6 +35,7 @@ export function Segmented<T extends string>({ options, value, onChange, ariaLabe
           key={option.value}
           type="button"
           className={option.value === value ? 'on' : ''}
+          aria-pressed={option.value === value}
           onClick={() => onChange(option.value)}
         >
           {option.label}

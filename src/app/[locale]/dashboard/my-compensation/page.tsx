@@ -11,7 +11,12 @@ type PageProps = {
   params: Promise<{ locale: string }>;
 };
 
-const TABLE_COLUMNS = '150px 220px 130px 1fr';
+// Review F2: the amount lives in a non-collapsible `minmax(110px, 1fr)`
+// track — a bare `1fr` gets squeezed to 0 by `.student-row > * { min-width:
+// 0 }` (airops.css) once the fixed tracks alone exceed a 390px viewport,
+// making the amount cell unreachable even after a full horizontal scroll.
+// Same fixed-track-for-money convention as the 14.6 twin (`account-section.tsx`).
+const TABLE_COLUMNS = '150px 200px 120px minmax(110px, 1fr)';
 
 function methodLabel(method: OwnPayoutHistoryItem['method'], t: Awaited<ReturnType<typeof getTranslations>>): string {
   switch (method) {
@@ -85,14 +90,29 @@ export default async function MyCompensationPage({ params }: PageProps) {
       ) : (
         <>
           <div className="kpi-row" data-testid="my-compensation-kpis">
-            <KPI
-              label={t('kpi.rate')}
-              value={overview.payoutRateCents === null ? '—' : formatCents(overview.payoutRateCents, displayLocale)}
-              unit={overview.payoutRateCents === null ? undefined : '/h'}
-            />
-            <KPI label={t('kpi.hoursMtd')} value={formatMinutes(overview.mtdMinutes)} />
-            <KPI label={t('kpi.owedMtd')} value={overview.mtdOwedCents === null ? '—' : formatCents(overview.mtdOwedCents, displayLocale)} />
-            <KPI label={t('kpi.owedTotal')} value={overview.totalOwedCents === null ? '—' : formatCents(overview.totalOwedCents, displayLocale)} />
+            <div data-testid="kpi-rate">
+              <KPI
+                label={t('kpi.rate')}
+                value={overview.payoutRateCents === null ? '—' : formatCents(overview.payoutRateCents, displayLocale)}
+                unit={overview.payoutRateCents === null ? undefined : '/h'}
+              />
+            </div>
+            <div data-testid="kpi-hours-mtd">
+              <KPI label={t('kpi.hoursMtd')} value={formatMinutes(overview.mtdMinutes)} />
+            </div>
+            {/* Ratifica PO (review F4): "Maturato nel mese" is the GROSS accrual
+                (ore x tariffa) and "Dovuto nel mese" is the NET owed (same
+                number the staff-facing card shows) — shown side by side so the
+                two adjacent KPIs reconcile instead of one silently being netted. */}
+            <div data-testid="kpi-gross-mtd">
+              <KPI label={t('kpi.grossMtd')} value={overview.mtdGrossCents === null ? '—' : formatCents(overview.mtdGrossCents, displayLocale)} />
+            </div>
+            <div data-testid="kpi-owed-mtd">
+              <KPI label={t('kpi.owedMtd')} value={overview.mtdOwedCents === null ? '—' : formatCents(overview.mtdOwedCents, displayLocale)} />
+            </div>
+            <div data-testid="kpi-owed-total">
+              <KPI label={t('kpi.owedTotal')} value={overview.totalOwedCents === null ? '—' : formatCents(overview.totalOwedCents, displayLocale)} />
+            </div>
           </div>
 
           <div className="card">

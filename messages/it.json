@@ -775,7 +775,8 @@
     "kpi": {
       "rate": "Tariffa oraria",
       "hoursMtd": "Ore nel mese",
-      "owedMtd": "Maturato nel mese",
+      "grossMtd": "Maturato nel mese",
+      "owedMtd": "Dovuto nel mese",
       "owedTotal": "Residuo dovuto"
     },
     "table": {

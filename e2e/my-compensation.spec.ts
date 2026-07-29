@@ -109,6 +109,75 @@ async function recordPayout(page: Page, personId: string, amountCents: number, m
   expect(response.status()).toBe(201);
 }
 
+/** Records a payout for an EXPLICIT period (review F4) — unlike `recordPayout` (always `PAST_DATE`, kept for the other deterministic-mtd-zero tests), this lets a test attribute a payout to the CURRENT month (`sumPayoutsByProfile`'s `periodEnd` rule). */
+async function recordPayoutForPeriod(page: Page, personId: string, amountCents: number, periodStart: string, periodEnd: string, method: 'CASH' | 'BANK_TRANSFER' | 'POS' = 'CASH'): Promise<void> {
+  const response = await page.request.post('/api/v1/instructor-payouts', {
+    headers: { 'Idempotency-Key': `e2e-my-compensation-${uniqueSuffix()}` },
+    data: { instructorPersonId: personId, amountCents, periodStart, periodEnd, method, notes: null },
+  });
+  expect(response.status()).toBe(201);
+}
+
+/** Today's date (server-clock UTC), same helper as `reports.spec.ts`/`billing.spec.ts` — used to log a SCHOOL flight inside the CURRENT mtd window (review F4). */
+function todayDateOnly(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Fresh STUDENT person — same helper shape as `instructor-compensation.spec.ts#createStudentPerson`. */
+async function createStudentPerson(page: Page, tag: string): Promise<{ personId: string }> {
+  const suffix = uniqueSuffix();
+  const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Allievo', lastName: `Comp-${tag}-${suffix}` } });
+  expect(personResponse.status()).toBe(201);
+  const person = (await personResponse.json()) as { id: string };
+  const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/student`, { data: { courseStartDate: PAST_DATE } });
+  expect(profileResponse.status()).toBe(200);
+  return { personId: person.id };
+}
+
+/** Aircraft + rate (`NO_AIRCRAFT_RATE` 422 otherwise) — same helper shape as `instructor-compensation.spec.ts#createAircraftWithRate`. */
+async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string }> {
+  const suffix = uniqueSuffix();
+  const registration = `I-CP${suffix}`.toUpperCase().slice(0, 20);
+  const aircraftResponse = await page.request.post('/api/v1/aircraft', {
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+  });
+  expect(aircraftResponse.status()).toBe(201);
+  const aircraft = (await aircraftResponse.json()) as { id: string };
+  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour, validFrom: PAST_DATE } });
+  expect(rateResponse.status()).toBe(201);
+  return { id: aircraft.id };
+}
+
+/** The STUDENT-charged instructor rate (D8, `NO_INSTRUCTOR_RATE` 422 otherwise) — unrelated to the payout rate this page reads. Same helper shape as `instructor-compensation.spec.ts#createInstructorRate`. */
+async function createInstructorRate(page: Page, instructorPersonId: string, priceCentsPerHour: number): Promise<void> {
+  const rateResponse = await page.request.post(`/api/v1/people/${instructorPersonId}/instructor-rates`, {
+    data: { priceCentsPerHour, validFrom: PAST_DATE },
+  });
+  expect(rateResponse.status()).toBe(201);
+}
+
+/** Registers a SCHOOL flight — same wire shape as `instructor-compensation.spec.ts#registerSchoolFlight`. */
+async function registerSchoolFlight(
+  page: Page,
+  params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number },
+): Promise<void> {
+  const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
+  const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
+  const response = await page.request.post('/api/v1/flights', {
+    data: {
+      aircraftId: params.aircraftId,
+      personId: params.personId,
+      instructorPersonId: params.instructorPersonId,
+      flightType: 'SCHOOL',
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      takeoffAt,
+      landingAt,
+    },
+  });
+  expect(response.status()).toBe(201);
+}
+
 /** Scoped to the sidebar landmark (CLAUDE.md convention — never a page-level `getByRole('link', ...)`, the name-match is substring). */
 function myCompensationNavLink(page: Page) {
   return page.getByRole('navigation', { name: 'Aree operative' }).getByRole('link', { name: 'I miei compensi', exact: true });
@@ -174,17 +243,43 @@ test.describe('Own compensation only (AC 2/3/5/6)', () => {
     await page.goto('/it/dashboard/my-compensation');
     await expect(page.getByRole('heading', { level: 1, name: 'I miei compensi' })).toBeVisible();
 
-    const kpis = page.getByTestId('my-compensation-kpis');
-    await expect(kpis).toContainText('50,00 €');
-    await expect(kpis).toContainText('0:00'); // no flights ever -> 0 hours this month
-    await expect(kpis).toContainText('0,00 €'); // maturato nel mese: no flights, no payout inside the mtd window
-    await expect(kpis).toContainText('-200,00 €'); // residuo dovuto: 0 gross - 200,00 € paid (all-time)
+    // Review F6: per-KPI assertions (each scoped to its own `data-testid`) —
+    // a bare `toContainText` on the WHOLE kpi-row container is not
+    // discriminating ('0,00 €' is a substring of '-200,00 €').
+    await expect(page.getByTestId('kpi-rate')).toContainText('50,00 €');
+    await expect(page.getByTestId('kpi-hours-mtd')).toContainText('0:00'); // no flights ever -> 0 hours this month
+    await expect(page.getByTestId('kpi-gross-mtd')).toContainText('0,00 €'); // maturato nel mese (LORDO): 0 hours x rate = 0
+    await expect(page.getByTestId('kpi-owed-mtd')).toContainText('0,00 €'); // dovuto nel mese (NETTO): 0 gross - 0 paid inside the mtd window
+    await expect(page.getByTestId('kpi-owed-total')).toContainText('-200,00 €'); // residuo dovuto: 0 gross - 200,00 € paid (all-time)
 
     const rows = page.getByTestId('my-compensation-payout-row');
     await expect(rows).toHaveCount(1);
     await expect(rows).toContainText('15/01/2020');
     await expect(rows).toContainText('Contanti');
     await expect(rows).toContainText('200,00 €');
+  });
+
+  test('"Maturato nel mese" (gross, ore x tariffa) and "Dovuto nel mese" (net) DIFFER once a partial payout has been made this month (ratifica PO, review F4)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const password = 'MyCompensationGross123!';
+    const instructor = await createInstructorWithLogin(page, password, 'Gross');
+    const student = await createStudentPerson(page, 'Gross');
+    const aircraft = await createAircraftWithRate(page, 8000);
+    await createInstructorRate(page, instructor.personId, 3000); // student-charged rate — required for the flight to bill, unrelated to the payout rate below
+    await setPayoutRate(page, instructor.personId, 6000); // 60,00 €/h payout rate
+
+    const today = todayDateOnly();
+    await registerSchoolFlight(page, { aircraftId: aircraft.id, personId: student.personId, instructorPersonId: instructor.personId, flightDate: today, minutes: 120 }); // 2:00h logged THIS month
+    await recordPayoutForPeriod(page, instructor.personId, 3000, today, today); // 30,00 € advance, dated THIS month -> counts against the mtd window
+
+    await loginExpectingDashboard(page, instructor.email, password);
+    await page.goto('/it/dashboard/my-compensation');
+
+    await expect(page.getByTestId('kpi-hours-mtd')).toContainText('2:00');
+    // gross = round(120min/60 * 6000c) = 12000c -> 120,00 €
+    await expect(page.getByTestId('kpi-gross-mtd')).toContainText('120,00 €');
+    // net = gross - paid_mtd = 12000 - 3000 = 9000c -> 90,00 €
+    await expect(page.getByTestId('kpi-owed-mtd')).toContainText('90,00 €');
   });
 
   test('a pilot never sees the nav item nor any compensation data on direct navigation (AC 5 — never the staff roster, never another instructor\'s)', async ({
@@ -219,5 +314,41 @@ test.describe('Own compensation only (AC 2/3/5/6)', () => {
     await expect(kpis).not.toContainText('99,99 €');
     await expect(page.getByTestId('my-compensation-payout-row')).toHaveCount(0);
     await expect(page.getByTestId('my-compensation-payouts-empty')).toBeVisible();
+  });
+});
+
+test.describe('Mobile geometry (review F2)', () => {
+  test('at 390px the IMPORTO cell stays reachable — non-zero width and hit-testable after scrolling the row fully into view', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const password = 'MyCompensationMobile123!';
+    const instructor = await createInstructorWithLogin(page, password, 'Mobile');
+    await setPayoutRate(page, instructor.personId, 5000);
+    await recordPayout(page, instructor.personId, 12345, 'CASH'); // 123,45 €
+
+    await loginExpectingDashboard(page, instructor.email, password);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/it/dashboard/my-compensation');
+
+    const row = page.getByTestId('my-compensation-payout-row').first();
+    await row.scrollIntoViewIfNeeded();
+
+    // Pre-fix repro: a bare `1fr` last column collapsed to 0px once the
+    // fixed tracks alone (150+220+130px + gaps) exceeded the 390px viewport
+    // (`.student-row > * { min-width: 0 }`, airops.css) — scrolling
+    // `.students` fully to the right never revealed the amount, because
+    // there was nothing there to reveal (0px wide).
+    const geometry = await row.evaluate((el) => {
+      const scroller = el.closest('.students') as HTMLElement | null;
+      if (scroller) scroller.scrollLeft = scroller.scrollWidth;
+      const amountCell = el.lastElementChild as HTMLElement | null;
+      if (!amountCell) return null;
+      const rect = amountCell.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return { width: rect.width, hitsSelf: hit === amountCell || amountCell.contains(hit) };
+    });
+
+    expect(geometry?.width).toBeGreaterThan(0);
+    expect(geometry?.hitsSelf).toBe(true);
+    await expect(row).toContainText('123,45 €');
   });
 });

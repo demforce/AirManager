@@ -775,7 +775,8 @@
     "kpi": {
       "rate": "Hourly rate",
       "hoursMtd": "Hours this month",
-      "owedMtd": "Accrued this month",
+      "grossMtd": "Accrued this month",
+      "owedMtd": "Owed this month",
       "owedTotal": "Outstanding balance"
     },
     "table": {

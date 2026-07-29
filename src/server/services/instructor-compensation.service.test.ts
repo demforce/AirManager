@@ -25,6 +25,23 @@ vi.mock('@/server/db/prisma', () => ({
   },
 }));
 
+// Review F1: `getOwnInstructorProfileId` is imported from `bookings.service.ts`,
+// which imports `@/server/adapters/mail` (for its own notification flow) ->
+// `smtp-mail-sender.ts` -> `@/lib/env`'s EAGER Zod validation. Same mock as
+// `bookings.service.test.ts:45-47` — without it, this file only passes in a
+// shell with `.env` exported (the env vars happen to already be set), never in
+// a clean shell (the class closed for `billing-summary` by commit `3c6add9`).
+vi.mock('@/server/adapters/mail', () => ({
+  getMailSender: vi.fn(() => ({ send: vi.fn() })),
+}));
+
+// Same chain, one hop further: `bookings.service.ts` also imports
+// `./app-settings.service` (its own scheduling-window check), which imports
+// `@/server/crypto/secret-box` -> `@/lib/env` too. Same sibling-service mock
+// convention as `bookings.service.test.ts` — this test never exercises the
+// scheduling window, so a bare stub is enough.
+vi.mock('./app-settings.service', () => ({ getSchedulingSettings: vi.fn() }));
+
 const { prisma } = await import('@/server/db/prisma');
 const {
   getCompensationSummary,
@@ -223,9 +240,18 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(payoutFindManyMock).not.toHaveBeenCalled();
     });
 
-    it("resolves the actor's OWN active profile (getOwnInstructorProfileId) and returns accrual + payout history, scoped to that profile only", async () => {
-      profileFindUnique.mockResolvedValue({ id: 'profile_ines', deactivatedAt: null });
-      personFindMany.mockResolvedValue([instructorPersonRow()]); // rate 3000 c/h
+    it("resolves the actor's OWN active profile (getOwnInstructorProfileId) and returns accrual (gross + net) + payout history, scoped to that profile only", async () => {
+      // ONE `instructorProfile.findUnique` fixture serves BOTH callers within
+      // `getOwnCompensationOverview`: `getOwnInstructorProfileId` (needs
+      // `id`/`deactivatedAt`) and `resolveInstructorRowByProfileId` (review
+      // F5/F7 — needs `payoutRateCents`/`person`, and deliberately does NOT
+      // check `Person.archivedAt`).
+      profileFindUnique.mockResolvedValue({
+        id: 'profile_ines',
+        deactivatedAt: null,
+        payoutRateCents: 3000,
+        person: { id: 'person_ines', firstName: 'Ines', lastName: 'Volpi' },
+      });
       flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 130 } }]);
       payoutGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { amountCents: 2000 } }]);
       payoutFindMany.mockResolvedValue([
@@ -244,7 +270,8 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(result).toEqual({
         payoutRateCents: 3000,
         mtdMinutes: 130,
-        mtdOwedCents: 4500,
+        mtdGrossCents: 6500, // round(130/60 * 3000) — review F4: gross, ore x tariffa
+        mtdOwedCents: 4500, // gross - 2000 already paid
         totalOwedCents: 4500,
         payouts: [
           {
@@ -262,6 +289,24 @@ describe('instructor-compensation.service (story 12.7)', () => {
       // resolved from the ACTOR — never a client-supplied id (AC 3).
       const [payoutArgs] = payoutFindManyMock.mock.calls[0] as [{ where: { instructorProfileId?: string } }];
       expect(payoutArgs.where.instructorProfileId).toBe('profile_ines');
+    });
+
+    it('resolves directly from the instructor profile, never through listActiveInstructors (review F5/F7 — an ARCHIVED person with an active profile still gets their own history, no archivedAt filter to disagree with the sidebar)', async () => {
+      profileFindUnique.mockResolvedValue({
+        id: 'profile_ines',
+        deactivatedAt: null,
+        payoutRateCents: 3000,
+        person: { id: 'person_ines', firstName: 'Ines', lastName: 'Volpi' },
+      });
+      stubZeroAggregates();
+      payoutFindMany.mockResolvedValue([]);
+
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).not.toBeNull();
+      // `listActiveInstructors` (the `Person.archivedAt`-filtering path used by
+      // the staff-facing reads) is never reached from this function.
+      expect(personFindManyMock).not.toHaveBeenCalled();
     });
 
     it('never accepts a second (personId/instructorProfileId) argument — there is no parameter to pass one through', () => {
