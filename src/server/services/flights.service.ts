@@ -310,7 +310,9 @@ type ResolvedFlightInput = {
  * (consolidated pattern: existence 404 -> state 422 -> domain 422): aircraft
  * exists -> 404; person exists -> 404; aircraft archived ->
  * `AIRCRAFT_ARCHIVED`; person archived -> `PERSON_ARCHIVED`; person missing
- * an active pilot/student profile -> `PERSON_NOT_PILOT_OR_STUDENT`;
+ * an active pilot/student profile -> `PERSON_NOT_PILOT_OR_STUDENT`; person
+ * has an active STUDENT profile and NO active pilot profile, on anything but
+ * a `SCHOOL` flight (story 14.3, AC 1) -> `STUDENT_FLIGHT_MUST_BE_SCHOOL`;
  * `takeoffAt`/`landingAt` resolution (story 11.1, AC 2/3 — the ONLY source
  * of `minutes`/`flightDate` now) -> `FLIGHT_TIMES_INVALID` if
  * `landingAt <= takeoffAt` or the derived duration exceeds 1440 minutes;
@@ -366,14 +368,26 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Pro
     throw new ValidationError('Cannot register a flight for an archived person.', undefined, 'PERSON_ARCHIVED');
   }
 
-  const hasActivePilotOrStudent =
-    (person.pilotProfile !== null && person.pilotProfile.deactivatedAt === null) ||
-    (person.studentProfile !== null && person.studentProfile.deactivatedAt === null);
-  if (!hasActivePilotOrStudent) {
+  const hasActivePilot = person.pilotProfile !== null && person.pilotProfile.deactivatedAt === null;
+  const hasActiveStudent = person.studentProfile !== null && person.studentProfile.deactivatedAt === null;
+  if (!hasActivePilot && !hasActiveStudent) {
     throw new ValidationError(
       'Person must have an active pilot or student profile to be logged on a flight.',
       undefined,
       'PERSON_NOT_PILOT_OR_STUDENT',
+    );
+  }
+
+  // Story 14.3 (AC 1, ratifica R1): a person with an active STUDENT profile
+  // and NO active pilot profile may only log SCHOOL flights — the rule is on
+  // the ACTIVE PROFILE (never the role), so a student who ALSO holds an
+  // active pilot profile (both active — took the license) is unrestricted,
+  // same as a plain pilot.
+  if (hasActiveStudent && !hasActivePilot && input.flightType !== 'SCHOOL') {
+    throw new ValidationError(
+      'A person with only an active student profile can only log SCHOOL flights.',
+      undefined,
+      'STUDENT_FLIGHT_MUST_BE_SCHOOL',
     );
   }
 

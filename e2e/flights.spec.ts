@@ -528,4 +528,47 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const soloRow = page.getByTestId('flight-row').filter({ hasText: 'solista' }).first();
     await expect(soloRow.getByTestId('flight-pic-cell')).toHaveText(`${pilot.lastName} ${pilot.firstName}`);
   });
+
+  test('a student-only person (active student profile, no active pilot profile) forces Tipo volo to SCHOOL in the form, and the forced submission actually succeeds (story 14.3, AC 1/2 — no vicolo cieco, lezione 14.6 F2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const instructor = await createInstructorWithRate(page, 4000);
+
+    // A fresh student-only person (active student profile, NO pilot profile)
+    // — no login needed, the admin registers the flight on their behalf.
+    const suffix = uniqueSuffix();
+    const firstName = 'Allievo';
+    const lastName = `SoloScuola-${suffix}`;
+    const personResponse = await page.request.post('/api/v1/people', { data: { firstName, lastName } });
+    expect(personResponse.status()).toBe(201);
+    const student = (await personResponse.json()) as { id: string };
+    const studentProfileResponse = await page.request.put(`/api/v1/people/${student.id}/profiles/student`, {
+      data: { courseStartDate: PAST_DATE },
+    });
+    expect(studentProfileResponse.status()).toBe(200);
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), lastName, `${lastName} ${firstName}`);
+
+    // AC 2: forced + locked to SCHOOL, with a clear reason — never a choice
+    // the service (STUDENT_FLIGHT_MUST_BE_SCHOOL) would reject.
+    const flightTypeSelect = page.getByTestId('flight-type-select');
+    await expect(flightTypeSelect).toHaveValue('SCHOOL');
+    await expect(flightTypeSelect).toBeDisabled();
+    await expect(page.getByText('Allievo senza brevetto')).toBeVisible();
+
+    // No dead end: the forced value is one the service actually accepts,
+    // given the (unchanged) instructor requirement on every SCHOOL flight.
+    await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
+    await page.getByLabel('Ora decollo').fill('09:00');
+    await page.getByLabel('Ora atterraggio').fill('10:00');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+  });
 });

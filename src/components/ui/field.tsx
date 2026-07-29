@@ -24,9 +24,18 @@ export type FieldProps = {
    * floor — same fix as `.stat-tone-bad`/`.badge.bad`, lezione 13.9).
    */
   error?: string;
+  /**
+   * Story 14.3, AC 2 — a neutral, non-error informational message in the
+   * SAME slot as `error` (muted `.fld-hint`, no `role="alert"`): used when
+   * another field's selection forces/narrows this one's choices (e.g. Tipo
+   * volo forced to SCHOOL once a student-only person is picked) so the
+   * reason is never a silent disabled control. Ignored when `error` is also
+   * set (a real validation error always wins).
+   */
+  hint?: string;
 };
 
-export function Field({ label, children, wide = false, error }: FieldProps) {
+export function Field({ label, children, wide = false, error, hint }: FieldProps) {
   // Review F8: the error text and the control are ARIA-linked (screen reader
   // announces the message alongside the accessible name), on top of the
   // already-visible red border/inline text — `useId()` keyed to THIS Field
@@ -51,6 +60,8 @@ export function Field({ label, children, wide = false, error }: FieldProps) {
         <span id={errorId} className="fld-error" role="alert">
           {error}
         </span>
+      ) : hint ? (
+        <span className="fld-hint">{hint}</span>
       ) : null}
     </div>
   );

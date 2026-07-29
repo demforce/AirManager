@@ -270,7 +270,12 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const dispatchAircraftOptions = aircraftResult.items.map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration }));
   const dispatchPersonOptions = peopleResult.items
     .filter((person) => person.profiles.pilot || person.profiles.student)
-    .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+    .map((person) => ({
+      id: person.id,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      profiles: { pilot: person.profiles.pilot, student: person.profiles.student },
+    }));
   const dispatchInstructorOptions = peopleResult.items
     .filter((person) => person.profiles.instructor)
     .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
@@ -452,6 +457,7 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       flightType: t('editor.fields.flightType'),
       soloMode: t('editor.fields.soloMode'),
       soloModes: { dual: t('editor.fields.soloModes.dual'), solo: t('editor.fields.soloModes.solo') },
+      studentOnlyHint: t('editor.fields.studentOnlyHint'),
       departure: t('editor.fields.departure'),
       arrival: t('editor.fields.arrival'),
       takeoffTime: t('editor.fields.takeoffTime'),
@@ -471,6 +477,7 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       NO_INSTRUCTOR_RATE: t('editor.errors.NO_INSTRUCTOR_RATE'),
       SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR: t('editor.errors.SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR'),
       SOLO_REQUIRES_SCHOOL: t('editor.errors.SOLO_REQUIRES_SCHOOL'),
+      STUDENT_FLIGHT_MUST_BE_SCHOOL: t('editor.errors.STUDENT_FLIGHT_MUST_BE_SCHOOL'),
       AIRCRAFT_ARCHIVED: t('editor.errors.AIRCRAFT_ARCHIVED'),
       PERSON_ARCHIVED: t('editor.errors.PERSON_ARCHIVED'),
       PERSON_NOT_PILOT_OR_STUDENT: t('editor.errors.PERSON_NOT_PILOT_OR_STUDENT'),

@@ -1254,6 +1254,7 @@
           "dual": "Dual",
           "solo": "Solo"
         },
+        "studentOnlyHint": "Student without a pilot license: flight type is always School.",
         "departure": "Departure airport",
         "arrival": "Arrival airport",
         "takeoffTime": "Takeoff time",
@@ -1272,6 +1273,7 @@
         "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
         "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "A school flight requires an instructor.",
         "SOLO_REQUIRES_SCHOOL": "Dual/solo is only valid for school flights.",
+        "STUDENT_FLIGHT_MUST_BE_SCHOOL": "A student without a pilot license can only log school flights.",
         "AIRCRAFT_ARCHIVED": "The selected aircraft is archived.",
         "PERSON_ARCHIVED": "The selected person is archived.",
         "PERSON_NOT_PILOT_OR_STUDENT": "The person must have an active pilot or student profile.",

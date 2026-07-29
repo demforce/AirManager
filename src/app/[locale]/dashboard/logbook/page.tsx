@@ -105,7 +105,10 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   // driver-adapter Prisma client trigger a `pg` "client is already executing
   // a query" warning under load (5.1 Debug Log) — same order as the legacy page.
   let aircraftOptions: { id: string; registration: string }[] = [];
-  let personOptions: { id: string; firstName: string; lastName: string }[] = [];
+  // Story 14.3, AC 2: `profiles` (active-only, pilot/student) travels with
+  // the person picker's options so `FlightEditor` can force/lock Tipo volo
+  // to SCHOOL for a person with only an active student profile.
+  let personOptions: { id: string; firstName: string; lastName: string; profiles: { pilot: boolean; student: boolean } }[] = [];
   let instructorOptions: { id: string; firstName: string; lastName: string }[] = [];
   let aircraftFilterOptions: { id: string; registration: string; archived: boolean }[] = [];
 
@@ -122,7 +125,12 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
       registration: aircraft.registration,
       archived: aircraft.archivedAt !== null,
     }));
-    personOptions = pilotStudentResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+    personOptions = pilotStudentResult.items.map((person) => ({
+      id: person.id,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      profiles: { pilot: person.profiles.pilot, student: person.profiles.student },
+    }));
     instructorOptions = instructorResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
   }
 
@@ -306,6 +314,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               flightType: t('editor.fields.flightType'),
               soloMode: t('editor.fields.soloMode'),
               soloModes: { dual: t('editor.fields.soloModes.dual'), solo: t('editor.fields.soloModes.solo') },
+              studentOnlyHint: t('editor.fields.studentOnlyHint'),
               departure: t('editor.fields.departure'),
               arrival: t('editor.fields.arrival'),
               takeoffTime: t('editor.fields.takeoffTime'),
@@ -325,6 +334,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               NO_INSTRUCTOR_RATE: t('editor.errors.NO_INSTRUCTOR_RATE'),
               SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR: t('editor.errors.SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR'),
               SOLO_REQUIRES_SCHOOL: t('editor.errors.SOLO_REQUIRES_SCHOOL'),
+              STUDENT_FLIGHT_MUST_BE_SCHOOL: t('editor.errors.STUDENT_FLIGHT_MUST_BE_SCHOOL'),
               AIRCRAFT_ARCHIVED: t('editor.errors.AIRCRAFT_ARCHIVED'),
               PERSON_ARCHIVED: t('editor.errors.PERSON_ARCHIVED'),
               PERSON_NOT_PILOT_OR_STUDENT: t('editor.errors.PERSON_NOT_PILOT_OR_STUDENT'),

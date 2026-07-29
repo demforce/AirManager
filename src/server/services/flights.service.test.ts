@@ -332,11 +332,43 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'PERSON_NOT_PILOT_OR_STUDENT' });
     });
 
-    it('accepts a person with an active STUDENT profile (no pilot profile at all)', async () => {
+    // Story 14.3 (AC 1/5, ratifica R1): a person with only an active STUDENT
+    // profile (no active pilot profile) may only log SCHOOL flights — this
+    // used to be accepted as a plain TOURISM flight (pre-14.3 test), now a
+    // dedicated 422.
+    it('throws a 422 STUDENT_FLIGHT_MUST_BE_SCHOOL for a person with only an active STUDENT profile on a non-SCHOOL flight', async () => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue({
         ...PILOT_PERSON,
         pilotProfile: null,
+        studentProfile: { deactivatedAt: null },
+      });
+
+      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'STUDENT_FLIGHT_MUST_BE_SCHOOL' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('accepts a person with only an active STUDENT profile on a SCHOOL flight WITH an instructor', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique
+        .mockResolvedValueOnce({ ...PILOT_PERSON, pilotProfile: null, studentProfile: { deactivatedAt: null } })
+        .mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL' });
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
+
+      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
+    });
+
+    it('accepts a TOURISM flight for a person with BOTH an active pilot AND an active student profile (double profile, unrestricted)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue({
+        ...PILOT_PERSON,
+        pilotProfile: { deactivatedAt: null },
         studentProfile: { deactivatedAt: null },
       });
       accountUpsert.mockResolvedValue({ id: 'account_1' });
@@ -506,6 +538,18 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL' });
+
+      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    // Story 14.3 (AC 4/5): the instructor requirement is unchanged by this
+    // story — it does NOT look at `isSolo`, so a SOLO SCHOOL flight with no
+    // instructor rejects with the SAME pre-existing code as a dual one.
+    it('throws a 422 SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR for a SOLO SCHOOL flight with no instructor (AC 4 invariant)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: true });
 
       await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({ code: 'SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR' });
       expect(transactionMock).not.toHaveBeenCalled();

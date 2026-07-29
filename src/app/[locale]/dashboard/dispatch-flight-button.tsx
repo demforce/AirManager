@@ -16,11 +16,13 @@ import { FlightEditor, type FlightEditorLabels } from './logbook/flight-editor';
 
 type AircraftOption = { id: string; registration: string };
 type PersonOption = { id: string; firstName: string; lastName: string };
+/** The "person" (pilot/allievo) picker's own option shape (story 14.3, AC 2) — see `flight-editor.tsx`'s own `PilotStudentOption` doc-comment. */
+type PilotStudentOption = PersonOption & { profiles: { pilot: boolean; student: boolean } };
 
 export type DispatchFlightButtonProps = {
   label: string;
   aircraftOptions: AircraftOption[];
-  personOptions: PersonOption[];
+  personOptions: PilotStudentOption[];
   instructorOptions: PersonOption[];
   airfieldName: string;
   moneyLocale: 'it' | 'en';

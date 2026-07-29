@@ -38,6 +38,8 @@ import { FlightEditor, type FlightEditorLabels, type FlightEditorTarget } from '
 
 type AircraftOption = { id: string; registration: string };
 type PersonOption = { id: string; firstName: string; lastName: string };
+/** The "person" (pilot/allievo) picker's own option shape (story 14.3, AC 2) — see `flight-editor.tsx`'s own `PilotStudentOption` doc-comment. */
+type PilotStudentOption = PersonOption & { profiles: { pilot: boolean; student: boolean } };
 type AircraftFilterOption = AircraftOption & { archived: boolean };
 
 export type LogbookFilters = {
@@ -147,7 +149,7 @@ export type LogbookConsoleProps = {
   /** Read-only (story 9.3 drill-down) — cleared only via the page-level "Rimuovi filtro istruttore" banner, never edited from this filter bar. */
   instructorPersonId: string;
   aircraftOptions: AircraftOption[];
-  personOptions: PersonOption[];
+  personOptions: PilotStudentOption[];
   instructorOptions: PersonOption[];
   aircraftFilterOptions: AircraftFilterOption[];
   airfieldName: string;

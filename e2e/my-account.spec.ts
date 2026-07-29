@@ -227,6 +227,17 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const password = 'MyAccountStudent123!';
     const student = await createPersonWithLogin(page, 'student', password, 'Own');
+    // Story 14.3 (AC 1, ratifica R1): a student-ONLY active profile can only
+    // log SCHOOL flights now — this fixture's own TOURISM `registerFlight`
+    // call below only needs SOME flight charge to exist for the own-access
+    // assertions, unrelated to `flightType`, so activating an ADDITIONAL
+    // pilot profile (both active -> unrestricted, same as a plain pilot)
+    // keeps this test's TOURISM charge legal without touching its balance
+    // math or its STUDENT-role login/self-access assertions below.
+    const pilotUpgrade = await page.request.put(`/api/v1/people/${student.personId}/profiles/pilot`, {
+      data: { licenseNumber: `IT-PPL-${student.personId.slice(-8)}`, licenseType: 'PPL(A)' },
+    });
+    expect(pilotUpgrade.status()).toBe(200);
     const aircraft = await createAircraftWithRate(page, 10000); // 100,00 €/h
     const flightDate = uniquePastDateOnly();
 

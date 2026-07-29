@@ -39,6 +39,8 @@ export type FlightEditorTarget = { mode: 'new' } | { mode: 'correct'; flight: Fl
 
 type AircraftOption = { id: string; registration: string };
 type PersonOption = { id: string; firstName: string; lastName: string };
+/** The "person" (pilot/allievo) picker's own option shape (story 14.3, AC 2): `profiles` carries ACTIVE-profile flags only (mirrors `people.service.ts#PersonListItem`'s own) — just the two this form needs to decide whether a student-only person forces `flightType` to SCHOOL. The instructor picker keeps the plain `PersonOption` (no profile data needed there). */
+type PilotStudentOption = PersonOption & { profiles: { pilot: boolean; student: boolean } };
 
 export type FlightEditorLabels = {
   newTitle: string;
@@ -64,6 +66,8 @@ export type FlightEditorLabels = {
     flightType: string;
     soloMode: string;
     soloModes: { dual: string; solo: string };
+    /** Story 14.3, AC 2 — shown as a neutral `Field` hint under Tipo volo once a person with only an active student profile is selected (the select is also forced/disabled to SCHOOL, see `isStudentOnly`). */
+    studentOnlyHint: string;
     departure: string;
     arrival: string;
     takeoffTime: string;
@@ -83,6 +87,7 @@ export type FlightEditorLabels = {
     NO_INSTRUCTOR_RATE: string;
     SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR: string;
     SOLO_REQUIRES_SCHOOL: string;
+    STUDENT_FLIGHT_MUST_BE_SCHOOL: string;
     AIRCRAFT_ARCHIVED: string;
     PERSON_ARCHIVED: string;
     PERSON_NOT_PILOT_OR_STUDENT: string;
@@ -110,7 +115,7 @@ type FlightEditorProps = {
   /** Refreshes the server-rendered table/KPI (`router.refresh()`) — the slide-over stays open (ratifica 1). */
   onMutated: () => void;
   aircraftOptions: AircraftOption[];
-  personOptions: PersonOption[];
+  personOptions: PilotStudentOption[];
   instructorOptions: PersonOption[];
   airfieldName: string;
   moneyLocale: 'it' | 'en';
@@ -240,8 +245,29 @@ export function FlightEditor({
   const defaults = target ? flightFormDefaults(target, airfieldName) : flightFormDefaults({ mode: 'new' }, airfieldName);
   const initialPickers = target ? pickerDefaults(target, aircraftOptions) : pickerDefaults({ mode: 'new' }, aircraftOptions);
 
+  // Story 14.3 (AC 2): `personId -> active-profile flags`, seeded from the
+  // server-rendered `personOptions` page and grown by `searchPilotStudent`
+  // below as the operator types — the ONLY way this form knows whether the
+  // CURRENTLY selected person has only an active student profile (in which
+  // case the service forces SCHOOL, `STUDENT_FLIGHT_MUST_BE_SCHOOL`) without
+  // re-fetching on every keystroke. A person outside this map (e.g. a
+  // "Correggi volo" prefill for someone past the options page cap, never
+  // re-searched) simply isn't force-locked here — the service itself still
+  // authoritatively rejects an invalid submission with a labeled error
+  // banner, so this is a narrower proactive hint, never a dead end.
+  const [personProfiles, setPersonProfiles] = useState<Map<string, PilotStudentOption['profiles']>>(
+    () => new Map(personOptions.map((person) => [person.id, person.profiles])),
+  );
+
+  function isStudentOnly(id: string): boolean {
+    const profiles = personProfiles.get(id);
+    return Boolean(profiles?.student && !profiles?.pilot);
+  }
+
+  const initialFlightType: FlightTypeDto = initialPickers.personId && isStudentOnly(initialPickers.personId) ? 'SCHOOL' : defaults.flightType;
+
   const [formError, setFormError] = useState<string | null>(null);
-  const [selectedFlightType, setSelectedFlightType] = useState<FlightTypeDto>(defaults.flightType);
+  const [selectedFlightType, setSelectedFlightType] = useState<FlightTypeDto>(initialFlightType);
   const [isSolo, setIsSolo] = useState(correctingFlight?.isSolo ?? false);
   const [flightDateValue, setFlightDateValue] = useState(defaults.flightDate);
   const [takeoffTimeValue, setTakeoffTimeValue] = useState(defaults.takeoffTime);
@@ -265,10 +291,11 @@ export function FlightEditor({
     register,
     handleSubmit,
     setError,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FlightFormValues>({
     resolver: zodResolver(flightFormSchema),
-    defaultValues: defaults,
+    defaultValues: { ...defaults, flightType: initialFlightType },
   });
 
   function handleAircraftChange(id: string): void {
@@ -279,10 +306,22 @@ export function FlightEditor({
   function handlePersonChange(id: string): void {
     setPersonId(id);
     if (id.trim() !== '') setPersonError(false);
+    // Story 14.3 (AC 2): force + lock Tipo volo the instant a student-only
+    // person is picked — never leave a choice on the table the service will
+    // reject (lezione 14.6 F2). `setValue` also writes the underlying
+    // register-based `<select>`'s own value, so the DOM stays in sync.
+    if (isStudentOnly(id)) {
+      setSelectedFlightType('SCHOOL');
+      setValue('flightType', 'SCHOOL');
+    }
   }
 
   const noAircraft = aircraftOptions.length === 0;
   const noPerson = personOptions.length === 0;
+  // Story 14.3 (AC 2): re-derived every render off the CURRENT `personId`
+  // (not a one-off flag set at selection time) so switching back to a
+  // non-restricted person un-locks Tipo volo again.
+  const personIsStudentOnly = isStudentOnly(personId);
 
   const aircraftComboOptions = useMemo<SearchComboboxOption[]>(() => {
     const base = aircraftOptions.map((aircraft) => ({ id: aircraft.id, label: aircraft.registration }));
@@ -308,6 +347,28 @@ export function FlightEditor({
     }
     return base;
   }, [instructorOptions, correctingFlight, labels.fields.noInstructor]);
+
+  /**
+   * Server-side search for the "person" (pilot/allievo) field ONLY (story
+   * TD-3, extended 14.3 AC 2) — unlike the generic `searchPeople` above
+   * (still used by the instructor field, which never needs profile data),
+   * this ALSO records each result's active-profile flags into
+   * `personProfiles`: the only way this form learns the profile of someone
+   * found via search rather than already present in the server-rendered
+   * `personOptions` page.
+   */
+  async function searchPilotStudent(query: string): Promise<SearchComboboxOption[]> {
+    const params = new URLSearchParams({ q: query, pageSize: '50', profile: 'pilot-or-student' });
+    const response = await fetch(`/api/v1/people?${params.toString()}`);
+    if (!response.ok) return [];
+    const body = (await response.json()) as { items: PilotStudentOption[] };
+    setPersonProfiles((previous) => {
+      const next = new Map(previous);
+      for (const person of body.items) next.set(person.id, person.profiles);
+      return next;
+    });
+    return body.items.map((person) => ({ id: person.id, label: personLabel(person) }));
+  }
 
   /**
    * Review F2: the aircraft/person/reason checks used to live ONLY inside
@@ -535,7 +596,7 @@ export function FlightEditor({
                 label={labels.fields.person}
                 value={personId}
                 onChange={handlePersonChange}
-                fetchOptions={(q) => searchPeople(q, 'pilot-or-student')}
+                fetchOptions={searchPilotStudent}
                 initialOptions={personComboOptions}
                 placeholder={labels.picker.placeholder}
                 emptyText={labels.picker.noResults}
@@ -555,8 +616,10 @@ export function FlightEditor({
                 emptyText={labels.picker.noResults}
               />
             </div>
-            <Field label={labels.fields.flightType}>
+            <Field label={labels.fields.flightType} hint={personIsStudentOnly ? labels.fields.studentOnlyHint : undefined}>
               <Select
+                disabled={personIsStudentOnly}
+                data-testid="flight-type-select"
                 {...register('flightType', {
                   onChange: (event: { target: { value: string } }) => {
                     const next = event.target.value as FlightTypeDto;

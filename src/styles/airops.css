@@ -1122,6 +1122,15 @@ textarea.input{ font-family: var(--font-ui); resize: vertical; }
 }
 html[data-theme="dark"] .fld-error{ color: var(--bad); }
 
+/* Story 14.3, AC 2: neutral informational message (same slot as
+   `.fld-error`, `Field`'s own `hint` prop) — muted `--ink-3`, already used
+   elsewhere in this exact form for secondary text (e.g. the "no aircraft
+   available" hint), so no new contrast case to measure. */
+.fld-hint{
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
 .segmented{
   display: inline-flex; padding: 2px; border-radius: var(--radius-xs);
   background: var(--bg-sunken); border: 1px solid var(--border);
