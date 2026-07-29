@@ -57,6 +57,14 @@ export type NavItem = {
   roles: readonly Role[];
   /** Whether the target route exists yet. A later story flips this to `true` when it ships the page. */
   enabled: boolean;
+  /**
+   * Story 15.1 (AC 2, epic 15 R2): priority slot in the <=640px bottom tab
+   * bar, used ONLY when the actor sees more than `MOBILE_TAB_COUNT` items
+   * (today: ADMIN) — the lowest-numbered slots fill the bar, everything else
+   * moves into the "Altro" sheet. Kept here, in the registry, so the mobile
+   * nav has the same single source of truth as the sidebar (href/icon/roles).
+   */
+  mobileSlot?: number;
 };
 
 const ALL_ROLES: readonly Role[] = ['ADMIN', 'INSTRUCTOR', 'PILOT', 'STUDENT'];
@@ -72,9 +80,12 @@ export const NAV_GROUPS: readonly NavGroupId[] = ['operations', 'directory', 'ar
 
 export const NAV_ITEMS: readonly NavItem[] = [
   // Story 12.12: the home ships in the AirOps visual language directly, replacing the legacy widget-grid dashboard.
-  { id: 'overview', href: '/dashboard', icon: 'dashboard', group: 'operations', roles: ALL_ROLES, enabled: true },
-  { id: 'schedule', href: '/dashboard/bookings', icon: 'calendar', group: 'operations', roles: ALL_ROLES, enabled: true },
-  { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: ADMIN_ROLES, enabled: true },
+  // Story 15.1: `mobileSlot` 1-4 = the template's own admin tab bar
+  // (Panoramica / Pianificazione / PPR / Aeromobili, `AirOps Mobile.dc.html`
+  // line 606), the 5th slot being the "Altro" sheet trigger.
+  { id: 'overview', href: '/dashboard', icon: 'dashboard', group: 'operations', roles: ALL_ROLES, enabled: true, mobileSlot: 1 },
+  { id: 'schedule', href: '/dashboard/bookings', icon: 'calendar', group: 'operations', roles: ALL_ROLES, enabled: true, mobileSlot: 2 },
+  { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: ADMIN_ROLES, enabled: true, mobileSlot: 3 },
   { id: 'visiting', href: '/dashboard/movements', icon: 'plane', group: 'operations', roles: ADMIN_ROLES, enabled: true },
   // Story 12.6: the pilots registry ships in the AirOps visual language directly.
   { id: 'pilots', href: '/dashboard/pilots', icon: 'users', group: 'directory', roles: ADMIN_ROLES, enabled: true },
@@ -85,7 +96,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // (Movimenti) above, per the user's "aereo piccolo per entrambe" item.
   // The dedicated `fleet` icon/NavIconKey entry was removed as an orphan
   // (story 13.11, AC 2).
-  { id: 'fleet', href: '/dashboard/fleet', icon: 'plane', group: 'directory', roles: ADMIN_ROLES, enabled: true },
+  { id: 'fleet', href: '/dashboard/fleet', icon: 'plane', group: 'directory', roles: ADMIN_ROLES, enabled: true, mobileSlot: 4 },
   // Story 12.11: the scadenze registry ships in the AirOps visual language
   // directly. Story 12.12 fix: widened to ALL_ROLES — the legacy home's own
   // in-page nav (permission-based, `nav-items.ts`, removed in story 12.13)
@@ -115,6 +126,31 @@ export const NAV_ITEMS: readonly NavItem[] = [
  */
 export function visibleNavItems(roles: readonly Role[]): NavItem[] {
   return NAV_ITEMS.filter((item) => item.enabled && item.roles.some((role) => roles.includes(role)));
+}
+
+/** Bottom tab bar capacity at <=640px (story 15.1, epic 15 R2): the template's own 5 columns, and the "3-5 tabs, extras behind More" mobile guideline. */
+export const MOBILE_TAB_COUNT = 5;
+
+/**
+ * Splits the items an actor can see (the SAME already-filtered array the
+ * sidebar gets — `dashboard/layout.tsx` also drops `myCompensation` for an
+ * instructor whose own profile is deactivated, story 14.7 AC 4) into the
+ * bottom tab bar and the "Altro" sheet (story 15.1, AC 2 / epic 15 R2):
+ *
+ * - `<= MOBILE_TAB_COUNT` items → all of them are tabs, no "Altro" (today:
+ *   INSTRUCTOR, PILOT, STUDENT);
+ * - more than that → the `mobileSlot` items, lowest slot first, fill the
+ *   first `MOBILE_TAB_COUNT - 1` columns (the last column is the "Altro"
+ *   trigger, rendered by `MobileNav`) and everything else goes to `more`, in
+ *   registry order (= the sidebar's group order).
+ */
+export function mobileNavLayout(items: readonly NavItem[]): { tabs: NavItem[]; more: NavItem[] } {
+  if (items.length <= MOBILE_TAB_COUNT) return { tabs: [...items], more: [] };
+  const tabs = items
+    .filter((item) => item.mobileSlot !== undefined)
+    .sort((a, b) => a.mobileSlot! - b.mobileSlot!)
+    .slice(0, MOBILE_TAB_COUNT - 1);
+  return { tabs, more: items.filter((item) => !tabs.includes(item)) };
 }
 
 /** Exact-match lookup (no prefix matching — a route not in the registry, e.g. a detail route like `/dashboard/people/[id]`, falls back to the generic breadcrumb title, never borrows `/dashboard`'s "Panoramica"). */

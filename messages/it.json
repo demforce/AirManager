@@ -61,6 +61,11 @@
     },
     "weather": {
       "title": "Meteo campo"
+    },
+    "mobile": {
+      "more": "Altro",
+      "moreSheet": "Altre sezioni",
+      "profile": "Profilo"
     }
   },
   "auth": {

@@ -1523,11 +1523,12 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
 .crumbs{ min-width: 0; overflow: hidden; white-space: nowrap; }
 .crumbs .cur{ overflow: hidden; text-overflow: ellipsis; }
 .user-chip{ flex-shrink: 0; }
-@media (max-width: 640px){
-  .topbar{ padding: 14px 16px; }
-  .user-chip .user-chip-name{ display: none; }
-  .user-chip{ padding: 4px; }
-}
+/* The <=640px half of this fix (topbar padding + hidden `.user-chip-name`)
+   was removed by story 15.1: at that width `.topbar` itself is now
+   `display: none` (the mobile top bar takes over) and `.user-chip` /
+   `.user-chip-name` exist ONLY inside it (`top-bar.tsx`), so those three
+   declarations could no longer apply to anything. The two rules above stay:
+   they are unconditional and still shape the 641px+ topbar. */
 
 /* Story 13.10 (mobile pass): `.form-grid`'s 2-column layout (18 consumers —
    every SlideOver form, editor, and Settings card) doesn't collapse at
@@ -1647,4 +1648,140 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    spilling past the card. */
 @media (max-width: 640px){
   .filter-date-range{ flex-wrap: wrap; }
+}
+
+/* ---------- mobile shell (story 15.1, epic 15 R1/R2/R5) ----------
+   Bottom tab bar + compact top bar + the two shell sheets ("Altro", profile),
+   ported from the `AirOps Mobile` template. Rules of engagement (epic plan):
+   - the switch is CSS ONLY and lives at 640px — 641-900px keeps the 64px
+     rail of story 13.10 (ratifica R1), so nothing here touches the
+     `max-width: 900px` block above;
+   - every declaration is ADDITIVE and no existing token changes value; the
+     template's own literals give way to the app's tokens where the app has
+     one (radii, `--ink-4` — ratifica 13.9 F6);
+   - the mobile tree is `display: none` OUTSIDE the media query (so it is
+     genuinely absent from the accessibility tree above 640px) and the
+     desktop `.sidebar`/`.topbar` are `display: none` inside it: exactly one
+     `navigation` landmark named "Aree operative" exists at any width
+     (lesson 103-F1), and Playwright strict mode never sees a duplicate. */
+.mobile-topbar,
+.mobile-tabbar,
+.mobile-sheet{ display: none; }
+
+@keyframes sheet-up{ from{ opacity: 0; transform: translateY(28px); } to{ opacity: 1; transform: none; } }
+
+@media (max-width: 640px){
+  /* `.app`'s column track is declared on the CONTAINER: hiding the sidebar
+     alone would leave `.main` sitting in a 232px (or 64px) first column. */
+  .app{ grid-template-columns: 1fr; }
+  .sidebar{ display: none; }
+  .topbar{ display: none; }
+
+  /* Nothing interactive ends up under the fixed bar. Template value (100px),
+     and it holds by measurement: the bar is 67px with one-line labels
+     (admin) and 78px with the longest two-line one ("Le mie transazioni",
+     pilot/allievo), so >=22px of clearance either way, plus the same
+     safe-area inset the bar adds to its own padding. */
+  .main{ padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+  /* Toasts (z-index 200) stay above the bar — template reference: 92px. */
+  .toast-host{ bottom: calc(92px + env(safe-area-inset-bottom)); }
+
+  /* --- compact top bar --- */
+  .mobile-topbar{
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 4;
+  }
+  .mobile-topbar-titles{ flex: 1; min-width: 0; }
+  .mobile-topbar-title{
+    font-weight: 600; font-size: 14px; letter-spacing: -0.01em; line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mobile-topbar-sub{
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mobile-avatar-btn{
+    width: 32px; height: 32px; padding: 0;
+    display: grid; place-items: center;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 50%;
+    cursor: pointer; flex-shrink: 0;
+  }
+
+  /* --- bottom tab bar --- */
+  .mobile-tabbar{
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    background: color-mix(in oklch, var(--panel) 94%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--border);
+    padding: 6px 6px calc(12px + env(safe-area-inset-bottom));
+  }
+  .mobile-tab{
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 6px 2px 2px;
+    min-height: 44px;
+    background: transparent; border: 0; cursor: pointer;
+    color: var(--ink-4); font-weight: 500; text-decoration: none;
+  }
+  .mobile-tab.active{ color: var(--ink); font-weight: 600; }
+  .mobile-tab svg{ width: 19px; height: 19px; }
+  /* The template's own tab labels are all one short word; the app's
+     `shell.nav.*` ones are not ("Le mie transazioni" — AC 2 keeps the
+     existing keys), so a label wraps to at most two lines instead of being
+     truncated. The inactive dots keep their slot (opacity, not display), so
+     every column stays the same height; only ONE dot is ever visible, so it
+     simply follows its own label. */
+  .mobile-tab-label{ font-size: 9.5px; line-height: 1.15; letter-spacing: 0.02em; text-align: center; }
+  .mobile-tab-dot{ width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0; }
+  .mobile-tab.active .mobile-tab-dot{ opacity: 1; }
+
+  /* --- shell sheets ("Altro" + profile) ---
+     z-index 40 sits above the page popovers (19/20/30 — a `.popover` can be
+     open while the tab bar is tapped, and it would otherwise paint over the
+     sheet) and below `SlideOver` (50/60) and `.toast-host` (200), which AC 6
+     requires to stay fully usable with the bar present. */
+  .mobile-sheet{ display: block; position: fixed; inset: 0; z-index: 40; }
+  .mobile-sheet-scrim{ position: absolute; inset: 0; background: oklch(0.1 0.01 250 / 0.4); }
+  .mobile-sheet-panel{
+    position: absolute; left: 0; right: 0; bottom: 0;
+    max-height: 80vh; overflow: auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 12px 16px calc(24px + env(safe-area-inset-bottom));
+    animation: sheet-up 240ms cubic-bezier(.2,.7,.2,1);
+  }
+  .mobile-sheet-grabber{ width: 36px; height: 4px; margin: 0 auto 14px; border-radius: 999px; background: var(--border-strong); }
+  .mobile-sheet-label{
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-4); padding: 0 2px 10px;
+  }
+  .mobile-sheet-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .mobile-sheet-item,
+  .mobile-sheet-row{
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    min-height: 44px; padding: 12px;
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-size: 12.5px; font-weight: 500; text-align: left; text-decoration: none;
+    cursor: pointer;
+  }
+  .mobile-sheet-item.active{ background: var(--panel-2); }
+  .mobile-sheet-item svg{ width: 16px; height: 16px; color: var(--ink-2); flex-shrink: 0; }
+  .mobile-sheet-rows{ display: flex; flex-direction: column; gap: 8px; }
+  .mobile-sheet-row{ justify-content: space-between; font-size: 13px; }
+  .mobile-sheet-row .mono{ font-size: 11px; color: var(--ink-3); }
+  .mobile-profile-id{ display: flex; align-items: center; gap: 12px; padding: 2px 2px 12px; }
+  .mobile-profile-name{ font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .mobile-profile-role{ font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .mobile-sheet-panel{ animation: none; }
 }

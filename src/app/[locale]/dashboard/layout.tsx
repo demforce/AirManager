@@ -3,8 +3,10 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Role } from '@/generated/prisma/client';
 import type { AvatarColor } from '@/components/ui/avatar';
 import { ToastProvider } from '@/components/ui/toast';
+import { MobileNav, type MobileNavItemView } from '@/components/shell/mobile-nav';
+import { MobileTopBar } from '@/components/shell/mobile-top-bar';
 import { Sidebar, type FlightCategory, type SidebarMetar } from '@/components/shell/sidebar';
-import { NAV_GROUPS, visibleNavItems, type NavItemId, NAV_ITEMS } from '@/components/shell/route-registry';
+import { NAV_GROUPS, mobileNavLayout, visibleNavItems, type NavItem, type NavItemId, NAV_ITEMS } from '@/components/shell/route-registry';
 import type { Theme } from '@/components/shell/theme-toggle';
 import { TopBar } from '@/components/shell/top-bar';
 import { redirect } from '@/i18n/navigation';
@@ -119,6 +121,13 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
       .map((item) => ({ id: item.id, href: item.href, icon: item.icon, label: t(`nav.${item.id}`) })),
   })).filter((group) => group.items.length > 0);
 
+  // Story 15.1 (AC 2): the mobile tab bar is fed by the SAME `rawItems` the
+  // sidebar groups above are built from — including the `myCompensation`
+  // filter right above, which a second `visibleNavItems` call here would have
+  // silently dropped (14.6 F2's lesson).
+  const toMobileItem = (item: NavItem): MobileNavItemView => ({ id: item.id, href: item.href, icon: item.icon, label: t(`nav.${item.id}`) });
+  const mobileLayout = mobileNavLayout(rawItems);
+
   // Review 14.6 F1: titles come from the FULL registry, not just the items
   // VISIBLE to this role — `TopBar` resolves the active item against the whole
   // registry, so a role-restricted route that is still SERVED (my-account, for
@@ -129,6 +138,13 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
   const displayName = me.person ? `${me.person.firstName} ${me.person.lastName}` : me.email;
   const role = primaryRole(actor.roles);
   const roleLabel = t(`roles.${role}`);
+  // Story 15.1: one object for both bars (`TopBar` >640px, `MobileTopBar` below) — they must never show a different identity.
+  const userChip = {
+    displayName,
+    fullLabel: `${displayName} · ${roleLabel}`,
+    initials: initialsFor(displayName),
+    color: AVATAR_COLOR_BY_ROLE[role],
+  };
 
   /**
    * Story 12.12 fix (Dev Notes): the ONLY logout control in the app used to
@@ -154,16 +170,37 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             initialTheme={theme}
             themeToggleLabel={t('themeToggle.label')}
             localeSwitchLabel={t('localeSwitch.label')}
+            userChip={userChip}
+            logoutAction={logoutAction}
+            logoutLabel={t('logout')}
+          />
+          <MobileTopBar
+            brandName="AirManager"
+            icao={icao}
+            pageTitles={pageTitles}
+            fallbackTitle={t('breadcrumb.fallback')}
+            initialTheme={theme}
+            themeToggleLabel={t('themeToggle.label')}
+            localeSwitchLabel={t('localeSwitch.label')}
             userChip={{
               displayName,
               fullLabel: `${displayName} · ${roleLabel}`,
               initials: initialsFor(displayName),
               color: AVATAR_COLOR_BY_ROLE[role],
             }}
+            roleLabel={roleLabel}
+            profileLabel={t('mobile.profile')}
             logoutAction={logoutAction}
             logoutLabel={t('logout')}
           />
           {children}
+          <MobileNav
+            tabs={mobileLayout.tabs.map(toMobileItem)}
+            more={mobileLayout.more.map(toMobileItem)}
+            navLabel={t('navLabel')}
+            moreLabel={t('mobile.more')}
+            moreSheetLabel={t('mobile.moreSheet')}
+          />
         </div>
       </div>
     </ToastProvider>

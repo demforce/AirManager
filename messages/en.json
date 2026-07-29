@@ -61,6 +61,11 @@
     },
     "weather": {
       "title": "Field weather"
+    },
+    "mobile": {
+      "more": "More",
+      "moreSheet": "More sections",
+      "profile": "Profile"
     }
   },
   "auth": {
