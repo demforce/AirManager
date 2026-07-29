@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 /**
  * "Le mie transazioni" — self-service estratto conto (story 14.6). A
@@ -92,6 +93,8 @@ async function createPersonWithLogin(
   const profileBody = profileType === 'pilot' ? { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' } : { courseStartDate: '2026-01-15' };
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/${profileType}`, { data: profileBody });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, profileType === 'pilot' ? 'PILOTS' : 'STUDENTS');
 
   const email = uniqueEmail(`${profileType}-myaccount`);
   const role = profileType === 'pilot' ? 'PILOT' : 'STUDENT';
@@ -238,6 +241,10 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
       data: { licenseNumber: `IT-PPL-${student.personId.slice(-8)}`, licenseType: 'PPL(A)' },
     });
     expect(pilotUpgrade.status()).toBe(200);
+    // Story 14.4 blast-radius fixture fix: now BOTH profiles are active, the
+    // flight guard's `applicableProfiles` also includes PILOTS — `createPersonWithLogin`
+    // only covered STUDENTS above (see `ensureValidSeedExpiries`'s own doc-comment, e2e/helpers.ts).
+    await ensureValidSeedExpiries(page, student.personId, 'PILOTS');
     const aircraft = await createAircraftWithRate(page, 10000); // 100,00 €/h
     const flightDate = uniquePastDateOnly();
 

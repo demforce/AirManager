@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -68,6 +69,8 @@ async function createInstructorPerson(page: Page, tag: string): Promise<{ person
 
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: { ratings: 'FI(A)' } });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'INSTRUCTORS');
 
   return { personId: person.id, firstName, lastName };
 }
@@ -81,6 +84,8 @@ async function createStudentPerson(page: Page, tag: string): Promise<{ personId:
 
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/student`, { data: { courseStartDate: PAST_DATE } });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'STUDENTS');
 
   return { personId: person.id };
 }
@@ -110,11 +115,24 @@ async function createInstructorRate(page: Page, instructorPersonId: string, pric
   expect(rateResponse.status()).toBe(201);
 }
 
-/** Registers a SCHOOL flight (same wire shape as `school.spec.ts#registerSchoolFlight`, story 11.1's `takeoffAt`/`landingAt`). */
+/**
+ * Registers a SCHOOL flight (same wire shape as `school.spec.ts#registerSchoolFlight`,
+ * story 11.1's `takeoffAt`/`landingAt`). Story 14.4 blast-radius fixture fix:
+ * re-runs `ensureValidSeedExpiries` for BOTH the student and the instructor
+ * right before submitting — `createStudentPerson`/`createInstructorPerson`
+ * already cover this at person-creation time, but this file's tests do
+ * several MORE awaited setup calls (aircraft, rate, instructor rate) in
+ * between, widening the window for a CONCURRENTLY-running sibling test
+ * (`flights.spec.ts`'s own custom-type tests) to leave a type active just
+ * long enough to be missed by the earlier scan (e2e/helpers.ts's own
+ * doc-comment).
+ */
 async function registerSchoolFlight(
   page: Page,
   params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number },
 ): Promise<void> {
+  await ensureValidSeedExpiries(page, params.personId, 'STUDENTS');
+  await ensureValidSeedExpiries(page, params.instructorPersonId, 'INSTRUCTORS');
   const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {

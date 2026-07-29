@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -89,6 +90,8 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
       data: { licenseNumber: `IT-PPL-${suffix}-target`, licenseType: 'PPL(A)' },
     });
     expect(targetProfileResponse.status()).toBe(200);
+    // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+    await ensureValidSeedExpiries(page, targetPerson.id, 'PILOTS');
 
     // The regression's real proof, BEFORE ever touching the UI: the
     // form-picker's own domain query (`profile=pilot-or-student`, active

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -156,6 +157,8 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
       data: { licenseNumber: `IT-PPL-${Date.now()}`, licenseType: 'PPL(A)' },
     });
     expect(pilotProfileResponse.status()).toBe(200);
+    // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+    await ensureValidSeedExpiries(page, personId, 'PILOTS');
 
     // A UNIQUE aircraft (never reuse seed I-ABCD — avoids rate-collision with
     // parallel specs), created directly via the API (same shape as

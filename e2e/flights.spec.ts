@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { ensureValidSeedExpiries, registerExpiry } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -105,38 +106,6 @@ async function createStaffUserAndSetPassword(page: Page, password: string): Prom
 }
 
 /**
- * The seed's own blocksBooking=true catalogue (`prisma/seed.ts#STANDARD_EXPIRY_TYPES`,
- * story 6.1) — review F5 (ratifica R-14.4-a, BLAST RADIUS note): since this
- * story, a person with NO `Expiry` row at all for an APPLICABLE blocking type
- * is rejected from flight registration exactly like an expired one, and the
- * seed already ships one such type per PILOTS/STUDENTS/INSTRUCTORS scope
- * (plus "Licenza", PILOTS). Every fresh pilot/student/instructor fixture
- * below registers a FAR-FUTURE (valid) `Expiry` for whichever of these apply,
- * so the rest of this file's "happy path" registrations are not spuriously
- * blocked. Restricted to this FIXED name list — deliberately never "every
- * currently blocksBooking=true type" — so it can never collide with this
- * file's own run-unique `createExpiryTypeForFlights` fixtures (several tests
- * below register one of THOSE as EXPIRED for the very same person right
- * after; a dynamic scan would have already registered a valid one first and
- * hit the `Expiry` unique constraint on personId+expiryTypeId).
- */
-const SEED_BLOCKING_EXPIRY_TYPE_NAMES = ['Visita medica classe 1', 'Visita medica classe 2', 'Visita medica LAPL', 'Licenza'];
-
-/** A comfortably far-future date — never itself the boundary under test. */
-const FAR_FUTURE_DATE = '2099-12-31';
-
-/** See `SEED_BLOCKING_EXPIRY_TYPE_NAMES`'s own doc-comment. */
-async function ensureValidSeedExpiries(page: Page, personId: string, scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS'): Promise<void> {
-  const response = await page.request.get('/api/v1/expiry-types');
-  expect(response.status()).toBe(200);
-  const types = (await response.json()) as { id: string; name: string; scope: string }[];
-  const applicable = types.filter((type) => SEED_BLOCKING_EXPIRY_TYPE_NAMES.includes(type.name) && type.scope === scope);
-  for (const type of applicable) {
-    await registerExpiry(page, personId, type.id, FAR_FUTURE_DATE);
-  }
-}
-
-/**
  * Creates a fresh pilot person (with an active pilot profile, so an
  * `Account` exists) plus a linked login user — avoids the shared seeded
  * pilot (mutated by other, parallel e2e specs — `fullyParallel: true`).
@@ -238,10 +207,25 @@ async function createExpiryTypeForFlights(page: Page, blocksBooking: boolean): P
   return { id: body.id, name };
 }
 
-/** Registers a scadenza for a person via the staff API (story 14.4; `expiries` API of story 6.2). */
-async function registerExpiry(page: Page, personId: string, expiryTypeId: string, expiresAt: string): Promise<void> {
-  const response = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId, expiresAt } });
-  expect(response.status()).toBe(201);
+/**
+ * Cleanup for the "Blocking expiry guard-rail" describe block's own
+ * `blocksBooking: true`, `scope: 'ALL'` fixture types (story 14.4
+ * blast-radius fixture fix): an active one is GLOBAL state, exactly like an
+ * `AppSetting` (CLAUDE.md, "e2e, stato globale") — under
+ * `fullyParallel: true` it can otherwise leak into a CONCURRENTLY-running
+ * OTHER spec's fresh-person `ensureValidSeedExpiries` scan (e2e/helpers.ts)
+ * that happened to run just before this type went active, blocking that
+ * spec's later flight registration too (observed cross-file: `my-account`/
+ * `pdf-exports`/`instructor-compensation`/`reports`). This is called AFTER
+ * every assertion the test needs the type ACTIVE for, so it always
+ * re-authenticates as ADMIN (`settings.manage`, story 6.1) regardless of
+ * which actor the test ended as.
+ */
+async function deactivateBlockingType(page: Page, typeId: string): Promise<void> {
+  await page.context().clearCookies();
+  await loginExpectingDashboard(page, ADMIN_EMAIL);
+  const response = await page.request.patch(`/api/v1/expiry-types/${typeId}`, { data: { isActive: false } });
+  expect(response.status()).toBe(200);
 }
 
 /** A safely-EXPIRED date for `PAST_DATE` flights (well before it, immune to DST/timezone edge cases). */
@@ -733,13 +717,29 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
 });
 
 test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3/4; ratifica R4)', () => {
+  // Story 14.4 blast-radius fixture fix: 4 of the 5 tests below each create
+  // their OWN active, scope: 'ALL', blocksBooking: true `ExpiryType` (never
+  // deactivated afterward) — under `fullyParallel: true` a SIBLING test in
+  // this SAME describe block could otherwise run concurrently on a
+  // different worker and have its fresh pilot's `ensureValidSeedExpiries`
+  // dynamic scan (e2e/helpers.ts) land BEFORE one of these types is
+  // created, then get blocked by it once it goes active mid-test (observed:
+  // "a flight that pushes the pilot balance negative..." failing on a
+  // SIBLING test's just-created custom type). Serial mode makes this
+  // describe block race-free against itself, the only source of these
+  // ALL-scope types in this file.
+  test.describe.configure({ mode: 'serial' });
+
   test('STAFF: a pilot with a BLOCKING expired document (at the FLIGHT DATE) is rejected naming the document and its date, with NO override affordance (admin-only)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 15000);
-    const blockingType = await createExpiryTypeForFlights(page, true);
+    // The pilot MUST exist before the custom blocking type below — see
+    // `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts) on the
+    // ordering/collision rationale.
     const pilot = await createPilotWithLogin(page, 'PilotBlocked123!');
+    const blockingType = await createExpiryTypeForFlights(page, true);
     await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
 
     const staffPassword = 'StaffBlocked123!';
@@ -760,6 +760,7 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     await expect(page.getByTestId('flight-form-error')).toContainText('01/06/2019'); // EXPIRED_BEFORE_PAST_DATE, IT date format (DD/MM/YYYY).
     await expect(page.getByTestId('force-flight-section')).toHaveCount(0);
     await expect(page.getByTestId('flight-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
+    await deactivateBlockingType(page, blockingType.id);
   });
 
   test('ADMIN: a blocked pilot triggers 422 naming the document, "Forza registrazione" appears, empty motivo is rejected client-side, and a motivated force succeeds (201) with forcedAt/forceReason tracked and shown as a badge in the registry', async ({
@@ -767,8 +768,9 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
-    const blockingType = await createExpiryTypeForFlights(page, true);
+    // Ordering: see the sibling test above / `ensureValidSeedExpiries`'s own doc-comment.
     const pilot = await createPilotWithLogin(page, 'PilotForce123!');
+    const blockingType = await createExpiryTypeForFlights(page, true);
     await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
 
     await page.goto('/it/dashboard/logbook');
@@ -812,13 +814,15 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     const row = page.getByTestId('flight-row');
     await expect(row).toHaveCount(1);
     await expect(row.getByTestId('flight-forced-badge')).toBeVisible();
+    await deactivateBlockingType(page, blockingType.id);
   });
 
   test('a non-admin actor cannot force even via a direct API call (403), and force: true without forceReason is a 422 (schema)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
-    const blockingType = await createExpiryTypeForFlights(page, true);
+    // Ordering: see the first test in this describe block / `ensureValidSeedExpiries`'s own doc-comment.
     const pilot = await createPilotWithLogin(page, 'PilotForceApi123!');
+    const blockingType = await createExpiryTypeForFlights(page, true);
     await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
 
     const staffPassword = 'StaffForceApi123!';
@@ -841,6 +845,7 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     expect(response.status()).toBe(403);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe('FORBIDDEN');
+    await deactivateBlockingType(page, blockingType.id);
   });
 
   test('an instructor with a blocking expired document (pilot clear) is rejected naming the instructor\'s document, and an ADMIN override succeeds', async ({
@@ -848,9 +853,10 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
-    const blockingType = await createExpiryTypeForFlights(page, true);
+    // Ordering: see the first test in this describe block / `ensureValidSeedExpiries`'s own doc-comment.
     const pilot = await createPilotWithLogin(page, 'PilotInstrBlock123!');
     const instructor = await createInstructorWithRate(page, 4000);
+    const blockingType = await createExpiryTypeForFlights(page, true);
     await registerExpiry(page, instructor.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
 
     await page.goto('/it/dashboard/logbook');
@@ -869,6 +875,7 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     await forceSection.getByTestId('force-flight-submit').click();
 
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+    await deactivateBlockingType(page, blockingType.id);
   });
 
   test('a flight that pushes the pilot balance negative shows an in-app warning to the operator, without blocking the registration (AC 3, decision D1)', async ({

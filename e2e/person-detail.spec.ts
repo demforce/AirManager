@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -150,6 +151,8 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
       data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
     });
     expect(profileResponse.status()).toBe(200);
+    // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+    await ensureValidSeedExpiries(page, personId, 'PILOTS');
     const aircraftResponse = await page.request.post('/api/v1/aircraft', {
       data: { registration: `I-PD${suffix}`.toUpperCase().slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 50 },
     });

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 /**
  * "I miei compensi" — self-service instructor compensation page (story
@@ -84,6 +85,8 @@ async function createInstructorWithLogin(page: Page, password: string, tag: stri
   const person = (await personResponse.json()) as { id: string };
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: {} });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'INSTRUCTORS');
 
   const email = uniqueEmail('instructor-comp');
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['INSTRUCTOR'], personId: person.id } });
@@ -131,6 +134,8 @@ async function createStudentPerson(page: Page, tag: string): Promise<{ personId:
   const person = (await personResponse.json()) as { id: string };
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/student`, { data: { courseStartDate: PAST_DATE } });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'STUDENTS');
   return { personId: person.id };
 }
 
@@ -156,11 +161,18 @@ async function createInstructorRate(page: Page, instructorPersonId: string, pric
   expect(rateResponse.status()).toBe(201);
 }
 
-/** Registers a SCHOOL flight — same wire shape as `instructor-compensation.spec.ts#registerSchoolFlight`. */
+/**
+ * Registers a SCHOOL flight — same wire shape as
+ * `instructor-compensation.spec.ts#registerSchoolFlight`, including its
+ * story 14.4 blast-radius re-scan right before submitting (see that
+ * function's own doc-comment).
+ */
 async function registerSchoolFlight(
   page: Page,
   params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number },
 ): Promise<void> {
+  await ensureValidSeedExpiries(page, params.personId, 'STUDENTS');
+  await ensureValidSeedExpiries(page, params.instructorPersonId, 'INSTRUCTORS');
   const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {

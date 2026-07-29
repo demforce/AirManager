@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import ExcelJS from 'exceljs';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -61,6 +62,8 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   return { personId: person.id, firstName, lastName };
 }
@@ -191,6 +194,10 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     const aircraft = await createAircraftWithRate(page, 12000);
     const otherPilot = await createPilotPerson(page, 'Other');
     expect(myId).not.toBe(otherPilot.personId);
+    // The SEED pilot flies too (below) — same story 14.4 blast radius as a
+    // fresh person: the seed carries no `Expiry` row at all for its own
+    // applicable blocking types (see `ensureValidSeedExpiries`'s doc-comment).
+    await ensureValidSeedExpiries(page, myId, 'PILOTS');
     await registerFlight(page, { aircraftId: aircraft.id, personId: otherPilot.personId, flightDate: '2020-04-01', flightType: 'TOURISM', minutes: 20 });
     await registerFlight(page, { aircraftId: aircraft.id, personId: myId, flightDate: '2020-04-02', flightType: 'TOURISM', minutes: 25 });
 
