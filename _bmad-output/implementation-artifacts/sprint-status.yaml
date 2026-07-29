@@ -203,8 +203,8 @@ development_status:
 
   # Epic 14 — Feedback demo tour (punch-list utente 2026-07-28, 17 item -> 9 story + TD-8).
   # Piano con ratifiche R1-R4 e decisioni D1-D3: docs/superpowers/plans/2026-07-28-epic-14-demo-feedback.md
-  # Ordine ESEGUITO: 14.1 -> 14.2 -> 14.8 -> 14.5 -> 14.6 -> 14.7 -> 14.3 -> 14.4 (tutte done).
-  # Ordine RESTANTE (deciso dall'utente 2026-07-29): 14.9 -> TD-8.
+  # Ordine ESEGUITO: 14.1 -> 14.2 -> 14.8 -> 14.5 -> 14.6 -> 14.7 -> 14.3 -> 14.4 -> 14.9
+  # (TUTTE E 9 LE STORY DONE). Resta: TD-8 (indagine, decisione D3: misurare su build prod).
   epic-14: in-progress
   # 14.1 chiusa 2026-07-28: review Opus 5 con 4 major di geometria (cap altezza,
   # overlap residuo su viewport bassi, flip fuori viewport, listbox orfana su scroll),
@@ -251,10 +251,21 @@ development_status:
   # transazionale; review Opus 5: 1 major (dry-only scartato in silenzio) + 6 tra
   # minor/nit, fix chirurgici in sessione. Arbitro 280/280, 0 flaky.
   14-8-form-velivolo-unificato: done
-  14-9-rimozione-ruolo-staff: review
+  # 14.9 chiusa 2026-07-29: STAFF rimosso da enum/rbac/seed/UI/i18n/OpenAPI, ADMIN unica
+  # figura amministrativa; ~15 test della classe "permesso largo senza quello stretto"
+  # senza piu' attore (8 unit + 6 e2e rimossi con ledger auditato dalla review). Review
+  # Opus 5 shippable-with-fixes: 5 major (migrazione ROLLBACK su DB pre-14.9 con la riga
+  # staff -> rimedio wipe DOCUMENTATO per ratifica R-14.9-a, R2 alla lettera; OpenAPI e
+  # 33 commenti che ancora dicevano staff; test-tautologia del force; 3 gate futuri
+  # annotati). 4 ratifiche PO. seed:demo riparato (era rotto dalla 14.3). Arbitro 298/298.
+  14-9-rimozione-ruolo-staff: done
   td-8-indagine-lentezza-salvataggi: backlog
 
 action_items:
+  - epic: 14
+    action: "TD (review 14.9 F11, PRE-esistente): /api/v1/stats e /api/v1/cash-report rispondono 422 (validazione Zod della query) PRIMA del 403 a un attore non autorizzato, mentre tutti gli altri endpoint gated fanno 403 -> un attore senza permesso apprende la forma dei parametri. Uniformare l'ordine gate-prima-di-validazione (o ratificare la convenzione)."
+    owner: "backlog TD"
+    status: open
   - epic: 14
     action: "TD (review 14.4, note residue): (a) il describe 'Blocking expiry guard-rail' di flights.spec.ts (e i test di bookings.spec.ts che creano ExpiryType bloccanti scope ALL) crea/disattiva STATO GLOBALE dentro il project fullyParallel -> TOCTOU raro con ensureValidSeedExpiries (mitigato a ~zero da e2e/helpers.ts, eliminabile solo spostandolo nella catena serializzata di playwright.config.ts); (b) reports.spec.ts esegue un PUT /settings/scheduling GLOBALE dal project fullyParallel (lacuna pre-esistente, stessa classe della regola 'e2e stato globale' di CLAUDE.md) -> va spostato nella catena serializzata."
     owner: "backlog TD"

@@ -4,7 +4,7 @@ baseline_commit: 8281149
 
 # Story 14.9: Rimozione del ruolo STAFF — resta ADMIN come unica figura amministrativa
 
-Status: review (branch `dev`, epic 14)
+Status: done (review Opus 5 shippable-with-fixes — fix F1-F10 `860778f` + 4 ratifiche PO, arbitro finale 298/298, 0 flaky — 2026-07-29)
 
 ## Story
 
@@ -138,4 +138,36 @@ Nessun test è stato indebolito in silenzio: ogni rimozione ha un pari (redundan
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+Review adversarial: **Opus 5 xhigh** (subagent via Workflow), diff `a11058a..243cc0a`. Verdetto: **shippable-with-fixes** (zero blocker: comportamento corretto e invarianti AC 7 verificati anche a runtime; 5 major di completezza/onestà documentale). Fix `860778f`, arbitro finale verde.
+
+### Gate arbitro
+
+- **Run del reviewer** (DB fresco, build prod, pre-fix): **298 passed (7.5m), 0 flaky, 0 failed**. Conto verificato: 304 (arbitro 14.4) − 6 e2e rimossi = 298; il diff conferma esattamente −6 e2e e −8 unit — ledger aritmeticamente onesto. Gates 4/4 PASS in shell pulita (1600 unit).
+- **Arbitro FINALE** (sessione principale, DB fresco, post-fix `860778f`): **298/298 passed (9.3m), exit 0, ZERO flaky**.
+
+### Verifiche empiriche del reviewer
+
+Catena migrazioni rieseguita su DB gemello proprio (`am_rev149`): 46/46, enum a 4 valori, nessun tipo orfano, `migrate diff` → "empty migration" (zero drift); l'SQL è il pattern AlterEnum standard Prisma, non un edit artigianale (claim 2 CONFERMATO). Matrice RBAC a runtime sui 4 ruoli (login reale, 14 route + 9 endpoint): identica al pre-14.9. UI reale: form "Nuovo pilota" con esattamente 4 checkbox ruolo, zero testo "Staff" (IT/EN). OpenAPI servito: enum di ruolo corretti ovunque. **Claim smentiti**: la flake `flights.spec.ts:602` attribuita dal dev a una "classe documentata 14.3" NON è documentata da nessuna parte (nel run del reviewer passa al primo colpo) — attribuzione ritirata dal Dev Agent Record.
+
+### Findings (tutti chiusi in `860778f`, salvo dove indicato)
+
+- **F1 MAJOR** — la migrazione fallisce con ROLLBACK su qualunque DB pre-14.9 con la riga STAFF (riprodotto in psql): il DELETE manuale del dev sul proprio DB (claim 3) aveva mascherato il difetto, e il bootstrap SessionStart si romperebbe sulle altre macchine. **Ratifica R-14.9-a** (PO): niente riga di pulizia — R2 alla lettera; rimedio sanzionato = wipe del DB + replay migrazioni/seed, documentato nell'header di `migration.sql` (verificato che il commento su una migrazione già applicata non crea drift: deploy/status non ri-checksummano) e in HANDOFF.
+- **F2 MAJOR** — l'OpenAPI SERVITO dichiarava ancora "staff/admin" in ~12+ perimetri (contratto per la futura app Flutter): sweep completo di `registry.ts` (+2 occorrenze oltre la lista del reviewer); post-fix il documento servito ha 0 "STAFF" e 1 solo "staff" deliberato come sostantivo generico.
+- **F3 MAJOR** — 33 doc-comment "(staff+admin)" in 20 file: sweep completo (con ricontrollo per-file oltre i conteggi del reviewer); i "staff" sostantivo-generico legittimi (es. `mode === 'staff'` del form prenotazioni, pre-esistente) lasciati e dichiarati.
+- **F4 MAJOR** — il test e2e presentato dal ledger come "equivalente API" del force-403 era una TAUTOLOGIA (il 403 arriva da `flights.manage`: un PILOT non raggiunge mai `flights.forceExpiry`) e l'unico test vero del gate era stato rimosso: test rinominato per ciò che prova davvero, `flights.service.ts:485` annotata come guardia per ruoli futuri deliberatamente senza test (AC 2 la sanziona), ledger corretto.
+- **F5 MAJOR** — 3 gate interni ora strutturalmente irraggiungibili (`aircraft.service.ts:249`, `people.service.ts:471`, `membership.service.ts:110`) rimossi dai test citando "copertura adiacente" che copre solo il gate ESTERNO: annotati con lo stesso pattern di F4, motivazioni del ledger corrette ("copertura strutturalmente non più esprimibile").
+- **F6/F7 minor** — messaggio API `Only staff can force…` e 2 stringhe UI vive che nominavano il ruolo rimosso. **Ratifica R-14.9-c** (PO): lessico "amministratore" — riscritti (API + IT/EN); chiave orfana `PeoplePage.description` rimossa.
+- **F8 minor** — naming residuo (`staffUsers`, `staffUserFixture`, 'staff digest', 2 titoli e2e): rinominato tutto.
+- **F9 minor** — hint read-only tariffe (review 14.8 F7) non più renderizzabili da nessun ruolo. **Ratifica R-14.9-d** (PO): rimossi ora — CON un'eccezione trovata dal fix-subagent: il ramo di `aircraft-editor.tsx` era gated `canManageSettings && !archived` e `archived` è una condizione VIVA indipendente dal ruolo (verificata su un aeromobile archiviato reale) → semplificato a `!archived`, tenuta la chiave i18n consumata. Deviazione corretta, non compliance cieca.
+- **F10 minor** — `npm run seed:demo` ROTTO dalla story 14.3 (voli dell'allievo come TOURISM → `STUDENT_FLIGHT_MUST_BE_SCHOOL`), quindi la migrazione Giulia→ADMIN non era mai stata eseguita davvero: fix di 2 righe (`flightType: 'SCHOOL'`), verificato end-to-end su DB gemello (24 voli, 6 prenotazioni, 3 PPR; Giulia ADMIN confermata — **ratifica R-14.9-b**: secondo admin nel demo OK).
+- **F11 nit, PRE-esistente, NON toccato** — `/api/v1/stats` e `/api/v1/cash-report` rispondono 422 (validazione query Zod) PRIMA del 403 a un attore non autorizzato, a differenza di tutti gli altri endpoint gated: tracciato come TD in sprint-status.
+
+### Audit del ledger (il cuore della review)
+
+Contabilità ESATTA (riconciliazione titolo-per-titolo del reviewer: nessuna rimozione fuori ledger). Motivazioni: 10/14 giuste; 4 imprecise o false (le "coperture adiacenti" di F4/F5 coprivano solo il gate esterno) — tutte corrette nel Dev Agent Record. La scoperta strutturale del dev (classe "permesso largo senza quello stretto" → ~15 test senza più attore possibile) CONFERMATA nel merito dal reviewer.
+
+### Verdetto deviazioni
+
+(1) Correzione ricognizione (17 spec e2e, 20 unit, 3 file non censiti): confermata e lodata. (2) Scoperta strutturale: giusta, difetto solo nelle formulazioni del ledger (corrette). (3) Giulia→ADMIN: deviazione di prodotto → ratificata dal PO (R-14.9-b). (4) DELETE manuale via SQL: conforme a R2 nel merito e dichiarato, ma di processo è stata la deviazione più costosa — ha mascherato F1; lezione: se devi toccare a mano il DB per far passare una migrazione, QUELLA è l'informazione che deve finire nel repo.
+
+**Esito finale: 5 major chiusi, 4 ratifiche PO recepite, ledger corretto, arbitro 298/298. Story DONE.**
