@@ -15,11 +15,21 @@ export type SegmentedProps<T extends string> = {
   options: readonly SegmentedOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  /**
+   * Story 14.7, AC 1: when the control needs its OWN accessible name (e.g.
+   * a caller that does not wrap it in a `Field`'s implicit `<label>`), this
+   * renders `role="group" aria-label={ariaLabel}` on the wrapping `div` —
+   * same pattern `schedule.tsx`'s hand-rolled view-toggle already uses.
+   * Omitted (the default) keeps today's plain `<div className="segmented">`
+   * for every existing caller (`aircraft-editor.tsx`'s `BasedSegmented`),
+   * unchanged.
+   */
+  ariaLabel?: string;
 };
 
-export function Segmented<T extends string>({ options, value, onChange }: SegmentedProps<T>) {
+export function Segmented<T extends string>({ options, value, onChange, ariaLabel }: SegmentedProps<T>) {
   return (
-    <div className="segmented">
+    <div className="segmented" {...(ariaLabel ? { role: 'group', 'aria-label': ariaLabel } : {})}>
       {options.map((option) => (
         <button
           key={option.value}

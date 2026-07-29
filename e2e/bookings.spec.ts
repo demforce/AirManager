@@ -512,7 +512,9 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByRole('radio', { name: 'Per un allievo' }).click();
+    // Story 14.7, AC 1: the "per me"/"per un allievo" radio pair became one
+    // `Segmented` control — its options render as `<button>`s, not radios.
+    await form.getByRole('button', { name: 'Per un allievo' }).click();
     // Pre-existing bug uncovered by review 12.3 F1 (out of scope to fix in
     // product code here): `Field`'s implicit `<label>` wraps the `<select>`
     // as a DOM child, so the browser's computed accessible name concatenates
@@ -530,6 +532,33 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     // `personName`/`instructorName` are "Nome Cognome" (Contesto's DTO spec) — firstName first.
     await expect(row).toContainText(`${student.firstName} ${student.lastName}`);
+    await expect(row).toContainText(`${instructor.firstName} ${instructor.lastName}`);
+  });
+
+  // Story 14.7, AC 1/6: the sibling test above only ever exercises SWITCHING
+  // the `Segmented` control to "Per un allievo" — this one proves the
+  // DEFAULT selected option ("Per me", `bookingTarget` state initializes to
+  // `'self'`) genuinely submits too, not just the switched-away state.
+  test('an instructor books for themselves (default "Per me") — 201, row shows only their own name', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const instructorPassword = 'IstruttoreBookingsSelf123!';
+    const instructor = await createInstructorWithLogin(page, instructorPassword);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, instructorPassword);
+
+    await gotoBookingsAndWaitForHydration(page);
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    await expect(form.getByRole('button', { name: 'Per me' })).toHaveClass('on');
+    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T17:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T18:00`);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+
+    await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
     await expect(row).toContainText(`${instructor.firstName} ${instructor.lastName}`);
   });
 

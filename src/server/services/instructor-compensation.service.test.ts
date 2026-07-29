@@ -14,8 +14,11 @@ vi.mock('@/server/db/prisma', () => ({
   prisma: {
     person: { findUnique: vi.fn(), findMany: vi.fn() },
     flight: { groupBy: vi.fn(), findMany: vi.fn() },
-    instructorPayout: { groupBy: vi.fn(), create: vi.fn() },
-    instructorProfile: { update: vi.fn() },
+    // `findUnique` (story 14.7): `getOwnInstructorProfileId` (`bookings.service.ts`,
+    // reused here — see `getOwnCompensationOverview`) reads it via the SAME
+    // mocked `prisma` module (vitest's module registry is per-test-file).
+    instructorPayout: { groupBy: vi.fn(), create: vi.fn(), findMany: vi.fn() },
+    instructorProfile: { update: vi.fn(), findUnique: vi.fn() },
     cashCategory: { findUnique: vi.fn() },
     cashMovement: { create: vi.fn() },
     $transaction: vi.fn(),
@@ -23,9 +26,14 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { getCompensationSummary, getInstructorCompensationDetail, getOwnCompensationSummary, recordPayout, setPayoutRate } = await import(
-  './instructor-compensation.service'
-);
+const {
+  getCompensationSummary,
+  getInstructorCompensationDetail,
+  getOwnCompensationOverview,
+  getOwnCompensationSummary,
+  recordPayout,
+  setPayoutRate,
+} = await import('./instructor-compensation.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
@@ -34,7 +42,9 @@ const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const payoutGroupByMock = vi.mocked(prisma.instructorPayout.groupBy);
 const payoutCreateMock = vi.mocked(prisma.instructorPayout.create);
+const payoutFindManyMock = vi.mocked(prisma.instructorPayout.findMany);
 const profileUpdateMock = vi.mocked(prisma.instructorProfile.update);
+const profileFindUniqueMock = vi.mocked(prisma.instructorProfile.findUnique);
 const cashCategoryFindUniqueMock = vi.mocked(prisma.cashCategory.findUnique);
 const cashMovementCreateMock = vi.mocked(prisma.cashMovement.create);
 const transactionMock = vi.mocked(prisma.$transaction);
@@ -50,7 +60,9 @@ const flightGroupBy = flightGroupByMock as unknown as { mockResolvedValue: (v: F
 const flightFindMany = flightFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const payoutGroupBy = payoutGroupByMock as unknown as { mockResolvedValue: (v: Fixture[]) => void; mockImplementation: (fn: ImplFn) => void };
 const payoutCreate = payoutCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const payoutFindMany = payoutFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const profileUpdate = profileUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const profileFindUnique = profileFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const cashMovementCreate = cashMovementCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 
@@ -97,7 +109,9 @@ describe('instructor-compensation.service (story 12.7)', () => {
     flightFindManyMock.mockReset();
     payoutGroupByMock.mockReset();
     payoutCreateMock.mockReset();
+    payoutFindManyMock.mockReset();
     profileUpdateMock.mockReset();
+    profileFindUniqueMock.mockReset();
     cashCategoryFindUniqueMock.mockReset();
     cashMovementCreateMock.mockReset();
     transactionMock.mockReset();
@@ -175,6 +189,83 @@ describe('instructor-compensation.service (story 12.7)', () => {
       const result = await getOwnCompensationSummary({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
 
       expect(result).toEqual({ payoutRateCents: null, mtdMinutes: 0, owedMtdCents: null });
+    });
+  });
+
+  describe('getOwnCompensationOverview (story 14.7, AC 2/3/6 — self-service, no personId/instructorProfileId parameter)', () => {
+    it('rejects an actor without self.read (defensive — every real Role has self.read)', async () => {
+      await expect(getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: [] })).rejects.toThrow(ForbiddenError);
+      expect(profileFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('returns null for an actor with no linked person — never queries the profile or the payouts', async () => {
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: null, roles: ['INSTRUCTOR'] });
+      expect(result).toBeNull();
+      expect(profileFindUniqueMock).not.toHaveBeenCalled();
+      expect(payoutFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it("returns null when the actor's own InstructorProfile is DEACTIVATED (AC 4 — never fabricates data)", async () => {
+      profileFindUnique.mockResolvedValue({ id: 'profile_ines', deactivatedAt: new Date('2026-01-01') });
+
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).toBeNull();
+      expect(payoutFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('returns null when the actor has no InstructorProfile at all', async () => {
+      profileFindUnique.mockResolvedValue(null);
+
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).toBeNull();
+      expect(payoutFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it("resolves the actor's OWN active profile (getOwnInstructorProfileId) and returns accrual + payout history, scoped to that profile only", async () => {
+      profileFindUnique.mockResolvedValue({ id: 'profile_ines', deactivatedAt: null });
+      personFindMany.mockResolvedValue([instructorPersonRow()]); // rate 3000 c/h
+      flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 130 } }]);
+      payoutGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { amountCents: 2000 } }]);
+      payoutFindMany.mockResolvedValue([
+        {
+          id: 'payout_1',
+          amountCents: 2000,
+          periodStart: parseDateOnlyUtc('2026-07-01'),
+          periodEnd: parseDateOnlyUtc('2026-07-15'),
+          method: 'CASH',
+          createdAt: new Date('2026-07-16T10:00:00.000Z'),
+        },
+      ]);
+
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).toEqual({
+        payoutRateCents: 3000,
+        mtdMinutes: 130,
+        mtdOwedCents: 4500,
+        totalOwedCents: 4500,
+        payouts: [
+          {
+            id: 'payout_1',
+            amountCents: 2000,
+            periodStart: '2026-07-01',
+            periodEnd: '2026-07-15',
+            method: 'CASH',
+            createdAt: new Date('2026-07-16T10:00:00.000Z'),
+          },
+        ],
+      });
+
+      // The payout query is scoped to the profile `getOwnInstructorProfileId`
+      // resolved from the ACTOR — never a client-supplied id (AC 3).
+      const [payoutArgs] = payoutFindManyMock.mock.calls[0] as [{ where: { instructorProfileId?: string } }];
+      expect(payoutArgs.where.instructorProfileId).toBe('profile_ines');
+    });
+
+    it('never accepts a second (personId/instructorProfileId) argument — there is no parameter to pass one through', () => {
+      expect(getOwnCompensationOverview).toHaveLength(1);
     });
   });
 

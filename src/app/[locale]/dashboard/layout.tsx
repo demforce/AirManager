@@ -11,6 +11,7 @@ import { redirect } from '@/i18n/navigation';
 import { signOut } from '@/server/auth/auth';
 import { getSessionActor } from '@/server/auth/session';
 import { getAirfieldBranding, getAirfieldIcao, getMetarStation } from '@/server/services/app-settings.service';
+import { getOwnInstructorProfileId } from '@/server/services/bookings.service';
 import { getMe } from '@/server/services/me.service';
 import { getMetar, type MetarCategory } from '@/server/services/metar.service';
 
@@ -76,12 +77,17 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
     return null;
   }
 
-  const [me, branding, icao, theme, metarStation] = await Promise.all([
+  const [me, branding, icao, theme, metarStation, ownInstructorProfileId] = await Promise.all([
     getMe(actor),
     getAirfieldBranding(),
     getAirfieldIcao(),
     (async (): Promise<Theme> => ((await cookies()).get(THEME_COOKIE)?.value === 'dark' ? 'dark' : 'light'))(),
     getMetarStation(),
+    // Story 14.7, AC 4: only queried for an INSTRUCTOR-role actor (`getOwnInstructorProfileId`'s
+    // own gate is `self.read`, granted to every role, so this would otherwise run one extra query
+    // per page load for every non-instructor actor too) — decides whether the "I miei compensi" nav
+    // item follows the actor's ACTIVE profile, not just the role (14.6 F2's lesson).
+    actor.roles.includes('INSTRUCTOR') ? getOwnInstructorProfileId(actor) : Promise.resolve(null),
   ]);
   // Story 12.11, AC 5: depends on `metarStation` above, so it cannot join the `Promise.all` batch.
   const metarData = await getMetar(metarStation);
@@ -101,7 +107,11 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
       }
     : undefined;
 
-  const rawItems = visibleNavItems(actor.roles);
+  // Story 14.7, AC 4: `visibleNavItems` is a pure per-role filter (module doc
+  // comment) — the ONE item that also needs the actor's ACTIVE profile
+  // (`myCompensation`) is filtered out here, surgically, rather than
+  // widening the registry's contract for every item.
+  const rawItems = visibleNavItems(actor.roles).filter((item) => item.id !== 'myCompensation' || ownInstructorProfileId !== null);
   const groups = NAV_GROUPS.map((groupId) => ({
     id: groupId,
     label: t(`groups.${groupId}`),

@@ -22,6 +22,7 @@
       "scadenze": "Expiries",
       "logbook": "Flight log",
       "myAccount": "My transactions",
+      "myCompensation": "My payouts",
       "billing": "Billing",
       "reports": "Reports",
       "settings": "Settings"
@@ -37,6 +38,7 @@
       "scadenze": "Expiries",
       "logbook": "Flight log",
       "myAccount": "My transactions",
+      "myCompensation": "My payouts",
       "billing": "Billing",
       "reports": "Reports",
       "settings": "Settings"
@@ -765,6 +767,25 @@
     "sub": "Top-ups, flight charges and adjustments on your account.",
     "balanceLabel": "Current balance",
     "noAccount": "No active account"
+  },
+  "MyCompensationPage": {
+    "title": "My payouts",
+    "sub": "Hours flown, this month's accrual and your payout history.",
+    "noProfile": "No active instructor profile.",
+    "kpi": {
+      "rate": "Hourly rate",
+      "hoursMtd": "Hours this month",
+      "owedMtd": "Accrued this month",
+      "owedTotal": "Outstanding balance"
+    },
+    "table": {
+      "heading": "Payments received",
+      "empty": "No payments recorded.",
+      "date": "Date",
+      "period": "Period",
+      "method": "Method",
+      "amount": "Amount"
+    }
   },
   "FinancePage": {
     "cashRegister": {

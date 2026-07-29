@@ -4,6 +4,7 @@ import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { getOwnInstructorProfileId } from './bookings.service';
 import { ConflictError, NotFoundError } from './errors';
 
 /** The seeded cash category (`prisma/seed.ts`/`seed-demo.ts`) the payout's money twin is recorded under (story Billing-1, AC 4) — resolved BY NAME before the transaction opens, same "fails loudly by design" contract as `accounts.service.ts#recordTopUp`'s "Ricariche". */
@@ -242,6 +243,78 @@ export async function getOwnCompensationSummary(actor: Actor): Promise<OwnCompen
 
   const [row] = await computeSummaryRows(instructors);
   return { payoutRateCents: row!.payoutRateCents, mtdMinutes: row!.mtdMinutes, owedMtdCents: row!.owedMtdCents };
+}
+
+/** A single received payout, as the self-service "I miei compensi" page's history table shows it (story 14.7, AC 2). */
+export type OwnPayoutHistoryItem = {
+  id: string;
+  amountCents: number;
+  periodStart: string;
+  periodEnd: string;
+  method: 'CASH' | 'BANK_TRANSFER' | 'POS';
+  createdAt: Date;
+};
+
+/** The self-service "I miei compensi" page's full read (story 14.7, AC 2). */
+export type OwnCompensationOverview = {
+  payoutRateCents: number | null;
+  mtdMinutes: number;
+  mtdOwedCents: number | null;
+  /** All-time residual owed ("saldo residuo dovuto", AC 2) — same `owedTotalCents` the staff roster row already computes. */
+  totalOwedCents: number | null;
+  /** Newest first — every individual payout ever recorded against this instructor. */
+  payouts: OwnPayoutHistoryItem[];
+};
+
+/**
+ * `getOwnCompensationOverview` (story 14.7, AC 2/3) — the self-service "I
+ * miei compensi" page's single read: current-period accrual (`mtdMinutes`/
+ * `mtdOwedCents`) plus the all-time residual (`totalOwedCents`), computed by
+ * the SAME `computeSummaryRows` math the staff-facing `getCompensationSummary`
+ * / `getOwnCompensationSummary` already use (AC 5: no new calculation), plus
+ * the individual payout history. Gated on `self.read`; resolves the actor's
+ * OWN instructor profile via `getOwnInstructorProfileId`
+ * (`bookings.service.ts` — reused verbatim, the exact function the "Nuova
+ * prenotazione" toggle and the Overview landing already rely on for the same
+ * "actor's own ACTIVE profile, never a client-supplied id" contract): there
+ * is no personId/instructorProfileId parameter on this function for a client
+ * to override (AC 3 — IDOR impossible by construction, not by a check). A
+ * deactivated/absent profile returns `null` (AC 4) — never a 403, never
+ * fabricated data, same convention as `getOwnCompensationSummary`. The
+ * staff-facing `getCompensationSummary`/`recordPayout` are UNTOUCHED by this
+ * addition (AC 5).
+ */
+export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompensationOverview | null> {
+  authorize(actor, 'self.read');
+  const instructorProfileId = await getOwnInstructorProfileId(actor);
+  if (!instructorProfileId) return null;
+
+  const instructors = await listActiveInstructors(actor.personId ?? undefined);
+  if (instructors.length === 0) return null;
+
+  const [[row], payouts] = await Promise.all([
+    computeSummaryRows(instructors),
+    prisma.instructorPayout.findMany({
+      where: { instructorProfileId },
+      orderBy: [{ createdAt: 'desc' }],
+      select: { id: true, amountCents: true, periodStart: true, periodEnd: true, method: true, createdAt: true },
+    }),
+  ]);
+
+  return {
+    payoutRateCents: row!.payoutRateCents,
+    mtdMinutes: row!.mtdMinutes,
+    mtdOwedCents: row!.owedMtdCents,
+    totalOwedCents: row!.owedTotalCents,
+    payouts: payouts.map((payout) => ({
+      id: payout.id,
+      amountCents: payout.amountCents,
+      periodStart: toDateOnlyString(payout.periodStart),
+      periodEnd: toDateOnlyString(payout.periodEnd),
+      method: payout.method,
+      createdAt: payout.createdAt,
+    })),
+  };
 }
 
 /** Resolves ONE active instructor by `Person.id` for the detail read (unknown person OR no/deactivated profile -> 404, no enumeration concern since `finance.manage` already sees every person). */

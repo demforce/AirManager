@@ -28,6 +28,7 @@ export type NavItemId =
   | 'scadenze'
   | 'logbook'
   | 'myAccount'
+  | 'myCompensation'
   | 'billing'
   | 'reports'
   | 'settings';
@@ -62,6 +63,8 @@ const ALL_ROLES: readonly Role[] = ['ADMIN', 'STAFF', 'INSTRUCTOR', 'PILOT', 'ST
 const STAFF_ROLES: readonly Role[] = ['ADMIN', 'STAFF'];
 /** Story 14.6, AC 1: PILOT/STUDENT's own "Le mie transazioni" — INSTRUCTOR gets its own compensation page (story 14.7); admin/staff already have Contabilità + the scheda persona. */
 const SELF_SERVICE_ROLES: readonly Role[] = ['PILOT', 'STUDENT'];
+/** Story 14.7, AC 2: INSTRUCTOR's own "I miei compensi" — same rationale as `SELF_SERVICE_ROLES` above, one role only. */
+const INSTRUCTOR_ROLES: readonly Role[] = ['INSTRUCTOR'];
 
 /** Group display order (prototype: Operazioni/Anagrafiche/Archivio/Sistema). Labels are resolved by the caller via `t('groups.<id>')` (`messages/*.json`'s `shell.groups.*`) — this module stays i18n-agnostic. */
 export const NAV_GROUPS: readonly NavGroupId[] = ['operations', 'directory', 'archive', 'system'];
@@ -94,6 +97,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: true },
   // Story 14.6: dedicated self-service estratto conto — own balance + own movements only (never a staff view).
   { id: 'myAccount', href: '/dashboard/my-account', icon: 'cash', group: 'archive', roles: SELF_SERVICE_ROLES, enabled: true },
+  // Story 14.7: dedicated self-service compensation page — own accrual + own payout history only (never the staff roster). This ROLE filter is coarse/presentation-only like every other entry (module doc comment); AC 4's stronger "active profile, not role" requirement is enforced by `dashboard/layout.tsx` filtering this ONE item out for an INSTRUCTOR-role actor whose own profile is deactivated (14.6 F2's lesson: never point a nav item where the destination would then have nothing to show).
+  { id: 'myCompensation', href: '/dashboard/my-compensation', icon: 'cash', group: 'archive', roles: INSTRUCTOR_ROLES, enabled: true },
   // Story 12.9: the billing (Contabilità) page ships in the AirOps visual language directly, replacing the legacy `/dashboard/finance`.
   { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: STAFF_ROLES, enabled: true },
   { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: STAFF_ROLES, enabled: true },

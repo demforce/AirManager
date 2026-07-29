@@ -22,6 +22,7 @@
       "scadenze": "Scadenze",
       "logbook": "Registro voli",
       "myAccount": "Le mie transazioni",
+      "myCompensation": "I miei compensi",
       "billing": "Contabilità",
       "reports": "Statistiche",
       "settings": "Impostazioni"
@@ -37,6 +38,7 @@
       "scadenze": "Scadenze",
       "logbook": "Registro voli",
       "myAccount": "Le mie transazioni",
+      "myCompensation": "I miei compensi",
       "billing": "Contabilità",
       "reports": "Statistiche",
       "settings": "Impostazioni"
@@ -765,6 +767,25 @@
     "sub": "Ricariche, addebiti voli e rettifiche sul tuo conto.",
     "balanceLabel": "Saldo attuale",
     "noAccount": "Nessun conto attivo"
+  },
+  "MyCompensationPage": {
+    "title": "I miei compensi",
+    "sub": "Ore volate, maturato del mese e storico dei pagamenti ricevuti.",
+    "noProfile": "Nessun profilo istruttore attivo.",
+    "kpi": {
+      "rate": "Tariffa oraria",
+      "hoursMtd": "Ore nel mese",
+      "owedMtd": "Maturato nel mese",
+      "owedTotal": "Residuo dovuto"
+    },
+    "table": {
+      "heading": "Pagamenti ricevuti",
+      "empty": "Nessun pagamento registrato.",
+      "date": "Data",
+      "period": "Periodo",
+      "method": "Metodo",
+      "amount": "Importo"
+    }
   },
   "FinancePage": {
     "cashRegister": {

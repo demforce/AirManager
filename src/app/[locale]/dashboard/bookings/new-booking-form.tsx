@@ -8,6 +8,7 @@ import { useRouter } from '@/i18n/navigation';
 import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
+import { Segmented } from '@/components/ui/segmented';
 import { SlideOver } from '@/components/ui/slide-over';
 
 export type NewBookingFormMode = 'staff' | 'instructor' | 'pilot';
@@ -414,20 +415,48 @@ export function NewBookingForm({
             </Field>
           ) : null}
 
+          {/* Story 14.7, AC 1: one binary AirOps `Segmented` control instead of
+              two radios — same component `aircraft-editor.tsx`'s `based`
+              toggle already uses, chosen over a checkbox/switch because the
+              choice is a named PAIR of mutually-exclusive options ("per me" /
+              "per un allievo"), exactly what `Segmented` is for; a bare
+              toggle would need its own on/off-to-label mapping for no
+              benefit. `bookingTarget`'s semantics (state, schema, the student
+              field's conditional render+validation) are UNCHANGED — only the
+              markup driving it.
+
+              NOT wrapped in `Field` (unlike `BasedSegmented`'s usage):
+              `Field`'s implicit `<label>` associates with the FIRST
+              labelable descendant only (native HTML behaviour) — verified
+              interactively that this makes Chromium compute that first
+              button's accessible name as the label text PLUS the OTHER
+              button's text, with the button's OWN text silently dropped
+              (e.g. "Per me" -> "Prenota Per un allievo"), while the second
+              button keeps a clean name. Same `role="group"`/`aria-label`
+              pattern `schedule.tsx`'s view toggle already uses instead: the
+              GROUP gets the accessible name, each button keeps its own
+              clean one — reused here via `Segmented`'s new `ariaLabel` prop
+              rather than hand-rolling the group markup again. Visual layout
+              is identical to `Field`'s (same `fld`/`fld-label-group`/
+              `fld-label`/`fld-ctrl` classes), just without the label
+              wrapper. */}
           {mode === 'instructor' ? (
-            <fieldset className="fld wide">
-              <legend className="fld-label">{labels.bookingTarget}</legend>
-              <div style={{ display: 'flex', gap: 20, marginTop: 8 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="radio" name="booking-target" checked={bookingTarget === 'self'} onChange={() => setBookingTarget('self')} />
-                  {labels.bookForMe}
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="radio" name="booking-target" checked={bookingTarget === 'student'} onChange={() => setBookingTarget('student')} />
-                  {labels.bookForStudent}
-                </label>
+            <div className="fld wide">
+              <div className="fld-label-group">
+                <span className="fld-label">{labels.bookingTarget}</span>
+                <span className="fld-ctrl">
+                  <Segmented
+                    ariaLabel={labels.bookingTarget}
+                    options={[
+                      { value: 'self', label: labels.bookForMe },
+                      { value: 'student', label: labels.bookForStudent },
+                    ]}
+                    value={bookingTarget}
+                    onChange={setBookingTarget}
+                  />
+                </span>
               </div>
-            </fieldset>
+            </div>
           ) : null}
 
           {mode === 'instructor' && bookingTarget === 'student' ? (
