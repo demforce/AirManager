@@ -18,10 +18,12 @@
 #
 # WORKFLOW NOTES:
 # ===============
-# - Model roles (user-approved config 2026-07-07, effective from story 4.4):
-#   stories = main session Fable 5 (effort xhigh); dev = ONE Sonnet 5
-#   subagent per story (effort xhigh, no ultracode fan-out); review =
-#   Opus 5 subagent (effort xhigh, the single adversarial layer;
+# - Model roles (user-approved config 2026-07-07, effective from story 4.4;
+#   amended 2026-07-29): stories = main session Fable 5 (effort xhigh);
+#   dev = ONE subagent per story — Opus 5 xhigh when the story writes UI
+#   code (user rule 2026-07-29, applies to fix-subagents on UI surfaces
+#   too; epic 15 mobile is all-UI), Sonnet 5 xhigh for pure backend;
+#   review = Opus 5 subagent (effort xhigh, the single adversarial layer;
 #   switched from Opus 4.8 by user decision 2026-07-25).
 #   (Story 4.3 dev ran on the earlier ultracode workflow config.)
 # - Story creation: main session (Fable 5 xhigh) via bmad-create-story
