@@ -215,8 +215,13 @@ development_status:
   # banner) — fix in DUE giri (subagent + chirurgico main: il "quarto form" era il
   # modal Quota associativa). Arbitro finale 276+1 flaky login-class, exit 0.
   14-2-validazione-form-per-campo: done
-  14-3-regole-voli-scuola: ready-for-dev
-  14-4-guardrail-registrazione-volo: backlog
+  # 14.3 chiusa 2026-07-29: allievo-senza-brevetto -> solo SCHOOL (il vincolo
+  # istruttore e il PIC c'erano gia'). Review Opus 5: F1 CORRUZIONE DATI (la UI
+  # riscriveva il tipo di un volo storico in correzione e lo ri-addebitava) +
+  # F2 vicolo cieco. Ratifiche: correzione a tipo invariato sempre ammessa;
+  # licenza a vita + pilota abilitabile a voli scuola (currency/SEP). 299/299.
+  14-3-regole-voli-scuola: done
+  14-4-guardrail-registrazione-volo: ready-for-dev
   # 14.5 chiusa 2026-07-29: masking server-side nel servizio (6 consumer coperti
   # alla fonte) + permesso bookings.read.names. Review Opus 5: BYPASS REALE (F1) —
   # instructorProfileId in chiaro + anagrafica istruttori nel payload di tutti +

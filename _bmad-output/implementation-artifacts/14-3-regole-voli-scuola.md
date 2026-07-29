@@ -4,7 +4,7 @@ baseline_commit: 47d0d33
 
 # Story 14.3: Regole voli scuola — l'allievo vola SOLO scuola, e il PIC è esplicito
 
-Status: review (branch `dev`, epic 14)
+Status: done (review Opus 5 shippable-with-fixes — 1 major di CORRUZIONE DATI + vicolo cieco, fix `0a8c8f1` + 2 ratifiche PO, arbitro 299/299 — 2026-07-29)
 
 ## Story
 
@@ -100,4 +100,64 @@ Condiviso da `registerFlight`/`correctFlight` (stessa funzione, invariato lo sch
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+Reviewer adversarial (Opus 5 xhigh), 2026-07-29 — perimetro `git diff 4575bc9..HEAD` (`764c8a2` feat, `2fe7dae` docs).
+
+### Gate arbitro (rieseguito dal reviewer, non fidandosi del Dev Agent Record)
+
+- **Full suite e2e su DB fresco** (`docker compose down -v && up`, `prisma migrate deploy && db seed`, build prod `env -u NODE_ENV`, `JOBS_SECRET` non-placeholder, `CI=1 npx playwright test` in background atteso sul PID): **298 passed (9.1m), 0 failed, 0 flaky** — coincide col claim del dev. Verdi anche i due test della story (`flights.spec.ts:532` AC 2, `flights.spec.ts:462` PIC dual/solo) e `my-account.spec.ts:226` con la fixture corretta.
+- `npm run gates`: PASS lint (17s) · PASS typecheck (3s) · PASS test (6s) — 1581 passed · PASS build (27s).
+- Unit in shell pulita (`env -u DATABASE_URL -u AUTH_SECRET`): 121 passed (`flights.service.test.ts` + `flight-pic.test.ts`).
+
+### Verifiche empiriche (API reale + psql + UI reale)
+
+- **AC 1 (servizio)**: `POST /api/v1/flights` e `POST /api/v1/flights/{id}/correct` — allievo-solo + TURISMO/LAVORO AEREO → 422 `STUDENT_FLIGHT_MUST_BE_SCHOOL` (admin **e** staff); doppio profilo + TURISMO → 201; SCHOOL solista senza istruttore → 422 `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`; archiviato → `PERSON_ARCHIVED`; profilo disattivato → `PERSON_NOT_PILOT_OR_STUDENT`; allievo con pilota disattivato → vincolato (e `profiles` del DTO coerente). RBAC: istruttore/pilota/allievo → 403.
+- **AC 3 / D1**: PIC verificato sulle superfici VIVE — registro (`flight-pic-cell`), xlsx aperto con exceljs, PDF decodificato dai content stream: dual → istruttore, solista → allievo su tutte e tre. Ricognizione del dev confermata.
+- **AC 4**: dual e solista **identici** (12000 aircraft + 4000 istruttore → addebito -16000 in entrambi); compenso maturato su entrambi; payout 8000 → CashMovement -8000 «Compensi istruttori».
+- **AC 2**: forzatura/lock e sblocco verificati in entrambe le direzioni, in IT e EN, su registro e CTA dashboard; contrasto `.fld-hint` misurato 4.85:1 (light) / 5.72:1 (dark) @12px.
+
+### Findings
+
+| # | Sev | Titolo |
+|---|-----|--------|
+| F1 | major | «Correggi volo» riscrive silenziosamente il Tipo volo di un volo storico non-SCHOOL e, alla conferma, lo riclassifica e lo **ri-addebita** (evidenza psql: -10000 → storno +10000 → -14000) |
+| F2 | major | Vicolo cieco reale: con la persona fuori dalle prime 100 opzioni, dopo una ricerca il select si **blocca su TOURISM** — 422 ad ogni submit e campo non modificabile |
+| F3 | minor | Un volo storico non-SCHOOL di una persona diventata solo-allievo non è più correggibile in alcun modo (422 anche senza cambiare tipo) — decisione di dominio da ratificare |
+| F4 | minor | `Field.hint` non è collegato al controllo via `aria-describedby` (il campo disabilitato non ha spiegazione per gli AT), a differenza dello slot `error` (fix F8 della 14.2) |
+| F5 | nit | Nuovo e2e AC 2: `page.getByText(...)` page-level invece che scoped al form (classe lezione 103-F1) |
+
+F1 e F2 hanno la **stessa causa radice**: il lock (`disabled={personIsStudentOnly}`, `flight-editor.tsx:621`) è ri-derivato ad ogni render, mentre la forzatura del valore avviene solo in `handlePersonChange` (`:315`) e nel valore iniziale (`:267`/`:298`). Invariante da imporre nel fix: **`disabled ⇒ value === 'SCHOOL'`**, e in modalità `correct` mai riscrivere il tipo del record senza dirlo.
+
+### Verdetto deviazioni
+
+D1 confermata (verificata empiricamente) · D2 accettata (nessuna asserzione indebolita, audit regge) · D3 accettata con F4 · D4 accettata · **D5 respinta come descritta** (non è un hint più stretto: è F2 + F1).
+
+**Verdetto: shippable-with-fixes** — la regola di dominio e gli invarianti economici sono solidi e verificati; il layer UI della correzione va sistemato (F1/F2) prima di chiudere la story, e F3 va ratificato con l'utente.
+
+### Fix post-review (2026-07-29, fix-subagent + sessione principale — commit `0a8c8f1`)
+
+**Ratifiche PO (AskUserQuestion 2026-07-29)**:
+- **R-14.3-a**: la correzione di un volo storico è SEMPRE ammessa purché NON se ne cambi il tipo (note/orari/contaore restano correggibili). Il divieto AC1 vale per REGISTRARE o PORTARE un volo a un tipo non-scuola.
+- **R-14.3-b** (chiarimento di dominio dell'utente): "la licenza è a VITA, nessun pilota dovrebbe perdere il profilo pilota; un pilota deve poter essere abilitato a un volo SCUOLA (riprese per la currency, rinnovo SEP)". Il secondo punto era GIÀ soddisfatto (il vincolo scatta solo per chi ha il SOLO profilo allievo) — ora coperto da un test dedicato e nominato.
+
+- **F1 fixed (major, CORRUZIONE DATI)** — `initialFlightType` è SEMPRE `defaults.flightType`: la UI non riscrive mai il tipo di un volo registrato. In correzione il select non è MAI disabilitato; se la persona è oggi solo-allievo e il volo non è scuola, un messaggio nomina il tipo a file e le conseguenze, e decide l'operatore. (Pre-fix, riprodotto dal reviewer: correggere le NOTE stornava il volo e lo ri-addebitava come scuola, conto da −100,00 a −140,00 €.)
+- **F2 fixed (major, vicolo cieco)** — lock e forzatura derivano da UN solo valore (`isLocked` → `effectiveFlightType`, usato sia per il campo sia per il payload): l'invariante `disabled ⇒ value === 'SCHOOL'` vale **per costruzione**, lo stato che causava il vicolo cieco non è più rappresentabile. Nota: il `useEffect` inizialmente previsto è stato RESPINTO dalla regola di lint del progetto (set-state in effetto) — la derivazione pura è risultata più semplice e più forte.
+- **F3 fixed (ratifica R-14.3-a)** — `resolveFlightInput` accetta l'`originalFlightType` e salta la guardia quando il tipo richiesto è identico a quello a file; `correctFlight` lo passa, `registerFlight` no. Unit: correzione a tipo invariato → OK; correzione che porta a TOURISM per allievo-senza-brevetto → 422; registrazione nuova non-scuola per allievo → 422.
+- **R-14.3-b coperta** — unit dedicato: pilota + SCHOOL + istruttore → OK (currency/rinnovo SEP).
+- **F4 fixed** — `Field.hint` collegato via `aria-describedby` come lo slot `error` (un select disabilitato è fuori dal tab order: senza questo, chi usa AT non ha spiegazione).
+- **F5 fixed** — selettore e2e scopato al form invece che page-level (classe 103-F1).
+
+**Diagnosi in tre strati del test rosso (sessione principale)** — il nuovo e2e F1/F2 falliva in modo deterministico (3/3 tentativi):
+1. **Il test si sabotava**: premeva `Escape` per chiudere il popup del typeahead, ma il listener globale di `SlideOver` (`slide-over.tsx:29-31`) chiude l'INTERO pannello; le asserzioni successive correvano contro l'animazione di chiusura. Provato dallo snapshot Playwright al fallimento (mostrava la pagina registro, non il form). Fix: niente `Escape`, con commento che spiega perché.
+2. **Falso allarme d'ambiente**: rimossa quella causa, falliva al login 2 volte di fila. Query al DB invece di attribuirlo alla flake nota: **118 tentativi admin in 15 minuti** → lock anti-brute-force della TD-6 scattato per i run ripetuti sullo stesso DB. Non un difetto: artefatto del metodo di verifica.
+3. **Il bug vero, sotto gli altri due**: con DB pulito il messaggio compariva come CHIAVE i18n grezza (`LogbookPage.editor.fields.studentOnlyCorrectionHint`) — il testo contiene un segnaposto riempito lato client, quindi serve `t.raw`: con `t()` la formattazione ICU fallisce e next-intl restituisce il percorso della chiave. **È la lezione già scritta in HANDOFF dal fix post-Epic-13**, non applicata dal dev e invisibile a lint/typecheck/unit.
+
+**Gates post-fix**: PASS lint/typecheck/test/build — 1584 unit (+ shell pulita 120/120 su flights.service).
+
+**Full suite finale (arbitro = sessione principale, DB fresco, build prod)**:
+
+```
+299 passed (8.6m)
+```
+Exit code `0`, zero flaky.
+
+**Esito finale: tutti i findings chiusi. Story DONE.**
