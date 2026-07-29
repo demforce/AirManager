@@ -6,7 +6,7 @@ Software di gestione per un'aviosuperficie: piloti, velivoli, voli, PPR, finanze
 
 - Next.js 16 (App Router, TypeScript) — API-first: le API REST (Zod + OpenAPI) saranno consumate anche da una futura app mobile Flutter
 - Prisma ORM + PostgreSQL 16
-- Auth.js (NextAuth v5) con RBAC — ruoli: admin, staff, istruttore, pilota, allievo
+- Auth.js (NextAuth v5) con RBAC — ruoli: admin, istruttore, pilota, allievo (STAFF eliminato con la story 14.9: ADMIN è l'unica figura amministrativa)
 - next-intl — UI in italiano + inglese
 - **UI primaria e UNICA: design system "AirOps" custom** (epic 12-13) — `src/styles/airops.css` (token + mini-reset esplicito) + primitive React in `src/components/ui/` (`Badge`, `KPI`, `SlideOver`, `CalendarPopover`, ...), porting del prototipo in `docs/design-reference/airops/`; font self-hosted via `@fontsource/*` (Inter Tight/JetBrains Mono/Instrument Serif — regola: niente font fetch a build-time). Lo stack UI legacy è stato RITIRATO per intero (epic 12 story 12.1: shadcn/Radix/CVA; epic 13 story 13.11: Tailwind CSS, Geist, TanStack Table + componenti/glife orfani) — **nessuna pagina, componente o dipendenza legacy residua in `package.json`**.
 - Test: Vitest + Playwright e2e
