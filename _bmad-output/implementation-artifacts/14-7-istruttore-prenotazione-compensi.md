@@ -4,7 +4,7 @@ baseline_commit: 3587c77
 
 # Story 14.7: Istruttore — toggle "per me / per un allievo" e pagina "I miei compensi"
 
-Status: review (branch `dev`, epic 14)
+Status: done (review Opus 5 shippable-with-fixes, 4 major — fix F1-F8 `d40c062` + ratifica PO sui KPI, suite 297/297, 0 flaky — 2026-07-29)
 
 ## Story
 
@@ -86,4 +86,78 @@ Nessun fallimento, nessun flaky osservato. Conteggio atteso: 289 (arbitro 14.6) 
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+**Reviewer**: adversarial (Opus 5 xhigh) — 2026-07-29. **Verdetto**: shippable-with-fixes (nessun blocker; isolamento self e invarianti economiche tengono, 4 major da chiudere prima della chiusura story).
+
+### Full suite (arbitro, verbatim)
+
+DB fresco (`docker compose down -v && up -d` + `prisma migrate deploy` + `db seed`), `JOBS_SECRET` esplicito, build prod via webServer, `CI=1 npx playwright test` foreground con log su file:
+
+```
+295 passed (10.4m)
+EXIT=0
+```
+
+0 falliti, 0 retry, 0 flaky. Catena serializzata completa (settings 6/6, booking-window 3/3, treasury-settings 3/3, billing-global 2/2). Conteggio del dev confermato: 289 (arbitro 14.6) + 6 nuovi = 295.
+
+**Gate locale**: `npm run gates` in shell PULITA (senza `.env` esportato) → `FAIL test` / EXIT=1 (v. F1). Con `.env` esportato è verde, come dichiarato.
+
+### Findings
+
+| # | Sev | Titolo | File |
+|---|---|---|---|
+| F1 | major | `npm run gates` rosso in shell senza `.env`: il nuovo import `./bookings.service` trascina `@/lib/env` (eager) nel test unitario | `src/server/services/instructor-compensation.service.test.ts:13`, `…service.ts:7` |
+| F2 | major | Mobile 390px: la colonna IMPORTO collassa a 0px, irraggiungibile a qualunque scroll | `my-compensation/page.tsx:14,109,116` |
+| F3 | major | Regressione a11y: stato selezionato non più esposto (radio `[checked]` → button senza `aria-pressed`/`aria-current`) | `src/components/ui/segmented.tsx:34-42` |
+| F4 | major | KPI "Maturato nel mese" mostra un valore NETTO dei pagamenti: riga KPI autocontraddittoria | `my-compensation/page.tsx:94`, `messages/it.json:778` |
+| F5 | minor | Persona ARCHIVIATA con profilo attivo: voce sidebar presente, pagina vuota (classe 14.6 F2) | `dashboard/layout.tsx:114` vs `…service.ts:97-111` |
+| F6 | minor | Assert e2e non discriminante: `toContainText('0,00 €')` soddisfatta da `-200,00 €` nello stesso contenitore | `e2e/my-compensation.spec.ts:180` |
+| F7 | nit | `listActiveInstructors(actor.personId ?? undefined)`: fallback che, se raggiunto, userebbe l'istruttore sbagliato | `…service.ts:292` |
+| F8 | nit | Storico pagamenti senza cap/paginazione | `…service.ts:297-301` |
+| F9 | nit | Il nuovo spec scrive sul ledger globale dal project parallelo (payout → CashMovement) | `e2e/my-compensation.spec.ts:104-110` |
+
+**F1** — A/B in shell pulita: baseline `48e0a24` → `1 passed (27 tests)`; HEAD → `Invalid environment configuration … ❯ src/server/adapters/mail/smtp-mail-sender.ts:2:1`, `Tests no tests`; HEAD con `.env` → `33 passed`. Il gemello `bookings.service.test.ts:45` mocka `@/server/adapters/mail` proprio per questo. Stessa classe del fix `3c6add9`. CI non lo vede (dummy env in `ci.yml:17-23`), il gate locale obbligatorio sì.
+
+**F2** — Misura a 390px: `.students` scrollWidth 546 / clientWidth 232; cella importo `clientWidth: 0`, `scrollWidth: 58`, invisibile anche a `scrollLeft` massimo; hit-test al suo centro → `DIV.card-body`. Screenshot: l'ultima colonna resa è METODO. Causa: `'150px 220px 130px 1fr'` + `airops.css:978` (`min-width:0`). La tabella gemella 14.6 mette il denaro in traccia fissa (`account-section.tsx:210`).
+
+**F3** — ariaSnapshot A/B: prima `radio "Per me" [checked]`, ora `button "Per me"` senza alcuno stato; il pattern citato come modello (`schedule.tsx:427,436`) usa `aria-current`. Fix additivo di una riga.
+
+**F4** — Fixture reale (60,00 €/h, volo SCHOOL 120' del 10/07, payout 30,00 € periodo 01→20/07): pagina → "ORE NEL MESE 2:00 | MATURATO NEL MESE 90,00 €", cioè 2×60 = 120,00 € ≠ 90,00 €. La matematica coincide al centesimo con `GET /api/v1/instructor-compensation` (owedMtd 9000, owedTotal 15000): è l'ETICHETTA a divergere dal resto dell'app ("Dovuto mese"/"Totale dovuto"). **Richiede ratifica PO**: rinominare l'etichetta oppure esporre il lordo maturato.
+
+### Deviazioni dichiarate — verdetti
+
+1. **`ariaLabel` + niente `Field`**: GIUSTIFICATA, diagnosi riprodotta (`button "Prenota Per un allievo": Per me` col wrapping `Field`), prop realmente additiva (unico altro call site `aircraft-editor.tsx:643` invariato). Incompleta però sullo stato selezionato → F3.
+2. **Export compensi escluso**: ACCETTATA — l'unico export esistente è `?format=xlsx` sulla route `finance.manage` (`api/v1/instructor-compensation/route.ts:19`), niente di self-safe da riusare a costo zero.
+3. **Test extra sul default del toggle**: ACCETTATA e utile — copre un percorso (self) prima non esercitato; l'aggiornamento `radio → button` a `bookings.spec.ts:517` asserisce lo stesso comportamento (copertura non indebolita) e nessun altro e2e guidava le vecchie radio.
+
+### Verifiche empiriche superate (nessun finding)
+
+- **Isolamento/IDOR**: da un istruttore "attaccante", URL con `?instructorProfileId=`/`?personId=` della vittima → solo la propria forma vuota; nell'HTML gli id compaiono unicamente come eco della query string (switch-lingua + payload di routing), testo visibile pulito; nessun identificatore né importo altrui.
+- **Matrice RBAC** (admin/staff/istruttore/pilota/allievo): pagina sempre 200, stato vuoto coerente per i non-istruttori, voce sidebar solo INSTRUCTOR; mai 403.
+- **Invarianti AC 5**: diff del servizio in addizione pura (0 righe rimosse); payout registrato da admin → gemello di cassa `-3000`, `BANK_TRANSFER`, categoria "Compensi istruttori", `instructorPayoutId` collegato; race di 2 POST con la stessa `Idempotency-Key` → 201 + 409 `IDEMPOTENCY_IN_PROGRESS`, 1 payout e 1 gemello in DB.
+- **AC 4**: disattivazione profilo → voce sparita + stato vuoto; riattivazione → tutto ripristinato; attore INSTRUCTOR+PILOT vede entrambe le voci.
+- **i18n/UI**: IT+EN complete e senza chiavi orfane, breadcrumb dal registry completo, dark theme coerente, toggle dentro il pannello a 390px.
+
+> Nota ambiente: il DB locale contiene le fixture della review (persone `Rev Alpha-*`/`Rev Bravo-*`, voli `rev147flightA/B`, payout di prova) — resettare prima del giro di fix.
+
+### Fix post-review (2026-07-29, fix-subagent Sonnet 5 xhigh — commit `d40c062`)
+
+**Ratifica PO (AskUserQuestion) su F4**: la riga KPI espone ENTRAMBI i numeri — **"Maturato nel mese" = LORDO** (`round(mtdMinutes/60 × payoutRateCents)`, coerente con ore × tariffa) e **"Dovuto nel mese" = NETTO** (l'`owedMtdCents` della card staff-facing, stessa matematica), più "Residuo dovuto". Il lordo è un valore DERIVATO dalla formula esistente (`computeGrossCents` estratta da `computeOwed`), non una definizione nuova.
+
+- **F1 fixed (major)** — la catena era più lunga di quella diagnosticata: oltre a `@/server/adapters/mail` c'è un secondo hop (`app-settings.service` → `crypto/secret-box` → `@/lib/env`). Entrambi mockati: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` → **34/34 in shell pulita**. Il gate locale obbligatorio torna affidabile (CI non lo vedeva: esporta env fittizie).
+- **F2 fixed (major)** — `minmax(110px, 1fr)` sulla traccia dell'importo (prima `1fr`, collassata a 0 da `airops.css:978`). Misura post-fix a 390px: cella 110px, hit-test positivo dopo lo scroll, nessun overflow di pagina. **e2e di geometria nuovo, rosso pre-fix** (pattern 13.10).
+- **F3 fixed (major)** — `aria-pressed` nella primitiva `Segmented` (additivo, vale anche per `BasedSegmented`): stato selezionato annunciato, verificato che si inverta al click. Chiude la regressione a11y introdotta dal passaggio radio→button.
+- **F4 fixed (major)** — 5 KPI con testid dedicati; aritmetica verificata su dati reali: 2:00 h × 60,00 €/h → Maturato **120,00 €**, Dovuto **90,00 €** (netto acconto 30,00 €), Residuo 90,00 €. e2e nuovo con volo SCUOLA + payout parziale che prova lordo ≠ netto end-to-end.
+- **F5+F7 fixed insieme** — `getOwnCompensationOverview` risolve la riga direttamente da `instructorProfileId` (nuova `resolveInstructorRowByProfileId`) invece di passare per `listActiveInstructors(personId)`: sparisce sia il disallineamento sull'archiviazione (sidebar vs pagina) sia il fallback `?? undefined` che, se raggiunto, avrebbe mostrato i dati di un ALTRO istruttore. Test di regressione: `listActiveInstructors` non è mai chiamata da questo percorso.
+- **F6 fixed** — assert per-KPI su testid dedicati al posto del `toContainText` sull'intero contenitore (che passava per substring: "0,00 €" dentro "-200,00 €" — classe già in CLAUDE.md).
+- **F8 fixed** — `take: 50` sullo storico payout. **F9** — nessuna azione (nota di contesa e2e pre-esistente).
+
+**Gates post-fix**: PASS lint/typecheck/test/build — 1578 unit.
+
+**Full suite finale** (run del fix-subagent sopravvissuto al cap grazie a `nohup`, atteso e verificato dalla sessione principale):
+
+```
+297 passed (10.6m)
+```
+Exit code `0`, zero flaky (297 = 295 + i 2 e2e nuovi di F2/F4).
+
+**Esito finale: tutti i findings chiusi. Story DONE.**

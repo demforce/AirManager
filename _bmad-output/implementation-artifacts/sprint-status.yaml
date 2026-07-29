@@ -215,7 +215,7 @@ development_status:
   # banner) — fix in DUE giri (subagent + chirurgico main: il "quarto form" era il
   # modal Quota associativa). Arbitro finale 276+1 flaky login-class, exit 0.
   14-2-validazione-form-per-campo: done
-  14-3-regole-voli-scuola: backlog
+  14-3-regole-voli-scuola: ready-for-dev
   14-4-guardrail-registrazione-volo: backlog
   # 14.5 chiusa 2026-07-29: masking server-side nel servizio (6 consumer coperti
   # alla fonte) + permesso bookings.read.names. Review Opus 5: BYPASS REALE (F1) —
@@ -228,7 +228,11 @@ development_status:
   # major (isolamento tenuto sotto ogni vettore), 7 minor/nit fixati in sessione.
   # Arbitro 289/289 (un run precedente aveva un fallimento REALE da fix F5).
   14-6-area-personale-transazioni-profili: done
-  14-7-istruttore-prenotazione-compensi: ready-for-dev
+  # 14.7 chiusa 2026-07-29: toggle Segmented + pagina self compensi. Review Opus 5:
+  # 4 major (gates rotti in shell pulita, importo invisibile su mobile, stato
+  # selezionato non annunciato, KPI che si autocontraddiceva) + 5 minor/nit.
+  # Ratifica PO: KPI lordo E netto affiancati. Suite 297/297.
+  14-7-istruttore-prenotazione-compensi: done
   # 14.8 chiusa 2026-07-28: creazione con tariffe+contaore in un submit composito
   # transazionale; review Opus 5: 1 major (dry-only scartato in silenzio) + 6 tra
   # minor/nit, fix chirurgici in sessione. Arbitro 280/280, 0 flaky.
