@@ -32,7 +32,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-26 (EPIC 13 DONE, 11/11 — chiuse in questa sessione 13.7 Pianificazione, 13.8 Shell&misc, 13.9 Dark theme, 13.10 Mobile, 13.11 Ritiro stack legacy (Tailwind/Geist/TanStack RIMOSSI). Reviewer switchato a Opus 5 (decisione utente 2026-07-25). Ultima full suite: 259 passed CI=1 build prod exit 0. Restano post-epic: 2 findings security (v. action_items) + push/merge PR a carico utente. Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
+last_updated: 2026-07-29 (EPIC 15 avviato: piano ratificato R1-R5, story 15.1 shell mobile creata e ready-for-dev. Epic 14 DONE 9/9 + TD-8 chiusa "nessun difetto"; ultima full suite 298/298, 0 flaky, CI=1 build prod. Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -270,6 +270,24 @@ development_status:
   # 465-912ms sui primi hit). VERDETTO: nessun difetto nel codice applicativo, nessun fix.
   # Evidenze complete nel commit docs(td-8) / HANDOFF.
   td-8-indagine-lentezza-salvataggi: done
+
+  # Epic 15 — UI mobile AirOps (porting completo del template "AirOps Mobile", richiesta utente 2026-07-29).
+  # Piano con 5 ratifiche PO R1-R5 + architettura vincolante (componenti mobile dedicati,
+  # switch CSS ≤640px, tablet 641-900 tengono il rail): docs/superpowers/plans/2026-07-29-epic-15-mobile-ui.md
+  # Template design: progetto claude.ai/design dcd71b3a-dbcf-494e-a543-29325a5435de (DesignSync, solo main session).
+  # REGOLA MODELLO (utente 2026-07-29): dev e fix subagent su Opus 5 xhigh (epic tutto UI); review Opus 5 xhigh.
+  # Ordine vincolante 15.1 -> 15.2 -> 15.3; il resto segue il valore d'uso.
+  epic-15: in-progress
+  15-1-shell-mobile: ready-for-dev
+  15-2-primitive-mobile: backlog
+  15-3-panoramica-mobile: backlog
+  15-4-pianificazione-mobile: backlog
+  15-5-anagrafiche-card-mobile: backlog
+  15-6-registro-voli-mobile: backlog
+  15-7-scadenze-transiti-mobile: backlog
+  15-8-contabilita-statistiche-impostazioni-mobile: backlog
+  15-9-aree-self-pubblico-mobile: backlog
+  15-10-sweep-finale-mobile: backlog
 
 action_items:
   - epic: 14
