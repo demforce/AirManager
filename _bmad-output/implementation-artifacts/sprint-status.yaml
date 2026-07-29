@@ -251,7 +251,7 @@ development_status:
   # transazionale; review Opus 5: 1 major (dry-only scartato in silenzio) + 6 tra
   # minor/nit, fix chirurgici in sessione. Arbitro 280/280, 0 flaky.
   14-8-form-velivolo-unificato: done
-  14-9-rimozione-ruolo-staff: backlog
+  14-9-rimozione-ruolo-staff: ready-for-dev
   td-8-indagine-lentezza-salvataggi: backlog
 
 action_items:
