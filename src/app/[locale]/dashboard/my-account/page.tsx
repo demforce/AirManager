@@ -98,8 +98,8 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
       type: tAccount('table.type'),
       description: tAccount('table.description'),
       amount: tAccount('table.amount'),
-      recordedBy: tAccount('table.recordedBy'),
-      actions: tAccount('table.actions'),
+      // `recordedBy`/`actions` omitted (review 14.6 F6): `showActor` and
+      // `canManageFinance` are both false here, so those columns never render.
       noValue: tAccount('table.noValue'),
     },
     movementType: {

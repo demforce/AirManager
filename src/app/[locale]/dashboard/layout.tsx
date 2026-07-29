@@ -4,7 +4,7 @@ import type { Role } from '@/generated/prisma/client';
 import type { AvatarColor } from '@/components/ui/avatar';
 import { ToastProvider } from '@/components/ui/toast';
 import { Sidebar, type FlightCategory, type SidebarMetar } from '@/components/shell/sidebar';
-import { NAV_GROUPS, visibleNavItems, type NavItemId } from '@/components/shell/route-registry';
+import { NAV_GROUPS, visibleNavItems, type NavItemId, NAV_ITEMS } from '@/components/shell/route-registry';
 import type { Theme } from '@/components/shell/theme-toggle';
 import { TopBar } from '@/components/shell/top-bar';
 import { redirect } from '@/i18n/navigation';
@@ -110,7 +110,12 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
       .map((item) => ({ id: item.id, href: item.href, icon: item.icon, label: t(`nav.${item.id}`) })),
   })).filter((group) => group.items.length > 0);
 
-  const pageTitles = Object.fromEntries(rawItems.map((item) => [item.id, t(`pageTitle.${item.id}`)])) as Record<NavItemId, string>;
+  // Review 14.6 F1: titles come from the FULL registry, not just the items
+  // VISIBLE to this role — `TopBar` resolves the active item against the whole
+  // registry, so a role-restricted route that is still SERVED (my-account, for
+  // an admin) would otherwise render an empty breadcrumb instead of falling
+  // back. Closes the class of bug, not just today's instance.
+  const pageTitles = Object.fromEntries(NAV_ITEMS.map((item) => [item.id, t(`pageTitle.${item.id}`)])) as Record<NavItemId, string>;
 
   const displayName = me.person ? `${me.person.firstName} ${me.person.lastName}` : me.email;
   const role = primaryRole(actor.roles);

@@ -195,6 +195,34 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
     for (const item of body.items) expect(item).not.toHaveProperty('actorEmail');
   });
 
+  test('pagination stays on /dashboard/my-account (review 14.6 F3: statementBasePath is the only behavior change to the shared component)', async ({
+    page,
+  }) => {
+    test.slow();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const password = 'MyAccountPager123!';
+    const pilot = await createPersonWithLogin(page, 'pilot', password, 'Pager');
+    // 21 movements > the 20/page window, so page 2 exists.
+    for (let index = 0; index < 21; index += 1) {
+      await recordTopUp(page, pilot.personId, 1000, uniquePastDateOnly());
+    }
+
+    await loginExpectingDashboard(page, pilot.email, password);
+    await page.goto('/it/dashboard/my-account');
+    await expect(page.getByTestId('account-movement-row')).toHaveCount(20);
+
+    // The pagination link must target THIS page, never the staff-shaped scheda persona.
+    const next = page.getByTestId('account-statement-page-next');
+    await expect(next).toHaveAttribute('href', /\/it\/dashboard\/my-account\?page=2/);
+    await next.click();
+    await expect(page).toHaveURL(/\/it\/dashboard\/my-account\?page=2/);
+    await expect(page.getByTestId('account-movement-row')).toHaveCount(1);
+
+    // Out-of-range page clamps instead of erroring.
+    await page.goto('/it/dashboard/my-account?page=999');
+    await expect(page.getByTestId('account-movement-row')).toHaveCount(1);
+  });
+
   test('an allievo sees their own movements the same way (top-up + flight charge)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const password = 'MyAccountStudent123!';

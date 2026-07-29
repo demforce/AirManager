@@ -50,7 +50,14 @@ export type AccountSectionLabels = {
   noAccount: string;
   empty: string;
   pagination: { prev: string; next: string };
-  table: { date: string; type: string; description: string; amount: string; recordedBy: string; actions: string; noValue: string };
+  /**
+   * `recordedBy`/`actions` are the headers of the two CONDITIONAL columns
+   * (`showActor` / `showActions`): optional for the same reason `topUp` and
+   * `adjustments` are (review 14.6 F6) — the self-service page renders
+   * neither column, so it must not have to ship dead strings across the
+   * Server→Client boundary.
+   */
+  table: { date: string; type: string; description: string; amount: string; recordedBy?: string; actions?: string; noValue: string };
   movementType: { topUp: string; adjustment: string; packagePurchase: string; flightCharge: string; flightChargeReversal: string };
   adjustmentBadge: { ofDate: string; linked: string };
   reversalBadge: { ofDate: string; linked: string };
@@ -196,7 +203,11 @@ export function AccountSection({
     router.refresh();
   }
 
-  const cols = ['104px', '150px', '1fr', '120px', ...(showActor ? ['170px'] : []), ...(canManageFinance ? ['170px'] : [])].join(' ');
+  // Review 14.6 F7: ONE condition for the Actions column — `labels.adjustments`
+  // is optional since 14.6, so `canManageFinance` alone could produce a header
+  // column whose row cells never render.
+  const showActions = canManageFinance && labels.adjustments !== undefined;
+  const cols = ['104px', '150px', '1fr', '120px', ...(showActor ? ['170px'] : []), ...(showActions ? ['170px'] : [])].join(' ');
 
   return (
     <div className="card" data-testid="account-section">
@@ -262,8 +273,8 @@ export function AccountSection({
               <div>{labels.table.type}</div>
               <div>{labels.table.description}</div>
               <div style={{ textAlign: 'right' }}>{labels.table.amount}</div>
-              {showActor ? <div>{labels.table.recordedBy}</div> : null}
-              {canManageFinance ? <div>{labels.table.actions}</div> : null}
+              {showActor && labels.table.recordedBy ? <div>{labels.table.recordedBy}</div> : null}
+              {showActions ? <div>{labels.table.actions}</div> : null}
             </div>
             {rows.map((row) => (
               <div key={row.id} className="student-row" data-testid="account-movement-row" style={{ gridTemplateColumns: cols }}>
@@ -294,7 +305,7 @@ export function AccountSection({
                     {row.actorEmail ?? labels.table.noValue}
                   </div>
                 ) : null}
-                {canManageFinance && labels.adjustments ? (
+                {showActions && labels.adjustments ? (
                   <div>
                     {row.hasReversal || row.type === 'PACKAGE_PURCHASE' ? null : (
                       <button type="button" className="btn mini" onClick={() => setAdjustPanel({ originalMovement: row })} data-testid={`account-adjustment-row-${row.id}`}>

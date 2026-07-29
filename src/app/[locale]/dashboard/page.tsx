@@ -632,7 +632,14 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
   // ne mostra i NOMI, non un conteggio.
   const ratingNames = [...new Set(myExpiries.filter((expiry) => categoryOf(expiry.typeName) === 'Abilitazione').map((expiry) => expiry.typeName))];
 
-  const canBook = hasPermission(actor, 'bookings.manage.own') || hasPermission(actor, 'bookings.manage.any');
+  // Review 14.6 F2: the permission alone is the ROLE; `createBooking`'s own-self
+  // path requires an ACTIVE flying profile (`isActivePilot || isActiveInstructor`,
+  // bookings.service.ts:485) — gating the primary CTA on the role sent a
+  // deactivated pilot straight into a 403 dead end. An actor reaching THIS
+  // landing has no active instructor profile by construction (that case renders
+  // the instructor face), so the active pilot profile is the whole condition.
+  const canBook =
+    (hasPermission(actor, 'bookings.manage.own') || hasPermission(actor, 'bookings.manage.any')) && person.activePilotLicenseType !== null;
 
   return (
     <main className="page">
@@ -661,7 +668,10 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
 
       <div className="kpi-row">
         <Link
-          href={`/dashboard/people/${person.id}/account`}
+          /* Review 14.6 F5: the pilot's own statement now lives at the
+             self-service page (story 14.6); the staff-shaped scheda persona
+             stays reachable from the "Profilo" CTA above. */
+          href="/dashboard/my-account"
           locale={locale}
           aria-label={t('pilotLanding.accountLink')}
           data-testid="kpi-balance"
