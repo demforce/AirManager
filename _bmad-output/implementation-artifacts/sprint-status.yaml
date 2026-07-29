@@ -203,8 +203,8 @@ development_status:
 
   # Epic 14 — Feedback demo tour (punch-list utente 2026-07-28, 17 item -> 9 story + TD-8).
   # Piano con ratifiche R1-R4 e decisioni D1-D3: docs/superpowers/plans/2026-07-28-epic-14-demo-feedback.md
-  # Ordine ESEGUITO: 14.1 -> 14.2 -> 14.8 -> 14.5 -> 14.6 -> 14.7 -> 14.3 (tutte done).
-  # Ordine RESTANTE (deciso dall'utente 2026-07-29): 14.4 -> 14.9 -> TD-8.
+  # Ordine ESEGUITO: 14.1 -> 14.2 -> 14.8 -> 14.5 -> 14.6 -> 14.7 -> 14.3 -> 14.4 (tutte done).
+  # Ordine RESTANTE (deciso dall'utente 2026-07-29): 14.9 -> TD-8.
   epic-14: in-progress
   # 14.1 chiusa 2026-07-28: review Opus 5 con 4 major di geometria (cap altezza,
   # overlap residuo su viewport bassi, flip fuori viewport, listbox orfana su scroll),
@@ -222,7 +222,15 @@ development_status:
   # F2 vicolo cieco. Ratifiche: correzione a tipo invariato sempre ammessa;
   # licenza a vita + pilota abilitabile a voli scuola (currency/SEP). 299/299.
   14-3-regole-voli-scuola: done
-  14-4-guardrail-registrazione-volo: ready-for-dev
+  # 14.4 chiusa 2026-07-29: blocco FLIGHT_BLOCKED_BY_EXPIRY alla data del volo +
+  # override admin (permesso flights.forceExpiry) + avviso saldo in-app. Review
+  # Opus 5 NOT-SHIPPABLE: F1 BLOCKER (payload force stantio dalla CTA dashboard ->
+  # volo registrato al PILOTA SBAGLIATO) + F2/F3 major su claim del dev smentiti.
+  # 4 ratifiche PO: assenza documento blocca (R4 alla lettera), correzioni a dati
+  # invarianti esenti, forceReason solo a flights.manage, avviso saldo esteso dal
+  # PO a OGNI addebito (voli, rettifiche, quota). Fixture sweep su 13 spec e2e
+  # (helper condiviso e2e/helpers.ts). Arbitro finale 304/304, 0 flaky.
+  14-4-guardrail-registrazione-volo: done
   # 14.5 chiusa 2026-07-29: masking server-side nel servizio (6 consumer coperti
   # alla fonte) + permesso bookings.read.names. Review Opus 5: BYPASS REALE (F1) —
   # instructorProfileId in chiaro + anagrafica istruttori nel payload di tutti +
@@ -247,6 +255,10 @@ development_status:
   td-8-indagine-lentezza-salvataggi: backlog
 
 action_items:
+  - epic: 14
+    action: "TD (review 14.4, note residue): (a) il describe 'Blocking expiry guard-rail' di flights.spec.ts (e i test di bookings.spec.ts che creano ExpiryType bloccanti scope ALL) crea/disattiva STATO GLOBALE dentro il project fullyParallel -> TOCTOU raro con ensureValidSeedExpiries (mitigato a ~zero da e2e/helpers.ts, eliminabile solo spostandolo nella catena serializzata di playwright.config.ts); (b) reports.spec.ts esegue un PUT /settings/scheduling GLOBALE dal project fullyParallel (lacuna pre-esistente, stessa classe della regola 'e2e stato globale' di CLAUDE.md) -> va spostato nella catena serializzata."
+    owner: "backlog TD"
+    status: open
   - epic: 14
     action: "TD (review 14.6 F2, PRE-esistente e sistemico): la CTA 'Nuova prenotazione' di /dashboard/bookings e' gated sul PERMESSO (ruolo) mentre createBooking richiede un PROFILO ATTIVO (bookings.service.ts:485) -> un pilota/istruttore con profilo disattivato clicca e prende 403. La landing pilota e' stata gia' allineata (14.6 F2); resta la pagina prenotazioni."
     owner: "backlog TD"

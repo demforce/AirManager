@@ -4,7 +4,7 @@ baseline_commit: 8219ce1
 
 # Story 14.4: Guard-rail alla registrazione volo — visita medica e saldo negativo
 
-Status: review (branch `dev`, epic 14)
+Status: done (review Opus 5 not-shippable → fix F1-F11 `5463f2f` + fixture sweep `a3ac276`, 4 ratifiche PO + estensione "ogni addebito", arbitro finale 304/304, 0 flaky — 2026-07-29)
 
 ## Story
 
@@ -95,4 +95,43 @@ Ho eseguito la full suite CI=1 su build di produzione **quattro volte** in quest
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+Review adversarial: **Opus 5 xhigh** (subagent via Workflow), diff `e64ff0b..ffc11a9`. Verdetto iniziale: **not-shippable** (1 blocker + 2 major su claim del dev smentiti dai fatti + 3 questioni PO). Dopo due giri di fix e le ratifiche: **shippable**, arbitro finale verde.
+
+### Gate arbitro
+
+- **Run del reviewer** (DB fresco, build prod, pre-fix): 304 test → **303 passed, 1 flaky noto** (login-class su `settings.spec.ts:133`, retry verde), exit 0. Gates PASS; unit 1594/1594 anche in shell pulita; OpenAPI generabile con `force`/`forceReason`/`balanceAlert` nei posti giusti.
+- **Arbitro FINALE** (sessione principale, DB fresco, post-fix `5463f2f`+`a3ac276`): **304/304 passed (8.6m), exit 0, ZERO flaky**.
+
+### Verifiche empiriche del reviewer (API reale + UI reale + psql, mai sola lettura del codice)
+
+Boundary della data CONFERMATI (scadenza = giorno del volo → 201; giorno prima → 422; scaduto oggi ma valido alla data volo → 201; tipo non bloccante → 201); force gated sul PERMESSO (STAFF con `flights.manage` → 403 sul force, 422 sul blocco; pilota/istruttore/allievo → 403 via HTTP diretto); motivo obbligatorio anche via API; stamp solo su override reale (force "a vuoto" → nessuno stamp); idempotency replay corretto; avviso saldo mai bloccante. Claim del dev (1)(2)(4)(6) confermati; ricognizione confermata.
+
+### Findings (tutti chiusi)
+
+- **F1 BLOCKER** — CTA "Pianifica volo": `FlightEditor` montato una volta sola, `pendingForceBody` sopravviveva a chiudi+riapri ⇒ la "Forza registrazione" rispediva il payload stantio e registrava il volo (addebito + Deroga) **al pilota sbagliato**, con pannello di successo (riprodotto su DB reale). Fix: `key={open ? 'open' : 'closed'}` — stesso idioma remount di `logbook-console.tsx:578`; verificato live post-fix.
+- **F2 MAJOR** — `forceReason` leggibile da pilota/allievo/istruttore a bordo (il claim "self.read vede solo i propri voli" era falso: `buildFlightsWhere` include i voli da istruttore). **Ratifica R-14.4-c**: masking a `flights.manage` in `toListItem` + niente motivo sul badge per i non-manage; unit test dedicato.
+- **F3 MAJOR** — la mitigazione dichiarata nel Dev Agent Record (hint Impostazioni aggiornati) NON esisteva nel diff. Fix: 4 stringhe (label+hint IT/EN, medical+ratings) ora nominano prenotazioni E voli. **Decisione F3**: niente rename di `blocksBooking` (sanzionata dal reviewer).
+- **F4 MAJOR** — correzione di volo storico rivalutata sulle scadenze ODIERNE: solo-note → 422, vicolo cieco STAFF, "Deroga" permanente su correzioni innocue. **Ratifica R-14.4-b**: esenzione totale dalla guardia per correzioni a persona/istruttore/data invarianti; unit test + 2 test pre-esistenti aggiornati (ora correggono la DATA per restare sul lato guarded).
+- **F5 MAJOR** — R4 dice "ASSENTE o scaduta": l'assenza non bloccava nulla. **Ratifica R-14.4-a**: nuova `findMissingBlockingDocuments` (solo percorso volo, prenotazioni 7.4 INVARIATE), messaggio "mancante" distinto da "scaduto il …", stesso override; 4 unit test.
+- **F6 minor** — messaggio senza titolare e con doppioni: `FlightBlockingDocument` ora porta `role`+`personName`, messaggio "{tipo} ({scaduto il …|mancante}) — {ruolo} {nome}".
+- **F7 minor** — avviso muto sui conti già in rosso. **Ratifica R-14.4-d in DUE tempi** (risposta + chiarimento esplicito PO: *"per qualsiasi addebito non solo per i voli"*): helper unico `hasNegativeBalanceAlert(before, after) = before<0 OR after<0` applicato a voli, rettifiche (`recordAdjustment` + dispatch `ADJUSTMENT`), quota associativa; censiti TUTTI i writer di addebito (la chiusura PPR non addebita a conto). Email INVARIATA a bande. Unit sulle 4 combinazioni di segno + il caso esatto della lacuna (banda invariata, entrambi negativi).
+- **F8 minor** — AC 6 scoperto: nuovo `flights-expiry-boundary.integration.test.ts` (3 boundary con la VERA date-math di `bookings.service`, mock solo su `prisma.expiry.findMany`).
+- **F9 minor** — e2e avviso saldo datato OGGI nel project `fullyParallel` (rischio delta-assert `billing.spec.ts`): ora `PAST_DATE`.
+- **F10 nit** — a11y: `aria-required`+`aria-describedby` sul textarea motivo (pattern 14.2); motivo del badge come testo visibile (`forcedDetail`), non solo `title`.
+- **F11 nit** — pannello di esito post-force: banner `role="status"` "Registrato in deroga — {motivo}".
+
+### Verdetto deviazioni
+
+(1) NON-rename `blocksBooking`: ammessa nel merito, ma condizionata alla chiusura di F3 (fatta). (2) `forceReason` nel DTO: respinta come implementata (claim di sicurezza falso) → risolta con la ratifica R-14.4-c.
+
+### Fix post-review (2026-07-29, commit `5463f2f` + `a3ac276`)
+
+- **Giro 1** (`5463f2f`, fix-subagent): F1-F11 + ratifiche. Nota di processo: il PRIMO fix-subagent è morto per errore API a metà (lavoro parziale non committato, di buona qualità); un secondo subagent ha continuato dal parziale con istruzioni esplicite di inventario/verifica. Il chiarimento PO "qualsiasi addebito" è arrivato A LAVORO IN CORSO: primo agente fermato e rilanciato con la ratifica estesa prima che impostasse la scope sbagliata. Gates PASS (unit 1594→**1608**).
+- **Giro 2** (`a3ac276`, fixture-subagent): blast radius R-14.4-a sugli e2e — 13 spec + nuovo **`e2e/helpers.ts`** condiviso (`ensureValidSeedExpiries`): scan DINAMICO dei tipi bloccanti (speculare a `findMissingBlockingDocuments` — la lista fissa dei 4 tipi seed falliva sui tipi custom `scope:ALL` accumulati), idempotente, tollerante al 409, con serial-mode+deactivate per il describe "Blocking expiry guard-rail" e re-scan pre-submit dove la finestra di race era larga. 7 iterazioni run→fix→run (29 falliti → 0 fixture-class). Triage onesto dei residui su DB sporco: 4 classi TUTTE pre-esistenti/ambientali (cap `OPTIONS_PAGE_SIZE`=100 con 170+ velivoli accumulati; `stats.service` fleet cap; AppSetting `maxAdvanceDays` stantio di sessioni passate; collisione date pool 700 giorni di `billing.spec.ts`) — nessuna riaperta come bug 14.4, tutte assenti su DB fresco (arbitro 304/304 lo conferma).
+
+### Note residue (tracciate, non bloccanti)
+
+- TOCTOU raro sotto `fullyParallel` quando un test crea/disattiva tipi bloccanti custom nella finestra di un fixture altrui: mitigato a ~zero; l'eliminazione totale richiederebbe la catena serializzata per il describe "Blocking expiry guard-rail" (e i tipi bloccanti di `bookings.spec.ts`) — TD in sprint-status.
+- `reports.spec.ts` esegue un `PUT /settings/scheduling` GLOBALE dal project `fullyParallel` (lacuna di isolamento PRE-esistente scoperta dal dev nei run sporchi) — TD in sprint-status.
+
+**Esito finale: blocker e major chiusi, 4 ratifiche PO recepite (una estesa dal PO a ogni addebito), arbitro 304/304. Story DONE.**
