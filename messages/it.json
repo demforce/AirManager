@@ -1255,6 +1255,7 @@
           "solo": "Solista"
         },
         "studentOnlyHint": "Allievo senza brevetto: il tipo volo è sempre Scuola.",
+        "studentOnlyCorrectionHint": "Questa persona ha oggi solo il profilo allievo. Il volo è registrato come {type}: lasciarlo invariato è sempre ammesso; cambiarlo (tranne che verso Scuola) verrà rifiutato dal server.",
         "departure": "Aeroporto di partenza",
         "arrival": "Aeroporto di arrivo",
         "takeoffTime": "Ora decollo",

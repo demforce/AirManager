@@ -1255,6 +1255,7 @@
           "solo": "Solo"
         },
         "studentOnlyHint": "Student without a pilot license: flight type is always School.",
+        "studentOnlyCorrectionHint": "This person currently has only a student profile. The flight is recorded as {type}: leaving it unchanged is always allowed; changing it (except to School) will be rejected by the server.",
         "departure": "Departure airport",
         "arrival": "Arrival airport",
         "takeoffTime": "Takeoff time",

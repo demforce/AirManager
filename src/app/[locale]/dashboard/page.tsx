@@ -458,6 +458,10 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       soloMode: t('editor.fields.soloMode'),
       soloModes: { dual: t('editor.fields.soloModes.dual'), solo: t('editor.fields.soloModes.solo') },
       studentOnlyHint: t('editor.fields.studentOnlyHint'),
+      // `t.raw`: the {type} placeholder is filled CLIENT-side by the editor —
+              // plain `t()` fails ICU formatting and renders the key path instead
+              // (lezione fix post-epic-13, HANDOFF).
+              studentOnlyCorrectionHint: t.raw('editor.fields.studentOnlyCorrectionHint'),
       departure: t('editor.fields.departure'),
       arrival: t('editor.fields.arrival'),
       takeoffTime: t('editor.fields.takeoffTime'),

@@ -560,7 +560,9 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const flightTypeSelect = page.getByTestId('flight-type-select');
     await expect(flightTypeSelect).toHaveValue('SCHOOL');
     await expect(flightTypeSelect).toBeDisabled();
-    await expect(page.getByText('Allievo senza brevetto')).toBeVisible();
+    // Scoped to the form (lezione 103-F1): a page-level `getByText` could
+    // also match unrelated copy elsewhere on the page.
+    await expect(page.getByTestId('flight-form').locator('.fld-hint')).toContainText('Allievo senza brevetto');
 
     // No dead end: the forced value is one the service actually accepts,
     // given the (unchanged) instructor requirement on every SCHOOL flight.
@@ -570,5 +572,97 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+  });
+
+  test('review F1/F2 (14.3): "Correggi volo" on a TOURISM flight whose person is student-only TODAY never rewrites the type nor locks the select — a notes-only correction succeeds unchanged (ratifica R-14.3-a)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 12000);
+
+    // A pilot with an active pilot profile flies a TOURISM flight...
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsF1F2-1!');
+    const flightResponse = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base',
+        arrivalAirfield: 'Base',
+        flightType: 'TOURISM',
+        ...flightTimes(PAST_DATE, 60),
+      },
+    });
+    expect(flightResponse.status()).toBe(201);
+    const flight = (await flightResponse.json()) as { flight: { id: string } };
+
+    // ...then, SINCE that flight, loses the pilot profile and gains a
+    // student one — student-only TODAY (review F1's exact repro shape),
+    // while the historical flight stays TOURISM on file.
+    const deactivateResponse = await page.request.post(`/api/v1/people/${pilot.personId}/profiles/pilot/deactivate`);
+    expect(deactivateResponse.status()).toBe(200);
+    const studentProfileResponse = await page.request.put(`/api/v1/people/${pilot.personId}/profiles/student`, {
+      data: { courseStartDate: PAST_DATE },
+    });
+    expect(studentProfileResponse.status()).toBe(200);
+
+    await page.goto('/it/dashboard/logbook');
+    // Persona filter, free-text (story 13.5, AC 7) — the RUN-UNIQUE last
+    // name keeps this a single row regardless of the dirty DB/pagination
+    // (lezione 6.3 F1), unlike a plain page-1 lookup on a PAST_DATE flight.
+    await page.getByTestId('flight-filter-person').fill(pilot.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(pilot.lastName)}`));
+    const row = page.getByTestId('flight-row');
+    await expect(row).toHaveCount(1);
+    await row.getByTestId('flight-correct-action').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+
+    const flightTypeSelect = page.getByTestId('flight-type-select');
+    // F1: the type stays what is ON FILE — never silently re-derived from
+    // the person's CURRENT (student-only) profile. F1/F2: correcting NEVER
+    // disables the select (only a NEW registration does), whether or not
+    // the form already knows this person's profile at this point (it may
+    // not — the prefilled person is not guaranteed to be on the server-
+    // rendered options page, review's own "fuori dalle prime 100" case).
+    await expect(flightTypeSelect).toHaveValue('TOURISM');
+    await expect(flightTypeSelect).toBeEnabled();
+
+    // F2's own repro path: typing the person's OWN name into the picker
+    // (without re-selecting) lets `searchPilotStudent` learn their CURRENT
+    // profile flags for certain (deterministic, unlike the page above).
+    const personCombobox = page.getByLabel('Pilota o allievo');
+    await personCombobox.click();
+    await personCombobox.fill(pilot.lastName);
+    await expect(page.getByRole('listbox').getByRole('option', { name: `${pilot.lastName} ${pilot.firstName}`, exact: true })).toBeVisible();
+    // NB: never `Escape` here — `SlideOver`'s window-level handler closes the
+    // WHOLE panel (slide-over.tsx:29-31), and the assertions below would then
+    // race the closing animation and read stale/absent nodes (that is exactly
+    // how this test first failed). Leaving the combobox popup open is fine:
+    // the assertions below read the select's state, not its visibility, and
+    // filling "Note" further down closes the popup naturally.
+
+    // Now the profile IS known — the select must STILL be enabled and
+    // STILL on TOURISM (never locked into a server-rejected dead end, the
+    // invariant `disabled ⇒ value === 'SCHOOL'` holds trivially here since
+    // correct mode never disables at all), and the correction hint now
+    // explains the situation, naming the on-file type.
+    await expect(flightTypeSelect).toHaveValue('TOURISM');
+    await expect(flightTypeSelect).toBeEnabled();
+    await expect(page.getByTestId('flight-form').locator('.fld-hint')).toContainText('Turismo');
+
+    // A notes-only correction goes through untouched: type unchanged, no
+    // instructor needed (still TOURISM), no new SCHOOL charge.
+    await page.getByLabel('Note').fill('Nota di correzione, tipo invariato');
+    await page.getByLabel('Motivo della correzione').fill('Verifica review F1/F2');
+    await page.getByRole('button', { name: 'Conferma correzione' }).click();
+
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+
+    const detailResponse = await page.request.get(`/api/v1/flights?personId=${pilot.personId}&pageSize=10`);
+    expect(detailResponse.status()).toBe(200);
+    const detailBody = (await detailResponse.json()) as { items: { id: string; flightType: string; status: string; correctionOfId: string | null }[] };
+    const corrected = detailBody.items.find((item) => item.correctionOfId === flight.flight.id);
+    expect(corrected?.flightType).toBe('TOURISM');
+    expect(corrected?.status).toBe('REGISTERED');
   });
 });

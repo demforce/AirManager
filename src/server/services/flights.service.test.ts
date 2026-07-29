@@ -211,6 +211,9 @@ const ORIGINAL_FLIGHT_ROW = {
   personId: 'person_1',
   minutes: 80,
   flightDate: new Date('2020-01-15T00:00:00.000Z'),
+  // Story 14.3 review F3 — the flight's OWN recorded type, needed so
+  // `correctFlight` can exempt a correction that keeps it unchanged.
+  flightType: 'TOURISM' as const,
   aircraft: { registration: 'I-ABCD' },
   movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: null }],
 };
@@ -378,6 +381,29 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
 
       await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+    });
+
+    // Ratifica R-14.3-b (PO, 2026-07-29): "un pilota deve poter essere
+    // abilitato a un volo SCUOLA (es. riprese volo per la currency, rinnovo
+    // SEP)". The STUDENT_FLIGHT_MUST_BE_SCHOOL guard only constrains a
+    // person with an active STUDENT profile and NO active pilot profile — a
+    // plain pilot (active pilot profile, no active student profile, PILOT_PERSON's
+    // own shape) logging a SCHOOL flight with an instructor is untouched by
+    // this story. Mechanically already covered by the instructor-required
+    // tests further below; this test documents the domain scenario
+    // explicitly, as ratified.
+    it('accepts a PILOT (no active student profile) on a SCHOOL flight WITH an instructor — currency/SEP renewal, ratifica R-14.3-b', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL' });
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
+
+      await expect(registerFlight(staffActor(), input)).resolves.toBeDefined();
     });
 
     it('throws a 422 FLIGHT_DATE_IN_FUTURE for a flight date after today (server UTC clock)', async () => {
@@ -1158,6 +1184,32 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2' });
 
       await expect(correctFlight(staffActor(), 'flight_orig', input)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    // Review F3 (ratifica R-14.3-a): correcting a flight while KEEPING its
+    // OWN recorded type is ALWAYS allowed, even for a person who is
+    // student-only TODAY (the profile may have changed SINCE the flight was
+    // flown) — this is exactly what lets a notes/times-only correction go
+    // through without ever rewriting the flight's type. `ORIGINAL_FLIGHT_ROW`
+    // and `CORRECT_INPUT` both carry `flightType: 'TOURISM'` — unchanged.
+    it("a correction that keeps the flight's OWN recorded flightType is allowed for a person who is student-only today (R-14.3-a: correcting is not registering anew)", async () => {
+      personFindUnique.mockResolvedValue({ ...PILOT_PERSON, pilotProfile: null, studentProfile: { deactivatedAt: null } });
+
+      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).resolves.toBeDefined();
+    });
+
+    // Review F3 (ratifica R-14.3-a): the exemption above is narrow — it
+    // protects an UNCHANGED type only. A correction that CHANGES the type
+    // away from what is on file (here: the original flight was SCHOOL, the
+    // correction asks for TOURISM) for a student-only person is rejected
+    // exactly like a brand-new registration would be.
+    it('422 STUDENT_FLIGHT_MUST_BE_SCHOOL when a correction CHANGES the flightType to a non-SCHOOL type for a person who is student-only today', async () => {
+      flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, flightType: 'SCHOOL' });
+      personFindUnique.mockResolvedValue({ ...PILOT_PERSON, pilotProfile: null, studentProfile: { deactivatedAt: null } });
+
+      // CORRECT_INPUT.flightType is 'TOURISM' — a change from the original SCHOOL.
+      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).rejects.toMatchObject({ code: 'STUDENT_FLIGHT_MUST_BE_SCHOOL' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 

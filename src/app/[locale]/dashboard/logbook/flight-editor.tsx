@@ -68,6 +68,8 @@ export type FlightEditorLabels = {
     soloModes: { dual: string; solo: string };
     /** Story 14.3, AC 2 — shown as a neutral `Field` hint under Tipo volo once a person with only an active student profile is selected (the select is also forced/disabled to SCHOOL, see `isStudentOnly`). */
     studentOnlyHint: string;
+    /** Review F1 (14.3) — shown ONLY while correcting a flight whose person is student-only TODAY but whose recorded type is NOT SCHOOL (ratifica R-14.3-a: never disabled, never rewritten). Contains a `{type}` placeholder for the flight's own recorded type label. */
+    studentOnlyCorrectionHint: string;
     departure: string;
     arrival: string;
     takeoffTime: string;
@@ -264,7 +266,19 @@ export function FlightEditor({
     return Boolean(profiles?.student && !profiles?.pilot);
   }
 
-  const initialFlightType: FlightTypeDto = initialPickers.personId && isStudentOnly(initialPickers.personId) ? 'SCHOOL' : defaults.flightType;
+  // Review F1 (14.3, CORRUZIONE DATI): the initial Tipo volo must NEVER be
+  // silently rewritten from the flight's own recorded value — forcing it to
+  // SCHOOL here based on the person's CURRENT active-profile flags used to
+  // make "Correggi volo" on an old TOURISM/AERIAL_WORK flight, whose person
+  // is student-only TODAY, open showing "Scuola" while the record says
+  // otherwise; confirming even a notes-only correction then re-typed the
+  // flight and re-charged it as SCHOOL (ratifica R-14.3-a: a historical
+  // flight's type is never rewritten by the UI, only by an explicit operator
+  // choice — see `isLocked`/`showStudentOnlyCorrectionWarning` below).
+  // `defaults.flightType` is always the value ALREADY ON FILE in `correct`
+  // mode, and the plain `'TOURISM'` default in `new` mode (where `personId`
+  // starts empty, so no forcing ever applied here anyway).
+  const initialFlightType: FlightTypeDto = defaults.flightType;
 
   const [formError, setFormError] = useState<string | null>(null);
   const [selectedFlightType, setSelectedFlightType] = useState<FlightTypeDto>(initialFlightType);
@@ -291,7 +305,6 @@ export function FlightEditor({
     register,
     handleSubmit,
     setError,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FlightFormValues>({
     resolver: zodResolver(flightFormSchema),
@@ -306,14 +319,6 @@ export function FlightEditor({
   function handlePersonChange(id: string): void {
     setPersonId(id);
     if (id.trim() !== '') setPersonError(false);
-    // Story 14.3 (AC 2): force + lock Tipo volo the instant a student-only
-    // person is picked — never leave a choice on the table the service will
-    // reject (lezione 14.6 F2). `setValue` also writes the underlying
-    // register-based `<select>`'s own value, so the DOM stays in sync.
-    if (isStudentOnly(id)) {
-      setSelectedFlightType('SCHOOL');
-      setValue('flightType', 'SCHOOL');
-    }
   }
 
   const noAircraft = aircraftOptions.length === 0;
@@ -322,6 +327,43 @@ export function FlightEditor({
   // (not a one-off flag set at selection time) so switching back to a
   // non-restricted person un-locks Tipo volo again.
   const personIsStudentOnly = isStudentOnly(personId);
+  // Review F1/F2 (14.3): the lock is a NEW-registration-only concept —
+  // correcting a historical flight NEVER disables the select (ratifica
+  // R-14.3-a: the operator decides whether to change a historical flight's
+  // type, never the UI; see `showStudentOnlyCorrectionWarning` below for
+  // what correct mode shows instead). `isLocked` is the ONE value driving
+  // BOTH the `disabled` prop AND `effectiveFlightType` right below it, so
+  // the two can never disagree (review F2: before this fix the force lived
+  // only in `handlePersonChange`, while `disabled` was re-derived every
+  // render from a profile map that can grow via search WITHOUT a
+  // re-selection — landing on `disabled=true` with the OLD, server-rejected
+  // value still selected, an unrecoverable dead end short of re-picking the
+  // person from the dropdown).
+  const isLocked = !isCorrecting && personIsStudentOnly;
+
+  // The value ACTUALLY in effect — `selectedFlightType` is only the
+  // operator's own last choice; while `isLocked`, SCHOOL wins regardless
+  // (covers BOTH the initial selection AND the delayed case where
+  // `searchPilotStudent` fills in the CURRENTLY selected person's profile
+  // flags later, typed but never re-selected). Fed BOTH into the Select's
+  // own `value` (so the DOM can never show a stale, server-rejected type
+  // while disabled — review F2) and into the submitted payload below, one
+  // single derivation for both, per the review's own fix note.
+  const effectiveFlightType: FlightTypeDto = isLocked ? 'SCHOOL' : selectedFlightType;
+
+  // Review F1 (14.3): correcting a flight whose person is student-only TODAY
+  // but whose recorded type is NOT SCHOOL — a real, if rare, state (ratifica
+  // R-14.3-b: a license is for life, so losing every profile is unusual, but
+  // a deactivated pilot profile is not impossible). The select stays
+  // ENABLED (never a silent rewrite, R-14.3-a) — this only names the
+  // situation so the operator decides with full information.
+  const showStudentOnlyCorrectionWarning = isCorrecting && personIsStudentOnly && effectiveFlightType !== 'SCHOOL';
+
+  function flightTypeLabel(type: FlightTypeDto): string {
+    if (type === 'SCHOOL') return labels.flightTypes.school;
+    if (type === 'AERIAL_WORK') return labels.flightTypes.other;
+    return labels.flightTypes.private;
+  }
 
   const aircraftComboOptions = useMemo<SearchComboboxOption[]>(() => {
     const base = aircraftOptions.map((aircraft) => ({ id: aircraft.id, label: aircraft.registration }));
@@ -448,7 +490,11 @@ export function FlightEditor({
           arrivalAirfield: values.arrivalAirfield.trim(),
           takeoffAt: times.takeoffAt.toISOString(),
           landingAt: times.landingAt.toISOString(),
-          flightType: values.flightType,
+          // Review F2: the SUBMITTED type is `effectiveFlightType`, not the
+          // raw form value — the one derivation that also drives the
+          // Select's own `value`/`disabled` above, so the two can never
+          // disagree.
+          flightType: effectiveFlightType,
           isSolo,
           ...hourMeterPayload,
           takeoffs,
@@ -616,10 +662,24 @@ export function FlightEditor({
                 emptyText={labels.picker.noResults}
               />
             </div>
-            <Field label={labels.fields.flightType} hint={personIsStudentOnly ? labels.fields.studentOnlyHint : undefined}>
+            <Field
+              label={labels.fields.flightType}
+              hint={
+                isLocked
+                  ? labels.fields.studentOnlyHint
+                  : showStudentOnlyCorrectionWarning
+                    ? labels.fields.studentOnlyCorrectionHint.replace('{type}', flightTypeLabel(correctingFlight!.flightType))
+                    : undefined
+              }
+            >
               <Select
-                disabled={personIsStudentOnly}
+                disabled={isLocked}
                 data-testid="flight-type-select"
+                // Review F2: `value` is CONTROLLED by `effectiveFlightType`
+                // (never the raw `selectedFlightType`) — the DOM can never
+                // show/submit a type the lock disagrees with, by React's own
+                // reconciliation, not an imperative sync call.
+                value={effectiveFlightType}
                 {...register('flightType', {
                   onChange: (event: { target: { value: string } }) => {
                     const next = event.target.value as FlightTypeDto;
@@ -683,7 +743,7 @@ export function FlightEditor({
             ) : null}
           </div>
 
-          {selectedFlightType === 'SCHOOL' ? (
+          {effectiveFlightType === 'SCHOOL' ? (
             <fieldset style={{ marginTop: 14 }}>
               <legend className="fld-label">{labels.fields.soloMode}</legend>
               <div style={{ marginTop: 8, display: 'flex', gap: 16 }}>

@@ -312,7 +312,12 @@ type ResolvedFlightInput = {
  * `AIRCRAFT_ARCHIVED`; person archived -> `PERSON_ARCHIVED`; person missing
  * an active pilot/student profile -> `PERSON_NOT_PILOT_OR_STUDENT`; person
  * has an active STUDENT profile and NO active pilot profile, on anything but
- * a `SCHOOL` flight (story 14.3, AC 1) -> `STUDENT_FLIGHT_MUST_BE_SCHOOL`;
+ * a `SCHOOL` flight AND not already the flight's OWN recorded type (story
+ * 14.3, AC 1; review F3 + ratifica R-14.3-a: correcting a historical flight
+ * while KEEPING its type is always allowed — the ban is on REGISTERING a new
+ * non-SCHOOL flight, or on CHANGING a correction's type away from what is on
+ * file, for a student-only person, never on leaving it untouched) ->
+ * `STUDENT_FLIGHT_MUST_BE_SCHOOL`;
  * `takeoffAt`/`landingAt` resolution (story 11.1, AC 2/3 — the ONLY source
  * of `minutes`/`flightDate` now) -> `FLIGHT_TIMES_INVALID` if
  * `landingAt <= takeoffAt` or the derived duration exceeds 1440 minutes;
@@ -336,7 +341,7 @@ type ResolvedFlightInput = {
  * (module doc-comment), which stayed the single place that writes it after
  * story 12.13 retired package consumption.
  */
-async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Promise<ResolvedFlightInput> {
+async function resolveFlightInput(actor: Actor, input: RegisterFlightInput, originalFlightType?: FlightType): Promise<ResolvedFlightInput> {
   const aircraft = await prisma.aircraft.findUnique({
     where: { id: input.aircraftId },
     select: { id: true, registration: true, archivedAt: true },
@@ -382,8 +387,16 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput): Pro
   // and NO active pilot profile may only log SCHOOL flights — the rule is on
   // the ACTIVE PROFILE (never the role), so a student who ALSO holds an
   // active pilot profile (both active — took the license) is unrestricted,
-  // same as a plain pilot.
-  if (hasActiveStudent && !hasActivePilot && input.flightType !== 'SCHOOL') {
+  // same as a plain pilot. Review F3 (ratifica R-14.3-a): `originalFlightType`
+  // is only ever set by `correctFlight` (the flight's OWN recorded type,
+  // never re-derived from the person's CURRENT profile) — a correction that
+  // keeps that exact type is exempt from this guard, because the person's
+  // profile status may have changed (e.g. lost/deactivated a license) SINCE
+  // the flight was flown, and the historical record must stay correctable
+  // without ever being silently reclassified. `registerFlight` never passes
+  // this argument, so a brand-new non-SCHOOL flight for a student-only
+  // person is rejected exactly as before.
+  if (hasActiveStudent && !hasActivePilot && input.flightType !== 'SCHOOL' && input.flightType !== originalFlightType) {
     throw new ValidationError(
       'A person with only an active student profile can only log SCHOOL flights.',
       undefined,
@@ -792,6 +805,8 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
   personId: string;
   minutes: number;
   flightDate: Date;
+  /** Story 14.3 review F3 (ratifica R-14.3-a) — the ORIGINAL flight's own recorded type, so `correctFlight` can let a correction keep it unchanged even for a person who is student-only TODAY. */
+  flightType: FlightType;
   aircraft: { registration: string };
   originalMovement: OriginalChargeMovement;
 }> {
@@ -804,6 +819,7 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
       personId: true,
       minutes: true,
       flightDate: true,
+      flightType: true,
       aircraft: { select: { registration: true } },
       movements: {
         where: { type: 'FLIGHT_CHARGE' },
@@ -843,6 +859,7 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
     personId: flight.personId,
     minutes: flight.minutes,
     flightDate: flight.flightDate,
+    flightType: flight.flightType,
     aircraft: flight.aircraft,
     originalMovement,
   };
@@ -987,7 +1004,10 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
   const originalFlight = await loadRegisteredFlightForReversal(flightId);
   const reason = input.reason;
 
-  const resolved = await resolveFlightInput(actor, input);
+  // Review F3 (ratifica R-14.3-a): pass the ORIGINAL flight's own recorded
+  // type so `resolveFlightInput`'s student-only guard exempts a correction
+  // that keeps it unchanged (see that function's own doc-comment).
+  const resolved = await resolveFlightInput(actor, input, originalFlight.flightType);
   const thresholdCents = await getNegativeBalanceThresholdCents();
 
   const {

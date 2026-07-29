@@ -40,8 +40,18 @@ export function Field({ label, children, wide = false, error, hint }: FieldProps
   // announces the message alongside the accessible name), on top of the
   // already-visible red border/inline text — `useId()` keyed to THIS Field
   // instance, not the caller's own `id` (many `Input`s here have none).
+  // Review F4 (story 14.3): `hint` gets the SAME treatment — a disabled
+  // control (e.g. Tipo volo force-locked to SCHOOL) is out of the tab order,
+  // so its only programmatic explanation for AT is this link. `error` and
+  // `hint` never BOTH render (the JSX below is a strict either/or, matching
+  // `FieldProps.hint`'s own doc-comment: "ignored when `error` is also
+  // set") — `describedById` picks whichever one IS actually in the DOM, so
+  // it can never point at a non-existent id.
   const errorId = useId();
-  const control = error && isValidElement(children) ? cloneElement(children as ReactElement<Record<string, unknown>>, { 'aria-describedby': errorId }) : children;
+  const hintId = useId();
+  const describedById = error ? errorId : hint ? hintId : undefined;
+  const control =
+    describedById && isValidElement(children) ? cloneElement(children as ReactElement<Record<string, unknown>>, { 'aria-describedby': describedById }) : children;
 
   return (
     <div className={`fld ${wide ? 'wide' : ''}`}>
@@ -61,7 +71,9 @@ export function Field({ label, children, wide = false, error, hint }: FieldProps
           {error}
         </span>
       ) : hint ? (
-        <span className="fld-hint">{hint}</span>
+        <span id={hintId} className="fld-hint">
+          {hint}
+        </span>
       ) : null}
     </div>
   );
