@@ -21,6 +21,18 @@ vi.mock('@/server/db/prisma', () => ({
   },
 }));
 
+// Story 14.4 review F7 — `membership.service.ts` now imports the REAL
+// `hasNegativeBalanceAlert` (pure, no I/O) from `./accounts.service`, which
+// in turn imports the mail adapter/templates. Mocked here so loading it
+// never runs `smtp-mail-sender.ts`'s eager env validation (same lesson/
+// pattern as `flights.service.test.ts`, CLAUDE.md).
+vi.mock('@/server/adapters/mail', () => ({
+  getMailSender: vi.fn(() => ({ send: vi.fn() })),
+}));
+vi.mock('@/server/adapters/mail/templates', () => ({
+  buildNegativeBalanceAlertEmail: vi.fn(async () => ({ subject: 'Alert subject', text: 'Alert text' })),
+}));
+
 const { prisma } = await import('@/server/db/prisma');
 const { chargeMembershipFee } = await import('./membership.service');
 const { ForbiddenError, NotFoundError, ValidationError } = await import('./errors');
@@ -174,7 +186,8 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
       }),
     );
     expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
-    expect(result).toEqual({ balanceCents: -5000, expiryId: 'expiry_new', expiresAt: '2028-03-10' });
+    // Story 14.4 review F7: post-charge balance (-5000) is negative -> in-app alert.
+    expect(result).toEqual({ balanceCents: -5000, expiryId: 'expiry_new', expiresAt: '2028-03-10', balanceAlert: true });
   });
 
   it('RENEWAL, current expiry still in the future (early renewal): rolls forward from the CURRENT expiresAt, never from today (ratifica 1b)', async () => {
@@ -219,7 +232,8 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
 
     const result = await chargeMembershipFee(staffActor(), 'person_1', { amountCents: 5000, override: false });
 
-    expect(result).toEqual({ balanceCents: -12000, expiryId: 'expiry_existing', expiresAt: '2028-09-01' });
+    // Story 14.4 review F7: post-charge balance (-12000) is negative -> in-app alert.
+    expect(result).toEqual({ balanceCents: -12000, expiryId: 'expiry_existing', expiresAt: '2028-09-01', balanceAlert: true });
   });
 
   it('upserts (never re-creates) the Account — a first-time payer with no prior movements is not blocked', async () => {
@@ -263,9 +277,11 @@ describe('chargeMembershipFee — insufficient-balance guard (PO decision 2026-0
 
     expect(result.balanceCents).toBe(0);
     expect(accountMovementCreateMock).toHaveBeenCalled();
+    // Story 14.4 review F7: 5000 -> 0, neither side negative -> no in-app alert.
+    expect(result.balanceAlert).toBe(false);
   });
 
-  it('an ADMIN override lets the addebito proceed below zero', async () => {
+  it('an ADMIN override lets the addebito proceed below zero — this is exactly the case the in-app alert (F7) exists for', async () => {
     mockBalances(0, -5000); // 0 - 5000 = -5000 < 0, but overridden
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
@@ -274,6 +290,7 @@ describe('chargeMembershipFee — insufficient-balance guard (PO decision 2026-0
 
     expect(result.balanceCents).toBe(-5000);
     expect(accountMovementCreateMock).toHaveBeenCalled();
+    expect(result.balanceAlert).toBe(true);
   });
 
   it('a STAFF override is forbidden (403) — override requires settings.manage, ADMIN-only', async () => {

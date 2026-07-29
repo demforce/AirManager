@@ -40,7 +40,16 @@ export function DispatchFlightButton({ label, aircraftOptions, personOptions, in
       <button type="button" className="btn primary" onClick={() => setOpen(true)} data-testid="dispatch-flight-button">
         <Icon.plus /> {label}
       </button>
+      {/* Review F1 (BLOCKER): unlike `logbook-console.tsx` (`key={editorTarget
+          === null ? 'closed' : ...}`), this single always-mounted `FlightEditor`
+          used to carry `pendingForceBody`/`blockedDocuments` (and every other
+          form field) across a close+reopen — "Forza registrazione" could
+          resend a STALE body for the person shown in a PREVIOUS blocked
+          attempt after the operator picked a different, clean pilot. Same
+          `key` idiom as the sibling console: a fresh `open`/`closed` key
+          forces a full remount (fresh state) on every open. */}
       <FlightEditor
+        key={open ? 'open' : 'closed'}
         target={open ? { mode: 'new' } : null}
         onClose={() => setOpen(false)}
         onMutated={() => router.refresh()}

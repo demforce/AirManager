@@ -94,6 +94,23 @@ export const accountOverviewSchema = z.object({
 export type AccountOverviewDto = z.infer<typeof accountOverviewSchema>;
 
 /**
+ * `accountOverviewSchema` plus the in-app "saldo in rosso" signal (story
+ * 14.4 review F7, ratifica R-14.4-d) — used ONLY by the writers that can
+ * actually debit the account (`POST .../adjustments`, the `ADJUSTMENT`
+ * branch of `POST /transactions`): `true` when the balance was ALREADY
+ * negative before the write OR ends up negative after it
+ * (`accounts.service.ts#hasNegativeBalanceAlert`) — deliberately NOT the
+ * email's own band-worsening condition (unchanged, still gates
+ * `sendNegativeBalanceAlert` only). `GET /account` and `recordTopUp` (a
+ * credit, never a debit) keep the plain `accountOverviewSchema`.
+ */
+export const accountOverviewWithAlertSchema = accountOverviewSchema.extend({
+  balanceAlert: z.boolean(),
+});
+
+export type AccountOverviewWithAlertDto = z.infer<typeof accountOverviewWithAlertSchema>;
+
+/**
  * `GET /api/v1/people/{id}/account/movements` query (story 3.2) — the shared
  * pagination shape (story 1.5), same reuse as `listHourMeterAdjustmentsQuerySchema`,
  * plus the `?format=xlsx` export params (story 10.1, AC 1).

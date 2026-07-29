@@ -101,8 +101,10 @@ export type LogbookConsoleLabels = {
     correctedBy: string;
     cancelAction: string;
     correctAction: string;
-    /** Story 14.4, AC 2 — lineage chip shown when `Flight.forcedAt` is set (an admin bypassed a blocking expired document); `title` carries `forceReason`. */
+    /** Story 14.4, AC 2 — lineage chip shown when `Flight.forcedAt` is set (an admin bypassed a blocking expired document). */
     forcedBadge: string;
+    /** Review F10 — `{reason}` placeholder, rendered as visible text (never title-only, unreachable by keyboard/screen reader) right under the badge above. Only ever present when `flight.forceReason` itself is non-null — review F2's own masking already hides it from a non-`flights.manage` viewer, so this line simply never renders for them. */
+    forcedDetail: string;
   };
   filters: {
     dateFrom: string;
@@ -274,13 +276,25 @@ export function LogbookConsole({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {/* Story 14.4, AC 2 ("persistita e visibile") — same lineage-chip
             idiom as the CANCELLED/correction badges below, so an admin's
-            override is discoverable in the registry, not just on the wire. */}
+            override is discoverable in the registry, not just on the wire.
+            Review F10: the motivo is rendered as VISIBLE text (never
+            title-only, unreachable by keyboard/screen reader) — review F2's
+            own server-side masking already nulls `forceReason` for a viewer
+            without `flights.manage`, so this line simply never renders for
+            them, no client-side gate needed here. */}
         {flight.forcedAt ? (
-          <span data-testid="flight-forced-badge" title={flight.forceReason ?? undefined}>
-            <Badge tone="warn" dot>
-              {labels.table.forcedBadge}
-            </Badge>
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span data-testid="flight-forced-badge">
+              <Badge tone="warn" dot>
+                {labels.table.forcedBadge}
+              </Badge>
+            </span>
+            {flight.forceReason ? (
+              <span data-testid="flight-forced-reason" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                {labels.table.forcedDetail.replace('{reason}', flight.forceReason)}
+              </span>
+            ) : null}
+          </div>
         ) : null}
         {flight.status === 'CANCELLED' ? (
           <>

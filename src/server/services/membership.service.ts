@@ -3,6 +3,7 @@ import { MEMBERSHIP_FEE_TYPE_NAME } from '@/lib/expiry-scope';
 import type { ChargeMembershipFeeInput } from '@/lib/schemas/membership';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { hasNegativeBalanceAlert } from './accounts.service';
 import { NotFoundError, ValidationError } from './errors';
 
 /** Upserted by NAME (not seeded via migration, Contesto) — also added to `prisma/seed.ts` so a fresh install's catalogue already lists it. `MEMBERSHIP_FEE_TYPE_NAME` lives in `@/lib/expiry-scope` (single source of truth, story 13.2 F3) so the create-form/inline-editor chip pickers can exclude it by the SAME name without importing this server-only service. */
@@ -12,6 +13,16 @@ export type ChargeMembershipFeeResult = {
   balanceCents: number;
   expiryId: string;
   expiresAt: string;
+  /**
+   * Story 14.4 review F7 (ratifica R-14.4-d) — same in-app "saldo in rosso"
+   * signal as every other debit-creating surface
+   * (`accounts.service.ts#hasNegativeBalanceAlert`). This writer already
+   * REFUSES a charge that would take the balance below zero unless an ADMIN
+   * `override`s it (this file's own doc-comment), so in practice this is
+   * only ever `true` on an overridden charge — never the email (this surface
+   * sends none, UNCHANGED).
+   */
+  balanceAlert: boolean;
 };
 
 /**
@@ -150,12 +161,14 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
     }
 
     const aggregate = await tx.accountMovement.aggregate({ where: { accountId: account.id }, _sum: { amountCents: true } });
+    const balanceAfterCents = aggregate._sum.amountCents ?? 0;
 
-    return { balanceCents: aggregate._sum.amountCents ?? 0, expiryId: expiry.id, expiresAt: expiry.expiresAt };
+    return { balanceCents: balanceAfterCents, expiryId: expiry.id, expiresAt: expiry.expiresAt, balanceAlert: hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents) };
   });
 
   return {
     balanceCents: result.balanceCents,
+    balanceAlert: result.balanceAlert,
     expiryId: result.expiryId,
     expiresAt: toDateOnlyString(result.expiresAt),
   };

@@ -22,6 +22,8 @@ export const chargeMembershipFeeResponseSchema = z.object({
   balanceCents: z.number().int(),
   expiryId: z.string(),
   expiresAt: z.iso.date(),
+  /** Story 14.4 review F7 (ratifica R-14.4-d) — same in-app "saldo in rosso" signal as `accountOverviewWithAlertSchema`; see `ChargeMembershipFeeResult`'s own doc-comment. */
+  balanceAlert: z.boolean(),
 });
 
 export type ChargeMembershipFeeResponseDto = z.infer<typeof chargeMembershipFeeResponseSchema>;

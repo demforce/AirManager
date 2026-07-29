@@ -924,6 +924,53 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       });
     });
 
+    // Story 14.4 review F7 (ratifica R-14.4-d) — the IN-APP `balanceAlert`,
+    // deliberately a DIFFERENT condition from the email's band-worsening gate
+    // above: "saldo prima < 0 OR saldo dopo < 0", so it also fires on a
+    // worsening move that stays WITHIN the same band (no email, in-app alert
+    // still true) — exactly the gap the review found on the flight side.
+    describe('in-app "saldo in rosso" signal (F7 — different condition from the email above)', () => {
+      it('fires when the balance was ALREADY negative before, even if the adjustment stays within the SAME band (no email in this case)', async () => {
+        // -5000 -> -6000: both plain "negative" with the default -20000
+        // threshold — same band, so `bandWorsened` (the email gate) is false
+        // (same fixture as the "does NOT resend" email test above).
+        mockAdjustmentHappyPath({ balanceBeforeCents: -5000, amountCents: -1000 });
+
+        const result = await recordAdjustment(staffActor(), 'person_1', { amountCents: -1000, reason: 'Ulteriore addebito' });
+        await flushAsync();
+
+        expect(sendMock).not.toHaveBeenCalled();
+        expect(result.balanceAlert).toBe(true);
+      });
+
+      it('fires when the balance BECOMES negative (ok -> negative), same case the email also fires on', async () => {
+        mockAdjustmentHappyPath({ balanceBeforeCents: 5000, amountCents: -10000 });
+
+        const result = await recordAdjustment(staffActor(), 'person_1', { amountCents: -10000, reason: 'Storno pacchetto' });
+
+        expect(result.balanceAlert).toBe(true);
+      });
+
+      it('stays false when the balance is non-negative both before and after', async () => {
+        mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
+
+        const result = await recordAdjustment(staffActor(), 'person_1', { amountCents: -2500, reason: 'Importo errato' });
+
+        expect(result.balanceAlert).toBe(false);
+      });
+
+      it('fires on a POSITIVE adjustment (a credit) that leaves the balance still negative (before<0 AND after<0)', async () => {
+        // -5000 + 1000 = -4000: a rettifica in the OPERATOR'S favor direction
+        // (crediting the person), but the account is still red — the signal
+        // is about the RESULTING state, not the sign of this one movement.
+        mockAdjustmentHappyPath({ balanceBeforeCents: -5000, amountCents: 1000 });
+
+        const result = await recordAdjustment(staffActor(), 'person_1', { amountCents: 1000, reason: 'Rettifica parziale' });
+
+        expect(result.balanceAlert).toBe(true);
+      });
+    });
+
     describe('H3 fix (docs/security/owasp-audit-2026-07-22.md) — the adjustment already committed by the time the post-commit re-read runs', () => {
       it('does NOT throw when the post-commit overview re-read fails — degrades to the balance already computed inside the transaction', async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
@@ -941,7 +988,8 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         // Degraded but correct: the balance the transaction itself computed,
         // never a throw that would have freed the caller's Idempotency-Key
         // (`apiRoute`'s AC 4) and let a retry double-record the adjustment.
-        expect(result).toEqual({ account: ACCOUNT, balanceCents: 7500, recentMovements: [] });
+        // Story 14.4 review F7: 10000 -> 7500, both non-negative -> no in-app alert.
+        expect(result).toEqual({ account: ACCOUNT, balanceCents: 7500, recentMovements: [], balanceAlert: false });
         expect(consoleErrorSpy).toHaveBeenCalledWith('recordAdjustment: post-commit account overview read failed', expect.any(Error));
         consoleErrorSpy.mockRestore();
       });

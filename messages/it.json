@@ -1202,6 +1202,7 @@
       "cancelAction": "Annulla",
       "correctAction": "Modifica",
       "forcedBadge": "Deroga",
+      "forcedDetail": "Motivo: {reason}",
       "empty": "Nessun volo registrato."
     },
     "filters": {
@@ -1282,7 +1283,11 @@
         "INSTRUCTOR_NOT_FOUND": "L'istruttore selezionato non ha un profilo istruttore attivo.",
         "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
         "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
-        "FLIGHT_BLOCKED_BY_EXPIRY": "Impossibile registrare il volo: risultano scaduti i seguenti documenti: {documents}.",
+        "FLIGHT_BLOCKED_BY_EXPIRY": "Impossibile registrare il volo: risultano mancanti o scaduti i seguenti documenti: {documents}.",
+        "documentExpiredOn": "scaduto il {date}",
+        "documentMissing": "mancante",
+        "documentRolePerson": "pilota/allievo",
+        "documentRoleInstructor": "istruttore",
         "generic": "Impossibile registrare il volo. Riprova."
       },
       "result": {
@@ -1294,7 +1299,8 @@
         "instructorAmount": "Costo istruttore",
         "total": "Totale addebitato",
         "newBalance": "Nuovo saldo",
-        "balanceAlert": "Attenzione: il saldo del pilota risulta negativo (o è peggiorato oltre la soglia configurata). Il volo è comunque stato registrato."
+        "balanceAlert": "Attenzione: il saldo del pilota risulta negativo (o è peggiorato oltre la soglia configurata). Il volo è comunque stato registrato.",
+        "forcedNotice": "Registrato in deroga — {reason}"
       },
       "force": {
         "title": "Forza registrazione",
@@ -1972,8 +1978,8 @@
         "scope": "Ambito",
         "validity": "Validità",
         "validityHint": "Precompila la scadenza alla registrazione (oggi + mesi). Imposta 0 per le Ratings che non scadono mai.",
-        "blocksBooking": "Blocca prenotazioni",
-        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta, impedisce nuove prenotazioni.",
+        "blocksBooking": "Blocca prenotazioni e voli",
+        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta o assente, impedisce nuove prenotazioni e la registrazione/correzione di voli.",
         "submitCreate": "Crea",
         "submitSave": "Salva",
         "cancel": "Annulla",
@@ -2035,8 +2041,8 @@
         "scope": "Ambito",
         "validity": "Validità",
         "validityHint": "Precompila la scadenza alla registrazione (oggi + mesi). Imposta 0 per le visite che non scadono mai.",
-        "blocksBooking": "Blocca prenotazioni",
-        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta, impedisce nuove prenotazioni.",
+        "blocksBooking": "Blocca prenotazioni e voli",
+        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta o assente, impedisce nuove prenotazioni e la registrazione/correzione di voli.",
         "submitCreate": "Crea",
         "submitSave": "Salva",
         "cancel": "Annulla",

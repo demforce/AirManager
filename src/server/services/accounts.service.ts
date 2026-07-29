@@ -477,6 +477,25 @@ export function bandWorsened(before: BalanceBand, after: BalanceBand): boolean {
 }
 
 /**
+ * Story 14.4 review F7 (ratifica R-14.4-d, PO verbatim: "l'avviso scatta sia
+ * se il conto è già in rosso sia se l'importo da addebitare porterà il conto
+ * in rosso... per QUALSIASI addebito non solo per i voli") — the ONE shared
+ * condition for the in-app "saldo in rosso" banner shown to the OPERATOR on
+ * every surface that can debit a person's account: `true` when the balance
+ * was ALREADY negative before the write OR ends up negative after it.
+ * Deliberately NOT `bandWorsened` (that stays the email's own, UNCHANGED
+ * band-transition gate, story 5.1/3.3): a debit on a balance already at
+ * -150,00 € never "worsens the band" (still `negative`, same as before) yet
+ * the operator staring at the result still needs to see red. Every writer
+ * below computes `balanceBeforeCents`/`balanceAfterCents` for its OWN
+ * purposes already (the email's before/after read) — this is never a second,
+ * independent balance read.
+ */
+export function hasNegativeBalanceAlert(balanceBeforeCents: number, balanceAfterCents: number): boolean {
+  return balanceBeforeCents < 0 || balanceAfterCents < 0;
+}
+
+/**
  * Reads the configurable alert threshold from `AppSetting` (Task 1), falling
  * back to `DEFAULT_NEGATIVE_BALANCE_THRESHOLD_CENTS` when the row is absent
  * — an admin settings UI to manage it is out of scope here (epic 10). A
@@ -566,7 +585,7 @@ export async function sendNegativeBalanceAlert(
  * commits (Dev Notes: SMTP failures must never hold the lock nor invalidate
  * the movement).
  */
-export async function recordAdjustment(actor: Actor, personId: string, input: RecordAdjustmentInput): Promise<AccountOverview> {
+export async function recordAdjustment(actor: Actor, personId: string, input: RecordAdjustmentInput): Promise<AccountOverview & { balanceAlert: boolean }> {
   authorize(actor, 'finance.manage');
 
   const person = await prisma.person.findUnique({
@@ -675,7 +694,12 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
     void sendNegativeBalanceAlert(personId, person, overview.balanceCents);
   }
 
-  return overview;
+  // Story 14.4 review F7 (ratifica R-14.4-d) — the in-app signal, deliberately
+  // NOT the same condition as the email above (this function's own doc-comment
+  // on `hasNegativeBalanceAlert`): fires for BOTH directions of a rettifica
+  // (this endpoint's `amountCents` is signed) whenever the account IS or
+  // BECOMES red, even when the band itself doesn't worsen.
+  return { ...overview, balanceAlert: hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents) };
 }
 
 /** `@db.Date` calendar-only "today" (server clock, UTC) — a rettifica always values as of today (Dev Notes: no `effectiveDate` input). */

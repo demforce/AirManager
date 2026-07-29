@@ -1,4 +1,4 @@
-import { Prisma, type FlightStatus, type FlightType } from '@/generated/prisma/client';
+import { Prisma, type ExpiryScope, type FlightStatus, type FlightType } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
 import type { CancelFlightInput, CorrectFlightInput, ListFlightsQuery, RegisterFlightInput } from '@/lib/schemas/flights';
@@ -11,6 +11,7 @@ import {
   bandWorsened,
   getAccountOverview,
   getNegativeBalanceThresholdCents,
+  hasNegativeBalanceAlert,
   sendNegativeBalanceAlert,
   type AccountOverview,
 } from './accounts.service';
@@ -158,6 +159,7 @@ export type FlightListItem = {
   correctedByFlightId: string | null;
   /** Story 14.4, AC 2 — set together, exactly once, ONLY when an admin bypassed a blocking expired document. `null` on every normal flight. */
   forcedAt: Date | null;
+  /** Review F2 (ratifica R-14.4-c) — MASKED to `null` for an actor without `flights.manage` (`toListItem`'s own `includeForceReason` param), even when `forcedAt` is set: the motivo can name another person's medical/document, so a pilot/student/instructor reading their OWN registry (`self.read`) sees the "Deroga" fact (`forcedAt`) but never the WHY. Unlike `Booking`'s own DTO (which omits the field entirely), staff/admin get the real value — audit trail, not blanket omission. */
   forceReason: string | null;
 };
 
@@ -167,11 +169,14 @@ export type RegisterFlightResult = {
   flight: FlightListItem;
   account: AccountOverview;
   /**
-   * Story 14.4, AC 3 (decision D1) — the SAME worsened-band signal that
-   * gates `sendNegativeBalanceAlert` below (`accounts.service.ts#bandWorsened`),
-   * surfaced to the OPERATOR in-app instead of (never in place of) the
-   * unchanged pilot-facing email. `cancelFlight` (module doc-comment: a
-   * storno only ever improves or holds the band) always returns `false`.
+   * Story 14.4, AC 3 (decision D1); review F7 (ratifica R-14.4-d) — the SAME
+   * in-app "saldo in rosso" signal every other debit-creating surface uses
+   * (`accounts.service.ts#hasNegativeBalanceAlert`: balance negative BEFORE
+   * the charge OR negative AFTER it) — deliberately NOT the same condition as
+   * `sendNegativeBalanceAlert` below (still band-gated, UNCHANGED, email
+   * only). `cancelFlight` (module doc-comment: a storno only ever improves or
+   * holds the balance, and it is a CREDIT, not a debit — outside F7's own
+   * scope) always returns `false`.
    */
   balanceAlert: boolean;
 };
@@ -252,11 +257,16 @@ type SelectedFlight = {
  * own-access gate (`hasPermission(actor, 'people.read')` at the call site) —
  * a pilot/student reading their own registry never learns who registered the
  * movement (same conditional-field pattern as `accounts.service.ts`'s
- * `toStatementItem`). Every staff-only entrypoint in this file
- * (`registerFlight`/`cancelFlight`/`correctFlight`, all gated on
- * `flights.manage`) always passes `true`.
+ * `toStatementItem`). `includeForceReason` is review F2's own gate
+ * (`hasPermission(actor, 'flights.manage')`) — masks `forceReason` to `null`
+ * for a non-manage viewer while leaving `forcedAt` visible to everyone with
+ * access to the flight (see `FlightListItem.forceReason`'s own doc-comment).
+ * Every staff-only entrypoint in this file (`registerFlight`/`cancelFlight`/
+ * `correctFlight`, all gated on `flights.manage`) always passes `true` for
+ * BOTH — the actor calling them already holds `flights.manage` by
+ * definition (the `authorize` call at the top of each).
  */
-function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightListItem {
+function toListItem(flight: SelectedFlight, includeActorEmail: boolean, includeForceReason: boolean): FlightListItem {
   const hasInstructor = flight.instructorRateCentsPerHour !== null && flight.instructorAmountCents !== null;
   return {
     id: flight.id,
@@ -301,9 +311,38 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightL
     correctionOfId: flight.correctionOfId,
     correctedByFlightId: flight.correctedBy?.id ?? null,
     forcedAt: flight.forcedAt,
-    forceReason: flight.forceReason,
+    // Review F2 (ratifica R-14.4-c): `forcedAt` (the "Deroga" fact) stays
+    // visible to everyone with access to this flight; the motivo — which can
+    // name another person's medical/document — is masked here, not left to
+    // every UI call site to remember.
+    forceReason: includeForceReason ? flight.forceReason : null,
   };
 }
+
+/**
+ * One blocking document surfaced in `FLIGHT_BLOCKED_BY_EXPIRY`'s
+ * `details.documents` (story 14.4; review F5/F6) — richer than bookings'
+ * own `ExpiredDocument` (`{ typeName, expiresAt }`, UNCHANGED there — AC 5):
+ * `expiresAt: null` marks an ABSENT document (F5, ratifica R-14.4-a: R4 says
+ * "assente O scaduta", not just "scaduta") instead of an expired one, and
+ * `role`/`personName` say WHOSE it is (F6 — a SCHOOL flight can block on the
+ * person's OR the instructor's document, and "the following documents are
+ * expired" alone is not actionable when two different people are involved).
+ */
+export type FlightBlockingDocument = {
+  typeName: string;
+  /** `null` <=> no `Expiry` was ever registered for this type (F5). A `YYYY-MM-DD` otherwise — always the FLIGHT-DAY comparison, never "today" (AC 1). */
+  expiresAt: string | null;
+  role: 'person' | 'instructor';
+  personName: string;
+};
+
+/**
+ * The ORIGINAL flight's identity fields, supplied ONLY by `correctFlight`
+ * (review F4, ratifica R-14.4-b) — see `resolveFlightInput`'s own
+ * doc-comment for what this exempts.
+ */
+type OriginalFlightIdentity = { personId: string; instructorPersonId: string | null; flightDate: Date };
 
 type ResolvedFlightInput = {
   aircraft: { id: string; registration: string };
@@ -324,6 +363,47 @@ type ResolvedFlightInput = {
   /** Story 14.4, AC 2 — set ONLY when an admin bypassed a real blocking expired document; `null` on every normal registration/correction, INCLUDING a `force: true` request with nothing to bypass. */
   forceStamp: { forcedAt: Date; forcedByUserId: string; forceReason: string } | null;
 };
+
+/**
+ * Review F5 (ratifica R-14.4-a) — FLIGHTS-ONLY extension of
+ * `findBlockingExpiredDocuments`: a blocking `ExpiryType` APPLICABLE to
+ * `personId` (by `scope`, same ALL/PILOTS/STUDENTS/INSTRUCTORS rule
+ * `expiries.service.ts#assertScopeCompatible` already uses at registration
+ * time — no separate "applicability" notion exists elsewhere in the
+ * scadenze domain) with NO `Expiry` row at all is a block, exactly like an
+ * expired one (R4: "assente O scaduta" — the pre-fix guard only ever
+ * checked "scaduta"). Bookings (story 7.4, AC 5 — semantics frozen by this
+ * story) never call this; it runs ALONGSIDE `findBlockingExpiredDocuments`,
+ * never folded into it. `applicableProfiles` is the CALLER's own view of the
+ * person's role on THIS flight (pilot/student for the person slot,
+ * instructor for the instructor slot) — never re-derived from a second
+ * profile query.
+ */
+async function findMissingBlockingDocuments(
+  personId: string,
+  applicableProfiles: { pilot: boolean; student: boolean; instructor: boolean },
+): Promise<Array<{ typeName: string }>> {
+  const scopes: ExpiryScope[] = ['ALL'];
+  if (applicableProfiles.pilot) scopes.push('PILOTS');
+  if (applicableProfiles.student) scopes.push('STUDENTS');
+  if (applicableProfiles.instructor) scopes.push('INSTRUCTORS');
+
+  const applicableTypes = await prisma.expiryType.findMany({
+    where: { isActive: true, blocksBooking: true, scope: { in: scopes } },
+    select: { id: true, name: true },
+  });
+  if (applicableTypes.length === 0) {
+    return [];
+  }
+
+  const registered = await prisma.expiry.findMany({
+    where: { personId, expiryTypeId: { in: applicableTypes.map((type) => type.id) } },
+    select: { expiryTypeId: true },
+  });
+  const registeredTypeIds = new Set(registered.map((expiry) => expiry.expiryTypeId));
+
+  return applicableTypes.filter((type) => !registeredTypeIds.has(type.id)).map((type) => ({ typeName: type.name }));
+}
 
 /**
  * All of `registerFlight`'s pre-transaction guards and rate lookups (AC 1/2/
@@ -373,14 +453,34 @@ type ResolvedFlightInput = {
  * AND the instructor's REGISTERED expiries are scanned against `flightDate`
  * (not "today") via the SAME shared core the booking expiry-block already
  * established (`bookings.service.ts#findBlockingExpiredDocuments`, reused
- * verbatim — never reimplemented); any blocking document across EITHER
- * person is a 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents` lists every
- * one) unless `force` bypasses it, which stamps `forcedAt`/`forcedByUserId`/
+ * verbatim — never reimplemented) PLUS (review F5, ratifica R-14.4-a) every
+ * blocking type APPLICABLE to that person with NO `Expiry` at all
+ * (`findMissingBlockingDocuments`, FLIGHTS-ONLY — never folded into the
+ * shared helper, AC 5's booking semantics stay frozen); any blocking
+ * document across EITHER person is a 422 `FLIGHT_BLOCKED_BY_EXPIRY`
+ * (`details.documents` lists every one, tagged `role`/`personName` — review
+ * F6) unless `force` bypasses it, which stamps `forcedAt`/`forcedByUserId`/
  * `forceReason` on the eventual `Flight` row (same "scavalcato un blocco, non
  * spuntata una checkbox" convention as `Booking.forcedAt`) — `null` on every
  * normal flight, INCLUDING a `force: true` request with nothing to bypass.
+ *
+ * **Unchanged-identity correction exemption (review F4, ratifica
+ * R-14.4-b)**: when `original` is supplied (`correctFlight` only) and the
+ * NEW `personId`/`instructorPersonId`/`flightDate` are IDENTICAL to the
+ * flight's own recorded ones, the ENTIRE guard above is skipped — a
+ * notes/hour-meter/times-only correction of a historical flight is never
+ * blocked (nor does it need a "Deroga" stamp) by a document that expired, or
+ * was only ever required, AFTER the flight was flown. Same
+ * "correcting-is-not-registering-anew" principle as `originalFlightType`'s
+ * own exemption above; changing ANY of those three fields drops back to the
+ * full check.
  */
-async function resolveFlightInput(actor: Actor, input: RegisterFlightInput, originalFlightType?: FlightType): Promise<ResolvedFlightInput> {
+async function resolveFlightInput(
+  actor: Actor,
+  input: RegisterFlightInput,
+  originalFlightType?: FlightType,
+  original?: OriginalFlightIdentity,
+): Promise<ResolvedFlightInput> {
   // Story 14.4, AC 2 (ratifica R4): checked FIRST, before any query — same
   // ordering as `createBooking`'s own force-403 (this function's doc-comment).
   if (input.force && !hasPermission(actor, 'flights.forceExpiry')) {
@@ -501,6 +601,10 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput, orig
 
   const instructorPersonId = input.instructorPersonId ?? null;
   let instructorProfileId: string | null = null;
+  // Review F6 — the instructor's display name, needed ONLY to label a
+  // blocking document as theirs (below); `null` whenever there is no
+  // instructor on this flight.
+  let instructorName: string | null = null;
   if (instructorPersonId) {
     if (instructorPersonId === input.personId) {
       throw new ValidationError('The instructor cannot be the same person as the pilot/student.', undefined, 'INSTRUCTOR_SAME_AS_PILOT');
@@ -508,7 +612,7 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput, orig
 
     const instructorPerson = await prisma.person.findUnique({
       where: { id: instructorPersonId },
-      select: { archivedAt: true, instructorProfile: { select: { id: true, deactivatedAt: true } } },
+      select: { firstName: true, lastName: true, archivedAt: true, instructorProfile: { select: { id: true, deactivatedAt: true } } },
     });
     const instructorProfile = instructorPerson?.instructorProfile ?? null;
     // TD-1, AC 9: an archived Person with an otherwise-active
@@ -520,16 +624,52 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput, orig
       throw new ValidationError('Instructor has no active instructor profile.', undefined, 'INSTRUCTOR_NOT_FOUND');
     }
     instructorProfileId = instructorProfile.id;
+    instructorName = `${instructorPerson.firstName} ${instructorPerson.lastName}`;
   }
+
+  // Review F4 (ratifica R-14.4-b): a correction that changes NEITHER the
+  // person, NOR the instructor, NOR the flight date is exempt from the
+  // expiry guard entirely — same "correcting is not registering anew"
+  // principle as R-14.3-a's flightType exemption above. `original` is only
+  // ever supplied by `correctFlight` (its own recorded identity); a
+  // brand-new `registerFlight` call never passes it, so it is always fully
+  // checked. Without this, a notes/hour-meter-only correction of a
+  // HISTORICAL flight becomes a permanent dead end for STAFF (422, no
+  // legitimate bypass) the moment a document expires AFTER the flight was
+  // flown, and forces the ADMIN path into stamping a fake "Deroga" on a
+  // flight that was never actually an operational override.
+  const identityUnchanged =
+    original !== undefined &&
+    original.personId === input.personId &&
+    original.instructorPersonId === instructorPersonId &&
+    original.flightDate.getTime() === flightDate.getTime();
 
   // Story 14.4, AC 1/2 (ratifica R4) — see this function's own doc-comment.
   // Both the pilot/student AND, when present, the instructor are scanned;
   // every blocking document across EITHER is reported together (never
   // partial — the admin sees the whole picture before deciding to override).
+  // Review F5 (ratifica R-14.4-a): R4 says "assente O scaduta" — a blocking
+  // type APPLICABLE to the person with NO `Expiry` at all
+  // (`findMissingBlockingDocuments`) blocks exactly like an expired one,
+  // alongside (never inside) the expired-document scan
+  // (`findBlockingExpiredDocuments`, shared verbatim with bookings — AC 5,
+  // that surface's own semantics stay frozen).
   const flightDateOnly = toDateOnlyString(flightDate);
-  const pilotBlock = await findBlockingExpiredDocuments(input.personId, flightDateOnly);
-  const instructorBlock = instructorPersonId ? await findBlockingExpiredDocuments(instructorPersonId, flightDateOnly) : null;
-  const blockingDocuments: ExpiredDocument[] = [...pilotBlock.blockingDocuments, ...(instructorBlock?.blockingDocuments ?? [])];
+  const personDisplayName = `${person.firstName} ${person.lastName}`;
+  const pilotExpired = identityUnchanged ? [] : (await findBlockingExpiredDocuments(input.personId, flightDateOnly)).blockingDocuments;
+  const pilotMissing = identityUnchanged
+    ? []
+    : await findMissingBlockingDocuments(input.personId, { pilot: hasActivePilot, student: hasActiveStudent, instructor: false });
+  const instructorExpired =
+    identityUnchanged || !instructorPersonId ? [] : (await findBlockingExpiredDocuments(instructorPersonId, flightDateOnly)).blockingDocuments;
+  const instructorMissing =
+    identityUnchanged || !instructorPersonId ? [] : await findMissingBlockingDocuments(instructorPersonId, { pilot: false, student: false, instructor: true });
+  const blockingDocuments: FlightBlockingDocument[] = [
+    ...pilotExpired.map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt, role: 'person' as const, personName: personDisplayName })),
+    ...pilotMissing.map((document) => ({ typeName: document.typeName, expiresAt: null, role: 'person' as const, personName: personDisplayName })),
+    ...instructorExpired.map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt, role: 'instructor' as const, personName: instructorName! })),
+    ...instructorMissing.map((document) => ({ typeName: document.typeName, expiresAt: null, role: 'instructor' as const, personName: instructorName! })),
+  ];
 
   let forceStamp: ResolvedFlightInput['forceStamp'] = null;
   if (blockingDocuments.length > 0) {
@@ -541,7 +681,7 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput, orig
       forceStamp = { forcedAt: new Date(), forcedByUserId: actor.userId, forceReason: input.forceReason! };
     } else {
       throw new ValidationError(
-        `Cannot register this flight: the following documents are expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
+        `Cannot register this flight: the following documents are missing or expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
         { documents: blockingDocuments },
         'FLIGHT_BLOCKED_BY_EXPIRY',
       );
@@ -852,21 +992,25 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
 
   const bandBefore = balanceBand(balanceBeforeCents, thresholdCents);
   const bandAfter = balanceBand(balanceAfterCents, thresholdCents);
-  const balanceAlert = bandWorsened(bandBefore, bandAfter);
-  if (balanceAlert) {
+  if (bandWorsened(bandBefore, bandAfter)) {
     // Fire-and-forget, AFTER commit (Dev Notes) — same pattern as
-    // `recordAdjustment`; the email quotes the post-commit balance.
+    // `recordAdjustment`; the email quotes the post-commit balance. Band-gated
+    // and UNCHANGED by review F7 (ratifica R-14.4-d) — only the IN-APP signal
+    // below gets the new "already red OR ends up red" condition.
     void sendNegativeBalanceAlert(
       resolved.person.id,
       { firstName: resolved.person.firstName, lastName: resolved.person.lastName, email: resolved.person.email },
       account.balanceCents,
     );
   }
+  // Review F7: deliberately NOT `bandWorsened` (see `RegisterFlightResult.balanceAlert`'s own doc-comment).
+  const balanceAlert = hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents);
 
-  // `true`: registerFlight/cancelFlight/correctFlight are all staff-only
-  // (`flights.manage`, story 5.4's own-access branch never reaches here) —
-  // `actorEmail` is always shown to the staff actor who just acted.
-  return { flight: toListItem(createdFlight, true), account, balanceAlert };
+  // `true, true`: registerFlight/cancelFlight/correctFlight are all
+  // staff-only (`flights.manage`, story 5.4's own-access branch never
+  // reaches here) — `actorEmail`/`forceReason` are always shown to the staff
+  // actor who just acted.
+  return { flight: toListItem(createdFlight, true, true), account, balanceAlert };
 }
 
 /** The `FLIGHT_CHARGE` movement a `REGISTERED` flight must always have — loaded so `cancelFlight`/`correctFlight` can reverse it. */
@@ -883,6 +1027,8 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
   id: string;
   aircraftId: string;
   personId: string;
+  /** Review F4 (ratifica R-14.4-b) — the ORIGINAL flight's own instructor, by PERSON id (matching `resolveFlightInput`'s own `instructorPersonId` local) so a correction that keeps every identity field unchanged can skip the expiry guard entirely. `null` <=> the original flight had no instructor. */
+  instructorPersonId: string | null;
   minutes: number;
   flightDate: Date;
   /** Story 14.3 review F3 (ratifica R-14.3-a) — the ORIGINAL flight's own recorded type, so `correctFlight` can let a correction keep it unchanged even for a person who is student-only TODAY. */
@@ -900,6 +1046,7 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
       minutes: true,
       flightDate: true,
       flightType: true,
+      instructorProfile: { select: { person: { select: { id: true } } } },
       aircraft: { select: { registration: true } },
       movements: {
         where: { type: 'FLIGHT_CHARGE' },
@@ -937,6 +1084,7 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
     id: flight.id,
     aircraftId: flight.aircraftId,
     personId: flight.personId,
+    instructorPersonId: flight.instructorProfile?.person.id ?? null,
     minutes: flight.minutes,
     flightDate: flight.flightDate,
     flightType: flight.flightType,
@@ -1041,7 +1189,7 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
   // `balanceAlert: false` — a storno only ever improves or holds the band
   // (module doc-comment: "No alert on cancel"), so there is never a
   // worsening signal to surface here.
-  return { flight: toListItem(updated, true), account, balanceAlert: false };
+  return { flight: toListItem(updated, true, true), account, balanceAlert: false };
 }
 
 /**
@@ -1089,8 +1237,15 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
 
   // Review F3 (ratifica R-14.3-a): pass the ORIGINAL flight's own recorded
   // type so `resolveFlightInput`'s student-only guard exempts a correction
-  // that keeps it unchanged (see that function's own doc-comment).
-  const resolved = await resolveFlightInput(actor, input, originalFlight.flightType);
+  // that keeps it unchanged. Review F4 (ratifica R-14.4-b): ALSO pass its
+  // recorded person/instructor/date so the expiry guard is skipped entirely
+  // when a correction changes none of them (see that function's own
+  // doc-comment for both).
+  const resolved = await resolveFlightInput(actor, input, originalFlight.flightType, {
+    personId: originalFlight.personId,
+    instructorPersonId: originalFlight.instructorPersonId,
+    flightDate: originalFlight.flightDate,
+  });
   const thresholdCents = await getNegativeBalanceThresholdCents();
 
   const {
@@ -1198,20 +1353,22 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
   // motivare se l'avviso va anche in correzione volo" (Contesto's own
   // question). Answer: yes, for free — `correctFlight` already computes this
   // exact before/after comparison to decide whether to fire the (unchanged)
-  // email alert (module doc-comment: "alert-after-storno on correct"), so
-  // returning the same boolean the UI already renders for `registerFlight`
-  // keeps the invariant "email fires <=> in-app banner shows" without a
-  // second, independently-maintained condition.
-  const balanceAlert = bandWorsened(bandBefore, bandAfter);
-  if (balanceAlert) {
+  // email alert (module doc-comment: "alert-after-storno on correct").
+  // Review F7 (ratifica R-14.4-d): the EMAIL below stays band-gated
+  // (`bandWorsened`, UNCHANGED); the IN-APP `balanceAlert` returned to the UI
+  // uses the WIDER `hasNegativeBalanceAlert` condition, same as
+  // `registerFlight` — the two are no longer the same boolean (module
+  // doc-comment on `RegisterFlightResult`).
+  if (bandWorsened(bandBefore, bandAfter)) {
     void sendNegativeBalanceAlert(
       resolved.person.id,
       { firstName: resolved.person.firstName, lastName: resolved.person.lastName, email: resolved.person.email },
       account.balanceCents,
     );
   }
+  const balanceAlert = hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents);
 
-  return { flight: toListItem(createdFlight, true), account, balanceAlert };
+  return { flight: toListItem(createdFlight, true, true), account, balanceAlert };
 }
 
 /**
@@ -1321,6 +1478,9 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
   const where = buildFlightsWhere(actor, query, canManage);
 
   const includeActorEmail = hasPermission(actor, 'people.read');
+  // Review F2 (ratifica R-14.4-c): `forceReason` visible ONLY to `flights.manage` —
+  // `canManage` is exactly that permission (`authorizeFlightsQuery` above).
+  const includeForceReason = canManage;
 
   // Interactive transaction (story TD-1, AC 3) — see
   // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
@@ -1339,7 +1499,7 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
   });
 
   return paginate(
-    items.map((item) => toListItem(item, includeActorEmail)),
+    items.map((item) => toListItem(item, includeActorEmail, includeForceReason)),
     total,
     query,
   );

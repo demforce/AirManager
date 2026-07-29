@@ -282,6 +282,9 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             cancelAction: t('table.cancelAction'),
             correctAction: t('table.correctAction'),
             forcedBadge: t('table.forcedBadge'),
+            // `t.raw`: the {reason} placeholder is filled CLIENT-side (same
+            // reasoning as `editor.fields.studentOnlyCorrectionHint` below).
+            forcedDetail: t.raw('table.forcedDetail'),
           },
           filters: {
             dateFrom: t('filters.dateFrom'),
@@ -356,6 +359,11 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               // `t.raw`: the {documents} placeholder is filled CLIENT-side
               // (same reasoning as `fields.studentOnlyCorrectionHint` above).
               FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
+              // Review F5/F6 — `{date}` filled CLIENT-side, same reasoning.
+              documentExpiredOn: t.raw('editor.errors.documentExpiredOn'),
+              documentMissing: t('editor.errors.documentMissing'),
+              documentRolePerson: t('editor.errors.documentRolePerson'),
+              documentRoleInstructor: t('editor.errors.documentRoleInstructor'),
               generic: t('editor.errors.generic'),
             },
             result: {
@@ -368,6 +376,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               total: t('editor.result.total'),
               newBalance: t('editor.result.newBalance'),
               balanceAlert: t('editor.result.balanceAlert'),
+              // Review F11 — `{reason}` filled CLIENT-side, same reasoning.
+              forcedNotice: t.raw('editor.result.forcedNotice'),
             },
             picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
             force: {

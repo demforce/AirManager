@@ -19,7 +19,7 @@
  * toast) — `lastResult` switches the body/footer to a read-only summary
  * view until the user explicitly closes.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -96,8 +96,15 @@ export type FlightEditorLabels = {
     INSTRUCTOR_NOT_FOUND: string;
     INSTRUCTOR_SAME_AS_PILOT: string;
     FLIGHT_DATE_IN_FUTURE: string;
-    /** Story 14.4, AC 1/4 (ratifica R4) — `{documents}` placeholder, client-filled with the comma-joined "type (date)" list (`t.raw` pattern, same as `new-booking-form.tsx`'s own `EXPIRED_DOCUMENTS`). */
+    /** Story 14.4, AC 1/4 (ratifica R4) — `{documents}` placeholder, client-filled with the comma-joined per-document detail below (`t.raw` pattern, same as `new-booking-form.tsx`'s own `EXPIRED_DOCUMENTS`). */
     FLIGHT_BLOCKED_BY_EXPIRY: string;
+    /** Review F5 (ratifica R-14.4-a) — `{date}` placeholder for an EXPIRED document. */
+    documentExpiredOn: string;
+    /** Review F5 — an APPLICABLE blocking document with no `Expiry` registered at all (`expiresAt: null` on the wire), distinguished from "scaduto il …" (R4 verbatim). */
+    documentMissing: string;
+    /** Review F6 — who a blocking document belongs to, so a SCHOOL flight blocked on both the pilot/allievo AND the instructor never reads as one duplicated line. */
+    documentRolePerson: string;
+    documentRoleInstructor: string;
     generic: string;
   };
   result: {
@@ -111,6 +118,8 @@ export type FlightEditorLabels = {
     newBalance: string;
     /** Story 14.4, AC 3 (decision D1) — shown next to "Nuovo saldo" when `balanceAlert` is `true`; non-blocking (the flight IS registered). */
     balanceAlert: string;
+    /** Review F11 — shown when the just-registered/corrected flight has `forcedAt` set: `{reason}` placeholder (this response is ALWAYS the manage actor's own submission, never masked — `toListItem`'s own doc-comment). */
+    forcedNotice: string;
   };
   picker: { placeholder: string; noResults: string };
   /** "Forza registrazione" (story 14.4, AC 2) — only ever rendered for `canForce`. Same shape as `NewBookingFormLabels.force`. */
@@ -331,6 +340,10 @@ export function FlightEditor({
   const [forceReasonTouched, setForceReasonTouched] = useState(false);
   const [forceSubmitting, setForceSubmitting] = useState(false);
   const [forceError, setForceError] = useState<string | null>(null);
+  // Review F10 — associates the reason textarea with its OWN error message
+  // (same `useId`-per-instance pattern as `Field`, `field.tsx`), so a screen
+  // reader announces WHY the field is invalid, not just that it is.
+  const forceReasonErrorId = useId();
 
   /** Clears every force-related state — called at the start of every new submit attempt AND by the force section's own "Annulla" (mirrors `new-booking-form.tsx#resetForceState`). */
   function resetForceState(): void {
@@ -563,7 +576,9 @@ export function FlightEditor({
       const blockedBody = (await response
         .clone()
         .json()
-        .catch(() => null)) as { error?: { details?: { documents?: Array<{ typeName: string; expiresAt: string }> } } } | null;
+        .catch(() => null)) as {
+        error?: { details?: { documents?: Array<{ typeName: string; expiresAt: string | null; role: 'person' | 'instructor'; personName: string }> } };
+      } | null;
       const { code, fieldErrors } = await parseApiError(response);
       if (response.status === 422 && fieldErrors.size > 0) {
         // Story 14.2, AC 3: a field-shaped 422 marks the matching Field
@@ -586,12 +601,23 @@ export function FlightEditor({
       }
       if (code === 'FLIGHT_BLOCKED_BY_EXPIRY') {
         // Story 14.4, AC 1/4 (ratifica R4): names EVERY blocking document
-        // AND its expiry date (Contesto: never just the type name) — no
-        // dead end (lezione 14.6 F2): for a non-admin actor (`canForce`
-        // false) this message IS the final, correct answer (there is no
-        // affordance promising a bypass they cannot use).
+        // AND its status (Contesto: never just the type name) — no dead end
+        // (lezione 14.6 F2): for a non-admin actor (`canForce` false) this
+        // message IS the final, correct answer (there is no affordance
+        // promising a bypass they cannot use). Review F5: `expiresAt: null`
+        // is a MISSING document (R4: "assente O scaduta") — distinguished
+        // from "scaduto il …", never rendered as a bare/confusing date.
+        // Review F6: `role`/`personName` name WHOSE document it is (a SCHOOL
+        // flight can block on the pilot/allievo's OR the instructor's own).
         const documents = blockedBody?.error?.details?.documents ?? [];
-        const documentNames = documents.map((document) => `${document.typeName} (${formatDateOnly(document.expiresAt, moneyLocale)})`);
+        const documentNames = documents.map((document) => {
+          const status =
+            document.expiresAt !== null
+              ? labels.errors.documentExpiredOn.replace('{date}', formatDateOnly(document.expiresAt, moneyLocale))
+              : labels.errors.documentMissing;
+          const roleLabel = document.role === 'instructor' ? labels.errors.documentRoleInstructor : labels.errors.documentRolePerson;
+          return `${document.typeName} (${status}) — ${roleLabel} ${document.personName}`;
+        });
         setFormError(labels.errors.FLIGHT_BLOCKED_BY_EXPIRY.replace('{documents}', documentNames.join(', ')));
         if (canForce) {
           setBlockedDocuments(documentNames);
@@ -721,6 +747,29 @@ export function FlightEditor({
               {formatCents(lastResult.account.balanceCents, moneyLocale)}
             </dd>
           </dl>
+          {/* Review F11 — the pannello di esito used to say nothing about a
+              force having just happened; the registry badge (also `forcedAt`)
+              is the only OTHER trace, and it lives off-screen until the
+              operator scrolls the table. This response is ALWAYS the manage
+              actor's OWN submission (never masked, `toListItem`'s own
+              doc-comment), so `forceReason` here is the real motivo. */}
+          {lastResult.flight.forcedAt ? (
+            <div
+              role="status"
+              data-testid="flight-forced-result"
+              style={{
+                marginTop: 10,
+                padding: '8px 10px',
+                borderRadius: 6,
+                background: 'var(--warn-soft)',
+                border: '1px solid color-mix(in oklch, var(--warn) 40%, transparent)',
+                fontSize: 12.5,
+                color: 'var(--accent-ink)',
+              }}
+            >
+              {labels.result.forcedNotice.replace('{reason}', lastResult.flight.forceReason ?? '')}
+            </div>
+          ) : null}
           {/* Story 14.4, AC 3 (decision D1) — non-blocking: the flight above IS
               registered, this only flags the resulting balance to the
               OPERATOR (the pilot-facing email is unchanged and separate). */}
@@ -927,13 +976,15 @@ export function FlightEditor({
                   value={forceReason}
                   onChange={(event) => setForceReason(event.target.value)}
                   aria-invalid={forceReasonTouched && forceReason.trim().length === 0}
+                  aria-required="true"
+                  aria-describedby={forceError ? forceReasonErrorId : undefined}
                   data-testid="force-flight-reason"
                   className="input"
                   style={{ marginTop: 6 }}
                 />
               </div>
               {forceError ? (
-                <p role="alert" data-testid="force-flight-error" className="fld-error" style={{ marginTop: 6 }}>
+                <p role="alert" id={forceReasonErrorId} data-testid="force-flight-error" className="fld-error" style={{ marginTop: 6 }}>
                   {forceError}
                 </p>
               ) : null}

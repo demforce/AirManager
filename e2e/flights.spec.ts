@@ -105,6 +105,38 @@ async function createStaffUserAndSetPassword(page: Page, password: string): Prom
 }
 
 /**
+ * The seed's own blocksBooking=true catalogue (`prisma/seed.ts#STANDARD_EXPIRY_TYPES`,
+ * story 6.1) — review F5 (ratifica R-14.4-a, BLAST RADIUS note): since this
+ * story, a person with NO `Expiry` row at all for an APPLICABLE blocking type
+ * is rejected from flight registration exactly like an expired one, and the
+ * seed already ships one such type per PILOTS/STUDENTS/INSTRUCTORS scope
+ * (plus "Licenza", PILOTS). Every fresh pilot/student/instructor fixture
+ * below registers a FAR-FUTURE (valid) `Expiry` for whichever of these apply,
+ * so the rest of this file's "happy path" registrations are not spuriously
+ * blocked. Restricted to this FIXED name list — deliberately never "every
+ * currently blocksBooking=true type" — so it can never collide with this
+ * file's own run-unique `createExpiryTypeForFlights` fixtures (several tests
+ * below register one of THOSE as EXPIRED for the very same person right
+ * after; a dynamic scan would have already registered a valid one first and
+ * hit the `Expiry` unique constraint on personId+expiryTypeId).
+ */
+const SEED_BLOCKING_EXPIRY_TYPE_NAMES = ['Visita medica classe 1', 'Visita medica classe 2', 'Visita medica LAPL', 'Licenza'];
+
+/** A comfortably far-future date — never itself the boundary under test. */
+const FAR_FUTURE_DATE = '2099-12-31';
+
+/** See `SEED_BLOCKING_EXPIRY_TYPE_NAMES`'s own doc-comment. */
+async function ensureValidSeedExpiries(page: Page, personId: string, scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS'): Promise<void> {
+  const response = await page.request.get('/api/v1/expiry-types');
+  expect(response.status()).toBe(200);
+  const types = (await response.json()) as { id: string; name: string; scope: string }[];
+  const applicable = types.filter((type) => SEED_BLOCKING_EXPIRY_TYPE_NAMES.includes(type.name) && type.scope === scope);
+  for (const type of applicable) {
+    await registerExpiry(page, personId, type.id, FAR_FUTURE_DATE);
+  }
+}
+
+/**
  * Creates a fresh pilot person (with an active pilot profile, so an
  * `Account` exists) plus a linked login user — avoids the shared seeded
  * pilot (mutated by other, parallel e2e specs — `fullyParallel: true`).
@@ -123,6 +155,8 @@ async function createPilotWithLogin(page: Page, password: string): Promise<{ per
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Review F5 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment.
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   const email = uniqueEmail('pilot-flights');
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
@@ -153,6 +187,8 @@ async function createInstructorWithRate(page: Page, priceCentsPerHour: number): 
     data: { ratings: 'FI(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Review F5 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment.
+  await ensureValidSeedExpiries(page, person.id, 'INSTRUCTORS');
 
   const rateResponse = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, {
     data: { priceCentsPerHour, validFrom: PAST_DATE },
@@ -574,6 +610,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
       data: { courseStartDate: PAST_DATE },
     });
     expect(studentProfileResponse.status()).toBe(200);
+    // Review F5 blast-radius fixture fix — this test registers a brand-new
+    // flight (not a correction, so F4's identity-unchanged exemption never
+    // applies) for this student — see `ensureValidSeedExpiries`'s own doc-comment.
+    await ensureValidSeedExpiries(page, student.id, 'STUDENTS');
 
     await page.goto('/it/dashboard/logbook');
     await openNewEntryForm(page);
@@ -842,6 +882,10 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     await openNewEntryForm(page);
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    // Review F9 — dated PAST_DATE, not the default "today": an undated flight
+    // here would land inside `billing.spec.ts`'s own delta-assert window on
+    // TODAY's aggregates (`fullyParallel`, CLAUDE.md's "e2e, stato globale").
+    await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();

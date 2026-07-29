@@ -506,7 +506,10 @@ export async function getLedgerRevenueCents(actor: Actor, from: string, to: stri
 
 export type RecordTransactionResult =
   | { kind: 'TOP_UP'; account: AccountOverview }
-  | { kind: 'ADJUSTMENT'; account: AccountOverview }
+  // Story 14.4 review F7 (ratifica R-14.4-d) — `recordAdjustment`'s own
+  // `balanceAlert`, flowing through this dispatcher unchanged (the "Addebito
+  // conto" branch of "Nuova transazione" IS a debit surface).
+  | { kind: 'ADJUSTMENT'; account: AccountOverview & { balanceAlert: boolean } }
   | { kind: 'CASH'; cashMovement: CashMovementListItem };
 
 /**

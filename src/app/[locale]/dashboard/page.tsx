@@ -490,6 +490,11 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       INSTRUCTOR_SAME_AS_PILOT: t('editor.errors.INSTRUCTOR_SAME_AS_PILOT'),
       FLIGHT_DATE_IN_FUTURE: t('editor.errors.FLIGHT_DATE_IN_FUTURE'),
       FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
+      // Review F5/F6 — `{date}` filled CLIENT-side, same reasoning as above.
+      documentExpiredOn: t.raw('editor.errors.documentExpiredOn'),
+      documentMissing: t('editor.errors.documentMissing'),
+      documentRolePerson: t('editor.errors.documentRolePerson'),
+      documentRoleInstructor: t('editor.errors.documentRoleInstructor'),
       generic: t('editor.errors.generic'),
     },
     result: {
@@ -502,6 +507,8 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       total: t('editor.result.total'),
       newBalance: t('editor.result.newBalance'),
       balanceAlert: t('editor.result.balanceAlert'),
+      // Review F11 — `{reason}` filled CLIENT-side, same reasoning.
+      forcedNotice: t.raw('editor.result.forcedNotice'),
     },
     picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
     force: {

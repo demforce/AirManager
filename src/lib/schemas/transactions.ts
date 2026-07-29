@@ -1,5 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
-import { accountMovementTypeSchema, accountOverviewSchema, paymentMethodSchema } from './accounts';
+import { accountMovementTypeSchema, accountOverviewSchema, accountOverviewWithAlertSchema, paymentMethodSchema } from './accounts';
 import { cashMovementItemSchema } from './cash';
 import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
@@ -214,7 +214,10 @@ export type RecordTransactionInput = z.infer<typeof recordTransactionSchema>;
  */
 export const recordTransactionResponseSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('TOP_UP'), account: accountOverviewSchema }),
-  z.object({ kind: z.literal('ADJUSTMENT'), account: accountOverviewSchema }),
+  // Story 14.4 review F7 — `balanceAlert` (ratifica R-14.4-d): this branch is
+  // a real debit ("Addebito conto"), see `accountOverviewWithAlertSchema`'s
+  // own doc-comment.
+  z.object({ kind: z.literal('ADJUSTMENT'), account: accountOverviewWithAlertSchema }),
   z.object({ kind: z.literal('CASH'), cashMovement: cashMovementItemSchema }),
 ]);
 

@@ -2,6 +2,7 @@ import { OpenAPIRegistry, OpenApiGeneratorV31, type ResponseConfig } from '@aste
 import { z } from './zod-with-openapi';
 import {
   accountOverviewSchema,
+  accountOverviewWithAlertSchema,
   accountStatementPdfQuerySchema,
   accountStatementResponseSchema,
   listAccountMovementsQuerySchema,
@@ -266,6 +267,7 @@ registry.register('AircraftRate', aircraftRateItemSchema);
 registry.register('AircraftRateList', aircraftRateListResponseSchema);
 registry.register('CreateAircraftRateRequest', createAircraftRateSchema);
 registry.register('AccountOverview', accountOverviewSchema);
+registry.register('AccountOverviewWithAlert', accountOverviewWithAlertSchema);
 registry.register('RecordTopUpRequest', recordTopUpSchema);
 registry.register('AccountStatement', accountStatementResponseSchema);
 registry.register('RecordAdjustmentRequest', recordAdjustmentSchema);
@@ -652,12 +654,12 @@ registry.registerPath({
   path: '/api/v1/people/{id}/account/adjustments',
   summary: 'Record a motivated adjustment (rettifica) on a person\'s account',
   description:
-    'Append-only (AD-3, story 3.3, AC 1) — creates a NEW, independent `AccountMovement` (`ADJUSTMENT`); the original movement is never touched. `originalMovementId`, when given, links this adjustment to the movement it corrects and must belong to the same account (404 otherwise, never revealing another account\'s movement) and must not already have a linked adjustment (409). Triggers the negative-balance alert email (AC 2/3) when the balance band worsens. Requires `finance.manage` — never "own". Accepts the opt-in `Idempotency-Key` header (story TD-2).',
+    'Append-only (AD-3, story 3.3, AC 1) — creates a NEW, independent `AccountMovement` (`ADJUSTMENT`); the original movement is never touched. `originalMovementId`, when given, links this adjustment to the movement it corrects and must belong to the same account (404 otherwise, never revealing another account\'s movement) and must not already have a linked adjustment (409). Triggers the negative-balance alert email (AC 2/3) when the balance band worsens. `balanceAlert` (story 14.4 review F7, ratifica R-14.4-d) is a WIDER in-app signal — true whenever the balance was already negative before this write or ends up negative after it, regardless of the email\'s own band transition. Requires `finance.manage` — never "own". Accepts the opt-in `Idempotency-Key` header (story TD-2).',
   tags: ['Accounts'],
   security,
   request: { params: personIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(recordAdjustmentSchema), required: true } },
   responses: {
-    200: { description: 'The account overview, refreshed after the adjustment.', content: jsonContent(accountOverviewSchema) },
+    200: { description: 'The account overview, refreshed after the adjustment.', content: jsonContent(accountOverviewWithAlertSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });
