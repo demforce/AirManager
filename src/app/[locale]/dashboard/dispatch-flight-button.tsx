@@ -26,10 +26,12 @@ export type DispatchFlightButtonProps = {
   instructorOptions: PersonOption[];
   airfieldName: string;
   moneyLocale: 'it' | 'en';
+  /** Story 14.4, AC 2 (ratifica R4) — forwarded to `FlightEditor` as-is; see that component's own doc-comment. */
+  canForce: boolean;
   labels: FlightEditorLabels;
 };
 
-export function DispatchFlightButton({ label, aircraftOptions, personOptions, instructorOptions, airfieldName, moneyLocale, labels }: DispatchFlightButtonProps) {
+export function DispatchFlightButton({ label, aircraftOptions, personOptions, instructorOptions, airfieldName, moneyLocale, canForce, labels }: DispatchFlightButtonProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -47,6 +49,7 @@ export function DispatchFlightButton({ label, aircraftOptions, personOptions, in
         instructorOptions={instructorOptions}
         airfieldName={airfieldName}
         moneyLocale={moneyLocale}
+        canForce={canForce}
         labels={labels}
       />
     </>

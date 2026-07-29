@@ -14,6 +14,7 @@ import {
   sendNegativeBalanceAlert,
   type AccountOverview,
 } from './accounts.service';
+import { findBlockingExpiredDocuments, type ExpiredDocument } from './bookings.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { getEffectiveInstructorRate, type InstructorRateListItem } from './instructor-rates.service';
 import { getEffectiveRate } from './rates.service';
@@ -155,6 +156,9 @@ export type FlightListItem = {
   correctionOfId: string | null;
   /** Story 5.3 — the NEW flight that replaced THIS one, from the inverse `correctedBy` relation. `null` unless this flight was corrected. */
   correctedByFlightId: string | null;
+  /** Story 14.4, AC 2 — set together, exactly once, ONLY when an admin bypassed a blocking expired document. `null` on every normal flight. */
+  forcedAt: Date | null;
+  forceReason: string | null;
 };
 
 export type FlightListResult = PaginatedResult<FlightListItem>;
@@ -162,6 +166,14 @@ export type FlightListResult = PaginatedResult<FlightListItem>;
 export type RegisterFlightResult = {
   flight: FlightListItem;
   account: AccountOverview;
+  /**
+   * Story 14.4, AC 3 (decision D1) — the SAME worsened-band signal that
+   * gates `sendNegativeBalanceAlert` below (`accounts.service.ts#bandWorsened`),
+   * surfaced to the OPERATOR in-app instead of (never in place of) the
+   * unchanged pilot-facing email. `cancelFlight` (module doc-comment: a
+   * storno only ever improves or holds the band) always returns `false`.
+   */
+  balanceAlert: boolean;
 };
 
 const FLIGHT_SELECT = {
@@ -188,6 +200,11 @@ const FLIGHT_SELECT = {
   cancelledAt: true,
   cancelReason: true,
   correctionOfId: true,
+  // Story 14.4, AC 2 — `forcedByUserId` deliberately NOT selected (same
+  // omission as `Booking`'s own `BOOKING_SELECT`): the DTO only needs
+  // "was this forced, and why", not "by whom".
+  forcedAt: true,
+  forceReason: true,
   // The inverse self-relation (story 5.3) — `id` only, just enough to
   // populate `correctedByFlightId` without an extra query.
   correctedBy: { select: { id: true } },
@@ -221,6 +238,8 @@ type SelectedFlight = {
   cancelledAt: Date | null;
   cancelReason: string | null;
   correctionOfId: string | null;
+  forcedAt: Date | null;
+  forceReason: string | null;
   correctedBy: { id: string } | null;
   aircraft: { id: string; registration: string };
   person: { id: string; firstName: string; lastName: string };
@@ -281,6 +300,8 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightL
     cancelReason: flight.cancelReason,
     correctionOfId: flight.correctionOfId,
     correctedByFlightId: flight.correctedBy?.id ?? null,
+    forcedAt: flight.forcedAt,
+    forceReason: flight.forceReason,
   };
 }
 
@@ -300,6 +321,8 @@ type ResolvedFlightInput = {
   instructorRateCentsPerHour: number | null;
   /** Already rounded on the FULL duration. */
   instructorAmountCents: number | null;
+  /** Story 14.4, AC 2 — set ONLY when an admin bypassed a real blocking expired document; `null` on every normal registration/correction, INCLUDING a `force: true` request with nothing to bypass. */
+  forceStamp: { forcedAt: Date; forcedByUserId: string; forceReason: string } | null;
 };
 
 /**
@@ -340,8 +363,30 @@ type ResolvedFlightInput = {
  * aircraft amount is computed the SAME way, but inside `registerFlightCore`
  * (module doc-comment), which stayed the single place that writes it after
  * story 12.13 retired package consumption.
+ *
+ * **Blocking-expiry guard-rail (story 14.4, AC 1/2; ratifica R4)**: `force`
+ * without `flights.forceExpiry` (ADMIN-only, never STAFF — the gate lives on
+ * this PERMISSION, not a role literal, so story 14.9's STAFF removal needs no
+ * change here) is a 403, checked FIRST, before any query — same "force-403
+ * before any further query" ordering as `bookings.service.ts#createBooking`'s
+ * AC 2. Once the instructor (if any) is resolved, BOTH the pilot/student's
+ * AND the instructor's REGISTERED expiries are scanned against `flightDate`
+ * (not "today") via the SAME shared core the booking expiry-block already
+ * established (`bookings.service.ts#findBlockingExpiredDocuments`, reused
+ * verbatim — never reimplemented); any blocking document across EITHER
+ * person is a 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents` lists every
+ * one) unless `force` bypasses it, which stamps `forcedAt`/`forcedByUserId`/
+ * `forceReason` on the eventual `Flight` row (same "scavalcato un blocco, non
+ * spuntata una checkbox" convention as `Booking.forcedAt`) — `null` on every
+ * normal flight, INCLUDING a `force: true` request with nothing to bypass.
  */
 async function resolveFlightInput(actor: Actor, input: RegisterFlightInput, originalFlightType?: FlightType): Promise<ResolvedFlightInput> {
+  // Story 14.4, AC 2 (ratifica R4): checked FIRST, before any query — same
+  // ordering as `createBooking`'s own force-403 (this function's doc-comment).
+  if (input.force && !hasPermission(actor, 'flights.forceExpiry')) {
+    throw new ForbiddenError('Only an admin can force a flight blocked by an expired document.');
+  }
+
   const aircraft = await prisma.aircraft.findUnique({
     where: { id: input.aircraftId },
     select: { id: true, registration: true, archivedAt: true },
@@ -477,6 +522,32 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput, orig
     instructorProfileId = instructorProfile.id;
   }
 
+  // Story 14.4, AC 1/2 (ratifica R4) — see this function's own doc-comment.
+  // Both the pilot/student AND, when present, the instructor are scanned;
+  // every blocking document across EITHER is reported together (never
+  // partial — the admin sees the whole picture before deciding to override).
+  const flightDateOnly = toDateOnlyString(flightDate);
+  const pilotBlock = await findBlockingExpiredDocuments(input.personId, flightDateOnly);
+  const instructorBlock = instructorPersonId ? await findBlockingExpiredDocuments(instructorPersonId, flightDateOnly) : null;
+  const blockingDocuments: ExpiredDocument[] = [...pilotBlock.blockingDocuments, ...(instructorBlock?.blockingDocuments ?? [])];
+
+  let forceStamp: ResolvedFlightInput['forceStamp'] = null;
+  if (blockingDocuments.length > 0) {
+    if (input.force) {
+      // The force-403 guard at the top of this function already guarantees
+      // `flights.forceExpiry` here, and the schema's own refine guarantees
+      // `forceReason` is a non-empty string whenever `force` is `true` — the
+      // `!` is safe (same reasoning as `createBooking`'s own force-stamp).
+      forceStamp = { forcedAt: new Date(), forcedByUserId: actor.userId, forceReason: input.forceReason! };
+    } else {
+      throw new ValidationError(
+        `Cannot register this flight: the following documents are expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
+        { documents: blockingDocuments },
+        'FLIGHT_BLOCKED_BY_EXPIRY',
+      );
+    }
+  }
+
   // Rate lookups BEFORE any transaction (Dev Notes: append-only tables, no
   // meaningful race) — AD-4, the effective rate at `flightDate`.
   const aircraftRate = await getEffectiveRate(actor, input.aircraftId, flightDate);
@@ -509,6 +580,7 @@ async function resolveFlightInput(actor: Actor, input: RegisterFlightInput, orig
     aircraftRateCentsPerHour: aircraftRate.priceCentsPerHour,
     instructorRateCentsPerHour: instructorRate?.priceCentsPerHour ?? null,
     instructorAmountCents,
+    forceStamp,
   };
 }
 
@@ -549,6 +621,8 @@ type RegisterFlightCoreInput = {
   instructorAmountCents: number | null;
   /** `Flight.correctionOfId` (story 5.3) — the ORIGINAL flight this one replaces, or `null` for a plain `registerFlight` call. */
   correctionOfId: string | null;
+  /** Story 14.4, AC 2 — `resolveFlightInput`'s own force-stamp, spread onto `Flight.create`'s data verbatim (`null` on every normal flight). */
+  forceStamp: { forcedAt: Date; forcedByUserId: string; forceReason: string } | null;
 };
 
 type RegisterFlightCoreResult = {
@@ -621,6 +695,10 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
       instructorAmountCents: params.instructorAmountCents,
       correctionOfId: params.correctionOfId,
       actorUserId: params.actorUserId,
+      // Story 14.4, AC 2: stamped ONLY when a real block was bypassed
+      // (`forceStamp`) — otherwise every field stays `null`, same convention
+      // as `createBooking`'s own `forceStamp` spread.
+      ...(params.forceStamp ?? {}),
     },
     select: FLIGHT_SELECT,
   });
@@ -752,6 +830,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
       instructorAmountCents: resolved.instructorAmountCents,
       correctionOfId: null,
+      forceStamp: resolved.forceStamp,
     });
     return { ...core, accountId: account.id, accountCreatedAt: account.createdAt };
   });
@@ -773,7 +852,8 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
 
   const bandBefore = balanceBand(balanceBeforeCents, thresholdCents);
   const bandAfter = balanceBand(balanceAfterCents, thresholdCents);
-  if (bandWorsened(bandBefore, bandAfter)) {
+  const balanceAlert = bandWorsened(bandBefore, bandAfter);
+  if (balanceAlert) {
     // Fire-and-forget, AFTER commit (Dev Notes) — same pattern as
     // `recordAdjustment`; the email quotes the post-commit balance.
     void sendNegativeBalanceAlert(
@@ -786,7 +866,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
   // `true`: registerFlight/cancelFlight/correctFlight are all staff-only
   // (`flights.manage`, story 5.4's own-access branch never reaches here) —
   // `actorEmail` is always shown to the staff actor who just acted.
-  return { flight: toListItem(createdFlight, true), account };
+  return { flight: toListItem(createdFlight, true), account, balanceAlert };
 }
 
 /** The `FLIGHT_CHARGE` movement a `REGISTERED` flight must always have — loaded so `cancelFlight`/`correctFlight` can reverse it. */
@@ -958,7 +1038,10 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
 
   const account = await getAccountOverview(actor, flight.personId);
 
-  return { flight: toListItem(updated, true), account };
+  // `balanceAlert: false` — a storno only ever improves or holds the band
+  // (module doc-comment: "No alert on cancel"), so there is never a
+  // worsening signal to surface here.
+  return { flight: toListItem(updated, true), account, balanceAlert: false };
 }
 
 /**
@@ -1103,6 +1186,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
       instructorAmountCents: resolved.instructorAmountCents,
       correctionOfId: originalFlight.id,
+      forceStamp: resolved.forceStamp,
     });
   });
 
@@ -1110,7 +1194,16 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
 
   const bandBefore = balanceBand(balanceBeforeCents, thresholdCents);
   const bandAfter = balanceBand(balanceAfterCents, thresholdCents);
-  if (bandWorsened(bandBefore, bandAfter)) {
+  // Story 14.4, AC 3: same in-app signal as `registerFlight` — "valutare e
+  // motivare se l'avviso va anche in correzione volo" (Contesto's own
+  // question). Answer: yes, for free — `correctFlight` already computes this
+  // exact before/after comparison to decide whether to fire the (unchanged)
+  // email alert (module doc-comment: "alert-after-storno on correct"), so
+  // returning the same boolean the UI already renders for `registerFlight`
+  // keeps the invariant "email fires <=> in-app banner shows" without a
+  // second, independently-maintained condition.
+  const balanceAlert = bandWorsened(bandBefore, bandAfter);
+  if (balanceAlert) {
     void sendNegativeBalanceAlert(
       resolved.person.id,
       { firstName: resolved.person.firstName, lastName: resolved.person.lastName, email: resolved.person.email },
@@ -1118,7 +1211,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
     );
   }
 
-  return { flight: toListItem(createdFlight, true), account };
+  return { flight: toListItem(createdFlight, true), account, balanceAlert };
 }
 
 /**

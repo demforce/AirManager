@@ -186,6 +186,31 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number | nu
   return { id: aircraft.id, registration };
 }
 
+/**
+ * Creates a run-unique expiry TYPE via the admin API (story 14.4; same
+ * "MAI riusare 'Licenza' del seed" rationale as `bookings.spec.ts`'s own
+ * `createExpiryTypeForBooking` — the catalogue is shared across parallel
+ * specs). `scope: 'ALL'` (any person is eligible) — `blocksBooking` gates
+ * BOTH bookings AND, since this story, flight registration (module
+ * doc-comment on `ExpiryType.blocksBooking` in `schema.prisma`).
+ */
+async function createExpiryTypeForFlights(page: Page, blocksBooking: boolean): Promise<{ id: string; name: string }> {
+  const name = `Tipo voli ${uniqueSuffix()}`;
+  const response = await page.request.post('/api/v1/expiry-types', { data: { name, scope: 'ALL', blocksBooking } });
+  expect(response.status()).toBe(201);
+  const body = (await response.json()) as { id: string };
+  return { id: body.id, name };
+}
+
+/** Registers a scadenza for a person via the staff API (story 14.4; `expiries` API of story 6.2). */
+async function registerExpiry(page: Page, personId: string, expiryTypeId: string, expiresAt: string): Promise<void> {
+  const response = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId, expiresAt } });
+  expect(response.status()).toBe(201);
+}
+
+/** A safely-EXPIRED date for `PAST_DATE` flights (well before it, immune to DST/timezone edge cases). */
+const EXPIRED_BEFORE_PAST_DATE = '2019-06-01';
+
 /** Opens the "Nuova voce" slide-over (story 12.8) — staff-only, replaces the legacy inline "Registra volo" form. */
 async function openNewEntryForm(page: Page): Promise<void> {
   await page.getByTestId('logbook-new-button').click();
@@ -664,5 +689,166 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const corrected = detailBody.items.find((item) => item.correctionOfId === flight.flight.id);
     expect(corrected?.flightType).toBe('TOURISM');
     expect(corrected?.status).toBe('REGISTERED');
+  });
+});
+
+test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3/4; ratifica R4)', () => {
+  test('STAFF: a pilot with a BLOCKING expired document (at the FLIGHT DATE) is rejected naming the document and its date, with NO override affordance (admin-only)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 15000);
+    const blockingType = await createExpiryTypeForFlights(page, true);
+    const pilot = await createPilotWithLogin(page, 'PilotBlocked123!');
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
+
+    const staffPassword = 'StaffBlocked123!';
+    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, staffEmail, staffPassword);
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await page.getByLabel('Data volo').fill(PAST_DATE);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+
+    await expect(page.getByTestId('flight-form-error')).toContainText(blockingType.name);
+    await expect(page.getByTestId('flight-form-error')).toContainText('01/06/2019'); // EXPIRED_BEFORE_PAST_DATE, IT date format (DD/MM/YYYY).
+    await expect(page.getByTestId('force-flight-section')).toHaveCount(0);
+    await expect(page.getByTestId('flight-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
+  });
+
+  test('ADMIN: a blocked pilot triggers 422 naming the document, "Forza registrazione" appears, empty motivo is rejected client-side, and a motivated force succeeds (201) with forcedAt/forceReason tracked and shown as a badge in the registry', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const blockingType = await createExpiryTypeForFlights(page, true);
+    const pilot = await createPilotWithLogin(page, 'PilotForce123!');
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await page.getByLabel('Data volo').fill(PAST_DATE);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+
+    await expect(page.getByTestId('flight-form-error')).toContainText(blockingType.name);
+    const forceSection = page.getByTestId('force-flight-section');
+    await expect(forceSection).toBeVisible();
+
+    // Submitting without a motivo is rejected client-side first.
+    await forceSection.getByTestId('force-flight-submit').click();
+    await expect(forceSection.getByTestId('force-flight-error')).toBeVisible();
+
+    await forceSection.getByTestId('force-flight-reason').fill('Autorizzato dal direttore per volo urgente');
+    await forceSection.getByTestId('force-flight-submit').click();
+
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+
+    // The tracking (AC 2 "chi, quando, perché") is exposed read-side on the item DTO.
+    const listResponse = await page.request.get(`/api/v1/flights?personId=${pilot.personId}&pageSize=10`);
+    expect(listResponse.status()).toBe(200);
+    const listBody = (await listResponse.json()) as { items: { forcedAt: string | null; forceReason: string | null }[] };
+    expect(listBody.items[0]?.forcedAt).not.toBeNull();
+    expect(listBody.items[0]?.forceReason).toBe('Autorizzato dal direttore per volo urgente');
+
+    // Visible in the registry too (AC 2 "persistita e visibile"), not just on the wire.
+    // Scoped via the run-unique person free-text filter (same pattern as the
+    // review F1/F2 test below, lezione 6.3 F1) rather than trusting default
+    // page-1 ordering: `PAST_DATE` (2020-01-01) is reused by many specs across
+    // this whole (never-reset) suite, so `flightDate desc` pagination alone
+    // does not guarantee this run-unique flight lands on page 1.
+    await page.getByTestId('flight-result-close').click();
+    await page.getByTestId('flight-filter-person').fill(pilot.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(pilot.lastName)}`));
+    const row = page.getByTestId('flight-row');
+    await expect(row).toHaveCount(1);
+    await expect(row.getByTestId('flight-forced-badge')).toBeVisible();
+  });
+
+  test('a non-admin actor cannot force even via a direct API call (403), and force: true without forceReason is a 422 (schema)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const blockingType = await createExpiryTypeForFlights(page, true);
+    const pilot = await createPilotWithLogin(page, 'PilotForceApi123!');
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
+
+    const staffPassword = 'StaffForceApi123!';
+    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, staffEmail, staffPassword);
+
+    const response = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        force: true,
+        forceReason: 'Tentativo non autorizzato',
+        ...flightTimes(PAST_DATE, 30),
+      },
+    });
+    expect(response.status()).toBe(403);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  test('an instructor with a blocking expired document (pilot clear) is rejected naming the instructor\'s document, and an ADMIN override succeeds', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const blockingType = await createExpiryTypeForFlights(page, true);
+    const pilot = await createPilotWithLogin(page, 'PilotInstrBlock123!');
+    const instructor = await createInstructorWithRate(page, 4000);
+    await registerExpiry(page, instructor.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
+    await page.getByLabel('Data volo').fill(PAST_DATE);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+
+    await expect(page.getByTestId('flight-form-error')).toContainText(blockingType.name);
+    const forceSection = page.getByTestId('force-flight-section');
+    await forceSection.getByTestId('force-flight-reason').fill('Autorizzato dal direttore');
+    await forceSection.getByTestId('force-flight-submit').click();
+
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+  });
+
+  test('a flight that pushes the pilot balance negative shows an in-app warning to the operator, without blocking the registration (AC 3, decision D1)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 20000); // 200,00 €/h — a 30' flight from a fresh (0-balance) account crosses into negative.
+    const pilot = await createPilotWithLogin(page, 'PilotBalanceAlert123!');
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+
+    const resultPanel = page.getByTestId('flight-result-panel');
+    await expect(resultPanel).toBeVisible();
+    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-100,00\s€/);
+    await expect(page.getByTestId('flight-balance-alert')).toBeVisible();
   });
 });

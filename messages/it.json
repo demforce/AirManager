@@ -1201,6 +1201,7 @@
       "correctedBy": "Corretto da un volo successivo",
       "cancelAction": "Annulla",
       "correctAction": "Modifica",
+      "forcedBadge": "Deroga",
       "empty": "Nessun volo registrato."
     },
     "filters": {
@@ -1281,6 +1282,7 @@
         "INSTRUCTOR_NOT_FOUND": "L'istruttore selezionato non ha un profilo istruttore attivo.",
         "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
         "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
+        "FLIGHT_BLOCKED_BY_EXPIRY": "Impossibile registrare il volo: risultano scaduti i seguenti documenti: {documents}.",
         "generic": "Impossibile registrare il volo. Riprova."
       },
       "result": {
@@ -1291,7 +1293,17 @@
         "instructorRate": "Tariffa istruttore",
         "instructorAmount": "Costo istruttore",
         "total": "Totale addebitato",
-        "newBalance": "Nuovo saldo"
+        "newBalance": "Nuovo saldo",
+        "balanceAlert": "Attenzione: il saldo del pilota risulta negativo (o è peggiorato oltre la soglia configurata). Il volo è comunque stato registrato."
+      },
+      "force": {
+        "title": "Forza registrazione",
+        "description": "Solo un admin può registrare comunque questo volo, indicando un motivo. La forzatura resta tracciata.",
+        "reasonLabel": "Motivo",
+        "submit": "Forza registrazione",
+        "cancel": "Annulla",
+        "requiredReason": "Il motivo è obbligatorio.",
+        "generic": "Impossibile forzare la registrazione. Riprova."
       }
     },
     "cancelModal": {

@@ -96,6 +96,8 @@ export type FlightEditorLabels = {
     INSTRUCTOR_NOT_FOUND: string;
     INSTRUCTOR_SAME_AS_PILOT: string;
     FLIGHT_DATE_IN_FUTURE: string;
+    /** Story 14.4, AC 1/4 (ratifica R4) — `{documents}` placeholder, client-filled with the comma-joined "type (date)" list (`t.raw` pattern, same as `new-booking-form.tsx`'s own `EXPIRED_DOCUMENTS`). */
+    FLIGHT_BLOCKED_BY_EXPIRY: string;
     generic: string;
   };
   result: {
@@ -107,8 +109,20 @@ export type FlightEditorLabels = {
     instructorAmount: string;
     total: string;
     newBalance: string;
+    /** Story 14.4, AC 3 (decision D1) — shown next to "Nuovo saldo" when `balanceAlert` is `true`; non-blocking (the flight IS registered). */
+    balanceAlert: string;
   };
   picker: { placeholder: string; noResults: string };
+  /** "Forza registrazione" (story 14.4, AC 2) — only ever rendered for `canForce`. Same shape as `NewBookingFormLabels.force`. */
+  force: {
+    title: string;
+    description: string;
+    reasonLabel: string;
+    submit: string;
+    cancel: string;
+    requiredReason: string;
+    generic: string;
+  };
 };
 
 type FlightEditorProps = {
@@ -121,6 +135,8 @@ type FlightEditorProps = {
   instructorOptions: PersonOption[];
   airfieldName: string;
   moneyLocale: 'it' | 'en';
+  /** Story 14.4, AC 2 (ratifica R4) — the ONLY thing gating the "Forza registrazione" affordance client-side; the real gate is server-side (`flights.forceExpiry`, AD-5). Mirrors `new-booking-form.tsx`'s `mode === 'staff'` check. */
+  canForce: boolean;
   labels: FlightEditorLabels;
 };
 
@@ -240,6 +256,7 @@ export function FlightEditor({
   instructorOptions,
   airfieldName,
   moneyLocale,
+  canForce,
   labels,
 }: FlightEditorProps) {
   const isCorrecting = target?.mode === 'correct';
@@ -300,6 +317,29 @@ export function FlightEditor({
   const [lastResult, setLastResult] = useState<RegisterFlightResponseDto | null>(null);
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
   const formRef = useRef<HTMLFormElement | null>(null);
+
+  // --- Blocking expiry / admin force (story 14.4, AC 1/2) ------------------
+  // Same shape/state as `new-booking-form.tsx`'s own force section:
+  // `blockedDocuments` (display strings, "typeName (date)") is non-null ONLY
+  // right after a 422 `FLIGHT_BLOCKED_BY_EXPIRY` FOR `canForce` — its
+  // presence is what renders "Forza registrazione" below. `pendingForceBody`
+  // is the EXACT body that just got rejected, resent unchanged plus
+  // `force`/`forceReason` — the operator never re-fills the form.
+  const [blockedDocuments, setBlockedDocuments] = useState<string[] | null>(null);
+  const [pendingForceBody, setPendingForceBody] = useState<Record<string, unknown> | null>(null);
+  const [forceReason, setForceReason] = useState('');
+  const [forceReasonTouched, setForceReasonTouched] = useState(false);
+  const [forceSubmitting, setForceSubmitting] = useState(false);
+  const [forceError, setForceError] = useState<string | null>(null);
+
+  /** Clears every force-related state — called at the start of every new submit attempt AND by the force section's own "Annulla" (mirrors `new-booking-form.tsx#resetForceState`). */
+  function resetForceState(): void {
+    setBlockedDocuments(null);
+    setPendingForceBody(null);
+    setForceReason('');
+    setForceReasonTouched(false);
+    setForceError(null);
+  }
 
   const {
     register,
@@ -438,6 +478,7 @@ export function FlightEditor({
 
   async function onValid(values: FlightFormValues): Promise<void> {
     setFormError(null);
+    resetForceState();
 
     if (markPlainRequiredFields()) {
       setTimeout(() => focusFirstInvalid(formRef.current), 0);
@@ -474,6 +515,26 @@ export function FlightEditor({
     const notes = values.notes.trim() === '' ? undefined : values.notes.trim();
     const trimmedReason = reason.trim();
 
+    const body = {
+      aircraftId,
+      personId,
+      instructorPersonId: instructorPersonId === '' ? undefined : instructorPersonId,
+      departureAirfield: values.departureAirfield.trim(),
+      arrivalAirfield: values.arrivalAirfield.trim(),
+      takeoffAt: times.takeoffAt.toISOString(),
+      landingAt: times.landingAt.toISOString(),
+      // Review F2: the SUBMITTED type is `effectiveFlightType`, not the raw
+      // form value — the one derivation that also drives the Select's own
+      // `value`/`disabled` above, so the two can never disagree.
+      flightType: effectiveFlightType,
+      isSolo,
+      ...hourMeterPayload,
+      takeoffs,
+      landings,
+      notes,
+      ...(isCorrecting ? { reason: trimmedReason } : {}),
+    };
+
     let response: Response;
     try {
       response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight!.id}/correct` : '/api/v1/flights', {
@@ -482,26 +543,7 @@ export function FlightEditor({
           'Content-Type': 'application/json',
           ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
         },
-        body: JSON.stringify({
-          aircraftId,
-          personId,
-          instructorPersonId: instructorPersonId === '' ? undefined : instructorPersonId,
-          departureAirfield: values.departureAirfield.trim(),
-          arrivalAirfield: values.arrivalAirfield.trim(),
-          takeoffAt: times.takeoffAt.toISOString(),
-          landingAt: times.landingAt.toISOString(),
-          // Review F2: the SUBMITTED type is `effectiveFlightType`, not the
-          // raw form value — the one derivation that also drives the
-          // Select's own `value`/`disabled` above, so the two can never
-          // disagree.
-          flightType: effectiveFlightType,
-          isSolo,
-          ...hourMeterPayload,
-          takeoffs,
-          landings,
-          notes,
-          ...(isCorrecting ? { reason: trimmedReason } : {}),
-        }),
+        body: JSON.stringify(body),
       });
     } catch {
       setFormError(labels.errors.generic);
@@ -514,6 +556,14 @@ export function FlightEditor({
         setFormError(labels.conflictError);
         return;
       }
+      // `response.clone()`: `parseApiError` below consumes the body via its
+      // own `.json()` — cloned so the FLIGHT_BLOCKED_BY_EXPIRY branch can
+      // read `error.details.documents` (not part of `parseApiError`'s own,
+      // narrower return shape) from the SAME response.
+      const blockedBody = (await response
+        .clone()
+        .json()
+        .catch(() => null)) as { error?: { details?: { documents?: Array<{ typeName: string; expiresAt: string }> } } } | null;
       const { code, fieldErrors } = await parseApiError(response);
       if (response.status === 422 && fieldErrors.size > 0) {
         // Story 14.2, AC 3: a field-shaped 422 marks the matching Field
@@ -534,12 +584,75 @@ export function FlightEditor({
           return;
         }
       }
+      if (code === 'FLIGHT_BLOCKED_BY_EXPIRY') {
+        // Story 14.4, AC 1/4 (ratifica R4): names EVERY blocking document
+        // AND its expiry date (Contesto: never just the type name) — no
+        // dead end (lezione 14.6 F2): for a non-admin actor (`canForce`
+        // false) this message IS the final, correct answer (there is no
+        // affordance promising a bypass they cannot use).
+        const documents = blockedBody?.error?.details?.documents ?? [];
+        const documentNames = documents.map((document) => `${document.typeName} (${formatDateOnly(document.expiresAt, moneyLocale)})`);
+        setFormError(labels.errors.FLIGHT_BLOCKED_BY_EXPIRY.replace('{documents}', documentNames.join(', ')));
+        if (canForce) {
+          setBlockedDocuments(documentNames);
+          setPendingForceBody(body);
+        }
+        return;
+      }
       const knownErrors: Record<string, string> = labels.errors;
       setFormError((code && knownErrors[code]) ?? labels.errors.generic);
       return;
     }
 
     const result = (await response.json()) as RegisterFlightResponseDto;
+    setLastResult(result);
+    onMutated();
+  }
+
+  /** "Forza registrazione" (story 14.4, AC 2) — resends `pendingForceBody` unchanged plus `force`/`forceReason`. Same shape as `new-booking-form.tsx#onForceSubmit`. */
+  async function onForceSubmit(): Promise<void> {
+    const trimmedReason = forceReason.trim();
+    setForceReasonTouched(true);
+    if (trimmedReason.length === 0) {
+      setForceError(labels.force.requiredReason);
+      return;
+    }
+    if (!pendingForceBody) {
+      return;
+    }
+
+    setForceSubmitting(true);
+    setForceError(null);
+
+    let response: Response;
+    try {
+      response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight!.id}/correct` : '/api/v1/flights', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
+        },
+        body: JSON.stringify({ ...pendingForceBody, force: true, forceReason: trimmedReason }),
+      });
+    } catch {
+      setForceSubmitting(false);
+      setForceError(labels.force.generic);
+      return;
+    }
+    setForceSubmitting(false);
+    if (!isCorrecting) regenerateIdempotencyKey();
+
+    if (!response.ok) {
+      // A concurrent change (e.g. the person/aircraft got archived meanwhile)
+      // — the generic message is enough here, the primary submit path above
+      // already covers every other domain code.
+      setForceError(labels.force.generic);
+      return;
+    }
+
+    const result = (await response.json()) as RegisterFlightResponseDto;
+    resetForceState();
+    setFormError(null);
     setLastResult(result);
     onMutated();
   }
@@ -608,6 +721,26 @@ export function FlightEditor({
               {formatCents(lastResult.account.balanceCents, moneyLocale)}
             </dd>
           </dl>
+          {/* Story 14.4, AC 3 (decision D1) — non-blocking: the flight above IS
+              registered, this only flags the resulting balance to the
+              OPERATOR (the pilot-facing email is unchanged and separate). */}
+          {lastResult.balanceAlert ? (
+            <div
+              role="status"
+              data-testid="flight-balance-alert"
+              style={{
+                marginTop: 10,
+                padding: '8px 10px',
+                borderRadius: 6,
+                background: 'var(--warn-soft)',
+                border: '1px solid color-mix(in oklch, var(--warn) 40%, transparent)',
+                fontSize: 12.5,
+                color: 'var(--accent-ink)',
+              }}
+            >
+              {labels.result.balanceAlert}
+            </div>
+          ) : null}
         </div>
       ) : (
         <form id="flight-editor-form" ref={formRef} data-testid="flight-form" onSubmit={(event) => void handleSubmit(onValid, onInvalid)(event)} noValidate>
@@ -765,6 +898,62 @@ export function FlightEditor({
             <p role="alert" data-testid="flight-form-error" style={{ color: 'var(--bad)', fontSize: 13, marginTop: 14 }}>
               {formError}
             </p>
+          ) : null}
+
+          {/* "Forza registrazione" (story 14.4, AC 2) — admin-only bypass of a
+              real blocking-expiry check; the actual `flights.forceExpiry`
+              gate is server-side (AD-5), `canForce` is this component's own
+              mirror of that permission. Same markup/tokens as
+              `new-booking-form.tsx`'s "Forza prenotazione". */}
+          {blockedDocuments && canForce ? (
+            <div
+              data-testid="force-flight-section"
+              style={{ marginTop: 14, padding: 14, borderRadius: 8, background: 'var(--warn-soft)', border: '1px solid color-mix(in oklch, var(--warn) 40%, transparent)' }}
+            >
+              <div>
+                <h4 className="fld-label" style={{ color: 'var(--accent-ink)' }}>
+                  {labels.force.title}
+                </h4>
+                <p style={{ marginTop: 4, fontSize: 13 }}>{labels.force.description}</p>
+              </div>
+              <div style={{ marginTop: 10 }}>
+                <label className="fld-label" htmlFor="flight-force-reason">
+                  {labels.force.reasonLabel}
+                </label>
+                <textarea
+                  id="flight-force-reason"
+                  rows={2}
+                  maxLength={500}
+                  value={forceReason}
+                  onChange={(event) => setForceReason(event.target.value)}
+                  aria-invalid={forceReasonTouched && forceReason.trim().length === 0}
+                  data-testid="force-flight-reason"
+                  className="input"
+                  style={{ marginTop: 6 }}
+                />
+              </div>
+              {forceError ? (
+                <p role="alert" data-testid="force-flight-error" className="fld-error" style={{ marginTop: 6 }}>
+                  {forceError}
+                </p>
+              ) : null}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button type="button" disabled={forceSubmitting} onClick={() => void onForceSubmit()} data-testid="force-flight-submit" className="btn primary">
+                  {labels.force.submit}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetForceState();
+                    setFormError(null);
+                  }}
+                  data-testid="force-flight-cancel"
+                  className="btn"
+                >
+                  {labels.force.cancel}
+                </button>
+              </div>
+            </div>
           ) : null}
         </form>
       )}

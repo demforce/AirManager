@@ -247,7 +247,8 @@ export type BookingExpiryWarning = { typeName: string; expiresAt: string };
 /** `createBooking`'s return shape (story 7.4, AC 1/2) — REPLACES the bare `BookingListItem` this function returned before this story (see its doc-comment). */
 export type CreateBookingResult = { booking: BookingListItem; warnings: BookingExpiryWarning[] };
 
-type ExpiredDocument = { typeName: string; expiresAt: string };
+/** A single expired document surfaced by {@link findBlockingExpiredDocuments} — exported (story 14.4) so `flights.service.ts` can share its return shape without redeclaring it. */
+export type ExpiredDocument = { typeName: string; expiresAt: string };
 
 /**
  * `personId`'s REGISTERED expiries, partitioned against `flightDateOnly`
@@ -260,8 +261,15 @@ type ExpiredDocument = { typeName: string; expiresAt: string };
  * with `blockingDocuments` — `createBooking`'s `force` bypass vs
  * `updateBooking`'s unconditional 422 — is each caller's own concern; this
  * helper never throws.
+ *
+ * Exported (story 14.4, AC 1; ratifica R4) — `flights.service.ts#resolveFlightInput`
+ * reuses this EXACT function (called once for the pilot/student, once more
+ * for the instructor when present) rather than reimplementing the
+ * `ExpiryType.blocksBooking` scan a second time. The flight side only ever
+ * consumes `blockingDocuments` (flights have no `warnings` concept, AC 1/2
+ * of that story).
  */
-async function findBlockingExpiredDocuments(
+export async function findBlockingExpiredDocuments(
   personId: string,
   flightDateOnly: string,
 ): Promise<{ blockingDocuments: ExpiredDocument[]; warnings: BookingExpiryWarning[] }> {

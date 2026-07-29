@@ -315,6 +315,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
             instructorOptions={dispatchInstructorOptions}
             airfieldName={branding.name}
             moneyLocale={displayLocale}
+            canForce={hasPermission(actor, 'flights.forceExpiry')}
             labels={buildFlightEditorLabels(tLogbook)}
           />
         </div>
@@ -488,6 +489,7 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       INSTRUCTOR_NOT_FOUND: t('editor.errors.INSTRUCTOR_NOT_FOUND'),
       INSTRUCTOR_SAME_AS_PILOT: t('editor.errors.INSTRUCTOR_SAME_AS_PILOT'),
       FLIGHT_DATE_IN_FUTURE: t('editor.errors.FLIGHT_DATE_IN_FUTURE'),
+      FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
       generic: t('editor.errors.generic'),
     },
     result: {
@@ -499,8 +501,18 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       instructorAmount: t('editor.result.instructorAmount'),
       total: t('editor.result.total'),
       newBalance: t('editor.result.newBalance'),
+      balanceAlert: t('editor.result.balanceAlert'),
     },
     picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
+    force: {
+      title: t('editor.force.title'),
+      description: t('editor.force.description'),
+      reasonLabel: t('editor.force.reasonLabel'),
+      submit: t('editor.force.submit'),
+      cancel: t('editor.force.cancel'),
+      requiredReason: t('editor.force.requiredReason'),
+      generic: t('editor.force.generic'),
+    },
   };
 }
 

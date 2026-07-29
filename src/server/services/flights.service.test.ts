@@ -77,6 +77,18 @@ vi.mock('./instructor-rates.service', () => ({
   getEffectiveInstructorRate: (...args: unknown[]) => getEffectiveInstructorRateMock(...args),
 }));
 
+// Story 14.4 (AC 1) — `flights.service.ts` reuses `bookings.service.ts`'s
+// `findBlockingExpiredDocuments` verbatim (never reimplements the scan).
+// Mocked at the module boundary, same rationale as `rates.service`/
+// `instructor-rates.service` above: `bookings.service.ts` itself has its own
+// dedicated test suite for the ACTUAL date-comparison logic
+// (`bookings.service.test.ts`) — this file only needs to verify flights.service
+// CALLS it correctly (which person(s), which date) and handles its result.
+const findBlockingExpiredDocumentsMock = vi.fn();
+vi.mock('./bookings.service', () => ({
+  findBlockingExpiredDocuments: (...args: unknown[]) => findBlockingExpiredDocumentsMock(...args),
+}));
+
 const { prisma } = await import('@/server/db/prisma');
 const { listFlights, getFlightTotals, registerFlight, cancelFlight, correctFlight } = await import('./flights.service');
 const { NotFoundError, ConflictError } = await import('./errors');
@@ -265,10 +277,15 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     sendNegativeBalanceAlertMock.mockReset();
     getEffectiveRateMock.mockReset();
     getEffectiveInstructorRateMock.mockReset();
+    findBlockingExpiredDocumentsMock.mockReset();
 
     getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
     getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+    // Story 14.4 default: no blocking document — every PRE-EXISTING test in
+    // this file (none of which cares about this guard) keeps passing
+    // unmodified; the dedicated describe block below overrides this per test.
+    findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
     mockTransaction();
   });
 
@@ -977,11 +994,11 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     // `void sendNegativeBalanceAlertMock(...)` call inside `registerFlight`
     // happens synchronously, before its returned promise resolves.
 
-    it('ok -> negative (a 20000-cent charge crossing zero) sends the alert, post-commit', async () => {
+    it('ok -> negative (a 20000-cent charge crossing zero) sends the alert, post-commit, AND flags the in-app operator signal (story 14.4, AC 3)', async () => {
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 5000 } });
       getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: -15000 });
 
-      await registerFlight(staffActor(), BASE_INPUT);
+      const result = await registerFlight(staffActor(), BASE_INPUT);
 
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledTimes(1);
       expect(sendNegativeBalanceAlertMock).toHaveBeenCalledWith(
@@ -989,15 +1006,134 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         expect.objectContaining({ firstName: 'Mario', lastName: 'Rossi', email: 'mario@example.com' }),
         -15000,
       );
+      // Story 14.4, AC 3 (decision D1): the SAME worsened-band condition that
+      // gates the (unchanged) email above also drives the in-app operator
+      // signal — never a second, independently-computed boolean.
+      expect(result.balanceAlert).toBe(true);
     });
 
-    it('does NOT send when the band is unchanged (already comfortably positive before and after)', async () => {
+    it('does NOT send when the band is unchanged (already comfortably positive before and after), and balanceAlert stays false', async () => {
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 1_000_000 } });
       getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: 980_000 });
 
-      await registerFlight(staffActor(), BASE_INPUT);
+      const result = await registerFlight(staffActor(), BASE_INPUT);
 
       expect(sendNegativeBalanceAlertMock).not.toHaveBeenCalled();
+      expect(result.balanceAlert).toBe(false);
+    });
+  });
+
+  describe('registerFlight — blocking expiry guard-rail (story 14.4, AC 1/2/6; ratifica R4)', () => {
+    beforeEach(() => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+    });
+
+    it('a blocking document expired at the FLIGHT DATE (not "today") -> 422 FLIGHT_BLOCKED_BY_EXPIRY, transaction never opens', async () => {
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({
+        blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }],
+        warnings: [],
+      });
+
+      await expect(registerFlight(staffActor(), BASE_INPUT)).rejects.toMatchObject({
+        code: 'FLIGHT_BLOCKED_BY_EXPIRY',
+        details: { documents: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }] },
+      });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    // AC 6: "valido alla data del volo ma scaduto oggi -> OK (la data conta)".
+    // The date-comparison arithmetic itself lives in, and is tested by,
+    // `bookings.service.test.ts` (the shared helper is mocked here, module
+    // doc-comment) — this asserts the CALLER side of that contract: flights.service
+    // asks the helper about `flightDate` (2020-01-15, `BASE_INPUT`'s own date),
+    // never "today" (the real server clock, wildly different in a test run).
+    it('is anchored to the FLIGHT DATE, never "today" — succeeds when the shared helper reports nothing blocking for that date', async () => {
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
+
+      await expect(registerFlight(staffActor(), BASE_INPUT)).resolves.toBeDefined();
+
+      expect(findBlockingExpiredDocumentsMock).toHaveBeenCalledWith('person_1', '2020-01-15');
+    });
+
+    it('an instructor with a blocking document (pilot clear) -> 422 FLIGHT_BLOCKED_BY_EXPIRY, naming the instructor\'s document', async () => {
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+      findBlockingExpiredDocumentsMock
+        .mockResolvedValueOnce({ blockingDocuments: [], warnings: [] }) // pilot: clear
+        .mockResolvedValueOnce({ blockingDocuments: [{ typeName: 'Visita medica classe 1', expiresAt: '2019-06-01' }], warnings: [] }); // instructor: blocked
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
+
+      await expect(registerFlight(staffActor(), input)).rejects.toMatchObject({
+        code: 'FLIGHT_BLOCKED_BY_EXPIRY',
+        details: { documents: [{ typeName: 'Visita medica classe 1', expiresAt: '2019-06-01' }] },
+      });
+      expect(findBlockingExpiredDocumentsMock).toHaveBeenCalledWith('person_1', '2020-01-15');
+      expect(findBlockingExpiredDocumentsMock).toHaveBeenCalledWith('person_instructor', '2020-01-15');
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('force: true without flights.forceExpiry (a non-admin STAFF actor) -> 403, before any query — even with a real block', async () => {
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Autorizzato dal direttore' });
+
+      await expect(registerFlight(staffActor(), input)).rejects.toThrow(ForbiddenError);
+      expect(aircraftFindUniqueMock).not.toHaveBeenCalled();
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('an ADMIN forcing past a real block succeeds and stamps forcedAt/forcedByUserId/forceReason on the Flight row', async () => {
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({
+        blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }],
+        warnings: [],
+      });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Autorizzato dal direttore per volo urgente' });
+
+      const result = await registerFlight(adminActor(), input);
+
+      expect(result).toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            forcedByUserId: 'admin_1',
+            forceReason: 'Autorizzato dal direttore per volo urgente',
+            forcedAt: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('force: true from an ADMIN with NOTHING to bypass registers normally and stamps NOTHING (Dev Notes: "scavalcato un blocco", not "spuntata una checkbox")', async () => {
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Non necessario ma fornito' });
+
+      await registerFlight(adminActor(), input);
+
+      const data = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+      expect(data['forcedAt']).toBeUndefined();
+      expect(data['forcedByUserId']).toBeUndefined();
+      expect(data['forceReason']).toBeUndefined();
+    });
+
+    // Schema-level guard (both exported schemas — `registerFlightSchema` is a
+    // `.refine()`d `ZodEffects`, `correctFlightSchema` is built off the SAME
+    // shared `registerFlightFields` base via `.extend().refine()` — see
+    // `flights.ts`'s own doc-comments for why the two can't just chain):
+    // `forceReason` is required UNCONDITIONALLY whenever `force` is `true`,
+    // same convention as `createBookingSchema`.
+    it('registerFlightSchema/correctFlightSchema both reject force: true without a forceReason', () => {
+      expect(() => registerFlightSchema.parse({ ...BASE_INPUT, force: true })).toThrow();
+      expect(() =>
+        correctFlightSchema.parse({ ...BASE_INPUT, force: true, reason: 'Motivo correzione' }),
+      ).toThrow();
     });
   });
 
@@ -1047,6 +1183,14 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockRejectedValueOnce({ code: 'P2002' });
 
       await expect(cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ConflictError);
+    });
+
+    // Story 14.4, AC 3 — module doc-comment: a storno only ever improves or
+    // holds the balance band, so there is never a worsening signal here.
+    it('balanceAlert is always false (a storno never worsens the band)', async () => {
+      const result = await cancelFlight(staffActor(), 'flight_orig', CANCEL_INPUT);
+
+      expect(result.balanceAlert).toBe(false);
     });
 
     it('creates the FLIGHT_CHARGE_REVERSAL movement: +|original amount|, reversalOfId, flightId, description with the reason', async () => {
@@ -1151,6 +1295,37 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     it('rejects a non-staff actor (flights.manage required), before touching the DB', async () => {
       await expect(correctFlight(pilotActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(ForbiddenError);
       expect(flightFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    // Story 14.4 (AC 1) — "tutti i 422 di 5.1 si applicano ai DATI NUOVI"
+    // (`resolveFlightInput`'s own doc-comment) extends verbatim to the
+    // blocking-expiry guard: a correction re-validates the NEW data from
+    // scratch, exactly like `registerFlight`.
+    it('422 FLIGHT_BLOCKED_BY_EXPIRY when the corrected (NEW) data targets a person with a blocking expired document', async () => {
+      findBlockingExpiredDocumentsMock.mockResolvedValue({
+        blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }],
+        warnings: [],
+      });
+
+      await expect(correctFlight(staffActor(), 'flight_orig', CORRECT_INPUT)).rejects.toMatchObject({ code: 'FLIGHT_BLOCKED_BY_EXPIRY' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('an ADMIN forcing a correction past a real block succeeds and stamps forcedAt/forcedByUserId/forceReason on the NEW flight row', async () => {
+      findBlockingExpiredDocumentsMock.mockResolvedValue({
+        blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }],
+        warnings: [],
+      });
+      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, force: true, forceReason: 'Autorizzato dal direttore' });
+
+      const result = await correctFlight(adminActor(), 'flight_orig', input);
+
+      expect(result).toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ forcedByUserId: 'admin_1', forceReason: 'Autorizzato dal direttore', forcedAt: expect.any(Date) }),
+        }),
+      );
     });
 
     it('throws NotFoundError for an unknown flight', async () => {

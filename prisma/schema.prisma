@@ -464,6 +464,8 @@ model User {
   bookingsCancelled                   Booking[]                     @relation("BookingCancelledBy")
   /// Bookings this user FORCED past a blocking expired document (epic 7, story 7.4, AC 2) — `Booking.forcedByUserId`.
   bookingsForced                      Booking[]                     @relation("BookingForcedBy")
+  /// Flights this user FORCED past a blocking expired document (epic 14, story 14.4, AC 2) — `Flight.forcedByUserId`.
+  flightsForced                       Flight[]                      @relation("FlightForcedBy")
   /// Bookings this user APPROVED or DENIED (epic 12, story 12.2, AC 3) — `Booking.decidedByUserId`.
   bookingsDecided                     Booking[]                     @relation("BookingDecidedBy")
   /// Bookings this user marked FLOWN or NO_SHOW (epic 12, story 12.2, AC 3) — `Booking.closedByUserId`.
@@ -1035,6 +1037,19 @@ model Flight {
   actorUserId String
   actorUser   User   @relation(fields: [actorUserId], references: [id])
 
+  /// Admin force-bypass tracking for a blocking expired document at
+  /// registration/correction time (story 14.4, AC 2; ratifica R4) — set
+  /// TOGETHER, exactly once, ONLY when `resolveFlightInput` actually
+  /// bypassed a blocking expired document (`flights.forceExpiry` + `force:
+  /// true` + `forceReason`); `null` on every normal flight, INCLUDING a
+  /// `force: true` request that had nothing to bypass — same "scavalcato un
+  /// blocco, non spuntata una checkbox" convention as `Booking.forcedAt`
+  /// (story 7.4).
+  forcedAt       DateTime?
+  forcedByUserId String?
+  forcedByUser   User?     @relation("FlightForcedBy", fields: [forcedByUserId], references: [id])
+  forceReason    String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1298,12 +1313,19 @@ model ExpiryType {
   isActive       Boolean        @default(true)
   /// Whether an EXPIRED `Expiry` of this type blocks a NEW booking (epic 7,
   /// story 7.4; FR-21 `[ASSUMPTION]`: medica/licenza block, ratings only
-  /// warn). Default `false` (a new/custom type never blocks until an admin
-  /// opts it in, `settings.manage`, `types-manager.tsx`'s checkbox) — the
-  /// migration backfills `true` on the 4 standard blocking types by exact
-  /// seed name (`prisma/migrations/20260709120000_add_booking_expiry_block`).
-  /// Consumed ONLY by `bookings.service.ts#createBooking` — see that
-  /// function's doc-comment for the flight-day comparison and force/warning
+  /// warn) AND a NEW flight registration/correction (epic 14, story 14.4,
+  /// AC 1; ratifica R4) — the SAME flag gates both, deliberately not
+  /// renamed/split (story 14.4's own AC 1 left the rename optional; the
+  /// field's semantics — "an expired document of this type blocks the
+  /// operation" — already generalize without one). Default `false` (a
+  /// new/custom type never blocks until an admin opts it in, `settings.manage`,
+  /// `types-manager.tsx`'s checkbox) — the migration backfills `true` on the
+  /// 4 standard blocking types by exact seed name
+  /// (`prisma/migrations/20260709120000_add_booking_expiry_block`). Consumed
+  /// by `bookings.service.ts#findBlockingExpiredDocuments` — shared by
+  /// `createBooking`/`updateBooking` (bookings) and, since story 14.4,
+  /// `flights.service.ts#resolveFlightInput` (flights) — see those
+  /// functions' doc-comments for the flight-day comparison and force/warning
   /// semantics.
   blocksBooking  Boolean        @default(false)
   /// Validity window in months, used to PRECOMPILE `Expiry.expiresAt` at

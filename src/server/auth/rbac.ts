@@ -46,7 +46,15 @@ export type Permission =
   // is masked to "Occupato" (`bookings.service.ts#listBookings`/
   // `listCalendarBookings`). Granted to ADMIN/STAFF/INSTRUCTOR, never
   // PILOT/STUDENT.
-  | 'bookings.read.names';
+  | 'bookings.read.names'
+  // Story 14.4 (ratifica R4): forces a flight registration/correction past a
+  // BLOCKING expired document (pilot's or instructor's) with a mandatory
+  // motivo — `flights.service.ts#resolveFlightInput`'s `FLIGHT_BLOCKED_BY_EXPIRY`
+  // bypass. Deliberately granted to ADMIN ONLY (never STAFF, unlike
+  // `flights.manage` itself) — the gate lives on THIS permission, not on a
+  // role literal, so story 14.9's eventual STAFF removal needs no change
+  // here.
+  | 'flights.forceExpiry';
 
 const ALL_PERMISSIONS: Permission[] = [
   'people.read',
@@ -63,6 +71,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'self.read',
   'payouts.manage',
   'bookings.read.names',
+  'flights.forceExpiry',
 ];
 
 /**

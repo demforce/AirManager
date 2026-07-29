@@ -1201,6 +1201,7 @@
       "correctedBy": "Corrected by a later flight",
       "cancelAction": "Cancel",
       "correctAction": "Edit",
+      "forcedBadge": "Override",
       "empty": "No flights logged yet."
     },
     "filters": {
@@ -1281,6 +1282,7 @@
         "INSTRUCTOR_NOT_FOUND": "The selected instructor has no active instructor profile.",
         "INSTRUCTOR_SAME_AS_PILOT": "The instructor cannot be the same person as the pilot or student.",
         "FLIGHT_DATE_IN_FUTURE": "The flight date cannot be in the future.",
+        "FLIGHT_BLOCKED_BY_EXPIRY": "Cannot log this flight: the following documents are expired: {documents}.",
         "generic": "Could not log the flight. Please try again."
       },
       "result": {
@@ -1291,7 +1293,17 @@
         "instructorRate": "Instructor rate",
         "instructorAmount": "Instructor cost",
         "total": "Total charged",
-        "newBalance": "New balance"
+        "newBalance": "New balance",
+        "balanceAlert": "Warning: the pilot's balance is negative (or has worsened past the configured threshold). The flight has been logged regardless."
+      },
+      "force": {
+        "title": "Force registration",
+        "description": "Only an admin can still log this flight, with a reason. The override stays tracked.",
+        "reasonLabel": "Reason",
+        "submit": "Force registration",
+        "cancel": "Cancel",
+        "requiredReason": "A reason is required.",
+        "generic": "Could not force the registration. Please try again."
       }
     },
     "cancelModal": {

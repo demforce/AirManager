@@ -84,6 +84,10 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     redirect({ href: '/dashboard', locale });
     return;
   }
+  // Story 14.4, AC 2 (ratifica R4) — `flights.forceExpiry` (ADMIN-only), the
+  // client-side mirror of the "Forza registrazione" gate (AD-5, `FlightEditor`'s
+  // own doc-comment for the real server-side check).
+  const canForceExpiry = hasPermission(actor, 'flights.forceExpiry');
 
   const dateFrom = sanitizeDateParam(sp.dateFrom);
   const dateTo = sanitizeDateParam(sp.dateTo);
@@ -159,6 +163,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     cancelledAt: flight.cancelledAt ? flight.cancelledAt.toISOString() : null,
     takeoffAt: flight.takeoffAt ? flight.takeoffAt.toISOString() : null,
     landingAt: flight.landingAt ? flight.landingAt.toISOString() : null,
+    // Story 14.4, AC 2 — same ISO-serialize treatment as the other `Date` fields.
+    forcedAt: flight.forcedAt ? flight.forcedAt.toISOString() : null,
   }));
 
   const filters: LogbookFilters = {
@@ -230,6 +236,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
       <LogbookConsole
         key={JSON.stringify({ page, ...exportFilters })}
         canManage={canManage}
+        canForceExpiry={canForceExpiry}
         items={items}
         totals={totals}
         page={page}
@@ -274,6 +281,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             correctedBy: t('table.correctedBy'),
             cancelAction: t('table.cancelAction'),
             correctAction: t('table.correctAction'),
+            forcedBadge: t('table.forcedBadge'),
           },
           filters: {
             dateFrom: t('filters.dateFrom'),
@@ -345,6 +353,9 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               INSTRUCTOR_NOT_FOUND: t('editor.errors.INSTRUCTOR_NOT_FOUND'),
               INSTRUCTOR_SAME_AS_PILOT: t('editor.errors.INSTRUCTOR_SAME_AS_PILOT'),
               FLIGHT_DATE_IN_FUTURE: t('editor.errors.FLIGHT_DATE_IN_FUTURE'),
+              // `t.raw`: the {documents} placeholder is filled CLIENT-side
+              // (same reasoning as `fields.studentOnlyCorrectionHint` above).
+              FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
               generic: t('editor.errors.generic'),
             },
             result: {
@@ -356,8 +367,18 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               instructorAmount: t('editor.result.instructorAmount'),
               total: t('editor.result.total'),
               newBalance: t('editor.result.newBalance'),
+              balanceAlert: t('editor.result.balanceAlert'),
             },
             picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
+            force: {
+              title: t('editor.force.title'),
+              description: t('editor.force.description'),
+              reasonLabel: t('editor.force.reasonLabel'),
+              submit: t('editor.force.submit'),
+              cancel: t('editor.force.cancel'),
+              requiredReason: t('editor.force.requiredReason'),
+              generic: t('editor.force.generic'),
+            },
           },
           cancelModal: {
             title: t('cancelModal.title'),

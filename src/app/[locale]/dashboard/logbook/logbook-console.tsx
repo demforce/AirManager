@@ -101,6 +101,8 @@ export type LogbookConsoleLabels = {
     correctedBy: string;
     cancelAction: string;
     correctAction: string;
+    /** Story 14.4, AC 2 — lineage chip shown when `Flight.forcedAt` is set (an admin bypassed a blocking expired document); `title` carries `forceReason`. */
+    forcedBadge: string;
   };
   filters: {
     dateFrom: string;
@@ -140,6 +142,8 @@ export type LogbookTotals = {
 
 export type LogbookConsoleProps = {
   canManage: boolean;
+  /** Story 14.4, AC 2 (ratifica R4) — `flights.forceExpiry` (ADMIN-only, unlike `canManage`/`flights.manage`); forwarded to `FlightEditor` as its own `canForce`. */
+  canForceExpiry: boolean;
   items: FlightListItemDto[];
   /** TRUE totals over the whole filtered set (review fix 12.8, MAJOR) — `flights.service.ts#getFlightTotals`, REGISTERED-only. Renders the table's own "Totali" row; NOT derived from `items` (the current page). */
   totals: LogbookTotals;
@@ -174,6 +178,7 @@ const COLS = '92px 150px minmax(150px,1.5fr) 110px 130px 64px 55px 55px 100px mi
 
 export function LogbookConsole({
   canManage,
+  canForceExpiry,
   items,
   totals,
   page,
@@ -264,9 +269,19 @@ export function LogbookConsole({
   ];
 
   function statusBadgeAndLineage(flight: FlightListItemDto) {
-    if (flight.status !== 'CANCELLED' && !flight.correctionOfId && !flight.correctedByFlightId) return null;
+    if (flight.status !== 'CANCELLED' && !flight.correctionOfId && !flight.correctedByFlightId && !flight.forcedAt) return null;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* Story 14.4, AC 2 ("persistita e visibile") — same lineage-chip
+            idiom as the CANCELLED/correction badges below, so an admin's
+            override is discoverable in the registry, not just on the wire. */}
+        {flight.forcedAt ? (
+          <span data-testid="flight-forced-badge" title={flight.forceReason ?? undefined}>
+            <Badge tone="warn" dot>
+              {labels.table.forcedBadge}
+            </Badge>
+          </span>
+        ) : null}
         {flight.status === 'CANCELLED' ? (
           <>
             {/* `Badge` (`@/components/ui/badge`) never forwards unknown props onto its `<span>` — a `data-testid` passed directly to it is silently dropped. A thin wrapper carries it instead, without touching the shared primitive (surgical). */}
@@ -569,6 +584,7 @@ export function LogbookConsole({
           instructorOptions={instructorOptions}
           airfieldName={airfieldName}
           moneyLocale={moneyLocale}
+          canForce={canForceExpiry}
           labels={labels.editor}
         />
       ) : null}
