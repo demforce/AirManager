@@ -92,7 +92,7 @@ export async function listCashCategories(actor: Actor, query: ListCashCategories
 /**
  * Creates a cash category (AC 1). `settings.manage` (admin) only — this is
  * finance configuration, deliberately stricter than day-to-day cash
- * operations (`finance.manage`, staff+admin).
+ * operations (`finance.manage`, ADMIN-only).
  */
 export async function createCashCategory(actor: Actor, input: { name: string }): Promise<CashCategoryListItem> {
   authorize(actor, 'settings.manage');
@@ -310,7 +310,7 @@ function toMovementListItem(movement: SelectedCashMovement): CashMovementListIte
  * (negative), append-only (AD-3: no update/delete API). This is NOT how the
  * automatic top-up twin is created (that stays `recordTopUp`'s job, story
  * 3.1, linked via `accountMovementId`) — this function always leaves
- * `accountMovementId`/`reversalOfId` `null`. `finance.manage` (staff+admin)
+ * `accountMovementId`/`reversalOfId` `null`. `finance.manage` (ADMIN-only)
  * — day-to-day cash operation, deliberately less restrictive than category
  * CRUD (`settings.manage`). The category must exist AND be active — same
  * `isActive` guard, and the same rationale, as `recordTopUp`'s lookup (Dev
@@ -441,7 +441,7 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
  * Reclassifies an UNATTRIBUTED historical cash movement (story Billing-2,
  * AC 3) — assigns a `paymentMethod` to a movement backfilled/recorded as
  * `null` (pre-Billing-1 manual entries, or a PPR landing fee recorded
- * without one, D2). `finance.manage` (staff+admin) — same day-to-day gate as
+ * without one, D2). `finance.manage` (ADMIN-only) — same day-to-day gate as
  * `recordCashMovement`/`reverseCashMovement`, not the stricter
  * `settings.manage` category CRUD uses. Deliberately scoped to movements
  * CURRENTLY unattributed (`paymentMethod === null`): every automatic twin

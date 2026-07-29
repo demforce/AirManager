@@ -295,7 +295,7 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 
-  test('"PPR manuale" (epic 12, story 12.4, AC 1): staff enters a manual request with an email — it appears PENDING in the console, badge-free ("da modulo web" is only for public-form rows), and NO receipt email is ever sent', async ({
+  test('"PPR manuale" (epic 12, story 12.4, AC 1): an admin enters a manual request with an email — it appears PENDING in the console, badge-free ("da modulo web" is only for public-form rows), and NO receipt email is ever sent', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);

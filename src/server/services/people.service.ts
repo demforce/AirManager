@@ -180,7 +180,7 @@ async function assertUnique(fields: { email?: string | null; fiscalCode?: string
  * browsable/searchable). `q` matches first name, last name or email,
  * case-insensitively; archived persons (AC 2) are excluded by default and
  * only surfaced with `includeArchived: true`. Read access: `people.read`
- * (staff/admin).
+ * (ADMIN-only).
  */
 export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<PersonListResult> {
   authorize(actor, 'people.read');
@@ -328,7 +328,7 @@ export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): 
 
 /**
  * Returns a single person with the three profiles in full (story 2.2, AC 1).
- * Read access: `people.read` (staff/admin, any person) OR "own" access
+ * Read access: `people.read` (ADMIN-only, any person) OR "own" access
  * (story 2.3, AC 2) — an actor with `self.read` but not `people.read` may
  * only read the record matching `actor.personId`. This is the "own"
  * resource-level scoping documented in `rbac.ts`'s module doc: `authorize()`
@@ -468,6 +468,12 @@ async function assertExpiryTypesValidForComposite(
 export async function createPerson(actor: Actor, input: CreatePersonInput): Promise<PersonListItem> {
   authorize(actor, 'people.manage');
   if (input.access) {
+    // Review 14.9 F5: since 14.9, `people.manage` is ADMIN-only, and ADMIN
+    // always also holds `users.manage` — no role can pass the guard above
+    // and fail this one, so this branch is structurally unreachable today.
+    // Kept for a future role holding `people.manage` without
+    // `users.manage`; coverage for it is no longer expressible (an
+    // adjacent test can only reach the OUTER `people.manage` gate).
     authorize(actor, 'users.manage');
   }
 

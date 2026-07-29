@@ -131,12 +131,12 @@ export async function createAircraftRateCore(
 /**
  * Records a new historicized rate (AC 1/2). `settings.manage` (admin) only —
  * pricing configuration, deliberately stricter than day-to-day fleet
- * management (`aircraft.manage`, staff+admin, which only gets read access
+ * management (`aircraft.manage`, ADMIN-only, which only gets read access
  * below) — same split as `createCashCategory` vs `listCashCategories`.
  *
  * Decision (Dev Notes left this open): an ARCHIVED aircraft rejects new
- * rates with a 409, not a 404 — the aircraft demonstrably exists (staff/
- * admin already see archived aircraft via `aircraft.manage`, so there is no
+ * rates with a 409, not a 404 — the aircraft demonstrably exists (an
+ * admin already sees archived aircraft via `aircraft.manage`, so there is no
  * enumeration concern in telling them apart) and pricing a retired airframe
  * going forward would be misleading; this mirrors `archiveAircraft`'s own
  * "already archived" `ConflictError` for the same "valid id, wrong state"
@@ -188,9 +188,10 @@ export async function createAircraftRate(
 
 /**
  * Lists an aircraft's full rate history, most recent `validFrom` first (AC
- * 1). `aircraft.manage` (staff+admin) — a deliberately wider read than the
- * `settings.manage` write above (Dev Notes: staff sees fleet pricing even
- * though only admin sets it). No pagination (small, admin-managed list, same
+ * 1). `aircraft.manage` (ADMIN-only) — a deliberately wider read than the
+ * `settings.manage` write above (Dev Notes: an admin reads fleet pricing
+ * through this wider permission, even though the same admin also sets it).
+ * No pagination (small, admin-managed list, same
  * choice as `listCashCategories`) but defensively capped at `take: 500`.
  */
 export async function listAircraftRates(actor: Actor, aircraftId: string): Promise<AircraftRateListItemWithDry[]> {

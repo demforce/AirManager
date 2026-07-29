@@ -246,6 +246,12 @@ export async function getAircraft(actor: Actor, id: string): Promise<AircraftLis
 export async function createAircraft(actor: Actor, input: CreateAircraftInput): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
   if (input.rate) {
+    // Review 14.9 F5: since 14.9, `aircraft.manage` is ADMIN-only, and ADMIN
+    // always also holds `settings.manage` — no role can pass the guard above
+    // and fail this one, so this branch is structurally unreachable today.
+    // Kept for a future role holding `aircraft.manage` without
+    // `settings.manage`; coverage for it is no longer expressible (an
+    // adjacent test can only reach the OUTER `aircraft.manage` gate).
     authorize(actor, 'settings.manage');
   }
 

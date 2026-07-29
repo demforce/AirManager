@@ -181,7 +181,7 @@ async function buildOverview(account: { id: string; createdAt: Date }): Promise<
 
 /**
  * Records a prepaid-account top-up (story 3.1, AC 2/3). Write access:
- * `finance.manage` (staff/admin) — never "own" (a pilot cannot top up their
+ * `finance.manage` (ADMIN-only) — never "own" (a pilot cannot top up their
  * own account). In ONE transaction: get-or-create the `Account` (idempotent
  * upsert on `personId` — same 1-to-0/1 guarantee `upsertProfile` relies on,
  * AD-11), create the immutable `AccountMovement` (TOP_UP, signed positive
@@ -279,7 +279,7 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
  * `actorEmail` is a display-only join over `actorUserId` (same enrichment
  * pattern as `listHourMeterAdjustments`, story 2.5) but, unlike that list,
  * it is conditional: only present when the caller has `people.read` (AC
- * 2's "dettaglio operativo" for staff) — a titolare reading their own
+ * 2's "dettaglio operativo" for an admin) — a titolare reading their own
  * statement never sees who registered a movement (Dev Notes, AD-5: the
  * service is the guardian of the data, not just the UI).
  */

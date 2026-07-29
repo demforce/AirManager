@@ -54,7 +54,6 @@ type FleetConsoleProps = {
   totalPages: number;
   initialQuery: string;
   initialIncludeArchived: boolean;
-  canManageSettings: boolean;
   exportHref: string;
   locale: 'it' | 'en';
   labels: FleetConsoleLabels;
@@ -85,7 +84,6 @@ export function FleetConsole({
   totalPages,
   initialQuery,
   initialIncludeArchived,
-  canManageSettings,
   exportHref,
   locale,
   labels,
@@ -206,7 +204,6 @@ export function FleetConsole({
         target={target}
         onClose={() => setTarget(null)}
         onMutated={() => router.refresh()}
-        canManageSettings={canManageSettings}
         locale={locale}
         labels={labels.editor}
         toastLabels={labels.toast}

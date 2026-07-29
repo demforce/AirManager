@@ -55,7 +55,6 @@ export default async function InstructorsPage({ params }: PageProps) {
 
   const canManagePeople = hasPermission(actor, 'people.manage');
   const canManagePayouts = hasPermission(actor, 'payouts.manage');
-  const canManageSettings = hasPermission(actor, 'settings.manage');
   const canExport = hasPermission(actor, 'finance.manage');
 
   const exportHref = buildExportHref('/api/v1/instructor-compensation', {}, locale);
@@ -90,7 +89,6 @@ export default async function InstructorsPage({ params }: PageProps) {
         items={items}
         canManagePeople={canManagePeople}
         canManagePayouts={canManagePayouts}
-        canManageSettings={canManageSettings}
         exportHref={canExport ? exportHref : undefined}
         locale={displayLocale}
         labels={{
@@ -139,7 +137,6 @@ export default async function InstructorsPage({ params }: PageProps) {
               label: t('editor.payoutRate.label'),
               noValue: t('editor.payoutRate.noValue'),
               save: t('editor.payoutRate.save'),
-              readOnlyHint: t('editor.payoutRate.readOnlyHint'),
             },
             ratings: {
               sectionTitle: t('editor.ratings.sectionTitle'),
@@ -176,7 +173,6 @@ export default async function InstructorsPage({ params }: PageProps) {
               invalidDate: t('studentRate.invalidDate'),
               genericError: t('studentRate.genericError'),
               conflictError: t('studentRate.conflictError'),
-              readOnlyHint: t('studentRate.readOnlyHint'),
               historyTitle: t('studentRate.historyTitle'),
               historyEmpty: t('studentRate.historyEmpty'),
               historyActor: t('studentRate.historyActor'),

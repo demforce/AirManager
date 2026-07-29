@@ -40,7 +40,7 @@ function toExpiryDto(item: ExpiryListItem): ExpiryItemDto {
 /**
  * Scadenze (epic 6/7, epic 12 story 12.11) — AirOps-native, port of
  * `docs/design-reference/airops/src/ScadenzeView.jsx`. Two faces (Contesto,
- * unchanged since story 6.2): `expiries.manage` (staff/admin) gets the full
+ * unchanged since story 6.2): `expiries.manage` (ADMIN-only) gets the full
  * registry; everyone else (own-access, `self.read`) gets "Le mie scadenze".
  * Story 12.13 (ratifica utente 4b) retired the titolare-facing
  * propose/staff-decide queue this page used to also render.

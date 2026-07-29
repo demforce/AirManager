@@ -63,8 +63,8 @@ function candidateFixture(overrides: Partial<Fixture> = {}): Fixture {
   };
 }
 
-function staffUserFixture(overrides: Partial<Fixture> = {}): Fixture {
-  return { email: 'staff@airmanager.local', locale: 'it', ...overrides };
+function adminUserFixture(overrides: Partial<Fixture> = {}): Fixture {
+  return { email: 'admin@airmanager.local', locale: 'it', ...overrides };
 }
 
 describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, idempotent job, FR-37, AD-9)', () => {
@@ -79,7 +79,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
     sentAlertCreateMany.mockResolvedValue({ count: 1 });
     userFindUnique.mockResolvedValue(null);
-    userFindMany.mockResolvedValue([staffUserFixture()]);
+    userFindMany.mockResolvedValue([adminUserFixture()]);
   });
 
   // --- Candidate query horizon --------------------------------------------
@@ -102,7 +102,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
       const result = await runExpiryAlertsJob();
 
       expect(sentAlertCreateManyMock).toHaveBeenCalledWith({ data: [{ expiryId: 'exp_1', threshold: 60 }] });
-      expect(sendMock).toHaveBeenCalledTimes(2); // holder + digest (staff)
+      expect(sendMock).toHaveBeenCalledTimes(2); // holder + digest (admin)
       expect(result).toMatchObject({ candidates: 1, alertsCreated: 1, holderEmailsSent: 1, holdersWithoutEmail: 0, digestEmailsSent: 1 });
     });
 
@@ -263,12 +263,12 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     });
   });
 
-  // --- Staff digest ---------------------------------------------------
+  // --- Admin digest ---------------------------------------------------
 
-  describe('staff digest', () => {
-    it('one digest email per active admin/staff user, each in their OWN locale', async () => {
+  describe('admin digest', () => {
+    it('one digest email per active admin user, each in their OWN locale', async () => {
       expiryFindMany.mockResolvedValue([candidateFixture({ sentAlerts: [] })]);
-      userFindMany.mockResolvedValue([staffUserFixture({ email: 'admin-it@airmanager.local', locale: 'it' }), staffUserFixture({ email: 'staff-en@airmanager.local', locale: 'en' })]);
+      userFindMany.mockResolvedValue([adminUserFixture({ email: 'admin-it@airmanager.local', locale: 'it' }), adminUserFixture({ email: 'admin-en@airmanager.local', locale: 'en' })]);
 
       const result = await runExpiryAlertsJob();
 
@@ -300,9 +300,9 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
       expect(buildExpiryDigestEmail).not.toHaveBeenCalled();
     });
 
-    it('a send failure for ONE staff recipient does not block the others, and is counted correctly', async () => {
+    it('a send failure for ONE admin recipient does not block the others, and is counted correctly', async () => {
       expiryFindMany.mockResolvedValue([candidateFixture({ sentAlerts: [] })]);
-      userFindMany.mockResolvedValue([staffUserFixture({ email: 'fails@airmanager.local' }), staffUserFixture({ email: 'ok@airmanager.local' })]);
+      userFindMany.mockResolvedValue([adminUserFixture({ email: 'fails@airmanager.local' }), adminUserFixture({ email: 'ok@airmanager.local' })]);
       sendMock.mockImplementation((message: { to: string }) => {
         if (message.to === 'fails@airmanager.local') {
           return Promise.reject(new Error('SMTP down'));

@@ -111,7 +111,6 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
         totalPages={totalPages}
         initialQuery={q ?? ''}
         initialIncludeArchived={includeArchived}
-        canManageSettings={hasPermission(actor, 'settings.manage')}
         exportHref={exportHref}
         locale={locale as 'it' | 'en'}
         labels={{

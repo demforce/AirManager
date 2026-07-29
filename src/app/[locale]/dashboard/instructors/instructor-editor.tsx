@@ -54,7 +54,7 @@ export type InstructorEditorLabels = {
     /** Story 14.2, AC 1/4: this section had NO required-field feedback at all (not even `aria-invalid`) — its own `updatePersonSchema` RHF errors were silently dropped. */
     requiredField: string;
   };
-  payoutRate: { sectionTitle: string; label: string; noValue: string; save: string; readOnlyHint: string };
+  payoutRate: { sectionTitle: string; label: string; noValue: string; save: string };
   ratings: { sectionTitle: string } & LiveExpiryEditorLabels;
   readOnly: { sectionTitle: string; hoursTotal: string; owedTotal: string };
   studentRate: InstructorRatesPanelLabels & { heading: string };
@@ -69,8 +69,6 @@ type InstructorEditorProps = {
   onClose: () => void;
   onMutated: () => void;
   canManagePeople: boolean;
-  canManagePayouts: boolean;
-  canManageSettings: boolean;
   locale: 'it' | 'en';
   labels: InstructorEditorLabels;
   toast: ToastHandle;
@@ -94,8 +92,6 @@ export function InstructorEditor({
   onClose,
   onMutated,
   canManagePeople,
-  canManagePayouts,
-  canManageSettings,
   locale,
   labels,
   toast,
@@ -147,8 +143,6 @@ export function InstructorEditor({
             <PayoutRateForm
               personId={current.personId}
               initialRateCents={current.payoutRateCents}
-              canManagePayouts={canManagePayouts}
-              locale={locale}
               labels={labels.payoutRate}
               errorLabels={labels.errors}
               toast={toast}
@@ -164,7 +158,6 @@ export function InstructorEditor({
               key={current.personId}
               personId={current.personId}
               toast={toast}
-              canAddRate={canManageSettings}
               labels={labels.studentRate}
             />
           </Section>
@@ -354,8 +347,6 @@ type PayoutRateFormValues = z.infer<typeof payoutRateFormSchema>;
 function PayoutRateForm({
   personId,
   initialRateCents,
-  canManagePayouts,
-  locale,
   labels,
   errorLabels,
   toast,
@@ -364,8 +355,6 @@ function PayoutRateForm({
 }: {
   personId: string;
   initialRateCents: number | null;
-  canManagePayouts: boolean;
-  locale: 'it' | 'en';
   labels: InstructorEditorLabels['payoutRate'];
   errorLabels: InstructorEditorLabels['errors'];
   toast: ToastHandle;
@@ -399,16 +388,6 @@ function PayoutRateForm({
     }
     toast.show(toastLabels.rateSet, 'ok');
     onSaved({ payoutRateCents });
-  }
-
-  if (!canManagePayouts) {
-    return (
-      <p className="fld-label" style={{ textTransform: 'none' }}>
-        {initialRateCents === null ? labels.noValue : `${formatCents(initialRateCents, locale)}/h`}
-        {' — '}
-        {labels.readOnlyHint}
-      </p>
-    );
   }
 
   return (

@@ -6,7 +6,7 @@ import { createExpiryType, listExpiryTypes } from '@/server/services/expiry-type
  * Thin routes (AD-1): the shared wrapper (story 1.5) validates, calls the
  * service, and maps the result/error to the AD-8 envelope. Authorization
  * stays in `expiry-types.service.ts` (AD-5) — `GET` needs only
- * `expiries.manage` (admin+staff read the catalogue, story 6.1), `POST`
+ * `expiries.manage` (ADMIN-only reads the catalogue, story 6.1), `POST`
  * needs `settings.manage` (catalogue configuration is admin-only).
  */
 export const GET = apiRoute({

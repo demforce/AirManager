@@ -194,7 +194,6 @@
   "PeoplePage": {
     "kicker": "Anagrafiche",
     "title": "Persone",
-    "description": "Anagrafica unica di piloti, allievi, istruttori e staff: crea, modifica e archivia le persone.",
     "backToDashboard": "Torna alla dashboard",
     "newPerson": "Nuova persona",
     "searchPlaceholder": "Cerca per nome, cognome o email…",
@@ -494,8 +493,7 @@
         "sectionTitle": "Tariffa payout (pagata all'istruttore)",
         "label": "Tariffa oraria",
         "noValue": "—",
-        "save": "Salva",
-        "readOnlyHint": "Solo un amministratore può impostare la tariffa payout."
+        "save": "Salva"
       },
       "ratings": {
         "sectionTitle": "Ratings",
@@ -541,7 +539,6 @@
       "invalidDate": "Inserisci una data valida.",
       "genericError": "Si è verificato un errore. Riprova.",
       "conflictError": "Esiste già una tariffa con questa data di decorrenza, oppure la persona non ha un profilo istruttore attivo.",
-      "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe istruttore.",
       "historyTitle": "Storico tariffe",
       "historyEmpty": "Nessuna tariffa registrata.",
       "historyValidFrom": "In vigore da",
@@ -1389,7 +1386,7 @@
       },
       "reminders": {
         "button": "Invia promemoria",
-        "sent": "Promemoria inviati: {holders} ai titolari, {digests} allo staff.",
+        "sent": "Promemoria inviati: {holders} ai titolari, {digests} agli amministratori.",
         "error": "Invio non riuscito. Riprova."
       },
       "membershipFee": {
@@ -1485,7 +1482,7 @@
       "successWithWarnings": "Prenotazione creata. Attenzione: i seguenti documenti risultano scaduti (non bloccanti):",
       "force": {
         "title": "Forza prenotazione",
-        "description": "Solo lo staff può creare comunque questa prenotazione, indicando un motivo. La forzatura resta tracciata.",
+        "description": "Solo un amministratore può creare comunque questa prenotazione, indicando un motivo. La forzatura resta tracciata.",
         "reasonLabel": "Motivo",
         "submit": "Forza prenotazione",
         "cancel": "Annulla",

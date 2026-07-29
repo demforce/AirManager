@@ -84,13 +84,12 @@ type InstructorsConsoleProps = {
   items: InstructorRow[];
   canManagePeople: boolean;
   canManagePayouts: boolean;
-  canManageSettings: boolean;
   exportHref?: string;
   locale: 'it' | 'en';
   labels: InstructorsConsoleLabels;
 };
 
-export function InstructorsConsole({ items, canManagePeople, canManagePayouts, canManageSettings, exportHref, locale, labels }: InstructorsConsoleProps) {
+export function InstructorsConsole({ items, canManagePeople, canManagePayouts, exportHref, locale, labels }: InstructorsConsoleProps) {
   const router = useRouter();
   const toast = useToast();
   const [editorTarget, setEditorTarget] = useState<InstructorRow | null>(null);
@@ -174,8 +173,6 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
         onClose={() => setEditorTarget(null)}
         onMutated={() => router.refresh()}
         canManagePeople={canManagePeople}
-        canManagePayouts={canManagePayouts}
-        canManageSettings={canManageSettings}
         locale={locale}
         labels={labels.editor}
         toast={toast}

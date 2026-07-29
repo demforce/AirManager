@@ -194,7 +194,6 @@
   "PeoplePage": {
     "kicker": "Records",
     "title": "People",
-    "description": "The single source of truth for pilots, students, instructors and staff: create, edit and archive people.",
     "backToDashboard": "Back to dashboard",
     "newPerson": "New person",
     "searchPlaceholder": "Search by first name, last name or email…",
@@ -494,8 +493,7 @@
         "sectionTitle": "Payout rate (paid to the instructor)",
         "label": "Hourly rate",
         "noValue": "—",
-        "save": "Save",
-        "readOnlyHint": "Only an administrator can set the payout rate."
+        "save": "Save"
       },
       "ratings": {
         "sectionTitle": "Ratings",
@@ -541,7 +539,6 @@
       "invalidDate": "Enter a valid date.",
       "genericError": "Something went wrong. Please try again.",
       "conflictError": "A rate with this validFrom already exists, or this person has no active instructor profile.",
-      "readOnlyHint": "Only an administrator can add new instructor rates.",
       "historyTitle": "Rate history",
       "historyEmpty": "No rate recorded.",
       "historyValidFrom": "In effect from",
@@ -1389,7 +1386,7 @@
       },
       "reminders": {
         "button": "Send reminders",
-        "sent": "Reminders sent: {holders} to holders, {digests} to staff.",
+        "sent": "Reminders sent: {holders} to holders, {digests} to the admins.",
         "error": "Send failed. Please try again."
       },
       "membershipFee": {
@@ -1485,7 +1482,7 @@
       "successWithWarnings": "Booking created. Warning: the following documents are expired (non-blocking):",
       "force": {
         "title": "Force booking",
-        "description": "Only staff can still create this booking, with a reason. The override stays tracked.",
+        "description": "Only an admin can still create this booking, with a reason. The override stays tracked.",
         "reasonLabel": "Reason",
         "submit": "Force booking",
         "cancel": "Cancel",

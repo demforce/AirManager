@@ -247,7 +247,7 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     await expect(row.getByText('+39 333 0000000')).toBeVisible();
   });
 
-  test('admin sets the default landing fee via Impostazioni; staff completes an APPROVED request from the register with the PREFILLED default: the row turns COMPLETED with the formatted fee, and a matching cash movement lands in the "PPR" category (AC 1)', async ({
+  test('admin sets the default landing fee via Impostazioni; the same admin completes an APPROVED request from the register with the PREFILLED default: the row turns COMPLETED with the formatted fee, and a matching cash movement lands in the "PPR" category (AC 1)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);

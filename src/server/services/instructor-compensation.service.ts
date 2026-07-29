@@ -209,7 +209,7 @@ async function computeSummaryRows(instructors: InstructorRow[]): Promise<Instruc
   });
 }
 
-/** `GET /api/v1/instructor-compensation` (no `personId`) — the full roster's compensation summary. `finance.manage` (staff+admin). */
+/** `GET /api/v1/instructor-compensation` (no `personId`) — the full roster's compensation summary. `finance.manage` (ADMIN-only). */
 export async function getCompensationSummary(actor: Actor): Promise<InstructorCompensationSummaryItem[]> {
   authorize(actor, 'finance.manage');
   const instructors = await listActiveInstructors();
@@ -386,7 +386,7 @@ async function resolveActiveInstructorRow(personId: string): Promise<InstructorR
  * the 5 most recent SCHOOL flights this instructor flew as CFI and the
  * distinct students among them (derived from the SAME 5 flights, never a
  * separate query — same as the prototype's own `[...new Set(...)]`).
- * `finance.manage` (staff+admin) — same permission as the summary; the
+ * `finance.manage` (ADMIN-only) — same permission as the summary; the
  * `personId` resolution keeps the door open for a future own-access variant
  * (Dev Notes) without any extra work now.
  */

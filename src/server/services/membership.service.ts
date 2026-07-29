@@ -107,6 +107,13 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
     // Landing EXACTLY on zero is allowed.
     if (balanceBeforeCents - input.amountCents < 0) {
       if (input.override) {
+        // Review 14.9 F5: since 14.9, `finance.manage` is ADMIN-only, and
+        // ADMIN always also holds `settings.manage` — no role can pass the
+        // guard at the top of this function and fail this one, so this
+        // branch is structurally unreachable today. Kept for a future role
+        // holding `finance.manage` without `settings.manage`; coverage for
+        // it is no longer expressible (an adjacent test can only reach the
+        // OUTER `finance.manage` gate).
         authorize(actor, 'settings.manage');
       } else {
         throw new ValidationError(

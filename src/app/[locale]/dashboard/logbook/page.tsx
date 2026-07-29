@@ -57,7 +57,7 @@ function sanitizeFlightStatus(value: string | undefined): FlightStatusDto | unde
  * (deleted by this story, hard, no redirect — ratifica utente 2). Same two
  * RBAC faces as before, decided by `flights.manage` (AD-5, `hasPermission`
  * here only decides what to RENDER — `listFlights` re-authorizes/re-scopes
- * regardless): staff/admin get the full manager (filters, "Nuova voce",
+ * regardless): an admin gets the full manager (filters, "Nuova voce",
  * Storna/Correggi); everyone else gets a read-only own-access registry
  * (period/tipo/stato only).
  *

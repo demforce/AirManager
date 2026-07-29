@@ -19,7 +19,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  *
  * **Creation matrix** (AD-5: `authorize()` first, then own-checks against
  * `actor.personId` in the service — never in the UI):
- * - `bookings.manage.any` (staff/admin): `personId` = anyone; an optional
+ * - `bookings.manage.any` (ADMIN-only): `personId` = anyone; an optional
  *   `instructorProfileId` may reference ANY active instructor.
  * - `bookings.manage.own` with `personId === actor.personId` (a pilot or an
  *   instructor booking for themself): allowed only if the actor's own
@@ -184,7 +184,7 @@ function toListItem(booking: SelectedBooking): BookingListItem {
 /**
  * Masks the personal identifiers on a booking that is NOT the actor's own
  * (story 14.5, ratifica R3: pilots/students see "Occupato" — aircraft and
- * time stay visible — on someone else's booking; admin/staff/instructor,
+ * time stay visible — on someone else's booking; admin/instructor,
  * `bookings.read.names`, see everyone's name unmasked). "Own" (review F4,
  * aligned with `assertOwnAccessAndTiming`'s own definition — the same shape
  * used by update/cancel) is `booking.personId === actor.personId` OR
@@ -213,7 +213,7 @@ function toListItem(booking: SelectedBooking): BookingListItem {
  * IDENTICALLY to a masked solo one — no layout tell (AC 4's other
  * requirement). `status`/`cancelledAt`/etc. are left untouched — none of
  * them name a person, and hiding them would be an unrequested behavior
- * change (AC 5: admin/staff/instructor/own bookings stay pixel-identical).
+ * change (AC 5: admin/instructor/own bookings stay pixel-identical).
  */
 function maskBookingNames(actor: Actor, canReadNames: boolean, ownInstructorProfileId: string | null, booking: BookingListItem): BookingListItem {
   const isOwn = booking.personId === actor.personId || (booking.instructorProfileId !== null && booking.instructorProfileId === ownInstructorProfileId);
@@ -440,7 +440,7 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
   // BEFORE any further query (persona, let alone scadenze) — own-path
   // booking never bypasses a block.
   if (input.force && !canManageAny) {
-    throw new ForbiddenError('Only staff can force a blocked booking.');
+    throw new ForbiddenError('Only an admin can force a blocked booking.');
   }
 
   // Target person (404/409/422) — outside the transaction (Dev Notes: it
@@ -465,7 +465,7 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
   }
 
   if (canManageAny) {
-    // Staff/admin: any active pilot, student or instructor is bookable.
+    // ADMIN-only (`bookings.manage.any`): any active pilot, student or instructor is bookable.
     if (!isActivePilot(person) && !isActiveStudent(person) && !isActiveInstructor(person)) {
       throw new ValidationError(
         'Person must have an active pilot, student or instructor profile to be booked.',
@@ -579,7 +579,7 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
         notes: input.notes ?? null,
         actorUserId: actor.userId,
         // Story 12.2, AC 2: the service ALWAYS stamps status explicitly,
-        // never the column default — staff/admin (`bookings.manage.any`)
+        // never the column default — ADMIN-only (`bookings.manage.any`)
         // bookings start APPROVED, everyone else's start PENDING.
         status: canManageAny ? 'APPROVED' : 'PENDING',
         // Story 7.4, AC 2: stamped ONLY when a real block was bypassed
@@ -751,7 +751,7 @@ type EditableBooking = {
  * person, OR its `instructorProfileId` matches the actor's own ACTIVE
  * `InstructorProfile` (an instructor manages the school bookings they are
  * involved in — the allievo never holds `bookings.manage.own` at all, story
- * 7.1). `bookings.manage.any` (staff/admin) skips BOTH checks entirely — no
+ * 7.1). `bookings.manage.any` (ADMIN-only) skips BOTH checks entirely — no
  * ownership gate AND, deliberately, NO temporal constraint ("lo staff può
  * sempre" — the asymmetry with the own-path below is intentional).
  *

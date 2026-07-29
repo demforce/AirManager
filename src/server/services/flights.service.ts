@@ -147,7 +147,7 @@ export type FlightListItem = {
   /** `null` <=> no instructor on this flight. `personId` (not the profile id — AD-11/consistency with the API's own `instructorPersonId`). */
   instructor: { personId: string; firstName: string; lastName: string } | null;
   breakdown: FlightBreakdown;
-  /** Story 5.4 — CONDITIONAL: present only when the caller has `people.read` (staff), same pattern as `AccountStatementItem` (3.2). */
+  /** Story 5.4 — CONDITIONAL: present only when the caller has `people.read` (ADMIN-only), same pattern as `AccountStatementItem` (3.2). */
   actorEmail?: string;
   createdAt: Date;
   /** Story 5.3 — set together, exactly once, when `status` becomes `CANCELLED`. Both `null` while `REGISTERED`. */
@@ -159,7 +159,7 @@ export type FlightListItem = {
   correctedByFlightId: string | null;
   /** Story 14.4, AC 2 — set together, exactly once, ONLY when an admin bypassed a blocking expired document. `null` on every normal flight. */
   forcedAt: Date | null;
-  /** Review F2 (ratifica R-14.4-c) — MASKED to `null` for an actor without `flights.manage` (`toListItem`'s own `includeForceReason` param), even when `forcedAt` is set: the motivo can name another person's medical/document, so a pilot/student/instructor reading their OWN registry (`self.read`) sees the "Deroga" fact (`forcedAt`) but never the WHY. Unlike `Booking`'s own DTO (which omits the field entirely), staff/admin get the real value — audit trail, not blanket omission. */
+  /** Review F2 (ratifica R-14.4-c) — MASKED to `null` for an actor without `flights.manage` (`toListItem`'s own `includeForceReason` param), even when `forcedAt` is set: the motivo can name another person's medical/document, so a pilot/student/instructor reading their OWN registry (`self.read`) sees the "Deroga" fact (`forcedAt`) but never the WHY. Unlike `Booking`'s own DTO (which omits the field entirely), an admin gets the real value — audit trail, not blanket omission. */
   forceReason: string | null;
 };
 
@@ -261,7 +261,7 @@ type SelectedFlight = {
  * (`hasPermission(actor, 'flights.manage')`) — masks `forceReason` to `null`
  * for a non-manage viewer while leaving `forcedAt` visible to everyone with
  * access to the flight (see `FlightListItem.forceReason`'s own doc-comment).
- * Every staff-only entrypoint in this file (`registerFlight`/`cancelFlight`/
+ * Every admin-only entrypoint in this file (`registerFlight`/`cancelFlight`/
  * `correctFlight`, all gated on `flights.manage`) always passes `true` for
  * BOTH — the actor calling them already holds `flights.manage` by
  * definition (the `authorize` call at the top of each).
@@ -482,6 +482,13 @@ async function resolveFlightInput(
 ): Promise<ResolvedFlightInput> {
   // Story 14.4, AC 2 (ratifica R4): checked FIRST, before any query — same
   // ordering as `createBooking`'s own force-403 (this function's doc-comment).
+  // Review 14.9 F4: guard on a DISTINCT permission (`flights.forceExpiry`,
+  // not `flights.manage`) — since 14.9, no role holds `flights.manage`
+  // without also holding `flights.forceExpiry` (both ADMIN-only), so this
+  // branch is structurally unreachable today. Kept for a future role that
+  // might hold `flights.manage` without `flights.forceExpiry` (story 14.4's
+  // original design intent), deliberately without a test of its own — AC 2
+  // of this story sanctions exactly this kind of now-unreachable guard.
   if (input.force && !hasPermission(actor, 'flights.forceExpiry')) {
     throw new ForbiddenError('Only an admin can force a flight blocked by an expired document.');
   }
@@ -1006,8 +1013,8 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
   const balanceAlert = hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents);
 
   // `true, true`: registerFlight/cancelFlight/correctFlight are all
-  // staff-only (`flights.manage`, story 5.4's own-access branch never
-  // reaches here) — `actorEmail`/`forceReason` are always shown to the staff
+  // admin-only (`flights.manage`, story 5.4's own-access branch never
+  // reaches here) — `actorEmail`/`forceReason` are always shown to the admin
   // actor who just acted.
   return { flight: toListItem(createdFlight, true, true), account, balanceAlert };
 }
@@ -1374,7 +1381,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
  * Shared RBAC guard for `listFlights`/`getFlightTotals` (review fix 12.8,
  * MAJOR — extracted so the two can't drift on who is allowed to see what).
  * Returns `canManage`. Throws `ForbiddenError` for an actor with neither
- * `flights.manage` nor `self.read` (via `authorize`), or for a non-staff
+ * `flights.manage` nor `self.read` (via `authorize`), or for a non-admin
  * actor filtering by someone else's `personId`/`instructorPersonId` (AC 4,
  * story 9.3) — exactly `listFlights`'s own guard order, unchanged.
  */
@@ -1384,7 +1391,7 @@ function authorizeFlightsQuery(actor: Actor, query: ListFlightsQuery): boolean {
     authorize(actor, 'self.read');
   }
 
-  // AC 4 — checked before any query, staff exempt (they may filter by any
+  // AC 4 — checked before any query, an admin is exempt (may filter by any
   // personId).
   if (!canManage && query.personId && query.personId !== actor.personId) {
     throw new ForbiddenError('Actor may only filter their own flights.');
@@ -1431,7 +1438,7 @@ function buildFlightsWhere(actor: Actor, query: ListFlightsQuery, canManage: boo
  * the own-access + filters extension promised since 5.1). Two branches,
  * decided ONCE at the top (never trusted from the UI, AD-5):
  *
- * - `flights.manage` (staff/admin): sees EVERY flight, every filter is a
+ * - `flights.manage` (ADMIN-only): sees EVERY flight, every filter is a
  *   free exact-match/range constraint, `actorEmail` is always included
  *   (`people.read` — every `flights.manage` role also holds it today, same
  *   coarser-permission caveat as `registerFlight`'s doc-comment).
@@ -1445,12 +1452,12 @@ function buildFlightsWhere(actor: Actor, query: ListFlightsQuery, canManage: boo
  *   titolare never learns who registered the movement).
  *
  * `personId`/`instructorPersonId` filter guard (AC 4, Contesto; story 9.3
- * extends the SAME guard to `instructorPersonId`): for a non-staff actor,
+ * extends the SAME guard to `instructorPersonId`): for a non-admin actor,
  * providing anyone else's id is a 403 — checked BEFORE any query, never
  * silently ignored or narrowed (never enumerate/filter another person's data
  * via a filter). Providing exactly the actor's own id is redundant but
  * harmless — this is exactly how the logbook's own-instructor "Le mie ore"
- * drill-down reaches the registry as a non-staff instructor.
+ * drill-down reaches the registry as a non-admin instructor.
  *
  * `actor.personId === null` with only `self.read` (AC 1, Contesto): nothing
  * is "theirs" — an EMPTY page, without ever touching `Flight`, not a 403
@@ -1521,7 +1528,7 @@ const ZERO_FLIGHT_TOTALS: FlightTotals = { count: 0, minutes: 0, takeoffs: 0, la
  * misleading once any filter narrows the set (e.g. a month filter on page 1
  * showed page 1's totals, not the month's). Shares `listFlights`'s exact
  * RBAC (`authorizeFlightsQuery`) and WHERE (`buildFlightsWhere`) so a
- * non-staff actor's totals can NEVER exceed their own scope — but ALWAYS
+ * non-admin actor's totals can NEVER exceed their own scope — but ALWAYS
  * forces `status: 'REGISTERED'` regardless of `query.status` (Ratifica 3: a
  * CANCELLED flight stays visible in the table, never counted in totals).
  * ONE `prisma.flight.aggregate` — no page-by-page summing, no N+1.

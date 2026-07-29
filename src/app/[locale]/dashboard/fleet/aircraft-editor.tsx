@@ -135,7 +135,6 @@ type AircraftEditorProps = {
   onClose: () => void;
   /** Refreshes the server-rendered grid/summary (AD-1) — called after every successful mutation. */
   onMutated: () => void;
-  canManageSettings: boolean;
   locale: 'it' | 'en';
   labels: AircraftEditorLabels;
   toastLabels: ToastLabels;
@@ -223,7 +222,7 @@ function currentRateOf(history: AircraftRateItemDto[]): AircraftRateItemDto | nu
 
 const KNOWN_FUEL_TYPES = ['AVGAS 100LL', 'Jet A-1', 'Mogas'];
 
-export function AircraftEditor({ target, onClose, onMutated, canManageSettings, locale, labels, toastLabels }: AircraftEditorProps) {
+export function AircraftEditor({ target, onClose, onMutated, locale, labels, toastLabels }: AircraftEditorProps) {
   const toast = useToast();
   const isNew = target?.mode === 'new';
   const [current, setCurrent] = useState<EditableAircraft | null>(target?.mode === 'edit' ? target.aircraft : null);
@@ -242,7 +241,6 @@ export function AircraftEditor({ target, onClose, onMutated, canManageSettings, 
       {isNew ? (
         <IdentitySection
           mode="new"
-          canManageSettings={canManageSettings}
           labels={labels}
           toastLabels={toastLabels}
           toast={toast}
@@ -269,7 +267,6 @@ export function AircraftEditor({ target, onClose, onMutated, canManageSettings, 
             <RatesSection
               aircraftId={current.id}
               archived={current.archivedAt !== null}
-              canManageSettings={canManageSettings}
               locale={locale}
               labels={labels}
               toastLabels={toastLabels}
@@ -310,8 +307,6 @@ type ToastHandle = { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') 
 type IdentitySectionProps =
   | {
       mode: 'new';
-      /** Story 14.8, AC 1: gates the create-mode "Tariffe" block below, same permission split `RatesSection`'s own add-rate form already enforces (`settings.manage`, admin-only). */
-      canManageSettings: boolean;
       labels: AircraftEditorLabels;
       toastLabels: ToastLabels;
       toast: ToastHandle;
@@ -328,22 +323,17 @@ type IdentitySectionProps =
       onSaved: (updated: EditableAircraft) => void;
     };
 
-/** Review 14.8 F7 — narrow accessor: `canManageSettings` only exists on the props union's create arm. */
-function isNewModeCanManageSettings(props: IdentitySectionProps): boolean {
-  return props.mode === 'new' && props.canManageSettings;
-}
-
 function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
   const { labels } = props;
   const [formError, setFormError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const isNew = props.mode === 'new';
-  // Review 14.8 F7 — the section renders for EVERY creator (form parity with
-  // edit, user-ratified principle): staff without `settings.manage` sees the
-  // same read-only hint edit's RatesSection shows, admin sees the fields.
+  // Review 14.9 (F9, ratifica R-14.9-d): the create-mode "Tariffe" block
+  // used to be gated on `settings.manage` (the STAFF/ADMIN split from story
+  // 14.8) — post-14.9 only ADMIN can reach this form at all (`aircraft.manage`
+  // route gate), so the block is unconditional now.
   const showRatesSection = props.mode === 'new';
-  const canEditRates = isNewModeCanManageSettings(props);
 
   // Story 14.8 (AC 1/2): the optional "Tariffe" block folded into the SAME
   // composite submit as identity — plain state + imperative validation, NOT
@@ -546,9 +536,6 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
 
       {showRatesSection ? (
         <Section title={labels.rates.sectionTitle}>
-          {!canEditRates ? (
-            <p className="hint" style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{labels.rates.readOnlyHint}</p>
-          ) : (
           <div className="form-grid">
             <Field
               label={labels.rates.price}
@@ -597,7 +584,6 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
               />
             </Field>
           </div>
-          )}
         </Section>
       ) : null}
 
@@ -797,7 +783,6 @@ async function fetchRatesHistory(aircraftId: string): Promise<AircraftRateItemDt
 function RatesSection({
   aircraftId,
   archived,
-  canManageSettings,
   locale,
   labels,
   toastLabels,
@@ -806,7 +791,6 @@ function RatesSection({
 }: {
   aircraftId: string;
   archived: boolean;
-  canManageSettings: boolean;
   locale: 'it' | 'en';
   labels: AircraftEditorLabels;
   toastLabels: ToastLabels;
@@ -885,7 +869,12 @@ function RatesSection({
         </p>
       ) : null}
 
-      {canManageSettings && !archived ? (
+      {/* `archived` remains a live gate independent of role (review 14.9 F9,
+          ratifica R-14.9-d): the old `canManageSettings &&` conjunct is
+          dropped because only ADMIN ever reaches this editor (`aircraft.manage`
+          route gate) — the readOnlyHint below now fires ONLY for an archived
+          aircraft, never for a permission gap. */}
+      {!archived ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="new-rate-form" style={{ marginTop: 10 }}>
           <div className="form-grid">
             <Field label={labels.rates.price} error={priceFieldError(errors.price)}>

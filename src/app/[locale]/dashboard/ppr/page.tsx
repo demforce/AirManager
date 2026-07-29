@@ -31,7 +31,7 @@ function sanitizeStatus(value: string | undefined): QueueStatus {
  * beyond the static prototype, which shows every status in one unfiltered
  * table), Approve/Reject actions rendered ONLY on `PENDING` rows — no
  * "Riapri" (D13: the domain has no reopen-a-decided-PPR path,
- * `PPR_ALREADY_DECIDED`). Gated `ppr.manage` (staff + admin) — the redirect
+ * `PPR_ALREADY_DECIDED`). Gated `ppr.manage` (ADMIN-only) — the redirect
  * here only hides navigation (AD-5, every service call re-checks its own
  * permission). Story 13.6, AC 1: the operating-instructions/landing-fee
  * editor that used to live in this console (duplicating Impostazioni's own

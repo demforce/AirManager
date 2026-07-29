@@ -606,7 +606,7 @@ registry.registerPath({
   path: '/api/v1/people/{id}/account/top-ups',
   summary: 'Record a prepaid-account top-up',
   description:
-    'Append-only (AD-3, story 3.1, AC 2/3) — in one transaction, upserts the `Account`, creates an immutable `AccountMovement` (TOP_UP) and its automatic `CashMovement` twin under the seeded "Ricariche" category. There is no update/delete endpoint for either ledger. Requires `finance.manage` (staff/admin) — never "own". Accepts the opt-in `Idempotency-Key` header (story TD-2).',
+    'Append-only (AD-3, story 3.1, AC 2/3) — in one transaction, upserts the `Account`, creates an immutable `AccountMovement` (TOP_UP) and its automatic `CashMovement` twin under the seeded "Ricariche" category. There is no update/delete endpoint for either ledger. Requires `finance.manage` (ADMIN-only) — never "own". Accepts the opt-in `Idempotency-Key` header (story TD-2).',
   tags: ['Accounts'],
   security,
   request: { params: personIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(recordTopUpSchema), required: true } },
@@ -621,7 +621,7 @@ registry.registerPath({
   path: '/api/v1/people/{id}/account/movements',
   summary: "List a person's full account statement (paginated, most recent first)",
   description:
-    'The full, paginated ledger (story 3.2) behind `GET /api/v1/people/{id}/account`\'s 5-entry preview. A person without an `Account` yet gets an empty page (`total: 0`), NOT a 404 — only an unknown person is. `actorEmail` (who registered the movement) is included ONLY when the caller has `people.read` (AC 2\'s operational detail for staff) — absent for a titolare reading their own statement. Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}/account`).',
+    'The full, paginated ledger (story 3.2) behind `GET /api/v1/people/{id}/account`\'s 5-entry preview. A person without an `Account` yet gets an empty page (`total: 0`), NOT a 404 — only an unknown person is. `actorEmail` (who registered the movement) is included ONLY when the caller has `people.read` (AC 2\'s operational detail for an admin) — absent for a titolare reading their own statement. Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}/account`).',
   tags: ['Accounts'],
   security,
   request: { params: personIdParams, query: listAccountMovementsQuerySchema },
@@ -669,7 +669,7 @@ registry.registerPath({
   path: '/api/v1/people/{id}/instructor-rates',
   summary: "List a person's historicized instructor-rate history (most recent validFrom first)",
   description:
-    'Story 4.2, AC 1 — the twin of `GET /api/v1/aircraft/{id}/rates`, a plain array (no pagination, capped at 500). A person without an (active) instructor profile gets an empty array, NOT a 404 — only an unknown person is. Requires `people.read` (staff+admin — a wider read than the `settings.manage` write below, since instructor data lives under `people`).',
+    'Story 4.2, AC 1 — the twin of `GET /api/v1/aircraft/{id}/rates`, a plain array (no pagination, capped at 500). A person without an (active) instructor profile gets an empty array, NOT a 404 — only an unknown person is. Requires `people.read` (ADMIN-only — a wider read than the `settings.manage` write below, since instructor data lives under `people`).',
   tags: ['People'],
   security,
   request: { params: personIdParams },
@@ -935,7 +935,7 @@ registry.registerPath({
   path: '/api/v1/flights',
   summary: 'List flights (paginated, most recent first, own-access or all with filters)',
   description:
-    'Story 5.1/5.4, AC 1/2/3/4; story 9.3, AC 4 — `flights.manage` (staff/admin) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`instructorPersonId`/`flightType`/`status`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard (CANCELLED included). A non-staff `personId`/`instructorPersonId` filter for anyone but themselves answers 403 (this is how the logbook\'s own-instructor drill-down reaches the registry as a non-staff instructor). `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for staff.',
+    'Story 5.1/5.4, AC 1/2/3/4; story 9.3, AC 4 — `flights.manage` (ADMIN-only) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`instructorPersonId`/`flightType`/`status`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard (CANCELLED included). A non-admin `personId`/`instructorPersonId` filter for anyone but themselves answers 403 (this is how the logbook\'s own-instructor drill-down reaches the registry as a non-admin instructor). `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for an admin.',
   tags: ['Flights'],
   security,
   request: { query: listFlightsQuerySchema },
@@ -953,7 +953,7 @@ registry.registerPath({
   path: '/api/v1/flights/pdf',
   summary: 'PDF export of the flight log (story 10.2, AC 2)',
   description:
-    'Dedicated PDF route (spine :105), same query schema and own/staff scoping as `GET /api/v1/flights` above (`page`/`pageSize`/`format` are accepted but ignored — this always re-pages internally up to the PDF cap). Totals line: sum of `minutes` (`H:MM`) and sum of `breakdown.totalAmountCents`, computed here, never in `flights.service.ts`. Above `2000` filtered rows: 422 `EXPORT_TOO_LARGE`.',
+    'Dedicated PDF route (spine :105), same query schema and own/admin scoping as `GET /api/v1/flights` above (`page`/`pageSize`/`format` are accepted but ignored — this always re-pages internally up to the PDF cap). Totals line: sum of `minutes` (`H:MM`) and sum of `breakdown.totalAmountCents`, computed here, never in `flights.service.ts`. Above `2000` filtered rows: 422 `EXPORT_TOO_LARGE`.',
   tags: ['Flights'],
   security,
   request: { query: listFlightsQuerySchema },
@@ -968,7 +968,7 @@ registry.registerPath({
   path: '/api/v1/flights',
   summary: 'Register a flight and its automatic charge (FR-9/FR-14/FR-15)',
   description:
-    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`), the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block), and advances `Aircraft.hourMeterMinutes` by the flight\'s minutes. Exactly one of `minutes` or the `hourMeterStart`/`hourMeterEnd` pair must be given. `isSolo` (story 9.4) is only meaningful on a `SCHOOL` flight (dual/false vs solo/true — a solo still carries and bills the instructor, the student is PIC) and defaults to `false`. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid hour-meter pair, a SCHOOL flight without an instructor, `isSolo` on a non-SCHOOL flight, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Story 14.4 (ratifica R4): a blocking expired document (`ExpiryType.blocksBooking`) on the pilot/student OR the instructor, valid at `flightDate`, answers 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents`) — bypassable ONLY with `force: true` + a mandatory `forceReason`, and only by an actor holding `flights.forceExpiry` (ADMIN, 403 otherwise). The response\'s `balanceAlert` flags a worsened balance band (story 3.3/14.4) without blocking the registration. Requires `flights.manage` (FR-14: only staff/admin register a flight). Accepts the opt-in `Idempotency-Key` header (story TD-2) — NOT `/flights/{id}/cancel`/`/correct`, already protected by `reversalOfId`.',
+    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`), the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block), and advances `Aircraft.hourMeterMinutes` by the flight\'s minutes. Exactly one of `minutes` or the `hourMeterStart`/`hourMeterEnd` pair must be given. `isSolo` (story 9.4) is only meaningful on a `SCHOOL` flight (dual/false vs solo/true — a solo still carries and bills the instructor, the student is PIC) and defaults to `false`. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid hour-meter pair, a SCHOOL flight without an instructor, `isSolo` on a non-SCHOOL flight, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Story 14.4 (ratifica R4): a blocking expired document (`ExpiryType.blocksBooking`) on the pilot/student OR the instructor, valid at `flightDate`, answers 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents`) — bypassable ONLY with `force: true` + a mandatory `forceReason`, and only by an actor holding `flights.forceExpiry` (ADMIN, 403 otherwise). The response\'s `balanceAlert` flags a worsened balance band (story 3.3/14.4) without blocking the registration. Requires `flights.manage` (FR-14: only an admin registers a flight). Accepts the opt-in `Idempotency-Key` header (story TD-2) — NOT `/flights/{id}/cancel`/`/correct`, already protected by `reversalOfId`.',
   tags: ['Flights'],
   security,
   request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(registerFlightSchema), required: true } },
@@ -1157,7 +1157,7 @@ registry.registerPath({
   path: '/api/v1/aircraft/{id}/rates',
   summary: "List an aircraft's historicized rate history (most recent validFrom first)",
   description:
-    'Story 4.1, AC 1 — a plain array (no pagination, small admin-managed list, capped at 500). Requires `aircraft.manage` (staff+admin see fleet pricing, a wider read than the `settings.manage` write below).',
+    'Story 4.1, AC 1 — a plain array (no pagination, small admin-managed list, capped at 500). Requires `aircraft.manage` (ADMIN-only — sees fleet pricing, a wider read than the `settings.manage` write below).',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams },
@@ -1261,7 +1261,7 @@ registry.registerPath({
   path: '/api/v1/expiry-types',
   summary: 'List the expiry-type catalogue (standard + custom, FR-35)',
   description:
-    'Active types only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 6.1, AC 1). Requires `expiries.manage` (admin+staff — staff will register scadenze against this catalogue in story 6.2).',
+    'Active types only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 6.1, AC 1). Requires `expiries.manage` (ADMIN-only — registers scadenze against this catalogue, story 6.2).',
   tags: ['Expiries'],
   security,
   request: { query: listExpiryTypesQuerySchema },
@@ -1403,7 +1403,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'delete',
   path: '/api/v1/expiries/{id}',
-  summary: 'Delete a scadenza (staff correction tool, AC 1)',
+  summary: 'Delete a scadenza (admin correction tool, AC 1)',
   description:
     'For correcting a wrong type/person registration — deletes the scadenza and cascades to any `ExpiryUpdateProposal` rows (pending included). Requires `expiries.manage`.',
   tags: ['Expiries'],
@@ -1455,9 +1455,9 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/v1/bookings',
-  summary: 'Book an aircraft for a person over a future interval (AC 1/2/3, FR-18; story 7.4 AC 1/2: expiry block + staff force)',
+  summary: 'Book an aircraft for a person over a future interval (AC 1/2/3, FR-18; story 7.4 AC 1/2: expiry block + admin force)',
   description:
-    "`bookings.manage.any` (staff/admin) books for anyone, with an optional instructor. `bookings.manage.own` books for the actor's own person (an active pilot or instructor only, no instructor may be indicated — 403 otherwise) OR, for an instructor, on behalf of an allievo with an active student profile (mandatory `instructorProfileId` matching the actor's own profile, 403 checked BEFORE any query on the target person). Concurrency (AC 2): a `FOR UPDATE` lock on the `Aircraft` row inside one transaction serializes the overlap pre-check against every concurrent request on the same aircraft — two overlapping concurrent POSTs always yield exactly one 201 and one 409. `[startsAt, endsAt)` is semi-open: back-to-back bookings do not overlap. Domain failures answer 422 with a stable code: `AIRCRAFT_OUT_OF_SERVICE` (with the reason), `BOOKING_IN_PAST`, `PERSON_NOT_BOOKABLE`. Story 7.4 (FR-21): the target person's registered scadenze are checked against the FLIGHT DAY — an expired document of a `blocksBooking` type answers 422 `EXPIRED_DOCUMENTS` (`details.documents` lists the blocking types); a non-blocking expired document is only a `warnings` entry in the 201 body. `force: true` (only usable with `bookings.manage.any` — 403 otherwise, checked before any further query) plus a mandatory `forceReason` bypasses a real block and is tracked (`forcedAt`/`forcedByUserId`/`forceReason`, only when something was actually bypassed).",
+    "`bookings.manage.any` (ADMIN-only) books for anyone, with an optional instructor. `bookings.manage.own` books for the actor's own person (an active pilot or instructor only, no instructor may be indicated — 403 otherwise) OR, for an instructor, on behalf of an allievo with an active student profile (mandatory `instructorProfileId` matching the actor's own profile, 403 checked BEFORE any query on the target person). Concurrency (AC 2): a `FOR UPDATE` lock on the `Aircraft` row inside one transaction serializes the overlap pre-check against every concurrent request on the same aircraft — two overlapping concurrent POSTs always yield exactly one 201 and one 409. `[startsAt, endsAt)` is semi-open: back-to-back bookings do not overlap. Domain failures answer 422 with a stable code: `AIRCRAFT_OUT_OF_SERVICE` (with the reason), `BOOKING_IN_PAST`, `PERSON_NOT_BOOKABLE`. Story 7.4 (FR-21): the target person's registered scadenze are checked against the FLIGHT DAY — an expired document of a `blocksBooking` type answers 422 `EXPIRED_DOCUMENTS` (`details.documents` lists the blocking types); a non-blocking expired document is only a `warnings` entry in the 201 body. `force: true` (only usable with `bookings.manage.any` — 403 otherwise, checked before any further query) plus a mandatory `forceReason` bypasses a real block and is tracked (`forcedAt`/`forcedByUserId`/`forceReason`, only when something was actually bypassed).",
   tags: ['Bookings'],
   security,
   request: { body: { content: jsonContent(createBookingSchema), required: true } },
@@ -1494,7 +1494,7 @@ registry.registerPath({
   path: '/api/v1/bookings/{id}',
   summary: 'Move a booking: change its aircraft/interval/notes (AC 1/2, FR-20)',
   description:
-    "Partial PATCH — `aircraftId`/`startsAt`/`endsAt`/`notes` only (`personId`/`instructorProfileId` are immutable, absent from the schema); the resulting merged interval is what gets validated. `bookings.manage.any` (staff/admin) may move ANY booking, with NO temporal constraint (can even correct one already in progress). `bookings.manage.own` may move only a booking where `personId`/`instructorProfileId` matches the actor's own person/active instructor profile, and only while it has not yet started (422 `BOOKING_ALREADY_STARTED`) — the NEW interval must also be future (422 `BOOKING_IN_PAST`). Concurrency (same discipline as `POST /api/v1/bookings`): the destination aircraft AND the current one (if different) are locked together (`ORDER BY id FOR UPDATE`) inside one transaction; the destination is re-validated (404/409 archived/422 `AIRCRAFT_OUT_OF_SERVICE`, even for staff) and the overlap pre-check excludes this booking and every CANCELLED row. An already-cancelled booking answers 409.",
+    "Partial PATCH — `aircraftId`/`startsAt`/`endsAt`/`notes` only (`personId`/`instructorProfileId` are immutable, absent from the schema); the resulting merged interval is what gets validated. `bookings.manage.any` (ADMIN-only) may move ANY booking, with NO temporal constraint (can even correct one already in progress). `bookings.manage.own` may move only a booking where `personId`/`instructorProfileId` matches the actor's own person/active instructor profile, and only while it has not yet started (422 `BOOKING_ALREADY_STARTED`) — the NEW interval must also be future (422 `BOOKING_IN_PAST`). Concurrency (same discipline as `POST /api/v1/bookings`): the destination aircraft AND the current one (if different) are locked together (`ORDER BY id FOR UPDATE`) inside one transaction; the destination is re-validated (404/409 archived/422 `AIRCRAFT_OUT_OF_SERVICE`, even for an admin) and the overlap pre-check excludes this booking and every CANCELLED row. An already-cancelled booking answers 409.",
   tags: ['Bookings'],
   security,
   request: { params: bookingIdParams, body: { content: jsonContent(updateBookingSchema), required: true } },
@@ -1578,7 +1578,7 @@ registry.registerPath({
   },
 });
 
-// --- PPR staff approval queue (epic 8, story 8.2, FR-23) --------------------
+// --- PPR admin approval queue (epic 8, story 8.2, FR-23) --------------------
 // Authenticated, `ppr.manage`-gated. The GET below shares its pathname with
 // the public POST above (`PUBLIC_API_PATHS` in `src/proxy.ts` bypasses the
 // middleware's OWN session check for that exact path, every method) — see
@@ -1589,9 +1589,9 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/v1/ppr-requests/manual',
-  summary: 'Staff manual PPR intake, optionally auto-approved (AC 1, epic 12 story 12.4)',
+  summary: 'Admin manual PPR intake, optionally auto-approved (AC 1, epic 12 story 12.4)',
   description:
-    "Staff-entered PPR (console's \"PPR manuale\" slide-over, or the movements page's \"Registra arrivo\" with `approveImmediately: true` in the SAME body shape) — no honeypot, no rate limit (staff, not public), no receipt/approval email. `email` is optional (a manual entry may have only a phone) but at least one of `email`/`phone` is required. Unlike the public POST, a past `eta` is ACCEPTED (\"Registra arrivo\" logs an aircraft that has just landed); a present `etd` at or before `eta` still answers 422 `ETD_NOT_AFTER_ETA`. With `approveImmediately: true`, issues the next atomic per-year PPR number in the SAME transaction as the create. Requires `ppr.manage`. Supports `Idempotency-Key`.",
+    "Admin-entered PPR (console's \"PPR manuale\" slide-over, or the movements page's \"Registra arrivo\" with `approveImmediately: true` in the SAME body shape) — no honeypot, no rate limit (an admin enters it, not the public), no receipt/approval email. `email` is optional (a manual entry may have only a phone) but at least one of `email`/`phone` is required. Unlike the public POST, a past `eta` is ACCEPTED (\"Registra arrivo\" logs an aircraft that has just landed); a present `etd` at or before `eta` still answers 422 `ETD_NOT_AFTER_ETA`. With `approveImmediately: true`, issues the next atomic per-year PPR number in the SAME transaction as the create. Requires `ppr.manage`. Supports `Idempotency-Key`.",
   tags: ['Ppr'],
   security,
   request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(createManualPprRequestSchema), required: true } },
@@ -1604,7 +1604,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/ppr-requests',
-  summary: 'List the staff PPR approval queue, or the filterable register (AC 1/2, story 8.3 AC 2)',
+  summary: 'List the admin PPR approval queue, or the filterable register (AC 1/2, story 8.3 AC 2)',
   description:
     "Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED`/`COMPLETED`/`CANCELLED`, or `ALL` for no status filter (the register, story 8.3). Optional `from`/`to` (`YYYY-MM-DD`) bound `eta` — a semi-open Europe/Rome day range, since the register is a register of ARRIVALS. Every detail field EXCEPT `submitterIp` (never exposed — anti-abuse technical datum). Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `ppr.manage`.",
   tags: ['Ppr'],
@@ -1701,7 +1701,7 @@ registry.registerPath({
   path: '/api/v1/settings/ppr-operating-instructions',
   summary: 'Read the PPR approval-email operating instructions (AC 1)',
   description:
-    "`{ it, en }` — the free-text note appended (per-locale, only when non-empty) to the PPR approval email. Absent/never-configured reads as `''` for both languages, never `null`. Requires `ppr.manage` (staff sees these from the queue page; only `settings.manage` can edit them, see the PUT sibling below). First real use of the `AppSetting` K/V store.",
+    "`{ it, en }` — the free-text note appended (per-locale, only when non-empty) to the PPR approval email. Absent/never-configured reads as `''` for both languages, never `null`. Requires `ppr.manage` (an admin sees these from the queue page; only `settings.manage` can edit them, see the PUT sibling below). First real use of the `AppSetting` K/V store.",
   tags: ['Settings'],
   security,
   responses: {
@@ -1729,7 +1729,7 @@ registry.registerPath({
   path: '/api/v1/settings/ppr-landing-fee',
   summary: 'Read the default PPR landing fee (story 8.3, AC 1)',
   description:
-    "`{ landingFeeCents }` — the admin-configured default landing fee (integer euro cents), used to prefill the completion panel. Absent/never-configured reads as `0`. Requires `ppr.manage` (staff sees it while completing a PPR; only `settings.manage` can edit it, see the PUT sibling below).",
+    "`{ landingFeeCents }` — the admin-configured default landing fee (integer euro cents), used to prefill the completion panel. Absent/never-configured reads as `0`. Requires `ppr.manage` (an admin sees it while completing a PPR; only `settings.manage` can edit it, see the PUT sibling below).",
   tags: ['Settings'],
   security,
   responses: {
@@ -1816,7 +1816,7 @@ registry.registerPath({
   path: '/api/v1/settings/scheduling',
   summary: 'Read the booking-window scheduling settings (story 12.11, AC 1/4)',
   description:
-    "`{ openTime, closeTime, minSlotMinutes, turnaroundMinutes, maxAdvanceDays }` — advisory defaults booking create/approve enforce (422 `BOOKING_OUTSIDE_WINDOW`); each field reads `null` until an admin saves the card once (backward-safe: absent keys impose no new constraint). NO permission gate: any actor creating a booking needs these, not just staff.",
+    "`{ openTime, closeTime, minSlotMinutes, turnaroundMinutes, maxAdvanceDays }` — advisory defaults booking create/approve enforce (422 `BOOKING_OUTSIDE_WINDOW`); each field reads `null` until an admin saves the card once (backward-safe: absent keys impose no new constraint). NO permission gate: any actor creating a booking needs these, not just an admin.",
   tags: ['Settings'],
   security,
   responses: {
@@ -2004,7 +2004,7 @@ registry.registerPath({
   path: '/api/v1/instructor-compensation',
   summary: 'Compensation summary (all ACTIVE instructors), or one instructor DETAIL with `?personId=`',
   description:
-    "No `personId`: every active instructor's mtd/ytd/total flown minutes and owed cents (`payoutRateCents: null` -> `owed*Cents: null`, shown as \"—\"). With `?personId=`: the SAME row plus the 5 most recent SCHOOL flights as CFI and the distinct students among them (the profile slide-over — no additional endpoint). `?format=xlsx` exports the summary (never the detail). Requires `finance.manage` (staff+admin).",
+    "No `personId`: every active instructor's mtd/ytd/total flown minutes and owed cents (`payoutRateCents: null` -> `owed*Cents: null`, shown as \"—\"). With `?personId=`: the SAME row plus the 5 most recent SCHOOL flights as CFI and the distinct students among them (the profile slide-over — no additional endpoint). `?format=xlsx` exports the summary (never the detail). Requires `finance.manage` (ADMIN-only).",
   tags: ['InstructorCompensation'],
   security,
   request: { query: instructorCompensationQuerySchema },
@@ -2054,7 +2054,7 @@ registry.registerPath({
   path: '/api/v1/stats',
   summary: 'Aggregated statistics (KPIs, monthly series, fleet/movement/instructor/pilot breakdowns)',
   description:
-    "Read-only aggregation over flights/PPR/ledger/compensation, no new model. `period` (`month`|`year`, REQUIRED) picks the KPI window's granularity; `ref` (`YYYY-MM`, optional, defaults to the current Europe/Rome month) anchors it — full history is supported, a FUTURE `ref` answers 422. The chart series is always a ROLLING window ending at `ref` (6 points for `period=month`, 12 for `period=year`), independent of the KPI window's own calendar alignment. `kpis.revenueCents`/`series.revenueCents` are the club-centric ledger total (`transactions.service.ts#getLedgerRevenueCents`, same sign-normalization as `GET /api/v1/transactions`'s KPIs); `fleet[].revenueCents`/`topPilots[].spentCents` are FLIGHT-charge totals instead (a deliberately different notion). `instructors[].owedCents` is `null` unless `ref` is the CURRENT period. Requires `finance.manage` (staff+admin).",
+    "Read-only aggregation over flights/PPR/ledger/compensation, no new model. `period` (`month`|`year`, REQUIRED) picks the KPI window's granularity; `ref` (`YYYY-MM`, optional, defaults to the current Europe/Rome month) anchors it — full history is supported, a FUTURE `ref` answers 422. The chart series is always a ROLLING window ending at `ref` (6 points for `period=month`, 12 for `period=year`), independent of the KPI window's own calendar alignment. `kpis.revenueCents`/`series.revenueCents` are the club-centric ledger total (`transactions.service.ts#getLedgerRevenueCents`, same sign-normalization as `GET /api/v1/transactions`'s KPIs); `fleet[].revenueCents`/`topPilots[].spentCents` are FLIGHT-charge totals instead (a deliberately different notion). `instructors[].owedCents` is `null` unless `ref` is the CURRENT period. Requires `finance.manage` (ADMIN-only).",
   tags: ['Stats'],
   security,
   request: { query: statsQuerySchema },

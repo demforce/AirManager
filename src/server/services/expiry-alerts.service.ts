@@ -38,17 +38,17 @@ import { prisma } from '@/server/db/prisma';
  * This ordering has a known, accepted trade-off (doc'd here, not just
  * asserted): a crash between the successful insert and the `send()` call
  * loses that one holder email — AD-9 privileges "never more than one alert
- * per threshold, ever" over "never lose an alert"; the staff digest below
- * is the recovery net for exactly this case (a staff member sees the
+ * per threshold, ever" over "never lose an alert"; the admin digest below
+ * is the recovery net for exactly this case (an admin sees the
  * scadenza listed even if the titolare's own inbox never got it).
  *
  * **Titolare without an email** (`Person.email === null`): thresholds are
  * consumed anyway (`SentAlert` created — the job must not re-evaluate this
  * scadenza forever) but no holder email is attempted; the entry still lands
- * in the staff digest, flagged, which is the deliberate recovery channel
+ * in the admin digest, flagged, which is the deliberate recovery channel
  * (Contesto).
  *
- * **Staff digest**: ONE email per active `ADMIN` user, in their OWN
+ * **Admin digest**: ONE email per active `ADMIN` user, in their OWN
  * locale, listing every alert this run actually consumed — sent ONLY when
  * the run consumed at least one alert (`alertsCreated > 0`); a run that
  * consumes nothing sends no digest to anyone (this is what makes AC 2 true
@@ -67,7 +67,7 @@ export type ExpiryAlertsJobResult = {
   holderEmailsSent: number;
   /** Candidates that consumed a threshold but have no `Person.email` on file. */
   holdersWithoutEmail: number;
-  /** Staff/admin digest emails sent (0 when `alertsCreated === 0`). */
+  /** Admin digest emails sent (0 when `alertsCreated === 0`). */
   digestEmailsSent: number;
 };
 
@@ -190,19 +190,19 @@ export async function runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult> {
 
   let digestEmailsSent = 0;
   if (digestItems.length > 0) {
-    const staffUsers = await prisma.user.findMany({
+    const adminUsers = await prisma.user.findMany({
       where: { isActive: true, roles: { has: 'ADMIN' } },
       select: { email: true, locale: true },
     });
 
-    for (const staffUser of staffUsers) {
+    for (const adminUser of adminUsers) {
       try {
-        const locale = resolveLocale(staffUser.locale);
+        const locale = resolveLocale(adminUser.locale);
         const { subject, text } = await buildExpiryDigestEmail(locale, { items: digestItems });
-        await getMailSender().send({ to: staffUser.email, subject, text });
+        await getMailSender().send({ to: adminUser.email, subject, text });
         digestEmailsSent += 1;
       } catch (error) {
-        console.error('runExpiryAlertsJob: failed to send staff digest email', error);
+        console.error('runExpiryAlertsJob: failed to send admin digest email', error);
       }
     }
   }

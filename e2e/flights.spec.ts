@@ -760,7 +760,14 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     await deactivateBlockingType(page, blockingType.id);
   });
 
-  test('a non-admin actor cannot force even via a direct API call (403), and force: true without forceReason is a 422 (schema)', async ({ page }) => {
+  // Review 14.9 F4: this proves the `flights.manage` gate rejects a pilot
+  // (403) on a direct POST /api/v1/flights, force included in the payload —
+  // it does NOT exercise `flights.forceExpiry` specifically. Post-14.9,
+  // `flights.manage` is ADMIN-only by construction, so no actor can reach
+  // `registerFlight` with `flights.manage` but without `flights.forceExpiry`
+  // — that deeper gate (`flights.service.ts`'s own force check) is
+  // structurally unreachable and has no test of its own (see its doc-comment).
+  test('a pilot gets 403 from POST /api/v1/flights (flights.manage gate) — force: true included in the payload', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
     // Ordering: see the first test in this describe block / `ensureValidSeedExpiries`'s own doc-comment.

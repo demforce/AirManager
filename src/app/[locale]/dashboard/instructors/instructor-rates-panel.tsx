@@ -24,7 +24,6 @@ export type InstructorRatesPanelLabels = {
   invalidDate: string;
   genericError: string;
   conflictError: string;
-  readOnlyHint: string;
   historyTitle: string;
   historyEmpty: string;
   historyActor: string;
@@ -38,15 +37,6 @@ type ToastHandle = { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') 
 type InstructorRatesPanelProps = {
   personId: string;
   toast: ToastHandle;
-  /**
-   * Derived server-side from `hasPermission(actor, 'settings.manage')` AND
-   * the instructor profile being active (`instructorProfile.deactivatedAt
-   * === null`) — hides the "new rate" form otherwise (a deactivated
-   * instructor's rates stay visible, read-only, per the story's Dev Notes).
-   * `createInstructorRate`'s own `authorize(actor, 'settings.manage')` and
-   * active-profile check remain the real guardians (AD-5).
-   */
-  canAddRate: boolean;
   labels: InstructorRatesPanelLabels;
 };
 
@@ -110,7 +100,7 @@ function currentRateOf(history: InstructorRateItemDto[]): InstructorRateItemDto 
  * confused. No outer heading here (rendered by the parent's own `Section`
  * wrapper, same convention as `pilot-editor.tsx`'s sub-sections).
  */
-export function InstructorRatesPanel({ personId, toast, canAddRate, labels }: InstructorRatesPanelProps) {
+export function InstructorRatesPanel({ personId, toast, labels }: InstructorRatesPanelProps) {
   // Money must follow the page locale (review 3.1 F1 — mandatory, same
   // pattern as `account-panel.tsx`): without this, `formatCents`' default
   // renders Italian separators on /en too.
@@ -183,32 +173,26 @@ export function InstructorRatesPanel({ personId, toast, canAddRate, labels }: In
         </span>
       </p>
 
-      {canAddRate ? (
-        <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-rates-form" style={{ marginTop: 10 }}>
-          <div className="form-grid">
-            <Field label={labels.price} error={priceFieldError(errors.price)}>
-              <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.price)} {...register('price')} />
-            </Field>
-            <Field label={labels.validFrom} error={errors.validFrom ? labels.requiredField : undefined}>
-              <DateInput aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
-            </Field>
-          </div>
-          {formError ? (
-            <p role="alert" data-testid="instructor-rates-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-              {formError}
-            </p>
-          ) : null}
-          <div style={{ marginTop: 10 }}>
-            <button type="submit" disabled={isSubmitting} className="btn" data-testid="instructor-rates-submit">
-              {labels.submit}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <p className="fld-label" style={{ marginTop: 8, textTransform: 'none' }}>
-          {labels.readOnlyHint}
-        </p>
-      )}
+      <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-rates-form" style={{ marginTop: 10 }}>
+        <div className="form-grid">
+          <Field label={labels.price} error={priceFieldError(errors.price)}>
+            <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.price)} {...register('price')} />
+          </Field>
+          <Field label={labels.validFrom} error={errors.validFrom ? labels.requiredField : undefined}>
+            <DateInput aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
+          </Field>
+        </div>
+        {formError ? (
+          <p role="alert" data-testid="instructor-rates-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
+            {formError}
+          </p>
+        ) : null}
+        <div style={{ marginTop: 10 }}>
+          <button type="submit" disabled={isSubmitting} className="btn" data-testid="instructor-rates-submit">
+            {labels.submit}
+          </button>
+        </div>
+      </form>
 
       <div style={{ marginTop: 14 }}>
         <div className="fld-label" style={{ fontWeight: 600 }}>
