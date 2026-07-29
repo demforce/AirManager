@@ -205,7 +205,7 @@ development_status:
   # Piano con ratifiche R1-R4 e decisioni D1-D3: docs/superpowers/plans/2026-07-28-epic-14-demo-feedback.md
   # Ordine ESEGUITO: 14.1 -> 14.2 -> 14.8 -> 14.5 -> 14.6 -> 14.7 -> 14.3 -> 14.4 -> 14.9
   # (TUTTE E 9 LE STORY DONE). Resta: TD-8 (indagine, decisione D3: misurare su build prod).
-  epic-14: in-progress
+  epic-14: done
   # 14.1 chiusa 2026-07-28: review Opus 5 con 4 major di geometria (cap altezza,
   # overlap residuo su viewport bassi, flip fuori viewport, listbox orfana su scroll),
   # tutti fixati e rimisurati; invarianza CalendarPopover provata con stash/rebuild;
@@ -259,7 +259,15 @@ development_status:
   # 33 commenti che ancora dicevano staff; test-tautologia del force; 3 gate futuri
   # annotati). 4 ratifiche PO. seed:demo riparato (era rotto dalla 14.3). Arbitro 298/298.
   14-9-rimozione-ruolo-staff: done
-  td-8-indagine-lentezza-salvataggi: backlog
+  # TD-8 chiusa 2026-07-29 (indagine, decisione D3 rispettata: MISURATO prima di diagnosticare).
+  # Build PROD (probe API autenticato, 10 campioni/op): crea persona p50 10ms, ricarica 13ms,
+  # prenotazione 16ms, REGISTRAZIONE VOLO (l'op piu' pesante) p50 29ms max 44ms; pagine SSR
+  # 55-580ms. In `next dev` le stesse API hanno application-code 16-64ms: i "secondi" osservati
+  # dall'utente nei log npm sono la riga di next dev per le PAGINE (es. GET /it/dashboard 2.3s,
+  # application-code 1294ms = overhead SSR dev-only) e la compilazione on-demand (next.js:
+  # 465-912ms sui primi hit). VERDETTO: nessun difetto nel codice applicativo, nessun fix.
+  # Evidenze complete nel commit docs(td-8) / HANDOFF.
+  td-8-indagine-lentezza-salvataggi: done
 
 action_items:
   - epic: 14
