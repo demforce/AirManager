@@ -4,7 +4,7 @@ baseline_commit: 44c8fda
 
 # Story 14.2: Validazione form per-campo — bordo rosso e messaggio sul campo, non in fondo
 
-Status: ready-for-dev (branch `dev`, epic 14)
+Status: done (review Opus 5 shippable-with-fixes — fix in due giri `ba90239` + `9097d18`, arbitro 276+1 flaky login-class exit 0 — 2026-07-28)
 
 ## Story
 
