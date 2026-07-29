@@ -223,8 +223,12 @@ development_status:
   # filtro-oracolo: nome istruttore in 3 click; chiuso su tutti e 3 i canali e
   # riprodotto post-fix. Anche F2 (e2e verde solo per ordine di esecuzione).
   14-5-privacy-prenotazioni: done
-  14-6-area-personale-transazioni-profili: ready-for-dev
-  14-7-istruttore-prenotazione-compensi: backlog
+  # 14.6 chiusa 2026-07-29: pagina self-service + percorso di lettura senza
+  # personId (IDOR-proof per costruzione) + profili attivi. Review Opus 5: zero
+  # major (isolamento tenuto sotto ogni vettore), 7 minor/nit fixati in sessione.
+  # Arbitro 289/289 (un run precedente aveva un fallimento REALE da fix F5).
+  14-6-area-personale-transazioni-profili: done
+  14-7-istruttore-prenotazione-compensi: ready-for-dev
   # 14.8 chiusa 2026-07-28: creazione con tariffe+contaore in un submit composito
   # transazionale; review Opus 5: 1 major (dry-only scartato in silenzio) + 6 tra
   # minor/nit, fix chirurgici in sessione. Arbitro 280/280, 0 flaky.
@@ -233,6 +237,14 @@ development_status:
   td-8-indagine-lentezza-salvataggi: backlog
 
 action_items:
+  - epic: 14
+    action: "TD (review 14.6 F2, PRE-esistente e sistemico): la CTA 'Nuova prenotazione' di /dashboard/bookings e' gated sul PERMESSO (ruolo) mentre createBooking richiede un PROFILO ATTIVO (bookings.service.ts:485) -> un pilota/istruttore con profilo disattivato clicca e prende 403. La landing pilota e' stata gia' allineata (14.6 F2); resta la pagina prenotazioni."
+    owner: "backlog TD"
+    status: open
+  - epic: 14
+    action: "TD (review 14.6 F4, EREDITATO): l'estratto conto (account-section.tsx, griglia 104px/150px/1fr/120px) non e' responsive sotto ~700px — a 390px la colonna Importo finisce fuori schermo, raggiungibile solo con scroll orizzontale senza affordance. Identico sulla scheda persona preesistente: fix da fare sul componente condiviso, non su una singola pagina."
+    owner: "backlog TD"
+    status: open
   - epic: 14
     action: "TD (review 14.8 F6, PRE-esistente): date-only.ts#parseDateOnlyUtc — Date.UTC mappa gli anni 0-99 su 1900+anno: validFrom '0001-01-01' passa z.iso.date() e finisce a DB come 1901-01-01 in silenzio (stesso comportamento su POST /aircraft/{id}/rates e tariffe istruttore). Fix quando si tocca date-only.ts: setUTCFullYear post-costruzione o rifiuto anni <1000 nello schema."
     owner: "backlog TD"

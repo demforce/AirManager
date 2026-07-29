@@ -4,7 +4,7 @@ baseline_commit: 3073f78
 
 # Story 14.6: Area personale — "Le mie transazioni" in sidebar e profili visibili solo se attivi
 
-Status: review (branch `dev`, epic 14)
+Status: done (review Opus 5 shippable-with-fixes, zero major — fix F1-F7 `3587c77`, arbitro 289/289, 0 flaky — 2026-07-29)
 
 ## Story
 
@@ -94,4 +94,70 @@ I 2 fallimenti (un click di navigazione sidebar rimasto su `/dashboard` invece d
 
 ## Review Record
 
-_(compilato dopo la review adversarial)_
+Reviewer adversarial (Opus 5), 2026-07-29. Perimetro: `git diff 4c9410a..HEAD` (commit `3a4e1da` feat, `95af7cd` docs) — 12 file. Verifica **empirica**: 5 sessioni HTTP reali (admin/staff/istruttore/pilota/allievo) + 1 login senza persona, ispezione `psql` diretta, driving UI reale (Playwright throwaway `playwright-core`, il MCP non è disponibile su questa macchina), build prod + `next start`.
+
+**Esito: shippable-with-fixes.** Nessun blocker, nessun major. La proprietà centrale della story — l'isolamento self — **tiene sotto ogni vettore provato**. I rilievi sono 3 minor + 4 nit, tutti fuori dal cuore di sicurezza.
+
+### Full suite
+
+Arbitrata dalla sessione principale e accettata: DB fresco, build prod, `CI=1 npx playwright test` → **288 passed (9.5m), exit 0, 0 flaky**. Non rieseguita (nessun motivo di dubbio: i test nuovi sono discriminanti — vedi D3).
+
+Eseguito da me:
+- `npm run gates` → `PASS lint (30s) / PASS typecheck (5s) / PASS test (14s) — 1571 passed / PASS build (41s)`.
+- `npx playwright test e2e/my-account.spec.ts e2e/home-dashboard.spec.ts --workers=1` contro build prod **su DB volutamente sporcato dagli attacchi** → **12 passed (29.2s)**.
+
+> ⚠️ Il DB locale è rimasto sporco per effetto delle fixture d'attacco (persona "Vittima Bersaglio" con conto 999,00 €; user `orphan@example.test` ora ADMIN senza persona; aeromobile `I-REV146`; 26 movimenti + 1 volo su pilot@). Profili seed disattivati durante i test sono stati **riattivati**. Reset DB obbligatorio prima di qualunque run finale.
+
+### Deviazioni del dev
+
+| # | Verdetto | Evidenza chiave |
+|---|---|---|
+| **D1** | **ACCETTATA** | `GET /people/<own>/account/movements` da sessione pilota → **200**; con id altrui → **403 FORBIDDEN**. `assertReadAccess` (`accounts.service.ts:97-103`) consentiva già il self dalla 13.3; l'e2e AD-5 non è stato toccato. `getOwnAccountOverview`/`listOwnAccountMovements` non hanno davvero un parametro personId → IDOR impossibile per costruzione, confermato: `?personId=<victim>`, `?id=<victim>`, `?page=…` → 200 e **zero** occorrenze del marker del conto altrui. |
+| **D2** | **ACCETTATA** | Export con id altrui forzato: xlsx **403**, PDF **403** (gate `assertReadAccess` prima di ogni lettura, `exports.service.ts:348`/`:524`). Sul proprio id: xlsx con **4 sole colonne** (niente "Registrato da"), PDF 200. Nessun oracolo di esistenza (id inesistente vs altrui: stesso 403, stesso timing). `pageSize` capped a 100. |
+| **D3** | **CORRETTA**, enumerazione **incompleta** (→ F2) | Istruttore con profilo disattivato: da "Buongiorno, Ines" + KPI compensi + "La mia giornata" → landing pilota. In DB `User.roles` resta `{INSTRUCTOR}` ⇒ il vecchio gate avrebbe tenuto la faccia istruttore ⇒ il nuovo e2e è **genuinamente discriminante**. Grep indipendente su `roles.includes|roles.some|primaryRole`: nessun'altra superficie self-service *portatrice di dati* gated sul ruolo. Ma `canBook` passa da `hasPermission` e sfugge al grep → F2. |
+| **D4** | **ACCETTATA** come residuo | La chip etichetta il RUOLO, che è ancora davvero INSTRUCTOR: non è falsa, solo di grana diversa. Zero dati. |
+| **AC5** | **CONFERMATA** | Login PILOT reale con `personId: null`: 200, "Nessun conto attivo", 0 righe, **nessun link di export renderizzato**, nessun errore nel log prod. Coerente, non rotta. |
+
+### Findings
+
+| # | Sev | Titolo | File:riga |
+|---|---|---|---|
+| F1 | minor | `/dashboard/my-account` è l'unica voce di registry role-restricted **servita** ai ruoli esclusi → breadcrumb **vuoto** per admin/staff/istruttore (ogni altra route fa 307 → `/dashboard`) | `my-account/page.tsx:34-41`, `layout.tsx:113`, `top-bar.tsx:61-62` |
+| F2 | minor | AC4: `renderPilotLanding` dichiarata "AUDITATA, nessun fix necessario" ma la CTA "Prenota volo" è **role-gated** mentre il dominio richiede il profilo ATTIVO → vicolo cieco 403 (preesistente e sistemico, ma l'affermazione di audit è falsa) | `dashboard/page.tsx:635,654` |
+| F3 | minor | `statementBasePath` — l'unica modifica di comportamento al componente condiviso — ha **zero copertura**: le fixture creano 2 movimenti ⇒ `totalPages === 1` ⇒ la paginazione non è mai renderizzata in test | `account-section.tsx:182`, `my-account.spec.ts:185` |
+| F4 | nit | A 390px l'**importo è fuori viewport** (griglia a colonne fisse, `overflow-x:auto` senza affordance). Identico alla scheda persona ⇒ ereditato, non regressione; ma "mobile verificato" è sovrastimato | `account-section.tsx:199` |
+| F5 | nit | Il KPI "Saldo conto" della landing pilota punta ancora a `people/{id}/account` (→ 307 → scheda persona staff-shaped), non alla nuova pagina | `dashboard/page.tsx:664` |
+| F6 | nit | `table.recordedBy`/`table.actions` popolate ma mai renderizzabili — contraddice la regola che il dev applica a `topUp`/`adjustments` due righe sotto | `my-account/page.tsx:101-102` |
+| F7 | nit | Colonna "Azioni": `cols`/header su `canManageFinance`, cella di riga su `canManageFinance && labels.adjustments` → disallineamento latente reso rappresentabile dalla nuova opzionalità | `account-section.tsx:199,266,297` |
+
+### Cosa ha retto (verificato, non letto)
+
+- **Isolamento self**: JSON, xlsx, PDF, payload RSC, query manipolate, scritture. Zero fughe.
+- **Nessun leak da cache**: stessa URL da 6 identità → 6 payload corretti, `Cache-Control: private, no-store`.
+- **Percorso staff invariato**: "Registrato da" + entrambi i bottoni presenti su `people/[id]`; zero righe di diff su quella pagina.
+- **Aritmetica contro il DB**: `SUM(amountCents)=52500` (psql) = "525,00 €" a schermo; volo 30' @120 €/h ⇒ `FLIGHT_CHARGE -6000` ⇒ "−60,00 €" in `var(--bad)`, saldo 465,00 € — prospettiva pilota, non club (`/transactions` lo classifica `REVENUE`).
+- **Paginazione** su 26 movimenti: 20/6, clamp di `?page=999` e `?page=abc/-1/0`.
+- **RBAC sidebar** inclusi ruoli composti: INSTRUCTOR+PILOT la vede, ADMIN no.
+- **i18n**: parità totale it/en (0 chiavi orfane), `/en/…` completamente tradotta.
+
+### Fix post-review (2026-07-29, chirurgici in sessione principale — commit `3587c77`)
+
+Nessun major: l'isolamento self ha retto a OGNI vettore provato dal reviewer (6 identità reali, probe su JSON/xlsx/PDF/payload RSC/query manipolate/scrittura, cache RSC per-identità) — il marker segreto del conto vittima non è mai comparso.
+
+- **F1 fixed** — i titoli di pagina derivano dal registry COMPLETO (`NAV_ITEMS`) e non dai soli item visibili al ruolo: il breadcrumb vuoto su una route role-restricted ma servita (my-account per un admin) è chiuso come CLASSE, non come istanza.
+- **F2 fixed (il più sostanzioso)** — la CTA "Prenota volo" della landing pilota era gated sul PERMESSO (= ruolo) mentre `createBooking` richiede un PROFILO ATTIVO (`bookings.service.ts:485`): un pilota con profilo disattivato finiva in un vicolo cieco 403. Ora gated su `person.activePilotLicenseType !== null` (segnale esatto: `PilotProfile.licenseType` è non-nullable, quindi non-null ⟺ profilo attivo; un attore che raggiunge QUESTA landing non ha profilo istruttore attivo per costruzione). Il bottone gemello su `/dashboard/bookings` è PRE-esistente e fuori perimetro → TD. **La dichiarazione "renderPilotLanding AUDITATA, nessun fix necessario" del Dev Agent Record era falsa** ed è corretta qui.
+- **F3 fixed** — `statementBasePath` (unica riga di comportamento nuovo nel componente condiviso) aveva zero copertura: e2e con 21 movimenti che asserisce href della paginazione, navigazione che RESTA su `/dashboard/my-account` e clamp di `?page=999`.
+- **F5 fixed** — il KPI saldo della landing punta alla pagina self-service invece che alla scheda persona staff-shaped. **Questo fix ha rotto un e2e della story 3.2** che asseriva la vecchia destinazione: aggiornato al valore CORRETTO (`/dashboard/my-account`) mantenendo tutti gli assert sostanziali (saldo, movimenti, assenza "Registrato da"); il redirect `/account`→scheda persona della 13.3 resta coperto da 6 altri punti della suite — nessuna copertura persa. Preso SOLO dalla full suite: i run mirati mostravano invece 2 flake di login.
+- **F6/F7 fixed** — `table.recordedBy`/`table.actions` resi opzionali col pattern già usato da `topUp`/`adjustments` (niente stringhe morte oltre il confine RSC); una sola condizione `showActions` per i 3 punti della colonna Azioni (con narrowing preservato sulla cella).
+- **F4 → TD** — estratto conto non responsive sotto ~700px (importo fuori schermo, scroll orizzontale senza affordance): difetto EREDITATO dal componente condiviso, identico byte per byte sulla scheda persona preesistente. La dichiarazione "mobile verificato" del Dev Record era sovrastimata; tracciato come TD.
+
+**Gates post-fix**: PASS lint/typecheck/test/build — 1571 unit.
+
+**Full suite finale (arbitro = sessione principale, build prod, DB fresco)**:
+
+```
+289 passed (9.5m)
+```
+Exit code `0`, zero flaky. (Run precedente: 273 passed + 1 FALLIMENTO REALE causato dal fix F5, corretto sopra.)
+
+**Esito finale: tutti i findings chiusi (F4 e la CTA di `/dashboard/bookings` tracciati come TD). Story DONE.**
