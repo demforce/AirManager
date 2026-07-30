@@ -301,7 +301,7 @@ development_status:
   # tutti gli 11 SlideOver; KPI strip su tutte le 9 fasce) e 2 dalla sessione
   # principale perché già decise dal piano epic (filtri/export restano a
   # 15.4/15.8; una lista sola guidata dal filtro esistente).
-  15-2-primitive-mobile: ready-for-dev
+  15-2-primitive-mobile: review
   15-3-panoramica-mobile: backlog
   15-4-pianificazione-mobile: backlog
   15-5-anagrafiche-card-mobile: backlog

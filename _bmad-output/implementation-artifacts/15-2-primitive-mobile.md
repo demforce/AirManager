@@ -4,7 +4,7 @@ baseline_commit: ad65d91
 
 # Story 15.2: Primitive mobile — bottom sheet di dettaglio, pannello form a tutto schermo, KPI strip; coda PPR come primo consumer
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -120,3 +120,144 @@ Le sei scelte non erano deducibili dal template (incompleto by design, R2) né d
 - Promozione dei token `--ok-ink`/`--bad-ink`/`--info-ink` (non serve: v. ricognizione d).
 - Project Playwright "mobile" dedicato (riesame a fine epic, 15.10) e TD 14.6 F4 (estratto conto non responsive sotto ~700px).
 - Qualunque modifica al comportamento desktop, alle API, agli schemi Zod o al dominio (il motivo obbligatorio del rifiuto è un **vincolo** esistente, non una modifica).
+
+## Dev Agent Record
+
+**Agente**: dev-story (**Opus 5 xhigh** — regola modello 2026-07-29: il codice UI lo scrive Opus 5). Skill caricate: `karpathy-guidelines`, `design-taste-frontend`, `ui-ux-pro-max` (query "bottom sheet mobile detail panel", "full screen modal mobile form", "horizontal scroll snap cards" — ne sono uscite tre regole applicate: `touch-action`/target ≥44px, niente input con solo placeholder (la textarea del rifiuto mobile ha un `aria-label`), `prefers-reduced-motion` sulle animazioni nuove). Template letto per intero prima di scrivere codice (righe 69-77, 153-185, 515-539, 584-601).
+
+**Commit**: `169acce` (codice) + questo record.
+
+### Verifica della ricognizione (sessione principale)
+
+Ricognizione **confermata su tutti i punti verificabili**. Conferme misurate e correzioni:
+
+1. **(a) `MobileSheet` dà già tutta la cornice — CONFERMATO.** Scrim, Escape gated su `open`, focus al pannello + ritorno al trigger, `role="dialog"` senza `aria-modal`, z-index 40, `max-height:80vh; overflow:auto`, radius `--radius-lg`, `sheet-up` con `prefers-reduced-motion`: tutto riusato, **zero righe copiate**. Il `BottomSheet` aggiunge solo il layout. Lo spostamento in `src/components/ui/` era necessario e sufficiente: 2 import aggiornati, `grep -rn "from '@/components/shell" src/components/ui/` = **0 occorrenze** (la direzione ui→shell non è stata inaugurata).
+2. **(b) `.so-head` è già fisso — CONFERMATO, non riscritto.** Il pannello è `flex-direction:column` e solo `.so-body` scrolla: misurato a 375px con `.so-body.scrollTop === 0`, titolo e ✕ entrambi `reachable()` true.
+3. **(b) `position:fixed` vietato per la riga azioni — CONFERMATO e rispettato** (`position: sticky`). 
+4. **(b) 11 consumer di `SlideOver` — CONFERMATO** (`grep -rln "<SlideOver" src/` = 11 file). **Precisazione che la ricognizione non dava**: 3 di questi (`transaction-editor`, `instructor-profile`, `flight-editor`) usano il prop `footer` → la loro azione primaria è **già** ancorata in fondo per costruzione (`.so-foot` fuori da `.so-body`), misurato `footBottom = 812` in un viewport 812. Gli altri 8 hanno la riga bottoni dentro il body. V. deviazione D2.
+5. **(c) Il motivo del rifiuto è obbligatorio nel dominio — CONFERMATO** (`rejectPprRequestSchema` min(1)); il client blocca il submit vuoto **senza chiamata di rete**: ora provato con `page.route` che conta le richieste (0).
+6. **(c) Parità informativa — CONFERMATO**: la tabella desktop non ha colonne per `origin`/`destination`/`notes`. Asserito in e2e, non assunto: `.ppr-queue-desktop` non contiene mai "LIRN Napoli", lo sheet sì.
+7. **(d) Collisione di nomi `.mobile-sheet-row` — CONFERMATA ed EVITATA**: le classi nuove del dettaglio sono `.bottom-sheet-*`, il menu profilo della 15.1 è intatto.
+8. **(d) Trappola `.kpi{overflow:hidden}` + `.kpi-value` 28px — CONFERMATA E MISURATA.** Con la base fissa `flex: 0 0 146px` del template e il valore "12.480,50 €": card `clientWidth` **144**, valore `scrollWidth 113` vs `clientWidth 112` → **clippato**. Con `flex: 1 0 auto; min-width: 146px`: card **164**, valore 132/132 → nessun clipping. `.kpi-value` portato a 23px (valore del template) a ≤640px.
+9. **(d) Token `--ok-ink`/`--bad-ink` non necessari — CONFERMATO**: non aggiunti. Le azioni riusano `.btn.primary` (solido `--ink`, come il template) e `.btn.mini.bad` (outline, con l'override dark 13.9). **Nessun literal di colore nuovo in tutta la story.**
+10. **(e) Le tre asserzioni 211/239/250 si rompono per strict mode — CONFERMATO** e risolto con scoping a `.ppr-queue-desktop` (visibilità e sparizione restano asserite; le due `toHaveCount(0)` restano page-wide, come devono).
+11. **CORREZIONE alla ricognizione (d) — la trappola del `sticky` era più profonda di come descritta.** `position: sticky; bottom: 0` dentro `.so-body` **non basta**: un box sticky non può uscire dal proprio blocco contenitore, che è il **content box** di `.so-body` — con i suoi `padding: 18px 20px` la riga si fermava **18px sopra** il fondo dello scrollport (misurato: `rowBottom 794` in un viewport 812) e i campi del form scorrevano nella feritoia sotto la barra. Risolto con `.so-body:has(.so-actions){ padding-bottom: 0 }` (idioma `:has()` già in uso in `airops.css:1110`), che azzera il padding **solo** per i pannelli che hanno davvero una riga d'azione: rimisurato `rowBottom 812`. Gli altri pannelli conservano il loro respiro in fondo.
+12. **CORREZIONE alla ricognizione (d) — i figli di `.kpi-row` non sono `.kpi`.** In 4 delle 9 fasce il figlio diretto è un wrapper (`<div data-testid="kpi-…">`, un `<Link>`, uno `StatCard`), non il `.kpi`. Le regole flex vanno quindi su `.kpi-row > *`, mai su `.kpi`: con `.kpi` il layout sarebbe rimasto grid in 4 pagine su 7. Verificato inoltre che tutte e 9 le fasce sono figlie DIRETTE di `.page` (mai dentro una `.card`), condizione necessaria per il full-bleed a margini negativi.
+
+### Riepilogo per AC
+
+1. **`BottomSheet` sopra `MobileSheet`** — `src/components/ui/bottom-sheet.tsx` (85 righe) compone `MobileSheet` (spostato in `src/components/ui/mobile-sheet.tsx`, doc-comment riscritto: non è più "lo sheet della shell", elenca i 3 consumer e rimanda al `BottomSheet` reale). API = row-builder del template: `{ sub, title, badge?, rows: {k,v}[], actions?, testId }` + `secondStep?` (R-15.2-a) + `open/onClose/closeLabel`. **Nessuna prop speculativa**: ognuna è usata dal consumer PPR. Verifica: `npm run gates` verde con i 3 consumer; `grep -rn "from '@/components/shell" src/components/ui/` → **0**; il diff del file spostato è solo doc-comment (scrim/Escape/focus intatti).
+2. **Doppio markup + testid** — la coda rende entrambi gli alberi; switch su **classi di pagina** `.ppr-queue-desktop` / `.ppr-queue-mobile` (mai `.students`, mai una utility generica). Misurato in e2e: a **375px** `.ppr-queue-desktop` → `display: none`, `.ppr-queue-mobile` → `block`; a **1280px** l'inverso (`.ppr-queue-mobile` → `none`). Testid desktop **invariati**; duplicati mobile `-mobile` (`ppr-row-mobile`, `ppr-approve-button-mobile`, `ppr-reject-button-mobile`, `ppr-reject-reason-mobile`, `ppr-reject-submit-mobile`, + `ppr-reject-cancel-mobile`, `ppr-reject-error-mobile`, `ppr-from-public-badge-mobile`); solo-mobile `mobile-ppr-sheet`. Asserito `ppr-row` `toHaveCount(1)` per richiesta a 1280px; suite completa in strict mode senza un solo doppio match sui miei spec.
+3. **Coda a card** — titolo = richiedente, sub mono = `marche · tipo · arrivo` con lo **stesso** `formatDateTime` del desktop, `pprNumber` mono a destra, `Badge` di stato per le righe non-PENDING, badge "da modulo web" dove il desktop lo mostra. La card è **UN solo `<button>`**: misurato `querySelectorAll('button, a, input, select, textarea, [tabindex]').length === 0` dentro la card, altezza ≥44px (misurata), nome accessibile `"Apri dettaglio richiesta: <Nome Cognome> · <marche>"`. Apertura **da tastiera** provata con Tab reali fino a `document.activeElement` (helper `tabUntilFocused`, non `focus()`) + Enter. Empty state: un solo nodo `ppr-queue-empty`, asserito su tutti e 5 gli stati (v. AC 9). Nessun literal di colore nuovo.
+4. **Sheet di dettaglio e decisione** — `sub` = "Richiesta {pprNumber|—}", titolo = `marche · tipo`, badge = stato. Righe: Richiedente, Email, Telefono, **Provenienza**, **Destinazione**, Arrivo (ETA), Partenza (ETD), Persone a bordo, **Note**, + Motivo del rifiuto se REJECTED. Azioni **solo su PENDING**, `flex:1`, altezza misurata **44px**. **Contrasto misurato (canvas → sRGB → WCAG)**: Approva `17.99:1` chiaro / `17.00:1` scuro; Rifiuta `6.53:1` chiaro / `6.61:1` scuro — tutti ≥4.5. Rifiuto = secondo passo nello **stesso** nodo: asserito con due `elementHandle` confrontati per identità (`node === other` → true), `.mini-modal` `toHaveCount(0)`, azioni sostituite. Submit vuoto → errore inline con **0 richieste di rete** (contatore su `page.route('**/ppr-requests/*/reject')`). "Annulla" torna al passo 1 col dettaglio intatto. Rifiuto reale → toast + sparizione; la REJECTED riaperta mostra il motivo e **nessuna azione**.
+5. **Pannello a tutto schermo** — misurato a 375×812 sul PPR manuale (12 campi): rect del pannello `x 0, y 0, w 375, h 812` (±0px), `border-left: 0px`. Header fisso per costruzione (dichiarato, non riscritto): titolo e ✕ `reachable()` true con `.so-body.scrollTop === 0`. Riga azioni: `position: sticky`, `rowBottom 812 = viewport`, larghezza 375 (bleed sui padding del body), submit **hit-testabile senza scorrere** (`elementFromPoint` → `btn primary`), altezza 44px. Entrata dal fondo (`translateY`), `prefers-reduced-motion` rispettato con una regola scopata a ≤640px. **Desktop invariato, rimisurato**: 1280 → `w 520, x 760, borderLeft 1px, transform identity, .so-actions position static`; 800 → `w 520, x 280`; 641 → `w 520, x 121` e rail `64px` (R1 tiene).
+6. **Blast radius** — enumerazione completa più sotto (11 consumer di `SlideOver`, 9 fasce `.kpi-row`), con esito per voce e campione verificato interattivamente.
+7. **KPI strip** — `display:flex`, `scroll-snap-type: x mandatory`, scrollbar nascosta, `scroll-snap-align: start` sui figli. Misurato sulla Panoramica admin a 375px: 5 card, larghezze `[146, 157, 146, 184, 146]`, `scrollWidth 876` vs `clientWidth 375`; primo card `reachable()` **true**, ultimo **false**, `mouse.wheel(1200,0)` reale → `scrollLeft > 0` → ultimo **true**; `document.documentElement.scrollWidth - clientWidth = 0`. Non-clipping con "12.480,50 €" iniettato: valore 132/132, card 164, overflow di pagina 0. Strip **full-bleed** (`margin-inline: -28px; padding-inline: 28px`, misurato `stripLeft 0 / stripRight 375` col primo card allineato al contenuto a `x 28`): senza, il terzo KPI restava senza alcun indizio di esistenza.
+8. **Layering** (5 coppie, `elementFromPoint`, valori misurati): (a) **sheet 40 vs tab bar 5** → il punto centrale della barra restituisce `btn bottom-sheet-close`, `closest('.mobile-sheet') !== null` (asserito in e2e); (b) **pannello 50 vs tab bar** → il punto restituisce contenuto dello `.slideover`, mai `.mobile-tabbar` (asserito in e2e); (c) **picker portalati 65/66 vs pannello** → popover a `l 48, t 264, r 328, b 693` (dentro 375×812), `zIndex 66`, `reachable()` true su una cella del calendario (asserito in e2e); (d) **`.mini-modal` 60** a 375px con la barra montata → card `335×241` centrata a `l 20, t 286`, `reachable()` true, `ppr-reject-submit` `reachable()` true, e il punto della barra restituisce `mini-modal` (verifica interattiva: la mini-modal non ha più trigger mobile per R-15.2-a, quindi è stata aperta a 1280px e poi il viewport ristretto — è un overlay di pagina, indipendente dallo switch degli alberi); (e) **toast 200** → asserito in e2e dopo l'approvazione dallo sheet che `.toast-host.bottom <= .mobile-tabbar.top` (geometrico e non hit-test perché `.toast-host` è `pointer-events: none`).
+9. **e2e** — (a) i 3 test che **decidono** stanno in `e2e/ppr-queue.spec.ts`, dentro il suo `describe` serial, con `setViewportSize` per test; (b) i 3 puramente geometrici in `e2e/mobile-primitives.spec.ts`, che non scrive stato globale e resta nel project `fullyParallel`; (c) righe 211/239/250 scopate a `.ppr-queue-desktop` con la motivazione a commento, **senza indebolire** (restano `toBeVisible()`); (d) i 5 spec citati: `mobile-shell` **5/5 ✓**, `datetime-picker` **6/6 ✓**, `movements` **12/12 ✓**, `bookings` e `my-compensation` v. sezione suite completa (nella run #1 tutti verdi tranne un test mio, poi corretto). **Errore mio, corretto**: il primo test di `mobile-primitives` navigava a `?status=CANCELLED` dandolo per vuoto — `movements.spec.ts` annulla PPR, quindi in suite completa era rosso. Riscritto in forma deterministica (ciclo sui 5 stati, `card == righe` e `empty == (righe===0 ? 1 : 0)`), che è **più forte**: intercetta anche una lista card che va fuori sincrono con la tabella.
+10. **Regole nuove → guardie, provate discriminanti** — tabella più sotto, tutte e 6 rese **rosse** simulando il pre-fix.
+11. **Invarianti** — desktop verificato a 1280/800/641 (misure all'AC 5, più `.kpi-row` `display: grid` e `.kpi-value` 28px a tutte e tre le larghezze); 641px tiene il rail 64px; `npm run gates` verde (lint 21s, typecheck 2s, **test 1605/1605**, build 32s); **nessuna dipendenza nuova**; **nessun token esistente cambia valore**; **nessun literal di colore nuovo**; 6 stringhe nuove in **entrambi** i locale (`PprQueuePage.mobile.*`). Gate finale = suite completa: **non completata verde, esito onesto più sotto**.
+
+### AC 6 — enumerazione completa, con esito per voce
+
+**11 consumer di `SlideOver`** (`grep -rln "<SlideOver" src/`). Tutti ereditano la modalità a tutto schermo per costruzione (una regola CSS, R-15.2-e); "azione ancorata" dice se l'azione primaria è già in fondo:
+
+| # | File | Forma | Azione ancorata | Esito |
+|---|---|---|---|---|
+| 1 | `components/ppr/manual-ppr-form.tsx` | form 12 campi, 2 picker portalati | **sì**, `.so-actions` (aggiunta qui) | **Verificato a 375px**: pannello 375×812, header fisso, submit hit-testabile senza scorrere, picker sopra il pannello. Secondo consumer (Transiti "Registra arrivo") verificato dagli e2e `movements.spec.ts` 12/12 ✓ |
+| 2 | `dashboard/bookings/new-booking-form.tsx` | form con picker portalati | no (riga in-body) | **Verificato a 375px da PILOTA (ruolo non-admin)**: pannello `x 0, y 0, 375×812`; form corto, la riga bottoni è visibile senza scorrere anche non-sticky |
+| 3 | `dashboard/bookings/edit-booking-form.tsx` | form | no | Eredita la stessa regola; non campionato |
+| 4 | `dashboard/fleet/aircraft-editor.tsx` | form composito lungo (14.8) | no | **Verificato a 375px**: pannello 375×812, `.so-body` scrollHeight **963** > viewport → l'azione richiede scroll (v. deviazione D2) |
+| 5 | `dashboard/logbook/flight-editor.tsx` | il form più lungo dell'app | **sì**, `footer` | **Verificato a 375px**: 375×812, body scrollHeight **1036** vs client 668, `.so-foot` a `bottom 812` → azione sempre visibile |
+| 6 | `dashboard/billing/transaction-editor.tsx` | form con `footer` | **sì**, `footer` | **Verificato a 375px**: 375×812, `.so-foot` a `bottom 812`, submit `reachable()` true |
+| 7 | `dashboard/instructors/instructor-profile.tsx` | **pannello di dettaglio (non-form)** | **sì**, `footer` | **Verificato a 375px**: 375×812, `.so-foot` a `bottom 812`. R3 vorrebbe farlo diventare bottom sheet: è lavoro di **15.5**; fino a lì eredita il tutto-schermo, netto miglioramento sui 345px |
+| 8 | `dashboard/instructors/instructor-editor.tsx` | **due** sotto-form in un pannello | no | Eredita la regola; **non può** prendere `.so-actions` (v. D2) |
+| 9 | `dashboard/instructors/instructors-console.tsx` | 3 pannelli (dettaglio + form) | no | Eredita la regola; non campionato |
+| 10 | `dashboard/pilots/pilots-console.tsx` | pannello di dettaglio | no | Eredita la regola; 15.5 |
+| 11 | `dashboard/pilots/pilot-editor.tsx` | **due** righe azioni | no | Eredita la regola; **non può** prendere `.so-actions` (v. D2) |
+
+**9 fasce `.kpi-row` in 7 file** (`grep -rn "kpi-row" src/`), tutte a strip a ≤640px:
+
+| # | File:riga | Ruolo che la vede | Esito misurato a 375px |
+|---|---|---|---|
+| 1 | `dashboard/page.tsx:324` (Panoramica admin) | ADMIN | **Verificato**: 5 card, `scrollW 876 / clientW 375`, primo intero, ultimo dopo scroll reale, overflow di pagina 0 |
+| 2 | `dashboard/page.tsx:594` (landing istruttore) | ISTRUTTORE | **Verificato**: 4 card, `scrollW 670 / 375`, primo intero, overflow 0, zero `console.error` |
+| 3 | `dashboard/page.tsx:699` (landing pilota) | PILOTA / ALLIEVO | **Verificato** su entrambi: 4 card, `scrollW 670 / 375`, primo intero, overflow 0, zero `console.error` |
+| 4 | `my-compensation/page.tsx:92` | ISTRUTTORE | **Verificato**: 5 card, `scrollW 830 / 375`, overflow 0 |
+| 5 | `expiries/scadenze-console.tsx:205` | ADMIN + ruoli con `expiries.read` | Verificato per costruzione: lo `style` inline `gridTemplateColumns` diventa inerte con `display:flex` (nessun conflitto), figli = `StatCard` |
+| 6 | `instructors/page.tsx:80` | ADMIN | Eredita la regola (4 `KPI` diretti) |
+| 7 | `logbook/page.tsx:229` | ADMIN/ISTRUTTORE | Eredita la regola (4 `KPI` diretti) |
+| 8 | `movements/page.tsx:191` | ADMIN | Eredita la regola (figli `.kpi` espliciti) |
+| 9 | `reports/page.tsx:130` | ADMIN | Eredita la regola (4-5 `KPI`, l'ultimo condizionale) |
+
+Nessun `console.error` nuovo su nessuno dei 4 ruoli (raccolti via listener `console` in tutta la sessione interattiva: array vuoto per pilota, istruttore, allievo).
+
+### AC 10 — regola → guardia → prova di discriminanza
+
+Ogni riga è stata resa **rossa** rieseguendo la guardia con il pre-fix iniettato via `addInitScript` (repo intatto, spec throwaway cancellato dopo il run):
+
+| # | Regola nuova (difetto misurato) | Guardia | Pre-fix simulato | Esito |
+|---|---|---|---|---|
+| i | `.ppr-queue-desktop{display:none}` ≤640px | `ppr-queue.spec.ts` "BOTH trees" + il test di approvazione | `display:flex !important` | **ROSSO** — `Expected "none" / Received "flex"` |
+| ii | `.ppr-queue-mobile{display:none}` fuori dalla media query | stesso test a 1280px | `display:block !important` | **ROSSO** — `Expected "none" / Received "block"` |
+| iii | pannello a tutto schermo (`left:0; width:100%`) ≤640px | `mobile-primitives` rect del pannello | ritorno a `min(520px,92vw)` | **ROSSO** — larghezza scarto **30px** |
+| iv | riga d'azione sticky (+ `:has()` sul padding del body) | `mobile-primitives` `reachable()` sul submit a scrollTop 0 | `position:static` + padding ripristinato | **ROSSO** — `reachable` false |
+| v | strip a scroll-snap | `mobile-primitives` primo/ultimo `reachable()` + `scrollLeft` | ritorno alla grid 2 colonne | **ROSSO** — l'ultimo KPI è già raggiungibile (`false` atteso, `true` ricevuto) |
+| vi | `flex: 1 0 auto; min-width: 146px` (non basis fissa) | `mobile-primitives` non-clipping del valore lungo | `flex: 0 0 146px` del template | **ROSSO** — `valueOverflow 1`, `cardWidth 144 < 146` |
+
+**Onestà sulla (vi)**: la prima versione della guardia misurava solo `card.scrollWidth - card.clientWidth` e **NON** era discriminante (pre-fix: `0`, perché l'overflow di un flex container discendente non risaliva allo `scrollWidth` della card con quel valore). Scoperto proprio facendo la prova, non dopo. La guardia ora misura tre cose (overflow del **valore**, overflow della card, e crescita della card oltre i 146px del template), due delle quali rosse nel pre-fix.
+
+**Punti di layering NON coperti da una guardia e2e, dichiarati**: `.mini-modal` (z 60) — non nasce da una regola di questa story (superficie invariata, e a ≤640px sulla pagina PPR non ha più alcun trigger per R-15.2-a: l'unico modo di aprirla è cambiare viewport a pannello aperto, che sarebbe un test artificioso). Misurata interattivamente (AC 8d) e riportata. Il sollevamento del toast è già coperto dalla guardia della 15.1 (F2), qui riasserito relativamente alla barra nel test di approvazione mobile.
+
+### File List
+
+- `src/components/ui/mobile-sheet.tsx` — **spostato** da `src/components/shell/`; solo il doc-comment cambia (elenca i 3 consumer, rimanda al `BottomSheet` reale; la nota "non è il BottomSheet della 15.2" non mente più).
+- `src/components/ui/bottom-sheet.tsx` (**nuovo**) — primitiva di dettaglio-riga, compone `MobileSheet`.
+- `src/components/shell/mobile-nav.tsx`, `src/components/shell/mobile-top-bar.tsx` — import aggiornato.
+- `src/app/[locale]/dashboard/ppr/ppr-console.tsx` — albero mobile a card + sheet + rifiuto in due passi; `submitReject(id)` prende l'id (una sola logica di rete per i due alberi); classe `ppr-queue-desktop`.
+- `src/app/[locale]/dashboard/ppr/page.tsx` — label del blocco `mobile` (riuso dei nomi di campo già tradotti, salvo ETD/Note).
+- `src/components/ppr/manual-ppr-form.tsx` — classe `so-actions` sulla riga bottoni (una riga + commento).
+- `src/styles/airops.css` — sezione "mobile primitives (story 15.2)" additiva: layout del bottom sheet, card PPR, modalità a tutto schermo dello SlideOver, riga sticky, KPI strip; `prefers-reduced-motion` scopato a ≤640px.
+- `messages/it.json`, `messages/en.json` — `PprQueuePage.mobile.{openDetail,close,requestLabel,etd,notes,rejectionReason}`.
+- `e2e/ppr-queue.spec.ts` — 3 asserzioni scopate all'albero desktop; helper `desktopQueue`/`tabUntilFocused`, `gotoQueueLastPage(status)`; **3 test nuovi**.
+- `e2e/mobile-primitives.spec.ts` (**nuovo**) — 3 test geometrici.
+
+### Deviazioni motivate
+
+- **D1 — nessuna riga "Stato" fra le chiave-valore dello sheet.** L'AC 4 chiede badge = stato **e** elenca "stato" fra i campi del desktop: il badge in testa *è* la resa dello stato (parola identica, `statusOptionLabel`), una riga gemella subito sotto sarebbe rumore. Nessuna informazione persa.
+- **D2 — `.so-actions` applicata SOLO a `manual-ppr-form.tsx`.** 3 degli 11 consumer ancorano già l'azione col prop `footer` (misurato); 7 hanno la riga in-body e **non** sono stati toccati, per due motivi cumulativi: (i) il Fuori scope della story ("qui cambia solo la coda PPR, come prova delle primitive"; le loro pagine sono 15.3-15.9); (ii) **due di essi rendono PIÙ form nello stesso pannello** (`instructor-editor` = identità + tariffa, `pilot-editor` = due righe azioni): applicare la regola a tappeto impilerebbe **due barre sticky** nello stesso pannello. Decidere quale riga è "primaria" per pannello è esattamente il lavoro per-pagina delle story successive. Misurato l'impatto: il form del velivolo (il caso peggiore campionato) ha `.so-body` scrollHeight 963 → l'azione richiede scroll, come prima della story.
+- **D3 — `.so-body:has(.so-actions){ padding-bottom: 0 }`.** Necessaria (v. correzione 11) e scopata col `:has()` per non togliere il respiro in fondo agli altri pannelli. `:has()` è già usato in `airops.css:1110` — nessun requisito di browser nuovo.
+- **D4 — KPI strip full-bleed** (`margin-inline: -28px; padding-inline: 28px`, con `scroll-padding-inline` per lo snap). Il template ha la strip a tutta larghezza col padding all'interno; dentro i 28px di `.page` il terzo KPI restava invisibile e senza alcun indizio di esistenza. Sicurezza verificata: tutte e 9 le fasce sono figlie **dirette** di `.page` (mai dentro `.card{overflow:hidden}`), `scrollWidth` di pagina invariato (0 di overflow su 4 pagine × 4 ruoli).
+- **D5 — etichetta "Rifiuta", non "Nega".** Il template dice "Nega"; l'app dice `actions.reject` = "Rifiuta"/"Reject" ovunque (desktop compreso). Stessa regola già ratificata per `--ink-4` e per i radius: l'app prevale sul mock. Lo sheet non deve chiamare l'azione in modo diverso dalla tabella.
+- **D6 — nessuna azione sulla card** (R-15.2-b applicata alla lettera). Il template le mostra inline (righe 167-170) e usa `stopPropagation`; qui la card è un solo `<button>` e il problema non esiste per costruzione. **Non è una svista del porting.**
+- **D7 — riuso delle label di campo del form manuale** per le chiavi dello sheet, salvo ETD e Note che nell'app portano un suffisso "(facoltativo)"/"(facoltative)": concetto da FORM, senza senso come chiave di una riga in sola lettura. Due chiavi nuove invece di otto.
+- **D8 — `aria-label` sulla textarea del rifiuto mobile.** Il desktop ha solo un placeholder (gap a11y pre-esistente, non toccato). Sulla superficie nuova un input senza nome accessibile non si scrive: due parole di codice, zero impatto sul desktop.
+
+### Test — esito
+
+- **`npm run gates`: PASS** (lint 21s, typecheck 2s, test **1605/1605**, build 32s). Nessun unit test nuovo: la story non introduce logica di dominio (nessun servizio nuovo importato → la classe "validazione eager di `@/lib/env`" non si applica).
+- **Run mirato su build di produzione** (5 spec dell'AC 9d + i nuovi), `--workers=1`: **35/35 verdi** — `mobile-primitives` 3/3, `ppr-queue` 9/9, `movements` 12/12, `mobile-shell` 5/5, `datetime-picker` 6/6.
+- **Prove di discriminanza**: 6/6 rosse col pre-fix iniettato (tabella AC 10).
+
+### Suite completa — esito ONESTO (NON verde)
+
+Due esecuzioni su build di produzione, in foreground, output su file.
+
+- **Run #1** (`timeout 590 npx playwright test`, 7.1 min): **293 passed / 1 failed / 15 did not run, exit 1**. L'**unico** fallimento era un test **mio** (`mobile-primitives`, l'empty state su `?status=CANCELLED` che davo per vuoto): difetto reale del test, corretto (v. AC 9) e riverificato. I 15 "did not run" sono la catena serializzata `settings → booking-window → treasury-settings → billing-global`, saltata perché il project `chromium` era rosso.
+- **Run #2** (dopo il fix, 8.5 min): **244 passed / 33 failed / 32 did not run, exit 1**. **La suite NON è verde su questo DB, e la causa è misurata, non narrata — nessuno dei 33 fallimenti tocca una superficie di questa story:**
+  - **Tutti i miei spec sono VERDI nella run #2**: `ppr-queue` 9/9 ✓, `mobile-primitives` 3/3 ✓, `mobile-shell` 5/5 ✓. I 33 fallimenti stanno in `bookings` (22), `api-v1` (2), `reports`, `pdf-exports`, `movements`, `home-dashboard`, `flights`, `flight-reversal`, `flight-log`, `datetime-picker`, `billing` (1 ciascuno).
+  - **Causa dominante, provata: `e2e/reports.spec.ts:312` fa `PUT /settings/scheduling` con `maxAdvanceDays: 30` e non lo ripristina** (TD "stato globale e2e: PUT scheduling di reports.spec.ts" già aperto in `sprint-status.yaml` dalla 14.4). Misurato a DB fermo: `sched.maxAdvanceDays = 30`. `api-v1.spec.ts` crea prenotazioni **nell'anno 2099** (`futureInterval()`), quindi oltre la finestra → **17 dei 33 fallimenti sono `422` invece di `201` sulla creazione**, uno dei quali espone il codice `BOOKING_OUTSIDE_WINDOW`. **Prova decisiva**: `api-v1.spec.ts:133` rieseguito **DA SOLO, `--workers=1`, zero concorrenza** fallisce identico — è una `POST` di sola API, senza UI, senza viewport: nessuna riga di questa story (CSS dentro `@media (max-width:640px)` + la pagina PPR + un file spostato) può produrla. È un'inversione di ordine fra due spec sotto `fullyParallel`: nella run #1 `reports` è girato dopo `api-v1`, nella #2 prima.
+  - **Seconda causa, saturazione del DB** (le mie stesse esecuzioni ripetute l'hanno prodotta): `Aircraft` **194** e `Person` **542** contro `OPTIONS_PAGE_SIZE = 100` → **5 timeout di `selectOption`** ("did not find some options"); `Booking` **71** contro `BOOKINGS_PAGE_SIZE = 20` → **7 "element(s) not found"**. È esattamente la classe diagnosticata dalla 15.1 e confermata dall'arbitro di allora. Controprova: `billing.spec.ts:256` (che nella suite trovava 3 righe invece di 2) **passa da solo** — collisione di dati accumulati, non un difetto.
+  - **`LoginAttempt` = 570 negli ultimi 15 minuti** (401 sul solo `admin@airmanager.local`, cap TD-6 = 10 per identifier): il lock anti-brute-force è certamente in gioco nella coda della run. Interrogato **prima** di attribuire, come prescrive CLAUDE.md.
+  - **Non ho resettato il DB** (è compito della sessione principale) e **non dichiaro verde ciò che non ho visto finire**: il gate arbitro va rieseguito su DB fresco. Attesa: 309 test (303 della 15.1 + 6 nuovi).
+
+### Note per la review
+
+1. **Punto più delicato: `.so-body:has(.so-actions){ padding-bottom: 0 }`.** È la correzione alla trappola del clamp dello sticky (correzione 11). Vale la pena rimisurare `rowBottom` con un form **più lungo** del PPR manuale che avesse `.so-actions` — oggi non ne esiste nessuno (D2), quindi il caso è coperto solo dal PPR manuale.
+2. **Full-bleed della KPI strip (D4)**: si regge su "tutte le `.kpi-row` sono figlie dirette di `.page`". L'ho verificato su tutte e 9 oggi; se una story futura ne annida una dentro una `.card`, i margini negativi finiscono sotto il bordo. Non c'è una guardia e2e per questa condizione — è il punto più fragile del diff.
+3. **`instructor-editor` / `pilot-editor` rendono due form in un pannello** (D2): se la review ritiene che la riga sticky vada estesa, va deciso **quale** riga è primaria in quei due pannelli, altrimenti si impilano due barre.
+4. **Le 4 fasce KPI non campionate interattivamente** (scadenze, istruttori, registro voli, transiti) ereditano la regola ma non le ho guardate a occhio: `scadenze-console` è l'unica con uno `style` inline su `gridTemplateColumns` (reso inerte da `display:flex`) e con figli `StatCard` anziché `KPI`.
+5. **`tabUntilFocused` fa fino a 150 `Tab`**: se una story futura allunga di molto la coda, il test rallenta (oggi ~25 pressioni). Soglia deliberata, non un limite di copertura.
+6. **Lo sheet non ha focus trap né `aria-modal`** (scelta della 15.1, fuori scope qui, 15.10): il secondo passo del rifiuto tiene il focus dentro il pannello perché il nodo non si smonta, ma niente impedisce di uscirne con Tab.
+7. **La card PPR non mostra le azioni** (R-15.2-b): è una **divergenza deliberata dal template**, ratificata. Non va "ripristinata" senza una nuova ratifica.
+8. **Vale la pena riprovare il 409 `PPR_ALREADY_DECIDED` dallo sheet** (due schede, stessa richiesta): il percorso riusa `handleApprove`/`submitReject` del desktop e chiude lo sheet, ma non l'ho esercitato via UI — resta coperto solo dal test API esistente, come dice l'AC 4.
