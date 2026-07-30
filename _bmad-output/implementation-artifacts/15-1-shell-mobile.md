@@ -4,7 +4,7 @@ baseline_commit: 806692a
 
 # Story 15.1: Shell mobile — tab bar per-ruolo, sheet "Altro", topbar compatta con menu profilo
 
-Status: review
+Status: done (review Opus 5 SHIPPABLE — F1 major multi-ruolo + F2/F3 copertura + F4 nit, tutti chiusi; 1 ratifica PO R-15.1-a; arbitro finale exit 0, 302+1 flaky pre-esistente — 2026-07-30)
 
 ## Story
 
@@ -139,3 +139,65 @@ Ricognizione **confermata** su tutti i punti verificabili; correzioni e precisaz
 - Punto più delicato: lo **z-index 40** degli sheet (v. correzione 6). Vale la pena rifare l'hit-test con un `.popover`/`SlideOver` aperto sotto lo sheet.
 - Secondo punto: il **wrap a 2 righe** della label lunga cambia l'altezza della barra (67→78px); il `padding-bottom` di `.main` (100px) e il `bottom` del `.toast-host` (92px) sono dimensionati sul caso peggiore misurato — se una story futura allunga una label `shell.nav.*`, quei due numeri vanno rimisurati.
 - Terzo: `MobileSheet` non ha focus trap (scelta esplicita, 15.10) — verificare che questo non sia considerato bloccante per l'AC 5.
+
+## Review Record
+
+**Reviewer**: subagent `adversarial-reviewer` **Opus 5 xhigh** (il layer adversarial del processo) + completamento nella sessione principale (anch'essa Opus 5).
+
+**Nota di processo (onestà sul come)**: il subagent di review ha eseguito il gate arbitro e 8 probe empiriche, poi è **morto per session limit prima di emettere il report**. Le misure qui sotto marcate *(probe Pn)* sono state recuperate **verbatim dal suo transcript** (`subagents/workflows/wf_2f83a84b-b90/agent-*.jsonl`), non riassunte a memoria; le verifiche che non aveva raggiunto sono state completate nella sessione principale e sono marcate *(main)*. Il subagent aveva anche lasciato **stato sporco nel DB** — aveva patchato `pilot@airmanager.local` a `{PILOT,INSTRUCTOR}` per la probe multi-ruolo e il comando di revert era stato bloccato dal classifier: ripristinato a `{PILOT}` e verificato prima di proseguire.
+
+### Gate arbitro
+
+- **Suite completa `CI=1` su build prod, DB FRESCO: 302 passed, 0 failed, 0 flaky, 0 skipped, exit 0, 8.5 min.**
+- **La diagnosi del dev è CONFERMATA**: gli 11 fallimenti del suo run erano saturazione del DB, non il diff. Stesso codice, stessa suite, DB pulito → verde pieno. I 3 spec mobile-viewport preesistenti (`bookings.spec.ts` 813/885, `datetime-picker.spec.ts` 237, `my-compensation.spec.ts` 329) risultano ✓ nel log dell'arbitro, senza modifiche.
+- Suite finale dopo i fix di review: v. "Verifica dei fix" in fondo.
+
+### Verifiche empiriche (12 punti d'attacco)
+
+| # | Oggetto | Esito |
+|---|---|---|
+| 1 | Sheet z-40 vs popover aperto | **Confermato** *(probe P3a/P3b)*: col filtro pianificazione aperto (z19/20) e col picker data portalato (z65/66), il tap sulla tab "Altro" colpisce `.popover-scrim` — il popover si chiude e lo sheet NON si apre. Comportamento scrim corretto, nessuna sovrapposizione errata. |
+| 2 | Altezza barra per ruolo × locale × larghezza | **Confermato con un caso peggiore nuovo** *(probe P2)*: admin IT 375px → barH 67, colonne 73px, 1 riga; admin EN 375 → 67; **admin IT 320px → barH 78** ("Richieste PPR" va a 2 righe, colonne 61px). Il padding di 100px regge ovunque (margine ≥22px). |
+| 3 | Menu profilo da tastiera | **Confermato** *(probe P4b)*: avatar raggiunto con 2 Tab, focus al pannello all'apertura (`mobile-sheet-panel`), ordine di tabulazione interno corretto, ritorno del focus al trigger dopo Escape. Baseline AC 5 soddisfatta. |
+| 4 | Interferenza SlideOver / claim "impossibile per costruzione" | **Confermato** *(probe P4a)*: con uno SlideOver aperto a 375px, l'hit-test su `.mobile-tabbar`, sull'avatar e su una tab restituisce contenuto del pannello (`so-body`, `fld-label`, `iconbtn`) — mai la barra; nessuna navigazione, nessuno sheet aperto, nessun leak. |
+| 5 | I 3 spec mobile-viewport esistenti | **Confermato** — ✓ nel log dell'arbitro su DB fresco. |
+| 6 | Confini R1 (640/641/900) + invarianza desktop | **Confermato** *(probe P1)*: 1280 → `232px 1048px`; **900 e 641 → `64px …` (il rail 13.10 TIENE, R1 rispettata)**; 640 e 375 → colonna unica, sidebar/topbar `none`, mobile attivo, `.main` padding 100px, toast 92px. `navigation` "Aree operative" = **1 a ogni larghezza**, anche su una rotta fuori registry (`people/{id}`). |
+| 7 | Blocco CSS ≤640px rimosso "perché morto" | **Confermato** *(main)*: `user-chip`/`user-chip-name` compaiono SOLO in `top-bar.tsx` (grep su tutto `src/`, incluse className composte) — che a ≤640px è `display:none`. Rimozione legittima. |
+| 8 | Casi limite multi-ruolo di `mobileNavLayout` | **SMENTITO → finding F1** *(probe P8 + misura deterministica main)*. V. sotto. |
+| 9 | RBAC/privacy per costruzione | **Confermato** *(main)*: `layout.tsx` passa a `MobileNav` lo STESSO `rawItems` della sidebar (filtro `myCompensation` incluso) — nessuna seconda chiamata a `visibleNavItems`. L'unico oggetto "largo" nel payload è `pageTitles` (14 titoli statici), già servito così alla `TopBar` desktop per scelta deliberata (review 14.6 F1): etichette di UI, nessun dato né identificatore correlabile — fuori dalla classe 14.5. L'e2e asserisce che un pilota non ha `mobile-tab-ppr`. |
+| 10 | Fedeltà visiva al template | **Confermato con riserva** — il subagent aveva catturato e letto 6 screenshot (overview, sheet Altro, menu profilo, tab bar zoom, topbar, dark) ma è morto prima di verbalizzare il verdetto, e lo scratchpad è stato ripulito tra le sessioni: gli screenshot NON sono più disponibili. Restano le misure geometriche (punti 1/2/6) e la verifica interattiva del dev, entrambe coerenti col template. **Non rivendico un verdetto visivo indipendente**: la fedeltà pixel resta da riconfermare nel design-pass di 15.10, dove serve comunque il confronto col template. |
+| 11 | "Gemello" dei fixed bottom-anchored | **Confermato** *(main)*: censimento di `position:fixed` in `airops.css` → `.toast-host` (200, ALZATO dal dev), `.tweaks` (50, **CSS morto**: zero riferimenti in `src/`, residuo del prototipo), gli scrim full-screen di SlideOver/popover (inset:0, non bottom-anchored) e i due nuovi. I `fixed` inline (`schedule.tsx`, `search-combobox`, i tre picker) sono popover viewport-clamped, verdi al punto 1. **Nessun gemello scoperto.** |
+| 12 | Discriminanza della guardia e2e nuova | **Confermato, per ciascun fix separatamente** *(probe P5a)*: senza il `padding-bottom` di `.main` → contentBottom 812 vs barTop 745 e hit-test a fine contenuto su `.mobile-tabbar` (test rosso); senza `.app{grid-template-columns:1fr}` → `232px 143px` con `.main` schiacciata a 232px. **Eccezione**: il sollevamento del toast NON era coperto da nulla → finding F2. |
+
+### Findings
+
+- **F1 — major (misurato, chiuso).** `mobileSlot` era assegnato solo alle 4 voci admin, ma gli slot sono un ordine **globale**: un attore che vede >5 voci con meno di 4 "slottate" riceve una barra CORTA. Caso reale raggiungibile (multi-ruolo si imposta dalla gestione utenti; l'istruttore che vola anche da pilota è un attore plausibile in un club): **ISTRUTTORE+PILOTA con profilo istruttore attivo = 6 voci → 2 sole tab** (Panoramica, Pianificazione) **+ 4 voci sepolte dietro "Altro" e 2 colonne sprecate**, contro le "4 + Altro" prescritte dall'AC 2. Misurato in modo deterministico su `visibleNavItems(['INSTRUCTOR','PILOT'])`, e osservato live dal subagent sulla UI reale *(probe P8)* per il caso a 5 voci. **Ratifica PO R-15.1-a (2026-07-30)**: barra a colonne fisse confermata (lo scroll orizzontale è stato proposto dal PO e **scartato dopo istruttoria**: distrugge la costanza posizionale, non è un'interazione attesa in basso, confligge pan/tap, diverge da R2 — e soprattutto non c'entra col difetto, che è una barra troppo CORTA); le due pagine self-service prendono le colonne libere **davanti a** Scadenze/Registro voli. Fix: `mobileSlot` 5 a `myAccount` e 6 a `myCompensation` (l'admin resta identico: non vede nessuna delle due) + riempimento delle colonne residue in ordine di registry, che chiude la **classe** (i `roles` si allargano di story in story — 12.12 aprì `scadenze` a tutti — e la prossima volta la barra non deve riaccorciarsi in silenzio). 2 unit test nuovi: il caso ratificato e il guard di classe.
+- **F2 — minor (chiuso).** Il sollevamento di `.toast-host` a ≤640px non era coperto da alcuna asserzione: rimuovendolo la suite restava verde *(probe P5a: `toastBottom = 18px`)* e i toast sarebbero tornati a sovrapporsi alla tab bar. Aggiunta al test di geometria un'asserzione sul `bottom` calcolato dell'host **relativa all'altezza misurata della barra** (non al literal 92px), così regge anche se la barra cresce a 78px.
+- **F3 — minor (chiuso).** R1 è una ratifica PO con un numero esatto dentro (i tablet 641-900px TENGONO il rail), ma i test stavano solo a 375 e 1280: una modifica del breakpoint a 768px non avrebbe rotto nulla. Aggiunto un test che fissa **entrambi i lati del bordo**: 641px → rail `64px …` e niente tab bar; 640px → shell telefono con un solo landmark.
+- **F4 — nit (chiuso).** Il dev aveva estratto la costante `userChip` con il commento "one object for both bars — they must never show a different identity", ma solo `TopBar` la usava: `MobileTopBar` conservava il literal duplicato. Identico oggi, divergente al primo edit. Ora entrambe usano la costante.
+- **Non-finding registrato** (per non rifarlo in 15.2): `.tweaks` in `airops.css` è CSS morto — residuo del prototipo sopravvissuto allo sweep 13.11. Pre-esistente, fuori scope qui.
+
+### Verdetto sulle deviazioni dichiarate dal dev
+
+| Deviazione | Verdetto |
+|---|---|
+| `MobileSheet` condiviso (2 consumatori) | **Legittima** — fattorizzazione di scrim/Escape/focus su due consumatori reali, non anticipo speculativo di 15.2; il doc-comment lo dichiara esplicitamente. |
+| Sheet a z-index 40 (contro la ricognizione) | **Legittima e MEGLIO della ricognizione** — provata al punto 1: gli sheet devono stare sopra i popover, non "appena sopra la barra". La ricognizione della sessione era imprecisa. |
+| `prefers-reduced-motion` sull'animazione | **Legittima** — 2 righe, unica animazione nuova, regola della skill. |
+| Radius `--radius-sm` invece dei 12px del template | **Legittima** — stessa regola già ratificata per i token (`--ink-4`): il token dell'app prevale sul literal del mock. |
+| Righe del menu profilo senza icona | **Legittima** — l'icon-set non ha glifi globo/logout e la regola anti-slop vieta di inventarli; nome accessibile = testo visibile. |
+| Bottoni topbar a 32px (<44px) | **Legittima** — valore del template e dimensione `.iconbtn` già in uso ovunque; l'AC 2 impone ≥44px alla tab bar, che è la navigazione primaria (e li rispetta). |
+| Label a 2 righe nella tab bar | **Legittima** — misurata (67→78px) e assorbita dal padding di 100px; il rischio residuo per label future è ora tracciato dall'asserzione di F2. |
+| `MobileSheet` senza focus trap né `aria-modal` | **Accettata per l'AC 5** — l'AC chiede "base corretta da tastiera", verificata al punto 3; non rivendicare `aria-modal` senza trap è la scelta giusta (dichiarare modalità non applicata è peggio). Il trap resta a 15.10. |
+
+
+### Verifica dei fix (F1-F4)
+
+- `npm run gates`: **PASS** (lint 20s, typecheck 5s, **test 1605/1605** — i 1603 del dev + i 2 unit nuovi di F1 —, build 27s).
+- Unit di F1 in shell PULITA (`env -u DATABASE_URL -u AUTH_SECRET`): `route-registry.test.ts` **5/5**.
+- **Suite completa `CI=1` su build prod, DB FRESCO (arbitro finale, post-fix): exit 0 — 302 passed + 1 flaky su 303, 6.9 min.** I 303 sono i 302 del gate arbitro più il test nuovo del confine R1 (F3). I 5 test di `mobile-shell.spec.ts` tutti ✓, incluso il nuovo `R1 boundary: 641px still gets the tablet rail, 640px is already the phone shell`.
+- **Attribuzione del flaky** (mai "è la flake nota" senza prove): `flights.spec.ts:602` (test della 14.3) fallisce a riga 621 con **422 invece di 201 sulla CREAZIONE del volo** — cioè nel setup della fixture, non nell'asserzione della story — mentre nello stesso file girava in parallelo il describe *"Blocking expiry guard-rail"* (test 147/149/151/156 interlacciati nel log), che crea un `ExpiryType` bloccante **scope ALL**. È il **TD aperto 14.4(a)** già tracciato in `sprint-status.yaml` (stato globale dentro il project `fullyParallel`), non la classe login-flake (che fallisce a ~5s sul POST di login, non a 1.8s su una creazione volo) e non una regressione di questa story, che sopra i 640px non esegue una riga. Retry verde. *Onestà: il corpo della risposta 422 non è nell'error-context, quindi l'attribuzione è circostanziale — ma il TD descrive esattamente questo meccanismo.*
+
+### Verdetto finale
+
+**SHIPPABLE.** Il gate arbitro è verde su DB fresco sia prima (302/302) sia dopo i fix (302+1 flaky pre-esistente, exit 0). Dei 12 punti d'attacco, 10 hanno confermato i claim del dev, 1 li ha superati (lo z-40 è più corretto della ricognizione), 1 li ha **smentiti** producendo F1 — un difetto reale, raggiungibile e invisibile ai test, chiuso con ratifica PO e coperto da 2 unit test. F2/F3 hanno chiuso due buchi di copertura su fix altrimenti non testati (uno dei quali, il toast, sarebbe potuto sparire senza che nulla diventasse rosso). Unica riserva dichiarata: nessun verdetto indipendente di fedeltà **visiva** (punto 10) — da riprendere nel design-pass di 15.10.

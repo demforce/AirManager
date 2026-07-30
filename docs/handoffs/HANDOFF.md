@@ -1,4 +1,39 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-27 — **EPIC 13 COMPLETO (11/11)** + post-epic: TD-6, fix-feedback, TD-7 e **REWORK CONTABILITÀ COMPLETO (Billing-1 + Billing-2 DONE)**. Nulla pushato — catena branch stacked. Prossimo lavoro: decide l'utente)
+# HANDOFF — AirManager (aggiornato: 2026-07-30 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: story 15.1 shell mobile DONE**. Prossimo lavoro: **story 15.2 — primitive mobile**)
+
+## EPIC 15 — UI mobile AirOps (in corso)
+
+Piano vincolante con le 5 ratifiche PO (R1-R5) e l'architettura: `docs/superpowers/plans/2026-07-29-epic-15-mobile-ui.md`.
+Template design: progetto claude.ai/design **`dcd71b3a-dbcf-494e-a543-29325a5435de`**, file `AirOps Mobile.dc.html` +
+`data.js` — leggibile col tool **`DesignSync`** (`ToolSearch "select:DesignSync"`) **solo dalla sessione principale**:
+la sessione fa da ponte salvando le copie in locale per i subagent. **Attenzione: lo scratchpad di sessione viene
+ripulito tra una sessione e l'altra — le copie vanno RISCARICATE ogni volta** (successo in questa sessione).
+
+**Regola modello (utente 2026-07-29)**: il codice UI lo scrive **Opus 5 xhigh** — dev e fix-subagent dell'epic 15
+(tutto UI), non Sonnet. Review adversarial: Opus 5 xhigh come sempre.
+
+### 15.1 Shell mobile — DONE (2026-07-30)
+
+Tab bar per-ruolo + sheet "Altro" + topbar compatta con menu profilo (logout + lingua), switch a media query CSS pura
+≤640px. Story file con Dev Agent Record e Review Record completi: `_bmad-output/implementation-artifacts/15-1-shell-mobile.md`.
+Commit: `e6ed88b` feat, `14ff9e5` record, `64363e4` fix review, + docs di chiusura.
+
+- **Ratifica PO R-15.1-a (2026-07-30)**: la tab bar resta a **colonne fisse** (4/5 + sheet "Altro"); lo **scroll
+  orizzontale** — proposto dal PO — è stato **scartato dopo istruttoria** (distrugge la costanza posizionale, non è
+  un'interazione attesa in basso, confligge pan/tap, diverge da R2, e soprattutto non risolveva il difetto, che era
+  una barra troppo CORTA). Per un attore che vede >5 voci, le due pagine **self-service** prendono le colonne libere
+  **davanti a** Scadenze/Registro voli.
+- **Convenzione testid mobile fissata per tutto l'epic** (in CLAUDE.md + doc-comment di `mobile-nav.tsx`): desktop
+  invariato, suffisso `-mobile` per i duplicati, prefisso `mobile-` per ciò che esiste solo su mobile.
+- **Lezione di processo (nuova, importante)**: un subagent che muore per **session limit** non perde il lavoro — il suo
+  transcript (`subagents/workflows/<runId>/agent-*.jsonl`) contiene misure e output verbatim, **recuperabili invece di
+  rifare ore di lavoro** (qui: gate arbitro 302/302 + 8 probe empiriche). Corollario: un subagent morto può lasciare
+  **stato sporco** (aveva patchato i ruoli di `pilot@airmanager.local` e il revert era stato bloccato dal classifier) —
+  **bonificare il DB prima di proseguire**, sempre.
+- **Lezione (durevole)**: quando una story introduce un ordinamento/priorità in un registry, i casi **multi-ruolo** vanno
+  enumerati esplicitamente — `visibleNavItems(['INSTRUCTOR','PILOT'])` produceva 6 voci e una barra a 2 tab, invisibile
+  a tutti i test e a entrambe le verifiche interattive (che avevano guardato solo attori a ruolo singolo).
+- **Lezione (durevole)**: un fix CSS senza asserzione è un fix che può sparire — il sollevamento del toast si poteva
+  rimuovere lasciando la suite verde (review F2). Ogni regola introdotta per un difetto misurato vuole la sua guardia.
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 

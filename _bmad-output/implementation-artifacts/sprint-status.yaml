@@ -32,7 +32,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-29 (EPIC 15 avviato: piano ratificato R1-R5, story 15.1 shell mobile creata e ready-for-dev. Epic 14 DONE 9/9 + TD-8 chiusa "nessun difetto"; ultima full suite 298/298, 0 flaky, CI=1 build prod. Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
+last_updated: 2026-07-30 (EPIC 15 in corso: 15.1 shell mobile DONE — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -278,7 +278,21 @@ development_status:
   # REGOLA MODELLO (utente 2026-07-29): dev e fix subagent su Opus 5 xhigh (epic tutto UI); review Opus 5 xhigh.
   # Ordine vincolante 15.1 -> 15.2 -> 15.3; il resto segue il valore d'uso.
   epic-15: in-progress
-  15-1-shell-mobile: ready-for-dev
+  # 15.1 chiusa 2026-07-30. Dev Opus 5 (prima story UI con la regola modello
+  # nuova). Review Opus 5: il subagent ha eseguito il gate arbitro (302/302 su
+  # DB fresco, che CONFERMA la diagnosi del dev: i suoi 11 rossi erano
+  # saturazione del DB, non il diff) e 8 probe empiriche, poi è morto per
+  # session limit prima del report -> misure recuperate verbatim dal transcript,
+  # verifiche mancanti completate nella sessione principale (anch'essa Opus 5).
+  # F1 major MISURATO: gli slot mobile erano solo sulle 4 voci admin, quindi un
+  # istruttore-che-è-anche-pilota (6 voci) otteneva 2 sole tab con 4 sezioni
+  # sepolte. Ratifica PO R-15.1-a: colonne fisse confermate (lo scroll
+  # orizzontale, proposto dal PO, è stato scartato dopo istruttoria) e
+  # self-service davanti a Scadenze/Registro. F2/F3: due fix erano privi di
+  # copertura (il toast poteva sparire restando tutto verde). Arbitro finale
+  # exit 0, 302 passed + 1 flaky = TD 14.4(a) pre-esistente (stato globale
+  # ExpiryType nel project fullyParallel), attribuito con evidenza.
+  15-1-shell-mobile: done
   15-2-primitive-mobile: backlog
   15-3-panoramica-mobile: backlog
   15-4-pianificazione-mobile: backlog
