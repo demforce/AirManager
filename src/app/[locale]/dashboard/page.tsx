@@ -1,24 +1,29 @@
 import type { ReactElement } from 'react';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Badge } from '@/components/ui/badge';
+import type { BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { Icon } from '@/components/ui/icons';
 import { KPI } from '@/components/ui/kpi';
 import { FleetCard, type FleetCardItem } from '@/components/dashboard/fleet-card';
+import { MobileAlertsCard, type MobileAlertsCardItem } from '@/components/dashboard/mobile-alerts-card';
+import { MobileMetarCard } from '@/components/dashboard/mobile-metar-card';
 import { ScadenzeWidget } from '@/components/dashboard/scadenze-widget';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { dayPhaseOf, filterInProgress, type DayPhase } from '@/lib/booking-day-phase';
 import { clampToWindowPercent, projectDayBlocks, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { categoryOf } from '@/lib/expiry-status';
 import { formatCents } from '@/lib/money';
+import { buildOverviewAlerts } from '@/lib/overview-alerts';
 import { deriveApprovedPprMovementStatus } from '@/lib/ppr-movement-status';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
 import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, zonedMidnightUtc } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import { getAccountOverview } from '@/server/services/accounts.service';
+import { getAccountOverview, listNegativeBalances } from '@/server/services/accounts.service';
 import { listAircraft } from '@/server/services/aircraft.service';
-import { getAirfieldBranding, getAirfieldIcao, getSchedulingSettings } from '@/server/services/app-settings.service';
+import { getAirfieldBranding, getAirfieldIcao, getMetarStation, getSchedulingSettings } from '@/server/services/app-settings.service';
 import {
   getOwnInstructorProfileId,
   listActiveInstructors,
@@ -31,6 +36,7 @@ import {
 import { listAllExpiries, listPersonExpiries } from '@/server/services/expiries.service';
 import { getFlightTotals } from '@/server/services/flights.service';
 import { getOwnCompensationSummary } from '@/server/services/instructor-compensation.service';
+import { getMetar } from '@/server/services/metar.service';
 import { getMe, type MeResult } from '@/server/services/me.service';
 import { listPeople } from '@/server/services/people.service';
 import { listPprRequests } from '@/server/services/ppr.service';
@@ -42,6 +48,8 @@ import type { PersonOption } from './bookings/new-booking-form';
 import { Schedule, type CalendarNav } from './bookings/schedule';
 import { DispatchFlightButton } from './dispatch-flight-button';
 import type { FlightEditorLabels } from './logbook/flight-editor';
+import { MobileBookingList, type MobileBookingRow } from './mobile-booking-list';
+import { MobilePendingBookings, type MobilePendingBookingRow } from './mobile-pending-bookings';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -69,6 +77,16 @@ const ALL_BOOKING_STATUSES: readonly BookingStatusDto[] = ['PENDING', 'APPROVED'
  * through everything.
  */
 const EXPIRIES_WIDGET_SCAN_LIMIT = 60;
+/**
+ * Story 15.3: rows of the mobile "Prenotazioni in attesa" card. The query that
+ * feeds it is the one the desktop card already runs for its windowed PENDING
+ * COUNT (`embedPendingResult`, review 12.12 F3) — this story only asks it for
+ * rows too, so the card lists what the count counts and no query is added.
+ * Deliberately NOT "filter PENDING out of the 8 mixed-status rows the desktop
+ * table shows": on a busy day those 8 can contain zero pending ones while the
+ * head claims five, which is exactly the class of defect 12.12 F3 was about.
+ */
+const MOBILE_PENDING_BOOKINGS_PAGE_SIZE = 8;
 
 /**
  * Protected home page (story 12.12) — an AirOps-native, role-based landing:
@@ -138,6 +156,81 @@ export default async function DashboardPage({ params }: PageProps) {
   );
 }
 
+// --- Mobile home, shared across the three faces (story 15.3) ----------------
+
+type Translator = Awaited<ReturnType<typeof getTranslations>>;
+
+/** `DashboardPage.mobile.detail.*` — the nouns every booking bottom sheet lists. */
+type MobileDetailLabels = {
+  aircraft: string;
+  pilot: string;
+  instructor: string;
+  startsAt: string;
+  endsAt: string;
+  duration: string;
+  notes: string;
+};
+
+function buildMobileDetailLabels(t: Translator): MobileDetailLabels {
+  return {
+    aircraft: t('mobile.detail.aircraft'),
+    pilot: t('mobile.detail.pilot'),
+    instructor: t('mobile.detail.instructor'),
+    startsAt: t('mobile.detail.startsAt'),
+    endsAt: t('mobile.detail.endsAt'),
+    duration: t('mobile.detail.duration'),
+    notes: t('mobile.detail.notes'),
+  };
+}
+
+/**
+ * Rows of a booking's bottom sheet (AC 8, template's own `openBooking`): the
+ * sheet shows everything the card shows PLUS what the card has no room for
+ * (istruttore, durata, note). The STATUS is the sheet's badge, never a
+ * duplicated line — the same choice `ppr-console.tsx#detailRows` made.
+ */
+function bookingDetailRows(booking: BookingListItem, labels: MobileDetailLabels, displayLocale: DisplayLocale, noValue: string): BottomSheetRow[] {
+  const minutes = Math.max(0, Math.round((booking.endsAt.getTime() - booking.startsAt.getTime()) / 60_000));
+  return [
+    { k: labels.aircraft, v: booking.aircraftRegistration },
+    { k: labels.pilot, v: booking.personName ?? noValue },
+    { k: labels.instructor, v: booking.instructorName ?? noValue },
+    { k: labels.startsAt, v: formatDateTime(booking.startsAt, displayLocale) },
+    { k: labels.endsAt, v: formatDateTime(booking.endsAt, displayLocale) },
+    { k: labels.duration, v: `${formatMinutes(minutes)} h` },
+    { k: labels.notes, v: booking.notes ?? noValue },
+  ];
+}
+
+/** Mono over-line of every booking sheet ("PRENOTAZIONE · 30/07/2026"): the bookings have no human-facing number, so the date is what identifies the record (review 15.2 F6: a missing value never becomes part of the accessible name). */
+function bookingSheetSub(booking: BookingListItem, bookingLabel: string, displayLocale: DisplayLocale): string {
+  return `${bookingLabel} · ${formatDateOnly(dateOnlyInZone(booking.startsAt, APP_TIMEZONE), displayLocale)}`;
+}
+
+/** `HH:MM–HH:MM`, the mono sub-line of the mobile rows. */
+function slotRange(booking: BookingListItem, displayLocale: DisplayLocale): string {
+  return `${formatTimeOfDay(booking.startsAt, displayLocale)}–${formatTimeOfDay(booking.endsAt, displayLocale)}`;
+}
+
+/**
+ * "Meteo campo" card (ratifica R-15.3-f) — rendered by the PAGE on all three
+ * faces and visible only <=640px, because `Sidebar`'s own weather card is
+ * `display: none` from 900px down: on a phone this is the ONLY way to see the
+ * airfield weather, not a duplicate of something visible.
+ *
+ * `getMetar` keeps a 10-minute in-memory cache per station, so this is normally
+ * the same cache entry `dashboard/layout.tsx` already filled; a cold process can
+ * miss twice, once every 10 minutes — the cost the ratifica accepted. Any
+ * failure degrades to `null` by the service's contract, and `null` renders
+ * NOTHING (same `metar &&` guard the sidebar has always applied).
+ */
+async function renderMobileMetarCard(title: string): Promise<ReactElement | null> {
+  const station = await getMetarStation();
+  const metar = await getMetar(station);
+  if (!metar) return null;
+  return <MobileMetarCard station={station} tempC={Math.round(metar.tempC)} category={metar.category} raw={metar.raw} labels={{ title }} />;
+}
+
 // --- AdminOverview (AC 1) ----------------------------------------------------
 
 /** Same day-scoped `/dashboard/bookings` href builder as `bookings/page.tsx#calendarHref`, simplified: the Overview always shows TODAY, so there is no `?page` list-state to preserve. */
@@ -185,6 +278,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     expiriesResult,
     scheduleAircraftOptions,
     instructorOptions,
+    negativeBalances,
   ] = await Promise.all([
     getAirfieldIcao(),
     getAirfieldBranding(),
@@ -197,9 +291,11 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     getStats(actor, { period: 'month' }),
     getFlightTotals(actor, { dateFrom: today, dateTo: today, status: 'REGISTERED', page: 1, pageSize: 1 }),
     listCalendarBookings(actor, { from: todayStart.toISOString(), to: tomorrowStart.toISOString() }),
-    // Windowed PENDING count for the card's "N in attesa" summary (review
-    // 12.12 F3) — only its `total` is read, hence `pageSize: 1`.
-    listBookings(actor, { from: listFrom, status: ['PENDING'], page: 1, pageSize: 1 }),
+    // Windowed PENDING count for the desktop card's "N in attesa" summary
+    // (review 12.12 F3) AND, since story 15.3, the ROWS of the mobile
+    // "Prenotazioni in attesa" card — same query, so the card lists exactly
+    // what its head counts.
+    listBookings(actor, { from: listFrom, status: ['PENDING'], page: 1, pageSize: MOBILE_PENDING_BOOKINGS_PAGE_SIZE }),
     // The card's ROWS: one `startsAt`-ascending query over every status, so
     // the embedded table reads in the same order as `/dashboard/bookings`
     // (PO decision 2026-07-26, replacing story 12.12's pending-first
@@ -208,6 +304,11 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     listAllExpiries(actor, { window: '60', page: 1, pageSize: EXPIRIES_WIDGET_SCAN_LIMIT }),
     listBookableAircraft(actor),
     listActiveInstructors(actor),
+    // Story 15.3 (ratifica R-15.3-e): the ONE new query the mobile "Avvisi"
+    // feed needed — a `groupBy` with a `having` on the aggregate plus one name
+    // lookup, `finance.manage`-gated exactly like this face. Not
+    // `hasNegativeBalanceAlert`, which is the per-charge point check, not a list.
+    listNegativeBalances(actor),
   ]);
 
   // --- .sub: ICAO (D3) + AOG + PPR pending + al suolo (12.4 reuse) --------
@@ -297,6 +398,80 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     reserved: reservedIds.has(aircraft.id),
   }));
 
+  // --- Mobile Panoramica (story 15.3) -------------------------------------
+  // Same DOM, one CSS switch: `.overview-mobile` is `display: none` above
+  // 640px and the five desktop surfaces it replaces (`.home-desktop-surface`)
+  // are `display: none` below it. No query here is new except
+  // `listNegativeBalances` above: the rows below are derivations of data the
+  // desktop face already had on the page.
+  const mobileDetailLabels = buildMobileDetailLabels(t);
+  const mobileNoValue = t('pilotLanding.noValue');
+  const bookingLabel = t('mobile.bookingLabel');
+
+  // Ratifica R-15.3-a: "In corso ora", NOT the template's "In volo ora" — the
+  // app has no airborne state at all (`FlightStatus` is REGISTERED|CANCELLED,
+  // a flight is logged afterwards), so what the card can honestly show is the
+  // BOOKING covering this instant. Derived from `calendarBookingsToday`, which
+  // is already in hand, with the pure boundary of `@/lib/booking-day-phase`.
+  const inProgressBookings = filterInProgress(calendarBookingsToday, now);
+  const inProgressRows: MobileBookingRow[] = inProgressBookings.map((booking) => ({
+    id: booking.id,
+    tail: booking.aircraftRegistration,
+    title: booking.personName ?? mobileNoValue,
+    sub: booking.instructorName ? `${slotRange(booking, displayLocale)} · ${booking.instructorName}` : slotRange(booking, displayLocale),
+    badgeTone: 'warn',
+    // Same wording the instructor face already uses for this exact state —
+    // one lexicon, one key, no second string that could drift.
+    badgeLabel: t('instructorLanding.status.inProgress'),
+    sheetSub: bookingSheetSub(booking, bookingLabel, displayLocale),
+    sheetTitle: `${booking.aircraftRegistration} · ${booking.personName ?? mobileNoValue}`,
+    detail: bookingDetailRows(booking, mobileDetailLabels, displayLocale, mobileNoValue),
+  }));
+
+  const pendingRows: MobilePendingBookingRow[] = embedPendingResult.items.map((booking) => ({
+    id: booking.id,
+    title: booking.personName ?? tBookings('occupied'),
+    sub: `${booking.aircraftRegistration} · ${formatDateTime(booking.startsAt, displayLocale)}`,
+    sheetSub: bookingSheetSub(booking, bookingLabel, displayLocale),
+    detail: bookingDetailRows(booking, mobileDetailLabels, displayLocale, mobileNoValue),
+  }));
+
+  // Ratifica R-15.3-e: scadenze + saldi negativi + PPR in attesa, ordered by
+  // real urgency and capped at 5. The order and the cap are unit-tested on the
+  // pure function (AD-4); here only the wording is added.
+  const alerts = buildOverviewAlerts({
+    expiries: expiriesResult.items,
+    negativeBalances,
+    pprPendingCount: pendingPprResult.total,
+  });
+  const alertItems: MobileAlertsCardItem[] = alerts.items.map((alert) => {
+    const common = { key: alert.key, kind: alert.kind, tone: alert.tone, href: alert.href };
+    switch (alert.kind) {
+      case 'expiry': {
+        const { personLastName, personFirstName, typeName, daysUntil } = alert.expiry;
+        // The SAME three templates `ScadenzeWidget` renders, so the same
+        // scadenza reads identically on both surfaces.
+        const sub =
+          daysUntil === 0
+            ? t('scadenzeWidget.today')
+            : daysUntil < 0
+              ? t('scadenzeWidget.ago', { n: Math.abs(daysUntil) })
+              : t('scadenzeWidget.inDays', { n: daysUntil });
+        return { ...common, title: `${personLastName} ${personFirstName} · ${typeName}`, sub };
+      }
+      case 'negativeBalance':
+        return {
+          ...common,
+          title: `${alert.balance.lastName} ${alert.balance.firstName}`,
+          sub: t('overview.mobile.alerts.balanceSub', { amount: formatCents(alert.balance.balanceCents, displayLocale) }),
+        };
+      case 'pprPending':
+        return { ...common, title: t('overview.pprPendingCount', { count: alert.count }), sub: t('overview.mobile.alerts.pprSub') };
+    }
+  });
+
+  const metarCard = await renderMobileMetarCard(t('mobile.metarTitle'));
+
   return (
     <main className="page">
       <div className="page-head">
@@ -307,7 +482,11 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
             {subParts.join(' · ')}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        {/* Story 15.3 (ratifica R-15.3-d): same `display: flex; gap: 8px` this
+            div carried inline, now a class so the phone can turn the header
+            actions into a full-width stack UNDER the sub-line instead of
+            squeezing them into the title row. Desktop computed style unchanged. */}
+        <div className="home-head-actions">
           <DispatchFlightButton
             label={t('overview.dispatchButton')}
             aircraftOptions={dispatchAircraftOptions}
@@ -339,25 +518,109 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         </div>
       </div>
 
-      <Schedule
-        view="day"
-        date={today}
-        today={today}
-        isToday
-        weekDates={[]}
-        aircraft={scheduleAircraftOptions}
-        instructors={instructorOptions}
-        dayBlocks={dayBlocks}
-        weekChips={[]}
-        nowLinePercent={nowLinePercent}
-        locale={displayLocale}
-        nav={calendarNav}
-        listPage={1}
-        windowStartHour={Math.round(windowStartMinutes / 60)}
-        windowEndHour={Math.round(windowEndMinutes / 60)}
-        labels={buildScheduleLabels(tBookings)}
-      />
+      {/* Story 15.3 — the phone Panoramica, in the template's own order (64-121):
+          "In corso ora", "Prenotazioni in attesa", "Avvisi", "Meteo campo", then
+          the two links to the desktop surfaces that are hidden here. It sits
+          right after the (single, AD-3) KPI strip so the reading order on the
+          phone is the template's; above 640px the whole subtree is
+          `display: none`. */}
+      <div className="overview-mobile">
+        <MobileBookingList
+          rows={inProgressRows}
+          labels={{
+            title: t('overview.mobile.inProgress.title'),
+            count: t('overview.mobile.inProgress.count', { count: inProgressRows.length }),
+            empty: t('overview.mobile.inProgress.empty'),
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+          }}
+          testId="mobile-overview-inprogress"
+          rowTestId="mobile-overview-inprogress-row"
+          emptyTestId="mobile-overview-inprogress-empty"
+        />
 
+        <MobilePendingBookings
+          rows={pendingRows}
+          labels={{
+            title: t('overview.mobile.pending.title'),
+            // Review 12.12 F3's distinction, kept: the WINDOW's pending total
+            // (the very query these rows come from), never the all-time
+            // `kpi-bookings-pending` value above.
+            count: t('overview.mobile.pending.count', { count: embedPendingResult.total }),
+            empty: t('overview.mobile.pending.empty'),
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            pendingStatus: tBookings('list.status.PENDING'),
+            approve: tBookings('list.actions.approve'),
+            reject: tBookings('list.actions.reject'),
+            approveSuccess: tBookings('list.actions.approveSuccess'),
+            rejectSuccess: tBookings('list.actions.rejectSuccess'),
+            reasonSubtitle: tBookings('list.denyModal.subtitle'),
+            reasonPlaceholder: tBookings('list.denyModal.reasonPlaceholder'),
+            reasonRequired: tBookings('list.denyModal.reasonRequired'),
+            reasonTitle: tBookings('list.denyModal.title'),
+            reasonSubmit: tBookings('list.denyModal.submit'),
+            reasonCancel: tBookings('list.denyModal.cancel'),
+            errors: buildBookingsTableLabels(tBookings).actions.errors,
+          }}
+        />
+
+        <MobileAlertsCard
+          items={alertItems}
+          locale={locale}
+          hiddenCount={alerts.hiddenCount}
+          moreHref={alerts.moreHref}
+          labels={{
+            title: t('overview.mobile.alerts.title'),
+            empty: t('overview.mobile.alerts.empty'),
+            seeAll: t.raw('overview.mobile.alerts.seeAll') as string,
+          }}
+        />
+
+        {metarCard}
+
+        {/* Ratifica R-15.3-d: the calendar, the full bookings table and the
+            fleet card are hidden on the phone, so the page says where they
+            went. ONE link per destination: the calendar and the table both live
+            at `/dashboard/bookings`. */}
+        <div className="mobile-shortcuts">
+          <Link href="/dashboard/bookings" locale={locale} className="btn" data-testid="mobile-overview-schedule-shortcut">
+            {t('overview.mobile.shortcuts.schedule')}
+          </Link>
+          <Link href="/dashboard/fleet" locale={locale} className="btn" data-testid="mobile-overview-fleet-shortcut">
+            {t('overview.mobile.shortcuts.fleet')}
+          </Link>
+        </div>
+      </div>
+
+      {/* `.home-desktop-surface` is the page's OWN switch class (never `.card`,
+          never `.split` — 13 consoles share those): it marks the three desktop
+          surfaces the cards above replace on the phone. One wrapper PER surface,
+          not one around all three: `.page` is a flex column with `gap: 22px`, so
+          a single wrapper would have collapsed the spacing between them at
+          desktop widths. */}
+      <div className="home-desktop-surface">
+        <Schedule
+          view="day"
+          date={today}
+          today={today}
+          isToday
+          weekDates={[]}
+          aircraft={scheduleAircraftOptions}
+          instructors={instructorOptions}
+          dayBlocks={dayBlocks}
+          weekChips={[]}
+          nowLinePercent={nowLinePercent}
+          locale={displayLocale}
+          nav={calendarNav}
+          listPage={1}
+          windowStartHour={Math.round(windowStartMinutes / 60)}
+          windowEndHour={Math.round(windowEndMinutes / 60)}
+          labels={buildScheduleLabels(tBookings)}
+        />
+      </div>
+
+      <div className="home-desktop-surface">
       <BookingsTable
         items={embedBookingRows}
         // Review 12.12 F3: windowed PENDING count (same `listFrom` window as
@@ -388,8 +651,9 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         editBookingLabels={buildEditBookingFormLabels(tBookings)}
         labels={buildBookingsTableLabels(tBookings)}
       />
+      </div>
 
-      <div className="split">
+      <div className="split home-desktop-surface">
         <ScadenzeWidget
           items={expiriesResult.items}
           locale={locale}
@@ -525,13 +789,7 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
 
 // --- InstructorLanding (AC 5) ------------------------------------------------
 
-type DayPhase = 'inProgress' | 'completed' | 'scheduled';
-
-function dayPhaseOf(startsAt: Date, endsAt: Date, now: Date): DayPhase {
-  if (now >= endsAt) return 'completed';
-  if (now >= startsAt) return 'inProgress';
-  return 'scheduled';
-}
+/** `dayPhaseOf`/`DayPhase` moved to `@/lib/booking-day-phase` in story 15.3 (AD-4): the mobile "In corso ora" card needs the same boundary, and it must have one implementation. Behaviour unchanged. */
 
 async function renderInstructorLanding(
   actor: Actor,
@@ -574,6 +832,29 @@ async function renderInstructorLanding(
   };
   const statusTone: Record<DayPhase, 'warn' | 'ok' | 'info'> = { inProgress: 'warn', completed: 'ok', scheduled: 'info' };
 
+  // --- Mobile "Oggi" (story 15.3, AC 7) -----------------------------------
+  const mobileDetailLabels = buildMobileDetailLabels(t);
+  const mobileNoValue = t('instructorLanding.noValue');
+  const bookingLabel = t('mobile.bookingLabel');
+  // Template 447-456: the time column moves to the LEFT of the row (start bold,
+  // end quiet) instead of sitting between the name and the badge.
+  const myDayRows: MobileBookingRow[] = myDayBookings.map((booking) => {
+    const phase = dayPhaseOf(booking.startsAt, booking.endsAt, now);
+    return {
+      id: booking.id,
+      title: booking.personName ?? mobileNoValue,
+      sub: booking.aircraftRegistration,
+      timeStart: formatTimeOfDay(booking.startsAt, displayLocale),
+      timeEnd: formatTimeOfDay(booking.endsAt, displayLocale),
+      badgeTone: statusTone[phase],
+      badgeLabel: statusLabels[phase],
+      sheetSub: bookingSheetSub(booking, bookingLabel, displayLocale),
+      sheetTitle: booking.personName ?? mobileNoValue,
+      detail: bookingDetailRows(booking, mobileDetailLabels, displayLocale, mobileNoValue),
+    };
+  });
+  const metarCard = await renderMobileMetarCard(t('mobile.metarTitle'));
+
   return (
     <main className="page">
       <div className="page-head">
@@ -584,14 +865,18 @@ async function renderInstructorLanding(
             {t('instructorLanding.sub', { flightsToday, owed: owedForSub })}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="home-head-actions">
           <Link href="/dashboard/logbook" locale={locale} className="btn" data-testid="instructor-landing-logbook-cta">
             {t('instructorLanding.logbookCta')}
           </Link>
         </div>
       </div>
 
-      <div className="kpi-row">
+      {/* Ratifica R-15.3-c: 4 KPIs fit a 2x2 grid, so on the phone this row is
+          the template's grid (439-446) instead of the 15.2 scroll strip that
+          hid half of them behind a swipe. A modifier on the SAME row, never a
+          second tree (AD-3). */}
+      <div className="kpi-row kpi-row-grid">
         <div data-testid="kpi-hours-month">
           <KPI label={t('instructorLanding.kpis.hoursMonth')} value={hoursMonthValue} />
         </div>
@@ -606,7 +891,25 @@ async function renderInstructorLanding(
         </div>
       </div>
 
-      <div className="card">
+      <div className="landing-mobile">
+        <MobileBookingList
+          rows={myDayRows}
+          withTimeColumn
+          labels={{
+            title: t('instructorLanding.myDay.title'),
+            count: formatDateOnly(today, displayLocale),
+            empty: t('instructorLanding.myDay.empty'),
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+          }}
+          testId="instructor-landing-myday-mobile"
+          rowTestId="instructor-landing-myday-row-mobile"
+          emptyTestId="instructor-landing-myday-empty-mobile"
+        />
+        {metarCard}
+      </div>
+
+      <div className="card home-desktop-surface">
         <div className="card-head">
           <div className="card-title">{t('instructorLanding.myDay.title')}</div>
         </div>
@@ -671,6 +974,21 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
   const canBook =
     (hasPermission(actor, 'bookings.manage.own') || hasPermission(actor, 'bookings.manage.any')) && person.activePilotLicenseType !== null;
 
+  // --- Mobile "Home" (story 15.3, AC 6) -----------------------------------
+  const mobileDetailLabels = buildMobileDetailLabels(t);
+  const bookingLabel = t('mobile.bookingLabel');
+  const upcomingRows: MobileBookingRow[] = upcomingBookingsResult.items.map((booking) => ({
+    id: booking.id,
+    title: booking.aircraftRegistration,
+    sub: formatDateTime(booking.startsAt, displayLocale),
+    badgeTone: 'info',
+    badgeLabel: t('pilotLanding.status.scheduled'),
+    sheetSub: bookingSheetSub(booking, bookingLabel, displayLocale),
+    sheetTitle: booking.aircraftRegistration,
+    detail: bookingDetailRows(booking, mobileDetailLabels, displayLocale, noValue),
+  }));
+  const metarCard = await renderMobileMetarCard(t('mobile.metarTitle'));
+
   return (
     <main className="page">
       <div className="page-head">
@@ -681,7 +999,7 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
             {t('pilotLanding.subAccount', { balance: formatCents(accountOverview.balanceCents, displayLocale) })}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="home-head-actions">
           <Link href={`/dashboard/people/${person.id}`} locale={locale} className="btn" data-testid="pilot-landing-profile-cta">
             {t('pilotLanding.profileCta')}
           </Link>
@@ -696,7 +1014,9 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
         </div>
       </div>
 
-      <div className="kpi-row">
+      {/* Ratifica R-15.3-c, same as the instructor face: 4 KPIs, so the phone
+          gets the template's 2x2 grid (407-414) rather than the 15.2 strip. */}
+      <div className="kpi-row kpi-row-grid">
         <Link
           /* Review 14.6 F5: the pilot's own statement now lives at the
              self-service page (story 14.6); the staff-shaped scheda persona
@@ -720,7 +1040,23 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
         </div>
       </div>
 
-      <div className="card">
+      <div className="landing-mobile">
+        <MobileBookingList
+          rows={upcomingRows}
+          labels={{
+            title: t('pilotLanding.upcomingFlights.title'),
+            empty: t('pilotLanding.upcomingFlights.empty'),
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+          }}
+          testId="pilot-landing-upcoming-mobile"
+          rowTestId="pilot-landing-upcoming-row-mobile"
+          emptyTestId="pilot-landing-upcoming-empty-mobile"
+        />
+        {metarCard}
+      </div>
+
+      <div className="card home-desktop-surface">
         <div className="card-head">
           <div className="card-title">{t('pilotLanding.upcomingFlights.title')}</div>
         </div>

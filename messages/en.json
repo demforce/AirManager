@@ -125,6 +125,29 @@
         "pprPending": "PPR pending",
         "bookingsPending": "Bookings pending",
         "revenue": "Revenue this month"
+      },
+      "mobile": {
+        "inProgress": {
+          "title": "Happening now",
+          "count": "{count} in progress",
+          "empty": "No booking is in progress right now."
+        },
+        "pending": {
+          "title": "Bookings pending",
+          "count": "{count} to approve",
+          "empty": "No booking is waiting for approval."
+        },
+        "alerts": {
+          "title": "Alerts",
+          "empty": "No alerts: expiries, balances and PPR are all in order.",
+          "seeAll": "+{count} more · See all",
+          "balanceSub": "Balance {amount}",
+          "pprSub": "Requests awaiting a decision"
+        },
+        "shortcuts": {
+          "schedule": "Scheduling",
+          "fleet": "Aircraft"
+        }
       }
     },
     "pilotLanding": {
@@ -193,6 +216,21 @@
         "reserved": "Reserved",
         "available": "Available",
         "archived": "Archived"
+      }
+    },
+    "mobile": {
+      "openDetail": "Open detail",
+      "close": "Close",
+      "bookingLabel": "Booking",
+      "metarTitle": "Field weather",
+      "detail": {
+        "aircraft": "Aircraft",
+        "pilot": "Pilot",
+        "instructor": "Instructor",
+        "startsAt": "Start",
+        "endsAt": "End",
+        "duration": "Duration",
+        "notes": "Notes"
       }
     }
   },

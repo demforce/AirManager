@@ -1979,3 +1979,196 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 @media (max-width: 640px) and (prefers-reduced-motion: reduce){
   .slideover-panel{ transition: none; }
 }
+
+/* ---------- panoramica mobile (story 15.3, epic 15 R1/R3/R4) ----------
+   The phone faces of the home: KPI 2x2 where there are four KPIs, "In corso
+   ora", "Prenotazioni in attesa", "Avvisi", "Meteo campo", and the two links
+   to the desktop surfaces that are hidden here.
+
+   Same rules of engagement as the 15.1/15.2 blocks above: every declaration
+   additive inside `@media (max-width: 640px)`, no existing token changes
+   value, no new colour literal (the decision buttons reuse `.btn.primary` /
+   `.btn.mini.bad`; the alert tone squares reuse `.list-icon.red`/`.amber`,
+   calibrated for both themes in 13.9; the METAR category dot reuses
+   `.flight-dot.vfr|mvfr|ifr`, already defined for the sidebar card).
+
+   The switch hangs off classes this page OWNS — `.overview-mobile`,
+   `.landing-mobile` and `.home-desktop-surface` — never off `.card`, `.split`,
+   `.list` or `.list-item` (13 consoles share those). Precedent and reasoning:
+   `.ppr-queue-mobile` above.
+
+   Card CSS is NOT a rename of `.ppr-card*`: these rows carry a registration
+   chip, a left time column and a right badge that the PPR card has none of, so
+   generalizing those class names would have changed how the PPR queue renders
+   at 375px — the story's own precondition for the rename ("only if it costs
+   nothing") does not hold. The two families are siblings, deliberately. */
+
+/* Both mobile trees are in the DOM at every width (the switch is CSS only), so
+   they must be `display: none` OUTSIDE the query too — otherwise the desktop
+   suite finds two matches for every heading and empty state on the home. */
+.overview-mobile,
+.landing-mobile{ display: none; }
+
+/* The header actions used to be an inline `display:flex; gap:8px` on three
+   divs of this page. Same declarations, now a class, so the phone rule below
+   has something to hook onto: identical computed style above 640px. */
+.home-head-actions{ display: flex; gap: 8px; }
+
+@media (max-width: 640px){
+  .overview-mobile,
+  .landing-mobile{ display: flex; flex-direction: column; gap: 14px; }
+  /* The five desktop surfaces the cards above replace (calendario, tabella
+     prenotazioni, widget Scadenze + card Flotta, and the two landing lists). */
+  .home-desktop-surface{ display: none; }
+
+  /* --- header actions: full-width UNDER the sub-line (ratifica R-15.3-d) ---
+     `.page-head` already wraps at this width (13.10), but the actions still
+     shared the title's row whenever they fitted. `flex: 1 0 100%` forces them
+     onto their own full-width row; the PRIMARY action then takes a whole row of
+     its own (template 415), the secondary ones share the row above it. */
+  .home-head-actions{ flex: 1 0 100%; flex-wrap: wrap; }
+  .home-head-actions .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .home-head-actions .btn.primary{ flex-basis: 100%; }
+
+  /* --- KPI 2x2 (ratifica R-15.3-c, template 407-414 / 439-446) ---
+     Undoes, for the two faces that have exactly FOUR KPIs, the scroll strip
+     R-15.2-f applied to all nine `.kpi-row`s: in a strip the 3rd and 4th card
+     are only reachable after a swipe, and on those faces they are the numbers
+     the actor opened the app for (saldo, medico, ratings / dovuto, voli).
+     `min-width: 0` is mandatory here, not cosmetic: the strip's own
+     `min-width: 146px` floor would overflow a 2-column grid below ~360px. */
+  .kpi-row.kpi-row-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-inline: 0;
+    padding-inline: 0;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+  .kpi-row.kpi-row-grid > *{ min-width: 0; max-width: none; scroll-snap-align: none; }
+  /* Template's own value size for the grid variant: a half-width card is
+     narrower than a strip card, and 23px there wrapped even short values. */
+  .kpi-row.kpi-row-grid .kpi-value{ font-size: 19px; }
+
+  /* --- card chrome of the mobile lists (template 78-121) ---
+     `.card` still supplies panel/border/radius/overflow; only the head differs
+     from `.card-head` (no bottom rule, tighter padding, baseline-aligned count). */
+  .mobile-card-head{ display: flex; align-items: baseline; gap: 8px; padding: 12px 16px 10px; }
+  .mobile-card-title{ font-weight: 600; font-size: 13.5px; letter-spacing: -0.005em; }
+  .mobile-card-count{ font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+  .mobile-card-empty{ padding: 16px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--ink-3); }
+  .mobile-card-foot{ padding: 10px 16px; border-top: 1px solid var(--border); }
+  .mobile-card-foot .btn{ width: 100%; justify-content: center; min-height: 44px; }
+
+  /* --- one row = one trigger (R3 + the `.ppr-card` idiom of 15.2) ---
+     The whole row is ONE `<button>`: the decision lives in the sheet
+     (R-15.3-b), so there is no nested interactive element to guard with
+     `stopPropagation` and the touch target is the row itself. Its children are
+     `<span>`s, hence the explicit `display: block`s below. */
+  .mobile-row{
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    padding: 11px 16px;
+    min-height: 44px;
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--border);
+    font: inherit;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+  }
+  .mobile-row:active{ background: var(--panel-2); }
+  /* Istruttore only (template 447-456): the slot's times move to the left. */
+  .mobile-row-timed{ grid-template-columns: 46px 1fr auto; gap: 12px; }
+  .mobile-row-times{ display: block; }
+  .mobile-row-t1{ display: block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; }
+  .mobile-row-t2{ display: block; font-family: var(--font-mono); font-size: 10px; color: var(--ink-4); margin-top: 2px; }
+  .mobile-row-main{ display: block; min-width: 0; }
+  .mobile-row-title{ display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; }
+  /* Registration chip (template 82): mono, sunken, never shrinks. */
+  .mobile-row-tail{
+    flex-shrink: 0;
+    padding: 1px 6px;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+  }
+  .mobile-row-name{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Affordance of the decision queue's rows (see the comment in
+     `mobile-pending-bookings.tsx`). `--ink-4` is the 13.9-calibrated quiet ink,
+     >=3:1 on `--panel` in both themes. */
+  .mobile-row-chev{ display: grid; place-items: center; color: var(--ink-4); }
+  .mobile-row-chev svg{ width: 16px; height: 16px; }
+  .mobile-row-sub{
+    display: block;
+    margin-top: 3px;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* --- "Avvisi" feed (template 106-116) ---
+     Rows are `<a>`s (every voice leads to the page where it can be acted on),
+     so the anchor colour has to be reclaimed from the global `a{color: var(--info)}`. */
+  .mobile-alert-row{
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .mobile-alert-row:hover{ color: var(--ink); }
+  .mobile-alert-row:active{ background: var(--panel-2); }
+  .mobile-alert-row .list-icon{ width: 30px; height: 30px; border-radius: 9px; }
+  /* MEASURED defect, dark theme: `.list-icon.red`'s glyph colour is a
+     light-tuned literal (`oklch(0.4 0.17 25)`) with no dark override, so on the
+     dark `--bad-soft` fill (L .32) it reads **1.35:1** — the icon is simply not
+     there (seen in a screenshot, then measured canvas->WCAG, story 15.3).
+     Fixed with the exact 13.9 pattern (`.btn.mini.bad` above): swap in the
+     dark-calibrated `--bad` token, no new literal. Measured after: **4.94:1**.
+     Deliberately SCOPED to this new surface: the same defect exists on the
+     desktop `ScadenzeWidget`, and repairing it there would be a visible change
+     to a desktop surface in a story whose mandate is "desktop invariato" —
+     it is reported as TD instead. `.amber` needs nothing: `--accent-ink`
+     already has a dark override (measured 7.4:1). */
+  html[data-theme="dark"] .mobile-alert-row .list-icon.red{ color: var(--bad); }
+  .mobile-alert-main{ display: block; min-width: 0; }
+  .mobile-alert-title{ display: block; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-alert-sub{ display: block; margin-top: 1px; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+
+  /* --- "Meteo campo" (template 117-121) ---
+     `word-break: anywhere` (not the template's `break-word`) on the raw line:
+     a real METAR is one unbroken ~70-character token, and only `anywhere` also
+     shrinks the box's min-content contribution, which is what would otherwise
+     push the whole page wider than the screen (the class of defect 13.10 F1). */
+  .mobile-metar-card{ display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
+  .mobile-metar-head{ display: flex; justify-content: space-between; gap: 10px; }
+  .mobile-metar-label{
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .mobile-metar-station{ font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); }
+  .mobile-metar-main{ display: flex; align-items: baseline; gap: 10px; }
+  .mobile-metar-temp{ font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .mobile-metar-temp .unit{ font-size: 13px; font-weight: 500; color: var(--ink-3); }
+  .mobile-metar-cat{ display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+  .mobile-metar-raw{
+    padding: 8px;
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--ink-2);
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow-wrap: anywhere;
+  }
+
+  /* --- where the hidden desktop surfaces went (ratifica R-15.3-d) --- */
+  .mobile-shortcuts{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mobile-shortcuts .btn{ justify-content: center; min-height: 44px; }
+}

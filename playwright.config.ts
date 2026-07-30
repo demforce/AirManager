@@ -40,7 +40,13 @@ export default defineConfig({
       // 'billing-global' projects below. Any future spec with the same
       // requirement must join this chain the same way.
       name: 'chromium',
-      testIgnore: ['**/settings.spec.ts', '**/booking-window.spec.ts', '**/treasury-settings.spec.ts', '**/billing-global.spec.ts'],
+      testIgnore: [
+        '**/settings.spec.ts',
+        '**/booking-window.spec.ts',
+        '**/treasury-settings.spec.ts',
+        '**/billing-global.spec.ts',
+        '**/mobile-metar.spec.ts',
+      ],
       use: sharedUse,
     },
     {
@@ -79,6 +85,18 @@ export default defineConfig({
       dependencies: ['treasury-settings'],
       use: sharedUse,
     },
+    {
+      // Story 15.3, AC 5 — the mobile METAR card only exists once a station is
+      // CONFIGURED, and that is a global `AppSetting` write: under
+      // `fullyParallel` it would make the sidebar weather card appear (and one
+      // upstream fetch fire) under every other spec's feet. Last in the chain,
+      // and it restores "no station configured" in `afterAll` — nothing
+      // downstream reads it.
+      name: 'mobile-metar',
+      testMatch: '**/mobile-metar.spec.ts',
+      dependencies: ['billing-global'],
+      use: sharedUse,
+    },
   ],
   webServer: {
     // In CI the suite runs against the production build: `next dev`'s
@@ -87,7 +105,13 @@ export default defineConfig({
     // unset for the build per repo rule (it breaks `next build`).
     command: process.env['CI'] ? 'env -u NODE_ENV npm run build && npm run start' : 'npm run dev',
     url: baseURL,
-    reuseExistingServer: !process.env['CI'],
+    // Under CI=1 the build runs INSIDE the suite's clock, so a series of runs
+    // (what a dev/review cycle actually does) pays `next build` every time —
+    // and a server already listening on :3000 makes the run fail outright
+    // instead of being reused. `E2E_REUSE_SERVER=1` opts into reusing a
+    // production server started once for the series; CI itself never sets it,
+    // so the pipeline keeps building from scratch.
+    reuseExistingServer: !process.env['CI'] || !!process.env['E2E_REUSE_SERVER'],
     timeout: 240_000,
   },
 });

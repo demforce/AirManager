@@ -18,6 +18,13 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { useToast } from '@/components/ui/toast';
 import { formatDateOnly, formatTimeOfDay } from '@/lib/time';
+import {
+  bookingErrorMessage,
+  postBookingTransition,
+  readBookingApiError,
+  type BookingTransitionErrorLabels,
+  type BookingTransitionTarget,
+} from './booking-transition';
 import { EditBookingForm, type EditBookingFormLabels } from './edit-booking-form';
 import { NewBookingForm, type AircraftOption, type InstructorOption, type NewBookingFormLabels, type NewBookingFormMode, type PersonOption } from './new-booking-form';
 import type { BookingCalendarView } from './schedule';
@@ -77,17 +84,8 @@ export type BookingsTableLabels = {
     noShowSuccess: string;
     moveSuccess: string;
     cancelSuccess: string;
-    errors: {
-      BOOKING_ALREADY_STARTED: string;
-      BOOKING_TRANSITION_INVALID: string;
-      BOOKING_DENY_REASON_REQUIRED: string;
-      /** `{documents}` placeholder, client-filled. */
-      EXPIRED_DOCUMENTS: string;
-      /** `{reason}` placeholder, client-filled. */
-      AIRCRAFT_OUT_OF_SERVICE: string;
-      conflict: string;
-      generic: string;
-    };
+    /** Story 15.3, AD-2: the same labels the shared `postBookingTransition` maps codes onto — the mobile Panoramica queue passes this very object. */
+    errors: BookingTransitionErrorLabels;
   };
   denyModal: {
     title: string;
@@ -127,12 +125,6 @@ type BookingsTableProps = {
   editBookingLabels: EditBookingFormLabels;
   labels: BookingsTableLabels;
 };
-
-type ApiErrorBody = { error?: { code?: string; details?: { reason?: string; documents?: Array<{ typeName: string }> } } };
-
-async function errorBodyOf(response: Response): Promise<ApiErrorBody | null> {
-  return (await response.json().catch(() => null)) as ApiErrorBody | null;
-}
 
 const STATUS_TONE: Record<BookingStatusDto, BadgeTone> = {
   PENDING: 'warn',
@@ -185,41 +177,14 @@ export function BookingsTable({
     return booking.instructorProfileId !== null && booking.instructorProfileId === ownInstructorProfileId;
   }
 
-  function errorMessage(code: string | undefined, body: ApiErrorBody | null): string {
-    switch (code) {
-      case 'BOOKING_ALREADY_STARTED':
-        return labels.actions.errors.BOOKING_ALREADY_STARTED;
-      case 'BOOKING_TRANSITION_INVALID':
-        return labels.actions.errors.BOOKING_TRANSITION_INVALID;
-      case 'BOOKING_DENY_REASON_REQUIRED':
-        return labels.actions.errors.BOOKING_DENY_REASON_REQUIRED;
-      case 'EXPIRED_DOCUMENTS': {
-        const documentNames = (body?.error?.details?.documents ?? []).map((document) => document.typeName);
-        return labels.actions.errors.EXPIRED_DOCUMENTS.replace('{documents}', documentNames.join(', '));
-      }
-      case 'AIRCRAFT_OUT_OF_SERVICE':
-        return labels.actions.errors.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', body?.error?.details?.reason ?? '');
-      default:
-        return labels.actions.errors.generic;
-    }
-  }
-
-  async function transition(id: string, to: Exclude<BookingStatusDto, 'CANCELLED'>, reason?: string): Promise<boolean> {
+  /** Story 15.3, AD-2: the request, the 409 branch and the code -> message mapping now live in `./booking-transition` and are shared with the mobile Panoramica queue. Same behaviour, same messages. */
+  async function transition(id: string, to: BookingTransitionTarget, reason?: string): Promise<boolean> {
     setPendingActionId(id);
-    const response = await fetch(`/api/v1/bookings/${id}/transition`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reason ? { to, reason } : { to }),
-    });
+    const outcome = await postBookingTransition(id, to, labels.actions.errors, reason);
     setPendingActionId(null);
 
-    if (!response.ok) {
-      if (response.status === 409) {
-        toast.show(labels.actions.errors.conflict, 'bad');
-        return false;
-      }
-      const body = await errorBodyOf(response);
-      toast.show(errorMessage(body?.error?.code, body), 'bad');
+    if (!outcome.ok) {
+      toast.show(outcome.message, 'bad');
       return false;
     }
     return true;
@@ -283,8 +248,8 @@ export function BookingsTable({
         toast.show(labels.actions.errors.conflict, 'bad');
         return;
       }
-      const body = await errorBodyOf(response);
-      toast.show(errorMessage(body?.error?.code, body), 'bad');
+      const body = await readBookingApiError(response);
+      toast.show(bookingErrorMessage(body?.error?.code, body, labels.actions.errors), 'bad');
       return;
     }
 

@@ -125,6 +125,29 @@
         "pprPending": "PPR in attesa",
         "bookingsPending": "Prenotazioni in attesa",
         "revenue": "Ricavi del mese"
+      },
+      "mobile": {
+        "inProgress": {
+          "title": "In corso ora",
+          "count": "{count} in corso",
+          "empty": "Nessuna prenotazione in corso adesso."
+        },
+        "pending": {
+          "title": "Prenotazioni in attesa",
+          "count": "{count} da approvare",
+          "empty": "Nessuna prenotazione da approvare."
+        },
+        "alerts": {
+          "title": "Avvisi",
+          "empty": "Nessun avviso: scadenze, saldi e PPR sono in regola.",
+          "seeAll": "+{count} altri · Vedi tutte",
+          "balanceSub": "Saldo {amount}",
+          "pprSub": "Richieste in attesa di risposta"
+        },
+        "shortcuts": {
+          "schedule": "Pianificazione",
+          "fleet": "Aeromobili"
+        }
       }
     },
     "pilotLanding": {
@@ -193,6 +216,21 @@
         "reserved": "Riservato",
         "available": "Disponibile",
         "archived": "Archiviato"
+      }
+    },
+    "mobile": {
+      "openDetail": "Apri dettaglio",
+      "close": "Chiudi",
+      "bookingLabel": "Prenotazione",
+      "metarTitle": "Meteo campo",
+      "detail": {
+        "aircraft": "Aeromobile",
+        "pilot": "Pilota",
+        "instructor": "Istruttore",
+        "startsAt": "Inizio",
+        "endsAt": "Fine",
+        "duration": "Durata",
+        "notes": "Note"
       }
     }
   },
