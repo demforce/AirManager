@@ -4,7 +4,7 @@ baseline_commit: ad65d91
 
 # Story 15.2: Primitive mobile — bottom sheet di dettaglio, pannello form a tutto schermo, KPI strip; coda PPR come primo consumer
 
-Status: review
+Status: done (review Opus 5 SHIPPABLE-WITH-FIXES → tutti i fix chiusi; F1/F2/F3 major + F4/F5/F6 minor + guardia D4; ratifica PO R-15.2-g sul rinvio a 15.5 di 2 pannelli; arbitro finale 309/309 exit 0 — 2026-07-30)
 
 ## Story
 
@@ -299,3 +299,60 @@ Cioè: **nessun valore di dominio realistico viene nascosto**; il clamp intervie
 **Test del giro di fix** — `npm run gates`: **PASS** (lint 17s, typecheck 4s, test **1605/1605**, build 27s). Mirati su **build di produzione**: `ppr-queue` + `mobile-primitives` **12/12 verdi**; `my-compensation` (390px, ha una `.kpi-row`) + `mobile-shell` **12/12 verdi**. La suite completa su DB fresco la rifà la sessione principale (questo DB ha già girato la suite dell'arbitro e le sonde).
 
 **File toccati dal fix**: `src/app/[locale]/dashboard/ppr/ppr-console.tsx`, `src/app/[locale]/dashboard/fleet/aircraft-editor.tsx`, `src/styles/airops.css`, `e2e/ppr-queue.spec.ts`, `e2e/mobile-primitives.spec.ts`, `_bmad-output/implementation-artifacts/sprint-status.yaml` (TD del rinvio F3), questo file.
+
+## Review Record
+
+**Reviewer**: teammate `review-15-2` (agent `adversarial-reviewer`, **Opus 5**) — l'unico layer adversarial del processo. **Fix**: teammate dedicato `fix-15-2` (**Opus 5**, regola UI). Story creata da un teammate dedicato (`story-15-2`, Opus 5): per scelta dell'utente il ciclo 15.2 è stato eseguito da quattro teammate distinti (story → dev → review → fix) invece che dalla sessione principale per story e fix.
+
+**Nota di processo**: il reviewer ha prodotto il report ma **non ha potuto consegnarlo** — il tipo di agent `adversarial-reviewer` ha una lista di tool ristretta che non include la messaggistica (limite del setup della sessione principale, non del reviewer). Report recuperato integralmente dal suo transcript e archiviato in `/tmp/rev152-report.md` durante la sessione. **Azione per le prossime story**: o si concede il tool di messaggistica al tipo `adversarial-reviewer`, o si mette in conto di leggere il transcript.
+
+### Gate arbitro (reviewer, DB fresco)
+
+Precondizione verificata PRIMA del run, non assunta: `Aircraft 1 · Person 4 · Booking 0 · PprRequest 0 · Flight 0 · LoginAttempt 0`, zero righe `AppSetting sched.*`.
+
+**309 passed · 0 failed · 0 flaky · 0 skipped · exit 0 · 8.8 min** — esattamente il numero atteso (303 della 15.1 + 6 nuovi). Ripartizione: `chromium 294 · settings 7 · booking-window 3 · treasury-settings 3 · billing-global 2`. Nessun fallimento da attribuire; la classe flake nota non si è presentata. `npm run gates` riverificato dal reviewer: PASS (1605 unit).
+
+**Le due cause dichiarate dal dev per la sua suite rossa**: (1) `reports.spec.ts:310-315` fa `PUT /settings/scheduling {maxAdvanceDays:30}` senza ripristino (`grep afterAll|afterEach` → 0 righe) → **CONFERMATA come TD reale e PRE-ESISTENTE**, già tracciata da 14.4; in questa run l'ordine `fullyParallel` è caduto favorevole. **La 15.2 non la peggiora**: nessuno dei 6 test nuovi scrive `AppSetting`. (2) saturazione del DB → **CONFERMATA e sparita su DB fresco**. (3) **SMENTITA una terza attribuzione del dev**: il record dava per certo il lock anti-brute-force TD-6 (570 `LoginAttempt`) — `login-throttle.ts:25` conta **solo** `succeeded = false`, misurati 380 totali di cui **3 falliti e 0 su admin**. Il record è stato corretto (F10).
+
+### Findings
+
+Tre major, tutti misurati e tutti chiusi (salvo la parte di F3 rinviata per ratifica PO).
+
+- **F1 — major (chiuso).** L'AC 4 dice a lettere *"il focus resta dentro il pannello"*; misurato `document.activeElement === body` **su entrambi i passaggi** dell'interazione centrale che la story inventa (ingresso nel passo 2 del rifiuto e ritorno con "Annulla"): il bottone premuto viene rimosso dal DOM dallo swap di contenuto e nessuno riporta il focus. Il nodo `role="dialog"` sopravvive davvero (`node === other` true), ma il contesto del dialog è perso per una tecnologia assistiva; in Chromium il costo è attenuato dal *sequential focus navigation starting point* (1 solo Tab per raggiungere la textarea), fuori da Chromium non è garantito. Fix: `useRef` + `useEffect` su `[sheetRejecting]` in `ppr-console.tsx`, **inerte a sheet chiuso** (entrambe le ref `null`) così la baseline 15.1 non regredisce. Misura: passo 2 `BODY` → **`TEXTAREA` `inPanel:true`**; "Annulla" `BODY` → **`ppr-reject-button-mobile` `inPanel:true`**; Escape → focus ancora su `ppr-row-mobile`.
+- **F2 — major (chiuso).** `.kpi-row > *{ flex: 1 0 auto }` non aveva tetto superiore: card KPI misurata a **2276px** sulla landing PILOTA (strip 2820px = 7,5 schermate). **Non è un artefatto del DB sporco**: con 5 abilitazioni realistiche la card arriva a **447px**, più larga del viewport. Prima della story quella fascia era `repeat(2, minmax(0,1fr))` + `min-width:0` (13.10 F1) e il valore veniva contenuto. **La guardia scritta per proteggere la strip era cieca per costruzione**: asseriva solo il limite INFERIORE (`cardWidth >= 146`), che resta verde a 2276px. Fix: `max-width: 100%` (scelto al posto del `calc(100vw - 56px)` proposto dal reviewer: il content box della strip È già la colonna di contenuto, quindi non dipende dalla scrollbar) + `overflow-wrap: anywhere` e clamp a 2 righe. Misura: **2276 → 319px**, strip 2820 → 862px, `pageOverflow 0`, altezze omogenee (103px). Effetto secondario trovato dal fixer: `-webkit-box` non è flex e perdeva il `gap` dell'unità ("91 / 94") → `margin-left: 8px` ridichiarato.
+- **F3 — major (chiuso in parte, per RATIFICA PO).** La modalità a tutto schermo di R3/R-15.2-e include "azione primaria fissa in basso": il **tutto schermo** è su **11/11** (rect `375×812`, `border-left 0`), la **barra fissa** su **7/11**. I 4 pannelli scoperti hanno il submit da 217 a 906px sotto il fold. **Ratifica PO R-15.2-g (2026-07-30)**: chiudere subito `aircraft-editor` (una riga: riga d'azione unica e ultima nel corpo) e **rinviare `pilot-editor` (2 form) e `instructor-editor` (3 form) alla story 15.5**, che nel piano possiede già quelle anagrafiche. Motivo tecnico che sostiene il rinvio: in quei pannelli il salva principale sta **a metà** pannello con altre sezioni sotto — una barra sticky lì **si sgancia scorrendo** (peggiore del problema), e applicarla a ogni form impilerebbe 2-3 barre. Il fix corretto è spostare il salva primario nel piede del pannello, che è lavoro di 15.5. TD registrato in `sprint-status.yaml` con le misure. Misura del fix fatto: submit `bottom 1029 / reachable false` → **`bottom 800 / reachable true`** a `scrollTop 0`, e ancora raggiungibile col body scrollato a fondo; desktop invariato a 1280/800/641.
+- **F4 — minor (chiuso).** 409 `PPR_ALREADY_DECIDED` esercitato dal reviewer con **due context di browser concorrenti**: toast corretto e sheet non appeso, ma mancava `router.refresh()` sul ramo d'errore → la riga stantia restava e il conflitto si ripeteva a ogni tap. Pre-esistente anche sul desktop (ramo condiviso): 1 riga per handler, sistemati entrambi gli alberi.
+- **F5 — minor (chiuso).** Azione primaria a **35px** su 10 pannelli su 11 (inclusi i 3 con `footer`), contro i 44px che la story adotta ovunque altrove. `@media (max-width:640px){ .so-foot .btn{ min-height:44px } }`: 35 → **44px** a 375px, invariato a 1280.
+- **F6 — minor (chiuso).** Nome accessibile del dialog malformato **sul caso dominante** (richiesta PENDING): `"Richiesta — — I-PK7X9CMW · Cessna 172"` in IT e EN, perché `sub` finiva già col fallback `—`. Composto senza fallback (il numero PPR non esiste finché non si approva, quindi non è parte del nome).
+- **Guardia mancante di D4 (aggiunta).** Il full-bleed della strip si reggeva sull'invariante "ogni `.kpi-row` è figlia diretta di `.page`" — verificata dal reviewer **9/9 su 4 ruoli**, ma senza rete. Ora asserita.
+- **F10 — nit (corretto nel record).** V. gate arbitro sopra: attribuzione errata al lock TD-6.
+- **Non corretti, con motivo**: F7 (azioni sotto il fold nello sheet con note molto lunghe — coerente col template `max-height:80vh`, nessun AC lo chiede), F8 (`.bottom-sheet-sub` a 3.66:1 — è la famiglia `--ink-4`, ratificata dal PO in 13.9 F6 con pavimento 3:1), F9 (precisazione sulla discriminanza di una guardia, non un difetto), F11/F12 (nit strutturali, un solo consumer / nessun percorso reale).
+
+### Verdetto sulle 8 deviazioni del dev
+
+Sette **legittime** (fra cui `:has()` — già idioma di `airops.css:1110`, e il clamp dello sticky provato su corpi fino a **10960px**, che smentisce la preoccupazione del dev: non serve un secondo consumer per fidarsi della regola). Una, **D2**, **parzialmente legittima → corretta**: il sotto-argomento "due pannelli rendono più form" è confermato empiricamente (`instructor-editor` ne rende **3**), ma "gli altri ereditano e va bene" è smentito per `aircraft-editor` (F3).
+
+### Rispetto delle 6 ratifiche PO
+
+R-15.2-a **rispettata** nella struttura (stesso nodo, nessun secondo overlay, "Annulla" conserva la bozza, submit vuoto a **0 richieste di rete** provate con contatore su `page.route`) con il difetto a11y F1, ora chiuso. R-15.2-b **rispettata** (card = un solo `<button>`, 0 interattivi annidati, aperta con **42 Tab reali** + Enter, non con `focus()`). R-15.2-c, R-15.2-d **rispettate**. R-15.2-e **rispettata per il tutto schermo (11/11)**, parziale sulla barra fissa → R-15.2-g. R-15.2-f **rispettata** (9/9 su 4 ruoli).
+
+### Cosa NON è stato verificato (dichiarato, non nascosto)
+
+- Ramo "coda PPR vuota": nessuno dei 5 stati era vuoto su questo DB, quindi l'unicità del nodo `ppr-queue-empty` è **lettura del codice, non misura**.
+- `instructor-profile.tsx` (1 degli 11 consumer): il reviewer non è riuscito a raggiungerne il trigger; resta la misura del dev.
+- `env(safe-area-inset-*)`: l'app non dichiara `viewport-fit=cover` in nessun layout (grep a zero) → **tutti** gli `env()` dell'epic (15.1 e 15.2) valgono 0 e sono oggi inerti. Segnalato per l'epic, non come finding.
+- Tutto misurato su Chromium headless: le implicazioni di F1 fuori da Chromium sono argomentate, non misurate.
+
+### Verifica dei fix (sessione principale, arbitro finale)
+
+- `npm run gates` (fix teammate, albero finale dopo il restore della prova F1): **PASS** — lint 17s · typecheck 3s · **test 1605/1605** · build 26s.
+- Mirati su build di produzione, `--workers=1`: `ppr-queue` + `mobile-primitives` **12/12**; `my-compensation` (390px, ha una `.kpi-row`) + `mobile-shell` **12/12**.
+- **Prove di discriminanza delle 3 guardie nuove: 3/3 ROSSE col pre-fix.** Notevole la prima: la guardia del focus è stata provata **su build reale** (`useEffect` neutralizzato, ricompilato e riservito), non con un'iniezione CSS — il livello di prova più alto usato finora nell'epic.
+- **Suite completa `CI=1` su build di produzione, DB FRESCO (arbitro finale, post-fix): exit 0 — 309 passed, 0 failed, 0 flaky, 0 skipped, 6.5 min.** Conteggio invariato rispetto al gate del reviewer: i fix hanno aggiunto asserzioni dentro test esistenti, non test nuovi.
+- **Verifica indipendente della sessione principale**: il diff CSS dei fix vive interamente dentro `@media (max-width: 640px)` (controllato riga per riga) → desktop invariato per costruzione, oltre che per misura.
+
+### Verdetto finale
+
+**SHIPPABLE.** Il gate arbitro è verde su DB fresco sia prima (309/309) sia dopo i fix (309/309, exit 0). I tre major sono chiusi con misure prima/dopo; il residuo di F3 è un **rinvio ratificato dal PO** a 15.5 — la story che già possiede quelle due anagrafiche — con TD registrato e misure allegate, non un difetto lasciato scoperto.
+
+Il valore aggiunto della review è concentrato in tre punti che né il dev né la sessione principale avevano visto: il **focus perso** nell'interazione centrale che la story inventa; una **card KPI da 2276px** su una pagina vista da un ruolo intero, degradante già con 5 abilitazioni realistiche; e una **guardia cieca per costruzione**, che proteggeva solo il limite inferiore della stessa regola che il difetto violava dall'alto. In più ha **smentito** un'attribuzione del dev (il lock anti-brute-force non era in gioco) — correzione importante perché quella diagnosi era destinata a essere riusata.

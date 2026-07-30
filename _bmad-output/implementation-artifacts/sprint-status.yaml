@@ -32,7 +32,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-30 (EPIC 15 in corso: 15.1 shell mobile DONE — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
+last_updated: 2026-07-30 (EPIC 15 in corso: 15.1 shell mobile e 15.2 primitive mobile DONE. 15.2: BottomSheet + pannello form a tutto schermo + KPI strip, coda PPR come consumer di prova; arbitro finale 309/309 exit 0 su DB fresco. Storico 15.1 — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -301,7 +301,18 @@ development_status:
   # tutti gli 11 SlideOver; KPI strip su tutte le 9 fasce) e 2 dalla sessione
   # principale perché già decise dal piano epic (filtri/export restano a
   # 15.4/15.8; una lista sola guidata dal filtro esistente).
-  15-2-primitive-mobile: review
+  # 15.2 chiusa 2026-07-30. Ciclo eseguito da QUATTRO teammate distinti (story ->
+  # dev -> review -> fix), tutti Opus 5, per scelta dell'utente. Review Opus 5
+  # SHIPPABLE-WITH-FIXES: 3 major misurati che nessun altro aveva visto — il focus
+  # che esce dal pannello nel passo del rifiuto (l'interazione centrale della
+  # story); una card KPI da 2276px sulla landing pilota, degradante gia' con 5
+  # abilitazioni realistiche; e una guardia CIECA per costruzione (proteggeva solo
+  # il limite inferiore della regola che il difetto violava dall'alto). Ha anche
+  # SMENTITO un'attribuzione del dev (lock anti-brute-force TD-6: il contatore
+  # conta solo i tentativi falliti, 3 nella finestra e 0 su admin). Ratifica PO
+  # R-15.2-g: barra fissa chiusa su aircraft-editor, rinviata a 15.5 per i due
+  # editor multi-form (v. action_items). Arbitro finale 309/309 exit 0.
+  15-2-primitive-mobile: done
   15-3-panoramica-mobile: backlog
   15-4-pianificazione-mobile: backlog
   15-5-anagrafiche-card-mobile: backlog
@@ -315,6 +326,10 @@ action_items:
   - epic: 15
     action: "TD (review 15.2 F3, RINVIO ratificato dal PO 2026-07-30): la riga d'azione fissa in basso della modalita' a tutto schermo (R3, classe `.so-actions`) manca su `pilots/pilot-editor.tsx` (2 form nello stesso pannello) e `instructors/instructor-editor.tsx` (3 form). Misurato a 375x812 dalla review: pilot-editor NUOVO body scrollHeight 1652/728 con il submit 906px sotto il fold, pilot-editor MODIFICA submit a bottom 2269, instructor-editor MODIFICA a 2072 - non hit-testabili senza scorrere. NON risolvibile applicando la regola a tappeto: una barra sticky su un'azione che sta a META' pannello si sgancia scorrendo, e metterla su ogni riga impilerebbe 2-3 barre. Serve spostare il salva PRIMARIO nel piede del pannello, decidendo quale riga e' primaria: lavoro della story 15.5, che nel piano possiede gia' quelle due anagrafiche. `fleet/aircraft-editor.tsx` (riga d'azione unica, submit 217px sotto il fold) e' stato chiuso subito nel fix della 15.2."
     owner: "story 15.5"
+    status: open
+  - epic: 15
+    action: "TD (review 15.2, rilievo di EPIC non di story): l'app non dichiara `viewport-fit=cover` in nessun layout (grep a zero), quindi TUTTI gli `env(safe-area-inset-*)` introdotti dall'epic valgono 0 e sono inerti: tab bar e toast-host della 15.1, riga `.so-actions` della 15.2. Oggi innocui, ma la convenzione non fa nulla e una futura verifica su iPhone con notch la troverebbe non applicata. Decidere in 15.10 (sweep finale): o si aggiunge `viewport-fit=cover` al meta viewport e si verifica il layout su un device con inset reali, o si rimuovono gli `env()` come rumore. NON va deciso a occhio su Chromium headless, che ha inset 0."
+    owner: "story 15.10 (sweep finale)"
     status: open
   - epic: 14
     action: "TD (review 14.9 F11, PRE-esistente): /api/v1/stats e /api/v1/cash-report rispondono 422 (validazione Zod della query) PRIMA del 403 a un attore non autorizzato, mentre tutti gli altri endpoint gated fanno 403 -> un attore senza permesso apprende la forma dei parametri. Uniformare l'ordine gate-prima-di-validazione (o ratificare la convenzione)."

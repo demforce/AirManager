@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-30 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: story 15.1 shell mobile DONE**. Prossimo lavoro: **story 15.2 — primitive mobile**)
+# HANDOFF — AirManager (aggiornato: 2026-07-30 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1 shell mobile e 15.2 primitive mobile DONE**. Prossimo lavoro: **story 15.3 — Panoramica mobile**)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -34,6 +34,42 @@ Commit: `e6ed88b` feat, `14ff9e5` record, `64363e4` fix review, + docs di chiusu
   a tutti i test e a entrambe le verifiche interattive (che avevano guardato solo attori a ruolo singolo).
 - **Lezione (durevole)**: un fix CSS senza asserzione è un fix che può sparire — il sollevamento del toast si poteva
   rimuovere lasciando la suite verde (review F2). Ogni regola introdotta per un difetto misurato vuole la sua guardia.
+
+### 15.2 Primitive mobile — DONE (2026-07-30)
+
+`BottomSheet` di dettaglio + pannello form a tutto schermo (modalità mobile di `SlideOver`) + KPI strip a scroll-snap,
+con la **coda PPR** come primo consumer completo. Story file con Dev Agent Record e Review Record completi:
+`_bmad-output/implementation-artifacts/15-2-primitive-mobile.md`. Commit: `37359b7` story, `169acce` feat,
+`230b7ed` record, `8f3d22c` fix di review. Arbitro finale: **309/309, exit 0, DB fresco**.
+
+- **Ciclo eseguito da QUATTRO teammate distinti** (story → dev → review → fix), tutti Opus 5, per scelta dell'utente
+  del 2026-07-30 — prima volta: fino alla 15.1 story e fix li faceva la sessione principale. **Ha funzionato**: la
+  story è uscita più ricca (ricognizione con path e righe, 11 AC verificabili, assunzioni isolate come ratifiche
+  bloccanti) e il fix più rigoroso. **Da rifare così.**
+- **7 ratifiche PO** (R-15.2-a..g) chiuse PRIMA di implementare. Le due che vale la pena ricordare: **R-15.2-b**
+  (Approva/Nega SOLO nello sheet) è una **divergenza deliberata dal template** — non "ripristinare" le azioni sulla
+  card credendola una svista; **R-15.2-g** rinvia a 15.5 la barra d'azione fissa su `pilot-editor`/`instructor-editor`
+  (2 e 3 form nello stesso pannello: lì il salva primario va spostato nel piede, non reso sticky a metà pannello).
+- **⚠️ TRAPPOLA DI SETUP, da evitare alla prossima review**: il tipo di agent `adversarial-reviewer`
+  (`.claude/agents/adversarial-reviewer.md`) ha una **lista di tool ristretta che NON include la messaggistica** →
+  ha prodotto il report ma non ha potuto consegnarlo, ed è andato in idle. Recuperato dal transcript
+  (`~/.claude/projects/<progetto>/<sessionId>.jsonl`, ultimi blocchi di testo assistant). Rimedio: concedergli il
+  tool di messaggistica, oppure mettere in conto di leggere il transcript. **Stessa classe della 15.1**, dove il
+  reviewer era morto per session limit: in entrambi i casi **il lavoro NON era perso**.
+- **⚠️ `.claude/agents/dev-story.md` ha `model: sonnet`** nel frontmatter, che contraddice la regola "il codice UI lo
+  scrive Opus 5". Va passato `model: 'opus'` esplicitamente a ogni dispatch (il parametro ha precedenza). Il default
+  resta corretto per le story di backend puro — è una mina solo per chi si dimentica l'override.
+- **Lezione (durevole) — una guardia può essere cieca per costruzione**: la guardia anti-clipping della KPI strip
+  asseriva solo il limite INFERIORE (`cardWidth >= 146`) e restava verde con una card da **2276px**. Quando una
+  regola nuova sostituisce un vincolo (qui: da `minmax(0,1fr)` che CONTENEVA il valore, a `flex:1 0 auto` che lo
+  lascia crescere), la guardia va scritta sul lato che la regola ha **liberato**, non su quello che già teneva.
+- **Lezione (durevole) — il livello di prova più alto è la build reale**: la discriminanza della guardia sul focus è
+  stata provata neutralizzando l'`useEffect`, **ricompilando e riservendo** l'app, non con un'iniezione CSS. Quando
+  il difetto è nel comportamento JS e non nel CSS, l'iniezione non è una riproduzione fedele.
+- **Lezione (durevole) — attribuire un fallimento è un'affermazione da provare**: il dev aveva dato per certo il lock
+  anti-brute-force TD-6 citando 570 `LoginAttempt`; il reviewer ha letto `login-throttle.ts:25` (conta solo
+  `succeeded = false`) e misurato **3 falliti, 0 su admin**. Interrogare la tabella non basta: bisogna sapere COSA
+  conta il contatore.
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 
