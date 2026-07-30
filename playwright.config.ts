@@ -46,6 +46,7 @@ export default defineConfig({
         '**/treasury-settings.spec.ts',
         '**/billing-global.spec.ts',
         '**/mobile-metar.spec.ts',
+        '**/mobile-overview-overflow.spec.ts',
       ],
       use: sharedUse,
     },
@@ -95,6 +96,18 @@ export default defineConfig({
       name: 'mobile-metar',
       testMatch: '**/mobile-metar.spec.ts',
       dependencies: ['billing-global'],
+      use: sharedUse,
+    },
+    {
+      // Review 15.3 F3 — proving that the mobile "Prenotazioni in attesa" card
+      // declares its truncation means holding NINE pending bookings in the
+      // GLOBAL 48h window at once, which under `fullyParallel` would shift
+      // every other spec's view of that same card (`home-dashboard.spec.ts`
+      // reads the 8-row window). Last in the chain, and it cancels its own
+      // fixtures in `afterAll` — nothing downstream inherits them.
+      name: 'mobile-overview-overflow',
+      testMatch: '**/mobile-overview-overflow.spec.ts',
+      dependencies: ['mobile-metar'],
       use: sharedUse,
     },
   ],

@@ -26,7 +26,8 @@ import { Badge } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { Icon } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/toast';
-import { useRouter } from '@/i18n/navigation';
+import { Link, useRouter } from '@/i18n/navigation';
+import type { AppLocale } from '@/i18n/routing';
 import { postBookingTransition, type BookingTransitionErrorLabels } from './bookings/booking-transition';
 
 export type MobilePendingBookingRow = {
@@ -59,15 +60,26 @@ export type MobilePendingBookingsLabels = {
   reasonTitle: string;
   reasonSubmit: string;
   reasonCancel: string;
+  /** `{count}` placeholder, client-filled — pass it with `t.raw`. */
+  seeAll: string;
   errors: BookingTransitionErrorLabels;
 };
 
 export type MobilePendingBookingsProps = {
   rows: MobilePendingBookingRow[];
   labels: MobilePendingBookingsLabels;
+  locale: AppLocale;
+  /**
+   * How many pending bookings the head counts but this card does not list
+   * (review 15.3 F3). The head shows the WINDOW's total and the card is capped
+   * at `MOBILE_PENDING_BOOKINGS_PAGE_SIZE`, so above the cap the two numbers
+   * disagree — on a decision queue, silently. Same shape as the sibling
+   * `MobileAlertsCard`, which already declares its own truncation.
+   */
+  hiddenCount: number;
 };
 
-export function MobilePendingBookings({ rows, labels }: MobilePendingBookingsProps) {
+export function MobilePendingBookings({ rows, labels, locale, hiddenCount }: MobilePendingBookingsProps) {
   const router = useRouter();
   const toast = useToast();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -108,10 +120,13 @@ export function MobilePendingBookings({ rows, labels }: MobilePendingBookingsPro
 
     if (!outcome.ok) {
       toast.show(outcome.message, 'bad');
-      // Review 15.2 F4's lesson: a 409 means somebody else decided this
-      // booking, so the row on screen is stale — it has to go, or the same
-      // card keeps re-opening a sheet that can only produce another 409.
-      if (outcome.conflict) {
+      // Review 15.2 F4's lesson: when the server says this booking is no longer
+      // the one on screen, the row has to go, or the card keeps re-opening a
+      // sheet that can only produce the same error. Keyed on `stale`, NOT on
+      // `conflict`: review 15.3 F2 measured that "somebody else already decided
+      // it" answers 422, not 409, so the 409-only version left the sheet open
+      // on a dead row in exactly the scenario it was written for.
+      if (outcome.stale) {
         closeSheet();
         router.refresh();
       }
@@ -139,7 +154,7 @@ export function MobilePendingBookings({ rows, labels }: MobilePendingBookingsPro
 
     if (!outcome.ok) {
       toast.show(outcome.message, 'bad');
-      if (outcome.conflict) {
+      if (outcome.stale) {
         closeSheet();
         router.refresh();
       } else {
@@ -194,11 +209,27 @@ export function MobilePendingBookings({ rows, labels }: MobilePendingBookingsPro
             </button>
           ))
         )}
-        {/* No "tutte le prenotazioni" footer here on purpose: the hidden
-            calendar AND the hidden full table both live at
-            `/dashboard/bookings`, so the page carries ONE link to it (the
-            `.mobile-shortcuts` row at the end of the Panoramica) instead of two
-            CTAs with the same destination. */}
+        {/* Review 15.3 F3 — this card used to carry NO footer, on the argument
+            that the page already links to `/dashboard/bookings` once from
+            `.mobile-shortcuts`. That reasoning holds for a plain "see the whole
+            list" CTA, and does NOT hold for a TRUNCATED decision queue: with
+            the head saying 10 and eight rows on screen, nothing on the page
+            said the other two existed. The generic shortcut is not that
+            signal — it is neither attached to the card nor to the number. This
+            footer only appears when the card actually hides something, and it
+            deep-links to the pending filter rather than to the whole list. */}
+        {hiddenCount > 0 ? (
+          <div className="mobile-card-foot">
+            <Link
+              href="/dashboard/bookings?status=PENDING"
+              locale={locale}
+              className="btn"
+              data-testid="mobile-overview-pending-see-all"
+            >
+              {labels.seeAll.replace('{count}', String(hiddenCount))}
+            </Link>
+          </div>
+        ) : null}
       </div>
 
       {openRow ? (

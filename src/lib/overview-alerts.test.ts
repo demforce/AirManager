@@ -139,6 +139,46 @@ describe('buildOverviewAlerts — cap and "Vedi tutte" (the case no e2e can fabr
   });
 
   it('returns nothing at all on an empty airfield', () => {
-    expect(buildOverviewAlerts(EMPTY)).toEqual({ items: [], hiddenCount: 0, moreHref: null });
+    expect(buildOverviewAlerts(EMPTY)).toEqual({ items: [], hiddenCount: 0, hiddenCountIsFloor: false, moreHref: null });
+  });
+});
+
+/**
+ * Review 15.3 F7, PO ratification 2026-07-30. `hiddenCount` counts what the
+ * FEED hid, but the expiries handed to the feed are themselves capped by the
+ * caller's scan limit — so above that cap "+N altri" was a number that quietly
+ * under-reported (measured: "+48 altri" while the truth was higher). The feed
+ * now says whether its own count is a floor, and the card renders "+N e oltre".
+ */
+describe('buildOverviewAlerts — "+N" is a floor when the source scan was capped (F7)', () => {
+  const capped = (count: number, scanLimit?: number) =>
+    buildOverviewAlerts({
+      ...EMPTY,
+      expiries: Array.from({ length: count }, (_, index) => expiry(`e-${index}`, -index)),
+      ...(scanLimit === undefined ? {} : { expiriesScanLimit: scanLimit }),
+    });
+
+  it('a FULL scan means more may exist beyond it: the count is a floor', () => {
+    const result = capped(60, 60);
+    expect(result.hiddenCount).toBe(55);
+    expect(result.hiddenCountIsFloor).toBe(true);
+  });
+
+  it('a scan that came back under its limit saw everything: the count is exact', () => {
+    const result = capped(12, 60);
+    expect(result.hiddenCount).toBe(7);
+    expect(result.hiddenCountIsFloor).toBe(false);
+  });
+
+  it('nothing hidden, nothing to caveat — even when the scan was full', () => {
+    // Five expiries exactly fill the feed: `hiddenCount` is 0, so "+N e oltre"
+    // must not appear just because the scan limit happened to be five too.
+    const result = capped(5, 5);
+    expect(result.hiddenCount).toBe(0);
+    expect(result.hiddenCountIsFloor).toBe(false);
+  });
+
+  it('without a declared scan limit the input IS everything (unit-test default)', () => {
+    expect(capped(20).hiddenCountIsFloor).toBe(false);
   });
 });

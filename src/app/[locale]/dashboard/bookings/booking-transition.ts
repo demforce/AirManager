@@ -62,8 +62,21 @@ export function bookingErrorMessage(code: string | undefined, body: BookingApiEr
 
 export type BookingTransitionOutcome =
   | { ok: true }
-  /** `conflict` is the 409 (someone else decided first): the caller's list is stale. */
-  | { ok: false; conflict: boolean; message: string };
+  /**
+   * `conflict` is the 409 — which on THIS endpoint means slot overlap or an
+   * archived aircraft, exactly what `labels.conflict` describes.
+   *
+   * `stale` is the broader question a caller actually asks ("is the row on my
+   * screen still real?"), and review 15.3 F2 measured that the two are not the
+   * same: when somebody else has already decided the booking,
+   * `bookings.service.ts#transitionBooking` raises a `ValidationError`
+   * (`BOOKING_TRANSITION_INVALID`), and `lib/api/handler.ts` maps
+   * ValidationError -> **422**, ConflictError -> 409. A caller keying its
+   * "close and refresh" on `conflict` therefore did nothing in the one
+   * scenario it was written for: the sheet stayed open over a dead row and
+   * every further tap produced the same error.
+   */
+  | { ok: false; conflict: boolean; stale: boolean; message: string };
 
 /**
  * `reason` is only sent when present — the schema keeps it optional at the type
@@ -84,8 +97,18 @@ export async function postBookingTransition(
   });
 
   if (response.ok) return { ok: true };
-  if (response.status === 409) return { ok: false, conflict: true, message: labels.conflict };
+  if (response.status === 409) return { ok: false, conflict: true, stale: true, message: labels.conflict };
 
   const body = await readBookingApiError(response);
-  return { ok: false, conflict: false, message: bookingErrorMessage(body?.error?.code, body, labels) };
+  const code = body?.error?.code;
+  return {
+    ok: false,
+    conflict: false,
+    // 422 `BOOKING_TRANSITION_INVALID` = the booking is no longer in a state
+    // this transition applies to, i.e. the caller's row is stale (review 15.3
+    // F2). Every other 4xx here is about THIS request (missing reason, expired
+    // documents, aircraft out of service): the row is fine, the input is not.
+    stale: code === 'BOOKING_TRANSITION_INVALID',
+    message: bookingErrorMessage(code, body, labels),
+  };
 }

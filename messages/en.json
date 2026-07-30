@@ -135,12 +135,14 @@
         "pending": {
           "title": "Bookings pending",
           "count": "{count} to approve",
+          "seeAll": "+{count} · See all",
           "empty": "No booking is waiting for approval."
         },
         "alerts": {
           "title": "Alerts",
           "empty": "No alerts: expiries, balances and PPR are all in order.",
           "seeAll": "+{count} more · See all",
+          "seeAllAtLeast": "+{count} and more · See all",
           "balanceSub": "Balance {amount}",
           "pprSub": "Requests awaiting a decision"
         },

@@ -135,12 +135,14 @@
         "pending": {
           "title": "Prenotazioni in attesa",
           "count": "{count} da approvare",
+          "seeAll": "+{count} · Vedi tutte",
           "empty": "Nessuna prenotazione da approvare."
         },
         "alerts": {
           "title": "Avvisi",
           "empty": "Nessun avviso: scadenze, saldi e PPR sono in regola.",
           "seeAll": "+{count} altri · Vedi tutte",
+          "seeAllAtLeast": "+{count} e oltre · Vedi tutte",
           "balanceSub": "Saldo {amount}",
           "pprSub": "Richieste in attesa di risposta"
         },

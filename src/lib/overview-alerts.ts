@@ -56,6 +56,14 @@ export type OverviewAlertsInput = {
   expiries: readonly OverviewAlertExpiry[];
   negativeBalances: readonly OverviewAlertNegativeBalance[];
   pprPendingCount: number;
+  /**
+   * The cap the caller applied when FETCHING `expiries`
+   * (`EXPIRIES_WIDGET_SCAN_LIMIT`). When the fetch came back full, this feed
+   * cannot know how many more exist — see `hiddenCountIsFloor` (review 15.3
+   * F7). Optional so the unit tests that build a handful of expiries stay
+   * unchanged: an unset cap means "the input is everything".
+   */
+  expiriesScanLimit?: number;
 };
 
 export type OverviewAlert =
@@ -68,6 +76,15 @@ export type OverviewAlerts = {
   items: OverviewAlert[];
   /** How many voices the cap hid (0 when nothing was truncated). */
   hiddenCount: number;
+  /**
+   * `true` when `hiddenCount` is a FLOOR, not a total: the expiries handed in
+   * were themselves capped by the caller's scan limit, so more voices exist
+   * beyond the ones this feed could see (review 15.3 F7 — measured "+48 altri"
+   * while the real number was higher). The reader is told "+N e oltre" instead
+   * of a number that quietly lies; "Vedi tutte" leads to the page that pages
+   * through everything either way.
+   */
+  hiddenCountIsFloor: boolean;
   /**
    * Destination of the "Vedi tutte" row, shown only when `hiddenCount > 0`:
    * the page of competence of the most urgent voice the reader is NOT seeing
@@ -157,9 +174,14 @@ export function buildOverviewAlerts(input: OverviewAlertsInput, limit: number = 
   const items = ordered.slice(0, Math.max(0, limit));
   const hidden = ordered.slice(items.length);
 
+  const expiriesWereCapped = input.expiriesScanLimit !== undefined && input.expiries.length >= input.expiriesScanLimit;
+
   return {
     items,
     hiddenCount: hidden.length,
+    // Only meaningful when something IS hidden: a full scan that still fits
+    // under the limit hides nothing and needs no caveat.
+    hiddenCountIsFloor: hidden.length > 0 && expiriesWereCapped,
     moreHref: hidden.length > 0 ? DOMAIN_HREF[hidden[0]!.kind] : null,
   };
 }

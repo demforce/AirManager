@@ -36,9 +36,16 @@ export type MobileAlertsCardProps = {
     empty: string;
     /** `{count}` placeholder, filled here — shown only when the cap truncated. */
     seeAll: string;
+    /**
+     * Same, for when `hiddenCount` is only a floor ("+{count} e oltre"):
+     * review 15.3 F7, PO ratification 2026-07-30.
+     */
+    seeAllAtLeast: string;
   };
   /** How many voices the cap hid, and where the overflow row leads (`buildOverviewAlerts`). */
   hiddenCount: number;
+  /** `true` when `hiddenCount` under-counts because the source scan was itself capped. */
+  hiddenCountIsFloor: boolean;
   moreHref: string | null;
 };
 
@@ -48,7 +55,7 @@ const KIND_ICON: Record<OverviewAlertKind, (typeof Icon)['clock']> = {
   pprPending: Icon.plane,
 };
 
-export function MobileAlertsCard({ items, locale, labels, hiddenCount, moreHref }: MobileAlertsCardProps) {
+export function MobileAlertsCard({ items, locale, labels, hiddenCount, hiddenCountIsFloor, moreHref }: MobileAlertsCardProps) {
   return (
     <div className="card" data-testid="mobile-overview-alerts">
       <div className="mobile-card-head">
@@ -79,7 +86,7 @@ export function MobileAlertsCard({ items, locale, labels, hiddenCount, moreHref 
       {hiddenCount > 0 && moreHref ? (
         <div className="mobile-card-foot">
           <Link href={moreHref} locale={locale} className="btn" data-testid="mobile-overview-alerts-see-all">
-            {labels.seeAll.replace('{count}', String(hiddenCount))}
+            {(hiddenCountIsFloor ? labels.seeAllAtLeast : labels.seeAll).replace('{count}', String(hiddenCount))}
           </Link>
         </div>
       ) : null}

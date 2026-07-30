@@ -31,6 +31,29 @@
  */
 import { useEffect, useRef, type ReactNode } from 'react';
 
+/**
+ * The sheet currently claiming the screen, if any — module-level on purpose.
+ *
+ * Review 15.3 F4 measured what happens without it: the Panoramica admin mounts
+ * TWO sheet owners ("In corso ora" and "Prenotazioni in attesa"), each with its
+ * own `openId`, and two Tab presses were enough to leave the first sheet open,
+ * reach a row behind it and open the second — two `role="dialog"`, two scrims
+ * stacked, and one testid matching twice (which AC 9 forbids). Until 15.2 the
+ * question could not arise: every face had a single owner.
+ *
+ * "One bottom sheet at a time" is a property of the PATTERN, not of any one
+ * caller, so it belongs to the chassis — the same reasoning this file already
+ * applies to Escape and focus, and the reason 15.10's focus trap will land
+ * here once for everybody. A caller-side fix (lifting `openId`, or renaming
+ * testids) would have to be repeated by every future pair of owners, and 15.4
+ * onwards adds more of them.
+ *
+ * Identity is a per-instance token, not the callback: `onClose` is required to
+ * be stable, but comparing tokens means an instance can never close ITSELF by
+ * re-registering.
+ */
+let openSheet: { token: object; close: () => void } | null = null;
+
 export type MobileSheetProps = {
   open: boolean;
   /** Must be referentially stable (`useCallback`) — it gates the focus effect below. */
@@ -44,9 +67,15 @@ export type MobileSheetProps = {
 
 export function MobileSheet({ open, onClose, label, testId, children }: MobileSheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const tokenRef = useRef<object>({});
 
   useEffect(() => {
     if (!open) return;
+    // Claim the screen, evicting whoever held it (review 15.3 F4).
+    const evicted = openSheet;
+    openSheet = { token: tokenRef.current, close: onClose };
+    if (evicted && evicted.token !== tokenRef.current) evicted.close();
+
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     panelRef.current?.focus();
     const handleKeydown = (event: KeyboardEvent) => {
@@ -54,6 +83,7 @@ export function MobileSheet({ open, onClose, label, testId, children }: MobileSh
     };
     window.addEventListener('keydown', handleKeydown);
     return () => {
+      if (openSheet?.token === tokenRef.current) openSheet = null;
       window.removeEventListener('keydown', handleKeydown);
       previouslyFocused?.focus();
     };

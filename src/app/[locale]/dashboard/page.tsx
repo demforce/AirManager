@@ -279,6 +279,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     scheduleAircraftOptions,
     instructorOptions,
     negativeBalances,
+    metarCard,
   ] = await Promise.all([
     getAirfieldIcao(),
     getAirfieldBranding(),
@@ -309,6 +310,11 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     // lookup, `finance.manage`-gated exactly like this face. Not
     // `hasNegativeBalanceAlert`, which is the per-charge point check, not a list.
     listNegativeBalances(actor),
+    // IN the Promise.all, not awaited after it (review 15.3 F6): the card costs
+    // a settings read plus an upstream HTTP fetch, and serializing it added
+    // that latency to every render of the home — including at 1280px, where the
+    // card has a 0x0 box. R-15.3-f ratified the double fetch, not the wait.
+    renderMobileMetarCard(t('mobile.metarTitle')),
   ]);
 
   // --- .sub: ICAO (D3) + AOG + PPR pending + al suolo (12.4 reuse) --------
@@ -443,6 +449,9 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     expiries: expiriesResult.items,
     negativeBalances,
     pprPendingCount: pendingPprResult.total,
+    // The same cap the fetch above used: when the scan comes back full, the
+    // feed's "+N" is a floor and says so (review 15.3 F7).
+    expiriesScanLimit: EXPIRIES_WIDGET_SCAN_LIMIT,
   });
   const alertItems: MobileAlertsCardItem[] = alerts.items.map((alert) => {
     const common = { key: alert.key, kind: alert.kind, tone: alert.tone, href: alert.href };
@@ -469,8 +478,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         return { ...common, title: t('overview.pprPendingCount', { count: alert.count }), sub: t('overview.mobile.alerts.pprSub') };
     }
   });
-
-  const metarCard = await renderMobileMetarCard(t('mobile.metarTitle'));
 
   return (
     <main className="page">
@@ -561,19 +568,28 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
             reasonTitle: tBookings('list.denyModal.title'),
             reasonSubmit: tBookings('list.denyModal.submit'),
             reasonCancel: tBookings('list.denyModal.cancel'),
+            // `t.raw`: the `{count}` placeholder is filled client-side, and
+            // `t()` would render the KEY (the ICU lesson of epic 13/14.3).
+            seeAll: t.raw('overview.mobile.pending.seeAll') as string,
             errors: buildBookingsTableLabels(tBookings).actions.errors,
           }}
+          locale={locale}
+          // Review 15.3 F3: what the head counts minus what the card lists.
+          // Never negative — the rows come from the very same query, capped.
+          hiddenCount={Math.max(0, embedPendingResult.total - pendingRows.length)}
         />
 
         <MobileAlertsCard
           items={alertItems}
           locale={locale}
           hiddenCount={alerts.hiddenCount}
+          hiddenCountIsFloor={alerts.hiddenCountIsFloor}
           moreHref={alerts.moreHref}
           labels={{
             title: t('overview.mobile.alerts.title'),
             empty: t('overview.mobile.alerts.empty'),
             seeAll: t.raw('overview.mobile.alerts.seeAll') as string,
+            seeAllAtLeast: t.raw('overview.mobile.alerts.seeAllAtLeast') as string,
           }}
         />
 
@@ -804,12 +820,14 @@ async function renderInstructorLanding(
   const todayStart = zonedMidnightUtc(today, APP_TIMEZONE);
   const tomorrowStart = zonedMidnightUtc(addDaysDateOnly(today, 1), APP_TIMEZONE);
 
-  const [compensation, flightsTodayTotals, calendarBookingsToday] = await Promise.all([
+  const [compensation, flightsTodayTotals, calendarBookingsToday, metarCard] = await Promise.all([
     getOwnCompensationSummary(actor),
     me.person
       ? getFlightTotals(actor, { dateFrom: today, dateTo: today, status: 'REGISTERED', instructorPersonId: me.person.id, page: 1, pageSize: 1 })
       : Promise.resolve({ count: 0, minutes: 0, takeoffs: 0, landings: 0, revenueCents: 0 }),
     listCalendarBookings(actor, { from: todayStart.toISOString(), to: tomorrowStart.toISOString() }),
+    // Parallel, not serialized after the queries — review 15.3 F6.
+    renderMobileMetarCard(t('mobile.metarTitle')),
   ]);
 
   const myDayBookings: BookingListItem[] = calendarBookingsToday.filter((booking) => booking.instructorProfileId === ownInstructorProfileId);
@@ -853,8 +871,6 @@ async function renderInstructorLanding(
       detail: bookingDetailRows(booking, mobileDetailLabels, displayLocale, mobileNoValue),
     };
   });
-  const metarCard = await renderMobileMetarCard(t('mobile.metarTitle'));
-
   return (
     <main className="page">
       <div className="page-head">
@@ -952,10 +968,12 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
   const t = await getTranslations('DashboardPage');
   const person = me.person!;
 
-  const [accountOverview, myExpiries, upcomingBookingsResult] = await Promise.all([
+  const [accountOverview, myExpiries, upcomingBookingsResult, metarCard] = await Promise.all([
     getAccountOverview(actor, person.id),
     listPersonExpiries(actor, person.id),
     listBookings(actor, { from: new Date().toISOString(), personId: person.id, status: ['APPROVED'], page: 1, pageSize: 5 }),
+    // Parallel, not serialized after the queries — review 15.3 F6.
+    renderMobileMetarCard(t('mobile.metarTitle')),
   ]);
 
   const noValue = t('pilotLanding.noValue');
@@ -987,8 +1005,6 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
     sheetTitle: booking.aircraftRegistration,
     detail: bookingDetailRows(booking, mobileDetailLabels, displayLocale, noValue),
   }));
-  const metarCard = await renderMobileMetarCard(t('mobile.metarTitle'));
-
   return (
     <main className="page">
       <div className="page-head">

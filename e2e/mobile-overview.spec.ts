@@ -552,3 +552,101 @@ test.describe('story 15.3 — keyboard and nesting', () => {
     expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('mobile-overview-inprogress-row');
   });
 });
+
+test.describe('story 15.3 — review fixes', () => {
+  /**
+   * Review 15.3 F2. The card's "the row on screen is dead, close and refresh"
+   * mitigation was keyed on the 409, but the scenario it exists for — somebody
+   * else decided this booking first — answers **422**
+   * (`BOOKING_TRANSITION_INVALID`; `ConflictError -> 409` is slot overlap).
+   * The sheet therefore stayed open over a row that no longer existed in that
+   * state, and every further tap produced the same error.
+   *
+   * The guard is discriminant by construction: it asserts the sheet CLOSES and
+   * the row LEAVES after an out-of-band decision. Against the pre-fix code
+   * (`if (outcome.conflict)`) both assertions fail, because 422 leaves
+   * `conflict` false.
+   */
+  test('a booking decided by somebody else while the sheet is open: the sheet closes and the dead row leaves', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page, 'ST');
+    const pilot = await createPilot(page, 'St');
+    await createPendingBooking(page, { aircraftId: aircraft.id, personId: pilot.id, ...safeSlotTomorrow(0, 30) });
+
+    await page.setViewportSize(PHONE);
+    await page.goto('/it/dashboard');
+    const row = page.getByTestId('mobile-overview-pending-row').filter({ hasText: aircraft.registration });
+    await expect(row).toHaveCount(1);
+    await row.click();
+    const sheet = page.getByTestId('mobile-booking-sheet');
+    await expect(sheet).toBeVisible();
+
+    // Somebody else decides it — out of band, exactly as a second operator would.
+    const decided = await page.request.get(`/api/v1/bookings?aircraftId=${aircraft.id}&status=PENDING&pageSize=5`);
+    const pending = (await decided.json()) as { items: Array<{ id: string }> };
+    const outOfBand = await page.request.post(`/api/v1/bookings/${pending.items[0]!.id}/transition`, { data: { to: 'APPROVED' } });
+    expect(outOfBand.status()).toBe(200);
+
+    await page.getByTestId('mobile-overview-approve').click();
+    // The response is a 422, NOT a 409 — this is the whole point of the fix.
+    await expect(sheet).toHaveCount(0);
+    await expect(page.getByTestId('mobile-overview-pending-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
+  });
+
+  /**
+   * Review 15.3 F4. The admin face mounts TWO sheet owners ("In corso ora" and
+   * "Prenotazioni in attesa"). Focus can leave an open sheet — the trap is
+   * story 15.10's — and reaching a row behind it used to open a SECOND sheet
+   * without closing the first: two `role="dialog"`, two scrims, and one testid
+   * matching twice, which AC 9 forbids.
+   *
+   * `focus()` is the honest reproduction of the escape (a click would be eaten
+   * by the scrim, which is precisely why the defect is invisible to a click
+   * test). Against the pre-fix chassis this asserts 2 dialogs and fails.
+   */
+  test('opening a second sheet closes the first: never two dialogs, never a duplicated testid', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page, 'TW');
+    const pilot = await createPilot(page, 'Tw');
+    const now = Date.now();
+    const inProgress = await createBooking(page, { aircraftId: aircraft.id, personId: pilot.id, ...safeSlotTomorrow(0, 60) });
+    await moveBooking(page, inProgress, now - 5 * 60_000, now + 45 * 60_000);
+    await createPendingBooking(page, { aircraftId: aircraft.id, personId: pilot.id, ...safeSlotTomorrow(180, 30) });
+
+    await page.setViewportSize(PHONE);
+    await page.goto('/it/dashboard');
+
+    await page.getByTestId('mobile-overview-inprogress-row').filter({ hasText: aircraft.registration }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('mobile-booking-sheet')).toBeVisible();
+
+    // Escape the open sheet the way the keyboard does, and open the other one.
+    await page.getByTestId('mobile-overview-pending-row').filter({ hasText: aircraft.registration }).focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('[role="dialog"]')).toHaveCount(1);
+    await expect(page.getByTestId('mobile-booking-sheet')).toHaveCount(1);
+  });
+
+  /**
+   * Review 15.3 F5. AC 4 / R-15.3-e put the Avvisi feed on the admin face ONLY,
+   * and it carries other people's financial data (`listNegativeBalances` is
+   * `finance.manage`-gated). The rule held when the reviewer attacked it, but
+   * nothing asserted it: moving `MobileAlertsCard` into shared markup would
+   * have turned nothing red. AC 11's own rule — a rule without a guard is a
+   * rule that can disappear.
+   */
+  for (const actor of [
+    { label: 'pilota', email: PILOT_EMAIL },
+    { label: 'allievo', email: STUDENT_EMAIL },
+    { label: 'istruttore', email: INSTRUCTOR_EMAIL },
+  ]) {
+    test(`the Avvisi feed does not exist on the ${actor.label} face`, async ({ page }) => {
+      await loginExpectingDashboard(page, actor.email);
+      await page.setViewportSize(PHONE);
+      await page.goto('/it/dashboard');
+      await expect(page.getByTestId('mobile-overview-alerts')).toHaveCount(0);
+      await expect(page.getByTestId('mobile-overview-alert-row')).toHaveCount(0);
+    });
+  }
+});

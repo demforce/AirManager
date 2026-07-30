@@ -841,6 +841,19 @@ html[data-theme="dark"] .alert-box.info{ color: oklch(0.86 0.1 245); }
 .list-icon.amber{ background: var(--warn-soft); color: var(--accent-ink); border-color: transparent; }
 .list-icon.red{ background: var(--bad-soft); color: oklch(0.4 0.17 25); border-color: transparent; }
 .list-icon.green{ background: var(--ok-soft); color: oklch(0.35 0.1 155); border-color: transparent; }
+/* Dark theme: `.red` and `.green` colour their glyph with light-tuned literals
+   that have no dark override, so on the dark `--*-soft` fills they read
+   **1.35:1** and **1.24:1** — the glyph is simply not there. Measured
+   oklch->sRGB->WCAG, the 13.9 method (story 15.3: the red one was found in a
+   screenshot and fixed mobile-only; the green TWIN had never been measured by
+   anyone — the "il gemello va MISURATO" rule of CLAUDE.md). Swapping in the
+   dark-calibrated tokens, with no new literals, gives 4.96:1 and 7.00:1.
+   `.amber` needs nothing: `--accent-ink` already has a dark override (9.70:1).
+   PO ratification 2026-07-30 — fixed GLOBALLY rather than behind a mobile-only
+   selector, so the desktop `ScadenzeWidget`, which carries the same defect and
+   predates this epic, stops hiding its alert glyphs too. */
+html[data-theme="dark"] .list-icon.red{ color: var(--bad); }
+html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
 .list-title{ font-size: 13px; font-weight: 500; }
 .list-sub{ font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); margin-top: 1px;}
 
@@ -2027,8 +2040,15 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      onto their own full-width row; the PRIMARY action then takes a whole row of
      its own (template 415), the secondary ones share the row above it. */
   .home-head-actions{ flex: 1 0 100%; flex-wrap: wrap; }
-  .home-head-actions .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
-  .home-head-actions .btn.primary{ flex-basis: 100%; }
+  /* DIRECT child, not descendant (review 15.3 F1): `DispatchFlightButton`
+     renders its trigger AND its `FlightEditor` SlideOver as siblings inside
+     this wrapper, so a descendant selector also caught the panel's own footer
+     buttons — measured, the full-screen panel's "Registra volo" went from 118px
+     to 191px stretched, on a surface this story declared untouchable. `>` keeps
+     the rule on the header's own buttons, whatever a child component mounts
+     underneath. */
+  .home-head-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .home-head-actions > .btn.primary{ flex-basis: 100%; }
 
   /* --- KPI 2x2 (ratifica R-15.3-c, template 407-414 / 439-446) ---
      Undoes, for the two faces that have exactly FOUR KPIs, the scroll strip
@@ -2127,18 +2147,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .mobile-alert-row:hover{ color: var(--ink); }
   .mobile-alert-row:active{ background: var(--panel-2); }
   .mobile-alert-row .list-icon{ width: 30px; height: 30px; border-radius: 9px; }
-  /* MEASURED defect, dark theme: `.list-icon.red`'s glyph colour is a
-     light-tuned literal (`oklch(0.4 0.17 25)`) with no dark override, so on the
-     dark `--bad-soft` fill (L .32) it reads **1.35:1** — the icon is simply not
-     there (seen in a screenshot, then measured canvas->WCAG, story 15.3).
-     Fixed with the exact 13.9 pattern (`.btn.mini.bad` above): swap in the
-     dark-calibrated `--bad` token, no new literal. Measured after: **4.94:1**.
-     Deliberately SCOPED to this new surface: the same defect exists on the
-     desktop `ScadenzeWidget`, and repairing it there would be a visible change
-     to a desktop surface in a story whose mandate is "desktop invariato" —
-     it is reported as TD instead. `.amber` needs nothing: `--accent-ink`
-     already has a dark override (measured 7.4:1). */
-  html[data-theme="dark"] .mobile-alert-row .list-icon.red{ color: var(--bad); }
+  /* The dark-theme glyph fix that used to live here (scoped to this surface)
+     is now GLOBAL, next to `.list-icon` itself — PO ratification 2026-07-30,
+     and it covers the `.green` twin the scoped version had missed. */
   .mobile-alert-main{ display: block; min-width: 0; }
   .mobile-alert-title{ display: block; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-alert-sub{ display: block; margin-top: 1px; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
