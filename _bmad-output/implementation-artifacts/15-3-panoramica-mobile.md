@@ -364,3 +364,179 @@ avvisi cosa sia" — e ratificata al secondo giro; l'esito è invariato.)
 - **(c) Nessuna** — la Panoramica mobile mostrerebbe meno del desktop, contro l'AC di parità informativa che regge tutto l'epic.
 
 **Raccomandazione: (a)**, con una nota di onestà sul costo: sono quattro builder di righe più quattro casi e2e; se il PO vuole contenere l'ampiezza della story, (b) è il taglio difendibile — a patto di scriverlo come **debito esplicito** per 15.10, non di lasciarlo implicito.
+
+---
+---
+
+# Dev Agent Record — 15.3 (dev agent, Opus 5 xhigh, 2026-07-30)
+
+Status: **implementata**. Gates verdi. Suite e2e: esito onesto in fondo alla sezione.
+
+## 1. Verifica della ricognizione — 12 conferme, 4 correzioni
+
+**Confermato sul codice (path e righe reali):**
+
+| Voce | Esito |
+|---|---|
+| (a) gate delle facce `page.tsx:109-122`, `renderAdminOverview` 151-433, `renderInstructorLanding` 536-644, `renderPilotLanding` 648-752, `dayPhaseOf` 530-534, `canBook` 671-672 | ✓ esatti |
+| (a) Scoperta 1: pilota e allievo rendono **la stessa** `renderPilotLanding`, unica differenza la CTA su `canBook` | ✓ — R2 non chiedeva una quarta schermata |
+| (b.1) strip KPI già fatta, `airops.css:1924-1973` | ✓ |
+| (b.3) `transition` 207-226, `handleApprove` 228-233, submit vuoto bloccato a 257-259; testid desktop `booking-approve-action`/`booking-reject-action`/`booking-deny-reason`/`booking-deny-error`/`booking-deny-submit` | ✓ tutti presenti |
+| (b.4) `listNegativeBalances` = `groupBy` + `having` + `findMany`, gate `finance.manage`, ordinata dal più negativo; **non** `hasNegativeBalanceAlert` | ✓ |
+| (b.5) `getMetar` cache 10' (38-42), degrada a `null` per contratto; layout 81-109; `sidebar.tsx:100-122`; `.weather-card{display:none}` a ≤900px (1439) | ✓ |
+| (c) API di `BottomSheet`/`MobileSheet`, `onClose` stabile per contratto, `secondStep` sostituisce nello STESSO nodo | ✓ |
+| (d) sezioni CSS 15.1 (1653-1787) e 15.2 (1789-1981), precedente `.ppr-queue-mobile{display:none}` a 1809, `.page{padding:22px 28px 60px}` 293-299, `.page-head{flex-wrap:wrap}` 1573 | ✓ |
+| (e) `home-dashboard.spec.ts` 136-267, `mobile-primitives.spec.ts` 172-265 (e `:195` asserisce ULTIMO non raggiungibile), `mobile-shell.spec.ts` 36-58/113-133/175-200 | ✓ |
+| (e) tutta la suite gira a viewport desktop 1280×720 se non la cambia | ✓ |
+| (f) `.list-icon.amber/.red/.green` esistono con i toni calibrati in 13.9 | ✓ (ma v. correzione 4) |
+| Fuori scope: `.slideover` full-screen non serviva | ✓ non toccata |
+
+**CORREZIONE 1 (semantica, importante) — `listCalendarBookings` è APPROVED-only.**
+La ricognizione (b.2) dice che la card si può fare con `calendarBookingsToday` e non dice che quella query filtra `status: 'APPROVED'` (`bookings.service.ts:711-714`). Conseguenza: "In corso ora" mostra **prenotazioni APPROVATE in corso**, non "qualsiasi prenotazione". È *più* corretto di quanto la ricognizione implicasse (una PENDING non è "in corso"), ma è un fatto che va detto: il conteggio della card non include le richieste non ancora approvate.
+
+**CORREZIONE 2 (difetto nel piano della ricognizione) — la coda mobile NON può filtrare le 8 righe del desktop.**
+(b.3) prescrive: «una card mobile "in attesa" filtra `status === 'PENDING'` su quelle righe: zero query nuove». Quelle righe sono `embedBookingsResult` = 8 righe su **tutti** gli stati ordinate per `startsAt`: in una finestra affollata possono contenere **zero** PENDING mentre la testata — che per AC 3 deve mostrare `embedPendingResult.total` — dichiara cinque. È esattamente la classe di difetto della review 12.12 F3. Corretto chiedendo **righe** alla query PENDING che già esisteva (`embedPendingResult`, `pageSize` 1 → `MOBILE_PENDING_BOOKINGS_PAGE_SIZE = 8`): la card elenca ciò che la sua testata conta, e le query restano quelle di prima (nessuna aggiunta oltre a `listNegativeBalances`).
+
+**CORREZIONE 3 — il fallback all'ICAO è nel SERVIZIO, non nella pagina Impostazioni.**
+(b.5) attribuisce il fallback a `settings/page.tsx:177-182`; è `getMetarStation()` stesso (`app-settings.service.ts:420-426`) a fare `?? getAirfieldIcao()`. Conseguenza pratica **non prevista dalla story**: su DB **fresco** nessuna delle due chiavi esiste, `getAirfieldIcao()` torna `''` e `getMetar('')` torna `null` **senza fare richieste** ⇒ **su seed pulito la card METAR non esiste**. Da qui la scelta di spec separato per il METAR (§4).
+
+**CORREZIONE 4 — `.list-icon.red` è rotta in dark mode, da prima di questa story.**
+(f) invita a riusare i toni "già calibrati in 13.9". `.list-icon.red` porta un literal tarato sul chiaro (`oklch(0.4 0.17 25)`) e **non ha override dark**: sul fill `--bad-soft` scuro il glifo è invisibile (misurato, v. §6). Il `.amber` invece è sano (usa `--accent-ink`, che ha l'override). Fix applicato **scoped alla superficie nuova**; il difetto gemello sul `ScadenzeWidget` desktop è lasciato intatto e segnalato come TD (§8) perché ripararlo là sarebbe una modifica visibile al desktop in una story il cui mandato è "desktop invariato".
+
+## 2. Riepilogo per AC
+
+1. **Panoramica admin, cinque superfici** — `.overview-mobile` rende, nell'ordine del template: `mobile-overview-inprogress`, `mobile-overview-pending-bookings`, `mobile-overview-alerts`, `mobile-metar-card`, `.mobile-shortcuts`. Ordine dei primi tre asserito sul DOM. Superfici desktop sostituite: `.home-desktop-surface` su calendario, tabella e `.split` ⇒ `display:none` misurato a 375/390px, `block/block/grid` a 641/800/1280px.
+2. **"In corso ora"** — `filterInProgress(calendarBookingsToday, now)` (funzione pura, 4 confini in unit); chip marche mono + nome + sub `HH:MM–HH:MM (· istruttore)` + badge "in corso"; head `{count} in corso`; empty state proprio. Titolo cambiato rispetto al template per R-15.3-a. Zero query nuove.
+3. **Coda prenotazioni con decisione** — righe dalla query PENDING della finestra (correzione 2), head `{total} da approvare` = `embedPendingResult.total`. Approva/Nega **solo nello sheet** (R-15.3-b); motivo obbligatorio nel `secondStep`; submit vuoto ⇒ errore inline e **0 richieste** (provato con `page.route` che le conta); 409 ⇒ stesso messaggio del desktop **più** chiusura sheet + `router.refresh()` (lezione review 15.2 F4). Nessun colore nuovo: `.btn.primary` / `.btn.mini.bad`. Target misurati 44px.
+4. **Feed "Avvisi"** — solo faccia admin. Tre fonti reali; ordine e tetto in `buildOverviewAlerts` (puro, 12 unit test). Ogni riga è un `<Link>` alla pagina dove la voce si tratta; "Vedi tutte" appare solo quando tronca e punta alla pagina di competenza della **prima voce nascosta**.
+5. **Card METAR** — resa da `page.tsx` su tutte e tre le facce, solo ≤640px; assente (non vuota) quando `getMetar` torna `null`; nessuna chiamata client. Raw in box `--bg-sunken` con `overflow-wrap: anywhere`.
+6. **Landing pilota/allievo** — testata unica, KPI 2×2 (`kpi-row-grid`), CTA full-width sotto la sub-riga con il `canBook` di oggi intatto, `pilot-landing-upcoming-mobile` + sheet, card METAR. Allievo verificato separatamente: `pilot-landing-book-cta` = 0 nodi.
+7. **Landing istruttore** — KPI 2×2, `instructor-landing-myday-mobile` con la **colonna orari a sinistra** (`.mobile-row-timed`, 46px), badge da `dayPhaseOf`, nessuna CTA di creazione, card METAR.
+8. **Bottom sheet su tutte e quattro le liste** — `mobile-booking-sheet`, righe Aeromobile/Pilota/Istruttore/Inizio/Fine/Durata/Note (lo stato è il badge, non una riga duplicata); card = **un solo `<button>`**, zero `button`/`<a>` annidati (misurato); nome accessibile parlante; apertura da tastiera e ritorno del focus verificati.
+9. **Testid** — nessun testid desktop toccato; duplicati mobile col suffisso, superfici solo-mobile col prefisso. **Deviazione motivata**: NON ho usato `booking-row-mobile`/`booking-approve-action-mobile` (esempi dell'AC 9) ma `mobile-overview-pending-row`/`mobile-overview-approve`. Motivo: la 15.4 aggiungerà l'albero mobile **dentro `bookings-table.tsx`**, che è embeddata **anche sulla home** ⇒ quei nomi sarebbero diventati doppi sulla home, cioè esattamente il difetto che la convenzione previene. La card in attesa è una superficie della home, non il gemello mobile della tabella.
+10. **Geometria e layering** — nessun overflow di pagina su tutte e tre le facce a 375 e 390px (misurato); `mobile-shell.spec.ts` verde **senza modifiche**; hit-test manuale a fondo pagina: 0 controlli inghiottiti dalla tab bar, 0 controlli sotto i 44px nell'albero mobile; sheet (z 40) dipinge sopra la tab bar (`elementFromPoint` sulla barra restituisce un nodo dentro `.mobile-sheet`).
+11. **Regola → guardia** — tabella in §5, con prova di discriminanza.
+12. **Invarianti** — desktop **misurato invariato** (§7): 9 snapshot (3 facce × 1280/800/641px), 10 campi geometrici ciascuno, differenza **zero** su ogni box visibile. `npm run gates` verde. Nessuna dipendenza nuova, nessun token cambiato di valore, nessun literal di colore nuovo (le due nuove regole di colore riusano `var(--bad)` e `var(--ink-4)`). Stringhe nuove in **entrambi** i locale. Contrasto misurato in chiaro e scuro (§6).
+
+## 3. File toccati
+
+**Nuovi** — `src/lib/booking-day-phase.ts` (+ test), `src/lib/overview-alerts.ts` (+ test), `src/app/[locale]/dashboard/bookings/booking-transition.ts`, `src/app/[locale]/dashboard/mobile-booking-list.tsx`, `src/app/[locale]/dashboard/mobile-pending-bookings.tsx`, `src/components/dashboard/mobile-alerts-card.tsx`, `src/components/dashboard/mobile-metar-card.tsx`, `e2e/mobile-overview.spec.ts`, `e2e/mobile-metar.spec.ts`.
+
+**Modificati** — `src/app/[locale]/dashboard/page.tsx` (le tre facce), `src/styles/airops.css` (+193 righe, un blocco in coda), `src/app/[locale]/dashboard/bookings/bookings-table.tsx` (solo AD-2, v. sotto), `messages/{it,en}.json` (solo aggiunte), `playwright.config.ts` (progetto `mobile-metar` in catena).
+
+**AD-2, `bookings-table.tsx`**: estratti in `booking-transition.ts` la richiesta, il ramo 409 e la mappa codice→messaggio; `transition` è ora un wrapper di 10 righe, `confirmCancel` usa le stesse due funzioni, `ApiErrorBody`/`errorBodyOf`/`errorMessage` locali rimossi, `BookingsTableLabels.actions.errors` è il tipo condiviso. Comportamento invariato per costruzione (corpi spostati verbatim); guardia = `bookings.spec.ts`.
+
+## 4. Decisioni non ovvie (e perché)
+
+1. **Un solo link per destinazione.** Calendario e tabella prenotazioni vivono **entrambi** su `/dashboard/bookings`: la card in attesa NON ha un footer "Tutte le prenotazioni" e la riga `.mobile-shortcuts` porta una sola voce "Pianificazione" (più "Aeromobili"). Due CTA con la stessa destinazione sono un difetto, non una feature.
+2. **Chevron sulla coda in attesa.** Le altre tre liste riempiono la colonna destra con un badge di stato; qui ogni riga è PENDING per costruzione (la testata lo dice già), quindi un badge non direbbe nulla — e R-15.3-b ha togliendo i bottoni inline anche togliuto il segnale "questa riga fa qualcosa". Il chevron (`Icon.chevR`, `--ink-4`, misurato 3.66/4.14:1) è l'affordance che rimette quel segnale.
+3. **`.ppr-card*` NON generalizzato.** La ricognizione chiedeva di valutarlo "solo se a costo zero": le righe di questa story hanno un chip marche, una colonna orari e un badge a destra che la card PPR non ha, quindi la generalizzazione avrebbe cambiato la resa della coda PPR a 375px. Famiglia sorella (`.mobile-row*`), duplicazione dichiarata.
+4. **Tetto del feed e "Vedi tutte".** Le scadenze a ≤30g/≤60g NON sono scartate: entrano dopo la riga PPR. Motivo: su mobile il feed **sostituisce** `ScadenzeWidget` (R-15.3-d), la cui finestra di default è 30 giorni; scartarle avrebbe fatto vedere al telefono **meno** del desktop. Il tetto le nasconde per prime, che è l'intento dell'ordine ratificato.
+5. **Spec METAR separato e in catena serializzata.** La card esiste solo con una stazione **configurata**, e configurarla è una scrittura su `AppSetting` globale: sotto `fullyParallel` farebbe comparire la weather-card della sidebar (e sparare un fetch upstream) sotto i piedi di ogni altro spec. Nuovo progetto `mobile-metar`, ultimo della catena, che ripristina "nessuna stazione" in `afterAll`. Ed è l'unica asserzione della story che dipende da un servizio terzo: se `aviationweather.gov` non è raggiungibile il test **skippa dicendolo**, non falsifica.
+6. **Fixture "a cavallo di adesso".** `createBooking` rifiuta `startsAt <= now` per **tutti** (`BOOKING_IN_PAST`), ma `updateBooking` esenta lo staff da quel check (asimmetria documentata: "staff can correct an in-progress booking"). La fixture nasce nel futuro e viene **spostata** su adesso: nessuno `sleep`, nessun test dipendente dall'ora.
+7. **PENDING creata da admin.** Una prenotazione creata dallo staff nasce APPROVED e `APPROVED → PENDING` non è una transizione legale: il helper passa per `NO_SHOW → PENDING` (due hop legali) invece di far girare il flusso di invito Mailpit in ogni test.
+8. **`—` come segnaposto di valore assente** (`mobile.detail`, `noValue`): è l'idioma già usato da `ppr-console.tsx` e dai KPI. La skill `design-taste-frontend` vieta l'em-dash come vezzo tipografico; qui è un valore di dominio ("nessun istruttore"), coerente con l'app, non decorazione.
+
+## 5. Regola nuova → guardia, con prova di discriminanza
+
+Ogni riga è una regola introdotta per un difetto **misurato**. La colonna "pre-fix simulato" riporta il valore misurato con la regola neutralizzata a runtime (injection CSS / rimozione della classe modificatore), col repo **intatto**.
+
+| # | Regola | Guardia | Pre-fix simulato | Discriminante |
+|---|---|---|---|---|
+| i | `.overview-mobile{display:none}` **fuori** dalla media query | `mobile-overview.spec.ts` — `toBeHidden(mobile-overview-inprogress)` + `display === 'none'` a 1280px | injection `.overview-mobile{display:flex!important}` → `display: flex`, elemento **visible: true** | ✅ la guardia diventa rossa |
+| ii | `.home-desktop-surface{display:none}` **dentro** la query | stessa spec — `every(display === 'none')` sui 3 nodi a 375/390px | injection `display:block!important` dentro la query → `['block','block','block']` | ✅ |
+| iii | `.kpi-row.kpi-row-grid` (griglia 2×2 dove i KPI sono 4) | stessa spec — **tutti e 4** i KPI `reachable()` con `scrollLeft === 0` **e** `scrollWidth <= clientWidth`; la prova di discriminanza è **dentro il test** (`classList.remove('kpi-row-grid')` → l'ultimo KPI torna `reachable() === false`) | senza la classe: ultimo KPI **non** raggiungibile (è la strip 15.2, come asserisce `mobile-primitives.spec.ts:195`) | ✅ — ed è scritta sul lato che la regola **libera**, non su "la riga esiste" |
+| iv | card METAR solo ≤640px | `mobile-metar.spec.ts` — visible a 375px, `toBeHidden()` + box di larghezza 0 a 1280px | injection che riapre l'albero mobile a 1280px → card **visible: true** | ✅ |
+| v | `.mobile-metar-raw{overflow-wrap:anywhere}` | stessa spec — `boxOverflow <= 0` con un **token non spezzabile** iniettato (oltre alla riga lunga realistica e al check di pagina) | con `overflow-wrap:normal`: `boxOverflow` **0 → 143px**, la `.card` ne ritaglia **126px** (page overflow resta 0: `.card{overflow:hidden}` lo nasconde) | ✅ **ma solo sul token non spezzabile**: v. nota sotto |
+| vi | un solo empty state per lista | `mobile-overview.spec.ts` — `toHaveCount(1)` su `instructor-landing-myday-empty` **e** su `…-empty-mobile` | non simulabile a runtime: un doppione richiede una modifica di codice | ⚠️ strutturale, dichiarato |
+| vii | `html[data-theme="dark"] .mobile-alert-row .list-icon.red{color:var(--bad)}` | **nessuna asserzione e2e**: il contrasto è misurato via canvas→WCAG (§6), non asserito nella suite | pre-fix misurato in §6 | ⚠️ dichiarato: nessuna guardia automatica sul contrasto esiste in questo repo (vale per tutte le superfici, non solo per questa) |
+
+**Nota onesta su (v)**: con una riga METAR **realistica** (che contiene spazi) la regola non cambia nulla — il word-wrap normale la manda a capo già così, `boxOverflow` resta 0 in entrambi i casi (misurato). La regola è load-bearing **solo** contro un token unico più largo del box, ed è per quello che la spec inietta anche quel caso: senza il secondo probe la guardia sarebbe stata cieca esattamente come la guardia KPI della 15.2.
+
+**Nota su `mobile-primitives.spec.ts` (il test più esposto della story)**: resta verde **e va detto perché**. Gira sulla home **admin**, che ha **5** KPI ⇒ la `.kpi-row` lì non porta `kpi-row-grid`, resta la strip della 15.2, `.kpi-row` resta figlio DIRETTO di `.page` (nessun wrapper introdotto attorno ad essa: l'albero mobile è un **fratello** della riga KPI, non un contenitore), i `children` restano 5 e l'ultimo resta non raggiungibile. La griglia 2×2 vale solo per le due facce a 4 KPI.
+
+## 6. Contrasto misurato (canvas → WCAG), chiaro e scuro, 375px
+
+| Superficie | chiaro | scuro | soglia |
+|---|---|---|---|
+| titolo card (13.5/600) | 18.79 | 15.74 | 4.5 ✓ |
+| conteggio card mono (10.5) | 4.85 | 5.72 | 4.5 ✓ |
+| titolo riga (13/600) | 18.79 | 15.74 | 4.5 ✓ |
+| sub riga mono (10.5) | 4.85 | 5.72 | 4.5 ✓ |
+| chip marche (10.5/500) | 17.01 | 17.67 | 4.5 ✓ |
+| titolo avviso (12.5/500) | 18.79 | 15.74 | 4.5 ✓ |
+| sub avviso mono (10.5) | 4.85 | 5.72 | 4.5 ✓ |
+| label METAR mono (9.5) | 4.85 | 5.72 | 4.5 ✓ |
+| station METAR (11) | 9.99 | 9.47 | 4.5 ✓ |
+| temperatura (26/600) | 18.79 | 15.74 | 3.0 ✓ |
+| raw METAR (11) | 9.05 | 10.63 | 4.5 ✓ |
+| empty state (12.5) | 4.85 | 5.72 | 4.5 ✓ |
+| bottone shortcut (13/500) | 18.79 | 15.74 | 4.5 ✓ |
+| **icona avviso `red`** | 8.38 | **4.94** (pre-fix: v. sotto) | 3.0 (oggetto grafico) ✓ |
+| icona avviso `amber` | 11.32 | 9.74 | 3.0 ✓ |
+| chevron coda (oggetto grafico) | 3.66 | 4.14 | 3.0 ✓ |
+
+Il difetto dark di `.list-icon.red` è stato **visto** in screenshot (quadratino rosso pieno, glifo assente) e la correzione è misurata sopra a **4.94:1**. Il valore *pre-fix* è riportato nel commento CSS della regola.
+
+## 7. Desktop invariato — misura pre/post
+
+Metodo: script `playwright-core` che raccoglie 10 campi geometrici (`.page`, `.page-head`, `h1`, `.sub`, il contenitore azioni, `.kpi-row` + `display` + box di ogni card KPI, i box di **ogni** `.card` della pagina, `grid-template-columns` di `.app`, `scrollHeight`, overflow orizzontale) su **3 facce × 3 larghezze** (1280 / 800 / **641**) = 9 snapshot; poi `git stash` delle sole modifiche tracciate, stesso script, `git stash pop`, diff campo per campo.
+
+**Risultato: 9 snapshot, 9 campi differenti, tutti della stessa specie** — la lista `cards` guadagna N voci `[0,0,0,0]` (le card mobile, in DOM ma `display:none` ⇒ box a dimensione zero). **Ogni box visibile è identico al pixel**, e identici sono `.page`, `.page-head`, `h1`, `.sub`, azioni di testata, `.kpi-row` (posizione, dimensione, `display: grid`, box di ogni card), `grid-template-columns` di `.app` (incluso il rail `64px` a 641px, R1), `scrollHeight` e overflow. Nessun cambiamento desktop, misurato e non dedotto.
+
+## 8. Blast radius — chiuso voce per voce
+
+| # | Voce | Esito |
+|---|---|---|
+| 1 | `e2e/home-dashboard.spec.ts`, 7 punti | **verde**, senza modifiche. Nessun heading/testid/KPI duplicato: `mobile-overview.spec.ts` lo asserisce a 375 **e** 1280px su 10 testid + heading + `.kpi-row` (1) + `.kpi-value` (5). |
+| 2 | `e2e/mobile-primitives.spec.ts:172-265` | **verde**, senza modifiche, e riletto: v. la nota in §5 (è admin, 5 KPI, la strip resta; `.kpi-row` resta figlio diretto di `.page` perché l'albero mobile è un fratello). |
+| 3 | `e2e/mobile-shell.spec.ts` (incl. bottom-geometry su ogni `.page a, .page button`) | **verde**, senza modifiche. Hit-test manuale ripetuto a fondo pagina con l'albero mobile presente: 0 controlli coperti dalla tab bar, 0 controlli sotto 44px. |
+| 4 | `e2e/pdf-exports.spec.ts:375` (`bookings-list-section`) | intatto: la tabella è **wrappata**, non modificata, e il testid resta 1 nodo (asserito). |
+| 5 | `e2e/bookings.spec.ts` (guardia di AD-2) | v. §9: 6 test rossi nella run completa, **causa accertata: inquinamento del DB fatto da me durante la verifica interattiva**, non il codice. Prova nel dettaglio in §9. |
+| 6 | `movements`, `login`, `flights`, `user-management`, `account-adjustments`, `ppr-queue` (passano dalla home) | **verdi** — nessun errore SSR sulla home. |
+| — | Tablet 641-900px | misurato a 641 e 800px: nessuna superficie nuova compare, `display` degli alberi mobile `none`, rail 64px intatto, overflow 0. |
+| — | Tema scuro delle superfici nuove | misurato (§6); trovato e corretto 1 difetto (correzione 4). |
+| — | Sub-riga della testata admin a 375px | 4 segmenti, va a capo su 2 righe dentro `.page-head{flex-wrap:wrap}`, nessun overflow (misurato 0). |
+| — | Unit | 1626 test verdi; 21 nuovi (9 su `booking-day-phase`, 12 su `overview-alerts`), verificati anche con `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` (funzioni pure: nessuna catena `@/lib/env`). |
+
+## 9. Esito ONESTO della suite e2e
+
+`npm run gates`: **verde** (lint / typecheck / 1626 unit / build), rieseguito come ultima cosa prima del commit.
+
+**Run completa `CI=1` su build di produzione** (`playwright test`, foreground con output su file, 13.4 min): **290 passed, 13 failed**. Le 13 sono state diagnosticate **una per una**; **nessuna è causata dal codice di questa story**, e la prova per la voce che pesa (la guardia di AD-2) è un run a confronto sul baseline. In compenso **due erano miei test scritti male** e li ho corretti.
+
+| Classe | Test | Causa accertata | Prova |
+|---|---|---|---|
+| A — DB oltre il tetto dei picker | `flight-log:289`, `flight-reversal:161`, `flights:483`, `reports:206` | il `<select>` "Velivolo" del registro voli è cappato a `OPTIONS_PAGE_SIZE = 100` (`logbook/page.tsx:33`) e il DB ne aveva **154** (ora 422): `selectOption` non trova più l'opzione della propria fixture e va in timeout | conteggio DB + messaggio `did not find some options`; limitazione preesistente dell'app, nessuna riga del mio diff tocca velivoli o voli |
+| B — mia fixture interattiva | `bookings.spec.ts` × 6 | avevo registrato una scadenza **scaduta non bloccante** ("Inglese ICAO") sul pilota di **seed** durante la verifica interattiva: la form di creazione passa allora al ramo `successWithWarnings` e `booking-form-success` non compare più | snapshot DOM del fallimento: «Prenotazione creata. Attenzione: i seguenti documenti risultano scaduti (non bloccanti): **Inglese ICAO**». Scadenza rimossa. |
+| C — asserzione dentro una finestra cappata | `home-dashboard:228` (preesistente), **`mobile-overview:238` e `:280` (miei)** | la card della home è una **finestra di 8 righe** ordinata per `startsAt` sulle ultime 48h: con 269 prenotazioni in DB una fixture specifica non ci sta. È la trappola "fotografia + uguaglianza" della review Billing-2 F4 | **corretti i miei due test**: la decisione si rilegge dall'API filtrata sul velivolo run-unique (deterministico), e il rendering desktop di una riga APPROVED/DENIED resta guardato da `bookings.spec.ts` |
+
+**Prova che AD-2 non rompe `bookings.spec.ts`** (la voce più delicata del blast radius): `bookings.spec.ts --project=chromium --workers=1` eseguito due volte sullo stesso DB, prima col mio albero e poi col **baseline** (`git stash` delle sole modifiche tracciate, quindi build senza la mia estrazione):
+
+- **mio albero: 10 failed / 24 passed**
+- **baseline: 11 failed / 23 passed**
+
+`comm -13 baseline mine` = **insieme vuoto**: nessun test fallisce col mio codice che non falliva già senza. Il baseline ne fallisce perfino uno in più (`:1645`). Le 10 sono tutte "riga non trovata in una lista paginata" o timeout della funzione che scorre le pagine a caccia della propria riga — cioè volume di DB, non la transizione.
+
+**Run di verifica delle mie spec dopo le correzioni** (`bookings + mobile-overview + mobile-primitives + mobile-shell`, `CI=1`, DB con i `sched.*` residui rimossi): **41 passed / 9 failed**, e i 9 sono solo `bookings.spec.ts` (classe A/B/C sopra). Le mie: **`mobile-overview` 9/9, `mobile-primitives` 3/3, `mobile-shell` 5/5**. `mobile-metar` 2/2 (run dedicato, progetto in catena).
+
+**Cosa NON è stato fatto e perché**: una run completa **valida** su **DB fresco**. Il DB condiviso è arrivato a **422 velivoli / 269 prenotazioni** durante questa sessione (il primo tentativo di suite l'ho lanciato per errore su `next dev` con 2 worker: invalido per contesa, ma ha comunque creato fixture) e oltre le 100 unità supera il tetto dei picker dell'app, quindi qualunque run successivo è inquinato per costruzione. **Non ho resettato il DB**: la regola di progetto lo riserva alla sessione principale (`docs/handoffs/HANDOFF.md`) e c'è un rischio noto di collisione fra sessioni parallele — che in questa sessione si è materializzato (il commit `1dab4fc` di un'altra sessione ha introdotto `scripts/e2e.sh` mentre lavoravo). ⇒ **la run completa su DB fresco la deve rifare la review, da arbitro** (prassi 13.9/13.11/15.2). Aspettativa: le classi A e B sparirebbero da sole; della classe C resta solo `home-dashboard:228`, che è una fragilità **preesistente** di quella spec.
+
+Due residui che ho ripulito a mano sul DB condiviso, dichiarati: la mia scadenza scaduta sul pilota di seed (classe B) e le righe `sched.*` che la catena serializzata di un run precedente aveva lasciato (07:00-21:00), che facevano fallire con 422 `BOOKING_OUTSIDE_WINDOW` ogni creazione fuori orario — incluse due mie fixture. Da lì una correzione utile: **le fixture di `mobile-overview.spec.ts` non sono più ancorate all'orologio** (`safeSlotTomorrow`, slot alle 07:30Z = 08:30/09:30 Roma, dentro qualunque finestra la suite configuri e prima dello slot `09:00Z` usato dalle altre spec), e la fixture "a cavallo di adesso" nasce nella finestra e viene **spostata** su adesso, perché `updateBooking` è l'unico percorso senza controllo di finestra.
+
+⚠️ **Nota per la review sul runner**: durante il mio lavoro un'altra sessione ha committato `scripts/e2e.sh` (runner distaccato) e la regola CLAUDE.md «MAI `playwright test` in foreground». I run riportati qui sopra sono stati lanciati prima (in foreground/background di sessione) tranne il confronto sul baseline, che ho eseguito col nuovo runner. Il progetto Playwright `mobile-metar` che aggiungo convive con la loro modifica di `playwright.config.ts` (`reuseExistingServer`): il file corrente contiene **entrambe**.
+
+## 10. Debito tecnico da tracciare (non chiuso qui)
+
+1. **METAR nella fascia 641-900px** — dichiarato fuori scope dalla story (R1): la `.weather-card` della sidebar è nascosta lì da 13.10 e la card mobile vive solo ≤640px, quindi il tablet resta senza meteo. Da mettere in `sprint-status.yaml`.
+2. **`.list-icon.red` in tema scuro** — difetto **preesistente** (misurato **1.35:1**) che colpisce il `ScadenzeWidget` desktop. Qui è corretto solo sulla superficie nuova, per non modificare il desktop in una story "desktop invariato". Il fix globale è una riga (`html[data-theme="dark"] .list-icon.red{ color: var(--bad) }`) e va deciso dal PO.
+3. **Tetto `OPTIONS_PAGE_SIZE = 100` dei picker** — con più di 100 velivoli in anagrafica il `<select>` del registro voli non contiene più l'ultimo creato. Su un'aviosuperficie reale non succede, ma **la suite e2e ci muore** su un DB riusato (4 test). Emerso qui, non causato qui.
+4. **`home-dashboard.spec.ts:228`** asserisce la propria fixture dentro la finestra di 8 righe della card della home: fragile per costruzione su DB popolato, esattamente come i miei due test prima della correzione. Da riscrivere con la stessa medicina.
+
+## 11. Cosa NON ho fatto (dichiarato)
+
+- **Nessuna guardia automatica sul contrasto**: le misure di §6 sono state prese con uno script throwaway, non sono asserzioni della suite (nel repo non esiste un guard di contrasto per nessuna superficie).
+- **Nessun focus trap / `aria-modal`** sullo sheet: è 15.10, e la baseline di tastiera della 15.1 è rispettata (focus al pannello, ritorno al trigger, Escape) e verificata.
+- **`bookings-table.tsx` non ha un albero mobile** (AD-2): è 15.4. Per questo la coda in attesa della home è un componente nuovo con testid `mobile-overview-*`, che non ruba i nomi che la 15.4 vorrà.
+- **Nessun delta sotto i KPI** (R-15.3-g) e **nessun avviso sulle facce pilota/istruttore** (il template non ne dà, le loro scadenze sono già nei KPI).
+- **Nessuna modifica al desktop**, nemmeno per riparare il difetto dark di `.list-icon.red` (v. §10.2).
