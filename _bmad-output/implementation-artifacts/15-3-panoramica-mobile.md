@@ -1,0 +1,366 @@
+---
+baseline_commit: cffc391
+---
+
+# Story 15.3: Panoramica mobile — KPI, "In corso ora", coda prenotazioni con decisione, feed Avvisi, card METAR; riconciliazione delle tre landing per-ruolo
+
+Status: **draft — NON dispatchare al dev prima delle ratifiche PO** (sezione finale "Assunzioni da ratificare", Q1-Q8: la regola di progetto — retro Epic 9 — vieta di spedire un'assunzione "da confermare" dentro l'implementazione)
+
+## Story
+
+As a amministratore che apre AirManager dal telefono la mattina (hangar, piazzale, ufficio senza scrivania),
+I want vedere in una schermata sola come sta il campo — numeri del giorno, chi è in movimento adesso, cosa devo approvare, cosa sta per scadere o è in rosso, e il meteo del campo — e poter decidere le prenotazioni in attesa senza aprire un'altra pagina,
+so that la prima schermata dell'app è una console operativa vera anche su un telefono, non una pagina desktop rimpicciolita.
+
+E, simmetricamente: **pilota, allievo e istruttore** aprono la LORO home nello stesso linguaggio (saluto, KPI, azione primaria, la loro lista di oggi, meteo) — la riconciliazione della landing per-ruolo della 12.12 col template richiesta dal bullet di piano.
+
+**Riferimenti vincolanti**: piano epic 15 `docs/superpowers/plans/2026-07-29-epic-15-mobile-ui.md` — **R1** (soglia 640px: 641-900px TENGONO il rail 64px della 13.10; nessuna regola di questa story esce dal `@media (max-width: 640px)`), **R2** (il template è incompleto by design: quello che non mostra — qui la schermata "Allievo", il motivo obbligatorio del rifiuto, l'ordinamento del feed Avvisi — lo progetta il team nello stesso linguaggio), **R3** (dettaglio-riga = **bottom sheet**; form = pannello a tutto schermo), **R4** (si porta TUTTO: nessuna superficie resta "tabella/griglia desktop scrollabile" come stato finale), **R5** (logout e lingua già nel menu profilo, 15.1 — non si toccano). Architettura vincolante: **componenti mobile dedicati + switch a media query CSS pura** (niente `matchMedia`, niente user-agent, niente route parallele), `display:none` VERO su entrambi gli alberi, ogni regola mobile **ADDITIVA**, **MAI** cambiare il valore di un token esistente, nessun literal di colore nuovo.
+
+**Convenzione testid dell'epic** (fissata dalla 15.1, in CLAUDE.md e nel doc-comment di `mobile-nav.tsx`): i testid dell'albero **desktop non cambiano mai**; una superficie mobile che **DUPLICA** una desktop prende lo stesso nome col suffisso **`-mobile`**; una che esiste **SOLO** su mobile prende un nome nuovo col prefisso **`mobile-`**.
+
+**Lezioni delle review 15.1/15.2 da NON ripetere**:
+1. **Una guardia può essere cieca per costruzione** (15.2, KPI strip): quando una regola nuova SOSTITUISCE un vincolo, la guardia va scritta sul lato che la regola ha **LIBERATO**, non su quello che il vincolo già teneva. Qui il caso concreto è la griglia 2×2 di Q3: la guardia non è "la riga esiste", è "il 3° e il 4° KPI sono raggiungibili SENZA scorrere" (nella strip non lo erano — `mobile-primitives.spec.ts:195` asserisce proprio `last reachable === false`).
+2. **I casi multi-attore vanno enumerati** (15.1 F1): questa story tocca **tutte e tre** le facce della home e quindi **quattro** ruoli (admin, istruttore, pilota, allievo). Nessuna verifica vale se fatta solo da admin.
+3. **Il livello di prova più alto è la build reale** (15.2): la discriminanza di una guardia su comportamento JS si prova ricompilando, non iniettando CSS.
+
+**Fonte visiva**: template `AirOps Mobile.dc.html` — copia locale di sessione in `/tmp/claude-1000/-home-admin-AirManager/35489d76-4a1d-401d-aa86-1f8ddb2722a3/scratchpad/AirOps-Mobile.dc.html` (lo scratchpad viene ripulito tra sessioni: se manca, la sessione principale lo riscarica con `DesignSync` dal progetto `dcd71b3a-dbcf-494e-a543-29325a5435de`; i subagent NON lo raggiungono). **Leggerlo davvero** prima di scrivere codice. Sezioni in scope:
+- **righe 64-123 — `Admin · Panoramica`**: testata (titolo 23px/600 + sub 12px con pallino `--ok`), KPI strip a scroll-snap (69-77), card "In volo ora" (78-89: head = titolo 13.5px + "N attivi" mono; righe `1fr auto` con chip marche mono + titolo + sub mono + badge di stato), card "Prenotazioni in attesa" (90-105: head + righe con pilota/sub mono/id mono a destra + **riga azioni Approva/Nega** `flex:1 padding:7px` + **empty state** "Nessuna prenotazione da approvare."), card "Avvisi" (106-116: righe `30px 1fr` con quadratino icona colorato per tono + titolo 12.5px + sub mono), card "Meteo campo" (117-121: label mono uppercase + station a destra, temperatura 26px + pallino categoria + `VFR`, raw METAR in box `--bg-sunken` mono 11px `word-break:break-word`).
+- **righe 402-431 — `Pilota · Home`**: saluto 23px + sub "Conto · … · saldo €480", **KPI grid `1fr 1fr`** (407-414, valore 19px — NON la strip), CTA "Prenota volo" **full-width** (415, solido `--ink`), card "I miei prossimi voli" (416-424), card Meteo (425-429).
+- **righe 434-463 — `Istruttore · Oggi`**: saluto + sub, **KPI grid `1fr 1fr`** (439-446), card "La mia giornata" (447-456: righe `46px 1fr auto` — **colonna orari** mono con inizio 11.5px/600 e fine 10px `--ink-4`), card Meteo.
+- **righe 584-601 — row-builder**: `{sub, title, badge, rows[], act?}` è la forma dell'API di `BottomSheet` già implementata in 15.2. `openBooking` (592) = rows Aeromobile, Istruttore, Inizio, Fine, Durata, Tipo + `act` solo se pending; `openFlight` (589) = Orario, Pilota, Istruttore, Aeromobile, Tipo.
+- **NON si portano** (assunzioni accettate del piano): orologio in topbar, "Accedi come", il toggle tema nella topbar del template (in app vive già altrove).
+- Il template **NON ha una schermata "Allievo"** → R2. Vedi però la ricognizione (a): in app l'allievo **condivide già** la faccia personale del pilota, quindi la R2 qui costa zero — non c'è una quarta schermata da inventare.
+
+---
+
+## Ricognizione (2026-07-30, teammate story — verificata su file e righe; il dev la **verifichi e CORREGGA** se sbaglia: la prassi ha pagato in 14.3/14.4/14.6/14.8/14.9, 15.1 e 15.2)
+
+### a) La superficie reale: `src/app/[locale]/dashboard/page.tsx` (752 righe, TRE facce)
+
+Gate delle facce (righe 109-122, doc-comment 73-95) — **non è il ruolo, sono permesso e profilo ATTIVO**:
+1. `hasPermission(actor,'finance.manage')` → `renderAdminOverview` (151-433);
+2. altrimenti `getOwnInstructorProfileId(actor) !== null` → `renderInstructorLanding` (536-644) — profilo **attivo**, non il ruolo (lezione 14.6 F2);
+3. altrimenti `me.person !== null` → `renderPilotLanding` (648-752);
+4. fallback difensivo (128-138) che nessun ruolo di seed raggiunge.
+
+**Scoperta 1 — la schermata "Allievo" che il template non ha, in app ESISTE GIÀ**: pilota e allievo rendono **la stessa** `renderPilotLanding`; l'unica differenza è la CTA "Prenota volo", gated su `canBook` (671-672: permesso `bookings.manage.*` **E** `person.activePilotLicenseType !== null` — review 14.6 F2). `e2e/home-dashboard.spec.ts:167-176` lo asserisce esplicitamente. **R2 qui non chiede una schermata nuova: chiede di portare la stessa in linguaggio mobile.**
+
+Composizione della faccia **admin** (300-431), voce per voce, con quello che il template mobile prevede al suo posto:
+
+| # | Superficie desktop di oggi | riga | testid | Nel template mobile |
+|---|---|---|---|---|
+| 1 | `.page-head`: h1 `overview.title` + `.sub` (ICAO · N AOG · N PPR · N al suolo) + CTA `DispatchFlightButton` | 302-322 | `dispatch-flight-button` | testata 65-68 (+ CTA: **non c'è**, v. Q4) |
+| 2 | `.kpi-row` con **5** KPI | 324-340 | `kpi-flights-today`, `kpi-fleet-available`, `kpi-ppr-pending`, `kpi-bookings-pending`, `kpi-revenue` | KPI strip 69-77 — **già implementata in 15.2 via CSS** |
+| 3 | `<Schedule view="day">` — calendario del giorno | 342-359 | `schedule-section` | **assente** (è la schermata "Voli di oggi", 15.4) |
+| 4 | `<BookingsTable>` — tabella 8 righe, tutti gli stati, azioni complete | 361-390 | `bookings-list-section`, `booking-row`, `booking-approve-action`, `booking-reject-action` | card "Prenotazioni in attesa" 90-105 |
+| 5 | `.split` → `<ScadenzeWidget>` + `<FleetCard>` | 392-430 | `scadenze-widget`, `fleet-card-widget` | **assenti**: le scadenze confluiscono nel feed "Avvisi" 106-116; la flotta è la sua pagina (15.5) |
+| — | *(nessuna)* | — | — | card "In volo ora" 78-89 — **NUOVA** |
+| — | *(nessuna)* | — | — | card "Avvisi" 106-116 — **NUOVA** |
+| — | *(nessuna in pagina; c'è nella sidebar)* | — | — | card "Meteo campo" 117-121 — **NUOVA in pagina** |
+
+Faccia **istruttore** (577-643): `.page-head` (saluto + sub `{flightsToday} voli oggi · {owed} dovuti nel mese`) + CTA `instructor-landing-logbook-cta`; `.kpi-row` con **4** KPI (`kpi-hours-month`, `kpi-payout-rate`, `kpi-owed-month`, `kpi-flights-today`); card "La mia giornata" con righe `.list-item` a `44px 1fr auto auto` (icona / nome+marche / orario mono / `Badge` di fase) e empty state `instructor-landing-myday-empty`. **Combacia già col template 434-456** salvo: KPI grid 2×2 (Q3), colonna orari a sinistra invece che a destra, e la card meteo (Q6).
+
+Faccia **pilota/allievo** (674-751): `.page-head` (saluto + `Conto · {balance}`) + 3 CTA (`pilot-landing-profile-cta`, `pilot-landing-logbook-cta`, `pilot-landing-book-cta` condizionale); `.kpi-row` con **4** KPI (`kpi-balance` — è un `<Link>` a `/dashboard/my-account` —, `kpi-license`, `kpi-medical`, `kpi-ratings`); card "I miei prossimi voli" (`pilot-landing-upcoming-row`, empty `pilot-landing-upcoming-empty`). **Combacia col template 402-424** salvo: KPI grid 2×2 (Q3), CTA full-width (Q4), card meteo (Q6).
+
+### b) I dati REALI, voce per voce del bullet di piano — **dove il template mostra un dato che l'app non ha, è detto qui**
+
+**b.1 — KPI strip: GIÀ FATTA, non è lavoro di questa story.**
+`airops.css:1924-1973` (story 15.2, ratifica **R-15.2-f**): a ≤640px **ogni** `.kpi-row` dell'app è già una strip a `scroll-snap-type: x mandatory`, full-bleed (`margin-inline:-28px`, che è esattamente il padding di `.page`, 293-299), con `flex: 1 0 auto; min-width: 146px; max-width: 100%` sulle card e `.kpi-value` a 23px clampato a 2 righe. **Il bullet di piano "KPI strip" è quindi già soddisfatto per la faccia admin.** Quello che resta da decidere è solo se le facce a 4 KPI debbano invece avere la **griglia 2×2 del template** (Q3) — e i delta (Q7).
+
+**b.2 — "In volo ora": il dato NON esiste. Va derivato, e il nome va cambiato.**
+Prove:
+- `prisma/schema.prisma:890-893`: `enum FlightStatus { REGISTERED, CANCELLED }` — **non esiste uno stato "in volo"**. Il volo si registra **dopo**, a posteriori, dal registro (`flights.service.ts#registerFlight`), con `takeoffTime`/`landingTime` già noti. Non c'è decollo/atterraggio in tempo reale, non c'è tracking, non c'è un "volo aperto".
+- `enum BookingStatus` (1216-1223): `PENDING|APPROVED|DENIED|FLOWN|NO_SHOW|CANCELLED` — `FLOWN` è un passo **manuale** a posteriori (commento a `page.tsx:226-227`).
+- L'unica nozione di "adesso" già calcolata in app è `dayPhaseOf(startsAt, endsAt, now)` (`page.tsx:530-534`): `inProgress` quando `now >= startsAt && now < endsAt`. La usa già la faccia istruttore, e l'etichetta i18n esiste: `instructorLanding.status.inProgress = "in corso"`.
+- L'altra nozione di "adesso" è `deriveApprovedPprMovementStatus(eta, now) === 'AL_SUOLO'` (`lib/ppr-movement-status.ts:36-41`), già calcolata sulla Panoramica (`page.tsx:215`) per la sub-riga "N in transito al suolo": è un **ospite atterrato**, cioè il contrario di "in volo".
+- Il dato di partenza è **già in pagina**: `calendarBookingsToday` (`page.tsx:199`, finestra `todayStart`→`tomorrowStart`) — nessuna query nuova serve.
+
+⇒ **La card si può fare con dati veri, ma non si può chiamare "In volo ora"**: mostrerebbe prenotazioni in corso, non voli confermati in aria. Q1 decide semantica e titolo.
+
+**b.3 — Coda prenotazioni con Approva/Nega: esiste, e "Nega" NON è un tap solo.**
+- Endpoint unico: `POST /api/v1/bookings/{id}/transition` con `{to, reason?}` (`bookings-table.tsx:208-212`).
+- `handleApprove` (228-233): transition → toast → `router.refresh()`. **Nessuna conferma**, come il PPR.
+- **Il motivo del rifiuto è obbligatorio nel dominio**, non una scelta di UI: `bookings-table.tsx:257-259` blocca il submit vuoto senza chiamata di rete e `submitDeny` passa `reason`; lo schema (`lib/schemas/bookings.ts:242-250`) tiene `reason` opzionale a livello di tipo ma **obbligatorio per `to: 'DENIED'`** (commento esplicito alle righe 242-244). Il desktop lo raccoglie in una `.mini-modal` (`booking-deny-reason`, `booking-deny-error`, `booking-deny-submit`, righe 481-518).
+⇒ **Un "Nega" inline sulla card non può completare l'azione**: apre comunque un secondo passo. È il fatto tecnico che pesa su Q2.
+- Fonte righe: la card admin ha già `embedBookingsResult` (8 righe, TUTTI gli stati, `startsAt` ascendente — decisione PO 2026-07-26, `page.tsx:203-207`) e `embedPendingResult.total` (il conteggio PENDING nella stessa finestra, review 12.12 F3). Una card mobile "in attesa" filtra `status === 'PENDING'` su quelle righe: **zero query nuove**, ma il conteggio mostrato deve restare quello **della finestra** (`embedPendingResult.total`), non il totale all-time del KPI — la distinzione è già documentata a `page.tsx:364-367` ed è esattamente il difetto che la review 12.12 F3 aveva colto.
+
+**b.4 — Feed "Avvisi": tre fonti reali, tutte verificate.**
+1. **Scadenze**: `listAllExpiries(actor, {window:'60', pageSize:60})` — **già fetchate** (`page.tsx:208`, cap `EXPIRIES_WIDGET_SCAN_LIMIT = 60` con la nota review 12.12 F4 sui conteggi cappati). Urgenza e categoria si derivano con le funzioni PURE già condivise: `tierOf(daysUntilUtc(...))` e `categoryOf(typeName)` (`lib/expiry-status.ts`) — 0 = scaduto, 1 = ≤7g, 2 = ≤30g, 3 = ≤60g. `ScadenzeWidget` usa già le stesse.
+2. **Saldi negativi**: `listNegativeBalances(actor)` (`accounts.service.ts:737-771`) — un solo `groupBy` con `having` + una join di nomi, ordinato **dal più negativo**, gate `finance.manage` (738), archiviati inclusi deliberatamente (review 3.3 F1: "archiviare non deve mai nascondere il debito"). Oggi la usa **solo** `/dashboard/billing` (`billing/page.tsx:93`). **È una query NUOVA sulla home** (costo: un `groupBy` + una `findMany`, da mettere nel `Promise.all` esistente).
+   ⚠️ **Non confondere con `hasNegativeBalanceAlert`** (`accounts.service.ts:494`): quella è la funzione **puntuale** che decide se avvisare **al momento di un addebito** (saldo già in rosso O che finisce in rosso — estesa dal PO a ogni addebito, ratifica 14.4); **non** è una lista. Per un feed serve `listNegativeBalances`.
+3. **PPR in attesa**: `pendingPprResult.total` — **già fetchato** (`page.tsx:194`) e già mostrato sia nella sub-riga sia nel KPI `kpi-ppr-pending`.
+   Q5 decide composizione, ordine e tetto. Nota: la card "Avvisi" del template è **solo nella schermata admin**; il template **non** ne dà una a pilota/istruttore, e le loro scadenze personali sono già nei KPI `kpi-medical`/`kpi-ratings` (`page.tsx:659-663`) → **non inventarne una** per quelle facce.
+
+**b.5 — METAR: il dato esiste, ma su mobile OGGI è INVISIBILE.**
+- Servizio: `server/services/metar.service.ts` — `getMetar(station)` (131-145), cache **in-memory 10 minuti** keyed by station (38-42), **ogni errore degrada a `null`, mai un throw** (doc-comment 10-14). DTO: `{raw, tempC, windDir, windKt, visM, qnh, category: 'VFR'|'MVFR'|'IFR'}`.
+- Station: `getMetarStation()` (`app-settings.service.ts`), configurabile in Impostazioni (`settings/club-card.tsx:167-184`, testid `club-metar-station-input`, `PUT /api/v1/settings/metar-station`) con **fallback all'ICAO** del campo (`settings/page.tsx:177-182`). Esiste anche `GET /api/v1/metar`.
+- **Dove viene reso oggi**: `dashboard/layout.tsx:81-109` lo fetcha e lo passa a `<Sidebar metar={...}>`; `sidebar.tsx:100-122` rende `.weather-card`.
+- **Scoperta 2 — su telefono E su tablet il meteo non si vede**: `.sidebar{display:none}` a ≤640px (`airops.css:1677`) **e** `.weather-card{display:none}` già a ≤900px (`airops.css:1439`, rail 64px della 13.10). `src/components/shell/mobile-top-bar.tsx` non contiene **zero** occorrenze di `metar`/`weather` (verificato con grep). Quindi la card METAR del template non è "un doppione del desktop": è l'**unico** modo di vedere il meteo sotto i 900px. Q6 decide da dove prende il dato e su quali facce compare (e traccia il buco 641-900px come TD, fuori scope R1).
+
+**b.6 — Delta sotto i KPI: il template li INVENTA, l'app ne ha due veri.**
+Template righe 74 + script 630-636: ogni KPI admin ha una terza riga (`"▲ 3 vs media"`, `"1 AOG · I-FOXT"`, `"più vecchia 6h fa"`, `"da approvare"`, `"+12,4% su mese prec."`). Di questi:
+- **reale**: `"N AOG"` — `aogCount` è già calcolato (`page.tsx:214`) e già mostrato nella sub-riga;
+- **reale**: la variazione sui ricavi — `getStats` restituisce una `series` mensile rolling a 6 mesi (`lib/schemas/stats.ts:52,109`), quindi il mese precedente è disponibile;
+- **inventati**: "vs media" dei voli, "più vecchia 6h fa" dei PPR (l'età della richiesta più vecchia non è calcolata da nessuna parte), "da approvare" è una didascalia fissa.
+Il componente `KPI` **ha già** le prop `delta`/`trend` (`components/ui/kpi.tsx:31-58`) e nessuna delle 9 `.kpi-row` dell'app le usa. ⚠️ **`KPI` è UN SOLO componente condiviso con il desktop**: aggiungere una riga delta si vede anche a 1280px. Q7.
+
+### c) Le primitive della 15.2 da RIUSARE (API verificata sul codice, non sul record)
+
+- **`src/components/ui/bottom-sheet.tsx`** (86 righe): `BottomSheet({open, onClose, testId, sub, title, badge?, rows: {k,v}[], actions?, secondStep?, closeLabel})`. Compone `MobileSheet`; il nome accessibile del dialog è `` `${sub} — ${title}` `` (riga 61). `secondStep` **sostituisce** righe+azioni+Chiudi nello **stesso** nodo dialog (ratifica R-15.2-a) — è già il meccanismo pronto per un motivo di rifiuto. `onClose` **deve essere referenzialmente stabile** (`useCallback`): `MobileSheet` ci basa l'effetto di focus (commento riga 37).
+- **`src/components/ui/mobile-sheet.tsx`**: scrim (`<testId>-scrim`), `Escape` montato **solo da aperto**, focus al pannello e **ritorno al trigger**, `role="dialog"` + `aria-label`, z-index **40**. Deliberatamente **senza** `aria-modal`/focus-trap finché non arriva la 15.10.
+- **Modalità full-screen di `SlideOver`** (`airops.css:1882-1915`): `left:0; width:100%`, entrata da `translateY`, `.so-actions` **sticky** con `.so-body:has(.so-actions){padding-bottom:0}`, `.so-foot .btn{min-height:44px}`. **In questa story non serve** (non si aprono form nuovi): la sola superficie che la usa è `DispatchFlightButton` → `FlightEditor`, già coperta dalla 15.2. Da NON toccare.
+- **CSS della card mobile già esistente come modello**: `.ppr-card`/`.ppr-card-head`/`.ppr-card-main`/`.ppr-card-name`/`.ppr-card-sub`/`.ppr-card-side`/`.ppr-card-id` (`airops.css:1856-1874`) — **la card è UN solo `<button>`**, i figli sono `<span>` resi `display:block` (commento 1864-1865), niente `button` dentro `button`, `min-height:44px`. Le liste di questa story hanno la stessa forma: **valutare di generalizzare quei nomi** (es. `.mobile-card*`) invece di duplicarli sei volte — ma **solo se la generalizzazione non cambia una riga di resa del PPR** (verifica: diff dei computed style della coda PPR a 375px pre/post, deve essere vuoto). Se non è a costo zero, si duplicano con nomi propri e si dice perché.
+- **Consumer di riferimento da leggere prima di scrivere**: `src/app/[locale]/dashboard/ppr/ppr-console.tsx` — doppio albero (`.ppr-queue-desktop` riga 303 / `.ppr-queue-mobile` riga 374), `sheetForId`/`sheetRejecting`/`rejectReason`/`rejectError` (128-131), `detailRows()`, azioni gated su `PENDING` (441), `secondStep` col motivo (~490-500).
+
+### d) `src/styles/airops.css` — dove va la roba nuova e cosa NON toccare
+
+- **Sezioni mobile esistenti**: shell 15.1 ai **1653-1787**, primitive 15.2 ai **1789-1981**. Le regole nuove vanno **in coda**, in un blocco proprio con commento di sezione `/* ---------- panoramica mobile (story 15.3) ---------- */`, sempre dentro `@media (max-width: 640px)` — **tranne** la riga `display:none` fuori-query per ogni albero mobile nuovo (precedente esatto: `.ppr-queue-mobile{display:none}` alla riga **1809**, motivata al 1806-1808: senza quella la suite desktop trova due match per ogni testo in pagina).
+- **Mappa z-index in uso** (non introdurre valori nuovi senza una misura che li motivi): `.topbar`/`.mobile-topbar` 4 · `.mobile-tabbar` 5 · popover/typeahead 19/20/30 · `.mobile-sheet` **40** · `.slideover` **50** · `.mini-modal` **60** · popover portalati dei picker **65/66** · `.toast-host` **200** (a ≤640px sollevato a `calc(92px + env(...))`, riga 1687).
+- **Riuso invece di colori nuovi**: Approva/Nega = `.btn.mini.ok` / `.btn.mini.bad` (**1151-1162**, con gli override dark `html[data-theme="dark"]` della 13.9 alle 1161-1162); primario solido = `.btn.primary` (**344-349**); toni del feed Avvisi = `Badge` (`components/ui/badge.tsx`) e/o le classi `.stat-tone-*` introdotte da Billing-2 — **misurare il contrasto**, non sceglierlo a occhio (lezione 13.9).
+- **Classi condivise da NON usare come aggancio dello switch**: `.card`, `.split`, `.list`, `.list-item`, `.students`/`.student-row` (13 file). Lo switch va agganciato a **classi di pagina proprie** (precedente 15.1/15.2). `.split` (il contenitore Scadenze+Flotta, `page.tsx:392`) è usato anche altrove: se Q4 chiede di nasconderlo, si nasconde **una classe nuova messa su quel `div` specifico**, non `.split`.
+- **`.page`** = `padding: 22px 28px 60px` a ogni larghezza (293-299) — è l'aritmetica su cui poggia il full-bleed della strip (`margin-inline:-28px`), ed è **asserita** da `mobile-primitives.spec.ts:188` (`.kpi-row` deve restare figlio DIRETTO di `.page`). **Qualunque wrapper nuovo attorno alla `.kpi-row` rompe quel test.**
+- **`.page-head`** è `flex-wrap: wrap` a ≤640px (riga 1573, fix 13.10) — la testata **non va duplicata**: v. AD-3.
+
+### e) e2e e unit — il campo minato preciso
+
+**Spec che vivono sulla home (`/dashboard`)**:
+| file | righe | cosa fa | rischio |
+|---|---|---|---|
+| `e2e/home-dashboard.spec.ts` | 136-148 | admin: `heading "Panoramica operativa"`, **5** `kpi-*`, `dispatch-flight-button`, `schedule-section`, `bookings-list-section`, `scadenze-widget`, `fleet-card-widget` — tutti `toBeVisible()` | gira a **viewport desktop**: `sharedUse` estende `devices['Desktop Chrome']` (`playwright.config.ts:13-19`), che porta `viewport 1280×720`, e nessun test lo cambia ⇒ nascondere quelle superfici a ≤640px NON lo tocca. **Ma un secondo nodo con lo stesso testid/heading lo rompe in strict mode a qualsiasi viewport** |
+| " | 150-191 | pilota / allievo / istruttore: heading `^Ciao, ` / `^Buongiorno, `, i 4 `kpi-*` per faccia, `pilot-landing-*-cta`, `instructor-landing-logbook-cta`, `toHaveCount(0)` sulle CTA altrui | idem: **niente duplicati di heading, KPI e CTA** |
+| " | 193-224 | istruttore disattivato: `kpi-payout-rate`/`instructor-landing-myday-empty`/heading `toHaveCount(0)` | un duplicato mobile farebbe fallire i `toHaveCount(0)` |
+| " | 228-267 | crea una prenotazione PENDING e la cerca con `getByTestId('booking-row').filter({hasText: registration})`, legge `booking-row-starts-at` e `kpi-bookings-pending .kpi-value` | **`booking-row` NON va riusato dall'albero mobile** (convenzione `-mobile`); **`.kpi-value` deve restare uno per KPI** |
+| `e2e/mobile-primitives.spec.ts` | 172-265 | **gira su `/it/dashboard` a 375px come admin**: `.kpi-row` è strip, `parentElement` è `.page`, `children.length >= 5`, **primo raggiungibile / ULTIMO NO**, wheel reale → `scrollLeft>0` → ultimo raggiungibile, niente overflow di pagina, non-clipping con valore lungo iniettato, tetto con valore lunghissimo, e a 1280px `display === 'grid'` | **il test più esposto della story**: qualunque wrapper attorno alla `.kpi-row` admin, qualunque KPI in meno, o un secondo `.kpi-row` prima di quella lo rompe. Se Q3 passa, la griglia 2×2 vale **solo** per le facce a 4 KPI (pilota/istruttore) e questo test — che è admin — resta verde: **va detto e va provato** |
+| `e2e/mobile-shell.spec.ts` | 36-58, 113-133, 175-200 | admin e pilota a 375px su `/it/dashboard`: un solo landmark `navigation`, tab bar, sidebar/topbar nascoste; **bottom-geometry**: scorre a fondo pagina e hit-testa **ogni `.page a, .page button` visibile** verificando che la tab bar non ne inghiotta il centro | **ogni controllo nuovo della Panoramica mobile entra automaticamente in questo test**: card-trigger, Approva/Nega, link "Vedi tutte", CTA full-width |
+| `e2e/pdf-exports.spec.ts` | 375 | `getByTestId('bookings-list-section')` | duplicato = rotto |
+| `e2e/bookings.spec.ts` | 741, 780, 936 | `schedule-section` — ma su `/dashboard/bookings`, non sulla home | nessuno se non si tocca `schedule.tsx` |
+| `movements`, `login`, `flights`, `user-management`, `account-adjustments`, `ppr-queue` | varie | passano da `/it/dashboard` per navigare | un errore SSR sulla home li rompe **tutti** |
+
+**Unit**: `page.tsx` è un server component senza test. Le funzioni PURE che questa story introduce (derivazione "in corso", merge/ordinamento/tetto del feed Avvisi) **devono** stare in `src/lib/` con i loro `*.test.ts` — e per costruzione non importano servizi, quindi **non** trascinano `@/lib/env` (lezione a 3 occorrenze in CLAUDE.md). Verifica comunque in shell pulita: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run <file>`.
+
+**Stato globale**: questa story **non** scrive AppSettings → nessuno spec nuovo entra nella catena serializzata. Ma **decide prenotazioni**, quindi ogni test nuovo deve lavorare **solo su fixture proprie** e non asserire mai un **conteggio globale** con uguaglianza (lezione 12.11 F1 / review Billing-2 F4): `>= 1` filtrato sulla propria targa, mai "la card ha 3 righe".
+
+### f) Convenzioni trasversali (CLAUDE.md, non ripeterle sbagliate)
+
+`karpathy-guidelines` su ogni riga; `npm run gates` prima del commit (**mai** i 4 comandi separati); ogni stringa nuova in **entrambi** i locale (`messages/it.json` + `messages/en.json`); segnaposto riempiti lato client → **`t.raw`** (con `t()` next-intl rende la chiave: 3 occorrenze storiche); **MAI `Escape`** negli e2e per chiudere un popup dentro uno `SlideOver`; **MAI** `getByRole('link', {name})` page-level né `hasText` con valori H:MM/date per disambiguare righe; prima di attribuire un fallimento e2e al lock anti-brute-force TD-6, contare i `LoginAttempt` **falliti** (`login-throttle.ts:25` conta solo `succeeded=false` — lezione 15.2).
+
+---
+
+## Decisioni architetturali (motivate, vincolanti — non sono ratifiche PO, sono vincoli tecnici)
+
+**AD-1 — Doppio markup con switch a classi di pagina proprie.** Le liste nuove della Panoramica mobile vivono in un albero proprio (`.overview-mobile`, `.landing-mobile`, o nomi equivalenti scelti dal dev), `display:none` **fuori** dalla media query e `display:block` dentro; le superfici desktop che il mobile sostituisce prendono una classe propria e vanno a `display:none` dentro la query. **Mai** agganciare lo switch a `.card`/`.split`/`.list`/`.students`. Precedente e motivazione: `airops.css:1806-1809` e `1851-1852`.
+
+**AD-2 — Non si tocca `bookings-table.tsx`, né `schedule.tsx`, né `fleet-card.tsx`, né `scadenze-widget.tsx`.** Sono i componenti di `/dashboard/bookings` e `/dashboard/fleet`, che ricevono il loro linguaggio mobile in **15.4** e **15.5**: un albero mobile dentro `bookings-table.tsx` comparirebbe **anche là** e anticiperebbe il taglio di due story. La card mobile "Prenotazioni in attesa" è un **componente nuovo** della cartella `dashboard/`. Per non duplicare la rete, la chiamata di transizione (`POST /api/v1/bookings/{id}/transition`, `bookings-table.tsx:207-226`) va estratta in un modulo condiviso minimo (una funzione, non un hook, non una classe) consumato da **entrambi**: è una modifica chirurgica e a comportamento invariato su desktop (verifica: `bookings.spec.ts` verde senza modifiche). Se il dev conclude che l'estrazione non è a comportamento invariato, **duplica le ~30 righe e lo motiva** — non modifica il desktop per comodità.
+
+**AD-3 — Testata e KPI NON si duplicano.** `.page-head` (h1 + sub + CTA) e `.kpi-row` restano **un solo nodo** per faccia, adattati in CSS. Motivo dirimente e misurabile: `home-dashboard.spec.ts:138/152/169/180` asserisce gli heading e `265` legge `kpi-bookings-pending .kpi-value`; `mobile-primitives.spec.ts:179-264` misura `.kpi-row` e **richiede che sia figlio diretto di `.page`**. Un secondo albero di testata o di KPI rompe entrambi in strict mode a **qualsiasi** viewport. Se Q3 passa, la griglia 2×2 è una **classe modificatore sulla stessa riga** (es. `.kpi-row.kpi-row-grid`), non un secondo albero.
+
+**AD-4 — Le derivazioni sono funzioni PURE in `src/lib/`, con unit test.** Valgono per la derivazione "in corso" e per il merge/ordinamento/tetto del feed Avvisi. Motivo: sono l'unica parte di questa story che un e2e non può provare in modo discriminante (non si può forzare un DB con 40 saldi negativi e 12 scadenze scadute dentro uno spec senza inquinare la suite), e la lezione 15.2 dice che una regola senza guardia è una regola che può sparire. Restano pure ⇒ niente `@/lib/env`.
+
+---
+
+## Acceptance Criteria
+
+> Gli AC marcati **⟨Qn⟩** dipendono dalla ratifica corrispondente e vanno riletti dopo le risposte del PO. Ogni misura si intende a **375×812** e ripetuta a **390×844** (i due viewport già usati dalla suite), tema **chiaro e scuro**.
+
+1. **(Panoramica admin — le cinque superfici del template)** A ≤640px la faccia admin rende, nell'ordine del template (64-121): testata (una sola, AD-3), KPI strip (già esistente), card **"In corso ora" ⟨Q1⟩**, card **"Prenotazioni in attesa"** con la decisione ⟨Q2⟩, card **"Avvisi" ⟨Q5⟩**, card **"Meteo campo" ⟨Q6⟩**. Le superfici desktop che il mobile sostituisce sono trattate secondo ⟨Q4⟩. **Verifica**: a 375px `getComputedStyle(...).display === 'none'` misurato in e2e su ogni albero inattivo (non a occhio) e visibilità dell'attivo; a 1280px l'inverso; nessun testid duplicato in tutta la suite (strict mode verde).
+
+2. **(Card "In corso ora" ⟨Q1⟩)** Righe derivate **senza query nuove** da `calendarBookingsToday` (`page.tsx:199`) con la derivazione pura di AD-4; head con conteggio; ogni riga mostra chip marche (mono, `--bg-sunken`, bordo), titolo, sub mono e badge di stato, come il template 78-89; empty state proprio. Il **titolo della card e il conteggio** dicono la verità sul dato (non "voli in aria" se il dato è "prenotazioni in corso"). **Verifica**: unit test della funzione pura sui 4 casi di confine (prima dell'inizio, esattamente a `startsAt`, dentro, esattamente a `endsAt`, dopo) + e2e che crea una prenotazione a cavallo di adesso e la trova nella card.
+
+3. **(Coda prenotazioni con decisione ⟨Q2⟩)** A ≤640px le prenotazioni **PENDING** della finestra sono card nel linguaggio del template (90-105): richiedente, sub mono (marche · orario), numero/id a destra dove il desktop lo mostra; il conteggio nell'head è quello **della finestra** (`embedPendingResult.total`), non l'all-time del KPI (`page.tsx:364-367`). Approvare esegue `POST .../transition {to:'APPROVED'}`, mostra lo **stesso toast** del desktop e fa `router.refresh()`; negare raccoglie il **motivo obbligatorio** (b.3) con la stessa validazione client di oggi (submit vuoto ⇒ errore inline e **zero richieste di rete**) e la stessa gestione del **409**. Empty state "Nessuna prenotazione da approvare." come da template (104). Nessun literal di colore nuovo: `.btn.mini.ok`/`.btn.mini.bad`/`.btn.primary`. Target ≥44px. **Verifica**: e2e su fixture propria — approva dal telefono, la riga sparisce dalla card e il badge desktop dice "Approvata"; nega con motivo vuoto ⇒ errore inline provato con `page.route`/`waitForRequest` (assenza di toast **non** basta); nega con motivo ⇒ toast + sparizione + `denyReason` leggibile sul desktop.
+
+4. **(Feed "Avvisi" ⟨Q5⟩)** Solo sulla faccia **admin** (il template non ne dà uno alle altre; le scadenze personali sono già nei KPI di pilota/allievo). Righe `30px 1fr` col quadratino di tono, titolo e sub mono (template 106-116). Ogni voce è **verificabile alla fonte** (nessun avviso senza un dato che lo genera) e porta a una destinazione sensata. Ordine, tetto e comportamento di troncamento come da ⟨Q5⟩. **Verifica**: unit test della funzione pura di AD-4 — ordinamento, tetto, e il caso "più voci del tetto" (che l'e2e non può forzare); e2e che, creata una scadenza scaduta su una persona di fixture, la trova nel feed.
+
+5. **(Card METAR ⟨Q6⟩)** Card nel linguaggio del template (117-121): label mono uppercase + station, temperatura + pallino di categoria + sigla, raw METAR in box `--bg-sunken` mono con `word-break: break-word` (una riga METAR reale è lunga: **misurare** che non produca overflow orizzontale di pagina a 375px). **Assente** — non vuota — quando `getMetar` restituisce `null` (stazione non configurata o fetch fallito): è lo stesso `metar &&` che la sidebar applica da sempre (`sidebar.tsx:100`). **Nessuna chiamata di rete lato client.** **Verifica**: a 375px la card c'è (con stazione configurata) e a 1280px `toHaveCount(0)` in pagina mentre `.weather-card` della sidebar è visibile; `document.documentElement.scrollWidth <= clientWidth` con un raw METAR lungo iniettato (text-node substitution, lezione 13.10).
+
+6. **(Landing pilota/allievo ⟨Q3⟩⟨Q4⟩⟨Q6⟩⟨Q8⟩)** A ≤640px la faccia personale rende: saluto + sub saldo (una sola testata), KPI secondo ⟨Q3⟩, CTA "Prenota volo" secondo ⟨Q4⟩ **con la stessa condizione `canBook` di oggi** (`page.tsx:671-672`: permesso **E** profilo pilota attivo — non reintrodurre il gate sul solo ruolo, difetto chiuso da review 14.6 F2), card "I miei prossimi voli", card METAR. L'**allievo** rende la stessa schermata **senza** la CTA (R2 chiuso dalla ricognizione a). **Verifica**: e2e con l'attore `pilot@airmanager.local` **e** con `student@airmanager.local` (mai solo uno — lezione 15.1 F1); `pilot-landing-book-cta` `toHaveCount(0)` per l'allievo anche nell'albero mobile.
+
+7. **(Landing istruttore ⟨Q3⟩⟨Q6⟩⟨Q8⟩)** A ≤640px: saluto + sub, KPI secondo ⟨Q3⟩, card "La mia giornata" con la **colonna orari a sinistra** del template (447-456: inizio mono 11.5px/600, fine mono 10px `--ink-4`) e il `Badge` di fase già calcolato da `dayPhaseOf`, empty state invariato, card METAR. **Nessuna CTA di creazione** (ratifica 12.12 n.3, asserita da `home-dashboard.spec.ts:187-190`). **Verifica**: e2e con `instructor@airmanager.local`; il testid `instructor-landing-myday-empty` resta **un solo nodo**.
+
+8. **(Dettaglio-riga in bottom sheet ⟨Q8⟩)** Le righe delle liste che ⟨Q8⟩ include aprono il `BottomSheet` della 15.2 con `sub`/`title`/`badge`/`rows[]` modellati sui row-builder del template (589/592) e **parità informativa**: lo sheet mostra **almeno** quello che la card mostra, più i campi che la card non ha spazio di mostrare. La card che apre lo sheet è **un solo `<button>`** senza elementi interattivi annidati (idioma `.ppr-card`, `airops.css:1853-1861`), con nome accessibile parlante. **Verifica**: apertura **da tastiera** (Tab + Enter); ispezione DOM: zero `button` dentro `button` e zero `<a>` dentro `<button>` nell'albero mobile; il nome accessibile non è generico.
+
+9. **(Convenzione testid — nessun duplicato)** Desktop **invariati**: `kpi-*`, `booking-row`, `booking-row-starts-at`, `booking-approve-action`, `booking-reject-action`, `booking-deny-reason`, `booking-deny-submit`, `bookings-list-section`, `schedule-section`, `scadenze-widget`, `fleet-card-widget`, `dispatch-flight-button`, `pilot-landing-upcoming-row`, `pilot-landing-upcoming-empty`, `pilot-landing-book-cta`, `pilot-landing-logbook-cta`, `pilot-landing-profile-cta`, `instructor-landing-myday-row`, `instructor-landing-myday-empty`, `instructor-landing-logbook-cta`. Duplicati mobile col suffisso `-mobile` (es. `booking-row-mobile`, `pilot-landing-upcoming-row-mobile`, `instructor-landing-myday-row-mobile`); superfici solo-mobile col prefisso `mobile-` (es. `mobile-overview-inprogress`, `mobile-overview-pending-bookings`, `mobile-overview-alerts`, `mobile-metar-card`, `mobile-booking-sheet`). **Verifica**: la **suite completa** passa in strict mode; un `page.getByTestId(id)` per ciascuno dei testid desktop elencati restituisce **esattamente 1** nodo a 375px e a 1280px.
+
+10. **(Geometria e layering, con la tab bar della 15.1 presente)** A 375px e 390px: nessun overflow orizzontale **di pagina** (`document.documentElement.scrollWidth <= clientWidth`) su tutte e tre le facce; nessun controllo della Panoramica finisce sotto la tab bar (z 5) — che è già quello che `mobile-shell.spec.ts:175-200` hit-testa su **ogni** `.page a, .page button`, e i controlli nuovi ci entrano automaticamente; il bottom sheet (z 40) copre la tab bar con lo scrim; i toast (200) restano sopra tutto. **Verifica**: `elementFromPoint` per ogni coppia (non giudizio visivo — lezioni 13.7/13.10/15.1), valori riportati nel record; `mobile-shell.spec.ts` verde **senza modifiche** (se va modificato, è un segnale: si aggiorna al valore **corretto**, mai indebolito — lezione 14.6).
+
+11. **(Ogni regola nuova ha la sua guardia, provata discriminante — 15.1 F2/F3 + lezione 15.2 sulla guardia cieca)** Il dev elenca nel record ogni regola CSS/comportamento introdotta per un difetto **misurato** e, per ciascuna, l'asserzione che la protegge. Minimo: (i) `display:none` dell'albero desktop ≤640px; (ii) `display:none` dell'albero mobile >640px; (iii) ⟨Q3⟩ se passa la griglia 2×2: **il 3° e il 4° KPI raggiungibili SENZA scorrere** — cioè il lato che la regola ha **liberato**, non "la riga esiste"; (iv) card METAR presente ≤640 / assente >640; (v) non-overflow col raw METAR lungo; (vi) empty state di ogni lista = **un solo** nodo. Ognuna va **provata discriminante** simulando il pre-fix (iniezione CSS / `addInitScript` / neutralizzazione del componente con **rebuild** se il difetto è JS — lezione 15.2): il test deve diventare **rosso**. Se una regola non è proteggibile con un'asserzione sensata, va detto e motivato, mai lasciata muta.
+
+12. **(Invarianti)** Desktop >640px **invariato**: verifica interattiva a 1280px e 800px sulle tre facce (nessuna differenza visiva né di geometria misurata rispetto al pre-diff, misura pre/post); 641px continua a prendere il rail 64px (R1, test di confine 15.1 verde). `npm run gates` verde; **nessuna dipendenza nuova**; **nessun token esistente cambia valore**, nessun literal di colore nuovo; ogni stringa nuova in **entrambi** i locale; contrasto delle superfici nuove **misurato** (canvas→WCAG) ≥4.5:1 in tema chiaro **e** scuro; gate finale = **suite completa `CI=1` su build di produzione, DB fresco** (`export JOBS_SECRET=<non-placeholder>` prima del run; foreground, output su file, mai `| tail`).
+
+---
+
+## Blast radius (enumerato — il dev lo verifichi e lo chiuda voce per voce nel record)
+
+**e2e che possono rompersi** (dettaglio e righe nella ricognizione e):
+1. `e2e/home-dashboard.spec.ts` — **7 punti**: heading admin (138), 5 KPI admin (140-142), 4 widget admin (143-147), heading+KPI+CTA pilota (152-164), allievo (169-175), istruttore (180-190), istruttore disattivato con 3 `toHaveCount(0)` (221-223), `booking-row`+`booking-row-starts-at`+`kpi-bookings-pending .kpi-value` (248-266). **Causa di rottura più probabile: un testid o un heading duplicato dall'albero mobile.**
+2. `e2e/mobile-primitives.spec.ts:172-265` — **il più esposto**: gira sulla home admin a 375px e vincola `.kpi-row` a essere figlio diretto di `.page`, con ≥5 card e l'ultima **non** raggiungibile. Va **rieseguito e riletto**, non solo rieseguito: se Q3 passa, occorre dire esplicitamente perché resta verde (è admin, la griglia è per le facce a 4 KPI).
+3. `e2e/mobile-shell.spec.ts` — 3 test sulla home a 375px, incluso il **bottom-geometry** che hit-testa ogni `.page a, .page button`: i controlli nuovi ci entrano da soli.
+4. `e2e/pdf-exports.spec.ts:375` — `bookings-list-section`.
+5. `e2e/bookings.spec.ts` — usa `schedule-section` su `/dashboard/bookings`: intatto **se** AD-2 è rispettata (niente modifiche a `schedule.tsx`).
+6. `movements`, `login`, `flights`, `user-management`, `account-adjustments`, `ppr-queue` — passano dalla home per navigare: un errore SSR sulla home li rompe **tutti insieme**. È il segnale d'allarme da guardare per primo se la suite crolla.
+
+**Unit**: nessun test copre oggi `page.tsx`. I nuovi test sono quelli delle funzioni pure di AD-4. Se il dev estrae la funzione di transizione (AD-2), `bookings-table.tsx` cambia di poco e **`bookings.spec.ts` è la sua guardia**.
+
+**Cosa può rompersi senza che un test lo veda** (da verificare a mano):
+- il **tablet 641-900px**: nessuna regola di questa story deve toccarlo (R1), ma è la fascia dove `.weather-card` è già nascosta e la sidebar è a rail — controllare a 800px che nulla di nuovo compaia;
+- il **tema scuro** delle superfici nuove (i toni del feed Avvisi sono l'elemento a rischio — 13.9 ha già trovato 5 cause radice token-level);
+- la **sub-riga** della testata admin (`subParts.join(' · ')`, `page.tsx:216-221`): a 375px va già a capo (`.page-head{flex-wrap:wrap}`) ma con 4 segmenti può occupare 3 righe — misurare.
+
+---
+
+## Piano di test
+
+**Dove vivono i test nuovi**
+- **Spec nuovo `e2e/mobile-overview.spec.ts`**, project `chromium` `fullyParallel` (non scrive AppSettings ⇒ **non** entra nella catena serializzata). `setViewportSize` **dentro il test** (pattern 13.10, decisione di epic: **niente project Playwright duplicato**).
+- Regola di isolamento **non negoziabile**: ogni test crea le proprie fixture (velivolo, persona, prenotazione) e asserisce **solo su quelle**, filtrando per targa/cognome run-unique. **Mai** un conteggio globale con uguaglianza (lezione 12.11 F1, review Billing-2 F4: "fotografia + uguaglianza" flaka per costruzione sotto `fullyParallel`).
+- I test **per ruolo** (pilota, allievo, istruttore) usano gli attori di seed già usati da `home-dashboard.spec.ts` (`pilot@`, `student@`, `instructor@`) e `page.context().clearCookies()` fra un'identità e l'altra (idioma già in quel file, righe 200-204).
+
+**Casi minimi**
+1. *admin, 375px*: le cinque superfici mobile visibili, le superfici desktop sostituite a `display:none` **misurato**, nessun overflow di pagina.
+2. *admin, 1280px*: l'inverso, e le 4 superfici desktop di `home-dashboard.spec.ts` intatte.
+3. *admin, 375px, decisione*: fixture PENDING → approva dalla card/sheet → sparizione + stato APPROVED verificato sul desktop; seconda fixture → nega con motivo vuoto (**zero richieste di rete**, provato con `page.route`) → poi con motivo → `denyReason` visibile.
+4. *admin, 375px, "in corso"*: fixture a cavallo di adesso → compare nella card; fixture interamente futura → non compare.
+5. *admin, 375px, avvisi*: scadenza scaduta su persona di fixture → compare nel feed.
+6. *pilota / allievo / istruttore, 375px*: la loro faccia, i loro KPI ⟨Q3⟩, la loro lista, la CTA giusta (presente per il pilota, assente per l'allievo, assente per l'istruttore), METAR.
+7. *METAR*: presente ≤640, `toHaveCount(0)` in pagina >640 mentre `.weather-card` della sidebar è visibile; raw lungo iniettato → nessun overflow.
+8. *tastiera*: Tab fino alla prima card → Enter → sheet aperto, focus dentro; Escape → chiuso, focus tornato al trigger.
+
+**Guardie DISCRIMINANTI (lezione 15.2 — la guardia va scritta sul lato che la regola ha LIBERATO)**
+- ⟨Q3⟩ griglia 2×2: **non** "la riga esiste" e **non** "il primo KPI si vede" (li teneva già la strip). L'asserzione è: **tutti e 4** i KPI `reachable()` con `scrollLeft === 0` **e** `scrollWidth <= clientWidth` sulla riga. Discriminanza: iniettando le regole della strip il test deve diventare rosso (oggi, con la strip, l'ultimo KPI è `reachable() === false` — lo dice già `mobile-primitives.spec.ts:195`).
+- Sostituzione degli alberi: asserire **entrambi** i lati (desktop `none` + mobile visibile a 375px; l'inverso a 1280px). Un solo lato lascia passare "ho nascosto tutto".
+- Empty state: `toHaveCount(1)`, non `toBeVisible()` — un doppione è esattamente il difetto che la convenzione testid esiste per prevenire (precedente: `mobile-primitives.spec.ts:71`).
+- Feed Avvisi: il **tetto** e l'**ordine** si provano in **unit** (l'e2e non può fabbricare 40 saldi negativi senza inquinare la suite) — AD-4.
+- Ogni guardia va provata rossa contro una simulazione del pre-fix, con il repo **intatto** (iniezione CSS / `addInitScript`; se il difetto è JS, **rebuild** — lezione 15.2).
+
+**Gate finale**: `npm run gates` + **suite completa `CI=1` su build di produzione con DB fresco**, foreground, output su file (`export JOBS_SECRET=<non-placeholder>` prima del run). Se il dev non la completa, la **review la riesegue da arbitro** (prassi consolidata 13.9/13.11/15.2).
+
+---
+
+## Contesto (puntatori)
+
+- Piano epic 15 (R1-R5 + architettura, VINCOLANTI): `docs/superpowers/plans/2026-07-29-epic-15-mobile-ui.md`.
+- Story precedenti, da leggere per intero: `_bmad-output/implementation-artifacts/15-1-shell-mobile.md` (convenzione testid, mappa z-index, lezioni F1-F3) e `15-2-primitive-mobile.md` (API delle primitive, 7 ratifiche R-15.2-a..g, lezioni sulla guardia cieca e sulla prova per rebuild).
+- Consumer di riferimento del doppio markup + `BottomSheet`: `src/app/[locale]/dashboard/ppr/ppr-console.tsx`.
+- Template locale: percorso in testa (fonte remota raggiungibile solo dalla sessione principale via `DesignSync`).
+- Regole ambiente e ciclo per story: `docs/handoffs/HANDOFF.md` (DB fresco solo dalla sessione principale, `JOBS_SECRET` da esportare, run e2e mai in background da subagent, MCP Playwright non raggiungibile dai subagent → fallback sanzionato: script `playwright-core` throwaway lanciati dalla root, mai committati, **mai** `playwright install`).
+- **Skill obbligatorie dev**: `karpathy-guidelines` + `design-taste-frontend` + `ui-ux-pro-max` (`python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<query>"` — utile su "mobile dashboard cards", "alert feed list", "kpi grid mobile", "weather card").
+- Modello: **Opus 5 xhigh** per dev e per eventuali fix-subagent (regola utente 2026-07-29: il codice UI lo scrive Opus 5; l'epic 15 è tutto UI). ⚠️ `.claude/agents/dev-story.md` ha `model: sonnet` nel frontmatter: **passare `model:'opus'` esplicitamente al dispatch**. Review adversarial: `adversarial-reviewer` Opus 5 xhigh — ⚠️ quel tipo di agent **non ha il tool di messaggistica**: concederglielo o mettere in conto di leggere il transcript (trappola 15.2).
+- Commit: `feat(15.3): panoramica mobile — in corso ora, coda prenotazioni, avvisi, METAR; landing per-ruolo` — Co-Authored-By col modello che ha scritto il codice.
+
+## Fuori scope dichiarato
+
+- **`/dashboard/bookings`** (agenda "Voli di oggi", filtri, form prenotazione) → **15.4**; **`/dashboard/fleet`**, Piloti, Istruttori, scheda persona → **15.5**. AD-2 esiste per non anticiparle.
+- Registro voli (15.6), Scadenze/Transiti (15.7), Contabilità/Statistiche/Impostazioni (15.8), aree self e `/ppr` pubblico (15.9).
+- **Focus trap** e `aria-modal` su sheet/pannelli, dark-pass e a11y-pass completi, riesame del "project mobile" Playwright → **15.10**. La baseline di tastiera resta quella della 15.1 (focus al pannello, ritorno al trigger, Escape).
+- **METAR nella fascia 641-900px**: `.weather-card` è nascosta lì da prima di questo epic (`airops.css:1439`, ratifica 13.10 sul rail). R1 vincola questa story a ≤640px ⇒ il buco resta e va **tracciato come TD in `sprint-status.yaml`**, non chiuso qui di straforo.
+- Qualunque modifica alle API, agli schemi Zod, al dominio o al comportamento desktop (il motivo obbligatorio del rifiuto di una prenotazione è un **vincolo esistente**, non una modifica).
+- Sostituzione o riscrittura di `BottomSheet`/`MobileSheet`/modalità full-screen di `SlideOver`: si **riusano**, non si reinventano (bullet di brief).
+
+---
+---
+
+# RATIFICHE PO — CHIUSE il 2026-07-30, PRIMA del dispatch al dev
+
+Le otto assunzioni sotto sono state poste al PO in due giri di `AskUserQuestion` e **chiuse tutte
+sulla raccomandazione del teammate story**. Valgono come vincoli: il dev le implementa così, non le
+ridiscute. (Q5 è stata riformulata dopo una richiesta di chiarimento del PO — "non ho capito il feed
+avvisi cosa sia" — e ratificata al secondo giro; l'esito è invariato.)
+
+| # | Ratifica | Decisione del PO |
+|---|---|---|
+| **R-15.3-a** | Card "In volo ora" | **"In corso ora" = prenotazioni di oggi con `startsAt <= now < endsAt`**. Il dato "volo in aria" NON esiste (`FlightStatus` = `REGISTERED\|CANCELLED`): il titolo del template si cambia perché il numero non menta. Zero query nuove (`calendarBookingsToday` è già in pagina). |
+| **R-15.3-b** | Approva/Nega prenotazioni | **Solo dentro il bottom sheet, come la coda PPR** — la card è un trigger unico, il motivo del rifiuto è il `secondStep` già costruito in 15.2. **Conferma e non deroga R-15.2-b**: le due code decisionali dell'app hanno UNA sola grammatica. Il bullet di piano ("Approva/Nega inline") è superato da questa ratifica. |
+| **R-15.3-c** | KPI pilota/istruttore | **Griglia 2×2 dove i KPI sono 4**, strip dove sono 5 (admin) — come il template. Una classe modificatore sulla stessa riga, **mai un secondo albero**. R-15.2-f resta il default per ogni altra pagina. |
+| **R-15.3-d** | Superfici desktop assenti dal template | **Nascoste ≤640px con CTA verso la loro pagina**: calendario → Pianificazione, card Flotta → Flotta; tabella prenotazioni → card "in attesa"; widget Scadenze → feed Avvisi. Le CTA di testata diventano **full-width sotto la sub-riga** (pattern template 415), non bottoni schiacciati in testata. |
+| **R-15.3-e** | Feed Avvisi | **Tre fonti — scadenze + saldi negativi + PPR in attesa — ordinate per urgenza** (scaduto → saldo negativo → ≤7g → PPR) e **tetto a 5 righe** con "Vedi tutte" verso la pagina di competenza quando tronca. Accettata la query nuova `listNegativeBalances` nel `Promise.all` esistente. Ordine e tetto si provano in **unit su funzione pura**. Solo faccia admin. |
+| **R-15.3-f** | Card METAR | **Resa da `dashboard/page.tsx` su tutte e tre le facce, visibile solo ≤640px.** Accettato il costo: a processo freddo layout e pagina possono mancare entrambi la cache 10' e fare due fetch upstream. Il buco **641-900px** resta fuori scope e va tracciato come **TD** in `sprint-status.yaml`. |
+| **R-15.3-g** | Riga "delta" sotto i KPI | **Nessun delta.** Il componente `KPI` è condiviso col desktop e il mandato della story è "desktop invariato"; tre dei cinque delta del template sono numeri inventati. |
+| **R-15.3-h** | Bottom sheet di dettaglio | **Su tutte e quattro le liste** (in corso ora, prenotazioni in attesa, i miei prossimi voli, la mia giornata) — grammatica unica e parità informativa col desktop. Costo accettato: quattro builder di righe e quattro casi e2e. |
+
+---
+
+# ASSUNZIONI DA RATIFICARE COL PO — **PRIMA** del dispatch al dev
+> **CHIUSE — v. la tabella qui sopra.** Il testo che segue resta come istruttoria (fatti, opzioni
+> scartate e motivi): serve al dev e al reviewer per capire *perché* una decisione è quella e non
+> un'altra, e al PO se in futuro vorrà rivederla.
+
+> Regola di progetto (retro Epic 9, riconfermata dal piano epic 15: "Per ogni altro dubbio chiedi a me" — PO, 2026-07-29): un'assunzione scoperta in ricognizione si ratifica **prima** di implementare, mai spedita "da confermare". Ognuna qui sotto è una scelta **non deducibile** dal template (incompleto by design, R2) né dal codice.
+
+### Q1 — "In volo ora": cosa mostra la card, dato che l'app non ha il concetto di volo attivo?
+
+**Il fatto**: `FlightStatus` ha solo `REGISTERED|CANCELLED` (`prisma/schema.prisma:890-893`) — un volo si registra **dopo**. Non esiste tracking, non esiste un volo aperto. L'unica nozione di "adesso" già calcolata è la prenotazione in corso (`dayPhaseOf`, `page.tsx:530-534`, etichetta i18n già presente: "in corso"); l'altra è il PPR approvato **AL_SUOLO** (ospite atterrato — il contrario di "in volo").
+
+- **(a) "In corso ora" = prenotazioni di oggi con `startsAt <= adesso < endsAt`** — dato vero, zero query nuove (`calendarBookingsToday` è già in pagina), lessico già in i18n. *(RACCOMANDATA)*
+- **(b) "Movimenti in corso" = (a) + PPR approvati al suolo** — più ricco, ma mette sotto un titolo solo due domini diversi (prenotazioni del club e ospiti in transito) e il conteggio diventa ambiguo.
+- **(c) Non portare la card** — la Panoramica mobile perde il "cosa sta succedendo adesso", che è il senso stesso della schermata.
+
+**Raccomandazione: (a)**, con il titolo cambiato rispetto al template. Motivo: la card del template promette "in volo", e mostrare una prenotazione in corso sotto quel titolo farebbe credere a un amministratore che un velivolo è in aria quando potrebbe non essere neppure decollato. Il costo è una parola; il beneficio è che il numero non mente.
+
+### Q2 — Approva/Nega delle prenotazioni: **inline sulla card** (bullet di piano + template) o **dentro il bottom sheet** (precedente R-15.2-b)?
+
+**Il conflitto**: il bullet 15.3 del piano dice "coda prenotazioni con Approva/Nega **inline**" e il template le mostra così (98-101). Ma la ratifica **R-15.2-b** (PO, 2026-07-30) ha scelto, per la coda PPR, la sede **unica** nello sheet — divergenza **deliberata** dal template, motivata così: non esporre due bottoni distruttivi sotto il pollice mentre si scorre. **In più**, un fatto tecnico: "Nega" richiede un **motivo obbligatorio** (`bookings-table.tsx:257-259`), quindi **non può completarsi con un tap** neanche inline.
+
+- **(a) Come il PPR: la card è un trigger unico, Approva/Nega vivono nello sheet, il motivo è il `secondStep` già implementato** — una sola grammatica per le due code decisionali dell'app, nessun elemento interattivo annidato, riuso al 100% di ciò che la 15.2 ha costruito. Costo: 2 tap per approvare. *(RACCOMANDATA)*
+- **(b) Inline come da bullet e template**: 2 bottoni sulla card; "Approva" si completa in un tap, "Nega" apre comunque il secondo passo. Costo: la card non può più essere un `<button>` (torna il problema `stopPropagation` / interattivo dentro interattivo che R-15.2-b aveva eliminato per costruzione), e le due code dell'app si comportano in modo diverso.
+- **(c) Ibrido: solo "Approva" inline, "Nega" solo nello sheet** — il tap veloce dove è sicuro, il passo lento dove serve. Costo: asimmetria da spiegare.
+
+**Raccomandazione: (a)**. Se il PO preferisce (b) o (c), è una **decisione consapevole che deroga a R-15.2-b**: va messo a verbale che le due code divergono, altrimenti la prima review che le confronta lo segnala come incoerenza.
+
+### Q3 — KPI di pilota/allievo e istruttore: **strip orizzontale** (stato attuale) o **griglia 2×2** (template)?
+
+**Il fatto**: la ratifica **R-15.2-f** ha applicato la strip a scroll-snap a **tutte** le 9 `.kpi-row` dell'app (`airops.css:1924-1951`), accettando esplicitamente il costo "dal terzo KPI serve uno scorrimento". Il template però usa la strip **solo** per l'admin (5 KPI, 69-77) e una **griglia `1fr 1fr`** per pilota (407-414) e istruttore (439-446), che hanno esattamente **4** KPI: in griglia si vedono tutti e quattro insieme, nella strip due sono nascosti.
+
+- **(a) Tutto strip (status quo)** — uniforme, zero codice. Ma su pilota/istruttore nasconde metà dei KPI dietro uno scroll che il template non chiedeva, e sono i KPI che un pilota apre l'app per vedere (saldo, medico, ratings).
+- **(b) Griglia 2×2 dove i KPI sono 4, strip dove sono 5** — fedele al template. Costo: **una classe modificatore** sulla stessa riga (AD-3: mai un secondo albero), applicata dalle due landing. R-15.2-f resta in vigore come **default** per ogni altra pagina. *(RACCOMANDATA)*
+- **(c) 2×2 ovunque** — rompe la scelta del template per l'admin (5 KPI non stanno in 2×2 senza una riga zoppa) e ribalta R-15.2-f su 7 pagine.
+
+**Raccomandazione: (b)**. È esattamente ciò che il template fa, costa una classe, non tocca nessun'altra pagina, e la guardia e2e è forte e discriminante (i 4 KPI raggiungibili senza scorrere — il lato che la regola *libera*).
+
+### Q4 — Sulla Panoramica **admin** mobile, che fine fanno calendario, tabella prenotazioni, widget Scadenze e card Flotta? E le CTA delle testate?
+
+**Il fatto**: il template mobile non ha nessuna delle quattro superfici desktop (calendario del giorno, tabella prenotazioni completa, widget scadenze, card flotta) — le sostituisce con le sue card. E la sua testata admin **non ha CTA**, mentre quella pilota ha un "Prenota volo" **full-width** (415).
+
+- **(a) Su mobile: calendario e card Flotta **nascosti**, con un link/CTA verso la loro pagina (Pianificazione, Flotta — entrambe già in tab bar, e ricevono il loro linguaggio mobile in 15.4/15.5); tabella prenotazioni sostituita dalla card "in attesa"; widget Scadenze sostituito dal feed Avvisi (che le include). Le CTA di testata diventano **full-width** sotto la sub-riga (pattern del template 415), non bottoni schiacciati nella testata.* *(RACCOMANDATA)*
+- **(b) Tenere tutto in coda alla pagina mobile** — nulla sparisce, ma la home diventa lunghissima e contiene un calendario a griglia usabile solo con scroll orizzontale: è precisamente quello che R4 dice di non lasciare come stato finale.
+- **(c) Nascondere senza link** — più pulito, ma un amministratore che sul desktop usa il widget Flotta non ha modo di capire dov'è finito.
+
+**Raccomandazione: (a)**. Nota di verifica: `home-dashboard.spec.ts:144-147` asserisce le quattro superfici `toBeVisible()` ma **gira a viewport desktop** (1280×720, ereditato da `devices['Desktop Chrome']` in `playwright.config.ts:13-19`) → nasconderle a ≤640px **non** lo rompe. Va comunque riletto, non solo rieseguito.
+
+### Q5 — Feed "Avvisi": quali fonti, in che ordine, con che tetto?
+
+**Il fatto**: tre fonti reali e verificate — scadenze (già in pagina, finestra 60g, cap 60), **saldi negativi** (`listNegativeBalances`, `finance.manage`, una query **nuova** sulla home), PPR in attesa (già contato). Il template mostra 3 righe generiche e non dice ordine né tetto (R2).
+
+- **(a) Tutte e tre, ordinate per urgenza reale (scaduto → saldo negativo → in scadenza ≤7g → PPR in attesa), tetto a 5 voci + riga "Vedi tutte" verso la pagina di competenza quando si tronca.** Costo: una query in più nel `Promise.all` esistente (un `groupBy` + una `findMany`). *(RACCOMANDATA)*
+- **(b) Solo scadenze + PPR (nessuna query nuova)** — a costo zero, ma la home mobile non direbbe mai che qualcuno è in rosso, che è metà del lavoro di un gestore di aviosuperficie.
+- **(c) Tutte e tre senza tetto** — su un campo reale i saldi negativi sono decine: la card diventerebbe la pagina.
+
+**Raccomandazione: (a)** con tetto 5. Il tetto e l'ordine si provano in **unit** su una funzione pura (AD-4), perché nessun e2e può fabbricare quel volume senza inquinare la suite.
+
+### Q6 — Card METAR: da dove prende il dato, e su quali facce compare?
+
+**Il fatto (scoperta di ricognizione)**: il METAR **esiste** ed è già fetchato dal layout (`dashboard/layout.tsx:94`), ma è reso **solo** dentro `Sidebar` — che è `display:none` a ≤640px, e la `.weather-card` è nascosta già a ≤900px (`airops.css:1439`). **Su telefono e tablet il meteo del campo oggi non si vede affatto.** `mobile-top-bar.tsx` non lo cita.
+
+- **(a) `dashboard/page.tsx` chiama `getMetarStation()` + `getMetar()` e rende una card `mobile-metar-card` (solo ≤640px) su **tutte e tre** le facce, come il template.** Costo reale: `getMetar` ha una cache in-memory di 10 minuti per stazione (`metar.service.ts:38-42,131-145`), quindi normalmente è un **cache hit** a costo zero; a processo freddo layout e pagina possono mancare entrambi la cache e fare **due** fetch upstream, una volta ogni 10 minuti. Ogni errore degrada già a `null` per contratto del servizio. *(RACCOMANDATA)*
+- **(b) Spostare il fetch nel layout e rendere lì una card mobile** — un solo fetch garantito, ma la card comparirebbe su **ogni** pagina mobile, mentre il template la mette solo nelle home.
+- **(c) Non portarla** — mobile e tablet restano senza meteo, su un'app per aviosuperficie.
+
+**Raccomandazione: (a)**. Il buco della fascia **641-900px** resta e va tracciato come **TD** in `sprint-status.yaml` (R1 vincola questa story a ≤640px): chiuderlo qui sarebbe uno scavalco della ratifica.
+
+### Q7 — La terza riga "delta" sotto i KPI del template: portarla?
+
+**Il fatto**: il template mostra un delta su ogni KPI admin, ma **3 su 5 sono inventati** ("▲ 3 vs media", "più vecchia 6h fa", "da approvare"). Reali sono solo il conteggio AOG (già calcolato, `page.tsx:214`) e la variazione dei ricavi (ricavabile dalla `series` di `getStats`). Il componente `KPI` ha già le prop `delta`/`trend` — **ed è condiviso col desktop**: aggiungere la riga si vede anche a 1280px.
+
+- **(a) Nessun delta (status quo)**: i KPI restano label + valore su entrambi i mondi. Zero rischio, zero modifiche al desktop. *(RACCOMANDATA)*
+- **(b) Delta solo dove il dato è reale** (AOG su "Flotta disponibile", variazione mese su "Ricavi"), gli altri tre senza. Porta il linguaggio del template senza inventare numeri — **ma è una modifica visibile anche sul desktop**, in una story il cui mandato è "desktop invariato".
+- **(c) Tutti e cinque i delta come nel template** — richiederebbe di inventare tre numeri. **Da escludere.**
+
+**Raccomandazione: (a)**. Se il PO vuole il linguaggio completo del template, (b) è accettabile ma va messo a verbale che la Panoramica **desktop** cambia aspetto, e serve una misura pre/post dell'altezza delle card KPI (la strip ha un tetto di larghezza e `.kpi` ha `overflow:hidden`: una terza riga cambia la geometria).
+
+### Q8 — Quali righe aprono un bottom sheet di dettaglio?
+
+**Il fatto**: R3 dice "dettaglio-riga = bottom sheet" e il template mette un `open` su **tutte** le righe di tutte le liste (589/592). Le liste in gioco sono quattro: "in corso ora" e "prenotazioni in attesa" (admin), "i miei prossimi voli" (pilota/allievo), "la mia giornata" (istruttore). Oggi tutte e quattro mostrano **meno** di quello che il record contiene (es. la riga pilota mostra marche + data, ma non istruttore, durata, note).
+
+- **(a) Tutte e quattro** — grammatica unica, parità informativa piena, riuso della primitiva 15.2 (il costo marginale per lista è un builder di `rows[]`). *(RACCOMANDATA)*
+- **(b) Solo la coda prenotazioni** (dove il tap serve a decidere); le altre tre restano righe informative non tappabili. Meno lavoro, ma tre liste su quattro restano più povere del desktop e la story lascia una grammatica mista da chiudere in 15.10.
+- **(c) Nessuna** — la Panoramica mobile mostrerebbe meno del desktop, contro l'AC di parità informativa che regge tutto l'epic.
+
+**Raccomandazione: (a)**, con una nota di onestà sul costo: sono quattro builder di righe più quattro casi e2e; se il PO vuole contenere l'ampiezza della story, (b) è il taglio difendibile — a patto di scriverlo come **debito esplicito** per 15.10, non di lasciarlo implicito.
