@@ -37,4 +37,35 @@ describe('mobileNavLayout', () => {
     expect(layout.tabs.map((item) => item.id)).toEqual(['overview', 'schedule', 'scadenze', 'logbook']);
     expect(layout.more).toEqual([]);
   });
+
+  /**
+   * Review 15.1 F1 (measured defect): this actor sees 6 items, and before the
+   * fix only two of them carried a slot — the bar came out with 2 tabs and
+   * four sections buried. PO ratification R-15.1-a (2026-07-30): the two
+   * self-service pages take the free columns, ahead of Scadenze/Registro voli.
+   */
+  it('gives an instructor who also flies as a pilot a FULL bar, self-service pages first (F1, R-15.1-a)', () => {
+    const items = visibleNavItems(['INSTRUCTOR', 'PILOT']);
+    expect(items.length).toBe(MOBILE_TAB_COUNT + 1);
+
+    const layout = mobileNavLayout(items);
+    expect(layout.tabs.map((item) => item.id)).toEqual(['overview', 'schedule', 'myAccount', 'myCompensation']);
+    expect(layout.more.map((item) => item.id)).toEqual(['scadenze', 'logbook']);
+  });
+
+  it('never returns a short bar: unslotted items fill the free columns in registry order (F1, class guard)', () => {
+    // A hypothetical future role list — no actor sees exactly this today; the
+    // point is that widening a `roles` array (as story 12.12 did) can never
+    // again leave the bar with empty columns while items sit behind "Altro".
+    const items = visibleNavItems(['ADMIN']).filter((item) => !['ppr', 'fleet'].includes(item.id));
+    const slotted = items.filter((item) => item.mobileSlot !== undefined);
+    expect(slotted.length).toBeLessThan(MOBILE_TAB_COUNT - 1);
+
+    const layout = mobileNavLayout(items);
+    expect(layout.tabs).toHaveLength(MOBILE_TAB_COUNT - 1);
+    expect(layout.tabs.map((item) => item.id)).toEqual(['overview', 'schedule', 'visiting', 'pilots']);
+    // Still a partition: nothing duplicated, nothing lost.
+    expect(layout.tabs.length + layout.more.length).toBe(items.length);
+    expect(layout.more.some((item) => layout.tabs.includes(item))).toBe(false);
+  });
 });

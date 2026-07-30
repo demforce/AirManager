@@ -182,12 +182,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             initialTheme={theme}
             themeToggleLabel={t('themeToggle.label')}
             localeSwitchLabel={t('localeSwitch.label')}
-            userChip={{
-              displayName,
-              fullLabel: `${displayName} · ${roleLabel}`,
-              initials: initialsFor(displayName),
-              color: AVATAR_COLOR_BY_ROLE[role],
-            }}
+            userChip={userChip}
             roleLabel={roleLabel}
             profileLabel={t('mobile.profile')}
             logoutAction={logoutAction}

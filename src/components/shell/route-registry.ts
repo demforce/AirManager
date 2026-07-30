@@ -59,10 +59,16 @@ export type NavItem = {
   enabled: boolean;
   /**
    * Story 15.1 (AC 2, epic 15 R2): priority slot in the <=640px bottom tab
-   * bar, used ONLY when the actor sees more than `MOBILE_TAB_COUNT` items
-   * (today: ADMIN) — the lowest-numbered slots fill the bar, everything else
-   * moves into the "Altro" sheet. Kept here, in the registry, so the mobile
-   * nav has the same single source of truth as the sidebar (href/icon/roles).
+   * bar, used ONLY when the actor sees more than `MOBILE_TAB_COUNT` items —
+   * the lowest-numbered slots fill the bar, everything else moves into the
+   * "Altro" sheet. Kept here, in the registry, so the mobile nav has the same
+   * single source of truth as the sidebar (href/icon/roles).
+   *
+   * Slots are a GLOBAL priority order, not a per-role one: each actor simply
+   * takes the lowest-slotted items among the ones they can see. 1-4 are the
+   * template's admin bar; 5-6 are the two self-service pages, which outrank
+   * Scadenze/Registro voli for the actors who have them (PO ratification
+   * R-15.1-a, 2026-07-30 — see the fill rule in `mobileNavLayout`).
    */
   mobileSlot?: number;
 };
@@ -108,9 +114,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
   // Story 12.8: the logbook ships in the AirOps visual language directly, replacing the legacy `/dashboard/flights`.
   { id: 'logbook', href: '/dashboard/logbook', icon: 'book', group: 'archive', roles: ALL_ROLES, enabled: true },
   // Story 14.6: dedicated self-service estratto conto — own balance + own movements only (never a staff view).
-  { id: 'myAccount', href: '/dashboard/my-account', icon: 'cash', group: 'archive', roles: SELF_SERVICE_ROLES, enabled: true },
+  // Story 15.1 (R-15.1-a): slot 5 — for an actor who sees more than 5 items
+  // and is NOT an admin (an instructor who also flies as a pilot), the two
+  // self-service pages take the bar ahead of Scadenze/Registro voli.
+  { id: 'myAccount', href: '/dashboard/my-account', icon: 'cash', group: 'archive', roles: SELF_SERVICE_ROLES, enabled: true, mobileSlot: 5 },
   // Story 14.7: dedicated self-service compensation page — own accrual + own payout history only (never the staff roster). This ROLE filter is coarse/presentation-only like every other entry (module doc comment); AC 4's stronger "active profile, not role" requirement is enforced by `dashboard/layout.tsx` filtering this ONE item out for an INSTRUCTOR-role actor whose own profile is deactivated (14.6 F2's lesson: never point a nav item where the destination would then have nothing to show).
-  { id: 'myCompensation', href: '/dashboard/my-compensation', icon: 'cash', group: 'archive', roles: INSTRUCTOR_ROLES, enabled: true },
+  { id: 'myCompensation', href: '/dashboard/my-compensation', icon: 'cash', group: 'archive', roles: INSTRUCTOR_ROLES, enabled: true, mobileSlot: 6 },
   // Story 12.9: the billing (Contabilità) page ships in the AirOps visual language directly, replacing the legacy `/dashboard/finance`.
   { id: 'billing', href: '/dashboard/billing', icon: 'cash', group: 'archive', roles: ADMIN_ROLES, enabled: true },
   { id: 'reports', href: '/dashboard/reports', icon: 'chart', group: 'archive', roles: ADMIN_ROLES, enabled: true },
@@ -143,13 +152,30 @@ export const MOBILE_TAB_COUNT = 5;
  *   first `MOBILE_TAB_COUNT - 1` columns (the last column is the "Altro"
  *   trigger, rendered by `MobileNav`) and everything else goes to `more`, in
  *   registry order (= the sidebar's group order).
+ *
+ * Review 15.1 F1: the bar must never come out SHORT. Slots are global, so an
+ * actor can see more than `MOBILE_TAB_COUNT` items while few of them carry a
+ * slot — measured before the fix: an instructor who also flies as a pilot
+ * (6 visible items, only `overview`/`schedule` slotted back then) got a
+ * 2-tab bar with four sections buried behind "Altro" and two columns wasted.
+ * Slots 5-6 fix that actor (R-15.1-a); the fill below closes the CLASS, since
+ * role lists keep widening story by story (12.12 opened `scadenze` to every
+ * role) and the next widening must not silently shorten the bar again.
  */
 export function mobileNavLayout(items: readonly NavItem[]): { tabs: NavItem[]; more: NavItem[] } {
   if (items.length <= MOBILE_TAB_COUNT) return { tabs: [...items], more: [] };
+  const capacity = MOBILE_TAB_COUNT - 1;
   const tabs = items
     .filter((item) => item.mobileSlot !== undefined)
     .sort((a, b) => a.mobileSlot! - b.mobileSlot!)
-    .slice(0, MOBILE_TAB_COUNT - 1);
+    .slice(0, capacity);
+  // Fewer slotted items than columns ⇒ every slotted one is already in, so
+  // this only ever appends UNSLOTTED items, in registry order (the same order
+  // `more` uses below).
+  for (const item of items) {
+    if (tabs.length === capacity) break;
+    if (!tabs.includes(item)) tabs.push(item);
+  }
   return { tabs, more: items.filter((item) => !tabs.includes(item)) };
 }
 

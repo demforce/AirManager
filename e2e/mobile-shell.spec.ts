@@ -101,6 +101,28 @@ test.describe('Mobile shell — tab bar and "Altro" sheet (story 15.1, AC 1/2/3)
     await expect(page.locator('.topbar')).toBeVisible();
   });
 
+  /**
+   * Epic 15 R1 is a PO ratification with an exact number in it — tablets
+   * (641-900px) KEEP the 64px rail of story 13.10, only phones switch. The
+   * two tests above sit at 375 and 1280, so nothing would notice a breakpoint
+   * edited to, say, 768px; this pins both sides of the 640/641 edge.
+   */
+  test('R1 boundary: 641px still gets the tablet rail, 640px is already the phone shell', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    await page.setViewportSize({ width: 641, height: 900 });
+    await page.goto('/it/dashboard');
+    await expect(page.locator('.sidebar')).toBeVisible();
+    await expect(page.getByTestId('mobile-tab-bar')).toBeHidden();
+    // The 13.10 rail, not the full sidebar: labels collapse, the icons stay.
+    expect(await page.locator('.app').evaluate((el) => getComputedStyle(el).gridTemplateColumns)).toMatch(/^64px /);
+
+    await page.setViewportSize({ width: 640, height: 900 });
+    await expect(page.locator('.sidebar')).toBeHidden();
+    await expect(page.getByTestId('mobile-tab-bar')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Aree operative' })).toHaveCount(1);
+  });
+
   test('pilot: its own 5 tabs, no "Altro", no admin-only route (AC 2, R2)', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
     await page.setViewportSize(PHONE);
@@ -207,5 +229,17 @@ test.describe('Mobile shell — bottom geometry (story 15.1, AC 6)', () => {
     expect(geometry.contentEndHitsBar).toBe(false);
     expect(geometry.contentEndReachesContent).toBe(true);
     expect(geometry.covered).toEqual([]);
+
+    // The third half of AC 6 — the toast host is lifted clear of the bar.
+    // Without this the fix is invisible to the suite (review 15.1 F2: with
+    // `.toast-host`'s mobile `bottom` removed, every test still passed while
+    // toasts came out sitting on top of the tab bar). Asserted against the
+    // measured bar, not the literal 92px, so a taller bar keeps it honest.
+    const toast = await page.evaluate(() => {
+      const host = document.querySelector('.toast-host')!;
+      const bar = document.querySelector('.mobile-tabbar')!.getBoundingClientRect();
+      return { hostBottom: Number.parseFloat(getComputedStyle(host).bottom), barHeight: bar.height };
+    });
+    expect(toast.hostBottom).toBeGreaterThanOrEqual(toast.barHeight);
   });
 });
