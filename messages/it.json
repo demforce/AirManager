@@ -1697,6 +1697,14 @@
       "submit": "Conferma rifiuto",
       "cancel": "Annulla"
     },
+    "mobile": {
+      "openDetail": "Apri dettaglio richiesta",
+      "close": "Chiudi",
+      "requestLabel": "Richiesta",
+      "etd": "Partenza (ETD)",
+      "notes": "Note",
+      "rejectionReason": "Motivo del rifiuto"
+    },
     "toast": {
       "approved": "Richiesta approvata: numero PPR {pprNumber}.",
       "rejected": "Richiesta rifiutata.",

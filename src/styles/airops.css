@@ -1785,3 +1785,163 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 @media (prefers-reduced-motion: reduce){
   .mobile-sheet-panel{ animation: none; }
 }
+
+/* ---------- mobile primitives (story 15.2, epic 15 R3/R4) ----------
+   Three surfaces the 15.3-15.9 stories reuse instead of reinventing:
+   (1) the row-detail `BottomSheet` layout (`ui/bottom-sheet.tsx`, template
+       lines 515-539) — it rides on `.mobile-sheet` above, so scrim, Escape,
+       focus and z-index 40 are not repeated here, only the header/rows/
+       actions layout is;
+   (2) the FULL-SCREEN mode of `SlideOver` — this IS `MobileFormPanel` of
+       ratifica R3: there is no such component file, because the epic's
+       architecture forbids a JS switch and rendering all 11 SlideOver
+       consumers twice would be the only alternative. One CSS mode of the
+       one component is the only shape that satisfies the constraint;
+   (3) the KPI strip (template lines 69-77).
+   Same rules of engagement as the 15.1 block above: everything additive
+   inside `@media (max-width: 640px)`, no existing token changes value, no
+   new colour literal (the decision buttons reuse `.btn.primary` and
+   `.btn.mini.bad`, dark calibration of 13.9 included). */
+
+/* The mobile PPR list is in the DOM at every width (the switch is CSS
+   only), so it must be `display: none` OUTSIDE the query too — otherwise
+   the desktop suite gets two matches for every registration on screen. */
+.ppr-queue-mobile{ display: none; }
+
+@media (max-width: 640px){
+  /* --- (1) row-detail bottom sheet --- */
+  .bottom-sheet-head{
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    padding: 2px 0 12px;
+  }
+  .bottom-sheet-headings{ min-width: 0; }
+  .bottom-sheet-sub{
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-4);
+  }
+  .bottom-sheet-title{ font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin-top: 3px; }
+  .bottom-sheet-kv{
+    display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+    padding: 9px 0; border-top: 1px solid var(--border);
+  }
+  .bottom-sheet-k{
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-3); flex-shrink: 0;
+  }
+  .bottom-sheet-v{ font-size: 12.5px; font-weight: 500; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  .bottom-sheet-actions{ display: flex; gap: 8px; padding-top: 14px; }
+  /* Sized here rather than by adding a modifier to `.btn`: the decision
+     buttons keep the COLOURS of their table-row twins (`.btn.mini.bad`) but
+     none of the table-row geometry — 44px touch targets, equal halves. Two
+     class names beat `.btn.mini`'s own two, and this block comes later. */
+  .bottom-sheet-actions .btn,
+  .bottom-sheet-close{
+    justify-content: center;
+    min-height: 44px; padding: 11px; font-size: 13px;
+    border-radius: var(--radius-sm);
+  }
+  .bottom-sheet-actions .btn{ flex: 1; }
+  .bottom-sheet-close{ width: 100%; margin-top: 10px; color: var(--ink-2); }
+  /* Second step of a decision started in the sheet (R-15.2-a). */
+  .bottom-sheet-step{ display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+
+  /* --- PPR queue: the mobile half of the double markup ---
+     Hooked to the page's OWN two classes, never to `.students` (shared by
+     13 consoles) nor to a generic `.only-mobile` utility. */
+  .ppr-queue-desktop{ display: none; }
+  .ppr-queue-mobile{ display: block; }
+  /* Ratifica R-15.2-b: the decision lives ONLY in the sheet, so the whole
+     card is ONE button — no nested interactive element to guard with
+     `stopPropagation`, and one honest 44px+ touch target. */
+  .ppr-card{
+    display: block; width: 100%;
+    padding: 11px 16px; min-height: 44px;
+    background: transparent; border: 0; border-top: 1px solid var(--border);
+    font: inherit; color: var(--ink); text-align: left; cursor: pointer;
+  }
+  .ppr-card:active{ background: var(--panel-2); }
+  .ppr-card-head{ display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  /* The card's inner nodes are `<span>`s (nothing but the card itself may be
+     a `<button>`, R-15.2-b), so each one has to be told to be a block. */
+  .ppr-card-main{ display: block; min-width: 0; }
+  .ppr-card-name{ display: block; font-size: 13px; font-weight: 600; }
+  .ppr-card-sub{
+    display: block;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ppr-card-side{ display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+  .ppr-card-id{ font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-4); }
+
+  /* --- (2) SlideOver, full-screen mode (R3) ---
+     `left: 0` + `width: 100%` beat the inherited `right: 0`, so the panel's
+     rect IS the viewport: no side scrim strip, no 30px of wasted width.
+     The header is already fixed by construction (the panel is a flex
+     column and only `.so-body` scrolls) — nothing to add for it. The panel
+     now rises from the bottom like every other mobile surface. */
+  .slideover-panel{
+    left: 0; width: 100%;
+    border-left: 0;
+    box-shadow: none;
+    transform: translateY(100%);
+  }
+  .slideover.open .slideover-panel{ transform: translateY(0); }
+  /* Primary action pinned to the bottom of the scrolling body.
+     `sticky`, NOT `fixed`: the panel's own `transform` traps descendant
+     `position: fixed` boxes (the reason the date pickers are portalled to
+     `document.body`, TD-7), so a `fixed` row here would be positioned
+     against the PANEL and only coincide with the viewport by accident.
+     Negative side margins make it span the body's padding box. */
+  /* A sticky box cannot leave its containing block, and that block is
+     `.so-body`'s CONTENT box — with the body's own 18px bottom padding in
+     place the row stops 18px short of the scrollport and form fields slide
+     through the gap underneath it (measured: row bottom 794 in an 812px
+     viewport). Zeroing the padding only for the bodies that actually have an
+     action row keeps every other panel's bottom breathing room intact;
+     `:has()` is already the idiom used by `.input-group` above. */
+  .so-body:has(.so-actions){ padding-bottom: 0; }
+  .so-actions{
+    position: sticky; bottom: 0;
+    margin-left: -20px; margin-right: -20px;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+  }
+  .so-actions .btn{ flex: 1; justify-content: center; min-height: 44px; }
+
+  /* --- (3) KPI strip (template lines 69-77) ---
+     `flex: 1 0 auto` + `min-width` (NOT a fixed 146px basis): the template's
+     width is a MINIMUM here, because `.kpi` carries `overflow: hidden` and a
+     realistic long value ("12.480,50 €" — the class of defect 13.10 F1 was
+     built from) would be clipped inside a fixed-basis card. With an `auto`
+     basis the card grows to its content instead, and `flex-grow` still lets
+     2-4 KPIs fill the row exactly as the 2-column grid did. */
+  .kpi-row{
+    display: flex;
+    gap: 10px;
+    /* Full-bleed, as the template has it (`padding: 2px 16px 4px` on a strip
+       that runs edge to edge): the cards must reach the screen edge so the
+       NEXT one peeks and the row reads as scrollable — clipped at `.page`'s
+       own padding it looks like a two-card row with nothing beyond. The
+       negative margins are safe by inspection: all 9 `.kpi-row`s are direct
+       children of `.page` (7 files, checked), never nested in a `.card`
+       (whose `overflow: hidden` would clip them). `scroll-padding` keeps
+       snapping aligned with the first card, not with the bleed. */
+    margin-inline: -28px;
+    padding-inline: 28px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 28px;
+    scrollbar-width: none;
+  }
+  .kpi-row::-webkit-scrollbar{ display: none; }
+  .kpi-row > *{ flex: 1 0 auto; min-width: 146px; scroll-snap-align: start; }
+  .kpi-value{ font-size: 23px; }
+}
+
+/* The full-screen panel's entrance is the only animation this story adds;
+   same treatment the 15.1 sheets got. Scoped to the phone breakpoint so the
+   desktop transition stays exactly as it is (AC 11). */
+@media (max-width: 640px) and (prefers-reduced-motion: reduce){
+  .slideover-panel{ transition: none; }
+}

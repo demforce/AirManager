@@ -1,16 +1,20 @@
 'use client';
 
 /**
- * Bottom sheet shared by the two <=640px shell menus (story 15.1): the
- * "Altro" nav sheet (`MobileNav`) and the profile menu (`MobileTopBar`).
- * Visual language ported from the `AirOps Mobile` template's own sheets
- * (scrim + panel rising from the bottom, grabber, 20px top corners).
+ * The app's bottom-sheet CHASSIS: scrim + panel rising from the bottom,
+ * grabber, 20px top corners — visual language ported from the `AirOps
+ * Mobile` template's own sheets. It owns only what every sheet shares
+ * (scrim, Escape, focus in/out, z-index); the content is the caller's.
  *
- * Scope note: this is deliberately the SHELL's sheet, not the epic's generic
- * row-detail `BottomSheet` primitive — that one, with its title/badge/rows
- * layout and its own consumers, is story 15.2 (R3). Two real consumers
- * TODAY justify factoring the scrim/Escape/focus handling out of them; a
- * third, richer consumer is 15.2's problem, not this story's.
+ * Consumers (story 15.2 moved this file from `shell/` to `ui/`, where the
+ * design-system primitives live, when the third one arrived):
+ * - `shell/mobile-nav.tsx` — the "Altro" nav sheet (15.1);
+ * - `shell/mobile-top-bar.tsx` — the profile menu (15.1);
+ * - `ui/bottom-sheet.tsx` — the row-detail `BottomSheet` of R3 (15.2),
+ *   which COMPOSES this one and adds the template's header/rows/actions
+ *   layout on top. It is deliberately not a second implementation: when
+ *   story 15.10 adds the focus trap and `aria-modal`, the fix lands here
+ *   once, for every sheet.
  *
  * Interaction: closes on scrim click and on Escape. The Escape listener is
  * mounted only while open and is INDEPENDENT of `SlideOver`'s own global one

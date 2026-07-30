@@ -10,10 +10,27 @@
  * "Riapri" button (D13: `PPR_ALREADY_DECIDED`, the domain has no reopen
  * path) — a non-PENDING row simply renders no actions at all.
  * `router.refresh()` on every successful mutation (AD-1).
+ *
+ * Story 15.2 — first consumer of the epic's mobile primitives. The page
+ * renders BOTH trees and lets a media query pick one (`display: none` on the
+ * other, epic architecture: no `matchMedia`, no parallel route):
+ * - `>640px`: the table above, byte-for-byte as it was;
+ * - `<=640px`: one card per request, and the card IS the trigger of a
+ *   `BottomSheet` holding the full detail plus Approva/Nega.
+ * Ratifica R-15.2-b: the decision buttons live ONLY in the sheet, never on
+ * the card — a DELIBERATE divergence from the template (which also puts them
+ * inline, lines 167-170), so two destructive buttons never sit under the
+ * thumb while scrolling the list. Ratifica R-15.2-a: "Nega" swaps the sheet's
+ * own body for the reason step instead of stacking a second overlay.
+ * Ratifica R-15.2-d: ONE list driven by the existing status filter, not the
+ * template's two "Da esaminare"/"Esaminate" sections (which would need a
+ * second query per page and would drift from the desktop at equal filter).
+ * No network logic is duplicated: both trees call the same handlers below.
  */
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from '@/i18n/navigation';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { useToast } from '@/components/ui/toast';
 import { formatDateTime } from '@/lib/time';
@@ -31,6 +48,30 @@ export type PprConsoleLabels = {
   badge: { fromPublicForm: string };
   actions: { approve: string; reject: string };
   rejectModal: { title: string; subtitle: string; reasonPlaceholder: string; reasonRequired: string; submit: string; cancel: string };
+  /**
+   * Story 15.2 — the <=640px card list and its detail sheet. `detail` reuses
+   * the manual-form field labels (same nouns, already translated in both
+   * locales) so the sheet adds only the three strings that genuinely did not
+   * exist: the trigger's accessible verb, "Chiudi", and the rejection reason.
+   */
+  mobile: {
+    openDetail: string;
+    close: string;
+    /** Sheet's mono over-line, template `openPPR`'s own `sub`: "Richiesta PPR-2026-0001" (or "—" while still PENDING). */
+    requestLabel: string;
+    detail: {
+      requester: string;
+      email: string;
+      phone: string;
+      origin: string;
+      destination: string;
+      eta: string;
+      etd: string;
+      personsOnBoard: string;
+      notes: string;
+      rejectionReason: string;
+    };
+  };
   /** `{pprNumber}` unresolved placeholder — client `.replace()`, same pattern as the pre-12.4 page. */
   toast: { approved: string; rejected: string; conflictError: string; genericError: string };
   empty: string;
@@ -81,7 +122,11 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
   const router = useRouter();
   const toast = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Desktop only: which row's `.mini-modal` is open. The mobile tree never sets it (R-15.2-a: no overlay on overlay), so the two surfaces can never both be up. */
   const [rejectForId, setRejectForId] = useState<string | null>(null);
+  /** Mobile only: which row's detail sheet is open, and whether it is showing its reason step. */
+  const [sheetForId, setSheetForId] = useState<string | null>(null);
+  const [sheetRejecting, setSheetRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState<string | null>(null);
 
@@ -117,16 +162,39 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
     setRejectError(null);
   }
 
-  async function submitReject(): Promise<void> {
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => {
+    setSheetForId(null);
+    setSheetRejecting(false);
+    setRejectReason('');
+    setRejectError(null);
+  }, []);
+
+  /**
+   * The reason step (R-15.2-a) only swaps what the sheet renders — the sheet
+   * itself is never unmounted, so focus stays inside the same `role="dialog"`
+   * node. Leaving the step keeps whatever was typed (nothing was decided) and
+   * drops only the now-stale error.
+   */
+  function startSheetReject(): void {
+    setSheetRejecting(true);
+    setRejectError(null);
+  }
+
+  function cancelSheetReject(): void {
+    setSheetRejecting(false);
+    setRejectError(null);
+  }
+
+  async function submitReject(id: string): Promise<void> {
     const reason = rejectReason.trim();
     if (reason.length === 0) {
       setRejectError(labels.rejectModal.reasonRequired);
       return;
     }
-    if (!rejectForId) return;
 
-    setBusyId(rejectForId);
-    const response = await fetch(`/api/v1/ppr-requests/${rejectForId}/reject`, {
+    setBusyId(id);
+    const response = await fetch(`/api/v1/ppr-requests/${id}/reject`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason }),
@@ -136,16 +204,41 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
     if (!response.ok) {
       const code = await errorCodeOf(response);
       closeReject();
+      closeSheet();
       toast.show(code === 'PPR_ALREADY_DECIDED' ? labels.toast.conflictError : labels.toast.genericError, 'bad');
       return;
     }
 
     closeReject();
+    closeSheet();
     toast.show(labels.toast.rejected, 'bad');
     router.refresh();
   }
 
   const cols = '110px 1.4fr 1.2fr 60px 1fr 180px';
+
+  /** The sheet follows the LIST: once a decision removes the row, `find` returns nothing and the sheet is gone with it. */
+  const sheetRequest = requests.find((request) => request.id === sheetForId) ?? null;
+
+  function detailRows(request: PprRequestItemDto) {
+    const { detail } = labels.mobile;
+    // Every field the desktop row shows (status included — it is the sheet's
+    // own badge, not a duplicated line) PLUS the three the desktop table has
+    // no column for: origin, destination, notes. Mobile may show more than
+    // desktop, never less (AC 4).
+    return [
+      { k: detail.requester, v: `${request.firstName} ${request.lastName}` },
+      { k: detail.email, v: request.email ?? '—' },
+      { k: detail.phone, v: request.phone || '—' },
+      { k: detail.origin, v: request.origin },
+      { k: detail.destination, v: request.destination },
+      { k: detail.eta, v: formatDateTime(new Date(request.eta), locale) },
+      { k: detail.etd, v: request.etd ? formatDateTime(new Date(request.etd), locale) : '—' },
+      { k: detail.personsOnBoard, v: String(request.personsOnBoard) },
+      { k: detail.notes, v: request.notes ?? '—' },
+      ...(request.status === 'REJECTED' && request.rejectionReason ? [{ k: detail.rejectionReason, v: request.rejectionReason }] : []),
+    ];
+  }
 
   return (
     <>
@@ -178,7 +271,12 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
             {labels.empty}
           </p>
         ) : (
-          <div className="students">
+          <>
+          {/* Story 15.2: the switch hangs off THESE two page-owned classes,
+              never off `.students` (13 consoles share it) and never off a
+              generic `.only-mobile` utility (which would have to pick one
+              fixed `display` for every tree that ever uses it). */}
+          <div className="students ppr-queue-desktop">
             <div className="student-row header" style={{ gridTemplateColumns: cols }}>
               <div>{labels.table.aircraft}</div>
               <div>{labels.table.requester}</div>
@@ -248,8 +346,124 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
               );
             })}
           </div>
+
+          <div className="ppr-queue-mobile">
+            {requests.map((request) => (
+              <button
+                key={request.id}
+                type="button"
+                className="ppr-card"
+                // AC 3: a speaking name, not a bare "Apri" — the row is
+                // identified by requester + registration, exactly what the
+                // card shows. The card carries no nested control (R-15.2-b),
+                // so there is nothing for a screen reader to get stuck on.
+                aria-label={`${labels.mobile.openDetail}: ${request.firstName} ${request.lastName} · ${request.aircraftRegistration}`}
+                onClick={() => setSheetForId(request.id)}
+                data-testid="ppr-row-mobile"
+              >
+                <span className="ppr-card-head">
+                  <span className="ppr-card-main">
+                    <span className="ppr-card-name">
+                      {request.firstName} {request.lastName}
+                    </span>
+                    <span className="ppr-card-sub">
+                      {request.aircraftRegistration} · {request.aircraftType} · {formatDateTime(new Date(request.eta), locale)}
+                    </span>
+                    {request.fromPublicForm ? (
+                      <span className="badge info" style={{ marginTop: 4, fontSize: 9.5 }} data-testid="ppr-from-public-badge-mobile">
+                        {labels.badge.fromPublicForm}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="ppr-card-side">
+                    {request.pprNumber ? <span className="ppr-card-id">{request.pprNumber}</span> : null}
+                    {request.status === 'PENDING' ? null : (
+                      <Badge tone={STATUS_BADGE_TONE[request.status]} dot>
+                        {statusOptionLabel(request.status, labels.filters.statusOptions)}
+                      </Badge>
+                    )}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+          </>
         )}
       </div>
+
+      {sheetRequest ? (
+        <BottomSheet
+          open
+          onClose={closeSheet}
+          testId="mobile-ppr-sheet"
+          sub={`${labels.mobile.requestLabel} ${sheetRequest.pprNumber ?? '—'}`}
+          title={`${sheetRequest.aircraftRegistration} · ${sheetRequest.aircraftType}`}
+          badge={
+            <Badge tone={STATUS_BADGE_TONE[sheetRequest.status]} dot>
+              {statusOptionLabel(sheetRequest.status, labels.filters.statusOptions)}
+            </Badge>
+          }
+          rows={detailRows(sheetRequest)}
+          closeLabel={labels.mobile.close}
+          actions={
+            // Same rule as the desktop row: no actions on a decided request
+            // (D13 — `PPR_ALREADY_DECIDED`, the domain has no reopen path).
+            sheetRequest.status === 'PENDING' ? (
+              <>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={busyId === sheetRequest.id}
+                  onClick={() => void handleApprove(sheetRequest.id).then(closeSheet)}
+                  data-testid="ppr-approve-button-mobile"
+                >
+                  {labels.actions.approve}
+                </button>
+                <button type="button" className="btn mini bad" disabled={busyId === sheetRequest.id} onClick={startSheetReject} data-testid="ppr-reject-button-mobile">
+                  {labels.actions.reject}
+                </button>
+              </>
+            ) : undefined
+          }
+          secondStep={
+            sheetRejecting ? (
+              <div className="bottom-sheet-step">
+                <p className="fld-hint">{labels.rejectModal.subtitle}</p>
+                <textarea
+                  className="input"
+                  rows={3}
+                  maxLength={500}
+                  value={rejectReason}
+                  onChange={(event) => setRejectReason(event.target.value)}
+                  placeholder={labels.rejectModal.reasonPlaceholder}
+                  aria-label={labels.rejectModal.title}
+                  aria-invalid={Boolean(rejectError)}
+                  data-testid="ppr-reject-reason-mobile"
+                />
+                {rejectError ? (
+                  <p role="alert" className="fld-error" data-testid="ppr-reject-error-mobile">
+                    {rejectError}
+                  </p>
+                ) : null}
+                <div className="bottom-sheet-actions">
+                  <button type="button" className="btn" onClick={cancelSheetReject} data-testid="ppr-reject-cancel-mobile">
+                    {labels.rejectModal.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={busyId === sheetRequest.id}
+                    onClick={() => void submitReject(sheetRequest.id)}
+                    data-testid="ppr-reject-submit-mobile"
+                  >
+                    {labels.rejectModal.submit}
+                  </button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
+      ) : null}
 
       {rejectForId ? (
         <div className="mini-modal">
@@ -277,7 +491,7 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
               <button type="button" className="btn" onClick={closeReject} data-testid="ppr-reject-cancel">
                 {labels.rejectModal.cancel}
               </button>
-              <button type="button" className="btn primary" disabled={busyId === rejectForId} onClick={() => void submitReject()} data-testid="ppr-reject-submit">
+              <button type="button" className="btn primary" disabled={busyId === rejectForId} onClick={() => void submitReject(rejectForId)} data-testid="ppr-reject-submit">
                 {labels.rejectModal.submit}
               </button>
             </div>

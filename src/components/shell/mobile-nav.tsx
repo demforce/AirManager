@@ -29,8 +29,8 @@
  */
 import { useCallback, useState } from 'react';
 import { Icon } from '@/components/ui/icons';
+import { MobileSheet } from '@/components/ui/mobile-sheet';
 import { Link, usePathname } from '@/i18n/navigation';
-import { MobileSheet } from './mobile-sheet';
 import type { NavIconKey, NavItemId } from './route-registry';
 
 export type MobileNavItemView = {

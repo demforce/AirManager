@@ -336,7 +336,13 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
           </p>
         ) : null}
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+        {/* Story 15.2 (R3): `so-actions` is the hook the <=640px full-screen
+            mode uses to pin this row to the bottom of the scrolling body
+            (`airops.css`, mobile-primitives block). The row is NOT moved to
+            `SlideOver`'s `footer` prop, which would pin it on DESKTOP too —
+            desktop must stay byte-for-byte as it is. Both consumers of this
+            form (the PPR console and Transiti's "Registra arrivo") get it. */}
+        <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
           <button type="button" className="btn" onClick={handleClose}>
             {labels.cancel}
           </button>

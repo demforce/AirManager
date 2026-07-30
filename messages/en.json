@@ -1697,6 +1697,14 @@
       "submit": "Confirm rejection",
       "cancel": "Cancel"
     },
+    "mobile": {
+      "openDetail": "Open request detail",
+      "close": "Close",
+      "requestLabel": "Request",
+      "etd": "Departure (ETD)",
+      "notes": "Notes",
+      "rejectionReason": "Rejection reason"
+    },
     "toast": {
       "approved": "Request approved: PPR number {pprNumber}.",
       "rejected": "Request rejected.",

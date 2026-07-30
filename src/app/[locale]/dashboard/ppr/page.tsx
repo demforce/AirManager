@@ -191,6 +191,29 @@ export default async function PprConsolePage({ params, searchParams }: PageProps
           },
           empty: t('empty'),
           exportMenu: { label: t('export.label'), xlsLabel: tExport('button'), pdfLabel: tExport('buttonPdf') },
+          // Story 15.2 — the <=640px card list + detail sheet. `detail` reuses
+          // the manual-form field labels: same nouns, already bilingual, no
+          // second set of translations to keep in sync.
+          mobile: {
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            requestLabel: t('mobile.requestLabel'),
+            detail: {
+              requester: t('table.requester'),
+              email: t('manualForm.email'),
+              phone: t('manualForm.phone'),
+              origin: t('manualForm.origin'),
+              destination: t('manualForm.destination'),
+              eta: t('manualForm.eta'),
+              // NOT `manualForm.etd`/`manualForm.notes`: those carry a
+              // "(facoltativo)"/"(facoltative)" suffix, which is a FORM
+              // concept — meaningless as the key of a read-only detail line.
+              etd: t('mobile.etd'),
+              personsOnBoard: t('manualForm.personsOnBoard'),
+              notes: t('mobile.notes'),
+              rejectionReason: t('mobile.rejectionReason'),
+            },
+          },
         }}
       />
 
