@@ -54,7 +54,9 @@ Unit nuovi (21) verificati anche con `env -u DATABASE_URL -u AUTH_SECRET npx vit
     `home-dashboard:228`, **2 miei** → riscritti con read-back dall'API sul velivolo run-unique).
 - **Guardia AD-2 provata sul baseline**: `bookings.spec.ts` con `--workers=1`, due run sullo stesso DB
   → **mio albero 10 failed / 24 passed**, **baseline (modifiche stashate) 11 failed / 23 passed**;
-  `comm -13` dei falliti = **vuoto**. Nessun fallimento introdotto da me.
+  `comm -13` dei falliti = **vuoto**. Nessun fallimento introdotto da me. Il run sul baseline è passato
+  dal nuovo `scripts/e2e.sh`: `status` lo dà `DONE — E2E_EXIT=1`, `11 failed / 23 passed (12.5m)`, log
+  in `/tmp/airmanager-e2e/last-run.log` → **riauditabile con `status`, senza rieseguire nulla**.
 - **Dopo le correzioni**: `mobile-overview` **9/9**, `mobile-primitives` **3/3**, `mobile-shell`
   **5/5**, `mobile-metar` **2/2**. Blast radius: `home-dashboard`, `pdf-exports`, `movements`,
   `login`, `flights`, `user-management`, `account-adjustments`, `ppr-queue` verdi senza modifiche.
@@ -80,6 +82,12 @@ Unit nuovi (21) verificati anche con `env -u DATABASE_URL -u AUTH_SECRET npx vit
 
 ## Rischi per la review
 
+0. **Procedura run**: la porta **:3000 è lasciata libera** (nessun `next` residuo, verificato con
+   `ss`/`pgrep`), quindi un `CI=1` senza `E2E_REUSE_SERVER` parte senza conflitti. Per una serie di
+   run: `env -u NODE_ENV npm run build && npm run start &` UNA volta, poi
+   `E2E_REUSE_SERVER=1 bash scripts/e2e.sh start ...` per non ripagare la build. Il mio
+   `playwright.config.ts` in HEAD contiene **sia** il progetto `mobile-metar` **sia** la modifica
+   `reuseExistingServer` dell'altra sessione (verificato su `git show HEAD:playwright.config.ts`).
 1. **DB inquinato**: prima di qualsiasi conclusione sulla suite, resettare e riseminare. Le classi A
    e B dei fallimenti sparirebbero da sole.
 2. **`mobile-overview.spec.ts` assume che la propria fixture PENDING stia nelle prime 8 righe della
