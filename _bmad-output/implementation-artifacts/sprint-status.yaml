@@ -32,7 +32,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-30 (EPIC 15 in corso: 15.1 shell mobile e 15.2 primitive mobile DONE. 15.2: BottomSheet + pannello form a tutto schermo + KPI strip, coda PPR come consumer di prova; arbitro finale 309/309 exit 0 su DB fresco. Storico 15.1 — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
+last_updated: 2026-07-30 (EPIC 15 in corso: 15.1 shell mobile, 15.2 primitive mobile e 15.3 panoramica mobile DONE. Prossima: 15.4 pianificazione mobile. 15.3: KPI 2x2, card "In corso ora", coda prenotazioni con decisione dentro lo sheet, feed Avvisi a 3 fonti, card METAR, landing per-ruolo riconciliate; 8 ratifiche PO chiuse prima del dispatch; review Opus 5 SHIPPABLE-WITH-FIXES (4 Medium + 4 Low, F1 = selettore discendente che sfondava nel pannello full-screen); arbitro finale 326/326, 0 flaky, exit 0, DB fresco. 4 TD nuovi in action_items. 15.2: BottomSheet + pannello form a tutto schermo + KPI strip, coda PPR come consumer di prova; arbitro finale 309/309 exit 0 su DB fresco. Storico 15.1 — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -313,7 +313,29 @@ development_status:
   # R-15.2-g: barra fissa chiusa su aircraft-editor, rinviata a 15.5 per i due
   # editor multi-form (v. action_items). Arbitro finale 309/309 exit 0.
   15-2-primitive-mobile: done
-  15-3-panoramica-mobile: backlog
+  # 15.3 chiusa 2026-07-30. 8 ratifiche PO (R-15.3-a..h) chiuse PRIMA del dispatch,
+  # in due giri di AskUserQuestion: fra queste R-15.3-b, che CONFERMA e non deroga
+  # R-15.2-b (Approva/Nega solo dentro lo sheet) e supera il bullet di piano
+  # "azioni inline" — le due code decisionali dell'app hanno UNA sola grammatica.
+  # R-15.3-a ha cambiato il titolo del template ("In volo ora" -> "In corso ora")
+  # perche' il dato "volo in aria" NON esiste nel dominio: il numero non deve mentire.
+  # Review Opus 5 SHIPPABLE-WITH-FIXES, 4 Medium + 4 Low, nessun blocker. Il Medium
+  # che conta e' F1: `.home-head-actions .btn` era un selettore DISCENDENTE e
+  # `DispatchFlightButton` monta trigger e pannello come FRATELLI, quindi la regola
+  # sfondava nel piede del SlideOver a tutto schermo (118px -> 191px stirati) — una
+  # superficie che la story dichiarava intoccabile, e che i 9 snapshot "desktop
+  # invariato" del dev non potevano vedere perche' misuravano solo il desktop
+  # (lezione 15.2 riconfermata: la regressione sta sul lato che la regola ha LIBERATO).
+  # F2: la mitigazione "riga stantia" era agganciata al 409 mentre lo scenario che
+  # documenta risponde 422. F4 risolto nella PRIMITIVA (uno sheet alla volta e' una
+  # proprieta' del pattern, non dei chiamanti: la 15.4 in avanti aggiunge coppie di
+  # proprietari). F8 (guardia d'ordine cieca) chiusa nel commit di chiusura, con
+  # discriminanza misurata. Ratifica PO in review: il fix del glifo dark diventa
+  # GLOBALE — e la misura ha trovato il GEMELLO che nessuno aveva controllato
+  # (`.list-icon.green` a 1.24:1, PEGGIO del rosso gia' trovato a 1.35:1).
+  # Arbitri, tutti su DB fresco ed exit 0: 320/320 sul commit di codice, 325 + 1 flaky
+  # pre-esistente sul commit di fix, **326/326 zero flaky** sullo stato committato.
+  15-3-panoramica-mobile: done
   15-4-pianificazione-mobile: backlog
   15-5-anagrafiche-card-mobile: backlog
   15-6-registro-voli-mobile: backlog
@@ -323,6 +345,22 @@ development_status:
   15-10-sweep-finale-mobile: backlog
 
 action_items:
+  - epic: 15
+    action: "TD (story 15.3, R-15.3-f: buco DICHIARATO fuori scope, non un difetto introdotto): nella fascia 641-900px il METAR non e' raggiungibile da nessuna parte. La `.weather-card` della sidebar e' nascosta da 13.10 in giu' da 900px, e la card mobile della 15.3 vive solo <=640px perche' R1 vincola l'epic a quella soglia. Su un tablet in verticale, quindi, il meteo campo non esiste. Decidere in 15.10: o si abbassa la soglia della card mobile, o si ripristina la weather-card nella fascia, o si accetta e si documenta."
+    owner: "story 15.10 (sweep finale)"
+    status: open
+  - epic: 15
+    action: "TD (emerso in 15.3, PRE-esistente e non causato li'): il picker Velivolo del registro voli e' un `<select>` seminato con `OPTIONS_PAGE_SIZE = 100` (logbook/page.tsx:32; stessa costante anche in dashboard/page.tsx, bookings/page.tsx, billing/page.tsx) — oltre 100 velivoli in anagrafica l'ultimo creato NON e' piu' selezionabile. Ha ucciso 4 e2e su DB saturo (flight-log:289, flight-reversal:161, flights:483, reports:206). Misura di questa sessione: UNA sola suite completa porta il DB a 104 velivoli, cioe' il run successivo sullo stesso DB parte gia' oltre il tetto. Il rimedio esiste GIA' in casa e non e' stato applicato a questo picker: il typeahead server-side della story TD-3, che il picker persone della STESSA pagina usa (guardato da typeahead-pickers.spec.ts:37). Su un'aviosuperficie reale il tetto e' lontano; per la suite e' un fucile carico."
+    owner: "backlog TD"
+    status: open
+  - epic: 15
+    action: "TD (rilevato dalla review 15.3, fragilita' PRE-esistente): `home-dashboard.spec.ts:228` cerca la propria fixture dentro la finestra di 8 righe della card della home, ordinata per startsAt sulle ultime 48h — su DB popolato la fixture non ci sta. E' la stessa trappola 'fotografia + uguaglianza' (review Billing-2 F4) che il dev della 15.3 ha dovuto togliere dai propri due test, e che li' e' stata curata rileggendo il dato dall'API filtrata su una fixture run-unique. Applicare la stessa medicina. NB: nell'arbitro su DB fresco il test passa — la fragilita' e' latente, non attiva."
+    owner: "backlog TD"
+    status: open
+  - epic: 15
+    action: "TD (osservato nell'arbitro della 15.3, PRE-esistente): `billing.spec.ts:296` e' flaky sotto `fullyParallel` — `depositsTotalAfter - depositsTotalBefore` ha letto 5000 invece di 10000 (retry verde, exit 0). E' un delta-assert su un aggregato GLOBALE (totale Acconti): la mitigazione 'delta invece di fotografia' prescritta da CLAUDE.md NON basta quando l'aggregato e' globale e altre spec creano ricariche dentro la stessa finestra. Rimedio: spostarlo nel project serializzato `billing-global` (dove vive gia' il gemello della stessa classe) oppure filtrare l'aggregato sulla persona run-unique dello scenario. Non attribuibile alla 15.3: le sue spec non creano movimenti di denaro (verificato)."
+    owner: "backlog TD"
+    status: open
   - epic: 15
     action: "TD (review 15.2 F3, RINVIO ratificato dal PO 2026-07-30): la riga d'azione fissa in basso della modalita' a tutto schermo (R3, classe `.so-actions`) manca su `pilots/pilot-editor.tsx` (2 form nello stesso pannello) e `instructors/instructor-editor.tsx` (3 form). Misurato a 375x812 dalla review: pilot-editor NUOVO body scrollHeight 1652/728 con il submit 906px sotto il fold, pilot-editor MODIFICA submit a bottom 2269, instructor-editor MODIFICA a 2072 - non hit-testabili senza scorrere. NON risolvibile applicando la regola a tappeto: una barra sticky su un'azione che sta a META' pannello si sgancia scorrendo, e metterla su ogni riga impilerebbe 2-3 barre. Serve spostare il salva PRIMARIO nel piede del pannello, decidendo quale riga e' primaria: lavoro della story 15.5, che nel piano possiede gia' quelle due anagrafiche. `fleet/aircraft-editor.tsx` (riga d'azione unica, submit 217px sotto il fold) e' stato chiuso subito nel fix della 15.2."
     owner: "story 15.5"

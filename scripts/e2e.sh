@@ -19,6 +19,9 @@
 #   scripts/e2e.sh status [tail-lines]
 #   scripts/e2e.sh stop
 #
+# The previous run's log is kept as `<log>.prev` — `status` only ever reads the
+# current one, so that copy is the only way back to a run you started over.
+#
 # Env:
 #   E2E_REUSE_SERVER=1  reuse a server already listening on :3000 instead of
 #                       rebuilding (see playwright.config.ts). Set it when you
@@ -64,6 +67,11 @@ cmd_start() {
   fi
 
   printf '%s\n' "${*:-<full suite>}" >"$ARGS_FILE"
+  # Keep the previous run's log instead of truncating over it. A targeted run
+  # started right after an arbiter run used to destroy the only evidence of that
+  # arbiter run (flagged in the 15.3 review, then re-triggered while closing the
+  # story): the summary is unrecoverable, and `status` cannot re-read it.
+  [ -s "$LOG" ] && mv -f "$LOG" "$LOG.prev"
   : >"$LOG"
 
   # setsid detaches the run from this shell's session and process group, so it

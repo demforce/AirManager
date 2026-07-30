@@ -543,3 +543,75 @@ Due residui che ho ripulito a mano sul DB condiviso, dichiarati: la mia scadenza
 - **`bookings-table.tsx` non ha un albero mobile** (AD-2): è 15.4. Per questo la coda in attesa della home è un componente nuovo con testid `mobile-overview-*`, che non ruba i nomi che la 15.4 vorrà.
 - **Nessun delta sotto i KPI** (R-15.3-g) e **nessun avviso sulle facce pilota/istruttore** (il template non ne dà, le loro scadenze sono già nei KPI).
 - **Nessuna modifica al desktop**, nemmeno per riparare il difetto dark di `.list-icon.red` (v. §10.2).
+
+---
+
+# Review Record — 15.3 (reviewer adversarial, Opus 5 xhigh, 2026-07-30)
+
+Report integrale con le evidenze: `_bmad-output/implementation-artifacts/15-3-review-report.md`.
+Qui il riassunto decisionale: verdetto, esito dei claim, cosa è stato fatto di ogni finding,
+le ratifiche PO sopraggiunte e il gate finale.
+
+## Verdetto: **SHIPPABLE-WITH-FIXES** — nessun blocker
+
+Le 8 ratifiche PO sono implementate tutte e otto. L'RBAC regge alla prova sull'HTML grezzo per
+tutti e quattro i ruoli. Il gate arbitro della review, su **DB fresco**, è **320/320, `E2E_EXIT=0`**
+(gates: 1626 unit). Restano **4 Medium** e **4 Low**, tutti chiusi (v. sotto).
+
+## I 5 claim del dev, verificati
+
+| Claim | Esito |
+|---|---|
+| «290 passed / 13 failed, nessuna dal codice della story» | ✅ **VERO**, alla prova più forte: su DB fresco i 13 rossi spariscono tutti (320/320). Le tre classi di attribuzione (A tetto `OPTIONS_PAGE_SIZE`, B fixture interattiva, C finestra cappata) erano corrette. La classe C era perfino **pessimistica**: `home-dashboard:228`, dato per rosso residuo, passa. |
+| «Guardia AD-2: nessun test fallisce solo col mio codice» | ✅ **VERO, con prova più forte** — `bookings.spec.ts` interamente verde (34/34). ⚠️ Il log del confronto baseline del dev non era più riauditabile: `scripts/e2e.sh start` sovrascriveva `last-run.log` (v. §"strumento" sotto). |
+| «Desktop invariato: 9 snapshot, differenza zero» | ⚠️ **VERO ma di scopo troppo stretto**: misurato in modo indipendente a 641/800/1280px, tutto conferma. Ma "desktop invariato" ≠ "nient'altro è cambiato": **F1 è una regressione su un'altra superficie MOBILE**, che nessuno dei 9 snapshot poteva vedere. |
+| «2 miei test erano scritti male, corretti e non resi ciechi» | ✅ **VERO**: le correzioni rileggono la decisione dall'API filtrata sul velivolo run-unique, e la guardia KPI 2×2 è stata rimisurata indipendentemente (strip → `[true,true,false,false,false]`, griglia → `[true,true,true,true]`: discriminante). |
+| «Deviazione testid `mobile-overview-*`» | ✅ **REGGE**: `BookingsTable` è embeddata anche sulla home, quindi in 15.4 il suo albero mobile emetterebbe `booking-row-mobile` proprio lì — il doppione che la convenzione previene. |
+
+## Findings — cosa è stato fatto (fix in `7c08be9`, F8 in questo commit)
+
+| # | Sev | Difetto | Chiusura |
+|---|---|---|---|
+| **F1** | 🟠 M | `.home-head-actions .btn` era un selettore **discendente** e `DispatchFlightButton` monta trigger e pannello come **fratelli**: la regola raggiungeva il piede del `SlideOver` a tutto schermo — superficie che la story dichiarava intoccabile. Misurato: "Registra volo" da 118px a **191px** stirati. | Figlio diretto (`> .btn`): la regola resta sui bottoni della testata qualunque cosa un figlio monti sotto. |
+| **F2** | 🟠 M | La mitigazione "riga stantia" era agganciata al **409**, ma lo scenario che documenta ("un altro operatore ha già deciso") risponde **422** `BOOKING_TRANSITION_INVALID` (il 409 è sovrapposizione di slot): lo sheet restava aperto su una riga morta. | Campo `stale` distinto da `conflict` nell'outcome: lo sheet chiude e la riga sparisce. Desktop invariato (usa il suo booleano). Ramo ora coperto da e2e. |
+| **F3** | 🟠 M | "Prenotazioni in attesa": la testata contava **10**, la card ne elencava **8**, senza alcun segnale di troncamento. | Footer "+N · Vedi tutte" verso il filtro PENDING, col pattern già scritto nella card sorella Avvisi. |
+| **F4** | 🟠 M | Due `mobile-booking-sheet` aperti insieme dopo 2 Tab: due `role="dialog"`, due scrim, testid duplicato. | Risolto nella **primitiva**, non nei chiamanti: "uno sheet alla volta" è una proprietà del pattern, e la 15.4 in avanti aggiunge coppie di proprietari. Identità per **token di istanza**, così un'istanza non può chiudere se stessa ri-registrandosi. |
+| **F5** | 🟡 L | La regola «feed Avvisi SOLO sulla faccia admin» (AC 4 / R-15.3-e) non aveva guardia — e protegge dati finanziari di terzi. | Guardia e2e sull'esclusività admin. |
+| **F6** | 🟡 L | Il METAR era `await`-ato **in serie** dopo il `Promise.all`, su tutte e tre le facce e a ogni larghezza. R-15.3-f aveva ratificato il doppio fetch, **non** la serializzazione. | METAR dentro il `Promise.all` sulle tre facce. |
+| **F7** | 🟡 L | «+N altri» del feed presentava come totale un numero che lo scan a monte aveva già cappato. | **Ratifica PO**: "+N e oltre" quando lo scan era cappato, invece di un totale che mente. |
+| **F8** | 🟡 L | La regola d'ordine di AC 1 era guardata per 3 superfici su 5 e **la posizione della card METAR da nessuna parte**: `mobile-overview.spec.ts` gira nel project `chromium`, dove la stazione non è configurata — lì la card non è proprio nell'albero, e `order.slice(0,3)` resta verde per una card scivolata in fondo. | Asserzione d'**ordine intero** (non un prefisso) in `mobile-metar.spec.ts`, cioè dove la card esiste davvero: `.overview-mobile` a 5 voci e `.landing-mobile` a 2 sulle facce pilota/allievo/istruttore. |
+
+**Discriminanza di F8, misurata** (mutazione del DOM col repo intatto, stazione configurata):
+
+| Superficie | Intatto | METAR spostata |
+|---|---|---|
+| admin `.overview-mobile` | verde | **rossa** — mentre l'asserzione a prefisso del dev, sulla **stessa** mutazione, resta **verde (cieca)** |
+| pilota `.landing-mobile` | verde | **rossa** |
+| istruttore `.landing-mobile` | verde | **rossa** |
+
+## Ratifiche PO sopraggiunte in review (2)
+
+- **Glifo in tema scuro — il fix diventa GLOBALE** (copre anche il `ScadenzeWidget` desktop, chiudendo il TD §10.2 del Dev Record). La lezione sta nella misura: il dev aveva riparato `.list-icon.red` (1.35:1) e dichiarato che l'ambra andava bene, ma **nessuno aveva misurato il gemello verde**, che stava a **1.24:1 — peggio del difetto trovato**. Ora 7.00:1 e 4.96:1; `.amber` non serviva (9.70:1). *Enumerare gli esemplari di un pattern, mai fidarsi dell'elenco di chi ha fatto il fix.*
+- **F7**: "+N e oltre" al posto di un totale cappato.
+
+## Gate finale
+
+- Arbitro della review sul commit di codice `99d6453`, DB fresco: **320 passed, 0 failed, 0 flaky, `E2E_EXIT=0`** (7.9m).
+- Arbitro sul commit di fix `7c08be9`, DB fresco: **325 passed, 1 flaky, 0 failed, `E2E_EXIT=0`** (9.3m). L'unico flaky è `billing.spec.ts:296` (`depositsTotalAfter - depositsTotalBefore` = 5000 invece di 10000), **retry verde**: è un delta-assert su un aggregato **globale** sotto `fullyParallel`, la classe Billing-2 F4 — non attribuibile a questa story, le cui spec non creano alcun movimento di denaro (verificato). Va a TD.
+- **Arbitro finale sullo stato committato** (F8 incluso), DB resettato prima del run e verificato fresco (1 velivolo / 0 prenotazioni / 4 persone / 0 tentativi di login): **326 passed, 0 failed, 0 flaky, `E2E_EXIT=0`** (8.2m, `CI=1` su build di produzione). Il flaky di `billing.spec.ts:296` non si è ripresentato — coerente con la diagnosi "contesa fra worker", non un difetto stabile. `npm run gates` verde, **1630 unit**.
+- F8 verificata anche mirata: `mobile-metar` **2/2 in 6,6s** sul server di produzione riusato.
+
+## Strumento — una perdita di evidenza chiusa in corsa
+
+`scripts/e2e.sh start` **troncava** `last-run.log`: un run mirato lanciato subito dopo un run
+arbitro ne distruggeva l'unica prova, e `status` non poteva più rileggerla. Segnalato dalla review
+(§5 del report) e **ri-innescato durante questa chiusura**. Ora il log precedente viene ruotato in
+`<log>.prev`. Non è un finding della story: è l'infrastruttura che la story stessa ha introdotto
+(`1dab4fc`), riparata dove faceva danno.
+
+## TD lasciati aperti (in `sprint-status.yaml`)
+
+1. **METAR invisibile nella fascia 641-900px** — fuori scope per R1, owner naturale 15.10.
+2. **Tetto `OPTIONS_PAGE_SIZE = 100`** dei picker — il rimedio esiste già in casa (typeahead server-side, story TD-3) ma non è applicato al `<select>` Velivolo del registro voli.
+3. **`home-dashboard.spec.ts:228`** — fixture cercata dentro la finestra di 8 righe della card della home: fragilità preesistente, stessa medicina già applicata ai due test del dev.
+4. **`billing.spec.ts:296`** — delta-assert su aggregato globale: la mitigazione "delta invece di fotografia" non basta quando l'aggregato è globale e altre spec scrivono acconti in parallelo.

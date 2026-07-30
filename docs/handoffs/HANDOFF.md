@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-30 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1 shell mobile e 15.2 primitive mobile DONE**. Prossimo lavoro: **story 15.3 — Panoramica mobile**)
+# HANDOFF — AirManager (aggiornato: 2026-07-30 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1 shell mobile, 15.2 primitive mobile e 15.3 panoramica mobile DONE**. Prossimo lavoro: **story 15.4 — Pianificazione mobile**)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -70,6 +70,47 @@ con la **coda PPR** come primo consumer completo. Story file con Dev Agent Recor
   anti-brute-force TD-6 citando 570 `LoginAttempt`; il reviewer ha letto `login-throttle.ts:25` (conta solo
   `succeeded = false`) e misurato **3 falliti, 0 su admin**. Interrogare la tabella non basta: bisogna sapere COSA
   conta il contatore.
+
+### 15.3 Panoramica mobile — DONE (2026-07-30)
+
+KPI 2×2 dove i KPI sono 4, card "In corso ora", coda prenotazioni con la **decisione dentro lo sheet**, feed "Avvisi"
+a 3 fonti reali, card METAR, e le tre landing per-ruolo riconciliate col linguaggio del template. Story file con Dev
+Agent Record e Review Record completi: `_bmad-output/implementation-artifacts/15-3-panoramica-mobile.md`; report della
+review (evidenze integrali, 8 findings misurati): `15-3-review-report.md`. Commit: `6a5d112` story, `1dab4fc` runner
+e2e, `99d6453` feat, `6fd9355`/`1006193`/`118d599`/`263ea48` record e report, `7c08be9` fix di review, + docs di
+chiusura. Arbitri su DB fresco: **320/320** sul commit di codice, **325 + 1 flaky pre-esistente** sul commit di fix,
+**326/326 con zero flaky** sullo stato committato (8.2m, `CI=1` su build di produzione).
+
+- **8 ratifiche PO** (R-15.3-a..h) chiuse PRIMA del dispatch, in due giri. Le due che contano per il futuro:
+  **R-15.3-b conferma e NON deroga R-15.2-b** — Approva/Nega vivono solo dentro lo sheet, quindi il bullet di piano
+  "azioni inline" è **superato**: le due code decisionali dell'app hanno una sola grammatica. **R-15.3-a** ha cambiato
+  il titolo del template ("In volo ora" → "In corso ora") perché il dato "volo in aria" **non esiste** nel dominio
+  (`FlightStatus` = `REGISTERED|CANCELLED`): quando il template promette un dato che l'app non ha, si cambia il
+  titolo, non si fa mentire il numero.
+- **Lezione (durevole) — "desktop invariato" non è "nient'altro è cambiato"**: il dev aveva 9 snapshot che provavano
+  il desktop identico, tutti veri. Il difetto F1 era una regressione su **un'altra superficie mobile** (il piede del
+  pannello full-screen), che nessuno di quei 9 poteva vedere. La causa è un classico: `.home-head-actions .btn` è un
+  selettore **discendente**, e `DispatchFlightButton` monta trigger e pannello come **fratelli** nello stesso wrapper.
+  Quando una regola nuova è scritta su un contenitore, chiedersi **cosa altro può finire dentro quel contenitore**.
+- **Lezione (durevole) — il gemello va MISURATO, non dedotto**: il dev aveva riparato `.list-icon.red` in tema scuro
+  (1.35:1) dichiarando che l'ambra andava bene. Nessuno aveva misurato il **verde**: stava a **1.24:1, peggio del
+  difetto trovato**. Enumerare gli esemplari di un pattern; non fidarsi dell'elenco di chi ha fatto il fix.
+- **Lezione (durevole) — una guardia messa dove il caso non esiste è muta**: F8. L'asserzione d'ordine viveva in uno
+  spec del project `chromium`, dove la stazione METAR non è configurata: lì la card **non è nell'albero**, e un
+  prefisso `slice(0,3)` resta verde anche se la card scivola in fondo alla pagina. Misurato: la mutazione realistica
+  (spostare `{metarCard}` sotto `.mobile-shortcuts`) lascia verde la guardia del dev e rende rossa quella nuova.
+  Chiedersi sempre **in quale project/stato gira l'asserzione**, non solo cosa asserisce.
+- **Processo — gli e2e non si lanciano più in foreground** (regola nuova in `CLAUDE.md`, nata qui): la suite supera il
+  tetto di durata di un comando d'agent, quindi chi la lancia inline perde il risultato in un timeout, non sa
+  distinguere un run morto da uno lento e **rilancia ripagando la build**. `scripts/e2e.sh start` distacca con
+  `setsid`, tiene un lock e chiude il log con `E2E_EXIT=<code>`; `status` è l'UNICO modo di sapere com'è andata.
+  **Build una volta per ciclo**: `env -u NODE_ENV npm run build && npm run start &` una volta, poi
+  `E2E_REUSE_SERVER=1` su ogni run. Misure: suite piena **8-9 min**, spec mirato sul server riusato **4-7 secondi**.
+  Il log del run precedente ora è conservato in `<log>.prev` (troncarlo distruggeva l'unica prova di un run arbitro —
+  successo due volte).
+- **Il DB va resettato prima di ogni run che conta**: qui era salito a 487 velivoli e produceva 13 rossi che NON
+  venivano dal codice. Misura utile: **una sola suite completa porta il DB a 104 velivoli**, cioè oltre il tetto di
+  100 dei picker — il run successivo sullo stesso DB parte già rotto (v. TD in `sprint-status.yaml`).
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 

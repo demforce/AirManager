@@ -80,6 +80,27 @@ test.describe('story 15.3 — card METAR (ratifica R-15.3-f)', () => {
     // Exactly one node — the card is rendered by the page, once per face.
     await expect(card).toHaveCount(1);
 
+    // AC 1's ORDER rule, guarded where the card actually exists (review F8).
+    // `mobile-overview.spec.ts` cannot do this: it runs in the `chromium`
+    // project, where no METAR station is configured, so at that moment the card
+    // is not in the tree at all and its `order.slice(0, 3)` stays green for a
+    // card that slid to the bottom of the page. Measured: moving `{metarCard}`
+    // below `.mobile-shortcuts` leaves that assertion green, and this one red.
+    // Whole list, not a prefix — a prefix is blind to exactly the tail moves.
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelectorAll('.overview-mobile > *')].map(
+          (n) => n.getAttribute('data-testid') ?? n.className,
+        ),
+      ),
+    ).toEqual([
+      'mobile-overview-inprogress',
+      'mobile-overview-pending-bookings',
+      'mobile-overview-alerts',
+      'mobile-metar-card',
+      'mobile-shortcuts',
+    ]);
+
     // A bad-weather METAR is a long line, and it must wrap instead of being
     // clipped by `.card{overflow:hidden}`. Injected by text-node substitution
     // (lesson 13.10): a fresh DB never produces the worst case on demand.
@@ -133,13 +154,31 @@ test.describe('story 15.3 — card METAR (ratifica R-15.3-f)', () => {
     const metar = (await probe.json()) as { raw?: string } | null;
     test.skip(!metar?.raw, 'upstream aviationweather.gov unreachable from this host');
 
-    for (const email of ['pilot@airmanager.local', 'student@airmanager.local', 'instructor@airmanager.local']) {
+    // The list each face puts ABOVE the METAR card: the pilota and the allievo
+    // share the pilot landing, the istruttore has their own (page.tsx).
+    const faces = [
+      { email: 'pilot@airmanager.local', list: 'pilot-landing-upcoming-mobile' },
+      { email: 'student@airmanager.local', list: 'pilot-landing-upcoming-mobile' },
+      { email: 'instructor@airmanager.local', list: 'instructor-landing-myday-mobile' },
+    ];
+
+    for (const { email, list } of faces) {
       await page.context().clearCookies();
       await loginExpectingDashboard(page, email);
       await page.setViewportSize(PHONE);
       await page.goto('/it/dashboard');
       await expect(page.getByTestId('mobile-metar-card'), email).toBeVisible();
       await expect(page.getByTestId('mobile-metar-card'), email).toHaveCount(1);
+      // Same order rule as the admin face (review F8): on these two landings
+      // `.landing-mobile` is exactly [list, METAR], and nothing else asserts it.
+      expect(
+        await page.evaluate(() =>
+          [...document.querySelectorAll('.landing-mobile > *')].map(
+            (n) => n.getAttribute('data-testid') ?? n.className,
+          ),
+        ),
+        email,
+      ).toEqual([list, 'mobile-metar-card']);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), email).toBe(true);
     }
   });
