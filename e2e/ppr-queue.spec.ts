@@ -487,9 +487,24 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     await page.getByTestId('ppr-row-mobile').filter({ hasText: created.registration }).click();
     await expect(sheet).toBeVisible();
 
+    /**
+     * Review 15.2 F1 — AC 4 in letters: "the focus stays inside the panel".
+     * Swapping the sheet's body destroys the button that was just pressed, so
+     * without an explicit hand-off `document.activeElement` falls back to
+     * `body` and the dialog context is lost for assistive technology, even
+     * though the `role="dialog"` node itself survives (measured on BOTH
+     * transitions before the fix).
+     */
+    const focusIsInsidePanel = () =>
+      page.evaluate(() => {
+        const panel = document.querySelector('.mobile-sheet-panel');
+        return Boolean(panel && document.activeElement && panel.contains(document.activeElement));
+      });
+
     const beforeStep = await sheet.elementHandle();
     await sheet.getByTestId('ppr-reject-button-mobile').click();
     await expect(sheet.getByTestId('ppr-reject-reason-mobile')).toBeVisible();
+    expect(await focusIsInsidePanel()).toBe(true);
 
     // R-15.2-a, the load-bearing assertion: SAME DOM node, different body.
     const afterStep = await sheet.elementHandle();
@@ -507,6 +522,7 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     await sheet.getByTestId('ppr-reject-cancel-mobile').click();
     await expect(sheet.getByTestId('ppr-approve-button-mobile')).toBeVisible();
     await expect(sheet.getByText('LIRN Napoli')).toBeVisible();
+    expect(await focusIsInsidePanel()).toBe(true);
 
     await sheet.getByTestId('ppr-reject-button-mobile').click();
     await sheet.getByTestId('ppr-reject-reason-mobile').fill(reason);

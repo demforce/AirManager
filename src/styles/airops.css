@@ -1908,6 +1908,11 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
     border-top: 1px solid var(--border);
   }
   .so-actions .btn{ flex: 1; justify-content: center; min-height: 44px; }
+  /* Review 15.2 F5: the three panels that anchor their primary action with
+     `SlideOver`'s `footer` prop instead of an in-body row got none of the
+     44px the rest of the story adopts — `.btn` alone measures 35px there.
+     Same target, same breakpoint, desktop untouched. */
+  .so-foot .btn{ min-height: 44px; }
 
   /* --- (3) KPI strip (template lines 69-77) ---
      `flex: 1 0 auto` + `min-width` (NOT a fixed 146px basis): the template's
@@ -1935,8 +1940,37 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
     scrollbar-width: none;
   }
   .kpi-row::-webkit-scrollbar{ display: none; }
-  .kpi-row > *{ flex: 1 0 auto; min-width: 146px; scroll-snap-align: start; }
-  .kpi-value{ font-size: 23px; }
+  /* `max-width` is the CEILING that the `auto` basis above needs (review 15.2
+     F2). With only a floor a card sizes itself on its content: the pilot
+     landing's "Abilitazioni" KPI, whose value is a joined list, measured
+     2276px — a 7.5-screenful strip — and 447px, already wider than the phone,
+     with a perfectly realistic 5 ratings. `100%` here IS the content column
+     (`.kpi-row`'s content box = viewport minus `.page`'s 28px padding, which
+     the full-bleed margins add straight back), so no card can be wider than
+     one screenful and the strip keeps its "one card per snap" rhythm. */
+  .kpi-row > *{ flex: 1 0 auto; min-width: 146px; max-width: 100%; scroll-snap-align: start; }
+  /* Under a ceiling the value has to WRAP instead of pushing the card wider,
+     and `anywhere` (not `break-word`) is the one that also shrinks the flex
+     item's min-content contribution — which is what was propagating the width
+     in the first place. The wrap is clamped to two lines so a single long
+     value cannot turn the strip into a wall (the strip exists to BUY vertical
+     budget); the clamp's own ellipsis is the affordance that says the value
+     continues. `line-height` comes off the base 1 because two 23px lines at
+     1 would have their glyphs touching — this is the first time a KPI value
+     is allowed to wrap at all. */
+  .kpi-value{
+    font-size: 23px;
+    line-height: 1.12;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  /* `-webkit-box` is not a flex container, so the `gap` that separated the
+     value from its unit ("3 / 5", "48,00 € /h") has to be restated. */
+  .kpi-value .unit{ margin-left: 8px; }
 }
 
 /* The full-screen panel's entrance is the only animation this story adds;

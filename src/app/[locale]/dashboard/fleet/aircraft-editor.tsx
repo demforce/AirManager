@@ -593,7 +593,16 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
         </p>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+      {/* Story 15.2 (R3, review F3 + PO ratification 2026-07-30): `so-actions`
+          pins this row to the bottom of the scrolling body at <=640px. This
+          panel is the composite aircraft form (14.8): its body scrolls 963px
+          in an 812px viewport, so the submit sat 217px BELOW the fold and was
+          not hit-testable without scrolling. The rule is safe here because
+          this is the panel's ONLY action row and it is the last node in the
+          body — the two editors that render several forms in one panel
+          (`pilot-editor`, `instructor-editor`) are deliberately left to story
+          15.5, which owns those pages and can decide which row is primary. */}
+      <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
         <button type="button" className="btn" onClick={props.onClose}>
           {labels.cancel}
         </button>

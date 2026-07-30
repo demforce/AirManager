@@ -179,6 +179,13 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     const strip = page.locator('.kpi-row').first();
     await expect(strip).toBeVisible();
     expect(await strip.evaluate((el) => getComputedStyle(el).scrollSnapType)).toContain('x');
+    // D4 (review: "legittima ma senza rete") — the strip is full-bleed with
+    // `margin-inline: -28px`, which is EXACTLY `.page`'s own padding: the
+    // arithmetic only holds while every `.kpi-row` is a DIRECT child of
+    // `.page`. Nested one level deeper (typically inside a `.card`, whose
+    // `overflow: hidden` clips) the negative margins would slide under the
+    // border. True 9/9 by inspection today; held by an assertion from now on.
+    expect(await strip.evaluate((el) => el.parentElement?.classList.contains('page'))).toBe(true);
     const cardCount = await strip.evaluate((el) => el.children.length);
     expect(cardCount).toBeGreaterThanOrEqual(5);
 
@@ -226,6 +233,31 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     expect(clipping?.cardOverflow).toBeLessThanOrEqual(0);
     expect(clipping?.cardWidth).toBeGreaterThanOrEqual(146);
     expect(clipping?.pageOverflow).toBeLessThanOrEqual(0);
+
+    // Review 15.2 F2 — the CEILING, probed with the value that actually
+    // produced the defect: a KPI whose value is a joined list (the pilot
+    // landing's "Abilitazioni"). The three assertions above only ever check
+    // that a card is BIG ENOUGH, so they stayed green while one card measured
+    // 2276px on a 375px screen. No card may be wider than the screen it snaps
+    // into, and the long value must be WRAPPED, not pushed out sideways.
+    const ceiling = await page.evaluate(() => {
+      const value = document.querySelector('.kpi-row .kpi .kpi-value');
+      const strip = value?.closest('.kpi-row');
+      if (!value || !strip) return null;
+      const textNode = [...value.childNodes].find((node) => node.nodeType === Node.TEXT_NODE);
+      const long = 'SEP(land) · IR(A) · Night · TMG · Acrobatico · Rimorchio alianti';
+      if (textNode) textNode.textContent = long;
+      else value.textContent = long;
+      return {
+        maxCardWidth: Math.max(...[...strip.children].map((child) => child.getBoundingClientRect().width)),
+        valueOverflow: value.scrollWidth - value.clientWidth,
+        pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        viewport: window.innerWidth,
+      };
+    });
+    expect(ceiling?.maxCardWidth).toBeLessThanOrEqual(ceiling?.viewport ?? 0);
+    expect(ceiling?.valueOverflow).toBeLessThanOrEqual(0);
+    expect(ceiling?.pageOverflow).toBeLessThanOrEqual(0);
 
     // AC 11 — above the breakpoint the strip is the grid it always was.
     await page.setViewportSize(DESKTOP);

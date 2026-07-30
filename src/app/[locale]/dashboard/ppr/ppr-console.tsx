@@ -27,7 +27,7 @@
  * second query per page and would drift from the desktop at equal filter).
  * No network logic is duplicated: both trees call the same handlers below.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from '@/i18n/navigation';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
@@ -129,6 +129,8 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
   const [sheetRejecting, setSheetRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState<string | null>(null);
+  const sheetRejectButtonRef = useRef<HTMLButtonElement>(null);
+  const sheetReasonRef = useRef<HTMLTextAreaElement>(null);
 
   function navigateStatus(next: string): void {
     router.push(next === 'PENDING' ? '/dashboard/ppr' : `/dashboard/ppr?status=${next}`);
@@ -142,6 +144,10 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
     if (!response.ok) {
       const code = await errorCodeOf(response);
       toast.show(code === 'PPR_ALREADY_DECIDED' ? labels.toast.conflictError : labels.toast.genericError, 'bad');
+      // Review 15.2 F4: a 409 means the list on screen is STALE (someone else
+      // decided this request), so the row has to go — without this the same
+      // card keeps re-opening a sheet that can only produce another 409.
+      router.refresh();
       return;
     }
 
@@ -186,6 +192,22 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
     setRejectError(null);
   }
 
+  /**
+   * Review 15.2 F1 — AC 4 says "the focus stays inside the panel", and it did
+   * NOT: swapping the sheet's body removes the very button that was pressed,
+   * nothing else claims the focus, and `document.activeElement` fell back to
+   * `body` (measured, both entering the step and leaving it) — the dialog
+   * context is lost for assistive technology even though the node survives.
+   * So each step explicitly takes the focus to what it is about. The effect is
+   * inert when no sheet is open (both refs are null then), which is why the
+   * sheet's own focus-on-open / focus-return baseline (`MobileSheet`) is
+   * untouched: it only ever fires on a real step change.
+   */
+  useEffect(() => {
+    if (sheetRejecting) sheetReasonRef.current?.focus();
+    else sheetRejectButtonRef.current?.focus();
+  }, [sheetRejecting]);
+
   async function submitReject(id: string): Promise<void> {
     const reason = rejectReason.trim();
     if (reason.length === 0) {
@@ -206,6 +228,8 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
       closeReject();
       closeSheet();
       toast.show(code === 'PPR_ALREADY_DECIDED' ? labels.toast.conflictError : labels.toast.genericError, 'bad');
+      // Review 15.2 F4, same reason as `handleApprove`: the stale row must go.
+      router.refresh();
       return;
     }
 
@@ -396,7 +420,13 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
           open
           onClose={closeSheet}
           testId="mobile-ppr-sheet"
-          sub={`${labels.mobile.requestLabel} ${sheetRequest.pprNumber ?? '—'}`}
+          // Review 15.2 F6: the number is assigned on approval, so a PENDING
+          // request has none — and the em-dash placeholder the template used
+          // for it landed in the dialog's accessible name, which `BottomSheet`
+          // builds as `${sub} — ${title}`: "Richiesta — — I-PK7X9 · C172".
+          // A missing value is simply not part of the name (nor of the
+          // over-line): "Richiesta" alone reads right in both places.
+          sub={sheetRequest.pprNumber ? `${labels.mobile.requestLabel} ${sheetRequest.pprNumber}` : labels.mobile.requestLabel}
           title={`${sheetRequest.aircraftRegistration} · ${sheetRequest.aircraftType}`}
           badge={
             <Badge tone={STATUS_BADGE_TONE[sheetRequest.status]} dot>
@@ -419,7 +449,14 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
                 >
                   {labels.actions.approve}
                 </button>
-                <button type="button" className="btn mini bad" disabled={busyId === sheetRequest.id} onClick={startSheetReject} data-testid="ppr-reject-button-mobile">
+                <button
+                  type="button"
+                  className="btn mini bad"
+                  disabled={busyId === sheetRequest.id}
+                  onClick={startSheetReject}
+                  ref={sheetRejectButtonRef}
+                  data-testid="ppr-reject-button-mobile"
+                >
                   {labels.actions.reject}
                 </button>
               </>
@@ -438,6 +475,7 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
                   placeholder={labels.rejectModal.reasonPlaceholder}
                   aria-label={labels.rejectModal.title}
                   aria-invalid={Boolean(rejectError)}
+                  ref={sheetReasonRef}
                   data-testid="ppr-reject-reason-mobile"
                 />
                 {rejectError ? (

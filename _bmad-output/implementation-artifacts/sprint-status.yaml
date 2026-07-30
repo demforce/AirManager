@@ -312,6 +312,10 @@ development_status:
   15-10-sweep-finale-mobile: backlog
 
 action_items:
+  - epic: 15
+    action: "TD (review 15.2 F3, RINVIO ratificato dal PO 2026-07-30): la riga d'azione fissa in basso della modalita' a tutto schermo (R3, classe `.so-actions`) manca su `pilots/pilot-editor.tsx` (2 form nello stesso pannello) e `instructors/instructor-editor.tsx` (3 form). Misurato a 375x812 dalla review: pilot-editor NUOVO body scrollHeight 1652/728 con il submit 906px sotto il fold, pilot-editor MODIFICA submit a bottom 2269, instructor-editor MODIFICA a 2072 - non hit-testabili senza scorrere. NON risolvibile applicando la regola a tappeto: una barra sticky su un'azione che sta a META' pannello si sgancia scorrendo, e metterla su ogni riga impilerebbe 2-3 barre. Serve spostare il salva PRIMARIO nel piede del pannello, decidendo quale riga e' primaria: lavoro della story 15.5, che nel piano possiede gia' quelle due anagrafiche. `fleet/aircraft-editor.tsx` (riga d'azione unica, submit 217px sotto il fold) e' stato chiuso subito nel fix della 15.2."
+    owner: "story 15.5"
+    status: open
   - epic: 14
     action: "TD (review 14.9 F11, PRE-esistente): /api/v1/stats e /api/v1/cash-report rispondono 422 (validazione Zod della query) PRIMA del 403 a un attore non autorizzato, mentre tutti gli altri endpoint gated fanno 403 -> un attore senza permesso apprende la forma dei parametri. Uniformare l'ordine gate-prima-di-validazione (o ratificare la convenzione)."
     owner: "backlog TD"
