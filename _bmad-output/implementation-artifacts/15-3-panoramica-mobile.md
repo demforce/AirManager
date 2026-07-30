@@ -514,7 +514,10 @@ Metodo: script `playwright-core` che raccoglie 10 campi geometrici (`.page`, `.p
 **Prova che AD-2 non rompe `bookings.spec.ts`** (la voce più delicata del blast radius): `bookings.spec.ts --project=chromium --workers=1` eseguito due volte sullo stesso DB, prima col mio albero e poi col **baseline** (`git stash` delle sole modifiche tracciate, quindi build senza la mia estrazione):
 
 - **mio albero: 10 failed / 24 passed**
-- **baseline: 11 failed / 23 passed**
+- **baseline: 11 failed / 23 passed** — questo è il run lanciato col nuovo runner distaccato
+  (`bash scripts/e2e.sh start e2e/bookings.spec.ts --project=chromium --workers=1`); `scripts/e2e.sh
+  status` lo riporta come `state: DONE — E2E_EXIT=1`, `11 failed / 23 passed (12.5m)`, log in
+  `/tmp/airmanager-e2e/last-run.log` (verificabile finché la macchina non ripulisce /tmp).
 
 `comm -13 baseline mine` = **insieme vuoto**: nessun test fallisce col mio codice che non falliva già senza. Il baseline ne fallisce perfino uno in più (`:1645`). Le 10 sono tutte "riga non trovata in una lista paginata" o timeout della funzione che scorre le pagine a caccia della propria riga — cioè volume di DB, non la transizione.
 
@@ -524,7 +527,7 @@ Metodo: script `playwright-core` che raccoglie 10 campi geometrici (`.page`, `.p
 
 Due residui che ho ripulito a mano sul DB condiviso, dichiarati: la mia scadenza scaduta sul pilota di seed (classe B) e le righe `sched.*` che la catena serializzata di un run precedente aveva lasciato (07:00-21:00), che facevano fallire con 422 `BOOKING_OUTSIDE_WINDOW` ogni creazione fuori orario — incluse due mie fixture. Da lì una correzione utile: **le fixture di `mobile-overview.spec.ts` non sono più ancorate all'orologio** (`safeSlotTomorrow`, slot alle 07:30Z = 08:30/09:30 Roma, dentro qualunque finestra la suite configuri e prima dello slot `09:00Z` usato dalle altre spec), e la fixture "a cavallo di adesso" nasce nella finestra e viene **spostata** su adesso, perché `updateBooking` è l'unico percorso senza controllo di finestra.
 
-⚠️ **Nota per la review sul runner**: durante il mio lavoro un'altra sessione ha committato `scripts/e2e.sh` (runner distaccato) e la regola CLAUDE.md «MAI `playwright test` in foreground». I run riportati qui sopra sono stati lanciati prima (in foreground/background di sessione) tranne il confronto sul baseline, che ho eseguito col nuovo runner. Il progetto Playwright `mobile-metar` che aggiungo convive con la loro modifica di `playwright.config.ts` (`reuseExistingServer`): il file corrente contiene **entrambe**.
+⚠️ **Nota per la review sul runner**: durante il mio lavoro un'altra sessione ha committato `scripts/e2e.sh` (runner distaccato) e la regola CLAUDE.md «MAI `playwright test` in foreground». I run riportati sopra sono stati lanciati prima di quel cambio (foreground con output su file, e background della mia shell) **tranne il confronto sul baseline**, che è passato dal nuovo runner e il cui esito è leggibile con `scripts/e2e.sh status` — è quindi l'unico dei miei run che la review può riauditare senza rieseguire nulla. Chi riprende il lavoro: build+start UNA volta, poi `E2E_REUSE_SERVER=1 bash scripts/e2e.sh start ...` per ogni run, così la build non si ripaga. Porta :3000 lasciata **libera** (nessun processo `next` residuo, verificato). Il progetto Playwright `mobile-metar` che aggiungo convive con la loro modifica di `playwright.config.ts` (`reuseExistingServer` con opt-in `E2E_REUSE_SERVER`): il file in HEAD contiene **entrambe** (verificato su `git show HEAD:playwright.config.ts`).
 
 ## 10. Debito tecnico da tracciare (non chiuso qui)
 
