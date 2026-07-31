@@ -114,6 +114,64 @@ test.describe.serial('BOOKING_OUTSIDE_WINDOW (Story 12.11, AC 4, ratifica utente
     expect((await response.json()).error.code).toBe('BOOKING_OUTSIDE_WINDOW');
   });
 
+  /**
+   * Story 15.4, ratifica R-15.4-g. Before this story the 422 above fell
+   * through `new-booking-form.tsx`'s `else` into "Impossibile creare la
+   * prenotazione. Riprova." — the least actionable message in the app, since
+   * retrying an out-of-window slot fails identically. The guard is written on
+   * the side the fix LIBERATES: the banner must NAME the window, so it stays
+   * red if the branch is deleted (the generic text contains neither bound).
+   *
+   * It lives in this serialized project because it writes `sched.*` globally
+   * (CLAUDE.md, lesson 12.11 F1) — never in the `fullyParallel` one.
+   */
+  test('the 422 BOOKING_OUTSIDE_WINDOW banner states the airfield window instead of the generic "Riprova" (story 15.4)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+    await setScheduling(page, { openTime: '14:00', closeTime: '18:00', minSlotMinutes: 60, turnaroundMinutes: 0, maxAdvanceDays: 3650 });
+
+    await page.goto('/it/dashboard/bookings');
+    await page.waitForLoadState('networkidle');
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    // THIS run's pilot, by id — never `{ index: 1 }`: the shared dev DB is full
+    // of people other specs gave expired documents to, and `EXPIRED_DOCUMENTS`
+    // would answer first (measured: it did).
+    await form.getByLabel('Pilota o allievo').selectOption(pilot.personId);
+    // 10:00-11:00 Rome (winter CET) — outside the 14:00-18:00 window above.
+    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T10:00`);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+
+    const banner = page.getByTestId('booking-form-error');
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('14:00');
+    await expect(banner).toContainText('18:00');
+    // The pre-fix text, which must NOT be what the user reads any more.
+    await expect(banner).not.toContainText('Riprova');
+
+    const insideBooking = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T14:00:00.000Z`, endsAt: `${FUTURE_DAY}T15:00:00.000Z` },
+    });
+    expect(insideBooking.status()).toBe(201);
+
+    // The MOVE panel carries the same branch and the same message
+    // (`edit-booking-form.tsx`), but it CANNOT be exercised end-to-end today:
+    // `assertWithinSchedulingWindow` runs on create and on approve only —
+    // `updateBooking` never calls it (measured: moving this very booking to
+    // 10:00-11:00 Rome against a 14:00-18:00 window answers 200). Story 15.4
+    // deliberately did NOT add that server check: touching the domain is
+    // outside its scope. Finding recorded in the Dev Agent Record for the PO;
+    // asserting an unreachable behaviour here would be a test that lies.
+    const movedOutside = await page.request.patch(`/api/v1/bookings/${(await insideBooking.json()).booking.id}`, {
+      data: { startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` },
+    });
+    expect(movedOutside.status(), 'documenting the gap: the window is not re-checked on update').toBe(200);
+  });
+
   test('a permissive (near-24h) window imposes no practical constraint, confirming the afterAll restore leaves other specs unaffected', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await setScheduling(page, PERMISSIVE_SCHEDULING);

@@ -55,6 +55,8 @@ export type NewBookingFormLabels = {
     PERSON_NOT_BOOKABLE: string;
     /** `{documents}` placeholder, client-filled with the comma-joined blocking document type names (story 7.4, AC 1) — same `t.raw` pattern as `outOfServiceSuffix`. */
     EXPIRED_DOCUMENTS: string;
+    /** Story 15.4 (ratifica R-15.4-g): already interpolated server-side with the airfield's own window — the settings live on the page, not in this component. */
+    BOOKING_OUTSIDE_WINDOW: string;
     overlap: string;
     generic: string;
   };
@@ -305,6 +307,12 @@ export function NewBookingForm({
         setFormError(labels.errors.BOOKING_IN_PAST);
       } else if (code === 'PERSON_NOT_BOOKABLE') {
         setFormError(labels.errors.PERSON_NOT_BOOKABLE);
+      } else if (code === 'BOOKING_OUTSIDE_WINDOW') {
+        // Ratifica R-15.4-g: this used to fall through to the generic
+        // "Riprova", which is the one thing that cannot work — the slot is
+        // outside the airfield's window and retrying it fails again. The
+        // message now states the window (interpolated server-side).
+        setFormError(labels.errors.BOOKING_OUTSIDE_WINDOW);
       } else if (code === 'EXPIRED_DOCUMENTS') {
         // Story 7.4, AC 1/2: the message lists the blocking document names
         // (from `details.documents`, never the server's English-only
@@ -565,7 +573,14 @@ export function NewBookingForm({
           </div>
         ) : null}
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+        {/* Story 15.4 (R3, AD-6): `so-actions` is the hook the <=640px
+            full-screen mode uses to pin the PRIMARY action to the bottom of
+            the panel (`airops.css`, inside `@media (max-width: 640px)` — inert
+            on the desktop, where this row keeps its exact geometry). It goes
+            on THIS row only: the "Forza prenotazione" row above keeps
+            scrolling with its own amber section, because two stacked sticky
+            bars are the defect review 15.2 F3 deferred to story 15.5. */}
+        <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
           <button type="button" className="btn" onClick={handleClose}>
             {labels.force.cancel}
           </button>

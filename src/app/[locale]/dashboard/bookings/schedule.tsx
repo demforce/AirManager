@@ -23,12 +23,16 @@
  * projection already computes are reused verbatim as `left`/`width` here,
  * since both are just "how far through the 06:00-22:00 window" percentages.
  */
-import { useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useCallback, useRef, useState, type MouseEvent } from 'react';
 import { getPathname, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { CAL_POPOVER_HEIGHT_DATE_ONLY, CalendarPopover } from '@/components/ui/calendar-popover';
 import { anchorPositionStyle, CAL_POPOVER_WIDTH, clampPopoverLeft, useFixedPopover } from '@/components/ui/fixed-popover';
 import { Icon } from '@/components/ui/icons';
+import type { DayPhase } from '@/lib/booking-day-phase';
+import { nowMarkerIndex } from '@/lib/mobile-agenda';
 // Story 12.12 AC 1: the projection ITSELF (`projectDayBlocks`/`projectWeekChips`)
 // moved to `@/lib/booking-schedule`, shared with the Overview's embedded day
 // timeline — these output types moved with it, imported (and re-exported
@@ -47,6 +51,34 @@ export type ScheduleAircraftRow = {
   model: string;
   status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
   statusReason: string | null;
+};
+
+/**
+ * One row of the phone agenda (story 15.4) — the day view a phone gets
+ * instead of the desktop timeline. Ordered and phase-tagged server-side by
+ * `@/lib/mobile-agenda` (AD-5); everything that needs a clock or a timezone
+ * (`HH:MM`, `startsAfterNow`) is already resolved, so this component only
+ * filters and renders.
+ */
+export type ScheduleAgendaRow = {
+  /** `aog-<aircraftId>` on an out-of-service row, the booking id otherwise. */
+  id: string;
+  kind: 'aog' | 'booking';
+  aircraftId: string;
+  registration: string;
+  /** Europe/Rome wall clock; both empty on an AOG row (an out-of-service aircraft has no slot). */
+  timeStart: string;
+  timeEnd: string;
+  /** `null` on a masked row (story 14.5 R3) — rendered as `labels.occupied`, same as the desktop blocks. */
+  personName: string | null;
+  instructorProfileId: string | null;
+  instructorName: string | null;
+  notes: string | null;
+  /** AOG rows only: why the aircraft is grounded. */
+  statusReason: string | null;
+  /** `null` on an AOG row (no slot, no phase). */
+  phase: DayPhase | null;
+  startsAfterNow: boolean;
 };
 
 export type CalendarNav = {
@@ -84,6 +116,28 @@ export type ScheduleLabels = {
   occupied: string;
   /** Raw (`t.raw`) `"{count} …"` template — client-interpolated (see `weekBookingsLabel` below), same pattern as `new-booking-form.tsx`'s `outOfServiceSuffix`/`EXPIRED_DOCUMENTS`: the per-day count changes with the client-only aircraft/instructor filter, so it cannot be pre-formatted server-side. */
   weekBookingsCountTemplate: string;
+  /** Story 15.4 — labels of the phone surfaces only (agenda, chips, week list, detail sheet). */
+  mobile: {
+    /** `t.raw` `"{count} movimenti"`: the count is what the CLIENT filter leaves on screen, so it cannot be pre-formatted. */
+    agendaCountTemplate: string;
+    /** `t.raw` `"ORA · {time}"` (template line 139). */
+    nowTemplate: string;
+    /** `t.raw` `"{registration} fuori servizio"`. */
+    aogTitleTemplate: string;
+    /** Verb of a row's accessible name ("Apri dettaglio"), never rendered as text. */
+    openDetail: string;
+    close: string;
+    /** Mono chip on today's row in the week list. */
+    today: string;
+    time: string;
+    pilot: string;
+    instructor: string;
+    aircraft: string;
+    notes: string;
+    /** AOG detail row: why the aircraft is grounded. */
+    reason: string;
+    phase: Record<DayPhase, string>;
+  };
 };
 
 export type ScheduleProps = {
@@ -100,10 +154,22 @@ export type ScheduleProps = {
   weekChips: CalendarWeekChip[];
   /** Day view only — the "now" vertical line's `left%`, `null` when `!isToday`. */
   nowLinePercent: number | null;
+  /**
+   * The "now" marker's wall clock (`HH:MM`), `null` when the shown day is not
+   * today. Feeds BOTH the phone agenda's "ORA · HH:MM" separator and the
+   * desktop `.now-line`'s `data-time` — the attribute `airops.css:567` prints
+   * with `content: attr(data-time)` and that nobody has ever written (ratifica
+   * R-15.4-b: the pill has been an empty 12px rectangle since story 12.3).
+   */
+  nowTime: string | null;
+  /** Day view only — the phone agenda's rows, already ordered and phase-tagged (`@/lib/mobile-agenda`). Empty in week view, and on the Overview's embedded timeline (which has no phone face of its own). */
+  agendaRows: ScheduleAgendaRow[];
   locale: 'it' | 'en';
   nav: CalendarNav;
   /** The list section's current `?page` — preserved by every date the calendar popover navigates to (lesson 6.4 M1, same crosstalk contract as the legacy calendar). */
   listPage: number;
+  /** The list section's current `?status` (story 15.4, R-15.4-e), preserved by the same client-built hrefs as `listPage`. `null`/absent = no filter. */
+  listStatus?: string | null;
   /**
    * The day-view axis bounds, in whole hours (story 12.11, AC 4: "la
    * timeline legge l'asse orario dalle settings quando presenti"). Always
@@ -159,14 +225,25 @@ const FILTER_POPOVER_WIDTH = 320;
 const FILTER_POPOVER_HEIGHT = 320;
 
 /** Small client-only duplicate of `page.tsx#calendarHref`'s day-view case — see module doc-comment. */
-function buildDateHref(dateOnly: string, view: BookingCalendarView, listPage: number, today: string): string {
+function buildDateHref(dateOnly: string, view: BookingCalendarView, listPage: number, today: string, listStatus: string | null): string {
   const params = new URLSearchParams();
   if (view !== 'day') params.set('view', view);
   if (dateOnly !== today) params.set('date', dateOnly);
   if (listPage > 1) params.set('page', String(listPage));
+  if (listStatus) params.set('status', listStatus);
   const qs = params.toString();
   return `/dashboard/bookings${qs ? `?${qs}` : ''}`;
 }
+
+/** Phase -> `Badge` tone, the SAME mapping the Overview's mobile lists use (`dashboard/page.tsx`): the two surfaces must not disagree on the same booking. */
+const PHASE_TONE: Record<DayPhase, BadgeTone> = { inProgress: 'warn', completed: 'ok', scheduled: 'info' };
+
+/** Phase -> left edge of the row (template's `edgeMap`, lines 630-634). `--accent` and `--warn` hold the same value in both themes, so the edge and the `warn` badge above read as one signal. */
+const PHASE_EDGE_CLASS: Record<DayPhase, string> = {
+  inProgress: 'mobile-row-edge-accent',
+  completed: 'mobile-row-edge-ok',
+  scheduled: 'mobile-row-edge-info',
+};
 
 export function Schedule({
   view,
@@ -179,9 +256,12 @@ export function Schedule({
   dayBlocks,
   weekChips,
   nowLinePercent,
+  nowTime,
+  agendaRows,
   locale,
   nav,
   listPage,
+  listStatus = null,
   windowStartHour,
   windowEndHour,
   labels,
@@ -216,7 +296,62 @@ export function Schedule({
   }
 
   function navigateToDate(dateOnly: string) {
-    router.push(buildDateHref(dateOnly, view, listPage, today));
+    router.push(buildDateHref(dateOnly, view, listPage, today, listStatus));
+  }
+
+  // --- phone agenda (story 15.4) -----------------------------------------
+  // The SAME `filterAircraftId`/`filterInstructorId` the popover drives
+  // (ratifica R-15.4-c: the tail chips are a second AFFORDANCE, never a second
+  // source of truth), applied to the server-ordered rows. An AOG row has no
+  // instructor, so the instructor filter leaves it alone — exactly like the
+  // desktop, where an out-of-service aircraft keeps its row whatever the
+  // instructor filter says.
+  const visibleAgendaRows = agendaRows.filter(
+    (row) =>
+      (filterAircraftId === 'all' || row.aircraftId === filterAircraftId) && (row.kind === 'aog' || matchesInstructorFilter(row.instructorProfileId)),
+  );
+  const agendaMovementCount = visibleAgendaRows.filter((row) => row.kind === 'booking').length;
+  // Recomputed on the FILTERED rows, never precomputed server-side: filtering
+  // the morning away moves the marker (unit-tested, `mobile-agenda.test.ts`).
+  const markerIndex = nowTime === null ? -1 : nowMarkerIndex(visibleAgendaRows);
+  const [openAgendaId, setOpenAgendaId] = useState<string | null>(null);
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeAgendaSheet = useCallback((): void => setOpenAgendaId(null), []);
+  const openAgendaRow = visibleAgendaRows.find((row) => row.id === openAgendaId) ?? null;
+
+  function agendaTitle(row: ScheduleAgendaRow): string {
+    return row.kind === 'aog' ? labels.mobile.aogTitleTemplate.replace('{registration}', row.registration) : (row.personName ?? labels.occupied);
+  }
+
+  /**
+   * The template's own agenda sub (line 145): the registration leads, then
+   * whoever else is on board. It is NOT the `.mobile-row-tail` chip the 15.3
+   * lists use, and that is deliberate — measured at 375px with the chip in the
+   * title row, the pilot's name was cut to a single letter ("P…"), because the
+   * title has to share 1fr with the chip AND the badge once the 46px time
+   * column is there. The template puts the tail in the sub for exactly the
+   * rows that carry times.
+   */
+  function agendaSub(row: ScheduleAgendaRow): string {
+    if (row.kind === 'aog') return row.statusReason ?? labels.outOfService;
+    const trailing = row.instructorName ?? row.notes;
+    return trailing ? `${row.registration} · ${trailing}` : row.registration;
+  }
+
+  function agendaDetailRows(row: ScheduleAgendaRow): BottomSheetRow[] {
+    if (row.kind === 'aog') {
+      return [
+        { k: labels.mobile.aircraft, v: row.registration },
+        { k: labels.mobile.reason, v: row.statusReason ?? labels.outOfService },
+      ];
+    }
+    return [
+      { k: labels.mobile.time, v: `${row.timeStart}–${row.timeEnd}` },
+      { k: labels.mobile.pilot, v: row.personName ?? labels.occupied },
+      { k: labels.mobile.instructor, v: row.instructorName ?? '—' },
+      { k: labels.mobile.aircraft, v: row.registration },
+      { k: labels.mobile.notes, v: row.notes ?? '—' },
+    ];
   }
 
   /**
@@ -239,12 +374,23 @@ export function Schedule({
   }
 
   return (
+    <>
     <div className="card" data-testid="schedule-section">
       <div className="card-head">
         <div className="card-title">{isToday ? labels.cardTitleToday : labels.cardTitle}</div>
         <span className="card-sub" data-testid="calendar-heading">
           {view === 'day' ? formatDayShort(date, locale) : `${formatDayMonth(weekDates[0]!.dateOnly, locale)} – ${formatDayMonth(weekDates[6]!.dateOnly, locale)}`}
         </span>
+        {/* The template's own testata sub ("MAR 21 APR · N movimenti in
+            programma", line 129), split in two nodes rather than appended to
+            `calendar-heading`: that heading's text is asserted by the desktop
+            suite and this count only exists on the phone, where it states what
+            the CLIENT filter actually left on screen (AC 1). */}
+        {view === 'day' ? (
+          <span className="card-sub mobile-agenda-count" data-testid="mobile-agenda-count">
+            {labels.mobile.agendaCountTemplate.replace('{count}', String(agendaMovementCount))}
+          </span>
+        ) : null}
         <div className="spacer" />
 
         <div className="date-nav" style={{ position: 'relative' }}>
@@ -442,11 +588,11 @@ export function Schedule({
       </div>
 
       {aircraft.length === 0 ? (
-        <p style={{ marginTop: 16, fontSize: 14, lineHeight: '20px', padding: '0 18px 18px' }}>
+        <p className="schedule-desktop-body" style={{ marginTop: 16, fontSize: 14, lineHeight: '20px', padding: '0 18px 18px' }}>
           {labels.noAircraft}
         </p>
       ) : view === 'day' ? (
-        <div className="schedule">
+        <div className="schedule schedule-desktop-body">
           <div className="sched-axis">
             <div className="axis-label">{labels.filtersAircraft}</div>
             <div className="axis-ticks" style={{ gridTemplateColumns: `repeat(${HOURS.length - 1}, 1fr)` }}>
@@ -476,7 +622,14 @@ export function Schedule({
                   {HOURS.map((hour) => (
                     <div key={hour} className="grid-line" style={{ left: `${hourLeftPercent(hour)}%` }} />
                   ))}
-                  {isToday && nowLinePercent !== null ? <div className="now-line" style={{ left: `${nowLinePercent}%` }} /> : null}
+                  {/* `data-time` (ratifica R-15.4-b): `.now-line::before` has
+                      printed `content: attr(data-time)` since story 12.3
+                      against an attribute nobody wrote — measured at 375px AND
+                      1280px, an empty 12px `--accent` rectangle. One attribute
+                      turns it into the "10:52" the CSS always meant to show. */}
+                  {isToday && nowLinePercent !== null ? (
+                    <div className="now-line" data-time={nowTime ?? undefined} style={{ left: `${nowLinePercent}%` }} />
+                  ) : null}
                   {isAog ? (
                     <div className="flight aog-block" style={{ left: '0%', width: 'calc(100% - 3px)' }} data-testid="schedule-aog-block">
                       <div className="f-head">
@@ -527,7 +680,7 @@ export function Schedule({
           ) : null}
         </div>
       ) : (
-        <div className="week-grid">
+        <div className="week-grid schedule-desktop-body">
           {weekDates.map(({ dateOnly, href }) => {
             const count = weekChips.filter(
               (chip) =>
@@ -567,7 +720,167 @@ export function Schedule({
           })}
         </div>
       )}
+
+      {/* --- the phone face of this card (story 15.4, R2/R4) ---------------
+          The card, its head and its two popovers are ONE node at every width
+          (AD-2): only the BODY is swapped, so the eight navigation testids and
+          the popover-clamp guard of story 13.10 stay exactly where they are.
+          Day view becomes the agenda of the template (lines 136-152), week
+          view the vertical list of seven days ratified in R-15.4-a — neither
+          is a 1000px grid inside a horizontal scroller. */}
+      <div className="schedule-mobile">
+        {aircraft.length > 0 ? (
+          <div className="mobile-chip-strip" data-testid="mobile-tail-chips">
+            <button
+              type="button"
+              className={`btn ${filterAircraftId === 'all' ? 'primary' : ''}`}
+              onClick={() => setFilterAircraftId('all')}
+              aria-pressed={filterAircraftId === 'all'}
+              data-testid="mobile-tail-chip-all"
+            >
+              {labels.filtersAll}
+            </button>
+            {aircraft.map((ac) => (
+              <button
+                key={ac.id}
+                type="button"
+                className={`btn ${filterAircraftId === ac.id ? 'primary' : ''}`}
+                onClick={() => setFilterAircraftId(ac.id)}
+                aria-pressed={filterAircraftId === ac.id}
+                data-testid={`mobile-tail-chip-${ac.id}`}
+              >
+                {ac.registration}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {view === 'day' ? (
+          <div data-testid="mobile-agenda">
+            {visibleAgendaRows.length === 0 ? (
+              <p className="mobile-card-empty" data-testid="mobile-agenda-empty">
+                {aircraft.length === 0 ? labels.noAircraft : labels.dayEmpty}
+              </p>
+            ) : (
+              visibleAgendaRows.map((row, index) => (
+                <Fragment key={row.id}>
+                  {index === markerIndex ? (
+                    // A separator, not a command: never a button, never in the
+                    // tab order (AD-4). It exists only on the day that IS
+                    // today AND only when a movement is still ahead.
+                    <div className="mobile-agenda-now" data-testid="mobile-agenda-now">
+                      <span className="mobile-agenda-now-dot" aria-hidden="true" />
+                      <span className="mobile-agenda-now-label">{labels.mobile.nowTemplate.replace('{time}', nowTime ?? '')}</span>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={`mobile-row mobile-row-timed ${row.phase ? PHASE_EDGE_CLASS[row.phase] : 'mobile-row-edge-bad'}`}
+                    aria-label={`${labels.mobile.openDetail}: ${agendaTitle(row)}`}
+                    onClick={() => setOpenAgendaId(row.id)}
+                    data-testid="mobile-agenda-row"
+                  >
+                    <span className="mobile-row-times">
+                      <span className="mobile-row-t1">{row.kind === 'aog' ? '—' : row.timeStart}</span>
+                      <span className="mobile-row-t2">{row.timeEnd}</span>
+                    </span>
+                    <span className="mobile-row-main">
+                      <span className="mobile-row-title">
+                        <span className="mobile-row-name">{agendaTitle(row)}</span>
+                      </span>
+                      <span className="mobile-row-sub">{agendaSub(row)}</span>
+                    </span>
+                    {row.phase ? (
+                      <Badge tone={PHASE_TONE[row.phase]} dot>
+                        {labels.mobile.phase[row.phase]}
+                      </Badge>
+                    ) : (
+                      <Badge tone="bad" dot>
+                        {labels.aog}
+                      </Badge>
+                    )}
+                  </button>
+                </Fragment>
+              ))
+            )}
+          </div>
+        ) : (
+          <div data-testid="mobile-week">
+            {weekDates.map(({ dateOnly }) => {
+              // NOT `weekDates[].href`: that one keeps `view=week` (the desktop
+              // grid's own behaviour — a cell there MOVES the anchor inside the
+              // week and highlights it). On the phone the week IS the list, so
+              // a row that stayed in the week view would go nowhere; ratifica
+              // R-15.4-a says "tocco -> vista giorno". `buildDateHref` with
+              // `'day'` is the same helper the calendar popover uses, so `?page`
+              // and `?status` ride along exactly as they do there.
+              const href = buildDateHref(dateOnly, 'day', listPage, today, listStatus);
+              // The SAME count the desktop cell shows, filtered the same way
+              // (ratifica R-15.4-a: "nessun dato nuovo dal server").
+              const count = weekChips.filter(
+                (chip) =>
+                  chip.dateOnly === dateOnly &&
+                  (filterAircraftId === 'all' || chip.aircraftId === filterAircraftId) &&
+                  matchesInstructorFilter(chip.instructorProfileId),
+              ).length;
+              return (
+                <a
+                  key={dateOnly}
+                  href={href}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    router.push(href);
+                  }}
+                  className="mobile-row"
+                  data-testid="mobile-week-day"
+                >
+                  <span className="mobile-row-main">
+                    <span className="mobile-row-title">
+                      {dateOnly === today ? <span className="mobile-row-tail">{labels.mobile.today}</span> : null}
+                      <span className="mobile-row-name">{formatDayShort(dateOnly, locale)}</span>
+                    </span>
+                    <span className="mobile-row-sub" data-testid="mobile-week-day-count">
+                      {labels.weekBookingsCountTemplate.replace('{count}', String(count))}
+                    </span>
+                  </span>
+                  <span className="mobile-row-chev" aria-hidden="true">
+                    <Icon.chevR />
+                  </span>
+                </a>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
+
+    {/* Read-only by construction (ratifica R-15.4-i): the agenda shows what is
+        APPROVED, the list below is where decisions are taken. Rendered
+        conditionally so `mobile-booking-sheet` is ONE node in the DOM even
+        though this page has two sheet owners (AD-7). */}
+    {openAgendaRow ? (
+      <BottomSheet
+        open
+        onClose={closeAgendaSheet}
+        testId="mobile-booking-sheet"
+        sub={openAgendaRow.kind === 'aog' ? labels.aog : `${openAgendaRow.registration} · ${openAgendaRow.timeStart}–${openAgendaRow.timeEnd}`}
+        title={agendaTitle(openAgendaRow)}
+        badge={
+          openAgendaRow.phase ? (
+            <Badge tone={PHASE_TONE[openAgendaRow.phase]} dot>
+              {labels.mobile.phase[openAgendaRow.phase]}
+            </Badge>
+          ) : (
+            <Badge tone="bad" dot>
+              {labels.aog}
+            </Badge>
+          )
+        }
+        rows={agendaDetailRows(openAgendaRow)}
+        closeLabel={labels.mobile.close}
+      />
+    ) : null}
+    </>
   );
 }
 

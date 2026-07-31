@@ -2106,7 +2106,14 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .mobile-row-timed{ grid-template-columns: 46px 1fr auto; gap: 12px; }
   .mobile-row-times{ display: block; }
   .mobile-row-t1{ display: block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; }
-  .mobile-row-t2{ display: block; font-family: var(--font-mono); font-size: 10px; color: var(--ink-4); margin-top: 2px; }
+  /* Story 15.4: `--ink-3`, was `--ink-4`. The 13.9 calibration put `--ink-4` at
+     a >=3:1 floor, which is the right bar for a table header or a group label
+     but not for TEXT: the slot's END time measured 3.66:1 (light) / 4.14 (dark)
+     on `--panel`, under the 4.5:1 AC 12 asks for. `--ink-3` measures 4.85 /
+     5.72. One declaration, colour only, and it lifts BOTH consumers of this
+     class — the agenda of this story and the instructor landing's "La mia
+     giornata" of 15.3, whose end time had the same ratio. */
+  .mobile-row-t2{ display: block; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); margin-top: 2px; }
   .mobile-row-main{ display: block; min-width: 0; }
   .mobile-row-title{ display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; }
   /* Registration chip (template 82): mono, sunken, never shrinks. */
@@ -2182,4 +2189,138 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* --- where the hidden desktop surfaces went (ratifica R-15.3-d) --- */
   .mobile-shortcuts{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .mobile-shortcuts .btn{ justify-content: center; min-height: 44px; }
+}
+
+/* ---------- pianificazione mobile (story 15.4, epic 15 R1/R3/R4) ----------
+   The phone faces of `/dashboard/bookings`: the agenda of "Voli di oggi"
+   (template 136-152) instead of the 1000px day timeline, a vertical list of
+   seven days instead of the 848px week grid, one card per booking instead of
+   the six-column table, and the two booking panels' primary action pinned to
+   the bottom of the full-screen panel.
+
+   Same rules of engagement as the 15.1/15.2/15.3 blocks above: every
+   declaration is additive inside `@media (max-width: 640px)`, no existing
+   token changes value, no new colour literal (the row edges reuse
+   `--ok`/`--accent`/`--info`/`--bad`, the ORA strip reuses
+   `--accent-soft`/`--accent`/`--accent-ink`, the chips reuse `.btn`/
+   `.btn.primary` — which IS the template's active pill, `--ink` on `--bg`).
+
+   The switch hangs off classes these two cards OWN — `.schedule-desktop-body`,
+   `.schedule-mobile`, `.bookings-desktop-body`, `.bookings-mobile` — never off
+   `.schedule`, `.week-grid` or `.students` (that last one is shared by 13
+   consoles). Precedent and reasoning: `.ppr-queue-mobile` (15.2),
+   `.home-desktop-surface` (15.3).
+
+   Rows deliberately reuse the `.mobile-row*` family of 15.3 rather than a new
+   one: this IS that row (left time column, registration chip, right badge),
+   plus a coloured left edge. Only the edge and the ORA separator are new. */
+
+/* Both mobile trees are in the DOM at every width (the switch is CSS only), so
+   they must be `display: none` OUTSIDE the query too — otherwise the desktop
+   suite finds two matches for every registration on this page. Same for the
+   agenda's count, which shares `.card-sub` with the desktop heading beside it. */
+.schedule-mobile,
+.bookings-mobile,
+.mobile-agenda-count{ display: none; }
+
+@media (max-width: 640px){
+  .schedule-desktop-body,
+  .bookings-desktop-body{ display: none; }
+  .schedule-mobile,
+  .bookings-mobile{ display: block; }
+  .mobile-agenda-count{ display: inline; }
+
+  /* --- tail / status chips (template 131-135) ---
+     One strip, two users: the aircraft filter of the agenda and the status
+     filter of the list. `> .btn` is a DIRECT child (lesson 15.3 F1): both
+     cards mount `SlideOver` panels and portalled popovers underneath, and a
+     descendant selector would restyle their buttons too. */
+  .mobile-chip-strip{
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .mobile-chip-strip::-webkit-scrollbar{ display: none; }
+  .mobile-chip-strip > .btn{
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  /* --- agenda: coloured left edge per phase (template's `edgeMap`) ---
+     `inset` box-shadow, exactly as the template draws it, so the edge costs no
+     layout and cannot shift the 46px/1fr/auto grid.
+
+     The raw tokens are the template's own choice and they do NOT hold up in
+     the LIGHT theme against a white `--panel`: measured 2.73 (`--ok`), 2.04
+     (`--accent`), 3.61 (`--info`), 3.96 (`--bad`) — two of them under the 3:1
+     floor AC 12 sets for a graphic object. Mixing 30% of `--ink` in fixes both
+     themes at once (the ink is near-black in light and near-white in dark, so
+     the mix always moves AWAY from the panel): measured 4.01-6.74 in light and
+     8.79-11.53 in dark. Same `color-mix` on tokens the design system already
+     uses for `.btn.mini.ok`'s border — no new colour literal. */
+  .mobile-row-edge-ok{ box-shadow: inset 3px 0 0 color-mix(in oklch, var(--ok) 70%, var(--ink)); }
+  .mobile-row-edge-accent{ box-shadow: inset 3px 0 0 color-mix(in oklch, var(--accent) 70%, var(--ink)); }
+  .mobile-row-edge-info{ box-shadow: inset 3px 0 0 color-mix(in oklch, var(--info) 70%, var(--ink)); }
+  .mobile-row-edge-bad{ box-shadow: inset 3px 0 0 color-mix(in oklch, var(--bad) 70%, var(--ink)); }
+
+  /* --- the ORA separator (template 139) ---
+     A strip between two rows, not a row: no touch target, no tab stop. */
+  .mobile-agenda-now{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 16px;
+    background: var(--accent-soft);
+    border-top: 1px solid var(--border);
+  }
+  /* `--accent-ink`, not the template's `--accent`: an amber dot on the amber
+     `--accent-soft` strip measured 1.76:1 in the light theme (7.23 in dark) —
+     the same "invisible twin" class of defect review 15.3 found on
+     `.list-icon.green`. `--accent-ink` is the colour the label beside it
+     already uses, so the marker reads as one object: 11.13:1 light, 9.74 dark. */
+  .mobile-agenda-now-dot{
+    width: 7px; height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--accent-ink);
+  }
+  .mobile-agenda-now-label{
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--accent-ink);
+  }
+
+  /* The week list's rows are anchors (each day leads to its own day view), so
+     the global `a{color: var(--info)}` has to be reclaimed — same as
+     `.mobile-alert-row` (15.3). */
+  a.mobile-row{ color: var(--ink); text-decoration: none; }
+  a.mobile-row:hover{ color: var(--ink); }
+
+  /* --- "Nuova prenotazione", full width under the head (ratifica R-15.4-f) ---
+     `.card-head` already wraps at this width (13.10); this gives the primary
+     action a row of its own, the same language ratifica R-15.3-d set for the
+     home. DIRECT child again: `ExportMenu` sits in this head too, and the two
+     `SlideOver` panels are mounted by the same card. */
+  .bookings-head > .btn.primary{
+    flex: 1 0 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  /* --- up to four decisions in one sheet (ratifica R-15.4-d) ---
+     `flex: 1` alone (15.2) never wraps: a `flex-basis: 0` item shrinks below
+     its own content instead, so four buttons squeezed onto one 195px line. A
+     half-width basis wraps the third and fourth onto their own row and leaves
+     the two-button sheets (PPR queue, pending queue) rendering exactly as
+     before — 50% + 8px gap is what `flex: 1` already produced for two. */
+  .bottom-sheet-actions{ flex-wrap: wrap; }
+  .bottom-sheet-actions .btn{ flex-basis: calc(50% - 4px); }
 }

@@ -30,6 +30,8 @@ export type EditBookingFormLabels = {
     AIRCRAFT_OUT_OF_SERVICE: string;
     /** `{documents}` placeholder, client-filled. */
     EXPIRED_DOCUMENTS: string;
+    /** Story 15.4 (ratifica R-15.4-g): already interpolated server-side with the airfield's own window — same message the create form shows. */
+    BOOKING_OUTSIDE_WINDOW: string;
     conflict: string;
     generic: string;
   };
@@ -168,6 +170,10 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
         setFormError(labels.errors.BOOKING_IN_PAST);
       } else if (code === 'BOOKING_ALREADY_STARTED') {
         setFormError(labels.errors.BOOKING_ALREADY_STARTED);
+      } else if (code === 'BOOKING_OUTSIDE_WINDOW') {
+        // Ratifica R-15.4-g — same reasoning as the create form: moving a
+        // booking outside the airfield's window must say WHICH window.
+        setFormError(labels.errors.BOOKING_OUTSIDE_WINDOW);
       } else if (code === 'EXPIRED_DOCUMENTS') {
         const documentNames = (body?.error?.details?.documents ?? []).map((document) => document.typeName);
         setFormError(labels.errors.EXPIRED_DOCUMENTS.replace('{documents}', documentNames.join(', ')));
@@ -218,7 +224,10 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
             </p>
           ) : null}
 
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+          {/* Story 15.4 (R3, AD-6): see `new-booking-form.tsx`'s own note — the
+              class is inert above 640px and pins "Salva" to the bottom of the
+              full-screen panel below it. */}
+          <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
             <button type="button" className="btn" onClick={handleClose}>
               {labels.cancel}
             </button>

@@ -11,7 +11,7 @@ import { ScadenzeWidget } from '@/components/dashboard/scadenze-widget';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { dayPhaseOf, filterInProgress, type DayPhase } from '@/lib/booking-day-phase';
-import { clampToWindowPercent, projectDayBlocks, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
+import { clampToWindowPercent, formatWallClock, projectDayBlocks, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { categoryOf } from '@/lib/expiry-status';
 import { formatCents } from '@/lib/money';
@@ -42,7 +42,13 @@ import { listPeople } from '@/server/services/people.service';
 import { listPprRequests } from '@/server/services/ppr.service';
 import { getEffectiveRates, todayDateOnlyUtc } from '@/server/services/rates.service';
 import { getStats } from '@/server/services/stats.service';
-import { buildBookingsTableLabels, buildNewBookingFormLabels, buildScheduleLabels, buildEditBookingFormLabels } from './bookings/booking-labels';
+import {
+  buildBookingsTableLabels,
+  buildNewBookingFormLabels,
+  buildScheduleLabels,
+  buildEditBookingFormLabels,
+  buildSchedulingWindowSummary,
+} from './bookings/booking-labels';
 import { BookingsTable, type BookingRowDto, type BookingStatusDto } from './bookings/bookings-table';
 import type { PersonOption } from './bookings/new-booking-form';
 import { Schedule, type CalendarNav } from './bookings/schedule';
@@ -338,6 +344,9 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const { start: windowStartMinutes, end: windowEndMinutes } = resolveWindowMinutes(schedulingSettings.openTime, schedulingSettings.closeTime);
   const dayBlocks = projectDayBlocks(calendarBookingsToday, today, windowStartMinutes, windowEndMinutes);
   const nowLinePercent = clampToWindowPercent(wallMinutesOfDay(now) - windowStartMinutes, windowEndMinutes - windowStartMinutes);
+  // Ratifica R-15.4-g: the embedded create/edit panels are the SAME components
+  // `/dashboard/bookings` mounts, so they get the same "which window" message.
+  const schedulingWindowSummary = buildSchedulingWindowSummary(tBookings, schedulingSettings);
   const calendarNav: CalendarNav = {
     prevHref: bookingsHref({ date: addDaysDateOnly(today, -1) }, today),
     nextHref: bookingsHref({ date: addDaysDateOnly(today, 1) }, today),
@@ -627,6 +636,14 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           dayBlocks={dayBlocks}
           weekChips={[]}
           nowLinePercent={nowLinePercent}
+          // Story 15.4 (ratifica R-15.4-b): the same fix as on
+          // `/dashboard/bookings` — this embedded timeline shows the SAME
+          // `.now-line`, whose `data-time` pill has been empty since 12.3.
+          nowTime={formatWallClock(now)}
+          // This card has a phone face of its own (the Panoramica's mobile
+          // cards, story 15.3) and is `display: none` under 640px, so it needs
+          // no agenda: the rows would be markup nobody can ever see.
+          agendaRows={[]}
           locale={displayLocale}
           nav={calendarNav}
           listPage={1}
@@ -659,12 +676,19 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         exportHref={buildExportHref('/api/v1/bookings', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale)}
         exportPdfHref={buildPdfExportHref('/api/v1/bookings/pdf', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale)}
         canCreate
+        // Staff-only surface (this is the admin Panoramica): a `bookings.manage.any`
+        // actor books for OTHERS, so ratifica R-15.4-f's own-profile requirement
+        // never applies here.
+        canCreateNew
+        // The home's embedded list has no `?status` of its own — the filter is a
+        // contract of the Pianificazione URL (R-15.4-e), not of this widget.
+        status={null}
         formMode="staff"
         personOptions={staffPersonOptions}
         instructorOptions={instructorOptions}
         studentOptions={[]}
-        newBookingLabels={buildNewBookingFormLabels(tBookings)}
-        editBookingLabels={buildEditBookingFormLabels(tBookings)}
+        newBookingLabels={buildNewBookingFormLabels(tBookings, schedulingWindowSummary)}
+        editBookingLabels={buildEditBookingFormLabels(tBookings, schedulingWindowSummary)}
         labels={buildBookingsTableLabels(tBookings)}
       />
       </div>

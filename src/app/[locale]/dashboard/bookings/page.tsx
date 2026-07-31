@@ -1,7 +1,9 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
-import { clampToWindowPercent, projectDayBlocks, projectWeekChips, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
+import { clampToWindowPercent, formatWallClock, projectDayBlocks, projectWeekChips, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
+import { sanitizeBookingStatusFilter } from '@/lib/booking-status-filter';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
+import { buildAgendaEntries } from '@/lib/mobile-agenda';
 import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
@@ -15,17 +17,19 @@ import {
   listBookings,
   listCalendarBookings,
 } from '@/server/services/bookings.service';
+import { getMe } from '@/server/services/me.service';
 import { listPeople } from '@/server/services/people.service';
-import { buildBookingsTableLabels, buildEditBookingFormLabels, buildNewBookingFormLabels, buildScheduleLabels } from './booking-labels';
+import { buildBookingsTableLabels, buildEditBookingFormLabels, buildNewBookingFormLabels, buildScheduleLabels, buildSchedulingWindowSummary } from './booking-labels';
 import type { BookingRowDto, BookingsTableLabels, BookingStatusDto } from './bookings-table';
 import { BookingsTable } from './bookings-table';
 import type { EditBookingFormLabels } from './edit-booking-form';
 import type { AircraftOption, InstructorOption, NewBookingFormLabels, NewBookingFormMode, PersonOption } from './new-booking-form';
-import { Schedule, type CalendarNav, type ScheduleLabels } from './schedule';
+import { Schedule, type CalendarNav, type ScheduleAgendaRow, type ScheduleLabels } from './schedule';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; view?: string; date?: string }>;
+  /** `?status` (story 15.4, ratifica R-15.4-e) joins `?page`/`?view`/`?date`: same "sanitize, never error" contract, see `sanitizeBookingStatusFilter`. */
+  searchParams: Promise<{ page?: string; view?: string; date?: string; status?: string }>;
 };
 
 /** Staff/instructor picker candidate cap — same "small admin-managed list" convention as `flights/page.tsx`'s `OPTIONS_PAGE_SIZE`. */
@@ -111,7 +115,7 @@ function sanitizeDate(value: string | undefined, today: string): string {
  */
 export default async function BookingsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { page: pageParam, view: viewParam, date: dateParam } = await searchParams;
+  const { page: pageParam, view: viewParam, date: dateParam, status: statusParam } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -169,18 +173,49 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
     }
   }
 
+  /**
+   * Story 15.4 (ratifica R-15.4-f, closing TD 14.6 F2): the "Nuova
+   * prenotazione" CTA needs MORE than the permission. `createBooking` rejects
+   * an own-self booking with 403 unless the actor has an active pilot or
+   * instructor profile (`bookings.service.ts`: "Only a licensed pilot or an
+   * active instructor may book"), so a pilot whose profile was deactivated
+   * used to see the button and hit a 403 on submit. The PO's explicit
+   * instruction: that actor must NOT SEE the button — hidden, never disabled,
+   * never shown-then-403. Staff (`bookings.manage.any`) books for OTHERS, so
+   * no profile of their own is required. Same rule the home's pilot landing
+   * already applies (`dashboard/page.tsx`, `activePilotLicenseType !== null`).
+   *
+   * `canCreate` itself is deliberately unchanged: it still decides whether the
+   * two form panels are MOUNTED at all, and a deactivated pilot keeps the
+   * "Modifica" panel their own rows still offer.
+   */
+  const needsOwnProfileCheck = !canManageAny && canManageOwn;
+  // One extra query, and only for the actors it can change anything for: staff
+  // never reaches it, and neither does an actor who already holds an active
+  // instructor profile (`getOwnInstructorProfileId` above is already that check).
+  const ownActivePilotLicense =
+    needsOwnProfileCheck && ownInstructorProfileId === null ? ((await getMe(actor)).person?.activePilotLicenseType ?? null) : null;
+  const canCreateNew = canManageAny || (needsOwnProfileCheck && (ownInstructorProfileId !== null || ownActivePilotLicense !== null));
+
   const now = new Date();
   const nowIso = now.toISOString();
   // Review 12.3 F7: the visible list's lower bound, `nowIso` minus 48h — see
   // `ALL_BOOKING_STATUSES`'s doc-comment above for the ratified rationale.
   const listFrom = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
+  // Story 15.4 (ratifica R-15.4-e): `?status` narrows the list — and with it
+  // the pagination, the export hrefs and the mobile status chips, which all
+  // read `listStatuses`/`statusFilter.param` below. No filter (the default and
+  // every unrecognized value) is `ALL_BOOKING_STATUSES`, byte for byte what
+  // the page fetched before this story.
+  const statusFilter = sanitizeBookingStatusFilter(statusParam);
+  const listStatuses: BookingStatusDto[] = statusFilter.param === null ? [...ALL_BOOKING_STATUSES] : statusFilter.statuses;
   let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
-  let bookingsResult = await listBookings(actor, { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...ALL_BOOKING_STATUSES] });
+  let bookingsResult = await listBookings(actor, { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, page, status: listStatuses });
   // Clamp an out-of-range ?page to the last real page (same pattern as `FlightsPage`).
   const lastPage = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
   if (page > lastPage) {
     page = lastPage;
-    bookingsResult = await listBookings(actor, { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, page, status: [...ALL_BOOKING_STATUSES] });
+    bookingsResult = await listBookings(actor, { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, page, status: listStatuses });
   }
   const totalPages = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
 
@@ -219,6 +254,65 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   const nowLinePercent = isToday
     ? clampToWindowPercent(wallMinutesOfDay(new Date()) - windowStartMinutes, windowEndMinutes - windowStartMinutes)
     : null;
+  /**
+   * The wall-clock time of the "now" marker (story 15.4, ratifica R-15.4-b):
+   * the phone agenda's "ORA · HH:MM" separator AND the desktop timeline's
+   * `.now-line` pill, which has been printing `content: attr(data-time)`
+   * against an attribute NOBODY wrote since story 12.3 — measured at 375px and
+   * at 1280px, `content === '""'` and a 12px empty `--accent` rectangle. Same
+   * value for both, computed once, `null` when the shown day is not today (no
+   * marker at all, on either surface).
+   */
+  const nowTime = isToday ? formatWallClock(now) : null;
+
+  /**
+   * The phone agenda's rows (story 15.4, ratifiche R-15.4-h/R-15.4-i).
+   *
+   * Built from `calendarBookings` — the SAME APPROVED-only read the desktop
+   * timeline uses (zero new queries, and no divergence from the desktop on the
+   * same data) — and NOT from `dayBlocks`: the day projection carries window
+   * percentages the agenda has no use for, and drops the `startsAt`/`endsAt`/
+   * registration it needs. The ORDER and the phase come from the pure
+   * `buildAgendaEntries` (AD-5, unit-tested); everything the client cannot
+   * derive without a clock or a timezone (`HH:MM`, `startsAfterNow`) is
+   * resolved here, server-side, exactly like `startsAtDateOnly` below.
+   */
+  const agendaRows: ScheduleAgendaRow[] =
+    view === 'day'
+      ? buildAgendaEntries(calendarBookings, aircraftOptions, now).map((entry) =>
+          entry.kind === 'aog'
+            ? {
+                kind: 'aog' as const,
+                id: `aog-${entry.aircraft.id}`,
+                aircraftId: entry.aircraft.id,
+                registration: entry.aircraft.registration,
+                timeStart: '',
+                timeEnd: '',
+                personName: null,
+                instructorProfileId: null,
+                instructorName: null,
+                notes: null,
+                statusReason: entry.aircraft.statusReason,
+                phase: null,
+                startsAfterNow: false,
+              }
+            : {
+                kind: 'booking' as const,
+                id: entry.booking.id,
+                aircraftId: entry.booking.aircraftId,
+                registration: entry.booking.aircraftRegistration,
+                timeStart: formatWallClock(entry.booking.startsAt),
+                timeEnd: formatWallClock(entry.booking.endsAt),
+                personName: entry.booking.personName,
+                instructorProfileId: entry.booking.instructorProfileId,
+                instructorName: entry.booking.instructorName,
+                notes: entry.booking.notes,
+                statusReason: null,
+                phase: entry.phase,
+                startsAfterNow: entry.startsAfterNow,
+              },
+        )
+      : [];
 
   const prevDate = view === 'day' ? addDaysDateOnly(date, -1) : addDaysDateOnly(date, -7);
   const nextDate = view === 'day' ? addDaysDateOnly(date, 1) : addDaysDateOnly(date, 7);
@@ -235,6 +329,10 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         ...(nextView !== 'day' ? { view: nextView } : {}),
         ...(nextDateValue !== today ? { date: nextDateValue } : {}),
         ...(page > 1 ? { page } : {}),
+        // Same crosstalk contract as `?page` (lesson 6.4 M1), extended to the
+        // list's new `?status` (story 15.4): moving the calendar must not
+        // silently drop the filter the list below is showing.
+        ...(statusFilter.param !== null ? { status: statusFilter.param } : {}),
       },
     };
   }
@@ -269,9 +367,12 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   // ALL statuses since the list itself shows all of them; review 12.3 F7:
   // `listFrom`, not a bare `nowIso`, so the export never diverges from what
   // the list actually shows).
-  const exportHref = buildExportHref('/api/v1/bookings', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale);
+  // Story 15.4: `listStatuses`, not the constant — with `?status` in play the
+  // rule ("l'export riflette gli STESSI filtri della lista") is only kept by
+  // exporting exactly what the list was fetched with.
+  const exportHref = buildExportHref('/api/v1/bookings', { from: listFrom, status: listStatuses.join(',') }, locale);
   // Story 13.7, AC 2 — the PDF counterpart, same filters (dedicated route, spine :105).
-  const exportPdfHref = buildPdfExportHref('/api/v1/bookings/pdf', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale);
+  const exportPdfHref = buildPdfExportHref('/api/v1/bookings/pdf', { from: listFrom, status: listStatuses.join(',') }, locale);
 
   // Story 7.3/12.3: serialize the already status-filtered, service-side rows
   // into plain wire DTOs before crossing the server -> client boundary
@@ -296,9 +397,18 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
     denyReason: booking.denyReason,
   }));
 
+  // Ratifica R-15.4-g: the 422 `BOOKING_OUTSIDE_WINDOW` used to land on the
+  // generic "Impossibile creare la prenotazione. Riprova." — the least useful
+  // message in the app, since retrying an out-of-window slot always fails.
+  // The settings that DEFINE the window are already on this page, so the
+  // message can state them; the server raises the same code for both halves
+  // of the check and carries no details, so the message names whichever half
+  // is configured.
+  const schedulingWindowSummary = buildSchedulingWindowSummary(t, schedulingSettings);
+
   const scheduleLabels: ScheduleLabels = buildScheduleLabels(t);
-  const newBookingLabels: NewBookingFormLabels = buildNewBookingFormLabels(t);
-  const editBookingLabels: EditBookingFormLabels = buildEditBookingFormLabels(t);
+  const newBookingLabels: NewBookingFormLabels = buildNewBookingFormLabels(t, schedulingWindowSummary);
+  const editBookingLabels: EditBookingFormLabels = buildEditBookingFormLabels(t, schedulingWindowSummary);
   const bookingsTableLabels: BookingsTableLabels = buildBookingsTableLabels(t);
 
   return (
@@ -321,9 +431,12 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         dayBlocks={dayBlocks}
         weekChips={weekChips}
         nowLinePercent={nowLinePercent}
+        nowTime={nowTime}
+        agendaRows={agendaRows}
         locale={dateLocale}
         nav={calendarNav}
         listPage={page}
+        listStatus={statusFilter.param}
         // `Schedule`'s hourly tick axis needs whole hours — rounded here
         // (a non-hour-aligned `sched.openTime`/`closeTime`, e.g. "06:30", is
         // a rare config; block positioning above still uses the EXACT
@@ -352,6 +465,8 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         exportHref={exportHref}
         exportPdfHref={exportPdfHref}
         canCreate={canCreate}
+        canCreateNew={canCreateNew}
+        status={statusFilter.param}
         formMode={formMode}
         personOptions={personOptions}
         instructorOptions={staffInstructorOptions}

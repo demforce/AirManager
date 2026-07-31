@@ -1493,7 +1493,22 @@
       "filtersInstructor": "Istruttore",
       "aog": "AOG",
       "available": "Disponibile",
-      "weekBookingsCount": "{count} prenotazioni"
+      "weekBookingsCount": "{count} prenotazioni",
+      "mobile": {
+        "agendaCount": "{count} movimenti",
+        "now": "ORA · {time}",
+        "aogTitle": "{registration} fuori servizio",
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "today": "OGGI",
+        "time": "Orario",
+        "reason": "Motivo",
+        "phase": {
+          "inProgress": "in corso",
+          "completed": "completato",
+          "scheduled": "in programma"
+        }
+      }
     },
     "form": {
       "title": "Nuova prenotazione",
@@ -1520,8 +1535,13 @@
         "BOOKING_IN_PAST": "L'orario di inizio deve essere nel futuro.",
         "PERSON_NOT_BOOKABLE": "Questa persona non ha un profilo attivo idoneo alla prenotazione.",
         "EXPIRED_DOCUMENTS": "Impossibile creare la prenotazione: risultano scaduti i seguenti documenti: {documents}.",
+        "BOOKING_OUTSIDE_WINDOW": "Orario fuori dalla finestra di prenotazione ({window}).",
         "overlap": "Il velivolo è già prenotato per un intervallo che si sovrappone a questo.",
         "generic": "Impossibile creare la prenotazione. Riprova."
+      },
+      "schedulingWindow": {
+        "hours": "campo aperto {open}–{close}",
+        "advance": "prenotabile fino a {days} giorni in anticipo"
       },
       "success": "Prenotazione creata.",
       "successWithWarnings": "Prenotazione creata. Attenzione: i seguenti documenti risultano scaduti (non bloccanti):",
@@ -1599,6 +1619,12 @@
         "reasonRequired": "Il motivo è obbligatorio.",
         "submit": "Invia rifiuto",
         "cancel": "Annulla"
+      },
+      "mobile": {
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "statusAll": "Tutte",
+        "denyReason": "Motivo del rifiuto"
       }
     },
     "calendar": {

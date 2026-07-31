@@ -1493,7 +1493,22 @@
       "filtersInstructor": "Instructor",
       "aog": "AOG",
       "available": "Available",
-      "weekBookingsCount": "{count} bookings"
+      "weekBookingsCount": "{count} bookings",
+      "mobile": {
+        "agendaCount": "{count} movements",
+        "now": "NOW · {time}",
+        "aogTitle": "{registration} out of service",
+        "openDetail": "Open detail",
+        "close": "Close",
+        "today": "TODAY",
+        "time": "Time",
+        "reason": "Reason",
+        "phase": {
+          "inProgress": "in progress",
+          "completed": "completed",
+          "scheduled": "scheduled"
+        }
+      }
     },
     "form": {
       "title": "New booking",
@@ -1520,8 +1535,13 @@
         "BOOKING_IN_PAST": "The start time must be in the future.",
         "PERSON_NOT_BOOKABLE": "This person has no active profile eligible for a booking.",
         "EXPIRED_DOCUMENTS": "Cannot create this booking: the following documents are expired: {documents}.",
+        "BOOKING_OUTSIDE_WINDOW": "This time falls outside the booking window ({window}).",
         "overlap": "The aircraft is already booked for an overlapping interval.",
         "generic": "Could not create the booking. Please try again."
+      },
+      "schedulingWindow": {
+        "hours": "airfield open {open}–{close}",
+        "advance": "bookable up to {days} days ahead"
       },
       "success": "Booking created.",
       "successWithWarnings": "Booking created. Warning: the following documents are expired (non-blocking):",
@@ -1599,6 +1619,12 @@
         "reasonRequired": "A reason is required.",
         "submit": "Send rejection",
         "cancel": "Cancel"
+      },
+      "mobile": {
+        "openDetail": "Open detail",
+        "close": "Close",
+        "statusAll": "All",
+        "denyReason": "Rejection reason"
       }
     },
     "calendar": {

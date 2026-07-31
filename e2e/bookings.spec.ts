@@ -845,41 +845,62 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn')).toBe(true);
   });
 
-  test('story 13.10 review F2: at 375px the week view is unreachable-day-free — `.week-grid` scrolls horizontally so the 7th day becomes reachable', async ({
-    page,
-  }) => {
+  /**
+   * Story 15.4 (ratifica R-15.4-a) REPLACES the 13.10 F2 assertion this test
+   * used to carry, and replaces it with a STRICTER one — never a weaker one
+   * (lesson 14.6).
+   *
+   * What 13.10 F2 could claim: `.week-grid` (848px of content in a 317px card)
+   * had gained a scroll container of its own, so the 7th day became reachable
+   * AFTER a horizontal wheel. That was the best available then: the grid was
+   * still a desktop layout squeezed onto a phone, and the test asserted
+   * `reachable() === false` BEFORE the scroll — i.e. it certified the defect.
+   *
+   * What this story makes true: at <=640px `.week-grid` is `display: none` and
+   * the week is a vertical list of seven day rows, so ALL SEVEN are reachable
+   * with `scrollLeft === 0` and no horizontal scroll anywhere. Deleting the
+   * mobile tree (or the `display:none` on the desktop grid) turns this red.
+   */
+  test('story 15.4 (was 13.10 F2): at 375px the week view is a vertical list — all 7 days reachable with NO horizontal scroll', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/it/dashboard/bookings?view=week');
 
-    const grid = page.locator('.week-grid');
-    const lastDay = page.getByTestId('schedule-week-day').last();
+    // The desktop grid is gone at this width, not merely scrollable.
+    await expect(page.locator('.week-grid')).toBeHidden();
+    const days = page.getByTestId('mobile-week-day');
+    await expect(days).toHaveCount(7);
 
-    // Pre-fix repro (F2): `.week-grid` had no scroll container of its own —
-    // day 7 was clipped by the ancestor `.card{overflow:hidden}`, outside
-    // both the viewport and the hit-testable area.
-    function reachable(el: HTMLElement): boolean {
-      const rect = el.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const atPoint = document.elementFromPoint(cx, cy);
-      return rect.left >= 0 && rect.right <= window.innerWidth && (atPoint === el || el.contains(atPoint));
+    // Reachability is asserted HORIZONTALLY: vertical scrolling is normal on a
+    // phone, a horizontal scroller is the defect R4 forbids. The row is brought
+    // into view with a PAGE-LEVEL vertical scroll — never `scrollIntoView`,
+    // which also scrolls the nearest horizontal container (`inline: 'nearest'`)
+    // and would silently drag a clipped `.week-grid` cell into view, making
+    // this guard blind exactly like the `.click()` auto-scroll of review 13.7
+    // F2 (measured: with the desktop grid restored by CSS injection, the
+    // `scrollIntoView` version reported all 7 reachable — the pre-fix state
+    // this test exists to reject).
+    for (let index = 0; index < 7; index += 1) {
+      const result = await days.nth(index).evaluate((el) => {
+        const absoluteTop = el.getBoundingClientRect().top + window.scrollY;
+        window.scrollTo(0, Math.max(0, absoluteTop - window.innerHeight / 2));
+        const rect = el.getBoundingClientRect();
+        const atPoint = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return {
+          insideHorizontally: rect.left >= 0 && rect.right <= window.innerWidth,
+          hit: atPoint === el || el.contains(atPoint),
+        };
+      });
+      expect(result, `day ${index + 1} of 7`).toEqual({ insideHorizontally: true, hit: true });
     }
-    expect(await lastDay.evaluate(reachable)).toBe(false);
-    expect(await grid.evaluate((el) => el.scrollLeft)).toBe(0);
 
-    // A real wheel scroll on the grid (not Playwright's own
-    // `scrollIntoViewIfNeeded`, which would mask a container that isn't
-    // actually scrollable).
-    const box = await grid.boundingBox();
-    if (!box) throw new Error('`.week-grid` not found');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.wheel(1000, 0);
-    await expect(async () => {
-      expect(await grid.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
-    }).toPass({ timeout: 2000 });
-    expect(await lastDay.evaluate(reachable)).toBe(true);
+    expect(await page.evaluate(() => document.scrollingElement!.scrollLeft)).toBe(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+    // Every row leads to that day's own DAY view (ratifica R-15.4-a): a row
+    // that kept `view=week` would navigate back to this very list.
+    const hrefs = await days.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href') ?? ''));
+    expect(hrefs.every((href) => href.startsWith('/dashboard/bookings') && !href.includes('view=week'))).toBe(true);
   });
 
   test('calendar mobile viewport (375x812, Task 4): day view is usable, no page-level horizontal overflow, primary action reachable', async ({
@@ -902,11 +923,17 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
 
-    // Story 12.3, AC 2: `calendar-aircraft-column`/`calendar-block` renamed
-    // to `schedule-aircraft-row`/`schedule-block` (day view is now rows, not columns).
-    const row = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
-    const block = row.getByTestId('schedule-block').filter({ hasText: pilot.lastName });
-    await expect(block).toBeVisible();
+    // Story 15.4 (ratifica R-15.4-a) rewrites what "usable day view" means at
+    // this width, at the SAME strength or higher. The old assertion
+    // ("`schedule-aircraft-row`/`schedule-block` are visible") certified a
+    // 1094px-wide grid inside a 317px card — 777px of hidden horizontal
+    // scroll, of which 160px was the registration column: the state R4
+    // forbids. The desktop timeline is now `display: none` here and the same
+    // booking is an agenda row instead, asserted on the same fixture.
+    await expect(page.locator('.schedule')).toBeHidden();
+    const agendaRow = page.getByTestId('mobile-agenda-row').filter({ hasText: pilot.lastName });
+    await expect(agendaRow).toHaveCount(1);
+    await expect(agendaRow).toContainText(aircraft.registration);
 
     // Pragmatic mobile-usability assert (Dev Notes): the body itself never scrolls horizontally — only the timeline's own `overflow-x-auto` wrapper does.
     const bodyFitsViewport = await page.evaluate(() => document.body.scrollWidth <= window.innerWidth);
@@ -919,7 +946,10 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // ("minimalist-ui superseded") accepts that trade-off for visual
     // parity with the prototype, so the pixel-size assertion is dropped;
     // the primary action stays reachable at this viewport regardless.
-    await expect(page.getByTestId('new-booking-button')).toBeVisible();
+    // Story 15.4 (R-15.4-f): the CTA is now full width under the head.
+    const cta = page.getByTestId('new-booking-button');
+    await expect(cta).toBeVisible();
+    expect(await cta.evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
   });
 
   test('review 7.2 fixes: an extreme ?date falls back to today without a 500 (F1); a bottom-clamped short block pins INSIDE the grid (F2)', async ({

@@ -125,5 +125,18 @@ test.describe('story 15.3 — the pending card declares its own truncation (revi
 
     await footer.click();
     await page.waitForURL(/\/dashboard\/bookings\?status=PENDING/);
+
+    // Story 15.4 (ratifica R-15.4-e): asserting the URL alone was blind by
+    // construction — the page did not read `?status` at all, so this deep link
+    // (added by the 15.3 F3 fix) landed on the UNFILTERED list and the suite
+    // could not tell. The assertion now lives on the ROWS: every card the
+    // filtered list shows must be a pending one, and the "In attesa" chip must
+    // be the selected one.
+    const listRows = page.getByTestId('booking-row-mobile');
+    await expect(listRows.first()).toBeVisible();
+    const statuses = await listRows.evaluateAll((nodes) => nodes.map((node) => node.querySelector('.badge')?.textContent?.trim() ?? ''));
+    expect(statuses.length).toBeGreaterThan(0);
+    expect([...new Set(statuses)]).toEqual(['In attesa']);
+    await expect(page.getByTestId('mobile-status-chip-PENDING')).toHaveClass(/primary/);
   });
 });
