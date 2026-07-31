@@ -4,7 +4,7 @@ baseline_commit: 51b60e1
 
 # Story 15.4: Pianificazione mobile — agenda "Voli di oggi" con chip marche e marcatore ORA, lista prenotazioni a card con filtri, form di prenotazione a tutto schermo
 
-Status: **draft — NON dispatchare al dev prima delle ratifiche PO** (sezione finale "Assunzioni da ratificare", Q1-Q9: la regola di progetto — retro Epic 9, AI-2 in `sprint-status.yaml` — vieta di spedire un'assunzione "da confermare" dentro l'implementazione)
+Status: **review** (implementata 2026-07-31 — v. il Dev Agent Record in fondo; ratifiche PO R-15.4-a..i tutte chiuse prima del dispatch)
 
 ## Story
 
@@ -417,3 +417,288 @@ vincoli: il dev le implementa così, non le ridiscute.
 | C | Tutti gli stati del giorno | l'agenda si riempie di annullate e rifiutate: rumore |
 
 **Raccomandazione: A.** Divergere dal desktop sullo **stesso dato** è la cosa che l'epic ha evitato in ogni story (è il motivo di R-15.2-d). La coda delle pending ha già la sua sede — la lista sotto, e la card della Panoramica — e il badge di fase è l'unico che aggiunge informazione a un'agenda ordinata per orario.
+
+---
+---
+
+# Dev Agent Record (dev-15-4, Opus 5 xhigh — 2026-07-31)
+
+Status: **review**. Gates verdi, spec nuovo verde (10/10), due e2e riscritti verdi,
+`booking-window` verde (4/4), `mobile-overview-overflow` verde (1/1). La suite COMPLETA
+non è stata eseguita: il DB di sviluppo è saturo per colpa di questa sessione (§9) e la
+sua ripulitura è riservata alla sessione principale.
+
+## 1. Verifica della ricognizione (conferme e correzioni, numerate)
+
+**Confermate sul codice (misurate o lette riga per riga):**
+
+1. **a.2 — la pillola ORA è vuota**: `grep -rn "data-time" src/` restituisce **una sola**
+   occorrenza (il CSS, `airops.css:567`). Misurato a runtime PRE-fix su `/dashboard/bookings`
+   **e** su `/dashboard`, a 1280/800/641px: `content === '""'`, larghezza **12px**. Confermato.
+2. **a.4 Scoperta 1 — `?status` non è letto**: `PageProps.searchParams` era
+   `{ page?, view?, date? }`. Confermato.
+3. **a.5 Scoperta 2 — `.so-actions` mancante sui due form prenotazione**: presente solo in
+   `manual-ppr-form.tsx:345` e `fleet/aircraft-editor.tsx:605`. Confermato.
+4. **a.5 Scoperta 3 — nessun ramo `BOOKING_OUTSIDE_WINDOW`** nei due form. Confermato.
+5. **a.3 — `listCalendarBookings` è APPROVED-only** (`bookings.service.ts:713`). Confermato.
+6. **TD 14.6 F2** — `createBooking` esige un profilo attivo sul percorso self
+   (`ForbiddenError`, "Only a licensed pilot or an active instructor may book"), mentre
+   `canCreate` guardava solo il permesso. Confermato.
+7. **a.6 — `.mobile-row*`/`.mobile-row-timed` sono la griglia `46px 1fr auto` del template**
+   e il `BottomSheet` garantisce **uno sheet alla volta** (token d'istanza, `mobile-sheet.tsx:55`).
+   Confermato e riusato.
+8. **§b — `bookings.spec.ts:813-846` (clamp dei due popover a 375px) resta verde SENZA
+   modifiche**: rieseguito, verde. È la prova che AD-2 (testata unica) regge.
+9. **§b — `home-dashboard.spec.ts:228` usa `booking-row` page-level**: confermato; l'albero
+   mobile usa `booking-row-mobile` (match ESATTO in `getByTestId`, nessuna collisione).
+
+**Correzioni (la ricognizione sbagliava o era incompleta):**
+
+1. **`weekDates[].href` NON porta alla vista giorno.** La ricognizione e l'AC 4 danno per
+   scontato che "il tocco su un giorno porta alla sua vista giorno"; il commento di
+   `page.tsx:249` lo afferma. In realtà `calendarHref` eredita `view` corrente
+   (`overrides.view ?? view`), quindi l'href di una cella di settimana è
+   `?view=week&date=…`: sul desktop sposta l'ancora DENTRO la settimana. Sul telefono
+   sarebbe stato un vicolo cieco (la lista dei 7 giorni ricaricava se stessa). Le righe
+   mobile usano quindi `buildDateHref(dateOnly, 'day', listPage, today, listStatus)`.
+   **Desktop invariato** (la cella `.week-day` continua a comportarsi come prima).
+2. **`updateBooking` NON ricontrolla la finestra di prenotazione.**
+   `assertWithinSchedulingWindow` è chiamata solo da `createBooking` (:538) e dal
+   `PENDING→APPROVED` di `transitionBooking` (:1121). R-15.4-g chiede il messaggio "su
+   creazione **e** modifica": il ramo è stato aggiunto a **entrambi** i form, ma sul
+   percorso di modifica **non è raggiungibile oggi** (misurato: PATCH fuori finestra → 200).
+   Non ho aggiunto il controllo server: è fuori dallo scope dichiarato della story. TD in §10.
+3. **Non esiste `GET /api/v1/bookings/{id}`** (solo PATCH): gli e2e leggono lo stato dalla
+   lista filtrata per `aircraftId`. Inoltre `listBookings` senza `?status` è **APPROVED-only**
+   (`bookings.service.ts:633`) — un dettaglio che rende cieca qualsiasi verifica di
+   DENIED/CANCELLED fatta senza passare gli stati.
+4. **`aircraftOptions` include i velivoli OUT_OF_SERVICE** (serve all'agenda AOG) — vero,
+   ma l'endpoint per metterli AOG è `POST /api/v1/aircraft/{id}/out-of-service` (`{reason}`),
+   non uno `/status`: la prima stesura delle mie misure non produceva righe AOG per questo.
+
+## 2. Riepilogo per AC
+
+| AC | Esito | Prova |
+|---|---|---|
+| 1 chip marche + conteggio | fatto | `mobile-tail-chips` (Tutti + N velivoli, `chip.count() === popover.count() + 1`), min-height 44px misurata, strip `overflow-x:auto` che scorre da sé (page overflow 0), chip↔popover sulla **stessa** `filterAircraftId` (asserito nei due versi), conteggio `mobile-agenda-count` = movimenti dopo il filtro |
+| 2 agenda del giorno | fatto | `.schedule` `display:none` misurato; 3 righe run-unique con le tre fasi **nell'ordine intero** `['completato','in corso','in programma']`; AOG in testa (indice < primo movimento); unit test sui confini |
+| 3 marcatore ORA | fatto | `toHaveCount(1)`, testo `\bORA · \d{2}:\d{2}\b`, ordine `[riga, ORA, riga]`, 0 marcatori su una data ≠ oggi; unit test dei 4 casi |
+| 4 settimana ≤640px | fatto | `.week-grid` nascosta; 7 righe tutte raggiungibili con `scrollLeft === 0` e **scroll di pagina verticale** (v. §5 per la discriminanza); href senza `view=week` |
+| 5 lista a card + sheet | fatto | card = 1 `<button>` senza figli interattivi, ≥44px; apertura **da tastiera**; rifiuto vuoto ⇒ 0 richieste di rete misurate; rifiuto con motivo ⇒ DENIED + motivo riletti **dall'API**; riapri/approva/annulla idem; `stale` chiude lo sheet |
+| 6 `?status` | fatto | chip di stato, sanificazione pura + unit test (ignoto/vuoto/lista/minuscole), filtro che attraversa paginazione, export **e** navigazione calendario; `mobile-overview-overflow` esteso alle RIGHE |
+| 7 form a tutto schermo | fatto | pannello == viewport (375×812 e 375×560), `.so-actions` sticky, submit hit-testabile con `scrollTop 0` su un viewport dove il corpo **scorre davvero** (49px di overflow), picker z 66 sopra la barra e dentro il viewport |
+| 8 CTA | fatto | full-width 281×44 sotto la testata; pilota con profilo **disattivato** ⇒ bottone **assente** (e2e multi-attore, profilo ripristinato in `finally`) |
+| 9 testid | fatto | 11 testid desktop `toHaveCount(1)` a 375 **e** 1280, su `/dashboard/bookings` **e** `/dashboard`; alberi mobile `toBeHidden()` a 1280 |
+| 10 geometria/layering | fatto | overflow di pagina 0 a 375 e 390 in giorno **e** settimana; 0 controlli su 105 intersecano la tab bar; sheet 40 < pannello 50 < picker 65/66 |
+| 11 guardie discriminanti | fatto | tabella §5 (7 regole, 6 provate rosse per iniezione, 1 provata strutturalmente) |
+| 12 invarianti | fatto | §7: unica differenza desktop = la pillola ORA ratificata; contrasti §6; gates verdi |
+
+## 3. File toccati
+
+- `src/lib/mobile-agenda.ts` (**nuovo**) + `src/lib/mobile-agenda.test.ts` (**nuovo**, 15 test)
+- `src/lib/booking-status-filter.ts` (**nuovo**) + `src/lib/booking-status-filter.test.ts` (**nuovo**, 8 test)
+- `src/app/[locale]/dashboard/bookings/page.tsx` — `?status`, `canCreateNew`, righe agenda, `nowTime`, messaggio finestra
+- `src/app/[locale]/dashboard/bookings/schedule.tsx` — albero mobile (chip, agenda, marcatore, settimana, sheet) + `data-time`
+- `src/app/[locale]/dashboard/bookings/bookings-table.tsx` — albero mobile (chip di stato, card, sheet decisionale), `canCreateNew`, `?status` negli href
+- `src/app/[locale]/dashboard/bookings/booking-labels.ts` — `buildSchedulingWindowSummary`, label mobile
+- `src/app/[locale]/dashboard/bookings/new-booking-form.tsx` / `edit-booking-form.tsx` — `.so-actions` + ramo `BOOKING_OUTSIDE_WINDOW`
+- `src/app/[locale]/dashboard/page.tsx` — prop nuove (la home monta gli stessi due componenti)
+- `src/styles/airops.css` — blocco `pianificazione mobile (story 15.4)` in coda + `.mobile-row-t2` (§6)
+- `messages/it.json` / `messages/en.json` — chiavi nuove nei DUE locale
+- `e2e/mobile-planning.spec.ts` (**nuovo**, 10 test), `e2e/bookings.spec.ts` (2 test riscritti),
+  `e2e/booking-window.spec.ts` (1 test nuovo), `e2e/mobile-overview-overflow.spec.ts` (asserzione estesa)
+
+## 4. Decisioni non ovvie
+
+1. **La tail chip NON compare nella riga d'agenda** (sta nel sub, come il template, riga 145).
+   Misurato a 375px con la chip nel titolo: il nome del pilota veniva troncato a **una
+   lettera** ("P…"), perché il titolo divide 1fr con la chip **e** il badge dopo la colonna
+   orari da 46px. Le card della LISTA (senza colonna orari) tengono la chip, com'è in 15.3.
+2. **`canCreate` non cambia significato**: è ancora "questo attore può aprire un form" e
+   monta i due pannelli. La CTA passa da `canCreateNew` (permesso **+** profilo attivo).
+   Cambiare `canCreate` avrebbe smontato l'`EditBookingForm` di un pilota disattivato,
+   togliendogli la "Modifica" sulle proprie righe: una regressione, non il TD.
+3. **La query in più per il profilo si paga solo dove serve**: `getMe` è chiamata solo per
+   `!canManageAny && canManageOwn && ownInstructorProfileId === null`.
+4. **`?status` canonicalizzato**: la funzione pura restituisce `param` (l'eco per gli href).
+   "Tutti e sei gli stati" ⇒ `param: null`, così l'URL di default resta pulito.
+5. **Le righe AOG sono bottoni** come le altre: il sheet mostra il motivo **intero**, che
+   nella riga è troncato con ellissi. Un solo modello d'interazione, nessun `cursor` finto.
+6. **`.bottom-sheet-actions` con base 50%**: `flex: 1` (15.2) non manda mai a capo (base 0 ⇒
+   gli item si comprimono), e questo sheet arriva a **quattro** decisioni. Misurato sui due
+   gemelli esistenti (coda PPR e coda pending): identici al pixel, v. §7.
+7. **`?status` non passa dalla paginazione quando si CAMBIA filtro** (i chip azzerano `?page`):
+   pagina 7 di un altro insieme non significa niente; il server la clamperebbe lasciando un
+   URL che mente.
+
+## 5. Regola nuova → guardia → prova di DISCRIMINANZA
+
+Simulazioni fatte sul repo **intatto** (iniezione CSS/DOM sulla build di produzione).
+
+| # | Regola (difetto misurato) | Guardia | Verde ora | Simulando il pre-fix |
+|---|---|---|---|---|
+| i | `.schedule`/`.students` `display:none` ≤640px (erano 1094px e 938px di scroll orizzontale in 317px) | `mobile-planning`: `.schedule`/`.students` `toBeHidden()` + albero mobile visibile | ✅ | `.schedule-desktop-body{display:block}` → **rosso** |
+| ii | alberi mobile `display:none` >640px | a 1280px `mobile-agenda`/`mobile-bookings-list` `toBeHidden()` | ✅ | `.schedule-mobile{display:block}` → **rosso** |
+| iii | settimana = lista verticale (erano 848px, 7° giorno irraggiungibile) | `bookings.spec` riscritto: **tutti e 7** raggiungibili, `scrollLeft === 0` | ✅ | `.week-grid{display:grid}` + mobile `none` → **rosso** |
+| iv | `.so-actions` sui due form (l'azione primaria non era fissa) | submit hit-testabile con `scrollTop === 0` su viewport 375×560 dove il corpo **scorre** | ✅ | `.so-actions{position:static}` → **rosso** |
+| v | marcatore ORA solo oggi e solo se c'è un movimento futuro | 1 marcatore oggi, **0** su data ≠ oggi, ordine `[riga, ORA, riga]` | ✅ | nodo `mobile-agenda-now` iniettato sulla pagina di domani → **rosso** |
+| vi | empty state = UN nodo | `toHaveCount(1)` su `mobile-agenda-empty` | ✅ | secondo nodo iniettato → **rosso** |
+| vii | il selettore della CTA non raggiunge il piede del `SlideOver` (lezione 15.3 F1) | i bottoni del pannello misurano 164px contro i 281px della CTA full-width; `.bookings-head [data-testid=new-booking-form]` non esiste (il form **non** è discendente della testata) | ✅ | strutturale: nessun selettore di questa story può raggiungerlo, i pannelli sono montati in fondo alla card |
+
+⚠️ **La guardia (iii) era CIECA nella prima stesura** e l'ho scoperta con questa procedura:
+usava `el.scrollIntoView({block:'center'})`, che scrolla anche il contenitore orizzontale
+più vicino (`inline: 'nearest'`) e trascinava dentro la cella clippata della `.week-grid`
+— **misurato: 7/7 "raggiungibili" anche col pre-fix**. Sostituita con uno scroll di pagina
+verticale esplicito (`window.scrollTo`), che lascia intatto lo scroll orizzontale. È la
+stessa classe della trappola `.click()`→`scrollIntoViewIfNeeded` di review 13.7 F2.
+
+## 6. Contrasto misurato (canvas → WCAG), tema chiaro **e** scuro
+
+Superfici nuove, `--panel` come sfondo. Testo ≥4.5:1, oggetti grafici ≥3:1.
+
+| elemento | chiaro | scuro |
+|---|---|---|
+| titolo riga (`.mobile-row-name`) | 18.79 | 15.74 |
+| orario inizio (`.mobile-row-t1`) | 18.79 | 15.74 |
+| **orario fine (`.mobile-row-t2`)** | **4.85** (era 3.66) | **5.72** (era 4.14) |
+| sub riga (`.mobile-row-sub`) | 4.85 | 5.72 |
+| chip marche attiva / inattiva | 17.99 / 18.79 | 17.00 / 15.74 |
+| chip marche di riga (`.mobile-row-tail`) | 17.01 | 17.67 |
+| etichetta ORA su `--accent-soft` | 11.13 | 9.74 |
+| **pallino ORA** su `--accent-soft` | **11.13** (era **1.76**) | **9.74** (era 7.23) |
+| bordi di riga (ok / accent / info / bad) | 6.74 / 5.04 / 4.01 / 6.26 (erano 2.73 / 2.04 / 3.61 / 3.96) | 8.79-11.53 |
+| badge di fase (completato/in corso/in programma) + AOG | 8.38-11.32 | 7.46-9.57 |
+
+Tre correzioni di colore, **senza token nuovi né literal nuovi**:
+- **pallino ORA** `--accent` → `--accent-ink`: ambra su ambra misurava **1.76:1** in chiaro
+  (la classe di difetto del gemello `.list-icon.green` trovata dalla review 15.3);
+- **bordi di riga** `var(--X)` → `color-mix(in oklch, var(--X) 70%, var(--ink))`: due dei
+  quattro erano sotto 3:1 in chiaro. Il mix con `--ink` migliora **entrambi** i temi;
+- **`.mobile-row-t2`** `--ink-4` → `--ink-3`: `--ink-4` è calibrato (13.9) su una soglia di
+  **3:1** — giusta per un'intestazione di tabella, non per del TESTO. ⚠️ **Deviazione
+  dichiarata**: la classe è condivisa con la lista "La mia giornata" della 15.3 (unico altro
+  consumer), che ne beneficia con lo stesso numero; è un cambio di **solo colore**, nessuna
+  geometria (verificato: nessuna differenza nelle misure pre/post di §7).
+- **Non conforme e dichiarato**: `--accent-soft` della striscia ORA contro `--panel` misura
+  **1.16 / 1.38**. È uno sfondo, non un oggetto grafico portatore d'informazione (il pallino
+  e il testo sopra lo sono, e stanno a 9.74-11.13): non rientra in 1.4.11.
+
+## 7. Misura pre/post delle DUE deviazioni ratificate
+
+Metodo: build PRE (stash) e build POST misurate sugli **stessi dati** (nessun seed fra le due
+— il primo confronto era contaminato dal volume creato dalle mie stesse misure, e l'ho
+rifatto). 1280/800/641px × `/dashboard/bookings`, `?view=week`, `/dashboard`.
+
+**Risultato: 18 differenze in totale, TUTTE la pillola ORA.**
+
+| misura | PRE | POST |
+|---|---|---|
+| `.now-line::before` `content` | `""` | `"10:36"` |
+| `.now-line` `data-time` | assente | `10:36` |
+| larghezza pillola | **12px** | **41.66px** |
+
+Invariati al pixel (0 differenze): `.page`, `.page-head`, le due `.card` e le due `.card-head`,
+`.schedule`, `.week-grid`, `.students`, il rail (64px a 641px), il pannello `SlideOver` aperto
+(x 760, w 520, h 900), la sua riga d'azione (y 394, h 35, `position: static`), le larghezze dei
+suoi bottoni (68 / 90) e il `padding-bottom` di `.so-body` (18px) — su **entrambe** le pagine.
+
+**Seconda deviazione (R-15.4-g), il testo del 422** — cambia su desktop e mobile:
+- PRE: «Impossibile creare la prenotazione. Riprova.»
+- POST: «Orario fuori dalla finestra di prenotazione (campo aperto 14:00–18:00, prenotabile
+  fino a 3650 giorni in anticipo).» (valori dalle impostazioni reali della pagina)
+
+**Terzo gemello misurato (non richiesto, ma è dove la 15.3 si è fatta male)** — i due sheet
+esistenti, a 375px, con la nuova base flex: coda pending e coda PPR, bottoni
+`[{w:166.5,h:44,top:689,left:17},{w:166.5,h:44,top:689,left:192}]` **identici** con e senza
+la dichiarazione nuova (simulazione `flex-basis:0` iniettata a runtime).
+
+## 8. Blast radius, voce per voce
+
+1. `bookings.spec.ts` — **813-846 verde senza modifiche** (prova di AD-2). **848-883** e
+   **885-923** riscritti al valore nuovo (verdi), con il commento sul perché il vecchio non è
+   più corretto. Gli altri test del file: v. §9.
+2. `home-dashboard.spec.ts:228` — `booking-row` page-level: nessuna collisione
+   (`getByTestId` è match esatto; il mobile usa `booking-row-mobile`). Asserito anche
+   nel test AC 9 (`/dashboard`: `mobile-bookings-list` **hidden**, testid desktop = 1 nodo).
+3. `mobile-shell.spec.ts:145-172` — la pagina non aggiunge né normalizza query param quando
+   `?status` è assente (`param: null` ⇒ nessuna chiave): contratto URL invariato.
+4. `shell-misc.spec.ts:53-58` — idem.
+5. `pdf-exports.spec.ts:374-380` — `bookings-list-section`/`booking-row` intatti; l'href di
+   export ora rispecchia `?status` (assente ⇒ stringa identica a prima).
+6. `datetime-picker.spec.ts` — misurato a 375×560 con la barra sticky: popover z 66 dentro il
+   viewport, bottone di conferma hit-testabile (scorrendo il **suo** scrollbox, metodo 13.7 F2).
+7. `mobile-overview-overflow.spec.ts` — esteso alle righe: verde (1/1).
+8. `booking-window.spec.ts` — test nuovo dentro il project serializzato: verde (4/4).
+9. `movements/login/flights/user-management/...` — nessun errore SSR/hydration: la home
+   renderizza (misurata a 375/641/800/1280) e i suoi testid restano unici.
+
+**Fasce non coperte da test, verificate a mano**: 641px e 800px (nessuna regola nuova si
+attiva, rail 64px invariato, misure in §7); tema scuro (§6); Panoramica a tutte le larghezze
+(§7); flusso force 7.4 — il bottone "Forza prenotazione" resta nella sezione ambra che
+**scorre** (nessuna seconda barra sticky, AD-6), raggiungibile scorrendo il corpo.
+
+## 9. Esito ONESTO della suite
+
+Eseguito con `scripts/e2e.sh start` + `status` (mai in foreground), su build di produzione
+riusata (`E2E_REUSE_SERVER=1`), `JOBS_SECRET` esportato.
+
+| run | esito |
+|---|---|
+| `e2e/mobile-planning.spec.ts` (nuovo) | **E2E_EXIT=0 — 10/10 verdi** |
+| `e2e/booking-window.spec.ts --project=booking-window` | **E2E_EXIT=0 — 4/4 verdi** |
+| `e2e/mobile-overview-overflow.spec.ts --project=mobile-overview-overflow` | **E2E_EXIT=0 — 1/1 verde** |
+| `e2e/bookings.spec.ts` (intero) | **E2E_EXIT=1 — 24 verdi, 10 rossi** |
+| `npm run gates` | **verde** (lint, typecheck, 1654 test unit, build) |
+
+**I 10 rossi di `bookings.spec.ts`: diagnosi provata, nessuno attribuibile a questa story.**
+
+- **7 test** falliscono su `getByTestId('booking-row').filter({hasText: <targa>})` dopo una
+  creazione riuscita. Causa **misurata**: la lista è `startsAt asc` su 20 righe per pagina e
+  il DB di sviluppo contiene ora **150 prenotazioni tutte dentro la finestra di 48h** →
+  **8 pagine**. Prova diretta: creata una prenotazione a `now+10min` (lo slot che
+  `soonestFutureSlot()` sceglie proprio per stare in cima) e cercata pagina per pagina →
+  **trovata a pagina 2 di 8**. È esattamente la fragilità che il commento di
+  `soonestFutureSlot` documenta ("this session's own repeated re-runs alone scattered enough
+  near-term bookings to blow past `BOOKINGS_PAGE_SIZE`"). **Il volume l'ho creato io**, con
+  gli script di misura e le riesecuzioni del ciclo dev.
+- **3 test** (`timeline 7.2 AC 1` e simili) falliscono con **422 `BOOKING_OUTSIDE_WINDOW`**
+  su una data 2040-2048 scelta da `runUniqueFutureDay()`. Causa **misurata**: il
+  `PERMISSIVE_SCHEDULING` di `booking-window.spec.ts` lascia `maxAdvanceDays: 3650`
+  (~10 anni) e quelle date stanno a 4900-8000 giorni. Prova diretta: `POST` per il
+  2043-05-05 → `422 {"code":"BOOKING_OUTSIDE_WINDOW","message":"Booking cannot be made more
+  than 3650 day(s) in advance."}`. È un'interazione cross-spec **pre-esistente**, che ho
+  scoperto solo perché ho eseguito `booking-window` **prima** di `bookings.spec` (con
+  `--no-deps`); nell'ordine reale della suite `chromium` gira prima, e su un DB fresco
+  `maxAdvanceDays` è `null`.
+
+⚠️ **Serve un reset del DB prima del gate finale** (150 prenotazioni, 131 velivoli, 8 pagine
+di lista): non l'ho fatto io — è riservato alla sessione principale. Con DB fresco la suite
+completa `CI=1` va rieseguita dall'arbitro (prassi 13.9/13.11/15.2/15.3).
+
+## 10. Debito tecnico da tracciare
+
+1. **`updateBooking` non ricontrolla la finestra di prenotazione** (`assertWithinSchedulingWindow`
+   gira su create e su approve). Il ramo client c'è su entrambi i form (R-15.4-g), ma sul
+   percorso "Sposta" non è raggiungibile: spostare fuori finestra risponde 200. Decisione PO.
+2. **`runUniqueFutureDay()` (2040-2048) contro `maxAdvanceDays: 3650`**: 3 test di
+   `bookings.spec.ts` sono rossi per costruzione appena `booking-window.spec.ts` ha girato
+   una volta sullo stesso DB. Va deciso se il permissivo debba essere `maxAdvanceDays: null`.
+3. **`reports.spec.ts:307-315`** (PUT scheduling globale dal project parallelo): TD aperto,
+   subìto e non chiuso qui.
+4. **Volume del DB di sviluppo**: le liste paginate rendono fragile ogni asserzione "riga in
+   pagina 1". `findMobileCard`/`findBookingRow` sono il rimedio locale; il rimedio vero è il
+   reset periodico.
+5. **`.mobile-row-t2`**: se in futuro si vuole tornare a `--ink-4` sulle liste mobile, va
+   fatto con un token nuovo per il testo quieto ≥4.5:1, non ripristinando 3.66:1.
+
+## 11. Cosa NON ho fatto (dichiarato)
+
+- **Non ho eseguito la suite completa `CI=1` su DB fresco**: il DB è saturo per colpa mia e
+  il reset non è mio (§9). Ho eseguito per intero i file toccati e quelli nel percorso diretto.
+- **Non ho aggiunto il controllo di finestra a `updateBooking`** (fuori scope, §10.1).
+- **Non ho toccato il desktop** oltre alle due deviazioni ratificate (§7): in particolare la
+  cella `.week-day` continua a restare in vista settimana (correzione 1 di §1).
+- **Non ho generalizzato `.ppr-card*`** né toccato le primitive 15.2 oltre alla base flex
+  della riga d'azione dello sheet (misurata identica sui due gemelli).
+- **Non ho aggiunto focus trap / `aria-modal`** (15.10), né toccato l'export mobile (15.8).
+- **Non ho committato** gli script di misura throwaway (vivono nello scratchpad di sessione).

@@ -336,7 +336,7 @@ development_status:
   # Arbitri, tutti su DB fresco ed exit 0: 320/320 sul commit di codice, 325 + 1 flaky
   # pre-esistente sul commit di fix, **326/326 zero flaky** sullo stato committato.
   15-3-panoramica-mobile: done
-  15-4-pianificazione-mobile: backlog
+  15-4-pianificazione-mobile: review
   15-5-anagrafiche-card-mobile: backlog
   15-6-registro-voli-mobile: backlog
   15-7-scadenze-transiti-mobile: backlog
