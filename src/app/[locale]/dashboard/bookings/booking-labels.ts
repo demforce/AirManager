@@ -172,6 +172,7 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
   return {
     cardTitle: t('list.cardTitle'),
     pendingSummary: t.raw('list.pendingSummary') as string,
+    filteredSummary: t.raw('list.filteredSummary') as string,
     newButton: t('list.newButton'),
     occupied: t('occupied'),
     exportLabel: t('list.exportLabel'),

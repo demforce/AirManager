@@ -796,6 +796,18 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * `createBooking`'s own rules, Contesto: staff can correct an in-progress
  * booking, e.g. shorten it).
  *
+ * **Re-checks the scheduling window (story 15.4 review, PO decision
+ * 2026-08-03)**: the resulting interval must satisfy
+ * `assertWithinSchedulingWindow` — 422 `BOOKING_OUTSIDE_WINDOW` — exactly like
+ * a create, staff INCLUDED (the deliberate staff exemptions above are about
+ * TIME having passed, not about the airfield being open). Until this story the
+ * window ran on create and on `PENDING -> APPROVED` only, so a booking could be
+ * MOVED to 03:00 against a 14:00-18:00 window and answer 200 (measured), and
+ * the "Sposta" panel's own `BOOKING_OUTSIDE_WINDOW` branch (ratifica R-15.4-g)
+ * was unreachable code. Checked on the MERGED interval, like every other rule
+ * here, so a notes-only PATCH of a booking already outside the CURRENT window
+ * is refused too — the same answer the create path gives for that interval.
+ *
  * **Re-evaluates expiries on a DAY change only (story 7.4 loophole closed by
  * TD-5, AC 5)**: moving this booking to a DIFFERENT flight day reruns the
  * SAME expiry-based block `createBooking` runs at creation
@@ -883,6 +895,13 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
       );
     }
   }
+
+  // Story 15.4 review (PO decision, 2026-08-03): the scheduling window is
+  // re-checked HERE too — see this function's own doc-comment. Same position
+  // in the sequence as `createBooking`'s (after the expiry block, outside the
+  // transaction), so the two paths report the same code first on the same
+  // input, and on the MERGED interval like every other rule above.
+  await assertWithinSchedulingWindow(nextStartsAt, nextEndsAt);
 
   const updated = await prisma.$transaction(async (tx) => {
     // ALL Aircraft ids first, ONE query, ORDER BY id FOR UPDATE — same

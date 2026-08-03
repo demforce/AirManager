@@ -33,11 +33,21 @@ const ALL_STATUSES: BookingStatusValue[] = [...BOOKING_STATUS_VALUES];
  * whatever it does not recognize. The result is de-duplicated and re-ordered
  * canonically (`BOOKING_STATUS_VALUES`' own order) so the same filter always
  * produces the same href, whatever the user typed.
+ *
+ * **A REPEATED param is an ARRAY** (review 15.4 F2): in the App Router
+ * `searchParams` hands `?status=PENDING&status=APPROVED` over as
+ * `['PENDING','APPROVED']`, and `raw.split` threw on it — the page answered
+ * **500**, breaking this module's own "never errors" contract on the very
+ * channel this story added (`?view`/`?date` survive it: `includes`/`RegExp.test`
+ * tolerate an array). Joining is the whole fix: the comma is ALREADY a valid
+ * separator here, so `?status=A&status=B` and `?status=A,B` mean the same
+ * filter and echo back the same canonical `param`.
  */
-export function sanitizeBookingStatusFilter(raw: string | undefined): BookingStatusFilter {
-  if (!raw) return { statuses: ALL_STATUSES, param: null };
+export function sanitizeBookingStatusFilter(raw: string | string[] | undefined): BookingStatusFilter {
+  const value = Array.isArray(raw) ? raw.join(',') : raw;
+  if (!value) return { statuses: ALL_STATUSES, param: null };
 
-  const requested = new Set(raw.split(',').map((value) => value.trim().toUpperCase()));
+  const requested = new Set(value.split(',').map((entry) => entry.trim().toUpperCase()));
   const statuses = BOOKING_STATUS_VALUES.filter((status) => requested.has(status));
 
   if (statuses.length === 0 || statuses.length === BOOKING_STATUS_VALUES.length) {

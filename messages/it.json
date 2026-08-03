@@ -1558,6 +1558,7 @@
     "list": {
       "cardTitle": "Prenotazioni",
       "pendingSummary": "{pending} in attesa · {total} totali",
+      "filteredSummary": "{total} totali",
       "newButton": "Nuova prenotazione",
       "exportLabel": "Esporta",
       "exportXls": "Esporta XLS",

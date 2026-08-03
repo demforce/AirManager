@@ -6,7 +6,7 @@ import { addDaysDateOnly, dateOnlyInZone, zonedMidnightUtc } from '@/lib/zoned-t
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { getSchedulingSettings } from './app-settings.service';
-import { listAircraft } from './aircraft.service';
+import { listAircraft, type AircraftListItem } from './aircraft.service';
 import { ValidationError } from './errors';
 import { getCompensationSummary } from './instructor-compensation.service';
 import { getLedgerRevenueCents } from './transactions.service';
@@ -112,6 +112,33 @@ function flightDateWindow(range: DateRange): { gte: Date; lte: Date } {
   return { gte: parseDateOnlyUtc(range.from), lte: parseDateOnlyUtc(range.to) };
 }
 
+/** How many aircraft `listAllActiveAircraft` asks for per round-trip — a page size, no longer a CAP on what `fleet` can contain. */
+const AIRCRAFT_PAGE_SIZE = 100;
+
+/**
+ * EVERY non-archived aircraft, `registration asc` (review 15.4 F3).
+ *
+ * This used to be a single `listAircraft(page: 1, pageSize: 100)`, i.e. a
+ * silent cap: on a fleet of 116 the 16 aircraft with the highest registrations
+ * simply were not in `fleet`, and their flown minutes/revenue vanished from the
+ * report (measured — an e2e fixture ranked 109th and disappeared). `fleet` is
+ * an aggregate OVER THE WHOLE FLEET, so a page of it is a wrong answer, not a
+ * partial one.
+ *
+ * Paging (rather than a new unpaginated read) keeps `listAircraft` the single
+ * gate/ordering/filtering authority for aircraft, exactly as before; the loop
+ * terminates on `total` and, defensively, on an empty page — a concurrent
+ * insert can only make `total` grow, never make a page come back empty.
+ */
+async function listAllActiveAircraft(actor: Actor): Promise<AircraftListItem[]> {
+  const items: AircraftListItem[] = [];
+  for (let page = 1; ; page += 1) {
+    const result = await listAircraft(actor, { page, pageSize: AIRCRAFT_PAGE_SIZE, includeArchived: false });
+    items.push(...result.items);
+    if (result.items.length === 0 || items.length >= result.total) return items;
+  }
+}
+
 export async function getStats(actor: Actor, query: StatsQuery, now: Date = new Date()): Promise<StatsResponseDto> {
   authorize(actor, 'finance.manage');
 
@@ -139,7 +166,7 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     personGroups,
     instructorGroups,
     kpiTransitCount,
-    aircraftResult,
+    aircraftRows,
     compensation,
     schedulingSettings,
   ] = await Promise.all([
@@ -157,7 +184,7 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     prisma.flight.groupBy({ by: ['personId'], where: kpiFlightWhere, _sum: { minutes: true, aircraftAmountCents: true, instructorAmountCents: true } }),
     prisma.flight.groupBy({ by: ['instructorProfileId'], where: { ...kpiFlightWhere, flightType: 'SCHOOL' }, _sum: { minutes: true } }),
     prisma.pprRequest.count({ where: { status: 'COMPLETED', eta: etaWindow(kpiRange) } }),
-    listAircraft(actor, { page: 1, pageSize: 100, includeArchived: false }),
+    listAllActiveAircraft(actor),
     isCurrentPeriod ? getCompensationSummary(actor) : Promise.resolve(null),
     getSchedulingSettings(),
   ]);
@@ -202,7 +229,7 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
 
   // --- fleet (ratifica utente 2: OPERATIONAL, non-archived aircraft only, `listAircraft` already orders by registration asc) ---
   const fleetTotalsByAircraftId = new Map(aircraftGroups.map((group) => [group.aircraftId, { minutes: group._sum.minutes ?? 0, revenueCents: group._sum.aircraftAmountCents ?? 0 }]));
-  const fleet = aircraftResult.items
+  const fleet = aircraftRows
     .filter((aircraft) => aircraft.status === 'OPERATIONAL')
     .map((aircraft) => {
       const totals = fleetTotalsByAircraftId.get(aircraft.id);

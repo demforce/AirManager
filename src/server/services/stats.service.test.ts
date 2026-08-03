@@ -244,6 +244,32 @@ describe('getStats (story 12.10, AC 1)', () => {
     expect(result.fleet).toEqual([{ registration: 'I-AERO', minutes: 240, revenueCents: 50000 }]);
   });
 
+  /**
+   * Review 15.4 F3. `fleet` used to be a single `listAircraft({ page: 1,
+   * pageSize: 100 })` — a silent CAP, not a page: on a 116-aircraft fleet the
+   * 16 highest registrations were missing from the report altogether (measured
+   * end-to-end: an e2e fixture ranked 109th vanished from `fleet`).
+   *
+   * The mock below PAGINATES exactly like the real service, which is what makes
+   * this test discriminating: against the pre-fix single read it returns 100
+   * rows and fails on the very first expectation.
+   */
+  it('fleet covers EVERY active aircraft, past the 100-row page of listAircraft (review 15.4 F3)', async () => {
+    const all = Array.from({ length: 150 }, (_, i) => ({ id: `ac_${i}`, registration: `I-Z${String(i).padStart(3, '0')}`, status: 'OPERATIONAL' }));
+    listAircraftMock.mockImplementation((async (_actor: unknown, query: { page: number; pageSize: number }) => {
+      const start = (query.page - 1) * query.pageSize;
+      return { items: all.slice(start, start + query.pageSize), total: all.length, page: query.page, pageSize: query.pageSize };
+    }) as never);
+
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
+
+    expect(result.fleet).toHaveLength(150);
+    expect(result.fleet[149]).toEqual({ registration: 'I-Z149', minutes: 0, revenueCents: 0 });
+    // Two round-trips for 150 rows, and it STOPS there (a loop that kept asking
+    // would hang the report instead of capping it).
+    expect(listAircraftMock).toHaveBeenCalledTimes(2);
+  });
+
   // --- fleetUtilization (story 12.11, AC 6 — closes ratifica utente 2 from 12.10) ---
 
   it('fleetUtilization is null when sched.openTime/closeTime are not configured (default)', async () => {

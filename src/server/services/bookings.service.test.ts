@@ -1075,6 +1075,44 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
     expect(result.id).toBe('booking_1');
   });
 
+  // --- Scheduling window on the MOVE path (story 15.4 review, PO decision
+  // 2026-08-03) — `assertWithinSchedulingWindow` used to run on create and on
+  // `PENDING -> APPROVED` only, so a PATCH could park a booking outside the
+  // airfield's opening hours and answer 200 (measured end-to-end), which also
+  // made the "Sposta" panel's own `BOOKING_OUTSIDE_WINDOW` branch unreachable.
+  // FUTURE_STARTS_AT/FUTURE_ENDS_AT are 12:00-13:00 Europe/Rome (CEST).
+
+  it('moving a booking OUTSIDE the configured window answers 422 BOOKING_OUTSIDE_WINDOW — for STAFF too, before the transaction opens', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: '14:00', closeTime: '18:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+
+    const error = await updateBooking(adminActor(), 'booking_1', { startsAt: FUTURE_STARTS_AT, endsAt: FUTURE_ENDS_AT }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_OUTSIDE_WINDOW');
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('moving a booking INSIDE the configured window still succeeds (the check reads the RESULTING interval)', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: '07:00', closeTime: '21:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
+
+    const result = await updateBooking(adminActor(), 'booking_1', { startsAt: FUTURE_STARTS_AT, endsAt: FUTURE_ENDS_AT });
+
+    expect(result.id).toBe('booking_1');
+  });
+
+  it('moving a booking beyond maxAdvanceDays answers 422 BOOKING_OUTSIDE_WINDOW as well', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+    vi.mocked(getSchedulingSettings).mockResolvedValue({ openTime: null, closeTime: null, minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: 1 });
+
+    // 2099-06-01 is always more than 1 day ahead, whenever this suite runs.
+    const error = await updateBooking(adminActor(), 'booking_1', { startsAt: FUTURE_STARTS_AT, endsAt: FUTURE_ENDS_AT }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as InstanceType<typeof ValidationError>).code).toBe('BOOKING_OUTSIDE_WINDOW');
+  });
+
   it('an own-path actor with no linked personId (and no instructorProfileId on the booking) gets 403', async () => {
     bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
 

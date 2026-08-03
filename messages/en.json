@@ -1558,6 +1558,7 @@
     "list": {
       "cardTitle": "Bookings",
       "pendingSummary": "{pending} pending · {total} total",
+      "filteredSummary": "{total} total",
       "newButton": "New booking",
       "exportLabel": "Export",
       "exportXls": "Export XLS",

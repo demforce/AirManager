@@ -78,6 +78,38 @@ async function createAircraft(page: Page, tag: string): Promise<{ id: string; re
   return { id: ((await response.json()) as { id: string }).id, registration };
 }
 
+/** The password this file gives the login users it creates (the seed actors keep `SEED_ADMIN_PASSWORD`). */
+const OWN_PILOT_PASSWORD = 'Aviosuperficie15.4!';
+
+function uniqueEmail(prefix: string): string {
+  return `${prefix}-${uniqueSuffix().toLowerCase()}@airmanager.local`;
+}
+
+type MailpitMessageSummary = { ID: string; Subject: string };
+type MailpitFullMessage = { Text: string };
+
+/** Same Mailpit-polling helper as the other e2e specs (file-local by convention here). */
+async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const searchResponse = await fetch(`http://localhost:8025/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`);
+    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
+    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
+    if (found) {
+      const messageResponse = await fetch(`http://localhost:8025/api/v1/message/${found.ID}`);
+      return (await messageResponse.json()) as MailpitFullMessage;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
+}
+
+function extractSetPasswordUrl(emailText: string): URL {
+  const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(emailText);
+  if (!match) throw new Error(`Email body did not contain a /set-password link:\n${emailText}`);
+  return new URL(match[1]!);
+}
+
 async function createPilot(page: Page, tag: string): Promise<{ id: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const lastName = `Plan${tag}${suffix}`;
@@ -92,16 +124,58 @@ async function createPilot(page: Page, tag: string): Promise<{ id: string; lastN
 }
 
 /**
- * A slot TODAY at `HH:MM` Rome, expressed in UTC with a fixed 2h shift so it
- * stays inside the 07:00-21:00 window another spec may have left behind
- * (`reports.spec.ts`'s un-restored PUT, TD in sprint-status). Never anchored to
- * `Date.now()` alone: a suite running at night would create bookings outside
- * every window and take 422s (measured on story 15.3).
+ * A pilot of this test's OWN, with a login (invite flow through Mailpit, the
+ * same one every other spec uses).
+ *
+ * Review 15.4 F4: the CTA case used to DEACTIVATE the seed pilot's profile from
+ * this `fullyParallel` project, while `bookings.spec.ts` clicks
+ * `new-booking-button` as that very pilot in four places — and story 15.4 made
+ * that button VANISH while the profile is inactive (it used to stay and answer
+ * 403 on submit). Any worker entering that window got a click timeout on a spec
+ * this story does not touch. A private actor removes the shared state entirely.
  */
-function todaySlotUtc(hourUtc: number, minutes = 0): { startsAt: string; endsAt: string } {
-  const today = new Date().toISOString().slice(0, 10);
-  const start = new Date(`${today}T${String(hourUtc).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00.000Z`);
-  return { startsAt: start.toISOString(), endsAt: new Date(start.getTime() + 60 * 60_000).toISOString() };
+async function createPilotWithLogin(page: Page, tag: string): Promise<{ personId: string; email: string; lastName: string }> {
+  const pilot = await createPilot(page, tag);
+  const email = uniqueEmail('plan-pilot');
+  const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: pilot.id } });
+  expect(userResponse.status(), await userResponse.text()).toBe(201);
+
+  const invite = await waitForMailpitMessage(email, 'invitato');
+  const url = extractSetPasswordUrl(invite.Text);
+  await page.goto(url.pathname + url.search);
+  await page.getByLabel('Nuova password').fill(OWN_PILOT_PASSWORD);
+  await page.getByLabel('Conferma password').fill(OWN_PILOT_PASSWORD);
+  await page.getByRole('button', { name: 'Imposta password' }).click();
+  await expect(page.getByTestId('set-password-success')).toBeVisible();
+
+  return { personId: pilot.id, email, lastName: pilot.lastName };
+}
+
+/**
+ * An interval expressed as MINUTES from now — the only anchor a fixture that
+ * has to be "today" may use.
+ *
+ * Review 15.4 F1: the first version of this file created its today-fixtures at
+ * a FIXED UTC hour of the current day (`todaySlotUtc(10)`), which is in the
+ * PAST for every run started after that hour — `createBooking` answers 422
+ * `BOOKING_IN_PAST` for everybody, staff included, and two tests were red from
+ * 12:00 Rome onwards (four across the day).
+ *
+ * Offsets stay inside ±20 minutes, which is what makes the fixtures hour-proof:
+ * a movement that must be "today" cannot be more than a day-boundary away from
+ * now, so the only unusable band left is 23:40-00:20 Rome (a "completed today"
+ * movement does not exist at 00:05, whatever the fixture does), and the whole
+ * set still fits inside a 07:00-21:00 opening window if another spec left one
+ * configured. The margins are minutes, not seconds: the in-progress fixture
+ * straddles now by ±8 minutes, so a slow page load can never turn it into a
+ * completed one.
+ */
+function slotAroundNow(startOffsetMinutes: number, endOffsetMinutes: number): { startsAt: string; endsAt: string } {
+  const now = Date.now();
+  return {
+    startsAt: new Date(now + startOffsetMinutes * 60_000).toISOString(),
+    endsAt: new Date(now + endOffsetMinutes * 60_000).toISOString(),
+  };
 }
 
 async function createBooking(page: Page, aircraftId: string, personId: string, slot: { startsAt: string; endsAt: string }): Promise<string> {
@@ -121,6 +195,37 @@ async function moveBooking(page: Page, id: string, startsAtMs: number, endsAtMs:
     data: { startsAt: new Date(startsAtMs).toISOString(), endsAt: new Date(endsAtMs).toISOString() },
   });
   expect(response.status(), await response.text()).toBe(200);
+}
+
+/**
+ * A fixture that must sit in the PAST (or straddle now): created on a FUTURE,
+ * in-window slot and then moved onto the wanted instants with the staff-only
+ * PATCH exemption above.
+ *
+ * The staging slot is tomorrow at `stagingHourUtc` — 08:00-10:00Z is
+ * 09:00-12:00 Rome in either DST regime, i.e. inside the 07:00-21:00 window
+ * another spec may have left globally configured (`reports.spec.ts`'s
+ * un-restored PUT, TD in sprint-status) — and one whole hour per fixture keeps
+ * the bookings of the SAME aircraft from overlapping each other while they wait
+ * there. `stagingHourUtc` is a parking spot, nothing in any assertion depends
+ * on it.
+ */
+async function createStagedBooking(
+  page: Page,
+  aircraftId: string,
+  personId: string,
+  stagingHourUtc: number,
+  startsAtMs: number,
+  endsAtMs: number,
+): Promise<string> {
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const hour = String(stagingHourUtc).padStart(2, '0');
+  const id = await createBooking(page, aircraftId, personId, {
+    startsAt: `${tomorrow}T${hour}:00:00.000Z`,
+    endsAt: `${tomorrow}T${hour}:45:00.000Z`,
+  });
+  await moveBooking(page, id, startsAtMs, endsAtMs);
+  return id;
 }
 
 /**
@@ -174,14 +279,14 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     const pilot = await createPilot(page, 'AG');
 
     // Three movements on the SAME day: one already over, one straddling now,
-    // one still ahead — the three phases `dayPhaseOf` distinguishes.
+    // one still ahead — the three phases `dayPhaseOf` distinguishes. All three
+    // within ±45 minutes of now (review 15.4 F1: the fixture must be TODAY at
+    // whatever hour the suite happens to start), staged on distinct hours of
+    // tomorrow so they never overlap each other on the way in.
     const now = Date.now();
-    const seed = await createBooking(page, aircraft.id, pilot.id, todaySlotUtc(10));
-    const seedTwo = await createBooking(page, aircraft.id, pilot.id, todaySlotUtc(12));
-    const seedThree = await createBooking(page, aircraft.id, pilot.id, todaySlotUtc(14));
-    await moveBooking(page, seed, now - 3 * 3600_000, now - 2 * 3600_000);
-    await moveBooking(page, seedTwo, now - 1800_000, now + 1800_000);
-    await moveBooking(page, seedThree, now + 2 * 3600_000, now + 3 * 3600_000);
+    await createStagedBooking(page, aircraft.id, pilot.id, 8, now - 20 * 60_000, now - 12 * 60_000);
+    await createStagedBooking(page, aircraft.id, pilot.id, 9, now - 8 * 60_000, now + 8 * 60_000);
+    await createStagedBooking(page, aircraft.id, pilot.id, 10, now + 12 * 60_000, now + 20 * 60_000);
 
     const aog = await page.request.post(`/api/v1/aircraft/${grounded.id}/out-of-service`, { data: { reason: `Revisione ${uniqueSuffix()}` } });
     expect(aog.status()).toBe(200);
@@ -220,11 +325,11 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     const aircraft = await createAircraft(page, 'NW');
     const pilot = await createPilot(page, 'NW');
 
+    // One movement behind now, one ahead: the marker belongs between them.
+    // Only the past one needs staging — a future slot is creatable directly.
     const now = Date.now();
-    const past = await createBooking(page, aircraft.id, pilot.id, todaySlotUtc(10));
-    const future = await createBooking(page, aircraft.id, pilot.id, todaySlotUtc(12));
-    await moveBooking(page, past, now - 3 * 3600_000, now - 2 * 3600_000);
-    await moveBooking(page, future, now + 2 * 3600_000, now + 3 * 3600_000);
+    await createStagedBooking(page, aircraft.id, pilot.id, 8, now - 20 * 60_000, now - 12 * 60_000);
+    await createBooking(page, aircraft.id, pilot.id, slotAroundNow(12, 20));
 
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/bookings');
@@ -255,7 +360,8 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     const aircraft = await createAircraft(page, 'CH');
     const other = await createAircraft(page, 'CO');
     const pilot = await createPilot(page, 'CH');
-    await createBooking(page, aircraft.id, pilot.id, todaySlotUtc(13));
+    // Today and still ahead: creatable as-is, no staging needed.
+    await createBooking(page, aircraft.id, pilot.id, slotAroundNow(12, 20));
 
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/bookings');
@@ -342,6 +448,22 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     const sheet = page.getByTestId('mobile-booking-sheet');
     await expect(sheet).toHaveCount(1);
     await expect(sheet).toContainText(aircraft.registration);
+
+    // Review 15.4 F5 — the guard the `.bottom-sheet-actions` rule never had.
+    // A PENDING row seen by an admin offers FOUR decisions (approve, reject,
+    // Modifica, Annulla) and `flex: 1` alone squeezed all four onto one 195px
+    // row at 79px each, which does not hold "Modifica"/"Annulla". The
+    // assertion is on the geometry the rule LIBERATES — two per row, each wide
+    // enough for its label — not on "the rule exists".
+    const actionGeometry = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-testid="mobile-booking-sheet"] .bottom-sheet-actions .btn')].map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { width: Math.round(rect.width), top: Math.round(rect.top) };
+      }),
+    );
+    expect(actionGeometry).toHaveLength(4);
+    expect(Math.min(...actionGeometry.map((button) => button.width))).toBeGreaterThanOrEqual(140);
+    expect(new Set(actionGeometry.map((button) => button.top)).size).toBe(2);
 
     // An empty reason never reaches the network (same guard as the desktop).
     await page.getByTestId('booking-reject-action-mobile').click();
@@ -618,14 +740,12 @@ test.describe('story 15.4 — pianificazione mobile', () => {
   test('multi-actor: the agenda and the list serve every role, and the CTA follows the PROFILE, not just the permission (TD 14.6 F2)', async ({
     page,
   }) => {
-    // Admin: sets up a booking today and a pilot whose profile is then
-    // deactivated — the exact case the TD describes.
+    // Admin: sets up a movement today, plus a pilot of this test's own whose
+    // profile is deactivated further down — the exact case the TD describes.
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page, 'RB');
     const pilot = await createPilot(page, 'RB');
-    const now = Date.now();
-    const booking = await createBooking(page, aircraft.id, pilot.id, todaySlotUtc(15));
-    await moveBooking(page, booking, now + 3600_000, now + 2 * 3600_000);
+    await createBooking(page, aircraft.id, pilot.id, slotAroundNow(12, 20));
 
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/bookings');
@@ -643,46 +763,43 @@ test.describe('story 15.4 — pianificazione mobile', () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), email).toBe(true);
     }
 
-    // The seeded pilot has an ACTIVE profile -> the CTA is there.
+    // --- CTA vs PROFILE, on a pilot of this test's OWN (review 15.4 F4) ---
+    // The seed pilot is shared with `bookings.spec.ts`, which clicks
+    // `new-booking-button` as that actor in four places while this project runs
+    // `fullyParallel`: deactivating it here made that button disappear under a
+    // concurrent worker. This actor belongs to this test alone, so nothing is
+    // shared and nothing has to be restored.
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const ownPilot = await createPilotWithLogin(page, 'CT');
+
+    // An ACTIVE pilot profile -> the CTA is there.
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ownPilot.email, OWN_PILOT_PASSWORD);
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/bookings');
     await expect(page.getByTestId('new-booking-button')).toBeVisible();
 
-    // Deactivate that same pilot's profile as admin, then look again: the CTA
-    // must be GONE, not disabled and not a 403 waiting to happen.
-    const pilotPersonId = await page.evaluate(async () => {
-      const response = await fetch('/api/v1/me');
-      const body = await response.json();
-      return body.person?.id as string;
-    });
+    // Deactivate that profile as admin, then look again: the CTA must be GONE,
+    // not disabled and not a 403 waiting to happen.
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    // Read the licence BEFORE deactivating: re-`PUT`ting it is what restores
-    // the profile (`upsertPilotProfileCore` clears `deactivatedAt` on update).
-    const personResponse = await page.request.get(`/api/v1/people/${pilotPersonId}`);
-    expect(personResponse.status()).toBe(200);
-    const seedPilotProfile = ((await personResponse.json()) as { pilotProfile: { licenseNumber: string; licenseType: string } | null }).pilotProfile;
-    expect(seedPilotProfile, 'the seed pilot must have an active pilot profile').not.toBeNull();
-    const deactivate = await page.request.post(`/api/v1/people/${pilotPersonId}/profiles/pilot/deactivate`);
+    const deactivate = await page.request.post(`/api/v1/people/${ownPilot.personId}/profiles/pilot/deactivate`);
     expect(deactivate.status(), await deactivate.text()).toBe(200);
 
-    try {
-      await page.context().clearCookies();
-      await loginExpectingDashboard(page, PILOT_EMAIL);
-      await page.setViewportSize(PHONE);
-      await page.goto('/it/dashboard/bookings');
-      await expect(page.getByTestId('mobile-bookings-list')).toBeVisible();
-      await expect(page.getByTestId('new-booking-button')).toHaveCount(0);
-    } finally {
-      // The seed pilot is shared with the rest of the suite: always restored.
-      await page.context().clearCookies();
-      await loginExpectingDashboard(page, ADMIN_EMAIL);
-      const restore = await page.request.put(`/api/v1/people/${pilotPersonId}/profiles/pilot`, {
-        data: { licenseNumber: seedPilotProfile!.licenseNumber, licenseType: seedPilotProfile!.licenseType },
-      });
-      expect(restore.status(), await restore.text()).toBe(200);
-    }
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ownPilot.email, OWN_PILOT_PASSWORD);
+    await page.setViewportSize(PHONE);
+    await page.goto('/it/dashboard/bookings');
+    await expect(page.getByTestId('mobile-bookings-list')).toBeVisible();
+    await expect(page.getByTestId('new-booking-button')).toHaveCount(0);
+
+    // ...and the hidden button matches the server EXACTLY: the same actor's
+    // own create answers 403 (the whole point of closing TD 14.6 F2 — the CTA
+    // is hidden where, and only where, `createBooking` refuses).
+    const refused = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: ownPilot.personId, ...slotAroundNow(12, 20) },
+    });
+    expect(refused.status(), await refused.text()).toBe(403);
   });
 });

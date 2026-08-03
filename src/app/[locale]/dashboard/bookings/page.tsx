@@ -28,8 +28,13 @@ import { Schedule, type CalendarNav, type ScheduleAgendaRow, type ScheduleLabels
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  /** `?status` (story 15.4, ratifica R-15.4-e) joins `?page`/`?view`/`?date`: same "sanitize, never error" contract, see `sanitizeBookingStatusFilter`. */
-  searchParams: Promise<{ page?: string; view?: string; date?: string; status?: string }>;
+  /**
+   * `?status` (story 15.4, ratifica R-15.4-e) joins `?page`/`?view`/`?date`:
+   * same "sanitize, never error" contract, see `sanitizeBookingStatusFilter`.
+   * `string | string[]` because a REPEATED param is an ARRAY here (review 15.4
+   * F2: the narrower type was a lie, and `?status=A&status=B` answered 500).
+   */
+  searchParams: Promise<{ page?: string; view?: string; date?: string; status?: string | string[] }>;
 };
 
 /** Staff/instructor picker candidate cap — same "small admin-managed list" convention as `flights/page.tsx`'s `OPTIONS_PAGE_SIZE`. */
