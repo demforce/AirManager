@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-30 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1 shell mobile, 15.2 primitive mobile e 15.3 panoramica mobile DONE**. Prossimo lavoro: **story 15.4 — Pianificazione mobile**)
+# HANDOFF — AirManager (aggiornato: 2026-08-03 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1 shell, 15.2 primitive, 15.3 panoramica e 15.4 pianificazione mobile DONE**. Prossimo lavoro: **story 15.5 — Anagrafiche a card**)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -111,6 +111,38 @@ chiusura. Arbitri su DB fresco: **320/320** sul commit di codice, **325 + 1 flak
 - **Il DB va resettato prima di ogni run che conta**: qui era salito a 487 velivoli e produceva 13 rossi che NON
   venivano dal codice. Misura utile: **una sola suite completa porta il DB a 104 velivoli**, cioè oltre il tetto di
   100 dei picker — il run successivo sullo stesso DB parte già rotto (v. TD in `sprint-status.yaml`).
+
+### 15.4 Pianificazione mobile — DONE (2026-08-03)
+
+Agenda "Voli di oggi" con chip marche e marcatore ORA, settimana come lista verticale, lista a
+card con sheet decisionale (grammatica R-15.2-b), `?status` sanificato che attraversa paginazione/
+export/calendario, form a tutto schermo, CTA gated su permesso+profilo attivo (chiude TD 14.6 F2).
+Story file con Dev Agent Record e Review Record completi: `_bmad-output/implementation-artifacts/
+15-4-pianificazione-mobile.md`; report review integrale: `15-4-review-report.md`. Ciclo spezzato
+su DUE sessioni: story `b104448` + feat `89edaf3` + record `357e7cf` (31/07), review + fix + docs
+(3/08, sessione di ripresa da handoff). Commit fix: `bbae514`. Arbitro finale su DB
+fresco: **337/337, 0 flaky, exit 0 (14.4m)**.
+
+- **9 ratifiche PO pre-dispatch** (R-15.4-a..i) + **4 sopraggiunte in review**: F3 risolto
+  PAGINANDO il tetto 100 di `getStats` (via strutturale, non pulizia fixture); finestra di
+  prenotazione riverificata anche su `updateBooking` PER TUTTI e **INCONDIZIONATA** (anche una
+  PATCH di sole note su una prenotazione fuori dalla finestra corrente → 422 — ratifica
+  esplicita); «in attesa» nascosto nel sub quando un filtro di stato è attivo.
+- **Review Opus 5 SHIPPABLE-WITH-FIXES** — codice di prodotto confermato (masking, RBAC
+  multi-ruolo, race sheet, z-order, contrasti, invarianza desktop), ma gate ROSSO su DB fresco:
+  4 major di cui 3 nei test NUOVI (fixture su slot di OGGI a ora fissa UTC — il «10/10» del dev
+  era l'ora del run; seed pilot mutato dal project parallelo; tetto stats) + `?status` ripetuto
+  → **HTTP 500** (`searchParams` è `string|string[]`, il tipo mentiva).
+- **Lezione (durevole, nuova classe)**: il PRIMO arbitro post-fix ha trovato un rosso che NESSUN
+  run mirato poteva vedere — il banner test della catena serializzata gira PER DEFINIZIONE su un
+  DB post-suite (299 persone) e la sua fixture `Booking-*` (rank 125) non stava nella pagina 1
+  del picker cappato a 100 → `selectOption` in timeout. I test della catena devono sopravvivere
+  ai tetti dei picker, non solo al DB fresco del run `--no-deps`. Fix: fixture `AAABooking-*`,
+  discriminanza provata sullo STESSO DB saturo del fallimento (4/4).
+- **TD aggravato da §10.1**: `reports.spec` scrive `sched.*` globali senza ripristino dal project
+  parallelo, e ora OGNI `moveBooking` della suite la eredita → suite time-dependent fuori dalla
+  fascia ~07:20-20:40 Roma. Il TD "reports.spec → catena serializzata" sale di priorità (voce in
+  sprint-status). Residuo F1 dichiarato: fixture "oggi" impossibili nella fascia 23:40-00:20.
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 

@@ -32,7 +32,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-30 (EPIC 15 in corso: 15.1 shell mobile, 15.2 primitive mobile e 15.3 panoramica mobile DONE. Prossima: 15.4 pianificazione mobile. 15.3: KPI 2x2, card "In corso ora", coda prenotazioni con decisione dentro lo sheet, feed Avvisi a 3 fonti, card METAR, landing per-ruolo riconciliate; 8 ratifiche PO chiuse prima del dispatch; review Opus 5 SHIPPABLE-WITH-FIXES (4 Medium + 4 Low, F1 = selettore discendente che sfondava nel pannello full-screen); arbitro finale 326/326, 0 flaky, exit 0, DB fresco. 4 TD nuovi in action_items. 15.2: BottomSheet + pannello form a tutto schermo + KPI strip, coda PPR come consumer di prova; arbitro finale 309/309 exit 0 su DB fresco. Storico 15.1 — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
+last_updated: 2026-08-03 (EPIC 15 in corso: 15.1 shell, 15.2 primitive, 15.3 panoramica e 15.4 pianificazione mobile DONE. Prossima: 15.5 anagrafiche a card. 15.4: agenda voli di oggi con chip marche e marcatore ORA, lista a card con sheet decisionale, `?status`, form a tutto schermo, CTA gated su profilo attivo; review Opus 5 SHIPPABLE-WITH-FIXES (4 major: fixture e2e time-dependent, ?status ripetuto 500, tetto 100 di getStats PAGINATO su decisione PO, seed pilot mutato da project parallelo; 2 minor), TD ratificato = finestra anche su updateBooking INCONDIZIONATA; un secondo rosso trovato dal primo arbitro post-fix (picker cappato vs catena serializzata su DB post-suite) chiuso in sessione; v. commento 15-4 e Review Record. 15.3: KPI 2x2, card "In corso ora", coda prenotazioni con decisione dentro lo sheet, feed Avvisi a 3 fonti, card METAR, landing per-ruolo riconciliate; 8 ratifiche PO chiuse prima del dispatch; review Opus 5 SHIPPABLE-WITH-FIXES (4 Medium + 4 Low, F1 = selettore discendente che sfondava nel pannello full-screen); arbitro finale 326/326, 0 flaky, exit 0, DB fresco. 4 TD nuovi in action_items. 15.2: BottomSheet + pannello form a tutto schermo + KPI strip, coda PPR come consumer di prova; arbitro finale 309/309 exit 0 su DB fresco. Storico 15.1 — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -336,7 +336,23 @@ development_status:
   # Arbitri, tutti su DB fresco ed exit 0: 320/320 sul commit di codice, 325 + 1 flaky
   # pre-esistente sul commit di fix, **326/326 zero flaky** sullo stato committato.
   15-3-panoramica-mobile: done
-  15-4-pianificazione-mobile: review
+  # 15.4 chiusa 2026-08-03. Ciclo a QUATTRO teammate (story 31/07 + dev Opus 5; review e fix
+  # Opus 5 il 3/08 dalla sessione di ripresa). 9 ratifiche R-15.4-a..i pre-dispatch + 4
+  # sopraggiunte in review. Review SHIPPABLE-WITH-FIXES ma gate ROSSO su DB fresco per cause
+  # della story: F1 fixture e2e su slot di OGGI a ora fissa UTC (rosse da mezzogiorno — il
+  # "10/10" del dev era l'ora del commit), F2 `?status` ripetuto -> HTTP 500 (searchParams
+  # e' string|string[], il tipo mentiva), F3 le fixture del nuovo spec sfondano il tetto 100
+  # di getStats (PO: chiuso PAGINANDO stats.service, non pulendo le fixture), F4 il test
+  # multi-attore disattivava il profilo del PILOTA DI SEED dal project fullyParallel (ora
+  # attore proprio via invito Mailpit). TD ratificato: assertWithinSchedulingWindow anche su
+  # updateBooking, PER TUTTI e INCONDIZIONATO (anche PATCH di sole note fuori finestra -> 422,
+  # ratifica esplicita). Il PRIMO arbitro post-fix ha trovato un SECONDO rosso della stessa
+  # classe: il banner test (catena serializzata = gira su DB post-suite) creava una persona
+  # `Booking-*` a rank 125 su 299 col picker cappato a 100 -> option assente; fix chirurgico
+  # in sessione (cognome `AAABooking-*`), discriminanza provata sullo STESSO DB saturo (4/4).
+  # Lezione: i test della catena serializzata devono sopravvivere ai tetti dei picker, non
+  # solo al DB fresco del run --no-deps. Dettagli nel Review Record dello story file.
+  15-4-pianificazione-mobile: done
   15-5-anagrafiche-card-mobile: backlog
   15-6-registro-voli-mobile: backlog
   15-7-scadenze-transiti-mobile: backlog
@@ -354,7 +370,7 @@ action_items:
     owner: "story 15.10 (sweep finale)"
     status: open
   - epic: 15
-    action: "TD (emerso in 15.3, PRE-esistente e non causato li'): il picker Velivolo del registro voli e' un `<select>` seminato con `OPTIONS_PAGE_SIZE = 100` (logbook/page.tsx:32; stessa costante anche in dashboard/page.tsx, bookings/page.tsx, billing/page.tsx) — oltre 100 velivoli in anagrafica l'ultimo creato NON e' piu' selezionabile. Ha ucciso 4 e2e su DB saturo (flight-log:289, flight-reversal:161, flights:483, reports:206). Misura di questa sessione: UNA sola suite completa porta il DB a 104 velivoli, cioe' il run successivo sullo stesso DB parte gia' oltre il tetto. Il rimedio esiste GIA' in casa e non e' stato applicato a questo picker: il typeahead server-side della story TD-3, che il picker persone della STESSA pagina usa (guardato da typeahead-pickers.spec.ts:37). Su un'aviosuperficie reale il tetto e' lontano; per la suite e' un fucile carico."
+    action: "TD (emerso in 15.3, PRE-esistente e non causato li'): il picker Velivolo del registro voli e' un `<select>` seminato con `OPTIONS_PAGE_SIZE = 100` (logbook/page.tsx:32; stessa costante anche in dashboard/page.tsx, bookings/page.tsx, billing/page.tsx) — oltre 100 velivoli in anagrafica l'ultimo creato NON e' piu' selezionabile. Ha ucciso 4 e2e su DB saturo (flight-log:289, flight-reversal:161, flights:483, reports:206). Misura di questa sessione: UNA sola suite completa porta il DB a 104 velivoli, cioe' il run successivo sullo stesso DB parte gia' oltre il tetto. Il rimedio esiste GIA' in casa e non e' stato applicato a questo picker: il typeahead server-side della story TD-3, che il picker persone della STESSA pagina usa (guardato da typeahead-pickers.spec.ts:37). Su un'aviosuperficie reale il tetto e' lontano; per la suite e' un fucile carico. AGGIORNAMENTO review 15.4 (2026-08-03): la faccia STATS e' CHIUSA — getStats ora pagina listAircraft fino a total (stats.service#listAllActiveAircraft, decisione PO), reports:206 non e' piu' uccidibile dal tetto. La faccia PICKER resta APERTA e ha fatto una seconda vittima misurata: il picker PERSONE di bookings/page.tsx (listPeople 1x100, lastName asc) su DB post-suite (299 persone) non conteneva la fixture a rank 125 del banner test di booking-window — curato rinominando la fixture (`AAABooking-*`), ma il fucile resta carico per ogni nuovo test in catena serializzata."
     owner: "backlog TD"
     status: open
   - epic: 15
@@ -378,7 +394,7 @@ action_items:
     owner: "backlog TD"
     status: open
   - epic: 14
-    action: "TD (review 14.4, note residue): (a) il describe 'Blocking expiry guard-rail' di flights.spec.ts (e i test di bookings.spec.ts che creano ExpiryType bloccanti scope ALL) crea/disattiva STATO GLOBALE dentro il project fullyParallel -> TOCTOU raro con ensureValidSeedExpiries (mitigato a ~zero da e2e/helpers.ts, eliminabile solo spostandolo nella catena serializzata di playwright.config.ts); (b) reports.spec.ts esegue un PUT /settings/scheduling GLOBALE dal project fullyParallel (lacuna pre-esistente, stessa classe della regola 'e2e stato globale' di CLAUDE.md) -> va spostato nella catena serializzata."
+    action: "TD (review 14.4, note residue): (a) il describe 'Blocking expiry guard-rail' di flights.spec.ts (e i test di bookings.spec.ts che creano ExpiryType bloccanti scope ALL) crea/disattiva STATO GLOBALE dentro il project fullyParallel -> TOCTOU raro con ensureValidSeedExpiries (mitigato a ~zero da e2e/helpers.ts, eliminabile solo spostandolo nella catena serializzata di playwright.config.ts); (b) reports.spec.ts esegue un PUT /settings/scheduling GLOBALE dal project fullyParallel (lacuna pre-esistente, stessa classe della regola 'e2e stato globale' di CLAUDE.md) -> va spostato nella catena serializzata. AGGRAVATO dalla 15.4 (2026-08-03): col controllo finestra ora attivo anche su updateBooking, OGNI moveBooking della suite eredita la sched globale che reports.spec scrive senza ripristinare (07:00-21:00, 30gg) -> le fixture 'oggi' di mobile-planning escono dalla finestra se la suite gira prima delle ~07:20 o dopo le ~20:40 Roma (verde misurato alle 15:33; la CI su fusi diversi ci finisce dentro). La priorita' di (b) SALE."
     owner: "backlog TD"
     status: open
   - epic: 14

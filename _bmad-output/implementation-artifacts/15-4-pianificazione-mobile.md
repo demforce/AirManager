@@ -4,7 +4,7 @@ baseline_commit: 51b60e1
 
 # Story 15.4: Pianificazione mobile — agenda "Voli di oggi" con chip marche e marcatore ORA, lista prenotazioni a card con filtri, form di prenotazione a tutto schermo
 
-Status: **review** (implementata 2026-07-31 — v. il Dev Agent Record in fondo; ratifiche PO R-15.4-a..i tutte chiuse prima del dispatch)
+Status: **done** (implementata 2026-07-31, review adversarial + fix 2026-08-03 — v. Dev Agent Record e Review Record in fondo; ratifiche PO R-15.4-a..i chiuse prima del dispatch, 4 ratifiche sopraggiunte in review)
 
 ## Story
 
@@ -702,3 +702,80 @@ completa `CI=1` va rieseguita dall'arbitro (prassi 13.9/13.11/15.2/15.3).
   della riga d'azione dello sheet (misurata identica sui due gemelli).
 - **Non ho aggiunto focus trap / `aria-modal`** (15.10), né toccato l'export mobile (15.8).
 - **Non ho committato** gli script di misura throwaway (vivono nello scratchpad di sessione).
+
+# Review Record — 15.4 (reviewer adversarial Opus 5 xhigh, fix-subagent Opus 5 xhigh — 2026-08-03)
+
+Report integrale della review (evidenze, riproduzioni, misure): `15-4-review-report.md`.
+Verdetto: **SHIPPABLE-WITH-FIXES** — codice di prodotto solido (masking 14.5, RBAC con attore
+multi-ruolo, race sullo sheet decisionale, z-order, contrasti nei due temi, invarianza desktop:
+tutti verificati empiricamente e confermati), ma gate della suite ROSSO su DB fresco per cause
+introdotte dalla story. Fix del fix-subagent in `bbae514`; un secondo rosso trovato dal
+primo arbitro post-fix e chiuso in sessione principale (v. sotto).
+
+## Arbitro PRE-fix (il gate che il dev non aveva potuto eseguire)
+
+`CI=1` su build di produzione, DB fresco: **E2E_EXIT=1 — 315 passed, 3 failed, 19 did not run
+(6.5m)** su 337. I project serializzati saltati sono stati rieseguiti a parte dal reviewer:
+verdi (incluso il test nuovo R-15.4-g). La diagnosi §9 del dev sui 10 rossi di `bookings.spec`
+era GIUSTA (su DB fresco: interamente verde); il suo «spec nuovo 10/10» era invece un artefatto
+dell'ora del run (F1). `npm run gates` verde, 1654 unit; unit nuovi verificati anche senza env.
+
+## Findings → fix (F1-F6 + TD ratificato)
+
+| # | Sev | Difetto (misurato dalla review) | Fix (fix-subagent, prove nel suo report) |
+|---|---|---|---|
+| F1 | MAJOR | `todaySlotUtc` creava slot di OGGI a ora fissa UTC: `422 BOOKING_IN_PAST` dalle 12:00 Roma (2 test), 4 nell'arco della giornata — il «10/10» del dev era l'ora del commit | helper `slotAroundNow`/`createStagedBooking`: create su DOMANI 08-10Z (dentro qualunque finestra) poi `moveBooking` sugli istanti voluti. 10/10 alle 15:22, 15:24, e sotto finestra globale 07-21. Residuo dichiarato: fascia 23:40-00:20 Roma impossibile per costruzione |
+| F2 | MAJOR | `?status=PENDING&status=APPROVED` → **HTTP 500** (`raw.split` su array: il tipo di `searchParams` mentiva), contro AC 6 | firma `string \| string[]`, normalizzazione `join(',')` in testa alla funzione pura, 3 unit sul caso array; runtime: 200 su tutte le forme |
+| F3 | MAJOR | le fixture del nuovo spec sfondano `listAircraft page 1×100` di `getStats`: fixture di `reports.spec` a rank 109/116 → rosso | **decisione PO: via strutturale** — `listAllActiveAircraft` pagina fino a `total` in `stats.service`; unit con mock paginante (150 velivoli, discriminanza provata al revert); prova end-to-end: 114 fleet rows con fixture a rank 116/116, `reports.spec` 5/5 |
+| F4 | MAJOR | il test multi-attore disattivava il profilo del PILOTA DI SEED dal project `fullyParallel`, mentre `bookings.spec` clicca la CTA (che la 15.4 fa sparire in quello stato) in 4 punti | attore PROPRIO via `createPilotWithLogin` (pattern invito Mailpit); seed pilot mai mutato, niente `finally`-restore; assert NUOVO: `POST /bookings` di quell'attore → 403 (bottone nascosto ⇔ server). `bookings.spec` 34/34 |
+| F5 | minor | la regola `.bottom-sheet-actions` (wrap + basis 50%) era senza guardia: rimossa, i 4 bottoni collassano a 79.3px e la suite resta verde | guardia nel test dello sheet decisionale: 4 bottoni, larghezza ≥140px, ESATTAMENTE 2 righe. Discriminanza: `flex-basis:0%` iniettato → `Received: 79`, rosso su 3 tentativi |
+| F6 | minor | «2 in attesa · 0 totali» con `?status=DENIED` (pendingCount non filtrato vs total filtrato), anche desktop | **decisione PO: nascondere "in attesa"** con filtro attivo — chiave `list.filteredSummary` nei DUE locale; misurato 375/1280, it/en |
+| TD §10.1 | ratificato | `updateBooking` non ricontrollava la finestra (PATCH fuori finestra → 200): il ramo client del form di modifica era irraggiungibile | **decisione PO: controllo per TUTTI, admin incluso** — `assertWithinSchedulingWindow` in `updateBooking` (stessa posizione relativa di `createBooking`); 3 unit (discriminanza: tolta la riga → rossi); `booking-window.spec` aggiornato 200→422 MAI indebolito + ramo UI del pannello di modifica ora esercitato; blast radius MISURATO: bookings 34/34, mobile-overview 14/14, mobile-planning 10/10 anche sotto finestra 07-21/30gg |
+
+## Ratifiche PO sopraggiunte in review (4, 2026-08-03)
+
+1. **F3 → via strutturale**: si pagina il tetto in `stats.service` (chiude la faccia stats del TD
+   `pageSize: 100`), le fixture dello spec restano.
+2. **TD §10.1 → sì, nel fix, per tutti**: la finestra si riverifica anche su `updateBooking`,
+   admin incluso.
+3. **F6 → nascondere "in attesa"** quando un filtro di stato è attivo.
+4. **Controllo finestra INCONDIZIONATO** (post-fix): anche una PATCH di sole note su una
+   prenotazione rimasta fuori dalla finestra CORRENTE risponde 422 — deviazione segnalata dal
+   fix-subagent, ratificata esplicitamente dal PO (alternativa "solo se cambia l'orario" scartata).
+
+## Il rosso del PRIMO arbitro post-fix (trovato dalla catena piena, chiuso in sessione principale)
+
+Arbitro post-fix su DB fresco: **327 passed, 1 failed, 9 did not run (9.3m)** — il fallito era
+proprio il banner test riscritto (`booking-window.spec.ts`), `selectOption(personId)` in timeout
+su 3 retry. Causa MISURATA: il picker persone staff carica UNA pagina di `listPeople` (100,
+`lastName asc`); dopo il passaggio dell'intero project `chromium` il DB aveva **299 persone** e
+il cognome `Booking-*` della fixture stava a **rank 125** → l'`<option>` non esisteva. Era la
+PRIMA esecuzione in catena del test (nato col dev 15.4: nel giro di review la catena era saltata
+e i run separati giravano su DB quasi fresco) — stessa classe di F1/F4: verde in isolamento,
+rosso per costruzione nell'ordine reale. Fix chirurgico: cognome `AAABooking-*` (ordina in testa
+alla pagina 1 a qualunque volume realistico), commento con la misura nel file. Discriminanza:
+rieseguito sullo STESSO DB saturo del fallimento → **4/4, E2E_EXIT=0**.
+
+**Lezione (durevole)**: un test della catena serializzata gira PER DEFINIZIONE su un DB
+post-suite — le sue fixture UI devono sopravvivere ai tetti dei picker (100 opzioni), non solo
+al DB fresco del run mirato con `--no-deps`.
+
+## Gate finale
+
+- Arbitro #2, `CI=1` su build di produzione, DB fresco, stato committato: **337 passed (14.4m), E2E_EXIT=0 — zero failed, zero flaky** (la catena serializzata inclusa: 337 = 327 verdi del run precedente + il banner test + i 9 a valle)
+- `npm run gates`: **verde** (lint 25s, typecheck 4s, build 108s) (1661 unit — 7 nuovi dal fix)
+- Unit nuovi senza env (regola CLAUDE.md): `booking-status-filter` + `stats.service` +
+  `bookings.service` → verdi con `env -u DATABASE_URL -u AUTH_SECRET`.
+
+## TD lasciati aperti (in `sprint-status.yaml`)
+
+1. **TD `pageSize: 100` — chiusa SOLO la faccia stats** (paging in `getStats`). La faccia
+   `OPTIONS_PAGE_SIZE` dei picker `<select>` (bookings, logbook, billing, expiries, dashboard)
+   resta aperta — il rosso del banner test ne è la prova viva; rimedio = typeahead TD-3.
+2. **Accoppiamento AGGRAVATO da §10.1**: `reports.spec.ts:307-315` scrive `sched.*` globali dal
+   project parallelo SENZA ripristino (07:00-21:00, 30gg) e ora OGNI `moveBooking` della suite
+   la eredita → le fixture "oggi" di `mobile-planning` escono dalla finestra se la suite gira
+   prima delle ~07:20 o dopo le ~20:40 Roma (verde misurato alle 15:33). Il rimedio resta il TD
+   già aperto su `reports.spec` — la priorità sale.
+3. F1 residuo (per costruzione): fixture "oggi" impossibili nella fascia 23:40-00:20 Roma.
+4. Fragilità da volume di `bookings.spec` riconfermata (pre-esistente, TD §10.4 del dev).
