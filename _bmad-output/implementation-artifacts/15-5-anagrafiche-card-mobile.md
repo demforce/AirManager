@@ -4,7 +4,7 @@ baseline_commit: 0d82ba2
 
 # Story 15.5: Anagrafiche a card — Flotta a griglia 2 colonne con barra ore, Piloti a riga con saldo e flag, e il salva primario in fondo ai due editor multi-form (R-15.2-g)
 
-Status: **approved — ratifiche PO R-15.5-a..j TUTTE chiuse (2026-08-03), pronta per il dispatch al dev**
+Status: **review** (implementata 2026-08-03/04 — v. Dev Agent Record in fondo; ratifiche PO R-15.5-a..j chiuse prima del dispatch)
 
 ## Ratifiche PO (chiuse 2026-08-03, batch AskUserQuestion in tre giri — la sezione Q1-Q10 in fondo porta fatti, opzioni e motivazioni)
 
@@ -429,3 +429,374 @@ Se ⟨Q2⟩/⟨Q3⟩ introducono un reader nuovo in un service, quello ha i suoi
 | C | Scroll infinito | il più "app"; il più lontano dal resto dell'app e dal template, e il peggiore da testare in modo deterministico |
 
 **Raccomandazione: A.** L'epic non ha mai introdotto un pattern di caricamento nuovo (la 15.4 ha tenuto la paginazione della lista prenotazioni), il contratto URL vale anche per la futura app Flutter, e B/C aggiungono stato e casi di test per un guadagno di comodità. Va però verificato (AC 3/8) che i due bottoni siano ≥44px e non finiscano sotto la tab bar.
+
+---
+
+# Dev Agent Record (dev-15-5, Opus 5 xhigh — 2026-08-03)
+
+Status: **review**. Gates verdi, spec nuovo verde (15/15), 8 guardie provate DISCRIMINANTI
+per iniezione sul repo intatto, suite completa `CI=1` su build di produzione e DB fresco
+lanciata come gate finale (esito in §9).
+
+## 1. Verifica della ricognizione (conferme e correzioni, numerate)
+
+Tutto rimisurato a runtime sulla build di produzione, DB seed fresco + fixture proprie.
+
+**Confermate:**
+
+1. **§a.1 — la griglia Flotta è a UNA colonna sotto i 640px.** `grid-template-columns`
+   misurato: **281px** a 375, **226px** a 320, `226px 226px`… no: una sola traccia in
+   entrambi i casi. `.ac-card` 281×143. Confermato.
+2. **§a.1 — `.card-head` della Flotta = 192px a 375px** (64px a 1280, 107px a 800/641).
+   Confermato al pixel.
+3. **§a.1 — `.ac-card` è un `<div>` con 0 figli interattivi.** Misurato `tagName: 'DIV'`,
+   `querySelectorAll('button,a,input,select').length === 0`. Confermato → TD aperto (R-15.5-i).
+4. **§a.2 — la tabella Piloti è 1102px in 317 visibili** a 375px (`.students` cw 317 / sw
+   1102), `.card-head` 149px. Confermato al pixel.
+5. **§a.3 — Istruttori 317/754** a 375px. Confermato. (La sua `.card-head` misura **150px**,
+   numero che la ricognizione non aveva.)
+6. **§a.4 — il salva PRIMARIO in MODIFICA è già sopra il fold**: `pilot-identity-submit`
+   `bottom 573` `reachable: true`, `instructor-identity-submit` `bottom 550` `reachable: true`.
+   Confermato (la ricognizione diceva 585 e 577 su un DB più pieno).
+7. **§a.4 — i submit di sezione stanno sotto il fold**: `instructor-payout-rate-submit`
+   `bottom 835`, `instructor-rates-submit` `bottom 1130` in un viewport 812. Confermato.
+8. **§a.4 — `aircraft-editor` è già a posto e INERTE sul desktop**: `hasSoActions: true`,
+   `position: sticky` a 375 e `static` a 641/800/1280, `.so-body` `padding-bottom` 0px a 375
+   e 18px sopra. Confermato.
+9. **§a.7 — `.meter-bar`/`.fill` esiste nel design system e non ha nessun consumer**
+   (`grep -rn "meter-bar" src/ --include=*.tsx` → 0). Riusata per la barra ore: track
+   `--bg-sunken`, fill `--ok`, `.fill.bad` — la ricetta del template, zero classi nuove.
+10. **§b — i sei helper `^=`** esistono esattamente dove indicato
+    (`grep -rn 'data-testid\^=' e2e/`, 6 file + 3 occorrenze 15.4 su altri prefissi).
+    AD-5 rispettata: nessun testid nuovo comincia per `ac-card-`, `pilot-row-`,
+    `instructor-row-`, `mobile-tail-chip-`, `schedule-filter-aircraft-`.
+
+**Correzioni (la ricognizione sbagliava o era incompleta):**
+
+1. **`--bad-ink` NON ESISTE in questo design system.** Il template lo usa per il saldo
+   negativo e la ricognizione lo cita, ma `airops.css` definisce solo `--accent-ink`
+   (grep: 0 occorrenze di `--bad-ink:`/`--ok-ink:`). Scritto `color: var(--bad-ink)` la
+   dichiarazione è **invalida a computed-value time** e il valore torna a ereditare `--ink`:
+   **misurato 18.79:1**, cioè il saldo negativo era NERO, indistinguibile da uno positivo.
+   Trovato solo perché il contrasto va misurato e non dedotto. Sostituito con la classe che
+   il design system ha già per questo caso esatto — `.stat-tone-bad` (Billing-2, "testo
+   colorato su `--panel`"): **9.82:1 chiaro / 6.61 scuro**, zero literal nuovi.
+2. **La `1fr 1fr` del template non è di per sé il difetto: lo è `min-width: auto`.**
+   Iniettando `1fr 1fr` sulla card MOBILE (che ha `min-width: 0` e le tre dichiarazioni di
+   ellissi) le tracce restano **137.5 / 137.5**: la guardia non diventa rossa. Il pre-fix
+   fedele è `1fr 1fr` **+ card senza `min-width: 0` + riga modello senza ellissi** (cioè la
+   `.ac-model` del desktop): allora le tracce misurano **219.14 / 117.8**, somma 336.94 + 10
+   di gap in un box da 317 (`fits: false`) e la **page overflow resta 0** — la prova che la
+   guardia va scritta sulle tracce. Dettaglio in §5-iii.
+3. **AC 1 chiede due cose incompatibili sul modello.** "modello mono **ellissato**" e
+   "a 320px nessun testo della card è clippato (`scrollWidth <= clientWidth` su `.ac-model`)"
+   non possono valere insieme: `text-overflow: ellipsis` PRODUCE `scrollWidth > clientWidth`.
+   Letta come "nessun testo è tagliato **senza affordance**": la guardia asserisce che ogni
+   testo della card o entra, o porta `text-overflow: ellipsis`. Con la lettura letterale il
+   test sarebbe verde solo togliendo l'ellissi, cioè reintroducendo il difetto.
+4. **Il `Badge` non entra accanto alle marche.** §a.5 decide "si tiene il `Badge`" al posto
+   del pallino 8px, ma su una card da **137.5px** il `Badge` "Disponibile" (91px) lasciava
+   alle marche **7px di glifi visibili** (misurato) — l'identificatore stesso della card,
+   ellissato via. Il `Badge` ha quindi una riga sua (§4-1).
+5. **`.card-head` NON si accorcia solo riordinando.** Misurato: con i 44px che AC 3 impone su
+   ogni controllo, la testata a 375px passa da 192 → **220px** sulla Flotta e 149 → **220px**
+   sui Piloti. Nascondendo il `.card-title` (che ripete quello che dicono già l'`<h1>` e la
+   top bar mobile) si scende a **176-177px** — Flotta **-16px** rispetto al pre-fix, Piloti
+   **+28px** (era già a tre righe, i target 44px costano 9px l'una). Numeri onesti in §7.
+6. **Il tetto della testata dipende dalla LUNGHEZZA delle etichette.** A 375px "Mostra
+   archiviati" (141px) + "Esporta Excel" (137px) + gap = **288px in un content box da 281**:
+   vanno a capo e la Flotta resta a **220px**; sui Piloti ("Solo archiviati", 128px) stanno
+   sulla stessa riga e la testata è **177px**; a 390px anche la Flotta scende a 177. È un
+   `flex-wrap` che degrada bene, non una regressione: l'alternativa era troncare l'etichetta
+   di un filtro.
+7. **Il flag non entra nella colonna destra.** Con il chip nello slot del template, un
+   documento reale ("Visita medica classe 2 scaduto", 191px) portava la colonna destra a
+   193px e lasciava al NOME **38px**. Il chip ha quindi una riga sua (§4-2).
+8. **La ricerca non era un target da 44px** anche col wrapper a 44: `.search` centra i figli,
+   quindi `fleet-search` (l'`<input>`) misurava 19px e un tap sul padding non dava fuoco a
+   nulla. L'altezza è passata sull'input.
+9. **`.info-row .v` della scheda persona sfora il proprio box** a 375px (3 righe: email,
+   codice fiscale, indirizzo — token non spezzabili). Non era in ricognizione.
+10. **`/api/v1/users/{id}` non ha GET** (rimosso in 12.13): la rilettura dell'esito della
+    sospensione passa dalla PAGINA (server-rendered da `listPilotsPageData`), che è lo STATO
+    del record, non il conteggio di una lista.
+11. **Il catalogo `ExpiryType` è GLOBALE e le altre spec lo sporcano.** Misurato su DB
+    post-suite: **11 tipi `blocksBooking = true`**, di cui **7** lasciati da `bookings.spec.ts`
+    ("Tipo prenotazioni …") e `flights.spec.ts` ("Tipo voli …"), mai rimossi. `POST /flights`
+    esige che OGNI tipo bloccante sia REGISTRATO e valido (`findMissingBlockingDocuments`,
+    14.4), quindi una persona nuova è bloccata da tutti quelli che esistono in quel momento:
+    il mio fixture del volo (per la barra ore) è passato dal verde al 422 fra il run mirato
+    su DB fresco e la suite completa. Non è un difetto introdotto qui — è un accoppiamento a
+    stato globale PRE-esistente — ma il mio test doveva esserne immune: usa ora l'override
+    admin `force`/`forceReason` (14.4, AC 2), che è deterministico qualunque sia il catalogo.
+    La guardia del guard-rail resta dov'era, in `flights.spec.ts`.
+12. **Il chip del flag sfondava la riga, e nessuna asserzione lo vedeva.** Trovato con la
+    verifica VISIVA (screenshot 375px, tema scuro), non da un test: un nome di tipo reale
+    lungo 38 caratteri portava il chip oltre il bordo destro della card. Due cause: (a) un
+    item che SPANNA due tracce contribuisce col suo max-content a entrambe, quindi
+    `grid-column: 2 / -1` rigonfiava la colonna `auto` da cui doveva essere indipendente
+    (fix: `grid-column: 2` dentro una traccia `minmax(0, 1fr)`); (b) `text-overflow` non ha
+    effetto sull'item anonimo in cui un `.badge` `inline-flex` trasforma una stringa, quindi
+    il taglio avveniva **senza ellissi** (fix: `display: block` + `width: fit-content` sul
+    chip). La guardia era cieca **per costruzione**: lo sweep degli scroller nascosti esclude
+    gli elementi con `text-overflow: ellipsis`, e il chip ne ha uno. Aggiunta un'asserzione
+    dedicata sul CONTENIMENTO (`chip.right <= row.right`).
+
+## 2. Riepilogo per AC
+
+| AC | Esito | Prova |
+|---|---|---|
+| 1 Flotta 2 colonne + barra ore | fatto | tracce **137.5/137.5** a 375, **110/110** a 320, **145/145** a 390, uguali e dentro il contenitore; card = 1 `<button>`, 0 figli interattivi, ≥44px, `aria-label` con le marche; nessun testo clippato senza ellissi a 320; barra: `100%` sul velivolo che ha volato, `0%` sull'altro (e2e), unit sui confini |
+| 2 Piloti a riga | fatto | `.students` `display:none` misurato; riga `30px 1fr auto`, 1 `<button>`, 0 figli interattivi, 60-85px; saldo `formatCents` con `.stat-tone-bad` sul negativo; flag presente sul fixture con documento scaduto, **assente** su quello pulito |
+| 3 testata/ricerca/archiviati/paginazione | fatto | 3 testid = 1 nodo ciascuno, tutti ≥44px; la ricerca guida `?q=`, il chip guida `?includeArchived=true` e `aria-pressed`; paginazione `1 / 2 → 2 / 2` con `?page=2` e bottoni ≥44px; altezze pre/post in §7 |
+| 4 sheet di dettaglio + azioni | fatto | sheet = **1 nodo**, z 40, nome accessibile ben formato (un solo ` — `); parità (Stato/Motivo AOG/Tariffa/Posti/Carburante/Contaore/Ore mese/Note e Email/Telefono/Saldo/Ultimo volo/Ruolo/Stato); apertura **da tastiera** (Tab reali + Enter); "Modifica"/"Registra" chiudono lo sheet PRIMA del pannello; sospensione in due passi, dismiss = nessuna mutazione, conferma riletta dal server su entrambe le facce |
+| 5 R-15.2-g | fatto | `pilot-editor` NUOVO: `reachable: true` con `scrollTop 0` su 375×560 dove il corpo **scorre davvero**, `position: sticky`, submit 44px, pannello == viewport, **1 sola** barra ancorata; i submit di sezione restano fuori da `.so-actions` (asserito); desktop invariato §7 |
+| 6 testid | fatto | 7 testid desktop = 1 nodo a **375 e 1280**, su `/dashboard/fleet`, `/dashboard/pilots`, `/dashboard/instructors`; `fleet-card-widget` = 1 nodo su `/dashboard` e **0** testid `mobile-fleet-*` dentro il widget (AD-2) |
+| 7 form a tutto schermo | fatto | pannello == viewport ±1px a 375×560; `identity-form`/`pilot-identity-form`/`instructor-identity-form` raggiunti dal percorso mobile e popolati; nessun `Escape` usato per chiudere un popup |
+| 8 geometria e layering | fatto | overflow di pagina **0** a 320/375/390 su tutte e quattro le superfici, in **entrambi i temi**; nessuno scroller interno nascosto (eccezioni dichiarate: `.kpi-row` 15.2, l'estratto conto TD 14.6 F4); hit-test su ogni `.page a, .page button` a fondo pagina: **0** sotto la tab bar, 0 coperti |
+| 9 guardie discriminanti | fatto | tabella §5: 8 regole, **8 provate rosse** per iniezione sul repo intatto |
+| 10 invarianti | fatto | §7 (desktop identico a 1280/800/641 su geometria, pannelli e `.so-actions`), §6 (contrasti nei due temi), gates verdi, 0 dipendenze nuove, 0 token cambiati, 0 literal di colore nuovi, chiavi i18n nei DUE locale |
+| 11 Istruttori a riga | fatto | `.students` nascosta, riga della stessa famiglia con ore + dovuto, 1 `<button>` ≥44px, sheet con `instructor-edit-mobile`/`instructor-pay-mobile` gated, entrambi i lati dello switch asseriti |
+| 12 scheda persona | fatto | 1 colonna (`bottomTracks: 1`), scadenze a riga (`expiryTracks: 2`, header `display:none`), **nessun doppione di testo** (`person-expiry-row` = 1, "Licenza" = 1 nodo), overflow 0 a 320/375/390, multi-attore (pilota sul proprio record + redirect dalle due console) |
+
+## 3. File toccati
+
+- `src/lib/mobile-registries.ts` (**nuovo**) + `src/lib/mobile-registries.test.ts` (**nuovo**, 21 test)
+- `src/server/services/aircraft.service.ts` — `sumFlightMinutesByAircraft` (+3 unit nel test esistente)
+- `src/server/services/expiries.service.ts` — `listBlockingExpiriesByPerson` (+4 unit nel test esistente)
+- `src/components/ui/avatar.tsx` — prop `as` (default invariato)
+- `src/app/[locale]/dashboard/fleet/page.tsx` / `fleet-console.tsx` — reader ore, albero mobile, sheet, classi di switch
+- `src/app/[locale]/dashboard/pilots/page.tsx` / `pilots-console.tsx` — reader flag, albero mobile, sheet con 4 azioni e conferma a due passi, `setUserActive` condivisa
+- `src/app/[locale]/dashboard/instructors/page.tsx` / `instructors-console.tsx` — albero mobile, sheet
+- `src/app/[locale]/dashboard/pilots/pilot-editor.tsx` / `instructors/instructor-editor.tsx` — `.so-actions` (R-15.5-f)
+- `src/app/[locale]/dashboard/people/[id]/page.tsx` — classi al posto di 2 stili inline, `.person-expiries`, `.home-head-actions`
+- `src/styles/airops.css` — blocco `anagrafiche mobile (story 15.5)` in coda
+- `messages/it.json` / `messages/en.json` — chiavi nuove nei DUE locale (36 righe ciascuno, solo additive)
+- `e2e/mobile-registries.spec.ts` (**nuovo**, 15 test) — **nessuno spec esistente modificato** (AD-5 ha tenuto)
+- `CLAUDE.md` — la riga di convenzione che AD-5 impone
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — TD R-15.2-g chiuso e riscritto con le misure, 2 TD nuovi, stato della story
+
+## 4. Decisioni non ovvie
+
+1. **Il `Badge` di stato ha una riga sua sulla card** (il template ci mette un pallino 8px).
+   Misurato: accanto alle marche su una card da 137.5px lasciava all'identificatore **7px**.
+   Costa ~18px di card e tiene leggibili entrambi anche a 320px.
+2. **Il chip del flag ha una riga sua sulla riga pilota** (`grid-row: 2; grid-column: 2/-1`).
+   Misurato nello slot del template: il nome scendeva a **38px**. Sulla sua riga il chip ha
+   245px e nessun altro deve stringersi.
+3. **Il chip "Archiviati" è lo STESSO bottone del desktop, ridisegnato a pillola**, non un
+   nodo dentro una `.mobile-chip-strip`. R-15.5-g chiede il chip **e** "nessuna seconda fonte
+   di verità"; AD-3 vieta di duplicare il nodo. Una strip con un chip solo non ha nulla da
+   scorrere. L'aggancio è `[aria-pressed]`, non `:not(.primary)`: "Ciclo pagamenti" vive
+   nella stessa testata e deve continuare a leggersi come azione.
+4. **`.card-title` nascosto a ≤640px** sulle tre console: costa una riga intera e ripete
+   quello che dicono l'`<h1>` e la top bar mobile. È un `div`, non un heading, e nessun test
+   lo legge (verificato con grep sui tre valori).
+5. **La riga "stato + tariffa" del template diventa "Tariffa + €/h"**: il `Badge` sopra
+   NOMINA già lo stato, e ripetere la stessa parola due volte su una card da 137px è rumore.
+   L'informazione non si perde.
+6. **`.mobile-ac-meter` va a capo** invece di `space-between`: a 320px "Tariffa" + "180,00 €/h"
+   misurano 95px in 84 e side-by-side venivano ellissate **entrambe**. A capo costa 12px solo lì.
+7. **`Avatar` guadagna `as`** invece di una seconda `.avatar` copiata nella riga: la riga è un
+   `<button>` (R-15.2-b) e il suo modello di contenuto è phrasing content — un `<div>` lì
+   dentro è markup non valido. Prop additiva, default invariato, 5 consumer non toccati.
+8. **La scadenze della scheda persona si RI-DISPONE, non si duplica.** Un albero mobile
+   avrebbe messo due volte ogni tipo/data/stato nel DOM e `person-detail.spec.ts:217`
+   (`getByText(updatedPhone)`) e `expiry-registration.spec.ts` leggono quella pagina a livello
+   di pagina. Regole `:nth-child` su 4 celle, zero testid nuovi, zero rischio e2e.
+9. **`setUserActive` estratta** e condivisa fra la conferma inline della tabella e il
+   `secondStep` dello sheet: stessa PATCH, stesso ramo 409 `CONFLICT`, stessi toast. Stessa
+   ragione di `booking-transition.ts` in 15.3.
+10. **La composizione delle righe di sheet è restata JSX** (AD-6 la elencava fra le funzioni
+    pure). Portano `ReactNode` e stringhe già formattate dal locale, non hanno rami di
+    confine, e l'e2e le prova per intero. Deviazione dichiarata, non dimenticata.
+
+## 5. Regola nuova → guardia → prova di DISCRIMINANZA
+
+Simulazioni sul repo **intatto** (iniezione CSS/DOM sulla build di produzione, script
+`m7-discriminance.mjs`/`m8-disc2.mjs` nello scratchpad, non committati).
+
+| # | Regola (difetto misurato) | Guardia | Verde ora | Simulando il pre-fix |
+|---|---|---|---|---|
+| i | alberi desktop `display:none` ≤640 (1102px e 754px di scroll orizzontale in 317) | `.fleet-desktop-body`/`.pilots-desktop-body`/`.instructors-desktop-body` `toBeHidden()` + albero mobile visibile | ✅ `desktopHidden: true` | `.fleet-desktop-body{display:block}` → `false` → **rosso** |
+| ii | alberi mobile `display:none` >640 | a 1280 `mobile-*-list`/`mobile-fleet-grid` `toBeHidden()` | ✅ `mobileHidden: true` | `.pilots-mobile{display:block}` → `false` → **rosso** |
+| iii | griglia `repeat(2, minmax(0,1fr))` + `min-width:0` + ellissi (il lato LIBERATO) | le due tracce **uguali** e somma+gap ≤ contenitore | ✅ `137.5/137.5`, `fits: true` | `1fr 1fr` + card senza `min-width:0` + modello senza ellissi → **`219.14/117.8`, `equal:false`, `fits:false`** → **rosso**, e `pageOverflow` resta **0** in entrambi i casi (la prova che l'overflow di pagina sarebbe una guardia cieca) |
+| iv | ellissi sulle tre righe di testo della card | a 320: nessun testo con `scrollWidth > clientWidth` **e** `text-overflow != ellipsis` | ✅ `[]` | `.mobile-ac-model{text-overflow:clip}` → `['mobile-ac-model','mobile-ac-model']` → **rosso** |
+| v | barra ore proporzionale al massimo di PAGINA, 0 quando nessuno ha volato | 21 unit su `hoursBarPercent` (max 0, minuti 0, 100%, arrotondamento, clamp, max negativo) + e2e sul cablaggio (`100%` / `0%`) | ✅ | unit per costruzione (l'e2e non può fabbricare "nessuno ha volato" senza svuotare il DB) |
+| vi | flag = documento bloccante, priorità sospeso > scaduto > ≤30g | unit su `pilotRowFlag` (assente/scaduto/oggi/30/31/60/priorità/pareggio) + e2e con documento reale scaduto e riga pulita senza chip | ✅ | unit per costruzione + e2e: il fixture pulito ha `.badge` `toHaveCount(0)` |
+| vii | `.so-actions` sui due editor multi-form | submit hit-testabile con `scrollTop === 0` su 375×560 dove il corpo **scorre** (`bodyScrolls: true`) | ✅ `reachable: true` | `.so-actions{position:static}` → `reachable: false` → **rosso** |
+| viii | empty state = UN nodo | `toHaveCount(1)` su `mobile-fleet-empty`/`mobile-pilots-empty` | ✅ `count: 1` | secondo nodo clonato nel DOM → `count: 2` → **rosso** |
+| ix | i selettori nuovi non raggiungono il pannello (lezione 15.3 F1) | `.home-head-actions > .btn` (figlio DIRETTO) e `.registry-head > …`; misura dei bottoni del `SlideOver` aperto | ✅ `164/164/61…` px | versione DISCENDENTE `.home-head-actions .btn{min-width:12px;max-width:12px}` → `26/26/18…` px → **rosso**: la trappola 15.3 F1 esiste davvero su questa testata (il `PilotEditor` è montato come FRATELLO del trigger) ed è il `>` a disinnescarla |
+
+## 6. Contrasto misurato (canvas → WCAG), tema chiaro **e** scuro
+
+Tutte le superfici nuove, enumerate una per una (lezione 15.3: il gemello va misurato).
+Testo ≥4.5:1, oggetti grafici ≥3:1.
+
+| elemento | token | chiaro | scuro | soglia |
+|---|---|---|---|---|
+| marche della card (`.mobile-ac-tail`) | `--ink` su `--panel-2` | **16.83** | **13.03** | 4.5 ✅ |
+| modello della card (`.mobile-ac-model`) | `--ink-2` su `--panel-2` | **8.95** | **7.84** | 4.5 ✅ |
+| etichetta "Tariffa"/"Ore mese" | `--ink-2` su `--panel-2` | **8.95** | **7.84** | 4.5 ✅ |
+| valore tariffa/ore (`.v`) | `--ink` su `--panel-2` | **16.83** | **13.03** | 4.5 ✅ |
+| `Badge` di stato sulla card | `.badge.ok` | **8.38** | **7.46** | 4.5 ✅ |
+| **riempimento barra ore** vs traccia | `color-mix(--ok 70%, --ink)` su `--bg-sunken` | **6.10** | **9.87** | 3 ✅ |
+| nome della riga persona | `--ink` su `--panel` | **18.79** | **15.74** | 4.5 ✅ |
+| sub della riga persona | `--ink-3` su `--panel` | **4.85** | **5.72** | 4.5 ✅ |
+| saldo positivo / ore istruttore | `--ink` su `--panel` | **18.79** | **15.74** | 4.5 ✅ |
+| **saldo negativo** | `.stat-tone-bad` | **9.82** | **6.61** | 4.5 ✅ |
+| "N dovuti" (`.mobile-row-note`) | `--ink-3` su `--panel` | **4.85** | **5.72** | 4.5 ✅ |
+| chip flag "scaduto" | `.badge.bad` | **8.38** | **7.46** | 4.5 ✅ |
+| chip flag "Ngg" | `.badge.warn` | **11.32** | **9.28** | 4.5 ✅ |
+| avatar (3 tinte estratte dalle fixture) | `.avatar`/`.amber`/`.green` | **5.69 / 5.21 / 5.09** | idem (token invarianti) | 4.5 ✅ |
+
+⚠️ Due misure **negative** trovate e chiuse durante il lavoro (§1 correzioni 1 e la nota sotto):
+- `var(--bad-ink)` **non esiste** → il saldo negativo rendeva a 18.79 (nero). Sostituito.
+- `--ink-3` su `--panel-2` (il fondo della card) misura **4.34** in chiaro, sotto la soglia
+  del testo: la card mobile usa `--ink-2`. **La `.ac-card` DESKTOP porta lo stesso 4.34 su
+  `.ac-model`/`.meter-row`**: difetto PRE-esistente, non toccato (componente condiviso con
+  il widget della Panoramica, mandato "desktop invariato") → **TD nuovo** in sprint-status.
+
+## 7. Misure pre/post
+
+**Desktop (AC 10) — 641 / 800 / 1280px, `q` sulle stesse fixture:**
+
+| campo | pre | post |
+|---|---|---|
+| `.card-head` Flotta | 106.69 / 106.69 / 63.84 | **identico** |
+| `.card-head` Piloti | 149.53 / 106.69 / 63.84 | **identico** |
+| `.registry-search` Flotta / Piloti | 240px / 260px (inline) | **240px / 260px** (classe) |
+| `.fleet-grid` tracce | 235.5×2 / 315×2 / 229.5×4 | **identico** |
+| `.students` Piloti scrollWidth | 1102 | **1102** |
+| `aircraft-editor`: pannello / `.so-actions` / `.so-body` pb / submit | 520px / static / 0px border-top / 18px / 35px, bottom 535 | **identico** |
+| `pilot-editor` NUOVO: pannello / actions / body pb / submit bottom | 520 / — / 18px / **854** | 520 / **static**, border-top **0px**, background **trasparente** / 18px / **854** |
+| `pilot-editor` MODIFICA submit bottom / reachable | 501 / true | **501 / true** |
+| `instructor-editor` submit bottom / larghezza; sezioni | 478 / 115px; 744 e 948 | **478 / 115px; 744 e 948** |
+| `.person-bottom-grid` | 252.5×2 / 332×2 / 488×2 (inline) | **identico** (classe) |
+| `.person-expiries .student-row` | 4 tracce | **4 tracce**, header `display: grid` |
+| widget Flotta della home | 1 traccia 287.34px a 1280 | **identico**, e **0** nodi `mobile-fleet-*` dentro |
+
+**Mobile (le due deviazioni dichiarate) — 375px:**
+
+| superficie | pre | post | nota |
+|---|---|---|---|
+| `.card-head` Flotta | **192px** | **220px** (177 a 390) | 4 righe perché "Mostra archiviati"+"Esporta Excel" = 288px in 281; ogni controllo ora ≥44px |
+| `.card-head` Piloti | **149px** | **177px** | era già a 3 righe; i target 44px costano 9px l'una |
+| `.card-head` Istruttori | **150px** | **168px** | idem |
+| pagina Flotta (20 card) | **4313px** a 1 colonna | ~**1600px** a 2 colonne | card 137.5×145 |
+
+## 8. Blast radius, voce per voce
+
+1. **I sei helper `^=`** — nessun testid nuovo comincia con `ac-card-`/`pilot-row-`: i nomi
+   sono `mobile-fleet-card-{id}`, `mobile-pilot-row-{id}`, `mobile-instructor-row-{id}`.
+   Verificato che ogni helper trova **1 solo** nodo per fixture (i sei file girano nella
+   suite completa, §9). **Nessuno spec esistente è stato modificato.**
+2. **`mobile-overview.spec.ts:39-51/209/224`** — `fleet-card-widget` resta 1 nodo e il widget
+   contiene **0** testid `mobile-fleet-*` (asserito a 375 **e** 1280 dal test AC 6): AD-2
+   rispettata rendendo la griglia mobile come FRATELLO di `FleetCardGrid`.
+3. **`home-dashboard.spec.ts:147`** — `fleet-card-widget` visibile a 1280: invariato.
+4. **`people-management.spec.ts:352`** (`getByText('Gestisci in Scadenze')` = 0) — nessun
+   testo duplicato introdotto sui Piloti.
+5. **`person-detail.spec.ts:61-68/217`** — la scheda persona non ha alberi mobile: le
+   scadenze sono RI-DISPOSTE via CSS, quindi zero nodi di testo nuovi.
+6. **`instructor-compensation.spec.ts:134-222` / `instructor-rates.spec.ts:69`** —
+   `instructor-row-{id}`/`instructor-edit-{id}` invariati (i nomi mobile sono altri).
+7. **`expiry-registration.spec.ts`, `flights.spec.ts:269`, `flight-reversal.spec.ts`,
+   `billing.spec.ts`** — passano da queste pagine con testid esatti: invariati.
+8. **`mobile-shell.spec.ts`** — non atterra qui: la copertura di geometria del fondo è
+   scritta in `mobile-registries.spec.ts` (hit-test su ogni `.page a, .page button`).
+9. **Tablet 641-900px (R1)** — misurato a 641 e 800: rail 64px, nessuna regola nuova attiva
+   (`.fleet-mobile`/`.pilots-mobile`/`.instructors-mobile` `display: none`, `.so-actions`
+   `position: static`), geometria identica al pre-fix.
+
+## 9. Esito ONESTO della suite
+
+- `npm run gates`: **PASS lint / PASS typecheck / PASS test (1689) / PASS build**.
+- `e2e/mobile-registries.spec.ts` mirato, build di produzione, `E2E_REUSE_SERVER=1`:
+  primo run **5 rossi** (tutti miei: volo bloccato da documenti mancanti 14.4, riga
+  istruttore senza tariffa payout, `fleet-search` alto 19px, editor istruttore aperto da un
+  testid `display:none` a 375, `.info-row` che sfora); dopo i fix **15/15 verde, exit 0**.
+- **Primo run della suite completa `CI=1`** (build di produzione, DB ricreato da zero):
+  **328 passed, 5 failed, 19 did not run — `E2E_EXIT=1`**. Le cinque:
+  1. `mobile-registries.spec.ts` "barra ore" — **mia**, causa nel §1 correzione 11
+     (catalogo `ExpiryType` globale sporcato da altre spec ⇒ `POST /flights` 422). Chiusa
+     con l'override admin `force`; riverificata **sullo stesso DB sporco** (11 tipi
+     bloccanti, 7 non miei): **15/15 verde, exit 0**.
+  2-5. **`mobile-planning.spec.ts` × 4** (agenda del giorno, marcatore ORA, chip marche,
+     multi-attore) — **NON mie, e l'attribuzione è provata, non affermata**:
+     - forma unica del fallimento: mancano le righe d'agenda **FUTURE** del proprio fixture
+       (3→2, 1→0, 1→0) e il marcatore ORA è 0 (esiste solo se c'è un movimento futuro OGGI);
+     - la spec 15.4 dichiara nel proprio doc-comment la sua unica banda inutilizzabile:
+       *"l'unica banda inutilizzabile è 23:40-00:20 Rome"* — le sue fixture di "oggi" sono
+       `now ± 20 minuti`, quindi dopo le 23:40 il movimento futuro cade **domani** e sparisce
+       dall'agenda di oggi;
+     - **il run è partito alle 23:44 e quelle quattro sono fallite fra le 23:47 e le 23:50
+       (ora di Roma), cioè dentro la banda dichiarata**;
+     - nessun file toccato da questa story entra in quel percorso: `bookings/page.tsx`,
+       `schedule.tsx` e `bookings-table.tsx` non sono nel diff, e i due reader nuovi sono
+       chiamati solo da `fleet/page.tsx` e `pilots/page.tsx`;
+     - controprova eseguita: la suite completa è stata **rilanciata dopo le 00:20** su DB
+       ricreato da zero (§9-bis).
+- **Verifica visiva** (screenshot 375px, tema chiaro e scuro, Flotta/Piloti/Istruttori +
+  sheet aperto): ha trovato il difetto del chip che nessuna asserzione vedeva (§1 correzione
+  12). Ripetuta dopo il fix: chip contenuto, ellissi visibile.
+
+### 9-bis. Gate finale
+
+**Suite completa `CI=1`, build di produzione, DB ricreato da zero — `E2E_EXIT=0`,
+351 passed, 1 flaky (verde al retry), 8.0 min** (`2026-08-04T00:43 → 00:51`, log
+`run8-full-suite-FINAL-green.log`). La catena serializzata ha girato per intero (i 19 test
+"did not run" dei run precedenti erano l'effetto dell'abort, non un'esclusione).
+
+Il run è stato raggiunto in tre passaggi, tutti documentati sopra:
+
+| # | ora | esito | causa |
+|---|---|---|---|
+| 1 | 23:44-23:51 | 328 passed, **5 failed** | 1 mia (catalogo `ExpiryType` globale), 4 di `mobile-planning` dentro la banda oraria 23:40-00:20 che quella spec dichiara inutilizzabile |
+| 2 | 00:22-00:29 | 331 passed, **2 failed** | 1 mia (asserzione che chiedeva a un controllo `aria-disabled` di essere hit-testabile), 1 di `mobile-planning` (`toISOString()` UTC per "domani" fra 00:00 e 02:00 Rome) |
+| 3 | 00:32-00:40 | 332 passed, **1 failed** | mia: lo sweep di hit-test segnalava le righe che passano sotto la **top bar sticky**, che è per progetto |
+| 4 | **00:43-00:51** | **351 passed, 1 flaky, exit 0** | — |
+
+**L'unico flaky** è `flights.spec.ts:602` (`POST /api/v1/flights` → 422, verde al retry):
+è **esattamente** l'accoppiamento a stato globale del §1 correzione 11 — un'altra worker
+aveva appena creato un `ExpiryType` bloccante e la persona nuova di quel test risultava priva
+del documento. Spec **non toccata** da questa story, difetto **pre-esistente**, e conferma
+indipendente della diagnosi che mi ha fatto adottare `force` nel mio fixture. **TD nuovo.**
+
+**Due spec esistenti toccate**, entrambe motivate (il piano di test prevedeva "nessuna
+modifica"):
+- `e2e/mobile-planning.spec.ts` — UNA riga: `"domani"` calcolato in **Europe/Rome** invece
+  che in UTC. Il `?date=` è un giorno di calendario romano; fra 00:00 e 02:00 Rome
+  `toISOString()` restituiva **oggi** e l'asserzione "nessun marcatore ORA in un giorno che
+  non è oggi" andava rossa su un marcatore legittimo. Stessa classe di review 15.4 F1, una
+  frontiera più in là. **Copertura invariata**, anzi resa vera a ogni ora.
+- Nessun'altra: i sei helper `^=` e tutti gli altri spec sono intatti (AD-5 ha tenuto).
+
+## 10. Debito tecnico da tracciare (già scritto in `sprint-status.yaml`)
+
+1. **TD R-15.2-g CHIUSO** con le misure corrette; resta aperta la **riserva sticky** ratificata
+   (in MODIFICA la barra si sgancia oltre la sezione identità) → 15.10 se il PO vuole R3 alla lettera.
+2. **`.ac-card` desktop resta un `<div onClick>`** (R-15.5-i, sotto-decisione) → TD a11y.
+3. **`--ink-3` su `--panel-2` = 4.34:1** sul desktop `.ac-model`/`.meter-row` → TD dark/a11y pass 15.10.
+4. **TD 14.6 F4 confermato e misurato**: `account-section.tsx` resta non responsive —
+   `.students` **802px** in un box da **226-296px** a 320/375/390. È l'UNICA eccezione
+   dichiarata dell'asserzione AC 12 e la guardia la nomina esplicitamente.
+5. **Catalogo `ExpiryType` globale mai ripulito** (`bookings.spec.ts`, `flights.spec.ts`):
+   ogni tipo `blocksBooking = true` che una spec crea rende **ogni persona nuova** priva di
+   quel documento e quindi bloccata su `POST /flights` (`findMissingBlockingDocuments`,
+   14.4). Misurato: 11 tipi bloccanti su DB post-suite, 7 non di seed. Effetto osservato due
+   volte: il mio fixture della barra ore (chiuso con `force`) e il **flaky** di
+   `flights.spec.ts:602` nel run finale. Rimedio suggerito: le due spec cancellino il tipo
+   che creano (o lo creino con `blocksBooking: false` dove non serve).
+6. `sprint-status.yaml` **non è YAML valido** (riga 35, `last_updated` non quotato con `:`
+   dentro): **pre-esistente**, verificato su `git show HEAD:` — non toccato.
+
+## 11. Cosa NON ho fatto (dichiarato)
+
+- Non ho convertito `.ac-card` desktop in `<button>` (TD sopra) né corretto il suo contrasto.
+- Non ho reso responsive `account-section.tsx` (TD 14.6 F4, esplicitamente fuori scope).
+- Non ho toccato `AircraftEditor` (AD-8), né la primitiva `SlideOver` (nessun `mobileFooter`).
+- Non ho portato l'export in linguaggio mobile (R-15.2-c: è la 15.8).
+- Non ho aggiunto `aria-modal`/focus-trap agli sheet (15.10).
+- La composizione delle righe di sheet non è una funzione pura con unit (AD-6): §4-10.
+- Non ho modificato nessuno spec e2e esistente.

@@ -353,7 +353,7 @@ development_status:
   # Lezione: i test della catena serializzata devono sopravvivere ai tetti dei picker, non
   # solo al DB fresco del run --no-deps. Dettagli nel Review Record dello story file.
   15-4-pianificazione-mobile: done
-  15-5-anagrafiche-card-mobile: backlog
+  15-5-anagrafiche-card-mobile: review
   15-6-registro-voli-mobile: backlog
   15-7-scadenze-transiti-mobile: backlog
   15-8-contabilita-statistiche-impostazioni-mobile: backlog
@@ -382,8 +382,20 @@ action_items:
     owner: "backlog TD"
     status: open
   - epic: 15
-    action: "TD (review 15.2 F3, RINVIO ratificato dal PO 2026-07-30): la riga d'azione fissa in basso della modalita' a tutto schermo (R3, classe `.so-actions`) manca su `pilots/pilot-editor.tsx` (2 form nello stesso pannello) e `instructors/instructor-editor.tsx` (3 form). Misurato a 375x812 dalla review: pilot-editor NUOVO body scrollHeight 1652/728 con il submit 906px sotto il fold, pilot-editor MODIFICA submit a bottom 2269, instructor-editor MODIFICA a 2072 - non hit-testabili senza scorrere. NON risolvibile applicando la regola a tappeto: una barra sticky su un'azione che sta a META' pannello si sgancia scorrendo, e metterla su ogni riga impilerebbe 2-3 barre. Serve spostare il salva PRIMARIO nel piede del pannello, decidendo quale riga e' primaria: lavoro della story 15.5, che nel piano possiede gia' quelle due anagrafiche. `fleet/aircraft-editor.tsx` (riga d'azione unica, submit 217px sotto il fold) e' stato chiuso subito nel fix della 15.2."
-    owner: "story 15.5"
+    action: "TD R-15.2-g CHIUSO dalla story 15.5 (ratifica PO R-15.5-f, opzione A). Correzione delle misure originali, rifatte a 375x812 sui pannelli reali: il difetto vero e UNICO era `pilot-editor` in modalita' NUOVO (un solo form, un solo submit, `bottom 926` in un viewport 812 con `elementFromPoint` = null); i numeri 2269/2072 del TD erano azioni SECONDARIE di sezione ('Crea e invia invito', 'Aggiungi tariffa'), che stanno sotto il fold anche sul desktop e anche in `aircraft-editor` (chiuso in 15.2 con la stessa asimmetria), mentre il salva PRIMARIO in MODIFICA era gia' sopra il fold (`pilot-identity-submit` bottom 573 reachable, `instructor-identity-submit` bottom 550 reachable). Fix: `.so-actions` sulla riga identita' di entrambi gli editor (+ su `pilot-editor` NUOVO), uniforme con `aircraft-editor`; desktop misurato invariato a 1280/800/641 (position static, border-top 0, background trasparente, `.so-body` padding-bottom 18px, submit 35px, pannello 520px). RISERVA ACCETTATA dal PO e da tracciare: `.so-actions` e' `position: sticky` dentro `.so-body`, quindi in MODIFICA la barra si sgancia scorrendo oltre la sezione identita'. La versione letterale di R3 ('azione primaria fissa per TUTTO il pannello') richiede lo slot `mobileFooter` sulla primitiva `SlideOver` (11 consumer) + la conversione di `aircraft-editor`: valutarla in 15.10."
+    owner: "story 15.10 (riserva sticky, se il PO vuole R3 alla lettera)"
+    status: open
+  - epic: 15
+    action: "TD (misurato dalla story 15.5, PRE-esistente, e osservato due volte): il catalogo `ExpiryType` e' GLOBALE e le spec non lo ripuliscono - `bookings.spec.ts` (\"Tipo prenotazioni <ts>\") e `flights.spec.ts` (\"Tipo voli <ts>\") creano tipi con `blocksBooking = true` e li lasciano li'. Da quel momento OGNI persona nuova e' priva di quel documento e `POST /api/v1/flights` la rifiuta con 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`findMissingBlockingDocuments`, story 14.4: 'assente O scaduta'). Misurato su DB post-suite: 11 tipi bloccanti, 7 lasciati dalle due spec. Effetti osservati: (a) il fixture del volo della 15.5 (barra ore) e' passato dal verde al 422 fra il run mirato su DB fresco e la suite completa - chiuso usando l'override admin `force`/`forceReason`, deterministico qualunque sia il catalogo; (b) `flights.spec.ts:602` e' risultato FLAKY nel run finale della 15.5 con lo stesso 422 (verde al retry). Rimedio: le due spec cancellino il tipo che creano, oppure lo creino con `blocksBooking: false` dove il test non ha bisogno del blocco."
+    owner: "backlog TD (isolamento e2e)"
+    status: open
+  - epic: 15
+    action: "TD (ratifica PO R-15.5-i, sotto-decisione): `.ac-card` del DESKTOP resta un `<div onClick>` (`components/dashboard/fleet-card.tsx:80-85`) - misurato: `tagName DIV`, 0 figli interattivi, non focusabile, non operabile da tastiera. Difetto a11y PRE-esistente (story 12.5/12.12), non introdotto dalla 15.5: la sua card MOBILE e' un `<button>` vero. Convertirlo cambia il DOM desktop di un componente CONDIVISO col widget Flotta della Panoramica (`FleetCard`), quindi va fatto con la sua misura pre/post su entrambe le superfici - non di sfuggita dentro una story il cui mandato e' 'desktop invariato'."
+    owner: "backlog TD (a11y desktop)"
+    status: open
+  - epic: 15
+    action: "TD (misurato dalla story 15.5, PRE-esistente): `.ac-model` e `.meter-row` del desktop usano `--ink-3` su `--panel-2` (`.ac-card`), che misura 4.34:1 in tema chiaro - sotto il 4.5:1 che l'epic 15 chiede al TESTO. La card MOBILE della 15.5 usa `--ink-2` (10.06:1 chiaro / 7.84 scuro) e non e' toccata; il desktop non e' stato cambiato perche' `.ac-card` e' condiviso col widget Flotta della Panoramica e il mandato della story era 'desktop invariato'. Da chiudere in un dark/a11y pass (15.10) insieme agli altri esemplari di `--ink-3` su `--panel-2`."
+    owner: "story 15.10 (a11y/dark pass)"
     status: open
   - epic: 15
     action: "TD (review 15.2, rilievo di EPIC non di story): l'app non dichiara `viewport-fit=cover` in nessun layout (grep a zero), quindi TUTTI gli `env(safe-area-inset-*)` introdotti dall'epic valgono 0 e sono inerti: tab bar e toast-host della 15.1, riga `.so-actions` della 15.2. Oggi innocui, ma la convenzione non fa nulla e una futura verifica su iPhone con notch la troverebbe non applicata. Decidere in 15.10 (sweep finale): o si aggiunge `viewport-fit=cover` al meta viewport e si verifica il layout su un device con inset reali, o si rimuovono gli `env()` come rumore. NON va deciso a occhio su Chromium headless, che ha inset 0."
