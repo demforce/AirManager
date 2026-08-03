@@ -1,9 +1,10 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import { buildExportHref } from '@/lib/export-href';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { redirect } from '@/i18n/navigation';
-import { listAircraft, listOutOfServiceAircraft } from '@/server/services/aircraft.service';
+import { listAircraft, listOutOfServiceAircraft, sumFlightMinutesByAircraft } from '@/server/services/aircraft.service';
 import { listReservedAircraftIds } from '@/server/services/bookings.service';
 import { getEffectiveRates, todayDateOnlyUtc } from '@/server/services/rates.service';
 import { FleetConsole, type FleetCardItem } from './fleet-console';
@@ -63,9 +64,14 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
   const ids = aircraftResult.items.map((item) => item.id);
   const today = todayDateOnlyUtc();
   const now = new Date();
-  const [currentRatesById, reservedIds] = await Promise.all([
+  // Story 15.5 (R-15.5-b): the phone card's hours bar. Batched over the ids of
+  // THIS page, exactly like the two readers beside it — the window is the
+  // current calendar month, and the card's own caption names it.
+  const monthStart = parseDateOnlyUtc(`${toDateOnlyString(today).slice(0, 7)}-01`);
+  const [currentRatesById, reservedIds, monthMinutesById] = await Promise.all([
     getEffectiveRates(actor, ids, today),
     listReservedAircraftIds(actor, ids, now),
+    sumFlightMinutesByAircraft(actor, ids, monthStart, today),
   ]);
 
   const totalCount = fleetTotalResult.total;
@@ -113,6 +119,7 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
         initialIncludeArchived={includeArchived}
         exportHref={exportHref}
         locale={locale as 'it' | 'en'}
+        monthMinutesById={Object.fromEntries(monthMinutesById)}
         labels={{
           cardTitle: t('cardTitle'),
           searchPlaceholder: t('searchPlaceholder'),
@@ -128,6 +135,23 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
             reserved: t('badge.reserved'),
             available: t('badge.available'),
             archived: t('badge.archived'),
+          },
+          mobile: {
+            monthHours: t('mobile.monthHours'),
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            edit: t('mobile.edit'),
+            sheet: {
+              status: t('mobile.sheet.status'),
+              aogReason: t('mobile.sheet.aogReason'),
+              rate: t('mobile.sheet.rate'),
+              seats: t('mobile.sheet.seats'),
+              fuel: t('mobile.sheet.fuel'),
+              hourMeter: t('mobile.sheet.hourMeter'),
+              monthHours: t('mobile.sheet.monthHours'),
+              notes: t('mobile.sheet.notes'),
+            },
+            noValue: t('mobile.noValue'),
           },
           editor: {
             newTitle: t('editor.newTitle'),

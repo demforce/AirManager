@@ -2324,3 +2324,279 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .bottom-sheet-actions{ flex-wrap: wrap; }
   .bottom-sheet-actions .btn{ flex-basis: calc(50% - 4px); }
 }
+
+/* ---------- anagrafiche mobile (story 15.5, epic 15 R1/R3/R4) ----------
+   The phone faces of `/dashboard/fleet`, `/dashboard/pilots`,
+   `/dashboard/instructors` and the dossier `people/{id}`: a two-column card
+   grid with an hours bar instead of the one-column 4313px page (template
+   191-201), one row per person instead of the 1102px-wide table (232-268), and
+   the two multi-form editors' primary save pinned to the bottom of the panel
+   (ratifica R-15.5-f, closing the R-15.2-g debt).
+
+   Same rules of engagement as the 15.1/15.2/15.3/15.4 blocks above: every
+   declaration is additive inside `@media (max-width: 640px)`, no existing token
+   changes value, no new colour literal — the status pill is `Badge`, the flag
+   chip is `Badge.bad`/`Badge.warn`, the AOG card tint is the app's own
+   `.ac-card.aog` recipe (never the template's `color-mix`), and the hours bar
+   reuses `.meter-bar`/`.fill`, the design system's own progress bar, with the
+   SAME `color-mix(… var(--ink))` correction 15.4 measured for the agenda edges
+   (the raw `--ok`/`--bad` do not clear 3:1 on `--bg-sunken` in the light theme).
+
+   The switch hangs off classes these four pages OWN — `.fleet-desktop-body`/
+   `.fleet-mobile`, `.pilots-desktop-body`/`.pilots-mobile`,
+   `.instructors-desktop-body`/`.instructors-mobile`, `.person-expiries` — never
+   off `.fleet-grid`/`.ac-card` (shared with the Overview's fleet widget) nor
+   `.students` (shared by 13 consoles). Precedent and reasoning:
+   `.ppr-queue-mobile` (15.2), `.home-desktop-surface` (15.3),
+   `.bookings-mobile` (15.4).
+
+   Rows reuse the `.mobile-row*` family of 15.3/15.4 rather than a new one: this
+   IS that row, with a 30px avatar in front and TWO stacked values behind
+   instead of one badge. Only those two slots are new. */
+
+/* The three mobile trees are in the DOM at every width (the switch is CSS
+   only), so they must be `display: none` OUTSIDE the query too — otherwise the
+   desktop suite finds two matches for every registration and every name on
+   these pages. */
+.fleet-mobile,
+.pilots-mobile,
+.instructors-mobile{ display: none; }
+
+/* Same two widths the inline styles had (fleet 240, pilots 260), moved into
+   classes: an inline `width` cannot be overridden by a media query, and the
+   phone rule below needs the box to span its own row. Identical computed style
+   above 640px — measured pre/post at 1280/800/641px. */
+.registry-search{ width: 240px; }
+.registry-search.registry-search-lg{ width: 260px; }
+
+/* Same two declarations the scheda persona's bottom grid carried inline. */
+.person-bottom-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* Same four tracks the scheda persona's scadenze rows carried inline. */
+.person-expiries .student-row{ grid-template-columns: 1.4fr 120px 140px 1fr; }
+
+@media (max-width: 640px){
+  .fleet-desktop-body,
+  .pilots-desktop-body,
+  .instructors-desktop-body{ display: none; }
+  .fleet-mobile{ display: grid; }
+  .pilots-mobile,
+  .instructors-mobile{ display: block; }
+
+  /* --- the head of a registry card (ratifica R-15.5-g) ---
+     ONE node per control at every width (AD-3): the toggle, the search, the
+     export menu and the CTA keep their testids and their state, and only their
+     PLACEMENT changes here. `order` puts the search on its own full-width row
+     and the CTA on the last one, which is the language ratifiche R-15.3-d and
+     R-15.4-f already set for a primary action. Measured pre-fix, this head was
+     192px tall on the Flotta and 149px on the Piloti (64px at 1280px), all of
+     it before the first card.
+     DIRECT children only (lesson 15.3 F1): every one of these cards also mounts
+     `SlideOver` panels and portalled popovers, and a descendant selector would
+     stretch their buttons too. */
+  .registry-head > .spacer{ display: none; }
+  /* The card's own sub-heading ("Flotta", "Anagrafica piloti", "Elenco
+     istruttori") costs a whole row here and says nothing the phone does not
+     already show twice — the page `<h1>` above it and the mobile top bar's own
+     title (15.1). Measured: keeping it made the head 220px, hiding it 176px
+     (pre-fix: 192px on the Flotta, 149px on the Piloti). It is a `div`, not a
+     heading, and no test reads it. */
+  .registry-head > .card-title{ display: none; }
+  /* Row 1: chip + export. Row 2: the search, full width, the last thing before
+     the first card. Row 3: the CTA, the language ratifiche R-15.3-d/R-15.4-f
+     already set for a primary action. The Piloti head ends up 27px TALLER than
+     before (149 -> 176) and that is deliberate: it was already three rows, and
+     the 44px targets AC 3 requires are 9px taller than `.btn`'s default each. */
+  .registry-head > .btn{ order: 2; min-height: 44px; }
+  /* The archived toggle in the chip language of `.mobile-chip-strip` (15.4):
+     same pill, same mono, same target. It stays the SAME button — a second node
+     inside a strip would be a second source of truth for one boolean.
+     `[aria-pressed]` is what makes it a TOGGLE and not just another button in
+     the head: `instructors-console.tsx`'s "Ciclo pagamenti" sits here too and
+     must keep reading as an action. */
+  .registry-head > .btn[aria-pressed]{
+    border-radius: 999px;
+    padding: 5px 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  /* `ExportMenu`'s own relative wrapper — mobile export is story 15.8 (R-15.2-c),
+     so it only changes place here, never behaviour. */
+  .registry-head > div:has(> .btn){ order: 3; }
+  /* The TAP TARGET is the input, not the box around it: `.search` centres its
+     children, so a 44px wrapper still left `fleet-search` 19px tall and a tap
+     on the padding focused nothing. The height moves onto the input and the
+     wrapper's vertical padding goes to zero, so the box stays ~46px. */
+  .registry-head > .registry-search{ order: 4; flex: 1 0 100%; width: auto; padding-top: 0; padding-bottom: 0; }
+  .registry-head > .registry-search .bare-input{ min-height: 44px; }
+  .registry-head > .btn.primary{ order: 5; flex: 1 0 100%; justify-content: center; }
+
+  /* --- pagination, in mobile language (ratifica R-15.5-j) ---
+     Same `?page=` contract and the same two links; only the target grows to the
+     44px AC 3 asks for (a `.btn` measures 35px). They sit inside the card, and
+     `.main`'s own 100px bottom padding (15.1) keeps them clear of the tab bar. */
+  .registry-pagination > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- Flotta: two equal columns inside the existing card (ratifica R-15.5-h) ---
+     `repeat(2, minmax(0, 1fr))`, NOT the template's literal `1fr 1fr`: `1fr` is
+     `minmax(auto, 1fr)`, so the model line's min-content widens the tracks —
+     measured on the desktop markup, `1fr 1fr` gives `285.28px + 275.83px` in a
+     317px content box and the second column is silently clipped by
+     `.card{overflow: hidden}`, with page overflow still reading 0. The `0`
+     minimum is the same idiom `.kpi{min-width: 0}` uses since 13.10 F1. */
+  .fleet-mobile{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 12px 16px 16px;
+  }
+  /* The empty state is a row of the grid, not a cell of it. */
+  .fleet-mobile > .mobile-card-empty{ grid-column: 1 / -1; padding: 4px 0 0; border-top: 0; }
+  .mobile-ac-card{
+    display: flex; flex-direction: column; gap: 6px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font: inherit;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+  }
+  /* The app's own AOG recipe (`.ac-card.aog`), not the template's own mix. */
+  .mobile-ac-card.aog{
+    background: color-mix(in oklch, var(--bad-soft) 70%, var(--panel));
+    border-color: color-mix(in oklch, var(--bad) 30%, var(--border));
+  }
+  .mobile-ac-card:active{ border-color: var(--border-strong); }
+  /* The registration owns its line, and the status pill the next one.
+     The template puts an 8px DOT beside the marks; the app shows a `Badge`
+     instead (it says strictly more, §a.5) and a `Badge` does NOT fit there:
+     measured on a 137.5px card, "Disponibile" left the marks 7px of visible
+     glyphs — the card's own primary identifier, ellipsised away. Two lines cost
+     ~18px per card and keep both readable at 320px. */
+  .mobile-ac-tail{
+    display: block;
+    font-family: var(--font-mono); font-weight: 600; font-size: 14px; letter-spacing: 0.03em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mobile-ac-status{ display: block; min-width: 0; }
+  /* The template's own chip scale (9.5px): at 320px the card is 84px wide and
+     `Badge`'s default 10.5px made "Disponibile" 91px — 9px of ellipsis on the
+     status word itself. */
+  .mobile-ac-status .badge{ font-size: 9.5px; padding: 1px 7px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The three declarations the template has on its own model line and the
+     desktop `.ac-model` has NOT: at 320px the card is 108px wide and a real
+     model ("Cessna 172 Skyhawk") overflowed it by 9px, measured. */
+  .mobile-ac-model{
+    display: block;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* `--ink-2`, not the `--ink-3` of the desktop `.ac-model`: this card's
+     background is `--panel-2`, and `--ink-3` measures 4.34:1 there in the light
+     theme — under the 4.5:1 AC 12 asks of TEXT. `--ink-2` measures 10.06:1.
+     (The desktop `.ac-card` carries the same 4.34:1 on the same two tokens: a
+     PRE-EXISTING defect this story reports and does not silently widen —
+     changing it would repaint the Panoramica's fleet widget too.) */
+  .mobile-ac-meter{
+    display: flex; flex-wrap: wrap; gap: 0 6px;
+    font-family: var(--font-mono); font-size: 10px; color: var(--ink-2);
+    min-width: 0;
+  }
+  .mobile-ac-meter > span{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* `margin-left: auto` instead of `justify-content: space-between`: at 320px
+     the card is 84px wide and "Tariffa" + "180,00 €/h" measure 95px together —
+     side by side BOTH ellipsised into nonsense. Wrapping puts the value on its
+     own line, still right-aligned, and costs 12px of card height only there. */
+  .mobile-ac-meter .v{ color: var(--ink); flex-shrink: 0; margin-left: auto; }
+  /* `.meter-bar`/`.fill` is the design system's own progress bar (`airops.css`
+     ~805, ported in 12.1 and until now unused): track `--bg-sunken`, fill
+     `--ok`, `.fill.bad` for the AOG variant — exactly the template's recipe.
+     Only the FILL COLOUR is corrected here, and only inside this card, with the
+     same `color-mix(… 70%, var(--ink))` 15.4 measured for the agenda edges: the
+     raw tokens do not clear the 3:1 an AC-12 graphic object needs against
+     `--bg-sunken` in the light theme. Descendant selector, but bounded by a
+     class this story owns whose subtree is `<span>`s only — no panel can be
+     reached through it. */
+  .mobile-ac-card .meter-bar .fill{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
+  .mobile-ac-card .meter-bar .fill.bad{ background: color-mix(in oklch, var(--bad) 70%, var(--ink)); }
+
+  /* --- Piloti / Istruttori: the person row (template 232-244 / 249-268) ---
+     `.mobile-row`'s own `1fr auto` becomes the template's `30px 1fr auto`. */
+  /* `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)` and the flag chip on row 2 would push its own track
+     wider than the row — measured with a real type name ("Tipo prenotazioni
+     1785793560243-v6kwjm", 38 chars) the chip ran past the card's right edge.
+     The `0` minimum is the same idiom `.kpi{min-width:0}` uses since 13.10 F1. */
+  .mobile-row-person{ grid-template-columns: 30px minmax(0, 1fr) auto; gap: 4px 12px; }
+  .mobile-row-avatar{ display: block; grid-row: 1; grid-column: 1; }
+  /* The template's 30px avatar; the primitive's own box is 24px (a topbar
+     size). Scoped to this slot, so no other `.avatar` in the app moves. */
+  .mobile-row-avatar .avatar{ width: 30px; height: 30px; font-size: 10px; }
+  .mobile-row-person > .mobile-row-main{ grid-row: 1; grid-column: 2; }
+  .mobile-row-side{ display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 0; grid-row: 1; grid-column: 3; }
+  .mobile-row-amount{ font-family: var(--font-mono); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .mobile-row-note{ font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+  /* The flag chip gets its OWN row rather than the template's slot under the
+     balance. Measured in that slot at 375px: a real blocking document
+     ("Visita medica classe 2 scaduto", 191px) pushed the right column to 193px
+     and left the NAME 38px — the row's own identifier, ellipsised away. On its
+     own row it has the full 245px and nothing else has to shrink. It is a
+     `Badge`, so 13.9's dark calibration comes with it; only the template's
+     smaller type is restated. */
+  /* Column 2 ONLY, never `2 / -1`: an item that SPANS tracks contributes its
+     max-content to the tracks it spans, so a spanning chip re-inflated the
+     `auto` column it was supposed to be independent of. Inside a single
+     `minmax(0, 1fr)` track its containing block is fixed by the name above it,
+     and `max-width: 100%` + ellipsis can finally do their job. */
+  .mobile-row-flag{
+    grid-row: 2; grid-column: 2;
+    display: block; min-width: 0;
+  }
+  /* `display: block`, not `.badge`'s own `inline-flex`: `text-overflow` has no
+     effect on the anonymous flex item a bare string becomes, so a long type name
+     was cut mid-word with no ellipsis to say so. The chip carries no dot here,
+     so nothing needs flex layout; `width: fit-content` keeps the pill hugging
+     its text instead of stretching to the whole track. */
+  .mobile-row-flag .badge{
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    font-size: 9.5px; padding: 1px 7px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* --- scheda persona: the dossier in one column (AC 12) ---
+     The two fixed tracks measured 151.5px each at 375px — two cards too narrow
+     to read. */
+  .person-bottom-grid{ grid-template-columns: 1fr; }
+  /* A free-text licence number or course label is one unbreakable token: at
+     320px it pushed its own box 14px wider than the card (measured). */
+  .person-profile-fact{ overflow-wrap: anywhere; }
+  /* Same class of defect on the "Dati anagrafici" rows: an email or a fiscal
+     code is one unbreakable token and `.info-row .v` has no wrap rule —
+     measured, three rows scrolled sideways inside their own box at 375px.
+     `anywhere` (not `break-word`) is the one that also shrinks the box's
+     min-content contribution, the 13.10 F1 lesson. */
+  .info-row .v{ min-width: 0; overflow-wrap: anywhere; }
+  /* The scadenze table becomes a stacked row — the SAME four cells, re-placed,
+     never duplicated into a second tree (`person-detail.spec.ts:217` and
+     `expiry-registration.spec.ts` match this page's text page-level). */
+  .person-expiries .student-row.header{ display: none; }
+  .person-expiries .student-row{
+    grid-template-columns: 1fr auto;
+    gap: 4px 10px;
+    padding: 11px 16px;
+    align-items: start;
+  }
+  .person-expiries .student-row > :nth-child(1){ grid-column: 1; grid-row: 1; font-weight: 600; font-size: 13px; }
+  .person-expiries .student-row > :nth-child(2){ grid-column: 2; grid-row: 1; justify-self: end; }
+  .person-expiries .student-row > :nth-child(3){ grid-column: 2; grid-row: 2; justify-self: end; }
+  .person-expiries .student-row > :nth-child(4){ grid-column: 1; grid-row: 2; font-size: 12px; }
+  /* `.card-body`'s 18px side padding would double the row's own 16px. */
+  .person-expiries .card-body{ padding: 0; }
+  .person-expiries .card-body > .fld-label{ padding: 14px 16px; }
+}

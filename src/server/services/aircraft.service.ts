@@ -529,3 +529,41 @@ export async function listHourMeterAdjustments(
 
   return paginate(items.map(toAdjustmentListItem), total, query);
 }
+
+/**
+ * Flown minutes per aircraft over `[from, to]` (both `@db.Date` UTC-midnight
+ * bounds, inclusive), for the subset of `aircraftIds` that flew — story 15.5,
+ * ratifica R-15.5-b: the number behind the fleet card's hours bar.
+ *
+ * BATCHED over the ids of the CURRENT PAGE, exactly like the two readers the
+ * fleet page already calls beside it (`getEffectiveRates`,
+ * `listReservedAircraftIds`) — never one query per card, and never the whole
+ * fleet: the bar compares the 20 cards on screen, and `hoursBarPercent`'s
+ * doc-comment says so. The alternative considered (and rejected in Q2) was
+ * `getStats`, a `finance.manage` service that fires 10+ queries and paginates
+ * the entire fleet to expose one field.
+ *
+ * `REGISTERED` only, matching every other flown-minutes aggregate in this
+ * codebase (`stats.service.ts`'s `kpiFlightWhere`): a cancelled flight never
+ * counts as activity. Aircraft with no flights in the window are ABSENT from
+ * the map — callers read `?? 0`, so an empty bar and a missing key mean the
+ * same thing.
+ *
+ * Gated on `aircraft.manage`, the SAME permission its only caller (the fleet
+ * page) requires, so the helper's gate can never drift from the page that
+ * reaches it.
+ */
+export async function sumFlightMinutesByAircraft(actor: Actor, aircraftIds: string[], from: Date, to: Date): Promise<Map<string, number>> {
+  authorize(actor, 'aircraft.manage');
+
+  if (aircraftIds.length === 0) {
+    return new Map();
+  }
+
+  const groups = await prisma.flight.groupBy({
+    by: ['aircraftId'],
+    where: { aircraftId: { in: aircraftIds }, status: 'REGISTERED', flightDate: { gte: from, lte: to } },
+    _sum: { minutes: true },
+  });
+  return new Map(groups.map((group) => [group.aircraftId, group._sum.minutes ?? 0]));
+}

@@ -320,7 +320,19 @@ function IdentitySection({
         </p>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+      {/* Story 15.5 (ratifica R-15.5-f, closing the R-15.2-g debt): `so-actions`
+          pins this row to the bottom of the scrolling body at <=640px, exactly
+          as `aircraft-editor.tsx` already does — the three editors stay
+          uniform. The row is the ANAGRAFICA's save, the panel's primary action;
+          the section-level submits below it ("Crea e invia invito", "Aggiungi
+          tariffa") stay where they are and are reached by scrolling to their own
+          section, on the phone as on the desktop. Honest reservation, accepted
+          by the PO: `position: sticky` cannot leave its containing block, so in
+          EDIT mode this bar detaches once the reader scrolls past the identity
+          form (measured pre-fix: this submit was already above the fold there —
+          the real defect was the NEW mode below). Inert above 640px: the rule
+          lives inside the phone media query. */}
+      <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
         <button type="button" className="btn" onClick={onClose}>
           {labels.cancel}
         </button>
@@ -791,7 +803,12 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
         </p>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+      {/* The defect R-15.2-g was really about (story 15.5, §a.4): the CREATE
+          flow is ONE form with ONE submit, and at 375x812 it measured `bottom
+          926` in an 812px viewport — 114px under the fold and `elementFromPoint`
+          returning null, i.e. not hit-testable without scrolling. `so-actions`
+          pins it; above 640px the rule does not exist. */}
+      <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
         <button type="button" className="btn" onClick={onClose}>
           {labels.cancel}
         </button>

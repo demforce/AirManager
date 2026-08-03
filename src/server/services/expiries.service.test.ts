@@ -29,7 +29,7 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { deleteExpiry, getExpiryTierCounts, listAllExpiries, listPersonExpiries, registerExpiry, updateExpiry } = await import(
+const { deleteExpiry, getExpiryTierCounts, listAllExpiries, listBlockingExpiriesByPerson, listPersonExpiries, registerExpiry, updateExpiry } = await import(
   './expiries.service'
 );
 const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
@@ -679,6 +679,53 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       if (result.success) {
         expect(result.data).toMatchObject({ page: 1, pageSize: 20 });
       }
+    });
+  });
+  describe('listBlockingExpiriesByPerson (story 15.5 — the pilot row flag)', () => {
+    it('rejects an actor without people.read', async () => {
+      await expect(listBlockingExpiriesByPerson(pilotActor(), ['person_1'], parseDateOnlyUtc('2026-08-03'))).rejects.toThrow(ForbiddenError);
+      expect(expiryFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('never queries for an empty page of people', async () => {
+      const result = await listBlockingExpiriesByPerson(adminActor(), [], parseDateOnlyUtc('2026-08-03'));
+
+      expect(result.size).toBe(0);
+      expect(expiryFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('asks only for BLOCKING documents at most 30 days out, batched over the page ids', async () => {
+      expiryFindManyMock.mockResolvedValue([] as never);
+      const today = parseDateOnlyUtc('2026-08-03');
+
+      await listBlockingExpiriesByPerson(adminActor(), ['person_1', 'person_2'], today);
+
+      expect(expiryFindManyMock).toHaveBeenCalledWith({
+        where: {
+          personId: { in: ['person_1', 'person_2'] },
+          expiresAt: { lte: parseDateOnlyUtc('2026-09-02') },
+          expiryType: { blocksBooking: true },
+        },
+        select: { personId: true, expiresAt: true, expiryType: { select: { name: true } } },
+      });
+    });
+
+    it('groups by person and reduces each document to whole days from today (negative = already expired)', async () => {
+      expiryFindManyMock.mockResolvedValue([
+        { personId: 'person_1', expiresAt: parseDateOnlyUtc('2026-07-24'), expiryType: { name: 'Medico classe 2' } },
+        { personId: 'person_1', expiresAt: parseDateOnlyUtc('2026-08-15'), expiryType: { name: 'Licenza PPL' } },
+        { personId: 'person_2', expiresAt: parseDateOnlyUtc('2026-08-03'), expiryType: { name: 'Licenza PPL' } },
+      ] as never);
+
+      const result = await listBlockingExpiriesByPerson(adminActor(), ['person_1', 'person_2', 'person_3'], parseDateOnlyUtc('2026-08-03'));
+
+      expect(result.get('person_1')).toEqual([
+        { typeName: 'Medico classe 2', daysUntil: -10 },
+        { typeName: 'Licenza PPL', daysUntil: 12 },
+      ]);
+      expect(result.get('person_2')).toEqual([{ typeName: 'Licenza PPL', daysUntil: 0 }]);
+      // A person with nothing blocking is simply absent (callers read `?? []`).
+      expect(result.has('person_3')).toBe(false);
     });
   });
 });

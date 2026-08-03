@@ -349,7 +349,14 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     expect(order).toEqual(['mobile-agenda-row', 'mobile-agenda-now', 'mobile-agenda-row']);
 
     // Not today -> no marker at all (the template's `nowIdx === -1` case).
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    // The `?date=` param is a EUROPE/ROME calendar day, so "tomorrow" has to be
+    // computed there too. `toISOString().slice(0, 10)` (UTC) made this line lie
+    // between 00:00 and 02:00 Rome — measured 2026-08-04 at 00:23 CEST, i.e.
+    // 22:23 UTC of the 3rd: `+24h` in UTC still lands on the 4th, which IS
+    // today in Rome, so the marker legitimately existed and the assertion went
+    // red. Same class as review 15.4 F1 ("fixtures independent of the hour"),
+    // one boundary further out. Found by story 15.5's final full-suite run.
+    const tomorrow = new Date(Date.now() + 86_400_000).toLocaleDateString('en-CA', { timeZone: 'Europe/Rome' });
     await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
     await expect(page.getByTestId('mobile-agenda')).toBeVisible();
     await expect(page.getByTestId('mobile-agenda-now')).toHaveCount(0);

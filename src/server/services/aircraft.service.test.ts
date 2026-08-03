@@ -23,6 +23,10 @@ vi.mock('@/server/db/prisma', () => ({
     aircraftRate: {
       create: vi.fn(),
     },
+    // Story 15.5: `sumFlightMinutesByAircraft`, the fleet card's hours bar.
+    flight: {
+      groupBy: vi.fn(),
+    },
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
   },
@@ -39,6 +43,7 @@ const {
   listOutOfServiceAircraft,
   returnToService,
   setOutOfService,
+  sumFlightMinutesByAircraft,
   unarchiveAircraft,
   updateAircraft,
 } = await import('./aircraft.service');
@@ -56,6 +61,7 @@ const hourMeterAdjustmentCreateMock = vi.mocked(prisma.hourMeterAdjustment.creat
 const hourMeterAdjustmentFindManyMock = vi.mocked(prisma.hourMeterAdjustment.findMany);
 const hourMeterAdjustmentCountMock = vi.mocked(prisma.hourMeterAdjustment.count);
 const aircraftRateCreateMock = vi.mocked(prisma.aircraftRate.create);
+const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
 const transactionMock = vi.mocked(prisma.$transaction);
 const queryRawMock = vi.mocked(prisma.$queryRaw);
 
@@ -127,6 +133,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     hourMeterAdjustmentFindManyMock.mockReset();
     hourMeterAdjustmentCountMock.mockReset();
     aircraftRateCreateMock.mockReset();
+    flightGroupByMock.mockReset();
     transactionMock.mockReset();
     queryRawMock.mockReset();
   });
@@ -719,6 +726,42 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(hourMeterAdjustmentFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { aircraftId: 'aircraft_1' }, orderBy: [{ createdAt: 'desc' }] }),
       );
+    });
+  });
+  describe('sumFlightMinutesByAircraft (story 15.5 — the fleet card hours bar)', () => {
+    it('rejects an actor without aircraft.manage', async () => {
+      await expect(sumFlightMinutesByAircraft(pilotActor(), ['aircraft_1'], new Date(Date.UTC(2026, 7, 1)), new Date(Date.UTC(2026, 7, 31)))).rejects.toThrow(
+        ForbiddenError,
+      );
+    });
+
+    it('never queries when the page has no aircraft (an empty `in ()` is a wasted round-trip)', async () => {
+      const result = await sumFlightMinutesByAircraft(adminActor(), [], new Date(Date.UTC(2026, 7, 1)), new Date(Date.UTC(2026, 7, 31)));
+
+      expect(result.size).toBe(0);
+      expect(flightGroupByMock).not.toHaveBeenCalled();
+    });
+
+    it('sums REGISTERED minutes only, inside the given date-only window, batched over the page ids', async () => {
+      flightGroupByMock.mockResolvedValue([
+        { aircraftId: 'aircraft_1', _sum: { minutes: 320 } },
+        { aircraftId: 'aircraft_2', _sum: { minutes: null } },
+      ] as never);
+
+      const from = new Date(Date.UTC(2026, 7, 1));
+      const to = new Date(Date.UTC(2026, 7, 31));
+      const result = await sumFlightMinutesByAircraft(adminActor(), ['aircraft_1', 'aircraft_2', 'aircraft_3'], from, to);
+
+      expect(flightGroupByMock).toHaveBeenCalledWith({
+        by: ['aircraftId'],
+        where: { aircraftId: { in: ['aircraft_1', 'aircraft_2', 'aircraft_3'] }, status: 'REGISTERED', flightDate: { gte: from, lte: to } },
+        _sum: { minutes: true },
+      });
+      expect(result.get('aircraft_1')).toBe(320);
+      // A group with a null sum is still a group — it must read as 0, not undefined.
+      expect(result.get('aircraft_2')).toBe(0);
+      // An aircraft that did not fly is simply absent (callers read `?? 0`).
+      expect(result.has('aircraft_3')).toBe(false);
     });
   });
 });

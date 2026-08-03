@@ -318,7 +318,13 @@ function IdentitySection({
           {formError}
         </p>
       ) : null}
-      <div style={{ marginTop: 10 }}>
+      {/* Story 15.5 (ratifica R-15.5-f): same `so-actions` bar as
+          `aircraft-editor.tsx` and `pilot-editor.tsx` — one primary action per
+          panel, the anagrafica's save, pinned to the bottom of the scrolling
+          body at <=640px and inert above it. Same accepted reservation as the
+          pilot editor's EDIT mode: a sticky box cannot leave its containing
+          block, so the bar detaches past the identity form. */}
+      <div className="so-actions" style={{ display: 'flex', gap: 8, marginTop: 10 }}>
         <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="instructor-identity-submit">
           {labels.save}
         </button>

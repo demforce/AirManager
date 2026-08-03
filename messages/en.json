@@ -365,6 +365,20 @@
       "suspend": "Suspend",
       "reactivate": "Reactivate"
     },
+    "mobile": {
+      "openDetail": "Open detail",
+      "close": "Close",
+      "openProfile": "Open record",
+      "flagExpired": "{doc} expired",
+      "flagExpiring": "{doc} {days}d",
+      "confirmSuspend": "Suspend this person's access?",
+      "confirmReactivate": "Reactivate this person's access?",
+      "dismiss": "Cancel",
+      "sheet": {
+        "phone": "Phone",
+        "documents": "Documents"
+      }
+    },
     "topUp": {
       "title": "Record top-up",
       "amount": "Amount (€)",
@@ -506,6 +520,11 @@
     "actions": {
       "edit": "Edit",
       "pay": "Pay"
+    },
+    "mobile": {
+      "openDetail": "Open detail",
+      "close": "Close",
+      "owedSuffix": "owed"
     },
     "addInstructor": {
       "title": "Add instructor",
@@ -950,6 +969,23 @@
       "reserved": "Reserved",
       "available": "Available",
       "archived": "Archived"
+    },
+    "mobile": {
+      "monthHours": "Hours this month",
+      "openDetail": "Open detail",
+      "close": "Close",
+      "edit": "Edit",
+      "noValue": "—",
+      "sheet": {
+        "status": "Status",
+        "aogReason": "AOG reason",
+        "rate": "Rate",
+        "seats": "Seats",
+        "fuel": "Fuel",
+        "hourMeter": "Hour meter",
+        "monthHours": "Hours this month",
+        "notes": "Notes"
+      }
     },
     "pagination": {
       "prev": "Previous",

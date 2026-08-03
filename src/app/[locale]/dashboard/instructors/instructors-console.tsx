@@ -13,10 +13,13 @@
  * `fleet-console.tsx`: every row-affecting action lives in the card, the
  * page-head is title+KPIs only).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Avatar } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Field, Input, Select } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
@@ -24,6 +27,7 @@ import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
+import { avatarColorFor, initialsOf } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
 import { formatMinutes } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
@@ -48,6 +52,8 @@ export type InstructorsConsoleLabels = {
   exportLabel: string;
   table: { name: string; rate: string; hours: string; owed: string; actions: string; noValue: string };
   actions: { edit: string; pay: string };
+  /** Story 15.5 — the phone face only (row + detail sheet). */
+  mobile: { openDetail: string; close: string; owedSuffix: string };
   addInstructor: {
     title: string;
     subtitle: string;
@@ -97,13 +103,20 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
   const [payTarget, setPayTarget] = useState<InstructorRow | null>(null);
   const [addInstructorOpen, setAddInstructorOpen] = useState(false);
   const [paymentCycleOpen, setPaymentCycleOpen] = useState(false);
+  const [sheetId, setSheetId] = useState<string | null>(null);
+
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => setSheetId(null), []);
+  const sheetInstructor = items.find((item) => item.personId === sheetId) ?? null;
 
   const cols = 'minmax(160px,1.8fr) 120px 110px 130px minmax(160px,1.2fr)';
 
   return (
     <>
       <div className="card">
-        <div className="card-head">
+        {/* ONE head at every width (AD-3) — this page has no search and no
+            pagination, so only the CTA changes shape at <=640px. */}
+        <div className="card-head registry-head">
           <div className="card-title">{labels.cardTitle}</div>
           <div className="spacer" />
           {canManagePayouts ? (
@@ -120,11 +133,11 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
         </div>
 
         {items.length === 0 ? (
-          <p className="card-body" data-testid="instructors-empty">
+          <p className="card-body instructors-desktop-body" data-testid="instructors-empty">
             {labels.empty}
           </p>
         ) : (
-          <div className="students">
+          <div className="students instructors-desktop-body">
             <div className="student-row header" style={{ gridTemplateColumns: cols }}>
               <div>{labels.table.name}</div>
               <div>{labels.table.rate}</div>
@@ -163,6 +176,51 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
             ))}
           </div>
         )}
+
+        {/* --- the phone face of the same roster (template 249-268) -----------
+            Same row family as the Piloti list: avatar, name + sub, and on the
+            right the two numbers this page is opened for. The desktop's own
+            read-only `InstructorProfile` panel is absorbed by the sheet — that
+            IS what R3 prescribes for a row detail. */}
+        <div className="instructors-mobile" data-testid="mobile-instructors-list">
+          {items.length === 0 ? (
+            <p className="mobile-card-empty" data-testid="mobile-instructors-empty">
+              {labels.empty}
+            </p>
+          ) : (
+            items.map((instructor) => {
+              const name = `${instructor.lastName} ${instructor.firstName}`;
+              return (
+                <button
+                  key={instructor.personId}
+                  type="button"
+                  className="mobile-row mobile-row-person"
+                  aria-label={`${labels.mobile.openDetail}: ${name}`}
+                  onClick={() => setSheetId(instructor.personId)}
+                  data-testid={`mobile-instructor-row-${instructor.personId}`}
+                >
+                  <span className="mobile-row-avatar">
+                    <Avatar as="span" init={initialsOf(instructor.firstName, instructor.lastName)} color={avatarColorFor(instructor.personId)} />
+                  </span>
+                  <span className="mobile-row-main">
+                    <span className="mobile-row-title">
+                      <span className="mobile-row-name">{name}</span>
+                    </span>
+                    <span className="mobile-row-sub">
+                      {instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`}
+                    </span>
+                  </span>
+                  <span className="mobile-row-side">
+                    <span className="mobile-row-amount">{formatMinutes(instructor.totalMinutes)}</span>
+                    <span className="mobile-row-note">
+                      {instructor.owedTotalCents === null ? labels.table.noValue : `${formatCents(instructor.owedTotalCents, locale)} ${labels.mobile.owedSuffix}`}
+                    </span>
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
 
       <InstructorEditor
@@ -216,6 +274,56 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
         labels={labels.addInstructor}
         successMessage={labels.toast.instructorAdded}
       />
+
+      {/* Rendered conditionally (AD-7): `mobile-instructor-sheet` is ONE node. */}
+      {sheetInstructor ? (
+        <BottomSheet
+          open
+          onClose={closeSheet}
+          testId="mobile-instructor-sheet"
+          sub={labels.cardTitle}
+          title={`${sheetInstructor.lastName} ${sheetInstructor.firstName}`}
+          badge={<Badge>{sheetInstructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(sheetInstructor.payoutRateCents, locale)}/h`}</Badge>}
+          rows={
+            [
+              { k: labels.table.rate, v: sheetInstructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(sheetInstructor.payoutRateCents, locale)}/h` },
+              { k: labels.table.hours, v: formatMinutes(sheetInstructor.totalMinutes) },
+              { k: labels.table.owed, v: sheetInstructor.owedTotalCents === null ? labels.table.noValue : formatCents(sheetInstructor.owedTotalCents, locale) },
+            ] satisfies BottomSheetRow[]
+          }
+          closeLabel={labels.mobile.close}
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  const instructor = sheetInstructor;
+                  closeSheet();
+                  setEditorTarget(instructor);
+                }}
+                data-testid="instructor-edit-mobile"
+              >
+                {labels.actions.edit}
+              </button>
+              {canManagePayouts ? (
+                <button
+                  type="button"
+                  className="btn mini ok"
+                  onClick={() => {
+                    const instructor = sheetInstructor;
+                    closeSheet();
+                    setPayTarget(instructor);
+                  }}
+                  data-testid="instructor-pay-mobile"
+                >
+                  {labels.actions.pay}
+                </button>
+              ) : null}
+            </>
+          }
+        />
+      ) : null}
     </>
   );
 }

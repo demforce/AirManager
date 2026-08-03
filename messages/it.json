@@ -365,6 +365,20 @@
       "suspend": "Sospendi",
       "reactivate": "Riattiva"
     },
+    "mobile": {
+      "openDetail": "Apri dettaglio",
+      "close": "Chiudi",
+      "openProfile": "Vai alla scheda",
+      "flagExpired": "{doc} scaduto",
+      "flagExpiring": "{doc} {days}gg",
+      "confirmSuspend": "Sospendere l'accesso di questa persona?",
+      "confirmReactivate": "Riattivare l'accesso di questa persona?",
+      "dismiss": "Annulla",
+      "sheet": {
+        "phone": "Telefono",
+        "documents": "Documenti"
+      }
+    },
     "topUp": {
       "title": "Registra ricarica",
       "amount": "Importo (€)",
@@ -506,6 +520,11 @@
     "actions": {
       "edit": "Modifica",
       "pay": "Paga"
+    },
+    "mobile": {
+      "openDetail": "Apri dettaglio",
+      "close": "Chiudi",
+      "owedSuffix": "dovuti"
     },
     "addInstructor": {
       "title": "Aggiungi istruttore",
@@ -950,6 +969,23 @@
       "reserved": "Riservato",
       "available": "Disponibile",
       "archived": "Archiviato"
+    },
+    "mobile": {
+      "monthHours": "Ore mese",
+      "openDetail": "Apri dettaglio",
+      "close": "Chiudi",
+      "edit": "Modifica",
+      "noValue": "—",
+      "sheet": {
+        "status": "Stato",
+        "aogReason": "Motivo AOG",
+        "rate": "Tariffa",
+        "seats": "Posti",
+        "fuel": "Carburante",
+        "hourMeter": "Contaore",
+        "monthHours": "Ore mese",
+        "notes": "Note"
+      }
     },
     "pagination": {
       "prev": "Precedente",
