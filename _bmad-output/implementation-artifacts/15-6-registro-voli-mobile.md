@@ -489,7 +489,7 @@ Baseline: `e28f5be`. Ambiente: Fedora locale dell'utente, DB Docker resettato al
 
 ### Correzioni (7)
 
-**C1 — §a.5 n.6 e AC 6(f) sono SBAGLIATI sull'`Idempotency-Key`.** La ricognizione dice che «lo **stesso** valore viaggia sul re-invio con `force` (e' la stessa operazione, non una nuova)». Il codice fa l'opposto, deliberatamente: `flight-editor.tsx:565` e `:667` chiamano `regenerateIdempotencyKey()` **dopo ogni risposta HTTP**, il 422 compreso, e il contratto e' scritto nero su bianco nel doc-comment di `src/lib/use-idempotency-key.ts` (story TD-2, AC 6): *"regenerated after ANY HTTP response, success OR an application-level error (422/409/…): a fresh submission attempt … must not collide with a completed or still-PENDING record under the OLD key"*; solo un **fallimento di rete** (nessuna risposta) conserva la chiave. Misurato sul filo: due UUID diversi. Ed e' il comportamento **sicuro**: il tentativo rifiutato possiede gia' la vecchia chiave lato server, riusarla rischierebbe di **rigiocare il rifiuto** invece di registrare il volo. L'e2e asserisce il contratto VERO (presente sulla registrazione, presente e **diversa** sul re-invio, **assente** sulla correzione) e cita il motivo.
+**C1 — §a.5 n.6 e AC 6(f) sono SBAGLIATI sull'`Idempotency-Key`.** La ricognizione dice che «lo **stesso** valore viaggia sul re-invio con `force` (e' la stessa operazione, non una nuova)». Il codice fa l'opposto, deliberatamente: `flight-editor.tsx:565` e `:667` chiamano `regenerateIdempotencyKey()` **dopo ogni risposta HTTP**, il 422 compreso, e il contratto e' scritto nero su bianco nel doc-comment di `src/lib/use-idempotency-key.ts` (story TD-2, AC 6): *"regenerated after ANY HTTP response, success OR an application-level error (422/409/…): a fresh submission attempt … must not collide with a completed or still-PENDING record under the OLD key"*; solo un **fallimento di rete** (nessuna risposta) conserva la chiave. Misurato sul filo: due UUID diversi. **Motivazione corretta dopo la review (LOW-4)**: la prima stesura scriveva che «riusare la vecchia chiave rischierebbe di rigiocare il rifiuto» — **falso**, e il reviewer l'ha misurato in DB: un tentativo **fallito LIBERA la chiave** (TD-2 AC 4, `e2e/idempotency.spec.ts:165` *"a failed attempt frees the key immediately"*), tanto che delle due chiavi osservate resta **una sola riga** in `IdempotencyRecord`, quella del 201. Il motivo vero della rigenerazione e' l'altro ramo dello stesso contratto: una chiave puo' restare **PENDING** lato server (risposta persa, richiesta ancora in volo) e un secondo invio sotto quella chiave otterrebbe un 409/una replica invece di registrare; rigenerare rende ogni tentativo indipendente per costruzione. Comportamento ed e2e restano quelli: l'e2e asserisce il contratto VERO (presente sulla registrazione, presente e **diversa** sul re-invio, **assente** sulla correzione).
 
 **C2 — `.lb-row` "88px" e' un numero dipendente dai dati.** Misurato 105px con le mie fixture (nome pilota piu' lungo). Non contraddice nulla, ma non e' una costante da usare come baseline.
 
@@ -515,10 +515,10 @@ Baseline: `e28f5be`. Ambiente: Fedora locale dell'utente, DB Docker resettato al
 | 6 — form | **fatto, invariato** | geometria pre/post **identica** (§1 conferma 7) su NUOVO e CORREGGI, a 375×812, 375×560 e 1280×900, `.so-actions` 0; (a) guardia che nomina documento + stato + **proprietario**; (b) deroga solo con `flights.forceExpiry`, motivo vuoto ⇒ **0 richieste**, motivo reale ⇒ 201 + `flight-forced-result`; (c) v. §6; (d) remount asserito; (e) invariante 14.3 su **entrambi** i rami; (f) v. C1; (g)/(h)/(i)/(j) v. §6 |
 | 7 — paginazione e totali | **fatto** | `1 / 2 → 2 / 2` con `aircraftId` e `flightType` preservati; `flight-page-prev/next` **>= 44px** e hit-testabili a fondo pagina (`elementFromPoint` = self dopo scroll reale, mai `scrollIntoViewIfNeeded`); riga Totali **desktop-only**, un solo nodo, e i suoi 4 numeri **misurati uguali** ai KPI |
 | 8 — testid | **fatto** | 10 testid desktop = **1 nodo** a 375 **e** 1280, su `/dashboard/logbook` **e** `/dashboard`; `flight-row` e `flight-row-mobile` hanno lo **stesso conteggio**; `grep 'data-testid\^='` rifatto (§1 conferma 12) |
-| 9 — geometria/layering | **fatto** | a 320/375/390 e per admin **e** pilota: overflow di pagina **0**, `covered: []` (metodo 15.1 AC 6, scroll reale a fondo pagina), nessuno scroller interno fuori dalle eccezioni dichiarate (KPI strip 15.2, chip strip 15.4, e i nodi **ellissati**); contenimento sul **rect** dei figli della card = `[]` |
+| 9 — geometria/layering | **fatto** | a 320/375/390 (attore ADMIN) **e**, dopo il fix di review LOW-2, a 375 con un attore **NON admin** (ALLIEVO, stessa funzione di misura `pageGeometry`, non una copia piu' lasca): overflow di pagina **0**, `covered: []` (metodo 15.1 AC 6, scroll reale a fondo pagina), nessuno scroller interno fuori dalle eccezioni dichiarate (KPI strip 15.2, chip strip 15.4, e i nodi **ellissati**); contenimento sul **rect** dei figli della card = `[]`. *(La prima stesura scriveva «per admin e pilota»: il test iterava i viewport, non gli attori — corretto qui e nello spec.)* |
 | 10 — guardie discriminanti | **fatto (con una eccezione dichiarata)** | tabella §4 |
 | 11 — invarianti | **fatto** | desktop identico a 1280/800/641 su **entrambe** le pagine; `npm run gates` verde; **zero dipendenze nuove**; **nessun token cambia valore**, nessun literal di colore; ogni stringa in **entrambi** i locale; contrasti §5; suite finale §8 |
-| 12 — multi-attore | **fatto** | ADMIN / PILOTA / ALLIEVO / ISTRUTTORE a 375 **e** 1280 con `clearCookies` fra le identita'; il caso non ovvio (istruttore che vede i voli in cui era CFI, con l'**allievo** sul titolo della card e `· CFI ⟨se stesso⟩` nel sub) **verificato**, non assunto |
+| 12 — multi-attore | **fatto dopo il fix di review LOW-2** | la prima stesura dichiarava «ADMIN / PILOTA / ALLIEVO / ISTRUTTORE a 375 e 1280» ma lo spec aveva **solo** pilota e istruttore, **solo** a 375, e **nessun** ALLIEVO. Ora, con `clearCookies` fra le identita': ADMIN (375 **e** 1280, test dei singleton), PILOTA (375 **e** 1280), ISTRUTTORE (375 **e** 1280), **ALLIEVO** (375 **e** 1280, test nuovo: badge "Deroga" presente, `forceReason` **mai**, 0 azioni nello sheet, `CFI ⟨istruttore⟩` nel sub); il caso non ovvio (istruttore che vede i voli in cui era CFI, con l'**allievo** sul titolo della card e `· CFI ⟨se stesso⟩` nel sub) **verificato**, non assunto |
 | 13 — TD | **fatto** | §9 |
 
 ## 3. File toccati
@@ -529,8 +529,8 @@ Baseline: `e28f5be`. Ambiente: Fedora locale dell'utente, DB Docker resettato al
 - `src/app/[locale]/dashboard/logbook/page.tsx` — le 17 label nuove (`mobile.*`, `filtersCount` via `t.raw`).
 - `messages/it.json` / `messages/en.json` — stesse 17 chiavi in **entrambi** i locale.
 - `src/styles/airops.css` — blocco `registro voli mobile (story 15.6)` in coda (107 righe) + **una** dichiarazione dentro il blocco 15.2 (`.bottom-sheet-sub`, C6).
-- `e2e/mobile-logbook.spec.ts` (**nuovo**, 24 test).
-- `e2e/flight-log.spec.ts` — **estese** (mai indebolite) le asserzioni `toHaveCount(0)` della faccia pilota ai gemelli mobile (blast radius 2).
+- `e2e/mobile-logbook.spec.ts` (**nuovo**, 24 test; **27 dopo i fix di review**: le due guardie xi/xii e il caso ALLIEVO di LOW-2).
+- `e2e/flight-log.spec.ts` — **fix di review LOW-1**: l'estensione dei `toHaveCount(0)` ai gemelli `-mobile` e' stata **rimossa**, non indebolita: quei nodi esistono solo a sheet/pannello **aperti**, quindi contarli su una pagina chiusa e' verde anche per un admin (misurato dal reviewer) e non aggiungeva copertura. Al suo posto un commento che rimanda alla guardia vera, in `mobile-logbook.spec.ts`, che lo sheet e il pannello li **apre**. Le asserzioni desktop del file restano tutte.
 - **NON toccati**: `flight-editor.tsx` (zero righe: il lavoro di questa story sul form era di verifica, non di codice — AD-6), `dashboard/page.tsx#buildFlightEditorLabels` (nessuna chiave nuova dell'editor ⇒ niente da duplicare), `.env.example`, CI, `.lb-row`/`COLS`.
 
 ## 4. Ogni regola nuova → la sua guardia → prova di discriminanza
@@ -545,11 +545,13 @@ Metodo: simulazione del pre-fix **col repo intatto** — iniezione CSS via `addS
 | iv | ellissi su nome e sub della card | nessun testo con `scrollWidth > clientWidth` **e** `text-overflow != ellipsis` a 320 | `text-overflow: clip` su `.mobile-row-name`/`.mobile-row-sub` | **ROSSA**: `[] → [mobile-row-name, mobile-row-sub, …]` |
 | v | `.mobile-row-flight` a `minmax(0,1fr) auto` + badge su riga propria in colonna 1 | **contenimento sul rect**: nessun figlio oltre il bordo destro della card | (a) badge che SPANNA le tracce; (b) badge spostato 150px; (c) valore lungo nella colonna destra | (a) e (c) **NON discriminanti** con i dati reali di questa pagina (le parole del badge sono corte e il nome e' ellissato): non sono riuscito a costruire uno sfondamento naturale — **dichiarato**; (b) **ROSSA** (`[] → mobile-row-flag:+77`) ⇒ il predicato **non e' vacuo**: la guardia resta di regressione |
 | vi | `joinSegments` che **scarta** i segmenti assenti (nome accessibile del dialog) | proprieta' sul nome (`not.toMatch(/—\s*—/)`, `/·\s*·/`, nessun segmento vuoto, nessun segmento `—`) + 16 unit | rimosso il `.filter()` da `joinSegments` | **ROSSA**: 5 unit falliti (`'02/01/2020 ·  · Turismo'`, `' ·  · '`), tutti verdi dopo il ripristino |
-| vii | empty state mobile in un nodo proprio | `mobile-flights-empty` count **1** e visibile, `flight-empty` count **1** e nascosto | — | **non iniettabile**: il difetto sarebbe un secondo nodo, che nessuna regola CSS puo' creare. La guardia resta di regressione (asserisce il conteggio, non la visibilita') — **dichiarato** |
+| vii | empty state mobile in un nodo proprio | `mobile-flights-empty` count **1** e visibile, `flight-empty` count **1** e nascosto | iniezione **DOM** (non CSS): `node.parentElement.appendChild(node.cloneNode(true))` | **ROSSA** — dichiarazione **corretta dopo la review (LOW-3)**: la prima stesura diceva «non iniettabile» guardando alla sola iniezione CSS. Il reviewer ha mostrato la simulazione giusta e io l'ho rifatta: `{"before":{"mobile":1,"desktop":1},"after":{"mobile":2,"desktop":1},"guardWouldFail":true}` — con `toHaveCount(1)` il secondo nodo fa fallire la guardia, che quindi e' **discriminante**, non solo di regressione |
 | viii | selettori di testata ancorati con `>` a `.logbook-head` (lezione 15.3 F1) | misura dei bottoni di `.so-foot` col pannello aperto, pre/post | (a) `.logbook-head .btn, .card .btn{…}` (variante discendente); (b) `.btn{…}` globale | (a) **NON discriminante** — e la ragione e' strutturale: il pannello non e' discendente ne' di `.logbook-head` ne' di `.card`, quindi nemmeno la variante sbagliata lo raggiunge; (b) **ROSSA** (`68x44,119x44 → 335x60,335x60`) ⇒ la misura **vedrebbe** un selettore che arrivasse fin li' |
 | ix | nessuna regola tocca `.filter-date-range` (contabilita', 15.8) | `/dashboard/billing` a 375 **e** 1280, pre/post | build con `src/styles/airops.css` **ripristinato** dal repo (build vero, non iniezione) | **IDENTICO** byte per byte: `display flex`, `flex-wrap wrap`/`nowrap`, `gap 5px`, box `272×37`, `.card-head` 49, overflow 0 |
 | x-d | il `key` che azzera `pendingForceBody` (review 14.4 F1) | chiudi/riapri ⇒ `.slideover.open` sparisce e riappare, `force-flight-section` **count 0**, `flight-form-error` **count 0**, `flight-person` vuoto | — | asserito in e2e (non dedotto). Difetto pre-fix riproducibile solo con un rebuild del codice 14.4: non rifatto, la guardia e' quella che 14.4 ha gia' pagato |
 | x-e | invariante 14.3 in correzione | select **abilitato** e sul valore a file (`TOURISM`) con la persona oggi allievo-solo + hint; e sul ramo NUOVO `disabled` **e** valore `SCHOOL` | — | asserito in e2e sui **due** rami della stessa derivazione |
+| **xi (fix review MINOR-2)** | `.mobile-row-flight > .mobile-row-flag .badge .b-dot{ display:inline-block }` (pallino **0x13**, cioe' non dipinto, sulla card) | e2e: per **ogni** chip di anomalia della card, `width`/`height` **>= 5** **e** contrasto del pallino contro il proprio pill **>= 3**, nei **due** temi | build **pre-fix** vera (la regola non c'era) | **ROSSA** sul pre-fix: `Annullato dot width in light ({"label":"Annullato","width":0,"height":13,"contrast":4.71})`, `Expected: >= 5 / Received: 0`. Verde post-fix (6x6). **Non-regressione della 15.5 misurata**: sulle card 15.5 (flotta 20 chip; piloti/istruttori 0 chip col DB corrente) il pre-fix simulato e' **identico** al post-fix, e un `.mobile-row-flag` con pallino **iniettato** sulla pagina Piloti resta `inline 0x13` mentre lo stesso markup dentro `.mobile-row-flight` misura `inline-block 6x6` ⇒ la regola non esce dalla card volo |
+| **xii (fix review MINOR-1)** | il debounce della ricerca **annullato** all'apertura del pannello (pre-fix: navigava a 400ms e il `key` rimontava la console, chiudendo il pannello) | e2e: digita → apri il pannello → **oltre** il debounce il pannello e' ancora visibile e l'URL non e' cambiato; poi "Applica" porta ricerca **e** filtro nella stessa navigazione; e la chiusura senza Applica fa comunque atterrare la ricerca | build **pre-fix** vera | **ROSSA** sul pre-fix: `the panel must survive a pending debounce — element(s) not found` (il pannello era gia' sparito). Verde post-fix |
 
 ## 5. Contrasti misurati (canvas → sRGB → WCAG, sfondo effettivo risolto risalendo gli antenati; **enumerati**, non fidati dell'elenco)
 
@@ -565,7 +567,7 @@ Metodo: simulazione del pre-fix **col repo intatto** — iniezione CSS via `addS
 | `Badge.bad` "Annullato" (testo) | 8.38 | 7.46 | 4.5 |
 | `Badge.warn` "Deroga" (testo) | 11.32 | 9.28 | 4.5 |
 | `Badge` neutro "Correzione" (testo, 9.5px) | 9.05 | 10.63 | 4.5 |
-| pallino di `Badge.bad` / `.warn` (oggetto grafico, contro il proprio pill) | 8.38 / 11.32 | 7.46 / 9.28 | 3.0 |
+| pallino di `Badge.bad` / `.warn` **sulla card** (oggetto grafico, ink fuso con `opacity .7` contro il proprio pill) | **4.71 / 4.81** | **4.43 / 5.40** | 3.0 |
 | chip di stato attiva `.btn.primary` (testo) | 17.99 | 17.00 | 4.5 |
 | chip di stato attiva (riempimento contro `--panel`, e' lo stato) | 18.79 | 15.74 | 3.0 |
 | chip di stato inattiva (testo) | 18.79 | 15.74 | 4.5 |
@@ -578,6 +580,16 @@ Metodo: simulazione del pre-fix **col repo intatto** — iniezione CSS via `addS
 | `.iconbtn` ✕ del pannello | 9.99 | 9.47 | 4.5 |
 
 Riempimenti dei `Badge` (1.10-1.38 contro `--panel`) e bordi di card/chip (1.18-1.45): **decorativi**, l'informazione e' la parola dentro il pill (e la 15.5 ha spedito gli stessi `Badge` sulle righe persona). Il `--ink-4` che 15.4 e 15.5 hanno gia' contestato **non compare** su nessuna superficie nuova di questa story dopo C6.
+
+**Correzione della riga del pallino (review MINOR-2).** La prima stesura di questa tabella riportava per il pallino i numeri 8.38/11.32 e 7.46/9.28, che sono i contrasti del **TESTO** dei due pill: sulla card il pallino **non era dipinto affatto** (`.mobile-row-flag .badge{ display: block }` della 15.5 riportava `.b-dot` a elemento inline, dove `width`/`height` non si applicano — misurato **0x13**), quindi quella riga misurava un oggetto inesistente. Dopo il fix di review (`.mobile-row-flight > .mobile-row-flag .badge .b-dot{ display: inline-block; vertical-align: middle; margin-right: 5px }`, ratifica PO "dipingere il pallino") il pallino c'e' davvero, **6x6 come nello sheet e sulla riga desktop**, e i numeri qui sopra sono la sua misura vera, per variante e per tema:
+
+| variante | pallino chiaro | pallino scuro | testo del pill (chiaro/scuro) |
+|---|---|---|---|
+| `Badge.bad` "Annullato" | **4.71** | **4.43** | 8.38 / 7.46 |
+| `Badge.warn` "Deroga" | **4.81** | **5.40** | 11.32 / 9.28 |
+| `Badge` neutro "Correzione" | **nessun pallino**: `statusChip()` non passa `dot` su questa variante (parita' col desktop, dove la discendenza e' testo, non un pill con pallino) | — | 9.05 / 10.63 |
+
+Tutte sopra il 3:1 richiesto a un oggetto grafico. La regola 15.5 **non e' stata toccata**: i chip delle card 15.5 restano senza pallino e **misurati identici** pre/post (§4 riga xi).
 
 ## 6. Comportamenti di dominio di §a.5, uno per uno, esercitati a 375px
 
@@ -607,6 +619,8 @@ Riempimenti dei `Badge` (1.10-1.38 contro `--panel`) e bordi di card/chip (1.18-
 7. **`.logbook-filter-range` e `.logbook-search`**: due `style` inline spostati in classi con **stile computato identico** sopra i 640px (misurato). Motivo tecnico, non estetico: un `display`/`width` inline non e' sovrascrivibile da una media query (la stessa lezione che la 15.5 ha pagato su `.registry-search`).
 8. **Sub-line della card senza segnaposto**: su un volo storico senza aeroporti il segmento della tratta **sparisce** invece di diventare `—`. Nella riga del template il `—` sarebbe un secondo separatore; nello sheet la tratta ha comunque la sua riga, con il `—` che il desktop usa.
 9. **`title` dello sheet = tratta, con fallback al pilota** (mai `—`): il template usa la rotta come titolo, ma la rotta e' nullable sui voli pre-11.1 e finirebbe nel nome accessibile del dialog (lezione 15.5 F1).
+10. **(fix review MINOR-1) Semantica scelta per il debounce vs il pannello: il pannello ADOTTA la ricerca pendente.** All'apertura si **annulla** il timer (non lo si flusha: il flush *e'* la navigazione che chiuderebbe il pannello — sarebbe autolesionista) e si semina il draft con `personQueryInput`, cioe' il testo **come digitato**, non l'ultimo applicato: "Applica" manda ricerca e filtri del pannello nella **stessa unica** navigazione, che e' esattamente la regola di AD-4. Alla chiusura senza Applica (✕, scrim, `Escape`) si buttano le modifiche del pannello ma **non** la digitazione: il debounce viene ri-armato e la ricerca atterra da sola, come sarebbe successo se il pannello non fosse mai stato aperto. Nulla di digitato si perde in nessuno dei due rami, e sono entrambi asserti in e2e (§4 riga xii).
+11. **(fix review MINOR-2, ratifica PO) Il pallino si dipinge anche sulla card.** Non si tocca la regola 15.5 (che ha una ragione misurata: `display:block` e' cio' che fa funzionare `text-overflow` sul pill) — si aggiunge **una** dichiarazione che vale **solo** dentro `.mobile-row-flight` e riporta `.b-dot` a `inline-block`, con `vertical-align: middle` e i `5px` di distacco che il `gap` del `.badge` flex dava sulle altre superfici. Cosi' la card, lo sheet e la riga desktop mostrano **lo stesso** oggetto per lo stesso stato, e i chip delle card 15.5 (che non chiedono `dot`) restano invariati — misurato, non dedotto (§4 riga xi).
 
 ## 8. Esito ONESTO della suite
 
@@ -614,12 +628,32 @@ Riempimenti dei `Badge` (1.10-1.38 contro `--panel`) e bordi di card/chip (1.18-
 - Spec nuovo, run mirato su build di produzione (`E2E_REUSE_SERVER=1`): prima passata **19 passed / 4 failed / 1 flaky**, tutti e cinque **difetti dello spec, non del codice** — banner con `firstName lastName` (C1 del §1 no: dettaglio nome), `toBeHidden()` su un pannello chiuso che tiene il DOM montato, l'assunzione sbagliata sull'`Idempotency-Key` (**C1**), l'hit-test della paginazione senza scroll a fondo pagina, e un `framenavigated` di troppo contato prima dell'apertura del pannello. Seconda passata: **24 passed, exit 0** (`/tmp/airmanager-e2e/last-run.log`).
 - Suite completa `CI=1` su build di produzione e **DB fresco**: due passate, §12.
 
+**Giro dei fix di review (2026-08-04, DB resettato dalla sessione principale prima di iniziare).** Guardie scritte **prima** del codice e provate rosse su una build **vera** del pre-fix:
+
+```
+$ E2E_REUSE_SERVER=1 scripts/e2e.sh start e2e/mobile-logbook.spec.ts -g MINOR   # build PRE-fix
+state: DONE — E2E_EXIT=1
+  2 failed
+    › the anomaly chip PAINTS its dot on the card too … (review 15.6 MINOR-2)
+    › a search still in its debounce cannot pull the panel shut … (review 15.6 MINOR-1)
+```
+
+Dopo i fix, sulla build nuova:
+
+```
+$ E2E_REUSE_SERVER=1 scripts/e2e.sh start e2e/mobile-logbook.spec.ts e2e/flight-log.spec.ts
+state: DONE — E2E_EXIT=0
+  31 passed (40.3s)      # 27 mobile-logbook (24 + 3 nuovi) + 4 flight-log
+$ npm run gates
+PASS  lint (20s) · PASS  typecheck (4s) · PASS  test (7s) — 1705 passed · PASS  build (29s)
+```
+
 ## 9. Blast radius, chiuso voce per voce
 
 | voce | esito |
 |---|---|
 | 1. `flight-row` letto page-level con `toHaveCount` da 4 spec | **non toccato**: l'albero mobile usa `flight-row-mobile`. Misurato: i due conteggi sono **uguali** a 375 e a 1280, e nessun testid ha due nodi |
-| 2. `flight-log.spec.ts:229-234` (faccia pilota) | **esteso**, mai indebolito: aggiunti `flight-cancel-action-mobile`, `flight-correct-action-mobile`, `flight-filter-aircraft-mobile` a `toHaveCount(0)` |
+| 2. `flight-log.spec.ts:229-234` (faccia pilota) | **non indebolito** (le sue asserzioni desktop sono tutte li'). L'estensione ai nomi `-mobile` che avevo aggiunto era **vacua** — quei nodi vivono solo a sheet/pannello aperti (review LOW-1): rimossa e sostituita dal rimando alla guardia vera, che vive in `mobile-logbook.spec.ts` (sheet APERTO ⇒ `flight-cancel-action-mobile`/`flight-correct-action-mobile` **0** dove l'admin ne ha 2; pannello APERTO ⇒ `flight-filter-aircraft-mobile` **0**) |
 | 3. 8 call-site di `selectOption` su `flight-filter-aircraft` | **intatti**: il controllo desktop non cambia, cambia solo la sua `display` sotto i 640px (dove nessuno spec desktop gira). Il gemello mobile e' un select **nuovo** dentro il pannello |
 | 4. `flights.spec.ts:33-37` (lookup page-level di `option`) | **non allargato**: il select mobile del velivolo vive dentro il pannello, che e' reso **solo quando aperto** e apribile solo da un trigger `display:none` sopra i 640px ⇒ **zero `<option>` nuove** nel DOM desktop (verificato: a 1280 `flight-filter-aircraft-mobile` non esiste) |
 | 5. `mobile-overview.spec.ts:39-51` + `home-dashboard.spec.ts:164/189` | **non toccati**: zero righe in `flight-editor.tsx`, zero testid nuovi dentro l'editor. Asserito in e2e che su `/dashboard` `flight-form` e' 1 nodo e `mobile-flight-sheet`/`flight-row-mobile` sono 0 |
@@ -655,7 +689,8 @@ Riempimenti dei `Badge` (1.10-1.38 contro `--panel`) e bordi di card/chip (1.18-
 - **Riga Totali non portata su mobile** (ratifica R-15.6-i): sostituita dalla KPI strip, con la coincidenza dei quattro numeri **misurata** in e2e.
 - **AC 6(c)** (attore con `flights.manage` senza `flights.forceExpiry`) non esercitato: non costruibile col modello di ruoli post-14.9 — dichiarato al §6, non saltato in silenzio.
 - **AC 6(g)** (avviso saldo) non esercitato in e2e su questa story: superficie invariata, dichiarato al §6.
-- **Guardia (v) di contenimento e (vii) empty state**: non ho trovato una simulazione del pre-fix che le rendesse rosse con i dati reali di questa pagina; il predicato di (v) e' stato provato **non vacuo** con un'iniezione blunt. Dichiarato al §4, non nascosto.
+- **Guardia (v) di contenimento**: non ho trovato una simulazione del pre-fix che la rendesse rossa con i dati reali di questa pagina; il predicato e' stato provato **non vacuo** con un'iniezione blunt. Dichiarato al §4, non nascosto — e la review lo **conferma** avendo costruito il caso peggiore legale (marche di 20 caratteri, nomi lunghi, importo a 5 cifre) senza sfondare nulla a 320/375 nei due temi.
+- **Guardia (vii) empty state**: la dichiarazione «non iniettabile» era **sbagliata** ed e' stata corretta (review LOW-3): l'iniezione giusta non e' CSS ma DOM (clonare il nodo), e con essa la guardia e' **rossa**. Misura in §4 riga vii.
 - **`viewport-fit=cover`, focus trap, `aria-modal`, redesign dell'`ExportMenu`**: fuori scope (15.8/15.10).
 
 ## 12. Suite completa finale (l'unico gate che conta)
@@ -677,3 +712,59 @@ E2E_EXIT=0
 **377 = 353 (baseline 15.5) + 24 test nuovi**, zero failed, **zero flaky**, catena serializzata inclusa. Log copiato in `<scratchpad>/final-full-suite.log`.
 
 `npm run gates` finale: **PASS** (lint · typecheck · test 1705 · build).
+
+# Review Record — 15.6 (reviewer adversarial Opus 5 xhigh, fix-subagent Opus 5 xhigh — 2026-08-04)
+
+Report integrale della review: `15-6-review-report.md`.
+Verdetto: **SHIPPABLE-WITH-FIXES** — **0 Major**, 2 Minor, 5 Low: il ciclo più pulito dell'epic.
+Fix in `bcb180d`.
+
+## Arbitro della review (pre-fix)
+
+`CI=1` su build di produzione, DB fresco: **E2E_EXIT=0 — 377 passed (10.5m), 0 failed, 0 flaky**,
+catena serializzata inclusa — coincide con la dichiarazione del dev. Gates verdi (1705 unit).
+Confermato empiricamente dal reviewer: testata **239 ≤ 266** a 320/375/390 in IT e EN anche con
+filtri attivi, ogni target ≥44px; **la sequenza 14.4 F1 non si riproduce** (chiudi/riapri/cambia
+pilota → il volo va SEMPRE alla persona giusta); doppio tap = 1 POST; storni concorrenti →
+200+409 con UN addebito e UNO storno in DB; `?page` azzerato da Applica e dalle chip; deep-link
+`?personId=`/`?instructorPersonId=` con parità desktop; il fix `.bottom-sheet-sub` solleva i
+gemelli di TUTTI gli sheet dell'epic (PPR/prenotazioni/flotta) a 4.85/5.72.
+
+## Findings → fix
+
+| # | Sev | Difetto (misurato dalla review) | Fix (prove nel report del fix) |
+|---|---|---|---|
+| MINOR-1 | minor | il debounce 400ms della ricerca persona navigava DOPO l'apertura del pannello Filtri e il remount lo smontava sotto il pollice — il fallimento che AD-4 dichiarava inaccettabile, da un'altra porta | **decisione PO: ora** — `cancel()` del timer all'apertura (il flush SAREBBE la navigazione che chiude il pannello), il pannello ADOTTA la ricerca pendente nel draft e "Applica" naviga UNA volta; alla chiusura senza applicare il debounce si RIARMA (senza, il testo digitato si perdeva in silenzio — deviazione dichiarata e guardata). Guardia scritta PRIMA e provata rossa su build pre-fix reale |
+| MINOR-2 | minor | il pallino del Badge di anomalia sulla CARD era inline width 0 (soppresso dalla regola 15.5) — e il record ne "misurava" il contrasto: misura di un oggetto non dipinto | **decisione PO di DESIGN (contro la raccomandazione del reviewer): dipingerlo** — eccezione mirata `.mobile-row-flight > .mobile-row-flag .badge .b-dot` (la regola 15.5 resta intatta: 20 chip flotta IDENTICI pre/post + prova strutturale per iniezione su Piloti); contrasto VERO nei due temi: Annullato 4.71/4.43, Deroga 4.81/5.40, Correzione senza pallino PER COSTRUZIONE (variante neutra = parità desktop); guardia w/h≥5 + contrasto ≥3, rossa sul pre-fix (`width: 0`) |
+| LOW-1 | low | l'estensione dei `toHaveCount(0)` ai nomi `-mobile` in `flight-log.spec.ts` era VACUA (0 anche per un admin pieno: quei nodi esistono solo a sheet aperto) | rimossa + dichiarata (l'alternativa era un duplicato verbatim); in cambio i gemelli non-vacui sono espliciti in `mobile-logbook.spec.ts`: sheet APERTO come pilota → 0 azioni (admin: 2), pannello APERTO → i testid dei filtri |
+| LOW-2 | low | copertura dichiarata > reale: mancava l'attore ALLIEVO, pilota/istruttore solo a 375, geometria solo admin | **decisione PO: colmare** — test allievo (invito reale, volo SCHOOL: titolo=allievo, CFI nel sub, badge Deroga, `forceReason` MAI, 0 azioni) + pilota/istruttore anche a 1280 + geometria non-admin con lo STESSO helper. Tutti verdi al primo run — nessun difetto, come la verifica manuale del reviewer |
+| LOW-3 | low | la guardia (vii) era dichiarata "non iniettabile" ma la review l'ha resa discriminante con un'iniezione DOM; la (v) confermata NON discriminante coi dati reali | simulazione adottata (`guardWouldFail: true`), record corretto; la (v) resta dichiarata onestamente — nessuna prova finta |
+| LOW-4 | low | la motivazione della correzione C1 (Idempotency-Key) era imprecisa: un tentativo fallito LIBERA la chiave | record corretto: la ragione vera della rigenerazione è il ramo "still-PENDING" del contratto TD-2; comportamento e test invariati |
+| LOW-5 | low | consegna: sprint-status non aggiornato (status, TD nuovi), HANDOFF non aggiornato | chiuso in QUESTO commit di chiusura dalla sessione principale |
+
+## Ratifiche PO sopraggiunte in review (4, 2026-08-04)
+
+1. **MINOR-2 → pallino dipinto anche sulla card** — decisione di design esplicita del PO, contro
+   la raccomandazione del reviewer (che proponeva di ratificare la card senza pallino).
+2. **MINOR-1 → fix subito**, non TD.
+3. **Faccia `personOptions` del tetto 100 → si SUBISCE** (l'invariante 14.3 regge, sparisce solo
+   l'hint UX su flotte >100; TD unico con più facce, rimedio = story propria).
+4. **LOW-2 → copertura colmata**, non record allineato al ribasso.
+
+## Verifiche del fix
+
+Gates verdi (1705 unit). Pre-fix build: guardie **2 failed, E2E_EXIT=1** (verbatim nei log dello
+scratchpad); post-fix: `mobile-logbook` (27) + `flight-log` **31 passed**; vicini (`flights`,
+`flight-reversal`, `mobile-registries`) **34 passed**, tutto exit 0.
+
+## Gate finale
+
+- Arbitro finale, `CI=1` su build di produzione, DB fresco, stato committato: **380 passed (10.1m), E2E_EXIT=0 — zero failed, ZERO flaky** (380 = 377 + 3 test nuovi del fix)
+- `npm run gates`: **verde** (lint 23s, typecheck 3s, 1705 unit, build 33s)
+
+## TD (in `sprint-status.yaml`, registrati alla chiusura)
+
+- **(g)** `.search` a 190px ha 2px di scroll interno pre-esistente (desktop).
+- **(h)** `.so-sub` è `--ink-4` (3.66:1) — primitiva desktop, evitata qui invece di estenderla.
+- **Faccia `personOptions`** aggiunta al TD `OPTIONS_PAGE_SIZE = 100` (hint 14.3 invisibile
+  oltre pagina 1 del picker; invariante server intatto).

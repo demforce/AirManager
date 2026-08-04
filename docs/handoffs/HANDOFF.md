@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-08-04 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1-15.5 DONE** (shell, primitive, panoramica, pianificazione, anagrafiche a card). Prossimo lavoro: **story 15.6 — Registro voli mobile**)
+# HANDOFF — AirManager (aggiornato: 2026-08-04 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1-15.6 DONE** (shell, primitive, panoramica, pianificazione, anagrafiche, registro voli). Prossimo lavoro: **story 15.7 — Scadenze + Transiti mobile**)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -171,6 +171,38 @@ Record completi: `_bmad-output/implementation-artifacts/15-5-anagrafiche-card-mo
   era irraggiungibile su mobile e nessuna guardia lo vedeva).
 - Deviazione di giudizio del fix-subagent RATIFICATA nel Review Record: il TD `--ink-3`/`--panel-2`
   chiuso come non-difetto (4.59/5.36 rimisurato da due parti indipendenti, il 4.34 non riproduce).
+
+### 15.6 Registro voli mobile — DONE (2026-08-04)
+
+Lista a card con `Badge` di anomalia (annullato > deroga > correzione, pallino DIPINTO su decisione di
+design del PO), sheet di dettaglio con parità informativa per TUTTI i ruoli (admin E self-service in un
+albero solo), storno con `secondStep` + toast, testata = chip di stato + ricerca + pannello "Filtri" a
+navigazione unica (**239px contro i 266 pre-fix** — e contro i 382 che avrebbe dato il riordino 15.5,
+scartato con la prova aritmetica), KPI strip al posto della riga Totali. Story file con ratifiche
+R-15.6-a..i, Dev Agent Record e Review Record: `_bmad-output/implementation-artifacts/
+15-6-registro-voli-mobile.md`; report review: `15-6-review-report.md`. Commit: `e28f5be` story,
+`2850ede` feat, `a880f01` record, `bcb180d` fix, + docs di chiusura. Arbitro finale su DB
+fresco: **380/380, 0 flaky, exit 0 (10.1m)**.
+
+- **Review col punteggio migliore dell'epic: 0 major** (2 minor + 5 low). I comportamenti di dominio
+  sono passati indenni dall'attacco: la sequenza 14.4 F1 (chiudi/riapri/cambia-pilota) NON si
+  riproduce, doppio tap = 1 POST, storni concorrenti → un addebito e uno storno. **Zero righe toccate
+  in `flight-editor.tsx`**: la ricognizione aveva stabilito che R3 era già soddisfatta dal prop
+  `footer`, e ha retto.
+- **Lezione (durevole) — il debounce è una porta di servizio del remount**: la ricerca debounced
+  navigava DOPO l'apertura del pannello Filtri e il remount con `key` lo smontava sotto il pollice.
+  Quando una pagina si remonta a ogni navigazione, OGNI scrittura ritardata di URL è un chiudi-pannello
+  latente: il timer va annullato all'apertura (e riarmato alla chiusura senza apply, o il testo
+  digitato si perde in silenzio — il fix ingenuo avrebbe introdotto un secondo difetto).
+- **Lezione (durevole) — le story correggono le story**: il dev ha corretto la ricognizione
+  sull'Idempotency-Key (si RIGENERA a ogni risposta HTTP: contratto TD-2, comportamento sicuro) e
+  l'e2e asserisce il contratto vero, non quello immaginato. Terza occorrenza del pattern "il
+  teammate a valle corregge quello a monte con le prove" (15.5: misure del TD R-15.2-g; 15.6: chiave
+  + la motivazione C1 raffinata dal reviewer).
+- **Il tetto `OPTIONS_PAGE_SIZE = 100` ha una TERZA faccia misurata** (`personOptions` del form volo:
+  su DB >100 persone l'hint `studentOnlyCorrectionHint` della 14.3 sparisce oltre pagina 1 — invariante
+  server intatto; PO: si subisce). Le facce sono ora: stats CHIUSA (15.4), picker prenotazioni/persone
+  APERTA, hint correzione APERTA. Il TD unico in sprint-status le elenca tutte.
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 
