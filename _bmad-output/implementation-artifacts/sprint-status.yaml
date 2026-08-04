@@ -32,7 +32,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-08-03 (EPIC 15 in corso: 15.1 shell, 15.2 primitive, 15.3 panoramica e 15.4 pianificazione mobile DONE. Prossima: 15.5 anagrafiche a card. 15.4: agenda voli di oggi con chip marche e marcatore ORA, lista a card con sheet decisionale, `?status`, form a tutto schermo, CTA gated su profilo attivo; review Opus 5 SHIPPABLE-WITH-FIXES (4 major: fixture e2e time-dependent, ?status ripetuto 500, tetto 100 di getStats PAGINATO su decisione PO, seed pilot mutato da project parallelo; 2 minor), TD ratificato = finestra anche su updateBooking INCONDIZIONATA; un secondo rosso trovato dal primo arbitro post-fix (picker cappato vs catena serializzata su DB post-suite) chiuso in sessione; v. commento 15-4 e Review Record. 15.3: KPI 2x2, card "In corso ora", coda prenotazioni con decisione dentro lo sheet, feed Avvisi a 3 fonti, card METAR, landing per-ruolo riconciliate; 8 ratifiche PO chiuse prima del dispatch; review Opus 5 SHIPPABLE-WITH-FIXES (4 Medium + 4 Low, F1 = selettore discendente che sfondava nel pannello full-screen); arbitro finale 326/326, 0 flaky, exit 0, DB fresco. 4 TD nuovi in action_items. 15.2: BottomSheet + pannello form a tutto schermo + KPI strip, coda PPR come consumer di prova; arbitro finale 309/309 exit 0 su DB fresco. Storico 15.1 — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
+last_updated: 2026-08-04 (EPIC 15 in corso: 15.1 shell, 15.2 primitive, 15.3 panoramica, 15.4 pianificazione e 15.5 anagrafiche a card DONE. Prossima: 15.6 registro voli mobile. 15.5: perimetro PIENO ratificato (Flotta 2 colonne con barra ore del mese, Piloti e Istruttori a riga con sheet, scheda persona a colonna singola, R-15.2-g chiuso con misure corrette); review con arbitro gia' verde, 2 major (aria-label con guardia cieca; sheet Istruttori senza il dettaglio desktop) + 5 minor, 7/7 fixati con discriminanza per stash+rebuild; v. commento 15-5 e Review Record. 15.4: agenda voli di oggi con chip marche e marcatore ORA, lista a card con sheet decisionale, `?status`, form a tutto schermo, CTA gated su profilo attivo; review Opus 5 SHIPPABLE-WITH-FIXES (4 major: fixture e2e time-dependent, ?status ripetuto 500, tetto 100 di getStats PAGINATO su decisione PO, seed pilot mutato da project parallelo; 2 minor), TD ratificato = finestra anche su updateBooking INCONDIZIONATA; un secondo rosso trovato dal primo arbitro post-fix (picker cappato vs catena serializzata su DB post-suite) chiuso in sessione; v. commento 15-4 e Review Record. 15.3: KPI 2x2, card "In corso ora", coda prenotazioni con decisione dentro lo sheet, feed Avvisi a 3 fonti, card METAR, landing per-ruolo riconciliate; 8 ratifiche PO chiuse prima del dispatch; review Opus 5 SHIPPABLE-WITH-FIXES (4 Medium + 4 Low, F1 = selettore discendente che sfondava nel pannello full-screen); arbitro finale 326/326, 0 flaky, exit 0, DB fresco. 4 TD nuovi in action_items. 15.2: BottomSheet + pannello form a tutto schermo + KPI strip, coda PPR come consumer di prova; arbitro finale 309/309 exit 0 su DB fresco. Storico 15.1 — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -353,7 +353,22 @@ development_status:
   # Lezione: i test della catena serializzata devono sopravvivere ai tetti dei picker, non
   # solo al DB fresco del run --no-deps. Dettagli nel Review Record dello story file.
   15-4-pianificazione-mobile: done
-  15-5-anagrafiche-card-mobile: review
+  # 15.5 chiusa 2026-08-04, ciclo a quattro teammate in un'unica sessione (story+dev+review+fix
+  # tutti Opus 5, ratifiche via AskUserQuestion a sessione presidiata). 10 ratifiche R-15.5-a..j
+  # pre-dispatch (R-15.5-a: perimetro PIENO a 4 superfici deciso dal PO contro la raccomandazione)
+  # + 3 sopraggiunte in review. La ricognizione del teammate story ha CORRETTO il TD R-15.2-g
+  # (il difetto vero era solo pilot-editor NUOVO, 906px sotto il fold; i numeri 2269/2072 erano
+  # azioni secondarie sotto il fold anche su desktop). Dev: 12 AC, 8 guardie provate rosse,
+  # --bad-ink inesistente scoperto (il saldo negativo sarebbe stato nero), full suite 351+1 flaky
+  # exit 0. Review Opus 5 SHIPPABLE-WITH-FIXES con arbitro GIA' verde: 2 major — F1 aria-label
+  # malformato su 115/121 velivoli con guardia CIECA (split consuma i separatori adiacenti);
+  # F2 sheet Istruttori che PERDEVA il dettaglio desktop (ore mese/allievi/voli CFI) — + 5 minor,
+  # fra cui le testate mobili PIU' ALTE del pre-fix (contro il beneficio della ratifica) e un
+  # selettore discendente che raggiungeva il /ppr pubblico (classe 15.3 F1). Fix: 7/7 con
+  # discriminanza per stash+rebuild (5 failed sul pre-fix); criterio testate centrato su Flotta
+  # (175<=192) e Istruttori (121<=150), IRRAGGIUNGIBILE su Piloti (175 vs 149: 3 controlli da
+  # 44px + padding = 175, accettato dal PO con la prova aritmetica). Dettagli nel Review Record.
+  15-5-anagrafiche-card-mobile: done
   15-6-registro-voli-mobile: backlog
   15-7-scadenze-transiti-mobile: backlog
   15-8-contabilita-statistiche-impostazioni-mobile: backlog
@@ -394,9 +409,9 @@ action_items:
     owner: "backlog TD (a11y desktop)"
     status: open
   - epic: 15
-    action: "TD (misurato dalla story 15.5, PRE-esistente): `.ac-model` e `.meter-row` del desktop usano `--ink-3` su `--panel-2` (`.ac-card`), che misura 4.34:1 in tema chiaro - sotto il 4.5:1 che l'epic 15 chiede al TESTO. La card MOBILE della 15.5 usa `--ink-2` (10.06:1 chiaro / 7.84 scuro) e non e' toccata; il desktop non e' stato cambiato perche' `.ac-card` e' condiviso col widget Flotta della Panoramica e il mandato della story era 'desktop invariato'. Da chiudere in un dark/a11y pass (15.10) insieme agli altri esemplari di `--ink-3` su `--panel-2`."
-    owner: "story 15.10 (a11y/dark pass)"
-    status: open
+    action: "TD CHIUSO NEL CICLO DI FIX DELLA 15.5 (review F7: il numero non riproduce). Il TD affermava che `.ac-model`/`.meter-row` del desktop (`--ink-3` su `--panel-2` dentro `.ac-card`) misurassero 4.34:1 in tema chiaro, sotto la soglia 4.5 del testo. Rimisurato due volte con lo stesso metodo canvas->WCAG usato dalla story (colore calcolato + sfondo EFFETTIVO risolto risalendo gli antenati) su `/dashboard/fleet` a 1280px, build di produzione: **4.59:1 in chiaro e 5.36:1 in scuro** su entrambi i selettori, e il confronto diretto dei due token (`contrastPair(--ink-3, --panel-2)`) da' gli stessi numeri - cioe' SOPRA soglia. La review adversarial aveva misurato 4.59/5.36 in modo indipendente: due misure concordi contro il 4.34 originale. Non c'e' quindi nessun difetto di contrasto da portare in 15.10 su questi due selettori; resta valida e non toccata la scelta della card MOBILE di usare `--ink-2` (misurato 9.46 chiaro / 8.88 scuro), che era comunque il tono giusto per quella superficie."
+    owner: "story 15.5 (chiuso nel ciclo di fix)"
+    status: closed
   - epic: 15
     action: "TD (review 15.2, rilievo di EPIC non di story): l'app non dichiara `viewport-fit=cover` in nessun layout (grep a zero), quindi TUTTI gli `env(safe-area-inset-*)` introdotti dall'epic valgono 0 e sono inerti: tab bar e toast-host della 15.1, riga `.so-actions` della 15.2. Oggi innocui, ma la convenzione non fa nulla e una futura verifica su iPhone con notch la troverebbe non applicata. Decidere in 15.10 (sweep finale): o si aggiunge `viewport-fit=cover` al meta viewport e si verifica il layout su un device con inset reali, o si rimuovono gli `env()` come rumore. NON va deciso a occhio su Chromium headless, che ha inset 0."
     owner: "story 15.10 (sweep finale)"

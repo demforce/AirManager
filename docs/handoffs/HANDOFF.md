@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-08-03 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1 shell, 15.2 primitive, 15.3 panoramica e 15.4 pianificazione mobile DONE**. Prossimo lavoro: **story 15.5 — Anagrafiche a card**)
+# HANDOFF — AirManager (aggiornato: 2026-08-04 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1-15.5 DONE** (shell, primitive, panoramica, pianificazione, anagrafiche a card). Prossimo lavoro: **story 15.6 — Registro voli mobile**)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -143,6 +143,34 @@ fresco: **337/337, 0 flaky, exit 0 (14.4m)**.
   parallelo, e ora OGNI `moveBooking` della suite la eredita → suite time-dependent fuori dalla
   fascia ~07:20-20:40 Roma. Il TD "reports.spec → catena serializzata" sale di priorità (voce in
   sprint-status). Residuo F1 dichiarato: fixture "oggi" impossibili nella fascia 23:40-00:20.
+
+### 15.5 Anagrafiche a card — DONE (2026-08-04)
+
+Perimetro PIENO ratificato dal PO (R-15.5-a, contro la raccomandazione del teammate story): Flotta a card
+2 colonne con barra ore del mese (reader batchato nuovo `sumFlightMinutesByAircraft`), Piloti e Istruttori
+a riga con sheet di dettaglio e azioni (flag = documento BLOCCANTE via `blocksBooking`, non solo il medico),
+scheda persona a colonna singola multi-attore, testata mobile (ricerca full-width + chip archiviati + CTA),
+R-15.2-g chiuso (`.so-actions` sui due editor — con la ricognizione che ha CORRETTO le misure del TD: il
+difetto vero era solo pilot-editor NUOVO). Story file con ratifiche R-15.5-a..j, Dev Agent Record e Review
+Record completi: `_bmad-output/implementation-artifacts/15-5-anagrafiche-card-mobile.md`; report review:
+`15-5-review-report.md`. Ciclo a quattro teammate in UNA sessione (story `0f4fc11`, feat `69062ee`, record
+`6383d3a`, fix `ff0bff7`). Arbitro finale su DB fresco: **353/353, 0 flaky, exit 0 (8.9m)**.
+
+- **13 ratifiche PO totali** (10 pre-dispatch + 3 in review). Le due che pesano per il futuro: il perimetro
+  pieno a 4 superfici è STORY-ABILE in un ciclo solo (ma la review va dimensionata); il criterio "testata
+  ≤ pre-fix mantenendo i 44px" è stato centrato su 2 superfici su 3 e dichiarato IRRAGGIUNGIBILE su Piloti
+  con prova aritmetica (3 controlli × 44px + padding = 175 > 149) — accettato, non nascosto.
+- **Lezione (durevole) — la guardia cieca per `split`**: `split(' — ').length === 2` è verde su `— —`
+  perché split consuma i separatori adiacenti. L'asserzione su un accessible name composto deve vietare
+  le sequenze malformate, non contare i pezzi. (Il difetto colpiva 115/121 velivoli del seed.)
+- **Lezione (durevole) — `ellipsis` nasconde gli sfondamenti allo sweep**: un elemento con
+  `text-overflow: ellipsis` non compare mai fra gli "scroller nascosti" — il contenimento va asserito
+  con una guardia dedicata sul rect. Classe da rileggere sulle superfici delle story precedenti (15.10).
+- **Lezione (durevole) — un dettaglio-pannello desktop non "si assorbe da solo"**: la parità informativa
+  degli sheet va enumerata contro TUTTO ciò che il desktop apre da quella riga (il pannello InstructorProfile
+  era irraggiungibile su mobile e nessuna guardia lo vedeva).
+- Deviazione di giudizio del fix-subagent RATIFICATA nel Review Record: il TD `--ink-3`/`--panel-2`
+  chiuso come non-difetto (4.59/5.36 rimisurato da due parti indipendenti, il 4.34 non riproduce).
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 

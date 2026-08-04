@@ -501,8 +501,12 @@ Tutto rimisurato a runtime sulla build di produzione, DB seed fresco + fixture p
 5. **`.card-head` NON si accorcia solo riordinando.** Misurato: con i 44px che AC 3 impone su
    ogni controllo, la testata a 375px passa da 192 → **220px** sulla Flotta e 149 → **220px**
    sui Piloti. Nascondendo il `.card-title` (che ripete quello che dicono già l'`<h1>` e la
-   top bar mobile) si scende a **176-177px** — Flotta **-16px** rispetto al pre-fix, Piloti
-   **+28px** (era già a tre righe, i target 44px costano 9px l'una). Numeri onesti in §7.
+   top bar mobile) si scende a **176-177px**. ⚠️ **Riga corretta nel ciclo di fix (review F3,
+   2026-08-04)**: il "**-16px** sulla Flotta" che questa riga rivendicava confrontava un post
+   misurato a **390px** con un pre misurato a **375px**. Al viewport di riferimento
+   dell'epic (375px) i numeri veri della prima consegna erano **221.84** (Flotta, quattro
+   righe), **179** (Piloti), **167.84** (Istruttori), cioè **PEGGIO** del pre-fix su tutte e
+   tre. Il secondo giro li ha portati a **175 / 175 / 121** — v. la tabella di §7 e §12.
 6. **Il tetto della testata dipende dalla LUNGHEZZA delle etichette.** A 375px "Mostra
    archiviati" (141px) + "Esporta Excel" (137px) + gap = **288px in un content box da 281**:
    vanno a capo e la Flotta resta a **220px**; sui Piloti ("Solo archiviati", 128px) stanno
@@ -676,14 +680,15 @@ Testo ≥4.5:1, oggetti grafici ≥3:1.
 | `.person-expiries .student-row` | 4 tracce | **4 tracce**, header `display: grid` |
 | widget Flotta della home | 1 traccia 287.34px a 1280 | **identico**, e **0** nodi `mobile-fleet-*` dentro |
 
-**Mobile (le due deviazioni dichiarate) — 375px:**
+**Mobile (le due deviazioni dichiarate) — 375px** (colonna "post fix" = dopo il secondo giro
+sulla testata del ciclo di fix, review F3 — §12):
 
-| superficie | pre | post | nota |
-|---|---|---|---|
-| `.card-head` Flotta | **192px** | **220px** (177 a 390) | 4 righe perché "Mostra archiviati"+"Esporta Excel" = 288px in 281; ogni controllo ora ≥44px |
-| `.card-head` Piloti | **149px** | **177px** | era già a 3 righe; i target 44px costano 9px l'una |
-| `.card-head` Istruttori | **150px** | **168px** | idem |
-| pagina Flotta (20 card) | **4313px** a 1 colonna | ~**1600px** a 2 colonne | card 137.5×145 |
+| superficie | pre-fix | prima consegna | post fix | nota |
+|---|---|---|---|---|
+| `.card-head` Flotta | **192px** | **221.84px** (4 righe) | **175px** | chip ed export sulla stessa riga; ogni controllo ≥44px, export incluso (F4) |
+| `.card-head` Piloti | **149px** | **179px** | **175px** | 3 righe è il pavimento: 24 (padding) + 44 + 46 + 44 + 16 di gap = 175 contro un pre-fix che era esattamente tre righe da 35px |
+| `.card-head` Istruttori | **150px** | **167.84px** | **121px** | "Ciclo pagamenti" + export sulla stessa riga |
+| pagina Flotta (20 card) | **4313px** a 1 colonna | ~**1600px** a 2 colonne | idem | card 137.5×145 |
 
 ## 8. Blast radius, voce per voce
 
@@ -800,3 +805,104 @@ modifica"):
 - Non ho aggiunto `aria-modal`/focus-trap agli sheet (15.10).
 - La composizione delle righe di sheet non è una funzione pura con unit (AD-6): §4-10.
 - Non ho modificato nessuno spec e2e esistente.
+
+## 12. Ciclo di fix della review (fix-15-5, Opus 5 xhigh — 2026-08-04)
+
+Sette findings, tutti chiusi. Misure a runtime sulla build di produzione, DB fresco seedato.
+
+| F | cosa è cambiato | evidenza (misurata, pre → post) |
+|---|---|---|
+| **F1** (Major) | il `sub` che finisce nel nome accessibile del dialog OMETTE i segmenti assenti invece di iniettare il segnaposto `—`: `fleet-console.tsx` (`based`/`fuelType` filtrati e uniti) e `subLineOf` in `pilots-console.tsx` (ritorna `''`, e il fallback è di chi RENDE: `—` sulla riga, `labels.cardTitle` sullo sheet). Guardia riscritta: `expectWellFormedSheetName` vieta `— —`, i segmenti vuoti e i segmenti-segnaposto, invece del cieco `split(' — ').length === 2` | `"Basato · — — I-ABCD · Tecnam P92 Eaglet"` → `"Basato — I-ABCD · Tecnam P92 Eaglet"`; test nuovo con un velivolo **senza carburante** e una persona **senza email né profili** |
+| **F2** (Major) | lo sheet Istruttori porta le tre voci del pannello desktop (**Ore nel mese**, **Allievi recenti**, **Voli recenti come CFI**, dallo STESSO `GET /api/v1/instructor-compensation?personId=` del pannello, fetch **all'apertura dello sheet**, zero query in più sulla lista) e l'azione **"Vai alla scheda"** (`instructor-open-profile-mobile`, gemella di `pilot-open-profile-mobile`) | sheet a 375px: `ORE NEL MESE 1:00 · ALLIEVI RECENTI <allievo> · VOLI RECENTI COME CFI <data · nome · 1:00>`; 3 azioni tutte a 44px; `pageOverflow 0`, zero scroller nascosti, contrasti 18.79/15.74 (valori) e 4.85/5.72 (chiavi) |
+| **F3** (Minor + PO) | secondo giro sulla testata col criterio ratificato: padding della testata mobile a `12px 16px` (quello di `.mobile-card-head`), `column-gap` 8px, chip a `padding 5px 10px`, glifo del check nascosto sul chip (lo stato resta `.btn.on` + `aria-pressed`) ⇒ chip ed export sulla **stessa riga** | **375px**: Flotta 221.84 → **175** (pre-fix 192 ✅), Istruttori 167.84 → **121** (150 ✅), Piloti 179 → **175** (149 ❌, **non raggiungibile**: 24 di padding + righe 44/46/44 + 16 di gap = 175, e il pre-fix 149 era esattamente tre righe da 35px). A **320px** la testata sale di 5px (221.84 → 227) perché F4 impone 44px all'export: costo aritmetico dichiarato. Filtro ON: 175 in entrambi i locale (era 227 in IT) |
+| **F4** (Minor + PO) | `.registry-head > div:has(> .btn) > .btn{ min-height: 44px }` — solo il target, il menu resta alla 15.8 | trigger export 34.84 → **44px** su tutte e tre le console; guardia nello sweep ≥44px (locatore strutturale: l'`ExportMenu` non ha testid) |
+| **F5** (Minor) | `.info-row .v` → `.person-identity > .info-row > .v`, con la classe nuova sulla card "Dati anagrafici" | `/ppr` a 375px: `overflow-wrap anywhere` → **normal**, `min-width 0px` → **auto** (identico a 1280); scheda persona invariata (`anywhere`/`0px` a 320/375/390, `normal`/`auto` a 641/800/1280, `pageOverflow 0` ovunque) |
+| **F6** (Minor) | `.so-body:has(.so-actions)` → `:has(> .so-actions:last-child), :has(> :last-child .so-actions)`: il `padding-bottom: 0` vale solo dove la barra è l'ULTIMA cosa del corpo (è lì che la spinge in alto) | fondo del corpo a 375px: `pilot-editor` MODIFICA 0 → **18.31**, `instructor-editor` MODIFICA 0 → **17.69**, `aircraft-editor` MODIFICA 0 → **17.77**; **invariati** `pilot-editor` NUOVO (0.23) e `aircraft-editor` NUOVO (0.31), submit sempre `reachable: true` con `scrollTop 0` (375×560: bottom 548, `sticky`); desktop 641/800/1280 `padding-bottom 18px`, `position static`, pannello 520px — identico |
+| **F7** (Minor) | TD riscritto e **chiuso**: `--ink-3` su `--panel-2` non è sotto soglia | rimisurato canvas→WCAG su `/dashboard/fleet` a 1280: **4.59 chiaro / 5.36 scuro** su `.ac-model` e `.meter-row`, e `contrastPair(--ink-3, --panel-2)` dà gli stessi numeri — il 4.34 del TD non riproduce (la review aveva misurato gli stessi 4.59/5.36 in modo indipendente) |
+
+**Sweep ripetuto dopo il cambio di layout** (le 24 combinazioni della review: 4 superfici ×
+320/375/390 × tema chiaro e scuro): `pageOverflow` **0**, scroller nascosti **[]**, controlli
+sotto la tab bar o coperti **[]**, target < 44px nella testata/paginazione **[]**, testo sotto
+4.5:1 **[]** — **0 combinazioni con findings**.
+
+**Desktop invariato** (641/800/1280, misurato): `.registry-head` `padding 14px 18px`,
+`gap 8px 10px`, altezze 106.69/106.69/63.84 (Flotta) e 149.53/106.69/63.84 (Piloti),
+`.registry-search` 240/260, chip `padding 7px 12px` e glifo `display: block`, `.card-title`
+visibile, i tre alberi mobile `display: none`.
+
+**Discriminanza delle guardie nuove — provate ROSSE sul codice pre-fix.** Le sole modifiche a
+`src/` e `messages/` sono state messe da parte (`git stash`) lasciando lo spec nuovo al suo
+posto, ricostruita la build di produzione e rilanciato `e2e/mobile-registries.spec.ts`:
+**5 failed / 11 passed** (`--retries=0`), una per finding, con il messaggio giusto:
+
+| guardia | rosso sul pre-fix |
+|---|---|
+| F1 `expectWellFormedSheetName` | `Error: no two adjacent separators — Received: "Basato · — — I-AMSEC8OAEJSQ · P92"` (la vecchia `split(' — ')` era **verde** su questa stessa stringa) |
+| F2 parità dello sheet istruttore | `toContainText` fallisce: `"…Tariffa payout 60,00 €/h Ore totali 1:00 Totale dovuto 60,00 € Modifica Paga Chiudi"` — nessun "Ore nel mese", nessun allievo, nessun volo, nessun "Vai alla scheda" |
+| F3 chip ed export sulla stessa riga | `Error: chip pressed: still one row with the export menu — Received: false` |
+| F5 `/ppr` non raggiunto dalla regola | `overflow-wrap/min-width` diversi da `normal/auto` sul modulo pubblico |
+| F6 fondo del corpo in MODIFICA | `paddingBottom` `Received: "0px"` (atteso `18px`) |
+| F4 target dell'export | stesso test di F3 (fallisce prima sull'asserzione della riga): la prova è la misura diretta, trigger **34.84px** pre-fix su tutte e tre le console a 320/375/390 |
+
+Log del rosso: `scratchpad/discriminance-prefix-RED.log`. Ripristinate le modifiche, ricostruita
+la build: **16/16 verde** sullo spec e **58/58** sul blast radius ristretto; il primo giro sul
+blast radius completo (18 spec: `ppr-public`, i tre `aircraft-*`, `people-management`,
+`person-profiles`, `person-detail`, `user-management`, `instructor-*`, i cinque `mobile-*`,
+`home-dashboard`, `expiry-registration`) era **114 passed, exit 0**.
+
+# Review Record — 15.5 (reviewer adversarial Opus 5 xhigh, fix-subagent Opus 5 xhigh — 2026-08-04)
+
+Report integrale della review (evidenze, riproduzioni, misure): `15-5-review-report.md`.
+Verdetto: **SHIPPABLE-WITH-FIXES**. Fix in `ff0bff7`.
+
+## Arbitro della review (pre-fix)
+
+`CI=1` su build di produzione, DB fresco: **E2E_EXIT=0 — 351 passed + 1 flaky (8.4m)** su 352
+(`mobile-registries.spec.ts` 15/15). Il flaky era `billing.spec.ts:296` — il TD pre-esistente
+che la story stessa elenca — NON il `flights.spec.ts:602` del run del dev (che in questo run
+non si è ripresentato; la diagnosi del dev sull'accoppiamento `ExpiryType` resta confermata dai
+dati: 11 tipi bloccanti sul DB post-suite, 7 non di seed). Gates verdi (1689 unit).
+
+Il reviewer ha RIPROVATO le 8 guardie per iniezione (tutte rosse), il desktop a 641/800/1280 su
+3 console + 4 pannelli + scheda persona + Panoramica, i testid AC 6 (1 nodo a 375 e 1280, zero
+duplicati), il multi-attore sulla scheda persona (incluso l'attore multi-ruolo, con ripristino
+verificato), i due reader nuovi (1 query ciascuno, valori incrociati in SQL), 24 combinazioni
+viewport×tema, la parità i18n e l'assenza di token `var(--x)` non definiti nell'intero repo.
+
+## Findings → fix
+
+| # | Sev | Difetto (misurato dalla review) | Fix (prove nel report del fix e in §12 del Dev Agent Record) |
+|---|---|---|---|
+| F1 | MAJOR | `aria-label` dello sheet malformato su **115/121 velivoli** (`"Basato · — — I-ABCD"`: il segnaposto `—` entrava nel `sub` e la primitiva compone `sub — title`; stessa classe sulla riga Piloti senza email/profili) con **guardia CIECA**: `split(' — ').length === 2` è verde sul caso vietato perché `split` consuma i separatori adiacenti | i segmenti assenti vengono FILTRATI dal `sub` (ogni chiamante possiede il proprio fallback); guardia riscritta (`expectWellFormedSheetName`: vieta `— —`, segmenti vuoti e segnaposto) + test con velivolo senza carburante e persona senza email/profili. Rossa sul pre-fix: `"Basato · — — I-AMSEC8OAEJSQ · P92"` |
+| F2 | MAJOR | lo sheet Istruttori PERDEVA il dettaglio desktop (`InstructorProfile`: ore nel mese, allievi recenti, voli recenti come CFI — irraggiungibili a 375px, `instructor-name-{id}` 32 nodi 0 visibili) e non aveva l'ingresso alla scheda persona | **decisione PO: assorbire** — `InstructorSheet` con fetch all'apertura (stessa API del pannello desktop, zero query per-riga): le tre sezioni + azione `instructor-open-profile-mobile` ("Vai alla scheda", chiave nei due locale). Misurato popolato a 375, 3 azioni ≥44px, contrasti 18.79/15.74 |
+| F3 | minor | testate mobili PIÙ ALTE del pre-fix (Flotta 192→222, Piloti 149→179, Istruttori 150→168 @375) contro il beneficio su cui R-15.5-g era stata ratificata; record contraddittorio (§1 vs §7) | **decisione PO: secondo giro con criterio "≤ pre-fix mantenendo i 44px"** — `.registry-head` compattata (padding 12/16, gap 8, chip senza glifo): **Flotta 175 (≤192 ✅), Istruttori 121 (≤150 ✅), Piloti 175 (>149 ❌ — irraggiungibile per aritmetica: 3 controlli da 44px + padding + gap = 175; il pre-fix era fatto di righe da 35px)**. Documentato nel CSS, in §12 e nel budget e2e; sparito anche il salto del toggle (175→227 solo in IT, ora stabile). Record corretto |
+| F4 | minor | trigger `ExportMenu` a **34.84px** contro i ≥44 di AC 3, senza guardia | **decisione PO: ora** — `min-height: 44px` ≤640px sulle tre console, dentro lo sweep ≥44px con locator strutturale; il redesign del menu resta alla 15.8 |
+| F5 | minor | `.info-row .v` discendente raggiungeva il modulo PPR PUBBLICO (classe lezione 15.3 F1) | scope a `.person-identity > .info-row > .v`; `/ppr` misurato identico a prima a 375 e 1280, guardia nuova sul modulo pubblico |
+| F6 | minor | `.so-body:has(.so-actions){padding-bottom:0}` azzerava i 18px in fondo ai due editor in MODIFICA | `:has` ristretto ai casi in cui la barra è davvero l'ultimo elemento: fondo 0→~18px sui tre editor in MODIFICA, invariati i NEW e il desktop (5 campi del fix 15.2 F3 misurati) |
+| F7 | minor | il TD `--ink-3` su `--panel-2` citava 4.34, che non riproduce (review: 4.59/5.36) | rimisurato 4.59 chiaro / 5.36 scuro (sopra soglia 3:1) → TD **chiuso** in sprint-status con l'audit trail — deviazione di giudizio del fix-subagent, ratificata qui: un TD che descrive un non-difetto non va tenuto aperto |
+
+## Verifiche del fix
+
+Gates verdi (1689 unit); `mobile-registries.spec.ts` **16/16** (un test nuovo per F1);
+blast radius completo **18 spec, 114 passed, exit 0**; prova di discriminanza per stash
+del src (spec tenuto, rebuild, `--retries=0`): **5 failed / 11 passed** sul pre-fix,
+tutto verde al ripristino. Sweep della review RIPETUTO dopo il cambio di layout:
+**24/24 combinazioni** (4 superfici × 3 larghezze × 2 temi) senza findings.
+
+## Gate finale
+
+- Arbitro finale, `CI=1` su build di produzione, DB fresco, stato committato: **353 passed (8.9m), E2E_EXIT=0 — zero failed, ZERO flaky** (353 = 352 + il test nuovo della guardia F1)
+- `npm run gates`: **verde** (lint 20s, typecheck 3s, 1689 unit, build 33s)
+
+## Ratifiche PO sopraggiunte in review (3, 2026-08-04)
+
+1. **F2 → assorbire il dettaglio nello sheet** (non "Vai alla scheda" da solo, non il pannello riusato).
+2. **F3 → secondo giro con criterio misurabile** "testata ≤ pre-fix mantenendo tutti i target ≥44px,
+   altrimenti documentare e accettare" — esito: 2 su 3 centrate, Piloti accettata con la prova aritmetica.
+3. **F4 → 44px subito** sul trigger dell'export (redesign in 15.8).
+
+## TD (in `sprint-status.yaml`)
+
+- Chiuso: `--ink-3`/`--panel-2` (F7, non-difetto rimisurato da due parti indipendenti).
+- Restano i TD aperti dal Dev Agent Record (accoppiamento `ExpiryType` fra spec; card desktop
+  `<div onClick>`; volume fixture per run — ora 8 velivoli + 21 archiviati, 9 persone, 2 voli).
