@@ -241,7 +241,12 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     // register (a PENDING one lives only in the PPR console) — so its row is
     // the one that renders the requester's email + phone.
     const { registration, email } = await createApprovedRequest(page);
-    await page.goto('/it/dashboard/movements');
+    // FIFO (createdAt asc): the fresh APPROVED fixture is the NEWEST row and
+    // lands on the LAST page once the backlog exceeds a page — the default
+    // landing made this red the moment a parallel spec (15.7's AC 9 fixtures)
+    // pushed the APPROVED bucket past 20. Same defensive navigation the
+    // "Registra arrivo" test below already uses.
+    await gotoMovementsLastPage(page, 'APPROVED');
     const row = movementsRows(page).filter({ hasText: registration });
     await expect(row.getByText(email)).toBeVisible();
     await expect(row.getByText('+39 333 0000000')).toBeVisible();

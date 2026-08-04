@@ -5,7 +5,7 @@ import type { Page } from '@playwright/test';
  * Story 15.7, ratifica R-15.7-g — "Quota associativa" as a full-screen panel
  * on a phone (AC 8): the SAME `MembershipFeeModal` node, in a CSS mode, with
  * the typeahead over 338 people finally given room, a 44px submit (35 before)
- * and a 20px override checkbox (13x13 before).
+ * and a 44px override ROW (a 13x13 checkbox in a 15px row before).
  *
  * **Why this lives in its own SERIALIZED project** (`playwright.config.ts`,
  * after `mobile-overview-overflow`): the quota button is `disabled` while
@@ -26,6 +26,7 @@ if (!SEED_PASSWORD) {
 }
 
 const PHONE = { width: 375, height: 812 };
+const DESKTOP = { width: 1280, height: 720 };
 
 async function login(page: Page, email: string): Promise<void> {
   await page.goto('/it/login');
@@ -94,18 +95,47 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     });
     expect(geometry).toEqual({ x: 0, y: 0, w: 375, h: 812 });
 
+    // Every control of this panel against the EPIC's floor — the same 43.5
+    // threshold `mobile-expiries-movements.spec.ts` sweeps with (sub-pixel
+    // layout), never one calibrated on the value obtained. Where a control is
+    // WRAPPED by its label ("Forza addebito"), the tap target is the label
+    // ROW, not the box: measured pre-fix 343x20 around a 20x20 checkbox, which
+    // is exactly what this sweep exists to catch (review 15.7 MINOR-1).
     const small = await page.evaluate(() => {
-      const out: { testid: string | null; h: number }[] = [];
+      const out: { testid: string | null; target: string; h: number }[] = [];
       for (const el of Array.from(document.querySelectorAll('.mini-modal button, .mini-modal input, .mini-modal select'))) {
         if (el.getClientRects().length === 0) continue;
-        const rect = el.getBoundingClientRect();
-        if (rect.height < 19.5) out.push({ testid: el.getAttribute('data-testid'), h: Math.round(rect.height * 10) / 10 });
+        const target = el.closest('label') ?? el;
+        const rect = target.getBoundingClientRect();
+        if (rect.height < 43.5) out.push({ testid: el.getAttribute('data-testid'), target: target.tagName, h: Math.round(rect.height * 10) / 10 });
       }
       return out;
     });
     expect(small).toEqual([]);
     expect(await panel.getByTestId('membership-fee-submit').evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
-    expect(await panel.getByTestId('membership-fee-override-checkbox').evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(20);
+    // The override's own target, said out loud: the row that wraps the box —
+    // the control that decides whether a 422 from the server gets overridden.
+    const overrideTarget = await panel.getByTestId('membership-fee-override-checkbox').evaluate((el) => {
+      const row = el.closest('label');
+      const rect = (row ?? el).getBoundingClientRect();
+      return { wrapped: row !== null, h: Math.round(rect.height * 10) / 10 };
+    });
+    expect(overrideTarget.wrapped).toBe(true);
+    expect(overrideTarget.h).toBeGreaterThanOrEqual(44);
+
+    // AC 10 for the quota's own names: they exist only while this panel is
+    // open with a non-zero fee, i.e. only inside this serialized project, so
+    // `mobile-expiries-movements.spec.ts`'s enumeration cannot reach them
+    // (review 15.7 LOW-6). The panel is ONE node in a CSS mode, never a second
+    // tree (deviation D2) — which is exactly what this asserts, at both
+    // widths, without navigating away (the modal keeps its state on resize).
+    for (const viewport of [PHONE, DESKTOP]) {
+      await page.setViewportSize(viewport);
+      for (const testid of ['scadenze-membership-fee-button', 'membership-fee-panel', 'membership-fee-amount', 'membership-fee-submit', 'membership-fee-override-checkbox']) {
+        await expect(page.getByTestId(testid), `${testid} @${viewport.width}`).toHaveCount(1);
+      }
+    }
+    await page.setViewportSize(PHONE);
 
     const combobox = panel.getByRole('combobox', { name: 'Pilota' });
     await combobox.click();

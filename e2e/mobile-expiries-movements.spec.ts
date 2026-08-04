@@ -93,6 +93,40 @@ async function gotoScadenze(page: Page, fixture: ExpiryFixture, window = 'all'):
   await page.goto(`/it/dashboard/expiries?window=${window}&expiryTypeId=${fixture.typeId}`);
 }
 
+/**
+ * One run-unique type carrying `count` scadenze, i.e. a SECOND page of the
+ * registry BUILT rather than hoped for (review 15.7 LOW-4: a pagination guard
+ * whose every assertion hides inside `if (the pagination exists)` is green
+ * without having measured anything, on any DB that happens to hold fewer than
+ * 21 rows). `@@unique([personId, expiryTypeId])` (schema.prisma) means one
+ * person per row, so the people go in one wave and the scadenze in the next.
+ * Every date is beyond 60 days on purpose: the four stat cards are EXCLUSIVE
+ * bands (expired/≤7/≤30/≤60), so these rows move none of the global counts
+ * `expiry-dashboard.spec.ts` reads twice in a row under `fullyParallel`.
+ */
+async function createPagedExpiryFixture(page: Page, count: number): Promise<string> {
+  const typeResponse = await page.request.post('/api/v1/expiry-types', { data: { name: `TipoPag ${uniqueSuffix()}`, scope: 'ALL' } });
+  expect(typeResponse.status()).toBe(201);
+  const type = (await typeResponse.json()) as { id: string };
+
+  const people = await Promise.all(
+    Array.from({ length: count }, async () => {
+      const response = await page.request.post('/api/v1/people', { data: { firstName: 'Pagina', lastName: `Scadenza-${uniqueSuffix()}` } });
+      expect(response.status()).toBe(201);
+      return (await response.json()) as { id: string };
+    }),
+  );
+  await Promise.all(
+    people.map(async (person, index) => {
+      const response = await page.request.post('/api/v1/expiries', {
+        data: { personId: person.id, expiryTypeId: type.id, expiresAt: addDaysUtc(100 + index) },
+      });
+      expect(response.status()).toBe(201);
+    }),
+  );
+  return type.id;
+}
+
 // --- fixtures: transiti ----------------------------------------------------
 
 type PprFixture = { id: string; registration: string; email: string; eta: string; pprNumber: string | null };
@@ -160,6 +194,44 @@ async function gotoMovementsFor(page: Page, status: string, etaIso: string): Pro
   const body = (await response.json()) as { total: number };
   const lastPage = Math.max(1, Math.ceil(body.total / UI_MOVEMENTS_PAGE_SIZE));
   await page.goto(`/it/dashboard/movements?status=${status}&from=${day}&to=${day}&page=${lastPage}`);
+}
+
+/**
+ * `count` APPROVED transiti in a Rome day of their OWN, through the same staff
+ * intake the "Registra arrivo" panel posts to (`ppr-requests/manual`, with
+ * `approveImmediately`): no rate limiter, no receipt email. `daysFromNow` is
+ * deliberately far out, which keeps these rows out of EVERY aggregate on the
+ * page — "attesi domani" is an exact day, "al suolo"/"in arrivo" scan only up
+ * to today, "movimenti nel mese" counts COMPLETED rows of the current month —
+ * and gives the register's own `?status=…&from=day&to=day` view a bucket that
+ * nothing else in the suite reaches. It is NOT an empty bucket, though: a
+ * re-run on the same DB adds its own `count` to the same day, so callers
+ * assert "at least this many", never an exact total. Returns that Rome day.
+ */
+async function createManualApproved(page: Page, daysFromNow: number, count: number): Promise<string> {
+  const eta = new Date(Date.now() + daysFromNow * 86_400_000);
+  eta.setUTCHours(9, 0, 0, 0);
+  await Promise.all(
+    Array.from({ length: count }, async () => {
+      const response = await page.request.post('/api/v1/ppr-requests/manual', {
+        data: {
+          firstName: 'Pagina',
+          lastName: `Transito-${uniqueSuffix()}`,
+          email: `pagina-${uniqueSuffix()}@e2e.airmanager.local`,
+          aircraftRegistration: uniqueRegistration('P'),
+          aircraftType: 'Cessna 172 Skyhawk',
+          origin: 'LIRN Napoli',
+          destination: 'LIRU Urbe',
+          eta: eta.toISOString(),
+          personsOnBoard: 2,
+          locale: 'it',
+          approveImmediately: true,
+        },
+      });
+      expect(response.status()).toBe(201);
+    }),
+  );
+  return romeDateOnly(eta);
 }
 
 function movementCards(page: Page): Locator {
@@ -247,6 +319,24 @@ const HIDDEN_SCROLLERS = (): { cls: string; cw: number; sw: number }[] => {
   }
   return out;
 };
+
+/**
+ * `'self'` when the control answers `elementFromPoint` at its own centre —
+ * an ANCESTOR answering means the control is pointer-transparent (measured:
+ * the `aria-disabled` pagination link at page 1), which is not a coverage
+ * either, since an ancestor cannot cover its own child. Anything else is the
+ * tag/class of what actually sits on top.
+ */
+async function hitTestOf(page: Page, selector: string): Promise<string> {
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return 'absent';
+    const rect = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if (!hit) return 'none';
+    return hit === el || el.contains(hit) || hit.contains(el) ? 'self' : `${hit.tagName}.${typeof hit.className === 'string' ? hit.className : ''}`;
+  }, selector);
+}
 
 /** Visible controls under 44px, excluding the closed `SlideOver` (present but off-screen). */
 const SMALL_TARGETS = (): { testid: string | null; cls: string; h: number }[] => {
@@ -746,9 +836,36 @@ test.describe('Story 15.7 — Scadenze e Voli in transito su telefono', () => {
     await page.getByTestId('mobile-movements-filters-button').click();
     await expect(page.getByTestId('mobile-movements-filter-panel')).toBeVisible();
 
-    // The date popover (portalled, z 65/66) opens ABOVE the panel and stays
-    // inside the viewport. It is dismissed by interacting with the NEXT
-    // control, never with Escape (review 14.3 F1: Escape closes the panel).
+    // The date popover (portalled, z 65/66) is OPENED — from its own calendar
+    // trigger, not simulated by a `fill()`, which never opens it (review 15.7
+    // LOW-5: the promise in this test's name used to go unexercised) — and is
+    // measured where AC 6 asks: above the panel, wholly inside the viewport,
+    // and picking a day writes the DRAFT without navigating. It is dismissed
+    // by the pick itself and then by the NEXT control, never with Escape
+    // (review 14.3 F1: Escape closes the whole SlideOver).
+    await page.getByTestId('ppr-register-filter-from-mobile').fill('2026-01-10');
+    const fromField = page.locator('.date-input').filter({ has: page.getByTestId('ppr-register-filter-from-mobile') });
+    await fromField.getByRole('button', { name: 'Apri calendario' }).click();
+    const popover = await page.evaluate(() => {
+      const el = document.querySelector('.cal-popover');
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return {
+        z: getComputedStyle(el).zIndex,
+        inside: rect.left >= 0 && rect.top >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+        // Above the panel: the hit at the popover's own centre belongs to IT,
+        // not to the `SlideOver` underneath (z 50 against the portal's 66).
+        onTop: hit !== null && hit.closest('.cal-popover') !== null,
+        panelOpen: document.querySelectorAll('[data-testid="mobile-movements-filter-panel"]').length,
+      };
+    });
+    expect(popover).toEqual({ z: '66', inside: true, onTop: true, panelOpen: 1 });
+    await page.locator('.cal-popover .cal-cell:not(.out)').filter({ hasText: /^15$/ }).click();
+    await expect(page.getByTestId('ppr-register-filter-from-mobile')).toHaveValue('2026-01-15');
+    await expect(page.locator('.cal-popover')).toHaveCount(0);
+    expect(navigations).toHaveLength(0);
+
     await page.getByTestId('ppr-register-filter-from-mobile').fill('2026-01-10');
     await page.getByTestId('ppr-register-filter-to-mobile').fill('2026-01-20');
     expect(navigations).toHaveLength(0);
@@ -841,31 +958,72 @@ test.describe('Story 15.7 — Scadenze e Voli in transito su telefono', () => {
   // -------------------------------------------------------------------------
 
   test('AC 9: le due paginazioni restano quelle di oggi, con target >=44px e sopra la tab bar', async ({ page }) => {
+    test.setTimeout(90_000); // this test BUILDS its two second pages: 21 + 21 fixtures over the API
     await page.setViewportSize(PHONE);
     await login(page, ADMIN_EMAIL);
 
-    // Scadenze: `window=all` over the whole registry always spans >1 page.
-    await page.goto('/it/dashboard/expiries?window=all');
-    const scadenzePagination = page.getByTestId('scadenze-pagination-status');
-    if ((await scadenzePagination.count()) === 1) {
-      const prev = page.getByTestId('scadenze-page-prev');
-      const next = page.getByTestId('scadenze-page-next');
-      expect(await next.evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
-      expect(await prev.evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
-      await next.click();
-      await expect(page).toHaveURL(/page=2/, { timeout: 15_000 });
-      await expect(page).toHaveURL(/window=all/);
-    }
+    // Both preconditions are BUILT, never hoped for (review 15.7 LOW-4): on a
+    // fresh DB neither register spans a second page, and every assertion below
+    // used to sit inside `if (the pagination exists)` — green on such a DB
+    // without having measured a single target.
+    const pagedTypeId = await createPagedExpiryFixture(page, 21);
+    await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${pagedTypeId}`);
+    await expect(page.getByTestId('scadenze-pagination-status')).toHaveText('1 / 2');
+    const prev = page.getByTestId('scadenze-page-prev');
+    const next = page.getByTestId('scadenze-page-next');
+    expect(await next.evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
+    expect(await prev.evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
+    // Above the tab bar, which this test's own title promises: hit-tested at
+    // the bottom of a REAL scroll. An ancestor answering `elementFromPoint` is
+    // the control being pointer-transparent (the `aria-disabled` "prev" at
+    // page 1), never a coverage — a real one comes from a different subtree.
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(250);
+    expect(await hitTestOf(page, '[data-testid="scadenze-page-next"]')).toBe('self');
+    await next.click();
+    await expect(page).toHaveURL(/page=2/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/window=all/);
+    await expect(page).toHaveURL(new RegExp(`expiryTypeId=${pagedTypeId}`));
+    await expect(page.getByTestId('scadenze-pagination-status')).toHaveText('2 / 2');
 
-    // Movimenti: `status=ALL` over the whole register.
-    await page.goto('/it/dashboard/movements?status=ALL');
+    // Movimenti: 21 transiti in a Rome day of their own, reached with the
+    // register's own filters — the pagination lives OUTSIDE `MovementsTable`
+    // (`movements/page.tsx`), which is why it needed its own rule.
+    const day = await createManualApproved(page, 45, 21);
+    await page.goto(`/it/dashboard/movements?status=ALL&from=${day}&to=${day}`);
     const movementsPagination = page.getByTestId('movements-pagination');
-    if ((await movementsPagination.count()) === 1) {
-      const links = movementsPagination.getByRole('link');
-      expect(await links.last().evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
-      await links.last().click();
-      await expect(page).toHaveURL(/page=2/, { timeout: 15_000 });
-      await expect(page).toHaveURL(/status=ALL/);
+    await expect(movementsPagination).toHaveCount(1);
+    // "There IS a second page, and this fixture put it there" — never "there
+    // are exactly two": a Rome day bucket accumulates the fixtures of every
+    // re-run on the same DB (measured: 1/3, 1/4, 1/5 over three runs), and a
+    // count nailed to the first run is a guard that goes red for the wrong
+    // reason on the second.
+    await expect(page.getByTestId('movements-pagination-status')).toHaveText(/^1 \/ [2-9][0-9]*$/);
+    const links = movementsPagination.getByRole('link');
+    expect(await links.first().evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
+    expect(await links.last().evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(250);
+    expect(await hitTestOf(page, '[data-testid="movements-pagination"] a:last-of-type')).toBe('self');
+    await links.last().click();
+    await expect(page).toHaveURL(/page=2/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/status=ALL/);
+    await expect(page).toHaveURL(new RegExp(`from=${day}`));
+    await expect(page.getByTestId('movements-pagination-status')).toHaveText(/^2 \/ [2-9][0-9]*$/);
+
+    // The pagination nodes exist ONLY on a paginated view, so this is the one
+    // state in which their uniqueness across the two trees can be asserted at
+    // all (AC 10's own enumeration never sees them).
+    for (const viewport of [PHONE, DESKTOP]) {
+      await page.setViewportSize(viewport);
+      await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${pagedTypeId}`);
+      for (const testid of ['scadenze-page-prev', 'scadenze-page-next', 'scadenze-pagination-status']) {
+        await expect(page.getByTestId(testid), `${testid} @${viewport.width}`).toHaveCount(1);
+      }
+      await page.goto(`/it/dashboard/movements?status=ALL&from=${day}&to=${day}`);
+      for (const testid of ['movements-pagination', 'movements-pagination-status']) {
+        await expect(page.getByTestId(testid), `${testid} @${viewport.width}`).toHaveCount(1);
+      }
     }
   });
 
@@ -874,17 +1032,33 @@ test.describe('Story 15.7 — Scadenze e Voli in transito su telefono', () => {
   // -------------------------------------------------------------------------
 
   test('AC 10: ogni testid desktop resta ESATTAMENTE un nodo a 375 e a 1280, e le marche di una fixture restano al piu` un nodo a 1280', async ({ page }) => {
+    test.setTimeout(90_000); // four states x two viewports, plus the self face
     await page.setViewportSize(DESKTOP);
     await login(page, ADMIN_EMAIL);
     const fixture = await createExpiryFixture(page, 20);
     const approved = await createApprovedRequest(page, 30);
+    // A Rome day of this test's OWN: the register's row-level, filter-reset
+    // and empty-state names live in states no default view shows, and a bucket
+    // it controls is how the enumeration below reaches them — it used to cover
+    // 25 of the ~45 names AC 10 lists (review 15.7 LOW-6).
+    const soloDay = await createManualApproved(page, 38, 1);
+    const soloUrl = `/it/dashboard/movements?status=APPROVED&from=${soloDay}&to=${soloDay}`;
+    const emptyDay = romeDateOnly(new Date(Date.now() + 300 * 86_400_000));
 
     const perPage: [string, string[]][] = [
       [
         `/it/dashboard/expiries?window=all&expiryTypeId=${fixture.typeId}`,
-        ['scadenze-row', 'scadenze-status-badge', 'scadenze-window-60', 'scadenze-window-30', 'scadenze-window-7', 'scadenze-window-expired', 'scadenze-window-all', 'scadenze-filter-type', 'scadenze-filter-pilot', 'scadenze-membership-fee-button', 'scadenze-send-reminders-button'],
+        ['scadenze-row', 'scadenze-status-badge', 'scadenze-window-60', 'scadenze-window-30', 'scadenze-window-7', 'scadenze-window-expired', 'scadenze-window-all', 'scadenze-filter-type', 'scadenze-filter-pilot', 'scadenze-membership-fee-button', 'scadenze-send-reminders-button', 'scadenze-stat-expired', 'scadenze-stat-within7', 'scadenze-stat-within30', 'scadenze-stat-within60'],
       ],
-      ['/it/dashboard/movements', ['ppr-register', 'ppr-register-filter-bar', 'ppr-register-filter-status', 'ppr-register-filter-from', 'ppr-register-filter-to', 'log-arrival-button', 'manual-ppr-form']],
+      [
+        soloUrl,
+        // `ppr-register-filter-reset` renders only while a filter differs from
+        // the page default (`hasActiveFilter`), which the day bounds satisfy.
+        ['ppr-register', 'ppr-register-filter-bar', 'ppr-register-filter-status', 'ppr-register-filter-from', 'ppr-register-filter-to', 'ppr-register-filter-reset', 'movements-kpi-on-ground', 'movements-kpi-inbound-today', 'movements-kpi-expected-tomorrow', 'movements-kpi-month', 'log-arrival-button', 'manual-ppr-form', 'manual-ppr-submit'],
+      ],
+      // The empty state is the row list's ALTERNATIVE, so it needs a bucket of
+      // its own: a day 300 days out that nothing else in the suite reaches.
+      [`/it/dashboard/movements?status=CANCELLED&from=${emptyDay}&to=${emptyDay}`, ['ppr-register-empty']],
       ['/it/dashboard', ['scadenze-widget']],
     ];
 
@@ -895,6 +1069,46 @@ test.describe('Story 15.7 — Scadenze e Voli in transito su telefono', () => {
         for (const testid of testids) {
           await expect(page.getByTestId(testid), `${testid} @${viewport.width} on ${url}`).toHaveCount(1);
         }
+      }
+    }
+
+    // The register's PER-ROW names: their multiplicity IS the row count, and a
+    // Rome day bucket accumulates one fixture per re-run on the same DB, so
+    // "exactly one" would be a guard that goes red for the wrong reason on the
+    // second run. What AC 10 protects here is that the two trees stay in step
+    // — one node per row per tree, never a name twice inside one of them.
+    for (const viewport of [DESKTOP, PHONE]) {
+      await page.setViewportSize(viewport);
+      await page.goto(soloUrl);
+      const rows = await page.getByTestId('ppr-register-row').count();
+      expect(rows, `ppr-register-row @${viewport.width}`).toBeGreaterThan(0);
+      await expect(page.getByTestId('ppr-register-row-mobile'), `ppr-register-row-mobile @${viewport.width}`).toHaveCount(rows);
+      await expect(page.getByTestId('ppr-register-complete-button'), `ppr-register-complete-button @${viewport.width}`).toHaveCount(rows);
+      await expect(page.getByTestId('ppr-register-cancel-button'), `ppr-register-cancel-button @${viewport.width}`).toHaveCount(rows);
+    }
+
+    // The row's two overlays exist only while `rowAction` holds them open, and
+    // they are mutually exclusive — so they are opened one after the other,
+    // and each is measured at BOTH widths without navigating (the console
+    // keeps its state across a resize, and a phone-side duplicate of these
+    // names would show precisely here). `rowAction` is a single state, so one
+    // node each whatever the row count.
+    await page.setViewportSize(DESKTOP);
+    await page.goto(soloUrl);
+    await page.getByTestId('ppr-register-cancel-button').first().click();
+    for (const viewport of [DESKTOP, PHONE]) {
+      await page.setViewportSize(viewport);
+      for (const testid of ['ppr-register-cancel-confirm', 'ppr-register-cancel-abort']) {
+        await expect(page.getByTestId(testid), `${testid} @${viewport.width}`).toHaveCount(1);
+      }
+    }
+    await page.setViewportSize(DESKTOP);
+    await page.getByTestId('ppr-register-cancel-abort').click();
+    await page.getByTestId('ppr-register-complete-button').first().click();
+    for (const viewport of [DESKTOP, PHONE]) {
+      await page.setViewportSize(viewport);
+      for (const testid of ['ppr-complete-form', 'ppr-complete-fee-input', 'ppr-complete-method', 'ppr-complete-submit', 'ppr-complete-close']) {
+        await expect(page.getByTestId(testid), `${testid} @${viewport.width}`).toHaveCount(1);
       }
     }
 
@@ -912,6 +1126,37 @@ test.describe('Story 15.7 — Scadenze e Voli in transito su telefono', () => {
     await expect(page.getByTestId('ppr-register-row').filter({ hasText: approved.registration })).toHaveCount(1);
     await expect(page.getByTestId('ppr-register-row-mobile').filter({ hasText: approved.registration })).toHaveCount(1);
     await expect(page.getByText(approved.registration)).toHaveCount(2);
+
+    // The SELF face of the same page carries names no admin state reaches. The
+    // seed pilot's row count is not ours to fix (other specs register scadenze
+    // for the same person under `fullyParallel`), so the property asserted is
+    // the one AC 10 actually protects: one node per TREE, the two trees in
+    // step, never a name appearing twice inside one of them.
+    // `my-expiry-pending-badge` is deliberately NOT enumerated: story 12.13
+    // retired the titolare proposal flow, so no API can create the
+    // `pendingProposal` that renders it (`my-expiries.tsx`'s own doc-comment
+    // calls it a read-only leftover) — unconstructible, declared, not skipped
+    // in silence.
+    const selfTypeResponse = await page.request.post('/api/v1/expiry-types', { data: { name: `TipoAC10 ${uniqueSuffix()}`, scope: 'ALL' } });
+    expect(selfTypeResponse.status()).toBe(201);
+    const selfType = (await selfTypeResponse.json()) as { id: string };
+    const peopleResponse = await page.request.get(`/api/v1/people?q=${encodeURIComponent(PILOT_EMAIL)}`);
+    const people = (await peopleResponse.json()) as { items: { id: string; email: string | null }[] };
+    const pilotPerson = people.items.find((item) => item.email === PILOT_EMAIL);
+    if (!pilotPerson) throw new Error('seed pilot not found');
+    await page.request.post('/api/v1/expiries', { data: { personId: pilotPerson.id, expiryTypeId: selfType.id, expiresAt: addDaysUtc(45) } });
+
+    await page.context().clearCookies();
+    await login(page, PILOT_EMAIL);
+    for (const viewport of [DESKTOP, PHONE]) {
+      await page.setViewportSize(viewport);
+      await page.goto('/it/dashboard/expiries');
+      await expect(page.getByTestId('my-expiries'), `my-expiries @${viewport.width}`).toHaveCount(1);
+      const selfRows = await page.getByTestId('my-expiry-row').count();
+      expect(selfRows, `my-expiry-row @${viewport.width}`).toBeGreaterThan(0);
+      await expect(page.getByTestId('my-expiry-row-mobile'), `my-expiry-row-mobile @${viewport.width}`).toHaveCount(selfRows);
+      await expect(page.getByTestId('my-expiry-status-badge'), `my-expiry-status-badge @${viewport.width}`).toHaveCount(selfRows);
+    }
   });
 
   // -------------------------------------------------------------------------

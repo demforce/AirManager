@@ -3005,6 +3005,14 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .membership-fee-modal .input{ min-height: 44px; }
   .membership-fee-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
   /* A 13x13 checkbox is the smallest target on either page, and this one
-     decides whether a refusal from the server gets overridden. */
+     decides whether a refusal from the server gets overridden. The TAP TARGET
+     is the label ROW, which wraps the input: enlarging the box alone left the
+     row at 343x20 (measured), i.e. the only control of this full-screen panel
+     still under the 44px floor its submit and its two fields already meet. The
+     floor goes on the row — the box can stay 20x20, since a click anywhere on
+     the row toggles it. Anchored to THIS modal's class: the desktop
+     `.mini-modal` is untouched (measured pre/post at 1280px — label 382x15.2,
+     checkbox 13x13, card 420x385.3, identical). */
+  .membership-fee-modal .membership-fee-override-label{ min-height: 44px; }
   .membership-fee-override-label > input[type="checkbox"]{ width: 20px; height: 20px; flex-shrink: 0; }
 }
