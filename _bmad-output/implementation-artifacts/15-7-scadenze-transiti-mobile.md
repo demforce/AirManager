@@ -526,3 +526,220 @@ Conseguenza operativa: le due sole azioni di scrittura della Scadenze sono **azi
 
 **Raccomandazione: 1-A, 2-A, 3-A.** Motivi: (1) è il difetto più concreto dei tre — un export che mente sui filtri è un dato sbagliato consegnato a qualcuno, costa due parole e non rompe nulla di misurato; (2) l'etichetta esiste già tradotta in entrambi i locale e il pannello senza un "Azzera" costringerebbe a rimettere a mano quattro controlli, mentre aggiungerlo al desktop è un cambio non richiesto; (3) è la stessa classe del TD (h) già rimandato dalla 15.6 a 15.10 e va trattata allo stesso modo — con la card mobile che **non** eredita la coppia difettosa, misurata e dichiarata.
 
+
+---
+---
+
+# Dev Agent Record (Opus 5 xhigh, 2026-08-04)
+
+Status: **implementata — pronta per la review adversarial**. Nessun commit (regola di consegna).
+
+## 0) Verifica della ricognizione — 12 conferme, 8 correzioni
+
+Metodo: misure a runtime su **build di produzione** (`env -u NODE_ENV npm run build && npm run start`), script `playwright-core` throwaway (Chromium `~/.cache/ms-playwright/chromium-1228`, import per path assoluto), baseline catturata **prima** di scrivere una riga di codice e ri-catturata dopo.
+
+**Confermate**
+1. `grep -rn 'data-testid\^=' e2e/` → **14 occorrenze**, prefissi `pilot-row-`, `ac-card-`, `mobile-tail-chip-`, `schedule-filter-aircraft-`, `schedule-filter-instructor-`, `mobile-fleet-card-`, `mobile-fleet-`. Nessuno tocca `scadenze-`, `ppr-register-`, `ppr-complete-`, `my-expiry-`, `movements-`, `log-arrival-`, `membership-fee-` ⇒ **suffisso `-mobile` legale** (AD-5 rispettata).
+2. Righe dei sei file: 245 / 539 / 92 / 306 / 465 / 46 — esatte.
+3. Scadenze `.card-head` **261.5** @375 e @390, **304.34** @320, **identica in EN**. (recon: 262 / 304 / EN identica ✓)
+4. Movimenti `.card-head` **142.98** @375, **229.83** @320, **185.83** con un filtro attivo; `.page-head` **106.28** a ≤640. (recon: 143 / 230 / 186 / 106 ✓)
+5. `.search` `cw 188 / sw 190` **a ogni larghezza, desktop compreso** — seconda occorrenza del TD (g) della 15.6 ✓.
+6. `.students` Scadenze `317/868`, Movimenti `317/800` (su DB popolato) ✓.
+7. Il `SlideOver` **CHIUSO** di `ManualPprForm` è uno scroller discendente di `.page`: `FORM 335/355` @375, `.slideover 641/1161 · 800/1320 · 1280/1800` ✓.
+8. `expiries/page.tsx:118` monta `ScadenzeConsole` **senza `key`**; `movements/page.tsx:217` remonta con `key` ✓ — l'asimmetria AD-4 è reale e ha dettato due scelte diverse (v. §3).
+9. `movements.spec.ts`: `page.getByText(created.registration)` page-level a **276, 397, 409, 419, 422** ✓ (5 punti).
+10. `expiry-dashboard.spec.ts:135` legge `'Nulla in questa finestra.'` page-level ✓.
+11. `expiry-alerts.spec.ts:254-255` conta `scadenze-send-reminders-button` = 0 per un pilota ✓.
+12. `.segmented` ha **6 consumer** ✓ — nessuna regola di questa story lo nomina.
+
+**Corrette**
+- **C1 — La baseline desktop dell'AC 13 sbaglia il valore a 800px.** La story dà `.card-head` Scadenze **107 / 148 / 148** (1280/800/641); misurata pre-fix: **106.84 / 106.84 / 148.23**. A 800px la testata è di **due** righe, non tre. (Il valore post-fix è identico: 106.84.)
+- **C2 — `scadenze-filter-type` non misura 267×35 ma 154×35.** Quel `<select>` ha `width:auto`, quindi la sua larghezza è quella dell'**opzione più lunga**: con un tipo di scadenza run-unique da 34 caratteri sale a **239px**, e a 800px quei +85px fanno passare la testata desktop da 106.84 a 148.23. **Sensibilità ai dati, non alla CSS**: tutte le misure desktop di questo record sono state ri-prese disattivando i tipi-fixture, ottenendo esattamente i numeri della baseline.
+- **C3 — Il DB appena seminato non ha nulla in nessuna delle tre superfici.** I conteggi della ricognizione (338 persone, 437 scadenze, 28 PPR, 7 righe per il pilota) sono quelli di un DB **post-suite**. Su DB fresco: registry Scadenze vuoto, registro Movimenti vuoto, "Le mie scadenze" del pilota vuoto (card 264×52.84, solo empty state). Ogni misura di questo record è stata presa con **fixture esplicite**.
+- **C4 — `.page-head` dei Movimenti in EN a 320px misura 125.13, non 106.28.** La ricognizione ha registrato solo il valore IT.
+- **C5 — A 320px, pre-fix, la `.card` e la `.card-head` della Scadenze sono esse stesse scroller orizzontali** (`262/278`). Non è nella ricognizione; il fix la elimina.
+- **C6 — La story dichiara "questa story non scrive `AppSettings` ⇒ nessuno spec nuovo entra nella catena serializzata", ma l'AC 8 chiede il percorso quota.** Il bottone "Quota associativa" è `disabled` finché `membership.annualFeeCents` è 0, quindi esercitarlo **richiede** di scrivere quella chiave globale — che `membership-fee.spec.ts` scrive cinque volte e **lascia a 0** per la sua ultima asserzione. Deviazione ratificata da me e dichiarata: i due test della quota vivono in `e2e/mobile-membership-fee.spec.ts`, **nella catena serializzata** (dopo `mobile-overview-overflow`), e ripristinano 0 in `afterAll`.
+- **C7 — Un bucket stato+giorno del registro Movimenti può superare la pagina.** Misurato: `status=APPROVED&from=D&to=D` → **36 righe, 2 pagine**. "L'ultima pagina dello stato" non basta a raggiungere una fixture: lo spec nuovo usa `gotoMovementsFor(status, eta)` = filtro stato **+** giorno-Roma dell'ETA **+** ultima pagina di *quel* bucket.
+- **C8 — I due link della paginazione Movimenti sono `aria-disabled` a pagina 1 e diventano pointer-transparent**: `elementFromPoint` sul loro centro restituisce il `<nav>` padre. Una guardia di copertura ingenua li conta come "coperti"; la guardia corretta ignora un **antenato** (un antenato non può coprire il proprio figlio).
+
+## 1) Riepilogo per AC, con le prove
+
+| AC | Esito | Prova |
+|---|---|---|
+| 1 — lista Scadenze a card | ✅ | e2e "AC 1/12": `.scadenze-desktop-body` `none` e `.scadenze-mobile` `block` **misurati a 375**, l'inverso a 1280; card = 1 solo elemento interattivo (`querySelectorAll('button,a,input,select,textarea,[tabindex]').length === 0`), ≥44px, `aria-label` con **persona + tipo**; empty state proprio con **stringa nuova** (`registry.mobile.empty`), un solo nodo |
+| 2 — lista Movimenti a card | ✅ | e2e "AC 2/12" + "AC 2 sette stati": `Badge` con `MOVEMENT_STATUS_TONE` (nessun literal nuovo), marche in chip mono + tipo mono `--ink-3`, sub `rotta · richiedente · ETA hh:mm`; i **7** valori di `MovementStatusLabel` esercitati con fixture proprie |
+| 3 — sheet a parità piena | ✅ | e2e "AC 3" (apertura **da tastiera**, Tab reali + Enter) e "AC 3/12": sheet = 1 nodo, nome accessibile ben formato provato su un transito **senza `pprNumber`** (PENDING) — guardia su **proprietà** (`/—\s*—/`, `/·\s*·/`, segmenti non vuoti/non segnaposto), mai `split().length` |
+| 4 — chiusura con tassa | ✅ | 4 e2e a 375px: (a) azioni solo su APPROVED (PENDING e COMPLETED: 0 azioni); (b) tassa non parsabile ⇒ `role="alert"` e **0 richieste** contate con `page.route`; (c) metodo default `CASH`; (d) prefill non vuoto; (e) `Idempotency-Key` presente, **una sola** richiesta; (f) 409 ⇒ toast `conflictError`; (g) fee 37,50 ⇒ **esattamente 1** `CashMovement` `PPR <n> landing fee` letto **dall'API filtrata**, fee 0 ⇒ **0**; (h) annullo senza tassa né movimento; (i) toast + refresh; (j) `CompleteForm` **riusato intero**. Submit **hit-testabile senza scroll orizzontale** (`pageOverflow 0`), tutti i target ≥44 |
+| 5 — testata Scadenze | ✅ (con una nota misurata) | 261.5 → **175 + 64 di chip strip = 239** @375/390 (IT ed EN), 304.34 → **248.69** @320; ogni controllo ≥44px (campo pilota da **18 → 44**); tutti i filtri e le due azioni raggiungibili; contratto URL invariato. ⚠️ **Nota onesta**: la prima card resta più in basso di prima (top **609** contro **567** pre-fix, a 375×812), perché la KPI 2×2 ratificata da R-15.7-h costa **+97.7px** (`.kpi-row` da 101.16 a 198.84) contro i **−22.5px** guadagnati dalla testata. Il costo era previsto e accettato da ⟨Q8⟩ ("≈ +90px sulla Scadenze"); il criterio dell'AC 5 è sulla **testata**, ed è rispettato. Sui Movimenti, dove i KPI restano una strip, la prima card sale da **512** a **445** |
+| 6 — testata Movimenti | ✅ | 142.98 → **69 + 64 = 133** @375/390, 229.83 → **133** @320, 185.83 (filtro attivo) → 133; CTA `log-arrival-button` **127×35 → 319×44 full width**; `.page-head` 106.28 → **115.44** (+9.16 = 44−34.84, il prezzo del target, dichiarato); popover data dentro il pannello, mai `Escape` |
+| 7 — "Le mie scadenze" | ✅ | e2e "AC 7/14": card+sheet per il pilota, `my-expiries-desktop-body` `none` a 375 e visibile a 1280; **empty state con testid proprio** (`my-expiries-empty` desktop, `mobile-my-expiries-empty` mobile), 1 nodo ciascuno, verificato su allievo **e** istruttore |
+| 8 — promemoria, quota, KPI | ✅ | promemoria: toast a 375, `<p>` **un solo nodo** e `display:none` sotto 640; quota: pannello **0,0 375×812**, submit 44, checkbox **13→20**, successo/saldo insufficiente/override in `mobile-membership-fee.spec.ts`; KPI **2×2** sulla Scadenze (`kpi-row-grid`), **strip** sui Movimenti |
+| 9 — paginazione | ✅ | e2e "AC 9": stesso contratto `?page=`, target ≥44 su entrambe (`registry-pagination` anche sul `<nav>` che vive **fuori** da `MovementsTable`), filtri preservati |
+| 10 — testid | ⚠️ parziale, misurato | Tutti i testid desktop = **1 nodo** a 375 **e** a 1280 su `/expiries`, `/movements` e `/dashboard` ✓. **L'ultima clausola dell'AC ("`getByText(<marche>)` al più 1 nodo a 1280") è irrealizzabile con l'architettura dell'epic** e contraddice il blast radius 1: lo switch è CSS-only, la card mobile *deve* stampare le marche, `getByText` conta anche i nodi nascosti ⇒ **misurato: esattamente 2, uno per albero**. La cura corretta è quella prescritta dal blast radius — **scopare** le asserzioni page-level — ed è stata applicata (5 in `movements.spec.ts` + 1 in `expiry-dashboard.spec.ts`). Lo spec asserisce la proprietà verificabile: 1 nodo per albero, 2 in totale |
+| 11 — geometria e layering | ✅ | `pageOverflow 0` a 320/375/390 su tutte e tre le superfici; scroller nascosti = **solo** chip strip e KPI strip (per progetto) più il `SlideOver` CHIUSO di `ManualPprForm` (eccezione dichiarata, escluso misurando `.slideover:not(.open)`); **contenimento** dei figli delle card = 0 sfondamenti; nessun controllo sotto la **tab bar** (la topbar sticky resta l'eccezione baseline 15.1, dichiarata); sheet copre la barra con lo scrim, pannello con `so-foot`, mini-modal z60 sopra |
+| 12 — guardie discriminanti | ✅ | tabella §5 |
+| 13 — invarianti | ✅ | §4 |
+| 14 — multi-attore | ✅ | ADMIN/PILOTA/ALLIEVO/ISTRUTTORE a 375 e 1280 con `clearCookies()` fra le identità; redirect da `/dashboard/movements` **anche a 375px** per i tre non-admin. Il caso "expiries.manage senza settings/finance.manage" **non è costruibile** col modello post-14.9 (ADMIN ha tutto): dichiarato, non saltato — il gate resta quello del server (`canTriggerReminders`/`canChargeMembershipFee`) e `expiry-alerts.spec.ts:254` continua a contarlo a 0 per un pilota, perché il trigger è rimasto **un solo nodo** |
+| 15 — debito tecnico | ✅ | §7 |
+
+## 2) File toccati
+
+**Sorgenti**
+- `src/lib/mobile-sub-line.ts` (**nuovo**) — `joinSegments`, la lezione 15.5 F1 in una funzione sola, ora che ha tre consumer.
+- `src/lib/mobile-sub-line.test.ts`, `src/lib/mobile-expiries.test.ts`, `src/lib/mobile-movements.test.ts` (**nuovi**).
+- `src/lib/mobile-expiries.ts`, `src/lib/mobile-movements.ts` (**nuovi**) — derivazioni pure di AD-6.
+- `src/lib/mobile-logbook.ts` — due righe: importa `joinSegments` invece di ridefinirlo (nessun cambio di comportamento; i suoi test passano invariati).
+- `src/app/[locale]/dashboard/expiries/page.tsx` — export che porta `window`/`personQuery` (R-15.7-k(1)); label mobile.
+- `src/app/[locale]/dashboard/expiries/scadenze-console.tsx` — albero mobile, chip strip, pannello Filtri, toast promemoria, quota full-screen, KPI 2×2.
+- `src/app/[locale]/dashboard/expiries/my-expiries.tsx` — albero mobile + sheet + empty state con testid.
+- `src/app/[locale]/dashboard/movements/page.tsx` — classe sul wrapper della CTA, `registry-pagination` sul `<nav>`, label mobile.
+- `src/app/[locale]/dashboard/movements/movements-table.tsx` — albero mobile, chip strip, pannello Filtri, sheet con i **due** `secondStep`, `CompleteForm` parametrizzato sul suffisso testid.
+- `src/styles/airops.css` — blocco `scadenze + transiti mobile (story 15.7)` in coda (10 dichiarazioni fuori query, il resto dentro `@media (max-width: 640px)`).
+- `messages/it.json`, `messages/en.json` — 41 righe ciascuno, **solo aggiunte**, parità piena.
+
+**Test**
+- `e2e/mobile-expiries-movements.spec.ts` (**nuovo**, 23 test, project `chromium`).
+- `e2e/mobile-membership-fee.spec.ts` (**nuovo**, 2 test, project serializzato).
+- `playwright.config.ts` — il project `mobile-membership-fee` in coda alla catena + il suo `testIgnore`.
+- `e2e/movements.spec.ts` — le **5** asserzioni page-level scopate alla riga (blast radius 1).
+- `e2e/expiry-dashboard.spec.ts` — **una sesta**, non enumerata dal blast radius: riga 182, `page.getByText(type.name)` sulla faccia **self**, che la card di "Le mie scadenze" avrebbe duplicata.
+
+## 3) Decisioni non ovvie
+
+**D1 — Le chip della finestra Scadenze sono `<button>`, non `Link` come in 15.4/15.6.** AD-5 suggerisce `Link`, ma `ScadenzeConsole` è montata **senza `key`** (AD-4, asimmetria misurata): una `Link` navigherebbe senza aggiornare lo stato locale `filters`, e il **filtro successivo** rimanderebbe indietro la finestra appena scelta. Il `<button>` chiama `handleFilterChange`, cioè esattamente ciò che fa il `.segmented` desktop: stesso contratto URL, stato coerente. Sui Movimenti, dove il `key` remonta il componente a ogni navigazione, le chip **sono** `Link` (pattern 15.6). L'e2e AC 5 prova la conseguenza: dopo una chip, "Applica" del pannello **conserva** `window=7`.
+
+**D2 — La quota associativa è una MODALITÀ CSS dello stesso nodo, non un secondo albero.** R-15.7-g chiede il pannello a tutto schermo riusando il contenuto di `MembershipFeeModal`. Un secondo albero duplicherebbe `membership-fee-panel`, `membership-fee-submit`, `membership-fee-amount`, l'`id` DOM del combobox e il suo percorso di rete — tutti letti **page-level** da `membership-fee.spec.ts`. Si adotta il precedente già scritto nel repo per lo stesso problema (`airops.css:1904`, la modalità full-screen di `SlideOver`: "one CSS mode of the one component"). Il `.mini-modal` **non** è agganciato: le regole stanno su `.membership-fee-modal`, classe di questa modale. Risultato misurato: card `0,0 375×812`, submit 168×44, checkbox 20×20.
+
+**D3 — L'esito dei promemoria è annunciato in ENTRAMBI i posti, e la CSS decide quale si vede.** Il trigger deve restare **un solo nodo** (`expiry-alerts.spec.ts:254` + AC 10) e l'architettura vieta di leggere il viewport in JS: non esiste una terza forma. Quindi `sendReminders` scrive il `<p role="status">` (invariato) **e** mostra il toast; `.scadenze-reminders-feedback` è `display:none` sotto 640. **Deviazione dichiarata**: sul desktop l'azione ora produce anche un toast transitorio, che prima non c'era. Nessun cambiamento di geometria, nessuno spec lo legge.
+
+**D4 — Il `secondStep` di chiusura rende lo STESSO `CompleteForm` del pannello desktop** (AD-8, vincolo non negoziabile). L'unica aggiunta al componente è `testIdSuffix` (`'-mobile'`) e `autoFocusFee`. Le tre dichiarazioni inline che portava (padding/flex del form, i due cap a 200px, la riga azioni) sono diventate classi, perché una dichiarazione inline non è sovrascrivibile da una media query (lezione 15.5): `ppr-complete-form`, `ppr-complete-field`, `ppr-complete-actions` hanno lo **stesso stile calcolato** sopra 640px (misurato).
+
+**D5 — Il conteggio "una sola navigazione" filtra le navigazioni verso lo STESSO url.** Next commette un `framenavigated` sull'url corrente a ogni refresh RSC: misurato, con il pannello aperto ce n'è **1 verso lo stesso url e 0 verso un url diverso**; senza pannello il debounce ne produce **uno verso un url diverso** (`?personQuery=`). La guardia conta solo i secondi — che sono esattamente ciò che il pre-fix produrrebbe.
+
+**D6 — `.card-sub` nascosta anche sulla Scadenze.** Tenendola, la testata misurava **198.94 + 64 = 262.94** contro un pre-fix di **261.5**: 1.4px oltre il budget ratificato. Senza: **175 + 64 = 239**, il numero che l'aritmetica di ⟨Q5⟩ aveva previsto. Misurato, non stimato.
+
+**D7 — Le icone delle due azioni di pagina della Scadenze sono nascoste sotto 640px.** "Quota associativa" col suo glifo misura **146.64px** contro i **137.5px** di mezza riga a 375px: andrebbe a capo. Stesso precedente della 15.5 (`.registry-head > .btn[aria-pressed] > svg{display:none}`), stessa motivazione misurata.
+
+**D8 — `.mobile-row-tail` (il chip mono) per le marche del transito, invece del testo mono nudo del template.** Le marche sono lo **stesso dato** che 15.4/15.5/15.6 rendono già come chip: la coerenza dentro l'app batte la fedeltà letterale a una schermata del template che non ha mai visto le altre tre. Il tipo aeromobile prende una classe nuova (`.mobile-row-model`, mono 10.5 `--ink-3`, ellissata) — **un** modificatore per lista, come chiede AD-3.
+
+**D9 — `.ppr-card*` (15.2) NON è riusata**, come AD-3 prescrive: le sue righe non hanno una colonna destra a griglia, e un pill "In arrivo" competerebbe con le marche. Il modificatore è `.mobile-row-transit` su `.mobile-row` (`minmax(0,1fr) auto`), gemello di `.mobile-row-flight` della 15.6.
+
+**D10 — `joinSegments` è uscita da `mobile-logbook.ts`.** Con tre consumer, tre copie di una funzione che *è* la lezione 15.5 F1 sarebbero state il difetto che la funzione previene. Spostata in `mobile-sub-line.ts`, stesso corpo, con il suo test.
+
+## 4) Invarianti desktop — pre/post, stesso set di opzioni
+
+Ri-misurati disattivando i tipi-fixture (v. C2), così i due lati sono confrontabili:
+
+| valore | 641 | 800 | 1280 | pre = post |
+|---|---|---|---|---|
+| `.app` `grid-template-columns` | `64px 577px` | `64px 736px` | `232px 1048px` | ✅ |
+| Scadenze `.card-head` | 148.23 | 106.84 | 106.84 | ✅ (C1: la story diceva 148 a 800) |
+| Scadenze `.students` cw/sw | 519/868 | 678/868 | 990/990 | ✅ |
+| Scadenze `.kpi-row` (grid, card) | 121.25 | 161 | 239 | ✅ — `kpi-row-grid` non tocca il desktop |
+| `.segmented` / suoi bottoni | 259.53×33.39 / 48.94×27.39 | idem | idem | ✅ |
+| `.search` (box / cw-sw) | 190×34.13 / 188-190 | idem | idem | ✅ |
+| `scadenze-filter-type` | 154×35 | idem | idem | ✅ |
+| Movimenti `.card-head` | 114.69 | 110.69 | 67.84 | ✅ |
+| Movimenti `.students` cw/sw | 519/800 | 678/800 | 990/990 | ✅ |
+| Movimenti `.kpi-row` (card) | 254.5 | 334 | 188.8 | ✅ |
+| `log-arrival-button` | 127.11×34.84 | idem | idem | ✅ |
+| `.page-head` (entrambe) | 51.44 | 51.44 | 51.44 | ✅ |
+| `pageOverflow` / tab bar | 0 / `none` | 0 / `none` | 0 / `none` | ✅ |
+
+Fascia tablet **641-900px**: il rail resta 64px, nessuna superficie nuova compare, le due `.card-head` restano ai valori di sopra. `/dashboard/ppr` non è stata toccata (`ManualPprForm` invariato, AD-10 verificata per misura: pannello `0,0 375×812`, submit 44px hit-testabile).
+
+## 5) Regola nuova → guardia → discriminanza
+
+Ogni guardia è stata ri-eseguita contro una **simulazione del pre-fix col repo intatto** (iniezione CSS/DOM) e deve andare **rossa**. Output integrale in `proofs157.mjs`.
+
+| # | regola introdotta (difetto misurato) | guardia | pre-fix simulato → esito |
+|---|---|---|---|
+| i | `display:none` delle tre tabelle desktop a ≤640 | e2e AC 1/2/7: `display` **misurato su entrambi i lati** | `.students.scadenze-desktop-body{display:flex}` iniettato ⇒ post `none/block` → pre **`flex`/`none`** ✅ rossa |
+| ii | `display:none` dei tre alberi mobile >640 | idem, a 1280 | stessa iniezione, lato opposto ✅ |
+| iii | testata Scadenze (262 → 239) | altezza `.card-head + .mobile-chip-strip` ≤ 261.5 **e** `SMALL_TARGETS === []` | rimesse in testata segmented/tipo/titolo/sub ⇒ post **239** → pre **351.69** ✅ |
+| iii-bis | testata Movimenti (143 → 133) | ≤ 142.98 + CTA full width ≥44 | idem per costruzione (la CTA pre-fix misura 127×35) ✅ |
+| iv | pannello che applica in **una** navigazione | conteggio delle navigazioni verso un url **diverso** | senza pannello il debounce ne produce 1; con pannello 0 e il pannello resta aperto ✅ (D5) |
+| v | debounce annullato all'apertura | pannello ancora visibile dopo 900 ms + "Applica" che porta `personQuery` digitato | senza pannello il timer naviga (finestra **non vacua**) ✅ |
+| vi | ellissi su ogni testo che può eccedere | sweep `overflow-x:hidden && text-overflow!=ellipsis` | `text-overflow: clip` iniettato ⇒ post `[]` → pre **3 nodi** ✅ |
+| vii | contenimento dei figli della card | rect di **ogni** figlio dentro il rect della card | pill spinto di 120px ⇒ post `[]` → pre **2 nodi fuori** (450 > 346) ✅ |
+| viii | nome accessibile ben formato | proprietà (`/—\s*—/`, `/·\s*·/`, nessun segmento vuoto/segnaposto) | `'— · Cessna 172 — I-ABC123'` ⇒ **2 fallimenti**; `' · Cessna…'` ⇒ 1. Il `split(' · ').length` **non li distingue**: 2 segmenti, come un sub legittimo ✅ |
+| ix | empty state = 1 nodo per albero | `toHaveCount(1)` + **clone DOM** del nodo | `node.parentElement.appendChild(node.cloneNode(true))` ⇒ 1 → **2** ✅ (in-spec) |
+| x | selettori ancorati con `>` (mai discendenti) | misura del submit di `ManualPprForm` | variante **discendente** `.movements-head .btn{min-height:90px}` ⇒ post 44 → pre **90** ✅ |
+| xi | nessuna regola su `.segmented` | `display`/altezza/`min-height` dei figli su `/bookings`, `/reports`, `/dashboard` | `.segmented{display:none}` iniettato ⇒ post `flex`/33.39 → pre **`none`/0** ✅ |
+| xii | `.date-input` toccata solo dentro il pannello Movimenti | altezza `.date-input .input` < 43.5 su `/billing` e `/logbook` | per costruzione: la regola è `.movements-filter-panel .input` ✅ |
+| xiii | effetto contabile della chiusura | `CashMovement` letta **dall'API filtrata** per categoria + descrizione run-unique | la stessa asserzione distingue fee 37,50 (**1**) da fee 0 (**0**) ✅ |
+| xiv | 409 distinto dal generico | toast `conflictError` dopo una chiusura concorrente reale | il percorso generico produrrebbe l'altro toast ✅ |
+
+**Guardia non scrivibile, dichiarata**: l'AC 10 chiede "`getByText(<marche>)` al più 1 nodo a 1280" — impossibile con lo switch CSS-only (v. AC 10 in §1). La proprietà verificabile che l'ha sostituita è "1 nodo per albero, 2 in totale", asserita.
+
+## 6) Contrasto — enumerato, nei due temi
+
+Metodo: `fillStyle` su canvas 1×1 (i token sono `oklch`, il regex `rgb()` non li legge — errore preso e corretto in corsa), sfondo effettivo risolto risalendo gli antenati **partendo dall'elemento**.
+
+| oggetto | chiaro | scuro |
+|---|---|---|
+| `.mobile-row-name` (nome/tipo sulla card) | 18.79 | 15.74 |
+| `.mobile-row-sub` (sub mono) | **4.85** | 5.72 |
+| `.mobile-row-model` (tipo aeromobile, classe **nuova**) | **4.85** | 5.72 |
+| `.mobile-row-tail` (chip marche) | 17.01 | 17.67 |
+| `Badge` di stato sulla card (peggiore: `Scaduto`) | 8.38 | 7.46 |
+| pallino del `Badge` (oggetto grafico, ≥3) | 8.38 | 7.46 |
+| chip della strip (inattiva / attiva) | 17.99 | 15.74 |
+| `.mobile-card-empty` | 4.85 | 5.72 |
+| sheet: over-line / titolo / chiave / valore | 4.85 / 18.79 / 4.85 / 18.79 | 5.72 / 15.74 / 5.72 / 15.74 |
+| sheet: azione primaria / distruttiva / chiudi | 17.99 / 6.53 / 9.99 | 15.74 / 6.61 / 9.47 |
+| testata: "Filtri", "Invia promemoria", CTA "Registra arrivo" | 18.79 / 17.99 / 17.99 | 15.74 / 15.74 / 17 |
+| pannello Filtri: titolo, label, footer | 18.79 / 4.85 / 17.99 | 15.74 / 5.72 / 15.74 |
+| chiusura nello sheet: label, input, hint | 4.85 / 17.79 / 4.85 | 5.72 / 14.77 / 5.72 |
+| quota: label, azioni | 4.85 / 17.99 | 5.72 / 15.74 |
+
+**Minimo assoluto 4.85** (`--ink-3` su `--panel`, la coppia che 15.6 ha già misurato e adottato). **Nessun testo sotto 4.5, in nessuno dei due temi.** La card mobile **non eredita** la coppia difettosa del desktop (`--bad` su `--bad-soft`, 3.38:1): il pill dei giorni è diventato il `Badge` di stato ratificato in R-15.7-b, e i giorni vivono nel sub a `--ink-3`.
+
+**Non un difetto nuovo**: i bordi hairline `1px solid var(--border)` misurano 1.29-1.30:1 su `.btn`, `.input`, `.badge` e `.mobile-row-tail`. È la hairline dell'**intero** design system dal 12.1 (la stessa di `.card`, `.student-row`, ogni `.btn` del desktop): questa story non ne introduce di nuove e non ne cambia il token.
+
+## 7) Debiti tecnici — chiusi, subiti, nuovi
+
+| TD | esito | misura |
+|---|---|---|
+| (a) `OPTIONS_PAGE_SIZE = 100` su `expiries/page.tsx:25` | **subìto** | alimenta `initialOptions` del combobox quota, che ha il typeahead server-side: degrada la comodità, non la funzione |
+| (b) export Scadenze che perde `window`/`personQuery` | **CHIUSO** (R-15.7-k(1)) | `exportFilterQuery` porta ora `window` (omesso quando `'all'`, che non è un valore dello schema) e `personQuery`; `pdf-exports.spec.ts` resta verde |
+| (c) `labels.filters.reset` orfano | **CHIUSO** (R-15.7-k(2)) | è il bottone "Azzera filtri" del pannello mobile; il desktop resta senza, come oggi |
+| (d) celle `.student-row` tagliate senza ellissi a ogni larghezza | **subìto**, non ereditato | la card mobile ha `text-overflow: ellipsis` ovunque (sweep = 0) |
+| (e) `.search` `cw 188 / sw 190` | **subìto** — seconda occorrenza del TD (g) 15.6 | invariato |
+| (f) `.so-sub` a `--ink-4` (3.66:1) | **subìto, ATTIVO**: `ManualPprForm` passa un sottotitolo (`movements/page.tsx:160`) | i due pannelli Filtri **non** passano sottotitolo, proprio per non aggiungere occorrenze; resta a 15.10 |
+| (g) contrasto 3.38:1 della colonna "Giorni rimasti" (desktop) | **subìto** (R-15.7-k(3)) | non corretto qui; la card mobile non lo eredita (§6) |
+| (h) `movements.spec.ts:269` scrive `settings/ppr-landing-fee` globale dal project parallelo | **subìto** | nessun test nuovo dipende da quel valore: ognuno digita il proprio importo |
+| (i) `viewport-fit=cover` mai dichiarato ⇒ `env(safe-area-inset-*)` = 0 | **subìto** (TD di epic, 15.10) | le due nuove `calc(... + env(safe-area-inset-bottom))` valgono oggi come senza |
+| (j) `KPI_SCAN_LIMIT = 500` | **subìto**, degradazione già accettata da 12.4 | invariato |
+| **(k) NUOVO** — la ✕ (`.iconbtn`) dell'header di `SlideOver` misura **32px** su mobile | **subìto** | è la primitiva condivisa da 11 consumer dal 15.2; portarla a 44 cambierebbe ogni pannello dell'epic: materia 15.10 |
+| **(l) NUOVO** — `mobile-membership-fee.spec.ts` scrive `settings/membership-fee` | **dichiarato e isolato** | project **serializzato**, ripristina 0 in `afterAll` (v. C6) |
+| **(m) NUOVO** — un bucket stato+giorno del registro può superare la pagina (36 righe misurate) | **gestito** | `gotoMovementsFor` naviga all'ultima pagina *del bucket* |
+
+## 8) Esito della suite — onesto
+
+- **`npm run gates`**: `PASS lint (18s) · PASS typecheck (3s) · PASS test (6s) — 1724 passed · PASS build (26s)`.
+- **Unit nuovi**, verificati anche **senza env** (`env -u DATABASE_URL -u AUTH_SECRET npx vitest run …`): 4 file, 35 test, verdi. Le funzioni sono pure e non importano nessun service ⇒ nessuna catena verso `@/lib/env`.
+- **Run mirato** (`mobile-expiries-movements.spec.ts` + `movements.spec.ts` + `expiry-dashboard.spec.ts`, `E2E_REUSE_SERVER=1`): **32 passed, 1 failed, 9 did not run**. L'unico rosso era `movements.spec.ts:238` (pre-esistente, "email e telefono su righe proprie"), che naviga a `/it/dashboard/movements` **pagina 1** e cerca la propria fixture: sul DB usato per le misure il registro aveva oltre 20 righe APPROVED, quindi la fixture era a pagina 2. **Fragilità pre-esistente esposta dal volume**, non una regressione — e infatti su DB fresco quel test è verde (v. sotto); i 9 "did not run" erano la coda del suo `describe.serial`.
+- **Run mirato del solo project serializzato** (`--project=mobile-membership-fee --no-deps`): **2 passed**. ⚠️ Senza `--no-deps` Playwright esegue prima **tutta** la catena di dipendenze: lezione presa in corsa, e il motivo per cui CLAUDE.md prescrive `--no-deps` per un run locale singolo.
+- **Gate finale — suite completa `CI=1` su build di produzione e DB fresco** (`docker compose down -v` + `up` + `migrate deploy` + `db seed`), lanciata con `scripts/e2e.sh start` e letta con `scripts/e2e.sh status`:
+
+  ```
+  state: DONE — E2E_EXIT=0
+  405 passed (9.7m)
+  ```
+
+  **405 = 380 (baseline alla chiusura della 15.6) + 23 (spec nuovo) + 2 (spec della quota)**. Zero rossi, zero flaky, tutti i sette project della catena eseguiti.
+
+  Due giri precedenti, entrambi diagnosticati e chiusi, riportati per onestà:
+  1. primo giro su DB fresco: **402 passed, 1 failed, 1 flaky** — il rosso era **mio**, `mobile-membership-fee.spec.ts` usava `POST /account/topups` (404) invece di `/account/top-ups` con `paymentMethod`/`effectiveDate`; il flaky era `flights.spec.ts:602`, **pre-esistente** e verde al retry;
+  2. secondo giro: **383 passed, 1 failed** — il rosso era ancora **mio**, l'asserzione "lo sheet copre la tab bar" cercava la stringa `mobile-sheet` nella classe dell'elemento colpito, mentre su uno sheet ALTO (il transito ne ha dieci righe) l'elemento sopra la barra è il **pannello** stesso (misurato: `BUTTON.btn bottom-sheet-close`). Riscritta sulla proprietà giusta — l'elemento appartiene al **sottoalbero** `.mobile-sheet` — che è ciò che l'AC 11 chiede davvero.
+
+## 9) Cosa NON ho fatto
+
+- Non ho committato (regola di consegna).
+- Non ho toccato `ManualPprForm` (AD-10): il lavoro sul form è stato **verifica misurata**, e la misura conferma la 15.2 (pannello `0,0 375×812`, submit 44px hit-testabile, tab bar coperta).
+- Non ho toccato la riga-pannello di chiusura del desktop, né la conferma inline di annullo del desktop (restano 54px e 25px: R-15.7-d dice "riga-pannello desktop invariata").
+- Non ho corretto il contrasto 3.38:1 della colonna "Giorni rimasti" né la ✕ a 32px di `SlideOver` (entrambi 15.10).
+- Non ho aggiunto link fra coda PPR e transiti (R-15.7-j).
+- Non ho toccato `.segmented`, `.mini-modal`, `.students`, `.card-head`, `.kpi-row` come agganci: tutte le regole passano da classi di pagina.
+- Il finding `side-tab` dell'hook di design sullo `StatCard` (`borderLeft: 3px solid var(--ink)`) è **pre-esistente dalla 12.11**, è la grammatica KPI di tutta l'app e ricade sotto "desktop invariato" (AC 13): lasciato invariato, non silenziato.
