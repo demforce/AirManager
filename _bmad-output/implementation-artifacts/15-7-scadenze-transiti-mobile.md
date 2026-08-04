@@ -743,3 +743,96 @@ Metodo: `fillStyle` su canvas 1×1 (i token sono `oklch`, il regex `rgb()` non l
 - Non ho aggiunto link fra coda PPR e transiti (R-15.7-j).
 - Non ho toccato `.segmented`, `.mini-modal`, `.students`, `.card-head`, `.kpi-row` come agganci: tutte le regole passano da classi di pagina.
 - Il finding `side-tab` dell'hook di design sullo `StatCard` (`borderLeft: 3px solid var(--ink)`) è **pre-esistente dalla 12.11**, è la grammatica KPI di tutta l'app e ricade sotto "desktop invariato" (AC 13): lasciato invariato, non silenziato.
+
+# Review Record — 15.7 (reviewer adversarial Opus 5 xhigh, fix-subagent Opus 5 xhigh — 2026-08-04)
+
+Report integrale della review: `15-7-review-report.md`.
+Verdetto: **SHIPPABLE-WITH-FIXES** — **0 Major**, 1 Minor, 7 Low (secondo ciclo consecutivo senza major).
+Fix in `b1b5fa9`.
+
+## Arbitro della review (pre-fix)
+
+`CI=1` su build di produzione, DB fresco: **E2E_EXIT=0 — 404 passed + 1 flaky (10.8m)** su 405
+(il flaky è `billing.spec.ts:296`, TD noto — non attribuibile). Catena serializzata completa e in
+ORDINE col project nuovo ultimo (`… → mobile-overview-overflow → mobile-membership-fee`),
+`afterAll` verificato in psql (`membership.annualFeeCents = 0`). Gates verdi (1724 unit).
+
+**Il cuore contabile ha retto l'attacco dal vivo**: chiusura con tassa → UN solo `CashMovement`
+categoria PPR con l'importo esatto (psql); race di due chiusure concorrenti → `[200, 409]` e un
+solo movimento; replay con la stessa chiave → `[200, 200]`, 1 movimento; chiave RIGENERATA dopo
+una risposta fallita; 409 → toast di conflitto; annullo → nessun movimento; chiusura praticabile
+anche a 320×568. Sheet ben formato con `pprNumber` nullo. Export: il file `.xlsx` scaricato con
+`window+expiryTypeId+personQuery` contiene SOLO la riga filtrata — il debito R-15.7-k(1) è chiuso
+per davvero. Le 5 guardie più delicate riprovate rosse per iniezione. Desktop 641/800/1280
+invariato (diff CSS puramente additivo), contrasti ≥4.85/≥5.72, RBAC 4 attori × 2 larghezze.
+
+## Findings → esito
+
+| # | Sev | Difetto | Esito |
+|---|---|---|---|
+| MINOR-1 | minor | "Forza addebito" (il SOLO controllo che scavalca un 422) a **20px**, con guardia calibrata sul valore ottenuto (19.5) | **decisione PO: 44px ora** — target reale della riga ≥44px nel pannello mobile, guardia riscritta a 43.5 e provata rossa sul pre-fix; `.mini-modal` desktop invariata |
+| LOW-1 | low | back button: la chip strip Scadenze ri-applica la finestra abbandonata — misurato IDENTICO sul `.segmented` desktop ⇒ pre-esistente | **TD registrato** (entrambe le facce; sui Movimenti, Link + remount, il back è corretto) |
+| LOW-2 | low | voci del menu Esporta a 35px (terza occorrenza della classe 15.5 F4) | **decisione PO: TD verso la 15.8** — il menu è UN componente condiviso e il suo redesign è già assegnato lì |
+| LOW-3 | low | esito promemoria annunciato DUE volte sul desktop (toast + `<p role=status>`) | **decisione PO: si tiene, dichiarato** — sopprimerlo richiederebbe matchMedia in JS (vietato) o un cambio desktop; valutazione nello sweep a11y 15.10 |
+| LOW-4 | low | guardia AC 9 (paginazione) interamente condizionale: poteva passare senza asserire nulla | resa sostanziale nel fix |
+| LOW-5 | low | il test AC 6 prometteva la verifica dei popover data senza aprirne nessuno (comportamento verificato corretto dal reviewer) | il test ora apre il popover e asserisce le proprietà |
+| LOW-6 | low | la guardia AC 10 enumerava 25 dei ~45 testid | elenco esteso nel fix |
+| LOW-7 | low | opzioni del typeahead quota a 36px (primitiva condivisa) | **TD registrato** — stessa classe del TD (k) (✕ di SlideOver a 32px), sweep 15.10 |
+
+## Ratifiche PO sopraggiunte in review (4, 2026-08-04)
+
+1. **MINOR-1 → 44px subito** con guardia onesta (mai calibrata sul valore ottenuto).
+2. **LOW-2 → TD verso la 15.8** (voci del menu = redesign del menu, non target del trigger).
+3. **R-15.7-h CONFERMATA col costo misurato**: prima card della Scadenze a 609px (75% del
+   viewport) per la KPI 2×2 — i 4 tier letti insieme valgono i 42px extra.
+4. **LOW-3 → si tiene**: il doppio annuncio è il costo dichiarato della deviazione D3.
+
+## Verifiche del fix
+
+Gates verdi (1724 unit). Run mirato post-fix: **25 passed (36.1s), exit 0** — eseguito su DB GIÀ
+sporco di tre run precedenti, che è la prova più forte per le guardie riscritte. Discriminanze:
+MINOR-1 rossa sulla build pre-fix REALE (label 20px, `E2E_EXIT=1`); LOW-4 rossa riducendo le
+fixture alla condizione in cui la guardia vecchia passava senza asserire; LOW-5 rossa per
+iniezione sul popover (z/inside/onTop tutte vive); LOW-6 rossa clonando un nodo appena aggiunto.
+Deviazione dichiarata e ratificata qui: la soglia 43.5 è applicata al TARGET REALE (la riga label
+che avvolge il checkbox), non al box 20×20 che il PO ha esplicitamente lasciato tale.
+
+**Lezione (durevole, dal fix)** — una fixture che isola per GIORNATA (`from=to=<giorno>`) non è
+isolata fra ri-run sullo stesso DB: il bucket accumula e un totale fotografato al primo run
+(`1 / 2`) diventa `1 / 3`, `1 / 4`… Le guardie su liste bucketed si scrivono su `≥`/regex o sulla
+parità fra alberi, MAI su un totale assoluto (famiglia di Billing-2 F4, innescata però dal
+proprio helper e non dalla concorrenza).
+
+## Il rosso del PRIMO arbitro post-fix (chiuso in sessione principale)
+
+Primo arbitro post-fix su DB fresco: **374 passed, 1 failed (3 retry), 30 did not run** — il
+fallito era `movements.spec.ts:238` (guardia 13.6 email+telefono): navigava sulla **pagina 1 di
+default** del registro e le **21 PprRequest APPROVED** che le fixture LOW-4 creano in parallelo
+(project `fullyParallel`) spingevano il backlog oltre le 20 righe — FIFO `createdAt asc` ⇒ la
+fixture fresca finisce in ULTIMA pagina. Il file aveva GIÀ il rimedio per la propria fragilità
+(`gotoMovementsLastPage`, usato dal test gemello "Registra arrivo" a `:485` col doc-comment che
+spiega esattamente questo): solo la guardia email+telefono l'aveva dimenticato. Fix chirurgico in
+sessione (stessa navigazione difensiva del gemello). Discriminanza: rieseguito lo spec INTERO
+sullo STESSO DB saturo del fallimento → **12/12, E2E_EXIT=0**. Classe già nota (15.3 C / 15.4
+secondo rosso): un'asserzione "riga in pagina 1" su lista paginata è vietata — questa era
+l'ultima superstite del file.
+
+## Gate finale
+
+- Arbitro finale, `CI=1` su build di produzione, DB fresco, stato committato: **404 passed + 1 flaky (10.8m), E2E_EXIT=0 — il flaky e' `flights.spec.ts:602`, TD noto (accoppiamento ExpiryType, retry verde), non attribuibile**
+- `npm run gates`: **verde** (lint, typecheck, 1724 unit, build)
+
+## TD (in `sprint-status.yaml`, registrati alla chiusura)
+
+- **(k)** ✕ di `SlideOver` a 32px su mobile (primitiva, 11 consumer) + **LOW-7** opzioni typeahead
+  a 36px (stessa classe) → sweep 15.10.
+- **(l)** lo spec quota scrive un `AppSetting` globale (project serializzato dedicato — mitigato).
+- **(m)** bucket stato+giorno del registro transiti può superare la pagina (36 righe misurate).
+- **LOW-1** desync back/filtri su Scadenze (pre-esistente, entrambe le facce).
+- **LOW-2** voci ExportMenu a 35px → 15.8.
+- **(n)** `scripts/e2e.sh start` perde il quoting degli argomenti: `-g "AC 9|AC 6/12"` esplode in
+  `bash: AC: comando non trovato` (`E2E_EXIT=127`) — TD a una riga sullo script (aggirato
+  lanciando il file intero).
+- Volume fixture per run dello spec 15.7 (per il TD di volume): AC 9 ora crea 21 persone +
+  21 scadenze (tutte oltre i 60 giorni: nessuna stat card si muove) + 21 PprRequest APPROVED su
+  giornate lontane dai KPI; nuova dipendenza e2e da `POST /api/v1/ppr-requests/manual`.

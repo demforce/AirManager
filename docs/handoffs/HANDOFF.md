@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-08-04 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1-15.6 DONE** (shell, primitive, panoramica, pianificazione, anagrafiche, registro voli). Prossimo lavoro: **story 15.7 — Scadenze + Transiti mobile**)
+# HANDOFF — AirManager (aggiornato: 2026-08-04 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1-15.7 DONE** (shell, primitive, panoramica, pianificazione, anagrafiche, registro voli, scadenze+transiti). Prossimo lavoro: **story 15.8 — Contabilità + Statistiche + Impostazioni mobile**)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -203,6 +203,34 @@ fresco: **380/380, 0 flaky, exit 0 (10.1m)**.
   su DB >100 persone l'hint `studentOnlyCorrectionHint` della 14.3 sparisce oltre pagina 1 — invariante
   server intatto; PO: si subisce). Le facce sono ora: stats CHIUSA (15.4), picker prenotazioni/persone
   APERTA, hint correzione APERTA. Il TD unico in sprint-status le elenca tutte.
+
+### 15.7 Scadenze + Transiti mobile — DONE (2026-08-04)
+
+TRE superfici (la ricognizione ha scoperto che «Le mie scadenze» era in tab bar per 3 ruoli senza owner):
+Scadenze admin e self a card con sheet, Movimenti con la **chiusura transito nel `secondStep` dello sheet**
+— prima era di fatto irraggiungibile da telefono (483px di scroll, pannello fuori viewport, submit sotto
+il fold). Chip sulla finestra (Scadenze) e sullo stato (Movimenti), quota associativa a tutto schermo,
+esito promemoria nel toast, KPI 2×2 solo su Scadenze, **export riparato** (perdeva `window`/`personQuery`:
+un file esportato dopo una ricerca conteneva tutto). Story file con R-15.7-a..k, Dev Agent Record e Review
+Record: `_bmad-output/implementation-artifacts/15-7-scadenze-transiti-mobile.md`; report review:
+`15-7-review-report.md`. Commit: `361bffb` story, `519a269` feat, `f18138b` record, `b1b5fa9` fix,
++ docs di chiusura. Arbitro finale su DB fresco: **404 + 1 flaky noto, exit 0 (10.8m)**.
+
+- **15 ratifiche PO totali** (11 pre-dispatch + 4 in review), review **0 major** — secondo ciclo
+  consecutivo. Il cuore contabile ha retto l'attacco dal vivo: race di chiusure concorrenti → un solo
+  `CashMovement`, replay idempotente, 409 col toast giusto, verifiche in psql.
+- **Lezione (durevole) — l'asimmetria del remount decide la semantica dei controlli**: `movements` remonta
+  con `key` (le chip sono `Link`), `expiries` no (le chip sono `<button>` che aggiornano lo stato locale
+  — una `Link` avrebbe desincronizzato i filtri). Generalizzare il pattern della story precedente alla
+  cieca sbaglia una pagina su due: la ricognizione deve MISURARE il remount, non assumerlo.
+- **Lezione (durevole) — le guardie si scrivono sul requisito, non sul valore ottenuto**: la soglia
+  19.5px della guardia checkbox era calibrata su ciò che il codice faceva (20px), non su ciò che l'AC
+  chiedeva (44) — una guardia così protegge il difetto, non la regola. Riscritta a 43.5 col fix.
+- **Un nuovo spec che scrive AppSettings globali = un nuovo project in coda alla catena** (ottavo:
+  `mobile-membership-fee`): la regola di CLAUDE.md ha retto — il dev l'ha applicata da solo contro
+  l'assunzione della story, con `afterAll` che ripristina (verificato in psql dal reviewer).
+- **Checklist di chiusura**: il report della review va committato NEL commit di chiusura — la svista è
+  già successa DUE volte (15.5 e 15.6, recuperate a posteriori).
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 
