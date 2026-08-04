@@ -1390,6 +1390,25 @@
         "generic": "Impossibile forzare la registrazione. Riprova."
       }
     },
+    "mobile": {
+      "openDetail": "Apri dettaglio volo",
+      "close": "Chiudi",
+      "back": "Indietro",
+      "route": "Tratta",
+      "instructor": "Istruttore",
+      "takeoffs": "Decolli",
+      "landings": "Atterraggi",
+      "times": "Orari",
+      "hourMeter": "Contaore",
+      "notes": "Note",
+      "lineage": "Storico",
+      "correctionBadge": "Correzione",
+      "statusAll": "Tutti",
+      "filters": "Filtri",
+      "filtersCount": "Filtri ({count})",
+      "filtersTitle": "Filtri del registro",
+      "apply": "Applica"
+    },
     "cancelModal": {
       "title": "Annulla volo",
       "reason": "Motivo",

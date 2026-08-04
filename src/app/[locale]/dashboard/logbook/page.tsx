@@ -390,6 +390,27 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               generic: t('editor.force.generic'),
             },
           },
+          mobile: {
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            back: t('mobile.back'),
+            route: t('mobile.route'),
+            instructor: t('mobile.instructor'),
+            takeoffs: t('mobile.takeoffs'),
+            landings: t('mobile.landings'),
+            times: t('mobile.times'),
+            hourMeter: t('mobile.hourMeter'),
+            notes: t('mobile.notes'),
+            lineage: t('mobile.lineage'),
+            correctionBadge: t('mobile.correctionBadge'),
+            statusAll: t('mobile.statusAll'),
+            filters: t('mobile.filters'),
+            // `t.raw`: the {count} placeholder is filled CLIENT-side (same
+            // reasoning as `table.forcedDetail` above).
+            filtersCount: t.raw('mobile.filtersCount'),
+            filtersTitle: t('mobile.filtersTitle'),
+            apply: t('mobile.apply'),
+          },
           cancelModal: {
             title: t('cancelModal.title'),
             reason: t('cancelModal.reason'),

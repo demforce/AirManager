@@ -23,17 +23,21 @@
  * the prototype's own 10 columns, needed to satisfy this exact assertion
  * (flights.spec.ts).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { DateInput } from '@/components/ui/date-input';
+import { SlideOver } from '@/components/ui/slide-over';
+import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { flightPicPerson } from '@/lib/flight-pic';
+import { flightBadgeKind, flightCardSubLine, flightRouteLabel, flightSheetSub, type FlightBadgeKind } from '@/lib/mobile-logbook';
 import { formatCents } from '@/lib/money';
 import type { FlightListItemDto, FlightStatusDto, FlightTypeDto } from '@/lib/schemas/flights';
-import { formatDateOnly, formatMinutes } from '@/lib/time';
+import { formatDateOnly, formatMinutes, formatTimeOfDay } from '@/lib/time';
 import { FlightEditor, type FlightEditorLabels, type FlightEditorTarget } from './flight-editor';
 
 type AircraftOption = { id: string; registration: string };
@@ -122,6 +126,33 @@ export type LogbookConsoleLabels = {
     reset: string;
   };
   editor: FlightEditorLabels;
+  /**
+   * Story 15.6 — the phone face of the registry (card list, detail sheet,
+   * "Filtri" panel). Only the words the desktop has NO equivalent for live
+   * here: the sheet reuses `table.*` wherever the desktop already spells the
+   * word out in full, and the abbreviated column heads ("Dec"/"Att") are the
+   * ones it cannot borrow.
+   */
+  mobile: {
+    openDetail: string;
+    close: string;
+    back: string;
+    route: string;
+    instructor: string;
+    takeoffs: string;
+    landings: string;
+    times: string;
+    hourMeter: string;
+    notes: string;
+    lineage: string;
+    correctionBadge: string;
+    statusAll: string;
+    filters: string;
+    /** `{count}` filled client-side (`t.raw`) — the number of PANEL filters currently active. */
+    filtersCount: string;
+    filtersTitle: string;
+    apply: string;
+  };
   cancelModal: {
     title: string;
     reason: string;
@@ -199,6 +230,7 @@ export function LogbookConsole({
   labels,
 }: LogbookConsoleProps) {
   const router = useRouter();
+  const toast = useToast();
   const [filters, setFilters] = useState<LogbookFilters>(initialFilters);
   const [personQueryInput, setPersonQueryInput] = useState(initialFilters.personQuery);
   const [editorTarget, setEditorTarget] = useState<FlightEditorTarget | null>(null);
@@ -208,6 +240,42 @@ export function LogbookConsole({
   const [cancelFormError, setCancelFormError] = useState<string | null>(null);
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [cancelFeedback, setCancelFeedback] = useState<string | null>(null);
+
+  // --- phone-only state (story 15.6) ---------------------------------------
+  // The row-detail sheet and its second step (the storno reason, ratifica
+  // R-15.6-d), plus the draft of the "Filtri" panel. All of it dies with the
+  // console at every navigation (`page.tsx`'s own `key`), which is exactly why
+  // the panel applies ONCE instead of navigating per keystroke (AD-4).
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const [sheetStep, setSheetStep] = useState<'none' | 'cancel'>('none');
+  const [sheetCancelReason, setSheetCancelReason] = useState('');
+  const [sheetReasonMissing, setSheetReasonMissing] = useState(false);
+  const [sheetCancelError, setSheetCancelError] = useState<string | null>(null);
+  /** `null` while the panel is closed; the filter values being edited while it is open. */
+  const [filterDraft, setFilterDraft] = useState<LogbookFilters | null>(null);
+  const sheetPrimaryRef = useRef<HTMLButtonElement>(null);
+  const sheetReasonRef = useRef<HTMLTextAreaElement>(null);
+
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => {
+    setSheetId(null);
+    setSheetStep('none');
+    setSheetCancelReason('');
+    setSheetReasonMissing(false);
+    setSheetCancelError(null);
+  }, []);
+
+  /**
+   * Review 15.2 F1: entering the second step removes the very button that was
+   * pressed, and `document.activeElement` falls back to `<body>` — the dialog
+   * context is lost for assistive technology even though the node survives.
+   * Inert while no sheet is open (both refs are null then), so `MobileSheet`'s
+   * own focus-on-open baseline is untouched.
+   */
+  useEffect(() => {
+    if (sheetStep === 'cancel') sheetReasonRef.current?.focus();
+    else sheetPrimaryRef.current?.focus();
+  }, [sheetStep]);
 
   /** Builds the query string from the 7 editable filters (dropping `instructorPersonId` — same as the legacy manager, Dev Notes). `personId` is deep-link-only (no filter-bar control sets it, AC 7) but still round-trips here so an incoming "Vedi tutti" scope survives an unrelated filter tweak. */
   function buildFilterQuery(next: LogbookFilters): Record<string, string> {
@@ -317,6 +385,148 @@ export function LogbookConsole({
     );
   }
 
+  /** The card's mono sub-line and the sheet's rows share this: `CFI ⟨nome⟩`, the desktop's own second line under the pilot. */
+  function instructorLabel(flight: FlightListItemDto): string | null {
+    return flight.instructor ? `CFI ${personLabel(flight.instructor)}` : null;
+  }
+
+  function statusChip(kind: FlightBadgeKind): ReactNode {
+    if (kind === 'cancelled') {
+      return (
+        <Badge tone="bad" dot>
+          {labels.table.statusCancelled}
+        </Badge>
+      );
+    }
+    if (kind === 'forced') {
+      return (
+        <Badge tone="warn" dot>
+          {labels.table.forcedBadge}
+        </Badge>
+      );
+    }
+    return <Badge>{labels.mobile.correctionBadge}</Badge>;
+  }
+
+  /**
+   * Parity of the sheet with the desktop row (AC 2, lesson 15.5 F2): the 11
+   * columns, the four things the row shows OUTSIDE a column (deroga + motivo,
+   * annullato + data/motivo, "correzione di", "corretto da") and the three the
+   * DTO carries that the desktop table has no room for (orari, contaore, note
+   * — ratifica R-15.6-b: the phone may show MORE, never less).
+   *
+   * `forceReason` is printed only when the server actually sent it: it is
+   * masked for a viewer without `flights.manage` (`flights.service.ts`'s
+   * `toListItem`), and a masked value is never invented here.
+   */
+  function sheetRows(flight: FlightListItemDto): BottomSheetRow[] {
+    const pic = flightPicPerson(flight);
+    const route = flightRouteLabel(flight.departureAirfield, flight.arrivalAirfield);
+    const rows: BottomSheetRow[] = [
+      { k: labels.table.date, v: formatDateOnly(flight.flightDate, moneyLocale) },
+      { k: labels.mobile.route, v: route ?? labels.table.noValue },
+      { k: labels.table.pilot, v: personLabel(flight.person) },
+      { k: labels.mobile.instructor, v: flight.instructor ? personLabel(flight.instructor) : labels.table.noValue },
+      { k: labels.table.pic, v: pic ? personLabel(pic) : labels.table.noValue },
+      { k: labels.table.aircraft, v: flight.aircraft.registration },
+      {
+        k: labels.table.type,
+        v: `${flightTypeLabel(flight.flightType, labels.flightTypes)}${flight.isSolo ? ` — ${labels.table.soloSuffix}` : ''}`,
+      },
+      { k: labels.table.hours, v: formatMinutes(flight.minutes) },
+      {
+        k: labels.mobile.times,
+        v:
+          flight.takeoffAt && flight.landingAt
+            ? `${formatTimeOfDay(new Date(flight.takeoffAt), moneyLocale)} – ${formatTimeOfDay(new Date(flight.landingAt), moneyLocale)}`
+            : labels.table.noValue,
+      },
+      { k: labels.mobile.takeoffs, v: flight.takeoffs },
+      { k: labels.mobile.landings, v: flight.landings },
+      {
+        k: labels.mobile.hourMeter,
+        v: flight.hourMeterStart !== null && flight.hourMeterEnd !== null ? `${flight.hourMeterStart} – ${flight.hourMeterEnd}` : labels.table.noValue,
+      },
+      { k: labels.table.amount, v: formatCents(flight.breakdown.totalAmountCents, moneyLocale) },
+      { k: labels.mobile.notes, v: flight.notes ?? labels.table.noValue },
+    ];
+
+    if (flight.forceReason) rows.push({ k: labels.table.forcedBadge, v: flight.forceReason });
+    if (flight.status === 'CANCELLED') {
+      const detail = [flight.cancelledAt ? formatDateOnly(flight.cancelledAt.slice(0, 10), moneyLocale) : null, flight.cancelReason]
+        .filter((part): part is string => Boolean(part))
+        .join(' · ');
+      rows.push({ k: labels.table.statusCancelled, v: detail === '' ? labels.table.noValue : detail });
+    }
+    const lineage = [flight.correctionOfId ? labels.table.correctionOf : null, flight.correctedByFlightId ? labels.table.correctedBy : null].filter(
+      (part): part is string => Boolean(part),
+    );
+    if (lineage.length > 0) rows.push({ k: labels.mobile.lineage, v: lineage.join(' · ') });
+
+    return rows;
+  }
+
+  /** A row's sheet always opens on its first step, never on a leftover one from the previous row. */
+  function openSheet(id: string): void {
+    setSheetStep('none');
+    setSheetCancelReason('');
+    setSheetReasonMissing(false);
+    setSheetCancelError(null);
+    setSheetId(id);
+  }
+
+  /**
+   * A status chip's href (ratifica R-15.6-e). It produces the SAME URL the
+   * desktop `<select>` would (`buildFilterQuery`, which deliberately drops the
+   * instructor drill-down exactly as `handleFilterChange` does) and drops
+   * `?page`: a different filter is a different result set (precedent 15.4).
+   */
+  function statusChipHref(nextStatus: LogbookFilters['status']) {
+    return { pathname: '/dashboard/logbook' as const, query: buildFilterQuery({ ...filters, status: nextStatus }) };
+  }
+
+  /**
+   * How many of the filters the phone HIDES inside the panel are active — the
+   * count on its trigger. A filter one cannot see is a filter one forgets;
+   * stato and persona are not counted because they are on the head, in plain
+   * sight (chips and search box).
+   */
+  const panelActiveCount =
+    (filters.dateFrom !== '' || filters.dateTo !== '' ? 1 : 0) + (canManage && filters.aircraftId !== '' ? 1 : 0) + (filters.flightType !== '' ? 1 : 0);
+
+  /** Re-read from `items` on every render: after a storno the very same row comes back CANCELLED, and the sheet must not keep showing the stale copy it was opened with. */
+  const sheetFlight = items.find((flight) => flight.id === sheetId) ?? null;
+  const sheetBadgeKind = sheetFlight ? flightBadgeKind(sheetFlight) : null;
+
+  /** ONE navigation on "Applica" (AD-4) — navigating per `onChange`, as the desktop head does, would remount the console and close the panel under the reader's thumb. */
+  function applyFilterDraft(): void {
+    if (filterDraft === null) return;
+    const next = filterDraft;
+    setFilterDraft(null);
+    setFilters(next);
+    navigate(next);
+  }
+
+  /**
+   * The ONE network path of a storno (story 15.6, AD-8): same request, same
+   * 409 mapping, same irreversibility, whether the decision was taken in the
+   * desktop `.mini-modal` or in the phone sheet. Returns the message to show,
+   * or `null` on success — the CALLER decides where the outcome is announced
+   * (a `role="status"` in the card head on desktop, a toast on the phone,
+   * where that paragraph would be off-screen: ratifica R-15.6-d).
+   */
+  async function postCancel(id: string, reason: string): Promise<string | null> {
+    setCancelSubmitting(true);
+    const response = await fetch(`/api/v1/flights/${id}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    setCancelSubmitting(false);
+    if (response.ok) return null;
+    return response.status === 409 ? labels.cancelModal.conflictError : labels.cancelModal.genericError;
+  }
+
   async function submitCancel(): Promise<void> {
     if (!cancellingFlight) return;
     const trimmed = cancelReason.trim();
@@ -326,17 +536,10 @@ export function LogbookConsole({
     }
     setCancelReasonError(false);
     setCancelFormError(null);
-    setCancelSubmitting(true);
 
-    const response = await fetch(`/api/v1/flights/${cancellingFlight.id}/cancel`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: trimmed }),
-    });
-    setCancelSubmitting(false);
-
-    if (!response.ok) {
-      setCancelFormError(response.status === 409 ? labels.cancelModal.conflictError : labels.cancelModal.genericError);
+    const error = await postCancel(cancellingFlight.id, trimmed);
+    if (error !== null) {
+      setCancelFormError(error);
       return;
     }
 
@@ -346,10 +549,38 @@ export function LogbookConsole({
     router.refresh();
   }
 
+  /** The phone twin of `submitCancel`, on the sheet's second step. Same guard (an empty motivo never reaches the network), same request, same mapping. */
+  async function submitSheetCancel(id: string): Promise<void> {
+    const trimmed = sheetCancelReason.trim();
+    if (trimmed === '') {
+      setSheetReasonMissing(true);
+      return;
+    }
+    setSheetReasonMissing(false);
+    setSheetCancelError(null);
+
+    const error = await postCancel(id, trimmed);
+    if (error !== null) {
+      setSheetCancelError(error);
+      return;
+    }
+
+    closeSheet();
+    toast.show(labels.cancelModal.success, 'ok');
+    router.refresh();
+  }
+
   return (
     <>
       <div className="card">
-        <div className="card-head">
+        {/* ONE head at every width (AD-2/AD-3): every control keeps its testid
+            and its state. On a phone the five filters that ratifica R-15.6-e
+            moves into the "Filtri" panel are hidden here (`.logbook-filter-
+            inpanel`) and re-rendered there over a DRAFT, because the panel
+            applies once instead of navigating per change (AD-4) — the only
+            behavioural difference, and the reason those five cannot be the
+            same elements. */}
+        <div className="card-head logbook-head">
           <div className="card-title">{labels.cardTitle}</div>
           <div className="spacer" />
           {cancelFeedback ? (
@@ -357,7 +588,12 @@ export function LogbookConsole({
               {cancelFeedback}
             </p>
           ) : null}
-          <div className="filter-date-range" style={{ display: 'flex', alignItems: 'center', gap: 5 }} title={`${labels.filters.dateFrom} – ${labels.filters.dateTo}`}>
+          {/* The inline `display: flex` this pair used to carry moved into
+              `.logbook-filter-range` (identical computed style above 640px,
+              measured): an inline `display` cannot be overridden by a media
+              query, and the phone head has to hide it. Same move `.registry-
+              search` needed in 15.5. */}
+          <div className="filter-date-range logbook-filter-range logbook-filter-inpanel" title={`${labels.filters.dateFrom} – ${labels.filters.dateTo}`}>
             <DateInput
               inline
               style={{ width: 'auto', fontSize: 12 }}
@@ -378,7 +614,7 @@ export function LogbookConsole({
           </div>
           {canManage ? (
             <select
-              className="input"
+              className="input logbook-filter-inpanel"
               style={{ width: 'auto', minWidth: 130, fontSize: 12 }}
               value={filters.aircraftId}
               onChange={(event) => handleFilterChange({ aircraftId: event.target.value })}
@@ -392,8 +628,12 @@ export function LogbookConsole({
               ))}
             </select>
           ) : null}
+          {/* Width moved out of the inline style into `.logbook-search` for the
+              same reason as the date pair above: the phone head gives this box
+              its own full-width row, and an inline `width` wins over a media
+              query. Identical computed width above 640px, measured. */}
           {canManage ? (
-            <div className="search" style={{ width: 190 }}>
+            <div className="search logbook-search">
               <Icon.search />
               <input
                 className="bare-input"
@@ -406,7 +646,7 @@ export function LogbookConsole({
             </div>
           ) : null}
           <select
-            className="input"
+            className="input logbook-filter-inpanel"
             style={{ width: 'auto', minWidth: 110, fontSize: 12 }}
             value={filters.flightType}
             onChange={(event) => handleFilterChange({ flightType: event.target.value as LogbookFilters['flightType'] })}
@@ -419,7 +659,7 @@ export function LogbookConsole({
             <option value="AERIAL_WORK">{labels.flightTypes.other}</option>
           </select>
           <select
-            className="input"
+            className="input logbook-filter-inpanel"
             style={{ width: 'auto', minWidth: 110, fontSize: 12 }}
             value={filters.status}
             onChange={(event) => handleFilterChange({ status: event.target.value as LogbookFilters['status'] })}
@@ -431,10 +671,21 @@ export function LogbookConsole({
             <option value="CANCELLED">{labels.filters.statusOptions.cancelled}</option>
           </select>
           {hasActiveFilter ? (
-            <button type="button" className="btn" onClick={handleReset} data-testid="flight-filter-reset">
+            <button type="button" className="btn logbook-filter-inpanel" onClick={handleReset} data-testid="flight-filter-reset">
               {labels.filters.reset}
             </button>
           ) : null}
+          {/* Phone only (`display: none` above 640px): the door to the panel that
+              holds periodo, velivolo and tipo, with the number of them currently
+              active — a filter one cannot see is a filter one forgets. */}
+          <button
+            type="button"
+            className="btn logbook-filters-trigger"
+            onClick={() => setFilterDraft(filters)}
+            data-testid="mobile-flight-filters-button"
+          >
+            {panelActiveCount === 0 ? labels.mobile.filters : labels.mobile.filtersCount.replace('{count}', String(panelActiveCount))}
+          </button>
           <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={pdfExportHref} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} />
           {canManage ? (
             <button type="button" className="btn primary" onClick={() => setEditorTarget({ mode: 'new' })} data-testid="logbook-new-button">
@@ -444,11 +695,11 @@ export function LogbookConsole({
         </div>
 
         {items.length === 0 ? (
-          <p className="card-body" data-testid="flight-empty">
+          <p className="card-body logbook-desktop-body" data-testid="flight-empty">
             {labels.empty}
           </p>
         ) : (
-          <div className="logbook">
+          <div className="logbook logbook-desktop-body">
             <div className="lb-row header" style={{ gridTemplateColumns: COLS }}>
               <div>{labels.table.date}</div>
               <div>{labels.table.route}</div>
@@ -560,8 +811,97 @@ export function LogbookConsole({
           </div>
         )}
 
+        {/* --- the phone face of this card (story 15.6, R3/R4) ---------------
+            Same card, same head, same pagination: only the eleven-column table
+            is swapped for one card per flight (template 289-296), whose two
+            decisions live in the sheet (R-15.6-c). The status chips are the one
+            filter that stays in plain sight, because a registry that silently
+            includes ANNULLATI is a registry read wrong (ratifica R-15.6-e).
+            The "Totali" row is NOT repeated here: the KPI strip above the card
+            already shows the same four numbers from the same `totals` object
+            (ratifica R-15.6-i), and the e2e measures that they coincide. */}
+        <div className="logbook-mobile">
+          <div className="mobile-chip-strip" data-testid="mobile-flight-status-chips">
+            <Link
+              href={statusChipHref('')}
+              locale={locale as AppLocale}
+              className={`btn ${filters.status === '' ? 'primary' : ''}`}
+              aria-current={filters.status === '' ? 'true' : undefined}
+              data-testid="mobile-flight-status-chip-all"
+            >
+              {labels.mobile.statusAll}
+            </Link>
+            <Link
+              href={statusChipHref('REGISTERED')}
+              locale={locale as AppLocale}
+              className={`btn ${filters.status === 'REGISTERED' ? 'primary' : ''}`}
+              aria-current={filters.status === 'REGISTERED' ? 'true' : undefined}
+              data-testid="mobile-flight-status-chip-REGISTERED"
+            >
+              {labels.filters.statusOptions.registered}
+            </Link>
+            <Link
+              href={statusChipHref('CANCELLED')}
+              locale={locale as AppLocale}
+              className={`btn ${filters.status === 'CANCELLED' ? 'primary' : ''}`}
+              aria-current={filters.status === 'CANCELLED' ? 'true' : undefined}
+              data-testid="mobile-flight-status-chip-CANCELLED"
+            >
+              {labels.filters.statusOptions.cancelled}
+            </Link>
+          </div>
+
+          <div data-testid="mobile-flights-list">
+            {items.length === 0 ? (
+              <p className="mobile-card-empty" data-testid="mobile-flights-empty">
+                {labels.empty}
+              </p>
+            ) : (
+              items.map((flight) => {
+                const kind = flightBadgeKind(flight);
+                const pilotName = personLabel(flight.person);
+                const dateLabel = formatDateOnly(flight.flightDate, moneyLocale);
+                return (
+                  <button
+                    key={flight.id}
+                    type="button"
+                    className="mobile-row mobile-row-flight"
+                    aria-label={`${labels.mobile.openDetail}: ${flight.aircraft.registration} · ${dateLabel} · ${pilotName}`}
+                    onClick={() => openSheet(flight.id)}
+                    data-testid="flight-row-mobile"
+                  >
+                    <span className="mobile-row-main">
+                      <span className="mobile-row-title">
+                        <span className="mobile-row-tail">{flight.aircraft.registration}</span>
+                        <span className="mobile-row-name">{pilotName}</span>
+                      </span>
+                      <span className="mobile-row-sub">
+                        {flightCardSubLine({
+                          date: dateLabel,
+                          route: flightRouteLabel(flight.departureAirfield, flight.arrivalAirfield),
+                          typeLabel: flightTypeLabel(flight.flightType, labels.flightTypes),
+                          instructorLabel: instructorLabel(flight),
+                        })}
+                      </span>
+                    </span>
+                    {/* The template's own right column: duration over amount. */}
+                    <span className="mobile-row-side">
+                      <span className="mobile-row-amount">{formatMinutes(flight.minutes)}</span>
+                      <span className="mobile-row-note">{formatCents(flight.breakdown.totalAmountCents, moneyLocale)}</span>
+                    </span>
+                    {/* Only when the row is NOT ordinary (ratifica R-15.6-b), and
+                        on its own line: measured in 15.5, a `Badge` beside an
+                        identifier on a 317px card eats the identifier. */}
+                    {kind ? <span className="mobile-row-flag">{statusChip(kind)}</span> : null}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
         {totalPages > 1 ? (
-          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+          <div className="card-body registry-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
             <Link
               href={pageHref(page - 1)}
               locale={locale as AppLocale}
@@ -651,6 +991,211 @@ export function LogbookConsole({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {/* The "Filtri" panel (ratifica R-15.6-e, AD-4). Rendered only while open,
+          and reachable only from a trigger that is `display: none` above 640px,
+          so nothing of it — not even its ~101 `<option>`s — exists in the
+          desktop DOM. It reuses `SlideOver`'s full-screen mobile mode (15.2):
+          fixed header with the X, primary action anchored in `.so-foot` at 44px.
+          The controls are the desktop ones RE-RENDERED over a draft, not moved:
+          the desktop head navigates on every change, this panel navigates once,
+          and a single element cannot do both. */}
+      {filterDraft !== null ? (
+        <SlideOver
+          open
+          title={labels.mobile.filtersTitle}
+          // No subtitle on purpose: `.so-sub` is a `--ink-4` line (3.66:1 on
+          // `--panel` in the light theme, a PRE-EXISTING shortfall of the
+          // desktop primitive this story does not own), and the panel's title
+          // already says everything a second line would.
+          onClose={() => setFilterDraft(null)}
+          closeLabel={labels.mobile.close}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setFilterDraft(null);
+                  handleReset();
+                }}
+                data-testid="flight-filter-reset-mobile"
+              >
+                {labels.filters.reset}
+              </button>
+              <div style={{ flex: 1 }} />
+              <button type="button" className="btn primary" onClick={applyFilterDraft} data-testid="mobile-flight-filters-apply">
+                {labels.mobile.apply}
+              </button>
+            </>
+          }
+        >
+          <div className="logbook-filter-panel">
+            <div className="fld">
+              <label className="fld-label" htmlFor="flight-filter-date-from-mobile">
+                {labels.filters.dateFrom}
+              </label>
+              <DateInput
+                id="flight-filter-date-from-mobile"
+                value={filterDraft.dateFrom}
+                onChange={(event) => setFilterDraft({ ...filterDraft, dateFrom: event.target.value })}
+                data-testid="flight-filter-date-from-mobile"
+              />
+            </div>
+            <div className="fld">
+              <label className="fld-label" htmlFor="flight-filter-date-to-mobile">
+                {labels.filters.dateTo}
+              </label>
+              <DateInput
+                id="flight-filter-date-to-mobile"
+                value={filterDraft.dateTo}
+                onChange={(event) => setFilterDraft({ ...filterDraft, dateTo: event.target.value })}
+                data-testid="flight-filter-date-to-mobile"
+              />
+            </div>
+            {canManage ? (
+              <div className="fld">
+                <label className="fld-label" htmlFor="flight-filter-aircraft-mobile">
+                  {labels.filters.aircraft}
+                </label>
+                <select
+                  id="flight-filter-aircraft-mobile"
+                  className="input"
+                  value={filterDraft.aircraftId}
+                  onChange={(event) => setFilterDraft({ ...filterDraft, aircraftId: event.target.value })}
+                  data-testid="flight-filter-aircraft-mobile"
+                >
+                  {aircraftSelectOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div className="fld">
+              <label className="fld-label" htmlFor="flight-filter-type-mobile">
+                {labels.filters.flightType}
+              </label>
+              <select
+                id="flight-filter-type-mobile"
+                className="input"
+                value={filterDraft.flightType}
+                onChange={(event) => setFilterDraft({ ...filterDraft, flightType: event.target.value as LogbookFilters['flightType'] })}
+                data-testid="flight-filter-type-mobile"
+              >
+                <option value="">{labels.filters.allTypes}</option>
+                <option value="TOURISM">{labels.flightTypes.private}</option>
+                <option value="SCHOOL">{labels.flightTypes.school}</option>
+                <option value="AERIAL_WORK">{labels.flightTypes.other}</option>
+              </select>
+            </div>
+          </div>
+        </SlideOver>
+      ) : null}
+
+      {/* The row-detail sheet (AD-7: rendered conditionally, so
+          `mobile-flight-sheet` is ONE node). Its two actions are the desktop
+          row's, under the SAME gate (`canManage && REGISTERED`); "Modifica"
+          CLOSES the sheet before opening the panel rather than stacking a z-50
+          panel on a z-40 sheet (AD-9), and passes through the SAME
+          `editorTarget` — the `key` that wipes a stale force payload stays the
+          only one (review 14.4 F1). */}
+      {sheetFlight ? (
+        <BottomSheet
+          open
+          onClose={closeSheet}
+          testId="mobile-flight-sheet"
+          sub={flightSheetSub({
+            date: formatDateOnly(sheetFlight.flightDate, moneyLocale),
+            registration: sheetFlight.aircraft.registration,
+            typeLabel: flightTypeLabel(sheetFlight.flightType, labels.flightTypes),
+          })}
+          // Never the "—" placeholder: a pre-11.1 flight has no route, and a
+          // placeholder here would land in the dialog's accessible name
+          // (review 15.5 F1). The pilot always exists, so the fallback is real.
+          title={flightRouteLabel(sheetFlight.departureAirfield, sheetFlight.arrivalAirfield) ?? personLabel(sheetFlight.person)}
+          badge={sheetBadgeKind ? statusChip(sheetBadgeKind) : undefined}
+          rows={sheetRows(sheetFlight)}
+          closeLabel={labels.mobile.close}
+          actions={
+            canManage && sheetFlight.status === 'REGISTERED' ? (
+              <>
+                <button
+                  type="button"
+                  className="btn primary"
+                  ref={sheetPrimaryRef}
+                  onClick={() => {
+                    const flight = sheetFlight;
+                    closeSheet();
+                    setEditorTarget({ mode: 'correct', flight });
+                  }}
+                  data-testid="flight-correct-action-mobile"
+                >
+                  {labels.table.correctAction}
+                </button>
+                {/* Second, and destructive-styled: the storno is irreversible
+                    (it writes the reversal transactions, story 5.3), so it is
+                    never the button a thumb lands on by default. */}
+                <button
+                  type="button"
+                  className="btn mini bad"
+                  onClick={() => {
+                    setSheetReasonMissing(false);
+                    setSheetCancelError(null);
+                    setSheetStep('cancel');
+                  }}
+                  data-testid="flight-cancel-action-mobile"
+                >
+                  {labels.table.cancelAction}
+                </button>
+              </>
+            ) : undefined
+          }
+          secondStep={
+            sheetStep === 'cancel' ? (
+              <div className="bottom-sheet-step">
+                <p className="fld-hint">{labels.cancelModal.title}</p>
+                <textarea
+                  className="input"
+                  rows={3}
+                  maxLength={500}
+                  value={sheetCancelReason}
+                  onChange={(event) => setSheetCancelReason(event.target.value)}
+                  aria-label={labels.cancelModal.reason}
+                  aria-invalid={sheetReasonMissing}
+                  ref={sheetReasonRef}
+                  data-testid="flight-cancel-reason-mobile"
+                />
+                {sheetReasonMissing ? (
+                  <p className="fld-error" data-testid="flight-cancel-required-mobile">
+                    {labels.cancelModal.requiredReason}
+                  </p>
+                ) : null}
+                {sheetCancelError ? (
+                  <p role="alert" className="fld-error" data-testid="flight-cancel-error-mobile">
+                    {sheetCancelError}
+                  </p>
+                ) : null}
+                <div className="bottom-sheet-actions">
+                  <button type="button" className="btn" onClick={() => setSheetStep('none')} data-testid="flight-cancel-dismiss-mobile">
+                    {labels.mobile.back}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn mini bad"
+                    disabled={cancelSubmitting}
+                    onClick={() => void submitSheetCancel(sheetFlight.id)}
+                    data-testid="flight-cancel-confirm-mobile"
+                  >
+                    {labels.cancelModal.submit}
+                  </button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
       ) : null}
     </>
   );

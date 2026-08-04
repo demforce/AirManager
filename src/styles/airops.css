@@ -1828,9 +1828,17 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
     padding: 2px 0 12px;
   }
   .bottom-sheet-headings{ min-width: 0; }
+  /* Story 15.6: `--ink-3`, was `--ink-4` — the SAME correction, on the same
+     grounds and with the same numbers, that 15.4 made on `.mobile-row-t2`.
+     The 13.9 calibration puts `--ink-4` at a >=3:1 floor, which is right for a
+     group label but not for TEXT: measured on `--panel`, this over-line is
+     3.66:1 (light) / 4.14 (dark), under the 4.5:1 AC 11 asks. `--ink-3`
+     measures 4.85 / 5.72. One declaration, colour only, and it lifts every
+     sheet of the epic (PPR, prenotazioni, piloti, istruttori, flotta, voli) —
+     the same reasoning 15.4 recorded for its own twin. */
   .bottom-sheet-sub{
     font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--ink-4);
+    text-transform: uppercase; color: var(--ink-3);
   }
   .bottom-sheet-title{ font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin-top: 3px; }
   .bottom-sheet-kv{
@@ -2646,4 +2654,102 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* `.card-body`'s 18px side padding would double the row's own 16px. */
   .person-expiries .card-body{ padding: 0; }
   .person-expiries .card-body > .fld-label{ padding: 14px 16px; }
+}
+
+/* ---------- registro voli mobile (story 15.6, epic 15 R1-R4) ----------
+   The widest table of the app (measured 317/1344 at 375px: 1027px of it off
+   screen) becomes one card per flight, in the template's own language
+   (`AirOps Mobile` 289-296): registration chip + pilot, a mono sub-line
+   `data · dep→arr · tipo [· CFI]`, and duration over amount on the right.
+   Everything the desktop row shows or OPENS lives in the detail sheet
+   (R-15.6-c) — including the two decisions, whose gate is unchanged.
+
+   Additive inside `@media (max-width: 640px)`, no existing token changes
+   value, no new colour literal: the badges are `Badge`, the chips are
+   `.mobile-chip-strip` (15.4), the rows are `.mobile-row*` (15.3/15.4/15.5)
+   and the panels are `SlideOver`/`BottomSheet` in their existing mobile
+   modes. The three declarations OUTSIDE the query exist only because an
+   inline style cannot be overridden by a media query (the 15.5 lesson) and
+   because both trees are in the DOM at every width.
+
+   The switch hangs off classes this page OWNS — `.logbook-desktop-body`/
+   `.logbook-mobile`, `.logbook-head` — never off `.logbook`/`.lb-row`
+   (which would be a desktop change) nor off `.card-head` (13 consoles) nor
+   off `.filter-date-range` (shared with the contabilità, story 15.8). */
+
+/* The mobile tree is in the DOM at every width (the switch is CSS only), so
+   it must be `display: none` OUTSIDE the query too — otherwise the desktop
+   suite finds two matches for every registration on this page. Same for the
+   phone-only "Filtri" trigger. */
+.logbook-mobile,
+.logbook-head > .logbook-filters-trigger{ display: none; }
+
+/* The two declarations the date pair and the search box carried inline. An
+   inline `display`/`width` cannot be overridden by a media query, and the
+   phone head has to hide the first and stretch the second. Identical computed
+   style above 640px — measured pre/post at 1280/800/641px. */
+.logbook-filter-range{ display: flex; align-items: center; gap: 5px; }
+.logbook-search{ width: 190px; }
+
+@media (max-width: 640px){
+  .logbook-desktop-body{ display: none; }
+  .logbook-mobile{ display: block; }
+
+  /* --- the head of the registry card (ratifica R-15.6-e) ---
+     Measured pre-fix: 266px at 375px in both locales (309 with a filter
+     active, 351 at 320px), against 109px at 1280px — 68% of the screen before
+     the first flight. The 15.5 recipe applied literally (all seven controls
+     full-width at 44px) would have made it 382px, so this head keeps only what
+     is looked at (the person search) and what acts (Filtri, Esporta, Nuova
+     voce); periodo, velivolo and tipo move into the panel, stato onto the
+     chips. DIRECT children only (lesson 15.3 F1): this card also mounts two
+     `SlideOver` panels, a `.mini-modal` and portalled popovers, and a
+     descendant selector would restyle their buttons too. */
+  .logbook-head{ padding: 12px 16px; column-gap: 8px; }
+  .logbook-head > .spacer{ display: none; }
+  /* The card's own sub-heading ("Diario di volo") costs a whole row and says
+     nothing the phone does not already show twice — the page `<h1>` above it
+     and the mobile top bar's own title (15.1). Same decision as 15.5. */
+  .logbook-head > .card-title{ display: none; }
+  /* The five filters whose phone home is the panel. They stay in the DOM with
+     their testids and their desktop behaviour, one node each (AC 8). */
+  .logbook-head > .logbook-filter-inpanel{ display: none; }
+  /* Row 1: the search, full width. Row 2: Filtri + Esporta, half each. Row 3:
+     the CTA, the last thing before the first card — the language ratifiche
+     R-15.3-d/R-15.4-f/R-15.5-g already set for a primary action. */
+  .logbook-head > .logbook-search{ flex: 1 0 100%; width: auto; padding-top: 0; padding-bottom: 0; }
+  /* The TAP TARGET is the input, not the box around it: `.search` centres its
+     children, so a 44px wrapper still left `flight-filter-person` 18px tall
+     (measured) and a tap on the padding focused nothing. Same fix as 15.5. */
+  .logbook-head > .logbook-search .bare-input{ min-height: 44px; }
+  .logbook-head > .logbook-filters-trigger{ display: inline-flex; flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* `ExportMenu`'s own relative wrapper — its trigger is a GRANDCHILD, which
+     is why review 15.5 F4 had to reach it separately. Only the target grows;
+     the menu itself is story 15.8 (R-15.2-c). */
+  .logbook-head > div:has(> .btn){ flex: 1 1 0; }
+  .logbook-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+  .logbook-head > .btn.primary{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
+
+  /* --- the flight card (template 289-296) ---
+     `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, chip
+     + ellipsised name on the left, two stacked values on the right). Only the
+     placement of the badge row is new, so this is a MODIFIER, not a family.
+     `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)`, and a long pilot name would push its own track wider
+     than the card (the 13.10 F1 idiom, re-measured in 15.5). */
+  .mobile-row-flight{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  /* `.mobile-row-side` carries `grid-column: 3` for the three-track person row
+     of 15.5; here the right column is the second track. */
+  .mobile-row-flight > .mobile-row-side{ grid-column: 2; }
+  /* The status chip gets its OWN row, in column 1 only (never spanning: an
+     item that SPANS tracks contributes its max-content to all of them, the
+     defect 15.5 measured). In the right-hand slot a "Annullato" pill would eat
+     the pilot's name, which is the card's own identifier. */
+  .mobile-row-flight > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
+
+  /* --- the "Filtri" panel ---
+     `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed
+     header and the anchored action; the body only needs the editors' own
+     vertical rhythm, which `.form-grid` supplies on one column here. */
+  .logbook-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
 }

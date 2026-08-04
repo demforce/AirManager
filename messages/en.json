@@ -1390,6 +1390,25 @@
         "generic": "Could not force the registration. Please try again."
       }
     },
+    "mobile": {
+      "openDetail": "Open flight detail",
+      "close": "Close",
+      "back": "Back",
+      "route": "Route",
+      "instructor": "Instructor",
+      "takeoffs": "Take-offs",
+      "landings": "Landings",
+      "times": "Times",
+      "hourMeter": "Hour meter",
+      "notes": "Notes",
+      "lineage": "History",
+      "correctionBadge": "Correction",
+      "statusAll": "All",
+      "filters": "Filters",
+      "filtersCount": "Filters ({count})",
+      "filtersTitle": "Logbook filters",
+      "apply": "Apply"
+    },
     "cancelModal": {
       "title": "Cancel flight",
       "reason": "Reason",
