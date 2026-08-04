@@ -524,7 +524,8 @@
     "mobile": {
       "openDetail": "Open detail",
       "close": "Close",
-      "owedSuffix": "owed"
+      "owedSuffix": "owed",
+      "openProfile": "Open record"
     },
     "addInstructor": {
       "title": "Add instructor",

@@ -304,7 +304,14 @@ export function FleetConsole({
           open
           onClose={closeSheet}
           testId="mobile-fleet-sheet"
-          sub={`${sheetAircraft.based ? labels.editor.identity.basedOptions.based : labels.editor.identity.basedOptions.guest} · ${sheetAircraft.fuelType ?? labels.mobile.noValue}`}
+          // Review 15.5 F1: the `sub` ends up inside the dialog's accessible
+          // name (`${sub} — ${title}`, `bottom-sheet.tsx`), so an ABSENT segment
+          // is OMITTED here, never replaced by the "—" placeholder: 115 of the
+          // 121 active aircraft have no `fuelType`, and the placeholder made
+          // every one of their names read "Basato · — — I-ABCD · …".
+          sub={[sheetAircraft.based ? labels.editor.identity.basedOptions.based : labels.editor.identity.basedOptions.guest, sheetAircraft.fuelType]
+            .filter((part): part is string => Boolean(part))
+            .join(' · ')}
           title={`${sheetAircraft.registration} · ${sheetAircraft.model}`}
           badge={badgeFor(sheetAircraft, labels.badge)}
           rows={fleetSheetRows(sheetAircraft, monthMinutesById[sheetAircraft.id] ?? 0, locale, labels)}

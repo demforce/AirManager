@@ -26,14 +26,15 @@ import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
-import { useRouter } from '@/i18n/navigation';
+import { Link, useRouter } from '@/i18n/navigation';
+import type { AppLocale } from '@/i18n/routing';
 import { avatarColorFor, initialsOf } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
-import { formatMinutes } from '@/lib/time';
+import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import type { PersonListItemDto } from '@/lib/schemas/people';
 import { InstructorEditor, type InstructorEditorLabels } from './instructor-editor';
-import { InstructorProfile, type InstructorProfileLabels } from './instructor-profile';
+import { InstructorProfile, fetchDetail, type InstructorDetail, type InstructorProfileLabels } from './instructor-profile';
 
 export type InstructorRow = {
   personId: string;
@@ -53,7 +54,7 @@ export type InstructorsConsoleLabels = {
   table: { name: string; rate: string; hours: string; owed: string; actions: string; noValue: string };
   actions: { edit: string; pay: string };
   /** Story 15.5 — the phone face only (row + detail sheet). */
-  mobile: { openDetail: string; close: string; owedSuffix: string };
+  mobile: { openDetail: string; close: string; owedSuffix: string; openProfile: string };
   addInstructor: {
     title: string;
     subtitle: string;
@@ -277,54 +278,136 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
 
       {/* Rendered conditionally (AD-7): `mobile-instructor-sheet` is ONE node. */}
       {sheetInstructor ? (
-        <BottomSheet
-          open
+        <InstructorSheet
+          instructor={sheetInstructor}
           onClose={closeSheet}
-          testId="mobile-instructor-sheet"
-          sub={labels.cardTitle}
-          title={`${sheetInstructor.lastName} ${sheetInstructor.firstName}`}
-          badge={<Badge>{sheetInstructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(sheetInstructor.payoutRateCents, locale)}/h`}</Badge>}
-          rows={
-            [
-              { k: labels.table.rate, v: sheetInstructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(sheetInstructor.payoutRateCents, locale)}/h` },
-              { k: labels.table.hours, v: formatMinutes(sheetInstructor.totalMinutes) },
-              { k: labels.table.owed, v: sheetInstructor.owedTotalCents === null ? labels.table.noValue : formatCents(sheetInstructor.owedTotalCents, locale) },
-            ] satisfies BottomSheetRow[]
-          }
-          closeLabel={labels.mobile.close}
-          actions={
-            <>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => {
-                  const instructor = sheetInstructor;
-                  closeSheet();
-                  setEditorTarget(instructor);
-                }}
-                data-testid="instructor-edit-mobile"
-              >
-                {labels.actions.edit}
-              </button>
-              {canManagePayouts ? (
-                <button
-                  type="button"
-                  className="btn mini ok"
-                  onClick={() => {
-                    const instructor = sheetInstructor;
-                    closeSheet();
-                    setPayTarget(instructor);
-                  }}
-                  data-testid="instructor-pay-mobile"
-                >
-                  {labels.actions.pay}
-                </button>
-              ) : null}
-            </>
-          }
+          onEdit={(instructor) => {
+            closeSheet();
+            setEditorTarget(instructor);
+          }}
+          onPay={(instructor) => {
+            closeSheet();
+            setPayTarget(instructor);
+          }}
+          canManagePayouts={canManagePayouts}
+          locale={locale}
+          labels={labels}
         />
       ) : null}
     </>
+  );
+}
+
+type InstructorSheetProps = {
+  instructor: InstructorRow;
+  onClose: () => void;
+  onEdit: (instructor: InstructorRow) => void;
+  onPay: (instructor: InstructorRow) => void;
+  canManagePayouts: boolean;
+  locale: 'it' | 'en';
+  labels: InstructorsConsoleLabels;
+};
+
+/**
+ * The phone detail of one instructor (review 15.5 F2). The desktop opens TWO
+ * panels from a roster row — the editor and the read-only `InstructorProfile`
+ * — and at <=640px `instructor-name-{id}` lives in a `display: none` tree, so
+ * everything the profile panel says has to be HERE: hours this month, recent
+ * students and recent flights as CFI, plus the entry to the person's record
+ * the pilots sheet already offers (`pilot-open-profile-mobile`).
+ *
+ * The three extra facts come from the SAME read the desktop panel uses
+ * (`GET /api/v1/instructor-compensation?personId=`, `fetchDetail`) and are
+ * fetched ON OPEN, one request for the row the user tapped — the roster list
+ * itself is untouched, so no N+1 is introduced on a page that renders every
+ * instructor at once.
+ */
+function InstructorSheet({ instructor, onClose, onEdit, onPay, canManagePayouts, locale, labels }: InstructorSheetProps) {
+  const [detail, setDetail] = useState<InstructorDetail | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchDetail(instructor.personId).then((result) => {
+      if (!cancelled) setDetail(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [instructor.personId]);
+
+  const rows: BottomSheetRow[] = [
+    { k: labels.table.rate, v: instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h` },
+    { k: labels.table.hours, v: formatMinutes(instructor.totalMinutes) },
+    { k: labels.profile.kpi.hoursMtd, v: detail === null ? '…' : formatMinutes(detail.mtdMinutes) },
+    { k: labels.table.owed, v: instructor.owedTotalCents === null ? labels.table.noValue : formatCents(instructor.owedTotalCents, locale) },
+    {
+      k: labels.profile.recentStudents.sectionTitle,
+      v:
+        detail === null ? (
+          '…'
+        ) : detail.recentStudents.length === 0 ? (
+          labels.profile.recentStudents.empty
+        ) : (
+          <span className="mobile-sheet-list">
+            {detail.recentStudents.map((student) => (
+              <span className="mobile-sheet-list-item" key={student.personId} data-testid="instructor-profile-student-chip-mobile">
+                {student.lastName} {student.firstName}
+              </span>
+            ))}
+          </span>
+        ),
+    },
+    {
+      k: labels.profile.recentFlights.sectionTitle,
+      v:
+        detail === null ? (
+          '…'
+        ) : detail.recentFlights.length === 0 ? (
+          labels.profile.recentFlights.empty
+        ) : (
+          <span className="mobile-sheet-list">
+            {detail.recentFlights.map((flight) => (
+              <span className="mobile-sheet-list-item" key={flight.id} data-testid="instructor-profile-flight-row-mobile">
+                {formatDateOnly(flight.flightDate, locale)} · {flight.personLastName} {flight.personFirstName} · {formatMinutes(flight.minutes)}
+              </span>
+            ))}
+          </span>
+        ),
+    },
+  ];
+
+  return (
+    <BottomSheet
+      open
+      onClose={onClose}
+      testId="mobile-instructor-sheet"
+      sub={labels.cardTitle}
+      title={`${instructor.lastName} ${instructor.firstName}`}
+      badge={<Badge>{instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`}</Badge>}
+      rows={rows}
+      closeLabel={labels.mobile.close}
+      actions={
+        <>
+          <button type="button" className="btn primary" onClick={() => onEdit(instructor)} data-testid="instructor-edit-mobile">
+            {labels.actions.edit}
+          </button>
+          {canManagePayouts ? (
+            <button type="button" className="btn mini ok" onClick={() => onPay(instructor)} data-testid="instructor-pay-mobile">
+              {labels.actions.pay}
+            </button>
+          ) : null}
+          <Link
+            href={`/dashboard/people/${instructor.personId}`}
+            locale={locale as AppLocale}
+            className="btn"
+            onClick={onClose}
+            data-testid="instructor-open-profile-mobile"
+          >
+            {labels.mobile.openProfile}
+          </Link>
+        </>
+      }
+    />
   );
 }
 

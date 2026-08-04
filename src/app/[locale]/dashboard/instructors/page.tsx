@@ -106,7 +106,7 @@ export default async function InstructorsPage({ params }: PageProps) {
             noValue: t('table.noValue'),
           },
           actions: { edit: t('actions.edit'), pay: t('actions.pay') },
-          mobile: { openDetail: t('mobile.openDetail'), close: t('mobile.close'), owedSuffix: t('mobile.owedSuffix') },
+          mobile: { openDetail: t('mobile.openDetail'), close: t('mobile.close'), owedSuffix: t('mobile.owedSuffix'), openProfile: t('mobile.openProfile') },
           addInstructor: {
             title: t('addInstructor.title'),
             subtitle: t('addInstructor.subtitle'),

@@ -1842,6 +1842,13 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
     text-transform: uppercase; color: var(--ink-3); flex-shrink: 0;
   }
   .bottom-sheet-v{ font-size: 12.5px; font-weight: 500; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  /* A value that is a LIST rather than one fact (review 15.5 F2: recent
+     students, recent flights as CFI — the two sections the desktop's
+     `InstructorProfile` panel renders and the phone had no way to reach).
+     Stacked inside the value column, so the key/value baseline of the row
+     above still reads as one line. */
+  .mobile-sheet-list{ display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .mobile-sheet-list-item{ display: block; }
   .bottom-sheet-actions{ display: flex; gap: 8px; padding-top: 14px; }
   /* Sized here rather than by adding a modifier to `.btn`: the decision
      buttons keep the COLOURS of their table-row twins (`.btn.mini.bad`) but
@@ -1912,7 +1919,15 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      viewport). Zeroing the padding only for the bodies that actually have an
      action row keeps every other panel's bottom breathing room intact;
      `:has()` is already the idiom used by `.input-group` above. */
-  .so-body:has(.so-actions){ padding-bottom: 0; }
+  /* Review 15.5 F6: only when the action row is at the END of the body. The
+     bar is `sticky` inside the FORM it belongs to, so the body's bottom
+     padding can push it up only when that form is the body's LAST child
+     (`aircraft-editor`, `pilot-editor` NUOVO). In the two multi-form editors in
+     MODIFICA the bar sits mid-panel and the zeroed padding bought nothing —
+     it only left the last control of the panel flush against the bottom edge
+     (measured `bottomGap: 0`, 18px before this story). */
+  .so-body:has(> .so-actions:last-child),
+  .so-body:has(> :last-child .so-actions){ padding-bottom: 0; }
   .so-actions{
     position: sticky; bottom: 0;
     margin-left: -20px; margin-right: -20px;
@@ -2394,20 +2409,40 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      DIRECT children only (lesson 15.3 F1): every one of these cards also mounts
      `SlideOver` panels and portalled popovers, and a descendant selector would
      stretch their buttons too. */
+  /* Review 15.5 F3, second pass with a measurable criterion (head <= the
+     pre-fix height at 375px, every target still >=44px, nothing lost): the
+     phone head takes the same padding the epic's own mobile heads use
+     (`.mobile-card-head`, 12px 16px) instead of the desktop's 14px 18px, and a
+     tighter column gap. That is 4px of height and 8px of width, and those 8px
+     are what let the chip and the export menu share ROW 1 at 375px in Italian
+     — the difference between three rows and four (measured: "Mostra
+     archiviati" 141px + "Esporta Excel" 137px + gap did not fit in 281px). */
+  .registry-head{ padding: 12px 16px; column-gap: 8px; }
   .registry-head > .spacer{ display: none; }
   /* The card's own sub-heading ("Flotta", "Anagrafica piloti", "Elenco
      istruttori") costs a whole row here and says nothing the phone does not
      already show twice — the page `<h1>` above it and the mobile top bar's own
      title (15.1). Measured: keeping it made the head 220px, hiding it 176px
      (pre-fix: 192px on the Flotta, 149px on the Piloti). It is a `div`, not a
-     heading, and no test reads it. */
+     heading, and no test reads it. (Those two numbers are the first pass's,
+     before the head's own padding was tightened below.) */
   .registry-head > .card-title{ display: none; }
-  /* Row 1: chip + export. Row 2: the search, full width, the last thing before
-     the first card. Row 3: the CTA, the language ratifiche R-15.3-d/R-15.4-f
-     already set for a primary action. The Piloti head ends up 27px TALLER than
-     before (149 -> 176) and that is deliberate: it was already three rows, and
-     the 44px targets AC 3 requires are 9px taller than `.btn`'s default each. */
+  /* Row 1: chip + export. Row 2: the search, full width. Row 3: the CTA, the
+     last thing before the first card — the language ratifiche R-15.3-d/R-15.4-f
+     already set for a primary action.
+     Three rows is the FLOOR here: the search and the CTA are full-width by
+     ratifica R-15.5-g, and AC 3 puts a 44px floor under every control. Measured
+     at 375px after this pass: Flotta 175px (pre-fix 192), Istruttori 121px
+     (150), Piloti 175px (149) — the Piloti head cannot reach its own pre-fix
+     value, which was exactly three rows of 35px controls (28 + 35*3 + 8*2 =
+     149): the 44px targets alone cost 29px, more than the head's whole padding
+     and gap budget. Documented, not hidden. */
   .registry-head > .btn{ order: 2; min-height: 44px; }
+  /* Review 15.5 F4: the export trigger is a GRANDCHILD (inside `ExportMenu`'s
+     own relative wrapper), so the direct-child rule above never reached it and
+     it stayed a 35px target against AC 3's 44px. Only the target: the menu
+     itself is story 15.8 (R-15.2-c). */
+  .registry-head > div:has(> .btn) > .btn{ min-height: 44px; }
   /* The archived toggle in the chip language of `.mobile-chip-strip` (15.4):
      same pill, same mono, same target. It stays the SAME button — a second node
      inside a strip would be a second source of truth for one boolean.
@@ -2416,11 +2451,20 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      must keep reading as an action. */
   .registry-head > .btn[aria-pressed]{
     border-radius: 999px;
-    padding: 5px 14px;
+    /* 10px, not the strip's own 14px (review 15.5 F3): those 8px are the last
+       ones needed to keep the chip and the export menu on the same row at
+       375px in Italian, and a pill this size still reads as a chip. */
+    padding: 5px 10px;
     font-family: var(--font-mono);
     font-size: 11px;
     white-space: nowrap;
   }
+  /* The pressed state is the pill's own accent fill (`.btn.on`) plus
+     `aria-pressed`; the check glyph is 20px with its gap and, measured in
+     Italian at 375px, those 20px pushed the pair onto two rows the moment the
+     filter was switched ON (head 175 -> 227, a 52px jump under the reader's
+     thumb). The chips of 15.4 carry no glyph either — this is that language. */
+  .registry-head > .btn[aria-pressed] > svg{ display: none; }
   /* `ExportMenu`'s own relative wrapper — mobile export is story 15.8 (R-15.2-c),
      so it only changes place here, never behaviour. */
   .registry-head > div:has(> .btn){ order: 3; }
@@ -2580,8 +2624,11 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      code is one unbreakable token and `.info-row .v` has no wrap rule —
      measured, three rows scrolled sideways inside their own box at 375px.
      `anywhere` (not `break-word`) is the one that also shrinks the box's
-     min-content contribution, the 13.10 F1 lesson. */
-  .info-row .v{ min-width: 0; overflow-wrap: anywhere; }
+     min-content contribution, the 13.10 F1 lesson.
+     ANCHORED to the dossier's own card (review 15.5 F5): `.info-row` is shared
+     with the PUBLIC `/ppr` module, which belongs to story 15.9 — a descendant
+     selector reached its "aviosuperficie" block too (lesson 15.3 F1). */
+  .person-identity > .info-row > .v{ min-width: 0; overflow-wrap: anywhere; }
   /* The scadenze table becomes a stacked row — the SAME four cells, re-placed,
      never duplicated into a second tree (`person-detail.spec.ts:217` and
      `expiry-registration.spec.ts` match this page's text page-level). */

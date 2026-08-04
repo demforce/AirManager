@@ -25,9 +25,12 @@ import type { Locator, Page } from '@playwright/test';
  * in the `fullyParallel` project.
  *
  * Fixture budget per full run (the two open ceilings — picker `OPTIONS_PAGE_SIZE
- * = 100`, 20-row pages): 5 aircraft + 21 more that are ARCHIVED again in the
+ * = 100`, 20-row pages): 8 aircraft + 21 more that are ARCHIVED again in the
  * same test (the pagination guard needs two pages of a filtered list, and an
- * archived aircraft leaves the pickers), 6 people, 1 user, 1 flight.
+ * archived aircraft leaves the pickers), 9 people, 1 user, 2 flights. The two
+ * fixtures the review's fix cycle added are one aircraft WITHOUT a fuel type
+ * plus a person without email or profiles (F1), and a SCHOOL flight that gives
+ * the instructor sheet something real to show (F2).
  *
  * Viewports are set with `setViewportSize` inside the test (pattern 13.10, epic
  * decision: no duplicated Playwright project).
@@ -71,10 +74,10 @@ function addDaysUtc(days: number): string {
 
 type Aircraft = { id: string; registration: string; model: string };
 
-async function createAircraft(page: Page, tag: string, model = 'Cessna 172 Skyhawk Reims Rocket'): Promise<Aircraft> {
+async function createAircraft(page: Page, tag: string, model = 'Cessna 172 Skyhawk Reims Rocket', fuelType: string | null = 'AVGAS 100LL'): Promise<Aircraft> {
   const registration = `I-${tag}`.slice(0, 20);
   const response = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model, hourMeterMinutes: 60, seats: 2, fuelType: 'AVGAS 100LL', based: true, notes: 'Nota 15.5' },
+    data: { registration, type: 'Ultraleggero 3 assi', model, hourMeterMinutes: 60, seats: 2, fuelType, based: true, notes: 'Nota 15.5' },
   });
   expect(response.status(), await response.text()).toBe(201);
   const { id } = (await response.json()) as { id: string };
@@ -130,6 +133,45 @@ async function heightOf(locator: Locator): Promise<number> {
   const box = await locator.boundingBox();
   expect(box).not.toBeNull();
   return Math.round(box!.height);
+}
+
+/** Height of the registry head and whether its chip and its export trigger share a row (review F3). */
+async function measureHead(page: Page): Promise<{ height: number; sameRow: boolean }> {
+  return page.locator('.registry-head').evaluate((node) => {
+    const toggle = node.querySelector<HTMLElement>('[data-testid$="-toggle-archived"], [data-testid="instructors-payment-cycle-button"]')!;
+    const menu = node.querySelector<HTMLElement>(':scope > div > .btn')!;
+    return {
+      height: Math.round(node.getBoundingClientRect().height),
+      sameRow: Math.abs(toggle.getBoundingClientRect().top - menu.getBoundingClientRect().top) <= 1,
+    };
+  });
+}
+
+/**
+ * The accessible name of a sheet is `${sub} — ${title}` (`bottom-sheet.tsx`),
+ * so it is well-formed only when BOTH halves carry real text.
+ *
+ * `expect(name.split(' — ')).toHaveLength(2)` — the assertion this file used to
+ * make — is BLIND to the very defect it was written for (review 15.5 F1): with
+ * a "—" placeholder inside the sub the name reads "Basato · — — I-ABCD · …",
+ * whose two ADJACENT separators consume one another under `String.split`,
+ * giving exactly 2 parts. Measured on the seeded DB: 115 of the 121 active
+ * aircraft have no `fuelType` and every one of their sheets was named that way.
+ *
+ * What is asserted here instead is the property itself: no run of two dashes,
+ * and no segment that is empty or is the placeholder alone.
+ */
+function expectWellFormedSheetName(name: string | null): void {
+  expect(name, 'the dialog must carry an aria-label').not.toBeNull();
+  expect(name!, 'no two adjacent separators').not.toMatch(/—\s*—/);
+  const segments = name!.split(' — ');
+  expect(segments, 'exactly one separator').toHaveLength(2);
+  for (const segment of segments) {
+    expect(segment.trim(), `segment of "${name}"`).not.toBe('');
+    expect(segment.trim(), `segment of "${name}"`).not.toBe('—');
+    expect(segment.trim().startsWith('—'), `segment of "${name}" starts with a placeholder`).toBe(false);
+    expect(segment.trim().endsWith('—'), `segment of "${name}" ends with a placeholder`).toBe(false);
+  }
 }
 
 test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
@@ -268,7 +310,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     // Well-formed accessible name (lesson 15.2 F6: never a double em dash).
     const name = await dialog.getAttribute('aria-label');
     expect(name).toContain(aircraft.registration);
-    expect(name!.split(' — ')).toHaveLength(2);
+    expectWellFormedSheetName(name);
 
     // Parity with the desktop card + the AOG reason the card itself truncates.
     for (const text of ['Stato', 'Motivo AOG', 'Revisione 15.5', 'Tariffa', 'Posti', 'Carburante', 'Contaore', 'Ore mese', 'Note']) {
@@ -280,6 +322,34 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await expect(page.getByTestId('mobile-fleet-sheet')).toHaveCount(0);
     await expect(page.getByTestId('identity-form')).toBeVisible();
     await expect(page.getByTestId('identity-form').getByLabel('Marche')).toHaveValue(aircraft.registration);
+  });
+
+  test('the sheet name stays well-formed on an aircraft WITHOUT fuel type and a person WITHOUT email or profiles (AC 4, review F1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const tag = `A${uniqueSuffix()}`;
+    // The two entities the placeholder used to break: the sub of the fleet
+    // sheet is "based · fuel", the sub of the pilot sheet is "profiles · email",
+    // and 115 of the 121 seeded aircraft have no fuel type at all.
+    const aircraft = await createAircraft(page, tag, 'P92', null);
+    const bare = await page.request.post('/api/v1/people', { data: { firstName: 'Mobile', lastName: `Reg${tag}` } });
+    expect(bare.status(), await bare.text()).toBe(201);
+    const bareId = ((await bare.json()) as { id: string }).id;
+
+    await page.setViewportSize(PHONE);
+    await searchFleet(page, `I-${tag}`);
+    await page.getByTestId(`mobile-fleet-card-${aircraft.id}`).click();
+    const fleetName = await page.getByTestId('mobile-fleet-sheet').getByRole('dialog').getAttribute('aria-label');
+    expect(fleetName).toContain(aircraft.registration);
+    expectWellFormedSheetName(fleetName);
+
+    await searchPilots(page, `Reg${tag}`);
+    // No profile and no email: the row shows the "—" placeholder (that is what a
+    // placeholder is FOR), the dialog name never does.
+    await expect(page.getByTestId(`mobile-pilot-row-${bareId}`).locator('.mobile-row-sub')).toHaveText('—');
+    await page.getByTestId(`mobile-pilot-row-${bareId}`).click();
+    const pilotName = await page.getByTestId('mobile-pilot-sheet').getByRole('dialog').getAttribute('aria-label');
+    expect(pilotName).toContain(`Reg${tag}`);
+    expectWellFormedSheetName(pilotName);
   });
 
   test('Piloti at <=640px: the 1102px table is hidden and each pilot is ONE row with balance and the blocking-document flag (AC 2, AC 9-i/ii/vi)', async ({ page }) => {
@@ -426,6 +496,35 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     const rate = await page.request.put(`/api/v1/instructor-compensation/${person.id}/rate`, { data: { payoutRateCents: 6000 } });
     expect(rate.status(), await rate.text()).toBe(200);
 
+    // A SCHOOL flight of TODAY flown by this instructor: it is what makes the
+    // three facts the desktop panel shows non-empty (review F2). `force` for the
+    // same reason as the hours-bar test — the blocking `ExpiryType` catalogue is
+    // global and this test is not about that guardrail.
+    const aircraft = await createAircraft(page, tag);
+    await addRate(page, aircraft.id);
+    // A SCHOOL flight also needs the instructor's CHARGE rate in force (the
+    // `payoutRateCents` above is what the club owes HIM) — without it
+    // `POST /flights` answers 422 `NO_INSTRUCTOR_RATE`.
+    const chargeRate = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, { data: { priceCentsPerHour: 4000, validFrom: '2020-01-01' } });
+    expect(chargeRate.status(), await chargeRate.text()).toBe(201);
+    const student = await createPilot(page, `${tag}S`);
+    const today = addDaysUtc(0);
+    const flight = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: student.id,
+        instructorPersonId: person.id,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'SCHOOL',
+        takeoffAt: `${today}T10:00:00.000Z`,
+        landingAt: `${today}T11:00:00.000Z`,
+        force: true,
+        forceReason: 'Fixture 15.5 — dettaglio istruttore',
+      },
+    });
+    expect(flight.status(), await flight.text()).toBe(201);
+
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/instructors');
 
@@ -441,12 +540,31 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await row.click();
     const sheet = page.getByTestId('mobile-instructor-sheet');
     await expect(sheet).toHaveCount(1);
-    for (const text of ['Tariffa payout', 'Ore totali', 'Totale dovuto']) {
+    // Parity with the desktop `InstructorProfile` panel, which at <=640px is
+    // unreachable (`instructor-name-{id}` lives in a `display: none` tree):
+    // the three facts it owns are HERE, with their real values, not their
+    // loading placeholder (review F2).
+    for (const text of ['Tariffa payout', 'Ore totali', 'Ore nel mese', 'Totale dovuto', 'Allievi recenti', 'Voli recenti come CFI']) {
       await expect(sheet).toContainText(text);
     }
+    await expect(sheet.getByTestId('instructor-profile-student-chip-mobile')).toHaveText(`${student.lastName} ${student.firstName}`);
+    await expect(sheet.getByTestId('instructor-profile-flight-row-mobile')).toHaveCount(1);
+    await expect(sheet.getByTestId('instructor-profile-flight-row-mobile')).toContainText('1:00');
+    await expect(sheet.locator('.bottom-sheet-kv').filter({ hasText: 'Ore nel mese' })).toContainText('1:00');
+    // ...and the sheet keeps the entry to the person's record the pilots sheet
+    // already had.
+    await expect(sheet.getByTestId('instructor-open-profile-mobile')).toBeVisible();
+    expect(await heightOf(sheet.getByTestId('instructor-open-profile-mobile'))).toBeGreaterThanOrEqual(44);
+
     await sheet.getByTestId('instructor-edit-mobile').click();
     await expect(page.getByTestId('mobile-instructor-sheet')).toHaveCount(0);
     await expect(page.getByTestId('instructor-identity-form')).toBeVisible();
+
+    // The record entry really goes to the record.
+    await page.goto('/it/dashboard/instructors');
+    await row.click();
+    await sheet.getByTestId('instructor-open-profile-mobile').click();
+    await expect(page).toHaveURL(new RegExp(`/it/dashboard/people/${person.id}$`));
 
     await page.setViewportSize(DESKTOP);
     await page.goto('/it/dashboard/instructors');
@@ -476,6 +594,40 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await page.getByTestId('fleet-toggle-archived').click();
     await expect(page).toHaveURL(/includeArchived=true/);
     await expect(page.getByTestId('fleet-toggle-archived')).toHaveAttribute('aria-pressed', 'true');
+    // ...and switching it ON must not reflow the head onto one more row under
+    // the reader's thumb: measured in Italian, the pressed chip's check glyph
+    // alone (20px with its gap) took the head from 175px to 227px.
+    const pressed = await measureHead(page);
+    expect(pressed.sameRow, 'chip pressed: still one row with the export menu').toBe(true);
+    expect(pressed.height, 'chip pressed: head height').toBeLessThanOrEqual(192);
+
+    // The export menu is the FOURTH control of the head and AC 3 covers it too
+    // (review F4): its trigger lives inside `ExportMenu`'s own relative wrapper,
+    // so the head's direct-child 44px rule never reached it and it stayed a 35px
+    // target. It has no testid of its own — the structural locator is the head's
+    // only `div > .btn` (the title carries no button, the search box an input).
+    // Only the TARGET is in scope here: the menu itself is story 15.8.
+    //
+    // Same loop measures the head's own height and the row the chip and the
+    // export trigger share: that is what keeps the head within its budget at
+    // 375px (review F3, criterion "head <= its pre-fix height at 375px with
+    // every target >=44px"). Measured pre-fix / after this pass:
+    // Flotta 192 -> 175, Istruttori 150 -> 121, Piloti 149 -> 175 — the Piloti
+    // head cannot meet it (28px of head padding + 3 rows of 44/46/44 + 2 gaps
+    // = 175 against a pre-fix of exactly three 35px rows), and its budget below
+    // is its post-15.5 value, not its pre-fix one.
+    const headBudget: Record<string, number> = { fleet: 192, pilots: 179, instructors: 150 };
+    for (const surface of ['fleet', 'pilots', 'instructors']) {
+      await page.setViewportSize(PHONE);
+      await page.goto(`/it/dashboard/${surface}`);
+      const exportTrigger = page.locator('.registry-head > div > .btn');
+      await expect(exportTrigger, surface).toHaveCount(1);
+      expect(await heightOf(exportTrigger), `export trigger @${surface}`).toBeGreaterThanOrEqual(44);
+
+      const head = await measureHead(page);
+      expect(head.sameRow, `chip and export share a row @${surface}`).toBe(true);
+      expect(head.height, `head height @${surface}`).toBeLessThanOrEqual(headBudget[surface]!);
+    }
 
     // Nothing visible at the bottom of any of the three consoles sits under the
     // tab bar (z 5) or scrolls sideways behind the user's back — at the three
@@ -656,6 +808,25 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     expect(probe.reachable).toBe(true);
     expect(probe.submitHeight).toBeGreaterThanOrEqual(44);
     expect(probe.sectionSubmitsAnchored).toBe(0);
+
+    // Review F6: the body's bottom padding is zeroed only where the action row
+    // is the LAST thing in it — there the padding would push the sticky bar up
+    // (story 15.2's own measurement). Here the bar sits mid-panel, after the
+    // identity form, so the panel keeps the 18px of breathing room under its
+    // last control instead of leaving it flush against the bottom edge.
+    const bottom = await page.evaluate(() => {
+      const body = document.querySelector<HTMLElement>('.so-body')!;
+      body.scrollTop = body.scrollHeight;
+      const last = body.children[body.children.length - 1]!;
+      return {
+        paddingBottom: getComputedStyle(body).paddingBottom,
+        lastChildHoldsTheActions: last.querySelector('.so-actions') !== null,
+        gap: Math.round(body.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom),
+      };
+    });
+    expect(bottom.lastChildHoldsTheActions).toBe(false);
+    expect(bottom.paddingBottom).toBe('18px');
+    expect(bottom.gap).toBeGreaterThanOrEqual(16);
   });
 
   test('every desktop testid stays exactly ONE node at 375px AND at 1280px, on the three consoles and on the home (AC 6)', async ({ page }) => {
@@ -739,6 +910,18 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
     await page.setViewportSize(PHONE_NARROW);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+
+    // Review F5: `.info-row` is shared with the PUBLIC `/ppr` module, which is
+    // story 15.9's surface. The dossier's wrap rule is anchored to this page's
+    // own card, so the public module must read exactly as it does on a desktop
+    // — the guard is on the surface the rule must NOT reach (lesson 15.3 F1).
+    await page.setViewportSize(PHONE);
+    await page.goto('/it/ppr');
+    await expect(page.locator('.info-row .v').first()).toBeVisible();
+    const publicWrap = await page.evaluate(() =>
+      [...document.querySelectorAll('.info-row .v')].map((v) => `${getComputedStyle(v).overflowWrap}/${getComputedStyle(v).minWidth}`),
+    );
+    expect(new Set(publicWrap)).toEqual(new Set(['normal/auto']));
   });
 
   test('scheda persona: a pilot reaches their OWN record at 375px with the masking intact (AC 12, multi-actor)', async ({ page }) => {

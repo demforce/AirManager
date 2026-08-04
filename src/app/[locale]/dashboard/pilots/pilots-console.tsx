@@ -298,10 +298,17 @@ export function PilotsConsole({
     return labels.mobile.flagExpiring.replace('{doc}', flag.typeName).replace('{days}', String(flag.daysUntil));
   }
 
-  /** The mono over-line of the row and of the sheet: the active profiles, then the email — ellipsised, never truncated by hand. */
+  /**
+   * The mono over-line of the row and of the sheet: the active profiles, then
+   * the email — ellipsised, never truncated by hand. Returns an EMPTY string
+   * when the person has neither, and each caller picks its own fallback:
+   * review 15.5 F1 — the sheet's `sub` ends up inside the dialog's accessible
+   * name (`${sub} — ${title}`, `bottom-sheet.tsx`), where the "—" placeholder
+   * read as a second separator ("— — Rossi Mario"). A placeholder belongs to
+   * what is DISPLAYED, never to what is composed into an accessible name.
+   */
   function subLineOf(pilot: PilotRow): string {
-    const parts = [...roleBadges(pilot.profiles).map((role) => role.label), pilot.email].filter((part): part is string => Boolean(part));
-    return parts.length > 0 ? parts.join(' · ') : labels.table.noValue;
+    return [...roleBadges(pilot.profiles).map((role) => role.label), pilot.email].filter((part): part is string => Boolean(part)).join(' · ');
   }
 
   const cols = 'minmax(150px,1.4fr) minmax(160px,1.4fr) 100px 110px minmax(160px,1.2fr) 120px minmax(200px,1.3fr)';
@@ -479,7 +486,7 @@ export function PilotsConsole({
                     <span className="mobile-row-title">
                       <span className="mobile-row-name">{name}</span>
                     </span>
-                    <span className="mobile-row-sub">{subLineOf(pilot)}</span>
+                    <span className="mobile-row-sub">{subLineOf(pilot) || labels.table.noValue}</span>
                   </span>
                   <span className="mobile-row-side">
                     {/* `.stat-tone-bad`, not the desktop cell's raw `--bad`:
@@ -560,7 +567,10 @@ export function PilotsConsole({
           open
           onClose={closeSheet}
           testId="mobile-pilot-sheet"
-          sub={subLineOf(sheetPilot)}
+          // No profiles and no email -> the card's own heading, the same `sub`
+          // the instructors sheet already uses. Never the "—" placeholder: it
+          // would land in the dialog's accessible name (review 15.5 F1).
+          sub={subLineOf(sheetPilot) || labels.cardTitle}
           title={`${sheetPilot.lastName} ${sheetPilot.firstName}`}
           badge={
             <Badge tone={userStatusTone(sheetPilot.user)} dot>

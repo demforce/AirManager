@@ -524,7 +524,8 @@
     "mobile": {
       "openDetail": "Apri dettaglio",
       "close": "Chiudi",
-      "owedSuffix": "dovuti"
+      "owedSuffix": "dovuti",
+      "openProfile": "Vai alla scheda"
     },
     "addInstructor": {
       "title": "Aggiungi istruttore",
