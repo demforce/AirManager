@@ -195,6 +195,47 @@ async function readFlight(page: Page, aircraftId: string, id: string): Promise<{
   return flight!;
 }
 
+/**
+ * AC 9's four facts, measured after a REAL scroll to the end of the page (never
+ * `scrollIntoViewIfNeeded`, which would hide exactly the defect: lesson 15.1
+ * AC 6). Shared so the non-admin face is measured with the very same ruler as
+ * the admin one (review LOW-2), never with a second, laxer copy.
+ */
+async function pageGeometry(page: Page): Promise<{ pageOverflow: number; atContentEnd: string | null; covered: string[]; scrollers: string[] }> {
+  return page.evaluate(async () => {
+    window.scrollTo(0, document.body.scrollHeight);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const content = document.querySelector('.page')!;
+    const contentRect = content.getBoundingClientRect();
+    const covered = [...document.querySelectorAll<HTMLElement>('.page a, .page button, .page input, .page select')]
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0;
+      })
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        const at = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return !!at?.closest('.mobile-tabbar');
+      })
+      .map((element) => element.getAttribute('data-testid') ?? element.className);
+    // Declared exceptions: the KPI strip (15.2) and the chip strip (15.4)
+    // scroll BY DESIGN; an ellipsised text node is not a hidden scroller
+    // (lesson 15.5 §5-iv), it is the affordance itself.
+    const scrollers = [...document.querySelectorAll<HTMLElement>('.page *')]
+      .filter((element) => element.scrollWidth > element.clientWidth + 1)
+      .filter((element) => getComputedStyle(element).display !== 'none' && element.getBoundingClientRect().width > 0)
+      .filter((element) => !element.closest('.kpi-row') && !element.closest('.mobile-chip-strip'))
+      .filter((element) => getComputedStyle(element).textOverflow !== 'ellipsis')
+      .map((element) => `${element.className}: ${element.clientWidth}/${element.scrollWidth}`);
+    return {
+      pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      atContentEnd: document.elementFromPoint(contentRect.left + contentRect.width / 2, contentRect.bottom - 4)?.className ?? null,
+      covered,
+      scrollers,
+    };
+  });
+}
+
 /** The page scoped to ONE run-unique aircraft: the list then holds exactly this test's own flights. */
 async function gotoLogbook(page: Page, aircraftId: string, extra = ''): Promise<void> {
   await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftId}${extra}`);
@@ -219,7 +260,7 @@ async function waitForMailpitMessage(to: string, subjectIncludes: string, timeou
 }
 
 /** Gives an existing person a login of the given role, through the real invite flow. */
-async function inviteUser(page: Page, personId: string, role: 'PILOT' | 'INSTRUCTOR', password: string): Promise<string> {
+async function inviteUser(page: Page, personId: string, role: 'PILOT' | 'INSTRUCTOR' | 'STUDENT', password: string): Promise<string> {
   const email = `mob156-${role.toLowerCase()}-${uniqueSuffix().toLowerCase()}@airmanager.local`;
   const created = await page.request.post('/api/v1/users', { data: { email, roles: [role], personId } });
   expect(created.status(), await created.text()).toBe(201);
@@ -358,6 +399,91 @@ test.describe('Registro voli mobile — lista a card (story 15.6, AC 1)', () => 
     await expect(cancelledRow).toContainText('Annullato');
     await expect(cancelledRow).not.toContainText('Deroga');
     expect(ordinary.id).not.toBe(cancelled.id);
+  });
+
+  test('the anomaly chip PAINTS its dot on the card too, readable in both themes (review 15.6 MINOR-2)', async ({ page }) => {
+    const tag = uniqueSuffix();
+    await login(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, tag);
+    const pilot = await createPilot(page, tag);
+    await registerFlight(page, aircraft.id, pilot.id, '2020-03-07');
+    const cancelled = await registerFlight(page, aircraft.id, pilot.id, '2020-03-08');
+    await cancelFlight(page, cancelled.id, `Riga doppia ${tag}`);
+
+    await page.setViewportSize(PHONE);
+    await gotoLogbook(page, aircraft.id);
+    await expect(page.getByTestId('flight-row-mobile')).toHaveCount(2);
+
+    // `Badge` is asked for `dot` on BOTH anomalies (warn "Deroga", bad
+    // "Annullato"), and 15.5's `.mobile-row-flag .badge{ display: block }` used
+    // to make that dot an INLINE box, where width/height simply do not apply:
+    // measured 0x13 on the card while the SAME badge painted a 6x6 dot in the
+    // sheet and on the desktop row. The guard measures the painted object, and
+    // its contrast against its own pill (dot ink at `opacity: .7` composited
+    // over the pill's background) — the review's own lesson: never report a
+    // contrast for something that is not painted.
+    for (const theme of ['light', 'dark'] as const) {
+      const dots = await page.evaluate((wanted) => {
+        document.documentElement.dataset['theme'] = wanted;
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const ctx = canvas.getContext('2d')!;
+        // Chromium reports `oklch(...)` verbatim: rasterising through a 1x1
+        // canvas is the only honest way back to 0-255 sRGB (idiom of
+        // `login.spec.ts`, and of the review's own probes).
+        const toRgb = (color: string): number[] => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = color;
+          ctx.fillRect(0, 0, 1, 1);
+          return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+        };
+        const luminance = (rgb: number[]): number => {
+          const channel = (value: number): number => {
+            const c = value / 255;
+            return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          };
+          return 0.2126 * channel(rgb[0]!) + 0.7152 * channel(rgb[1]!) + 0.0722 * channel(rgb[2]!);
+        };
+        const ratio = (a: number[], b: number[]): number => {
+          const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+          return (high + 0.05) / (low + 0.05);
+        };
+        return [...document.querySelectorAll<HTMLElement>('[data-testid="flight-row-mobile"] .mobile-row-flag .badge .b-dot')].map((dot) => {
+          const badge = dot.parentElement!;
+          const rect = dot.getBoundingClientRect();
+          const pill = toRgb(getComputedStyle(badge).backgroundColor);
+          const ink = toRgb(getComputedStyle(dot).backgroundColor);
+          const alpha = Number(getComputedStyle(dot).opacity);
+          const painted = ink.map((channel, index) => channel * alpha + pill[index]! * (1 - alpha));
+          return {
+            label: (badge.textContent ?? '').trim(),
+            width: Math.round(rect.width * 100) / 100,
+            height: Math.round(rect.height * 100) / 100,
+            contrast: Math.round(ratio(painted, pill) * 100) / 100,
+          };
+        });
+      }, theme);
+
+      expect(dots.map((dot) => dot.label).sort(), `the two anomaly chips in ${theme}`).toEqual(['Annullato', 'Deroga']);
+      for (const dot of dots) {
+        expect(dot.width, `${dot.label} dot width in ${theme} (${JSON.stringify(dot)})`).toBeGreaterThanOrEqual(5);
+        expect(dot.height, `${dot.label} dot height in ${theme} (${JSON.stringify(dot)})`).toBeGreaterThanOrEqual(5);
+        expect(dot.contrast, `${dot.label} dot contrast in ${theme} (${JSON.stringify(dot)})`).toBeGreaterThanOrEqual(3);
+      }
+    }
+
+    // Parity with the surface the same badge already painted it on: the sheet.
+    await page.getByTestId('flight-row-mobile').filter({ hasText: '08/03/2020' }).click();
+    const sheetDot = await page
+      .locator('[data-testid="mobile-flight-sheet"] .badge .b-dot')
+      .first()
+      .evaluate((dot) => {
+        const rect = dot.getBoundingClientRect();
+        return { width: Math.round(rect.width * 100) / 100, height: Math.round(rect.height * 100) / 100 };
+      });
+    expect(sheetDot.width, 'the sheet dot the card must now match').toBeGreaterThanOrEqual(5);
+    expect(sheetDot.height, 'the sheet dot the card must now match').toBeGreaterThanOrEqual(5);
   });
 });
 
@@ -635,6 +761,54 @@ test.describe('Registro voli mobile — filtri in linguaggio mobile (story 15.6,
     await page.getByTestId('flight-filter-reset-mobile').click();
     await expect(page).toHaveURL(/\/dashboard\/logbook$/);
     await expect(page.getByTestId('mobile-flight-filters-button')).toHaveText('Filtri');
+  });
+
+  test('a search still in its debounce cannot pull the panel shut under the thumb, and its text is not lost (review 15.6 MINOR-1)', async ({ page }) => {
+    const tag = uniqueSuffix();
+    await login(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, tag);
+    const pilot = await createPilot(page, tag);
+    const other = await createPilot(page, `W${tag}`);
+    // Both TOURISM: what narrows the list here is the SEARCH, so the panel's
+    // own filter can be applied without changing which rows can match.
+    await registerFlight(page, aircraft.id, pilot.id, '2020-03-26');
+    await registerFlight(page, aircraft.id, other.id, '2020-03-27');
+
+    await page.setViewportSize(PHONE);
+    await gotoLogbook(page, aircraft.id);
+    await expect(page.getByTestId('flight-row-mobile')).toHaveCount(2);
+    const urlBeforePanel = page.url();
+
+    // The exact sequence that used to lose the tap: type a name, open "Filtri"
+    // straight away. The 400ms debounce of the search was still pending, and
+    // ITS navigation remounted the console (`page.tsx`'s `key`) — the panel
+    // opened and vanished ~400ms later, the very failure AD-4 calls
+    // unacceptable, coming through the one door AD-4 did not close.
+    await page.getByTestId('flight-filter-person').fill(pilot.lastName);
+    await page.getByTestId('mobile-flight-filters-button').click();
+    await expect(page.getByTestId('flight-filter-type-mobile')).toBeVisible();
+    await page.waitForTimeout(1_200); // well past the 400ms debounce
+    await expect(page.getByTestId('flight-filter-type-mobile'), 'the panel must survive a pending debounce').toBeVisible();
+    expect(page.url(), 'no navigation may happen while the panel is open').toBe(urlBeforePanel);
+
+    // The typed name is not lost: the panel took the pending search over, and
+    // "Applica" carries it in the SAME single navigation as its own filters.
+    await page.getByTestId('flight-filter-type-mobile').selectOption('TOURISM');
+    await page.getByTestId('mobile-flight-filters-apply').click();
+    await expect(page).toHaveURL(new RegExp(`personQuery=${pilot.lastName}`));
+    await expect(page).toHaveURL(/flightType=TOURISM/);
+    await expect(page.getByTestId('flight-row-mobile')).toHaveCount(1);
+    await expect(page.getByTestId('flight-filter-person')).toHaveValue(pilot.lastName);
+
+    // Dismissing the panel instead of applying it discards the panel's own
+    // edits, never the typing that preceded it: the search re-arms and lands.
+    await page.getByTestId('flight-filter-person').fill(other.lastName);
+    await page.getByTestId('mobile-flight-filters-button').click();
+    await expect(page.getByTestId('flight-filter-type-mobile')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(new RegExp(`personQuery=${other.lastName}`));
+    await expect(page.getByTestId('flight-row-mobile')).toHaveCount(1);
+    await expect(page.getByTestId('flight-row-mobile')).toContainText(other.label);
   });
 
   test('the status chips are the one filter left in plain sight, and they round-trip through the URL', async ({ page }) => {
@@ -952,38 +1126,7 @@ test.describe('Registro voli mobile — geometria, testid e totali (story 15.6, 
     for (const viewport of [PHONE_NARROW, PHONE, PHONE_WIDE]) {
       await page.setViewportSize(viewport);
       await gotoLogbook(page, aircraft.id);
-      const geometry = await page.evaluate(async () => {
-        window.scrollTo(0, document.body.scrollHeight);
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        const content = document.querySelector('.page')!;
-        const contentRect = content.getBoundingClientRect();
-        const covered = [...document.querySelectorAll<HTMLElement>('.page a, .page button, .page input, .page select')]
-          .filter((element) => {
-            const rect = element.getBoundingClientRect();
-            return rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0;
-          })
-          .filter((element) => {
-            const rect = element.getBoundingClientRect();
-            const at = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-            return !!at?.closest('.mobile-tabbar');
-          })
-          .map((element) => element.getAttribute('data-testid') ?? element.className);
-        // Declared exceptions: the KPI strip (15.2) and the chip strip (15.4)
-        // scroll BY DESIGN; an ellipsised text node is not a hidden scroller
-        // (lesson 15.5 §5-iv), it is the affordance itself.
-        const scrollers = [...document.querySelectorAll<HTMLElement>('.page *')]
-          .filter((element) => element.scrollWidth > element.clientWidth + 1)
-          .filter((element) => getComputedStyle(element).display !== 'none' && element.getBoundingClientRect().width > 0)
-          .filter((element) => !element.closest('.kpi-row') && !element.closest('.mobile-chip-strip'))
-          .filter((element) => getComputedStyle(element).textOverflow !== 'ellipsis')
-          .map((element) => `${element.className}: ${element.clientWidth}/${element.scrollWidth}`);
-        return {
-          pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          atContentEnd: document.elementFromPoint(contentRect.left + contentRect.width / 2, contentRect.bottom - 4)?.className ?? null,
-          covered,
-          scrollers,
-        };
-      });
+      const geometry = await pageGeometry(page);
       expect(geometry.pageOverflow, `page overflow at ${viewport.width}px`).toBe(0);
       expect(geometry.covered, `controls under the tab bar at ${viewport.width}px`).toEqual([]);
       expect(geometry.scrollers, `hidden inner scrollers at ${viewport.width}px`).toEqual([]);
@@ -1103,33 +1246,38 @@ test.describe('Registro voli mobile — le due facce (story 15.6, AC 12)', () =>
     await expect(page.getByTestId('flight-row-mobile')).toHaveCount(1);
     await expect(page.getByTestId('flight-row-mobile')).toContainText(aircraft.registration);
 
-    // The desktop assertions of `flight-log.spec.ts:229-234`, EXTENDED to the
-    // phone twins (blast radius 2) — never weakened.
-    for (const testId of [
-      'flight-form',
-      'flight-cancel-action',
-      'flight-correct-action',
-      'flight-filter-aircraft',
-      'flight-filter-person',
-      'logbook-new-button',
-      'flight-cancel-action-mobile',
-      'flight-correct-action-mobile',
-      'flight-filter-aircraft-mobile',
-    ]) {
+    // The desktop assertions of `flight-log.spec.ts` on the self-service face.
+    for (const testId of ['flight-form', 'flight-cancel-action', 'flight-correct-action', 'flight-filter-aircraft', 'flight-filter-person', 'logbook-new-button']) {
       await expect(page.getByTestId(testId), testId).toHaveCount(0);
     }
 
     // The sheet is there for everybody (ratifica R-15.6-c) — with no action, and
-    // with no motivo of an override it is not allowed to see.
+    // with no motivo of an override it is not allowed to see. The phone twins
+    // are asserted HERE, with the sheet OPEN: closed, those nodes do not exist
+    // for anybody (an admin included, measured), so counting them on a closed
+    // page proves nothing (review LOW-1).
     await page.getByTestId('flight-row-mobile').click();
     await expect(page.getByTestId('mobile-flight-sheet')).toHaveCount(1);
     await expect(page.getByTestId('mobile-flight-sheet').locator('.bottom-sheet-actions')).toHaveCount(0);
+    await expect(page.getByTestId('flight-cancel-action-mobile'), 'the admin gets this one inside the very same sheet').toHaveCount(0);
+    await expect(page.getByTestId('flight-correct-action-mobile'), 'the admin gets this one inside the very same sheet').toHaveCount(0);
     await expect(page.getByTestId('mobile-flight-sheet')).not.toContainText('Fixture e2e 15.6');
-    // ...but the panel of the filters it DOES have is still reachable.
+    // ...but the panel of the filters it DOES have is still reachable, and it
+    // is there — panel OPEN — that the velivolo filter is proven absent.
     await page.keyboard.press('Escape');
     await page.getByTestId('mobile-flight-filters-button').click();
     await expect(page.getByTestId('flight-filter-type-mobile')).toBeVisible();
     await expect(page.getByTestId('flight-filter-aircraft-mobile')).toHaveCount(0);
+
+    // AC 12 asks for 375 AND 1280 (review LOW-2): the masking is the server's,
+    // so it must hold identically on the tree the desktop shows.
+    await page.setViewportSize(DESKTOP);
+    await page.goto('/it/dashboard/logbook');
+    await expect(page.getByTestId('flight-row')).toHaveCount(1);
+    await expect(page.getByTestId('mobile-flights-list')).toBeHidden();
+    for (const testId of ['flight-cancel-action', 'flight-correct-action', 'logbook-new-button', 'flight-filter-aircraft', 'flight-filter-person']) {
+      await expect(page.getByTestId(testId), `${testId} at 1280px`).toHaveCount(0);
+    }
     expect(flight.id).toBeTruthy();
   });
 
@@ -1162,5 +1310,77 @@ test.describe('Registro voli mobile — le due facce (story 15.6, AC 12)', () =>
     await card.click();
     await expect(page.getByTestId('mobile-flight-sheet')).toHaveCount(1);
     await expect(page.getByTestId('mobile-flight-sheet').locator('.bottom-sheet-actions')).toHaveCount(0);
+
+    // 1280px too (AC 12, review LOW-2): the CFI scope and the missing actions
+    // are the server's, and the desktop row says exactly the same thing.
+    await page.keyboard.press('Escape');
+    await page.setViewportSize(DESKTOP);
+    await page.goto('/it/dashboard/logbook');
+    const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText(student.label);
+    await expect(row).toContainText(instructor.label);
+    await expect(page.getByTestId('flight-cancel-action')).toHaveCount(0);
+    await expect(page.getByTestId('flight-correct-action')).toHaveCount(0);
+  });
+
+  test('an allievo gets their own SCHOOL flight, the CFI in the sub-line, no action, no motivo of the deroga — at 375 and at 1280 (review LOW-2)', async ({ page }) => {
+    const tag = uniqueSuffix();
+    const password = `Mobile156s-${tag}!`;
+    await login(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, tag);
+    const student = await createStudent(page, tag);
+    const instructor = await createInstructor(page, tag);
+    await registerFlight(page, aircraft.id, student.id, '2020-05-04', { flightType: 'SCHOOL', instructorPersonId: instructor.id });
+    const email = await inviteUser(page, student.id, 'STUDENT', password);
+
+    await page.context().clearCookies();
+    await page.goto('/it/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill(password);
+    await page.getByRole('button', { name: 'Accedi' }).click();
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
+
+    await page.setViewportSize(PHONE);
+    await page.goto('/it/dashboard/logbook');
+    const card = page.getByTestId('flight-row-mobile').filter({ hasText: aircraft.registration });
+    await expect(card).toHaveCount(1);
+    // The allievo is the flight's own person: they are the NAME on the card,
+    // and the sub-line carries the instructor who signed the lesson.
+    await expect(card).toContainText(student.label);
+    await expect(card).toContainText(`CFI ${instructor.label}`);
+    // The badge of the deroga stays (the server masks the MOTIVO, not the fact
+    // — parity with the desktop), the motivo never appears.
+    await expect(card).toContainText('Deroga');
+    await expect(card).not.toContainText('Fixture e2e 15.6');
+    for (const testId of ['flight-form', 'flight-cancel-action', 'flight-correct-action', 'flight-filter-aircraft', 'flight-filter-person', 'logbook-new-button']) {
+      await expect(page.getByTestId(testId), testId).toHaveCount(0);
+    }
+
+    await card.click();
+    await expect(page.getByTestId('mobile-flight-sheet')).toHaveCount(1);
+    await expect(page.getByTestId('mobile-flight-sheet').locator('.bottom-sheet-actions')).toHaveCount(0);
+    await expect(page.getByTestId('flight-cancel-action-mobile')).toHaveCount(0);
+    await expect(page.getByTestId('flight-correct-action-mobile')).toHaveCount(0);
+    await expect(page.getByTestId('mobile-flight-sheet')).not.toContainText('Fixture e2e 15.6');
+    await page.keyboard.press('Escape');
+
+    // AC 9 measured on a NON-admin face too (review LOW-2): fewer controls in
+    // the head, the same floor and the same tab bar underneath.
+    const geometry = await pageGeometry(page);
+    expect(geometry.pageOverflow, 'page overflow for the allievo at 375px').toBe(0);
+    expect(geometry.covered, 'controls under the tab bar for the allievo').toEqual([]);
+    expect(geometry.scrollers, 'hidden inner scrollers for the allievo').toEqual([]);
+    expect(geometry.atContentEnd, 'what is painted at the end of the page').not.toContain('mobile-tabbar');
+
+    await page.setViewportSize(DESKTOP);
+    await page.goto('/it/dashboard/logbook');
+    const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText(student.label);
+    await expect(row).not.toContainText('Fixture e2e 15.6');
+    await expect(page.getByTestId('mobile-flights-list')).toBeHidden();
+    await expect(page.getByTestId('flight-cancel-action')).toHaveCount(0);
+    await expect(page.getByTestId('flight-correct-action')).toHaveCount(0);
   });
 });

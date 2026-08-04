@@ -2746,6 +2746,17 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      defect 15.5 measured). In the right-hand slot a "Annullato" pill would eat
      the pilot's name, which is the card's own identifier. */
   .mobile-row-flight > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
+  /* Review 15.6 MINOR-2 — the dot, painted here too. `.mobile-row-flag .badge`
+     (15.5) is `display: block` so `text-overflow` can work on a bare string,
+     and inside a block the `.b-dot` span falls back to INLINE, where its 6x6
+     never applies: measured 0x13 on the card while the SAME `Badge` painted a
+     real 6x6 dot in the sheet and on the desktop row. The 15.5 rule stays as
+     it is — its own chips ask for no dot; only the flight card, whose two
+     anomaly chips DO (`tone="bad" dot` / `tone="warn" dot`), gets the inline
+     box back, with the 5px the base `.badge`'s own `gap` would have given it.
+     Ellipsis is untouched: the pill stays a block, the dot is just its first
+     inline child. */
+  .mobile-row-flight > .mobile-row-flag .badge .b-dot{ display: inline-block; vertical-align: middle; margin-right: 5px; }
 
   /* --- the "Filtri" panel ---
      `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed

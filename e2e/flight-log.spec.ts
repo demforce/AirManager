@@ -232,12 +232,13 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // Only staff filters (aircraft/persona) are absent; period/tipo/stato remain.
     await expect(page.getByTestId('flight-filter-aircraft')).toHaveCount(0);
     await expect(page.getByTestId('flight-filter-person')).toHaveCount(0);
-    // Story 15.6: the phone tree is in the DOM at every width (CSS-only
-    // switch), so the masking has to hold on ITS names too — extending this
-    // assertion, never weakening it.
-    await expect(page.getByTestId('flight-cancel-action-mobile')).toHaveCount(0);
-    await expect(page.getByTestId('flight-correct-action-mobile')).toHaveCount(0);
-    await expect(page.getByTestId('flight-filter-aircraft-mobile')).toHaveCount(0);
+    // Story 15.6 (review LOW-1): the phone twins of these three names are NOT
+    // asserted here. They only exist while the detail sheet or the "Filtri"
+    // panel is OPEN, so a `toHaveCount(0)` on a page with both closed is green
+    // for an admin too — measured — and would claim a coverage it does not
+    // have. The real masking guard opens them: `mobile-logbook.spec.ts`, "a
+    // pilot gets the same card without any action" (sheet open ⇒ zero actions
+    // where the admin has two; panel open ⇒ no velivolo filter).
 
     // Exactly the pilot's own 2 flights (this pilot is brand new — nothing else could be theirs), never the other person's.
     const rows = page.getByTestId('flight-row');

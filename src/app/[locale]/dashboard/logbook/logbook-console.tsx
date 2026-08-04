@@ -58,8 +58,15 @@ export type LogbookFilters = {
   status: '' | FlightStatusDto;
 };
 
-/** Same debounce-before-navigating idiom as `pilots-console.tsx`/`fleet-console.tsx`. */
-function useDebouncedCallback(callback: (value: string) => void, delayMs: number): (value: string) => void {
+/**
+ * Same debounce-before-navigating idiom as `pilots-console.tsx`/`fleet-console.tsx`,
+ * plus the `cancel` this page needs (review 15.6 MINOR-1): here a navigation
+ * REMOUNTS the console (`page.tsx`'s own `key`), so a timer still pending when
+ * the "Filtri" panel opens would close that panel ~400ms later, under the
+ * reader's thumb — the exact failure AD-4 calls unacceptable. The other
+ * consoles have no panel and keep the plain form.
+ */
+function useDebouncedCallback(callback: (value: string) => void, delayMs: number): { run: (value: string) => void; cancel: () => void } {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -69,9 +76,17 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
     [],
   );
 
-  return (value: string) => {
+  function cancel(): void {
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => callback(value), delayMs);
+    timerRef.current = null;
+  }
+
+  return {
+    run: (value: string) => {
+      cancel();
+      timerRef.current = setTimeout(() => callback(value), delayMs);
+    },
+    cancel,
   };
 }
 
@@ -302,13 +317,13 @@ export function LogbookConsole({
     navigate(next);
   }
 
-  const debouncedPersonQuery = useDebouncedCallback((value: string) => {
+  const personQueryDebounce = useDebouncedCallback((value: string) => {
     handleFilterChange({ personQuery: value });
   }, 400);
 
   function handlePersonQueryChange(value: string): void {
     setPersonQueryInput(value);
-    debouncedPersonQuery(value);
+    personQueryDebounce.run(value);
   }
 
   function handleReset(): void {
@@ -498,6 +513,26 @@ export function LogbookConsole({
   const sheetFlight = items.find((flight) => flight.id === sheetId) ?? null;
   const sheetBadgeKind = sheetFlight ? flightBadgeKind(sheetFlight) : null;
 
+  /**
+   * Opening the panel takes the pending search OVER (review 15.6 MINOR-1).
+   * Cancelling that timer is what keeps the panel open (its navigation would
+   * remount the console); carrying `personQueryInput` — the text as TYPED, not
+   * the last applied one — into the draft is what keeps the typing: "Applica"
+   * then sends search and panel filters in the SAME single navigation (AD-4).
+   * Flushing instead of cancelling would be self-defeating: the flush IS the
+   * navigation that closes the panel.
+   */
+  function openFilterPanel(): void {
+    personQueryDebounce.cancel();
+    setFilterDraft({ ...filters, personQuery: personQueryInput });
+  }
+
+  /** Dismissing (✕, scrim, Escape) drops the panel's own edits — never the typing that preceded it: the search re-arms and lands on its own, as it would have without the panel. */
+  function dismissFilterPanel(): void {
+    setFilterDraft(null);
+    if (personQueryInput !== filters.personQuery) personQueryDebounce.run(personQueryInput);
+  }
+
   /** ONE navigation on "Applica" (AD-4) — navigating per `onChange`, as the desktop head does, would remount the console and close the panel under the reader's thumb. */
   function applyFilterDraft(): void {
     if (filterDraft === null) return;
@@ -681,7 +716,7 @@ export function LogbookConsole({
           <button
             type="button"
             className="btn logbook-filters-trigger"
-            onClick={() => setFilterDraft(filters)}
+            onClick={openFilterPanel}
             data-testid="mobile-flight-filters-button"
           >
             {panelActiveCount === 0 ? labels.mobile.filters : labels.mobile.filtersCount.replace('{count}', String(panelActiveCount))}
@@ -1009,7 +1044,7 @@ export function LogbookConsole({
           // `--panel` in the light theme, a PRE-EXISTING shortfall of the
           // desktop primitive this story does not own), and the panel's title
           // already says everything a second line would.
-          onClose={() => setFilterDraft(null)}
+          onClose={dismissFilterPanel}
           closeLabel={labels.mobile.close}
           footer={
             <>
