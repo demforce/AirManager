@@ -2764,3 +2764,247 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      vertical rhythm, which `.form-grid` supplies on one column here. */
   .logbook-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
 }
+
+/* ---------- scadenze + transiti mobile (story 15.7, epic 15 R1-R4) ----------
+   The last two operational registries that could only be read from a desk:
+   the Scadenze registry (868px of table inside 317px of screen, with a 262px
+   head above it — the first row started at 70% of the viewport) and the Voli
+   in transito register (800px of table, and a closure whose button needed
+   483px of horizontal scroll to reach and then opened its panel 483px to the
+   LEFT of the finger). Both become one card per row plus a detail sheet, in
+   the template's own language (`AirOps Mobile` 207-225 and 266-286), and so
+   does the self face "Le mie scadenze" — one of the FIVE tab-bar entries a
+   pilota/allievo/istruttore has.
+
+   Same rules of engagement as the 15.1-15.6 blocks above: every declaration
+   is additive inside `@media (max-width: 640px)`, no existing token changes
+   value, no new colour literal — the status pills are `Badge` (whose four
+   derived tones coincide 1:1 with the template's own `_badge`, script 563),
+   the chips are `.mobile-chip-strip` (15.4), the rows are `.mobile-row*`
+   (15.3/15.4/15.5/15.6) and the panels are `SlideOver`/`BottomSheet` in their
+   existing mobile modes. The declarations OUTSIDE the query exist only
+   because an inline style cannot be overridden by a media query (the 15.5
+   lesson) and because the mobile trees are in the DOM at every width.
+
+   The switch hangs off classes these pages OWN — `.scadenze-desktop-body`/
+   `.scadenze-mobile`, `.movements-desktop-body`/`.movements-mobile`,
+   `.my-expiries-desktop-body`/`.my-expiries-mobile`, `.scadenze-head`,
+   `.movements-head` — never off `.students`/`.student-row` (13 consoles), nor
+   `.card-head`, nor `.kpi-row`, nor `.mini-modal` (shared with the logbook's
+   storno), and above all never off `.segmented`: that class has SIX consumers
+   (pianificazione, panoramica, statistiche, the scadenze widget and the
+   primitive itself), so the finestra filter's phone form is NEW markup and
+   the desktop `.segmented` is hidden here through a class of this page
+   (`.scadenze-window-desktop`), which is not a rule on `.segmented` at all.
+   Same for `.date-input`, shared with contabilità and registro voli: the two
+   period filters are reached through `.movements-filter-inpanel`. */
+
+/* The three mobile trees are in the DOM at every width (the switch is CSS
+   only), so they must be `display: none` OUTSIDE the query too — otherwise
+   the desktop suite finds two matches for every registration and every person
+   name on these pages. Same for the two phone-only "Filtri" triggers. */
+.scadenze-mobile,
+.movements-mobile,
+.my-expiries-mobile,
+.scadenze-head > .scadenze-filters-trigger,
+.movements-head > .movements-filters-trigger{ display: none; }
+
+/* The declarations these six nodes carried inline. An inline `width`/
+   `display`/`grid-template-columns`/`max-width` cannot be overridden by a
+   media query, and the phone face has to stretch, hide or re-place each one.
+   Identical computed style above 640px — measured pre/post at 1280/800/641px. */
+.scadenze-search{ width: 190px; }
+.scadenze-kpi-row{ grid-template-columns: repeat(4, 1fr); }
+.movements-head-actions{ display: flex; gap: 8px; flex-wrap: wrap; }
+.ppr-complete-form{ display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; }
+.ppr-complete-field{ max-width: 200px; }
+.ppr-complete-actions{ display: flex; gap: 8px; }
+.membership-fee-actions{ display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.membership-fee-override-label{ display: flex; align-items: center; gap: 6px; margin-top: 10px; font-weight: 400; }
+
+@media (max-width: 640px){
+  .scadenze-desktop-body,
+  .movements-desktop-body,
+  .my-expiries-desktop-body{ display: none; }
+  .scadenze-mobile,
+  .movements-mobile,
+  .my-expiries-mobile{ display: block; }
+
+  /* --- the head of the Scadenze card (ratifica R-15.7-e) ---
+     Measured pre-fix: 262px at 375px in BOTH locales (304 at 320px), against
+     107px at 1280px — 70% of the screen before the first scadenza. The 15.5
+     recipe applied literally (all six controls full-width at 44px) would have
+     made it 330px, so this head keeps the search full-width and pairs the
+     four actions two per row, while the finestra moves onto a chip strip and
+     the tipo into the panel. DIRECT children only (lesson 15.3 F1): this card
+     also mounts a `SlideOver`, a `.mini-modal` and portalled popovers, and a
+     descendant selector would restyle their buttons too. */
+  .scadenze-head{ padding: 12px 16px; column-gap: 8px; }
+  .scadenze-head > .spacer{ display: none; }
+  /* The card's own sub-heading ("Registro scadenze") costs a whole row and
+     says nothing the phone does not already show twice — the page `<h1>` above
+     it and the mobile top bar's own title (15.1). Same decision as 15.5/15.6.
+     The COUNT beside it goes with it, measured: keeping it made the head
+     198.94px at 375px which, with the 64px chip strip, is 262.94 against a
+     261.5 pre-fix — 1.4px OVER the budget ratifica R-15.7-e was granted.
+     Without it: 175 + 64 = 239, the number ⟨Q5⟩'s own arithmetic predicted. */
+  .scadenze-head > .card-title,
+  .scadenze-head > .card-sub{ display: none; }
+  /* The finestra segmented and the tipo select: hidden through classes of
+     THIS page, never through a rule on `.segmented` (6 consumers) or on
+     `.input` (every form in the app). */
+  .scadenze-head > .scadenze-window-desktop,
+  .scadenze-head > .scadenze-filter-inpanel{ display: none; }
+  /* The TAP TARGET is the input, not the box around it: `.search` centres its
+     children, so a 44px wrapper still left `scadenze-filter-pilot` 18px tall
+     (measured) and a tap on the padding focused nothing. Same fix as 15.5/15.6. */
+  .scadenze-head > .scadenze-search{ flex: 1 0 100%; width: auto; padding-top: 0; padding-bottom: 0; }
+  .scadenze-head > .scadenze-search .bare-input{ min-height: 44px; }
+  .scadenze-head > .scadenze-filters-trigger{ display: inline-flex; }
+  /* Two per row: a `calc(50% - 4px)` BASIS, not `flex: 1 1 0` — with a zero
+     basis all four actions shrink onto ONE line instead of wrapping (the
+     defect 15.4 measured on the sheet's own action row). 50% + the head's own
+     8px column-gap is exactly one row. `ExportMenu`'s trigger is a GRANDCHILD
+     (inside its own relative wrapper), which is why it needs the second pair
+     of rules (review 15.5 F4). */
+  .scadenze-head > .btn,
+  .scadenze-head > div:has(> .btn){ flex: 1 1 calc(50% - 4px); }
+  .scadenze-head > .btn{ justify-content: center; min-height: 44px; }
+  .scadenze-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+  /* The two page actions carry a 16px glyph plus its 6px gap, and measured in
+     Italian at 375px that is exactly what pushed them over the 137.5px a
+     half-row gives them ("Quota associativa" 146.64px). The chips of 15.4
+     carry no glyph either, and 15.5 dropped the same one from its own head
+     chip for the same reason — this is that language. */
+  .scadenze-head > .btn > svg{ display: none; }
+  /* The reminders outcome is a toast on the phone (ratifica R-15.7-g): a
+     confirm-then-nothing on a telephone is how an operator ends up firing an
+     idempotent job twice. The `role="status"` paragraph stays for the desktop. */
+  .scadenze-reminders-feedback{ display: none; }
+
+  /* --- the head of the Voli in transito card (ratifica R-15.7-f) ---
+     Measured pre-fix: 143px at 375px in both locales (230 at 320px, 186 with
+     a filter active), against 68px at 1280px. The 15.5 recipe applied
+     literally (all five controls full-width at 44px) would have made it
+     276px, so stato moves onto a chip strip, periodo and "Azzera" into the
+     panel, and the head keeps only the two things that act. */
+  .movements-head{ padding: 12px 16px; column-gap: 8px; }
+  .movements-head > .spacer{ display: none; }
+  /* Both the title and the count go: the page `<h1>` and its own sub-line
+     ("N attualmente al suolo") already say what this card is, and the count
+     here is the CURRENT PAGE's row count, which the list itself shows. */
+  .movements-head > .card-title,
+  .movements-head > .card-sub{ display: none; }
+  /* Stato (now the chip strip), the two period filters and "Azzera filtri"
+     (now the panel's own footer button). They stay in the DOM with their
+     testids and their desktop behaviour, one node each. */
+  .movements-head > .movements-filter-status,
+  .movements-head > .movements-filter-inpanel{ display: none; }
+  /* One row: Filtri + Esporta, half each. */
+  .movements-head > .movements-filters-trigger{ display: inline-flex; flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .movements-head > div:has(> .btn){ flex: 1 1 0; }
+  .movements-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+  /* "Registra arrivo", full width under the page sub-line — the grammar
+     ratifiche R-15.3-d/R-15.4-f/R-15.5-g already set for a primary action, and
+     the last page CTA of the epic still measuring 127x35. DIRECT child:
+     `LogArrivalLaunchButton` renders its trigger AND its `ManualPprForm`
+     panel as siblings inside this wrapper (lesson 15.3 F1). */
+  .movements-head-actions{ flex: 1 0 100%; }
+  .movements-head-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- the two "Filtri" panels ---
+     `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed
+     header and the anchored action; the bodies only need the editors' own
+     vertical rhythm on one column. */
+  .scadenze-filter-panel,
+  .movements-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
+  /* Every control of a panel is a control of the head that moved into it
+     (R4), so AC 5/6's 44px floor follows it there: measured without these,
+     the tipo select was 36px and the two date fields 38.8px with a 24x24
+     calendar trigger — the smallest target of either page. Bounded by the two
+     panel classes this story owns; the `SlideOver` chassis is untouched. */
+  .scadenze-filter-panel .input,
+  .movements-filter-panel .input{ min-height: 44px; }
+  .movements-filter-panel .date-input-btn{ width: 36px; height: 36px; }
+
+  /* --- the transit card (template 207-225) ---
+     `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, an
+     identifier and an ellipsised line on the left, a pill on the right). Only
+     the tracks and the type slot are new, so this is a MODIFIER, not a family
+     — and `.ppr-card*` (15.2) is deliberately NOT reused: its rows have no
+     right-hand track, so a status pill as long as "In arrivo" would compete
+     with the marks instead of being protected by one (AD-3).
+     `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)` and a long requester name would push its own track
+     wider than the card (the 13.10 F1 idiom, re-measured in 15.5/15.6). */
+  .mobile-row-transit,
+  .mobile-row-expiry{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  /* `.mobile-row-side` carries `grid-column: 3` for the three-track person row
+     of 15.5; here the right column is the second track. */
+  .mobile-row-transit > .mobile-row-side,
+  .mobile-row-expiry > .mobile-row-side{ grid-column: 2; }
+  /* The pill never wraps and never shrinks: it is the word that changes what
+     the row MEANS, and the `auto` track is sized on it. The left track's
+     `minmax(0, …)` is what absorbs the difference. */
+  .mobile-row-transit > .mobile-row-side .badge,
+  .mobile-row-expiry > .mobile-row-side .badge{ white-space: nowrap; }
+  /* The template's own second slot on the title line (207-225): the aircraft
+     TYPE, mono, quieter and lighter than the marks beside it. It ellipsises
+     and the marks chip does not, so a long type never eats the identifier.
+     `--ink-3` on `--panel` measures 4.85:1 light / 5.72 dark (the pair 15.6
+     already established for `.mobile-row-sub`) — never the template's own
+     `--ink-4`, which is a >=3:1 floor meant for group labels, not for text. */
+  .mobile-row-model{
+    min-width: 0;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 400; color: var(--ink-3);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* "Le mie scadenze" only: the dormant "Proposta in attesa" chip gets its own
+     row in column 1 — never spanning (an item that SPANS tracks contributes
+     its max-content to all of them, the defect 15.5 measured), and never in
+     the right-hand slot, where it would eat the status pill. */
+  .mobile-row-expiry > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
+
+  /* --- the closure of a transit, inside the sheet (ratifica R-15.7-d) ---
+     The SAME `CompleteForm` the desktop row panel renders (AD-8) — only its
+     container changes, so the three inline styles it used to carry had to
+     become classes first. The two fields lose their 200px desktop cap and the
+     two buttons become equal 44px halves. Bounded by a class this story owns,
+     whose subtree is this one form. */
+  .mobile-complete-step > .ppr-complete-form{ padding: 0; }
+  .mobile-complete-step .ppr-complete-field{ max-width: none; }
+  /* The two fields of an operation with a REAL accounting effect: measured
+     36.8px (importo) and 36px (metodo) without this. */
+  .mobile-complete-step .input{ min-height: 44px; }
+  .mobile-complete-step .ppr-complete-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- "Quota associativa" as a full-screen panel (ratifica R-15.7-g) ---
+     Measured pre-fix at 375px: a 335x385 card with a 131x35 submit and a
+     13x13 checkbox, holding a typeahead over 338 people. It becomes the
+     epic's full-screen grammar WITHOUT a second tree: a second tree would
+     duplicate `membership-fee-panel`, `membership-fee-submit`, the
+     combobox's DOM `id` and its network path, all read PAGE-LEVEL by
+     `membership-fee.spec.ts`. Anchored to a class of THIS modal — never to
+     `.mini-modal`, which the registro voli's storno also uses. The
+     combobox's listbox is portalled to `<body>` and `position: fixed`
+     (story 14.1), so the card's own scroll cannot clip it. */
+  .membership-fee-modal{ padding: 0; place-items: stretch; }
+  .membership-fee-modal > .mini-modal-card{
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+  /* `margin-top: auto` inside the card's own flex column: the action row sits
+     at the BOTTOM of the panel, which is where R3 puts a primary action. */
+  .membership-fee-modal > .mini-modal-card > .membership-fee-actions{ margin-top: auto; }
+  /* The typeahead over 338 people and the amount: 36.8px each without this. */
+  .membership-fee-modal .input{ min-height: 44px; }
+  .membership-fee-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* A 13x13 checkbox is the smallest target on either page, and this one
+     decides whether a refusal from the server gets overridden. */
+  .membership-fee-override-label > input[type="checkbox"]{ width: 20px; height: 20px; flex-shrink: 0; }
+}

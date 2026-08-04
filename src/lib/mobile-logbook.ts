@@ -9,6 +9,7 @@
  * Pure by construction: no import of a service, hence no `@/lib/env` dragged
  * into the test (CLAUDE.md's eager-env rule).
  */
+import { joinSegments } from './mobile-sub-line';
 
 /**
  * The one status a row is allowed to shout about (ratifica R-15.6-b), in
@@ -45,19 +46,6 @@ export function flightRouteLabel(departureAirfield: string | null, arrivalAirfie
   const arrival = (arrivalAirfield ?? '').trim();
   if (departure === '' || arrival === '') return null;
   return `${departure}→${arrival}`;
-}
-
-/**
- * Joins the segments of a composed line with the template's own separator,
- * DROPPING every absent one.
- *
- * This is the lesson of review 15.5 F1 turned into code: a placeholder
- * ("—") pushed into a composed string reads as a second separator, and an
- * empty segment leaves two separators adjacent. Both are defects of the
- * COMPOSITION, so they are killed once, here, instead of at each call site.
- */
-function joinSegments(segments: readonly (string | null | undefined)[]): string {
-  return segments.map((segment) => (segment ?? '').trim()).filter((segment) => segment !== '').join(' · ');
 }
 
 /**

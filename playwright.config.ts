@@ -47,6 +47,7 @@ export default defineConfig({
         '**/billing-global.spec.ts',
         '**/mobile-metar.spec.ts',
         '**/mobile-overview-overflow.spec.ts',
+        '**/mobile-membership-fee.spec.ts',
       ],
       use: sharedUse,
     },
@@ -108,6 +109,19 @@ export default defineConfig({
       name: 'mobile-overview-overflow',
       testMatch: '**/mobile-overview-overflow.spec.ts',
       dependencies: ['mobile-metar'],
+      use: sharedUse,
+    },
+    {
+      // Story 15.7, ratifica R-15.7-g — the "Quota associativa" button is
+      // `disabled` while `membership.annualFeeCents` is 0, so exercising its
+      // phone panel at all means WRITING that global `AppSetting`, which
+      // `membership-fee.spec.ts` (main project) also writes five times and
+      // leaves at 0. Two parallel writers on one global key is exactly what
+      // this chain exists to prevent. Last in the chain, and it restores 0 in
+      // `afterAll` — nothing downstream reads it.
+      name: 'mobile-membership-fee',
+      testMatch: '**/mobile-membership-fee.spec.ts',
+      dependencies: ['mobile-overview-overflow'],
       use: sharedUse,
     },
   ],

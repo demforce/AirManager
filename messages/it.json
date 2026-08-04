@@ -1505,6 +1505,25 @@
         "insufficientBalance": "Saldo insufficiente: il conto è a {balance}, l'addebito di {amount} lo porterebbe sotto zero. Un admin può forzare l'addebito con la casella qui sotto.",
         "overrideCheckbox": "Forza addebito (saldo insufficiente)",
         "requiredPilot": "Seleziona un pilota."
+      },
+      "mobile": {
+        "openDetail": "Apri dettaglio scadenza",
+        "close": "Chiudi",
+        "notes": "Note",
+        "scopeLabel": "Ambito",
+        "scope": {
+          "PILOTS": "Piloti",
+          "STUDENTS": "Allievi",
+          "INSTRUCTORS": "Istruttori",
+          "ALL": "Tutti"
+        },
+        "openPerson": "Apri scheda persona",
+        "filters": "Filtri",
+        "filtersCount": "Filtri ({count})",
+        "filtersTitle": "Filtri del registro",
+        "apply": "Applica",
+        "empty": "Nessuna scadenza in questa finestra.",
+        "noValue": "—"
       }
     },
     "own": {
@@ -1521,6 +1540,10 @@
           "expired": "Scaduta"
         },
         "pendingBadge": "Proposta in attesa"
+      },
+      "mobile": {
+        "openDetail": "Apri dettaglio scadenza",
+        "close": "Chiudi"
       }
     }
   },
@@ -1973,6 +1996,24 @@
         "ETD_NOT_AFTER_ETA": "L'ETD deve essere successivo all'ETA.",
         "generic": "Non è stato possibile completare l'operazione. Riprova."
       }
+    },
+    "mobile": {
+      "openDetail": "Apri dettaglio transito",
+      "close": "Chiudi",
+      "back": "Indietro",
+      "pprNumber": "Numero PPR",
+      "email": "Email",
+      "phone": "Telefono",
+      "personsOnBoard": "Persone a bordo",
+      "notes": "Note",
+      "source": "Origine richiesta",
+      "sourcePublic": "Modulo web",
+      "rejectionReason": "Motivo rifiuto",
+      "closedAt": "Chiusura",
+      "filters": "Filtri",
+      "filtersCount": "Filtri ({count})",
+      "filtersTitle": "Filtri del registro",
+      "apply": "Applica"
     }
   },
   "Export": {

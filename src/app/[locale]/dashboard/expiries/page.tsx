@@ -100,7 +100,14 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     }
     const registryTotalPages = Math.max(1, Math.ceil(registryResult.total / REGISTRY_PAGE_SIZE));
 
-    const exportFilterQuery = { expiryTypeId, scope: undefined, status: undefined };
+    // Story 15.7, ratifica R-15.7-k(1): the export now carries the SAME
+    // filters as the list. It used to send `expiryTypeId` alone, so an admin
+    // who had searched "Rossi" inside the ≤7 days window still downloaded
+    // every scadenza of that type — a file that silently disagrees with the
+    // screen it was exported from. `listAllExpiriesQuerySchema` already
+    // accepts both fields; `window: 'all'` is not one of its values (it is
+    // the ABSENCE of the filter), same shape as `registryQuery` above.
+    const exportFilterQuery = { ...(window !== 'all' ? { window } : {}), expiryTypeId, personQuery, scope: undefined, status: undefined };
     const exportHref = buildExportHref('/api/v1/expiries', exportFilterQuery, locale);
     const exportPdfHref = buildPdfExportHref('/api/v1/expiries/pdf', exportFilterQuery, locale);
 
@@ -201,6 +208,27 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               overrideCheckbox: t('registry.membershipFee.overrideCheckbox'),
             },
             pagination: { prev: '←', next: '→' },
+            mobile: {
+              openDetail: t('registry.mobile.openDetail'),
+              close: t('registry.mobile.close'),
+              notes: t('registry.mobile.notes'),
+              scopeLabel: t('registry.mobile.scopeLabel'),
+              scope: {
+                PILOTS: t('registry.mobile.scope.PILOTS'),
+                STUDENTS: t('registry.mobile.scope.STUDENTS'),
+                INSTRUCTORS: t('registry.mobile.scope.INSTRUCTORS'),
+                ALL: t('registry.mobile.scope.ALL'),
+              },
+              openPerson: t('registry.mobile.openPerson'),
+              filters: t('registry.mobile.filters'),
+              // `t.raw`: `{count}` is interpolated CLIENT-SIDE (the number of
+              // active panel filters), same rationale as `shown` above.
+              filtersCount: t.raw('registry.mobile.filtersCount') as string,
+              filtersTitle: t('registry.mobile.filtersTitle'),
+              apply: t('registry.mobile.apply'),
+              empty: t('registry.mobile.empty'),
+              noValue: t('registry.mobile.noValue'),
+            },
           }}
         />
       </main>
@@ -238,6 +266,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             },
             pendingBadge: t('own.table.pendingBadge'),
           },
+          mobile: { openDetail: t('own.mobile.openDetail'), close: t('own.mobile.close') },
         }}
       />
     </main>

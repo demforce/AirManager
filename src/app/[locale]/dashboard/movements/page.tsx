@@ -151,7 +151,13 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
           <h1>{t('title')}</h1>
           <div className="sub">{t('sub', { onGround: onGroundCount })}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {/* Story 15.7 (ratifica R-15.7-f): the two declarations this wrapper
+            carried inline, now a class — an inline `display` cannot be
+            overridden by a media query, and this is the LAST page CTA of the
+            epic still measuring 127x35 because `.home-head-actions > .btn`
+            (R-15.3-d) could not reach a class-less div. Identical computed
+            style above 640px, measured. */}
+        <div className="movements-head-actions">
           <LogArrivalLaunchButton
             locale={locale as AppLocale}
             buttonLabel={t('header.logArrival')}
@@ -285,11 +291,35 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
             genericError: t('toast.genericError'),
           },
           empty: t('empty'),
+          mobile: {
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            back: t('mobile.back'),
+            pprNumber: t('mobile.pprNumber'),
+            email: t('mobile.email'),
+            phone: t('mobile.phone'),
+            personsOnBoard: t('mobile.personsOnBoard'),
+            notes: t('mobile.notes'),
+            source: t('mobile.source'),
+            sourcePublic: t('mobile.sourcePublic'),
+            rejectionReason: t('mobile.rejectionReason'),
+            closedAt: t('mobile.closedAt'),
+            filters: t('mobile.filters'),
+            // `t.raw`: `{count}` is interpolated CLIENT-SIDE (the number of
+            // active panel filters), same rationale as `card.subTemplate`.
+            filtersCount: t.raw('mobile.filtersCount') as string,
+            filtersTitle: t('mobile.filtersTitle'),
+            apply: t('mobile.apply'),
+          },
         }}
       />
 
+      {/* `registry-pagination` (15.5): the two links keep the same `?page=`
+          contract and only their TARGET grows to 44px on a phone. This nav
+          lives OUTSIDE `MovementsTable`, so a rule anchored to the card would
+          never have reached it. */}
       {totalPages > 1 ? (
-        <nav style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }} data-testid="movements-pagination">
+        <nav className="registry-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }} data-testid="movements-pagination">
           <Link href={pageHref(page - 1)} locale={locale as AppLocale} aria-disabled={page <= 1} className="btn">
             &larr;
           </Link>

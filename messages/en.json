@@ -1505,6 +1505,25 @@
         "insufficientBalance": "Insufficient balance: the account is at {balance}, charging {amount} would take it below zero. An admin can force the charge with the checkbox below.",
         "overrideCheckbox": "Force charge (insufficient balance)",
         "requiredPilot": "Select a pilot."
+      },
+      "mobile": {
+        "openDetail": "Open expiry detail",
+        "close": "Close",
+        "notes": "Notes",
+        "scopeLabel": "Scope",
+        "scope": {
+          "PILOTS": "Pilots",
+          "STUDENTS": "Students",
+          "INSTRUCTORS": "Instructors",
+          "ALL": "All"
+        },
+        "openPerson": "Open person profile",
+        "filters": "Filters",
+        "filtersCount": "Filters ({count})",
+        "filtersTitle": "Registry filters",
+        "apply": "Apply",
+        "empty": "No expiry in this window.",
+        "noValue": "—"
       }
     },
     "own": {
@@ -1521,6 +1540,10 @@
           "expired": "Expired"
         },
         "pendingBadge": "Pending proposal"
+      },
+      "mobile": {
+        "openDetail": "Open expiry detail",
+        "close": "Close"
       }
     }
   },
@@ -1973,6 +1996,24 @@
         "ETD_NOT_AFTER_ETA": "ETD must be after ETA.",
         "generic": "We could not complete the operation. Please try again."
       }
+    },
+    "mobile": {
+      "openDetail": "Open transit detail",
+      "close": "Close",
+      "back": "Back",
+      "pprNumber": "PPR number",
+      "email": "Email",
+      "phone": "Phone",
+      "personsOnBoard": "Persons on board",
+      "notes": "Notes",
+      "source": "Request source",
+      "sourcePublic": "Web form",
+      "rejectionReason": "Rejection reason",
+      "closedAt": "Closed at",
+      "filters": "Filters",
+      "filtersCount": "Filters ({count})",
+      "filtersTitle": "Register filters",
+      "apply": "Apply"
     }
   },
   "Export": {
