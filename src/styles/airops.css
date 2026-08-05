@@ -3016,3 +3016,279 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .membership-fee-modal .membership-fee-override-label{ min-height: 44px; }
   .membership-fee-override-label > input[type="checkbox"]{ width: 20px; height: 20px; flex-shrink: 0; }
 }
+
+/* ---------- contabilità mobile + export menu (story 15.8a, epic 15 R1-R4) ----------
+   The last accounting surface of the app, and the widest table left: 988px of
+   nine columns inside 317px of screen, under a 265.66px head, with the first
+   transaction row starting at y=1068 — 131% of a 812px viewport, the worst
+   opening measured in the whole epic. It becomes one card per transaction plus
+   a detail sheet, in the template's own language (`AirOps Mobile` 325-334),
+   with the three riquadri collapsed into a tappable KPI per riquadro
+   (R-15.8a-c) and the three writes — rettifica, storno, riclassifica — living
+   INSIDE the sheet as second steps (R-15.8a-g).
+
+   Same rules of engagement as the 15.1-15.7 blocks above: every declaration is
+   additive inside `@media (max-width: 640px)`, no existing token changes value,
+   no new colour literal — the pills are `Badge`, the chips are
+   `.mobile-chip-strip` (15.4), the rows are `.mobile-row*` (15.3-15.6), the
+   pagination is `.registry-pagination` (15.5) and the panels are `SlideOver`/
+   `BottomSheet` in their existing mobile modes.
+
+   The declarations OUTSIDE the query are the four this story declares: (i) the
+   `display: none` of the two mobile trees, which are in the DOM at every width;
+   (ii) `.billing-split`, the inline `1fr 1fr` of `billing-console.tsx` moved
+   into a class so the desktop stays measured-identical (R-15.8a-f); (iii) the
+   three other inline declarations that a media query could never have
+   overridden (`.billing-filter-range`, `.billing-search`,
+   `.billing-negative-list`, `.export-menu-panel`), the same move 15.5/15.6/15.7
+   each had to make; (iv) the `ExportMenu`'s own chassis and the two contrast
+   fixes of R-15.8a-i, which are defects of BOTH faces and are corrected at
+   every width.
+
+   The switch hangs off classes this page OWNS — `.billing-desktop-body`/
+   `.billing-mobile`, `.billing-head`, `.billing-kpi-row` — never off
+   `.students`/`.student-row` (13 consoles), nor `.card-head`, nor `.kpi-row`,
+   nor `.split` (4 more instances on `/dashboard/reports`, the story gemella's
+   own page), nor `.mini-modal` (shared with the registro voli's storno), nor
+   `.segmented` (6 consumers), nor `.date-input` (5 pages): the two period
+   fields are reached through `.billing-filter-inpanel` and the panel's own
+   class. */
+
+/* Graphic objects on `--bg-sunken`: the two flow segments of "Per categoria"
+   measured 2.47:1 (in) and 3.59:1 (out) in the LIGHT theme against their own
+   sunken track — the first under the 3:1 floor a graphic object has to meet
+   (in dark they were already 10.45 / 7.42). Mixing 30% of `--ink` into the
+   token moves the colour AWAY from the track in BOTH themes (the ink is
+   near-black in light, near-white in dark), which is exactly the technique
+   `.mobile-row-edge-*` established in 15.4 — same tokens, no new literal, and
+   no token changes value. Named for the SHAPE, not for the page: story 15.8b's
+   own `.util-bar .seg` is the same defect on the same tokens and can reuse
+   these two classes rather than take a second decision about them. */
+.flow-bar-in{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
+.flow-bar-out{ background: color-mix(in oklch, var(--bad) 70%, var(--ink)); }
+
+/* The two mobile trees are in the DOM at every width (the switch is CSS only),
+   so they must be `display: none` OUTSIDE the query too — otherwise the
+   desktop suite finds two matches for every description on this page. Same for
+   the phone-only "Filtri" trigger. */
+.billing-mobile,
+.billing-kpi-row,
+.billing-head > .billing-filters-trigger{ display: none; }
+
+/* R-15.8a-f. `.split`'s own base is `2fr 1fr`, so the inline `1fr 1fr` this
+   node carried could not simply be deleted: it moves here, OUTSIDE the query
+   (desktop measured identical at 488/488 @1280), and is neutralised inside it. */
+.billing-split{ grid-template-columns: 1fr 1fr; }
+
+/* The declarations three nodes carried inline. An inline `display`/`width`/
+   `max-height` cannot be overridden by a media query, and the phone face has
+   to hide the first, stretch the second and grow the third. Identical computed
+   style above 640px — measured pre/post at 641/800/1280. */
+.billing-filter-range{ display: flex; align-items: center; gap: 5px; }
+.billing-search{ width: 190px; }
+.billing-negative-list{ display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+
+/* --- ExportMenu: one node, two shapes (R-15.8a-h) ---
+   The menu is a `MobileSheet` at every width; `.mobile-sheet`'s own base rule
+   is `display: none` outside the query, so the desktop form has to be claimed
+   back here. Everything else the desktop popover needs comes from the
+   `.popover`/`.popover-scrim` classes the component still passes — the shadow,
+   the border, the radius, the z-index pair and the anchoring are NOT restated,
+   so there is no second source of truth and no new colour literal. Only the
+   two things the sheet chassis adds and the popover never had — the grabber —
+   and the width the trigger used to carry inline are declared. */
+.mobile-sheet.export-menu-sheet{ display: block; }
+.export-menu-sheet .mobile-sheet-grabber{ display: none; }
+.export-menu-panel{ min-width: 180px; }
+
+@media (max-width: 640px){
+  .billing-desktop-body{ display: none; }
+  .billing-mobile{ display: block; }
+
+  /* --- the three riquadri as a tappable KPI each (R-15.8a-c) ---
+     Measured pre-fix at 375px: the three stacked cards were 579.92px tall and
+     the first transaction row started at 1068.23 on a 812px screen. The strip
+     replaces them; the full detail of each riquadro is one tap away, in a
+     sheet, so nothing is lost (R4).
+     `1fr 1fr` with the FIRST cell spanning, not `repeat(3, 1fr)`: three money
+     values in 101px columns wrap to two clamped lines each on a real ledger
+     (`-1.216,22 €` needs ~99px at 15px mono), and the month's result is the
+     number this page is opened for — it gets the full width, liquidità and
+     acconti share the row below. No empty cell, and no swipe to reach the
+     third number (the defect ratifica R-15.3-c already corrected for the 2x2). */
+  .billing-panels{ display: none; }
+  .kpi-row.billing-kpi-row{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-inline: 0;
+    padding-inline: 0;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+  .billing-kpi-row > *{ min-width: 0; max-width: none; scroll-snap-align: none; }
+  .billing-kpi-row > *:first-child{ grid-column: 1 / -1; }
+  /* The KPI is a `<button>` now (it opens the riquadro's sheet), so it needs
+     the reset `.kpi` never had to carry: a button brings its own font, its own
+     centred text and its own `text-align`. */
+  .billing-kpi{
+    width: 100%;
+    min-height: 44px;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .billing-kpi:active{ background: var(--panel-2); }
+  /* Same 19px the 2x2 variant of 15.3 uses: a half-width card is narrower than
+     a strip card, and 23px there wrapped even short values. */
+  .billing-kpi-row .kpi-value{ font-size: 19px; }
+
+  /* --- the head of the registro card (R-15.8a-e) ---
+     Measured pre-fix: 265.66px at 375px AND at 390px in both locales (350.89 at
+     320px, 308.5 with a filter active, 393.73 at 320 with the secchiello chip),
+     against 109.23 at 1280px. The 15.5 recipe applied literally (all seven
+     controls full-width at 44px) would have made it ~416px, so this head keeps
+     only what is looked at (the pilot search) and what acts (Filtri, Esporta,
+     Nuova transazione); periodo and categoria move into the panel, tipo and il
+     secchiello onto the chips. DIRECT children only (lesson 15.3 F1): this card
+     also mounts a `SlideOver`, two `.mini-modal`s and portalled popovers, and a
+     descendant selector would restyle their buttons too. */
+  .billing-head{ padding: 12px 16px; column-gap: 8px; }
+  .billing-head > .spacer{ display: none; }
+  /* The card's own sub-heading ("Transazioni") and its count cost a whole row
+     and say nothing the phone does not already show twice — the page `<h1>`
+     above it, which carries the same count, and the mobile top bar's own title
+     (15.1). Same decision as 15.5/15.6/15.7. */
+  .billing-head > .card-title,
+  .billing-head > .card-sub{ display: none; }
+  /* Periodo, categoria and "Azzera filtri", whose phone home is the panel; the
+     tipo select and the secchiello chip, whose phone home is the chip strip.
+     They all stay in the DOM with their testids and their desktop behaviour,
+     one node each. */
+  .billing-head > .billing-filter-inpanel,
+  .billing-head > .billing-filter-booktype-desktop,
+  .billing-head > .billing-filter-chip-desktop{ display: none; }
+  /* R-15.8a-j: the three outcomes are toasts on the phone. The paragraphs are
+     the desktop's, and they must never grow the head this rule is shrinking. */
+  .billing-head > .billing-feedback{ display: none; }
+  /* Row 1: the search, full width. Row 2: Filtri + Esporta, half each. Row 3:
+     the CTA, the last thing before the chips — the grammar ratifiche
+     R-15.3-d/R-15.4-f/R-15.5-g already set for a primary action. */
+  .billing-head > .billing-search{ flex: 1 0 100%; width: auto; padding-top: 0; padding-bottom: 0; }
+  /* The TAP TARGET is the input, not the box around it: `.search` centres its
+     children, so a 44px wrapper still left `billing-filter-person` 18.13px tall
+     (measured) and a tap on the padding focused nothing. Same fix as 15.5-15.7. */
+  .billing-head > .billing-search .bare-input{ min-height: 44px; }
+  .billing-head > .billing-filters-trigger{ display: inline-flex; flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* `ExportMenu`'s own relative wrapper — its trigger is a GRANDCHILD, which is
+     why review 15.5 F4 had to reach it separately. */
+  .billing-head > div:has(> .btn){ flex: 1 1 0; }
+  .billing-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+  .billing-head > .btn.primary{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
+  /* The CTA carries a 16px glyph plus its 6px gap; the head's own budget is
+     tighter than the label needs at 320px. Same drop 15.5/15.7 made. */
+  .billing-head > .btn.primary > svg{ display: none; }
+
+  /* --- the transaction card (template 325-334) ---
+     `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, a
+     chip and an ellipsised line on the left, a value on the right). Only the
+     tracks and the flag's placement are new, so this is a MODIFIER, not a
+     family. `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)` and a long description would push its own track wider
+     than the card (the 13.10 F1 idiom, re-measured in 15.5/15.6/15.7). */
+  .mobile-row-transaction{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  /* `.mobile-row-side` carries `grid-column: 3` for the three-track person row
+     of 15.5; here the right column is the second track. */
+  .mobile-row-transaction > .mobile-row-side{ grid-column: 2; }
+  /* The status chip gets its OWN row, in column 1 only (never spanning: an item
+     that SPANS tracks contributes its max-content to all of them, the defect
+     15.5 measured). In the right-hand slot a "Stornato" pill would eat the
+     amount, which is the card's whole point. */
+  .mobile-row-transaction > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
+  /* Review 15.6 MINOR-2, the dot painted here too: `.mobile-row-flag .badge` is
+     `display: block` so `text-overflow` can work on a bare string, and inside a
+     block the `.b-dot` span falls back to INLINE, where its 6x6 never applies.
+     Both chips of this card carry a dot (`tone="bad" dot` / `tone="warn" dot`). */
+  .mobile-row-transaction > .mobile-row-flag .badge .b-dot{ display: inline-block; vertical-align: middle; margin-right: 5px; }
+  /* The amount never wraps and never shrinks: the `auto` track is sized on it
+     and the left track's `minmax(0, …)` absorbs the difference. */
+  .mobile-row-transaction > .mobile-row-side .mobile-row-amount{ white-space: nowrap; }
+
+  /* --- the "Filtri" panel ---
+     `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed header
+     and the anchored action; the body only needs the editors' own vertical
+     rhythm on one column. Every control of a panel is a control of the head
+     that moved into it (R4), so the 44px floor follows it there: measured
+     without these, the categoria select was 35px and the two date fields
+     38.84px with a 24x24 calendar trigger. Bounded by the panel class this
+     story owns; the `SlideOver` chassis and `.date-input` elsewhere are
+     untouched. */
+  .billing-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
+  .billing-filter-panel .input{ min-height: 44px; }
+  .billing-filter-panel .date-input-btn{ width: 36px; height: 36px; }
+
+  /* --- the three writes, inside the sheet (R-15.8a-g) ---
+     The riclassifica becomes explicit: three method buttons and a confirm,
+     never a `<select>` that writes on change. Equal thirds, 44px, wrapping
+     rather than shrinking below the floor. */
+  .billing-method-choice{ display: flex; gap: 8px; flex-wrap: wrap; }
+  .billing-method-choice > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* The fields of operations with a real accounting effect: measured 34.84px
+     (importo), 36.84px (motivo della rettifica) without this. Anchored to a
+     class of THIS story, never to `.bottom-sheet-step` — that one is shared
+     with the registro voli's storno and the transiti's closure (15.6/15.7). */
+  .billing-sheet-step .input{ min-height: 44px; }
+
+  /* --- "Saldi negativi": the scroller stays, its rows grow ---
+     61 rows behind a 220px window, with 44px targets, shows four names; the
+     window grows and every link becomes a real target. The list keeps its own
+     scroller (it is a secondary card at the bottom of a long page), and the
+     sweep of AC 11 discriminates "clipped inside this scroller" from "covered
+     by the tab bar". */
+  .billing-negative-list{ max-height: 320px; }
+  .billing-negative-row{ align-items: center; min-height: 44px; }
+  /* The card's own "Vedi tutte le persone" link measured 137.14x15.94 — the
+     smallest target left on the page after the sweep, and the only one of this
+     card AC 6 had not named. Anchored to the card's own class. */
+  .billing-negative-card > .card-head > a{ display: inline-flex; align-items: center; min-height: 44px; }
+
+  /* --- "Nuova transazione": the six fields of the full-screen form (TD (k), AC 15 b) ---
+     R3 was already satisfied by `SlideOver`'s mobile mode (measured: 0,0
+     375x812, `.so-foot` anchored at the bottom, `transaction-submit` 161.39x44),
+     but the fields inside it were 34.84-38.84px with a 24x24 calendar trigger.
+     Anchored to the form's OWN class, inside the phone query, so the desktop is
+     untouched by construction — and re-measured at 1280 to prove it. The ✕ of
+     the `SlideOver` chassis (32x32) and the typeahead's own 36px options are
+     NOT touched here: they belong to a primitive with eleven consumers (TD (k),
+     declared, not closed). */
+  .transaction-form .input{ min-height: 44px; }
+  .transaction-form .date-input-btn{ width: 36px; height: 36px; }
+
+  /* R-15.8a-f, the other half: the two secondary cards stop being two 151.5px
+     columns with a horizontal scroller each. Stacking alone is not enough,
+     though: measured after it, "Per categoria" still had 259px of content in
+     226 at 320px (293 in 281 at 375px) and "Saldi negativi" 282 in 226 — the
+     three mono values and a free-text name do not fit one line on a phone. */
+  .billing-split{ grid-template-columns: 1fr; }
+  .billing-cat-line{ flex-wrap: wrap; }
+  .billing-cat-name{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A surname is one unbreakable token: it ellipsises rather than pushing the
+     row past the card (the 15.5 idiom). */
+  .billing-negative-row > a{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* --- ExportMenu as a bottom sheet (R-15.8a-h) ---
+     Measured pre-fix at 375px: the popover sat at x = -29.09 on BOTH the
+     Contabilità and the Prenotazioni — 29px off screen to the left — and its
+     Italian entries were 53.69px tall on the Contabilità (34.84 elsewhere).
+     The sheet form comes from `.mobile-sheet*`, which is declared LATER in this
+     file than `.popover` and therefore already wins on every property both set;
+     only `top` (which `.popover` sets and the sheet does not) and the flex gap
+     have to be undone here, plus the grabber the desktop popover hides. */
+  .export-menu-sheet > .mobile-sheet-panel{ top: auto; gap: 0; }
+  .export-menu-sheet .mobile-sheet-grabber{ display: block; }
+  /* The entries: full-width and above the 44px floor, on every one of the nine
+     consumers — the guard is written on the REQUIREMENT (43.5), never on the
+     value obtained. */
+  .export-menu-panel .pop-row > .btn{ min-height: 44px; }
+}

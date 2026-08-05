@@ -234,7 +234,20 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
           )}
         </div>
       ) : (
-        <form id="transaction-form" ref={formRef} data-testid="transaction-form" onSubmit={(event) => { event.preventDefault(); void submit(); }} noValidate>
+        // `.transaction-form` is the anchor story 15.8a's own CSS block uses to
+        // put the 44px floor under this form's six fields on a phone (AC 15 b):
+        // never `.form-grid` or `.input`, which every editor in the app shares.
+        <form
+          id="transaction-form"
+          className="transaction-form"
+          ref={formRef}
+          data-testid="transaction-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+          noValidate
+        >
           <div className="form-grid">
             <Field label={labels.kind}>
               <Select value={kind} onChange={(event) => setKind(event.target.value as Kind)} data-testid="transaction-kind">

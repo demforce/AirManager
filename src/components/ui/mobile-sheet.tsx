@@ -62,10 +62,27 @@ export type MobileSheetProps = {
   label: string;
   /** `data-testid` of the sheet root; the scrim gets `<testId>-scrim` (mobile-only names, see `mobile-nav.tsx`'s testid convention). */
   testId: string;
+  /**
+   * Extra classes on the root / scrim / panel (story 15.8a, AC 8). The one
+   * consumer is `ExportMenu`, which is a bottom sheet at <=640px and the
+   * SAME popover it has always been above it: the epic's architecture allows
+   * no JS width switch and no second tree (five page-level e2e assertions
+   * read exactly one trigger and one link per voice, AD-4), so the container
+   * has to be a single node that changes shape in CSS. Passing `.popover`/
+   * `.popover-scrim` here reuses the existing desktop styling instead of
+   * re-declaring it — no new colour literal, no duplicated shadow.
+   */
+  className?: string;
+  scrimClassName?: string;
+  panelClassName?: string;
   children: ReactNode;
 };
 
-export function MobileSheet({ open, onClose, label, testId, children }: MobileSheetProps) {
+function classes(...names: (string | undefined)[]): string {
+  return names.filter((name) => name !== undefined && name !== '').join(' ');
+}
+
+export function MobileSheet({ open, onClose, label, testId, className, scrimClassName, panelClassName, children }: MobileSheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const tokenRef = useRef<object>({});
 
@@ -77,7 +94,14 @@ export function MobileSheet({ open, onClose, label, testId, children }: MobileSh
     if (evicted && evicted.token !== tokenRef.current) evicted.close();
 
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    panelRef.current?.focus();
+    // `preventScroll` (story 15.8a): a sheet is `position: fixed` at the bottom
+    // of the viewport, so it is in view by construction and the browser's
+    // scroll-into-view has nothing to do — EXCEPT for the one consumer that is
+    // not a sheet above 640px. `ExportMenu`'s popover is `position: absolute`
+    // inside the page, and focusing it scrolled `.main` by up to 461px on the
+    // scheda persona (measured on logbook/ppr/movements/person at 1280): a
+    // desktop this story declares invariant does not jump when a menu opens.
+    panelRef.current?.focus({ preventScroll: true });
     const handleKeydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
@@ -92,9 +116,9 @@ export function MobileSheet({ open, onClose, label, testId, children }: MobileSh
   if (!open) return null;
 
   return (
-    <div className="mobile-sheet" data-testid={testId}>
-      <div className="mobile-sheet-scrim" onClick={onClose} data-testid={`${testId}-scrim`} />
-      <div className="mobile-sheet-panel" role="dialog" aria-label={label} tabIndex={-1} ref={panelRef}>
+    <div className={classes('mobile-sheet', className)} data-testid={testId}>
+      <div className={classes('mobile-sheet-scrim', scrimClassName)} onClick={onClose} data-testid={`${testId}-scrim`} />
+      <div className={classes('mobile-sheet-panel', panelClassName)} role="dialog" aria-label={label} tabIndex={-1} ref={panelRef}>
         <div className="mobile-sheet-grabber" />
         {children}
       </div>

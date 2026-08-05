@@ -2504,6 +2504,32 @@
         "placeholder": "Cerca...",
         "noResults": "Nessun risultato."
       }
+    },
+    "mobile": {
+      "bookTypeAll": "Tutti",
+      "unattributedChip": "Non attribuiti",
+      "filters": "Filtri",
+      "filtersCount": "Filtri ({count})",
+      "filtersTitle": "Filtri del registro",
+      "apply": "Applica",
+      "close": "Chiudi",
+      "back": "Indietro",
+      "openDetail": "Apri dettaglio",
+      "empty": "Nessun movimento con questi filtri.",
+      "source": "Origine",
+      "sourceAccount": "Conto pilota",
+      "sourceCash": "Cassa",
+      "reference": "Riferimento",
+      "id": "Identificativo",
+      "reclassify": "Assegna metodo",
+      "reclassifyConfirm": "Conferma metodo",
+      "unattributedMethod": "Non attribuito",
+      "kpiResult": "Risultato",
+      "kpiAvailable": "Disponibile",
+      "kpiDeposits": "Acconti",
+      "openPanel": "Apri dettaglio",
+      "treasurySub": "Saldo corrente",
+      "depositsSub": "Debito verso i piloti"
     }
   },
   "ReportsPage": {

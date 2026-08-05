@@ -9,6 +9,12 @@
  * every number arrives ALREADY computed by `getBillingSummary` (Billing-1),
  * this component only formats and lays them out.
  *
+ * Story 15.8a (R-15.8a-c) adds the phone face — a tappable KPI per riquadro,
+ * detail in a sheet — as a CLIENT island (`billing-panels-mobile.tsx`), the
+ * smallest thing that needs the open/closed state (AD-1). This file stays a
+ * server component: the same numbers, from the same object, are simply
+ * passed down.
+ *
  * The "Istruttori" KPI tile the old row had (owed MTD, a single aggregate)
  * is NOT relocated here (Dev Notes, AC 1) — it doesn't fit the three-book
  * model (instructor payouts are already inside `result.costCents`, via
@@ -20,6 +26,7 @@ import { Link } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
 import type { BillingSummary } from '@/server/services/billing-summary.service';
+import { BillingPanelsMobile, type BillingPanelsMobileLabels } from './billing-panels-mobile';
 
 export type BillingPanelsLabels = {
   result: { title: string; revenue: string; cost: string; net: string };
@@ -35,6 +42,8 @@ export type BillingPanelsProps = {
   /** The secchiello's own filter link (story Billing-2, AC 3) — only rendered when `treasury.unattributedCount > 0` (spec §8: never hidden while non-empty; review F1 — gated on count, not the summed amount, since two opposite-signed unattributed rows sum to 0 but leave the secchiello reachable). */
   unattributedHref: { pathname: '/dashboard/billing'; query: Record<string, string> };
   labels: BillingPanelsLabels;
+  /** Phone-only strings of the KPI strip and its three sheets (story 15.8a, R-15.8a-c). */
+  mobileLabels: BillingPanelsMobileLabels;
 };
 
 /** `--ok`/`--bad` raw are tuned for a small accent (a dot, a badge's own paired ink) and fail WCAG AA as body-sized TEXT directly on `--panel` in light theme (canvas-measured, see the `.stat-tone-*` doc-comment in airops.css) — `.stat-tone-ok`/`.stat-tone-bad` swap in a darker light-mode-only literal instead, same technique `.badge.*` already established. */
@@ -74,70 +83,85 @@ function TotalRow({ label, value, testId, tone }: { label: string; value: string
   );
 }
 
-export function BillingPanels({ summary, monthLabel, moneyLocale, locale, unattributedHref, labels }: BillingPanelsProps) {
+export function BillingPanels({ summary, monthLabel, moneyLocale, locale, unattributedHref, labels, mobileLabels }: BillingPanelsProps) {
   const { result, treasury, deposits } = summary;
 
   return (
-    <div className="billing-panels">
-      <div className="card" data-testid="billing-panel-result">
-        <div className="card-head">
-          <div className="card-title">{labels.result.title}</div>
-          <span className="card-sub">{monthLabel}</span>
+    <>
+      {/* Phone face (story 15.8a): a tappable KPI per riquadro, the full detail
+          in a sheet. `display: none` above 640px through a class this page owns
+          — the desktop `.billing-panels` below is the one that disappears under
+          it, and both sides are measured (AC 12 i/ii). */}
+      <BillingPanelsMobile
+        summary={summary}
+        monthLabel={monthLabel}
+        moneyLocale={moneyLocale}
+        locale={locale}
+        unattributedHref={unattributedHref}
+        labels={labels}
+        mobile={mobileLabels}
+      />
+      <div className="billing-panels">
+        <div className="card" data-testid="billing-panel-result">
+          <div className="card-head">
+            <div className="card-title">{labels.result.title}</div>
+            <span className="card-sub">{monthLabel}</span>
+          </div>
+          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <StatRow label={labels.result.revenue} value={formatCents(result.revenueCents, moneyLocale)} testId="billing-panel-revenue" />
+            <StatRow label={labels.result.cost} value={formatCents(-result.costCents, moneyLocale)} testId="billing-panel-cost" tone={result.costCents > 0 ? 'bad' : undefined} />
+            <TotalRow label={labels.result.net} value={formatCents(result.netCents, moneyLocale)} testId="billing-panel-net" tone={result.netCents >= 0 ? 'ok' : 'bad'} />
+          </div>
         </div>
-        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <StatRow label={labels.result.revenue} value={formatCents(result.revenueCents, moneyLocale)} testId="billing-panel-revenue" />
-          <StatRow label={labels.result.cost} value={formatCents(-result.costCents, moneyLocale)} testId="billing-panel-cost" tone={result.costCents > 0 ? 'bad' : undefined} />
-          <TotalRow label={labels.result.net} value={formatCents(result.netCents, moneyLocale)} testId="billing-panel-net" tone={result.netCents >= 0 ? 'ok' : 'bad'} />
-        </div>
-      </div>
 
-      <div className="card" data-testid="billing-panel-treasury">
-        <div className="card-head">
-          <div className="card-title">{labels.treasury.title}</div>
+        <div className="card" data-testid="billing-panel-treasury">
+          <div className="card-head">
+            <div className="card-title">{labels.treasury.title}</div>
+          </div>
+          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <StatRow label={labels.treasury.cash} value={formatCents(treasury.cashCents, moneyLocale)} testId="billing-panel-cash" />
+            <StatRow label={labels.treasury.bank} value={formatCents(treasury.bankCents, moneyLocale)} testId="billing-panel-bank" />
+            <StatRow label={labels.treasury.deposits} value={formatCents(deposits.totalCents, moneyLocale)} testId="billing-panel-deposits-note" />
+            <TotalRow label={labels.treasury.available} value={formatCents(treasury.availableCents, moneyLocale)} testId="billing-panel-available" tone={treasury.availableCents >= 0 ? 'ok' : 'bad'} />
+            {/* Review F1: gated on COUNT, not the summed amount — two unattributed rows of opposite sign sum to 0 but the secchiello is still non-empty (spec §8: never hidden while non-empty). */}
+            {treasury.unattributedCount > 0 ? (
+              <Link
+                href={unattributedHref}
+                locale={locale as AppLocale}
+                data-testid="billing-panel-unattributed-link"
+                className="stat-tone-warn"
+                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginTop: 2, textDecoration: 'underline' }}
+              >
+                <span>{labels.treasury.unattributed}</span>
+                <span className="mono num" data-testid="billing-panel-unattributed">
+                  {formatCents(treasury.unattributedCents, moneyLocale)}
+                </span>
+              </Link>
+            ) : null}
+          </div>
         </div>
-        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <StatRow label={labels.treasury.cash} value={formatCents(treasury.cashCents, moneyLocale)} testId="billing-panel-cash" />
-          <StatRow label={labels.treasury.bank} value={formatCents(treasury.bankCents, moneyLocale)} testId="billing-panel-bank" />
-          <StatRow label={labels.treasury.deposits} value={formatCents(deposits.totalCents, moneyLocale)} testId="billing-panel-deposits-note" />
-          <TotalRow label={labels.treasury.available} value={formatCents(treasury.availableCents, moneyLocale)} testId="billing-panel-available" tone={treasury.availableCents >= 0 ? 'ok' : 'bad'} />
-          {/* Review F1: gated on COUNT, not the summed amount — two unattributed rows of opposite sign sum to 0 but the secchiello is still non-empty (spec §8: never hidden while non-empty). */}
-          {treasury.unattributedCount > 0 ? (
-            <Link
-              href={unattributedHref}
-              locale={locale as AppLocale}
-              data-testid="billing-panel-unattributed-link"
-              className="stat-tone-warn"
-              style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginTop: 2, textDecoration: 'underline' }}
-            >
-              <span>{labels.treasury.unattributed}</span>
-              <span className="mono num" data-testid="billing-panel-unattributed">
-                {formatCents(treasury.unattributedCents, moneyLocale)}
-              </span>
-            </Link>
-          ) : null}
-        </div>
-      </div>
 
-      <div className="card" data-testid="billing-panel-deposits">
-        <div className="card-head">
-          <div className="card-title">{labels.deposits.title}</div>
-        </div>
-        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <StatRow label={labels.deposits.total} value={formatCents(deposits.totalCents, moneyLocale)} testId="billing-panel-deposits-total" />
-          <StatRow label={labels.deposits.exposure} value={formatCents(-deposits.exposureCents, moneyLocale)} testId="billing-panel-deposits-exposure" tone={deposits.exposureCents > 0 ? 'bad' : undefined} />
-          <StatRow label={labels.deposits.inRed} value={String(deposits.inRedCount)} testId="billing-panel-deposits-inred" />
-          {deposits.inRedCount > 0 ? (
-            <Link
-              href="/dashboard/pilots"
-              locale={locale as AppLocale}
-              data-testid="billing-panel-deposits-link"
-              style={{ fontSize: 11.5, marginTop: 2, textDecoration: 'underline', color: 'var(--ink-2)' }}
-            >
-              {labels.deposits.detailLink}
-            </Link>
-          ) : null}
+        <div className="card" data-testid="billing-panel-deposits">
+          <div className="card-head">
+            <div className="card-title">{labels.deposits.title}</div>
+          </div>
+          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <StatRow label={labels.deposits.total} value={formatCents(deposits.totalCents, moneyLocale)} testId="billing-panel-deposits-total" />
+            <StatRow label={labels.deposits.exposure} value={formatCents(-deposits.exposureCents, moneyLocale)} testId="billing-panel-deposits-exposure" tone={deposits.exposureCents > 0 ? 'bad' : undefined} />
+            <StatRow label={labels.deposits.inRed} value={String(deposits.inRedCount)} testId="billing-panel-deposits-inred" />
+            {deposits.inRedCount > 0 ? (
+              <Link
+                href="/dashboard/pilots"
+                locale={locale as AppLocale}
+                data-testid="billing-panel-deposits-link"
+                style={{ fontSize: 11.5, marginTop: 2, textDecoration: 'underline', color: 'var(--ink-2)' }}
+              >
+                {labels.deposits.detailLink}
+              </Link>
+            ) : null}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

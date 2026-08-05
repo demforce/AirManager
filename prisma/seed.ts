@@ -256,33 +256,56 @@ async function seedCashCategories(): Promise<void> {
  * description instead (find-or-skip), same rationale every other seed
  * function's `upsert` serves.
  */
-const UNATTRIBUTED_SEED_DESCRIPTION = 'Movimento storico pre-Billing-1 (seed)';
+/**
+ * TWO of them, one per CONSUMER (story 15.8a): the fixture is consumed by a
+ * real write and there is no way to restore it, so a single row cannot serve
+ * two specs. `billing-global.spec.ts` (last project of the serialized chain)
+ * reclassifies the first through the desktop inline `<select>`;
+ * `mobile-billing.spec.ts` reclassifies the second through the phone sheet's
+ * explicit choose-then-confirm step. Each guards on ITS OWN marker and skips
+ * when a previous run against the same dirty DB already consumed it — the
+ * trade-off review Billing-2 F4/F5 already accepted.
+ *
+ * Both are dated in 2019, outside every spec's isolation window, and neither
+ * is reachable through any HTTP writer: since Billing-1 AC2 (+ review F8/D2 on
+ * `completePprRequest`) every live path REQUIRES a `paymentMethod`, which is
+ * why an e2e cannot create its own.
+ */
+const UNATTRIBUTED_SEED_ROWS: readonly { description: string; amountCents: number; effectiveDate: string }[] = [
+  { description: 'Movimento storico pre-Billing-1 (seed)', amountCents: 500, effectiveDate: '2019-06-15' },
+  { description: 'Movimento storico pre-Billing-1 mobile (seed)', amountCents: 700, effectiveDate: '2019-06-16' },
+];
 
 async function seedUnattributedHistoricalMovement(): Promise<void> {
-  const existing = await prisma.cashMovement.findFirst({ where: { description: UNATTRIBUTED_SEED_DESCRIPTION }, select: { id: true } });
-  if (existing) {
-    return;
-  }
-
   const category = await prisma.cashCategory.findUnique({ where: { name: 'Altro' }, select: { id: true } });
   const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL }, select: { id: true } });
   if (!category || !admin) {
-    console.warn('Seed: "Altro" category or admin user not found — skipping the unattributed historical movement.');
+    console.warn('Seed: "Altro" category or admin user not found — skipping the unattributed historical movements.');
     return;
   }
 
-  await prisma.cashMovement.create({
-    data: {
-      categoryId: category.id,
-      amountCents: 500,
-      paymentMethod: null,
-      description: UNATTRIBUTED_SEED_DESCRIPTION,
-      effectiveDate: new Date('2019-06-15'),
-      actorUserId: admin.id,
-    },
-  });
+  let created = 0;
+  for (const row of UNATTRIBUTED_SEED_ROWS) {
+    const existing = await prisma.cashMovement.findFirst({ where: { description: row.description }, select: { id: true } });
+    if (existing) {
+      continue;
+    }
+    await prisma.cashMovement.create({
+      data: {
+        categoryId: category.id,
+        amountCents: row.amountCents,
+        paymentMethod: null,
+        description: row.description,
+        effectiveDate: new Date(row.effectiveDate),
+        actorUserId: admin.id,
+      },
+    });
+    created += 1;
+  }
 
-  console.log('Seed: 1 unattributed historical cash movement ready (story Billing-2, AC 3 secchiello).');
+  if (created > 0) {
+    console.log(`Seed: ${created} unattributed historical cash movement(s) ready (story Billing-2 AC 3 secchiello; story 15.8a phone twin).`);
+  }
 }
 
 /**

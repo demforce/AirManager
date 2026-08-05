@@ -169,6 +169,15 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             detailLink: t('panels.deposits.detailLink'),
           },
         }}
+        mobileLabels={{
+          kpiResult: t('mobile.kpiResult'),
+          kpiAvailable: t('mobile.kpiAvailable'),
+          kpiDeposits: t('mobile.kpiDeposits'),
+          openPanel: t('mobile.openPanel'),
+          treasurySub: t('mobile.treasurySub'),
+          depositsSub: t('mobile.depositsSub'),
+          close: t('mobile.close'),
+        }}
       />
 
       <BillingConsole
@@ -313,6 +322,27 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             genericError: t('newTransactionForm.genericError'),
             result: { title: t('newTransactionForm.result.title'), newBalance: t('newTransactionForm.result.newBalance'), close: t('newTransactionForm.result.close') },
             picker: { placeholder: t('newTransactionForm.picker.placeholder'), noResults: t('newTransactionForm.picker.noResults') },
+          },
+          mobile: {
+            bookTypeAll: t('mobile.bookTypeAll'),
+            unattributedChip: t('filters.unattributedChip'),
+            filters: t('mobile.filters'),
+            // Placeholder filled client-side (the count is client state) — `t.raw`, per the convention.
+            filtersCount: t.raw('mobile.filtersCount') as string,
+            filtersTitle: t('mobile.filtersTitle'),
+            apply: t('mobile.apply'),
+            close: t('mobile.close'),
+            back: t('mobile.back'),
+            openDetail: t('mobile.openDetail'),
+            empty: t('mobile.empty'),
+            source: t('mobile.source'),
+            sourceAccount: t('mobile.sourceAccount'),
+            sourceCash: t('mobile.sourceCash'),
+            reference: t('mobile.reference'),
+            id: t('mobile.id'),
+            reclassify: t('mobile.reclassify'),
+            reclassifyConfirm: t('mobile.reclassifyConfirm'),
+            unattributedMethod: t('mobile.unattributedMethod'),
           },
         }}
       />

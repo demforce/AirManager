@@ -2504,6 +2504,32 @@
         "placeholder": "Search...",
         "noResults": "No results."
       }
+    },
+    "mobile": {
+      "bookTypeAll": "All",
+      "unattributedChip": "Unattributed",
+      "filters": "Filters",
+      "filtersCount": "Filters ({count})",
+      "filtersTitle": "Ledger filters",
+      "apply": "Apply",
+      "close": "Close",
+      "back": "Back",
+      "openDetail": "Open detail",
+      "empty": "No entry matches these filters.",
+      "source": "Source",
+      "sourceAccount": "Pilot account",
+      "sourceCash": "Cash book",
+      "reference": "Reference",
+      "id": "Identifier",
+      "reclassify": "Assign method",
+      "reclassifyConfirm": "Confirm method",
+      "unattributedMethod": "Unattributed",
+      "kpiResult": "Result",
+      "kpiAvailable": "Available",
+      "kpiDeposits": "Deposits",
+      "openPanel": "Open detail",
+      "treasurySub": "Current balance",
+      "depositsSub": "Owed to pilots"
     }
   },
   "ReportsPage": {
