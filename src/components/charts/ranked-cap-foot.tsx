@@ -19,7 +19,46 @@
  * `reports-rank-*-row-*` page-level at 1280px, where every row must still be
  * there, and each testid must still match exactly one node at BOTH widths.
  */
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { RankedCap } from '@/lib/mobile-reports';
+
+export type RankedExpansion = {
+  expanded: boolean;
+  /** Pass as `onShowAll`: expands the list AND moves the focus off the button it is about to unmount. */
+  showAll: () => void;
+  /** Put on the `.ranked-rows` container, which must also carry `tabIndex={-1}`. */
+  rowsRef: RefObject<HTMLDivElement | null>;
+};
+
+/**
+ * Expansion state of one capped list, plus the single thing a "Mostra tutte"
+ * that unmounts itself has to get right.
+ *
+ * The foot is rendered only while collapsed, so the click destroys the button
+ * that received it and the focus falls back to `<body>` — measured, and it is
+ * the third time this epic (15.2 F1, 15.8a MINOR-2, review 15.8b MINOR-1): the
+ * next Tab of a keyboard reader restarts from the top of a document that the
+ * expansion just made thousands of pixels taller.
+ *
+ * DECLARED destination: the rows container itself, focused with
+ * `preventScroll` — the epic's own idiom for "the surface that just changed
+ * takes the focus" (`mobile-sheet.tsx:104` focuses its `tabIndex={-1}` panel
+ * the same way). It sits immediately before the removed button in the DOM, so
+ * the next Tab continues where the reader was instead of at the top of the
+ * page, and `preventScroll` keeps the viewport where the reader left it (the
+ * container starts several screenfuls above the button).
+ */
+export function useRankedExpansion(): RankedExpansion {
+  const [expanded, setExpanded] = useState(false);
+  const rowsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    rowsRef.current?.focus({ preventScroll: true });
+  }, [expanded]);
+
+  return { expanded, showAll: () => setExpanded(true), rowsRef };
+}
 
 export type RankedCapFootLabels = {
   /** `"Prime {shown} di {total}"` — client-interpolated, pass it with `t.raw`. */

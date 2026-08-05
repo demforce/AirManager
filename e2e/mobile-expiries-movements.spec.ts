@@ -1287,11 +1287,17 @@ test.describe('Story 15.7 — Scadenze e Voli in transito su telefono', () => {
           // 44px floor — through the page-owned classes `.reports-period` /
           // `.reports-rank-metrics`, never through `.segmented`, which is
           // exactly what this guard exists to check. So here the assertion is
-          // on the OWNER: the floor may only arrive with one of those classes.
+          // on the OWNER *and on the post-15.8b VALUE*: the floor must be
+          // there, and it may only arrive with one of those classes. The class
+          // match alone is unconditional markup, i.e. an assertion nothing
+          // could ever fail (review 15.8b LOW-3); the height is what makes the
+          // reports branch discriminate in both directions.
           // The "untouched" expectation below still runs on the two pages no
           // story owns, where a rule written on `.segmented` itself would
           // land anyway.
           expect(segmented.cls, `${url} .segmented owner class`).toMatch(/\breports-(period|rank-metrics)\b/);
+          expect(segmented.btnMinHeight, `${url} .segmented child min-height`).toBe('44px');
+          expect(segmented.btnH, `${url} .segmented button height`).toBeGreaterThanOrEqual(43.5);
         } else {
           expect(segmented.btnMinHeight, `${url} .segmented child min-height`).not.toBe('44px');
           if (segmented.rendered) {

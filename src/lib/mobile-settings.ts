@@ -21,13 +21,16 @@ export type ExpiryTypeSubLineInput = {
   validityLabel: string;
   /** Present ONLY when `blocksBooking` is true (the manoeuvre that feeds the 7.4/14.4 guards). */
   blocksLabel?: string | null;
-  /** Present ONLY when the type is deactivated — an active type says nothing. */
-  inactiveLabel?: string | null;
 };
 
-/** Sub-line of an `ExpiryType` card: scope, validity, and the two facts that are only worth a word when true. */
+/**
+ * Sub-line of an `ExpiryType` card: scope, validity, and the one fact that is
+ * only worth a word when true. The deactivated state is NOT here — it is the
+ * card's `Badge` (`ratings-card.tsx`), and a second channel for it would be a
+ * branch nothing renders (review LOW-2).
+ */
 export function expiryTypeSubLine(input: ExpiryTypeSubLineInput): string {
-  return joinSegments([input.scopeLabel, input.validityLabel, input.blocksLabel, input.inactiveLabel]);
+  return joinSegments([input.scopeLabel, input.validityLabel, input.blocksLabel]);
 }
 
 export type ExpiryTypeSheetSubInput = {
@@ -47,13 +50,11 @@ export type CashCategorySubLineInput = {
   movementsLabel: string;
   /** Present ONLY for the three system categories (`Ricariche`, `Compensi istruttori`, `PPR`). */
   systemLabel?: string | null;
-  /** Present ONLY when the category is deactivated. */
-  inactiveLabel?: string | null;
 };
 
-/** Sub-line of a `CashCategory` card. */
+/** Sub-line of a `CashCategory` card — the deactivated state lives in the card's `Badge`, not here (review LOW-2). */
 export function cashCategorySubLine(input: CashCategorySubLineInput): string {
-  return joinSegments([input.movementsLabel, input.systemLabel, input.inactiveLabel]);
+  return joinSegments([input.movementsLabel, input.systemLabel]);
 }
 
 export type CashCategorySheetSubInput = {

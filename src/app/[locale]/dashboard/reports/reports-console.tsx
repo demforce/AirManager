@@ -1,11 +1,10 @@
 'use client';
 
-import { useState } from 'react';
 import { BarChart } from '@/components/charts/bar-chart';
 import { LineChart } from '@/components/charts/line-chart';
 import { RankBars, type RankBarsRow } from '@/components/charts/rank-bars';
-import { RankedCapFoot, type RankedCapFootLabels } from '@/components/charts/ranked-cap-foot';
-import { RANKED_MOBILE_LIMIT, rankedCap } from '@/lib/mobile-reports';
+import { RankedCapFoot, useRankedExpansion, type RankedCapFootLabels } from '@/components/charts/ranked-cap-foot';
+import { RANKED_MOBILE_LIMIT, rankedCap, rankedTopIndexes } from '@/lib/mobile-reports';
 import { formatCents } from '@/lib/money';
 import type { StatsResponseDto } from '@/lib/schemas/stats';
 import { formatMinutes } from '@/lib/time';
@@ -65,8 +64,8 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
   // `RankBars` own theirs). This console is mounted without a `key`, so the
   // flags survive a `?period=` navigation exactly as `RankBars`' own
   // `metricIndex` already does — measured, not assumed (AD-3).
-  const [fleetExpanded, setFleetExpanded] = useState(false);
-  const [instructorsExpanded, setInstructorsExpanded] = useState(false);
+  const { expanded: fleetExpanded, showAll: showAllFleet, rowsRef: fleetRowsRef } = useRankedExpansion();
+  const { expanded: instructorsExpanded, showAll: showAllInstructors, rowsRef: instructorsRowsRef } = useRankedExpansion();
 
   const revenueData = stats.series.revenueCents.map((cents) => cents / 100);
   const hoursData = stats.series.flightMinutes.map((minutes) => minutes / 60);
@@ -89,6 +88,20 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
 
   const fleetCap = rankedCap(stats.fleet.length);
   const instructorsCap = rankedCap(stats.instructors.length);
+  /**
+   * WHICH rows the phone keeps (review MAJOR-1). `stats.fleet` arrives in
+   * `registration asc` (`stats.service.ts:230`), so a cap by DOM position
+   * showed the eight alphabetically-first aircraft — on a real fleet, eight
+   * rows of `0:00` — instead of the eight most flown ones the AC asks for.
+   * The DOM order is left exactly as it is: only the marking changes, so the
+   * desktop (where nothing is hidden) is untouched.
+   *
+   * "Ore istruttori" is NOT in the same situation and is left alone: the
+   * server sorts it `minutes desc, name asc` (`stats.service.ts:272`), i.e. by
+   * the very metric its bar and its value are drawn from, so there position IS
+   * rank — verified, not assumed.
+   */
+  const fleetTop = rankedTopIndexes(stats.fleet.map((aircraft) => aircraft.minutes));
 
   return (
     <>
@@ -134,10 +147,10 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
             </div>
           ) : (
             <>
-              <div className={`util-rows ranked-rows${fleetExpanded ? '' : ' ranked-rows-capped'}`}>
+              <div className={`util-rows ranked-rows${fleetExpanded ? '' : ' ranked-rows-capped'}`} ref={fleetRowsRef} tabIndex={-1}>
                 {stats.fleet.map((aircraft, i) => (
                   <div
-                    className={i >= RANKED_MOBILE_LIMIT ? 'util-row ranked-row-overflow' : 'util-row'}
+                    className={fleetTop.has(i) ? 'util-row' : 'util-row ranked-row-overflow'}
                     key={aircraft.registration}
                     data-testid={`reports-fleet-row-${aircraft.registration}`}
                     style={{ gridTemplateColumns: '90px 1fr 80px' }}
@@ -151,7 +164,7 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
                 ))}
               </div>
               {fleetExpanded ? null : (
-                <RankedCapFoot cap={fleetCap} total={stats.fleet.length} labels={labels.cap} onShowAll={() => setFleetExpanded(true)} testId="mobile-reports-fleet-cap" />
+                <RankedCapFoot cap={fleetCap} total={stats.fleet.length} labels={labels.cap} onShowAll={showAllFleet} testId="mobile-reports-fleet-cap" />
               )}
             </>
           )}
@@ -201,7 +214,7 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
             </div>
           ) : (
             <>
-              <div className={`util-rows ranked-rows${instructorsExpanded ? '' : ' ranked-rows-capped'}`}>
+              <div className={`util-rows ranked-rows${instructorsExpanded ? '' : ' ranked-rows-capped'}`} ref={instructorsRowsRef} tabIndex={-1}>
                 {stats.instructors.map((instructor, i) => (
                   <div
                     className={i >= RANKED_MOBILE_LIMIT ? 'util-row ranked-row-overflow' : 'util-row'}
@@ -224,7 +237,7 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
                   cap={instructorsCap}
                   total={stats.instructors.length}
                   labels={labels.cap}
-                  onShowAll={() => setInstructorsExpanded(true)}
+                  onShowAll={showAllInstructors}
                   testId="mobile-reports-instructors-cap"
                 />
               )}

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { RANKED_MOBILE_LIMIT, rankedCap } from '@/lib/mobile-reports';
-import { RankedCapFoot, type RankedCapFootLabels } from './ranked-cap-foot';
+import { RankedCapFoot, useRankedExpansion, type RankedCapFootLabels } from './ranked-cap-foot';
 
 /**
  * `RankBars` port (epic 12, story 12.10, AC 2) — 1:1 of
@@ -71,8 +71,12 @@ export function RankBars({ title, sub, rows, metrics, labelCol = 110, monoLabel 
    * asked to see the whole ranking, and re-hiding 137 aircraft because the
    * ranking was re-sorted would undo a request nobody withdrew — this
    * component keeps `metricIndex` across navigations for the same reason.
+   *
+   * Here the cap can stay POSITIONAL (review MAJOR-1 is about the two lists of
+   * `reports-console.tsx`): these rows are sorted by the selected metric one
+   * line below, so the first `RANKED_MOBILE_LIMIT` of them ARE the top ones.
    */
-  const [expanded, setExpanded] = useState(false);
+  const { expanded, showAll, rowsRef } = useRankedExpansion();
   const metric = metrics[metricIndex]!;
   const sorted = [...rows].sort((a, b) => (b.values[metric.key] ?? 0) - (a.values[metric.key] ?? 0));
   const max = Math.max(1, ...sorted.map((row) => row.values[metric.key] ?? 0));
@@ -98,7 +102,7 @@ export function RankBars({ title, sub, rows, metrics, labelCol = 110, monoLabel 
         </div>
       ) : (
         <>
-          <div className={`util-rows ranked-rows${expanded ? '' : ' ranked-rows-capped'}`}>
+          <div className={`util-rows ranked-rows${expanded ? '' : ' ranked-rows-capped'}`} ref={rowsRef} tabIndex={-1}>
             {sorted.map((row, i) => {
               const value = row.values[metric.key] ?? 0;
               return (
@@ -119,7 +123,7 @@ export function RankBars({ title, sub, rows, metrics, labelCol = 110, monoLabel 
               );
             })}
           </div>
-          {expanded ? null : <RankedCapFoot cap={cap} total={sorted.length} labels={capLabels} onShowAll={() => setExpanded(true)} testId={capTestId} />}
+          {expanded ? null : <RankedCapFoot cap={cap} total={sorted.length} labels={capLabels} onShowAll={showAll} testId={capTestId} />}
         </>
       )}
     </div>

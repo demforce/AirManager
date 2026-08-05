@@ -41,3 +41,29 @@ export function rankedCap(total: number, limit: number = RANKED_MOBILE_LIMIT): R
   if (limit <= 0 || total <= limit) return { visibleCount: total, hiddenCount: 0, capped: false };
   return { visibleCount: limit, hiddenCount: total - limit, capped: true };
 }
+
+/**
+ * WHICH rows a capped list keeps on screen: the `limit` best ones BY THE
+ * METRIC, given the metric values in the list's own render order.
+ *
+ * AC 3 asks for "the first N BY THE SELECTED METRIC", and a cap that hides by
+ * POSITION only satisfies it when the list is already sorted by that metric.
+ * `stats.fleet` is not: `stats.service.ts:230` returns it in `registration asc`
+ * (`listAircraft`'s own order), so hiding rows 9..N showed eight aircraft
+ * chosen alphabetically — on the review's DB, eight rows of `0:00` while the
+ * aircraft with 2 hours sat behind "Mostra tutte" (review 15.8b MAJOR-1).
+ *
+ * The returned indexes are RANKS, not an order: the caller keeps rendering its
+ * rows in its own order and only marks the ones outside this set as overflow,
+ * so the DOM order — and therefore the desktop, where nothing is hidden — is
+ * untouched, and the server is not involved at all (AD-10).
+ *
+ * Ties are broken by the row's own position, which for `fleet` means by
+ * registration: with more rows at the same value than there are seats, the same
+ * rows win every render instead of depending on `sort` stability.
+ */
+export function rankedTopIndexes(values: number[], limit: number = RANKED_MOBILE_LIMIT): Set<number> {
+  const all = values.map((_, index) => index);
+  if (limit <= 0 || values.length <= limit) return new Set(all);
+  return new Set(all.sort((a, b) => (values[b] ?? 0) - (values[a] ?? 0) || a - b).slice(0, limit));
+}

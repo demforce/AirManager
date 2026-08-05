@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 /**
  * Statistiche on a phone (story 15.8b, R-15.8b-b/c/e).
@@ -217,6 +218,59 @@ async function createAircraft(page: Page, tag: string): Promise<{ id: string; re
   return { id: ((await response.json()) as { id: string }).id, registration };
 }
 
+/**
+ * An aircraft that has actually FLOWN, with a registration that sorts at the
+ * very END of `registration asc` — which is the order `stats.fleet` arrives in
+ * (`stats.service.ts:230`).
+ *
+ * That combination is the whole point (review MAJOR-1): with the flown
+ * aircraft last alphabetically and eight or more idle ones before it, a cap
+ * that hides by DOM POSITION shows eight rows of `0:00` and hides the only row
+ * with hours, while a cap that hides by RANK keeps it. The flight is long (10h)
+ * so the aircraft is the top of the ranking even on a DB other specs are
+ * writing to in parallel.
+ */
+async function createFlownAircraft(page: Page, minutes: number): Promise<{ id: string; registration: string }> {
+  const aircraft = await createAircraft(page, 'ZZ');
+  const rate = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour: 12000, validFrom: '2020-01-01' } });
+  expect(rate.status()).toBe(201);
+
+  const suffix = uniqueSuffix();
+  const person = await page.request.post('/api/v1/people', { data: { firstName: 'Reports', lastName: `Cap-${suffix}` } });
+  expect(person.status()).toBe(201);
+  const personId = ((await person.json()) as { id: string }).id;
+  const profile = await page.request.put(`/api/v1/people/${personId}/profiles/pilot`, { data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' } });
+  expect(profile.status()).toBe(200);
+  // Story 14.4: without the applicable blocking documents the flight is refused (422).
+  await ensureValidSeedExpiries(page, personId, 'PILOTS');
+
+  const takeoffAt = `${new Date().toISOString().slice(0, 10)}T10:00:00.000Z`;
+  const flight = await page.request.post('/api/v1/flights', {
+    data: {
+      aircraftId: aircraft.id,
+      personId,
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      takeoffAt,
+      landingAt: new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString(),
+      flightType: 'TOURISM',
+    },
+  });
+  expect(flight.status()).toBe(201);
+  return aircraft;
+}
+
+/** Every fleet row with its metric, read from the DOM: `H:MM` back to minutes, plus whether the cap is hiding it. */
+const FLEET_ROWS = (): { testid: string; visible: boolean; minutes: number }[] =>
+  [...document.querySelectorAll('[data-testid^="reports-fleet-row-"]')].map((el) => {
+    const [hours, mins] = (el.querySelector('.util-value')?.textContent ?? '0:00').split(':');
+    return {
+      testid: el.getAttribute('data-testid') ?? '',
+      visible: el.getClientRects().length > 0,
+      minutes: Number(hours) * 60 + Number(mins),
+    };
+  });
+
 test.describe('Statistiche mobile (story 15.8b)', () => {
   test('AC 1: la KPI strip resta UN solo nodo e la stessa strip a 375 e a 1280, e i sei controlli passano il pavimento dei 44px', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
@@ -321,7 +375,10 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
     // exceeds it. Archived in `afterAll` below, so `getStats().fleet` — a
     // GLOBAL list — goes back to what it was.
     const created: string[] = [];
+    const flown = await createFlownAircraft(page, 600);
+    created.push(flown.id);
     const before = ((await (await page.request.get('/api/v1/stats?period=year')).json()) as { fleet: unknown[] }).fleet.length;
+    // Idle aircraft, all sorting BEFORE the flown one (`I-CAP…` < `I-ZZ…`).
     for (let i = before; i <= RANKED_LIMIT + 1; i++) created.push((await createAircraft(page, 'CAP')).id);
 
     try {
@@ -338,6 +395,22 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
       const rankVisibleCapped = await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-rank-aircraft-row-"]');
       expect(rankVisibleCapped).toBe(RANKED_LIMIT);
 
+      // ...and they are the first N BY THE METRIC, which is what AC 3 asks for
+      // and what a cap by DOM position does NOT give on a list the server
+      // returns in `registration asc` (review MAJOR-1: eight rows of 0:00 while
+      // the only flown aircraft sat behind "Mostra tutte"). The property is
+      // asserted on the data the page itself renders, so it holds on any DB:
+      // no hidden row may beat a visible one.
+      const fleetRows = await page.evaluate(FLEET_ROWS);
+      const visibleRows = fleetRows.filter((row) => row.visible);
+      const hiddenRows = fleetRows.filter((row) => !row.visible);
+      expect(visibleRows).toHaveLength(RANKED_LIMIT);
+      expect(Math.max(...hiddenRows.map((row) => row.minutes))).toBeLessThanOrEqual(Math.min(...visibleRows.map((row) => row.minutes)));
+      // The concrete case, with the fixture built for it: the aircraft with the
+      // hours is on screen even though it sorts last alphabetically.
+      expect(visibleRows.map((row) => row.testid)).toContain(`reports-fleet-row-${flown.registration}`);
+      expect(visibleRows.find((row) => row.testid === `reports-fleet-row-${flown.registration}`)?.minutes).toBe(600);
+
       // ...and the row that declares it does not lie: it names both numbers.
       const foot = page.getByTestId('mobile-reports-fleet-cap');
       await expect(foot).toBeVisible();
@@ -345,8 +418,26 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
       await expect(foot).toContainText(`Mostra tutte (${total - RANKED_LIMIT})`);
       expect(await page.getByTestId('mobile-reports-fleet-cap-button').evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(TARGET_FLOOR);
 
-      await page.getByTestId('mobile-reports-fleet-cap-button').click();
+      // Expanded FROM THE KEYBOARD, because that is where the defect lives: the
+      // foot is rendered only while collapsed, so the click destroys the button
+      // that holds the focus. Pre-fix `document.activeElement` fell back to
+      // `<body>` and the next Tab restarted from the top of a document the
+      // expansion had just made thousands of pixels taller (review MINOR-1,
+      // third occurrence of the 15.2 F1 class). The declared destination is the
+      // rows container of THAT list, read literally.
+      await page.getByTestId('mobile-reports-fleet-cap-button').focus();
+      await page.keyboard.press('Enter');
       await expect(page.getByTestId('mobile-reports-fleet-cap')).toHaveCount(0);
+      expect(
+        await page.evaluate(() => {
+          const el = document.activeElement;
+          return {
+            tag: el ? el.tagName : 'NONE',
+            rankedRows: !!el && el.classList.contains('ranked-rows'),
+            ownsFleetRows: !!el && !!el.querySelector('[data-testid^="reports-fleet-row-"]'),
+          };
+        }),
+      ).toEqual({ tag: 'DIV', rankedRows: true, ownsFleetRows: true });
       expect(await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-fleet-row-"]')).toBe(total);
 
       // The expansion of ONE list is not the expansion of the others.

@@ -3482,7 +3482,12 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 
   /* The checkbox row of the expiry-type form: `blocksBooking` is the manoeuvre
      that feeds the 7.4/14.4 guards, and it was a 13px box in a 15px row. Same
-     idiom as `.membership-fee-override-label` (15.7). */
-  .settings-card form label:has(> input[type="checkbox"]){ min-height: 44px; align-items: center; }
-  .settings-card form input[type="checkbox"]{ width: 20px; height: 20px; flex-shrink: 0; }
+     idiom as `.membership-fee-override-label` (15.7): the `<label>` around it
+     is the real target and carries the 44px floor, the box itself is 24px —
+     the WCAG 2.2 minimum for a control that is not its own target (review
+     MINOR-2, PO decision 2026-08-05). The label's own `align-items` is NOT set
+     here: it comes from the inline `flex-start` of `ratings-card.tsx:588`,
+     which wins over any class rule (review LOW-1). */
+  .settings-card form label:has(> input[type="checkbox"]){ min-height: 44px; }
+  .settings-card form input[type="checkbox"]{ width: 24px; height: 24px; flex-shrink: 0; }
 }

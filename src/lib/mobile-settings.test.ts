@@ -15,7 +15,7 @@ function expectWellFormedSheetName(sub: string, title: string): void {
 }
 
 describe('expiryTypeSubLine', () => {
-  it('carries scope and validity, and says nothing about the two facts that are false', () => {
+  it('carries scope and validity, and says nothing about the fact that is false', () => {
     expect(expiryTypeSubLine({ scopeLabel: 'Piloti', validityLabel: '24 mesi' })).toBe('Piloti · 24 mesi');
   });
 
@@ -23,12 +23,8 @@ describe('expiryTypeSubLine', () => {
     expect(expiryTypeSubLine({ scopeLabel: 'Tutti', validityLabel: '12 mesi', blocksLabel: 'Blocca prenotazioni' })).toBe('Tutti · 12 mesi · Blocca prenotazioni');
   });
 
-  it('adds the deactivated state only when the type is deactivated, and never leaves a hole where a false fact was', () => {
-    expect(expiryTypeSubLine({ scopeLabel: 'Allievi', validityLabel: 'senza scadenza', blocksLabel: null, inactiveLabel: 'Disattivato' })).toBe('Allievi · senza scadenza · Disattivato');
-  });
-
   it('a type WITHOUT a validity reads "senza scadenza", never an empty slot', () => {
-    const sub = expiryTypeSubLine({ scopeLabel: 'Istruttori', validityLabel: 'senza scadenza', blocksLabel: undefined, inactiveLabel: undefined });
+    const sub = expiryTypeSubLine({ scopeLabel: 'Istruttori', validityLabel: 'senza scadenza', blocksLabel: undefined });
     expect(sub).toBe('Istruttori · senza scadenza');
     expect(sub).not.toMatch(/·\s*·/);
   });
@@ -58,10 +54,7 @@ describe('cashCategorySubLine', () => {
   it('leads with the movement count, and mentions "di sistema" only for a system category', () => {
     expect(cashCategorySubLine({ movementsLabel: '3 movimenti' })).toBe('3 movimenti');
     expect(cashCategorySubLine({ movementsLabel: '0 movimenti', systemLabel: 'Di sistema' })).toBe('0 movimenti · Di sistema');
-  });
-
-  it('adds the deactivated state last, and omits the system segment in between when it is absent', () => {
-    expect(cashCategorySubLine({ movementsLabel: '7 movimenti', systemLabel: null, inactiveLabel: 'Disattivata' })).toBe('7 movimenti · Disattivata');
+    expect(cashCategorySubLine({ movementsLabel: '7 movimenti', systemLabel: null })).toBe('7 movimenti');
   });
 });
 

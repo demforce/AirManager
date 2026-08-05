@@ -123,13 +123,20 @@ const DISPLAY_PROBE = (selector: string): string => {
  * it). Nothing else is excluded: the desktop table is `display: none` here and
  * its rows have no client rect, so the sweep skips them by geometry, not by an
  * exclusion that could hide a real defect (lesson 15.8a MINOR-1).
+ *
+ * A CHECKBOX is measured on the `<label>` that wraps it, because that is the
+ * box a finger actually hits (the label carries the 44px floor; the box itself
+ * is 24px — review MINOR-2, PO decision). It is a substitution, not a second
+ * exclusion: an unwrapped checkbox, or a label that lost its floor, is still
+ * reported.
  */
 const SMALL_TARGETS = (): { testid: string | null; cls: string; h: number }[] => {
   const out: { testid: string | null; cls: string; h: number }[] = [];
   const nodes = document.querySelectorAll('.page a, .page button, .page input, .page select, .page textarea, .mobile-sheet button, .mobile-sheet a, .mobile-sheet input');
   for (const el of Array.from(nodes)) {
     if (el.classList.contains('date-input-btn')) continue;
-    const rect = el.getBoundingClientRect();
+    const target = el instanceof HTMLInputElement && el.type === 'checkbox' ? (el.closest('label') ?? el) : el;
+    const rect = target.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) continue;
     if (rect.height < 43.5) out.push({ testid: el.getAttribute('data-testid'), cls: typeof el.className === 'string' ? el.className : '', h: Math.round(rect.height * 100) / 100 });
   }
@@ -262,6 +269,31 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       await page.setViewportSize(viewport);
       await gotoSettings(page);
       expect(await page.evaluate(SMALL_TARGETS)).toEqual([]);
+
+      // ...and with the catalogue FORMS OPEN, a state this sweep never visited
+      // before (review MINOR-2): the `blocksBooking` checkbox lived there at
+      // 20x20, i.e. a second target under the floor that the AC declared as
+      // one. Every control of the three forms is swept here, not just that one.
+      for (const addButton of ['ratings-add-button', 'medical-add-button', 'cash-category-add-button']) await page.getByTestId(addButton).click();
+      await expect(page.getByTestId('rating-form')).toBeVisible();
+      await expect(page.getByTestId('medical-form')).toBeVisible();
+      await expect(page.getByTestId('cash-category-form')).toBeVisible();
+      expect(await page.evaluate(SMALL_TARGETS), `forms open @${viewport.width}`).toEqual([]);
+
+      // The checkbox is not its own target — the 44px label around it is — but
+      // it is still the thing a finger aims at: >= 24px (PO decision), inside a
+      // label that carries the floor.
+      const checkbox = await page
+        .getByTestId('rating-form')
+        .getByLabel('Blocca prenotazioni')
+        .evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          const label = el.closest('label');
+          return { w: box.width, h: box.height, labelH: label ? label.getBoundingClientRect().height : 0 };
+        });
+      expect(checkbox.w, `checkbox width @${viewport.width}`).toBeGreaterThanOrEqual(24);
+      expect(checkbox.h, `checkbox height @${viewport.width}`).toBeGreaterThanOrEqual(24);
+      expect(checkbox.labelH, `checkbox label height @${viewport.width}`).toBeGreaterThanOrEqual(TARGET_FLOOR);
     }
 
     await page.setViewportSize(PHONE);
