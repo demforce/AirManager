@@ -64,6 +64,9 @@ type NegativeBalanceRow = { personId: string; firstName: string; lastName: strin
 /** Mirrors `cash.service.ts#CashReportCategoryTotal` — the "Per categoria" panel's own row (story Billing-2: replaces the old Σ-positivi `revenueByKind` bars). */
 type CategoryTotal = { categoryId: string; categoryName: string; inCents: number; outCents: number; netCents: number };
 
+/** The phone sheet's own step (story 15.8a): the detail, or one of the three writes rendered as a `secondStep`. */
+type SheetStep = 'none' | 'adjust' | 'reverse' | 'reclassify';
+
 /** Free-text pilot filter (story 13.5, AC 1) — `personQuery` replaces the old `SearchCombobox`-driven `personId`, same idiom as `pilots-console.tsx`'s own name filter. `bookType`/`categoryId`/`unattributed` (story Billing-2) replace the old combined `type` param. */
 export type BillingFilters = { dateFrom: string; dateTo: string; bookType: string; categoryId: string; personQuery: string; unattributed: boolean };
 
@@ -294,7 +297,7 @@ export function BillingConsole({
   // `key`, re-measured), which is exactly why the panel applies ONCE instead
   // of navigating per change (AD-3).
   const [sheetId, setSheetId] = useState<string | null>(null);
-  const [sheetStep, setSheetStep] = useState<'none' | 'adjust' | 'reverse' | 'reclassify'>('none');
+  const [sheetStep, setSheetStep] = useState<SheetStep>('none');
   const [sheetAmount, setSheetAmount] = useState('');
   const [sheetReason, setSheetReason] = useState('');
   const [sheetAmountError, setSheetAmountError] = useState(false);
@@ -303,9 +306,22 @@ export function BillingConsole({
   const [sheetMethod, setSheetMethod] = useState<PaymentMethodDto | null>(null);
   /** `null` while the panel is closed; the filter values being edited while it is open. */
   const [filterDraft, setFilterDraft] = useState<BillingFilters | null>(null);
-  const sheetPrimaryRef = useRef<HTMLButtonElement>(null);
+  /**
+   * One ref per action button and one per step's first control: the sheet moves
+   * focus INTO a step when it opens and BACK to the button that opened THAT
+   * step when it closes (AC 3). Review 15.8a MINOR-2: a single ref, held by the
+   * ACCOUNT branch's button alone, covered one branch out of three — on a CASH
+   * row it was `null`, so the return was a no-op and `document.activeElement`
+   * fell back to `<body>`, which is exactly the defect review 15.2 F1 named.
+   */
+  const sheetAdjustActionRef = useRef<HTMLButtonElement>(null);
+  const sheetReclassifyActionRef = useRef<HTMLButtonElement>(null);
+  const sheetReverseActionRef = useRef<HTMLButtonElement>(null);
   const sheetAmountRef = useRef<HTMLInputElement>(null);
   const sheetReasonRef = useRef<HTMLTextAreaElement>(null);
+  const sheetMethodRef = useRef<HTMLButtonElement>(null);
+  /** The step being LEFT, read by the focus effect to pick which button gets the focus back. */
+  const sheetPreviousStepRef = useRef<SheetStep>('none');
 
   function buildFilterQuery(next: BillingFilters): Record<string, string> {
     const query: Record<string, string> = {};
@@ -537,13 +553,23 @@ export function BillingConsole({
    * Review 15.2 F1: entering a second step removes the very button that was
    * pressed, and `document.activeElement` falls back to `<body>` — the dialog
    * context is lost for assistive technology even though the node survives.
-   * Inert while no sheet is open (both refs are null then), so `MobileSheet`'s
-   * own focus-on-open baseline is untouched.
+   * Both directions are covered on ALL THREE branches (review 15.8a MINOR-2):
+   * entering focuses the step's first control, leaving returns the focus to the
+   * button that opened THAT step — read from `sheetPreviousStepRef`, because by
+   * the time the effect runs the step is already `none` and the branch alone
+   * (ACCOUNT/CASH, or a row that offers two actions at once) cannot say which
+   * button the finger came from. Inert while no sheet is open (every ref is
+   * null then), so `MobileSheet`'s own focus-on-open baseline is untouched.
    */
   useEffect(() => {
+    const leaving = sheetPreviousStepRef.current;
+    sheetPreviousStepRef.current = sheetStep;
     if (sheetStep === 'adjust') sheetAmountRef.current?.focus();
     else if (sheetStep === 'reverse') sheetReasonRef.current?.focus();
-    else sheetPrimaryRef.current?.focus();
+    else if (sheetStep === 'reclassify') sheetMethodRef.current?.focus();
+    else if (leaving === 'adjust') sheetAdjustActionRef.current?.focus();
+    else if (leaving === 'reverse') sheetReverseActionRef.current?.focus();
+    else if (leaving === 'reclassify') sheetReclassifyActionRef.current?.focus();
   }, [sheetStep]);
 
   /** Re-read from `items` on every render: after a storno or a riclassifica the very same row comes back changed, and the sheet must not keep showing the stale copy it was opened with. */
@@ -1377,7 +1403,7 @@ export function BillingConsole({
                   <button
                     type="button"
                     className="btn primary"
-                    ref={sheetPrimaryRef}
+                    ref={sheetAdjustActionRef}
                     onClick={() => {
                       setSheetAmountError(false);
                       setSheetReasonError(false);
@@ -1393,6 +1419,7 @@ export function BillingConsole({
                   <button
                     type="button"
                     className="btn primary"
+                    ref={sheetReclassifyActionRef}
                     onClick={() => {
                       setSheetMethod(null);
                       setSheetError(null);
@@ -1408,6 +1435,7 @@ export function BillingConsole({
                   <button
                     type="button"
                     className="btn mini bad"
+                    ref={sheetReverseActionRef}
                     onClick={() => {
                       setSheetReasonError(false);
                       setSheetError(null);
@@ -1527,10 +1555,11 @@ export function BillingConsole({
                     scrolls a list also picks an option. Same PATCH, same body. */}
                 <p className="fld-hint">{labels.actions.reclassifyPlaceholder}</p>
                 <div className="billing-method-choice" role="group" aria-label={labels.actions.reclassifyPlaceholder}>
-                  {(['CASH', 'BANK_TRANSFER', 'POS'] as const).map((method) => (
+                  {(['CASH', 'BANK_TRANSFER', 'POS'] as const).map((method, index) => (
                     <button
                       key={method}
                       type="button"
+                      ref={index === 0 ? sheetMethodRef : undefined}
                       className={`btn ${sheetMethod === method ? 'primary' : ''}`}
                       aria-pressed={sheetMethod === method}
                       onClick={() => setSheetMethod(method)}

@@ -737,6 +737,28 @@ html[data-theme="dark"] .stat-tone-ok{ color: var(--ok); }
 html[data-theme="dark"] .stat-tone-bad{ color: var(--bad); }
 html[data-theme="dark"] .stat-tone-warn{ color: var(--warn); }
 
+/* ---------- flow-bar (story 15.8a, R-15.8a-i) ---------- */
+/* `.stat-tone-*`'s twin for GRAPHIC objects, and it lives here for that reason
+   (review 15.8a LOW-3 moved it out of the phone block it was written in: it is
+   a reusable contrast remedy valid at EVERY width, not a mobile rule, and the
+   next person looking for the medicine will look next to `.stat-tone-*`).
+   Measured: the two flow segments of "Per categoria" (`billing-console.tsx`)
+   were 2.47:1 (in) and 3.59:1 (out) in the LIGHT theme against their own sunken
+   track — the first under the 3:1 floor a graphic object has to meet (in dark
+   they were already 10.45 / 7.42). Mixing 30% of `--ink` into the token moves
+   the colour AWAY from the track in BOTH themes (the ink is near-black in
+   light, near-white in dark), the technique `.mobile-row-edge-*` established in
+   15.4 — same tokens, no new literal, no token changes value. Post-fix: 4.56 /
+   6.10 light, 12.36 / 9.87 dark.
+   Named for the SHAPE, not for the page, so story 15.8b's `.util-bar .seg`
+   (the same defect on the same two tokens) settles it here instead of taking a
+   second decision. ⚠️ Reuse is not literal, though: `.util-bar .seg.flown`
+   is (0,3,0) and beats a bare `.flow-bar-in` (0,1,0), so those bars need a
+   selector of equal weight (`.util-bar .seg.flow-bar-in`) or the `background`
+   dropped from `.seg.flown` — adding the class alone would change nothing. */
+.flow-bar-in{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
+.flow-bar-out{ background: color-mix(in oklch, var(--bad) 70%, var(--ink)); }
+
 /* Story 13.9: block-level alert/confirmation box for the (auth) forms
    (login/forgot-password/set-password) — same soft-bg + colored-text pairs
    as .badge.* above (was duplicated as inline styles per call site, so the
@@ -3041,9 +3063,10 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    three other inline declarations that a media query could never have
    overridden (`.billing-filter-range`, `.billing-search`,
    `.billing-negative-list`, `.export-menu-panel`), the same move 15.5/15.6/15.7
-   each had to make; (iv) the `ExportMenu`'s own chassis and the two contrast
-   fixes of R-15.8a-i, which are defects of BOTH faces and are corrected at
-   every width.
+   each had to make; (iv) the `ExportMenu`'s own chassis. The graphic half of
+   R-15.8a-i is a defect of BOTH faces and is corrected at every width, so it
+   does not live in this block at all: `.flow-bar-in`/`.flow-bar-out` sit next
+   to their text twin `.stat-tone-*` (review 15.8a LOW-3).
 
    The switch hangs off classes this page OWNS — `.billing-desktop-body`/
    `.billing-mobile`, `.billing-head`, `.billing-kpi-row` — never off
@@ -3053,19 +3076,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    `.segmented` (6 consumers), nor `.date-input` (5 pages): the two period
    fields are reached through `.billing-filter-inpanel` and the panel's own
    class. */
-
-/* Graphic objects on `--bg-sunken`: the two flow segments of "Per categoria"
-   measured 2.47:1 (in) and 3.59:1 (out) in the LIGHT theme against their own
-   sunken track — the first under the 3:1 floor a graphic object has to meet
-   (in dark they were already 10.45 / 7.42). Mixing 30% of `--ink` into the
-   token moves the colour AWAY from the track in BOTH themes (the ink is
-   near-black in light, near-white in dark), which is exactly the technique
-   `.mobile-row-edge-*` established in 15.4 — same tokens, no new literal, and
-   no token changes value. Named for the SHAPE, not for the page: story 15.8b's
-   own `.util-bar .seg` is the same defect on the same tokens and can reuse
-   these two classes rather than take a second decision about them. */
-.flow-bar-in{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
-.flow-bar-out{ background: color-mix(in oklch, var(--bad) 70%, var(--ink)); }
 
 /* The two mobile trees are in the DOM at every width (the switch is CSS only),
    so they must be `display: none` OUTSIDE the query too — otherwise the
@@ -3274,8 +3284,15 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .billing-cat-line{ flex-wrap: wrap; }
   .billing-cat-name{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* A surname is one unbreakable token: it ellipsises rather than pushing the
-     row past the card (the 15.5 idiom). */
-  .billing-negative-row > a{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+     row past the card (the 15.5 idiom) — and this link IS the target AC 6 asks
+     for at 44px: the ROW was already 44, but what a thumb hits is the `<a>`,
+     measured 18.13px with 13px of dead space above and below (review 15.8a
+     MINOR-1, 61 of them). The height comes from the line box, not from the
+     `display: inline-flex` idiom of the card head's own link two rules above:
+     as a flex item this link is already blockified, and making it a flex
+     CONTAINER would turn its text into an anonymous item, where `text-overflow`
+     does not apply — the ellipsis on this very selector would stop working. */
+  .billing-negative-row > a{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 44px; line-height: 44px; }
 
   /* --- ExportMenu as a bottom sheet (R-15.8a-h) ---
      Measured pre-fix at 375px: the popover sat at x = -29.09 on BOTH the

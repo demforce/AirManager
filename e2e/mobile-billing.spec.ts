@@ -178,7 +178,21 @@ const HIDDEN_SCROLLERS = (): { cls: string; cw: number; sw: number }[] => {
   return out;
 };
 
-/** Visible controls under the 44px floor, excluding the closed `SlideOver` and the `display: none` desktop tree. */
+/**
+ * Visible controls under the 44px floor. Two exclusions, both declared:
+ * the CLOSED `SlideOver` (its fields are in the DOM but unreachable) and the
+ * `display: none` desktop tree (measured at a width where it does not exist
+ * for the user).
+ *
+ * A third exception exists and is NOT an exclusion in code: the two calendar
+ * triggers of the "Filtri" panel and of the "Nuova transazione" form stay at
+ * 36x36 by PO decision (the 15.7 line: a nested trigger lives INSIDE a 44px
+ * box, `airops.css:2928` is the ratified precedent). They are out of this
+ * sweep's reach because it runs with both panels closed — stated here so the
+ * next reader knows it is a decision, not an oversight. The "Saldi negativi"
+ * links used to be excluded here too; review 15.8a MINOR-1 closed that gap —
+ * they are 44px now and the sweep covers them.
+ */
 const SMALL_TARGETS = (): { testid: string | null; cls: string; h: number }[] => {
   const out: { testid: string | null; cls: string; h: number }[] = [];
   const nodes = document.querySelectorAll(
@@ -187,7 +201,6 @@ const SMALL_TARGETS = (): { testid: string | null; cls: string; h: number }[] =>
   for (const el of Array.from(nodes)) {
     if (el.closest('.slideover:not(.open)')) continue;
     if (el.closest('.billing-desktop-body')) continue;
-    if (el.closest('.billing-negative-list')) continue;
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) continue;
     if (rect.height < 43.5) out.push({ testid: el.getAttribute('data-testid'), cls: typeof el.className === 'string' ? el.className : '', h: Math.round(rect.height * 100) / 100 });
@@ -402,6 +415,16 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     await page.getByTestId('transaction-row-mobile').first().click();
     await page.getByTestId('transaction-adjust-action-mobile').click();
 
+    // Review 15.8a MINOR-2, ACCOUNT branch: entering the step focuses its first
+    // field, leaving it returns the focus to the button that opened it. Asserted
+    // HERE, on a fixture that already exists, rather than in a test of its own:
+    // an ACCOUNT `actionable` row is a ricarica, and a new one would add money
+    // to the `fullyParallel` project that TD (j) asks not to grow.
+    await expect(page.getByTestId('transaction-adjust-amount-mobile')).toBeFocused();
+    await page.getByTestId('transaction-adjust-dismiss-mobile').click();
+    await expect(page.getByTestId('transaction-adjust-action-mobile')).toBeFocused();
+    await page.getByTestId('transaction-adjust-action-mobile').click();
+
     // Unparsable.
     await page.getByTestId('transaction-adjust-amount-mobile').fill('non un numero');
     await page.getByTestId('transaction-adjust-reason-mobile').fill('motivo');
@@ -469,6 +492,24 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     await gotoBilling(page, { categoryId: category.id });
     await page.getByTestId('transaction-row-mobile').first().click();
     await page.getByTestId('transaction-reverse-action-mobile').click();
+
+    // Review 15.8a MINOR-2, the branch the defect was measured on: leaving this
+    // step used to leave `document.activeElement` on `<body>` (the ref lived on
+    // the ACCOUNT button alone), so the dialog context was lost on two of the
+    // three writes. Read literally, the way the review read it.
+    await expect(page.getByTestId('transaction-reverse-reason-mobile')).toBeFocused();
+    await page.getByTestId('transaction-reverse-dismiss-mobile').click();
+    await expect(page.getByTestId('transaction-reverse-action-mobile')).toBeFocused();
+    expect(
+      await page.evaluate(() => {
+        const el = document.activeElement;
+        return el ? `${el.tagName}[${el.getAttribute('data-testid') ?? ''}]` : 'none';
+      }),
+    ).toBe('BUTTON[transaction-reverse-action-mobile]');
+    // …and the focus never leaves the dialog, which is what the defect cost.
+    expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
+    await page.getByTestId('transaction-reverse-action-mobile').click();
+
     // The reason is mandatory here too.
     await page.getByTestId('transaction-reverse-confirm-mobile').click();
     await expect(page.getByTestId('transaction-reverse-required-mobile')).toBeVisible();
@@ -501,6 +542,15 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
 
     const card = page.getByTestId('transaction-row-mobile').filter({ hasText: 'pre-Billing-1 mobile' });
     await card.click();
+    await page.getByTestId('transaction-reclassify-action-mobile').click();
+
+    // Review 15.8a MINOR-2, third branch: entering the step focuses its first
+    // control and leaving it returns the focus to the button that opened it —
+    // this row is the only one that can offer "Assegna metodo", so the branch
+    // is asserted here, where its fixture already lives.
+    await expect(page.getByTestId('transaction-reclassify-method-mobile-CASH')).toBeFocused();
+    await page.getByTestId('transaction-reclassify-dismiss-mobile').click();
+    await expect(page.getByTestId('transaction-reclassify-action-mobile')).toBeFocused();
     await page.getByTestId('transaction-reclassify-action-mobile').click();
 
     // Choosing alone must NOT write: that is the whole point of R-15.8a-g.
@@ -960,6 +1010,64 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     expect(await page.evaluate(SMALL_TARGETS)).toEqual([]);
     await page.addStyleTag({ content: '.billing-head > .billing-filters-trigger{ min-height: 20px !important; height: 20px !important; }' });
     expect(await page.evaluate(SMALL_TARGETS)).not.toEqual([]);
+    await page.reload();
+
+    // (vi-bis) the 44px floor on the "Saldi negativi" LINKS (review 15.8a
+    // MINOR-1: the row was 44 but the `<a>` a thumb hits was 18.13). The card
+    // is gated on a GLOBAL condition (`negativeBalances.length > 0`) that no
+    // test may create without writing money into the `fullyParallel` project
+    // (TD (j)), so the rule is exercised on an INJECTED row — the same DOM
+    // injection (vii) uses below. It proves three things at once: the rule
+    // reaches the link, the link clears the floor, and the sweep no longer
+    // excludes this list (with the old exclusion the shrunk link would stay
+    // invisible to it and this block would pass on a broken page).
+    await page.evaluate(() => {
+      const card = document.createElement('div');
+      card.className = 'card billing-negative-card';
+      card.innerHTML =
+        '<div class="card-body billing-negative-list">' +
+        '<div class="billing-negative-row" style="display:flex;justify-content:space-between;font-size:12.5px" data-testid="injected-negative-row">' +
+        '<a href="#">Cognome molto lungo che non entra nella riga Nome</a>' +
+        '<span class="mono num stat-tone-bad">-1.216,22 €</span></div></div>';
+      document.querySelector('.page')!.appendChild(card);
+    });
+    const injectedLinkHeight = await page.evaluate(
+      () => Math.round(document.querySelector('[data-testid="injected-negative-row"] a')!.getBoundingClientRect().height * 100) / 100,
+    );
+    expect(injectedLinkHeight).toBeGreaterThanOrEqual(TARGET_FLOOR);
+    expect(await page.evaluate(SMALL_TARGETS)).toEqual([]);
+    await page.addStyleTag({ content: '.billing-negative-row > a{ min-height: 0 !important; line-height: normal !important; }' });
+    expect(await page.evaluate(SMALL_TARGETS)).not.toEqual([]);
+    await page.reload();
+
+    // (vii-bis) `.billing-head > .billing-feedback{ display: none }` — the rule
+    // is unreachable BY FLOW on a phone (record §3e: the three desktop
+    // `<p role="status">` are only ever set by the desktop body and the inline
+    // `<select>`, both `display: none` at 375). Unreachable by flow is not
+    // unprovable (review 15.8a LOW-2): the paragraph is INJECTED into the head,
+    // exactly as (vii) injects a second empty state. At 375 it must stay hidden
+    // and leave the head's height untouched; at 1280 the very same node is
+    // visible, which is what makes the phone rule discriminant.
+    const feedbackProbe = async (): Promise<{ before: number; display: string; after: number }> =>
+      page.evaluate(() => {
+        const head = document.querySelector('.billing-head')!;
+        const before = Math.round(head.getBoundingClientRect().height * 100) / 100;
+        const p = document.createElement('p');
+        p.className = 'billing-feedback';
+        p.setAttribute('role', 'status');
+        p.textContent = 'Rettifica registrata';
+        head.appendChild(p);
+        const display = getComputedStyle(p).display;
+        const after = Math.round(head.getBoundingClientRect().height * 100) / 100;
+        p.remove();
+        return { before, display, after };
+      });
+    const phoneFeedback = await feedbackProbe();
+    expect(phoneFeedback.display).toBe('none');
+    expect(phoneFeedback.after).toBe(phoneFeedback.before);
+    await page.setViewportSize(DESKTOP);
+    const desktopFeedback = await feedbackProbe();
+    expect(desktopFeedback.display).toBe('block');
   });
 
   test('AC 12 viii/ix: i selettori nuovi non raggiungono gli overlay di questa pagina ne il resto dell\'app', async ({ page }) => {
