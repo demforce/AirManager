@@ -431,3 +431,211 @@ Per confronto la 15.7 toccava **1.647 righe** con **3** scritture e **nessuno** 
 **Opzioni**: **A** toast su mobile, `<p>` al desktop (i `<p>` a `display:none` sotto 640px, regola ancorata alla testata della Contabilità), **senza** aggiungere il toast al desktop · **B** toast su entrambe (ripete il doppio annuncio su tre feedback) · **C** i tre `<p>` restano ovunque.
 
 **Decisione PO: A** — esiti a **toast su mobile**, `<p>` al **desktop**, **niente doppio annuncio**. Il toast serve dove l'azione avviene lontano dal feedback (dentro uno sheet); il `<p>` basta dove sono adiacenti.
+
+---
+---
+
+# Dev Agent Record — story 15.8a (Opus 5 xhigh, 2026-08-05)
+
+Status: **implementata, gates verdi, suite completa CI=1 su DB fresco eseguita** (esito in §9). Nessun commit: la consegna è il codice + questo record.
+
+## 1. Verifica della ricognizione (conferme e correzioni, tutte MISURATE)
+
+Baseline ricostruita su questa macchina (build di produzione, `npm run start`) dopo aver ripopolato il DB fresco con le fixture che riproducono le condizioni della ricognizione (26+21 movimenti di cassa del mese, 23 categorie, 10 saldi negativi, 2 pagine di registro). Script e JSON in `/tmp/.../scratchpad/158a-A-geom.mjs` + `158a-A-baseline.json`.
+
+### Confermato alla cifra
+| fatto della ricognizione | misura ripetuta |
+|---|---|
+| `.card-head` registro **265,66** @375 **e** @390, IT **e** EN | **265,66** in tutti e quattro i casi |
+| **350,89** @320 | **350,89** |
+| **308,5** con un filtro attivo @375 | **308,5** |
+| **393,73** @320 col chip secchiello | **393,73** |
+| **180,53** @641 IT vs **152,23** @641 EN (baseline sensibile al locale) | identico |
+| **109,23** @1280 | **109,23** |
+| `.students` `cw 317 / sw 988` @375; 990/990 @1280; 678/988 @800; 519/988 @641 | identico |
+| `.split` inline: **151,5+151,5** @375, **124+124** @320, **488/488** @1280 | identico |
+| paginazione `billing-page-prev/next` **38,3×34,8** | **38,34×34,84** |
+| campo pilota **18,1px** | **18,13** |
+| trigger calendario **24×24**, `filter-date-range` 271,9×37,4 | **24×24**, date input 128×37,39 |
+| CTA 151,5×34,8, Esporta 103,9×34,8, bookType 120×35 | identico |
+| overflow orizzontale **di pagina 0** a 320/375/390/641/800/1280 | **0** ovunque (⇒ una guardia sull'overflow di pagina è davvero CIECA qui) |
+| `.search` `cw 188 / sw 190` (TD (g)) | identico |
+| contrasti chiari: byCat in **2,73**, out **3,96**, negBalance **3,96**, barra in **2,47**, barra out **3,59** | identici alla seconda cifra |
+| contrasti scuri: byCat **9,3 / 6,61**, barre **10,45 / 7,42** | identici |
+| `ExportMenu` @375 su Contabilità: `x = -29,1`, `inside: false`, voci **53,7px**, z 20 | **x = −29,09**, inside false, voci **53,69**, z 20 |
+| `TransactionEditor` @375: pannello `0,0 375×812`, `.so-foot` in basso, submit 161,4×44, otto controlli 34,84-38,84 + ✕ 32 + calendario 24 | identico |
+| `BillingConsole` **rimonta** a ogni navigazione | **misurato**, non dedotto: `{"before":"ZZZ-remount-probe","after":"","remounted":true}` |
+| la pagina è ADMIN-only | confermato per pilota/allievo/istruttore a 375 **e** 1280 (AC 14) |
+
+### Correzioni / precisazioni
+1. **`.billing-panels` non misura 553,3 ma 579,92** a 375: la ricognizione girava su un DB col **secchiello vuoto**, quindi senza la riga-link `billing-panel-unattributed-link` e senza `billing-panel-deposits-link`. Con entrambi i link presenti (il caso reale che la story vuole preservare) i tre riquadri costano **579,92**. Di conseguenza la prima riga non parte da 1041,6 ma da **1068,23** (131% di 812; a 320: **1153,47**, 203%). Il difetto è quindi **peggiore** di quanto dichiarato, non migliore.
+2. **`billing-filter-category` non misura 250px in assoluto**: la larghezza dipende dal nome di categoria più lungo. Con 23 categorie qui misura **182×35**; è quella larghezza che fa mandare a capo una riga in più della testata. Chi rimisura con meno categorie ottiene **222,66** invece di 265,66: *la baseline della testata è sensibile ai DATI* (stessa classe della lezione 15.7 C2, qui su un `<select>`).
+3. **La misura "3 link della card Saldi negativi sotto la tab bar" è ambigua e va discriminata**: riprodotta, il link colpevole risulta **contemporaneamente** `clipped: true` dentro il proprio scroller `maxHeight:220` **e** `coveredByBar: true`. Cioè la baseline non poteva distinguere le due cose. La discriminazione è stata implementata sia nello sweep di misura sia nella guardia e2e (si salta un controllo che è fuori dal rettangolo visibile del proprio scroller).
+4. **La paginazione era coperta dalla top bar, non dalla tab bar**: allo scroll a fondo pagina i due `billing-page-*` colpivano `HEADER.mobile-topbar`. È l'eccezione dichiarata della 15.1 (barra sticky), non un difetto di questa story — ma la ricognizione non lo elencava.
+5. **`bookings` è il SECONDO consumer col popover fuori dal viewport**: `x = −29,09` anche su `/dashboard/bookings` @375. La ricognizione citava solo la Contabilità.
+6. **Nessun writer HTTP può creare una riga CASH non attribuita** (dal Billing-1 AC 2 + review F8/D2 su `completePprRequest` ogni percorso richiede `paymentMethod`). Il piano di test chiedeva che «il test del secchiello crei la propria riga»: **è impossibile**. V. §7 (deviazione 1).
+7. **La barra di "Per categoria" NON usa `.util-bar .seg`**: è uno stile **inline** (`background: var(--ok)`) dentro `billing-console.tsx:671`. `.util-*` ha 4 consumer, **tutti** su `/dashboard/reports`. Il fix è quindi **locale per applicazione** ma **riusabile per forma**: v. §5 e la nota di tensione in §10.
+8. **`.mini-modal` non conta 2 nodi a riposo**: le due modali sono rese condizionalmente, quindi il DOM ne ha **0** finché non si apre un'azione (verificato a 375 e 1280).
+9. Il `<p role="status">` del desktop **non è raggiungibile a ≤640px**: i suoi unici innesco (le due `.mini-modal` e il `<select>` inline) vivono dentro il corpo desktop, che è `display:none`. La regola che li nasconde resta (è parte di R-15.8a-j) ma la sua guardia è per iniezione DOM, non per flusso — dichiarato in §6.
+
+## 2. Che cosa è stato costruito, per AC
+
+| AC | esito | prova (misura o test) |
+|---|---|---|
+| **1** registro a card | **fatto** | `.students` `display:none` @375 / `flex` @1280; `.billing-mobile` `block` @375 / `none` @1280 (misurato sui **due** lati). Card = **UN** `<button>`, `querySelectorAll('button,a,input,select,textarea,[tabindex]').length === 0` su tutte (misurato: `[0,0,0,0,0]`). `min-height` 44. Nome accessibile = `Apri dettaglio: <kindLabel — descrizione> · <importo>` (asserito: contiene descrizione **e** importo). Sub-line `pilota · data · metodo` via `joinSegments`. Chip `bookType` a sinistra del titolo, **mai** un secondo oggetto a destra. Badge di stato **solo** se `reversed`/`reversal`. Empty state `mobile-billing-empty`, stringa distinta da `billing-empty`. Nessun testo clippato senza ellissi a 320 (misurato `[]`). |
+| **2** sheet a parità piena | **fatto** | 11 righe: Data, Pilota, Tipo (+ nota "non incide sul risultato" su DEPOSIT/TRANSFER), Descrizione, Metodo (o "Non attribuito"), Entrate, Uscite, Stato, Origine (`source`), Riferimento (`reference`), Identificativo (`id`) — asserite in ordine. `reversed`/`reversal` sono lo **Stato** (Stornato / Storno), `actionable` è il **gate delle azioni**, reso come presenza/assenza dei bottoni (dichiarato: renderlo anche come riga sarebbe rumore). Apertura **da tastiera** con Tab reali + Enter. `mobile-transaction-sheet` = **1 nodo**. Nome accessibile provato su riga senza `personName`, senza `description` e senza `method` (il secchiello), con guardie su **proprietà** (`/—\s*—/`, `/·\s*·/`, segmento vuoto, segmento uguale a "—"). |
+| **3** rettifica, storno, riclassifica | **fatto** | (a) Rettifica solo su `ACCOUNT actionable`, Storna solo su `CASH actionable`, zero azioni altrove — asserito nei due sensi; (b) importo non parsabile **e** zero ⇒ `fld-error` e **0 richieste** contate con `page.route`; (c) motivo obbligatorio su entrambe (asserito anche sullo storno); (d) **409 distinto dal generico** (due `route.fulfill`, testi diversi); (e) effetto letto **dall'API filtrata**: la rettifica crea **1** `ADJUSTMENT` da −2500, lo storno crea **1** riga `reversal` e marca **1** riga `reversed`; (f) la riclassifica fa **UNA** `PATCH /cash-movements/{id}` con body `{"paymentMethod":"CASH"}` — e la SCELTA da sola non scrive (0 richieste dopo il tap sul metodo); (g) `router.refresh()` su ogni esito. Target: bottoni azione e metodi ≥44 (misurati). **Nessuna `.mini-modal` nel DOM** durante il flusso mobile (asserito `0`). |
+| **4** KPI strip tappabile | **fatto** | `.billing-panels` `none` @375, `.billing-kpi-row` `grid` @375 / `none` @1280; **una sola** `.kpi-row` a 375 **e** a 1280. Riquadri **579,92 → strip 152,97** (**−426,95**); prima card del registro **1068,23 → 563,41** (**−504,82**; a 320: 1153,47 → 563,41, **−590,06**) — sopra la stima di −450. I tre valori sono confrontati col DOM desktop **nello stesso render** (i riquadri sono `display:none` ma il `textContent` c'è): mai due `page.goto` intorno a un aggregato globale (v. §7 deviazione 4). Secchiello **gated sul count** anche nello sheet, link ≥44px, `?unattributed=true` raggiunto e chip attiva presente. |
+| **5** testata in linguaggio mobile | **fatto** | **175 + 64 di strip = 239** a 320/375/390, IT **e** EN, in **tutti** gli stati di filtro (nessuno, bookType, periodo, secchiello) — contro 265,66 / 308,5 / 350,89 / 393,73. Desktop **invariato**: 180,53 @641 IT, 152,23 @641 EN, 152,23 @800, 109,23 @1280. Ogni controllo ≥44 (ricerca 18,13 → **44**, Esporta 34,84 → **44**, CTA 34,84 → **44**, Filtri **44**, chip **44**). Contratto URL invariato (asserito: le sole chiavi prodotte dal pannello sono `categoryId` e `dateFrom`). Pannello applica in **UNA** navigazione (contate le `framenavigated`). Debounce **annullato** all'apertura (test dedicato: pannello ancora aperto dopo 900 ms) e **riarmato** alla chiusura. |
+| **6** `.split` + Saldi negativi | **fatto** | `.billing-split` fuori query (`1fr 1fr`) ⇒ desktop **488/488 @1280** rimisurato; dentro la query `1fr` ⇒ **319/319 @375**, **264/264 @320**, impilate. `scrollWidth <= clientWidth + 1` su entrambe a 320 **dopo** due correzioni scoperte dalla guardia stessa (v. §4). Saldi negativi: scroller conservato, 220 → **320px**, righe **44px**, link ellissato. |
+| **7** paginazione | **fatto** | `.registry-pagination` riusata: prev/next **34,84 → 44** (larghezza 103,66 @375). `1 / 2 → 2 / 2` con `?categoryId=` preservato. |
+| **8** redesign `ExportMenu` | **fatto** | ≤640px: **bottom sheet** `MobileSheet` (z 40), `x = 0`, `w = 375`, `inside: true`, voci **44px** e tutte `own` all'hit-test, su **tutti e dieci** i consumer misurati (billing, logbook, movements, expiries, bookings, ppr, fleet, instructors, pilots, people/{id}) — compresi i **tre** a una sola voce. >640px: popover **identico** su tutti e dieci a **641/800/1280** (diff programmatico su x, y, w, h, z, position, padding, radius, display, gap: **nessuna differenza**). Testid nuovi (`export-menu-trigger|pdf|xls|sheet`), **nessuno** dei cinque spec verdi toccato. `<a target="_blank">` dentro lo sheet con scrim: il download **parte davvero** (asserita la richiesta `format=xlsx` emessa dalla nuova scheda). |
+| **9** contrasti | **fatto** | v. §5: 2,73 → **10,63**; 3,96 → **9,82**; 3,96 → **9,82**; barra 2,47 → **4,56** (e la gemella out 3,59 → **6,10**); più due esemplari **non elencati** trovati e chiusi (PDF 3,96 → 9,82, XLS **2,73** → 10,63). Tema scuro rimisurato su tutto: nulla scende. |
+| **10** testid | **fatto** | Matrice asserita a **375 e 1280**: 32 singleton a 1 nodo, 7 nomi assenti a menu/sheet/pannelli chiusi, `transaction-row` e `transaction-row-mobile` a N. `grep -rn 'data-testid\^=' e2e/` rieseguito: **14 occorrenze, 9 file**, prefissi `ac-card-`, `mobile-fleet-`, `mobile-fleet-card-`, `mobile-tail-chip-`, `pilot-row-`, `schedule-filter-aircraft-`, `schedule-filter-instructor-` — **nessuno** tocca `billing-`, `transaction-`, `negative-balance-`, `export-`, `mobile-billing-` ⇒ il suffisso `-mobile` è **legale** qui. |
+| **11** geometria e layering | **fatto** | Overflow di pagina **0** a 320/375/390. Nessuno scroller nascosto (eccezioni dichiarate: chip strip e KPI strip, il corpo desktop `display:none`, lo `SlideOver` CHIUSO). Nessun testo clippato senza ellissi. Contenimento dei figli della card: **0** sconfinamenti (la guardia è sul **rect**, non sullo sweep). Nessun controllo coperto dalla tab bar (blocked `[]` a 375 e 390; a 320 resta solo un hit sulla **top bar** sticky, eccezione 15.1). Sheet z40 sopra la tab bar (asserito `hit.closest('.mobile-sheet')`), pannello z50 la copre del tutto, `.mini-modal` z60 desktop-only, bottom sheet export dentro il viewport. |
+| **12** guardie discriminanti | **fatto** | Tabella in §6: ognuna provata **rossa** su una simulazione del pre-fix col repo intatto. |
+| **13** invarianti | **fatto** | Desktop rimisurato a 641/800/1280 su Contabilità e sugli **altri nove** consumer dell'export; `.app` grid, `.card-head`, `.students`, `.split`, `.page-head`, `docH`, `pageOverflow` identici. Nessuna dipendenza npm nuova. **Nessun token esistente cambia valore**; nessun literal di colore nuovo (il fix grafico è `color-mix` sui token, la tecnica di `.mobile-row-edge-*`). Ogni stringa nuova nei **due** locale (24 chiavi, parità 155/155 verificata). |
+| **14** multi-attore | **fatto** | PILOTA/ALLIEVO/ISTRUTTORE redirect a `/it/dashboard` a **375 e 1280**, con `clearCookies()` fra le identità; "Contabilità" assente dalla tab bar e dallo sheet "Altro"; ADMIN entra. Export verificato anche su un attore **non-admin** (pilota, `/dashboard/logbook`, 375). |
+| **15** debito tecnico | **fatto** | §8. |
+
+## 3. Decisioni non ovvie
+
+**a) `ExportMenu`: un solo nodo che cambia forma, con `MobileSheet` come telaio.** AD-4 chiede "la stessa istanza React che cambia contenitore", ma l'architettura dell'epic vieta lo switch JS: due contenitori resi insieme raddoppierebbero i nodi (e AC 8 asserisce 1 nodo per voce a 375 **e** 1280). La forma implementata è quindi: **una** `MobileSheet` a ogni larghezza, che porta con sé le classi `.popover`/`.popover-scrim` — così il popover desktop **non è riscritto**, è lo stesso CSS di sempre (nessuna duplicazione di ombra/bordo/raggio, nessun literal nuovo), e `@media (max-width:640px)` gli mette sopra la forma sheet, che vince perché `.mobile-sheet-panel` è più avanti nel file. `MobileSheet` guadagna tre prop opzionali (`className`/`scrimClassName`/`panelClassName`). Il vantaggio non è estetico: il menu entra nella famiglia di sheet dove la 15.10 metterà il focus trap **una volta sola**, invece di restare un sesto pannello fatto a mano.
+
+**b) `focus({ preventScroll: true })` in `MobileSheet`.** Misurato: senza, l'apertura del menu export **faceva scorrere `.main`** su desktop (logbook/ppr −46px, movements −44, scheda persona **−461**). Uno sheet è `position: fixed` in fondo al viewport, quindi per i cinque consumer esistenti la modifica è un no-op per costruzione; per il sesto è ciò che tiene fede a "desktop invariato".
+
+**c) Dove vive lo stato della KPI strip (AD-1).** `billing-panels.tsx` **resta un server component**; la strip tappabile è un'isola client nuova (`billing-panels-mobile.tsx`) che riceve lo **stesso** oggetto `BillingSummary` e lo formatta con lo stesso `formatCents`. Nessun ricalcolo, nessun `'use client'` sul componente intero.
+
+**d) La KPI strip è "hero + 2", non tre colonne.** Tre valori monetari in colonne da ~101px vanno a capo su due righe *clampate* su un registro reale (`-1.216,22 €` chiede ~99px a 15px mono). Il risultato del mese è il numero per cui questa pagina si apre: prende la riga intera, liquidità e acconti si dividono quella sotto. Nessuna cella vuota, nessuno swipe per il terzo numero (il difetto che R-15.3-c aveva già corretto per la 2×2). Guadagno misurato comunque **−426,95px** sui riquadri e **−504,82** sulla prima card.
+
+**e) I tre `<p role="status">` sul mobile.** L'assenza di doppio annuncio non è ottenuta con un `if`, ma dal **punto d'ingresso**: le due `.mini-modal` e il `<select>` inline vivono dentro il corpo desktop (`display:none` a ≤640), quindi non possono impostare quei paragrafi; le tre scritture mobile passano da `submitSheet*` e annunciano con un toast. La regola `display:none` sui `<p>` resta perché fa parte dell'opzione A ratificata e perché protegge la testata da un paragrafo che la farebbe crescere — ma è dichiaratamente **irraggiungibile per flusso**, e la sua guardia è per **iniezione DOM** (§6, riga vii-bis).
+
+**f) La riclassifica esplicita.** Tre bottoni `aria-pressed` + un "Conferma metodo" disabilitato finché non si sceglie. La rete è la **stessa** funzione (`postReclassify`) che il `<select>` desktop chiama: cambia solo chi la invoca e dove l'esito viene annunciato.
+
+**g) `parseAdjustAmount` estratto.** Le due facce condividono il **gate** oltre che la rete: un importo non parsabile o zero non raggiunge la rete né dalla `.mini-modal` né dallo sheet, perché la funzione è una sola.
+
+## 4. Due difetti trovati dalle guardie di questa story (e chiusi)
+
+1. **"Per categoria" sfondava la propria card anche DOPO l'impilamento**: 259px di contenuto in 226 a 320px (293 in 281 a **375**), tagliati dall'`overflow:hidden` della `.card` — la colonna "Netto" spariva senza che nulla lo dicesse. Chiuso con `.billing-cat-line{flex-wrap:wrap}` + ellissi sul nome di categoria (che è testo libero).
+2. **"Saldi negativi" sfondava a 320**: 282 in 226, per via del cognome, un token unico non spezzabile. Chiuso con ellissi sul link (`.billing-negative-row > a`).
+
+Entrambi erano invisibili allo sweep dell'overflow **di pagina** (che resta 0) ed entrambi sono stati trovati dall'asserzione `scrollWidth <= clientWidth + 1` dell'AC 6 e dalla `HIDDEN_SCROLLERS` dell'AC 11: è esattamente il motivo per cui la story chiede quelle due e non la prima.
+
+## 5. Contrasti — misure nei DUE temi, con i gemelli enumerati
+
+Metodo: canvas→WCAG, sfondo effettivo risolto **risalendo gli antenati partendo dall'elemento**, alpha letta prima della composizione, tema pilotato dal **cookie `am-theme`** (la app non guarda `prefers-color-scheme`: misurare con `colorScheme` soltanto avrebbe dato numeri identici nei due temi — errore preso e corretto in corsa).
+
+| esemplare | dove | chiaro pre → post | scuro pre → post | soglia |
+|---|---|---|---|---|
+| `billing-by-category-row` valore **in** | `.stat-tone-ok` (era `var(--ok)`) | **2,73 → 10,63** | 9,3 → **9,3** | 4,5 |
+| `billing-by-category-row` valore **out** | `.stat-tone-bad` | **3,96 → 9,82** | 6,61 → **6,61** | 4,5 |
+| `negative-balance-row` importo | `.stat-tone-bad` | **3,96 → 9,82** | 6,61 → **6,61** | 4,5 |
+| barra "in" di "Per categoria" | `.flow-bar-in` | **2,47 → 4,56** | 10,45 → **12,36** | 3,0 |
+| barra "out" (era già sopra) | `.flow-bar-out` | 3,59 → **6,10** | 7,42 → **9,87** | 3,0 |
+| tag **PDF** dell'`ExportMenu` *(non elencato dalla story)* | `.stat-tone-bad` | **3,96 → 9,82** | 6,61 → **6,61** | 4,5 |
+| tag **XLS** dell'`ExportMenu` *(non elencato)* | `.stat-tone-ok` | **2,73 → 10,63** | 9,3 → **9,3** | 4,5 |
+
+**Gemelli.** Il fix dei testi **non cambia** `.stat-tone-*`: ne aggiunge consumer. Enumerati e rimisurati **tutti** gli esemplari renderizzati della classe su 13 pagine × 2 temi × 2 larghezze: **218 esemplari a 1280** (min **7,58** chiaro / **6,2** scuro) e **172 a 375** (min **9,82** / **6,61**). Nessuno scende. ⚠️ Nota metodologica: una prima passata segnalava 20 esemplari a **1,65:1** in tema scuro a 1280 — sono le card mobile dentro `.billing-mobile{display:none}`, dove `.mobile-row{background:transparent}` (che vive dentro la media query) non si applica e resta lo sfondo UA del `<button>`. È un **artefatto di misura su un sottoalbero non renderizzato**: filtrando per `getClientRects().length > 0` sparisce. Riportato perché la prossima misura lo incontrerà di nuovo.
+
+Il fix grafico `.flow-bar-*` è **additivo** e **senza literal nuovi**: `color-mix(in oklch, var(--ok|--bad) 70%, var(--ink))`, la stessa tecnica (stessi token, stessa percentuale) che `.mobile-row-edge-*` usa dalla 15.4. Nominato per la **forma** (`flow-bar`), non per la pagina, così la 15.8b può riusarlo su `.util-bar .seg` invece di prendere una seconda decisione sugli stessi token.
+
+**Difetto pre-esistente NON chiuso, dichiarato**: il link della riga `negative-balance-row` (nome della persona) misura **3,61:1** in chiaro — è il colore globale degli `<a>` (`var(--info)`), un TD sistemico dell'app, non una superficie nuova di questa story. Fuori mandato: chiuderlo qui vorrebbe dire cambiare il colore dei link ovunque.
+
+## 6. Regola nuova → guardia → prova di discriminanza
+
+Ogni guardia è stata provata **rossa** simulando il pre-fix **col repo intatto** (iniezione CSS/DOM in `mobile-billing.spec.ts`, test "AC 12: le guardie sono DISCRIMINANTI" + le prove inline degli altri test).
+
+| # | regola introdotta (per un difetto misurato) | guardia | come è stata provata discriminante |
+|---|---|---|---|
+| i | `.billing-desktop-body{display:none}` ≤640 | `DISPLAY_PROBE('.students') === 'none'` @375 **e** `'flex'` @1280 | iniettato `.billing-desktop-body{display:flex!important}` ⇒ la prima asserzione cade |
+| ii | `.billing-mobile{display:none}` >640 (+ `.billing-kpi-row`, trigger Filtri) | `DISPLAY_PROBE('.billing-mobile')` sui due lati; conteggio `transaction-row-mobile` a 1280 | iniettato `.billing-mobile{display:none!important}` a 375 ⇒ cade |
+| iii | testata mobile (11 dichiarazioni su `.billing-head >`) | **altezza** `head+strip ≤ pre-fix` nei 3 stati × 2 locale × 3 larghezze, **più** `SMALL_TARGETS() === []` | ripristinato via `addStyleTag` il padding/gap desktop e riesposti i controlli nascosti ⇒ l'altezza supera il post; ridotto il trigger Filtri a 20px ⇒ lo sweep lo trova |
+| iv | pannello Filtri con draft + `cancel()` del debounce | "applica in **UNA** navigazione" (conteggio `framenavigated`) **e** "sopravvive a un debounce pendente" (pannello ancora aperto dopo 900 ms) | la seconda è rossa per costruzione senza il `cancel()`: la navigazione del debounce rimonta la console (rimonto **misurato**, §1) |
+| v | ellissi su `.mobile-row-name`/`-sub`, `.billing-cat-name`, link dei saldi | `CLIPPED_WITHOUT_ELLIPSIS() === []` | iniettato `text-overflow: clip` ⇒ la lista non è più vuota |
+| vi | tracce `minmax(0,1fr)` + flag su riga propria | `CHILDREN_OUT_OF_CARD() === []` (guardia sul **rect**) | spostato `.mobile-row-side` di 80px ⇒ la lista non è più vuota |
+| vii | empty state mobile = 1 nodo con stringa distinta | `toHaveCount(1)` sui due empty + testi diversi | clonato il nodo con `appendChild(cloneNode(true))` ⇒ il conteggio diventa 2 |
+| vii-bis | `.billing-head > .billing-feedback{display:none}` | *irraggiungibile per flusso* (§3e): la guardia possibile è l'iniezione di un `<p data-testid="billing-adjust-feedback">` nella testata a 375 e la verifica che resti `display:none` | **dichiarata, non implementata come test**: sarebbe una guardia su uno stato che il codice non può produrre. Detto, non taciuto. |
+| viii | `.billing-filter-panel .input{min-height:44px}` e `.transaction-form .input{...}` | altezze desktop dei 7 controlli dell'editor a 1280 (tutte < 44) | iniettata la **variante DISCENDENTE** `.slideover .input{min-height:44px}` ⇒ `transaction-kind` sale a ≥44: la regola ancorata non ci arriva, quella discendente sì |
+| ix | nessuna regola tocca `.segmented`/`.util-*`/`.split` fuori Contabilità/`.date-input` altrove | geometria di `/dashboard/reports`, `/logbook`, `/movements`, `/bookings` a 375 confrontata con la baseline pre-fix | i valori sono **dati misurati prima** della modifica; una regola non ancorata li sposterebbe (è il difetto che 15.3 F1 e 15.5 F5 hanno misurato) |
+| x | `ExportMenu` su un consumer NON toccato (`/dashboard/fleet`, una sola voce) | contenimento nel viewport + voci ≥43,5 + 1 nodo per voce a 375 e 1280 | il pre-fix è la misura registrata (`158a-C-export-pre.json`): 34,84px e popover a 180px ancorato a destra |
+| xi | comportamenti invisibili a occhio | 0 richieste sugli invalidi, 409 ≠ generico, 1 sola PATCH, 1 solo `ADJUSTMENT`, 1 `reversal` + 1 `reversed` | contati con `page.route`, letti dall'**API filtrata** |
+| xii | soglia dei target | **43,5** ovunque, anche dove il valore ottenuto è 44 esatto | scritta sul requisito, mai sul risultato (lezione 15.7 MINOR-1) |
+
+## 7. Deviazioni dalla story (con motivazione)
+
+1. **Il test del secchiello non crea la propria riga: il seed ne semina una seconda.** Il piano di test lo chiedeva, ma **nessun endpoint HTTP** può produrre una `CashMovement` senza `paymentMethod` (verificato su tutti e quattro i writer: `recordCashMovement`, `top-ups`, `completePprRequest`, `recordPayout`). `prisma/seed.ts` semina ora **due** righe non attribuite con marcatori diversi, una per consumer: `billing-global.spec.ts` continua a guardare **solo** il proprio marcatore (`'Movimento storico pre-Billing-1 (seed)'`) e a filtrare le righe per `hasText: 'Movimento storico pre-Billing-1'`, quindi resta verde e non condivide fixture con nessuno. La nuova riga vale **700 cent** in categoria "Altro" al 2019-06-16, fuori da ogni finestra di isolamento; nessuno spec asserisce `unattributedCents`/`Count` in valore assoluto (verificato con grep). I due test mobile che la consumano hanno la stessa `test.skip` guardata sul proprio marcatore, con la stessa motivazione accettata dalla review Billing-2 F4/F5.
+2. **Il fix dei contrasti tocca due esemplari non elencati** (i tag PDF/XLS dell'`ExportMenu`, 3,96 e **2,73** in chiaro). Sono testo su una superficie che questa story **trasforma in sheet**, e AC 13 chiede di enumerare gli esemplari delle superfici nuove senza fidarsi dell'elenco. Fix con la stessa classe già in casa; il nome accessibile dei link non cambia, quindi i cinque spec verdi non se ne accorgono (verificato: verdi).
+3. **`MobileSheet` guadagna tre prop e un `preventScroll`.** È l'unica via per riusare davvero la primitiva (R-15.8a-h) senza JS switch e senza secondo albero; `preventScroll` è ciò che tiene il desktop invariato (§3b). I cinque consumer esistenti sono `position: fixed` a schermo pieno: la modifica è un no-op per costruzione e la suite completa lo conferma.
+4. **La parità dei tre KPI è asserita nello STESSO render**, non fra due `page.goto`. Prima stesura: leggevo i riquadri a 1280 e i KPI a 375 — **flaky misurato** (8.215,17 → 8.138,17 fra i due caricamenti) perché `getBillingSummary` è un aggregato **globale** e sotto `fullyParallel` un altro worker scrive. È la trappola che il piano di test vieta esplicitamente; corretta leggendo entrambi dal DOM della stessa pagina (i riquadri sono `display:none` a 375 ma il `textContent` c'è).
+5. **Otto controlli del `TransactionEditor` portati a 44px** (AC 15 b lo ammette e raccomanda): i sei `.input` del form e il trigger calendario a 36 (stessa scelta che la 15.7 ha fatto per i propri pannelli: il bottone vive **dentro** la casella da 44). Restano sotto soglia la ✕ dello `SlideOver` (32×32) e le opzioni del typeahead (36) — sono del **telaio** condiviso da 11 consumer, TD (k), dichiarati e non chiusi.
+6. **Tre gruppi di dichiarazioni CSS fuori dalla media query** oltre alle due previste da R1: (i) i `display:none` dei due alberi mobile e del trigger Filtri; (ii) `.billing-split`; (iii) le tre dichiarazioni che erano **inline** (`.billing-filter-range`, `.billing-search`, `.billing-negative-list`) più `.export-menu-panel{min-width:180px}` e le due righe del telaio `ExportMenu`; (iv) `.flow-bar-*`, che è un fix di contrasto valido a **ogni** larghezza (AC 9 lo impone: «il fix vale desktop e mobile»). Tutte dichiarate qui, tutte con desktop rimisurato.
+
+## 8. Debito tecnico — voce per voce
+
+| TD | esito | misura |
+|---|---|---|
+| (a) `OPTIONS_PAGE_SIZE = 100` | **subìto e dichiarato** | 100 opzioni iniziali al solo picker persona del `TransactionEditor`, che ha il typeahead server-side: degrada la comodità, non la funzione |
+| (b) otto controlli dell'editor sotto 44 | **chiuso per sei**, subìto per due | i sei `.input` a **44** e il trigger calendario a **36** su mobile; desktop rimisurato a 1280 (36 / 36,84 / 34,84 / 36 / 38,84 / 36,84 / 34,84, invariati). ✕ dello `SlideOver` **32×32** e opzioni typeahead **36**: TD (k), telaio condiviso, **non** chiusi |
+| (c) voci dell'export a 53,7/35px | **CHIUSO** | 44px su tutti e dieci i consumer a 375 |
+| (d) popover fuori dal viewport | **CHIUSO** | `x = −29,09 → 0` su Contabilità **e** su Prenotazioni (secondo caso, non elencato) |
+| (e) `.split` inline | **CHIUSO** | `.billing-split`, desktop 488/488 invariato |
+| (f) contrasti | **CHIUSO** (7 esemplari: 5 previsti + 2 trovati) | §5 |
+| (g) `.search` `cw 188 / sw 190` | **subìto** sul desktop; su mobile la casella è full-width e il difetto non si presenta |
+| (h) campo pilota desktop 18,13px | **subìto e dichiarato** (fuori mandato: è il desktop) |
+| (i) `.so-sub` a `--ink-4` (3,66:1) | **subìto e dichiarato**: `TransactionEditor` passa un sottotitolo ("Contabilità"). Il fix dell'AC 9 non lo copre (è un token del telaio `SlideOver`, 11 consumer) e allargarlo sarebbe fuori mandato |
+| (j) `billing.spec.ts:296` delta-assert globale | **non aggravato**: nessun test nuovo asserisce un aggregato globale con uguaglianza (§7 deviazione 4). Le fixture create per run: **≤26** movimenti/persone nel test più pesante (21 movimenti della paginazione), tutte con handle run-unique |
+| (k) `account-section.tsx` non responsive | **fuori scope** (15.9), ma monta lo stesso `ExportMenu`: misurato a 375 (sheet a x=0, voci 44, un nodo per voce) e a 1280 (popover identico) |
+| (l) `viewport-fit=cover` mai dichiarato | **subìto** (TD di epic, 15.10): gli `env(safe-area-inset-*)` valgono 0 |
+| **nuovo (m)** | il link `negative-balance-row > a` misura **3,61:1** in chiaro — colore globale degli `<a>`, TD sistemico, fuori mandato (§5) |
+| **nuovo (n)** | la baseline della testata Contabilità è **sensibile ai dati** (il `<select>` categorie): chi la rimisura con poche categorie ottiene 222,66 invece di 265,66 (§1 correzione 2) |
+
+## 9. Esito della suite (onesto)
+
+- `npm run gates`: **PASS lint / PASS typecheck / PASS test (1739) / PASS build**, ripetuto a ogni passo intermedio; ultimo run verde prima della consegna.
+- Unit nuovi: `src/lib/mobile-billing.test.ts`, **15 test**, verdi anche con `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` (nessun `@/lib/env` trascinato).
+- Spec nuovo `e2e/mobile-billing.spec.ts`: **26 test**. Ultimo run mirato su build di produzione: **24 passed, 2 skipped, exit 0** — i due skip sono i test del secchiello, la cui fixture di seed era stata consumata dal run precedente sullo stesso DB (modello di consumo dichiarato; su DB fresco girano, ed è successo al primo run).
+- Blast radius mirato su DB fresco (`mobile-billing` + `billing` + `cash-register` + `cash-report` + `account-adjustments` + `exports` + `pdf-exports` + `movements`): **80 passed** più il solo fallimento di una mia asserzione troppo rigida (conteggio `.util-bar`, dipendente dai dati), corretta e riverificata verde.
+- **Gate finale**: suite completa `CI=1` su build di produzione e **DB fresco** (`docker compose down -v` → `up` → `migrate deploy` → `db seed`), lanciata con `scripts/e2e.sh start` e letta con `scripts/e2e.sh status`:
+
+  ```
+  1 flaky
+    [chromium] › e2e/flights.spec.ts:602:7 › … ratifica R-14.3-a
+  430 passed (10.5m)
+  E2E_EXIT=0
+  ```
+
+  **430 passed + 1 flaky = 431**, cioè i **405** della baseline 15.7 più i **26** nuovi. Tutti e 26 i test di `mobile-billing.spec.ts` sono girati (nessuno skip: su DB fresco entrambe le fixture del secchiello ci sono) e `billing-global.spec.ts` ha consumato la **sua**, restando verde.
+
+  **Il flaky non è di questa story, con la prova**: `flights.spec.ts:602` fallisce su `POST /flights` con **422** alla creazione della fixture — prima ancora che la UI entri in scena — e passa al retry. È il percorso `registerFlight` (gate scadenze/profilo), non tocca né la Contabilità, né l'`ExportMenu`, né una sola riga di CSS di questa story; la stessa classe di flake è già registrata dagli arbitri 15.6/15.7. Verificato inoltre che il file non condivide fixture con `mobile-billing.spec.ts` (persone e categorie sono run-unique da entrambe le parti).
+
+## 10. Nota di tensione per la 15.8b (dichiarata come chiede la story)
+
+La barra "Per categoria" **non condivide** il token con `.util-bar .seg` attraverso una classe: qui era uno **stile inline** con `var(--ok)`/`var(--bad)`, là è `.util-bar .seg.flown` con gli stessi due token. Il difetto è quindi lo stesso (**2,47:1** in chiaro in entrambi i casi) ma il punto di applicazione è diverso. La decisione presa **una volta sola qui** è la coppia `.flow-bar-in`/`.flow-bar-out`, dichiarata fuori dalla media query e nominata per la forma: la 15.8b **riusa quelle due classi** su `.util-bar .seg` invece di introdurre una seconda soluzione per lo stesso colore. Se lo facesse diversamente, gli stessi due token avrebbero due rimedi diversi nella stessa app.
+
+## 11. Cosa NON ho fatto
+
+- Non ho toccato `/dashboard/reports` né `/dashboard/settings` (superfici della 15.8b): le uniche misure lì sono guardie di non-regressione.
+- Non ho toccato API, schemi Zod, servizi, il calcolo dei riquadri, `getLedgerRevenueCents`, `ledgerClubAmountCents`, il ciclo di vita di `CashCategory`. **Nessuna modifica server** oltre alla seconda riga di seed (dato di test).
+- Non ho riscritto nessuno dei cinque spec verdi dell'export, né `billing-global.spec.ts`.
+- Non ho aggiunto focus trap, `aria-modal`, `viewport-fit=cover` né la riserva sticky (15.10).
+- Non ho corretto i difetti pre-esistenti non ratificati (`.search` 188/190, campo pilota desktop, taglio senza ellissi delle celle `.student-row`, colore globale dei link).
+- **Non ho committato**: il repo è lasciato con le modifiche in working tree.
+
+## 12. File toccati
+
+**Nuovi**
+- `src/lib/mobile-billing.ts` — le cinque derivazioni pure (AD-6), che riusano `joinSegments`
+- `src/lib/mobile-billing.test.ts` — 15 unit
+- `src/app/[locale]/dashboard/billing/billing-panels-mobile.tsx` — la KPI strip tappabile e i tre sheet
+- `e2e/mobile-billing.spec.ts` — 26 test
+
+**Modificati**
+- `src/app/[locale]/dashboard/billing/billing-console.tsx` — testata mobile, albero card, sheet + tre `secondStep`, pannello Filtri, `.billing-split`, `.billing-negative-list`, i due fix di contrasto della card "Per categoria" e dei saldi negativi, rete condivisa (`postAdjust`/`postReverse`/`postReclassify`, `parseAdjustAmount`)
+- `src/app/[locale]/dashboard/billing/billing-panels.tsx` — monta l'isola client mobile, resta server component
+- `src/app/[locale]/dashboard/billing/page.tsx` — le 24 stringhe nuove
+- `src/app/[locale]/dashboard/billing/transaction-editor.tsx` — classe `.transaction-form` (ancoraggio del 44px mobile)
+- `src/components/ui/export-menu.tsx` — telaio `MobileSheet`, testid, contrasto dei due tag
+- `src/components/ui/mobile-sheet.tsx` — tre prop di classe opzionali, `focus({preventScroll:true})`
+- `src/styles/airops.css` — blocco `contabilità mobile + export menu (story 15.8a)` (+276 righe)
+- `messages/it.json`, `messages/en.json` — `BillingPage.mobile.*` (24 chiavi per locale, parità 155/155)
+- `prisma/seed.ts` — seconda riga non attribuita, una per consumer
