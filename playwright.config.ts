@@ -43,11 +43,13 @@ export default defineConfig({
       testIgnore: [
         '**/settings.spec.ts',
         '**/booking-window.spec.ts',
+        '**/reports.spec.ts',
         '**/treasury-settings.spec.ts',
         '**/billing-global.spec.ts',
         '**/mobile-metar.spec.ts',
         '**/mobile-overview-overflow.spec.ts',
         '**/mobile-membership-fee.spec.ts',
+        '**/mobile-settings.spec.ts',
       ],
       use: sharedUse,
     },
@@ -64,13 +66,38 @@ export default defineConfig({
       use: sharedUse,
     },
     {
+      // Story 15.8b, R-15.8b-f — `reports.spec.ts` used to run in the main
+      // `fullyParallel` project while its `fleetUtilization` test PUT a GLOBAL
+      // `sched.*` window (07:00-21:00) and never restored it: the TD registered
+      // since 14.4, AGGRAVATED by 15.4 (since `assertWithinSchedulingWindow`
+      // also guards `updateBooking`, EVERY `moveBooking` in the suite inherited
+      // that window, and the "today" fixtures of `mobile-planning` fell outside
+      // it whenever the suite ran before ~07:20 or after ~20:40 Rome). The whole
+      // file moves here rather than just the guilty test (PO decision, against
+      // the recommendation) because that closes the time-dependency of the suite
+      // as well as the leak.
+      //
+      // POSITION — right after `booking-window`, before `treasury-settings`:
+      // `sched.*` is the only global key this file writes, and `booking-window`
+      // is the project that OWNS that key, so the two `sched.*` writers stay
+      // adjacent and the chain reads in one direction. It restores the same
+      // permissive window `settings.spec.ts` restores, so everything downstream
+      // (treasury, billing-global, the four mobile projects) sees exactly what
+      // it saw before this project existed. Running it alone locally:
+      // `npx playwright test reports.spec.ts --no-deps`.
+      name: 'reports',
+      testMatch: '**/reports.spec.ts',
+      dependencies: ['booking-window'],
+      use: sharedUse,
+    },
+    {
       // Story Billing-2, AC 6 — `treasury.*` (opening cash/bank balances)
       // feeds `getBillingSummary`'s Liquidità figures for EVERY other spec
       // that touches `/dashboard/billing` in the main project: last in the
       // chain, after `booking-window`.
       name: 'treasury-settings',
       testMatch: '**/treasury-settings.spec.ts',
-      dependencies: ['booking-window'],
+      dependencies: ['reports'],
       use: sharedUse,
     },
     {
@@ -122,6 +149,18 @@ export default defineConfig({
       name: 'mobile-membership-fee',
       testMatch: '**/mobile-membership-fee.spec.ts',
       dependencies: ['mobile-overview-overflow'],
+      use: sharedUse,
+    },
+    {
+      // Story 15.8b, R-15.8b-d — proving that every write of Impostazioni still
+      // works from a phone means writing the very `AppSetting` keys this chain
+      // quarantines (`sched.*`, `smtp.*`, the five club keys). LAST in the
+      // chain, and it restores the permissive scheduling window in `afterAll`,
+      // read back to prove it — nothing downstream inherits anything. Running
+      // it alone locally: `npx playwright test mobile-settings.spec.ts --no-deps`.
+      name: 'mobile-settings',
+      testMatch: '**/mobile-settings.spec.ts',
+      dependencies: ['mobile-membership-fee'],
       use: sharedUse,
     },
   ],

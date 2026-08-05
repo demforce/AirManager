@@ -1,13 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Badge } from '@/components/ui/badge';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { Field, Input, InputGroup, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
+import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
+import { expiryTypeSheetSub, expiryTypeSubLine } from '@/lib/mobile-settings';
 
 export type ExpiryScopeValue = 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
 
@@ -38,6 +41,16 @@ export type ExpiryTypeCardTestIds = {
   validityInput: string;
   formSubmit: string;
   formError: string;
+  /** Phone face (story 15.8b). Convention of the epic (15.1): a surface that DUPLICATES a desktop one takes the desktop name plus `-mobile`; one that exists only on a phone takes a new name prefixed `mobile-`. */
+  mobileList: string;
+  mobileEmpty: string;
+  mobileRow: string;
+  mobileSheet: string;
+  mobileEditButton: string;
+  mobileToggleButton: string;
+  mobileDeleteButton: string;
+  mobileDeleteConfirm: string;
+  mobileDeleteCancel: string;
 };
 
 const DEFAULT_TEST_IDS: ExpiryTypeCardTestIds = {
@@ -52,6 +65,15 @@ const DEFAULT_TEST_IDS: ExpiryTypeCardTestIds = {
   validityInput: 'rating-validity-input',
   formSubmit: 'rating-form-submit',
   formError: 'rating-form-error',
+  mobileList: 'mobile-rating-list',
+  mobileEmpty: 'mobile-rating-empty',
+  mobileRow: 'rating-row-mobile',
+  mobileSheet: 'mobile-rating-sheet',
+  mobileEditButton: 'rating-edit-button-mobile',
+  mobileToggleButton: 'rating-toggle-button-mobile',
+  mobileDeleteButton: 'rating-delete-button-mobile',
+  mobileDeleteConfirm: 'rating-delete-confirm-mobile',
+  mobileDeleteCancel: 'rating-delete-cancel-mobile',
 };
 
 export type RatingsCardLabels = {
@@ -81,6 +103,8 @@ export type RatingsCardLabels = {
   };
   feedback: { created: string; updated: string; deactivated: string; reactivated: string; deleted: string; deleteInUseError: string; genericError: string };
   hint: string;
+  /** Phone face (story 15.8b, R-15.8b-d) — the wording the card list and its sheet need on top of the desktop's own. */
+  mobile: { openDetail: string; close: string; empty: string; yes: string; no: string };
 };
 
 type RatingsCardProps = {
@@ -113,10 +137,46 @@ const COLS = '1fr 130px 150px 120px 220px';
  */
 export function RatingsCard({ expiryTypes, labels, kind = 'RATING', testIds = DEFAULT_TEST_IDS }: RatingsCardProps) {
   const router = useRouter();
+  const toast = useToast();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; isError: boolean } | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  // Phone face (story 15.8b): the row sheet, and the delete confirmation as a
+  // `secondStep` INSIDE it (R-15.8b-d) — never a second overlay on top of the
+  // sheet (AD-8).
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const [sheetStep, setSheetStep] = useState<'detail' | 'delete'>('detail');
+  const sheetDeleteButtonRef = useRef<HTMLButtonElement>(null);
+  const sheetConfirmButtonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  /** Set only by the sheet's "Modifica": the form lives ABOVE the list, off-screen on a phone. The desktop never sets it, so its scroll position is untouched by construction (the 15.8a `preventScroll` lesson). */
+  const revealPanelRef = useRef(false);
+
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => {
+    setSheetId(null);
+    setSheetStep('detail');
+  }, []);
+
+  // Same fix as review 15.2 F1 / 15.8a MINOR-2: swapping the sheet's body
+  // removes the very button that was pressed, and `document.activeElement`
+  // falls back to `<body>` — losing the dialog context — even though the
+  // dialog node survives. Each step takes the focus to what it is about, in
+  // BOTH directions; inert while no sheet is open (both refs are null then).
+  useEffect(() => {
+    if (sheetStep === 'delete') sheetConfirmButtonRef.current?.focus();
+    else sheetDeleteButtonRef.current?.focus();
+  }, [sheetStep]);
+
+  // The inline form is the SAME node for both faces (R-15.8b-d option A keeps
+  // the forms in the page), and it renders above the table — on a phone that
+  // is several screens up from the card the finger just tapped.
+  useEffect(() => {
+    if (panel === null || !revealPanelRef.current) return;
+    revealPanelRef.current = false;
+    panelRef.current?.scrollIntoView({ block: 'center' });
+  }, [panel]);
 
   function handleSuccess(message: string): void {
     setPanel(null);
@@ -124,7 +184,15 @@ export function RatingsCard({ expiryTypes, labels, kind = 'RATING', testIds = DE
     router.refresh();
   }
 
-  async function handleToggleActive(expiryType: ExpiryTypeRow): Promise<void> {
+  // --- the network, shared by the two faces (AD-7) -------------------------
+  // One request per action, one contract: `PATCH`/`DELETE /expiry-types/{id}`,
+  // with the 409 "in use" kept DISTINCT from the generic failure. What differs
+  // between the faces is only WHERE the outcome is announced — the desktop's
+  // own `<p role="status">` for the inline flow, a toast for anything started
+  // in the sheet (grammar R-15.6-d ii / R-15.7-g / R-15.8a-j). The two
+  // channels can never both fire for one action, because each entry point
+  // calls exactly one of the wrappers below.
+  async function requestToggleActive(expiryType: ExpiryTypeRow): Promise<boolean> {
     setPendingActionId(expiryType.id);
     const response = await fetch(`/api/v1/expiry-types/${expiryType.id}`, {
       method: 'PATCH',
@@ -132,31 +200,65 @@ export function RatingsCard({ expiryTypes, labels, kind = 'RATING', testIds = DE
       body: JSON.stringify({ isActive: !expiryType.isActive }),
     });
     setPendingActionId(null);
-    setFeedback(
-      response.ok
-        ? { text: expiryType.isActive ? labels.feedback.deactivated : labels.feedback.reactivated, isError: false }
-        : { text: labels.feedback.genericError, isError: true },
-    );
     router.refresh();
+    return response.ok;
   }
 
-  async function handleDelete(expiryType: ExpiryTypeRow): Promise<void> {
+  async function requestDelete(expiryType: ExpiryTypeRow): Promise<'ok' | 'in-use' | 'error'> {
     setPendingActionId(expiryType.id);
     const response = await fetch(`/api/v1/expiry-types/${expiryType.id}`, { method: 'DELETE' });
     setPendingActionId(null);
-    setConfirmingDeleteId(null);
-    if (response.ok) {
-      setFeedback({ text: labels.feedback.deleted, isError: false });
-    } else if (response.status === 409) {
-      setFeedback({ text: labels.feedback.deleteInUseError, isError: true });
-    } else {
-      setFeedback({ text: labels.feedback.genericError, isError: true });
-    }
     router.refresh();
+    if (response.ok) return 'ok';
+    return response.status === 409 ? 'in-use' : 'error';
+  }
+
+  function toggleMessage(expiryType: ExpiryTypeRow, ok: boolean): { text: string; isError: boolean } {
+    if (!ok) return { text: labels.feedback.genericError, isError: true };
+    return { text: expiryType.isActive ? labels.feedback.deactivated : labels.feedback.reactivated, isError: false };
+  }
+
+  function deleteMessage(outcome: 'ok' | 'in-use' | 'error'): { text: string; isError: boolean } {
+    if (outcome === 'ok') return { text: labels.feedback.deleted, isError: false };
+    if (outcome === 'in-use') return { text: labels.feedback.deleteInUseError, isError: true };
+    return { text: labels.feedback.genericError, isError: true };
+  }
+
+  async function handleToggleActive(expiryType: ExpiryTypeRow): Promise<void> {
+    setFeedback(toggleMessage(expiryType, await requestToggleActive(expiryType)));
+  }
+
+  async function handleDelete(expiryType: ExpiryTypeRow): Promise<void> {
+    const outcome = await requestDelete(expiryType);
+    setConfirmingDeleteId(null);
+    setFeedback(deleteMessage(outcome));
+  }
+
+  async function handleSheetToggleActive(expiryType: ExpiryTypeRow): Promise<void> {
+    const message = toggleMessage(expiryType, await requestToggleActive(expiryType));
+    toast.show(message.text, message.isError ? 'bad' : 'ok');
+  }
+
+  async function handleSheetDelete(expiryType: ExpiryTypeRow): Promise<void> {
+    const outcome = await requestDelete(expiryType);
+    const message = deleteMessage(outcome);
+    toast.show(message.text, message.isError ? 'bad' : 'ok');
+    closeSheet();
+  }
+
+  const sheetRow = expiryTypes.find((expiryType) => expiryType.id === sheetId) ?? null;
+
+  function sheetRows(expiryType: ExpiryTypeRow): BottomSheetRow[] {
+    return [
+      { k: labels.table.scope, v: labels.scope[expiryType.scope] },
+      { k: labels.table.validity, v: expiryType.validityMonths ? `${expiryType.validityMonths} ${labels.table.monthsSuffix}` : labels.table.noExpiry },
+      { k: labels.table.status, v: expiryType.isActive ? labels.status.active : labels.status.inactive },
+      { k: labels.form.blocksBooking, v: expiryType.blocksBooking ? labels.mobile.yes : labels.mobile.no },
+    ];
   }
 
   return (
-    <div className="card" data-testid={testIds.card}>
+    <div className="card settings-card" data-testid={testIds.card}>
       <div className="card-head">
         <div className="card-title">{labels.title}</div>
         <span className="card-sub">{labels.sub}</span>
@@ -173,7 +275,7 @@ export function RatingsCard({ expiryTypes, labels, kind = 'RATING', testIds = DE
       ) : null}
 
       {panel ? (
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
+        <div ref={panelRef} style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
           <ExpiryTypeForm
             key={panel.mode === 'edit' ? panel.expiryType.id : 'create'}
             expiryType={panel.mode === 'edit' ? panel.expiryType : null}
@@ -186,7 +288,7 @@ export function RatingsCard({ expiryTypes, labels, kind = 'RATING', testIds = DE
         </div>
       ) : null}
 
-      <div className="students">
+      <div className="students expiry-types-desktop-body">
         <div className="student-row header" style={{ gridTemplateColumns: COLS }}>
           <div>{labels.table.name}</div>
           <div>{labels.table.scope}</div>
@@ -255,7 +357,142 @@ export function RatingsCard({ expiryTypes, labels, kind = 'RATING', testIds = DE
           ))
         )}
       </div>
+      {/* --- the phone face of this catalogue (story 15.8b, R-15.8b-d) -------
+          The five-column table becomes one card per type; the four actions
+          (Modifica, Disattiva/Riattiva, Elimina) move INTO the sheet, which is
+          the only place a thumb can reach them — as `.btn.mini`s they measured
+          24.67x61 at x=503-637 in a 375px viewport, i.e. past the right edge.
+          The card is ONE `<button>` with `<span>` children: zero nested
+          interactives, so a tap can only mean "open the detail". */}
+      <div className="expiry-types-mobile" data-testid={testIds.mobileList}>
+        {expiryTypes.length === 0 ? (
+          // Deliberately NOT the desktop's own `table.empty` string: a second
+          // node carrying it would break any page-level `getByText` at 1280px
+          // (the class of defect `expiry-dashboard.spec.ts:135` already has).
+          <p className="mobile-card-empty" data-testid={testIds.mobileEmpty}>
+            {labels.mobile.empty}
+          </p>
+        ) : (
+          expiryTypes.map((expiryType) => (
+            <button
+              key={expiryType.id}
+              type="button"
+              className="mobile-row mobile-row-catalog"
+              aria-label={`${labels.mobile.openDetail}: ${expiryType.name}`}
+              onClick={() => {
+                setSheetStep('detail');
+                setSheetId(expiryType.id);
+              }}
+              data-testid={testIds.mobileRow}
+            >
+              <span className="mobile-row-main">
+                <span className="mobile-row-title">
+                  <span className="mobile-row-name">{expiryType.name}</span>
+                </span>
+                <span className="mobile-row-sub">
+                  {expiryTypeSubLine({
+                    scopeLabel: labels.scope[expiryType.scope],
+                    validityLabel: expiryType.validityMonths ? `${expiryType.validityMonths} ${labels.table.monthsSuffix}` : labels.table.noExpiry,
+                    blocksLabel: expiryType.blocksBooking ? labels.blocksBooking.yes : null,
+                  })}
+                </span>
+              </span>
+              <span className="mobile-row-side">
+                <Badge tone={expiryType.isActive ? 'ok' : ''} dot>
+                  {expiryType.isActive ? labels.status.active : labels.status.inactive}
+                </Badge>
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+
       <div style={{ padding: '12px 20px', fontSize: 12, color: 'var(--ink-3)' }}>{labels.hint}</div>
+
+      {/* Rendered conditionally, so the sheet's testid is always exactly ONE
+          node (AD-6); the "one sheet at a time" invariant itself belongs to
+          the chassis (fix 15.3 F4) — which matters here, because the page
+          mounts THREE independent catalogue cards that do not know each
+          other. */}
+      {sheetRow ? (
+        <BottomSheet
+          open
+          onClose={closeSheet}
+          testId={testIds.mobileSheet}
+          sub={expiryTypeSheetSub({
+            catalogLabel: labels.title,
+            scopeLabel: labels.scope[sheetRow.scope],
+            blocksLabel: sheetRow.blocksBooking ? labels.blocksBooking.yes : null,
+          })}
+          title={sheetRow.name}
+          badge={
+            <Badge tone={sheetRow.isActive ? 'ok' : ''} dot>
+              {sheetRow.isActive ? labels.status.active : labels.status.inactive}
+            </Badge>
+          }
+          rows={sheetRows(sheetRow)}
+          closeLabel={labels.mobile.close}
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  revealPanelRef.current = true;
+                  setPanel({ mode: 'edit', expiryType: sheetRow });
+                  closeSheet();
+                }}
+                data-testid={testIds.mobileEditButton}
+              >
+                {labels.actions.edit}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={pendingActionId === sheetRow.id}
+                onClick={() => void handleSheetToggleActive(sheetRow)}
+                data-testid={testIds.mobileToggleButton}
+              >
+                {sheetRow.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+              </button>
+              {/* Destructive and last: deleting a type is irreversible, so it
+                  is never the button a thumb lands on by default. */}
+              <button
+                type="button"
+                className="btn mini bad"
+                ref={sheetDeleteButtonRef}
+                disabled={pendingActionId === sheetRow.id}
+                onClick={() => setSheetStep('delete')}
+                data-testid={testIds.mobileDeleteButton}
+              >
+                {labels.actions.delete}
+              </button>
+            </>
+          }
+          secondStep={
+            sheetStep === 'delete' ? (
+              <div className="catalog-sheet-step">
+                <p className="fld-hint">{labels.actions.confirmDelete}</p>
+                <div className="bottom-sheet-actions">
+                  <button
+                    type="button"
+                    className="btn mini bad"
+                    ref={sheetConfirmButtonRef}
+                    disabled={pendingActionId === sheetRow.id}
+                    onClick={() => void handleSheetDelete(sheetRow)}
+                    data-testid={testIds.mobileDeleteConfirm}
+                  >
+                    {labels.actions.confirmYes}
+                  </button>
+                  <button type="button" className="btn" onClick={() => setSheetStep('detail')} data-testid={testIds.mobileDeleteCancel}>
+                    {labels.actions.confirmCancel}
+                  </button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
+      ) : null}
     </div>
   );
 }

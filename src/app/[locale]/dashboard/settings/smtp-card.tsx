@@ -113,7 +113,7 @@ export function SmtpCard({ initial, labels }: SmtpCardProps) {
   }
 
   return (
-    <div className="card" data-testid="smtp-settings-card">
+    <div className="card settings-card" data-testid="smtp-settings-card">
       <div className="card-head">
         <div className="card-title">{labels.title}</div>
         <span className="card-sub">{labels.sub}</span>

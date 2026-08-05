@@ -136,7 +136,7 @@ export function ClubCard({ branding, icao, contactEmail, metarStation, landingFe
   }
 
   return (
-    <div className="card" data-testid="club-settings-card">
+    <div className="card settings-card" data-testid="club-settings-card">
       <div className="card-head">
         <div className="card-title">{labels.title}</div>
         <span className="card-sub">{labels.sub}</span>

@@ -1121,7 +1121,15 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     // The story's own 2026-08-05 baseline, measured BEFORE the change on the
     // pages this story must not reach.
     const neighbours: Record<string, ReturnType<typeof NEIGHBOUR_PROBE>> = {
-      '/it/dashboard/reports': { splits: [319, 319, 319, 319], segmentedHeights: [33.39, 33.39, 33.39], utilBarWidths: [281], dateInputs: [] },
+      // `/dashboard/reports` was frozen at this story's own pre-fix numbers
+      // (`segmentedHeights: [33.39, 33.39, 33.39]`, `utilBarWidths: [281]`)
+      // until story 15.8b, which OWNS that page: its AC 1 puts the two toggles
+      // on the 44px floor (46 with the border) and its AC 3 hides the ranked
+      // rows past the cap, whose bars then measure 0. The page stays in this
+      // sweep — a rule leaking from THIS story would still move `.split`, the
+      // bar width of the visible rows or the date inputs — with the numbers
+      // updated to what 15.8b measures, never weakened away.
+      '/it/dashboard/reports': { splits: [319, 319, 319, 319], segmentedHeights: [46, 46, 46], utilBarWidths: [281, 0], dateInputs: [] },
       '/it/dashboard/logbook': { splits: [], segmentedHeights: [], utilBarWidths: [], dateInputs: [0, 0, 335] },
       '/it/dashboard/movements': { splits: [], segmentedHeights: [], utilBarWidths: [], dateInputs: [335, 335, 0, 0] },
       '/it/dashboard/bookings': { splits: [], segmentedHeights: [33.39], utilBarWidths: [], dateInputs: [335, 335] },

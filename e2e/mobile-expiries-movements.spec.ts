@@ -1268,6 +1268,7 @@ test.describe('Story 15.7 — Scadenze e Voli in transito su telefono', () => {
         const btn = el.querySelector('button, a');
         return {
           display: getComputedStyle(el).display,
+          cls: typeof el.className === 'string' ? el.className : '',
           rendered: el.getClientRects().length > 0,
           h: Math.round(rect.height * 100) / 100,
           btnMinHeight: btn ? getComputedStyle(btn).minHeight : null,
@@ -1281,10 +1282,22 @@ test.describe('Story 15.7 — Scadenze e Voli in transito su telefono', () => {
         // widget that carries it lives inside a `.home-desktop-surface` that
         // 15.3 already hides at this width, so its rect is legitimately 0).
         expect(segmented.display, `${url} .segmented display`).toBe('flex');
-        expect(segmented.btnMinHeight, `${url} .segmented child min-height`).not.toBe('44px');
-        if (segmented.rendered) {
-          expect(segmented.h, `${url} .segmented height`).toBeGreaterThan(20);
-          expect(segmented.btnH, `${url} .segmented button height`).toBeLessThan(43.5);
+        if (url === '/it/dashboard/reports') {
+          // Story 15.8b OWNS this page and its AC 1 raises both toggles to the
+          // 44px floor — through the page-owned classes `.reports-period` /
+          // `.reports-rank-metrics`, never through `.segmented`, which is
+          // exactly what this guard exists to check. So here the assertion is
+          // on the OWNER: the floor may only arrive with one of those classes.
+          // The "untouched" expectation below still runs on the two pages no
+          // story owns, where a rule written on `.segmented` itself would
+          // land anyway.
+          expect(segmented.cls, `${url} .segmented owner class`).toMatch(/\breports-(period|rank-metrics)\b/);
+        } else {
+          expect(segmented.btnMinHeight, `${url} .segmented child min-height`).not.toBe('44px');
+          if (segmented.rendered) {
+            expect(segmented.h, `${url} .segmented height`).toBeGreaterThan(20);
+            expect(segmented.btnH, `${url} .segmented button height`).toBeLessThan(43.5);
+          }
         }
       }
     }

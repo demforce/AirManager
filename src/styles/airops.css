@@ -755,9 +755,28 @@ html[data-theme="dark"] .stat-tone-warn{ color: var(--warn); }
    second decision. ⚠️ Reuse is not literal, though: `.util-bar .seg.flown`
    is (0,3,0) and beats a bare `.flow-bar-in` (0,1,0), so those bars need a
    selector of equal weight (`.util-bar .seg.flow-bar-in`) or the `background`
-   dropped from `.seg.flown` — adding the class alone would change nothing. */
-.flow-bar-in{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
+   dropped from `.seg.flown` — adding the class alone would change nothing.
+
+   Story 15.8b (R-15.8b-e) takes the SECOND option — `.util-bar .seg.flown`
+   is listed in the `.flow-bar-in` rule itself, so the fill of BOTH shapes is
+   decided on one line and `.util-bar .seg.flown` no longer carries a
+   `background` of its own — and adds the three remaining graphic tokens the
+   Statistiche paint bars and bands with. Measured in the LIGHT theme before
+   the fix (canvas->WCAG, background resolved by walking ancestors): the
+   `--ok` bar 2.47, the `--accent` bar of both `RankBars`' second metric 1.85
+   (an exemplar the story did not list), and the four "Composizione
+   movimenti" bands 2.73 / 2.04 / 4.85 / 3.61 — with their legend DOTS
+   carrying the identical four values (a second unlisted family). All five
+   tones get the same 70/30 ink mix so that a band strip stays ONE palette
+   instead of two darkened bands next to two untouched ones; `--info` and
+   `--ink-3` were already above the 3:1 floor and are mixed for that reason
+   only, never to reach it. No token changes value, no new literal. */
+.flow-bar-in,
+.util-bar .seg.flown{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
 .flow-bar-out{ background: color-mix(in oklch, var(--bad) 70%, var(--ink)); }
+.flow-bar-accent{ background: color-mix(in oklch, var(--accent) 70%, var(--ink)); }
+.flow-bar-info{ background: color-mix(in oklch, var(--info) 70%, var(--ink)); }
+.flow-bar-muted{ background: color-mix(in oklch, var(--ink-3) 70%, var(--ink)); }
 
 /* Story 13.9: block-level alert/confirmation box for the (auth) forms
    (login/forgot-password/set-password) — same soft-bg + colored-text pairs
@@ -893,7 +912,8 @@ html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
 }
 .util-bar .seg{ position: absolute; top: 0; bottom: 0; }
 .util-bar .seg.booked{ background: var(--info); }
-.util-bar .seg.flown{ background: var(--ok); }
+/* `.seg.flown`'s own fill lives in the `.flow-bar-in` rule above (story 15.8b,
+   R-15.8b-e): same shape, same defect, ONE decision — see the comment there. */
 .util-bar .seg.mx{ background: repeating-linear-gradient(135deg, var(--accent) 0 4px, transparent 4px 8px); opacity: 0.9;}
 .util-value{ font-family: var(--font-mono); font-size: 11.5px; text-align: right; color: var(--ink-2); }
 /* Story 13.10 review F5: all 3 call sites (`rank-bars.tsx` + 2 raw usages in
@@ -1633,6 +1653,20 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
 @media (max-width: 413px){
   .chart-label:nth-last-child(even){ visibility: hidden; }
 }
+
+/* Story 15.8b (R-15.8b-e): the axis label is TEXT, so its floor is 4.5:1 —
+   and `--ink-4` measured 3.66:1 on `--panel` in the light theme (4.14 dark),
+   the "grafici" face of the long-standing `--ink-4`-as-body-text debt. The
+   remedy is the cheapest one the AC allows: REUSE a token already measured
+   above the floor rather than invent a literal or a token — `--ink-3` is the
+   same muted family one step up, and is exactly what `.bottom-sheet-sub`
+   already uses at 4.85/5.72. No token changes value, and `--ink-4`'s other
+   consumers (`.so-sub`, `.mobile-row-chev`, `.syl-num`, `.ppr-card-id`) are
+   untouched: this switches ONE class's consumer, it does not repaint a token.
+   The colour lives here, not inline in `bar-chart.tsx`/`line-chart.tsx`,
+   because an inline style wins over any class rule — the two components keep
+   every other inline declaration (size, family, alignment) they had. */
+.chart-label{ color: var(--ink-3); }
 
 /* Custom date field (user decision 2026-07-21): the browser's native
    calendar popup is replaced by `CalendarPopover` (`ui/date-input.tsx`,
@@ -3308,4 +3342,147 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      consumers — the guard is written on the REQUIREMENT (43.5), never on the
      value obtained. */
   .export-menu-panel .pop-row > .btn{ min-height: 44px; }
+}
+
+/* ---------- statistiche + impostazioni mobile (story 15.8b, epic 15 R1-R4) ----------
+   Two admin surfaces of opposite natures: `/dashboard/reports` writes nothing
+   and is 21.939px tall on a phone (measured, 145-aircraft fleet), while
+   `/dashboard/settings` writes through ~15 endpoints and carried 231 targets
+   under 44px — 201 of them 24.67px `.btn.mini`s sitting at x=503-637 in a
+   375px viewport, i.e. off the right edge and unreachable without scrolling a
+   table sideways (hit-test on their centre returned the tab bar, not the
+   button).
+
+   Everything below lives inside `@media (max-width: 640px)` except the two
+   kinds of declaration R1 allows out of it: the `display: none` of a mobile
+   tree (so the desktop never renders it) and the `.billing-split`-style layout
+   classes that only MOVE an inline style into the sheet. The switch is hung on
+   classes THIS story owns — never on `.card`, `.card-head`, `.students`,
+   `.kpi-row`, `.form-grid`, `.util-*`, `.split` and above all never on
+   `.segmented` (six consumers, two of them on this very page): a rule that
+   looked harmless here would repaint Pianificazione, Panoramica and Scadenze
+   (lesson 15.3 F1, reconfirmed 15.5 F5 and 15.7).
+
+   The contrast half of the story does NOT live here: `.flow-bar-*` and
+   `.chart-label` sit next to their own families further up, because a contrast
+   remedy is valid at every width and the next reader will look for it there
+   (review 15.8a LOW-3). */
+
+.expiry-types-mobile,
+.cash-categories-mobile,
+.ranked-cap-foot{ display: none; }
+
+@media (max-width: 640px){
+  /* --- Statistiche: the period toggle and the two metric toggles (AC 1) ---
+     Both are `.segmented`s, and `.segmented` is shared with four surfaces
+     outside this page, so the 44px floor is hung on two page-owned classes,
+     anchored with `>` so it can only ever reach a DIRECT child of the toggle
+     it names. Pre-fix both were 27.39px tall. The `.page-head` itself is left
+     alone: it already wraps at <=640 (13.10) and measured 104.83px in both
+     locales — the arithmetic is what matters, not the intention (lesson 15.6
+     R-15.6-e), and 44px links inside a 33.39px box is exactly the case where
+     a head grows if nothing else gives, so the padding of the box comes down
+     by the 2px it can afford. */
+  .reports-period > a,
+  .reports-rank-metrics > button{
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .reports-period{ padding: 0; flex: 1 1 100%; }
+  .reports-period > a{ flex: 1 1 0; }
+  .reports-rank-metrics{ padding: 0; }
+
+  /* --- the ranked lists (AC 3) ---
+     Three unrelated defects in one place, all measured at 375px: a `.util-row`
+     was a 64.5px three-line stack (label, bar, value each on their own line),
+     the two 145-row cards were 9.356 and 9.398px tall, and the fixed inline
+     `grid-template-columns` of all four call sites (`90px 1fr 80px`, ...) had
+     already been neutralised by 13.10 by turning the row into a flex column.
+     The row stays FLEX for that same reason — switching it back to `grid`
+     would revive those inline px tracks and re-clip the value (13.10's own
+     defect) — but wraps instead of stacking: label and value share the first
+     line, the bar takes the second. */
+  .ranked-rows > .util-row{ flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .ranked-rows > .util-row > :first-child{ flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ranked-rows > .util-row > .util-value{ flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
+  .ranked-rows > .util-row > .util-bar{ flex: 0 0 100%; order: 3; }
+
+  /* The cap itself (R-15.8b-b, pattern 13.4). CSS, not JS: every row is
+     rendered at every width — `reports.spec.ts` reads `reports-fleet-row-*`
+     and `reports-rank-*-row-*` page-level at 1280px, and AC 9 wants exactly
+     one node per testid at BOTH widths — and only the phone hides the rows
+     past the limit. `.ranked-row-overflow` is put on the rows by the callers
+     from the ONE constant in `src/lib/mobile-reports.ts`, so the limit is
+     never written twice. */
+  .ranked-rows-capped .ranked-row-overflow{ display: none; }
+  .ranked-cap-foot{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .ranked-cap-foot > .btn{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
+
+  /* --- Impostazioni: the form half of the seven cards (AC 4) ---
+     `.form-grid` was already one column here (13.10), so what was broken was
+     the SIZE of the controls: 13 inputs at 36.84px, 3 time/date fields at
+     38.84, 12 "Salva" at 34.84, one calendar trigger at 24. Anchored to a
+     class carried only by these seven cards. The nested calendar trigger
+     stays at 36x36 — the PO line since 15.7: a nested trigger lives INSIDE a
+     44px box (`airops.css`'s own `.movements-filter-panel` precedent), and
+     it is DECLARED in the sweep instead of being silently excluded (lesson
+     15.8a MINOR-1). */
+  .settings-card .input{ min-height: 44px; }
+  .settings-card .date-input-btn{ width: 36px; height: 36px; }
+  .settings-card textarea.input{ min-height: 88px; }
+  /* "Salva"/"Aggiungi"/"Invia email di prova"/"Annulla": full-width and 44px.
+     A card save is the end of a column of fields — on a phone it is the whole
+     column's width (57.66px measured before), not a chip lost against the left
+     margin. The `:only-child` is what tells a SAVE ROW (one button in its own
+     div, the shape all five save actions share) from the sheet's action column
+     and the head's own action, which are laid out by their own rules. */
+  .settings-card .btn{ min-height: 44px; justify-content: center; }
+  .settings-card div:has(> .btn.primary:only-child) > .btn.primary{ width: 100%; }
+  .settings-card form > div:has(> .btn) > .btn{ flex: 1 1 0; }
+
+  /* The head: `.card-head` is shared by every card in the app, so the phone
+     rule is hung on `.settings-card >` and touches only its DIRECT children.
+     Pre-fix heads at 375/IT: 89.17 · 89.17 · 132.02 · 73.23 · 116.08 · 116.08
+     · 147.95. The head action ("Aggiungi", "Invia email di prova") goes to
+     44px, which alone would grow every head that has one, so the head's own
+     padding comes down and the action takes a full row of its own instead of
+     fighting the title for the same line. */
+  .settings-card > .card-head{ padding: 10px 16px; column-gap: 8px; row-gap: 6px; }
+  .settings-card > .card-head > .spacer{ display: none; }
+  .settings-card > .card-head > .btn{ flex: 1 0 100%; }
+  .settings-card > .card-head > .card-sub{ flex: 1 0 100%; }
+
+  /* --- the three CRUD tables become card lists (AC 5) ---
+     `.students` measured 317 visible against 694 of content: FOUR columns and
+     the whole action group lived past the right edge. The desktop body goes
+     away, the mobile tree arrives; both switches are hung on classes this
+     story owns, never on `.students`/`.student-row` (13 consoles). */
+  .expiry-types-desktop-body,
+  .cash-categories-desktop-body{ display: none; }
+  .expiry-types-mobile,
+  .cash-categories-mobile{ display: block; }
+
+  /* The card of one catalogue entry: ONE `<button>` with `<span>` children
+     (zero nested interactives, asserted), the name ellipsised, the status
+     badge on the right. The row primitive of 15.2/15.5 is reused as-is —
+     `.mobile-row` and its children already carry the 44px floor, the
+     `:active` tint and the two-column grid. */
+  .mobile-row-catalog{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .mobile-row-catalog > .mobile-row-main{ grid-column: 1; grid-row: 1; }
+  .mobile-row-catalog > .mobile-row-side{ grid-column: 2; grid-row: 1; }
+  .mobile-row-catalog > .mobile-row-side .badge{ white-space: nowrap; }
+
+  /* The sheet's action column: "Elimina" is a `secondStep` inside the same
+     sheet (R-15.8b-d), so no second overlay is ever stacked on it (AD-8) —
+     and the confirmation prose needs a line of its own. */
+  .catalog-sheet-step{ display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+  .catalog-sheet-step .input{ min-height: 44px; }
+
+  /* The checkbox row of the expiry-type form: `blocksBooking` is the manoeuvre
+     that feeds the 7.4/14.4 guards, and it was a 13px box in a 15px row. Same
+     idiom as `.membership-fee-override-label` (15.7). */
+  .settings-card form label:has(> input[type="checkbox"]){ min-height: 44px; align-items: center; }
+  .settings-card form input[type="checkbox"]{ width: 20px; height: 20px; flex-shrink: 0; }
 }

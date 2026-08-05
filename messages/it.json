@@ -2168,7 +2168,14 @@
         "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
         "genericError": "Non è stato possibile completare l'operazione."
       },
-      "hint": "Imposta la validità a 0 per le Ratings che non scadono mai (es. Ratings notturna). Le scadenze compaiono nella pagina Scadenze."
+      "hint": "Imposta la validità a 0 per le Ratings che non scadono mai (es. Ratings notturna). Le scadenze compaiono nella pagina Scadenze.",
+      "mobile": {
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "empty": "Nessun tipo in questo catalogo.",
+        "yes": "Sì",
+        "no": "No"
+      }
     },
     "medical": {
       "title": "Visite mediche",
@@ -2231,7 +2238,14 @@
         "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
         "genericError": "Non è stato possibile completare l'operazione."
       },
-      "hint": "Le visite mediche sono separate dai Ratings: hanno una propria scadenza e non sono mai testo libero. Le scadenze compaiono nella pagina Scadenze."
+      "hint": "Le visite mediche sono separate dai Ratings: hanno una propria scadenza e non sono mai testo libero. Le scadenze compaiono nella pagina Scadenze.",
+      "mobile": {
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "empty": "Nessuna visita in questo catalogo.",
+        "yes": "Sì",
+        "no": "No"
+      }
     },
     "cashCategories": {
       "title": "Categorie di cassa",
@@ -2277,6 +2291,12 @@
         "deleted": "Categoria eliminata.",
         "deleteInUseError": "La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.",
         "genericError": "Operazione non riuscita. Riprova."
+      },
+      "mobile": {
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "empty": "Nessuna categoria in questo catalogo.",
+        "movementsCount": "{count} movimenti"
       }
     }
   },
@@ -2598,6 +2618,10 @@
         "spent": "Spesa"
       },
       "empty": "Nessun pilota con voli nel periodo."
+    },
+    "mobile": {
+      "capNote": "Prime {shown} di {total}",
+      "showAll": "Mostra tutte ({count})"
     }
   },
   "ui": {

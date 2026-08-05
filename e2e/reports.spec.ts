@@ -1,3 +1,14 @@
+// This spec WRITES a GLOBAL `sched.*` AppSetting row (the `fleetUtilization`
+// test below) and runs in the `reports` Playwright project, serialized after
+// `booking-window` (playwright.config.ts) — story 15.8b, R-15.8b-f. Until then
+// it ran in the main `fullyParallel` project and left an 07:00-21:00 window
+// behind: the TD registered since 14.4, aggravated by 15.4 (every `moveBooking`
+// in the suite inherits that window, so the "today" fixtures of
+// `mobile-planning` fall outside it when the suite runs before ~07:20 or after
+// ~20:40 Rome). The `afterAll` below restores the same permissive window
+// `settings.spec.ts` restores. Running this file alone locally:
+// `npx playwright test reports.spec.ts --no-deps` (otherwise Playwright first
+// runs its `chromium`/`settings`/`booking-window` dependencies).
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
@@ -202,7 +213,24 @@ function formatMinutesHm(totalMinutes: number): string {
   return `${hours}:${String(minutes).padStart(2, '0')}`;
 }
 
+/** Same permissive baseline as `settings.spec.ts`/`booking-window.spec.ts`: a PUT has no unset, so restoring a maximally permissive window is the only way to neutralise the one the `fleetUtilization` test writes (story 15.8b, R-15.8b-f). */
+const PERMISSIVE_SCHEDULING = { openTime: '00:00', closeTime: '23:59', minSlotMinutes: 30, turnaroundMinutes: 0, maxAdvanceDays: 3650 };
+
 test.describe('Reports / Statistiche (story 12.10)', () => {
+  test.afterAll(async ({ browser }) => {
+    // Story 15.8b (R-15.8b-f): the `fleetUtilization` test needs `sched.*`
+    // CONFIGURED, and until this story nothing ever put it back — read back
+    // here, not assumed.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const put = await page.request.put('/api/v1/settings/scheduling', { data: PERMISSIVE_SCHEDULING });
+    expect(put.status()).toBe(200);
+    const readBack = await page.request.get('/api/v1/settings/scheduling');
+    expect(await readBack.json()).toMatchObject(PERMISSIVE_SCHEDULING);
+    await context.close();
+  });
+
   test('a real fixture (2 flights, 1 completed transit) moves the KPIs/mix by EXACTLY the right delta, and populates fleet/instructor/topPilot rows exactly (AC 1/3/4)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 

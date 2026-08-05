@@ -85,7 +85,7 @@ export function SchedulingCard({ initial, labels }: SchedulingCardProps) {
   }
 
   return (
-    <div className="card" data-testid="scheduling-settings-card">
+    <div className="card settings-card" data-testid="scheduling-settings-card">
       <div className="card-head">
         <div className="card-title">{labels.title}</div>
         <span className="card-sub">{labels.sub}</span>

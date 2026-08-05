@@ -94,6 +94,13 @@ function expiryTypeCardLabels(t: Translator, ns: 'ratings' | 'medical'): Ratings
       genericError: t(`${ns}.feedback.genericError`),
     },
     hint: t(`${ns}.hint`),
+    mobile: {
+      openDetail: t(`${ns}.mobile.openDetail`),
+      close: t(`${ns}.mobile.close`),
+      empty: t(`${ns}.mobile.empty`),
+      yes: t(`${ns}.mobile.yes`),
+      no: t(`${ns}.mobile.no`),
+    },
   };
 }
 
@@ -298,6 +305,15 @@ export default async function SettingsPage({ params }: PageProps) {
           validityInput: 'medical-validity-input',
           formSubmit: 'medical-form-submit',
           formError: 'medical-form-error',
+          mobileList: 'mobile-medical-list',
+          mobileEmpty: 'mobile-medical-empty',
+          mobileRow: 'medical-row-mobile',
+          mobileSheet: 'mobile-medical-sheet',
+          mobileEditButton: 'medical-edit-button-mobile',
+          mobileToggleButton: 'medical-toggle-button-mobile',
+          mobileDeleteButton: 'medical-delete-button-mobile',
+          mobileDeleteConfirm: 'medical-delete-confirm-mobile',
+          mobileDeleteCancel: 'medical-delete-cancel-mobile',
         }}
       />
 
@@ -344,6 +360,14 @@ export default async function SettingsPage({ params }: PageProps) {
             deleted: t('cashCategories.feedback.deleted'),
             deleteInUseError: t('cashCategories.feedback.deleteInUseError'),
             genericError: t('cashCategories.feedback.genericError'),
+          },
+          mobile: {
+            openDetail: t('cashCategories.mobile.openDetail'),
+            close: t('cashCategories.mobile.close'),
+            empty: t('cashCategories.mobile.empty'),
+            // `t.raw`: `{count}` is interpolated client-side from the row's own
+            // `movementCount` (same reason as `scheduling.hint` above).
+            movementsCount: t.raw('cashCategories.mobile.movementsCount') as string,
           },
         }}
       />

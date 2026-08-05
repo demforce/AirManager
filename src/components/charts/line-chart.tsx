@@ -69,7 +69,9 @@ export function LineChart({ data, labels, height = 180, color = 'var(--accent)' 
       </svg>
       <div aria-hidden="true" style={{ display: 'flex', justifyContent: 'space-between', padding: `0 ${padPercent}%` }}>
         {labels.map((label, i) => (
-          <span key={i} className="chart-label" style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>
+          // Story 15.8b (R-15.8b-e): colour moved to `.chart-label` in
+          // `airops.css`, same reason as `bar-chart.tsx`'s own label row.
+          <span key={i} className="chart-label" style={{ fontSize: 9, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
             {label}
           </span>
         ))}
