@@ -502,6 +502,8 @@ Baseline ricostruita su questa macchina (build di produzione, `npm run start`) d
 
 **a) `ExportMenu`: un solo nodo che cambia forma, con `MobileSheet` come telaio.** AD-4 chiede "la stessa istanza React che cambia contenitore", ma l'architettura dell'epic vieta lo switch JS: due contenitori resi insieme raddoppierebbero i nodi (e AC 8 asserisce 1 nodo per voce a 375 **e** 1280). La forma implementata è quindi: **una** `MobileSheet` a ogni larghezza, che porta con sé le classi `.popover`/`.popover-scrim` — così il popover desktop **non è riscritto**, è lo stesso CSS di sempre (nessuna duplicazione di ombra/bordo/raggio, nessun literal nuovo), e `@media (max-width:640px)` gli mette sopra la forma sheet, che vince perché `.mobile-sheet-panel` è più avanti nel file. `MobileSheet` guadagna tre prop opzionali (`className`/`scrimClassName`/`panelClassName`). Il vantaggio non è estetico: il menu entra nella famiglia di sheet dove la 15.10 metterà il focus trap **una volta sola**, invece di restare un sesto pannello fatto a mano.
 
+⚠️ **Il desktop resta identico nella GEOMETRIA, non nel COMPORTAMENTO** — dichiarazione che mancava alla consegna (review LOW-1). Misurato: il popover >640px è ancorato esattamente come prima (`panelRight == wrapperRight == triggerRight`, 6px sotto il wrapper, su tutti e dieci i consumer a 641/800/1280, diff programmatico su `x,y,w,h,z,position,padding,radius,display,gap` senza differenze). Ma il telaio `MobileSheet` gli porta **quattro comportamenti nuovi** che il vecchio `.popover` non aveva, e valgono su **dieci** superfici desktop: (i) è un `role="dialog"` con `aria-label="Esporta"`; (ii) all'apertura il **focus si sposta nel pannello** (prima restava sul trigger) — con `preventScroll`, che è ciò che tiene ferma la pagina (§3b); (iii) **Escape chiude** il menu (prima no); (iv) il menu entra nel **registro globale "un solo sheet alla volta"** (`mobile-sheet.tsx:55`), quindi aprirlo chiude uno sheet eventualmente aperto. È con ogni probabilità un **miglioramento** e non va annullato, ma è una scelta: `MobileSheet` non ha focus trap né `aria-modal` (rimandati alla 15.10), e spostare il focus dentro un dialog **non modale** su desktop non è un no-op. Dichiarato qui perché "popover desktop identico" da solo non lo diceva.
+
 **b) `focus({ preventScroll: true })` in `MobileSheet`.** Misurato: senza, l'apertura del menu export **faceva scorrere `.main`** su desktop (logbook/ppr −46px, movements −44, scheda persona **−461**). Uno sheet è `position: fixed` in fondo al viewport, quindi per i cinque consumer esistenti la modifica è un no-op per costruzione; per il sesto è ciò che tiene fede a "desktop invariato".
 
 **c) Dove vive lo stato della KPI strip (AD-1).** `billing-panels.tsx` **resta un server component**; la strip tappabile è un'isola client nuova (`billing-panels-mobile.tsx`) che riceve lo **stesso** oggetto `BillingSummary` e lo formatta con lo stesso `formatCents`. Nessun ricalcolo, nessun `'use client'` sul componente intero.
@@ -554,7 +556,7 @@ Ogni guardia è stata provata **rossa** simulando il pre-fix **col repo intatto*
 | v | ellissi su `.mobile-row-name`/`-sub`, `.billing-cat-name`, link dei saldi | `CLIPPED_WITHOUT_ELLIPSIS() === []` | iniettato `text-overflow: clip` ⇒ la lista non è più vuota |
 | vi | tracce `minmax(0,1fr)` + flag su riga propria | `CHILDREN_OUT_OF_CARD() === []` (guardia sul **rect**) | spostato `.mobile-row-side` di 80px ⇒ la lista non è più vuota |
 | vii | empty state mobile = 1 nodo con stringa distinta | `toHaveCount(1)` sui due empty + testi diversi | clonato il nodo con `appendChild(cloneNode(true))` ⇒ il conteggio diventa 2 |
-| vii-bis | `.billing-head > .billing-feedback{display:none}` | *irraggiungibile per flusso* (§3e): la guardia possibile è l'iniezione di un `<p data-testid="billing-adjust-feedback">` nella testata a 375 e la verifica che resti `display:none` | **dichiarata, non implementata come test**: sarebbe una guardia su uno stato che il codice non può produrre. Detto, non taciuto. |
+| vii-bis | `.billing-head > .billing-feedback{display:none}` | **IMPLEMENTATA** (correzione di review LOW-2, `mobile-billing.spec.ts` test AC 12): un `<p class="billing-feedback" role="status">` viene **iniettato** nella testata — a 375 deve restare `display:none` **e** lasciare la testata alla stessa altezza (175 → 175), a 1280 lo **stesso** nodo deve essere `display:block` | la mia motivazione originale ("guardia su uno stato che il codice non può produrre") era sbagliata: iniettare uno stato che il flusso non produce è **esattamente** lo scopo dell'iniezione DOM, la stessa tecnica che (vii) usa per l'empty state. La discriminanza è nel confronto 375 vs 1280 **sullo stesso nodo**: senza la regola il ramo a 375 leggerebbe `block`, come fa 1280 |
 | viii | `.billing-filter-panel .input{min-height:44px}` e `.transaction-form .input{...}` | altezze desktop dei 7 controlli dell'editor a 1280 (tutte < 44) | iniettata la **variante DISCENDENTE** `.slideover .input{min-height:44px}` ⇒ `transaction-kind` sale a ≥44: la regola ancorata non ci arriva, quella discendente sì |
 | ix | nessuna regola tocca `.segmented`/`.util-*`/`.split` fuori Contabilità/`.date-input` altrove | geometria di `/dashboard/reports`, `/logbook`, `/movements`, `/bookings` a 375 confrontata con la baseline pre-fix | i valori sono **dati misurati prima** della modifica; una regola non ancorata li sposterebbe (è il difetto che 15.3 F1 e 15.5 F5 hanno misurato) |
 | x | `ExportMenu` su un consumer NON toccato (`/dashboard/fleet`, una sola voce) | contenimento nel viewport + voci ≥43,5 + 1 nodo per voce a 375 e 1280 | il pre-fix è la misura registrata (`158a-C-export-pre.json`): 34,84px e popover a 180px ancorato a destra |
@@ -583,7 +585,7 @@ Ogni guardia è stata provata **rossa** simulando il pre-fix **col repo intatto*
 | (g) `.search` `cw 188 / sw 190` | **subìto** sul desktop; su mobile la casella è full-width e il difetto non si presenta |
 | (h) campo pilota desktop 18,13px | **subìto e dichiarato** (fuori mandato: è il desktop) |
 | (i) `.so-sub` a `--ink-4` (3,66:1) | **subìto e dichiarato**: `TransactionEditor` passa un sottotitolo ("Contabilità"). Il fix dell'AC 9 non lo copre (è un token del telaio `SlideOver`, 11 consumer) e allargarlo sarebbe fuori mandato |
-| (j) `billing.spec.ts:296` delta-assert globale | **non aggravato**: nessun test nuovo asserisce un aggregato globale con uguaglianza (§7 deviazione 4). Le fixture create per run: **≤26** movimenti/persone nel test più pesante (21 movimenti della paginazione), tutte con handle run-unique |
+| (j) `billing.spec.ts:296` delta-assert globale | **aggravato IN POTENZA, dichiarato** — riga corretta dopo la review (MINOR-3). La dichiarazione precedente ("non aggravato") era vera su **metà** del requisito: nessun test nuovo **asserisce** un aggregato globale con uguaglianza (§7 deviazione 4), ma l'AC 15 (j) vieta anche di **CREARE denaro** fuori dalla catena, e questo spec ne crea — nel project `chromium` `fullyParallel`: **4 ricariche** (`recordTopUp` 15.000 + 9.000 + 12.000 + 20.000 = **56.000 cent**, che muovono `deposits.totalCents`, cioè **proprio** l'aggregato che `billing.spec.ts:341` confronta con uguaglianza), **10 chiamate `recordCashMovement`** (una da 21 righe per la paginazione: ~28 movimenti per run), **1 rettifica** (−2.500) e **1 storno**. **Causalità NON provata, e va detto**: nell'arbitro della review il flaky è caduto proprio lì (`depositsTotal` +5.000 invece di +10.000), ma quel test è documentato flaky **2 run su 2** in `billing.spec.ts:290-292`, ha già flakato nell'arbitro **15.7** (prima che questa story esistesse) e il delta mancante non corrisponde a nessuna fixture di `mobile-billing.spec.ts`. Rischio **residuo** accettato dal PO; il rimedio strutturale resta quello che il TD (j) registra (delta a finestra breve, o project serializzato), non preso qui. Il fix di review **non aggiunge una sola scrittura**: le tre asserzioni di focus di MINOR-2 vivono dentro test che quelle fixture le creavano già, e la guardia dei link "Saldi negativi" gira su una riga **iniettata nel DOM** proprio per non creare un saldo negativo vero |
 | (k) `account-section.tsx` non responsive | **fuori scope** (15.9), ma monta lo stesso `ExportMenu`: misurato a 375 (sheet a x=0, voci 44, un nodo per voce) e a 1280 (popover identico) |
 | (l) `viewport-fit=cover` mai dichiarato | **subìto** (TD di epic, 15.10): gli `env(safe-area-inset-*)` valgono 0 |
 | **nuovo (m)** | il link `negative-balance-row > a` misura **3,61:1** in chiaro — colore globale degli `<a>`, TD sistemico, fuori mandato (§5) |
@@ -608,9 +610,13 @@ Ogni guardia è stata provata **rossa** simulando il pre-fix **col repo intatto*
 
   **Il flaky non è di questa story, con la prova**: `flights.spec.ts:602` fallisce su `POST /flights` con **422** alla creazione della fixture — prima ancora che la UI entri in scena — e passa al retry. È il percorso `registerFlight` (gate scadenze/profilo), non tocca né la Contabilità, né l'`ExportMenu`, né una sola riga di CSS di questa story; la stessa classe di flake è già registrata dagli arbitri 15.6/15.7. Verificato inoltre che il file non condivide fixture con `mobile-billing.spec.ts` (persone e categorie sono run-unique da entrambe le parti).
 
-## 10. Nota di tensione per la 15.8b (dichiarata come chiede la story)
+## 10. Nota di tensione per la 15.8b — riscritta dopo la review (LOW-3): dove vive `.flow-bar-*` e come si riusa DAVVERO
 
-La barra "Per categoria" **non condivide** il token con `.util-bar .seg` attraverso una classe: qui era uno **stile inline** con `var(--ok)`/`var(--bad)`, là è `.util-bar .seg.flown` con gli stessi due token. Il difetto è quindi lo stesso (**2,47:1** in chiaro in entrambi i casi) ma il punto di applicazione è diverso. La decisione presa **una volta sola qui** è la coppia `.flow-bar-in`/`.flow-bar-out`, dichiarata fuori dalla media query e nominata per la forma: la 15.8b **riusa quelle due classi** su `.util-bar .seg` invece di introdurre una seconda soluzione per lo stesso colore. Se lo facesse diversamente, gli stessi due token avrebbero due rimedi diversi nella stessa app.
+La barra "Per categoria" **non condivide** il token con `.util-bar .seg` attraverso una classe: qui era uno **stile inline** con `var(--ok)`/`var(--bad)`, là è `.util-bar .seg.flown` (`airops.css:874`) con gli stessi due token. Il difetto è lo stesso (**2,47:1** in chiaro in entrambi i casi), il punto di applicazione no. La decisione presa **una volta sola** è la coppia `.flow-bar-in`/`.flow-bar-out`, nominata per la **forma** e non per la pagina.
+
+**Dove vive adesso.** Accanto a `.stat-tone-*`, nel blocco `/* ---------- flow-bar (story 15.8a, R-15.8a-i) ---------- */` subito dopo i tre override `html[data-theme="dark"] .stat-tone-*` — non più in coda al blocco mobile di questa story. Motivo (review LOW-3, decisione PO): è un rimedio di contrasto **token-level valido a ogni larghezza**, il gemello dichiarato del rimedio per i **testi**, e chi cercherà la medicina per un oggetto grafico la cercherà lì, non dentro un blocco mobile per-story. Lo spostamento è un **MOVE**: zero cambi di valore, rimisurato pre/post con lo stesso metodo (canvas→WCAG, cookie `am-theme`, `getClientRects().length > 0`) — `flow-bar-in` **4,56** chiaro / **12,36** scuro e `flow-bar-out` **6,10** / **9,87** *prima e dopo*, con il `background` calcolato identico alla cifra (`oklch(0.529998 0.0876005 154.995)` e `oklch(0.488004 0.129589 25.0064)` in chiaro) a **375 e 1280**; i gemelli di testo restano 10,63 / 9,82 (chiaro) e 9,3 / 6,61 (scuro). Desktop rimisurato pre/post: `.billing-head` **109,23** @1280 · **152,23** @800 · **180,53** @641 IT, `.students` 990/990 · 678/988 · 519/988, `.billing-split` **488/488**, `.page-head` 51,44, `pageOverflow` 0, e il link dei saldi negativi **18,13 in entrambi** (il pavimento dei 44px è dentro la media query, il desktop non lo vede).
+
+**Come si riusa davvero** — la promessa precedente ("la 15.8b riusa quelle due classi su `.util-bar .seg`") era **imprecisa sulla meccanica CSS**, e va letta così: `.util-bar .seg.flown` ha specificità **(0,3,0)**, `.flow-bar-in` ha **(0,1,0)**. Aggiungere la classe al `<div class="seg flown">` **non cambierebbe nulla**: vince la regola esistente. Il riuso corretto è un selettore **alla pari** — `.util-bar .seg.flow-bar-in{ background: color-mix(…) }`, che rimanda alla stessa decisione — oppure togliere il `background` da `.seg.flown` e lasciare che sia la classe di forma a portarlo. Quello che la 15.8b **non** deve fare è prendere una seconda decisione di colore sugli stessi due token.
 
 ## 11. Cosa NON ho fatto
 
@@ -639,3 +645,95 @@ La barra "Per categoria" **non condivide** il token con `.util-bar .seg` attrave
 - `src/styles/airops.css` — blocco `contabilità mobile + export menu (story 15.8a)` (+276 righe)
 - `messages/it.json`, `messages/en.json` — `BillingPage.mobile.*` (24 chiavi per locale, parità 155/155)
 - `prisma/seed.ts` — seconda riga non attribuita, una per consumer
+
+---
+
+## 13. Fix di review (2026-08-05, fix-subagent Opus 5 xhigh) — 3 minor + 4 low chiusi
+
+Decisioni PO ratificate il 2026-08-05 sul report `15-8a-review-report.md`. Nessun commit: la consegna è il codice + questo aggiornamento.
+
+| finding | esito | dove |
+|---|---|---|
+| **MINOR-1** — i 61 link di "Saldi negativi" a 18,13px, e la guardia che li escludeva senza dirlo | **chiuso** | `airops.css` (media query, `.billing-negative-row > a`: `min-height: 44px; line-height: 44px`) + `e2e/mobile-billing.spec.ts` (l'esclusione `.billing-negative-list` **sparisce** da `SMALL_TARGETS`; il doc-comment dichiara le due esclusioni residue **e** i due trigger calendario a 36, decisione PO linea 15.7). Misurato: **18,13 → 44** a 320/375/390, ellissi conservata (`display` resta `block`: un `inline-flex` avrebbe reso il testo un item anonimo e `text-overflow` avrebbe smesso di applicarsi), desktop **18,13 invariato** |
+| **MINOR-2** — il ritorno di focus dal `secondStep` copriva 1 ramo su 3 | **chiuso** | `billing-console.tsx`: `sheetPrimaryRef` → **tre** ref (`sheetAdjustActionRef`/`sheetReclassifyActionRef`/`sheetReverseActionRef`) + `sheetMethodRef` + `sheetPreviousStepRef`; l'effetto legge lo step che si sta **lasciando** e rimette il focus sul bottone che lo aveva aperto, qualunque sia il ramo o la combinazione di azioni visibili. In più: **entrando** nella riclassifica il focus va al primo bottone di metodo (prima cadeva su `<body>` come all'uscita: era lo stesso `else` rotto) |
+| **MINOR-3** — dichiarazione TD (j) falsa a metà | **corretta** (nessun codice) | §8 riga (j) |
+| **LOW-1** — il desktop dell'`ExportMenu` cambia comportamento, non geometria | **dichiarato** | §3a, capoverso finale |
+| **LOW-2** — la guardia (vii-bis) dichiarata non implementabile | **implementata** | §6 riga vii-bis + test AC 12 |
+| **LOW-3** — dove vive `.flow-bar-*` e la meccanica del riuso | **spostata + corretta** | `airops.css` (accanto a `.stat-tone-*`) + §10 |
+| **LOW-4** — i due trigger calendario a 36px | **coperto da MINOR-1** (decisione PO: restano 36, l'esclusione è ora **dichiarata** nel doc-comment della guardia) | `e2e/mobile-billing.spec.ts` |
+
+**Guardie nuove, tutte provate rosse sul pre-fix** (metodo 15.5 §12: `git stash push -- src/` con lo spec al suo posto, **rebuild**, run; poi `stash pop`, rebuild, run):
+
+```
+PRE-FIX  (src a HEAD, spec fixato)   4 failed / 22 passed  E2E_EXIT=1
+  · AC 3 storno      → transaction-reverse-action-mobile "inactive" dopo "Indietro"   (MINOR-2)
+  · AC 3 riclassifica→ transaction-reclassify-method-mobile-CASH "inactive" entrando  (MINOR-2)
+  · AC 5             → SMALL_TARGETS = 3 nodi a 18,13 (erano esclusi)                 (MINOR-1)
+  · AC 12            → idem dentro il blocco (vi)                                     (MINOR-1)
+POST-FIX (src fixato)                26 passed             E2E_EXIT=0
+```
+
+- Il ramo **ACCOUNT** del focus non fallisce sul pre-fix, ed è giusto così: era l'unico coperto. È asserito lo stesso (regressione).
+- Le tre asserzioni di focus vivono **dentro test esistenti** (rettifica-invalidi, storno, riclassifica) e la guardia dei link gira su una riga **iniettata**: il fix non aggiunge **nessuna** scrittura di denaro al project parallelo (v. TD (j) corretto).
+- `npm run gates` verde dopo il fix: `PASS lint / PASS typecheck / PASS test 1739 / PASS build`.
+
+# Review Record — 15.8a (reviewer adversarial Opus 5 xhigh, fix-subagent Opus 5 xhigh — 2026-08-05)
+
+Report integrale della review: `15-8a-review-report.md`.
+Verdetto: **SHIPPABLE-WITH-FIXES** — **0 Major**, 3 Minor, 4 Low (terzo ciclo su quattro senza major).
+Fix in `2e50615` (+ §13 "Fix di review" nel Dev Agent Record).
+
+## Arbitro della review (pre-fix)
+
+`CI=1` su build di produzione, DB fresco: **E2E_EXIT=0 — 430 passed + 1 flaky (10.6m)** su 431
+(405 + 26 nuovi, TUTTI e 26 girati, zero skip). Il flaky NON era quello dichiarato dal dev ma
+`billing.spec.ts:296` — il TD (j) già registrato. Gates verdi (1739 unit).
+
+**Il nucleo contabile ha retto l'attacco dal vivo**: prospettiva club provata su TRE facce
+(card mobile = cella desktop = **xlsx letto con exceljs**); `ledgerClubAmountCents` importata,
+zero duplicati; secchiello gated sul COUNT provato col caso patologico **+903/−903 →
+"Non attribuiti (2) · 0,00 €"**; il SEED a due righe marcate (deviazione 1) verificato
+idempotente, consumato una riga per spec, fuori da ogni finestra di periodo, senza asserzioni
+assolute nel repo; ExportMenu su **10 consumer** (la story ne diceva 9 — correzione del dev
+giusta) con bottom sheet dentro il viewport a 375 e desktop geometricamente identico; KPI
+parity nello stesso render; race/replay/409 delle scritture contabili sani (PATCH concorrente
+200/200 last-write-wins: pre-esistente server-side, osservazione non finding).
+
+## Findings → esito
+
+| # | Sev | Difetto | Esito |
+|---|---|---|---|
+| MINOR-1 | minor | i **61 link** di "Saldi negativi" a 18,13px (AC 6 chiedeva ≥44) con la guardia `SMALL_TARGETS` che li ESCLUDEVA senza dichiararlo — un'esclusione non dichiarata è una guardia che mente | **decisione PO: 44px** — `min-height/line-height: 44px` (NON l'idioma inline-flex della riga accanto: avrebbe rotto l'ellissi, motivato nel commento); l'esclusione sparisce dalla guardia, le due residue + i calendari 36×36 sono DICHIARATI nel doc-comment. Rossa sul pre-fix (3 × 18,13) |
+| MINOR-2 | minor | uscendo da un `secondStep` su riga CASH il focus cadeva su `<body>` (il difetto 15.2 F1 "risolto" solo su 1 ramo su 3) | tre ref per-step + ritorno sul bottone che ha APERTO lo step, per ogni ramo; scoperta ed estesa anche all'INGRESSO della riclassifica su riga CASH (stesso else rotto); guardie sui rami mancanti con lettura letterale di `document.activeElement`, rosse sul pre-fix (`Received: inactive`) |
+| MINOR-3 | minor | record §8: TD (j) dichiarato "non aggravato" ma lo spec CREA denaro nel project parallelo (56.000 cent + ~28 movimenti/run) | **decisione PO: dichiarazione corretta** — aggravato IN POTENZA, causalità del flake non provata (pre-esistente 2/2), rimedio = TD (j); il fix di review non aggiunge scritture |
+| LOW-1 | low | il redesign ExportMenu cambia il COMPORTAMENTO desktop (role=dialog, focus, Escape, one-sheet) a geometria identica: non dichiarato | dichiarato nel record §3a come scelta (focus trap/aria-modal restano a 15.10) |
+| LOW-2 | low | guardia (vii-bis) dichiarata "non implementabile" — la review l'ha implementata per iniezione | adottata (iniezione del `<p>` → none@375/block@1280), tabella §6 corretta con l'autocritica del dev |
+| LOW-3 | low | `.flow-bar-*`: nome giusto ma collocazione sbagliata e promessa di riuso IMPRECISA (`.util-bar .seg.flown` a specificità 0,3,0 batte 0,1,0) | **decisione PO: spostare + correggere ora** — MOVE accanto a `.stat-tone-*` con pre/post identici al centesimo di contrasto nei due temi; §10 riscritta con la meccanica reale per la 15.8b (`.util-bar .seg.flow-bar-in`, non il riuso letterale) |
+| LOW-4 | low | trigger calendario annidati a 36×36 | **decisione PO: restano 36** (linea 15.7, primitiva condivisa → sweep 15.10), dichiarati nella guardia |
+
+## Ratifiche PO sopraggiunte in review (3, 2026-08-05)
+
+1. **MINOR-1/LOW-4 → link a 44px subito, calendari restano 36** dichiarati.
+2. **LOW-3 → `.flow-bar-*` ricollocata e §10 corretta ORA**, prima che la 15.8b la erediti sbagliata.
+3. **MINOR-3 → dichiarazione corretta**, nessun cambio di codice (causalità non provata).
+
+## Verifiche del fix
+
+Gates verdi (1739 unit). Discriminanza per stash+rebuild: pre-fix **4 failed / 22 passed**
+(i due rami di focus `Received: inactive`, i 3 link a 18,13 su due AC), post-fix **26 passed
+(29.3s), exit 0**. Spostamento `.flow-bar-*`: contrasti identici al centesimo nei due temi,
+desktop rimisurato su 6 superfici. Guardia nuova (vi-bis) per iniezione DOM sulla lista
+saldi negativi (la card è gated su una condizione globale non costruibile senza scrivere denaro).
+
+## Gate finale
+
+- Arbitro finale, `CI=1` su build di produzione, DB fresco, stato committato: **430 passed + 1 flaky (9.8m), E2E_EXIT=0 — il flaky e'`billing.spec.ts:296`, il TD (j), non attribuibile**
+- `npm run gates`: **verde** (lint, typecheck, 1739 unit, build)
+
+## TD (in `sprint-status.yaml`)
+
+- TD (j) confermato col perimetro vero (lo spec nuovo crea denaro nel parallelo — aggravato in
+  potenza, rimedio strutturale invariato).
+- Calendari annidati 36×36 e ✕/typeahead delle primitive → sweep 15.10 (classe già tracciata).
+- `PATCH /cash-movements/{id}` senza guardia di concorrenza (200/200 last-write-wins,
+  pre-esistente server-side, osservazione della review).

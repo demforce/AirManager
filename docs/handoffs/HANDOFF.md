@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-08-04 — **EPIC 14 COMPLETO** (9 story + TD-8) e **EPIC 15 IN CORSO: 15.1-15.7 DONE** (shell, primitive, panoramica, pianificazione, anagrafiche, registro voli, scadenze+transiti). Prossimo lavoro: **story 15.8 — Contabilità + Statistiche + Impostazioni mobile**)
+# HANDOFF — AirManager (aggiornato: 2026-08-05 — **EPIC 14 COMPLETO** e **EPIC 15 IN CORSO: 15.1-15.7 + 15.8a DONE** (la 15.8 è stata SPLITTATA in a/b su decisione PO). Prossimo lavoro: **story 15.8b — Statistiche + Impostazioni mobile**)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -231,6 +231,35 @@ Record: `_bmad-output/implementation-artifacts/15-7-scadenze-transiti-mobile.md`
   l'assunzione della story, con `afterAll` che ripristina (verificato in psql dal reviewer).
 - **Checklist di chiusura**: il report della review va committato NEL commit di chiusura — la svista è
   già successa DUE volte (15.5 e 15.6, recuperate a posteriori).
+
+### 15.8a Contabilità + ExportMenu — DONE (2026-08-05; la 15.8 è stata SPLITTATA in a/b)
+
+**Lo split** (Q1 delle 14 ratifiche, contro la raccomandazione del perimetro pieno): la 15.8 originaria
+era 2,3× la 15.7 con zero codice condiviso fra le tre pagine → 15.8a = Contabilità + redesign ExportMenu,
+15.8b = Statistiche + Impostazioni. Due decisioni PO più ambiziose delle raccomandazioni: **tutti e 7 i
+contrasti si chiudono ora** (inclusi gli oggetti grafici) e **TUTTO `reports.spec` migra in catena**
+(15.8b — chiusura del TD annoso del PUT scheduling globale).
+
+Contenuto 15.8a: registro Entrate/Uscite a card con sheet a parità piena (rettifica/storno/**riclassifica
+in `secondStep` esplicito** — prima il select scriveva al change), i tre riquadri da 580px → **KPI strip
+tappabile con sheet** (prima card da 1068 a 563px), testata 239 vs 266, **ExportMenu ridisegnato a bottom
+sheet** su 10 consumer (popover desktop identico al diff programmatico; guadagna role=dialog/focus/Escape
+anche sul desktop, dichiarato), 7+2 contrasti chiusi con fix additivi, seed con **due CashMovement marcate**
+per il secchiello (deviazione ratificata — nessun endpoint può creare la riga non attribuita). Story file:
+`_bmad-output/implementation-artifacts/15-8a-contabilita-exportmenu-mobile.md` + `15-8a-review-report.md`.
+Commit: `f64faa9` split, `0e5d6cb` feat, `ca5e08d` record, `2e50615` fix, + docs chiusura.
+Arbitro finale: **430 + 1 flaky noto (TD j), exit 0 (9.8m)**.
+
+- Review **0 major** (terzo ciclo su quattro): il nucleo contabile ha retto — prospettiva club provata su
+  tre facce (card = cella desktop = xlsx letto con exceljs), secchiello sul caso patologico +903/−903,
+  race/replay/409. MINOR: 61 link "Saldi negativi" a 18px con guardia che li escludeva IN SILENZIO
+  (un'esclusione non dichiarata è una guardia che mente); focus del secondStep coperto su 1 ramo su 3.
+- **Lezione (durevole) — un cambio di SEED tocca ogni consumatore del DB**: la review l'ha trattato come
+  il punto più delicato della story e l'ha verificato su KPI/report/billing-global. Fixture di seed
+  marcate e a consumo per-spec: il pattern ha retto.
+- **Per la 15.8b**: la coppia `.flow-bar-*` vive accanto a `.stat-tone-*` e la §10 del record documenta
+  la meccanica REALE del riuso (`.util-bar .seg.flown` ha specificità maggiore: serve un selettore alla
+  pari, non il riuso letterale). Baseline e grep dei testid da RIMISURARE sul repo consegnato.
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 
