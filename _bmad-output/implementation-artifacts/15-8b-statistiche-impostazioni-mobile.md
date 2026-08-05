@@ -395,3 +395,257 @@ Per confronto la 15.7 toccava **1.647 righe** con **3** scritture e **nessuno** 
 **Opzioni**: **A** l'intero `reports.spec.ts` esce da `chromium` ed entra nella catena (più netto; serializza anche quattro test che non ne avrebbero bisogno) · **B** si sposta **solo** il test colpevole (`fleetUtilization`, `:307-315`) dentro `booking-window.spec.ts`, che quella chiave la possiede già (il taglio chirurgico) · **C** si subisce.
 
 **Decisione PO: A — TUTTO `reports.spec` in catena** (la raccomandazione del teammate era **B**). Motivazione ratificata: chiude **sia** il TD del PUT scheduling globale **sia** la **time-dependency** della suite. L'AC deve imporre: **posizione nella catena motivata**, **run locale `--no-deps` funzionante**, il **ripristino** delle settings che lo spec scrive, e la **misura del costo in durata della suite (prima/dopo)** — v. AC 8.
+
+---
+---
+
+# Dev Agent Record — story 15.8b (Opus 5 xhigh, 2026-08-05)
+
+Status: **implementata, gates verdi, suite completa CI=1 su build di produzione e DB fresco eseguita** (esito in §9). Nessun commit: la consegna è il codice + questo record.
+
+Baseline ricostruita su questa macchina (build di produzione, `npm run start`) **ripopolando il DB alle volumetrie della ricognizione** — 145 velivoli OPERATIONAL, 43 `RATING` + 4 `MEDICAL`, 21 categorie di cassa, 12 istruttori con voli, 10 `topPilots`, scheduling configurato. Script e JSON in `/tmp/.../scratchpad/{measure,gemelli,mix,interactive}.mjs` + `pre.json`/`post.json`. Il DB è stato poi **azzerato** (`down -v` → `up` → `migrate deploy` → `db seed`) prima degli e2e e del gate finale.
+
+## 1. Verifica della ricognizione — conferme e correzioni, tutte MISURATE
+
+### Confermato alla cifra
+
+| fatto della ricognizione | misura ripetuta |
+|---|---|
+| `.page-head` **104,83** a ≤640 (IT **e** EN), **51,44** a 641/800/1280 | identico |
+| `.segmented` di periodo **173,05×33,39**, due `Link` da **27,39** | identico (EN 170×33,39) |
+| SVG **281×180** @375, **226** @320, **296** @390, **612,66**/**287,34** @1280 | identico |
+| `minGap` `period=year` @375 **28,09 / 27,08**, @320 **18,89 / 18,66**; `period=month` **81,02 / 70,17**; card stretta @1280 **6,03** | identico |
+| "Utilizzo flotta" **9.356,36** (ricogn. 9.356) · "Per aeromobile" **9.397,75** (9.398) | identico |
+| target <44 sulle Statistiche: **6** (2 `Link` + 4 bottoni di metrica, tutti 27,39) | identico |
+| `overflow` orizzontale di pagina **0** a 320/375/390/641/800/1280, su entrambe le pagine | identico (⇒ una guardia sull'overflow di PAGINA è davvero cieca qui) |
+| `.util-bar .seg` **2,47** chiaro / **10,45** scuro | identico |
+| fasce "Composizione movimenti" **2,73 / 2,04 / 4,85 / 3,61** chiaro, **9,3 / 9,96 / 5,72 / 7,73** scuro | identico |
+| `.chart-label` **3,66** chiaro / **4,14** scuro | identico |
+| Impostazioni: **231** target <43,5 — **201** a 24,67 · 13 a 36,84 · 12 a 34,84 · 3 a 38,84 · 1 a 36 · 1 a 24 | identico |
+| le 7 `.card-head` @375 IT: **89,17 · 89,17 · 132,02 · 73,23 · 116,08 · 116,08 · 147,95** | identico |
+| le 7 altezze di card @375 IT: 1052,73 · 664,11 · 688,98 · 433,16 · **2399,69** · 500,7 · 1285,61 | identico tranne Abilitazioni (la ricognizione dava 2533,5: dipende dal numero di tipi) |
+| `.students` `cw/sw` **317/694**, **317/694**, **317/520** | identico |
+| `.btn.mini` **24,67×61** a `x` 503→637 | identico (IT max 637,23; EN 623,52 — la ricognizione diceva "≈503-690") |
+| `.form-grid` 1 colonna **277px** @375, **232,5×2** @641, **468×2** @1280 | identico |
+| `.app` `grid-template-columns` 375px / **64px 577px** / 64px 736px / **232px 1048px** | identico |
+| le due pagine sono ADMIN-only | confermato per pilota/allievo/istruttore a 375 **e** 1280 |
+
+### Correzioni / precisazioni (9)
+
+1. **La `.kpi-row` rende 4 KPI, non 5, finché `sched.openTime/closeTime` non sono configurati** (12.11 AC 6). Misurato in entrambi gli stati: **4** (strip `sw` 670) e **5** (`sw` **828** IT / **835** EN). La ricognizione riportava solo il caso a 5. R-15.8b-c è quindi esercitata su **due** configurazioni, non una.
+2. **`docH` 21.485 @375 / 17.794 @1280 non è riproducibile dalla sola flotta**: con 145 velivoli + 12 istruttori + 10 piloti misuro **21.939** @375 e **9.759** @1280 (le due card lunghe combaciano al centesimo). Le uniche cifre usate come pre-fix in questo record sono quelle che ho misurato io.
+3. **`club-contact-email-input` NON era clippato sul mio DB** (`cw 275 / sw 275` contro `275/300`): l'overflow dipende dalla lunghezza dell'indirizzo memorizzato. Il TD (e) è **sensibile ai dati**, non strutturale.
+4. **I controlli coperti in fondo a Impostazioni sono coperti dalla TOP BAR sticky, non da `MAIN.page`**: pre-fix `cash-category-rename-button` ×2 + `cash-category-delete-button` colpiscono `HEADER.mobile-topbar`. La ricognizione diceva "12 con hit `MAIN.page`". La discriminazione (tab bar vs top bar vs altro) è ora **dentro la guardia**.
+5. **L'hit-test dei `.btn.mini` restituisce `NAV.mobile-tabbar`, non `MAIN.page`** — il centro clampato al viewport cade sulla tab bar. Il fatto vero, e quello che la guardia asserisce, è `rect.right > innerWidth`.
+6. **Due esemplari di contrasto NON elencati dalla story**: la barra `--accent` della **seconda metrica** di entrambi i `RankBars` (**1,85** chiaro / 11,19 scuro) e i **quattro pallini della legenda** di "Composizione movimenti", che condividono la mappa colori delle fasce (2,73 / 2,04 / 4,85 / 3,61). Entrambi chiusi.
+7. **`.util-*` ha esattamente 4 consumer, tutti su questa pagina** (`reports-console.tsx` ×2 + `rank-bars.tsx` ×2): verificato con grep, come dichiarava la story.
+8. **`grep -rn 'data-testid\^=' e2e/` rifatto sul repo consegnato dalla 15.8a**: **14 occorrenze, 9 file** — prefissi `ac-card-`, `mobile-tail-chip-`, `schedule-filter-aircraft-`, `schedule-filter-instructor-`, `pilot-row-`, `mobile-fleet-card-`, `mobile-fleet-`. **Nessuno** tocca `reports-`, `club-`, `scheduling-`, `smtp-`, `treasury-`, `rating-`, `ratings-`, `medical-`, `cash-categor-`, `airfield-`, né i nomi nuovi (`mobile-rating-`, `mobile-medical-`, `mobile-cash-category-`, `mobile-reports-`) ⇒ suffisso `-mobile` **legale**.
+9. **`DELETE /expiry-types/{id}` risponde 204**, non 200 (trovato dall'e2e; la story non lo dice).
+
+### Il remount, MISURATO (AD-3)
+
+- `reports/page.tsx` non ha stato di filtro (il periodo sono due `Link` server-side) e `ReportsConsole` è montata **senza `key`**: il `metricIndex` dei due `RankBars` sopravvive a ogni navigazione — e con esso, per costruzione, i due flag di espansione nuovi. **Deciso e dichiarato**: un cambio di metrica **NON richiude** una lista espansa (il lettore ha chiesto di vedere tutto; ri-nascondere 137 righe annullerebbe una richiesta che nessuno ha ritirato). Asserito nell'e2e.
+- `settings/page.tsx` è un **server component** e monta sette card **senza `key`**: nulla si rimonta mai. Verificato che ogni sheet si chiuda **esplicitamente** (`closeSheet()` dopo il delete, `closeSheet()` all'ingresso della Modifica) e che il form inline continui a chiudersi da solo su successo (`handleSuccess`, invariato).
+
+## 2. Che cosa è stato costruito, per AC
+
+| AC | esito | prova (misura o test) |
+|---|---|---|
+| **1** KPI + periodo | **fatto** | `.kpi-row` **1 nodo** a 375 e a 1280, nessuna `.kpi-row-grid` (R-15.8b-c: nessun ramo); `.kpi .kpi-value` stesso conteggio ai due viewport. Periodo **27,39 → 44** (larghezza 157,5 ciascuno), metriche **27,39 → 44** ×4; `SMALL_TARGETS` **6 → 0** a 375, **6 invariati** a 1280. `.page-head` **104,83 → 117,44** (v. §7 deviazione 1). Guardia di non-contaminazione: i `.segmented` di `/bookings`, `/expiries`, `/dashboard` restano **sotto 43,5** a 375. |
+| **2** grafici invariati | **fatto** | Larghezza SVG e `minGap` **identici al centesimo** pre/post a 320/375/390 (`226/281/296`, gap 18,66-28,09, 6 label su 12) e a 1280 (`612,66/287,34/612,66`, 12 su 12, gap 33,78/**6,03**/30,97); `period=month` 3 su 6. Nessun cambio a `viewBox`, `preserveAspectRatio`, alla regola `:nth-last-child(even)`. Il `minGap` **6,03** a 1280 è tightness desktop pre-esistente: **dichiarata, non corretta**. |
+| **3** cap dichiarato | **fatto** | "Utilizzo flotta" **9.356,36 → 502,64**, "Per aeromobile" **9.397,75 → 556,64**, "Ore istruttori" 844,86 → 508,52, "Per pilota" 756,66 → 562,52; `docH` **21.939 → 3.726** @375 (**−83%**), **21.987 → 3.774** @320. Righe VISIBILI 8 su 145 (`RANKED_MOBILE_LIMIT = 8`, motivato in `src/lib/mobile-reports.ts`), riga finale `"Prime 8 di 145 · Mostra tutte (137)"` a 44px, espansione → **145 visibili** e foot rimosso. A **1280 tutte** le righe visibili e il foot `display:none`. `stats.service.ts` **non toccato**. |
+| **4** Impostazioni in pagina | **fatto** | **231 → 1** target sotto 43,5 a 320/375/390 (l'1 è il trigger calendario 36×36, **dichiarato**, linea PO 15.7/15.8a LOW-4). Le 5 "Salva" sono **full-width** (57,66 → larghezza del contenitore) e ≥44. Le 7 testate **non superano il pre-fix** (misura PRE/POST **nella stessa pagina**, v. §3c). Le 4 card di form scrivono con gli **stessi endpoint**: Club **5 PUT** su un solo Salva + 422 `contactEmail` inline; Pianificazione 422 `closeTime` + round-trip 200; SMTP 422 `host` (SSRF); Tesoreria `invalidAmount`+`requiredDate` con **0 richieste** contate con `page.route`. |
+| **5** tre tabelle → card+sheet | **fatto** | `.expiry-types-desktop-body`/`.cash-categories-desktop-body` `display:none` @375 e `flex` @1280; `.expiry-types-mobile`/`.cash-categories-mobile` l'inverso (misurato sui **due** lati). Card = **UN** `<button>`: `querySelectorAll('button,a,input,select,textarea,[tabindex]').length` = **0** su tutte, `min-height` ≥44. Sheet: **1 nodo**, righe **Ambito · Validità · Stato · Blocca prenotazioni e voli** (parità con le 5 colonne desktop), 3 azioni a **44**, "Chiudi" 44. "Elimina" = **`secondStep`** (le `.bottom-sheet-kv` spariscono, **una sola** `.mobile-sheet` nel DOM), 409 "in uso" a **toast**. Contenimento sul **rect**: `CHILDREN_OUT_OF_CARD` = `[]`. |
+| **6** CRUD dal telefono | **fatto** | Create/edit/deactivate/delete completi dallo sheet e dal form; `PATCH` verificato sul **body**: `{name, scope, blocksBooking, validityMonths: null}` — **`kind` assente** in modifica, `validityMonths` `null` per `0`. Il **422 `FLIGHT_BLOCKED_BY_EXPIRY`** è provato su un tipo `blocksBooking=true` creato **dal telefono** (checkbox + `POST` 201), con `details.documents` che **contiene il nome del tipo**; il tipo è **cancellato** in `finally`. Categorie: rinomina/disattiva/riattiva/elimina dallo sheet; su "Ricariche" (sistema) il bottone Elimina è **assente** (`toHaveCount(0)`), non disabilitato. |
+| **7** contrasti | **fatto** | v. §5: `.util-bar .seg` **2,47 → 4,56**; barra `--accent` **1,85 → 3,63** (non elencata); fasce **2,73/2,04/4,85/3,61 → 5,04/4,01/7,85/6,26**; pallini della legenda idem (non elencati); `.chart-label` **3,66 → 4,85**. Tema scuro: tutto sale (12,36 / 12,95 / 11,01-11,53-7,92-9,76 / 5,72). Gemelli della 15.8a rimisurati: **identici** (§5). |
+| **8** `reports.spec` in catena | **fatto** | Project `reports` fra `booking-window` e `treasury-settings`, motivazione in `playwright.config.ts`; `--no-deps` **verde** (5 passed, `E2E_EXIT=0`); `afterAll` che ripristina e **rilegge**; ripristino verificato **in DB** con psql: `sched.*` = `00:00/23:59/30/0/3650` dopo il run. Costo in durata in §9. Lo spec **non è indebolito**: 5 test, stesse asserzioni. |
+| **9** testid | **fatto** | Matrice asserita a **375 e 1280**: 41 singleton a 1 nodo su Impostazioni, 6 nomi assenti a riposo, `rating-row-mobile`/`cash-category-row-mobile` = **N** (uguale al conteggio desktop, mai 2N); su Statistiche i 4 singleton e le **quattro famiglie composte** con `data-testid` **unici**. I due nomi letti page-level dagli spec esistenti (`'Blocca prenotazioni'`, `'Inserisci un indirizzo email valido.'`) = **1 nodo** a 1280. **Nessuno spec esistente modificato.** |
+| **10** geometria e layering | **fatto** | `pageOverflow` **0** a 320/375/390 su entrambe; `HIDDEN_SCROLLERS` = `[]` su Impostazioni (**81 → 0**) e solo `.kpi-row` (eccezione dichiarata) sulle Statistiche; `CLIPPED_WITHOUT_ELLIPSIS` = `[]` (**10 → 0** su Impostazioni); dopo uno scroll **reale** a fondo pagina nessun controllo è coperto dalla **tab bar** né da "altro" (la top bar sticky è l'eccezione 15.1, **discriminata**). Sheet z **40** sopra la tab bar (`hit.closest('.mobile-sheet')`). |
+| **11** guardie discriminanti | **fatto** | Tabella in §6: ognuna provata **rossa** su una simulazione del pre-fix col repo **intatto** (iniezione CSS/DOM). |
+| **12** invarianti | **fatto** | Desktop **identico** a 641/800/1280 su entrambe le pagine: `docH` 11.083/11.083/9.759 (reports) e 6.410/6.293/6.135 (settings), le 7 altezze di card e le 7 testate, `.students` 519/694-678/694-990/990, `.form-grid`, `.app` grid, `pageOverflow` 0. Nessuna dipendenza npm nuova; **nessun token cambia valore**; **nessun literal di colore nuovo** (`color-mix` sui token, tecnica 15.4/15.8a); 26 stringhe nuove **nei due locale**. Superfici 15.8a rimisurate (§5 e AC 11 ix). |
+| **13** multi-attore | **fatto** | PILOTA/ALLIEVO/ISTRUTTORE → redirect a `/it/dashboard` su **entrambe** le pagine a **375 e 1280**, con `clearCookies()` fra le identità; "Statistiche"/"Impostazioni" assenti dalla tab bar (e dallo sheet "Altro" quando esiste — v. §7 deviazione 5); ADMIN entra e vede la testata. |
+| **14** debito tecnico | **fatto** | §8. |
+
+## 3. Decisioni non ovvie
+
+**a) Il cap è CSS, non JS.** Ogni riga è resa a ogni larghezza; solo il telefono nasconde quelle oltre il limite (`.ranked-rows-capped .ranked-row-overflow{display:none}` dentro la media query). È l'unico modo di rispettare insieme (i) l'architettura dell'epic (niente `matchMedia`, niente switch di larghezza in JS), (ii) `reports.spec.ts:255-260`, che legge i testid composti **page-level a 1280**, e (iii) AC 9, che vuole **un nodo per testid a entrambe le larghezze**. Il limite vive in **una sola** costante (`RANKED_MOBILE_LIMIT`): il CSS non lo conosce, sono i chiamanti a marcare le righe eccedenti con `.ranked-row-overflow`. La guardia è quindi sul **numero di righe VISIBILI**, non sul numero di nodi.
+
+**b) N = 8, misurato.** A 375×812 restano ~664px fra la top bar (56) e la tab bar (92); dopo la riscrittura della riga (v. c) una riga ranked costa ~30px + 12 di gap, e testata + foot ~110: **8 righe = ~546px**, cioè una schermata. Le card lunghe passano da 9.356/9.398 a **502/556**.
+
+**c) La riga ranked resta FLEX, ma va a capo.** La 13.10 aveva trasformato `.util-row` in colonna flex proprio per rendere **inerti** i `grid-template-columns` inline dei quattro call site (`90px 1fr 80px`, …): tornare a `grid` li avrebbe resuscitati e ri-clippato il valore. La riga nuova resta `display:flex` e usa `flex-wrap` + `order`: label e valore sulla prima riga, barra sulla seconda. Ancorata a `.ranked-rows >`, che è una classe di questa story (i 4 consumer di `.util-*` sono tutti qui, ma la regola non è scritta su `.util-*`).
+
+**d) Il contrasto è UNA decisione, in un posto solo.** `.util-bar .seg.flown` è **elencato nella regola `.flow-bar-in` stessa** (invece di ripetere il `color-mix` in un secondo selettore alla pari, l'altra opzione che la §10 della 15.8a offriva): così il riempimento delle due forme è deciso su **una riga**, e `.util-bar .seg.flown` non porta più un `background` proprio. La famiglia si allarga di tre toni (`accent`/`info`/`muted`) perché la striscia "Composizione movimenti" è **una** palette: due fasce scurite accanto a due intatte sarebbero state due palette. `--info` e `--ink-3` erano già sopra 3:1 e sono mescolati **solo** per quella coerenza.
+
+**e) `.chart-label` cambia TOKEN, non valore.** Da `--ink-4` (3,66) a `--ink-3` (4,85, la scelta che `.bottom-sheet-sub` già fa). Il colore esce dallo style inline dei due componenti — uno style inline batte qualunque regola di classe — e nient'altro di quegli inline si muove. `--ink-4` **non cambia valore**: i suoi altri consumer restano a 3,66/4,14 (misurati su 6 pagine, §5).
+
+**f) Il form resta in pagina, ma va incontro al dito.** R-15.8b-d opzione A tiene i form inline: "Modifica"/"Rinomina" nello sheet chiude lo sheet, apre **lo stesso** form e lo porta in vista (`scrollIntoView({block:'center'})`), gated su un ref che **solo lo sheet** imposta — il desktop non scrolla mai (la lezione `preventScroll` della 15.8a). Misurato: dopo il tap il form è a `top: 175,5` dentro il viewport.
+
+**g) Due canali di annuncio, decisi dal PUNTO D'INGRESSO.** `requestToggleActive`/`requestDelete` sono la rete condivisa (AD-7); chi la chiama decide dove annunciare — il `<p role="status">` per il flusso inline (desktop **e** form mobile), un **toast** per tutto ciò che parte dallo sheet. Nessun `if` sulla larghezza, e il doppio annuncio è impossibile per costruzione: ogni azione passa da **uno solo** dei due wrapper. Nessun `display:none` sul `<p>` è quindi necessario.
+
+**h) Il fuoco segue il `secondStep` nei DUE sensi.** Entrando in "Elimina" il fuoco va sul "Sì", tornando indietro torna sul bottone "Elimina" che lo aveva aperto (lezione 15.2 F1 / 15.8a MINOR-2, che aveva coperto 1 ramo su 3). Asserito leggendo `document.activeElement`.
+
+## 4. Due difetti trovati dalle guardie di questa story
+
+**Le cinque "Salva" non erano full-width**: `min-height: 44px` le aveva portate all'altezza giusta, ma la larghezza restava **57,66px** (il testo "Salva" più il padding) perché il contenitore è un `div` a blocco e un `flex: 1 1 0` su un figlio di un blocco non fa nulla. Trovato dall'asserzione di AC 4 (`box.w > box.parentW - 1`), che la prima stesura del CSS faceva fallire. Chiuso con `.settings-card div:has(> .btn.primary:only-child) > .btn.primary{ width: 100% }` — `:only-child` è ciò che distingue una **riga di salvataggio** (un bottone solo nel proprio div, forma condivisa da tutte e cinque) dalla colonna di azioni dello sheet e dall'azione della testata, che hanno regole proprie.
+
+**2. Lo sweep degli scroller nascosti trovava TRE `<input>` — ed era il TD (e), non un difetto mio.** Emerso **solo nel gate finale**, perché dipende dai DATI che la suite scrive: con un `contactEmail` da 42 caratteri, `club-contact-email-input` misura `sw 299` in `cw 220` (a 320px), e con esso `airfield-name-input` (259 in 220) e `smtp-from-input` (236 in 220). Diagnosi con prova, prima di toccare la guardia: **gli stessi tre input sfondano anche a 641px**, dove nessuna regola di questa story si applica ⇒ è il comportamento nativo di un campo di testo il cui VALORE è più lungo della casella, cioè il TD (e) che la story dichiara fuori mandato (la ricognizione lo misurava `275/300`, io `275/299`). La guardia è stata corretta con un'esclusione **dichiarata** — `INPUT`/`TEXTAREA` fuori dallo sweep, con il motivo e le misure scritte sopra la funzione (lezione 15.8a MINOR-1: un'esclusione non dichiarata è una guardia che mente) — e **tutto il resto continua a essere spazzato**: la prova di discriminanza (i) rimostra le tabelle desktop e la lista torna piena di `DIV`.
+
+## 5. Contrasti — misure nei DUE temi, coi gemelli enumerati
+
+Metodo: canvas→WCAG, sfondo effettivo risolto **risalendo gli antenati partendo dall'elemento**, alpha letta prima della composizione, tema pilotato dal cookie `am-theme`, nodi senza `getClientRects()` **esclusi** (un sottoalbero `display:none` misura sfondi che l'utente non vede — nota metodologica 15.8a §5).
+
+| esemplare | dove | chiaro pre → post | scuro pre → post | soglia |
+|---|---|---|---|---|
+| `.util-bar .seg.flown` (Utilizzo flotta + Ore istruttori) | `.flow-bar-in` | **2,47 → 4,56** | 10,45 → **12,36** | 3,0 |
+| barra `RankBars`, metrica 1 (`--ok`) | `.flow-bar-in` | **2,47 → 4,56** | 10,45 → **12,36** | 3,0 |
+| barra `RankBars`, metrica 2 (`--accent`) *(non elencata dalla story)* | `.flow-bar-accent` | **1,85 → 3,63** | 11,19 → **12,95** | 3,0 |
+| fascia mix SCUOLA | `.flow-bar-in` | **2,73 → 5,04** | 9,3 → **11,01** | 3,0 |
+| fascia mix TURISMO | `.flow-bar-accent` | **2,04 → 4,01** | 9,96 → **11,53** | 3,0 |
+| fascia mix LAVORO AEREO | `.flow-bar-muted` | 4,85 → **7,85** | 5,72 → **7,92** | 3,0 |
+| fascia mix TRANSITI | `.flow-bar-info` | 3,61 → **6,26** | 7,73 → **9,76** | 3,0 |
+| **pallini** della legenda ×4 *(non elencati)* | idem | **2,73 / 2,04 / 4,85 / 3,61 → 5,04 / 4,01 / 7,85 / 6,26** | 9,3 / 9,96 / 5,72 / 7,73 → 11,01 / 11,53 / 7,92 / 9,76 | 3,0 |
+| `.chart-label` (36 esemplari) | `--ink-4` → `--ink-3` | **3,66 → 4,85** | 4,14 → **5,72** | 4,5 (**testo**) |
+
+**Gemelli — enumerati e rimisurati, nei due temi, a 375 e 1280.**
+- **`.flow-bar-in`/`-out` della 15.8a** (`/dashboard/billing`, "Per categoria"): **4,56** / **6,10** chiaro e **12,36** / **9,87** scuro — **identici** ai valori che il record 15.8a dichiara. Nulla si è mosso: la regola ha guadagnato un selettore, non un valore.
+- **`.stat-tone-ok/-bad/-warn`** su `/dashboard/billing`: **10,63 / 9,82 / 7,58** chiaro e **9,3 / 6,61 / 9,96** scuro su 23-40 esemplari — identici.
+- **Gli altri consumer di `--ink-4`** (`.so-sub`, `.mobile-row-chev`, `.syl-num`, `.ppr-card-id`) su `/dashboard`, `/logbook`, `/movements`, `/fleet`, `/bookings`, `/billing`: **3,66** chiaro / **4,14** scuro, **invariati** — il token non è stato toccato, è `.chart-label` che ha cambiato consumer.
+- `.util-value` (testo delle liste ranked): 9,99 / 9,47, invariato.
+
+## 6. Regola nuova → guardia → prova di discriminanza
+
+Ogni guardia è stata provata **rossa** simulando il pre-fix **col repo intatto** (iniezione CSS/DOM nei due spec nuovi, test "AC 11").
+
+| # | regola introdotta (per un difetto misurato) | guardia | come è stata provata discriminante |
+|---|---|---|---|
+| i | `.expiry-types-desktop-body`/`.cash-categories-desktop-body` `display:none` ≤640 | `DISPLAY_PROBE` sui **due** lati (`none`@375 / `flex`@1280) **+** `HIDDEN_SCROLLERS() === []` **+** nessun `.btn.mini` oltre il bordo | iniettato `display:flex!important` ⇒ tornano **58 scroller nascosti** e i `.btn.mini` con `right > innerWidth`. ⚠️ Il **conteggio** dei target piccoli NON è l'asserzione: il pavimento 44px è su `.settings-card .btn`, che raggiunge anche i mini della tabella nascosta, e un conteggio dipenderebbe dal numero di righe |
+| ii | `.expiry-types-mobile`/`.cash-categories-mobile`/`.ranked-cap-foot` `display:none` >640 | `isVisible()` sui due lati; foot `toBeHidden()` a 1280 | iniettato `display:block!important` a 1280 ⇒ la card mobile diventa visibile (e la matrice testid vedrebbe 2N nodi); iniettato `display:flex` sul foot ⇒ diventa visibile a 1280 |
+| iii | pavimento 44px (periodo, metriche, input, salva, azioni di sheet) | `SMALL_TARGETS() === []` con soglia **43,5**, scritta sul **requisito** | rimesso `min-height:0; padding:5px 8px` ⇒ sulle Statistiche riappaiono **esattamente 6** controlli; su Impostazioni **>20** |
+| iv | ellissi sulla label ranked e sui figli della card | `CLIPPED_WITHOUT_ELLIPSIS() === []` | iniettato `text-overflow:clip; flex:0 0 40px` ⇒ la lista non è più vuota (con `flex-grow` intatto l'iniezione non morde: annotato nel test) |
+| v | contenimento dei figli della card | `CHILDREN_OUT_OF_CARD() === []` (guardia sul **rect**, cieca allo sweep degli scroller) | spostato `.mobile-row-side` di 120px ⇒ la lista non è più vuota |
+| vi | nome accessibile dello sheet ben formato | proprietà su `sub` (`/—\s*—/`, `/·\s*·/`, nessun segmento vuoto o "—") negli unit di `mobile-settings.ts` + lettura reale dell'`aria-label` (`"Ratings · Piloti — Abilitazione baseline 04"`) | 15 unit, fra cui un tipo **senza validità** ("senza scadenza") e un segmento **vuoto** passato al posto di uno assente. ⚠️ Il caso "senza scope" **non è costruibile**: `ExpiryScope` è un enum non nullable a quattro valori — **dichiarato**, e coperto dall'unit sul segmento vuoto |
+| vii | empty state mobile = 1 nodo con stringa distinta | `toHaveCount(1)` dopo **iniezione DOM** del nodo, poi `cloneNode` ⇒ 2 | i tre cataloghi sono seminati, quindi lo stato vuoto non è raggiungibile per flusso: iniettarlo è **esattamente** lo scopo dell'iniezione (metodo 15.6 LOW-3, riusato dalla vii-bis della 15.8a) |
+| viii | cap delle liste ranked | **numero di righe VISIBILI**: 8 a 375, **tutte** a 1280, e l'espansione | iniettato `display:flex!important` su `.ranked-row-overflow` ⇒ le righe visibili passano da 8 a `total` |
+| ix | nessuna regola esce da questa pagina | geometria di `/bookings`, `/expiries`, `/dashboard` (`.segmented` < 43,5), `/logbook`+`/movements`+`/billing` (`.date-input-btn` ≤ 36), `/expiries` (`.scadenze-desktop-body` ancora `none`), `/fleet` (ExportMenu a `x=0`, dentro il viewport) | i valori sono quelli **misurati prima** della modifica; una regola non ancorata li sposterebbe (è il difetto che 15.3 F1 e 15.5 F5 hanno misurato) |
+| x | comportamenti invisibili a occhio | `PATCH` senza `kind` e con `validityMonths: null`; **0 richieste** sulla Tesoreria invalida; 409 ≠ generico; **422 `FLIGHT_BLOCKED_BY_EXPIRY`** con `details.documents` che contiene il tipo; "Elimina" **assente** sulle categorie di sistema | contati con `page.route`, letti dal **body** della richiesta/risposta, mai da un testo in pagina |
+| xi | testate ≤ pre-fix coi 44px | altezza PRE e POST misurate **nella stessa pagina** (iniezione delle 4 dichiarazioni pre-fix) | il confronto è per costruzione discriminante: senza le regole nuove la testata è quella di prima. ⚠️ Scelto **dopo** aver misurato che una tabella di baseline hard-coded è fragile: la stessa pagina dà 113,23 sotto un contesto `playwright-core` e **129,17** sotto `devices['Desktop Chrome']` della suite (una riga in più su una `.card-sub` la cui misura del testo cambia dell'~1%) |
+| xii | soglia dei target | **43,5** ovunque, anche dove il valore ottenuto è 44 esatto | scritta sul requisito, mai sul risultato (lezione 15.7 MINOR-1) |
+
+## 7. Deviazioni dalla story (con motivazione)
+
+1. **La `.page-head` delle Statistiche CRESCE di 12,61px** (104,83 → **117,44** a ≤640, nei due locale). È il prezzo aritmetico dei 44px: il `.segmented` passa da 33,39 a 46 (44 + bordo), e i 2px di padding tolti al box non bastano a compensarlo. La story chiede di **misurare** la testata, non di ridurla (il criterio "testata ≤ pre-fix" è delle testate di card, dove è **rispettato**). Contropartita misurata sulla stessa pagina: **−18.213px** di documento.
+2. **La pagina Impostazioni si ALLUNGA di 612px** (7.465 → **8.077** @375; 8.200 @320, 8.037 @390, 8.004 EN@375). È il costo dei 44px su 29 controlli e di una card per riga al posto di una riga di tabella (la card Abilitazioni 2.399,69 → 2.782,09 con 43 tipi). In cambio: **230 dei 231** target sotto soglia spariscono, **81 scroller orizzontali nascosti → 0**, **10 testi clippati → 0** e nessuna azione resta fuori dallo schermo. È il rovescio esplicito dell'opzione A ratificata (tutto in pagina): l'alternativa che accorciava la pagina era l'opzione B, **scartata dal PO**.
+3. **Il cap è applicato a TUTTE E QUATTRO le liste ranked**, non solo alle due nominate dall'AC 3. "Ore istruttori" (35 righe sul DB della ricognizione) e "Per pilota" (10, cappata a 10 lato server) condividono componente e linguaggio con le due lunghe: tre liste cappate e una no si legge come un bug, e il codice è lo stesso `RankedCapFoot`. Costo: zero righe in più.
+4. **`RankBars` cambia due firme**: `metric.color` (stringa di colore inline) → `metric.barClass` (classe di tono) e due prop nuove (`capLabels`/`capTestId`/`metricsClassName`). È l'unico modo di prendere la decisione di colore **una volta sola** in CSS invece di due volte in JS, e i due soli consumer sono su questa pagina.
+5. **La verifica multi-attore sullo sheet "Altro" è CONDIZIONALE**: `mobile-nav.tsx` non rende affatto la tab "Altro" per un ruolo che vede ≤5 aree, e pilota/allievo/istruttore sono in quel caso. La tab bar è comunque asserita per tutti e tre; lo sheet solo quando esiste. **Dichiarato** invece di essere silenziosamente saltato.
+6. **Il caso "attore con `finance.manage` ma senza `settings.manage`" NON è costruibile** col modello di ruoli post-14.9 (ADMIN ha entrambi, nessun altro ruolo ha nessuno dei due): AC 13 lo chiedeva "se costruibile". Provato ciò che è costruibile: i tre non-admin sono respinti da **entrambe** le pagine, a 375 e a 1280.
+7. **La Tesoreria non viene MAI scritta dallo spec nuovo**: la card è esercitata solo sul ramo di validazione, che ritorna **prima** della `PUT` (0 richieste, contate). `treasury.*` alimenta `getBillingSummary` di ogni spec di `/dashboard/billing` e **non ha una GET** da cui ripristinare (D5): scriverla sarebbe stato l'unico dei quattro form senza ripristino verificabile.
+8. **Il Club è esercitato come round-trip a VUOTO** (i 5 PUT partono coi valori già a schermo): il contratto dei cinque endpoint è provato senza spostare un solo valore memorizzato.
+9. **`document.fonts.ready` aggiunto ai due helper di navigazione degli spec nuovi.** Ogni altezza di queste pagine è un **a capo**, e un a capo dipende dalle metriche del font: `networkidle` non implica font **applicati**. È anche la lezione che ha fatto scartare la tabella di baseline hard-coded (§6 xi).
+10. **DUE spec esistenti sono stati modificati** (la story chiede di evitarlo e di motivarlo — lezione 14.6). Entrambi sono guardie di **non-contaminazione** scritte da 15.7 e 15.8a che congelavano la geometria di `/dashboard/reports` ai numeri **pre-15.8b**, cioè a una superficie che **questa** story possiede e che gli AC 1/3 cambiano per mandato. Trovati dal gate finale, non dedotti: `2 failed / 413 passed`.
+    - `e2e/mobile-expiries-movements.spec.ts:1284` asseriva `min-height != 44px` sui figli di **ogni** `.segmented` di tre pagine. Riscritto **al valore corretto**: su `/dashboard/reports` l'asserzione è ora sull'**owner** (`.segmented` deve portare `.reports-period` o `.reports-rank-metrics` — cioè il pavimento arriva da una classe di pagina, mai da `.segmented`), sulle altre due pagine resta identica. Una regola scritta su `.segmented` verrebbe comunque catturata lì: copertura invariata.
+    - `e2e/mobile-billing.spec.ts:1124` congelava `segmentedHeights: [33.39×3]` e `utilBarWidths: [281]` su `/dashboard/reports`. **Aggiornati** ai valori misurati post-15.8b (`[46,46,46]`, `[281, 0]` — lo 0 sono le barre delle righe oltre il cap), la pagina **resta nella sweep** (`.split`, la larghezza delle barre visibili e i `date-input` sono ancora congelati): nessun indebolimento, solo una baseline riportata alla realtà dalla story che possiede quella superficie.
+
+## 8. Debito tecnico — voce per voce
+
+| TD | esito | misura |
+|---|---|---|
+| (a) `reports.spec.ts:307-315`, PUT scheduling globale da project `fullyParallel` | **CHIUSO** | project `reports` in catena fra `booking-window` e `treasury-settings`; `--no-deps` verde; `afterAll` che ripristina e **rilegge**; verifica in DB con psql (`sched.*` = 00:00/23:59/30/0/3650). Chiude anche la **time-dependency** della suite: nessuna finestra 07:00-21:00 resta in piedi per i `moveBooking` di `mobile-planning` |
+| (b) contrasti `.util-bar .seg`, fasce mix, `.chart-label` | **CHIUSI** (+2 esemplari non elencati) | §5 |
+| (c) `.chart-label` a `--ink-4` = faccia "grafici" del TD (h) | **chiusa quella faccia**; il TD (h) **resta aperto altrove** | `.so-sub`, `.mobile-row-chev`, `.syl-num`, `.ppr-card-id` restano a **3,66** chiaro su 6 pagine (misurato). `--ink-4` non ha cambiato valore |
+| (d) pagina Statistiche alta 21.939px con due card da ~9.400 | **mitigato su mobile, NON risolto sul desktop** | 21.939 → **3.726** a 375; a 1280 resta **9.759** (il cap è mobile-only per costruzione, AC 3) |
+| (e) `club-contact-email-input` clippato senza ellissi | **subìto e dichiarato**, e **precisato due volte**: (i) sul DB di seed non si presenta (`275/275`), dipende dalla lunghezza dell'indirizzo memorizzato; (ii) sul DB che la suite lascia si presenta su **tre** campi (`club-contact-email-input` 299 in 220, `airfield-name-input` 259 in 220, `smtp-from-input` 236 in 220 a 320px) **e anche a 641px**, dove nessuna regola di questa story vive ⇒ pre-esistente e indipendente dalla larghezza. È l'esclusione dichiarata dello sweep degli scroller (§4.2) |
+| (f) `minGap` **6,03** delle label a 1280 sulla card stretta | **subìto e dichiarato**: tightness desktop pre-esistente, fuori mandato; rimisurato identico pre/post |
+| (g) `viewport-fit=cover` mai dichiarato | **subìto** (TD di epic, 15.10): gli `env(safe-area-inset-*)` valgono 0 |
+| (h) ✕ di `SlideOver` a 32px e opzioni typeahead a 36px | **non toccati**: nessun `SlideOver` e nessun typeahead vive su queste due superfici |
+| (i) trigger calendario annidato a **36×36** (Tesoreria) | **subìto per decisione PO** (linea 15.7, riconfermata 15.8a LOW-4) e **DICHIARATO nella guardia**: è l'unica esclusione di `SMALL_TARGETS`, con il motivo scritto sopra la funzione |
+| **nuovo (j)** | `.settings-card .btn{min-height:44px}` raggiunge anche i `.btn.mini` della tabella desktop, che a ≤640 è `display:none`: **nessun effetto visibile**, ma rende inefficace un'iniezione che ri-mostri la tabella aspettandosi i 24,67px di prima. La guardia (i) è scritta di conseguenza (scroller + azioni fuori bordo), e il fatto è dichiarato qui |
+| **nuovo (k)** | l'altezza di una `.card-head` **dipende dalle metriche del font e dal contesto browser**: la stessa pagina misura 113,23 sotto `playwright-core` e **129,17** sotto `devices['Desktop Chrome']`. Ogni baseline di altezza hard-coded in uno spec è fragile per questo motivo; la guardia xi confronta PRE e POST nella stessa pagina |
+| **nuovo (l)** | a 390px e in EN **tre** testate crescono rispetto al pre-fix (Tesoreria +13,93, Abilitazioni +21,09, Pianificazione +5,94 in EN): il pre-fix a quelle larghezze/locale aveva l'azione sulla stessa riga del titolo, il post le dà una riga propria per portarla a 44px. A **320 e 375/IT** tutte e sette restano **sotto** il pre-fix |
+
+## 9. Esito della suite (onesto)
+
+- `npm run gates`: **PASS lint / PASS typecheck / PASS test (1754) / PASS build**, ripetuto a ogni passo intermedio; ultimo run verde prima della consegna.
+- **Unit nuovi**: `src/lib/mobile-reports.test.ts` (6) + `src/lib/mobile-settings.test.ts` (9) = **15 test**, verdi anche con `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` (nessun `@/lib/env` trascinato: entrambi i moduli sono puri).
+- **Spec nuovi**, run mirati su build di produzione e DB fresco:
+  - `e2e/mobile-reports.spec.ts` (project `chromium`): **10 passed, E2E_EXIT=0** (13,2s).
+  - `e2e/mobile-settings.spec.ts` (`--project=mobile-settings --no-deps`): **12 passed, E2E_EXIT=0** (37,4s).
+  - `e2e/reports.spec.ts` migrato (`--project=reports --no-deps`): **5 passed, E2E_EXIT=0** (5,2s) — AC 8 b.
+- **Blast radius mirato** (`mobile-billing.spec.ts` + `mobile-expiries-movements.spec.ts`, le due superfici consegnate da 15.7 e 15.8a): **47 passed, 2 skipped, E2E_EXIT=0** dopo la correzione delle loro due guardie di vicinato (v. §7 deviazione 10).
+
+### Gate finale
+
+Suite completa `CI=1` su build di produzione e **DB fresco** (`docker compose down -v` → `up` → `migrate deploy` → `db seed`), lanciata con `scripts/e2e.sh start` e letta con `scripts/e2e.sh status`. Esito verbatim nel §11 (aggiunto a fine run).
+
+**Costo in durata della catena (AC 8 d), misurato per project in isolamento su build di produzione:**
+
+| project | test | durata |
+|---|---|---|
+| `reports` (nuovo, era dentro `chromium`) | 5 | **5,2s** |
+| `mobile-settings` (nuovo) | 12 | **37,4s** |
+| **totale aggiunto alla coda serializzata** | 17 | **~43s** |
+
+I 5 test di `reports.spec.ts` giravano prima **dentro** il project parallelo, dove il loro costo era assorbito dai worker: il delta netto sulla durata della suite è quindi ~43s meno i pochi secondi che quei 5 test occupavano in parallelo, cioè **~40s** su una suite da ~9-10 minuti (+7%). È il prezzo dichiarato di R-15.8b-f: in cambio la finestra `sched.*` non resta più scritta da un project parallelo, e la suite smette di dipendere dall'ora in cui gira.
+
+## 10. Cosa NON ho fatto
+
+- Non ho toccato **API, schemi Zod, servizi, seed, migrazioni**: `stats.service.ts` (cap `topPilots` 10, `fleet` non cappato, `fleetUtilization` `null`), `expiry-types.service.ts`, `cash.service.ts`, `app-settings.service.ts` sono **invariati** (AD-10, R-15.8b-b "Nessun cambio API").
+- Non ho toccato la **geometria o la logica dei tre grafici SVG** (AD-9): `viewBox`, `preserveAspectRatio`, la regola di diradamento 13.10 e la struttura sono identiche; dei due componenti ho tolto **solo** la dichiarazione `color` inline della label, che è il fix di contrasto.
+- Non ho introdotto un **orchestratore client** sopra le sette card: `settings/page.tsx` resta un **server component** (AD-1).
+- Non ho trasformato i form in **pannelli a tutto schermo**: R-15.8b-d opzione A li tiene in pagina; l'opzione B è esplicitamente scartata dal PO.
+- Non ho toccato `/dashboard/billing`, `export-menu.tsx`, `BottomSheet`, `MobileSheet`, `SlideOver`, `joinSegments`: riusati, non riscritti. Le uniche misure su quelle superfici sono guardie di non-regressione.
+- Non ho aggiunto **focus trap**, `aria-modal`, `viewport-fit=cover` né la riserva sticky (15.10).
+- Non ho corretto i difetti pre-esistenti non ratificati: `minGap` 6,03 a 1280, altezza desktop della pagina Statistiche, taglio senza ellissi delle celle `.student-row` desktop, `club-contact-email-input`.
+- **Non ho committato**: il repo è lasciato con le modifiche in working tree.
+
+## 11. File toccati
+
+**Nuovi**
+- `src/lib/mobile-reports.ts` — `RANKED_MOBILE_LIMIT` + `rankedCap` (AD-5 ii), pura
+- `src/lib/mobile-reports.test.ts` — 6 unit
+- `src/lib/mobile-settings.ts` — le quattro composizioni di sub-line/over-line (AD-5 i), che riusano `joinSegments`
+- `src/lib/mobile-settings.test.ts` — 9 unit
+- `src/components/charts/ranked-cap-foot.tsx` — la riga di cap condivisa dalle 4 liste ranked
+- `e2e/mobile-reports.spec.ts` — 10 test (project `chromium`)
+- `e2e/mobile-settings.spec.ts` — 12 test (project `mobile-settings`, **in catena**)
+
+**Modificati**
+- `src/styles/airops.css` — famiglia `.flow-bar-*` allargata (+3 toni) e `.util-bar .seg.flown` elencato nella stessa regola; `.chart-label{color:var(--ink-3)}`; blocco `statistiche + impostazioni mobile (story 15.8b)` in coda (+~150 righe)
+- `src/app/[locale]/dashboard/reports/page.tsx` — classe `.reports-period`, labels del cap (`t.raw`)
+- `src/app/[locale]/dashboard/reports/reports-console.tsx` — `MIX_TONES` al posto di `MIX_COLORS`, `.ranked-rows` + cap sulle due liste proprie, wiring dei due `RankBars`
+- `src/components/charts/rank-bars.tsx` — `metric.barClass` al posto di `metric.color`, cap + `metricsClassName`
+- `src/components/charts/{bar,line}-chart.tsx` — via il `color` inline della label
+- `src/app/[locale]/dashboard/settings/page.tsx` — labels `mobile.*` per i tre cataloghi, testid mobile della card "Visite mediche"
+- `src/app/[locale]/dashboard/settings/ratings-card.tsx` — classe `.settings-card`, corpo desktop dietro `.expiry-types-desktop-body`, albero mobile a card, `BottomSheet` con `secondStep`, rete condivisa + toast
+- `src/app/[locale]/dashboard/settings/cash-categories-card.tsx` — idem, con "Elimina" assente sulle categorie di sistema
+- `src/app/[locale]/dashboard/settings/{club,scheduling,smtp,treasury}-card.tsx` — classe `.settings-card` (una riga ciascuno)
+- `messages/{it,en}.json` — 13 chiavi nuove per locale (2 `ReportsPage.mobile.*` + 11 `SettingsPage.*.mobile.*`), parità verificata
+- `playwright.config.ts` — project `reports` (fra `booking-window` e `treasury-settings`) e `mobile-settings` (in coda), `testIgnore` aggiornato
+- `e2e/reports.spec.ts` — intestazione che dichiara la catena + `afterAll` che ripristina e rilegge `sched.*`
+- `e2e/mobile-billing.spec.ts`, `e2e/mobile-expiries-movements.spec.ts` — le due guardie di vicinato su `/dashboard/reports` riportate ai valori/alla forma corretti (v. §7 deviazione 10)
+
+## 12. Gate finale — esito verbatim
+
+Suite completa `CI=1` su build di produzione e **DB fresco** (`docker compose down -v` → `up` → `migrate deploy` → `db seed`), lanciata con `scripts/e2e.sh start` e letta con `scripts/e2e.sh status`:
+
+```
+453 passed (12.2m)
+E2E_EXIT=0
+```
+
+**453 = 431 + 22**: i **430 passed + 1 flaky** dell'arbitro 15.8a più i **10** di `mobile-reports.spec.ts` e i **12** di `mobile-settings.spec.ts`. **Zero failed, zero flaky** (il flaky noto di `billing.spec.ts:296` / `flights.spec.ts:602` non si è ripresentato in questo run).
+
+**Il run precedente NON era verde, e va detto**: `2 failed / 413 passed` prima, `1 failed / 449 passed` poi. Tre fallimenti in tutto, **tutti attribuibili a questa story e tutti chiusi**:
+1. `mobile-expiries-movements.spec.ts` e `mobile-billing.spec.ts` — le due guardie di vicinato che congelavano la geometria di `/dashboard/reports` ai numeri pre-15.8b (§7 deviazione 10);
+2. `mobile-settings.spec.ts` AC 10 — lo sweep degli scroller che contava tre `<input>` con il valore più lungo della casella, cioè il TD (e) (§4.2). Diagnosticato con la prova (**lo stesso difetto a 641px**, dove nessuna regola di questa story vive) prima di toccare la guardia, e chiuso con un'esclusione **dichiarata** che continua a spazzare tutto il resto.
+
+**Stato del DB dopo il gate**, verificato con psql:
+- `sched.*` = `00:00 / 23:59 / 30 / 0 / 3650` — il ripristino permissivo, **non** la finestra `07:00-21:00` che `reports.spec.ts` scrive: R-15.8b-f chiuso end-to-end, sull'intera catena, non solo sul run isolato.
+- Nessuna fixture di questa story sopravvive: `Blocco mobile*`, `Tipo mobile*`, `Cat mobile*` = **0 righe**. Gli **11** tipi con `blocksBooking = true` che restano sono i 4 di seed più i 7 di `bookings`/`flights` — il TD di volume già registrato, **non aggravato** da questa story.
+- Porta 3000 **libera**, nessun server lasciato in ascolto.
+
+## 13. Note per la review
+
+- La misura più fragile che ho incontrato è l'**altezza di una testata**: la stessa pagina dà 113,23 sotto un contesto `playwright-core` e 129,17 sotto `devices['Desktop Chrome']` (TD nuovo (k)). Ogni baseline di altezza hard-coded in uno spec eredita quella fragilità; la guardia xi confronta PRE e POST **nella stessa pagina** proprio per questo.
+- Le due modifiche a spec esistenti (§7 deviazione 10) sono l'unico punto in cui ho toccato copertura altrui: entrambe sono baseline di vicinato **su una pagina che questa story possiede**, riportate al valore corretto e non indebolite.
+- I due esemplari di contrasto non elencati dalla story (barra `--accent` dei `RankBars` a **1,85**, i quattro pallini della legenda) sono la parte del lavoro che l'elenco dell'AC non copriva: se la review ne cerca altri, il metodo è in §5 e gli script sono riproducibili.
