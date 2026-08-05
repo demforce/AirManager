@@ -649,3 +649,71 @@ E2E_EXIT=0
 - La misura più fragile che ho incontrato è l'**altezza di una testata**: la stessa pagina dà 113,23 sotto un contesto `playwright-core` e 129,17 sotto `devices['Desktop Chrome']` (TD nuovo (k)). Ogni baseline di altezza hard-coded in uno spec eredita quella fragilità; la guardia xi confronta PRE e POST **nella stessa pagina** proprio per questo.
 - Le due modifiche a spec esistenti (§7 deviazione 10) sono l'unico punto in cui ho toccato copertura altrui: entrambe sono baseline di vicinato **su una pagina che questa story possiede**, riportate al valore corretto e non indebolite.
 - I due esemplari di contrasto non elencati dalla story (barra `--accent` dei `RankBars` a **1,85**, i quattro pallini della legenda) sono la parte del lavoro che l'elenco dell'AC non copriva: se la review ne cerca altri, il metodo è in §5 e gli script sono riproducibili.
+
+# Review Record — 15.8b (reviewer adversarial Opus 5 xhigh, fix-subagent Opus 5 xhigh — 2026-08-05)
+
+Report integrale della review: `15-8b-review-report.md`.
+Verdetto: **APPROVATA CON RISERVA — 1 Major, 2 Minor, 4 Low**. Il giudizio del reviewer sul
+record del dev: "onesto — ogni numero rimisurabile è stato riprodotto al centesimo".
+Fix in `1a66ece`.
+
+## Arbitro della review (pre-fix)
+
+`CI=1` su build di produzione, DB fresco: **E2E_EXIT=0 — 453 passed (11.1m), 0 failed, 0 flaky**
+— identico alla dichiarazione del dev, con la catena riorganizzata (9 project, `reports` incluso).
+Gates verdi (1754 unit).
+
+**Verificato dal vivo dal reviewer**: CRUD ExpiryType dal telefono riprodotto fino al **422
+`FLIGHT_BLOCKED_BY_EXPIRY`** col nome del tipo nei `details`; race di doppio DELETE (204/404);
+Elimina assente sulle categorie di sistema; catena: `--no-deps` verde per TUTTI e 9 i project,
+ripristino `sched.*` riletto in psql, **nessuno scrittore di `sched.*` resta in `fullyParallel`**
+(la time-dependency della suite è chiusa per costruzione); contrasti 9 esemplari + gemelli
+billing riprodotti al centesimo nei due temi; desktop invariato a 641/800/1280; RBAC 4 attori ×
+2 pagine × 2 larghezze; i18n 1950/1950.
+
+## Findings → esito
+
+| # | Sev | Difetto | Esito |
+|---|---|---|---|
+| MAJOR-1 | MAJOR | il cap di "Utilizzo flotta" nascondeva per POSIZIONE DOM ma `stats.fleet` è ordinato per marche ⇒ a 375px le 8 righe visibili erano tutte 0:00 mentre la top vera stava dietro "Mostra tutte" — contro l'AC 3 ("le prime N per la METRICA"); la gemella RankBars faceva giusto sulla stessa pagina | **decisione PO: nascondere per RANGO** — selezione client-side delle N righe migliori sulla metrica (pareggi deterministici), ordine DOM/desktop INVARIATO, zero cambi server; guardia su DB dove i volati non sono i primi alfabetici, rossa sul pre-fix |
+| MINOR-1 | minor | "Mostra tutte" smontava il bottone col focus → `activeElement` = BODY (classe 15.2 F1, terza occorrenza) | focus post-espansione in un posto dichiarato, guardia letterale rossa sul pre-fix |
+| MINOR-2 | minor | checkbox `blocksBooking` a 20×20 col form aperto, sweep cieco allo stato "form aperto", esclusione non dichiarata | **decisione PO: ≥24px + sweep ESTESO al form aperto** — l'esclusione sparisce perché non serve più |
+| LOW-1 | low | `align-items:center` morto (battuto dall'inline) | riga morta rimossa a computed invariato |
+| LOW-2 | low | `inactiveLabel` API morta con 3 unit su un ramo mai percorso | API e test rimossi (karpathy: niente speculativo) |
+| LOW-3 | low | il ramo reports della guardia 15.7 era diventato tautologico | asserzione reale ripristinata / ramo dichiarato |
+| LOW-4 | low | l'elenco della catena in CLAUDE.md era stale (9 project) | aggiornato nello stesso giro di commit (regola di manutenzione) |
+
+## Ratifiche PO sopraggiunte in review (2, 2026-08-05)
+
+1. **MAJOR-1 → nascondere per rango** (né riordino desktop, né rinuncia al cap).
+2. **MINOR-2 → checkbox ≥24px E sweep esteso** (non la sola dichiarazione).
+
+## Verifiche del fix
+
+Gates verdi (1757 unit: +5 per `rankedTopIndexes`, −2 per il ramo morto rimosso). Discriminanze
+su binari PRE-FIX RICOSTRUITI: MAJOR-1 `Expected: <= 0 / Received: 600` (letteralmente le "8
+righe a 0:00" del reviewer, con la fixture `I-ZZ…` volata ULTIMA alfabeticamente); MINOR-1
+`"tag": "BODY"`; MINOR-2 `Received: 20`; LOW-3 `Received: "0px"`. Le altre tre liste cappate
+VERIFICATE (le RankBars ordinano client-side ⇒ posizione = rango; "Ore istruttori" è ordinata
+dal server ⇒ posizionale legittimo, annotato nel commento). Desktop rimisurato: ordine fleet =
+registration asc a TUTTE le larghezze, checkbox 13×13 sul desktop, card heights identiche alle
+baseline della review. CLAUDE.md: l'enumerazione della catena sostituita da un PUNTATORE a
+`playwright.config.ts` (stesso idioma del route-registry — una lista copiata invecchia al primo
+spec che entra, che è esattamente ciò che la 15.8b ha fatto).
+
+**Trappola nuova, degna di nota (pagata due volte dal fix agent)**: ricompilare mentre
+`next start` è ancora in ascolto su :3000 serve un manifest VECCHIO contro asset nuovi — pagina
+senza stili e spec che falliscono con geometrie senza senso. `pkill -f "next start"` NON lo
+uccide (il processo si chiama `next-server`): serve il PID da `ss -ltnp`.
+
+## Gate finale
+
+- Arbitro finale, `CI=1` su build di produzione, DB fresco, stato committato: **453 passed (10.0m), E2E_EXIT=0 — zero failed, ZERO flaky, catena a 9 project inclusa**
+- `npm run gates`: **verde** (lint, typecheck, 1757 unit, build)
+
+## TD (in `sprint-status.yaml`)
+
+- TD (j)(k)(l) del Dev Agent Record confermati dalla review (btn.mini della tabella nascosta;
+  testate font/contesto-dipendenti; tre testate che crescono a 390/EN).
+- Il TD annoso del PUT scheduling globale (`reports.spec.ts:307-315`) è **CHIUSO** da questa
+  story: la voce in sprint-status va marcata risolta.

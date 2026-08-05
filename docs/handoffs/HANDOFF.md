@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-08-05 — **EPIC 14 COMPLETO** e **EPIC 15 IN CORSO: 15.1-15.7 + 15.8a DONE** (la 15.8 è stata SPLITTATA in a/b su decisione PO). Prossimo lavoro: **story 15.8b — Statistiche + Impostazioni mobile**)
+# HANDOFF — AirManager (aggiornato: 2026-08-05 — **EPIC 14 COMPLETO** e **EPIC 15 IN CORSO: 15.1-15.8 DONE** (15.8 splittata in a/b, entrambe chiuse). Prossimo lavoro: **story 15.9 — Aree self + modulo PPR pubblico**)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -231,6 +231,29 @@ Record: `_bmad-output/implementation-artifacts/15-7-scadenze-transiti-mobile.md`
   l'assunzione della story, con `afterAll` che ripristina (verificato in psql dal reviewer).
 - **Checklist di chiusura**: il report della review va committato NEL commit di chiusura — la svista è
   già successa DUE volte (15.5 e 15.6, recuperate a posteriori).
+
+### 15.8b Statistiche + Impostazioni — DONE (2026-08-05)
+
+Statistiche: controlli periodo/metriche a 44px con classe di pagina (`.segmented` intoccato, 6 consumer),
+liste ranked con **cap client-side dichiarato** ("Prime 8 di 145 · Mostra tutte"), grafici **identici al
+centesimo** pre/post (AD-9). Impostazioni: documento da **21.939 a 3.726px**, 230/231 target risanati,
+tre tabelle → card+sheet con Elimina in `secondStep`, **CRUD ExpiryType dal telefono provato fino al 422
+`FLIGHT_BLOCKED_BY_EXPIRY`** (riprodotto anche dal reviewer con race di doppio DELETE). Contrasti
+token-level dei grafici chiusi coi gemelli. **E il TD annoso è morto**: tutto `reports.spec` in catena
+serializzata (Q13), ripristino verificato in psql, nessuno scrittore di `sched.*` in `fullyParallel` —
+la time-dependency della suite (fuori ~07:20-20:40) è chiusa per costruzione, +43s isolati. Story file:
+`_bmad-output/implementation-artifacts/15-8b-statistiche-impostazioni-mobile.md` + `15-8b-review-report.md`.
+Commit: `a3400df` feat, `be2ed53` record, `1a66ece` fix, + docs chiusura. Arbitro finale:
+**453/453, 0 flaky, exit 0 (10.0m)**.
+
+- Review: **1 MAJOR vero** — il cap di "Utilizzo flotta" nascondeva per POSIZIONE DOM su una lista
+  ordinata per marche: a 375px otto righe a 0:00 con il volato dietro "Mostra tutte", mentre la card
+  gemella sulla stessa pagina faceva giusto. Fixato **per rango** (decisione PO), desktop invariato.
+- **Lezione (durevole) — un cap è una SELEZIONE, non un taglio**: nascondere "le prime N righe" ha senso
+  solo se l'ordine del DOM coincide con la metrica promessa; quando non coincide, il cap mente con
+  numeri veri. La guardia giusta usa un DB dove i migliori NON sono i primi alfabetici.
+- Il giudizio del reviewer sul record del dev: "onesto — ogni numero rimisurabile riprodotto al
+  centesimo". Terza storia di fila in cui la qualità dei record regge la verifica indipendente.
 
 ### 15.8a Contabilità + ExportMenu — DONE (2026-08-05; la 15.8 è stata SPLITTATA in a/b)
 
