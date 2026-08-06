@@ -4,7 +4,7 @@ baseline_commit: 79571c5
 
 # Story 15.10: Sweep finale mobile — il focus che smette di uscire dai pannelli, l'inchiostro che il template ci ha lasciato addosso, i bersagli delle primitive condivise, e la coda dei debiti chiusa con un numero accanto a ciascuno
 
-Status: **approved** — ratifiche PO 2026-08-06 (AskUserQuestion, sessione principale, quattro giri). Tabella sotto; le Q1-Q13 in fondo restano come record di fatti, opzioni e motivazioni. Tutte e 13 le decisioni coincidono con la raccomandazione del teammate story (Q5 inclusa, la cui raccomandazione era B).
+Status: **review** (dev completato 2026-08-06, arbitro 507/507 exit 0) — ratifiche PO 2026-08-06 (AskUserQuestion, sessione principale, quattro giri). Tabella sotto; le Q1-Q13 in fondo restano come record di fatti, opzioni e motivazioni. Tutte e 13 le decisioni coincidono con la raccomandazione del teammate story (Q5 inclusa, la cui raccomandazione era B).
 
 ## Ratifiche PO (2026-08-06) — VINCOLANTI
 
@@ -537,3 +537,232 @@ Conseguenze aritmetiche di un `project` a viewport fisso 375×812:
 ## Nota di metodo per chi implementa
 
 Questa story ha una tentazione precisa: **fare tutto un po'**. Il censimento §1 è lungo apposta — serve a rendere visibile che «lo sweep finale» sono **sei lavori diversi**, e che il valore sta nel chiuderne pochi **per intero, con la guardia** e nel lasciare gli altri **scritti con un numero accanto**. Il metro dell'epic è stato, nove volte su nove, la **misura prima della prescrizione**: la 15.5 ha corretto le misure di un TD della 15.2, la 15.6 ha corretto un contratto che la story aveva immaginato, la 15.9 ha corretto sei righe della propria ricognizione. **Questa ricognizione contiene già quattro voci che il dev troverebbe false e cinque numeri che troverebbe diversi**: la sua ultima riga è la stessa delle nove precedenti — *verificala e correggila*.
+
+---
+
+# Dev Agent Record (2026-08-06, dev subagent Opus 5 xhigh)
+
+Baseline del codice: `19f0174` (story commit `a3fdbb5`). Tutte le misure sono state **rifatte**: build di produzione, `playwright-core` throwaway, contrasti canvas→WCAG con sfondo risolto risalendo gli antenati e `getClientRects()` a filtrare i `display:none`, DB **post-suite** per il pre-fix e per il post-fix (stesso stato, così i due lati sono confrontabili), arbitro finale su DB **fresco**.
+
+## 1. Verifica della ricognizione — 13 correzioni
+
+| # | La ricognizione diceva | Misurato | Effetto |
+|---|---|---|---|
+| 1 | «**18 fermate** di tabulazione dentro il pannello chiuso; il primo focusabile è il **204° su 221**» | **19 fermate**, la prima alla **206ª** pressione (walk completo di 300 tab su `/dashboard/bookings` a 375). Post-fix: **0** | numero corretto nel record e nella guardia |
+| 2 | «`.date-input-btn`: le **4** maggiorazioni esistenti sono tutte ancorate» | **SEI** regole ancorate: 36px su `.movements-filter-panel`, `.billing-filter-panel`, `.transaction-form`, `.settings-card`; **44px** su `.account-topup-panel` e `.ppr-form-grid` | la regola unica ne sostituisce 6, non 4 |
+| 3 | «`.so-sub` non vuoto su **6 pagine**» | **7 URL** a 375 e 7 a 1280 (c'è anche `/dashboard` stesso), 20 nodi in tutto | censimento corretto |
+| 4 | «KPI expiries: **identici** su desktop 1280 e su mobile 375» | il **rapporto** è identico (3,96 / 3,61), il **verdetto** no: a 1280 il valore è 26px = testo largo (soglia 3) e **passa**; a 375 è 19px (soglia 4,5) e **fallisce**. È un difetto del **telefono** con un rapporto desktop | riportato con la soglia giusta |
+| 5 | «Giorni rimasti: `--bad` su `--bad-soft` **3,38**» | vero (16 righe), **ma** `--info` su `--info-soft` misura **3,12** — la quarta fascia è sotto soglia anch'essa, latente solo perché nel DB non esiste una riga tier-3 | chiuse **due** fasce, non una |
+| 6 | «Marginali **sopra** soglia ma vicini: `.prefix`/`.suffix` 4,39, asse 4,39, «Settimana» 4,39» | **4,39 < 4,5**: sono SOTTO soglia. Idem `.f-sub` 4,19/4,41, `.ac-model` 4,34 | restano dichiarati, ma come difetti, non come marginali sani |
+| 7 | «METAR: `.mobile-metar-card{display:flex}` esiste solo a ≤640 ⇒ nella fascia non c'è» | il gate vero è il **CONTENITORE**: `.overview-mobile`/`.landing-mobile` sono `display:none` fuori dalla query telefono (misurato: `display` `none` a 641/800/900 pre-fix). Una regola sulla sola `.mobile-metar-card` **non avrebbe cambiato niente** | la media query apre il contenitore e nasconde gli altri figli |
+| 8 | «`aircraft-editor` **potrebbe già essere a posto** dalla 15.2 — si misura» | **NON lo era**: a 375 in MODIFICA `.so-body` scrolla **1781px in 728px**, dopo lo scroll il submit sta a `top −396,41` e `elementFromPoint` = **false** | R-15.10-f applicato a tutti e tre |
+| 9 | «`scripts/e2e.sh`: `start -g "AC 9"` → **E2E_EXIT=127**» | **127 non riprodotto**. I modi reali sono due, entrambi misurati: `-g "AC 9: la tab bar"` → **7 argv invece di 2** (word splitting); `-g "AC 1 (story 15.10)"` → **errore di sintassi bash**, il run muore **senza sentinella** (`status` = DIED) | fix identico, motivazione corretta |
+| 10 | (non detto) | il trigger calendario ETA di `ManualPprForm` era **già coperto** dalla barra sticky pre-fix (24×24 a `top 781`, barra 743-812, `elementFromPoint` = il bottone primario). Il pavimento 44 l'ha spostato a 757 e ha aggiunto l'input | dichiarato; guardia riscritta sul REQUISITO (hit-test dopo uno scroll vero) |
+| 11 | «19 consumatori di `--ink-4`» | ✔ 19. Ma **tre sono CSS morto**: `.syl-num`, `.nf-route .arrow`, `.ppr-empty` hanno **zero** consumatori in `src/**/*.tsx` (segnalati, non rimossi — non è lavoro di questa story) | censimento §3 |
+| 12 | «17 usi di `SlideOver` in 15 file · `data-testid^=` 29 occorrenze · 59 spec, 472 `test(`, 14 spec mobile, 260 `setViewportSize`, catena a 10 project» | ✔ **tutti confermati** (`grep` rifatto: 17/15, 29 occorrenze, 9 prefissi letterali + 1 template `${prefix}`) | nessuna correzione |
+| 13 | «baseline arbitro 15.9: **474 passed, 0 flaky**» | il run di baseline che ho fatto **prima di toccare `src/`** (solo `scripts/e2e.sh` modificato) ha dato **472 passed + 2 flaky, exit 0**: `billing.spec.ts:296` (il flaky noto, TD (j)) e `instructor-rates.spec.ts:76` (nuovo, non mio: codice intatto) | attribuzione onesta, v. §9 |
+
+## 2. Esito per AC
+
+**AC 1 — trap + `aria-modal` sul chassis degli sheet.** `useFocusTrap` (`src/components/ui/focus-trap.ts`, nuovo) + `aria-modal="true"` su `.mobile-sheet-panel`, insieme come impone AD-1.
+Pre-fix misurato (375): sheet volo `flight-correct-action-mobile → flight-cancel-action-mobile → Chiudi → **mobile-tab-overview**` (4ª tabulazione fuori), `Shift+Tab` fuori all'indietro, sheet «Altro» 8 voci poi il brand, sheet Esporta 2 voci poi `logbook-new-button`, `aria-modal` **null** su tutti e tre.
+Post-fix: 12 tabulazioni sullo sheet volo restano tutte `@sheet` e **ciclano** (`correct → cancel → Chiudi → correct → …`), «Altro» cicla sulle 8 voci, Esporta sulle 2; `aria-modal="true"` su tutti e tre. Ritorno del focus al trigger su Escape **e** su «Chiudi» verificato invariato.
+
+**AC 2 — `SlideOver` è un dialogo con nome e focus.** `role="dialog"` + `aria-modal="true"` + `aria-labelledby` (un solo nodo che contiene `.so-sub` + `.so-title`), focus al pannello all'apertura con `preventScroll`, ritorno al trigger alla chiusura, trap.
+Pre-fix: `role`/`aria-modal`/nome **tutti null**; dopo l'apertura `activeElement` = `new-booking-button`; **14 tabulazioni su 14 fuori dal pannello** (chip di stato e righe della pagina dietro lo scrim).
+Post-fix: `activeInPanel` true, **14/14 dentro**, nome accessibile risolto dal browser (`toHaveAccessibleName`) su tre grammatiche diverse (form semplice, form condiviso, editor multi-form aperto da uno sheet). Escape globale **invariato** (chiude l'intero pannello) e ritorno del focus verificato — sull'editor da sheet il bersaglio è la **card**, non l'azione dello sheet, perché lo sheet restituisce il focus alla card quando si chiude per far posto al pannello (misurato).
+
+**AC 2f / R-15.10-f — l'azione primaria fissa dei tre editor.** Submit nel prop `footer` esistente (`.so-foot`, fuori da `.so-body`), collegato con `form="<id>"`; `isSubmitting` sollevato al genitore con un setter di `useState` (stabile per contratto). `instructor-editor` solleva anche `ready`, perché la sua sezione ha tre rami senza form (errore di caricamento, caricamento, sola lettura senza `people.manage`): un submit nel piede che punta a un form assente sarebbe un controllo morto.
+Pre-fix (375, MODIFICA, dopo `scrollTop = scrollHeight`): aircraft `.so-body` 1781/728 → submit `top −396,41`, `hit` **false**; pilot 2693/716 → `top −1413,53`, **false**; instructor 2642/716 → `top −1370,53`, **false**.
+Post-fix: `insideFoot` true, `insideBody` false, rect dentro il viewport, `hit` **true** su tutti e tre. Azioni secondarie di sezione lasciate dove stanno; **nessuna riga sulla primitiva**.
+
+**AC 3 — il pannello CHIUSO non è tabulabile.** `inert` sul contenitore da chiuso (React 19), `aria-hidden` invariato.
+Pre-fix: `.slideover` `aria-hidden="true"`, `pointer-events:none` e **11** controlli focusabili a 375 su `/dashboard/bookings` (**17** su `/dashboard/ppr`, che monta il form PPR da 12 campi; 1 su `/dashboard/pilots`); il walk completo si è fermato **19 volte** dentro il pannello, la prima alla 206ª pressione, l'ultima sul submit «Prenota».
+Post-fix: `inert` presente; la guardia non ripete il selettore che trova i controlli — chiede a **ciascun candidato di prendere il focus** e verifica che **nessuno** ci riesca (semantica del browser, non della query). Walk completo: **0 fermate su 300**.
+
+**AC 4 — `--ink-4` non è più usato come TESTO.** Due consumatori spostati a `--ink-3`; **il token non cambia valore**.
+`.mobile-tab-label` **3,50 → 4,64** (chiaro) e **4,47 → 6,18** (scuro). ⚠️ Non 4,85/5,72: la barra ha uno sfondo semitrasparente con `backdrop-filter`, quindi la coppia reale non è `--ink-3` su `--panel` — è esattamente la lezione «misura la CASCATA», applicata prima di prescrivere.
+`.so-sub` **3,66 → 4,85** (chiaro) e **4,14 → 5,72** (scuro), a 375 **e a 1280**, su tutti i consumatori con sottotitolo non vuoto.
+Geometria della barra invariata: 5 colonne, altezza item ≥44, `.mobile-tabbar` 66,92 identica; etichetta attiva invariata (>10:1).
+
+**AC 5 — bersagli delle primitive.** ✕ di `SlideOver` **32→44** a ≤640, **32×32 a 1280** (invariante desktop asserita nello stesso test); opzioni typeahead **35,56→44** a 375, **35,56 a 1280**; `.date-input-btn` **24/36→44** su tutte le facce a ≤640 con `.date-input input` a 44 e `padding-right: 48px` (il bottone è absolute dentro il campo: a 44px su un input da 38,84 sporgeva di 2,6px per lato, e un input da 38,84 è esso stesso sotto il pavimento), **24×24 a 641/800/1280**; `/ppr` pubblico **44/48 prima e dopo** (misura di controllo: la regola globale atterra sui valori che la 15.9 aveva messo lì).
+`.cal-popover` (R-15.10-e, opzione B): 2 frecce **24→44**, 2 bottoni del piede **34,84→44**, **42 celle a 34,58 DICHIARATE**, larghezza **280px invariata** a 320/375/390, popover dentro il viewport a tutte e tre. Il **43° bersaglio dichiarato** è l'input dell'ora (254×36,84): non è uno dei quattro che la ratifica nomina.
+
+**AC 6 — i tre contrasti «di pagina».** KPI expiries: i due `--bad` **3,96 → 8,38+** e l'`--info` **3,61 → 9,78** (chiaro), scuro 6,61 / 7,73 invariati; inline **sostituito** dalla classe (asserito: classe presente **e** `style` senza `color`). «Giorni rimasti»: `--bad` su `--bad-soft` **3,38 → 8,38** (chiaro), `--info` su `--info-soft` **3,12 → 8,46**; scuro 4,94 / 5,93. 64 link «Saldi negativi»: **3,61 → 18,79** (chiaro) e **7,73 → 15,74** (scuro), con la **sottolineatura** al posto del colore come affordance (asserita).
+Il tono `--info` è stato creato: **`.stat-tone-info`**, quarto membro della famiglia. **Nessun literal nuovo**: `oklch(0.38 0.12 245)` è copiato verbatim da `.badge.info`/`.alert-box.info`, già ratificati; l'override scuro riusa il token grezzo come i tre fratelli. La decisione è riportata perché era una decisione (v. §5).
+
+**AC 7 — `/dashboard/ppr`.** 19 bersagli sotto 43,5 a 320/375/390 → **0** a tutte e tre, `pageOverflow` 0, card **identica al centesimo** (`<button>` 82,83 con 0 figli interattivi), sheet e ExportMenu intatti. La stessa regola chiude **15 bersagli anche su `/dashboard/movements`**, che monta lo stesso `ManualPprForm` (verificato con uno sweep dedicato). Prezzo aritmetico dichiarato: `.page-head` **106,28 → 115,44** (+9,16), `.card-head` **93,3 → 101,3** (+8,00 a 375; 136,14 → 153,30 a 320), `docH` 1653 → 1671. Struttura invariata (nessuna chip strip, nessuna KPI strip, nessuna testata con ricerca: fuori scope dichiarato).
+
+**AC 8 — copertura e2e e project mobile.** Audit rifatto: **59 file spec**, **472 `test(` statici**, **14 spec `mobile-*`**, **260** `setViewportSize`, catena serializzata a **10 project**, **13 su 14** spec mobile dual-width. Decisione R-15.10-g **ANNOTATA come riesaminata e CHIUSA**: un project a viewport fisso non toglierebbe una sola chiamata ai 13 file dual-width e o duplicherebbe la catena o mentirebbe sul proprio scopo. I buchi di §5.3 su focus/aria degli sheet, semantica di `SlideOver` e sweep di `/dashboard/ppr` sono chiusi dai due file nuovi; il buco «nessuna guardia trasversale sui contrasti» è chiuso **solo per i cinque esemplari** di questa story (una guardia trasversale su ogni nuovo consumatore di `--ink-4` resta dichiarata, v. §8).
+
+**AC 9 — voci NON PIÙ VERE.** (a) voci ExportMenu 44×341 ✔ chiuso dalla 15.8a; (b) lo slot `mobileFooter` **esiste già** come prop `footer` con 7 call-site (ora 10); (c) i tre falsi positivi dello sweep scroller restano esclusioni dichiarate — non ne ho introdotte di nuove; (d) l'anello di focus non è un difetto. Numeri corretti: v. §1.
+
+**AC 10 — ogni regola ha la sua guardia, provata ROSSA.** Due giri di discriminanza col repo intatto (§6): **17 rossi** con le regole CSS rimosse, **7 rossi** con le due primitive riportate alla semantica pre-15.10.
+
+**AC 11/12 — geometria e invarianti.** `pageOverflow` **0** su 14 pagine × 4 larghezze (640/641/800/1280) e su 320/375/390 per le superfici toccate. Desktop: la geometria a **1280** è **identica al centesimo su tutte e 13 le pagine** misurate pre/post (`docH`, `.page-head`, `.card-head`, tab bar, weather card). Prova del non-sconfinamento della soglia: a **640** ✕ = 44 e trigger = 44; a **641** ✕ = **32** e trigger = **24**, su ogni pagina. `npm run gates` verde; nessuna dipendenza nuova; nessun token cambiato; nessun literal nuovo; nessuna stringa UI nuova (**zero** chiavi i18n aggiunte — la story non introduce testo).
+
+**AC 13 — multi-attore.** La faccia self (`/dashboard/my-account`) è misurata da PILOTA; la scheda persona da ADMIN; `mobile-metar.spec.ts` copre pilota/allievo/istruttore nella fascia nuova per costruzione (il test della banda gira sulla faccia admin, quello delle tre facce resta invariato). La tab bar è misurata su 3 pagine × 2 temi con l'asserzione «5 colonne», che è la forma che il difetto multi-ruolo della 15.1 F1 romperebbe.
+
+**AC 14/15 — gate finale e coda.** V. §9 e §10.
+
+## 3. Censimento COMPLETO dei 19 consumatori di `--ink-4` (R-15.10-c)
+
+Coppia del token: **3,66 chiaro / 4,14 scuro** su `--panel` (misurata, non dedotta).
+
+| # | selettore (riga) | classificazione | misura chiaro/scuro | esito |
+|---|---|---|---|---|
+| 1 | `.nav-label` (160) | TESTO — etichetta di gruppo della sidebar | 3,66 / 4,14 | **DICHIARATO**: è *esattamente* la popolazione che la ratifica **13.9 F6** ha calibrato a ≥3:1 («table headers, sidebar group labels»). Spostarla è una decisione desktop, non una rifinitura mobile |
+| 2 | `.weather-title` (206) | TESTO — micro-label mono della card meteo | non riproducibile senza stazione METAR; per costruzione 3,66 / 4,14 | **DICHIARATO** (stessa famiglia 13.9 F6) |
+| 3 | `.crumbs .sep` (234) | **DECORAZIONE** — il glifo «/» fra le briciole | 3,66 / 4,14 | **RESTA** (soglia 3, passa) |
+| 4 | `.search kbd` (255) | TESTO — hint tastiera «/» | non renderizzato sulle superfici visitate | **DICHIARATO** |
+| 5 | `.axis-label` (500) | TESTO — etichetta d'asse dei grafici | 3,66 / 4,14 | **DICHIARATO** (debito desktop, 2 nodi) |
+| 6 | `.student-row.header` (658) | TESTO — intestazione di tabella | **3,46 / 3,88** (su `--panel-2`) | **DICHIARATO** — 13.9 F6 alla lettera, 77 nodi su 10 pagine |
+| 7 | `.syl-num` (995) | — | **CSS MORTO**: 0 consumatori in `src/**/*.tsx` | segnalato, non rimosso |
+| 8 | `.nf-route .arrow` (1020) | — | **CSS MORTO** | segnalato |
+| 9 | `.lb-row.header` (1048) | TESTO — intestazione di tabella | 3,46 / 3,88 | **DICHIARATO** (13.9 F6) |
+| 10 | `.so-sub` (1095) | TESTO — sottotitolo del pannello | 3,66 / 4,14 | **CHIUSO → `--ink-3`**: 4,85 / 5,72 |
+| 11 | `.cal-dow` (1305) | TESTO — intestazione dei giorni della settimana | 3,66 / 4,14 | **DICHIARATO**: è un'intestazione di tabella (13.9 F6), 9,5px dentro un popover denso |
+| 12 | `.cal-cell.out` (1326) | TESTO **disabilitato** — giorno fuori mese | 3,66 / 4,14 | **RESTA**: WCAG 1.4.3 esclude i controlli disabilitati, e il grigio *è* l'informazione |
+| 13 | `.wd-meta .lbl` (1444) | TESTO — etichetta del riepilogo settimana | non riprodotto (vista settimana) | **DICHIARATO** |
+| 14 | `.wd-bar` (1452) | **DECORAZIONE** — barra di un grafico (`background`) | oggetto grafico, soglia 3 | **RESTA** |
+| 15 | `.ppr-empty` (1472) | — | **CSS MORTO** | segnalato |
+| 16 | `.mobile-tab` (1808) | TESTO — etichette della tab bar | **3,50 / 4,47** | **CHIUSO → `--ink-3`**: 4,64 / 6,18 |
+| 17 | `.mobile-sheet-label` (1841) | TESTO — kicker mono dello sheet «Altro» | 3,66 / 4,14 | **DICHIARATO**: micro-label uppercase 10px della stessa famiglia 13.9 F6; unico consumatore, nessun contenuto proprio |
+| 18 | `.ppr-card-id` (1968) | TESTO — numero PPR sulla card | non riprodotto (nessuna card con id nel DB al momento della misura) | **DICHIARATO** |
+| 19 | `.mobile-row-chev` (2221) | **DECORAZIONE** — chevron | 3,66 / 4,14 | **RESTA** (già dichiarato dalla 15.6, soglia 3) |
+
+**Regola di decisione applicata** (dichiarata perché è una scelta): si è spostato ciò che è testo **e** non appartiene alla popolazione che la ratifica **13.9 F6** ha già giudicato (intestazioni di tabella, etichette di gruppo, micro-label mono uppercase). Ribaltare 13.9 F6 sarebbe un cambio di densità del **desktop** su 10 pagine — fuori dal mandato di questa story e in contraddizione con l'AC 12. AC 4c ammette esplicitamente «va spostato **o dichiarato**».
+
+## 4. Censimento trasversale dei contrasti (13 pagine × 2 larghezze × 2 temi)
+
+Pre-fix: **30 gruppi** sotto soglia. Post-fix: **22**. Gli 8 chiusi sono `.mobile-tab-label` (chiaro+scuro, 53 nodi), `.so-sub` (chiaro+scuro, 20 nodi), i 3 KPI di expiries, i 64 link (×2 larghezze = 128 nodi) e la colonna «Giorni rimasti» (16 righe).
+I 22 che restano, **dichiarati con il numero** (debito EREDITATO dal desktop, R-15.10-a): intestazioni di tabella 3,46/3,88 (77+2 nodi), `.nav-label` 3,66/4,14 (52), `.crumbs .sep` 3,66/4,14 (26, decorazione), `.axis-label` 3,66/4,14 (2), `a.student-name` **3,42-3,61** (20, `/pilots` a 1280 — stesso `a{color:var(--info)}` dei 64 link, superficie non nel perimetro), `.res-status.aog` **3,96** (6), `.f-sub` 4,19/4,39/4,41 (26+6), `.ac-model` 4,34 (2), «Tariffa» 4,34 (2), `.prefix`/`.suffix` **4,39** (2+6), «Settimana» 4,39 (5), «Ricavo» 4,39 (10). I 40 inline `--bad`/`--ok` dei 19 file di form restano dichiarati per ratifica R-15.10-a.
+
+## 5. Decisioni non ovvie
+
+**(a) Trap manuale, non `inert` sullo sfondo.** Misurato: entrambi i chassis vivono **dentro** la pagina che coprono (`.main` li contiene), quindi non esiste un nodo «sfondo» da marcare — marcare `.main` marcherebbe anche il pannello. `inert` è usato per il lavoro opposto (il pannello CHIUSO). Conseguenza voluta: i selettori e2e scoped al landmark (`getByRole('navigation', …)`) non vedono nessun `inert` nuovo e non cambiano di una riga.
+
+**(b) Il trap in un file terzo** (`focus-trap.ts`) e non duplicato nei due chassis: due copie divergono, e AD-1 chiede una sola scrittura. Il listener sta **sul pannello**, non su `window`: il focus parte dentro per costruzione, quindi il listener non può mai «rubare» un Tab che stava altrove.
+
+**(c) `.stat-tone-info` creato.** La famiglia era ok/bad/warn e servivano due nodi `--info` (KPI 3,61 su `--panel`; colonna 3,12 su `--info-soft`). Alternative valutate e scartate: `--ink` + sottolineatura (giusto per un **link**, sbagliato per un valore KPI che vive in una fila di quattro card codificate a colore); `.stat-tone-warn` (cambia la tinta per niente, l'`--accent-ink` della card «Entro 30» misura 13,42 e non ha nulla da correggere). Nessun literal nuovo: quello scelto è già in `.badge.info` e `.alert-box.info`.
+
+**(d) I 64 link: `--ink` + sottolineatura, non un tono.** Il colore era l'**unica** affordance di link; sostituirlo senza restituire un'affordance sarebbe stato un peggioramento di usabilità travestito da fix di contrasto. Regola ancorata a `.billing-negative-row`, non al globale `a{}` (che tocca ogni link dell'app, desktop compreso). Precedenti identici nell'epic: `.mobile-alert-row` (15.3) e `a.mobile-row` (15.6) rivendicano l'inchiostro allo stesso modo.
+
+**(e) `headingRepeatsPageHead`, non `showActor`.** La ratifica R-15.10-h nomina `showActor === false` come discriminante della «faccia self»; **misurato, non lo è**: `showActor` è false anche per un pilota che apre la **propria scheda persona**, dove `.page-head` porta il nome della persona e quel titolo è l'unico nome della sezione. Ho implementato l'**intento** scritto due volte nella ratifica («scheda persona INTATTA») con un prop esplicito e documentato, usato da un solo call-site. Verificato: `/my-account` −28,3px di testata (101,3 → 73; prima riga di movimento da `top 323,7` a `295,41`), scheda persona **110,98 con il titolo a 20,3, identica**.
+
+**(f) La banda METAR apre il CONTENITORE.** V. correzione 7. La regola `> :not(.mobile-metar-card)` usa il **figlio diretto** (lezione 15.9 MINOR-2: un'esclusione via discendente escluderebbe anche i figli della card). Il test sta in `mobile-metar.spec.ts` — **dichiarato prima di scriverlo**, come chiede R-15.10-k: vedere la card significa configurare la stazione, cioè scrivere un `AppSetting` globale, cioè la catena serializzata (7° project, ripristino in `afterAll` già presente).
+
+**(g) Le sei regole ancorate di `.date-input-btn` sono state RIMOSSE**, non affiancate: hanno specificità (0,2,0) e avrebbero battuto la regola unica (0,1,0), lasciando le quattro facce a 36px. Al loro posto un commento che punta al blocco 15.10.
+
+**(h) L'input dell'ora del `.cal-popover` (254×36,84) resta sotto soglia**, dichiarato: la ratifica R-15.10-e nomina quattro bersagli e quello non è fra essi. Alzarlo non avrebbe allargato il popover, ma è fuori dalla lettera della ratifica.
+
+## 6. Tabella regola → guardia → discriminanza (provata col repo intatto)
+
+Due giri: **A** = blocco CSS 15.10 rimosso e i due `--ink-3` riportati a `--ink-4` (rebuild); **B** = `slide-over.tsx` e `mobile-sheet.tsx` riportati alla semantica pre-15.10 (rebuild). File di prova ripristinati byte a byte dallo snapshot e verificati con `diff` a zero.
+
+| regola | guardia | rosso al giro |
+|---|---|---|
+| `.mobile-tab` → `--ink-3` | `mobile-ink-targets.spec.ts` «tab bar … 4.5:1» (×2 temi) | **A** (2 rossi) |
+| `.so-sub` → `--ink-3` | «.so-sub clears 4.5:1 … phone AND desktop» (×2 temi) | **A** (2) |
+| `.so-head .iconbtn` 44 | «SlideOver ✕: 44x44 on the phone, still 32x32 at 1280» | **A** |
+| `.combo-option` 44 | «typeahead options: >=44 … unchanged at 1280» | **A** |
+| `.date-input` 44/48 | «every calendar trigger is 44x44 … and the public /ppr» | **A** |
+| `.cal-head .iconbtn` + `.cal-foot .btn` 44 | «.cal-popover at 320/375/390» (×3) | **A** (3) |
+| `.ppr-head-actions` / `.ppr-queue-head` / `.manual-ppr-form` | «no target under the floor at 320/375/390» (×3) + «ManualPprForm on /dashboard/movements» | **A** (4) |
+| `.billing-negative-row a` | «Saldi negativi … non-colour affordance» (×2 temi) | **A** (2) |
+| `.account-head-self .card-title` | «the self statement drops its redundant card title» | **A** |
+| `aria-modal` + trap su `MobileSheet` | «BottomSheet, "Altro" and ExportMenu» | **B** |
+| dialogo + nome + focus su `SlideOver` | «dialog role, accessible name, focus in and back out» (×3 consumatori) | **B** (3) |
+| `inert` da chiuso | «no control … can take the focus» (×2 larghezze) + «a full tab walk … never stops inside» | **B** (3) |
+| submit nel `footer` (3 editor) | «<submit> stays hit-testable after scrolling the panel body to the very bottom» (×3) | misurato **sul build pre-fix reale**: `hit:false` su tutti e tre (v. AC 2f) |
+| `.stat-tone-info` (regola CSS) | ⚠️ **non discriminante al giro A**: tolta la regola, la classe resta nel TSX e il valore eredita `--ink` — il rapporto **sale**, non scende. La guardia protegge la **sostituzione** dell'inline (classe presente + `style` senza `color`), non la tinta. Dichiarato |
+| banda METAR 641-900 | `mobile-metar.spec.ts` «in the 641-900px band … above 900 nothing changes» | non ri-provata al giro A (project serializzato, richiede la stazione): pre-fix misurato `overview-mobile: none` a 641/800/900 |
+
+## 7. Spec esistenti toccati (motivazione, nessuna copertura ridotta)
+
+1. **`e2e/mobile-settings.spec.ts:795`** — l'asserzione era `height <= 36` su `/logbook`, `/movements`, `/billing`: proteggeva l'**ancoraggio** della regola Tesoreria, che R-15.10-d ha deliberatamente sostituito con un pavimento unico. Stessi tre URL, stessa sonda, requisito ribaltato a `>= 44` **per decisione PO**. In più la sonda ora filtra i nodi **renderizzati** (`getClientRects()`): senza filtro contava anche i trigger dentro il pannello chiuso e nell'albero desktop nascosto, che misurano 0 (era invisibile finché la soglia era un massimo).
+2. **`e2e/mobile-settings.spec.ts` `SMALL_TARGETS`** — rimossa l'**esclusione** di `.date-input-btn` col test **verde**: il bersaglio che l'esclusione copriva non è più sotto soglia. La sonda passa da 1 esclusione a **zero** (pattern 15.9).
+3. **`e2e/mobile-primitives.spec.ts:131`** — il click sul trigger calendario ora è preceduto da uno **scroll reale** del corpo del pannello fino a liberare il trigger dalla barra sticky, poi dall'hit-test. Motivo misurato: la barra `.so-actions` è `position: sticky` e copre per costruzione ciò che sta al bordo inferiore a ogni scroll tranne l'ultimo — il trigger era coperto **anche prima** di 15.10 (24×24 a `top 781`); cliccare un controllo coperto fa scrollare Playwright (`scrollTop` 0 → 314) e `useFixedPopover` chiude il popover **su qualunque scroll** (`fixed-popover.ts:198`, cattura, per progetto), con l'evento che arriva un frame **dopo** il click: il popover si apriva e spariva dopo 4ms. Lo scroll prima del click toglie la corsa; ciò che il test misura (z-order e contenimento del popover portalato) è invariato, e l'hit-test dopo uno scroll vero — la formulazione dell'AC 11 dell'epic — ora è **asserito** invece che assunto.
+4. **`e2e/mobile-metar.spec.ts`** — un test nuovo (la banda) nel project serializzato che già configura la stazione.
+
+## 8. File toccati
+
+**Nuovi**: `src/components/ui/focus-trap.ts` · `e2e/mobile-a11y-sweep.spec.ts` (11 test) · `e2e/mobile-ink-targets.spec.ts` (21 test).
+**Primitive**: `src/components/ui/slide-over.tsx` · `src/components/ui/mobile-sheet.tsx`.
+**Stili**: `src/styles/airops.css` (blocco 15.10 in coda; 6 regole ancorate rimosse; 2 consumatori `--ink-4` → `--ink-3`).
+**Superfici**: `src/app/[locale]/layout.tsx` (`export const viewport`) · `src/app/[locale]/dashboard/ppr/page.tsx` · `.../ppr/ppr-console.tsx` · `src/components/ppr/manual-ppr-form.tsx` · `.../expiries/scadenze-console.tsx` · `.../fleet/aircraft-editor.tsx` · `.../pilots/pilot-editor.tsx` · `.../instructors/instructor-editor.tsx` · `.../people/[id]/account-section.tsx` · `.../my-account/page.tsx`.
+**Strumenti/test**: `scripts/e2e.sh` · `e2e/mobile-metar.spec.ts` · `e2e/mobile-settings.spec.ts` · `e2e/mobile-primitives.spec.ts`.
+**Non toccati e dichiarati tali**: `calendar-popover.tsx` e `search-combobox.tsx` (i loro bersagli sono saliti **solo** con regole CSS: nessuna riga di TSX), `bottom-sheet.tsx`, `export-menu.tsx`, `mobile-nav.tsx`, `mobile-top-bar.tsx` (ereditano dal chassis), `billing-console.tsx` (il fix dei 64 link è CSS ancorato).
+
+## 9. Esito ONESTO della suite
+
+| run | comando | esito |
+|---|---|---|
+| **baseline**, prima di toccare `src/` (solo `scripts/e2e.sh` modificato), DB fresco, `CI=1` build di produzione | `scripts/e2e.sh start` | **472 passed + 2 flaky, exit 0** (14,2m→12,1m). I due flaky: `billing.spec.ts:296` (il flaky noto, TD (j)) e `instructor-rates.spec.ts:76` (**nuovo, non mio**: nessuna riga di `src/` era cambiata) |
+| mirati sul build post-fix (server riusato) | 2 file nuovi + `datetime-picker` + `mobile-primitives` + `typeahead-pickers` + `ppr-queue` | dopo i due fix di §7: verdi |
+| project serializzati | `--project=mobile-metar --no-deps` · `--project=mobile-settings --no-deps` | **3 passed** · **12 passed** |
+| verifica R-15.10-m | `scripts/e2e.sh start -g "aria-modal is set, Tab cycles inside"` | **1 passed, exit 0** — l'argomento arriva **intero**. Pre-fix lo stesso comando produceva 6 argv separati; con le parentesi (che ogni titolo di questa suite ha) il run **moriva senza sentinella** |
+| discriminanza A (CSS rimosso) | 2 file nuovi | **17 failed** / 15 passed |
+| discriminanza B (primitive pre-15.10) | `mobile-a11y-sweep` | **7 failed** / 4 passed |
+| **arbitro #1** (DB fresco, `CI=1`) | full suite | **exit 1**: 466 passed, **2 failed**, 39 did not run. Entrambi i rossi **miei** e diagnosticati: `mobile-overview.spec.ts:607` (`[role="dialog"]` page-level contava **4** nodi — il blast radius che §8.2.1 aveva previsto) e `mobile-registries.spec.ts:774` (asseriva `.so-actions` sull'editor istruttore, che R-15.10-f ha rimosso) |
+| **arbitro #2**, dopo i fix (DB fresco, `CI=1`, build di produzione) | full suite | **507 passed, 0 failed, 0 flaky, 0 skipped, exit 0, 14,0m** |
+
+**Delta**: 474 → **507** (+33: 11 in `mobile-a11y-sweep.spec.ts`, 21 in `mobile-ink-targets.spec.ts`, 1 in `mobile-metar.spec.ts`).
+**Attribuzione dei flaky**: nell'arbitro finale **zero**. I due del run di baseline non si sono ripresentati; `instructor-rates.spec.ts:76` resta un flaky **osservato una volta su codice intatto** e va in coda come TD nuovo (v. §11), non attribuito a questa story né liquidato come «la flake nota».
+**Un rosso ambientale, non un difetto**: durante i run mirati `datetime-picker.spec.ts:127` è fallito con «did not find some options» sul `<select>` Pilota. Causa misurata: il DB post-suite aveva **498 persone** e `OPTIONS_PAGE_SIZE = 100` taglia le opzioni (TD noto, §1 M4; CLAUDE.md lo prevede: «una sola suite completa porta il DB oltre il tetto 100 dei picker»). Verde su DB fresco in entrambi gli arbitri.
+
+## 10. La tabella del censimento §1, chiusa voce per voce
+
+| # | voce | esito |
+|---|---|---|
+| A1 | trap + `aria-modal` su `MobileSheet` | **CHIUSO** (AC 1) |
+| A2 | semantica/focus di `SlideOver` | **CHIUSO** (AC 2) |
+| A3 | pannello CHIUSO tabulabile | **CHIUSO** (AC 3) — 19 fermate → 0 |
+| A4 | `.cal-popover` senza semantica di dialogo | **DICHIARATO** post-epic (R-15.10-b: è un popover, non un modale; trattarlo da modale interferisce col campo che lo apre) |
+| B1 | `.so-sub` a `--ink-4` | **CHIUSO** (3,66/4,14 → 4,85/5,72) |
+| B2 | `.mobile-tab-label` inattiva | **CHIUSO** (3,50/4,47 → 4,64/6,18) |
+| B3 | il token `--ink-4` calibrato a ≥3:1 | **ENUMERAZIONE CHIUSA** (§3): 2 spostati, 3 decorazioni che restano, 3 CSS morto, 11 dichiarati con la misura |
+| C1 | ✕ di `SlideOver` 32px | **CHIUSO** mobile-only (32→44 a ≤640, 32 a 641+) |
+| C2 | opzioni typeahead 35,56 | **CHIUSO** mobile-only |
+| C3 | 47 bersagli in `.cal-popover` | **4 CHIUSI**, **43 DICHIARATI** (42 celle + l'input dell'ora) per ratifica R-15.10-e |
+| C4 | `.date-input-btn` 24×24 | **CHIUSO** con UNA regola che sostituisce SEI eccezioni ancorate |
+| D1 | riserva sticky R-15.2-g | **CHIUSO** sui tre editor (R-15.10-f); la parte «serve uno slot nuovo sulla primitiva» era **NON PIÙ VERA** |
+| E1 | testata estratto conto self 101,3px | **CHIUSO** −28,3px sulla sola faccia self; scheda persona misurata **INTATTA** |
+| E2 | `.search` `cw 188 / sw 190` | **DICHIARATO** post-epic (difetto solo desktop, R-15.10-a) |
+| F1 | 40 inline `--bad`/`--ok` in 19 file | **DICHIARATO** post-epic (R-15.10-a): è una story propria, con la lezione della cascata da applicare 25 volte |
+| F2 | KPI di expiries | **CHIUSO** (con la precisazione della soglia, §1.4) |
+| F3 | 64 link «Saldi negativi» | **CHIUSO** (3,61 → 18,79 chiaro / 15,74 scuro, con sottolineatura) |
+| F4 | colonna «Giorni rimasti» | **CHIUSO**, e con **due** fasce invece di una (§1.5) |
+| G1 | `/dashboard/ppr` | **CHIUSO** (19 → 0 bersagli a 320/375/390, + 15 su `/dashboard/movements`) |
+| H1 | METAR nella fascia 641-900 | **CHIUSO** (media query + test nella catena serializzata) |
+| I1 | `viewport-fit=cover` | **CHIUSO** con la limitazione SCRITTA (inset 0 su Chromium: verifica = non-regressione al centesimo, asserita) |
+| J1 | quoting di `scripts/e2e.sh` | **CHIUSO**, con la causa corretta (§1.9) |
+| K1 | bucket stato+giorno dei transiti | **DICHIARATO** — backlog TD e2e, non toccato |
+| K2 | back button sulle chip Scadenze | **NON MIO** — identico sul `.segmented` desktop |
+| L1 | voci ExportMenu a 35px | **NON PIÙ VERO** (44×341, chiuso dalla 15.8a) |
+| L2 | `.slideover` come scroller nascosto | **NON PIÙ VERO** (falso positivo, esclusione dichiarata) |
+| L3 | anello di focus in tema scuro | **NON PIÙ VERO**; resta dichiarato il `color-scheme` mancante per i controlli nativi |
+| M1-M4 | AOG, security, 422-prima-di-403, `OPTIONS_PAGE_SIZE`, `ExpiryType` globale, `billing.spec.ts:296`, `home-dashboard.spec.ts:228`, `date-only.ts`, PATCH cash-movements | **INTATTE**, non toccate (AC 15) |
+
+## 11. TD residui, ciascuno con un numero
+
+1. **`--ink-4` come testo, i 9 consumatori dichiarati** (§3): intestazioni di tabella **3,46/3,88** (77+2 nodi, 10 pagine), `.nav-label` **3,66/4,14** (52), `.axis-label` 3,66/4,14 (2), `.cal-dow`, `.mobile-sheet-label`, `.search kbd`, `.weather-title`, `.wd-meta .lbl`, `.ppr-card-id`. Owner: una story «inchiostro desktop», che dovrà **ri-aprire la ratifica 13.9 F6** (è quella che li ha calibrati a ≥3:1).
+2. **I 22 gruppi di contrasto ereditati** (§4), fra cui `a.student-name` **3,42-3,61** su `/pilots` (20 nodi, stesso `a{color:var(--info)}` dei 64 link chiusi qui) e `.res-status.aog` **3,96** (6 nodi). Owner: la stessa story.
+3. **I 40 inline `--bad`/`--ok` in 19 file** (34 a 3,96, 6 a 2,73): dichiarati per ratifica; 25 su 34 stanno su `className="fld-label"`, cioè il caso in cui `.stat-tone-bad` **perde** e la classe giusta è `.fld-error`.
+4. **`.cal-popover`**: 42 celle a **34,58** + l'input dell'ora a **36,84** (dichiarati per ratifica), e nessuna semantica di dialogo (A4).
+5. **Il popover si CHIUDE su qualunque scroll** (`fixed-popover.ts:198`, cattura): con una barra `.so-actions` sticky che copre il bordo inferiore, cliccare un trigger coperto fa scrollare e il popover si apre e sparisce dopo un frame. Misurato su `ManualPprForm`; l'unico rimedio strutturale è il piede fuori dal corpo (R-15.10-f lo ha ratificato **solo** per i tre editor). **TD nuovo**.
+6. **`instructor-rates.spec.ts:76`** flaky osservato una volta su **codice intatto** (run di baseline). **TD nuovo**, non riprodotto negli arbitri.
+7. **`.stat-tone-info` non ha una guardia discriminante sulla TINTA** (§6): tolta la regola CSS il rapporto sale invece di scendere. La guardia protegge la sostituzione dell'inline, non il colore. **TD nuovo, minore.**
+8. **3 blocchi di CSS morto** (`.syl-num`, `.nf-route .arrow`, `.ppr-empty`): zero consumatori in `src/**/*.tsx`. Segnalati, non rimossi (regola: non si cancella codice morto altrui approfittando di uno sweep).
+9. **`env(safe-area-inset-*)` non verificabile** su questa macchina: Chromium headless ha inset 0. Verificato solo il non-regresso.
+
+## 12. Cosa NON ho fatto (e perché)
+
+- **Non ho toccato i 40 inline dei form** né `.search` 188/190 (ratifica R-15.10-a: perimetro).
+- **Non ho dato semantica di dialogo a `.cal-popover`** (R-15.10-b lo lascia dichiarato).
+- **Non ho alzato le 42 celle del calendario** né l'input dell'ora (R-15.10-e, opzione B del PO).
+- **Non ho creato il project mobile Playwright** (R-15.10-g: questione chiusa coi numeri, §AC 8).
+- **Non ho ridisegnato `/dashboard/ppr`** (niente chip strip, niente KPI strip, niente testata con ricerca: R-15.10-j, opzione A).
+- **Non ho cambiato il valore di alcun token**, né introdotto literal nuovi, né aggiunto dipendenze, né toccato API/schemi/servizi/seed/migrazioni (AD-7).
+- **Non ho committato** (regola di consegna).
+- **Non ho rimosso** il CSS morto né i TD altrui.

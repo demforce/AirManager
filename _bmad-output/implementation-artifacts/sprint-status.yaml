@@ -450,7 +450,7 @@ development_status:
   # grigio 4,85 sarebbe passato per un fix — usato .fld-error, stesso literal ratificato).
   # Dettagli nel Review Record.
   15-9-aree-self-pubblico-mobile: done
-  15-10-sweep-finale-mobile: backlog
+  15-10-sweep-finale-mobile: review
 
 action_items:
   - epic: 15
