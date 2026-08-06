@@ -76,15 +76,29 @@ cmd_start() {
 
   # setsid detaches the run from this shell's session and process group, so it
   # survives the agent (and the tool call) that started it.
+  #
+  # Arguments reach the detached shell as POSITIONAL PARAMETERS ($1 = log path,
+  # "$@" = the playwright args), never interpolated into the script text (story
+  # 15.10, R-15.10-m — TD (n) of 15.7). Interpolating `$*` broke every argument
+  # containing a space in two different ways, both measured on this script:
+  #   `start -g "AC 9: la tab bar"`  -> playwright received 7 argv instead of 2
+  #                                     (`-g AC` plus four bogus file filters);
+  #   `start -g "AC 1 (story 15.10)"` -> bash syntax error near `(`, the run
+  #                                     died BEFORE writing the E2E_EXIT
+  #                                     sentinel, i.e. `status` reported DIED.
+  # Since every test title in this suite has spaces and most have parentheses,
+  # `-g` — the only cheap way to prove a guard discriminant without paying a
+  # full suite — was effectively unusable.
   setsid nohup bash -c '
-    exec >>"'"$LOG"'" 2>&1
+    exec >>"$1" 2>&1
+    shift
     echo "=== e2e start: $(date -Is) ==="
-    echo "=== args: '"${*:-<full suite>}"' ==="
-    CI=1 npx playwright test '"$*"'
+    echo "=== args: ${*:-<full suite>} ==="
+    CI=1 npx playwright test "$@"
     code=$?
     echo "=== e2e end: $(date -Is) ==="
     echo "E2E_EXIT=$code"
-  ' >/dev/null 2>&1 &
+  ' _ "$LOG" "$@" >/dev/null 2>&1 &
 
   echo "$!" >"$LOCK"
   echo "STARTED (pid $(cat "$LOCK")) — log: $LOG"

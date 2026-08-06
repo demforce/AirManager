@@ -1091,8 +1091,17 @@ html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
   padding: 18px 20px; border-bottom: 1px solid var(--border);
 }
+/* `--ink-3`, not `--ink-4` (story 15.10, R-15.10-c — TD (h) of 15.6, still
+   open at 15.7): this sub is TEXT, and `--ink-4` is calibrated to a >=3:1
+   floor (ratifica 13.9 F6, for table headers and nav group labels), not to
+   4.5. Measured on `--panel` before the change: 3.66:1 light and — the half
+   the TD never named — 4.14:1 DARK, both under the floor for body text.
+   `--ink-3` is 4.85 / 5.72, the same tone 15.4, 15.6 and 15.8b each moved one
+   consumer to. This is DESKTOP text before it is mobile text: it shows on the
+   6 pages whose panels pass a non-empty `subtitle` (bookings x2, logbook,
+   instructors x2, movements, billing, ppr), at every width. */
 .so-sub{
-  font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-4);
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
   text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;
 }
 .so-title{ font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
@@ -1800,12 +1809,19 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
     border-top: 1px solid var(--border);
     padding: 6px 6px calc(12px + env(safe-area-inset-bottom));
   }
+  /* `--ink-3`, not the template's `--ink-4` (story 15.10, R-15.10-c): the four
+     INACTIVE labels of the tab bar measured 3.50:1 light / 4.47:1 dark on all
+     14 pages of the epic — the most-looked-at text of the whole mobile UI, and
+     debt this epic created itself (15.1 ratified "the app's `--ink-4` values
+     win over the template", but nobody questioned the TOKEN). `--ink-3` is
+     4.85 / 5.72. The ACTIVE label keeps `--ink` (17.99 / 17.00) and the
+     geometry of the bar is untouched: only the colour changes. */
   .mobile-tab{
     display: flex; flex-direction: column; align-items: center; gap: 3px;
     padding: 6px 2px 2px;
     min-height: 44px;
     background: transparent; border: 0; cursor: pointer;
-    color: var(--ink-4); font-weight: 500; text-decoration: none;
+    color: var(--ink-3); font-weight: 500; text-decoration: none;
   }
   .mobile-tab.active{ color: var(--ink); font-weight: 600; }
   .mobile-tab svg{ width: 19px; height: 19px; }
@@ -2991,7 +3007,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      panel classes this story owns; the `SlideOver` chassis is untouched. */
   .scadenze-filter-panel .input,
   .movements-filter-panel .input{ min-height: 44px; }
-  .movements-filter-panel .date-input-btn{ width: 36px; height: 36px; }
+  /* The 36px trigger this story anchored here is now the app-wide 44px floor
+     of story 15.10 (R-15.10-d): the rule that replaced it is at the end of
+     this file, and the value went 36 -> 44 on this panel. */
 
   /* --- the transit card (template 207-225) ---
      `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, an
@@ -3280,7 +3298,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      untouched. */
   .billing-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
   .billing-filter-panel .input{ min-height: 44px; }
-  .billing-filter-panel .date-input-btn{ width: 36px; height: 36px; }
+  /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
 
   /* --- the three writes, inside the sheet (R-15.8a-g) ---
      The riclassifica becomes explicit: three method buttons and a confirm,
@@ -3317,7 +3335,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      NOT touched here: they belong to a primitive with eleven consumers (TD (k),
      declared, not closed). */
   .transaction-form .input{ min-height: 44px; }
-  .transaction-form .date-input-btn{ width: 36px; height: 36px; }
+  /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
 
   /* R-15.8a-f, the other half: the two secondary cards stop being two 151.5px
      columns with a horizontal scroller each. Stacking alone is not enough,
@@ -3440,7 +3458,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      it is DECLARED in the sweep instead of being silently excluded (lesson
      15.8a MINOR-1). */
   .settings-card .input{ min-height: 44px; }
-  .settings-card .date-input-btn{ width: 36px; height: 36px; }
+  /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
   .settings-card textarea.input{ min-height: 88px; }
   /* "Salva"/"Aggiungi"/"Invia email di prova"/"Annulla": full-width and 44px.
      A card save is the end of a column of fields — on a phone it is the whole
@@ -3599,8 +3617,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      at 44px, and a guard written on the requirement (43.5) does not accept a
      36px exception it cannot name. Same `padding-right` arithmetic as the
      public form below: `.date-input input`'s own 30px cleared a 24px icon. */
-  .account-topup-panel .date-input-btn{ width: 44px; height: 44px; }
-  .account-topup-panel .date-input input{ padding-right: 48px; }
+  /* The 44x44 trigger and its 48px of clearance are now the app-wide floor
+     (story 15.10, R-15.10-d): same values, one rule, at the end of this file. */
   .account-topup-panel form > div:last-child > .btn,
   .account-adjust-panel form > div:last-child > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
 
@@ -3663,11 +3681,167 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* The trigger goes to a full 44x44 (R-15.9-f), so the text needs more room
      than `.date-input input`'s own 30px: at 24px the value was clear of the
      icon by 6px, and the same clearance at 44px needs 48px. */
-  .ppr-form-grid .date-input-btn{ width: 44px; height: 44px; }
-  .ppr-form-grid .date-input input{ padding-right: 48px; }
+  /* Same 44x44 + 48px, now the app-wide floor of story 15.10 (R-15.10-d):
+     this page's measurement must NOT move, and it does not — the global rule
+     lands on exactly the values this one set. */
   /* Submit full width, the "campi obbligatori" note on its own line. The row
      was `flex-wrap: nowrap` and 85.59px tall with a 101.64x64.59 button whose
      height came from its label wrapping, not from a decision. */
   .ppr-actions{ flex-wrap: wrap; }
   .ppr-actions > .btn{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
+}
+
+/* ============================================================================
+   SWEEP FINALE MOBILE (story 15.10)
+   ============================================================================
+   The last story of epic 15 closes debts the previous nine MEASURED and wrote
+   down. Same rules of engagement: additive declarations, no existing token
+   changes value, no new colour literal. The exceptions R1 allows are used and
+   NAMED here, once:
+
+   (i)  the `.date-input` block below is deliberately GLOBAL at <=640px — it
+        REPLACES six anchored exceptions (four at 36px, two at 44px) that four
+        stories wrote one surface at a time. Ratifica R-15.10-d asked for one
+        rule instead of a seventh exception. Measured before: 24x24 on
+        logbook (1), movements (2), bookings (2) and /dashboard/ppr (2); 36x36
+        on billing and settings; 44x44 on the public /ppr, which this rule
+        reaches at exactly the value 15.9 gave it, so that page does not move;
+   (ii) the METAR band below is a `min-width`/`max-width` band, not a <=640
+        rule, because that IS the ratified requirement (R-15.10-k: the tablet
+        is a usage surface);
+   (iii)`.stat-tone-info` and the two contrast rules are NOT mobile rules: the
+        defects they close measure the same on the desktop (R-15.10-i). They
+        sit outside the query on purpose, next to the family they join.
+
+   Everything else here is anchored to a class the surface OWNS. */
+
+/* --- (1) `.stat-tone-info` — the fourth member of the tone family ---
+   `.stat-tone-*` had ok/bad/warn and no info, and two page-level defects
+   needed exactly that tone (R-15.10-i): `/dashboard/expiries`'s "Entro 60
+   giorni" KPI (`--info` inline, measured 3.61:1 on `--panel`, at 19px on the
+   phone where the floor is 4.5) and the "Giorni rimasti" column of the same
+   page on `--info-soft` rows (`--info` on `--info-soft` = 3.12:1 light —
+   latent today, since a tier-3 row simply happens not to exist in the DB).
+   NOT a new colour literal: `oklch(0.38 0.12 245)` is copied verbatim from
+   `.badge.info` and `.alert-box.info` above, both already ratified, and the
+   dark override reuses the raw token exactly like its three siblings.
+   Measured: light 9.78 on `--panel` / 8.46 on `--info-soft`; dark 7.73 on
+   `--panel` / 5.93 on `--info-soft`. */
+.stat-tone-info{ color: oklch(0.38 0.12 245); }
+html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
+
+/* --- (2) the 64 "Saldi negativi" links (R-15.10-i) ---
+   The row's amount was fixed by 15.8a (`.stat-tone-bad`, 9.82/6.61); the
+   NAME next to it is an anchor, and it still inherited the global
+   `a{ color: var(--info) }` — 3.61:1 in the light theme, on 64 rows, at 12.5px,
+   identically on the phone and at 1280. The remedy is the one the epic has
+   already used twice for anchors on a surface of its own (`.mobile-alert-row`
+   15.3, `a.mobile-row` 15.6): reclaim the ink and give the link its OTHER
+   affordance back — the underline the colour used to carry. Measured: 18.79
+   light / 15.74 dark. Anchored to the row class, so no other link moves; the
+   "Vedi tutti" link in the same card head already carries its own underline. */
+.billing-negative-row a{ color: var(--ink); text-decoration: underline; }
+.billing-negative-row a:hover{ color: var(--ink); }
+
+/* --- (3) METAR in the 641-900px band (R-15.10-k) ---
+   `.weather-card` is hidden from 900px down (the 64px rail, 13.10) and the
+   mobile card only existed at <=640, so on a tablet in portrait (768px) the
+   airfield weather existed NOWHERE. The recon read that gap off the two
+   `display` rules; the REAL reason the card is absent above 640 is its
+   container: `.overview-mobile`/`.landing-mobile` are `display: none` outside
+   the phone query, so a rule on `.mobile-metar-card` alone would have changed
+   nothing. Hence the container is opened in this band and every OTHER child of
+   the mobile tree stays hidden — the desktop surfaces are the ones on screen
+   here, and two trees showing at once is exactly what the epic forbids.
+   Direct child selector on purpose (`> :not(...)`, lesson 15.9 MINOR-2): a
+   descendant exclusion would hide the card's own children too. */
+@media (min-width: 641px) and (max-width: 900px){
+  .overview-mobile,
+  .landing-mobile{ display: flex; flex-direction: column; gap: 14px; }
+  .overview-mobile > :not(.mobile-metar-card),
+  .landing-mobile > :not(.mobile-metar-card){ display: none; }
+  .mobile-metar-card{ display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
+  .mobile-metar-head{ display: flex; justify-content: space-between; gap: 10px; }
+  .mobile-metar-label{
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .mobile-metar-station{ font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); }
+  .mobile-metar-main{ display: flex; align-items: baseline; gap: 10px; }
+  .mobile-metar-temp{ font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .mobile-metar-temp .unit{ font-size: 13px; font-weight: 500; color: var(--ink-3); }
+  .mobile-metar-cat{ display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+  .mobile-metar-raw{
+    padding: 8px;
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--ink-2);
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 640px){
+  /* --- (4) the calendar trigger, five faces and ONE rule (R-15.10-d) ---
+     `.date-input-btn` is 24x24 app-wide. Four stories raised it on their own
+     surface (36px on movements/billing/transaction/settings, 44px on the
+     account top-up and on the public /ppr form) and left the other five faces
+     at 24. Those six anchored rules are REMOVED above and replaced by this
+     pair. The input grows with it: the trigger is `position: absolute` inside
+     the field, so a 44px button inside a 38.84px input would stick out 2.6px
+     top and bottom — and a 38.84px input is itself under the 43.5 floor. The
+     48px of right padding is the same clearance 15.9 measured for a 44px icon
+     (30px cleared a 24px one by 6px). */
+  .date-input input{ min-height: 44px; padding-right: 48px; }
+  .date-input-btn{ width: 44px; height: 44px; }
+
+  /* --- (5) the ✕ of every SlideOver (R-15.10-d) ---
+     32x32 on all 17 usages, in both themes and at both widths (contrast was
+     never the problem: 9.99/9.47). Anchored to `.so-head` so the app's other
+     `.iconbtn`s — the calendar arrows below have their own rule — are not
+     swept along. `.so-head` keeps its `align-items: flex-start`, so the
+     header grows only if the title block is shorter than the button. */
+  .so-head .iconbtn{ width: 44px; height: 44px; }
+
+  /* --- (6) the typeahead options (R-15.10-d) ---
+     Measured 35.56px tall, 50 of them, inside a 240px listbox with its own
+     scroll. `min-height` + centring rather than more padding: the option's
+     text can wrap (a long registration plus a model), and padding would make
+     a wrapped option 60px tall. */
+  .combo-option{ min-height: 44px; display: flex; align-items: center; }
+
+  /* --- (7) `.cal-popover`: the FOUR non-cell targets (R-15.10-e) ---
+     The PO ratified option B: the two month arrows (24x24) and the two footer
+     buttons (34.84) go to 44; the 42 day cells stay 34.58 and are DECLARED —
+     7 columns x 44 = 308 > the popover's 280px, i.e. the one place in the epic
+     where the 44px floor fights the function (a month in seven columns inside
+     a popover that must fit a 320px screen). The width of the popover does not
+     change, by construction: nothing here is a grid column. The time input
+     (254x36.84) is the 43rd declared target — it is not one of the four the
+     ratifica names. */
+  .cal-head .iconbtn{ width: 44px; height: 44px; }
+  .cal-foot .btn{ min-height: 44px; }
+
+  /* --- (8) `/dashboard/ppr`, the 19 targets (R-15.10-j) ---
+     The one surface built BEFORE the primitives were complete. Everything
+     else about it is already right (the card is a `<button>` with zero
+     interactive children, the sheet is a named dialog with 44px controls, the
+     ExportMenu is a bottom sheet, `pageOverflow` is 0 at 320/375/390): what
+     was missing is the touch floor. Three anchors, all on classes these two
+     files own — never `.card-head`, `.form-grid` or `.btn`, which 13 consoles
+     share. `ManualPprForm` is mounted from BOTH `/dashboard/ppr` and
+     `/dashboard/movements` (log arrival), so this rule fixes 15 targets on two
+     surfaces at once. */
+  .ppr-head-actions > .btn{ min-height: 44px; }
+  .ppr-queue-head .input,
+  .ppr-queue-head .btn{ min-height: 44px; }
+  .manual-ppr-form .input{ min-height: 44px; }
+
+  /* --- (9) the self statement's redundant card title (R-15.10-h) ---
+     On the SELF face the page head already says "Le mie transazioni" and the
+     card title says "Estratto conto" 20px below it — the same thing twice, for
+     101.3px of head above the first movement. On the scheda persona the same
+     title is the section's ONLY name, so the rule is anchored to the modifier
+     the card sets when `showActor === false`. -20.3px, self face only. */
+  .account-head-self .card-title{ display: none; }
 }

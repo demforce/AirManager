@@ -23,13 +23,19 @@
  * and this sheet's own scrim covers the page underneath), and even if they
  * were, both listeners sit on `window` and would simply both close.
  *
- * A11y baseline (the full pass is story 15.10): the panel takes focus on
- * open and hands it back to the trigger on close, and is exposed as a
- * `dialog` with an accessible name. It deliberately does NOT claim
- * `aria-modal` — there is no focus trap yet, and claiming modality without
- * enforcing it is worse than not claiming it.
+ * A11y (completed by story 15.10, ratifica R-15.10-b): the panel takes focus
+ * on open, hands it back to the trigger on close, is exposed as a `dialog`
+ * with an accessible name — and now TRAPS the focus, which is what finally
+ * lets it claim `aria-modal`. The two arrive together on purpose: claiming
+ * modality without enforcing it is worse than not claiming it, and the leak
+ * was real (measured on the flight sheet at 375px: `flight-correct-action-
+ * mobile → flight-cancel-action-mobile → Chiudi → mobile-tab-overview`, i.e.
+ * the FOURTH Tab landed on the tab bar behind the scrim; `Shift+Tab` from the
+ * first control walked out backwards; the "Altro" sheet leaked after 8 voices
+ * and the Esporta sheet after 2).
  */
 import { useEffect, useRef, type ReactNode } from 'react';
+import { useFocusTrap } from './focus-trap';
 
 /**
  * The sheet currently claiming the screen, if any — module-level on purpose.
@@ -113,12 +119,14 @@ export function MobileSheet({ open, onClose, label, testId, className, scrimClas
     };
   }, [open, onClose]);
 
+  useFocusTrap(open, panelRef);
+
   if (!open) return null;
 
   return (
     <div className={classes('mobile-sheet', className)} data-testid={testId}>
       <div className={classes('mobile-sheet-scrim', scrimClassName)} onClick={onClose} data-testid={`${testId}-scrim`} />
-      <div className={classes('mobile-sheet-panel', panelClassName)} role="dialog" aria-label={label} tabIndex={-1} ref={panelRef}>
+      <div className={classes('mobile-sheet-panel', panelClassName)} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} ref={panelRef}>
         <div className="mobile-sheet-grabber" />
         {children}
       </div>

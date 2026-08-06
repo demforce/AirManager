@@ -144,6 +144,7 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
         exportPdfHref={exportPdfHref}
         exportLabels={{ label: tExport('button'), xls: tExport('button'), pdf: tExport('buttonPdf') }}
         statementBasePath="/dashboard/my-account"
+        headingRepeatsPageHead={true}
         labels={labels}
       />
     </main>

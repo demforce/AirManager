@@ -226,6 +226,8 @@ export function AircraftEditor({ target, onClose, onMutated, locale, labels, toa
   const toast = useToast();
   const isNew = target?.mode === 'new';
   const [current, setCurrent] = useState<EditableAircraft | null>(target?.mode === 'edit' ? target.aircraft : null);
+  /** Mirrors `IdentitySection`'s `isSubmitting` so the footer submit can be disabled while the request is in flight. */
+  const [identityBusy, setIdentityBusy] = useState(false);
 
   const open = target !== null;
   const title = isNew ? labels.newTitle : (current?.registration ?? '');
@@ -236,14 +238,35 @@ export function AircraftEditor({ target, onClose, onMutated, locale, labels, toa
     onMutated();
   }
 
+  /* Story 15.10 (R-15.10-f): the identity submit moves from the in-body
+     `.so-actions` bar to `SlideOver`'s `footer` (`.so-foot`, OUTSIDE the
+     scrolling `.so-body`), reaching its form through `form="identity-form"`.
+     15.2 pinned that bar with `position: sticky`, which cannot leave its
+     containing block: measured at 375px in MODIFICA, `.so-body` scrolls 1781px
+     inside 728px and the bar ended at `top -409.41` with the submit's
+     `elementFromPoint` returning FALSE — the same defect the pilot editor was
+     credited with, on the panel that was believed already fixed. */
+  const identityFooter = (
+    <>
+      <div style={{ flex: 1 }} />
+      <button type="button" className="btn" onClick={onClose}>
+        {labels.cancel}
+      </button>
+      <button type="submit" form="identity-form" disabled={identityBusy} className="btn primary" data-testid="identity-submit">
+        {isNew ? labels.submitCreate : labels.submitEdit}
+      </button>
+    </>
+  );
+
   return (
-    <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel}>
+    <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel} footer={identityFooter}>
       {isNew ? (
         <IdentitySection
           mode="new"
           labels={labels}
           toastLabels={toastLabels}
           toast={toast}
+          onBusyChange={setIdentityBusy}
           onClose={onClose}
           onCreated={onMutated}
         />
@@ -255,6 +278,7 @@ export function AircraftEditor({ target, onClose, onMutated, locale, labels, toa
             labels={labels}
             toastLabels={toastLabels}
             toast={toast}
+            onBusyChange={setIdentityBusy}
             onClose={onClose}
             onSaved={handleMutated}
           />
@@ -310,6 +334,8 @@ type IdentitySectionProps =
       labels: AircraftEditorLabels;
       toastLabels: ToastLabels;
       toast: ToastHandle;
+      /** `useState`'s setter — stable by contract, so the effect below cannot loop. */
+      onBusyChange: (busy: boolean) => void;
       onClose: () => void;
       onCreated: () => void;
     }
@@ -319,6 +345,7 @@ type IdentitySectionProps =
       labels: AircraftEditorLabels;
       toastLabels: ToastLabels;
       toast: ToastHandle;
+      onBusyChange: (busy: boolean) => void;
       onClose: () => void;
       onSaved: (updated: EditableAircraft) => void;
     };
@@ -384,6 +411,14 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
     resolver: zodResolver(isNew ? createAircraftSchema : updateAircraftSchema),
     defaultValues,
   });
+
+  // The submit that runs this form lives in the panel's `.so-foot` (story
+  // 15.10), outside this component: the only state it needs from here is
+  // whether a request is in flight.
+  const { onBusyChange } = props;
+  useEffect(() => {
+    onBusyChange(isSubmitting);
+  }, [isSubmitting, onBusyChange]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- register()'s valueAsNumber composition, same documented exception as the legacy manager.
   const seatsField = register('seats', { setValueAs: (value: string) => (value === '' ? null : Number(value)) }) as any;
@@ -478,7 +513,7 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
   }
 
   return (
-    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)} noValidate data-testid="identity-form">
+    <form id="identity-form" ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)} noValidate data-testid="identity-form">
       <div className="form-grid">
         <Field label={labels.identity.registration} error={errors.registration ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.registration)} {...register('registration')} />
@@ -593,23 +628,6 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
         </p>
       ) : null}
 
-      {/* Story 15.2 (R3, review F3 + PO ratification 2026-07-30): `so-actions`
-          pins this row to the bottom of the scrolling body at <=640px. This
-          panel is the composite aircraft form (14.8): its body scrolls 963px
-          in an 812px viewport, so the submit sat 217px BELOW the fold and was
-          not hit-testable without scrolling. The rule is safe here because
-          this is the panel's ONLY action row and it is the last node in the
-          body — the two editors that render several forms in one panel
-          (`pilot-editor`, `instructor-editor`) are deliberately left to story
-          15.5, which owns those pages and can decide which row is primary. */}
-      <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-        <button type="button" className="btn" onClick={props.onClose}>
-          {labels.cancel}
-        </button>
-        <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="identity-submit">
-          {isNew ? labels.submitCreate : labels.submitEdit}
-        </button>
-      </div>
     </form>
   );
 }

@@ -269,7 +269,10 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
   return (
     <>
       <div className="card" data-testid="ppr-queue">
-        <div className="card-head">
+        {/* `ppr-queue-head`: a class this console OWNS, so story 15.10's 44px
+            floor reaches the status filter and the Esporta trigger without
+            touching `.card-head`, which 13 consoles share (lesson 15.3 F1). */}
+        <div className="card-head ppr-queue-head">
           <div className="card-title">{labels.card.title}</div>
           <span className="card-sub">{labels.card.subTemplate.replace('{total}', String(requests.length))}</span>
           <div className="fld" style={{ minWidth: 0 }}>

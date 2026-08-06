@@ -140,19 +140,46 @@ export function PilotEditor({ target, onClose, onMutated, canManageUsers, locale
   const title = isNew ? labels.newTitle : current ? `${current.lastName} ${current.firstName}` : '';
   const subtitle = isNew ? labels.newSubtitle : (current?.email ?? '');
 
+  /** Mirrors `IdentitySection`'s `isSubmitting` so the footer submit can be disabled while the request is in flight. */
+  const [identityBusy, setIdentityBusy] = useState(false);
+
   /** Merges a partial API response into the editor's own working copy (same rationale as `AircraftEditor`'s `handleMutated`) and tells the parent list to refresh. */
   function applyPatch(patch: Partial<PilotRow>): void {
     setCurrent((existing) => (existing ? { ...existing, ...patch } : existing));
     onMutated();
   }
 
+  /* Story 15.10 (R-15.10-f): the ANAGRAFICA's submit is the panel's primary
+     action, and R3 wants it fixed at the bottom. It now lives in `SlideOver`'s
+     `footer` — `.so-foot`, OUTSIDE the scrolling `.so-body` — and reaches its
+     form through `form="pilot-identity-form"`. The bar it replaces was
+     `position: sticky` INSIDE `.so-body`, which cannot leave its containing
+     block: measured at 375px in MODIFICA, `.so-body` scrolls 2693px inside
+     716px and the bar ended at `top -1426.53`, with `elementFromPoint` on the
+     submit returning false — the primary action left the screen and could not
+     be clicked without scrolling back up. Only `isSubmitting` has to travel up
+     with it (the labels are already here); the SECTION-level submits ("Crea e
+     invia invito", "Aggiungi tariffa") stay where they are, as ratified. */
+  const identityFooter =
+    !isNew && current ? (
+      <>
+        <div style={{ flex: 1 }} />
+        <button type="button" className="btn" onClick={onClose}>
+          {labels.cancel}
+        </button>
+        <button type="submit" form="pilot-identity-form" disabled={identityBusy} className="btn primary" data-testid="pilot-identity-submit">
+          {labels.submitEdit}
+        </button>
+      </>
+    ) : undefined;
+
   return (
-    <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel}>
+    <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel} footer={identityFooter}>
       {isNew ? (
         <NewPersonForm labels={labels} toast={toast} toastLabels={toastLabels} canManageUsers={canManageUsers} onClose={onClose} onCreated={onMutated} />
       ) : current ? (
         <>
-          <IdentitySection pilot={current} labels={labels} toast={toast} toastLabels={toastLabels} onClose={onClose} onSaved={applyPatch} />
+          <IdentitySection pilot={current} labels={labels} toast={toast} toastLabels={toastLabels} onBusyChange={setIdentityBusy} onSaved={applyPatch} />
 
           <Section title={labels.profiles.sectionTitle}>
             <ProfilesSection personId={current.id} locale={locale} labels={labels.profiles} onChanged={(profiles) => applyPatch({ profiles })} />
@@ -204,14 +231,15 @@ function IdentitySection({
   labels,
   toast,
   toastLabels,
-  onClose,
+  onBusyChange,
   onSaved,
 }: {
   pilot: PilotRow;
   labels: PilotEditorLabels;
   toast: ToastHandle;
   toastLabels: ToastLabels;
-  onClose: () => void;
+  /** `useState`'s setter — stable by contract, so the effect below cannot loop. */
+  onBusyChange: (busy: boolean) => void;
   onSaved: (patch: Partial<PilotRow>) => void;
 }): React.JSX.Element {
   const [formError, setFormError] = useState<string | null>(null);
@@ -233,6 +261,13 @@ function IdentitySection({
       fiscalCode: pilot.fiscalCode,
     },
   });
+
+  // The submit that runs this form lives in the panel's `.so-foot` (see the
+  // footer above), outside this component: the only state it needs from here
+  // is whether a request is in flight.
+  useEffect(() => {
+    onBusyChange(isSubmitting);
+  }, [isSubmitting, onBusyChange]);
 
   async function onSubmit(values: UpdatePersonInput): Promise<void> {
     setFormError(null);
@@ -292,7 +327,7 @@ function IdentitySection({
   }
 
   return (
-    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="pilot-identity-form">
+    <form id="pilot-identity-form" ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="pilot-identity-form">
       <div className="form-grid">
         <Field label={labels.identity.firstName} error={errors.firstName ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
@@ -320,26 +355,6 @@ function IdentitySection({
         </p>
       ) : null}
 
-      {/* Story 15.5 (ratifica R-15.5-f, closing the R-15.2-g debt): `so-actions`
-          pins this row to the bottom of the scrolling body at <=640px, exactly
-          as `aircraft-editor.tsx` already does — the three editors stay
-          uniform. The row is the ANAGRAFICA's save, the panel's primary action;
-          the section-level submits below it ("Crea e invia invito", "Aggiungi
-          tariffa") stay where they are and are reached by scrolling to their own
-          section, on the phone as on the desktop. Honest reservation, accepted
-          by the PO: `position: sticky` cannot leave its containing block, so in
-          EDIT mode this bar detaches once the reader scrolls past the identity
-          form (measured pre-fix: this submit was already above the fold there —
-          the real defect was the NEW mode below). Inert above 640px: the rule
-          lives inside the phone media query. */}
-      <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-        <button type="button" className="btn" onClick={onClose}>
-          {labels.cancel}
-        </button>
-        <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="pilot-identity-submit">
-          {labels.submitEdit}
-        </button>
-      </div>
     </form>
   );
 }

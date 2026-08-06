@@ -387,7 +387,11 @@ test.describe('Le mie transazioni — the shared estratto conto on a phone (AC 1
     // segment (guard on a PROPERTY, never on a `split` count — lesson 15.5 F1).
     const withoutDescription = movementCards(page).filter({ hasText: '+11,11' });
     await withoutDescription.click();
-    const dialogName = await page.locator('[role="dialog"]').getAttribute('aria-label');
+    // `getByRole` (story 15.10): `SlideOver` also carries `role="dialog"` now,
+    // and a page-level attribute selector would break strict mode wherever a
+    // panel is mounted closed. A closed panel is `aria-hidden` + `inert`, so it
+    // is not in the accessibility tree and this resolves to the sheet alone.
+    const dialogName = await page.getByRole('dialog').getAttribute('aria-label');
     expect(dialogName).not.toMatch(/·\s*·/);
     expect(dialogName).not.toMatch(/·\s*—/);
     expect(dialogName).not.toMatch(/—\s*—/);

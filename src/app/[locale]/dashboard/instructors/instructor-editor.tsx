@@ -112,6 +112,8 @@ export function InstructorEditor({
   // (`onMutated`'s `router.refresh()` already keeps the TABLE row itself
   // correct in the meantime).
   const [current, setCurrent] = useState<InstructorRow | null>(instructor);
+  /** Mirrors `IdentitySection`: `ready` = the editable form is mounted (not the load-error, loading or read-only branch), `busy` = a save is in flight. */
+  const [identityForm, setIdentityForm] = useState<{ ready: boolean; busy: boolean }>({ ready: false, busy: false });
 
   function applyPatch(patch: Partial<InstructorRow>): void {
     setCurrent((existing) => (existing ? { ...existing, ...patch } : existing));
@@ -121,8 +123,27 @@ export function InstructorEditor({
   const open = current !== null;
   const title = current ? `${current.lastName} ${current.firstName}` : '';
 
+  /* Story 15.10 (R-15.10-f): the anagrafica's save moves from the in-body
+     `.so-actions` bar to `SlideOver`'s `footer` (`.so-foot`, OUTSIDE the
+     scrolling `.so-body`), wired to its form with `form="instructor-identity-form"`.
+     Measured at 375px before the move: `.so-body` scrolls 2642px inside 716px
+     and the sticky bar ended at `top -1383.53`, with `elementFromPoint` on the
+     submit returning FALSE. It renders only when the identity form itself does
+     — the section has a load-error, a loading and a READ-ONLY branch (no
+     `canManagePeople`), and a footer submit pointing at a form that is not in
+     the DOM would be a dead control. The rate/tariffa submits below stay in
+     their own sections, as ratified. */
+  const identityFooter = identityForm.ready ? (
+    <>
+      <div style={{ flex: 1 }} />
+      <button type="submit" form="instructor-identity-form" disabled={identityForm.busy} className="btn primary" data-testid="instructor-identity-submit">
+        {labels.identity.save}
+      </button>
+    </>
+  ) : undefined;
+
   return (
-    <SlideOver open={open} onClose={onClose} title={title} closeLabel={labels.closeLabel}>
+    <SlideOver open={open} onClose={onClose} title={title} closeLabel={labels.closeLabel} footer={identityFooter}>
       {current ? (
         <>
           <IdentitySection
@@ -132,6 +153,7 @@ export function InstructorEditor({
             labels={labels.identity}
             toast={toast}
             toastLabels={toastLabels}
+            onFormStateChange={setIdentityForm}
             onSaved={(patch) => applyPatch(patch)}
           />
 
@@ -194,6 +216,7 @@ function IdentitySection({
   labels,
   toast,
   toastLabels,
+  onFormStateChange,
   onSaved,
 }: {
   personId: string;
@@ -202,6 +225,8 @@ function IdentitySection({
   labels: InstructorEditorLabels['identity'];
   toast: ToastHandle;
   toastLabels: ToastLabels;
+  /** `useState`'s setter — stable by contract, so the effect below cannot loop. */
+  onFormStateChange: (state: { ready: boolean; busy: boolean }) => void;
   onSaved: (patch: Partial<InstructorRow>) => void;
 }) {
   const [identity, setIdentity] = useState<PersonIdentity | null>(null);
@@ -233,6 +258,14 @@ function IdentitySection({
     resolver: zodResolver(updatePersonSchema),
     values: identity ?? undefined,
   });
+
+  // The submit that runs this form lives in the panel's `.so-foot` (story
+  // 15.10), outside this component: it needs to know whether the form exists
+  // at all and whether a request is in flight.
+  const formMounted = !loadError && identity !== null && canManagePeople;
+  useEffect(() => {
+    onFormStateChange({ ready: formMounted, busy: isSubmitting });
+  }, [formMounted, isSubmitting, onFormStateChange]);
 
   async function onSubmit(values: UpdatePersonInput): Promise<void> {
     setFormError(null);
@@ -292,7 +325,7 @@ function IdentitySection({
   }
 
   return (
-    <form ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-identity-form">
+    <form id="instructor-identity-form" ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-identity-form">
       <div className="form-grid">
         <Field label={labels.firstName} error={errors.firstName ? labels.requiredField : undefined}>
           <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
@@ -318,17 +351,6 @@ function IdentitySection({
           {formError}
         </p>
       ) : null}
-      {/* Story 15.5 (ratifica R-15.5-f): same `so-actions` bar as
-          `aircraft-editor.tsx` and `pilot-editor.tsx` — one primary action per
-          panel, the anagrafica's save, pinned to the bottom of the scrolling
-          body at <=640px and inert above it. Same accepted reservation as the
-          pilot editor's EDIT mode: a sticky box cannot leave its containing
-          block, so the bar detaches past the identity form. */}
-      <div className="so-actions" style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-        <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="instructor-identity-submit">
-          {labels.save}
-        </button>
-      </div>
     </form>
   );
 }

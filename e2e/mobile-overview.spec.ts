@@ -624,7 +624,12 @@ test.describe('story 15.3 — review fixes', () => {
     await page.getByTestId('mobile-overview-pending-row').filter({ hasText: aircraft.registration }).focus();
     await page.keyboard.press('Enter');
 
-    await expect(page.locator('[role="dialog"]')).toHaveCount(1);
+    // `getByRole`, not `[role="dialog"]` (story 15.10): `SlideOver` is a real
+    // dialog now, and this page mounts several of them CLOSED — the attribute
+    // selector counts 4. The accessibility tree counts what this test is about:
+    // a closed panel is `aria-hidden` + `inert`, so it is not a dialog for
+    // anyone, and the assertion reads "exactly one dialog is EXPOSED".
+    await expect(page.getByRole('dialog')).toHaveCount(1);
     await expect(page.getByTestId('mobile-booking-sheet')).toHaveCount(1);
   });
 

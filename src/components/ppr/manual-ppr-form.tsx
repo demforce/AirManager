@@ -279,7 +279,12 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
 
   return (
     <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel}>
-      <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="manual-ppr-form">
+      {/* `manual-ppr-form` (class, not just the testid): the 44px touch floor
+          of story 15.10 (R-15.10-j) has to reach the 12 fields of THIS form on
+          both surfaces that mount it — `/dashboard/ppr` and the "Registra
+          arrivo" of `/dashboard/movements` — without reaching `.form-grid` or
+          `.input`, which every dashboard form shares. */}
+      <form className="manual-ppr-form" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="manual-ppr-form">
         <div className="form-grid">
           <Field label={labels.firstName} error={fieldErrorLabel(errors.firstName) ?? undefined}>
             <Input autoComplete="given-name" maxLength={100} aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />

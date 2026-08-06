@@ -99,7 +99,11 @@ export default async function PprConsolePage({ params, searchParams }: PageProps
           <h1>{t('title')}</h1>
           <div className="sub">{t('sub', { pending: pendingCount, approved: approvedCount, rejected: rejectedCount })}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {/* `ppr-head-actions`: same declarations as the inline style it
+            replaces (measured identical above 640px), now a class so the 44px
+            touch floor of story 15.10 has something of this page's OWN to hang
+            off — never `.page-head`, shared by 13 pages. */}
+        <div className="ppr-head-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <a className="btn" href={`/${locale}/ppr`} target="_blank" rel="noopener noreferrer" data-testid="ppr-public-form-link">
             {t('header.publicForm')}
           </a>

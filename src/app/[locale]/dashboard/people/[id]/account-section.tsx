@@ -137,6 +137,22 @@ type AccountSectionProps = {
    * duplicated.
    */
   statementBasePath?: string;
+  /**
+   * Story 15.10 (ratifica R-15.10-h): true on the ONE face whose `.page-head`
+   * already names this section — `/dashboard/my-account`, whose `<h1>` is "Le
+   * mie transazioni" and whose card title says "Estratto conto" 20px lower.
+   * The same name twice cost 101.3px of head above the first movement at
+   * 375px, so the title is hidden there at <=640px (and only there, and only
+   * at that width: the desktop keeps both).
+   *
+   * The ratifica names `showActor === false` as the discriminator; MEASURED,
+   * it is not one — `showActor` is also false for a pilota opening their OWN
+   * scheda persona (`hasPermission(actor, 'people.read')`), where `.page-head`
+   * carries the person's name and this title is the section's only name. The
+   * intent of the ratifica ("scheda persona INTATTA") is what this prop
+   * implements.
+   */
+  headingRepeatsPageHead?: boolean;
   labels: AccountSectionLabels;
 };
 
@@ -176,6 +192,7 @@ export function AccountSection({
   exportPdfHref,
   exportLabels,
   statementBasePath,
+  headingRepeatsPageHead = false,
   labels,
 }: AccountSectionProps) {
   const router = useRouter();
@@ -282,8 +299,10 @@ export function AccountSection({
   return (
     <div className="card" data-testid="account-section">
       {/* `account-head`: the phone rules of this story hang off a class this
-          card OWNS (never `.card-head`, shared by every console) — lesson 15.3 F1. */}
-      <div className="card-head account-head">
+          card OWNS (never `.card-head`, shared by every console) — lesson 15.3 F1.
+          `account-head-self` (story 15.10, R-15.10-h) marks the ONE face whose
+          page head already names this section. */}
+      <div className={`card-head account-head${headingRepeatsPageHead ? ' account-head-self' : ''}`}>
         <h2 className="card-title">{labels.heading}</h2>
         <div className="spacer" />
         {/* `feedback` only ever carries the rettifica CONFIRMATION

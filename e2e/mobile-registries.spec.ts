@@ -786,27 +786,51 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await page.getByTestId('mobile-instructor-sheet').getByTestId('instructor-edit-mobile').click();
     await expect(page.getByTestId('instructor-identity-form')).toBeVisible();
 
+    // Story 15.10 (ratifica R-15.10-f) moved this panel's PRIMARY action out of
+    // the scrolling body and into `SlideOver`'s `footer` (`.so-foot`), wired to
+    // its form with `form="instructor-identity-form"`. What 15.5 could only
+    // anchor with `position: sticky` — a sticky box cannot leave its containing
+    // block, and this body scrolls 2642px inside 716px, so the bar ended at
+    // `top -1383.53` with the submit not hit-testable — is now fixed for real.
+    // The requirement this test guards is unchanged in substance (ONE primary
+    // action for the panel, section submits left where they are); what changed
+    // is WHERE the primary one lives, by a PO decision.
     const probe = await page.evaluate(() => {
       const body = document.querySelector('.so-body') as HTMLElement;
-      body.scrollTop = 0;
+      const foot = document.querySelector('.so-foot');
       const submit = document.querySelector('[data-testid="instructor-identity-submit"]') as HTMLElement;
-      const rect = submit.getBoundingClientRect();
-      const hit = document.elementFromPoint(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2));
+      const readHit = () => {
+        const rect = submit.getBoundingClientRect();
+        const hit = document.elementFromPoint(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2));
+        return { reachable: hit === submit || (hit !== null && submit.contains(hit)), height: Math.round(rect.height) };
+      };
+      body.scrollTop = 0;
+      const atTop = readHit();
+      body.scrollTop = body.scrollHeight;
+      const atBottom = readHit();
       return {
         anchoredRows: document.querySelectorAll('.so-actions').length,
-        actionsPosition: getComputedStyle(submit.closest('.so-actions')!).position,
-        reachable: hit === submit || (hit !== null && submit.contains(hit)),
-        submitHeight: Math.round(rect.height),
-        // The section submits stay ordinary in-body buttons (AC 5-c).
+        primaryInFoot: !!(foot && foot.contains(submit)),
+        primaryInBody: body.contains(submit),
+        bodyScrolls: body.scrollHeight > body.clientHeight,
+        atTop,
+        atBottom,
+        // The section submits stay ordinary in-body buttons (AC 5-c) — neither
+        // anchored in a sticky row nor promoted into the panel's footer.
         sectionSubmitsAnchored: ['instructor-payout-rate-submit', 'instructor-rates-submit']
           .map((testId) => document.querySelector(`[data-testid="${testId}"]`))
-          .filter((node) => node !== null && node.closest('.so-actions') !== null).length,
+          .filter((node) => node !== null && (node.closest('.so-actions') !== null || node.closest('.so-foot') !== null)).length,
       };
     });
-    expect(probe.anchoredRows).toBe(1);
-    expect(probe.actionsPosition).toBe('sticky');
-    expect(probe.reachable).toBe(true);
-    expect(probe.submitHeight).toBeGreaterThanOrEqual(44);
+    expect(probe.anchoredRows).toBe(0);
+    expect(probe.primaryInFoot).toBe(true);
+    expect(probe.primaryInBody).toBe(false);
+    expect(probe.bodyScrolls).toBe(true);
+    expect(probe.atTop.reachable).toBe(true);
+    // The half 15.5 could not deliver: still reachable with the body scrolled
+    // all the way down.
+    expect(probe.atBottom.reachable).toBe(true);
+    expect(probe.atTop.height).toBeGreaterThanOrEqual(44);
     expect(probe.sectionSubmitsAnchored).toBe(0);
 
     // Review F6: the body's bottom padding is zeroed only where the action row

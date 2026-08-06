@@ -153,6 +153,28 @@ const CATEGORY_TONE: Record<Category, BadgeTone> = { Medico: 'info', Licenza: ''
 
 /** Tier tone (Contesto: `ScadenzeView.jsx:12-20`) — `tierOf` itself is shared, `@/lib/expiry-status` (story 12.12). */
 const TIER_TONE: Record<0 | 1 | 2 | 3 | 4, BadgeTone> = { 0: 'bad', 1: 'bad', 2: 'warn', 3: 'info', 4: '' };
+/**
+ * Story 15.10 (R-15.10-i) — the "Giorni rimasti" ink, split in two because
+ * only two of the five tiers had a contrast defect. A tier with a TONE class
+ * carries no inline colour at all: an inline style beats any class, so the fix
+ * is a substitution (lesson 15.9 MINOR-1, applied 25 times there).
+ */
+const TIER_DAYS_TONE: Record<0 | 1 | 2 | 3 | 4, string> = {
+  0: ' stat-tone-bad',
+  1: ' stat-tone-bad',
+  2: '',
+  3: ' stat-tone-info',
+  4: '',
+};
+
+const TIER_DAYS_INK: Record<0 | 1 | 2 | 3 | 4, string | null> = {
+  0: null,
+  1: null,
+  2: 'var(--accent-ink)',
+  3: null,
+  4: 'var(--ink-2)',
+};
+
 const TIER_ROW_TINT: Record<0 | 1 | 2 | 3 | 4, string> = {
   0: 'var(--bad-soft)',
   1: 'var(--bad-soft)',
@@ -356,10 +378,10 @@ export function ScadenzeConsole({
           `grid-template-columns` cannot be overridden by a media query.
           Identical computed style above 640px, measured. */}
       <div className="kpi-row kpi-row-grid scadenze-kpi-row">
-        <StatCard label={labels.statCards.expired} value={tierCounts.expired} ink="var(--bad)" note={labels.statCards.expiredNote} testId="scadenze-stat-expired" />
-        <StatCard label={labels.statCards.within7} value={tierCounts.within7} ink="var(--bad)" note={labels.statCards.within7Note} testId="scadenze-stat-within7" />
+        <StatCard label={labels.statCards.expired} value={tierCounts.expired} ink="var(--bad)" tone="stat-tone-bad" note={labels.statCards.expiredNote} testId="scadenze-stat-expired" />
+        <StatCard label={labels.statCards.within7} value={tierCounts.within7} ink="var(--bad)" tone="stat-tone-bad" note={labels.statCards.within7Note} testId="scadenze-stat-within7" />
         <StatCard label={labels.statCards.within30} value={tierCounts.within30} ink="var(--accent-ink)" note={labels.statCards.within30Note} testId="scadenze-stat-within30" />
-        <StatCard label={labels.statCards.within60} value={tierCounts.within60} ink="var(--info)" note={labels.statCards.within60Note} testId="scadenze-stat-within60" />
+        <StatCard label={labels.statCards.within60} value={tierCounts.within60} ink="var(--info)" tone="stat-tone-info" note={labels.statCards.within60Note} testId="scadenze-stat-within60" />
       </div>
 
       <div className="card">
@@ -478,7 +500,17 @@ export function ScadenzeConsole({
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
                     {formatDateOnly(item.expiresAt, locale)}
                   </div>
-                  <div className="mono num" style={{ fontWeight: 600, color: `var(--${tier === 0 || tier === 1 ? 'bad' : tier === 2 ? 'accent-ink' : tier === 3 ? 'info' : 'ink-2'})` }}>
+                  {/* Story 15.10 (R-15.10-i): this cell sits on the row's OWN
+                      tier tint, so the pair to measure is ink-on-tint, not
+                      ink-on-panel — `--bad` on `--bad-soft` is 3.38:1 in the
+                      light theme (TD (g) of 15.7, 16 rows here), and `--info`
+                      on `--info-soft` is 3.12:1, latent only because no tier-3
+                      row exists in this DB today. The two failing tiers move to
+                      the tone CLASS (measured on the tint: 8.38 / 8.46 light,
+                      4.94 / 5.93 dark); the other two keep their inline colour
+                      because they PASS on their own tint (`--accent-ink` on
+                      `--warn-soft` 11.32, `--ink-2` on `--panel` 9.99). */}
+                  <div className={`mono num${TIER_DAYS_TONE[tier]}`} style={{ fontWeight: 600, ...(TIER_DAYS_INK[tier] === null ? null : { color: TIER_DAYS_INK[tier]! }) }}>
                     {daysLabelOf(item.daysUntil)}
                   </div>
                   <div data-testid="scadenze-status-badge">
@@ -687,13 +719,24 @@ export function ScadenzeConsole({
   );
 }
 
-type StatCardProps = { label: string; value: number; ink: string; note: string; testId: string };
+type StatCardProps = { label: string; value: number; ink: string; tone?: string; note: string; testId: string };
 
-function StatCard({ label, value, ink, note, testId }: StatCardProps) {
+/**
+ * `ink` paints the 3px left rule — a GRAPHIC object, floor 3:1, and the tier's
+ * identity. `tone` paints the VALUE, which is text: story 15.10 (R-15.10-i)
+ * replaced the inline colour with a `.stat-tone-*` class on the two cards that
+ * failed, measured at 19px on the phone (where the floor is 4.5, not the 3 the
+ * 26px desktop value earns as large text): `--bad` 3.96:1 and `--info` 3.61:1
+ * on `--panel` in the light theme. SUBSTITUTED, not flanked — an inline style
+ * beats any class (lesson 15.9 MINOR-1). The "Entro 30 giorni" card keeps its
+ * inline `--accent-ink` because that one MEASURES 13.42:1: there is nothing to
+ * fix, and swapping it for `.stat-tone-warn` would repaint it for nothing.
+ */
+function StatCard({ label, value, ink, tone, note, testId }: StatCardProps) {
   return (
     <div className="kpi" style={{ borderLeft: `3px solid ${ink}` }} data-testid={testId}>
       <div className="kpi-label">{label}</div>
-      <div className="kpi-value num" style={{ color: ink }}>
+      <div className={`kpi-value num${tone ? ` ${tone}` : ''}`} style={tone ? undefined : { color: ink }}>
         {value}
       </div>
       <div className="kpi-delta">

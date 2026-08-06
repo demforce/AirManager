@@ -117,11 +117,14 @@ const DISPLAY_PROBE = (selector: string): string => {
 
 /**
  * Visible controls under the floor, on the page AND inside an open sheet.
- * ONE declared exclusion, and it is a PO decision, not an oversight: the
- * calendar trigger nested inside the Tesoreria date field stays 36x36 (the
- * 15.7 line — a nested trigger lives INSIDE a 44px box; 15.8a LOW-4 confirmed
- * it). Nothing else is excluded: the desktop table is `display: none` here and
- * its rows have no client rect, so the sweep skips them by geometry, not by an
+ * ZERO exclusions since story 15.10: the one this probe used to carry (the
+ * calendar trigger nested inside the Tesoreria date field, 36x36 by the 15.7
+ * line) is gone because the trigger itself is gone from under the floor —
+ * ratifica R-15.10-d gave `.date-input-btn` one 44px floor at <=640px, so the
+ * sweep now covers it like everything else. Removing an exclusion WITH the
+ * test still green is the strongest form of this guard (the 15.9 pattern).
+ * Nothing else is excluded: the desktop table is `display: none` here and its
+ * rows have no client rect, so the sweep skips them by geometry, not by an
  * exclusion that could hide a real defect (lesson 15.8a MINOR-1).
  *
  * A CHECKBOX is measured on the `<label>` that wraps it, because that is the
@@ -134,7 +137,6 @@ const SMALL_TARGETS = (): { testid: string | null; cls: string; h: number }[] =>
   const out: { testid: string | null; cls: string; h: number }[] = [];
   const nodes = document.querySelectorAll('.page a, .page button, .page input, .page select, .page textarea, .mobile-sheet button, .mobile-sheet a, .mobile-sheet input');
   for (const el of Array.from(nodes)) {
-    if (el.classList.contains('date-input-btn')) continue;
     const target = el instanceof HTMLInputElement && el.type === 'checkbox' ? (el.closest('label') ?? el) : el;
     const rect = target.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) continue;
@@ -794,14 +796,26 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await login(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
 
-    // `.date-input` is shared by five pages: the Tesoreria rule is anchored to
-    // `.settings-card`, so the calendar trigger stays 36x36 everywhere and the
-    // fields keep the heights 15.7/15.8a measured for them.
+    // `.date-input` is shared by five pages, and this assertion used to read
+    // "<= 36": the Tesoreria rule was ANCHORED to `.settings-card`, so the
+    // trigger stayed 36x36 here and 24x24 on the pages nobody had raised.
+    // Story 15.10 (ratifica R-15.10-d) replaced those six anchored exceptions
+    // with ONE floor at <=640px, so the requirement this line guards is the
+    // opposite one: the floor reaches these three pages too. Same three URLs,
+    // same probe, the coverage is not reduced — only the number it protects
+    // changed, by a PO decision.
     for (const url of ['/it/dashboard/logbook', '/it/dashboard/movements', '/it/dashboard/billing']) {
       await page.goto(url);
       await page.waitForSelector('.page');
-      const triggers = await page.locator('.date-input-btn').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
-      for (const height of triggers) expect(height).toBeLessThanOrEqual(36);
+      // RENDERED triggers only (`getClientRects()`): these pages also carry a
+      // closed panel and a hidden desktop tree, whose nodes measure 0 and would
+      // report as "under the floor" without being on screen at all — the same
+      // filter every sweep of this epic uses.
+      const triggers = await page
+        .locator('.date-input-btn')
+        .evaluateAll((els) => els.filter((el) => el.getClientRects().length > 0).map((el) => Math.round(el.getBoundingClientRect().height)));
+      expect(triggers.length, url).toBeGreaterThan(0);
+      for (const height of triggers) expect(height, url).toBeGreaterThanOrEqual(44);
     }
 
     // `.students` on a console this story does not own keeps its own mobile

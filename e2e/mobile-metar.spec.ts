@@ -145,6 +145,65 @@ test.describe('story 15.3 — card METAR (ratifica R-15.3-f)', () => {
     await expect(page.locator('.weather-card')).toBeVisible();
   });
 
+  /**
+   * Story 15.10, ratifica R-15.10-k — the 641-900px band.
+   *
+   * `.weather-card` is hidden from 900px down (the 64px rail, 13.10) and this
+   * card only existed at <=640, so on a tablet in portrait (768px) the airfield
+   * weather existed NOWHERE. Measured pre-fix at 641, 800 and 900: neither node
+   * on screen, `.overview-mobile` `display: none`.
+   *
+   * It lives HERE, and not in the new 15.10 files, for the reason this whole
+   * file exists: seeing the card at all means the station is configured, and
+   * that is a global `AppSetting` write — the requirement CLAUDE.md pins to the
+   * serialized chain. Declared before it was written (Dev Agent Record).
+   *
+   * The recon read the gap off the two `display` rules; the REAL gate is the
+   * CONTAINER (`.overview-mobile`/`.landing-mobile` are `display: none` outside
+   * the phone query), so the rule opens the container in the band and hides
+   * every OTHER child — two trees on screen at once is what the epic forbids.
+   * That is what the second half of this test measures.
+   */
+  test('story 15.10: in the 641-900px band the card is the ONLY visible child of the mobile tree, and above 900 nothing changes', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const put = await page.request.put('/api/v1/settings/metar-station', { data: { station: STATION } });
+    expect(put.status(), await put.text()).toBe(200);
+    const probe = await page.request.get('/api/v1/metar');
+    const metar = (await probe.json()) as { raw?: string } | null;
+    test.skip(!metar?.raw, 'upstream aviationweather.gov unreachable from this host: getMetar degraded to null by contract');
+
+    for (const width of [641, 768, 900]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/it/dashboard');
+      await page.waitForSelector('.page');
+      const card = page.getByTestId('mobile-metar-card');
+      await expect(card, `${width}px`).toBeVisible();
+      await expect(card, `${width}px`).toHaveCount(1);
+      await expect(page.locator('.weather-card'), `${width}px: the sidebar card is still hidden by the rail rule`).toBeHidden();
+
+      // The card is the ONLY child of the mobile tree that shows here: the
+      // desktop surfaces are the ones on screen, and a second visible tree
+      // would double every testid the desktop guards read.
+      const visibleChildren = await page.evaluate(() =>
+        [...document.querySelectorAll('.overview-mobile > *')]
+          .filter((node) => node.getClientRects().length > 0)
+          .map((node) => node.getAttribute('data-testid') ?? node.className),
+      );
+      expect(visibleChildren, `${width}px`).toEqual(['mobile-metar-card']);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${width}px`).toBe(true);
+    }
+
+    // One pixel above the band: exactly the pre-15.10 behaviour — the mobile
+    // card is gone and the SIDEBAR card is back (the 13.10 rail rule that hides
+    // `.weather-card` is itself a `max-width: 900px` rule, so 901 is where the
+    // two swap; that swap is what makes the band a gap in the first place).
+    await page.setViewportSize({ width: 901, height: 900 });
+    await page.goto('/it/dashboard');
+    await page.waitForSelector('.page');
+    await expect(page.getByTestId('mobile-metar-card')).toBeHidden();
+    await expect(page.locator('.weather-card')).toBeVisible();
+  });
+
   /** Ratifica R-15.3-f: on all THREE faces, not just the admin one (lesson 15.1 F1: a multi-actor rule verified on one actor is not verified). */
   test('the card is rendered on the pilota, allievo and istruttore faces too', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
