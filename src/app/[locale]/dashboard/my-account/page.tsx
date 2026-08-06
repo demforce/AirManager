@@ -113,6 +113,7 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
     // rationale as the scheda persona's identical usage of these two keys).
     adjustmentBadge: { ofDate: tAccount.raw('adjustmentBadge.ofDate') as string, linked: tAccount('adjustmentBadge.linked') },
     reversalBadge: { ofDate: tAccount.raw('reversalBadge.ofDate') as string, linked: tAccount('reversalBadge.linked') },
+    mobile: { empty: tAccount('mobile.empty'), openDetail: tAccount('mobile.openDetail'), close: tAccount('mobile.close') },
     // `topUp`/`adjustments` deliberately omitted: `canManageFinance={false}`
     // below means their toggle buttons never render, so `AccountSection`
     // never needs these labels here (story 14.6 — a pilot cannot top up or

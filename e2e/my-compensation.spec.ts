@@ -325,8 +325,26 @@ test.describe('Own compensation only (AC 2/3/5/6)', () => {
   });
 });
 
-test.describe('Mobile geometry (review F2)', () => {
-  test('at 390px the IMPORTO cell stays reachable — non-zero width and hit-testable after scrolling the row fully into view', async ({ page }) => {
+test.describe('Mobile geometry (review F2, rewritten at the correct value by story 15.9)', () => {
+  /**
+   * The original version of this test (14.7 review F2) asserted that the
+   * IMPORTO cell of the DESKTOP grid had a non-zero width and was
+   * hit-testable AFTER scrolling `.students` fully to the right — the best
+   * that could be asked of a table nobody had ported yet (the pre-fix defect
+   * it caught was a `1fr` last track collapsing to 0px).
+   *
+   * Story 15.9 ports the surface: at <=640px the grid is `display: none` and
+   * a card list takes its place, so "scroll the table sideways to reach the
+   * amount" is no longer the RIGHT requirement — the amount must be readable
+   * and hit-testable with NO horizontal scroll at all. The assertion is
+   * rewritten to that stronger requirement (measured pre/post: `.students`
+   * 296/640 at 390px with the amount cell ending 406px past the card body;
+   * the card's amount now sits inside a 296px card), never weakened: the old
+   * defect (an amount of zero width, unreachable) would still fail here,
+   * because a card whose amount is 0px wide cannot contain its text nor be
+   * hit-tested.
+   */
+  test('at 390px the IMPORTO is readable and hit-testable WITHOUT any horizontal scroll', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const password = 'MyCompensationMobile123!';
     const instructor = await createInstructorWithLogin(page, password, 'Mobile');
@@ -337,26 +355,29 @@ test.describe('Mobile geometry (review F2)', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/it/dashboard/my-compensation');
 
-    const row = page.getByTestId('my-compensation-payout-row').first();
-    await row.scrollIntoViewIfNeeded();
+    // The desktop grid is gone at this width; the card list replaces it.
+    expect(await page.evaluate(() => getComputedStyle(document.querySelector('.compensation-desktop-body')!).display)).toBe('none');
+    const card = page.getByTestId('my-compensation-payout-row-mobile').first();
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toContainText('123,45 €');
 
-    // Pre-fix repro: a bare `1fr` last column collapsed to 0px once the
-    // fixed tracks alone (150+220+130px + gaps) exceeded the 390px viewport
-    // (`.student-row > * { min-width: 0 }`, airops.css) — scrolling
-    // `.students` fully to the right never revealed the amount, because
-    // there was nothing there to reveal (0px wide).
-    const geometry = await row.evaluate((el) => {
-      const scroller = el.closest('.students') as HTMLElement | null;
-      if (scroller) scroller.scrollLeft = scroller.scrollWidth;
-      const amountCell = el.lastElementChild as HTMLElement | null;
-      if (!amountCell) return null;
-      const rect = amountCell.getBoundingClientRect();
+    const geometry = await card.evaluate((el) => {
+      const amount = el.querySelector('.mobile-row-amount') as HTMLElement;
+      const rect = amount.getBoundingClientRect();
+      const cardRect = el.getBoundingClientRect();
       const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      return { width: rect.width, hitsSelf: hit === amountCell || amountCell.contains(hit) };
+      return {
+        width: rect.width,
+        hitsSelf: hit === amount || amount.contains(hit),
+        insideCard: rect.right <= cardRect.right + 0.5,
+        // No ancestor of the card scrolls sideways to reveal it.
+        anyScroller: [...document.querySelectorAll('.page *')].some((node) => node.scrollWidth > node.clientWidth + 1 && node.contains(el)),
+      };
     });
 
-    expect(geometry?.width).toBeGreaterThan(0);
-    expect(geometry?.hitsSelf).toBe(true);
-    await expect(row).toContainText('123,45 €');
+    expect(geometry.width).toBeGreaterThan(0);
+    expect(geometry.hitsSelf).toBe(true);
+    expect(geometry.insideCard).toBe(true);
+    expect(geometry.anyScroller).toBe(false);
   });
 });

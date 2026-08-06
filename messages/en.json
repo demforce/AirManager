@@ -821,6 +821,11 @@
     "pdf": {
       "balance": "Final balance",
       "currentBalance": "Current account balance"
+    },
+    "mobile": {
+      "empty": "This account has no movements.",
+      "openDetail": "Open movement detail",
+      "close": "Close"
     }
   },
   "MyAccountPage": {
@@ -847,6 +852,9 @@
       "period": "Period",
       "method": "Method",
       "amount": "Amount"
+    },
+    "mobile": {
+      "registeredOn": "Recorded on {date}"
     }
   },
   "FinancePage": {
@@ -1849,7 +1857,8 @@
       "requestLabel": "Request",
       "etd": "Departure (ETD)",
       "notes": "Notes",
-      "rejectionReason": "Rejection reason"
+      "rejectionReason": "Rejection reason",
+      "viewInMovements": "View in Transits"
     },
     "toast": {
       "approved": "Request approved: PPR number {pprNumber}.",

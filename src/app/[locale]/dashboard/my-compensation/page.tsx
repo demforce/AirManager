@@ -1,6 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { KPI } from '@/components/ui/kpi';
 import { redirect } from '@/i18n/navigation';
+import { payoutCardSubLine } from '@/lib/mobile-self';
 import { formatCents } from '@/lib/money';
 import { formatDateOnly, formatDateTime, formatMinutes } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
@@ -89,7 +90,12 @@ export default async function MyCompensationPage({ params }: PageProps) {
         </div>
       ) : (
         <>
-          <div className="kpi-row" data-testid="my-compensation-kpis">
+          {/* R-15.9-e: 2x2 + 1 on the phone (`compensation-kpi-row`), so that
+              "Maturato" and "Dovuto" — the pair the review 14.7 F4 ratifica
+              requires side by side — land on the SAME row instead of one being
+              inside and one outside a scroll strip. DOM order unchanged, so the
+              desktop grid is untouched. */}
+          <div className="kpi-row kpi-row-grid compensation-kpi-row" data-testid="my-compensation-kpis">
             <div data-testid="kpi-rate">
               <KPI
                 label={t('kpi.rate')}
@@ -125,7 +131,7 @@ export default async function MyCompensationPage({ params }: PageProps) {
                   {t('table.empty')}
                 </p>
               ) : (
-                <div className="students">
+                <div className="students compensation-desktop-body">
                   <div className="student-row header" data-testid="my-compensation-header-row" style={{ gridTemplateColumns: TABLE_COLUMNS }}>
                     <div>{t('table.date')}</div>
                     <div>{t('table.period')}</div>
@@ -141,13 +147,50 @@ export default async function MyCompensationPage({ params }: PageProps) {
                         {formatDateOnly(payout.periodStart, displayLocale)} – {formatDateOnly(payout.periodEnd, displayLocale)}
                       </div>
                       <div>{methodLabel(payout.method, tPay)}</div>
-                      <div className="mono num" style={{ fontWeight: 600, textAlign: 'right', color: 'var(--ok)' }}>
+                      {/* `.stat-tone-ok` replaces the inline `var(--ok)` (2.73:1 as
+                          text on `--panel` in the light theme, measured): an inline
+                          colour beats any class rule, so the fix has to BE the class. */}
+                      <div className="mono num stat-tone-ok" style={{ fontWeight: 600, textAlign: 'right' }}>
                         {formatCents(payout.amountCents, displayLocale)}
                       </div>
                     </div>
                   ))}
                 </div>
               )}
+
+              {/* --- the phone face of the payout history (story 15.9, R4) ------
+                  The desktop grid hides 359px of a 640px row on a 375px screen
+                  and puts the amount 406px past the card's right edge. One card
+                  per payout in the template's own language (`AirOps Mobile`
+                  325-334) carries all four columns: the period on the first
+                  line, `registrato il … · metodo` under it, the amount on the
+                  right. No sheet and no interactive element — everything the
+                  desktop row shows is already on the card, so a tap would open
+                  a copy of what is already visible. */}
+              {overview.payouts.length > 0 ? (
+                <div className="compensation-mobile" data-testid="mobile-compensation-list">
+                  {overview.payouts.map((payout) => (
+                    <div key={payout.id} className="mobile-row mobile-row-payout" data-testid="my-compensation-payout-row-mobile">
+                      <span className="mobile-row-main">
+                        <span className="mobile-row-title">
+                          <span className="mobile-row-name">
+                            {formatDateOnly(payout.periodStart, displayLocale)} – {formatDateOnly(payout.periodEnd, displayLocale)}
+                          </span>
+                        </span>
+                        <span className="mobile-row-sub">
+                          {payoutCardSubLine({
+                            registeredLabel: t('mobile.registeredOn', { date: formatDateTime(payout.createdAt, displayLocale) }),
+                            methodLabel: methodLabel(payout.method, tPay),
+                          })}
+                        </span>
+                      </span>
+                      <span className="mobile-row-side">
+                        <span className="mobile-row-amount stat-tone-ok">{formatCents(payout.amountCents, displayLocale)}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
         </>

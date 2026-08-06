@@ -1568,7 +1568,17 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
 .ppr-ref{display:inline-block;margin:16px 0 22px;font-family:var(--font-mono);font-size:15px;font-weight:600;padding:8px 16px;border:1px dashed var(--border-strong);border-radius:var(--radius-sm);background:var(--bg-sunken)}
 .ppr-foot{margin-top:auto;border-top:1px solid var(--border);background:var(--panel)}
 .ppr-foot-in{max-width:1060px;margin:0 auto;padding:16px 24px;display:flex;justify-content:space-between;gap:12px;font-size:11.5px;color:var(--ink-3);font-family:var(--font-mono)}
-@media (max-width:820px){.ppr-grid{grid-template-columns:1fr}.ppr-aside{position:static}.ppr-hero h1{font-size:34px}.ppr-top-right{display:none}}
+/* Story 15.9 (R-15.9-g): `.ppr-top-right{display:none}` USED to be the fourth
+   declaration of this query. It hid the ONLY IT/EN switch of the public
+   showcase on every phone and every tablet (measured: the link had a 0x0 rect
+   at 320/375/390/641/800 and came back at 821), and the language it switches
+   is also the language of the receipt email (`ppr-form.tsx`'s `locale` in the
+   body). Its historical reason is gone: the prototype's `.ppr-top-right` held
+   three AFIS/ELEV/OPS stat blocks that did not fit a phone, and story 12.4
+   OMITTED all three — what the rule hid is one eight-character word. The
+   declaration is REMOVED rather than overridden, so `/ppr` keeps exactly ONE
+   breakpoint (820px) and no third threshold is introduced. */
+@media (max-width:820px){.ppr-grid{grid-template-columns:1fr}.ppr-aside{position:static}.ppr-hero h1{font-size:34px}}
 
 /* ---------- AirManager additions (story 12.1 review, finding F1) ----------
    Narrow-viewport topbar: the prototype has no <900px rules for the topbar, and
@@ -3490,4 +3500,174 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      which wins over any class rule (review LOW-1). */
   .settings-card form label:has(> input[type="checkbox"]){ min-height: 44px; }
   .settings-card form input[type="checkbox"]{ width: 24px; height: 24px; flex-shrink: 0; }
+}
+
+/* ---------- aree self + modulo pubblico mobile (story 15.9, epic 15 R1-R4) ----------
+   The two self-service surfaces every pilot, student and instructor has in the
+   first row of their own tab bar, plus the public showcase. Measured before
+   this block, at 375x812:
+
+   - "Le mie transazioni" (`account-section.tsx`, SHARED with the scheda
+     persona): the statement grid computes `104px 150px 0px 120px` — the
+     Descrizione track is literally ZERO — and the amount ends at x=481 inside
+     a 281px card body. The admin face adds two tracks and ends at 849.
+   - "I miei compensi": `.students` 281/640, the amount at 687.
+   - `/ppr`: 12 fields out of 12 under 44px (9 inputs at 36.84, 2
+     datetime-local at 38.84, the textarea is tall enough), two 24x24 calendar
+     triggers, a submit 64.59px tall only because its Italian label wraps.
+
+   Same rules of engagement as the 15.1-15.8b blocks above: every declaration
+   is additive inside `@media (max-width: 640px)`, no existing token changes
+   value, no new colour literal. The two exceptions R1 allows are used and
+   named: (i) the `display: none` of the two mobile trees, which are in the DOM
+   at every width; (ii) `.account-pagination`, an inline style moved into a
+   class so a media query can reach it at all (the move R-15.8a-f had to make).
+
+   `/ppr` lives OUTSIDE the shell and outside this threshold: its own
+   breakpoint is 820px and its rules are the two marked below, anchored to
+   `.ppr-*` — `/ppr` shares `.card`, `.input`, `.fld`, `.btn`, `.info-card`,
+   `.info-row` and `.date-input-btn` with the dashboard, and review 15.5 F5 is
+   the proof that an unanchored selector reaches it. The 47 targets under 43.5
+   inside `.cal-popover` (42 `.cal-cell` at 34.58, 2 `.iconbtn` at 24x24) are a
+   SHARED primitive with 11+ consumers and stay a declared TD for 15.10.
+
+   The switch hangs off classes these surfaces OWN — `.account-desktop-body`/
+   `.account-mobile`, `.compensation-desktop-body`/`.compensation-mobile`,
+   `.account-head` — never off `.students`/`.student-row` (13 consoles), nor
+   `.card-head`, nor `.kpi-row` alone. */
+
+/* Both mobile trees are in the DOM at every width (the switch is CSS only), so
+   they must be `display: none` OUTSIDE the query too — otherwise every desktop
+   guard that reads a movement or a payout page-level finds two matches. */
+.account-mobile,
+.compensation-mobile{ display: none; }
+
+/* AD-4: the statement pagination carried its geometry INLINE, where no media
+   query could reach it. Same values, same node, same two links — measured
+   identical at 641/800/1280. */
+.account-pagination{ display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px; }
+
+/* R-15.9-g, the other half of removing `display:none` above: the switch is a
+   real target at EVERY width. The declaration is unconditional because the
+   defect is (the link measured 45.72x15.94 even at 821px, where it WAS
+   visible), and its arithmetic price on the desktop header is declared in the
+   record: `.ppr-top-in` is a 14px-padded flex row whose tallest item was the
+   32px logo mark, so a 44px item makes the header 72px instead of 60px. */
+.ppr-top-right a{ display: inline-flex; align-items: center; min-height: 44px; }
+/* A configured airfield name is free text (the e2e chain writes a 38-character
+   one) and now shares a 320px header with the switch: the brand block is the
+   one that gives way, so the header can never push the page wider than the
+   viewport. Only the NAME is clamped — `.ppr-brand-sub` is a fixed i18n string
+   and keeps wrapping onto a second line exactly as before (measured: clamping
+   it too truncated "Autorizzazione Preventiva Obbligatoria" at 375px, which is
+   content this page loses for nothing). */
+.ppr-brand-block{ min-width: 0; }
+.ppr-brand-name{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 640px){
+  /* --- estratto conto: table out, cards in (AC 1/2, TD 14.6 F4) --- */
+  .account-desktop-body{ display: none; }
+  .account-mobile{ display: block; }
+
+  /* The head of the shared card: the three actions it can carry (Esporta,
+     Registra ricarica, Registra rettifica) share one row of a 281px card at
+     34.84px each. DIRECT children only (lesson 15.3 F1): this card also mounts
+     the two inline riquadri and the `ExportMenu`'s own popover/sheet, and a
+     descendant selector would restyle their buttons too. */
+  .account-head{ column-gap: 8px; }
+  .account-head > .spacer{ display: none; }
+  /* The card's own title keeps its row (it is the only thing naming this card
+     on the scheda persona), and the actions share the row below it — the
+     grammar R-15.3-d/R-15.5-g already set for a head with actions. */
+  .account-head > .card-title{ flex: 1 0 100%; }
+  .account-head > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* `ExportMenu`'s own relative wrapper — its trigger is a GRANDCHILD, which is
+     why review 15.5 F4 had to reach it separately. Anchored to THIS head: the
+     other nine consumers of the chassis keep their 34.84px trigger (TD (g),
+     declared, not closed here). */
+  .account-head > div:has(> .btn){ flex: 1 1 0; }
+  .account-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+
+  /* The two inline riquadri (ratifica R-15.9-c: they stay riquadri, they do not
+     become panels) — one column, and every control above the floor. Measured
+     without these: the fields 34.84-36.84px, the calendar trigger 24x24, the
+     two submit buttons 34.84. Anchored to this card's own body classes. */
+  .account-topup-panel .input,
+  .account-adjust-panel .input{ min-height: 44px; }
+  /* 44, not the 36 the four previous stories settled for on their own
+     surfaces: this riquadro is one of the two ACTIONS ratifica R-15.9-c puts
+     at 44px, and a guard written on the requirement (43.5) does not accept a
+     36px exception it cannot name. Same `padding-right` arithmetic as the
+     public form below: `.date-input input`'s own 30px cleared a 24px icon. */
+  .account-topup-panel .date-input-btn{ width: 44px; height: 44px; }
+  .account-topup-panel .date-input input{ padding-right: 48px; }
+  .account-topup-panel form > div:last-child > .btn,
+  .account-adjust-panel form > div:last-child > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- the movement card (template 325-334) ---
+     `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, an
+     ellipsised block on the left and a value on the right). Only the tracks and
+     the badge's placement are new, so this is a MODIFIER, not a family.
+     `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)` and a long description would push its own track wider
+     than the card (the 13.10 F1 idiom, re-measured in 15.5-15.8b). */
+  .mobile-row-movement{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .mobile-row-movement > .mobile-row-side{ grid-column: 2; }
+  /* The badge takes a row of its own, in column 1 only (never spanning: an item
+     that SPANS tracks contributes its max-content to all of them, the defect
+     15.5 measured). In the right-hand slot "Rettifica del movimento del
+     15/01/2026" would eat the amount, which is the card's whole point. */
+  .mobile-row-movement > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
+  /* The amount never wraps and never shrinks: the `auto` track is sized on it
+     and the left track's `minmax(0, …)` absorbs the difference. */
+  .mobile-row-movement > .mobile-row-side .mobile-row-amount{ white-space: nowrap; }
+
+  /* --- I miei compensi --- */
+  .compensation-desktop-body{ display: none; }
+  .compensation-mobile{ display: block; }
+  /* R-15.9-e: four KPIs in a 2x2 (the `.kpi-row-grid` variant of 15.3, reused
+     as-is) and the fifth across the full width. The order is the DOM's, which
+     already puts Maturato and Dovuto next to each other — so the ratifica 14.7
+     F4 pair shares a row on screen, not only in the markup. */
+  .compensation-kpi-row{ gap: 8px; }
+  .compensation-kpi-row > *:last-child{ grid-column: 1 / -1; }
+  /* The payout card is NOT a trigger (everything the desktop row shows is on
+     it, so there is nothing for a sheet to add): `.mobile-row`'s pointer
+     affordances would promise an interaction that does not exist. */
+  .mobile-row-payout{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; cursor: default; }
+  .mobile-row-payout:active{ background: transparent; }
+  .mobile-row-payout > .mobile-row-side{ grid-column: 2; }
+  .mobile-row-payout > .mobile-row-side .mobile-row-amount{ white-space: nowrap; }
+  /* The ONE card of this story with no sheet behind it: everything the desktop
+     row shows has to be readable HERE. `.mobile-row-sub`'s own `nowrap +
+     ellipsis` cut the method away (measured at 375px: 182px of track for 262px
+     of "Registrato il 06/08/2026, 09:30 · Bonifico"), and there was nowhere
+     else to read it — so this sub wraps instead of ellipsising. The movement
+     card keeps the ellipsis, because its sheet carries the full text. */
+  .mobile-row-payout > .mobile-row-main > .mobile-row-sub{ white-space: normal; overflow: visible; text-overflow: clip; }
+
+  /* --- the rettifica as a second step INSIDE the sheet (R-15.9-c) ---
+     Same fields as the riquadro, same endpoint, same 409 mapping — only the
+     container changes. Anchored to a class of THIS story, never to
+     `.bottom-sheet-step`, which is shared with the PPR queue's rejection, the
+     registro voli's storno and the Contabilità's three writes. */
+  .account-sheet-step .input{ min-height: 44px; }
+  .account-sheet-step form > div:last-child > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- the public form (AC 6, R-15.9-f) ---
+     Anchored to `.ppr-form-grid`, which only `ppr-form.tsx` uses: `.input`,
+     `.fld` and `.date-input-btn` are app-wide, and an unanchored rule here
+     would resize every field of every dashboard page (and vice versa — that is
+     exactly what review 15.5 F5 caught going the other way). */
+  .ppr-form-grid .input{ min-height: 44px; }
+  /* The trigger goes to a full 44x44 (R-15.9-f), so the text needs more room
+     than `.date-input input`'s own 30px: at 24px the value was clear of the
+     icon by 6px, and the same clearance at 44px needs 48px. */
+  .ppr-form-grid .date-input-btn{ width: 44px; height: 44px; }
+  .ppr-form-grid .date-input input{ padding-right: 48px; }
+  /* Submit full width, the "campi obbligatori" note on its own line. The row
+     was `flex-wrap: nowrap` and 85.59px tall with a 101.64x64.59 button whose
+     height came from its label wrapping, not from a decision. */
+  .ppr-actions{ flex-wrap: wrap; }
+  .ppr-actions > .btn{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
 }

@@ -860,7 +860,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     }
   });
 
-  test('scheda persona at <=640px: one column, no hidden side-scroll except the still-open estratto conto (AC 12)', async ({ page }) => {
+  test('scheda persona at <=640px: one column, no hidden side-scroll ANYWHERE — the estratto conto included since story 15.9 (AC 12)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const tag = `D${uniqueSuffix()}`;
     const person = await createPilot(page, tag);
@@ -878,16 +878,13 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
         expiryTracks: getComputedStyle(expiryRow).gridTemplateColumns.split(' ').length,
         headerDisplay: getComputedStyle(document.querySelector('.person-expiries .student-row.header')!).display,
         pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        // TD 14.6 F4 (`account-section.tsx`, not responsive under ~700px) stays
-        // OPEN by this story's own declaration: it is the ONLY declared exception.
+        // TD 14.6 F4 (`account-section.tsx`, not responsive under ~700px) was
+        // the ONLY declared exception of this sweep. Story 15.9 closed it —
+        // the estratto conto is a card list on a phone — so the exclusion is
+        // GONE: this sweep now covers the whole page, `account-section`
+        // included, which is the binary proof that the debt is paid.
         hiddenOutsideAccount: [...document.querySelectorAll('.page *')]
-          .filter(
-            (el) =>
-              el.scrollWidth > el.clientWidth + 1 &&
-              !el.closest('.slideover') &&
-              !el.closest('[data-testid="account-section"]') &&
-              getComputedStyle(el).textOverflow !== 'ellipsis',
-          )
+          .filter((el) => el.scrollWidth > el.clientWidth + 1 && !el.closest('.slideover') && getComputedStyle(el).textOverflow !== 'ellipsis')
           .map((el) => String(el.className)),
       };
     });

@@ -58,7 +58,11 @@ export default async function PprPage({ params }: PageProps) {
           <div className="ppr-mark">
             <Icon.logo />
           </div>
-          <div>
+          {/* `ppr-brand-block` (story 15.9): the language switch below is now
+              visible at EVERY width, so the brand block has to be the one that
+              gives way on a 320px header — a configured airfield name is free
+              text and can be arbitrarily long. */}
+          <div className="ppr-brand-block">
             <div className="ppr-brand-name">
               {branding.name}
               {icao ? ` · ${icao}` : ''}
@@ -66,7 +70,7 @@ export default async function PprPage({ params }: PageProps) {
             <div className="ppr-brand-sub">{t('top.brandSub')}</div>
           </div>
           <div className="ppr-top-right">
-            <Link href="/ppr" locale={otherLocale} style={{ color: 'inherit' }}>
+            <Link href="/ppr" locale={otherLocale} style={{ color: 'inherit' }} data-testid="ppr-locale-switch">
               {t('switchTo')}
             </Link>
           </div>

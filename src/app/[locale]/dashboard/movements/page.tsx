@@ -15,7 +15,7 @@ import { MovementsTable, type MovementRowDto, type MovementsFilters } from './mo
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; status?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ page?: string; status?: string; from?: string; to?: string; pprNumber?: string }>;
 };
 
 const MOVEMENTS_PAGE_SIZE = 20;
@@ -33,6 +33,18 @@ function sanitizeDateParam(value: string | undefined): string | undefined {
 
 function sanitizeStatus(value: string | undefined): MovementsStatus {
   return value && (MOVEMENTS_STATUSES as readonly string[]).includes(value) ? (value as MovementsStatus) : 'APPROVED';
+}
+
+/**
+ * Story 15.9 (AC 15): the register is the destination of the approval queue's
+ * "Vedi in Transiti" deep link. Same hand-edited-URL defence as
+ * `sanitizeDateParam` above — a malformed `?pprNumber=` is DROPPED here (the
+ * page then shows its normal, unfiltered register) rather than forwarded to
+ * `listPprRequestsQuerySchema`, which would answer 422 on a page render. The
+ * API keeps the strict validation for its own callers.
+ */
+function sanitizePprNumber(value: string | undefined): string | undefined {
+  return value && /^PPR-\d{4}-\d{4,}$/.test(value) ? value : undefined;
 }
 
 /** Upper bound on how many currently-open (never-closed) APPROVED rows the KPI scan below reads at once (Dev Notes: a realistic airfield has well under this many simultaneously in flight; exceeding it undercounts the "al suolo ora"/"in arrivo oggi" KPIs rather than crashing — a documented, accepted degradation, not a hard cap on the register itself). */
@@ -86,7 +98,8 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
   const tomorrow = addDaysDateOnly(today, 1);
   const monthRange = currentMonthRange(now);
 
-  const listQuery = { pageSize: MOVEMENTS_PAGE_SIZE, status, from, to };
+  const pprNumber = sanitizePprNumber(sp.pprNumber);
+  const listQuery = { pageSize: MOVEMENTS_PAGE_SIZE, status, from, to, ...(pprNumber ? { pprNumber } : {}) };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   const results = await Promise.all([
     listPprRequests(actor, { ...listQuery, page }),
@@ -125,6 +138,10 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
     ...(status !== 'APPROVED' ? { status } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
+    // Kept on the pagination links so a deep-linked register stays filtered
+    // while paging (story 15.9). The filters form does not carry it: changing
+    // a filter by hand is how the number filter is cleared.
+    ...(pprNumber ? { pprNumber } : {}),
   };
 
   function pageHref(targetPage: number) {

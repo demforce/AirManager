@@ -28,7 +28,7 @@
  * No network logic is duplicated: both trees call the same handlers below.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from '@/i18n/navigation';
+import { Link, useRouter } from '@/i18n/navigation';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
@@ -57,6 +57,8 @@ export type PprConsoleLabels = {
   mobile: {
     openDetail: string;
     close: string;
+    /** Story 15.9 (R-15.9-h): the sheet's deep link to the transits register, filtered on THIS request's own number. */
+    viewInMovements: string;
     /** Sheet's mono over-line, template `openPPR`'s own `sub`: "Richiesta PPR-2026-0001" (or "—" while still PENDING). */
     requestLabel: string;
     detail: {
@@ -438,7 +440,22 @@ export function PprConsole({ requests, locale, status, labels, xlsHref, pdfHref 
           actions={
             // Same rule as the desktop row: no actions on a decided request
             // (D13 — `PPR_ALREADY_DECIDED`, the domain has no reopen path).
-            sheetRequest.status === 'PENDING' ? (
+            // Story 15.9 (R-15.9-h): a DECIDED request that owns a number gets
+            // exactly one action instead — the deep link to its transit. The
+            // number is `null` while PENDING and forever on a REJECTED one, so
+            // the link is never offered towards an empty filter; both pages are
+            // gated on the same `ppr.manage` permission, so an actor who can
+            // see this sheet can always see the destination.
+            sheetRequest.pprNumber ? (
+              <Link
+                href={{ pathname: '/dashboard/movements', query: { status: 'ALL', pprNumber: sheetRequest.pprNumber } }}
+                locale={locale}
+                className="btn"
+                data-testid="ppr-view-in-movements-mobile"
+              >
+                {labels.mobile.viewInMovements}
+              </Link>
+            ) : sheetRequest.status === 'PENDING' ? (
               <>
                 <button
                   type="button"

@@ -1606,7 +1606,7 @@ registry.registerPath({
   path: '/api/v1/ppr-requests',
   summary: 'List the admin PPR approval queue, or the filterable register (AC 1/2, story 8.3 AC 2)',
   description:
-    "Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED`/`COMPLETED`/`CANCELLED`, or `ALL` for no status filter (the register, story 8.3). Optional `from`/`to` (`YYYY-MM-DD`) bound `eta` — a semi-open Europe/Rome day range, since the register is a register of ARRIVALS. Every detail field EXCEPT `submitterIp` (never exposed — anti-abuse technical datum). Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `ppr.manage`.",
+    "Defaults to `status=PENDING` (the actionable queue, FIFO `createdAt asc`); pass `APPROVED`/`REJECTED`/`COMPLETED`/`CANCELLED`, or `ALL` for no status filter (the register, story 8.3). Optional `from`/`to` (`YYYY-MM-DD`) bound `eta` — a semi-open Europe/Rome day range, since the register is a register of ARRIVALS. Optional `pprNumber` (`PPR-<year>-NNNN`, story 15.9) filters on the issued number with an exact match — a malformed value answers 422, a well-formed unknown one an empty page; the number exists only on approved/completed requests. Every detail field EXCEPT `submitterIp` (never exposed — anti-abuse technical datum). Paginated `{ items, total, page, pageSize }`, same shape as `GET /api/v1/cash-movements`. Requires `ppr.manage`.",
   tags: ['Ppr'],
   security,
   request: { query: listPprRequestsQuerySchema },

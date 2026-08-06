@@ -222,6 +222,7 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
     // fail on the missing ICU value server-side.
     adjustmentBadge: { ofDate: tAccount.raw('adjustmentBadge.ofDate') as string, linked: tAccount('adjustmentBadge.linked') },
     reversalBadge: { ofDate: tAccount.raw('reversalBadge.ofDate') as string, linked: tAccount('reversalBadge.linked') },
+    mobile: { empty: tAccount('mobile.empty'), openDetail: tAccount('mobile.openDetail'), close: tAccount('mobile.close') },
     topUp: {
       action: t('accountPanel.topUp.action'),
       title: t('accountPanel.topUp.title'),

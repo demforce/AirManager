@@ -518,6 +518,27 @@ describe('ppr.service — staff approval queue (story 8.2, AC 1/2; FR-23)', () =
       expect(whereArg).not.toHaveProperty('status');
     });
 
+    it('pprNumber filters on the issued number with an exact match, alongside the other filters (story 15.9, AC 15)', async () => {
+      pprFindMany.mockResolvedValue([]);
+      const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
+      pprCountFn.mockResolvedValue(0);
+
+      await listPprRequests(adminActor(), { status: 'ALL', page: 1, pageSize: 20, pprNumber: 'PPR-2026-0042' });
+
+      const whereArg = findManyMock.mock.calls[0]?.[0]?.where as Record<string, unknown> | undefined;
+      expect(whereArg).toEqual({ pprNumber: 'PPR-2026-0042' });
+    });
+
+    it('no pprNumber means no number filter at all (the queue keeps its own shape)', async () => {
+      pprFindMany.mockResolvedValue([]);
+      const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };
+      pprCountFn.mockResolvedValue(0);
+
+      await listPprRequests(adminActor(), { status: 'PENDING', page: 1, pageSize: 20 });
+
+      expect(findManyMock.mock.calls[0]?.[0]?.where as Record<string, unknown> | undefined).not.toHaveProperty('pprNumber');
+    });
+
     it('from/to bound eta to a semi-open Europe/Rome day range (story 8.3 AC 2)', async () => {
       pprFindMany.mockResolvedValue([]);
       const pprCountFn = countMock as unknown as { mockResolvedValue: (v: number) => void };

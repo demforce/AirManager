@@ -821,6 +821,11 @@
     "pdf": {
       "balance": "Saldo finale",
       "currentBalance": "Saldo attuale del conto"
+    },
+    "mobile": {
+      "empty": "Nessun movimento in questo conto.",
+      "openDetail": "Apri dettaglio movimento",
+      "close": "Chiudi"
     }
   },
   "MyAccountPage": {
@@ -847,6 +852,9 @@
       "period": "Periodo",
       "method": "Metodo",
       "amount": "Importo"
+    },
+    "mobile": {
+      "registeredOn": "Registrato il {date}"
     }
   },
   "FinancePage": {
@@ -1849,7 +1857,8 @@
       "requestLabel": "Richiesta",
       "etd": "Partenza (ETD)",
       "notes": "Note",
-      "rejectionReason": "Motivo del rifiuto"
+      "rejectionReason": "Motivo del rifiuto",
+      "viewInMovements": "Vedi in Transiti"
     },
     "toast": {
       "approved": "Richiesta approvata: numero PPR {pprNumber}.",

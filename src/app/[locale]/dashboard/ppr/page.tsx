@@ -197,6 +197,7 @@ export default async function PprConsolePage({ params, searchParams }: PageProps
           mobile: {
             openDetail: t('mobile.openDetail'),
             close: t('mobile.close'),
+            viewInMovements: t('mobile.viewInMovements'),
             requestLabel: t('mobile.requestLabel'),
             detail: {
               requester: t('table.requester'),
