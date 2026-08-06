@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-08-05 — **EPIC 14 COMPLETO** e **EPIC 15 IN CORSO: 15.1-15.8 DONE** (15.8 splittata in a/b, entrambe chiuse). Prossimo lavoro: **story 15.9 — Aree self + modulo PPR pubblico**)
+# HANDOFF — AirManager (aggiornato: 2026-08-06 — **EPIC 14 COMPLETO** e **EPIC 15 IN CORSO: 15.1-15.9 DONE**. Prossimo lavoro: **story 15.10 — Sweep finale**, poi chiusura epic: revisione CLAUDE.md, `/handoff`, push (PO), **PR `dev` → `main`**, STOP)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -283,6 +283,41 @@ Arbitro finale: **430 + 1 flaky noto (TD j), exit 0 (9.8m)**.
 - **Per la 15.8b**: la coppia `.flow-bar-*` vive accanto a `.stat-tone-*` e la §10 del record documenta
   la meccanica REALE del riuso (`.util-bar .seg.flown` ha specificità maggiore: serve un selettore alla
   pari, non il riuso letterale). Baseline e grep dei testid da RIMISURARE sul repo consegnato.
+
+### 15.9 Aree self + modulo pubblico — DONE (2026-08-06)
+
+Le «quattro voci» del piano erano 3 pagine + 1 componente condiviso («le mie transazioni» **È**
+`my-account`, che monta solo `AccountSection`). Estratto conto a **card+sheet su ENTRAMBE le facce**
+(self + scheda persona) dentro l'unico componente coi prop esistenti — **TD 14.6 F4 CHIUSO** (la misura
+reale era peggio del TD: colonna Descrizione a **0px**, importo 200px fuori; la guardia è la RIMOZIONE
+dell'esclusione dichiarata di `mobile-registries.spec.ts:888` col test verde, rossa a 25 nodi col difetto
+reiniettato). Compensi a card + **KPI 2×2+1** (Maturato/Dovuto adiacenti, ratifica 14.7 F4; costo reale
++156,48px vs ~98 stimati, dichiarato, docH 812). `/ppr` **risanamento chirurgico**: 12/12 campi e submit
+a 44px ancorati a `.ppr-*`, trigger calendario 44×44, e **lo switch di lingua torna visibile ≥44px a OGNI
+larghezza** (era nascosto su ogni telefono e tablet da una query 820px il cui motivo storico — le stat del
+prototipo mai portate — non esisteva più); hero/aside/footer INVARIATI provati per attribuzione delle
+regole CSS. **R-15.9-h (contro la raccomandazione): l'unico lavoro backend dell'epic** — filtro
+`pprNumber` su schema+service+route+**OpenAPI nello stesso commit**, deep link coda PPR → Transiti in una
+direzione (registrata dal PO). 4+2 contrasti chiusi SOSTITUENDO gli inline. Story file:
+`_bmad-output/implementation-artifacts/15-9-aree-self-pubblico-mobile.md` + `15-9-review-report.md`.
+Commit: `1657da7` story, `8898288` feat, `91c2b30` record, `19f0174` fix, + docs chiusura.
+Arbitro finale: **474/474, 0 flaky, 0 skipped, exit 0 (14.2m)** — il più pulito dell'epic
+(474 = 453 baseline + 21 nuovi).
+
+- Review **0 major** (quarto ciclo su sei): 2 minor — i 2 inline residui su 5 nello stesso file
+  (il feedback a 2,73 era l'UNICO annuncio del percorso inline mobile) e lo sweep di `/ppr` cieco
+  sugli antenati del honeypot (`querySelector` non-scoped → `:scope >`) — più 5 low. I 4 punti
+  auto-segnalati dal dev reggono tutti alla verifica dal vivo. 3 ratifiche PO in review: MINOR-1
+  subito; deviazione feedback RATIFICATA (toast SOLO dal percorso sheet — la lettera di R-15.9-j
+  avrebbe doppiato l'annuncio desktop); direzione unica del link registrata.
+- **Lezione (durevole) — la medicina di classe va misurata sulla CASCATA reale prima di prescriverla**:
+  `stat-tone-bad` avrebbe PERSO contro `.fld-label` (pari specificità, dichiarata dopo) e il grigio
+  4,85 sarebbe passato per un fix; usato `.fld-error`, stesso literal ratificato, 9,82. E
+  **un'esclusione via `querySelector` è un'esclusione su TUTTI gli antenati**: il fix è `:scope >`.
+- **Per la 15.10**: la coda TD è in `sprint-status.yaml` action_items — in più da questa story:
+  testata card self a 101,3px (via d'uscita nel record), 47 target dentro `.cal-popover`,
+  `.date-input-btn` 24×24 fuori da `/ppr` (quarta faccia), e la riserva `/dashboard/ppr` (unica
+  superficie costruita prima delle primitive complete, R-15.9-i).
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 

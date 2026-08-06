@@ -638,7 +638,7 @@ Confermate alla lettera invece: `.students` **281/434** self e **281/802** admin
 - `src/lib/schemas/ppr.ts`, `src/lib/schemas/registry.ts`, `src/server/services/ppr.service.ts` — il filtro.
 - `src/lib/schemas/ppr.test.ts`, `src/server/services/ppr.service.test.ts` — contract + unit.
 - `src/styles/airops.css` — blocco 15.9 in coda (+ la rimozione di `.ppr-top-right{display:none}` dalla query 820px esistente).
-- `messages/it.json`, `messages/en.json` — 6 chiavi nuove per locale (`AccountStatementPage.mobile.{empty,openDetail,close}`, `MyCompensationPage.mobile.registeredOn`, `PprQueuePage.mobile.viewInMovements`).
+- `messages/it.json`, `messages/en.json` — **5** chiavi foglia nuove per locale (`AccountStatementPage.mobile.{empty,openDetail,close}`, `MyCompensationPage.mobile.registeredOn`, `PprQueuePage.mobile.viewInMovements`). ⚠️ **Correzione review 15.9 LOW-5**: il record diceva «6», l'elenco ne portava 5 e il `git diff 118ad64 HEAD -- messages/` ne conta **5** per locale (parità piena, nessuna chiave orfana).
 - `e2e/mobile-registries.spec.ts` — **esclusione rimossa** (rafforzamento) + titolo del test allineato.
 - `e2e/my-compensation.spec.ts` — il test di geometria a 390px riscritto al valore corretto.
 
@@ -670,7 +670,7 @@ Riscritto **al valore corretto**: l'importo dev'essere leggibile e hit-testabile
 | my-account | celle prima riga | `104@169 · 150@333 · **0@347** · 120@**481**` | card 281 di larghezza, importo contenuto |
 | my-account | `.card-head` | 63,84 (92,14 @320) | **101,3** (@320 101,3) |
 | my-account | paginazione | 91,27×34,84 / 90,45×34,84 | **44** (contenitore 44; 60,89 @320, va a capo) |
-| my-account | `export-menu-trigger` | 136,63×**34,84** | **44** |
+| my-account | `export-menu-trigger` | 136,63×**34,84** | **44,00** sulla faccia **self** (281 di larghezza @375: è l'unico controllo della testata) · **53,69** sulla faccia **scheda persona** (103,91 di larghezza: divide la riga con i due bottoni di scrittura e l'etichetta «Esporta Excel ▾» va a capo). ⚠️ **Correzione review 15.9 LOW-5**: il record citava **un solo** valore (44) per **due** geometrie. Entrambe sopra il pavimento — misurate 53,69 a 320/375/390 sulla faccia admin, 44,00 sulla self, 34,84 a ≥641 su entrambe |
 | my-account | `docH` (21 movimenti) | 1480 | **1782** |
 | my-account | target sotto 43,5 | 5 (3 della pagina + 2 della shell) | **2** (i due `iconbtn` 32×32 della shell, TD 15.1) |
 | scheda persona | `.students` `cw/sw` | **281/802** | `display:none` |
@@ -707,6 +707,8 @@ Riscritto **al valore corretto**: l'importo dev'essere leggibile e hit-testabile
 | `/ppr` | `ppr-submit`, `.input`, `.date-input-btn`, `.ppr-actions` | 127,41×44,3 · 36,84 · 24×24 · 65,3 | **identici** |
 | `/ppr` | `.ppr-top` | 60 | **72** ⚠️ |
 | `/ppr` | `docH` | 1542 / 1542 / 1286 | 1554 / 1554 / **1298** |
+
+⚠️ **Correzione review 15.9 LOW-5**: il «72» vale a **≥641** (misurato 72,00 a 641/800/821/1280); sul telefono `.ppr-top` misura **73,50** a 320/375/390 (lo switch da 45,72×44 e il blocco brand non stanno sulla stessa riga), valore che il record non distingueva. Lo switch è 45,72×44 a **tutte** le larghezze misurate.
 
 ⚠️ **L'unica variazione desktop dichiarata**: `.ppr-top` 60 → **72** (+12) a ogni larghezza, `docH` +12. È il **prezzo aritmetico** di R-15.9-g: `.ppr-top-in` è una riga flex con 14px di padding sopra e sotto il cui elemento più alto era il logo da 32px; un target da 44 la porta a 72. Precedente identico: il +12,61px della 15.8b.
 
@@ -758,12 +760,13 @@ Il tema scuro **non scende** in nessun esemplare: l'override `html[data-theme="d
 | (e) `.so-sub` a `--ink-4` | **non attivo qui**: nessun componente di questa story monta uno `SlideOver` con sottotitolo (verificato). |
 | (f) `viewport-fit=cover` mai dichiarato | **INVARIATO**, TD di epic (15.10). |
 | (g) trigger `ExportMenu` a 34,84 | **CHIUSO sulla sola card dell'estratto conto** (44px, ancorato a `.account-head`); gli altri nove consumatori restano a 34,84 — TD ancora aperto, ora più piccolo. |
-| (h) `billing.spec.ts:296` flaky su aggregato globale | **esposizione dichiarata, non aggravata di proposito.** Il nuovo spec crea per run: **8 conti** con ricariche (tutte datate `2026-01-15`, **passato**, compresa quella inviata dal form — cambiata apposta), **4 rettifiche** che il dominio data **oggi** (l'endpoint `POST /account/adjustments` non accetta una data: `-5,00`, `-25,00`, `-1,00`, `-75,00`), **2 pagamenti istruttore** (periodo 2020, non sono `AccountMovement`) e **3 richieste PPR**. **Nessuna** asserzione su un aggregato globale: ogni saldo asserito è quello della propria fixture, letto dall'API filtrata. ⚠️ Nel run finale `billing.spec.ts:296` è risultato **flaky** (verde al retry) — è il flaky NOTO di quel test (review Billing-2 F4: «flaky 2 run su 2» prima che questa story esistesse), causato dalla sua fotografia+uguaglianza su aggregati globali sotto `fullyParallel`, e le 4 rettifiche di oggi sono un contributo alla concorrenza che questo spec non può eliminare senza rinunciare al ramo "saldo negativo" (AC 9 lo impone). |
-| (i) catalogo `ExpiryType` globale mai ripulito | **toccato solo in lettura**: le fixture usano `ensureValidSeedExpiries` (helper esistente) e non creano voli ⇒ il 422 `FLIGHT_BLOCKED_BY_EXPIRY` non le riguarda. |
+| (h) `billing.spec.ts:296` flaky su aggregato globale | **esposizione dichiarata, non aggravata di proposito** — ⚠️ **motivazione CORRETTA dopo la review 15.9 LOW-3: quella scritta qui prima era SBAGLIATA.** Il record diceva che datare le ricariche nel passato proteggeva l'asserzione che flaka; **non è vero**: quella riga è `depositsTotalAfter - depositsTotalBefore` (`billing.spec.ts:341`) e `deposits.totalCents` è definito come «**Σ of every POSITIVE account balance**» (`billing-summary.service.ts:35-38`, letto: `groupBy` sui conti, `if (balance > 0)` — riga 140), un aggregato **senza alcuna finestra temporale**. Una ricarica muove `deposits` **nell'istante in cui committa**, qualunque sia `effectiveDate`. La data passata protegge davvero **solo** `revenue`/`cost`/`net` (scoped al mese di `ref`), e `bank` non è toccato perché il metodo è CASH: motivo per cui la data resta com'è, ma per l'altra metà dell'asserzione. **Che cosa espone davvero quel test**: le scritture di conto di questo spec che cadono **dentro la finestra** fra la sua fotografia "before" e quella "after" — non i saldi residui, che compaiono in **entrambe** e si annullano. **Stima onesta dell'aggravio** (post-fix): **76 righe `AccountMovement`** per run, e **8 conti a saldo POSITIVO** a fine run per **1.034,06 €** complessivi (191,34 + 53,53 + 23,10 + 9,99 + 470,00 + 107,10 + 149,00 + 30,00) — gli altri due conti chiudono negativi (−75,00 € il ramo "saldo in rosso", −0,03 € la fixture dei badge) e valgono **zero** per `deposits`. **Mitigazione valutata e scartata**: riportare ogni fixture a saldo ≤0 a fine test **non protegge nulla** (un residuo è in entrambe le fotografie) e **aggiungerebbe** scritture nella finestra; l'unica mitigazione reale è serializzare uno dei due spec, che è lavoro di `billing.spec.ts` (TD suo, review Billing-2 F4) e costa tempo di catena. **Applicata invece** alla fixture NUOVA di questa fix-story (i badge collegati): ricariche da **1 centesimo**, addebito volo da **0 centesimi** (tariffa 1 cent/ora × 5 minuti ⇒ `Math.round` = 0) e chiusura a **−0,03 €** ⇒ 21 righe in più che muovono **0,17 €** di transitorio e **0** di residuo. |
+| (i) catalogo `ExpiryType` globale mai ripulito | **toccato solo in lettura**: le fixture usano `ensureValidSeedExpiries` (helper esistente). ⚠️ **Aggiornato dopo la review 15.9 LOW-1**: la fixture nuova dei badge collegati **crea un volo** (l'unico modo di produrre un `FLIGHT_CHARGE_REVERSAL`), quindi da qui in poi anche questo spec è nel perimetro del 422 `FLIGHT_BLOCKED_BY_EXPIRY` — con la stessa protezione (e la stessa esposizione residua a un `ExpiryType` bloccante creato in concorrenza) dei sei spec che già registrano voli sotto `fullyParallel`. |
 | (j) `.ppr-top-right` nascosto a ≤820 | **CHIUSO** (R-15.9-g). |
 | (k) `ppr-public.spec.ts` riempie per etichetta localizzata | **nessuna label toccata** su `/ppr` (diff verificato: solo una classe e un testid) ⇒ TD invariato e non aggravato. |
 | **nuovo (l)** | `.ppr-top` cresce di 12px sul desktop (prezzo dei 44px dello switch): dichiarato, non un difetto da chiudere. |
 | **nuovo (m)** | La testata della card estratto conto cresce di 37,46px sulla faccia self (63,84 → 101,3): prezzo dei 44px del trigger di export su una card che ha un solo controllo. Se la 15.10 volesse recuperarli, la strada è nascondere `.card-title` a ≤640 come fa `.billing-head` — non fatto qui perché sulla scheda persona quel titolo è l'unico nome di quella sezione. |
+| **nuovo (n)** | **422-prima-di-403 replicato dal parametro nuovo** (classe **TD 14.9 F11**, pre-esistente e dichiarata qui dopo la review 15.9 LOW-4). Su `GET /api/v1/ppr-requests` il chassis `apiRoute` (`src/lib/api/handler.ts`) valida la **query** dopo la sessione ma **prima** di `handle` → `authorize(actor,'ppr.manage')`: un attore senza il permesso riceve **403** con `?status=ALL&pprNumber=PPR-2026-0001` e **422** con `?pprNumber=NOT-A-NUMBER`. **Nessuna informazione nuova**: `?status=BOGUS` espone già oggi lo stesso ordinamento (misurato dalla review su entrambi), l'anonimo resta **401**. `pprNumber` la **replica per coerenza** con la route esistente — nessun cambio di comportamento introdotto e nessuna correzione tentata qui: si sposta il chassis o niente. |
 
 ## 9) Cosa NON ho fatto
 
@@ -802,3 +805,89 @@ Run mirati eseguiti prima (tutti `E2E_EXIT=0`):
 - `mobile-self-public.spec.ts` da solo dopo l'ultima modifica (data della ricarica dal form portata al passato) → **20 passed**.
 
 ⚠️ **Non eseguito dal dev**: l'aggiornamento di `sprint-status.yaml` e di `docs/handoffs/HANDOFF.md` (sono del commit `docs(15.9)` di chiusura, sessione principale) e **nessun commit** (istruzione esplicita del dispatch).
+
+---
+---
+
+# Review Record — 15.9 (reviewer adversarial Opus 5 xhigh, fix-subagent Opus 5 xhigh — 2026-08-06)
+
+Report integrale della review: `15-9-review-report.md`.
+Verdetto: **SHIPPABLE WITH FIXES — 0 Major, 2 Minor, 5 Low** (quarto ciclo dell'epic a 0 major su sei).
+I **quattro punti che il dev stesso aveva segnalato** come meritevoli di attenzione avversariale
+**reggono tutti alla verifica dal vivo**: un solo `account-adjustment-form` in ogni stato/larghezza col
+`key` di remount efficace; la chiusura DERIVATA dello sheet è corretta (e la variante "click sulla
+paginazione con sheet aperto" è irraggiungibile: lo scrim copre la paginazione); 4 percorsi di feedback
+× **1 annuncio ciascuno**, col `<p>` mobile in viewport dopo l'invio; KPI 2×2+1 con Maturato/Dovuto
+sulla stessa riga (`top 248 === 248`), docH 812, desktop a 5 tracce. Fix in `19f0174`.
+
+## Arbitro della review (pre-fix)
+
+`CI=1` su build di produzione, DB fresco: **E2E_EXIT=0 — 470 passed (14.5m) + 1 flaky + 2 skipped =
+473 = 453 baseline + 20 nuovi**, tutti e 20 i test di `mobile-self-public.spec.ts` verdi. ⚠️ Il flaky
+NON era quello dichiarato dal dev: `billing.spec.ts:296` è passato al primo colpo; ha flakato
+`expiry-alerts.spec.ts:132` (ECONNRESET sul POST /people — infra, verde al retry). Gates verdi (1773 unit).
+
+**Verificato dal vivo dal reviewer**: il **TD 14.6 F4 è chiuso davvero** — sweep `[]` a 320/375/390 su
+ENTRAMBE le facce, **rosso a 25 nodi** col difetto reiniettato; `/ppr` chirurgico provato **per
+attribuzione delle regole CSS** (nessuna regola 15.9 raggiunge hero/aside/footer), 12/12 campi a 44,
+switch lingua 45,72×44 a ogni larghezza, mail di ricevuta EN confermata da Mailpit; deep link e authz
+del filtro `pprNumber` esercitati (PENDING senza link, permessi rispettati, filtro esatto).
+
+## Findings → esito
+
+| # | Sev | Difetto | Esito |
+|---|---|---|---|
+| MINOR-1 | minor | dei 5 inline di colore in `account-section.tsx` ne erano stati sostituiti 3: `adjustment-feedback` a **2,73:1** e i `p[role="alert"]` di TopUp/AdjustmentForm a **3,96:1** (incluso il messaggio 409 DENTRO lo sheet nuovo) | **decisione PO: chiudere ADESSO** — `stat-tone-ok` sul feedback (2,73 → 10,63); per i `p[role=alert]` la classe è **`.fld-error`**, non `stat-tone-bad`: deviazione MISURATA (a pari specificità `.fld-label`, dichiarata dopo, vince e darebbe il GRIGIO 4,85; `.fld-error` porta lo **stesso literal ratificato** e lo stesso override dark: 3,96 → **9,82** / 6,61 dark). Guardie durevoli: classe presente + inline assente (`mobile-self-public.spec.ts:705-706`, `account-adjustments.spec.ts:88-89`), rosse sul pre-fix |
+| MINOR-2 | minor | lo sweep di `/ppr` escludeva **ogni antenato** del honeypot (`querySelector` non-scoped): cieco su mezzo form — iniettando un figlio da 2000px in `#formCard` restituiva `[]` | fix **`:scope >`**: la stessa iniezione ora è vista (`|card|325/2048`; sul test reale patchato: `E2E_EXIT=1` con l'array atteso, poi revert) e lo sweep resta verde sul DOM reale |
+| LOW-1 | low | `adjustment-badge-mobile`/`reversal-badge-mobile`: **0 asserzioni** in `e2e/` (badge di storno mai reso su un telefono) | test nuovo con fixture da 21 movimenti a 1 centesimo che copre TRE rami in un colpo: storno in card, rettifica col ramo data E il fallback `linked` (originale spinto fuori pagina dalla paginazione a 20); TD (h) neutralizzato per costruzione (saldo finale −3 cent ⇒ zero per `deposits.totalCents`) |
+| LOW-2 | low | la clonazione DOM dichiarata in §7 non era nel test committato | aggiunta sui 4 empty state (idioma dei 4 precedenti dell'epic) |
+| LOW-3 | low | la motivazione del TD (h) era SBAGLIATA: `deposits.totalCents` è la Σ **all-time** dei saldi positivi (`billing-summary.service.ts:35-38`) — datare al passato non protegge `billing.spec.ts:341` | record corretto con la meccanica giusta (espone il **numero di scritture** nella finestra before/after, non i residui che si annullano) e la stima MISURATA (76 scritture, 8 conti positivi = 1.034,06 € residui); la mitigazione "saldo ≤0 a fine test" è **finta** (aggiungerebbe scritture) — scartata con motivazione |
+| LOW-4 | low | 422-prima-di-403 replicato dal param `pprNumber` (classe PRE-esistente TD 14.9 F11, chassis `apiRoute`) | nessun cambio di comportamento (coerenza con la route); dichiarato **TD (n)** nel record e in sprint-status |
+| LOW-5 | low | imprecisioni del record: «6 chiavi» = 5; trigger export dichiarato 44 ma 53,69 sulla faccia admin | numeri corretti e MISURATI: 5 foglie i18n per locale; trigger **44,00** faccia self / **53,69** scheda persona (103,91 di larghezza, etichetta a capo) a 320-390, 34,84 a ≥641 su entrambe |
+
+## Ratifiche PO sopraggiunte in review (3, 2026-08-06)
+
+1. **MINOR-1 → chiudere adesso**, non TD 15.10 (la 15.10 riaprirebbe un file appena riscritto).
+2. **Deviazione 1 RATIFICATA**: toast SOLO dal percorso sheet, il `<p role="status">` resta a **ogni**
+   larghezza per il percorso inline — l'implementazione letterale di R-15.9-j avrebbe prodotto due
+   annunci sul desktop o zero sull'inline mobile, che la stessa ratifica vieta («canale unico»);
+   verificato dal reviewer: 1 annuncio per ciascuno dei 4 percorsi, `<p>` in viewport a 375.
+3. **Direzione UNICA del deep link registrata** (coda PPR → Transiti): il verso opposto punterebbe alla
+   stessa entità `PprRequest` vista con un altro filtro — dentro il mandato di R-15.9-h, resta possibile
+   in futuro senza lavoro server (il filtro ormai esiste).
+
+## Verifiche del fix
+
+Gates verdi (1773 unit). `mobile-self-public.spec.ts` **21/21** (il test LOW-1 è il ventunesimo);
+blast radius 10 spec → **81 passed**. Discriminanze su pre-fix reale: contrasti `2,73/3,96` misurati
+prima e `10,63/9,82` dopo, nei DUE temi, a 375 E 1280, **incluso il 409 dentro lo sheet** (`inSheet=true`);
+sweep MINOR-2 rosso col difetto (`E2E_EXIT=1`) e verde sul DOM reale. **Gemelli `.stat-tone-*` invariati
+al centesimo** su `/dashboard/billing` nei due temi (22 nodi ok + 36 bad). Desktop rimisurato: identico
+ai POST del Dev Agent Record; nello stato normale i riquadri hanno **0 nodi** `[role=alert]` (i +2,17px
+del `.fld-error` vivono solo nello stato d'errore). Nessun file CSS toccato dal fix.
+
+**Lezione durevole (dal fix)**: un'esclusione scritta con `querySelector` è un'esclusione su **TUTTI gli
+antenati** del nodo — il fix è `:scope >`. Vale per ogni sweep futuro che debba escludere un nodo e non
+il suo intero ramo. E una medicina di classe va **misurata sulla cascata reale** prima di prescriverla:
+`stat-tone-bad` avrebbe PERSO contro `.fld-label` (stessa specificità, dichiarata dopo) — il grigio 4,85
+sarebbe passato per un fix.
+
+## Gate finale
+
+- Arbitro finale, `CI=1` su build di produzione, DB fresco: **474 passed (14.2m), E2E_EXIT=0 — zero
+  failed, ZERO flaky, zero skipped** (474 = 453 baseline + 21 nuovi: i 20 del dev + il test LOW-1 del
+  fix; l'arbitro più pulito dell'epic — anche i 2 condizionali skippati nei run precedenti sono girati)
+- `npm run gates`: **verde** (lint, typecheck, 1773 unit, build)
+
+## TD (in `sprint-status.yaml`)
+
+- **TD 14.6 F4 CHIUSO** da questa story: la voce in sprint-status va marcata risolta (guardia: l'esclusione
+  di `mobile-registries.spec.ts:888` non esiste più).
+- **R-15.7-j CHIUSO** (deep link con filtro server `pprNumber`, direzione unica registrata).
+- TD nuovi dichiarati: **(m)** testata card estratto conto self a 101,3px (+37,46, prezzo dei 44px del
+  trigger export su una card con un solo controllo → sweep 15.10 con la via d'uscita nel record);
+  **(n)** 422-prima-di-403 sul param `pprNumber` (occorrenza della classe TD 14.9 F11); i **47 target
+  sotto 43,5 dentro `.cal-popover`** (primitiva condivisa, 11+ consumer) e **`.date-input-btn` 24×24
+  fuori dalle superfici di questa story** (quarta faccia) → 15.10.
+- TD (i) della 15.5 **aggiornato** dal fix: la fixture nuova di LOW-1 crea un volo (la riga del record
+  che diceva "questa story non crea voli" non era più vera).
