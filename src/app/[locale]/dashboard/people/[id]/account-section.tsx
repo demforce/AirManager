@@ -286,8 +286,14 @@ export function AccountSection({
       <div className="card-head account-head">
         <h2 className="card-title">{labels.heading}</h2>
         <div className="spacer" />
+        {/* `feedback` only ever carries the rettifica CONFIRMATION
+            (`handleAdjustmentSuccess` is its only writer), so the tone is
+            green by construction. It is the class, not an inline colour:
+            `--ok` as text measures 2.73:1 in the light theme (review 15.9
+            MINOR-1) and this paragraph is — by deviazione 1 (R-15.9-j) — the
+            phone's ONLY announcement on the inline path. */}
         {feedback ? (
-          <p role="status" data-testid="adjustment-feedback" className="card-sub" style={{ color: 'var(--ok)' }}>
+          <p role="status" data-testid="adjustment-feedback" className="card-sub stat-tone-ok">
             {feedback}
           </p>
         ) : null}
@@ -664,8 +670,14 @@ function TopUpForm({
           <Input {...register('description')} />
         </Field>
       </div>
+      {/* `.fld-error`, the app's own inline-error primitive, NOT
+          `fld-label stat-tone-bad`: measured on the real node, `.stat-tone-bad`
+          (airops.css:734) LOSES the cascade to `.fld-label` (1114, same
+          specificity, declared later) and the message would come out --ink-3
+          GREY. `.fld-error` (1174) carries the SAME ratified literal —
+          9.82:1 light, `--bad` in dark — and wins. */}
       {formError ? (
-        <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 10 }}>
+        <p role="alert" className="fld-error" style={{ marginTop: 10 }}>
           {formError}
         </p>
       ) : null}
@@ -782,8 +794,10 @@ function AdjustmentForm({
           <Input aria-invalid={Boolean(errors.reason)} {...register('reason')} />
         </Field>
       </div>
+      {/* Same medicine and same reason as `TopUpForm`'s above — and this is
+          the paragraph AC 3 (f) shows at 375px INSIDE the sheet (the 409). */}
       {formError ? (
-        <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 6 }}>
+        <p role="alert" className="fld-error" style={{ marginTop: 6 }}>
           {formError}
         </p>
       ) : null}

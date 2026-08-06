@@ -109,6 +109,67 @@ async function recordTopUp(page: Page, personId: string, amountCents: number, de
   return body.recentMovements[0]!.id;
 }
 
+/** A pilot person WITHOUT a login: the two linked badges live on the shared component's ADMIN face, so the invite round-trip would be dead weight. */
+async function createPilotPerson(page: Page, tag: string): Promise<string> {
+  const suffix = uniqueSuffix();
+  const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Pilota', lastName: `${tag}-${suffix}` } });
+  expect(personResponse.status()).toBe(201);
+  const person = (await personResponse.json()) as { id: string };
+  const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/pilot`, {
+    data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
+  });
+  expect(profileResponse.status()).toBe(200);
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
+  return person.id;
+}
+
+/** The date of the storno fixture's flight: safely in the past, so its `FLIGHT_CHARGE` never lands in the current month any global aggregate is summing. */
+const FLIGHT_DATE = '2020-01-01';
+
+/**
+ * The ONLY shape that produces a `FLIGHT_CHARGE_REVERSAL` (the storno badge):
+ * a flight charge and its cancellation. The aircraft rate is 1 cent per HOUR
+ * and the flight lasts 5 minutes, so `Math.round(1 * 5 / 60)` charges ZERO
+ * cents — the fixture moves no euro at all, neither on the account balance nor
+ * on the global aggregates `billing.spec.ts:296` watches (TD (h)); it adds
+ * exactly the two rows this test is about.
+ */
+async function createReversedFlightCharge(page: Page, personId: string): Promise<void> {
+  const suffix = uniqueSuffix();
+  const aircraftResponse = await page.request.post('/api/v1/aircraft', {
+    data: { registration: `I-BG${suffix}`.toUpperCase().slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Badge Test', hourMeterMinutes: 500 },
+  });
+  expect(aircraftResponse.status()).toBe(201);
+  const aircraft = (await aircraftResponse.json()) as { id: string };
+  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour: 1, validFrom: FLIGHT_DATE } });
+  expect(rateResponse.status()).toBe(201);
+
+  const flightResponse = await page.request.post('/api/v1/flights', {
+    data: {
+      aircraftId: aircraft.id,
+      personId,
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      flightType: 'TOURISM',
+      takeoffAt: `${FLIGHT_DATE}T10:00:00.000Z`,
+      landingAt: `${FLIGHT_DATE}T10:05:00.000Z`,
+    },
+  });
+  expect(flightResponse.status()).toBe(201);
+  const flight = (await flightResponse.json()) as { flight: { id: string } };
+  const cancelResponse = await page.request.post(`/api/v1/flights/${flight.flight.id}/cancel`, { data: { reason: `Storno di prova ${suffix}` } });
+  expect(cancelResponse.status()).toBe(200);
+}
+
+/** A linked rettifica on `originalMovementId` — the ADJUSTMENT badge's own fixture. */
+async function recordLinkedAdjustment(page: Page, personId: string, originalMovementId: string, amountCents: number): Promise<void> {
+  const response = await page.request.post(`/api/v1/people/${personId}/account/adjustments`, {
+    headers: { 'Idempotency-Key': `e2e-selfmobile-${uniqueSuffix()}` },
+    data: { amountCents, reason: `Rettifica collegata ${uniqueSuffix()}`, originalMovementId },
+  });
+  expect(response.status()).toBe(200);
+}
+
 /** The movements of the person's own account, read from the API — the ONLY honest way to check an accounting effect (never a count of rows in a paginated page). */
 async function accountMovements(page: Page, personId: string): Promise<{ id: string; type: string; amountCents: number; description: string | null }[]> {
   const response = await page.request.get(`/api/v1/people/${personId}/account/movements?page=1&pageSize=100`);
@@ -191,11 +252,16 @@ async function hiddenScrollers(page: Page, root: string): Promise<string[]> {
           (el) =>
             el.scrollWidth > el.clientWidth + 1 &&
             !el.closest('.slideover') &&
-            // Declared exclusion: the `/ppr` honeypot lives in an off-screen
-            // 1px wrapper (`position:absolute; left:-9999px`) — it is not a
-            // clipped control, it is anti-abuse machinery (AC 6 c).
+            // Declared exclusion, and ONLY that one: the `/ppr` honeypot lives
+            // in an off-screen 1px wrapper (`position:absolute; left:-9999px`)
+            // — not a clipped control, anti-abuse machinery (AC 6 c). The
+            // wrapper is matched with `:scope >`, never with a plain
+            // `querySelector`: that one is true for EVERY ancestor, so it also
+            // dropped `<form>`, `#formCard` and `.ppr-grid` from the sweep —
+            // the containers that can actually blow out (review 15.9 MINOR-2:
+            // a 2000px child injected in `#formCard` was invisible to it).
             !el.closest('[data-testid="ppr-honeypot"]') &&
-            el.querySelector('[data-testid="ppr-honeypot"]') === null &&
+            el.querySelector(':scope > [data-testid="ppr-honeypot"]') === null &&
             getComputedStyle(el).textOverflow !== 'ellipsis',
         )
         .map((el) => `${el.getAttribute('data-testid') ?? ''}|${String(el.className)}|${el.clientWidth}/${el.scrollWidth}`),
@@ -345,6 +411,17 @@ test.describe('Le mie transazioni — the shared estratto conto on a phone (AC 1
     await expect(page.getByTestId('mobile-account-empty')).toHaveText('Nessun movimento in questo conto.');
     await expect(page.getByText('Nessun conto attivo')).toHaveCount(1);
     await expect(page.getByText('Nessun movimento registrato.', { exact: true })).toHaveCount(1);
+
+    // The pre-fix, simulated on the intact repo (idiom review 15.6 LOW-3,
+    // four precedents in this epic): a second node WOULD be seen, so the two
+    // `toHaveCount(1)` above discriminate instead of being decoration.
+    await page.getByTestId('mobile-account-empty').evaluate((node) => node.parentElement?.appendChild(node.cloneNode(true)));
+    await expect(page.getByTestId('mobile-account-empty')).toHaveCount(2);
+    await page.getByTestId('account-statement-empty').evaluate((node) => node.parentElement?.appendChild(node.cloneNode(true)));
+    await expect(page.getByTestId('account-statement-empty')).toHaveCount(2);
+    await page.reload();
+    await expect(page.getByTestId('mobile-account-empty')).toHaveCount(1);
+    await expect(page.getByTestId('account-statement-empty')).toHaveCount(1);
 
     await page.setViewportSize(DESKTOP);
     await expect(page.getByTestId('account-statement-empty')).toBeVisible();
@@ -503,6 +580,61 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     await expect(page.getByTestId('mobile-account-adjust-action')).toHaveCount(0);
   });
 
+  test('both linked badges are RENDERED on the phone card — the storno included — with the desktop text and with the `linked` fallback (AC 1/3 c)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const personId = await createPilotPerson(page, 'Badge');
+
+    // 21 movements ON PURPOSE: the statement pages at 20 and the badge text
+    // DEPENDS on whether the original is on the rendered page (comportamento
+    // 3, `rowById`). The oldest top-up is the only one that falls off page 1,
+    // so its rettifica shows the `linked` fallback while the other one shows
+    // the original's date. Every top-up is 1 cent and the flight charge is
+    // ZERO, so this fixture ends at -3 cents: a NEGATIVE balance, which is
+    // worth nothing to `deposits.totalCents` (TD (h)).
+    const offPage = await recordTopUp(page, personId, 1, `Originale fuori pagina ${uniqueSuffix()}`);
+    for (let index = 0; index < 15; index += 1) {
+      await recordTopUp(page, personId, 1, null);
+    }
+    const onPage = await recordTopUp(page, personId, 1, `Originale in pagina ${uniqueSuffix()}`);
+    await createReversedFlightCharge(page, personId);
+    await recordLinkedAdjustment(page, personId, offPage, -10);
+    await recordLinkedAdjustment(page, personId, onPage, -10);
+
+    await page.setViewportSize(PHONE);
+    await page.goto(`/it/dashboard/people/${personId}`);
+    await expect(page.getByTestId('account-statement-pagination-status')).toHaveText('1 / 2');
+    expect(await treeDisplays(page, '.account-desktop-body', '.account-mobile')).toEqual({ desktop: 'none', mobile: 'block' });
+
+    // The gap this closes: `reversal-badge-mobile` was rendered by NO test at
+    // any width. Both badges must sit INSIDE a card, with the desktop text.
+    const reversalBadge = page.locator('[data-testid="account-movement-row-mobile"] [data-testid="reversal-badge-mobile"]');
+    await expect(reversalBadge).toHaveCount(1);
+    await expect(reversalBadge).toHaveText('Storno del movimento del 01/01/2020');
+    await expect(page.getByTestId('reversal-badge')).toHaveText('Storno del movimento del 01/01/2020');
+
+    const adjustmentBadges = page.locator('[data-testid="account-movement-row-mobile"] [data-testid="adjustment-badge-mobile"]');
+    await expect(adjustmentBadges).toHaveCount(2);
+    // One of the two originals is on page 1 and one is not: the date branch
+    // AND the `linked` fallback, rendered, in the same list.
+    // `allTextContents`, not `allInnerTexts`: the desktop twins below are
+    // `display:none` at this width and `innerText` is rendering-dependent.
+    expect((await adjustmentBadges.allTextContents()).sort()).toEqual(['Rettifica del movimento del 15/01/2026', 'Rettifica di un movimento precedente']);
+    expect((await page.getByTestId('adjustment-badge').allTextContents()).sort()).toEqual([
+      'Rettifica del movimento del 15/01/2026',
+      'Rettifica di un movimento precedente',
+    ]);
+
+    // The badge is the longest string a 281px card carries: it must not push
+    // anything out of the card, and nothing may be clipped without an ellipsis.
+    expect(await cardOverflows(page, '[data-testid="account-movement-row-mobile"]')).toEqual([]);
+    expect(await hiddenScrollers(page, '.page')).toEqual([]);
+
+    // The 320px phone, where the fallback string is at its most cramped.
+    await page.setViewportSize({ width: 320, height: 568 });
+    await expect(reversalBadge).toBeVisible();
+    expect(await cardOverflows(page, '[data-testid="account-movement-row-mobile"]')).toEqual([]);
+  });
+
   test('the sheet does not survive a page change (AD-3), and the rettifica form remounts when the target row changes', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const password = 'SelfMobileRemount123!';
@@ -564,7 +696,14 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     await page.locator('[data-testid="mobile-account-sheet"] .input').nth(1).fill(`Seconda rettifica ${uniqueSuffix()}`);
     await page.getByTestId('account-adjustment-submit').click();
 
-    await expect(page.locator('[data-testid="mobile-account-sheet"] [role="alert"]')).toHaveText('Questo movimento ha già una rettifica collegata.');
+    const alert = page.locator('[data-testid="mobile-account-sheet"] [role="alert"]');
+    await expect(alert).toHaveText('Questo movimento ha già una rettifica collegata.');
+    // Review MINOR-1: this message was `fld-label` + inline `var(--bad)`, 3.96:1
+    // in the light theme, ON THE PHONE. The red now comes from `.fld-error` and
+    // the inline colour is GONE (`fld-label stat-tone-bad` would NOT have done
+    // it: `.fld-label` is declared after `.stat-tone-bad` and wins, measured).
+    await expect(alert).toHaveClass(/fld-error/);
+    await expect(alert).not.toHaveAttribute('style', /color/);
     await expect(page.getByTestId('mobile-account-sheet')).toBeVisible();
     await expect(page.getByTestId('toast')).toHaveCount(0);
     // Only the ONE adjustment the API created exists — the refused submit wrote nothing.
@@ -703,6 +842,9 @@ test.describe('I miei compensi on a phone (AC 4/5)', () => {
     await expect(page.getByTestId('my-compensation-kpis')).toHaveCount(0);
     await expect(page.getByTestId('my-compensation-payout-row-mobile')).toHaveCount(0);
     await expect(page.getByText('Nessun profilo istruttore attivo.')).toHaveCount(1);
+    // Same pre-fix simulation as the estratto conto's empties above.
+    await page.getByTestId('my-compensation-empty').evaluate((node) => node.parentElement?.appendChild(node.cloneNode(true)));
+    await expect(page.getByTestId('my-compensation-empty')).toHaveCount(2);
 
     // A FRESH instructor with a profile and no payout at all — never the
     // seeded one, whose history other specs write to (fullyParallel).
@@ -719,6 +861,10 @@ test.describe('I miei compensi on a phone (AC 4/5)', () => {
     await expect(page.getByTestId('my-compensation-payouts-empty')).toBeVisible();
     await expect(page.getByTestId('mobile-compensation-list')).toHaveCount(0);
     await expect(page.getByText('Nessun pagamento registrato.')).toHaveCount(1);
+    await page.getByTestId('my-compensation-payouts-empty').evaluate((node) => node.parentElement?.appendChild(node.cloneNode(true)));
+    await expect(page.getByTestId('my-compensation-payouts-empty')).toHaveCount(2);
+    await page.reload();
+    await expect(page.getByTestId('my-compensation-payouts-empty')).toHaveCount(1);
 
     await page.setViewportSize(DESKTOP);
     await expect(page.getByTestId('my-compensation-payouts-empty')).toHaveCount(1);
