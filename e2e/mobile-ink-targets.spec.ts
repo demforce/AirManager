@@ -98,6 +98,17 @@ const SMALL_TARGETS = `(arg) => {
   return out;
 }`;
 
+/**
+ * The panel slides in over 260ms (`transform`), so anything measured right
+ * after the click reads a rect the box will not be at (measured: a foot
+ * bottom of 1436 in an 812px viewport). Waiting for the transform to settle
+ * is the only honest gate.
+ */
+async function settledPanel(page: Page): Promise<void> {
+  await expect(page.locator('.slideover.open .so-foot')).toBeVisible();
+  await expect(page.locator('.slideover.open .slideover-panel')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+}
+
 async function smallTargets(page: Page, root: string, floor = TARGET_FLOOR): Promise<Array<Record<string, unknown>>> {
   const result = (await page.evaluate(new Function('arg', `return (${SMALL_TARGETS})(arg)`) as (arg: unknown) => unknown, {
     root,
@@ -189,6 +200,30 @@ test.describe('story 15.10 — `--ink-4` stops being used as TEXT (AC 4)', () =>
       }
     });
   }
+
+  /**
+   * Review 15.10 LOW-3, AC 4c. The `--ink-4` census classified `.crumbs .sep`
+   * (3.66 / 4.14) as DECORATION — which is what lets it stay under the 3:1
+   * floor instead of joining the declared text debt — but the node was plain
+   * exposed text: `<span class="sep">/</span>`, read out between two crumbs.
+   * The classification is now TRUE, and this is what keeps it true.
+   */
+  test('the breadcrumb separator is a decoration for real: hidden from the accessibility tree', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize(DESKTOP);
+    await page.goto('/it/dashboard/logbook');
+    await page.waitForSelector('.topbar');
+
+    const separators = page.locator('.crumbs .sep');
+    const count = await separators.count();
+    expect(count, 'the desktop breadcrumb renders its separators').toBeGreaterThan(0);
+    for (let index = 0; index < count; index += 1) {
+      await expect(separators.nth(index)).toHaveAttribute('aria-hidden', 'true');
+    }
+    // ...and the crumb text itself is untouched: the name of the bar still
+    // carries the brand and the page, only without the "/" glyphs.
+    await expect(page.locator('.crumbs .cur')).toBeVisible();
+  });
 });
 
 test.describe('story 15.10 — the touch targets of the shared primitives (AC 5)', () => {
@@ -478,7 +513,21 @@ test.describe('story 15.10 — /dashboard/ppr, the surface built before the prim
    * 32, twelve `ManualPprForm` fields at 36.84/38.84, two calendar triggers at
    * 24x24, `ppr-queue-filter-status` at 36 and `export-menu-trigger` at 34.84.
    * Everything else was already right and must stay identical: `pageOverflow`
-   * 0, the card a `<button>` 317x82.83 with zero interactive children.
+   * 0, the card a `<button>` with zero interactive children.
+   *
+   * Review 15.10 MAJOR-1 — how "the card is untouched" is asserted, and why
+   * NOT with its height. `expect(cardHeight).toBe(82.83)` was a photograph of
+   * the FIRST row of a queue other specs write under `fullyParallel`: a
+   * 30-character fixture name ("Nega Test-1786045551936-hvgdm8") wraps at
+   * 320px and the same card measures 101.67, which turned the arbiter red 3
+   * times out of 3 and, with the `chromium` project red, kept the 39 tests of
+   * the serialized chain from running at all. What follows asserts the
+   * REQUIREMENT instead, and every value in it is content-INDEPENDENT: the box
+   * 15.2 gave the card (padding, border, floor, `display`), the typography of
+   * its two lines, and — the part that actually catches a 44px rule of this
+   * story reaching the card — that the card's height is nothing but its own
+   * box plus its content. A `min-height`, an extra padding or an inflated
+   * child would break that equation at ANY row content.
    */
   for (const width of [320, 375, 390]) {
     test(`no target under the floor at ${width}px, and the card is untouched`, async ({ page }) => {
@@ -491,31 +540,81 @@ test.describe('story 15.10 — /dashboard/ppr, the surface built before the prim
       expect(small, JSON.stringify(small)).toEqual([]);
 
       const geometry = await page.evaluate(() => {
-        const card = document.querySelector('[data-testid^="ppr-row-mobile"]');
-        const rect = card?.getBoundingClientRect();
+        const round = (value: number) => Math.round(value * 100) / 100;
+        const px = (value: string) => round(Number.parseFloat(value));
+        const card = document.querySelector('[data-testid="ppr-row-mobile"]');
+        const pageOverflow = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+        if (!card) return { pageOverflow, card: null, emptyStates: document.querySelectorAll('[data-testid="ppr-queue-empty"]').length };
+        const style = getComputedStyle(card);
+        const head = card.querySelector('.ppr-card-head');
+        const name = card.querySelector('.ppr-card-name');
+        const sub = card.querySelector('.ppr-card-sub');
         return {
-          pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          cardIsButton: card ? card.tagName.toLowerCase() === 'button' : null,
-          cardInteractiveChildren: card ? card.querySelectorAll('a,button,input,select,textarea').length : null,
-          cardHeight: rect ? Math.round(rect.height * 100) / 100 : null,
+          pageOverflow,
+          emptyStates: document.querySelectorAll('[data-testid="ppr-queue-empty"]').length,
+          card: {
+            tag: card.tagName.toLowerCase(),
+            interactiveChildren: card.querySelectorAll('a,button,input,select,textarea').length,
+            height: round(card.getBoundingClientRect().height),
+            headHeight: head ? round(head.getBoundingClientRect().height) : null,
+            box: {
+              paddingTop: px(style.paddingTop),
+              paddingBottom: px(style.paddingBottom),
+              borderTop: px(style.borderTopWidth),
+              borderBottom: px(style.borderBottomWidth),
+              minHeight: px(style.minHeight),
+              display: style.display,
+            },
+            nameFontSize: name ? getComputedStyle(name).fontSize : null,
+            // Every `min-height` INSIDE the card: the touch-floor rules of
+            // this story must not reach a single node of it.
+            floorsInside: [...card.querySelectorAll('*')]
+              .map((node) => getComputedStyle(node).minHeight)
+              .filter((value) => value !== '0px' && value !== 'auto'),
+            subClipping: sub ? [getComputedStyle(sub).whiteSpace, getComputedStyle(sub).overflow, getComputedStyle(sub).textOverflow].join(' ') : null,
+          },
         };
       });
       expect(geometry.pageOverflow).toBeLessThanOrEqual(0);
-      if (geometry.cardIsButton !== null) {
-        expect(geometry.cardIsButton).toBe(true);
-        expect(geometry.cardInteractiveChildren).toBe(0);
-        expect(geometry.cardHeight).toBe(82.83);
+
+      if (geometry.card === null) {
+        // No row on this DB — then the queue must be showing its empty state,
+        // so the branch is visible instead of silently skipped.
+        expect(geometry.emptyStates, 'an empty queue renders exactly one empty state').toBe(1);
+        return;
       }
+      const card = geometry.card;
+      expect(card.tag).toBe('button');
+      expect(card.interactiveChildren).toBe(0);
+      // The box 15.2 gave it, untouched by the target floor of this story.
+      expect(card.box).toEqual({ paddingTop: 11, paddingBottom: 11, borderTop: 1, borderBottom: 0, minHeight: 44, display: 'block' });
+      expect(card.nameFontSize).toBe('13px');
+      expect(card.floorsInside, 'no 44px floor rule of this story reaches inside the card').toEqual([]);
+      // The sub still contains its own overflow (lesson 15.5 F1 in reverse).
+      expect(card.subClipping).toBe('nowrap hidden ellipsis');
+      // Height = its own box + its content, never a floor of its own: with a
+      // 44px rule reaching the card this equation is what breaks, whatever the
+      // row happens to contain.
+      const explained = Math.max(44, card.headHeight! + card.box.paddingTop + card.box.paddingBottom + card.box.borderTop);
+      expect(card.height, `head ${card.headHeight} + box ${JSON.stringify(card.box)}`).toBeCloseTo(explained, 1);
+      expect(card.height).toBeGreaterThanOrEqual(44);
     });
   }
 
-  /** The same form is mounted by `/dashboard/movements` ("Registra arrivo"): the rule reaches both. */
+  /**
+   * The same form is mounted by `/dashboard/movements` ("Registra arrivo"):
+   * the rule reaches both. The root is the whole open panel, not just the
+   * `<form>`: since review 15.10 LOW-4 the primary action lives in `.so-foot`,
+   * OUTSIDE the form, and a sweep rooted on the form would stop covering it.
+   */
   test('the shared ManualPprForm has no small target on /dashboard/movements either', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/movements');
     await page.waitForSelector('.page');
-    const small = await smallTargets(page, '.manual-ppr-form');
+    await page.getByTestId('log-arrival-button').click();
+    await expect(page.getByTestId('manual-ppr-form')).toBeVisible();
+    const small = await smallTargets(page, '.slideover.open .slideover-panel');
     expect(small, JSON.stringify(small)).toEqual([]);
   });
 });
@@ -592,5 +691,110 @@ test.describe('story 15.10 — the two minors (R-15.10-h, R-15.10-l)', () => {
     expect(measured.barPaddingBottom).toBe('12px');
     expect(measured.mainPaddingBottom).toBe('100px');
     expect(measured.barBottom).toBe(measured.innerHeight);
+  });
+
+  /**
+   * Review 15.10 MAJOR-3 (PO decision 2026-08-06). `viewport-fit=cover` makes
+   * the insets real, and the story lit it while `.so-foot` — the foot R-15.10-f
+   * had just promoted to PRIMARY action of the full-screen panel — had none,
+   * where the `.so-actions` bar it replaced carried `calc(12px + env(...))`.
+   * On a phone with a 34px home indicator that submit would have sat ~22px
+   * inside the system strip.
+   *
+   * Insets are 0 on this Chromium, so the computed padding cannot show the
+   * term: the DECLARATION is read from the CSSOM (where `env()` survives
+   * serialization) and the numbers are the non-regression half — every value
+   * identical to what it was without the term.
+   */
+  test('the bars that touch a screen edge declare their safe-area inset, and at inset 0 nothing moves', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize(PHONE);
+    // The flight editor, not the PPR panel: this panel has carried a `.so-foot`
+    // since 12.x, so the guard measures the CSS and only the CSS.
+    await page.goto('/it/dashboard/logbook');
+    await page.waitForSelector('.page');
+    await page.getByTestId('logbook-new-button').click();
+    await settledPanel(page);
+
+    const declarations = await page.evaluate(() => {
+      const texts: string[] = [];
+      const walk = (rules: CSSRuleList) => {
+        for (const rule of rules) {
+          // A CSSStyleRule owns a (usually empty) `cssRules` too since CSS
+          // nesting, so the style rule has to be recorded FIRST and the
+          // recursion only used for what it actually contains.
+          if (rule instanceof CSSStyleRule) texts.push(rule.cssText);
+          const nested = (rule as CSSGroupingRule).cssRules;
+          if (nested && nested.length > 0) walk(nested);
+        }
+      };
+      for (const sheet of document.styleSheets) {
+        try {
+          walk(sheet.cssRules);
+        } catch {
+          // A cross-origin sheet cannot be read; the app has none.
+        }
+      }
+      const find = (selector: string) => texts.filter((text) => text.startsWith(`${selector} {`) || text.startsWith(`${selector}{`));
+      return {
+        soFoot: find('.so-foot'),
+        mobileTopbar: find('.mobile-topbar'),
+        topbar: find('.topbar'),
+      };
+    });
+    expect(declarations.soFoot.join(' '), '.so-foot pads for the home indicator').toContain('env(safe-area-inset-bottom)');
+    expect(declarations.mobileTopbar.join(' '), 'the sticky phone top bar pads for the notch').toContain('env(safe-area-inset-top)');
+    expect(declarations.topbar.join(' '), 'the sticky shell top bar of the 641-900 band pads for the notch').toContain('env(safe-area-inset-top)');
+
+    // Non-regression at inset 0: the same numbers as before the term.
+    const phone = await page.evaluate(() => {
+      const foot = document.querySelector('.slideover.open .so-foot')!;
+      const bar = document.querySelector('.mobile-topbar')!;
+      const round = (value: number) => Math.round(value * 100) / 100;
+      const tallestChild = (element: Element) => Math.max(...[...element.children].map((child) => child.getBoundingClientRect().height));
+      return {
+        footPaddingBottom: getComputedStyle(foot).paddingBottom,
+        footHeight: round(foot.getBoundingClientRect().height),
+        footContent: round(tallestChild(foot)),
+        footBottom: round(foot.getBoundingClientRect().bottom),
+        barPaddingTop: getComputedStyle(bar).paddingTop,
+        barHeight: round(bar.getBoundingClientRect().height),
+        barContent: round(tallestChild(bar)),
+        innerHeight: window.innerHeight,
+      };
+    });
+    expect(phone.footPaddingBottom).toBe('12px');
+    // 12 + 12 of padding, 1 of border-top, and the tallest control: the foot
+    // is its own box plus its content, with no inset added at inset 0.
+    expect(phone.footHeight).toBeCloseTo(phone.footContent + 25, 1);
+    expect(phone.footBottom).toBe(phone.innerHeight);
+    expect(phone.barPaddingTop).toBe('10px');
+    // 10 + 10 of padding, 1 of border-bottom.
+    expect(phone.barHeight).toBeCloseTo(phone.barContent + 21, 1);
+
+    await page.setViewportSize(DESKTOP);
+    await page.goto('/it/dashboard/logbook');
+    await page.waitForSelector('.page');
+    await page.getByTestId('logbook-new-button').click();
+    await settledPanel(page);
+    const desktop = await page.evaluate(() => {
+      const foot = document.querySelector('.slideover.open .so-foot')!;
+      const bar = document.querySelector('.topbar')!;
+      const round = (value: number) => Math.round(value * 100) / 100;
+      const tallestChild = (element: Element) => Math.max(...[...element.children].map((child) => child.getBoundingClientRect().height));
+      return {
+        footPaddingBottom: getComputedStyle(foot).paddingBottom,
+        footHeight: round(foot.getBoundingClientRect().height),
+        footContent: round(tallestChild(foot)),
+        barPaddingTop: getComputedStyle(bar).paddingTop,
+        barHeight: round(bar.getBoundingClientRect().height),
+        barContent: round(tallestChild(bar)),
+      };
+    });
+    expect(desktop.footPaddingBottom).toBe('12px');
+    expect(desktop.footHeight).toBeCloseTo(desktop.footContent + 25, 1);
+    expect(desktop.barPaddingTop).toBe('14px');
+    // 14 + 14 of padding, 1 of border-bottom.
+    expect(desktop.barHeight).toBeCloseTo(desktop.barContent + 29, 1);
   });
 });

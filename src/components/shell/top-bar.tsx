@@ -71,13 +71,23 @@ export function TopBar({
 
   return (
     <header className="topbar">
+      {/* Review 15.10 LOW-3: the "/" between crumbs was classified DECORATION
+          in the `--ink-4` census (threshold 3, 3.66/4.14 — it passes as one)
+          but nothing made it a decoration: it is rendered text, exposed and
+          read out. `aria-hidden` makes the classification TRUE instead of
+          moving the glyph to a tone it does not need — the separator carries
+          no information a screen reader has to hear between two crumbs. */}
       <div className="crumbs">
         <span>{brandName}</span>
-        <span className="sep">/</span>
+        <span className="sep" aria-hidden="true">
+          /
+        </span>
         {icao && (
           <>
             <span>{icao}</span>
-            <span className="sep">/</span>
+            <span className="sep" aria-hidden="true">
+              /
+            </span>
           </>
         )}
         <span className="cur">{currentTitle}</span>

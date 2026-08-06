@@ -56,6 +56,41 @@ async function tabStops(page: Page, containerSelector: string, times: number): P
   return stops;
 }
 
+/**
+ * Where the focus is, relative to the MODAL CONTEXT: the open panel plus any
+ * portal it has open (`.cal-popover`, `.combo-listbox` — portaled to
+ * `document.body`, so `panel.contains()` alone calls them "outside").
+ */
+async function modalFocusReport(page: Page): Promise<{ name: string; where: string }> {
+  return page.evaluate(() => {
+    const active = document.activeElement as HTMLElement | null;
+    const panel = document.querySelector('.slideover.open .slideover-panel') ?? document.querySelector('.mobile-sheet-panel');
+    const portals = [...document.querySelectorAll('.cal-popover, .combo-listbox')];
+    const where = !active || active === document.body
+      ? 'BODY'
+      : panel && panel.contains(active)
+        ? 'panel'
+        : portals.some((portal) => portal.contains(active))
+          ? 'portal'
+          : 'OUT';
+    return {
+      name: active
+        ? active.getAttribute('data-testid') ?? active.getAttribute('aria-label') ?? ((active.textContent ?? '').trim().slice(0, 20) || active.tagName)
+        : 'BODY',
+      where,
+    };
+  });
+}
+
+async function modalTabStops(page: Page, times: number, shift = false): Promise<Array<{ name: string; where: string }>> {
+  const stops: Array<{ name: string; where: string }> = [];
+  for (let index = 0; index < times; index += 1) {
+    await page.keyboard.press(shift ? 'Shift+Tab' : 'Tab');
+    stops.push(await modalFocusReport(page));
+  }
+  return stops;
+}
+
 test.describe('story 15.10 — the sheet chassis traps the focus and claims modality (AC 1)', () => {
   /**
    * Rule: `MobileSheet` adds `aria-modal="true"` AND a focus trap, never one
@@ -289,6 +324,97 @@ test.describe('story 15.10 — the full-screen panel is a dialog with a name and
       expect(measured!.hit).toBe(true);
     });
   }
+});
+
+test.describe('review 15.10 MAJOR-2 — the modal context includes the portals the panel opens', () => {
+  /**
+   * Rule: `useFocusTrap` treats the ACTIVE portals (`.cal-popover`,
+   * `.combo-listbox`) as part of the panel's modal context, and the panel
+   * `aria-owns` them while they are open (`ui/focus-trap.ts`).
+   *
+   * Pre-fix, measured at 375px on `/dashboard/bookings` with the panel open
+   * and the calendar popover open on top of it — the listener sat on the
+   * panel, and a portaled popover is not a descendant of it, so its keydowns
+   * never reached the trap:
+   *   Oggi @popover · Conferma @popover · BODY · "Cambia tema" OUT ·
+   *   mobile-profile-button OUT · calendar-prev OUT · schedule-date-pick OUT ·
+   *   calendar-next OUT
+   * i.e. SIX stops behind the scrim while the panel claimed `aria-modal`.
+   */
+  test('with the calendar popover open, Tab never leaves the panel+popover context, and the panel owns the portal', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize(PHONE);
+    await page.goto('/it/dashboard/bookings');
+    await page.waitForSelector('.page');
+
+    await page.getByTestId('new-booking-button').click();
+    const panel = page.locator('.slideover.open .slideover-panel');
+    await expect(panel).toBeVisible();
+    await panel.locator('.date-input-btn').first().click();
+    const popover = page.locator('.cal-popover');
+    await expect(popover).toBeVisible();
+    // The popover really is portaled OUT of the panel — otherwise this test
+    // would be guarding nothing (lesson 15.3 F8).
+    expect(await panel.evaluate((el) => el.contains(document.querySelector('.cal-popover')))).toBe(false);
+
+    // LOW-2: what the trap includes, `aria-modal` must not exclude.
+    const owns = await panel.getAttribute('aria-owns');
+    expect(owns, 'the panel owns the open portal').toBeTruthy();
+    expect(await popover.getAttribute('id')).toBe(owns);
+
+    const forward = await modalTabStops(page, 10);
+    expect(forward.filter((stop) => stop.where !== 'panel' && stop.where !== 'portal'), JSON.stringify(forward)).toEqual([]);
+    const backward = await modalTabStops(page, 6, true);
+    expect(backward.filter((stop) => stop.where !== 'panel' && stop.where !== 'portal'), JSON.stringify(backward)).toEqual([]);
+
+    // Coexistence with the GLOBAL Escape of `SlideOver` (CLAUDE.md): the
+    // popover's own capture-phase handler stops that dispatch
+    // (`fixed-popover.ts`), so the FIRST Escape closes only the popover — the
+    // panel survives, the focus returns to the trigger — and a second one
+    // closes the panel. Measured, both before and after this fix.
+    await page.keyboard.press('Escape');
+    await expect(popover).toHaveCount(0);
+    await expect(page.locator('.slideover.open')).toHaveCount(1);
+    expect((await modalFocusReport(page)).where).toBe('panel');
+    expect(await panel.getAttribute('aria-owns'), 'the ownership goes away with the portal').toBeNull();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.slideover.open')).toHaveCount(0);
+  });
+
+  /**
+   * Review LOW-1: with the listener on the panel, a focus that fell to
+   * `<body>` (its node destroyed) took the trap out of the picture entirely —
+   * measured synthetically by emptying a sheet: `mobile-tab-overview`,
+   * `mobile-tab-schedule`, `mobile-tab-ppr`, i.e. the tab bar behind the
+   * scrim. From `document` the same press is caught and the focus goes back
+   * into the modal.
+   */
+  test('when the focused control is destroyed, Tab puts the focus back inside the sheet', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize(PHONE);
+    await page.goto('/it/dashboard');
+    await page.waitForSelector('.page');
+
+    await page.getByTestId('mobile-tab-more').click();
+    await expect(page.getByTestId('mobile-more-sheet')).toHaveCount(1);
+    await page.keyboard.press('Tab');
+    expect((await modalFocusReport(page)).where).toBe('panel');
+
+    // Destroy every focusable the sheet has, the focused one included.
+    const removed = await page.evaluate(() => {
+      const panel = document.querySelector('.mobile-sheet-panel');
+      if (!panel) return 0;
+      const controls = [...panel.querySelectorAll('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])')];
+      for (const control of controls) control.remove();
+      return controls.length;
+    });
+    expect(removed).toBeGreaterThan(0);
+    expect((await modalFocusReport(page)).where, 'the focus fell to the body, as it does when its node dies').toBe('BODY');
+
+    await page.keyboard.press('Tab');
+    const after = await modalFocusReport(page);
+    expect(after.where, JSON.stringify(after)).toBe('panel');
+  });
 });
 
 test.describe('story 15.10 — a CLOSED panel is not tabbable (AC 3)', () => {

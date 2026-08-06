@@ -277,14 +277,44 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
     onSuccess(created);
   }
 
+  /* Review 15.10 LOW-4 (PO decision 2026-08-06): the same medicine R-15.10-f
+     gave the three multi-form editors, on the form that ratifica shares with
+     them. The primary action moves from the in-body `.so-actions` bar to
+     `SlideOver`'s `footer` (`.so-foot`, OUTSIDE the scrolling `.so-body`) and
+     reaches this form through `form="manual-ppr-form"`. Measured at 375px on
+     BOTH surfaces that mount it, at `scrollTop 0`: the sticky bar sat at
+     743-812 and COVERED the ETA calendar trigger (756.73-800.73,
+     `elementFromPoint` = `manual-ppr-submit`) — a 44px target that was not
+     hit-testable at first sight, which is defect R3 itself. The desktop foot
+     is the ratified one (review MINOR-1): the same grammar the other ten
+     call-sites of `footer` already use. */
+  const footer = (
+    <>
+      <div style={{ flex: 1 }} />
+      <button type="button" className="btn" onClick={handleClose}>
+        {labels.cancel}
+      </button>
+      <button type="submit" form="manual-ppr-form" disabled={isSubmitting} className="btn primary" data-testid="manual-ppr-submit">
+        <Icon.check /> {labels.submit}
+      </button>
+    </>
+  );
+
   return (
-    <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel}>
+    <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel} footer={footer}>
       {/* `manual-ppr-form` (class, not just the testid): the 44px touch floor
           of story 15.10 (R-15.10-j) has to reach the 12 fields of THIS form on
           both surfaces that mount it — `/dashboard/ppr` and the "Registra
           arrivo" of `/dashboard/movements` — without reaching `.form-grid` or
-          `.input`, which every dashboard form shares. */}
-      <form className="manual-ppr-form" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="manual-ppr-form">
+          `.input`, which every dashboard form shares. The `id` is what the
+          footer submit binds to (`form="manual-ppr-form"`). */}
+      <form
+        id="manual-ppr-form"
+        className="manual-ppr-form"
+        onSubmit={(event) => void handleSubmit(onSubmit)(event)}
+        noValidate
+        data-testid="manual-ppr-form"
+      >
         <div className="form-grid">
           <Field label={labels.firstName} error={fieldErrorLabel(errors.firstName) ?? undefined}>
             <Input autoComplete="given-name" maxLength={100} aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
@@ -341,20 +371,6 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
           </p>
         ) : null}
 
-        {/* Story 15.2 (R3): `so-actions` is the hook the <=640px full-screen
-            mode uses to pin this row to the bottom of the scrolling body
-            (`airops.css`, mobile-primitives block). The row is NOT moved to
-            `SlideOver`'s `footer` prop, which would pin it on DESKTOP too —
-            desktop must stay byte-for-byte as it is. Both consumers of this
-            form (the PPR console and Transiti's "Registra arrivo") get it. */}
-        <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-          <button type="button" className="btn" onClick={handleClose}>
-            {labels.cancel}
-          </button>
-          <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="manual-ppr-submit">
-            <Icon.check /> {labels.submit}
-          </button>
-        </div>
       </form>
     </SlideOver>
   );

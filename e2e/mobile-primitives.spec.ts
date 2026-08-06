@@ -76,11 +76,19 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
    * Rule (iii): `.slideover-panel{ left:0; width:100% }` at <=640px. Pre-fix
    * the panel was `min(520px, 92vw)` = 345px of 375, i.e. 30px of scrim strip
    * and 30px of lost form width on every phone.
-   * Rule (iv): `.so-actions{ position:sticky; bottom:0 }` — pre-fix the submit
-   * button of a 12-field form sat below the fold and was NOT hit-testable
-   * until the body was scrolled.
+   * Rule (iv): the primary action of a 12-field form is reachable without
+   * scrolling — pre-15.2 the submit sat below the fold and was NOT
+   * hit-testable at all. 15.2 met that with `.so-actions{position:sticky}`
+   * INSIDE the scrolling body; review 15.10 LOW-4 (PO decision 2026-08-06)
+   * replaced it with `SlideOver`'s `footer` slot, OUTSIDE `.so-body`, because
+   * a sticky bar covers whatever sits at the bottom edge at every scroll
+   * position but the last: measured at 375px on both surfaces that mount this
+   * form, the bar (743-812) covered the ETA calendar trigger (756.73-800.73,
+   * `elementFromPoint` = `manual-ppr-submit`). The REQUIREMENT is unchanged
+   * and asserted more strictly below: hit-testable at `scrollTop 0` AND with
+   * the body scrolled to its very end.
    */
-  test('at 375px a SlideOver form is full-screen with a fixed header and a sticky action row; at 1280px the desktop geometry is untouched', async ({
+  test('at 375px a SlideOver form is full-screen with a fixed header and a primary action outside the scrolling body; at 1280px the desktop geometry is untouched', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -115,7 +123,34 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     const submit = page.getByTestId('manual-ppr-submit');
     expect(await submit.evaluate(reachable)).toBe(true);
     expect(await submit.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
-    expect(await page.locator('.so-actions').evaluate((el) => getComputedStyle(el).position)).toBe('sticky');
+    // ...and it is OUT of the scroller, so scrolling the body to its end
+    // cannot take it away (review 15.10 LOW-4). A sticky row inside `.so-body`
+    // passed the line above and failed this one: measured pre-fix on the three
+    // editors, `hit: false` with the body at `scrollHeight`.
+    const anchored = await page.evaluate(() => {
+      const body = document.querySelector('.so-body')!;
+      const foot = document.querySelector('.so-foot');
+      const button = document.querySelector('[data-testid="manual-ppr-submit"]')!;
+      body.scrollTop = body.scrollHeight;
+      const rect = button.getBoundingClientRect();
+      const atPoint = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return {
+        scrollable: body.scrollHeight > body.clientHeight,
+        insideFoot: !!(foot && foot.contains(button)),
+        insideBody: body.contains(button),
+        anchoredRows: document.querySelectorAll('.slideover.open .so-actions').length,
+        hit: atPoint === button || button.contains(atPoint),
+      };
+    });
+    expect(anchored.scrollable, 'a 12-field form is only interesting because its body scrolls').toBe(true);
+    expect(anchored.insideFoot).toBe(true);
+    expect(anchored.insideBody).toBe(false);
+    // AD-6: one anchored action row per panel, and it is the foot.
+    expect(anchored.anchoredRows).toBe(0);
+    expect(anchored.hit).toBe(true);
+    await page.evaluate(() => {
+      document.querySelector('.so-body')!.scrollTop = 0;
+    });
 
     // AC 8: the full-screen panel (z 50) covers the 15.1 tab bar (z 5) — no
     // second navigation visible under the form.
@@ -131,33 +166,23 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     // AC 8: a portalled picker popover (z 65/66) stays ABOVE the panel and
     // inside the viewport (TD-7's own invariant, re-measured full-screen).
     //
-    // `scrollIntoViewIfNeeded` (story 15.10): with the body at `scrollTop: 0`
-    // the ETA row sits under the panel's own STICKY action bar — measured
-    // before 15.10 too (the 24x24 trigger at `top 781`, the bar at 743-812,
-    // `elementFromPoint` returning the primary button), and 15.10's 44px floor
-    // only moved it from 781 to 757 and added the input itself to what the bar
-    // covers. Clicking an occluded control makes Playwright scroll the body
-    // (measured: `scrollTop` 0 -> 314), and `useFixedPopover` closes the
-    // popover on ANY scroll outside it (`fixed-popover.ts:198`, capture phase,
-    // by design) — the scroll EVENT lands a frame after the click, so the
-    // popover opened and vanished 4ms later. Scrolling first removes the race
-    // without weakening anything this test asserts; what the test is about
-    // (z-order and viewport containment of a portaled popover) is measured
-    // unchanged below, and the hit-test after a REAL scroll — the epic's own
-    // AC-11 formulation — is now asserted explicitly instead of being assumed.
+    // The ETA row is the 9th field of twelve: with the body at `scrollTop: 0`
+    // it is below the scrollport (measured at 375px: trigger at 756.73, body
+    // ending at 743), so it has to be scrolled to before it can be clicked.
+    // Doing it here rather than letting the click do it is not cosmetic:
+    // `useFixedPopover` closes the popover on ANY scroll outside it
+    // (`fixed-popover.ts:198`, capture phase, by design) and Playwright's own
+    // scroll-into-view lands a frame AFTER the click, so the popover opened
+    // and vanished 4ms later (measured: `scrollTop` 0 -> 314). Scrolling first
+    // removes the race without weakening anything this test asserts, and the
+    // hit-test after a REAL scroll — the epic's own AC-11 formulation — is
+    // asserted instead of assumed.
     const dateTrigger = page.locator('.date-input-btn').first();
-    // A REAL scroll of the panel body until the trigger clears the sticky bar,
-    // then the hit-test — the epic's AC-11 formulation, and the only honest one
-    // for a `position: sticky` bottom bar, which by construction overlays
-    // whatever content is at the bottom edge at every scroll position but the
-    // end. `scrollIntoViewIfNeeded` cannot help here: the trigger IS in view,
-    // it is merely covered.
     await page.evaluate(() => {
       const body = document.querySelector('.so-body');
       const trigger = document.querySelector('.date-input-btn');
-      const bar = document.querySelector('.so-actions');
-      if (!body || !trigger || !bar) return;
-      const overlap = trigger.getBoundingClientRect().bottom - bar.getBoundingClientRect().top;
+      if (!body || !trigger) return;
+      const overlap = trigger.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom;
       if (overlap > 0) body.scrollTop += overlap + 12;
     });
     // Let the scroll event land BEFORE the popover exists: `useFixedPopover`
@@ -184,7 +209,10 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     // Reopening the same trigger toggles it shut.
     await dateTrigger.click();
 
-    // AC 11 — desktop invariant: 520px panel, no full-screen, no sticky row.
+    // AC 11 — desktop invariant: 520px panel, no full-screen. The foot is the
+    // same one the other ten `footer` call-sites have carried since 12.x and
+    // the PO ratified for this form too (review 15.10 MINOR-1/LOW-4): a panel
+    // foot at both widths, never a full-screen phone bar leaking upwards.
     await page.setViewportSize(DESKTOP);
     await expect(async () => {
       const desktopPanel = await page.locator('.slideover-panel').evaluate((el) => {
@@ -194,7 +222,24 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
       expect(desktopPanel.width).toBe(520);
       expect(Math.abs(desktopPanel.right - DESKTOP.width)).toBeLessThanOrEqual(1);
     }).toPass({ timeout: 3000 });
-    expect(await page.locator('.so-actions').evaluate((el) => getComputedStyle(el).position)).toBe('static');
+    const desktopFoot = await page.evaluate(() => {
+      const foot = document.querySelector('.slideover.open .so-foot');
+      const panel = document.querySelector('.slideover.open .slideover-panel');
+      const button = document.querySelector('[data-testid="manual-ppr-submit"]');
+      if (!foot || !panel || !button) return null;
+      return {
+        position: getComputedStyle(foot).position,
+        insideFoot: foot.contains(button),
+        footBottom: Math.round(foot.getBoundingClientRect().bottom),
+        panelBottom: Math.round(panel.getBoundingClientRect().bottom),
+        anchoredRows: document.querySelectorAll('.slideover.open .so-actions').length,
+      };
+    });
+    expect(desktopFoot).not.toBeNull();
+    expect(desktopFoot!.position).toBe('static');
+    expect(desktopFoot!.insideFoot).toBe(true);
+    expect(desktopFoot!.footBottom).toBe(desktopFoot!.panelBottom);
+    expect(desktopFoot!.anchoredRows).toBe(0);
   });
 
   /**

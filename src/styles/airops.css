@@ -223,9 +223,13 @@ button{ font: inherit; color: inherit; }
 .flight-dot.ifr{ background: var(--bad); }
 
 /* ---------- top bar ---------- */
+/* Review 15.10 MAJOR-3, "the shell bars" of the PO decision, plural: this one
+   is the bar the 641-900px band shows (the tablet the METAR rule just declared
+   a usage surface), and it is `sticky; top: 0` exactly like `.mobile-topbar`.
+   At inset 0 the padding stays 14px, so the desktop is unchanged. */
 .topbar{
   display: flex; align-items: center; gap: 12px;
-  padding: 14px 28px;
+  padding: calc(14px + env(safe-area-inset-top)) 28px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   position: sticky; top: 0; z-index: 4;
@@ -1106,9 +1110,20 @@ html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
 }
 .so-title{ font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
 .so-body{ flex: 1; overflow: auto; padding: 18px 20px; }
+/* Review 15.10 MAJOR-3 (PO decision 2026-08-06): the safe-area inset the
+   `.so-actions` bar it REPLACED already carried. Story 15.10 turned this foot
+   into the primary action of the full-screen panel (R-15.10-f, 7 call-sites
+   before it, 11 now) and lit `viewport-fit=cover` in the same commit — so on a
+   phone with a home indicator the submit would have sat 12px from the PHYSICAL
+   edge, ~22px inside the system strip, where the sticky bar kept 12+34. Global
+   and not phone-scoped on purpose: an iPad in portrait (768px, home indicator,
+   34px) renders this same panel and would fall between the two media queries.
+   On a browser with no inset `env()` is 0, i.e. every value stays 12px — the
+   only verification this machine allows (Chromium reports all insets 0). */
 .so-foot{
   display: flex; align-items: center; gap: 8px;
-  padding: 12px 20px; border-top: 1px solid var(--border); background: var(--panel-2);
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border); background: var(--panel-2);
 }
 
 /* ---------- form ---------- */
@@ -1774,10 +1789,15 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* Toasts (z-index 200) stay above the bar — template reference: 92px. */
   .toast-host{ bottom: calc(92px + env(safe-area-inset-bottom)); }
 
-  /* --- compact top bar --- */
+  /* --- compact top bar ---
+     Review 15.10 MAJOR-3: `env(safe-area-inset-top)`, the other half of
+     `viewport-fit=cover`. This bar is `sticky; top: 0`, so in standalone mode
+     on a notched phone its content renders UNDER the status bar / notch
+     without it. Same non-regression as every other inset in this file: at
+     inset 0 the padding stays exactly 10px. */
   .mobile-topbar{
     display: flex; align-items: center; gap: 10px;
-    padding: 10px 14px;
+    padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
     background: var(--panel);
     border-bottom: 1px solid var(--border);
     position: sticky; top: 0; z-index: 4;
