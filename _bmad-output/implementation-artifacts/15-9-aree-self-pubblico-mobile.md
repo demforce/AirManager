@@ -579,3 +579,226 @@ Cioè, rispondendo alla domanda del brief: **allievo e pilota vedono ESATTAMENTE
 - **C — Niente**: si riusano le stringhe e i nodi di oggi.
 
 **Raccomandazione: A.** Motivi: (i) i testid mancanti sono **la stessa lacuna** che la 15.7 ha già chiuso sulla superficie gemella, con la stessa motivazione (un empty state senza testid si può asserire solo per testo, e il testo è ciò che duplica); (ii) il toast è **ratificato tre volte** su tre superfici diverse e il caso qui è identico: il feedback vive nella `.card-head`, cioè sopra una lista che su un telefono l'utente sta guardando **dopo** aver scrollato; (iii) **C** è la scelta che romperebbe `accounts-topups.spec.ts:101` non appena l'albero mobile ripete «Nessun conto attivo» — cioè non è un'opzione, è un difetto in attesa. **B** è accettabile se il PO vuole minimizzare le superfici toccate, ma va scritto nel record che il feedback resta sopra il fold sul telefono.
+
+---
+---
+
+# Dev Agent Record (dev, Opus 5 xhigh — 2026-08-06)
+
+## 0) Verifica della ricognizione — 6 correzioni
+
+Tutto rimisurato su build di produzione (`npm run start`), DB **resettato all'inizio della sessione** (quindi con dati diversi da quelli della ricognizione, che girava su DB post-suite) e fixture create dal dev via API.
+
+| # | La ricognizione diceva | Misurato dal dev | Conseguenza |
+|---|---|---|---|
+| 1 | `grep -rn 'data-testid\^=' e2e/` = **20 occorrenze, 7 file** | **29 occorrenze, 10 file** (`ac-card-`, `pilot-row-`, `schedule-filter-aircraft-`, `schedule-filter-instructor-`, `mobile-tail-chip-`, `mobile-fleet-`, `mobile-fleet-card-`, `reports-fleet-row-`, `reports-rank-aircraft-row-`, `reports-rank-pilot-row-`, `reports-instructor-row-`) | **L'elenco dei prefissi è identico**: nessuno tocca `account-`, `my-compensation-`, `mobile-account`, `mobile-compensation`, `ppr-`. Il suffisso `-mobile` resta LEGALE qui. Conta e file corretti. |
+| 2 | `/ppr`: «10 `input.input` a 36,84» | **9** `input.input` a 36,84 + 2 `datetime-local` a 38,84 + 1 `textarea` 74,53 = **12 campi**, di cui 11 sotto i 44 | Il totale «12 su 12 sotto i 44px» resta vero (il textarea è alto ma i suoi 11 fratelli no); la scomposizione era 9+2, non 10+2. |
+| 3 | `.ppr-top` **75,5** @375 / **90** @320 | **60** @375 / **73,5** @320 | Dipende dalla lunghezza del nome aviosuperficie (`AppSetting`, riscritto dalla catena e2e): non è una costante. |
+| 4 | `.page-head` scheda persona **198,41** @375 | **169,81** @375 | Stessa causa: dipende dai profili/badge della persona misurata. |
+| 5 | contrasti importi: due valori (2,73 / 3,96) | **tre**: 2,73 (positivo su `--panel`), **2,59** (positivo su riga con sfondo alternato) e 3,96 (negativo) | Il fix li chiude tutti e tre (10,63 / 10,06 / 9,82). |
+| 6 | `.stat-tone-*` «misurate 9,82/10,63» | `.stat-tone-ok` = **10,63**, `.stat-tone-bad` = **9,82** (chiaro) | Coppia invertita nel testo della story; i valori sono quelli. |
+
+Confermate alla lettera invece: `.students` **281/434** self e **281/802** admin @375, tracce **`104px 150px 0px 120px`** (celle `104@169 · 150@333 · 0@347 · 120@481`), `.students` compensi **281/640** (celle `150@215 · 200@429 · 120@563 · 110@687`), `.page-head` 51,44 / 70,28, `.card-head` 63,84 / 49,3 / 106,69, paginazione 91,27×34,84 e 90,45×34,84, `export-menu-trigger` 136,63×34,84, `account-adjustment-row-*` **24,67**, i due toggle 34,84, `/ppr` **14** target sotto 43,5 di cui 1 honeypot, `ppr-submit` **101,64×64,59** @375 e **127,41×44,30** @≥641, `.ppr-top-right` **0×0** a ≤820 e **45,72×15,94** a 821, l'unico scroller di `/ppr` (`cw 1 / sw 198`, wrapper honeypot), `AccountSection` che **non rimonta**.
+
+## 1) Esito per AC
+
+| AC | Esito | Prova |
+|---|---|---|
+| 1 | **fatto** | `.account-desktop-body` `display:none` + `.account-mobile` `block` a 375, l'inverso (`flex`/`none`) a 1280 — asserito su **entrambi** i lati. Card = 1 `<button>` con `querySelectorAll('button,a,input,select,textarea,[tabindex]').length === 0`, `min-height` 44 (rect 81,83 con badge / ~60 senza). Sub = `data · descrizione [· registrato da]` via `joinSegments`. Importo `.mobile-row-amount` + `.stat-tone-*`. |
+| 2 | **fatto — TD 14.6 F4 CHIUSO** | `e2e/mobile-registries.spec.ts:888` **l'esclusione `!el.closest('[data-testid="account-section"]')` è stata RIMOSSA** e il test resta verde (run mirato: 16/16 di quel file). Con il difetto reintrodotto (CSS injection che riaccende la tabella desktop a 375) lo stesso sweep restituisce `["students account-desktop-body","student-row header","","student-row", …]`. |
+| 3 | **fatto** | I dieci comportamenti: (a) saldo rosso solo con conto e saldo<0 (test dedicato, `-75,00 €` + classe `stat-tone-bad`, e «Nessun conto attivo» sull'attore senza conto); (b) `formatSignedCents` invariata; (c) badge con la data dell'originale **in pagina** e fallback `linked` (funzione pura `linkedBadgeText`, unit test sui due rami); (d) nessuna azione su `hasReversal`/`PACKAGE_PURCHASE` (asserito nello sheet); (e) importo non parsabile ⇒ errore inline e **0 richieste contate con `page.route`**, `Idempotency-Key` presente; (f) importo ≠ 0 negativo provato, motivo obbligatorio, `originalMovementId` asserito nel body, **409 distinto** provato con la corsa reale (rettifica creata via API a sheet aperto ⇒ messaggio dedicato, sheet che resta aperto, **nessun** movimento scritto); (g) effetto contabile letto **dall'API** filtrata; (h) `router.refresh()` + chiusura esplicita; (i) remount del form provato (riga A → riga B ⇒ importo vuoto). Target: 44px su tutti (`mobile-account-adjust-action` 341×44). |
+| 4 | **fatto** | `.compensation-desktop-body` none / `.compensation-mobile` block a 375 e l'inverso a 1280; card con **tutte e quattro** le informazioni (periodo, `Registrato il … · metodo`, importo) — la sub **va a capo** invece di ellissare, perché questa card non ha uno sheet dietro (v. §4). `my-compensation.spec.ts:329-361` riscritto **al valore corretto** (v. §4). |
+| 5 | **fatto** | `.kpi-row.kpi-row-grid.compensation-kpi-row`: `grid`, 2 tracce, `scrollWidth == clientWidth`, `kpi-gross-mtd.top === kpi-owed-mtd.top` (Maturato e Dovuto sulla STESSA riga), `kpi-owed-total` largo quanto la riga. Cinque testid, un nodo ciascuno. Costo misurato: **76,97 → 233,45** (+156,48px) @375 — v. §5, oltre la stima ~98px della story. |
+| 6 | **fatto** | 320/375/390: target sotto 43,5 = **[]** escluso il honeypot **dichiarato**; submit **full-width** (277×44,3 in una `.ppr-actions` da 277); `pageOverflow` 0; sweep `.ppr-page` = solo il wrapper del honeypot; switch lingua visibile e ≥44 a **320/375/390/641/800/1280** e funzionante (IT→EN, label che si inverte, form EN); flusso invariato (submit vuoto = 10 `.fld-error` + **0** richieste; submit reale = 1 richiesta + `.ppr-success` senza numero PPR + "invia un'altra" che resetta); `.cal-popover` 47,5→327,5 dentro il viewport; `datetime-picker.spec.ts` **non toccato e verde**. |
+| 7 | **fatto** | Paginazione su **entrambe** le facce a 375: `1 / 2 → 2 / 2`, href asserito (`/it/dashboard/people/{id}?page=2` e `/it/dashboard/my-account?page=2`), target 44 (pre 34,84), hit-test a fondo pagina `[]`. L'inline è diventato `.account-pagination` **fuori** dalla query (34,84 identico a 641/800/1280). |
+| 8 | **fatto (verifica + una modifica dichiarata)** | Un solo `export-menu-trigger`, un solo `export-menu-xls`/`-pdf`, sheet a 375 con gli href identici e **download reale** provato (`.xlsx`). ⚠️ Il trigger è stato portato a 44px **solo su questa card** (`.account-head > div:has(> .btn) > .btn`): gli altri nove consumatori restano a 34,84 — TD (g) dichiarato, non chiuso. |
+| 9 | **fatto — tutti e quattro chiusi** | v. §6. Inline sostituiti con la classe in 3 punti (`account-section.tsx` importo e saldo, `my-compensation/page.tsx` importo). |
+| 10 | **fatto** | Desktop invariati; nomi nuovi: `account-movement-row-mobile`, `my-compensation-payout-row-mobile`, `adjustment-badge-mobile`, `reversal-badge-mobile` (suffisso), `mobile-account-list`, `mobile-account-empty`, `mobile-account-sheet`, `mobile-account-adjust-action`, `mobile-compensation-list`, `account-statement-empty`, `ppr-locale-switch`, `ppr-view-in-movements-mobile` (prefisso/nuovi). **Nessuno** comincia per un prefisso `^=` in uso; **nessuno** riusa la famiglia `account-adjustment-row-{id}` (l'azione nello sheet è un singleton). Conteggi verificati a 375 **e** 1280 su tutte e quattro le pagine. Le 4 stringhe lette page-level compaiono **una volta sola** a entrambe le larghezze. |
+| 11 | **fatto** | 320/375/390 su my-account (con e senza conto, 2 e 21 movimenti), my-compensation (con e senza profilo, con e senza pagamenti), scheda persona, `/ppr`: `pageOverflow` 0, sweep `[]` (con le esclusioni dichiarate), contenimento dei figli delle card `[]`, hit-test a fondo pagina `[]` (esclusi i `Link` `aria-disabled`, motivo dichiarato). |
+| 12 | **fatto** | v. §7 (tabella regola→guardia→discriminanza, ognuna provata ROSSA). |
+| 13 | **fatto** | v. §5 (misure pre/post a 641/800/1280 su tutte e quattro le pagine). `npm run gates` verde; nessuna dipendenza nuova; nessun token cambiato; nessun literal di colore nuovo; ogni stringa nuova nei due locale. |
+| 14 | **fatto** | ADMIN/PILOTA/ALLIEVO/ISTRUTTORE a 375 **e** 1280 su entrambe le pagine self, con `clearCookies` fra un'identità e l'altra: nessun redirect, `account-section`/`account-balance`/`mobile-account-list` = 1 nodo per ciascuno, **zero** azioni di scrittura sulla faccia self per chiunque, `my-compensation-kpis` presente **solo** per l'istruttore. Stati degradati: senza conto, senza pagamenti, senza profilo istruttore, saldo negativo, `/ppr` **senza** sessione e **con** sessione. |
+| 15 | **fatto** | Schema (`pprNumberSchema`, `PPR-\d{4}-\d{4,}`), service (`where.pprNumber`), route (invariata: passa la query), **registry OpenAPI aggiornato nello stesso commit**, `movements/page.tsx` che sanifica il parametro. UI: «Vedi in Transiti» **solo** dove il numero esiste. Contract test (valido / seq>4 cifre / assente / 7 malformati) + unit del service + e2e end-to-end. |
+| 16 | **fatto** | v. §8. |
+
+## 2) File toccati
+
+**Nuovi**
+- `src/lib/mobile-self.ts` — 4 derivazioni pure (`accountMovementSubLine`, `accountMovementSheetSub`, `linkedBadgeText`, `payoutCardSubLine`).
+- `src/lib/mobile-self.test.ts` — 12 casi (verificati anche con `env -u DATABASE_URL -u AUTH_SECRET npx vitest run`).
+- `e2e/mobile-self-public.spec.ts` — 20 test, project `chromium`, `fullyParallel`, **fuori** dalla catena serializzata.
+
+**Modificati**
+- `src/app/[locale]/dashboard/people/[id]/account-section.tsx` — albero mobile + sheet + `.stat-tone-*` + classi di switch + testid degli empty + toast dal solo sheet.
+- `src/app/[locale]/dashboard/my-account/page.tsx`, `src/app/[locale]/dashboard/people/[id]/page.tsx` — le tre label `mobile.*`.
+- `src/app/[locale]/dashboard/my-compensation/page.tsx` — lista card, KPI 2×2+1, `.stat-tone-ok`.
+- `src/app/[locale]/ppr/page.tsx` — `.ppr-brand-block` + `data-testid="ppr-locale-switch"` (nessuna label toccata).
+- `src/app/[locale]/dashboard/ppr/ppr-console.tsx`, `.../ppr/page.tsx` — l'azione «Vedi in Transiti» nello sheet (unica modifica ammessa da R-15.9-i).
+- `src/app/[locale]/dashboard/movements/page.tsx` — `?pprNumber=` sanificato e propagato.
+- `src/lib/schemas/ppr.ts`, `src/lib/schemas/registry.ts`, `src/server/services/ppr.service.ts` — il filtro.
+- `src/lib/schemas/ppr.test.ts`, `src/server/services/ppr.service.test.ts` — contract + unit.
+- `src/styles/airops.css` — blocco 15.9 in coda (+ la rimozione di `.ppr-top-right{display:none}` dalla query 820px esistente).
+- `messages/it.json`, `messages/en.json` — 6 chiavi nuove per locale (`AccountStatementPage.mobile.{empty,openDetail,close}`, `MyCompensationPage.mobile.registeredOn`, `PprQueuePage.mobile.viewInMovements`).
+- `e2e/mobile-registries.spec.ts` — **esclusione rimossa** (rafforzamento) + titolo del test allineato.
+- `e2e/my-compensation.spec.ts` — il test di geometria a 390px riscritto al valore corretto.
+
+## 3) Decisioni non ovvie
+
+1. **`inSheet` invece di un secondo stato.** `adjustPanel` porta ora `{ originalMovement, inSheet }`: il riquadro inline si rende con `!inSheet`, il `secondStep` dello sheet con `inSheet`. Così `account-adjustment-form` resta **un** nodo a qualsiasi larghezza (asserito) e la rete è una sola (AD-6), senza duplicare `AdjustmentForm`. Il `key` di remount è ripetuto **identico** nei due punti di render.
+2. **Lo sheet è DERIVATO, non sincronizzato.** `sheetRow = rowById.get(sheetRowId)`: al cambio pagina la riga non esiste più e lo sheet sparisce **per costruzione** (provato con `?page=2`), senza `useEffect`. Non è solo eleganza: la regola di lint del progetto (`react-hooks/set-state-in-effect`) vieta il `setState` sincrono in un effetto, quindi la versione "chiusura esplicita in un effetto" **non compila**. `openSheet()` azzera un `adjustPanel` rimasto appeso a uno sheet precedente (provato: aprendo un'altra riga il secondo passo non si riapre).
+3. **Il feedback della rettifica: un canale per azione, deciso dal CHIAMANTE** (grammatica 15.8a, citata dal suo stesso doc-comment). Lo sheet chiude e annuncia con un **toast**; il riquadro inline continua ad annunciare nel suo `<p role="status" data-testid="adjustment-feedback">`. ⚠️ **Deviazione dichiarata da R-15.9-j**: la ratifica dice «toast su mobile, il `<p>` resta al desktop», ma a ≤640px il riquadro inline **è ancora raggiungibile** (R-15.9-c lo tiene inline), e l'unica implementazione letterale (nascondere il `<p>` sotto i 640 e sparare sempre il toast) produrrebbe **due annunci** sul desktop — cioè viola l'altra metà della stessa ratifica («canale unico, nessun doppio annuncio»). In 15.8a il `<p>` poteva essere nascosto perché su mobile **nessun** percorso lo raggiungeva. Qui il `<p>` resta visibile a ogni larghezza: è adiacente al riquadro che l'utente ha appena usato (misurato: il riquadro è il primo nodo del `.card-body`, il `<p>` è nella `.card-head` sopra di esso — entrambi dentro il primo schermo quando si invia).
+4. **La sub della card compensi VA A CAPO, quella dei movimenti no.** Misurato a 375: `Registrato il 06/08/2026, 09:32 · Bonifico` = 262px in 182px di traccia ⇒ con `nowrap + ellipsis` il **metodo spariva**, e su quella card non c'è uno sheet dove ritrovarlo (Q5 non ne prevede uno). La card dei movimenti mantiene l'ellissi perché la sua parità sta nello sheet. Costo: card 60,06 → 75,28 @375 (90,5 @320).
+5. **Il trigger del calendario del riquadro "Registra ricarica" va a 44, non a 36.** Le quattro story precedenti si erano fermate a 36 sulle proprie superfici; qui la guardia è scritta sul requisito (43,5) e un'eccezione a 36 sarebbe stata un'esclusione non dichiarata. Stessa aritmetica del form pubblico: `padding-right` da 30 a 48px.
+6. **Direzione UNICA del deep link (coda PPR → Transiti).** Il verso opposto («Vedi la richiesta» dallo sheet del transito) porterebbe alla **stessa entità** vista con un filtro diverso (la coda e il registro sono la stessa tabella `PprRequest`): sarebbe un link verso sé stessi. Il valore osservato da Q8 è l'altro («chi approva dal telefono non sa se quel volo è poi atterrato»), e quello lo chiude questa direzione. Entrambe le pagine sono gated `ppr.manage`: chi vede lo sheet può sempre vedere la destinazione (nessun ramo di permesso da scrivere, dichiarato).
+7. **`sanitizePprNumber` sulla pagina, `pprNumberSchema` sull'API.** Un `?pprNumber=` scritto a mano non deve far esplodere una **pagina** (la pagina lo ignora e mostra il registro normale); l'**API** invece valida e risponde 422, che è ciò che AC 15 chiede. Stesso pattern di `sanitizeDateParam`, già in quel file.
+8. **`.ppr-brand-name` ellissato, `.ppr-brand-sub` no.** Il nome dell'aviosuperficie è testo libero (la catena e2e ne scrive uno da 38 caratteri) e ora divide la testata con lo switch: senza `min-width:0` + ellissi la pagina sfonderebbe a 320. Il sottotitolo invece è una stringa i18n fissa: clamparlo troncava «Autorizzazione Preventiva Obbligatoria» a 375px per niente, quindi continua ad andare a capo come prima.
+
+## 4) `my-compensation.spec.ts:329-361` — perché la riscrittura è un rafforzamento
+
+Il test originale (review 14.7 F2) chiedeva: *la cella IMPORTO ha larghezza > 0 ed è hit-testabile **dopo aver scrollato `.students` tutto a destra***. Era il massimo ottenibile da una tabella che nessuno aveva ancora portato. La 15.9 la porta: a ≤640px quella tabella è `display:none`, quindi «scrolla la tabella di lato» non è più il requisito **giusto**.
+
+Riscritto **al valore corretto**: l'importo dev'essere leggibile e hit-testabile **senza alcuno scroll orizzontale**, dentro la card, con la prova che **nessun antenato** della card scrolla di lato. Misure: pre `.students` **296/640** @390 con la cella importo a `right 687` in 296; post card 296 di larghezza, importo dentro, `anyScroller: false`. Il difetto originale (importo a 0px, irraggiungibile) **fallirebbe ancora** questa versione: una card il cui importo è largo 0 non contiene il testo e non è hit-testabile.
+
+## 5) Misure pre/post
+
+**Fasce mobile (375×812 se non indicato)**
+
+| superficie | grandezza | pre | post |
+|---|---|---|---|
+| my-account | `.students` `cw/sw` | **281/434** | `display:none` |
+| my-account | tracce computate | **`104px 150px 0px 120px`** | — (card list) |
+| my-account | celle prima riga | `104@169 · 150@333 · **0@347** · 120@**481**` | card 281 di larghezza, importo contenuto |
+| my-account | `.card-head` | 63,84 (92,14 @320) | **101,3** (@320 101,3) |
+| my-account | paginazione | 91,27×34,84 / 90,45×34,84 | **44** (contenitore 44; 60,89 @320, va a capo) |
+| my-account | `export-menu-trigger` | 136,63×**34,84** | **44** |
+| my-account | `docH` (21 movimenti) | 1480 | **1782** |
+| my-account | target sotto 43,5 | 5 (3 della pagina + 2 della shell) | **2** (i due `iconbtn` 32×32 della shell, TD 15.1) |
+| scheda persona | `.students` `cw/sw` | **281/802** | `display:none` |
+| scheda persona | ultima cella | `170@**849**` | contenuta nella card |
+| scheda persona | `.card-head` | 106,69 (177,83 @320) | **110,98** (162,98 @320) |
+| scheda persona | `account-adjustment-row-*` | **24,67** | azione nello sheet, **44** |
+| scheda persona | target sotto 43,5 | **28** | **4** (2 `iconbtn` shell + 1 `iconbtn` + `recent-flights-view-all` 15,94, **tutti pre-esistenti e fuori scope**) |
+| my-compensation | `.students` `cw/sw` | **281/640** | `display:none` |
+| my-compensation | celle | `150@215 · 200@429 · 120@563 · 110@**687**` | card 281, importo contenuto |
+| my-compensation | `.kpi-row` | `flex`, `cw 375 / sw 835`, 5 card da 146 | `grid` **155,5px 155,5px**, `sw == cw`, **233,45** di altezza |
+| my-compensation | `docH` (2 pagamenti) | 812 | **813** (la pagina continua a stare in uno schermo) |
+| `/ppr` | 12 campi | 9×36,84 + 2×38,84 + textarea | **44** (textarea invariata) |
+| `/ppr` | `.date-input-btn` | **24×24** | **44×44** |
+| `/ppr` | `ppr-submit` | 101,64×**64,59** (testo a capo) | **277×44,30**, full width |
+| `/ppr` | `.ppr-actions` | 85,59 (`nowrap`) | 96,69 (`wrap`, nota su riga propria) |
+| `/ppr` | switch lingua | **0×0** a 320/375/390/641/800 | **45,72×44** a **ogni** larghezza |
+| `/ppr` | target sotto 43,5 | **14** | **1** (honeypot, dichiarato) |
+| `/ppr` | `docH` | 1925 | 2023 |
+
+**Desktop — invarianza (641 / 800 / 1280)**
+
+| superficie | grandezza | pre | post |
+|---|---|---|---|
+| my-account | `.page-head` | 51,44 / 51,44 / 51,44 | **identica** |
+| my-account | `.card-head` | 63,84 ×3 | **identica** |
+| my-account | `.students` `cw/sw` | 483/483 · 642/642 · 954/954 | **identiche** |
+| my-account | `docH` | 1394 ×3 | **1394 ×3** |
+| scheda persona | `.card-head` | 106,69 / 63,84 / 63,84 | **identiche** |
+| scheda persona | `.students` | 483/802 · 642/802 · 954/954 | **identiche** |
+| scheda persona | `docH` | 2311 / 2253 / 2194 | **identici** |
+| my-compensation | `.kpi-row` | `254,5×2` / `334×2` / **5 tracce** da 188,79 | **identiche** |
+| my-compensation | `.students` | 483/640 · 642/642 · 954/954 | **identiche** |
+| `/ppr` | `.ppr-grid` | 593 / 752 / `623,33 366,66` | **identiche** |
+| `/ppr` | `ppr-submit`, `.input`, `.date-input-btn`, `.ppr-actions` | 127,41×44,3 · 36,84 · 24×24 · 65,3 | **identici** |
+| `/ppr` | `.ppr-top` | 60 | **72** ⚠️ |
+| `/ppr` | `docH` | 1542 / 1542 / 1286 | 1554 / 1554 / **1298** |
+
+⚠️ **L'unica variazione desktop dichiarata**: `.ppr-top` 60 → **72** (+12) a ogni larghezza, `docH` +12. È il **prezzo aritmetico** di R-15.9-g: `.ppr-top-in` è una riga flex con 14px di padding sopra e sotto il cui elemento più alto era il logo da 32px; un target da 44 la porta a 72. Precedente identico: il +12,61px della 15.8b.
+
+**Non-regressione di `/dashboard/ppr` (R-15.9-i, AC 15 d)** — misurata a 375 dopo la modifica: `docH` 812, `pageOverflow` 0, sweep `[]`, 19 target sotto 43,5 (**tutti pre-esistenti**: `ppr-public-form-link`, `ppr-manual-button`, i campi del `ManualPprForm`, `ppr-queue-filter-status`, `export-menu-trigger` — fuori scope per R-15.9-i, riserva 15.10), sheet di una richiesta PENDING: **9 righe kv, 2 azioni, 0 link**, pannello 579,30 — identico a prima per costruzione (il ramo nuovo si attiva solo con `pprNumber != null`, cioè dove prima non c'era **nessuna** azione). `ppr-queue.spec.ts` verde (9/9).
+
+## 6) Contrasti (canvas→WCAG, sfondo effettivo risalendo gli antenati, alpha letta prima della composizione) — due temi, gemelli enumerati
+
+| esemplare | superficie | chiaro pre | chiaro post | scuro pre | scuro post |
+|---|---|---|---|---|---|
+| `account-movement-row .mono.num` positivo | my-account + scheda persona (desktop **e** mobile) | **2,73** ❌ | **10,63** ✅ | 9,30 | 9,30 (invariato) |
+| lo stesso su riga a sfondo alternato | my-account | **2,59** ❌ | **10,06** ✅ | 8,73 | 8,73 |
+| `account-movement-row .mono.num` negativo | idem | **3,96** ❌ | **9,82** ✅ | 6,61 | 6,61 |
+| `account-balance` in **rosso** (fixture con saldo −508,29 €) | idem | **3,96** ❌ | **9,82** ✅ | 6,61 | 6,61 |
+| `my-compensation-payout-row .mono.num` | my-compensation | **2,73** ❌ | **10,63** ✅ | 9,30 | 9,30 |
+| `.mobile-row-amount` (card nuova) | entrambe | — | **10,63 / 9,82** ✅ | — | 9,30 / 6,61 ✅ |
+| `.mobile-row-sub` (card nuova) | entrambe | — | **4,85** ✅ | — | **5,72** ✅ |
+| `.mobile-row-name` (card nuova) | entrambe | — | **18,79** ✅ | — | **15,74** ✅ |
+| `.kpi-label` / `.kpi-value` nella griglia 2×2 | my-compensation | 4,85 / 18,79 | **identici** | 5,72 / 15,74 | **identici** |
+| **GEMELLI `.stat-tone-ok`** (`billing-console`: importo card, "Per categoria" in, colonna Entrate) | /dashboard/billing | 10,63 | **10,63** | 9,30 | **9,30** |
+| **GEMELLI `.stat-tone-bad`** (`billing-console` uscite + saldi negativi, `billing-panels`) | /dashboard/billing | 9,82 | **9,82** | 6,61 | **6,61** |
+
+Il tema scuro **non scende** in nessun esemplare: l'override `html[data-theme="dark"] .stat-tone-*` restituisce esattamente i token `--ok`/`--bad` che l'inline usava. **Nessun token cambia valore, nessun literal nuovo**: il fix è l'applicazione di una classe già scritta e già ratificata (15.8a).
+
+## 7) Regola nuova → guardia → discriminanza (ognuna provata ROSSA col repo intatto)
+
+| regola introdotta | guardia | valore con il difetto reintrodotto |
+|---|---|---|
+| `.account-desktop-body{display:none}` / `.account-mobile{display:block}` a ≤640 | `treeDisplays()` asserisce **entrambi** i lati a 375 **e** a 1280 | iniettando `display:flex/none` ⇒ `{desktop:"flex", mobile:"none"}` ≠ atteso ⇒ **rosso** |
+| lo stesso, dal punto di vista dello sweep | `mobile-registries.spec.ts:888` **senza** esclusione | pre-fix ⇒ `["students account-desktop-body","student-row header","","student-row", …]` ⇒ **rosso** |
+| azione di riga → `secondStep` a 44px | `boundingBox().height >= 43.5` | geometria pre-fix (`.btn.mini`) ⇒ **24,67** ⇒ **rosso** |
+| contenimento dei figli della card | `cardOverflows()` sul **rect** | spingendo `.mobile-row-side` di 120px ⇒ 3 nodi fuori ⇒ **rosso** |
+| nome accessibile senza segmenti vuoti | guardia su **proprietà** (`not.toMatch(/·\s*—/)`), su una riga **senza descrizione** | iniettando `"15/01/2026 · — — Ricarica"` ⇒ match ⇒ **rosso** |
+| empty state = un nodo per albero | `toHaveCount(1)` + clonazione DOM del nodo | dopo `appendChild(node.cloneNode(true))` ⇒ **2** ⇒ **rosso** |
+| switch lingua visibile ovunque ≥44 | rect a 320/375/390/641/800/1280 | reintroducendo `@media(max-width:820px){.ppr-top-right{display:none}}` ⇒ `0×0`, `display:none` ⇒ **rosso** |
+| campi/submit/trigger di `/ppr` ≥44 | sweep sul **requisito 43,5** (mai sul 64,59 ottenuto per accidente tipografico) | reintroducendo `min-height:0` + trigger 24 ⇒ **14** target sotto soglia ⇒ **rosso** |
+| filtro server `pprNumber` | e2e del deep link + contract test | senza filtro la stessa GET restituisce **8** righe invece di **1**; `pprNumber=NOT-A-NUMBER` ⇒ **422** |
+| toast al posto del `<p>` per la rettifica dallo sheet | `toHaveText('Rettifica registrata.')` sul toast **e** `toHaveCount(0)` sul toast nel ramo 409 | il ramo 409 senza il gate mostrerebbe il toast ⇒ **rosso** |
+| card = un solo elemento interattivo | `querySelectorAll('button,a,input,…').length === 0` dentro la card | un controllo annidato ⇒ ≥1 ⇒ **rosso** |
+| i selettori nuovi non raggiungono nient'altro | conteggio dei match di **tutti** i 16 selettori nuovi su 12 pagine × 2 larghezze | 0 match fuori dalle 4 superfici; `.date-input-btn` resta **24×24** su dashboard/logbook/billing/movements/bookings/**/dashboard/ppr**, `.input` invariata (36,84/38,84/35/36), `.students`/`.student-row`/`.kpi-row`/`.info-*` invariati |
+
+## 8) Debito tecnico
+
+| TD | stato dopo questa story |
+|---|---|
+| (a) **TD 14.6 F4** (`account-section.tsx` non responsive) | **CHIUSO** su entrambe le facce — l'esclusione dichiarata di `mobile-registries.spec.ts:888` è stata rimossa e il test è verde. |
+| (b) **R-15.7-j** (link coda PPR ↔ transiti) | **CHIUSO** (AC 15). |
+| (c) **47 target sotto 43,5 dentro `.cal-popover`** (42 `.cal-cell` 34,58 + 2 `.iconbtn` 24×24) | **SUBITO e dichiarato**: primitiva condivisa da 11+ consumatori, chiuderla qui la cambierebbe per tutti → 15.10. Il *trigger* che la apre su `/ppr` è invece a 44. |
+| (d) `.date-input-btn` 24×24 fuori dalle superfici curate | **INVARIATO** (misurato a 24×24 su 6 pagine): quinta faccia dello stesso TD, ancorato come le quattro precedenti. |
+| (e) `.so-sub` a `--ink-4` | **non attivo qui**: nessun componente di questa story monta uno `SlideOver` con sottotitolo (verificato). |
+| (f) `viewport-fit=cover` mai dichiarato | **INVARIATO**, TD di epic (15.10). |
+| (g) trigger `ExportMenu` a 34,84 | **CHIUSO sulla sola card dell'estratto conto** (44px, ancorato a `.account-head`); gli altri nove consumatori restano a 34,84 — TD ancora aperto, ora più piccolo. |
+| (h) `billing.spec.ts:296` flaky su aggregato globale | **esposizione dichiarata, non aggravata di proposito.** Il nuovo spec crea per run: **8 conti** con ricariche (tutte datate `2026-01-15`, **passato**, compresa quella inviata dal form — cambiata apposta), **4 rettifiche** che il dominio data **oggi** (l'endpoint `POST /account/adjustments` non accetta una data: `-5,00`, `-25,00`, `-1,00`, `-75,00`), **2 pagamenti istruttore** (periodo 2020, non sono `AccountMovement`) e **3 richieste PPR**. **Nessuna** asserzione su un aggregato globale: ogni saldo asserito è quello della propria fixture, letto dall'API filtrata. ⚠️ Nel run finale `billing.spec.ts:296` è risultato **flaky** (verde al retry) — è il flaky NOTO di quel test (review Billing-2 F4: «flaky 2 run su 2» prima che questa story esistesse), causato dalla sua fotografia+uguaglianza su aggregati globali sotto `fullyParallel`, e le 4 rettifiche di oggi sono un contributo alla concorrenza che questo spec non può eliminare senza rinunciare al ramo "saldo negativo" (AC 9 lo impone). |
+| (i) catalogo `ExpiryType` globale mai ripulito | **toccato solo in lettura**: le fixture usano `ensureValidSeedExpiries` (helper esistente) e non creano voli ⇒ il 422 `FLIGHT_BLOCKED_BY_EXPIRY` non le riguarda. |
+| (j) `.ppr-top-right` nascosto a ≤820 | **CHIUSO** (R-15.9-g). |
+| (k) `ppr-public.spec.ts` riempie per etichetta localizzata | **nessuna label toccata** su `/ppr` (diff verificato: solo una classe e un testid) ⇒ TD invariato e non aggravato. |
+| **nuovo (l)** | `.ppr-top` cresce di 12px sul desktop (prezzo dei 44px dello switch): dichiarato, non un difetto da chiudere. |
+| **nuovo (m)** | La testata della card estratto conto cresce di 37,46px sulla faccia self (63,84 → 101,3): prezzo dei 44px del trigger di export su una card che ha un solo controllo. Se la 15.10 volesse recuperarli, la strada è nascondere `.card-title` a ≤640 come fa `.billing-head` — non fatto qui perché sulla scheda persona quel titolo è l'unico nome di quella sezione. |
+
+## 9) Cosa NON ho fatto
+
+- **Non ho toccato** `ManualPprForm`, la coda PPR oltre l'azione dello sheet, "Le mie scadenze", le landing 15.3, `BottomSheet`/`MobileSheet`/`SlideOver`/`ExportMenu`/`CalendarPopover`/`joinSegments`.
+- **Non ho toccato** nessuna regola di dominio: saldo, segno, storni, rettifiche, lordo/netto, validazioni del form pubblico, honeypot, rate limit, email di ricevuta.
+- **Non ho introdotto** cap né selezioni sulle liste (l'estratto conto è già paginato lato server, i pagamenti sono pochi).
+- **Non ho aggiunto** nessuno spec alla catena serializzata (questa story non scrive `AppSettings`; verificato).
+- **Non ho chiuso** i TD (c), (d), (f) né il trigger `ExportMenu` sugli altri consumatori.
+
+## 10) Esito dei gate — onesto
+
+**`npm run gates`** (ultimo run, dopo l'ultima riga di codice):
+
+```
+PASS  lint (23s)
+PASS  typecheck (3s)
+PASS  test (8s) — Tests  1773 passed (1773)
+PASS  build (38s)
+```
+
+**Suite completa `CI=1` su build di produzione e DB FRESCO** (`docker compose down -v` → `up` → `migrate deploy` → `db seed`, poi `scripts/e2e.sh start` senza `E2E_REUSE_SERVER`, server ucciso prima):
+
+```
+1 flaky
+  [chromium] › e2e/billing.spec.ts:296:7 › Tre riquadri con numeri veri da scenario seminato (story Billing-2, AC 6) › ricarica + volo + payout, tutti dated today, move Risultato/Liquidità/Acconti by EXACTLY the expected deltas
+2 skipped
+470 passed (15.0m)
+E2E_EXIT=0
+```
+
+**470 passed + 1 flaky + 2 skipped = 473 = 453 (baseline 15.8b) + 20 nuovi.** Exit **0**. L'unico flaky è quello NOTO (TD (h)), verde al retry; nessun rosso.
+
+Run mirati eseguiti prima (tutti `E2E_EXIT=0`):
+- `mobile-self-public.spec.ts` + `my-compensation.spec.ts` + `mobile-registries.spec.ts` → **43 passed** (è il run che prova la rimozione dell'esclusione di `mobile-registries.spec.ts:888`);
+- blast radius: `my-account` + `account-statement` + `accounts-topups` + `account-adjustments` + `flight-reversal` + `flights` + `people-management` + `pdf-exports` + `ppr-public` + `datetime-picker` + `ppr-queue` + `mobile-expiries-movements` → **104 passed**;
+- `mobile-self-public.spec.ts` da solo dopo l'ultima modifica (data della ricarica dal form portata al passato) → **20 passed**.
+
+⚠️ **Non eseguito dal dev**: l'aggiornamento di `sprint-status.yaml` e di `docs/handoffs/HANDOFF.md` (sono del commit `docs(15.9)` di chiusura, sessione principale) e **nessun commit** (istruzione esplicita del dispatch).
