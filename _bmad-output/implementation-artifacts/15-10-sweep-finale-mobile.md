@@ -609,27 +609,29 @@ Il tono `--info` è stato creato: **`.stat-tone-info`**, quarto membro della fam
 
 Coppia del token: **3,66 chiaro / 4,14 scuro** su `--panel` (misurata, non dedotta).
 
+> Numeri di riga riallineati al file dopo il fix di review (il blocco safe-area di R4 ne ha spostati alcuni); i selettori e le misure non cambiano.
+
 | # | selettore (riga) | classificazione | misura chiaro/scuro | esito |
 |---|---|---|---|---|
-| 1 | `.nav-label` (160) | TESTO — etichetta di gruppo della sidebar | 3,66 / 4,14 | **DICHIARATO**: è *esattamente* la popolazione che la ratifica **13.9 F6** ha calibrato a ≥3:1 («table headers, sidebar group labels»). Spostarla è una decisione desktop, non una rifinitura mobile |
+| 1 | `.nav-label` (155) | TESTO — etichetta di gruppo della sidebar | 3,66 / 4,14 | **DICHIARATO**: è *esattamente* la popolazione che la ratifica **13.9 F6** ha calibrato a ≥3:1 («table headers, sidebar group labels»). Spostarla è una decisione desktop, non una rifinitura mobile |
 | 2 | `.weather-title` (206) | TESTO — micro-label mono della card meteo | non riproducibile senza stazione METAR; per costruzione 3,66 / 4,14 | **DICHIARATO** (stessa famiglia 13.9 F6) |
-| 3 | `.crumbs .sep` (234) | **DECORAZIONE** — il glifo «/» fra le briciole | 3,66 / 4,14 | **RESTA** (soglia 3, passa) |
-| 4 | `.search kbd` (255) | TESTO — hint tastiera «/» | non renderizzato sulle superfici visitate | **DICHIARATO** |
-| 5 | `.axis-label` (500) | TESTO — etichetta d'asse dei grafici | 3,66 / 4,14 | **DICHIARATO** (debito desktop, 2 nodi) |
+| 3 | `.crumbs .sep` (238) | **DECORAZIONE** — il glifo «/» fra le briciole | 3,66 / 4,14 | **RESTA** (soglia 3, passa) — ⚠️ **riga corretta dal fix di review (LOW-3)**: alla data del record la classificazione era FALSA, il nodo era `<span class="sep">/</span>` **senza `aria-hidden`**, cioè testo esposto e letto. Ora `aria-hidden="true"` (`top-bar.tsx:82,88`, 2 nodi): la classificazione è vera e il glifo resta a `--ink-4` a pieno diritto. Guardia: `mobile-ink-targets.spec.ts` «the breadcrumb separator is a decoration for real» |
+| 4 | `.search kbd` (252) | TESTO — hint tastiera «/» | non renderizzato sulle superfici visitate | **DICHIARATO** |
+| 5 | `.axis-label` (499) | TESTO — etichetta d'asse dei grafici | 3,66 / 4,14 | **DICHIARATO** (debito desktop, 2 nodi) |
 | 6 | `.student-row.header` (658) | TESTO — intestazione di tabella | **3,46 / 3,88** (su `--panel-2`) | **DICHIARATO** — 13.9 F6 alla lettera, 77 nodi su 10 pagine |
 | 7 | `.syl-num` (995) | — | **CSS MORTO**: 0 consumatori in `src/**/*.tsx` | segnalato, non rimosso |
-| 8 | `.nf-route .arrow` (1020) | — | **CSS MORTO** | segnalato |
-| 9 | `.lb-row.header` (1048) | TESTO — intestazione di tabella | 3,46 / 3,88 | **DICHIARATO** (13.9 F6) |
-| 10 | `.so-sub` (1095) | TESTO — sottotitolo del pannello | 3,66 / 4,14 | **CHIUSO → `--ink-3`**: 4,85 / 5,72 |
-| 11 | `.cal-dow` (1305) | TESTO — intestazione dei giorni della settimana | 3,66 / 4,14 | **DICHIARATO**: è un'intestazione di tabella (13.9 F6), 9,5px dentro un popover denso |
-| 12 | `.cal-cell.out` (1326) | TESTO **disabilitato** — giorno fuori mese | 3,66 / 4,14 | **RESTA**: WCAG 1.4.3 esclude i controlli disabilitati, e il grigio *è* l'informazione |
-| 13 | `.wd-meta .lbl` (1444) | TESTO — etichetta del riepilogo settimana | non riprodotto (vista settimana) | **DICHIARATO** |
-| 14 | `.wd-bar` (1452) | **DECORAZIONE** — barra di un grafico (`background`) | oggetto grafico, soglia 3 | **RESTA** |
-| 15 | `.ppr-empty` (1472) | — | **CSS MORTO** | segnalato |
-| 16 | `.mobile-tab` (1808) | TESTO — etichette della tab bar | **3,50 / 4,47** | **CHIUSO → `--ink-3`**: 4,64 / 6,18 |
-| 17 | `.mobile-sheet-label` (1841) | TESTO — kicker mono dello sheet «Altro» | 3,66 / 4,14 | **DICHIARATO**: micro-label uppercase 10px della stessa famiglia 13.9 F6; unico consumatore, nessun contenuto proprio |
-| 18 | `.ppr-card-id` (1968) | TESTO — numero PPR sulla card | non riprodotto (nessuna card con id nel DB al momento della misura) | **DICHIARATO** |
-| 19 | `.mobile-row-chev` (2221) | **DECORAZIONE** — chevron | 3,66 / 4,14 | **RESTA** (già dichiarato dalla 15.6, soglia 3) |
+| 8 | `.nf-route .arrow` (1024) | — | **CSS MORTO** | segnalato |
+| 9 | `.lb-row.header` (1049) | TESTO — intestazione di tabella | 3,46 / 3,88 | **DICHIARATO** (13.9 F6) |
+| 10 | `.so-sub` (1107) | TESTO — sottotitolo del pannello | 3,66 / 4,14 | **CHIUSO → `--ink-3`**: 4,85 / 5,72 |
+| 11 | `.cal-dow` (1326) | TESTO — intestazione dei giorni della settimana | 3,66 / 4,14 | **DICHIARATO**: è un'intestazione di tabella (13.9 F6), 9,5px dentro un popover denso |
+| 12 | `.cal-cell.out` (1350) | TESTO **disabilitato** — giorno fuori mese | 3,66 / 4,14 | **RESTA**: WCAG 1.4.3 esclude i controlli disabilitati, e il grigio *è* l'informazione |
+| 13 | `.wd-meta .lbl` (1468) | TESTO — etichetta del riepilogo settimana | non riprodotto (vista settimana) | **DICHIARATO** |
+| 14 | `.wd-bar` (1474) | **DECORAZIONE** — barra di un grafico (`background`) | oggetto grafico, soglia 3 | **RESTA** |
+| 15 | `.ppr-empty` (1496) | — | **CSS MORTO** | segnalato |
+| 16 | `.mobile-tab` (1839) | TESTO — etichette della tab bar | **3,50 / 4,47** | **CHIUSO → `--ink-3`**: 4,64 / 6,18 |
+| 17 | `.mobile-sheet-label` (1875) | TESTO — kicker mono dello sheet «Altro» | 3,66 / 4,14 | **DICHIARATO**: micro-label uppercase 10px della stessa famiglia 13.9 F6; unico consumatore, nessun contenuto proprio |
+| 18 | `.ppr-card-id` (2004) | TESTO — numero PPR sulla card | non riprodotto (nessuna card con id nel DB al momento della misura) | **DICHIARATO** |
+| 19 | `.mobile-row-chev` (2257) | **DECORAZIONE** — chevron | 3,66 / 4,14 | **RESTA** (già dichiarato dalla 15.6, soglia 3) |
 
 **Regola di decisione applicata** (dichiarata perché è una scelta): si è spostato ciò che è testo **e** non appartiene alla popolazione che la ratifica **13.9 F6** ha già giudicato (intestazioni di tabella, etichette di gruppo, micro-label mono uppercase). Ribaltare 13.9 F6 sarebbe un cambio di densità del **desktop** su 10 pagine — fuori dal mandato di questa story e in contraddizione con l'AC 12. AC 4c ammette esplicitamente «va spostato **o dichiarato**».
 
@@ -684,6 +686,7 @@ Due giri: **A** = blocco CSS 15.10 rimosso e i due `--ink-3` riportati a `--ink-
 2. **`e2e/mobile-settings.spec.ts` `SMALL_TARGETS`** — rimossa l'**esclusione** di `.date-input-btn` col test **verde**: il bersaglio che l'esclusione copriva non è più sotto soglia. La sonda passa da 1 esclusione a **zero** (pattern 15.9).
 3. **`e2e/mobile-primitives.spec.ts:131`** — il click sul trigger calendario ora è preceduto da uno **scroll reale** del corpo del pannello fino a liberare il trigger dalla barra sticky, poi dall'hit-test. Motivo misurato: la barra `.so-actions` è `position: sticky` e copre per costruzione ciò che sta al bordo inferiore a ogni scroll tranne l'ultimo — il trigger era coperto **anche prima** di 15.10 (24×24 a `top 781`); cliccare un controllo coperto fa scrollare Playwright (`scrollTop` 0 → 314) e `useFixedPopover` chiude il popover **su qualunque scroll** (`fixed-popover.ts:198`, cattura, per progetto), con l'evento che arriva un frame **dopo** il click: il popover si apriva e spariva dopo 4ms. Lo scroll prima del click toglie la corsa; ciò che il test misura (z-order e contenimento del popover portalato) è invariato, e l'hit-test dopo uno scroll vero — la formulazione dell'AC 11 dell'epic — ora è **asserito** invece che assunto.
 4. **`e2e/mobile-metar.spec.ts`** — un test nuovo (la banda) nel project serializzato che già configura la stazione.
+5. **`e2e/mobile-self-public.spec.ts:387-394`** — ⚠️ **voce mancante, aggiunta dal fix di review (MINOR-2)**: gli spec esistenti toccati sono **SEI**, non cinque. Qui `[role="dialog"]` (selettore CSS page-level) è diventato `getByRole('dialog')` **scoped**, per la stessa ragione dell'arbitro #1 su `mobile-overview.spec.ts:607`: `role="dialog"` aggiunto a `SlideOver` (AC 2) fa risolvere a **più di un nodo** un selettore di dialogo page-level, perché ogni pannello chiuso della pagina è ora un dialogo nell'albero. Nessuna copertura ridotta: lo stesso pannello, asserito per ruolo invece che per attributo.
 
 ## 8. File toccati
 
@@ -766,3 +769,281 @@ Due giri: **A** = blocco CSS 15.10 rimosso e i due `--ink-3` riportati a `--ink-
 - **Non ho cambiato il valore di alcun token**, né introdotto literal nuovi, né aggiunto dipendenze, né toccato API/schemi/servizi/seed/migrazioni (AD-7).
 - **Non ho committato** (regola di consegna).
 - **Non ho rimosso** il CSS morto né i TD altrui.
+
+---
+
+# Fix di review (2026-08-06, fix-subagent Opus 5 xhigh)
+
+Report di riferimento: `15-10-review-report.md` (SHIPPABLE-WITH-FIXES: 3 MAJOR, 2 MINOR, 4 LOW).
+Decisioni PO del 2026-08-06 già ratificate: MAJOR-2 → **opzione A** (il trap si estende ai portali attivi);
+MAJOR-3 → **bottom su `.so-foot` + top sulle barre della shell**, left/right dichiarati col numero;
+MINOR-1 → il piede desktop dei tre editor è **RATIFICATO** (non si restringe); LOW-4 → `ManualPprForm`
+**prende il piede**. Baseline del codice: `8ab7dbc`. Tutte le misure sono state rifatte su build di
+produzione, `playwright-core` throwaway, DB fresco per i run che contano.
+
+## R1. MAJOR-1 — la guardia della card riscritta sul REQUISITO
+
+`e2e/mobile-ink-targets.spec.ts` — `expect(geometry.cardHeight).toBe(82.83)` **rimosso**. Era una fotografia
+del contenuto della PRIMA riga di una coda che altri spec scrivono sotto `fullyParallel`; misurato oggi su DB
+popolato con nomi lunghi (32-36 caratteri, le fixture di `ppr-queue`/`mobile-expiries-movements`), le prime 6
+card a 320px hanno **tre altezze diverse e tutte legittime**: `[82,83 · 101,67 · 77,91]` (a 375: `[82,83 ·
+59,06]`). Quale sia la prima è una lotteria di ordinamento FIFO — ed è la lotteria che ha reso rosso l'arbitro
+3 volte su 3 e ha impedito ai **39 test della catena serializzata** di partire.
+
+Al suo posto, solo proprietà **indipendenti dal contenuto**: la scatola che la 15.2 ha dato alla card
+(`padding 11/11`, `border-top 1`, `min-height 44`, `display block`), la tipografia delle sue due righe
+(`.ppr-card-name` 13px; `.ppr-card-sub` `nowrap hidden ellipsis`), **zero `min-height` su qualunque nodo
+INTERNO** alla card (è la forma diretta di «nessuna regola di questa story raggiunge la card») e
+l'equazione `altezza = max(44, testa + padding + bordo)` — cioè «la card è la sua scatola più il suo
+contenuto, mai un pavimento suo». Se la coda è vuota il ramo è **dichiarato**, non saltato in silenzio
+(si asserisce l'empty state: lezione 15.3 F8).
+
+**Discriminanza** (repo intatto, iniezione CSS, `-g "no target under the floor at 320px"`):
+`.ppr-queue-mobile .ppr-card-name{min-height:44px}` → *«no 44px floor rule of this story reaches inside the
+card» — Expected `[]`, Received 3 valori* ❌; `.ppr-queue-mobile .ppr-card{min-height:120px}` →
+*`minHeight: 44` atteso, `120` ricevuto* ❌. Verde con la coda popolata di nomi lunghi (36/36 dello spec) e
+verde con la coda vuota (DB fresco).
+
+## R2. MAJOR-2 — il trap comprende i portali attivi (PO: opzione A)
+
+`src/components/ui/focus-trap.ts`. Il listener passa **dal pannello a `document`** e il contesto modale
+diventa «pannello + portali aperti» (`MODAL_PORTALS = '.cal-popover, .combo-listbox'`, filtrati per non
+essere già dentro il pannello). Resta conservativo: agisce solo se il focus è **dentro** il contesto (o
+in nessun posto, v. R6), e solo sulle pressioni di wrap-around; se un altro overlay possiede il focus,
+ritorna senza toccare l'evento.
+
+Pre-fix (375, ADMIN, `/dashboard/bookings`, pannello + `.cal-popover` aperti, `Tab` ×8):
+`Oggi @popover · Conferma @popover · BODY · Cambia tema OUT · mobile-profile-button OUT · calendar-prev OUT ·
+schedule-date-pick OUT · calendar-next OUT` — **sei** fermate dietro lo scrim mentre il pannello dichiarava
+`aria-modal`. Post-fix, stesse pressioni: `Oggi @popover · Conferma @popover · Annulla @panel · … @panel` —
+**zero** fuori, `Shift+Tab` ×4 tutte `@panel`.
+
+**Typeahead non regredito** (misura pre e post identiche, `.combo-listbox` aperta, `Tab` ×6):
+`flight-instructor @panel · flight-type-select @panel · INPUT @panel …`.
+
+**Convivenza con l'Escape globale, VERIFICATA e dichiarata**: `Escape` dentro il popover **NON** chiude il
+pannello. La causa è nel codice, non nella fortuna: `fixed-popover.ts:216-225` (cattura su `window`) monta il suo handler in
+**cattura** su `window` e fa `stopPropagation()`, quindi lo stesso dispatch non arriva mai al listener in
+bolla di `SlideOver`. Misurato prima e dopo il fix, identico: dopo il primo `Escape` → `popovers 0`,
+`panelsOpen 1`, focus di ritorno sul trigger «Apri calendario» `@panel`; il secondo `Escape` chiude il
+pannello. È il comportamento «nested overlay» già documentato in `fixed-popover.ts` — **non l'ho toccato**, e
+la nota di CLAUDE.md («mai Escape per chiudere un popup dentro un pannello negli e2e») resta valida per la
+ragione opposta e più forte: il primo Escape non chiude il pannello, ma il secondo sì.
+
+**Guardia**: `mobile-a11y-sweep.spec.ts` «with the calendar popover open, Tab never leaves the panel+popover
+context, and the panel owns the portal» — asserisce prima che il popover sia **davvero** portalato fuori dal
+pannello (altrimenti guarderebbe il nulla), poi 10 Tab + 6 Shift+Tab tutte dentro il contesto, poi la
+convivenza con Escape. **Rossa sul pre-fix** (rebuild con `focus-trap.ts` di `8ab7dbc`): *«the panel owns the
+open portal» — Received: null*, e il walk pre-fix è quello citato sopra.
+
+## R3. LOW-2 — `aria-modal` reso COERENTE con ciò che il trap include
+
+Scelta finale, dichiarata: **il trap include `.cal-popover` e `.combo-listbox`, e il pannello li `aria-owns`
+finché sono aperti** (attributo scritto/rimosso dal hook, sincronizzato su `focusin` — che è esattamente
+quando un portale appare e sparisce, perché `fixed-popover.ts` sposta il focus dentro il popover
+all'apertura e sul trigger alla chiusura; l'`id` viene generato solo se manca, `.combo-listbox` ha già il
+suo). `aria-owns` è l'unico meccanismo che rimette un nodo dentro il sottoalbero di un dialogo **senza
+spostarlo nel DOM** — e spostarlo è ciò che TD-7 vieta (il `transform` del pannello intrappola i `fixed`).
+Verificato: con il popover aperto `aria-owns == id del popover`; chiuso il popover, l'attributo **sparisce**.
+
+**Il toast host resta FUORI, dichiarato col numero**: `.toast-host` è figlio di `body`, ha **0** discendenti
+focalizzabili e i suoi figli sono `role="status"` (live region) — includerlo nel ciclo di tabulazione non
+aggiungerebbe una fermata e intrappolare il Tab in un annuncio sarebbe un difetto, non un fix. Resta il
+limite ARIA dichiarato: con `aria-modal` sul pannello, un annuncio del toast emesso a pannello aperto può
+non essere percepito in modalità browse. **TD che resta**, con il numero: 1 host, 0 focalizzabili, `role=status`.
+
+## R4. MAJOR-3 — safe-area (PO: bottom + top)
+
+- `.so-foot` (`airops.css:1113-1126`): `padding: 12px 20px calc(12px + env(safe-area-inset-bottom))`, la
+  stessa che aveva la `.so-actions` che ha sostituito. **Globale e non dentro la query telefono** per
+  scelta dichiarata: un iPad in verticale (768px, home indicator 34px) rende questo stesso pannello e
+  cadrebbe fra le due media query.
+- `.mobile-topbar` (`:1798-1810`): `padding: calc(10px + env(safe-area-inset-top)) 14px 10px`.
+- `.topbar` (`:230-240`): stessa riga con 14px. «Le barre della shell» al plurale della decisione PO:
+  questa è la barra che vede la fascia 641-900 (il tablet che la regola METAR ha appena dichiarato
+  superficie d'uso) ed è `sticky; top: 0` esattamente come la gemella mobile.
+- **`left`/`right`: ZERO occorrenze, dichiarate.** `grep -rn "safe-area-inset-\(left\|right\)" src/` → 0.
+  Motivo: contano solo in **landscape** su device con tacca, e questa macchina non lo verifica (Chromium
+  headless riporta ogni inset a 0); introdurle alla cieca sarebbe padding non misurato su ogni larghezza.
+
+**Non-regressione a inset 0, misurata pre/post** (sonda `safe-area.mjs`, 375 / 320 / 1280): **9 superfici col
+piede** (transaction-editor, billing-filters, scadenze-filters, movements-filters, logbook-filters,
+flight-editor, aircraft-editor, pilot-editor, instructor-editor) × 2 larghezze telefono + 2 al desktop, e le
+barre su 4 pagine × 3 larghezze. **Diff pre/post = 3 voci, TUTTE e sole il `manual-ppr-form` che guadagna il
+piede per LOW-4** (v. R5): ogni altro valore identico al centesimo — piede 743→812 alto **69** con padding
+`12px 20px 12px 20px` a 375 e 320, 840,16→900 alto **59,84** a 1280; `.mobile-topbar` 53px con `10px`;
+`.topbar` 63,84px con `14px`; `.main` 100px; `.mobile-tabbar` 12px.
+
+**Guardia**: `mobile-ink-targets.spec.ts` «the bars that touch a screen edge declare their safe-area inset,
+and at inset 0 nothing moves» — legge le **dichiarazioni** dal CSSOM (dove `env()` sopravvive alla
+serializzazione: è l'unico modo di provare un inset su un browser che lo riporta a 0) e poi i numeri, con le
+altezze espresse come «scatola + contenuto» invece che fotografate. Gira sul pannello del **logbook**, che ha
+il piede da 12.x, così misura il CSS e solo il CSS. **Rossa sul pre-fix**: *Expected substring
+«env(safe-area-inset-bottom)»* ❌.
+
+## R5. LOW-4 — `ManualPprForm` prende il piede R3 (PO: si fa)
+
+`src/components/ppr/manual-ppr-form.tsx`: il submit primario (e l'Annulla che lo accompagna) passano dal
+`.so-actions` in-body al prop `footer` di `SlideOver`, collegati con `form="manual-ppr-form"` (`id` aggiunto
+al `<form>`, che già portava la classe e il testid). Il piede diventa quello dei tre editor e dei sette
+call-site precedenti: **11 usi del prop `footer`**.
+
+Misura pre-fix, **identica sulle due superfici** che montano il form (`/dashboard/ppr` e
+`/dashboard/movements`, 375, `scrollTop 0`): barra sticky a 743-812, trigger calendario ETA a
+**756,73-800,73** con `elementFromPoint` = `manual-ppr-submit` ⇒ **`hit: false`**, cioè un bersaglio da 44px
+non toccabile al primo sguardo. Post-fix: `.so-actions` **0**, `.so-foot` presente, submit **44px** a
+756-800 con `hit: true` a `scrollTop 0` **e** con `.so-body` scrollato a fondo (è fuori dallo scroller per
+costruzione); il campo ETA non è più coperto, è semplicemente sotto la piega e uno scroll lo porta in vista.
+**Effetto collaterale positivo, dichiarato**: l'esclusione (ii) di AD-6 sparisce — `manual-ppr-form` passa da
+`cw 335 / sw 355` a `cw 335 / sw 335` su entrambe le superfici (la barra che sfondava il padding non c'è più).
+
+**Spec che asseriscono questo form, tutti enumerati e verificati**: `ppr-queue.spec.ts:335` (salvataggio
+REALE dal piede su `/dashboard/ppr` → toast «Richiesta PPR aggiunta.» e riga PENDING in coda) ·
+`movements.spec.ts:485` (salvataggio REALE su `/dashboard/movements` → toast con `PPR-YYYY-NNNN` e riga «al
+suolo») · `mobile-expiries-movements.spec.ts:1324` (geometria del pannello + hit-test del submit) e `:1057`
+(censimento testid: `manual-ppr-form` e `manual-ppr-submit` esistono entrambi) · `mobile-primitives.spec.ts`
+(riscritto, sotto) · `mobile-ink-targets.spec.ts` (sweep dei bersagli). **83/83 verdi** nel run che li
+contiene tutti.
+
+**Desktop dichiarato** (copre anche la ratifica MINOR-1): a 1280 il pannello guadagna un `.so-foot` di
+**59,84px** (840,16→900, `padding 12/20/12/20`, bottoni 34,84 — la stessa geometria che il piede ha su
+`transaction-editor` e `flight-editor` da 12.x), `.so-body` da 816,23 a 756,39, `.so-actions` 0. È
+esattamente il piede che i tre editor hanno preso con R-15.10-f e che il PO ha ratificato il 2026-08-06.
+
+## R6. LOW-1 — il focus che muore (fix cheap, incluso nel movimento del listener)
+
+Con il listener su `document`, il caso «il nodo focalizzato è stato distrutto ⇒ il focus cade su `body`» è
+finalmente **visibile** al trap, che riporta il focus sulla prima fermata del contesto (o sul pannello, se il
+contesto non ne ha più — il ramo che il codice già aveva ma che non veniva mai raggiunto).
+⚠️ Correzione al metodo del report: `blur()` **non** riproduce il difetto (Chromium conserva il
+*sequential focus navigation starting point* del nodo abbandonato: misurato, il Tab successivo rientra nel
+pannello) e nemmeno rimuovere il solo nodo focalizzato. Il difetto è quello che la review ha misurato:
+focus su `body` **e** nessuna fermata rimasta nel contesto. **Guardia**: `mobile-a11y-sweep.spec.ts` «when
+the focused control is destroyed, Tab puts the focus back inside the sheet» — svuota lo sheet «Altro» dei
+suoi focalizzabili, verifica che il focus sia su BODY, poi preme Tab. **Rossa sul pre-fix**: `Expected
+"panel", Received "BODY"` (il focus se ne va dietro lo scrim, come la review aveva misurato).
+
+## R7. MINOR-1 — il piede desktop dei tre editor: RATIFICATO, misure dichiarate
+
+Nessun cambio di codice (decisione PO 2026-08-06: **non** si restringe a ≤640). Misure desktop dichiarate qui,
+che il record non aveva perché l'AC 12 misurava grandezze **di pagina** e un piede vive dentro un pannello:
+a **1280** `aircraft-editor` acquista un `.so-foot` che prima non c'era, `pilot-editor` e `instructor-editor`
+lo portano a **59,84px** col submit `34,84` dentro (`top 853,16 / bottom 888`), `.so-actions` in body **0** su
+tutti e tre. È la grammatica desktop che 7 call-site del prop `footer` già usavano prima della story (10 dopo
+R-15.10-f, 11 dopo LOW-4) — coerenza, non deriva.
+
+## R8. Guardie nuove e spec toccati dal fix (dichiarazione completa)
+
+| file | cosa cambia | perché |
+|---|---|---|
+| `e2e/mobile-ink-targets.spec.ts` | card di `/dashboard/ppr` riscritta sul requisito (R1); test nuovo sulle safe-area (R4); test nuovo sul separatore delle briciole (LOW-3); sweep di `/dashboard/movements` con radice sul **pannello aperto** invece che sul solo `<form>` | il submit vive ora nel `.so-foot`, fuori dal form: una radice sul form smetterebbe di coprirlo |
+| `e2e/mobile-a11y-sweep.spec.ts` | 2 test nuovi (portali nel contesto modale + focus distrutto) | guardie di MAJOR-2, LOW-1, LOW-2 |
+| `e2e/mobile-primitives.spec.ts` | la regola (iv) del 15.2 non è più «`.so-actions` è sticky» ma «l'azione primaria è FUORI dallo scroller»: `insideFoot`/`insideBody`/`anchoredRows` + hit-test a `scrollTop 0` **e** a fondo scroll; al desktop il piede al posto della barra statica; lo scroll prima del click sul trigger calendario ora si misura sul **bordo del corpo**, non sulla barra che non esiste più | LOW-4 rimuove la barra che questo spec asseriva. Requisito invariato e asserito **più stretto** di prima |
+
+## R9. Esiti verbatim
+
+- `npm run gates`: **PASS** (lint 21s · typecheck 3s · vitest **1773 passed** · build 30s).
+- e2e mirati, build di produzione + `E2E_REUSE_SERVER=1`, via `scripts/e2e.sh`:
+  `mobile-a11y-sweep + mobile-ink-targets` (DB popolato di nomi lunghi) → **36 passed, exit 0**;
+  `mobile-a11y-sweep + mobile-ink-targets + mobile-primitives + ppr-queue + movements +
+  mobile-expiries-movements` → **83 passed, exit 0**;
+  `mobile-planning + mobile-shell + mobile-billing + mobile-self-public + mobile-overview + mobile-logbook +
+  mobile-registries + typeahead-pickers + bookings` → 154 passed, **4 failed** (v. sotto);
+  `bookings + datetime-picker` **su DB fresco** → **40 passed, exit 0**.
+- **I 4 rossi sono ambientali e provati tali**: `bookings.spec.ts` (383, 442, 1058, 1129) su un DB su cui
+  erano già girati gli spec delle scadenze. Il DOM del fallimento mostra che la prenotazione **era stata
+  creata**: il banner presente è quello «Prenotazione creata. Attenzione: i seguenti documenti risultano
+  scaduti (non bloccanti)», che ha un testid diverso da `booking-form-success`
+  (`new-booking-form.tsx:555-569`, il ramo `warnings.length > 0`). Causa: il catalogo `ExpiryType` **globale
+  mai ripulito** (TD noto, §1 M4), che rende scaduto ogni pilota creato dopo. Su DB fresco: **40/40 verdi**.
+  Stessa famiglia dei 4 rossi visti a inizio sessione su DB fresco (`flight-row-mobile` e la tabella scadenze
+  inesistenti finché nessuno le popola): sono spec che vogliono un DB **popolato**, non uno appena seedato —
+  fragilità dichiarata, non introdotta qui.
+- La full suite finale NON è di questo subagent: la esegue la sessione principale come arbitro.
+
+---
+---
+
+# Review Record — 15.10 (reviewer adversarial Opus 5 xhigh, fix-subagent Opus 5 xhigh — 2026-08-06)
+
+Report integrale della review: `15-10-review-report.md`. La sezione «Fix di review» qui sopra è la
+dichiarazione completa del fix, finding per finding, con le discriminanze.
+Verdetto: **SHIPPABLE-WITH-FIXES — 3 Major, 2 Minor, 4 Low**. Fix in `8426c56`.
+
+## Arbitro della review (pre-fix)
+
+`CI=1` su build di produzione, DB fresco: **E2E_EXIT=1 — 467 passed (11.8m), 1 failed, 39 did not run.**
+Il rosso era il **MAJOR-1** (una guardia NUOVA della story: fotografia+uguaglianza su un'altezza
+dipendente dal contenuto di `PprRequest`, tabella che altri spec scrivono sotto `fullyParallel` — 3
+tentativi su 3 rossi a 320px con un nome-fixture lungo) e i 39 «did not run» erano l'**intera catena
+serializzata** bloccata dal project `chromium` rosso. Rieseguiti uno per uno con `--no-deps`:
+**39/39 verdi** (incluso il test nuovo della banda METAR). Gates PASS (1773 unit). Il DB era davvero
+fresco (`datetime-picker.spec.ts:127` verde).
+
+**Verificato solido dal reviewer**: `inert` su 13 pagine × 2 larghezze (fino a 4 pannelli/pagina,
+`tookFocus=0`); trap su sheet NON campionati dal dev (prenotazione, Filtri Scadenze, ExportMenu su
+billing, sheet con un solo focusabile); nomi accessibili con e senza subtitle; focus di ritorno anche
+su chiusura programmatica; **tutte e 5 le deviazioni del dev** (incluso il pilota sulla PROPRIA scheda
+persona intatta — il caso che motivava `headingRepeatsPageHead` — e la banda METAR senza varchi su 4
+attori); contrasti nei due temi; `/ppr` pubblico identico al centesimo; quoting `e2e.sh` con sentinella
+sempre presente e lock intatto; 7 testid aggiunti = 7 rimossi.
+
+## Findings → esito
+
+| # | Sev | Difetto | Esito |
+|---|---|---|---|
+| MAJOR-1 | MAJOR | `mobile-ink-targets.spec.ts:507` — `toBe(82.83)` su un'altezza dipendente dal CONTENUTO (viola la lezione 4 citata dalla story stessa); ha impedito l'esecuzione di 39 test di catena | guardia riscritta su **proprietà indipendenti dal contenuto** (scatola, tipografia, `nowrap/ellipsis`, zero `min-height` interni, `altezza = max(44, testa+23)`); provato che il valore era una lotteria (3 altezze distinte sul DB popolato); discriminanza a doppia iniezione CSS, verde su DB con nomi 32-36 char E su DB fresco |
+| MAJOR-2 | MAJOR | il trap NON teneva attraverso i popover portalati: pannello + calendario aperto ⇒ 4-6 fermate di Tab dietro lo scrim con `aria-modal="true"` | **decisione PO: trap esteso ai portali attivi** — listener su `document`, contesto = pannello + `.cal-popover`/`.combo-listbox`; post-fix 0 fermate fuori; typeahead invariato; convivenza con l'Escape verificata REALE (il popover intercetta in cattura: primo Escape chiude solo il popover — invariato); guardia nuova che APRE un popover dentro il pannello, rossa sul pre-fix |
+| MAJOR-3 | MAJOR | `.so-foot` senza `env(safe-area-inset-bottom)` proprio mentre la story accende `viewport-fit=cover` E ci sposta i submit primari; invisibile al metodo «a inset 0 tutto identico» | **decisione PO: bottom + top sulle barre della shell** — `.so-foot` bottom, `.mobile-topbar` e `.topbar` top (a inset 0 identico al centesimo, sonda su 9 superfici col piede + barre su 4 pagine × 3 larghezze); left/right a ZERO occorrenze DICHIARATE (landscape non verificabile qui); guardia dal CSSOM rossa sul pre-fix |
+| MINOR-1 | minor | i tre editor col piede cambiano anche il DESKTOP mentre AC/record dichiaravano invarianza | **decisione PO: RATIFICATO** (idioma dei 7 call-site esistenti) — misure desktop dichiarate nel record |
+| MINOR-2 | minor | `mobile-self-public.spec.ts:387-394` modificato ma non dichiarato (6 spec toccati, 5 dichiarati) | dichiarazione aggiunta al §7 con la motivazione (stessa causa dell'arbitro #1 del dev) |
+| LOW-1 | low | trap morto se il nodo focalizzato sparisce (sintetico) | risolto dallo spostamento del listener su `document` (fallback); correzione al metodo del report: `blur()` non riproduce (Chromium conserva il sequential focus navigation starting point); guardia rossa sul pre-fix |
+| LOW-2 | low | `aria-modal` escludeva dal modale i portali che il trap ora include | il pannello **`aria-owns`** i portali aperti (sync su `focusin`) ⇒ coerenza trap/aria; toast host FUORI dichiarato col numero (0 focalizzabili, `role="status"`) |
+| LOW-3 | low | `.crumbs .sep` classificato «decorazione» ma era testo esposto | `aria-hidden="true"` sui 2 separatori (la classificazione diventa VERA); censimento corretto; guardia rossa sul pre-fix |
+| LOW-4 | low | il trigger calendario di `ManualPprForm` non hit-testabile a scrollTop 0 — la stessa classe R3 appena curata sui tre editor | **decisione PO: prende il piede** — submit+annulla nel `footer` con `form="manual-ppr-form"`, hit:false→true su ENTRAMBE le superfici (ppr + movements), salvataggio reale provato, sparita anche l'esclusione AD-6 (ii) |
+
+## Ratifiche PO sopraggiunte in review (4, 2026-08-06)
+
+1. **MAJOR-2 → trap esteso ai portali attivi** (né rinuncia ad `aria-modal`, né TD).
+2. **MAJOR-3 → bottom obbligato + top sulle barre della shell**; left/right dichiarati col numero.
+3. **MINOR-1 → il piede desktop dei tre editor è RATIFICATO** (uniforme ai 7 call-site esistenti).
+4. **LOW-4 → `ManualPprForm` prende il piede** (ultimo utente della barra sticky in-body).
+
+## Verifiche del fix
+
+Gates verdi (1773). Run mirati: 36 passed (ink+a11y su DB con nomi lunghi), 83 passed (6 spec del
+blast radius), 40/40 su DB fresco per bookings+datetime-picker (i 4 rossi del run su DB sporco provati
+AMBIENTALI: banner warnings da catalogo `ExpiryType` globale mai ripulito, TD noto). Discriminanze:
+**5/5 rosse** su rebuild pre-fix coi 4 file riportati a `8ab7dbc` e ripristinati byte-identici.
+
+**Lezioni durevoli (dal ciclo)**: (1) **un trap scritto sul pannello non vede i portali su `body`** —
+il contesto modale va definito sul `document` e deve COMPRENDERE i portali attivi, e `aria-owns` è il
+modo di dirlo anche all'albero di accessibilità; (2) **la guardia che protegge un'invarianza non può
+essere una fotografia del contenuto altrui** — il MAJOR-1 era una guardia NUOVA della story stessa,
+scritta contro la lezione che la story citava, e ha fermato 39 test di catena; (3) una famiglia di
+sweep può dipendere dall'**ordine di popolamento del DB** (spec che vogliono un DB popolato vs
+`datetime-picker:127` che vuole un DB fresco): classe PRE-esistente, ora dichiarata.
+
+## Gate finale
+
+- Arbitro finale, `CI=1` su build di produzione, DB fresco: **511 passed (13.3m), E2E_EXIT=0 — zero
+  failed, ZERO flaky, zero skipped** (511 = 507 + 4 test nuovi del fix; catena serializzata inclusa e
+  verde — il MAJOR-1 che l'aveva fermata è chiuso)
+- `npm run gates`: **verde** (lint, typecheck, 1773 unit, build)
+
+## TD (in `sprint-status.yaml`) — la coda alla chiusura dell'EPIC
+
+**Chiusi da questa story**: TD (k) 15.7 (✕ SlideOver e typeahead a 44 mobile-only), TD (n) 15.7
+(quoting e2e.sh), TD (h) 15.6 (`.so-sub` → `--ink-3`), TD (m) 15.9 (testata card self −28,3px),
+`.date-input-btn` (UNA regola al posto di sei eccezioni), riserva sticky R-15.2-g (3 editor +
+`ManualPprForm` col footer ESISTENTE — lo slot nuovo che il TD ipotizzava non serviva), METAR 641-900,
+`viewport-fit=cover`, e il riesame del project mobile (chiuso coi numeri: 13/14 spec dual-width).
+
+**Dichiarati post-epic** (v. action item nuovo): 40 inline `--bad`/`--ok` in 19 file (stati d'errore);
+42 celle `.cal-popover` a 34,58 (griglia densa per progetto) + popover senza semantica di dialogo;
+`.search` 188/190 (solo desktop); bucket stato+giorno transiti oltre pagina 20; back-button sulle chip
+Scadenze (pre-esistente); `color-scheme` mai dichiarato (controlli nativi in scuro); toast host fuori
+dal contesto modale (0 focalizzabili, limite ARIA dichiarato); `aria-owns` verificato nella meccanica
+ma non con uno screen reader reale; left/right safe-area a zero occorrenze; `instructor-rates.spec.ts:76`
+flaky osservata una volta su codice non toccato; la classe «sweep dipende dal popolamento del DB»
+(incl. `datetime-picker:127` oltre le 100 persone, ambientale).

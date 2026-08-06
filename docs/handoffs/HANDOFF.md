@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-08-06 — **EPIC 14 COMPLETO** e **EPIC 15 IN CORSO: 15.1-15.9 DONE**. Prossimo lavoro: **story 15.10 — Sweep finale**, poi chiusura epic: revisione CLAUDE.md, `/handoff`, push (PO), **PR `dev` → `main`**, STOP)
+# HANDOFF — AirManager (aggiornato: 2026-08-06 — **EPIC 15 COMPLETO: 10/10 story DONE**. Prossimo lavoro: push (PO) + **PR `dev` → `main`**; poi backlog post-epic: story AOG ratificata, 40 inline dei form, security TD — v. `sprint-status.yaml` action_items)
 
 ## EPIC 15 — UI mobile AirOps (in corso)
 
@@ -318,6 +318,44 @@ Arbitro finale: **474/474, 0 flaky, 0 skipped, exit 0 (14.2m)** — il più puli
   testata card self a 101,3px (via d'uscita nel record), 47 target dentro `.cal-popover`,
   `.date-input-btn` 24×24 fuori da `/ppr` (quarta faccia), e la riserva `/dashboard/ppr` (unica
   superficie costruita prima delle primitive complete, R-15.9-i).
+
+### 15.10 Sweep finale — DONE (2026-08-06) — **EPIC 15 COMPLETO**
+
+Il censimento (26 voci, 4 provate non più vere, 3 difetti NUOVI mai visti) prima della prescrizione;
+13 ratifiche R-15.10-a..m tutte sulla raccomandazione. Consegnato: **a11y delle primitive** —
+`inert` sul pannello chiuso (il difetto più grave del censimento: 18 fermate di Tab sotto
+`aria-hidden`), `SlideOver` promosso a dialogo con nome+focus+trap, `MobileSheet` con
+`aria-modal`+trap, `focus-trap.ts` condiviso su ~30 superfici, e su decisione PO in review **il trap
+COMPRENDE i portali attivi** (calendario, typeahead) con `aria-owns` per l'albero a11y; **inchiostro**
+(`.mobile-tab-label` 3,50→4,64, `.so-sub` 3,66→4,85, censimento dei 19 consumatori di `--ink-4`);
+**bersagli mobile-only** (✕ 44, typeahead 44, `.date-input-btn` UNA regola per sei eccezioni,
+`.cal-popover` i 4 non-cella); **R3 alla lettera** su 3 editor + `ManualPprForm` col `footer`
+ESISTENTE (lo slot ipotizzato dal TD non serviva — piede desktop RATIFICATO, idioma dei 7 call-site);
+`/dashboard/ppr` 19→0 bersagli; contrasti di pagina (+`.stat-tone-info` col literal ratificato);
+METAR ≤900 (tablet ratificato superficie d'uso); `viewport-fit=cover` con safe-area **bottom+top**;
+quoting `e2e.sh`. Il project mobile Playwright: riesaminato e CHIUSO coi numeri (13/14 spec
+dual-width). Story file: `_bmad-output/implementation-artifacts/15-10-sweep-finale-mobile.md` +
+`15-10-review-report.md`. Commit: `a3fdbb5` story, `215ef49` feat, `8ab7dbc` record, `8426c56` fix,
++ docs chiusura. Arbitro finale: **511/511, 0 flaky, 0 skipped, exit 0 (13.3m)** — catena inclusa
+(511 = 507 + 4 test nuovi del fix).
+
+- Review **SHIPPABLE-WITH-FIXES, 3 MAJOR**: (1) una guardia NUOVA della story era una
+  **fotografia+uguaglianza su contenuto altrui** (`cardHeight===82.83`) e ha fermato l'intera catena
+  serializzata nell'arbitro — riscritta su proprietà indipendenti dal contenuto; (2) il **trap non
+  teneva attraverso i popover portalati** (4-6 fermate dietro lo scrim con `aria-modal=true`) —
+  esteso ai portali su decisione PO; (3) `.so-foot` senza `env(safe-area-inset-bottom)` proprio
+  mentre la story accendeva `cover` e ci spostava i submit — bottom+top su decisione PO.
+- **Lezioni (durevoli)**: un trap scritto sul pannello **non vede i portali su `body`** — il contesto
+  modale si definisce sul `document` e comprende i portali attivi; la guardia di un'invarianza **non è
+  mai una fotografia del contenuto altrui** (la story l'ha pagato con 39 test bloccati, violando la
+  lezione che essa stessa citava); una famiglia di sweep può dipendere dall'**ordine di popolamento
+  del DB** (classe pre-esistente, ora dichiarata).
+- **La coda TD dell'epic è chiusa o dichiarata voce per voce**: chiusi ✕/typeahead/date-input-btn,
+  `.so-sub`, testata self, riserva sticky R-15.2-g, METAR, viewport-fit, quoting; dichiarati
+  post-epic (item dedicato in sprint-status): 40 inline in 19 file, 42 celle calendario,
+  `.search` desktop, bucket transiti, back-button chips, `color-scheme`, toast host fuori dal
+  modale, `aria-owns` senza verifica screen-reader, left/right insets, `instructor-rates:76` flaky,
+  la classe sweep-vs-popolamento.
 
 ## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
 
