@@ -15,12 +15,15 @@ import {
   aircraftListResponseSchema,
   aircraftRateItemSchema,
   aircraftRateListResponseSchema,
+  aogBookingImpactSchema,
   createAircraftRateSchema,
   createAircraftSchema,
   createHourMeterAdjustmentSchema,
   hourMeterAdjustmentListResponseSchema,
   listAircraftQuerySchema,
   listHourMeterAdjustmentsQuerySchema,
+  outOfServiceImpactQuerySchema,
+  setOutOfServiceResponseSchema,
   setOutOfServiceSchema,
   updateAircraftSchema,
 } from './aircraft';
@@ -261,6 +264,8 @@ registry.register('AircraftList', aircraftListResponseSchema);
 registry.register('CreateAircraftRequest', createAircraftSchema);
 registry.register('UpdateAircraftRequest', updateAircraftSchema);
 registry.register('SetOutOfServiceRequest', setOutOfServiceSchema);
+registry.register('AogBookingImpact', aogBookingImpactSchema);
+registry.register('SetOutOfServiceResponse', setOutOfServiceResponseSchema);
 registry.register('CreateHourMeterAdjustmentRequest', createHourMeterAdjustmentSchema);
 registry.register('HourMeterAdjustmentList', hourMeterAdjustmentListResponseSchema);
 registry.register('AircraftRate', aircraftRateItemSchema);
@@ -1104,8 +1109,27 @@ registry.registerPath({
   security,
   request: { params: aircraftIdParams, body: { content: jsonContent(setOutOfServiceSchema), required: true } },
   responses: {
-    200: { description: 'The aircraft, now out of service.', content: jsonContent(aircraftListItemSchema) },
+    200: {
+      description:
+        'The aircraft, now out of service, PLUS the number of live bookings the grounding just impacted (story AOG-1b, ratifica R-AOG-b). The count is recomputed INSIDE the grounding transaction, so it is authoritative for that instant; it is split into `pending` (already frozen — an approval on a grounded aircraft answers 422) and `approved` (nothing in the app stops these, and their holders receive the best-effort grounding email).',
+      content: jsonContent(setOutOfServiceResponseSchema),
+    },
     ...errorResponses(401, 403, 404, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/aircraft/{id}/out-of-service-impact',
+  summary: 'Preview how many live bookings a grounding would impact',
+  description:
+    'Story AOG-1b (AD-2): the number the admin sees BEFORE grounding an aircraft. `until` is the CANDIDATE expected-return date (`YYYY-MM-DD`); the counting window is `[now, end of that calendar day]`, INCLUSIVE (ratifica R-AOG-a). OMITTING `until` means the window is NOT delimited (`[now, +infinity)`), which is a different answer from "delimited by today". Only `PENDING` and `APPROVED` bookings count; a booking that has already started never does. This is a STIMA: the authoritative number is the one `POST /out-of-service` returns, computed inside its own transaction.',
+  tags: ['Aircraft'],
+  security,
+  request: { params: aircraftIdParams, query: outOfServiceImpactQuerySchema },
+  responses: {
+    200: { description: 'The impacted-booking counts, split by state.', content: jsonContent(aogBookingImpactSchema) },
+    ...errorResponses(401, 403, 404, 422),
   },
 });
 

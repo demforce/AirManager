@@ -115,6 +115,36 @@ export const setOutOfServiceSchema = z.object({
 export type SetOutOfServiceInput = z.infer<typeof setOutOfServiceSchema>;
 
 /**
+ * The impacted-bookings count (story AOG-1b, ratifica R-AOG-b) — the SAME
+ * shape the preview, the grounding response and the persistent row all render,
+ * because they all come from the SAME domain function
+ * (`aog-impact.ts#computeAogImpact`, AD-1).
+ *
+ * The split is not cosmetic: `pending` bookings are already frozen (an approval
+ * on a grounded aircraft answers 422), `approved` ones are the ones nothing in
+ * the app stops — and the only ones the grounding email goes to (R-AOG-i).
+ */
+export const aogBookingImpactSchema = z.object({
+  pending: z.number().int().min(0),
+  approved: z.number().int().min(0),
+});
+
+export type AogBookingImpactDto = z.infer<typeof aogBookingImpactSchema>;
+
+/**
+ * `GET /api/v1/aircraft/{id}/out-of-service-impact` query (story AOG-1b, AD-2)
+ * — the CANDIDATE expected-return date the admin is typing, in the same
+ * `YYYY-MM-DD` wire shape `setOutOfServiceSchema` accepts. Omitted means the
+ * window is NOT delimited (invariant [b]), which is a different answer from
+ * "delimited by today" and is why this cannot be `.default(today)`.
+ */
+export const outOfServiceImpactQuerySchema = z.object({
+  until: z.iso.date().optional(),
+});
+
+export type OutOfServiceImpactQuery = z.infer<typeof outOfServiceImpactQuerySchema>;
+
+/**
  * `POST /api/v1/aircraft/{id}/hour-meter-adjustments` body (story 2.5, AC 2).
  * `newMinutes` is an integer number of minutes (AD-2 — same cardinal
  * constraint as `createAircraftSchema.hourMeterMinutes`); a negative delta is
@@ -210,6 +240,21 @@ export type AircraftListItemDto = z.infer<typeof aircraftListItemSchema>;
 
 /** `GET /api/v1/aircraft` response — AD-8 paginated shape. */
 export const aircraftListResponseSchema = paginatedResponseSchema(aircraftListItemSchema);
+
+/**
+ * `POST /api/v1/aircraft/{id}/out-of-service` response (story AOG-1b, AD-5).
+ * The contract CHANGES here: the endpoint used to answer the bare
+ * `AircraftListItem`. It now answers the aircraft under its own key PLUS the
+ * advisory count — the same shape `POST /api/v1/flights` already uses for
+ * `balanceAlert` (`registerFlightResponseSchema`, story 14.4), so an advisory
+ * datum about a write is never smuggled into the entity DTO a client reads and
+ * writes back. Declared here, after `aircraftListItemSchema`, because it
+ * composes it.
+ */
+export const setOutOfServiceResponseSchema = z.object({
+  aircraft: aircraftListItemSchema,
+  impactedBookings: aogBookingImpactSchema,
+});
 
 // --- Rates (story 4.1, Task 1/2/3, AC 1/2) ----------------------------------
 // `createAircraftRateSchema`/`CreateAircraftRateInput` moved above

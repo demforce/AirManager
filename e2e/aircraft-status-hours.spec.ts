@@ -64,7 +64,10 @@ test.describe('Aircraft operational status and audited hour meter adjustments (S
     await expect(page.getByTestId('availability-current')).toContainText('—');
 
     await page.getByTestId('out-of-service-reason').fill('Revisione motore programmata');
+    // Story AOG-1b (AC 3): the submit is a DOUBLE STEP — the first press only
+    // arms it, the second one writes. Nothing else about this test changed.
     await page.getByTestId('out-of-service-submit').click();
+    await page.getByTestId('out-of-service-confirm').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'fuori servizio' })).toBeVisible();
 
     // The editor's own section reflects the reason, and the card badge flips to AOG.

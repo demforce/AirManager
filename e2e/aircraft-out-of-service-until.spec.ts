@@ -113,13 +113,22 @@ async function postFlight(page: Page, aircraftId: string, personId: string, flig
   });
 }
 
-/** Grounds an aircraft through the API, with or without the expected-return date. */
+/**
+ * Grounds an aircraft through the API, with or without the expected-return date.
+ *
+ * Story AOG-1b (AD-5) changed this endpoint's RESPONSE — it now answers
+ * `{ aircraft, impactedBookings }` instead of the bare `AircraftListItem` — so
+ * this helper unwraps the aircraft. The story's own AD-8 authorises exactly
+ * that change; the assertions below are about story AOG-1a's field and are
+ * otherwise untouched.
+ */
 async function ground(page: Page, aircraftId: string, reason: string, outOfServiceUntil?: string): Promise<Record<string, unknown>> {
   const response = await page.request.post(`/api/v1/aircraft/${aircraftId}/out-of-service`, {
     data: outOfServiceUntil === undefined ? { reason } : { reason, outOfServiceUntil },
   });
   expect(response.status()).toBe(200);
-  return (await response.json()) as Record<string, unknown>;
+  const body = (await response.json()) as { aircraft: Record<string, unknown> };
+  return body.aircraft;
 }
 
 /** Opens the fleet editor for a given registration, search-scoped (same TD-1 lesson as the other fleet specs). */
@@ -181,7 +190,9 @@ test.describe('Aircraft out-of-service expected return date (story AOG-1a, AC 1/
 
     await page.getByTestId('out-of-service-reason').fill(reason);
     await untilField.fill(until);
+    // Story AOG-1b (AC 3): first press arms, second press writes.
     await page.getByTestId('out-of-service-submit').click();
+    await page.getByTestId('out-of-service-confirm').click();
 
     // --- face 2: OUT_OF_SERVICE — the date is STATED, and no longer writable ---
     await expect(page.getByTestId('return-to-service-button')).toBeVisible();
@@ -198,6 +209,7 @@ test.describe('Aircraft out-of-service expected return date (story AOG-1a, AC 1/
     const reasonNoDate = `Attesa pezzo ${uniqueSuffix()}`;
     await page.getByTestId('out-of-service-reason').fill(reasonNoDate);
     await page.getByTestId('out-of-service-submit').click();
+    await page.getByTestId('out-of-service-confirm').click();
     await expect(page.getByTestId('return-to-service-button')).toBeVisible();
     await expect(page.getByTestId('availability-current')).toHaveText(`Stato attuale: ${reasonNoDate} · rientro da definire`);
 

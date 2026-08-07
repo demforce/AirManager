@@ -1040,7 +1040,18 @@
         "untilValue": "fermo fino al {date} compreso",
         "untilUnknown": "rientro da definire",
         "confirm": "Conferma",
-        "confirmReturnToService": "Rimettere in servizio questo velivolo?"
+        "confirmReturnToService": "Rimettere in servizio questo velivolo?",
+        "impactPreviewOne": "Stai per impattare 1 prenotazione.",
+        "impactPreviewMany": "Stai per impattare {count} prenotazioni.",
+        "impactBannerOne": "Fermo registrato: 1 prenotazione impattata.",
+        "impactBannerMany": "Fermo registrato: {count} prenotazioni impattate.",
+        "impactRowOne": "1 prenotazione nel fermo",
+        "impactRowMany": "{count} prenotazioni nel fermo",
+        "impactSplit": "In attesa (congelate): {pending} · Approvate (da gestire): {approved}",
+        "impactWindowUntil": "conteggio fino al {date} compreso",
+        "impactWindowUndelimited": "rientro da definire: conteggio non delimitato",
+        "impactEstimate": "stima",
+        "impactBookingsLink": "Vedi le prenotazioni"
       },
       "rates": {
         "sectionTitle": "Tariffe",
@@ -2362,6 +2373,12 @@
     "bookingDenied": {
       "subject": "Prenotazione rifiutata: {aircraftRegistration}",
       "body": "Ciao {firstName},\n\nLa tua prenotazione per {aircraftRegistration} del {when} è stata rifiutata.\n\nMotivo: {reason}"
+    },
+    "aircraftGrounded": {
+      "subject": "Velivolo fuori servizio: {aircraftRegistration}",
+      "body": "Ciao {firstName},\n\nIl velivolo {aircraftRegistration}, su cui hai una prenotazione approvata, è stato messo fuori servizio.\n\nMotivo: {reason}\nFermo: {window}\nLa tua prima prenotazione interessata: {when}\n\nLa prenotazione NON è stata annullata: contatta l'aviosuperficie per concordare come procedere.",
+      "windowUntil": "fino al {date} compreso",
+      "windowUnknown": "rientro da definire"
     }
   },
   "BillingPage": {

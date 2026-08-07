@@ -193,6 +193,21 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               reason: t('editor.availability.reason'),
               confirm: t('editor.availability.confirm'),
               confirmReturnToService: t('editor.availability.confirmReturnToService'),
+              // Story AOG-1b — `t.raw` for every template carrying a
+              // client-interpolated placeholder (same convention as
+              // `rates.showAll`): the count and the date are only known in the
+              // browser.
+              impactPreviewOne: t('editor.availability.impactPreviewOne'),
+              impactPreviewMany: t.raw('editor.availability.impactPreviewMany') as string,
+              impactBannerOne: t('editor.availability.impactBannerOne'),
+              impactBannerMany: t.raw('editor.availability.impactBannerMany') as string,
+              impactRowOne: t('editor.availability.impactRowOne'),
+              impactRowMany: t.raw('editor.availability.impactRowMany') as string,
+              impactSplit: t.raw('editor.availability.impactSplit') as string,
+              impactWindowUntil: t.raw('editor.availability.impactWindowUntil') as string,
+              impactWindowUndelimited: t('editor.availability.impactWindowUndelimited'),
+              impactEstimate: t('editor.availability.impactEstimate'),
+              impactBookingsLink: t('editor.availability.impactBookingsLink'),
             },
             rates: {
               sectionTitle: t('editor.rates.sectionTitle'),

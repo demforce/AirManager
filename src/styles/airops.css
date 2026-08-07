@@ -795,6 +795,18 @@ html[data-theme="dark"] .alert-box.bad{ color: oklch(0.85 0.12 25); }
 html[data-theme="dark"] .alert-box.ok{ color: oklch(0.88 0.1 155); }
 html[data-theme="dark"] .alert-box.info{ color: oklch(0.86 0.1 245); }
 
+/* Story AOG-1b: the grounding banner is the FIRST `.alert-box` in this app to
+   carry a link (to the bookings the count is about). Without this rule the
+   anchor inherits the global `a{ color: var(--info) }` on a `--bad-soft`/
+   `--ok-soft`/`--info-soft` tint — the exact 3.61:1 defect R-15.10-i measured
+   on the "Saldi negativi" links — so the remedy is the one this codebase has
+   now used three times (`.mobile-alert-row` 15.3, `a.mobile-row` 15.6,
+   `.billing-negative-row a` 15.10): inherit the box's OWN already-ratified ink
+   and give the link back the affordance the colour used to carry, the
+   underline. No new colour literal, no token changed. */
+.alert-box a{ color: inherit; text-decoration: underline; }
+.alert-box a:hover{ color: inherit; }
+
 /* ---------- expiry chips (story 13.2 — Ratings/Visita medica pickers) ---------- */
 .expiry-chip{
   display: inline-flex; align-items: center; gap: 5px;
@@ -3878,4 +3890,14 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
      same "anchor on something this surface owns" discipline, as the nine rules
      above. */
   [data-testid="out-of-service-submit"]{ min-height: 44px; }
+
+  /* --- (11) the two controls of the double step (story AOG-1b, AC 3) ---
+     The armed state REPLACES the submit above with a Conferma/Annulla pair
+     (same idiom as the Archivio section). They are NEW controls on a surface
+     this story touches, so they take the same 44px floor rather than inheriting
+     the 34.84px the `.btn` base gives them — and rule (10) above is left
+     byte-identical instead of being widened, so story AOG-1a's own measure
+     still describes exactly what it measured. */
+  [data-testid="out-of-service-confirm"],
+  [data-testid="out-of-service-cancel"]{ min-height: 44px; }
 }

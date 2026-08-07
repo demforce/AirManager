@@ -30,6 +30,7 @@ import {
   createHourMeterAdjustmentSchema,
   updateAircraftSchema,
   type AircraftRateItemDto,
+  type AogBookingImpactDto,
   type CreateAircraftInput,
   type CreateHourMeterAdjustmentInput,
   type HourMeterAdjustmentListItemDto,
@@ -74,6 +75,25 @@ export type AircraftEditorLabels = {
     untilValue: string;
     /** What "Stato attuale" says instead when the aircraft is grounded with NO date (invariant [b]: a legitimate state, never an empty string or a bare dash). */
     untilUnknown: string;
+    /** Story AOG-1b, AC 2 — the preview headline, BEFORE the act. Two forms because Italian and English both inflect the noun; `{count}` is client-interpolated (same `t.raw` convention as `rates.showAll`). */
+    impactPreviewOne: string;
+    impactPreviewMany: string;
+    /** AC 5 — the persistent banner's headline, AFTER the act, on the number the grounding transaction itself computed. */
+    impactBannerOne: string;
+    impactBannerMany: string;
+    /** AC 6 — the line that comes back at every reopening of an already-grounded aircraft. */
+    impactRowOne: string;
+    impactRowMany: string;
+    /** AC 2 — the split, `{pending}`/`{approved}`. NOT decorative: it is the criterion of the email (R-AOG-i), so each half says what it means. */
+    impactSplit: string;
+    /** AC 2/AC 8 — the counting window in words, `{date}`, in the INCLUSIVE form of R-AOG-a. */
+    impactWindowUntil: string;
+    /** AC 8 — invariant [b]: no date means the count is NOT delimited, and both halves of that are named. */
+    impactWindowUndelimited: string;
+    /** AC 2 — the preview number is a STIMA; the authoritative one is the response's. */
+    impactEstimate: string;
+    /** AC 5 — the banner's way out towards the bookings it is talking about. */
+    impactBookingsLink: string;
   };
   rates: {
     sectionTitle: string;
@@ -174,6 +194,12 @@ type AircraftApiResponse = {
   fuelType: string | null;
   based: boolean;
   archivedAt: string | null;
+};
+
+/** Story AOG-1b (AD-5): `POST /out-of-service` now answers the aircraft under its own key PLUS the count its transaction recomputed — `setOutOfServiceResponseSchema`. */
+type SetOutOfServiceApiResponse = {
+  aircraft: AircraftApiResponse;
+  impactedBookings: AogBookingImpactDto;
 };
 
 function toEditable(aircraft: AircraftApiResponse): EditableAircraft {
@@ -689,6 +715,14 @@ function BasedSegmented({
 
 // --- Availability (disponibilità) ------------------------------------------
 
+/**
+ * Story AOG-1b, AC 2: how long the impacted-booking preview waits before asking
+ * again. Sized on the MEASURED behaviour of the native date control (see the
+ * effect that uses it), not on a habit — small enough that opening the section
+ * still feels immediate, large enough that a typed year is one request.
+ */
+const IMPACT_DEBOUNCE_MS = 300;
+
 function AvailabilitySection({
   aircraft,
   locale,
@@ -712,12 +746,82 @@ function AvailabilitySection({
   // expects; an empty string means "not set" and is a legitimate submit.
   const [until, setUntil] = useState('');
   const [busy, setBusy] = useState(false);
+  /**
+   * Story AOG-1b, AC 3 — the second step of the submit. Deliberately LOCAL
+   * state on a section that `fleet-console.tsx` remounts on every open
+   * (`key={target === null ? 'closed' : ...}`), so it cannot outlive a
+   * close/reopen the way `pendingForceBody` did in BLOCKER 14.4 F1. Measured,
+   * not assumed (Dev Agent Record).
+   */
+  const [confirming, setConfirming] = useState(false);
+  /** The impacted-booking count currently on screen — `null` until the first read answers. */
+  const [impact, setImpact] = useState<AogBookingImpactDto | null>(null);
+  /**
+   * Which of the two things that number IS: the estimate the preview fetched
+   * (`false`, AC 2) or the one `POST /out-of-service` recomputed inside its own
+   * transaction (`true`, AC 4) — the latter is what the persistent banner
+   * reports (AC 5). Deliberately its OWN state and not a field of `impact`: it
+   * is a dependency of the effect below, and folding it into the value the
+   * effect WRITES would make every fetch schedule another one.
+   */
+  const [authoritative, setAuthoritative] = useState(false);
   const isOutOfService = aircraft.status === 'OUT_OF_SERVICE';
+
+  /**
+   * The window the count is about: the CANDIDATE date while the aircraft is
+   * still operational (it changes as the admin types), the STORED one once it
+   * is grounded (AC 6 — the row reappears at every reopen, same function).
+   */
+  const impactUntil = isOutOfService ? aircraft.outOfServiceUntil : until === '' ? null : until;
+
+  /*
+   * AC 2: the number is fetched when the section MOUNTS and re-fetched whenever
+   * the candidate date changes. The trigger is the VALUE of the date control,
+   * not a keystroke — but a native `<input type="date">` still emits one
+   * complete value per digit of the YEAR segment while it is being typed
+   * (measured: `0002-08-10`, `0020-08-10`, `0202-08-10`, `2026-08-10`), so an
+   * un-debounced effect fires FOUR requests, three of them about years nobody
+   * asked for. `IMPACT_DEBOUNCE_MS` collapses a whole typed date into ONE
+   * request (measured, Dev Agent Record) and costs one timer.
+   *
+   * `authoritative` short-circuits the whole thing: once the grounding has
+   * answered, its own number stands — a refetch would silently replace a
+   * transactional count with a later estimate.
+   */
+  useEffect(() => {
+    if (authoritative) return;
+    const controller = new AbortController();
+    const query = impactUntil === null ? '' : `?until=${encodeURIComponent(impactUntil)}`;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch(`/api/v1/aircraft/${aircraft.id}/out-of-service-impact${query}`, { signal: controller.signal });
+          if (!response.ok) return;
+          setImpact((await response.json()) as AogBookingImpactDto);
+        } catch {
+          // An aborted/failed preview is not an error the admin has to act on:
+          // the count is advisory, and the authoritative one still arrives with
+          // the grounding itself. Never a toast, never a blocked submit.
+        }
+      })();
+    }, IMPACT_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [aircraft.id, impactUntil, authoritative]);
 
   async function submitOutOfService(): Promise<void> {
     const trimmed = reason.trim();
     if (trimmed.length === 0) {
       setReasonError(labels.errors.reasonRequired);
+      setConfirming(false);
+      return;
+    }
+    // AC 3: the FIRST press writes nothing — it only asks. The write happens on
+    // the second one, below.
+    if (!confirming) {
+      setConfirming(true);
       return;
     }
     setBusy(true);
@@ -729,6 +833,7 @@ function AvailabilitySection({
       body: JSON.stringify({ reason: trimmed, ...(until === '' ? {} : { outOfServiceUntil: until }) }),
     });
     setBusy(false);
+    setConfirming(false);
 
     if (!response.ok) {
       const code = await errorCodeOf(response);
@@ -736,12 +841,16 @@ function AvailabilitySection({
       return;
     }
 
-    const updated = (await response.json()) as AircraftApiResponse;
+    // Story AOG-1b, AD-5: the response is now the aircraft PLUS the count its
+    // own transaction recomputed.
+    const result = (await response.json()) as SetOutOfServiceApiResponse;
     setReason('');
     setUntil('');
     setReasonError(null);
+    setImpact(result.impactedBookings);
+    setAuthoritative(true);
     toast.show(toastLabels.setOutOfService, 'ok');
-    onMutated(toEditable(updated));
+    onMutated(toEditable(result.aircraft));
   }
 
   async function submitReturnToService(): Promise<void> {
@@ -756,6 +865,11 @@ function AvailabilitySection({
     }
 
     const updated = (await response.json()) as AircraftApiResponse;
+    // The aircraft is airworthy again: the count that described its fermo is
+    // no longer about anything, and the next read is an estimate again. No
+    // email goes out here (R-AOG-i).
+    setImpact(null);
+    setAuthoritative(false);
     toast.show(toastLabels.returnedToService, 'ok');
     onMutated(toEditable(updated));
   }
@@ -772,6 +886,27 @@ function AvailabilitySection({
       }`
     : '—';
 
+  /**
+   * Story AOG-1b, AC 2/AC 8 — the window, stated in words, on EVERY surface
+   * that shows a number. A `null` date is NAMED ("rientro da definire") and the
+   * count is declared NOT delimited: invariant [b] is a legitimate state, and
+   * the one thing it must never look like is a delimited count with a missing
+   * end.
+   */
+  const windowText =
+    impactUntil === null
+      ? labels.availability.impactWindowUndelimited
+      : labels.availability.impactWindowUntil.replace('{date}', formatDateOnly(impactUntil, locale));
+
+  function countText(one: string, many: string, count: number): string {
+    return count === 1 ? one : many.replace('{count}', String(count));
+  }
+
+  const splitText = impact
+    ? labels.availability.impactSplit.replace('{pending}', String(impact.pending)).replace('{approved}', String(impact.approved))
+    : '';
+  const impactTotal = impact ? impact.pending + impact.approved : 0;
+
   return (
     <div>
       <p className="fld-label" data-testid="availability-current">
@@ -779,9 +914,37 @@ function AvailabilitySection({
       </p>
 
       {isOutOfService ? (
-        <button type="button" className="btn" disabled={busy} onClick={() => void submitReturnToService()} data-testid="return-to-service-button">
-          {labels.availability.returnToService}
-        </button>
+        <>
+          {impact ? (
+            authoritative ? (
+              /* AC 5: the PERSISTENT report of what just happened. `role="status"`
+                 (polite) rather than `alert`: it is the outcome of an action the
+                 admin took on purpose, not an interruption — and unlike the
+                 2600 ms toast beside it, it does not go away. */
+              <p className="alert-box bad" role="status" style={{ marginBottom: 12, lineHeight: 1.55 }} data-testid="aog-impact-banner">
+                <span style={{ display: 'block', fontWeight: 600 }}>
+                  {countText(labels.availability.impactBannerOne, labels.availability.impactBannerMany, impactTotal)}
+                </span>
+                <span style={{ display: 'block' }}>{splitText}</span>
+                <span style={{ display: 'block' }}>{windowText}</span>
+                <a style={{ display: 'inline-block', marginTop: 4 }} href={`/${locale}/dashboard/bookings?status=PENDING,APPROVED`} data-testid="aog-impact-bookings-link">
+                  {labels.availability.impactBookingsLink}
+                </a>
+              </p>
+            ) : (
+              /* AC 6: the same number, from the same domain function, back at
+                 every reopening of an already-grounded aircraft — the banner is
+                 gone with the session, this line is not. Informative only: AD-9
+                 keeps every control that would 409 off this face. */
+              <p className="fld-hint" style={{ marginBottom: 12 }} data-testid="aog-impact-row">
+                {countText(labels.availability.impactRowOne, labels.availability.impactRowMany, impactTotal)} · {windowText}
+              </p>
+            )
+          ) : null}
+          <button type="button" className="btn" disabled={busy} onClick={() => void submitReturnToService()} data-testid="return-to-service-button">
+            {labels.availability.returnToService}
+          </button>
+        </>
       ) : (
         /* AD-9: the whole grounding form — reason AND date — is rendered ONLY
            for an OPERATIONAL aircraft, because `setOutOfService`'s atomic
@@ -790,6 +953,19 @@ function AvailabilitySection({
            already-grounded aircraft would be a control that can only ever
            fail — the dead-end class of lezione 14.6 F2. */
         <div className="form-grid">
+          {impact ? (
+            /* AC 2: the warning arrives BEFORE the act, not after it. `role="status"`
+               so the number is re-announced when the candidate date changes it. */
+            <p className="alert-box info" role="status" style={{ gridColumn: '1 / -1', lineHeight: 1.55 }} data-testid="aog-impact-preview">
+              <span style={{ display: 'block', fontWeight: 600 }}>
+                {countText(labels.availability.impactPreviewOne, labels.availability.impactPreviewMany, impactTotal)}
+              </span>
+              <span style={{ display: 'block' }}>{splitText}</span>
+              <span style={{ display: 'block' }}>
+                {windowText} · {labels.availability.impactEstimate}
+              </span>
+            </p>
+          ) : null}
           <Field label={labels.availability.reason} wide error={reasonError ?? undefined}>
             <textarea
               className="input"
@@ -799,17 +975,55 @@ function AvailabilitySection({
               onChange={(event) => {
                 setReason(event.target.value);
                 if (reasonError) setReasonError(null);
+                // Editing the motivo after asking to confirm would have the
+                // second press write something the first one never showed.
+                setConfirming(false);
               }}
               data-testid="out-of-service-reason"
             />
           </Field>
           <Field label={labels.availability.until} hint={labels.availability.untilHint}>
-            <DateInput value={until} onChange={(event) => setUntil(event.target.value)} data-testid="out-of-service-until" />
+            <DateInput
+              value={until}
+              onChange={(event) => {
+                setUntil(event.target.value);
+                setConfirming(false);
+              }}
+              data-testid="out-of-service-until"
+            />
           </Field>
-          <div className="fld wide">
-            <button type="button" className="btn" disabled={busy} onClick={() => void submitOutOfService()} data-testid="out-of-service-submit">
-              {labels.availability.setOutOfService}
-            </button>
+          {/* AC 3, the DOUBLE STEP. Same idiom as `ArchiveSection` two sections
+              below — the armed state REPLACES the trigger with a confirm/cancel
+              pair — so the panel keeps one language for "this asks first".
+              `availability.confirm` has been translated since story 12.5 and
+              never consumed until now, and this step adds NO string of its own:
+              the question it answers is the preview right above it, which is
+              exactly what the admin is confirming. */}
+          {/* `.fld` is a COLUMN flex box (`airops.css:1143`) — the plain, unstyled
+              wrapper is what gives the lone submit the full-width box story
+              AOG-1a measured, and it is left exactly that way. Only the armed
+              state turns the row horizontal, for its two controls. */}
+          <div className="fld wide" style={confirming ? { flexDirection: 'row', flexWrap: 'wrap', gap: 8 } : undefined}>
+            {confirming ? (
+              <>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={busy}
+                  onClick={() => void submitOutOfService()}
+                  data-testid="out-of-service-confirm"
+                >
+                  {labels.availability.confirm}
+                </button>
+                <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)} data-testid="out-of-service-cancel">
+                  {labels.cancel}
+                </button>
+              </>
+            ) : (
+              <button type="button" className="btn" disabled={busy} onClick={() => void submitOutOfService()} data-testid="out-of-service-submit">
+                {labels.availability.setOutOfService}
+              </button>
+            )}
           </div>
         </div>
       )}

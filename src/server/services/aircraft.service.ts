@@ -1,4 +1,5 @@
 import type { AircraftStatus } from '@/generated/prisma/client';
+import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type {
@@ -6,11 +7,15 @@ import type {
   CreateHourMeterAdjustmentInput,
   ListAircraftQuery,
   ListHourMeterAdjustmentsQuery,
+  OutOfServiceImpactQuery,
   SetOutOfServiceInput,
   UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
+import { getMailSender } from '@/server/adapters/mail';
+import { buildAircraftGroundedEmail } from '@/server/adapters/mail/templates';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { computeAogImpact, type AogBookingImpact, type ImpactedApprovedBooking } from './aog-impact';
 import { ConflictError, NotFoundError } from './errors';
 import { createAircraftRateCore } from './rates.service';
 
@@ -37,6 +42,19 @@ export type AircraftListItem = {
 
 /** AD-8 paginated shape, via the shared helper (story 1.5). */
 export type AircraftListResult = PaginatedResult<AircraftListItem>;
+
+/**
+ * `setOutOfService`'s response (story AOG-1b, ratifica R-AOG-b / AD-5): the
+ * aircraft PLUS the number of bookings the grounding just impacted, recounted
+ * inside its own transaction. Same shape and same discipline as
+ * `RegisterFlightResult` (story 14.4, AC 3) — the entity under its own key, the
+ * advisory datum beside it, never mixed INTO the entity DTO (which a client
+ * reads and writes back).
+ */
+export type SetOutOfServiceResult = {
+  aircraft: AircraftListItem;
+  impactedBookings: AogBookingImpact;
+};
 
 const AIRCRAFT_SELECT = {
   id: true,
@@ -406,8 +424,19 @@ export async function unarchiveAircraft(actor: Actor, id: string): Promise<Aircr
  * rejected: invariant [a] means the field never decides anything, so a
  * "must be in the future" rule would be semantically wrong here (and is not
  * ratified). The date never re-opens the aircraft — only `returnToService` does.
+ *
+ * Story AOG-1b (ratifica R-AOG-b, AD-3): the whole grounding now runs in ONE
+ * `$transaction` so the number of impacted bookings it reports is computed on
+ * the SAME connection that just wrote it — no TOCTOU between the write and its
+ * own report. The atomic guard, the `ConflictError` and the re-read are
+ * BYTE-IDENTICAL to what story AOG-1a left; the transaction wraps them, it does
+ * not touch them. The count is advisory data ON a write's response, exactly
+ * like `balanceAlert` on `RegisterFlightResult` (story 14.4, AC 3).
+ *
+ * The grounding email (R-AOG-i) goes out AFTER the commit, best-effort, and can
+ * never fail the write — see {@link sendAircraftGroundedEmails}.
  */
-export async function setOutOfService(actor: Actor, id: string, input: SetOutOfServiceInput): Promise<AircraftListItem> {
+export async function setOutOfService(actor: Actor, id: string, input: SetOutOfServiceInput): Promise<SetOutOfServiceResult> {
   authorize(actor, 'aircraft.manage');
 
   const existing = await prisma.aircraft.findUnique({ where: { id }, select: { id: true } });
@@ -415,32 +444,140 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
     throw new NotFoundError('Aircraft not found.');
   }
 
-  // Atomic guard (review 2.2 F1): the WHERE also requires status ===
-  // OPERATIONAL, so two concurrent "out of service" calls can't both read
-  // OPERATIONAL and both "win" the check-then-write race — the loser matches
-  // zero rows and gets ConflictError instead of silently overwriting the
-  // other caller's statusReason.
-  const { count } = await prisma.aircraft.updateMany({
-    where: { id, status: 'OPERATIONAL' },
-    data: {
-      status: 'OUT_OF_SERVICE',
-      statusReason: input.reason,
-      // Story AOG-1a: ONE extra key in the `data`; the `where` above is
-      // untouched, so the concurrency discipline of review 2.2 F1 is
-      // unchanged. `@db.Date` is bound as a UTC-midnight calendar date
-      // (`parseDateOnlyUtc`, review 3.5 F1's lesson) — never a timestamp.
-      // `== null` covers BOTH an omitted key and an explicit `null` (review
-      // MINOR-2, `.nullish()` on the schema): the two mean the same thing —
-      // "return date not yet known" — and are stored the same way.
-      outOfServiceUntil: input.outOfServiceUntil == null ? null : parseDateOnlyUtc(input.outOfServiceUntil),
-    },
+  const now = new Date();
+  const { aircraft, impact } = await prisma.$transaction(async (tx) => {
+    // Atomic guard (review 2.2 F1): the WHERE also requires status ===
+    // OPERATIONAL, so two concurrent "out of service" calls can't both read
+    // OPERATIONAL and both "win" the check-then-write race — the loser matches
+    // zero rows and gets ConflictError instead of silently overwriting the
+    // other caller's statusReason.
+    const { count } = await tx.aircraft.updateMany({
+      where: { id, status: 'OPERATIONAL' },
+      data: {
+        status: 'OUT_OF_SERVICE',
+        statusReason: input.reason,
+        // Story AOG-1a: ONE extra key in the `data`; the `where` above is
+        // untouched, so the concurrency discipline of review 2.2 F1 is
+        // unchanged. `@db.Date` is bound as a UTC-midnight calendar date
+        // (`parseDateOnlyUtc`, review 3.5 F1's lesson) — never a timestamp.
+        // `== null` covers BOTH an omitted key and an explicit `null` (review
+        // MINOR-2, `.nullish()` on the schema): the two mean the same thing —
+        // "return date not yet known" — and are stored the same way.
+        outOfServiceUntil: input.outOfServiceUntil == null ? null : parseDateOnlyUtc(input.outOfServiceUntil),
+      },
+    });
+    if (count === 0) {
+      throw new ConflictError('Aircraft is already out of service.');
+    }
+
+    const aircraft = await tx.aircraft.findUniqueOrThrow({ where: { id }, select: AIRCRAFT_SELECT });
+    // The date the count uses is the one JUST WRITTEN and read back, never the
+    // raw input: one source, and the `@db.Date` round-trip already applied.
+    const impact = await computeAogImpact(tx, { aircraftId: id, until: aircraft.outOfServiceUntil, now });
+    return { aircraft, impact };
   });
-  if (count === 0) {
-    throw new ConflictError('Aircraft is already out of service.');
+
+  const listItem = toListItem(aircraft);
+  await sendAircraftGroundedEmails(listItem, impact.approvedBookings);
+
+  return { aircraft: listItem, impactedBookings: { pending: impact.pending, approved: impact.approved } };
+}
+
+/**
+ * The PREVIEW behind "Stai per impattare N prenotazioni" (story AOG-1b, AC 2 /
+ * AD-2): the same {@link computeAogImpact} the grounding runs, against the
+ * CANDIDATE date the admin is typing (or none), so the two numbers can never
+ * come from two implementations that drift apart.
+ *
+ * A read, gated exactly like the write it precedes (`aircraft.manage`), on a
+ * route of its own rather than a client-built `GET /api/v1/bookings` query
+ * (AD-2): expressing the window client-side would duplicate the inclusive
+ * end-of-day rule and the undelimited branch in the very place AD-1 asks for a
+ * single definition.
+ *
+ * The number is a STIMA and the UI says so: it is measured before the act, and
+ * the authoritative one is the one {@link setOutOfService} returns.
+ */
+export async function previewOutOfServiceImpact(actor: Actor, id: string, query: OutOfServiceImpactQuery): Promise<AogBookingImpact> {
+  authorize(actor, 'aircraft.manage');
+
+  const existing = await prisma.aircraft.findUnique({ where: { id }, select: { id: true } });
+  if (!existing) {
+    throw new NotFoundError('Aircraft not found.');
   }
 
-  const aircraft = await prisma.aircraft.findUniqueOrThrow({ where: { id }, select: AIRCRAFT_SELECT });
-  return toListItem(aircraft);
+  const impact = await computeAogImpact(prisma, {
+    aircraftId: id,
+    until: query.until === undefined ? null : parseDateOnlyUtc(query.until),
+    now: new Date(),
+  });
+  return { pending: impact.pending, approved: impact.approved };
+}
+
+/**
+ * Best-effort grounding email to the holders of the impacted APPROVED bookings
+ * (story AOG-1b, ratifica R-AOG-i / AD-6), fire-and-forget — called AFTER
+ * `setOutOfService`'s transaction commits, same "a slow/broken SMTP server must
+ * never hold a lock or fail an otherwise-valid write" rule as
+ * `bookings.service.ts#sendBookingDeniedEmail`, which this is modelled on.
+ *
+ * Only APPROVED holders (R-AOG-i): a PENDING booking is ALREADY frozen — the
+ * admin who tries to approve it gets the 422 with the reason — so its holder is
+ * deliberately not written to. `returnToService` sends nothing at all.
+ *
+ * ONE email per HOLDER, not per booking: a person with several impacted
+ * bookings on the same aircraft gets a single message naming their EARLIEST
+ * one (`approvedBookings` arrives `startsAt`-ascending), which is also what
+ * caps the fan-out at the number of distinct holders.
+ *
+ * Recipient locale is the holder's OWN `User.locale` (AD-7), resolved the same
+ * way as `sendBookingDeniedEmail` (fallback `it` with no linked `User`); a
+ * person with no email on file is a SILENT skip, distinct from an actual send
+ * failure (`console.error`, still no throw). One failing recipient never stops
+ * the others, and NOTHING in here can propagate: the write already committed
+ * and stays valid.
+ */
+async function sendAircraftGroundedEmails(aircraft: AircraftListItem, approvedBookings: ImpactedApprovedBooking[]): Promise<void> {
+  if (approvedBookings.length === 0) return;
+
+  try {
+    // First booking wins per holder — the list is already `startsAt`-ascending.
+    const firstBookingByPerson = new Map<string, ImpactedApprovedBooking>();
+    for (const booking of approvedBookings) {
+      if (!firstBookingByPerson.has(booking.personId)) firstBookingByPerson.set(booking.personId, booking);
+    }
+    const personIds = [...firstBookingByPerson.keys()];
+
+    // Two batched lookups instead of two per recipient: the per-recipient shape
+    // of `sendBookingDeniedEmail` is for ONE holder, and a fan-out that repeats
+    // it would issue 2N round-trips for no gain.
+    const people = await prisma.person.findMany({ where: { id: { in: personIds } }, select: { id: true, firstName: true, email: true } });
+    const users = await prisma.user.findMany({ where: { personId: { in: personIds } }, select: { personId: true, locale: true } });
+    const localeByPerson = new Map(users.map((user) => [user.personId, user.locale]));
+
+    for (const person of people) {
+      if (!person.email) continue;
+      const booking = firstBookingByPerson.get(person.id);
+      if (!booking) continue;
+
+      try {
+        const locale: AppLocale = localeByPerson.get(person.id) === 'en' ? 'en' : 'it';
+        const { subject, text } = await buildAircraftGroundedEmail(locale, {
+          firstName: person.firstName,
+          aircraftRegistration: aircraft.registration,
+          startsAt: booking.startsAt,
+          // Just written by this function's own transaction — safe to assert.
+          reason: aircraft.statusReason!,
+          outOfServiceUntil: aircraft.outOfServiceUntil,
+        });
+        await getMailSender().send({ to: person.email, subject, text });
+      } catch (error) {
+        console.error('setOutOfService: failed to send aircraft-grounded email', error);
+      }
+    }
+  } catch (error) {
+    console.error('setOutOfService: failed to resolve aircraft-grounded email recipients', error);
+  }
 }
 
 /**

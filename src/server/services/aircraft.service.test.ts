@@ -27,12 +27,41 @@ vi.mock('@/server/db/prisma', () => ({
     flight: {
       groupBy: vi.fn(),
     },
+    // Story AOG-1b: the impacted-booking count (`aog-impact.ts`) and the
+    // grounding email's two batched recipient look-ups.
+    booking: {
+      findMany: vi.fn(),
+    },
+    person: {
+      findMany: vi.fn(),
+    },
+    user: {
+      findMany: vi.fn(),
+    },
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
   },
 }));
 
+/**
+ * Story AOG-1b: `aircraft.service.ts` now sends the grounding email, so this
+ * test file imports the mail chain for the first time — and that chain reaches
+ * `@/lib/env`'s EAGER validation through `SmtpMailSender`. Mocked here (same
+ * shape as `bookings.service.test.ts`), which is what keeps
+ * `env -u DATABASE_URL -u AUTH_SECRET npx vitest run <file>` green: the
+ * three-occurrence rule of CLAUDE.md.
+ */
+const sendMock = vi.fn();
+vi.mock('@/server/adapters/mail', () => ({
+  getMailSender: vi.fn(() => ({ send: sendMock })),
+}));
+
+vi.mock('@/server/adapters/mail/templates', () => ({
+  buildAircraftGroundedEmail: vi.fn(async () => ({ subject: 'Aircraft grounded subject', text: 'Aircraft grounded text' })),
+}));
+
 const { prisma } = await import('@/server/db/prisma');
+const { buildAircraftGroundedEmail } = await import('@/server/adapters/mail/templates');
 const {
   adjustHourMeter,
   archiveAircraft,
@@ -41,6 +70,7 @@ const {
   listAircraft,
   listHourMeterAdjustments,
   listOutOfServiceAircraft,
+  previewOutOfServiceImpact,
   returnToService,
   setOutOfService,
   sumFlightMinutesByAircraft,
@@ -62,6 +92,9 @@ const hourMeterAdjustmentFindManyMock = vi.mocked(prisma.hourMeterAdjustment.fin
 const hourMeterAdjustmentCountMock = vi.mocked(prisma.hourMeterAdjustment.count);
 const aircraftRateCreateMock = vi.mocked(prisma.aircraftRate.create);
 const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
+const bookingFindManyMock = vi.mocked(prisma.booking.findMany);
+const personFindManyMock = vi.mocked(prisma.person.findMany);
+const userFindManyMock = vi.mocked(prisma.user.findMany);
 const transactionMock = vi.mocked(prisma.$transaction);
 const queryRawMock = vi.mocked(prisma.$queryRaw);
 
@@ -76,6 +109,11 @@ const aircraftUpdate = updateMock as unknown as { mockResolvedValue: (v: Aircraf
 const aircraftUpdateMany = updateManyMock as unknown as { mockResolvedValue: (v: { count: number }) => void };
 // Same workaround, array-shaped — `listOutOfServiceAircraft` (story 10.3) is the first direct (non-transaction) `findMany` fixture in this file.
 const aircraftFindMany = findManyMock as unknown as { mockResolvedValue: (v: AircraftFixture[]) => void };
+// Story AOG-1b: same overload workaround for the three delegates the grounding
+// count and its email fan-out read.
+const bookingFindMany = bookingFindManyMock as unknown as { mockResolvedValue: (v: Array<Record<string, unknown>>) => void };
+const personFindMany = personFindManyMock as unknown as { mockResolvedValue: (v: Array<Record<string, unknown>>) => void };
+const userFindMany = userFindManyMock as unknown as { mockResolvedValue: (v: Array<Record<string, unknown>>) => void };
 // The FOR UPDATE locked read in `adjustHourMeter` (review 2.5 F1) — returns rows.
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: Array<{ hourMeterMinutes: number }>) => void };
 const hourMeterAdjustmentCreate = hourMeterAdjustmentCreateMock as unknown as { mockResolvedValue: (v: unknown) => void };
@@ -137,6 +175,16 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     hourMeterAdjustmentCountMock.mockReset();
     aircraftRateCreateMock.mockReset();
     flightGroupByMock.mockReset();
+    bookingFindManyMock.mockReset();
+    personFindManyMock.mockReset();
+    userFindManyMock.mockReset();
+    sendMock.mockReset();
+    vi.mocked(buildAircraftGroundedEmail).mockClear();
+    // Story AOG-1b defaults: no impacted booking, hence no recipient — every
+    // PRE-EXISTING test keeps behaving exactly as it did.
+    bookingFindMany.mockResolvedValue([]);
+    personFindMany.mockResolvedValue([]);
+    userFindMany.mockResolvedValue([]);
     transactionMock.mockReset();
     queryRawMock.mockReset();
   });
@@ -571,6 +619,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     });
 
     it('sets status/statusReason via the atomic OPERATIONAL-guarded updateMany (review 2.2 F1 pattern)', async () => {
+      mockInteractiveTransaction();
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
       aircraftUpdateMany.mockResolvedValue({ count: 1 });
       aircraftFindUniqueOrThrow.mockResolvedValue({
@@ -585,23 +634,33 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         where: { id: 'aircraft_1', status: 'OPERATIONAL' },
         // Story AOG-1a, invariant [b]: no date supplied -> the column is written
         // `null` EXPLICITLY, never left at whatever a previous grounding left.
+        // Story AOG-1b (AD-3/AD-8): the `$transaction` wraps this call, it does
+        // NOT change it — asserted EXACTLY, never relaxed to `objectContaining`
+        // (lezione 14.6), because "the guard is byte-identical" IS the claim.
         data: { status: 'OUT_OF_SERVICE', statusReason: 'Engine inspection', outOfServiceUntil: null },
       });
-      expect(result.status).toBe('OUT_OF_SERVICE');
-      expect(result.statusReason).toBe('Engine inspection');
+      expect(result.aircraft.status).toBe('OUT_OF_SERVICE');
+      expect(result.aircraft.statusReason).toBe('Engine inspection');
+      // Story AOG-1b, AD-5: the count travels WITH the aircraft, beside it.
+      expect(result.impactedBookings).toEqual({ pending: 0, approved: 0 });
     });
 
     it('throws ConflictError when the atomic guard matches zero rows (already out of service)', async () => {
+      mockInteractiveTransaction();
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
       aircraftUpdateMany.mockResolvedValue({ count: 0 });
 
       await expect(setOutOfService(adminActor(), 'aircraft_1', { reason: 'Engine inspection' })).rejects.toThrow(ConflictError);
       expect(findUniqueOrThrowMock).not.toHaveBeenCalled();
+      // Story AOG-1b: a 409 produces NO count and NO email — nothing was written.
+      expect(bookingFindManyMock).not.toHaveBeenCalled();
+      expect(sendMock).not.toHaveBeenCalled();
     });
 
     // --- story AOG-1a: the expected-return date -------------------------------
 
     it('writes outOfServiceUntil as a UTC-midnight calendar date, in the SAME guarded updateMany as the reason (AC 1/AC 3)', async () => {
+      mockInteractiveTransaction();
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
       aircraftUpdateMany.mockResolvedValue({ count: 1 });
       aircraftFindUniqueOrThrow.mockResolvedValue({
@@ -624,10 +683,11 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       const written = updateManyMock.mock.calls[0]![0].data.outOfServiceUntil as Date;
       expect(written.toISOString()).toBe('2031-05-12T00:00:00.000Z');
       // ...and the DTO hands the caller back the calendar day, not the instant.
-      expect(result.outOfServiceUntil).toBe('2031-05-12');
+      expect(result.aircraft.outOfServiceUntil).toBe('2031-05-12');
     });
 
     it('accepts a date in the PAST and still leaves the aircraft grounded — invariant [a] (AC 2a/AC 3)', async () => {
+      mockInteractiveTransaction();
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
       aircraftUpdateMany.mockResolvedValue({ count: 1 });
       aircraftFindUniqueOrThrow.mockResolvedValue({
@@ -642,8 +702,8 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       // A past date is a LEGITIMATE input (no "must be in the future" rule is
       // added: the field decides nothing, so such a rule would be semantically
       // wrong) and the aircraft stays OUT_OF_SERVICE regardless.
-      expect(result.status).toBe('OUT_OF_SERVICE');
-      expect(result.outOfServiceUntil).toBe('2020-01-01');
+      expect(result.aircraft.status).toBe('OUT_OF_SERVICE');
+      expect(result.aircraft.outOfServiceUntil).toBe('2020-01-01');
     });
 
     it('listOutOfServiceAircraft still returns an aircraft whose outOfServiceUntil is in the past — invariant [a] (AC 2a)', async () => {
@@ -673,6 +733,250 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       expect(result.status).toBe('OUT_OF_SERVICE');
       expect(result.outOfServiceUntil).toBe('2020-01-01');
+    });
+  });
+
+  /**
+   * Story AOG-1b — the count in the transaction (AC 4), the fan-out (AC 10) and
+   * its best-effort contract (AC 11). `mockInteractiveTransaction` hands the
+   * SAME mocked `prisma` back as `tx`, so a `booking.findMany` reached through
+   * `tx` and one reached directly are the same spy — which is why the "inside
+   * the transaction" claims below are asserted on ORDER, not on identity.
+   */
+  describe('setOutOfService — impacted-booking count and grounding email (story AOG-1b)', () => {
+    function groundedFixture(overrides: Record<string, unknown> = {}) {
+      return { ...SELECTED_AIRCRAFT, status: 'OUT_OF_SERVICE', statusReason: 'Revisione 100h', ...overrides };
+    }
+
+    it('recounts INSIDE the transaction, AFTER the guarded write, and returns the number beside the aircraft (AC 4)', async () => {
+      const order: string[] = [];
+      transaction.mockImplementation(async (arg: unknown) => {
+        order.push('tx-start');
+        const result = typeof arg === 'function' ? await (arg as (tx: unknown) => unknown)(prisma) : arg;
+        order.push('tx-end');
+        return result;
+      });
+      updateManyMock.mockImplementation((async () => {
+        order.push('updateMany');
+        return { count: 1 };
+      }) as never);
+      bookingFindManyMock.mockImplementation((async () => {
+        order.push('booking.findMany');
+        return [
+          { id: 'b1', status: 'PENDING', personId: 'person_1', startsAt: new Date('2031-05-01T09:00:00.000Z') },
+          { id: 'b2', status: 'APPROVED', personId: 'person_2', startsAt: new Date('2031-05-02T09:00:00.000Z') },
+          { id: 'b3', status: 'APPROVED', personId: 'person_3', startsAt: new Date('2031-05-03T09:00:00.000Z') },
+        ];
+      }) as never);
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture({ outOfServiceUntil: new Date(Date.UTC(2031, 4, 12)) }));
+
+      const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' });
+
+      expect(result.impactedBookings).toEqual({ pending: 1, approved: 2 });
+      // The count is a REPORT of the write, so it runs after it, and it runs on
+      // the transaction's own connection: no TOCTOU between the two.
+      expect(order).toEqual(['tx-start', 'updateMany', 'booking.findMany', 'tx-end']);
+    });
+
+    it('counts against the date it JUST WROTE, read back from the row — not against the raw input', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture({ outOfServiceUntil: new Date(Date.UTC(2031, 4, 12)) }));
+
+      await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' });
+
+      const where = bookingFindManyMock.mock.calls[0]![0]!.where as {
+        aircraftId: string;
+        status: { in: string[] };
+        startsAt: { gte: Date; lt?: Date };
+      };
+      expect(where.aircraftId).toBe('aircraft_1');
+      expect(where.status).toEqual({ in: ['PENDING', 'APPROVED'] });
+      // 13/05/2031 00:00 Europe/Rome (CEST, UTC+2) — the INCLUSIVE end of the
+      // 12th, i.e. R-AOG-a expressed as an instant.
+      expect(where.startsAt.lt?.toISOString()).toBe('2031-05-12T22:00:00.000Z');
+    });
+
+    it('emails ONE holder per impacted APPROVED booking and NOTHING to a PENDING holder (AC 10)', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture({ outOfServiceUntil: new Date(Date.UTC(2031, 4, 12)) }));
+      bookingFindMany.mockResolvedValue([
+        { id: 'b1', status: 'PENDING', personId: 'person_pending', startsAt: new Date('2031-05-01T09:00:00.000Z') },
+        { id: 'b2', status: 'APPROVED', personId: 'person_approved', startsAt: new Date('2031-05-02T09:00:00.000Z') },
+      ]);
+      personFindMany.mockResolvedValue([{ id: 'person_approved', firstName: 'Anna', email: 'anna@example.test' }]);
+      userFindMany.mockResolvedValue([{ personId: 'person_approved', locale: 'en' }]);
+
+      await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' });
+
+      // The PENDING holder is not even LOOKED UP: the recipient set is the
+      // APPROVED subset, decided by the one domain function (R-AOG-i).
+      expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_approved'] } } }));
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      expect(sendMock).toHaveBeenCalledWith({ to: 'anna@example.test', subject: 'Aircraft grounded subject', text: 'Aircraft grounded text' });
+      // Recipient locale is the holder's OWN `User.locale` (AD-7), and the mail
+      // names the aircraft, the reason, the window and THEIR booking.
+      expect(buildAircraftGroundedEmail).toHaveBeenCalledWith('en', {
+        firstName: 'Anna',
+        aircraftRegistration: 'I-ABCD',
+        startsAt: new Date('2031-05-02T09:00:00.000Z'),
+        reason: 'Revisione 100h',
+        outOfServiceUntil: '2031-05-12',
+      });
+    });
+
+    it('falls back to `it` with no linked User, and names the UNDELIMITED window when there is no date (invariant [b])', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture({ statusReason: 'Attesa pezzo', outOfServiceUntil: null }));
+      bookingFindMany.mockResolvedValue([{ id: 'b1', status: 'APPROVED', personId: 'person_1', startsAt: new Date('2031-05-02T09:00:00.000Z') }]);
+      personFindMany.mockResolvedValue([{ id: 'person_1', firstName: 'Bruno', email: 'bruno@example.test' }]);
+      userFindMany.mockResolvedValue([]);
+
+      await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Attesa pezzo' });
+
+      expect(buildAircraftGroundedEmail).toHaveBeenCalledWith('it', expect.objectContaining({ outOfServiceUntil: null, reason: 'Attesa pezzo' }));
+      // No date => no upper bound at all in the count either.
+      const where = bookingFindManyMock.mock.calls[0]![0]!.where as { startsAt: { gte: Date; lt?: Date } };
+      expect(where.startsAt.lt).toBeUndefined();
+    });
+
+    it('sends ONE email per HOLDER, naming their EARLIEST impacted booking', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture({ outOfServiceUntil: null }));
+      bookingFindMany.mockResolvedValue([
+        { id: 'b1', status: 'APPROVED', personId: 'person_1', startsAt: new Date('2031-05-02T09:00:00.000Z') },
+        { id: 'b2', status: 'APPROVED', personId: 'person_1', startsAt: new Date('2031-05-09T09:00:00.000Z') },
+      ]);
+      personFindMany.mockResolvedValue([{ id: 'person_1', firstName: 'Carla', email: 'carla@example.test' }]);
+      userFindMany.mockResolvedValue([]);
+
+      const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h' });
+
+      // The COUNT still says two bookings — the fan-out is what dedupes.
+      expect(result.impactedBookings).toEqual({ pending: 0, approved: 2 });
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      expect(buildAircraftGroundedEmail).toHaveBeenCalledWith('it', expect.objectContaining({ startsAt: new Date('2031-05-02T09:00:00.000Z') }));
+    });
+
+    it('a holder with NO email on file is skipped in silence, and does not stop the others (AC 11)', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture({ outOfServiceUntil: null }));
+      bookingFindMany.mockResolvedValue([
+        { id: 'b1', status: 'APPROVED', personId: 'person_no_email', startsAt: new Date('2031-05-02T09:00:00.000Z') },
+        { id: 'b2', status: 'APPROVED', personId: 'person_with_email', startsAt: new Date('2031-05-03T09:00:00.000Z') },
+      ]);
+      personFindMany.mockResolvedValue([
+        { id: 'person_no_email', firstName: 'Dario', email: null },
+        { id: 'person_with_email', firstName: 'Elena', email: 'elena@example.test' },
+      ]);
+      userFindMany.mockResolvedValue([]);
+
+      const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h' });
+
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'elena@example.test' }));
+      expect(result.impactedBookings).toEqual({ pending: 0, approved: 2 });
+    });
+
+    it('a MailSender that THROWS cannot fail the grounding — 200, row written, count in the response (AC 11)', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture({ outOfServiceUntil: null }));
+      bookingFindMany.mockResolvedValue([
+        { id: 'b1', status: 'APPROVED', personId: 'person_1', startsAt: new Date('2031-05-02T09:00:00.000Z') },
+        { id: 'b2', status: 'APPROVED', personId: 'person_2', startsAt: new Date('2031-05-03T09:00:00.000Z') },
+      ]);
+      personFindMany.mockResolvedValue([
+        { id: 'person_1', firstName: 'Fabio', email: 'fabio@example.test' },
+        { id: 'person_2', firstName: 'Gina', email: 'gina@example.test' },
+      ]);
+      userFindMany.mockResolvedValue([]);
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      sendMock.mockRejectedValueOnce(new Error('SMTP down'));
+
+      const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h' });
+
+      expect(result.aircraft.status).toBe('OUT_OF_SERVICE');
+      expect(result.impactedBookings).toEqual({ pending: 0, approved: 2 });
+      expect(updateManyMock).toHaveBeenCalledTimes(1);
+      // ...and the SECOND recipient still got their mail: one bad address does
+      // not swallow the rest of the fan-out.
+      expect(sendMock).toHaveBeenCalledTimes(2);
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
+    });
+
+    it('sends AFTER the transaction has closed, never inside it (AC 11)', async () => {
+      const order: string[] = [];
+      transaction.mockImplementation(async (arg: unknown) => {
+        order.push('tx-start');
+        const result = typeof arg === 'function' ? await (arg as (tx: unknown) => unknown)(prisma) : arg;
+        order.push('tx-end');
+        return result;
+      });
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture({ outOfServiceUntil: null }));
+      bookingFindMany.mockResolvedValue([{ id: 'b1', status: 'APPROVED', personId: 'person_1', startsAt: new Date('2031-05-02T09:00:00.000Z') }]);
+      personFindMany.mockResolvedValue([{ id: 'person_1', firstName: 'Hugo', email: 'hugo@example.test' }]);
+      userFindMany.mockResolvedValue([]);
+      sendMock.mockImplementation(async () => {
+        order.push('send');
+      });
+
+      await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h' });
+
+      expect(order).toEqual(['tx-start', 'tx-end', 'send']);
+    });
+  });
+
+  describe('previewOutOfServiceImpact (story AOG-1b, AC 2 — the estimate before the act)', () => {
+    it('rejects an actor without aircraft.manage, before any query', async () => {
+      await expect(previewOutOfServiceImpact(pilotActor(), 'aircraft_1', {})).rejects.toThrow(ForbiddenError);
+      expect(findUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundError for a missing aircraft', async () => {
+      aircraftFindUnique.mockResolvedValue(null);
+      await expect(previewOutOfServiceImpact(adminActor(), 'missing', {})).rejects.toThrow(NotFoundError);
+      expect(bookingFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('runs the SAME domain function against the CANDIDATE date and answers counts only', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      bookingFindMany.mockResolvedValue([
+        { id: 'b1', status: 'PENDING', personId: 'person_1', startsAt: new Date('2031-05-01T09:00:00.000Z') },
+        { id: 'b2', status: 'APPROVED', personId: 'person_2', startsAt: new Date('2031-05-02T09:00:00.000Z') },
+      ]);
+
+      const impact = await previewOutOfServiceImpact(adminActor(), 'aircraft_1', { until: '2031-05-12' });
+
+      // Counts ONLY: the recipient list never leaves the service.
+      expect(impact).toEqual({ pending: 1, approved: 1 });
+      const where = bookingFindManyMock.mock.calls[0]![0]!.where as { startsAt: { lt?: Date } };
+      expect(where.startsAt.lt?.toISOString()).toBe('2031-05-12T22:00:00.000Z');
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('with NO candidate date the window is not delimited (invariant [b])', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      bookingFindMany.mockResolvedValue([]);
+
+      await previewOutOfServiceImpact(adminActor(), 'aircraft_1', {});
+
+      const where = bookingFindManyMock.mock.calls[0]![0]!.where as { startsAt: { gte: Date; lt?: Date } };
+      expect(where.startsAt.lt).toBeUndefined();
     });
   });
 
@@ -706,6 +1010,18 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftUpdateMany.mockResolvedValue({ count: 0 });
 
       await expect(returnToService(adminActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
+    });
+
+    it('sends NO email and counts NOTHING (story AOG-1b, R-AOG-i: the return to service is silent)', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue({ ...SELECTED_AIRCRAFT, status: 'OPERATIONAL', statusReason: null });
+
+      await returnToService(adminActor(), 'aircraft_1');
+
+      expect(sendMock).not.toHaveBeenCalled();
+      expect(buildAircraftGroundedEmail).not.toHaveBeenCalled();
+      expect(bookingFindManyMock).not.toHaveBeenCalled();
     });
   });
 

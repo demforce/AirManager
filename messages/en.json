@@ -1040,7 +1040,18 @@
         "untilValue": "grounded until {date} inclusive",
         "untilUnknown": "return date not yet known",
         "confirm": "Confirm",
-        "confirmReturnToService": "Return this aircraft to service?"
+        "confirmReturnToService": "Return this aircraft to service?",
+        "impactPreviewOne": "You are about to impact 1 booking.",
+        "impactPreviewMany": "You are about to impact {count} bookings.",
+        "impactBannerOne": "Grounding recorded: 1 booking impacted.",
+        "impactBannerMany": "Grounding recorded: {count} bookings impacted.",
+        "impactRowOne": "1 booking inside the grounding",
+        "impactRowMany": "{count} bookings inside the grounding",
+        "impactSplit": "Pending (frozen): {pending} · Approved (to handle): {approved}",
+        "impactWindowUntil": "counted until {date} inclusive",
+        "impactWindowUndelimited": "return date not yet known: count not delimited",
+        "impactEstimate": "estimate",
+        "impactBookingsLink": "View bookings"
       },
       "rates": {
         "sectionTitle": "Rates",
@@ -2362,6 +2373,12 @@
     "bookingDenied": {
       "subject": "Booking denied: {aircraftRegistration}",
       "body": "Hello {firstName},\n\nYour booking for {aircraftRegistration} on {when} has been denied.\n\nReason: {reason}"
+    },
+    "aircraftGrounded": {
+      "subject": "Aircraft out of service: {aircraftRegistration}",
+      "body": "Hello {firstName},\n\nAircraft {aircraftRegistration}, which you have an approved booking for, has been taken out of service.\n\nReason: {reason}\nGrounded: {window}\nYour first affected booking: {when}\n\nThe booking has NOT been cancelled: please contact the airfield to agree how to proceed.",
+      "windowUntil": "until {date} inclusive",
+      "windowUnknown": "return date not yet known"
     }
   },
   "BillingPage": {
