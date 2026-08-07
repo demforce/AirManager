@@ -363,6 +363,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               // Story AOG-1a, AC 11 — `{registration}`/`{reason}`/`{date}` filled CLIENT-side, same reasoning.
               AIRCRAFT_OUT_OF_SERVICE: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE'),
               AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL'),
+              // Review MAJOR-1 — appended to either template above when documents block the same request; `{documents}` filled CLIENT-side.
+              AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS'),
               // `t.raw`: the {documents} placeholder is filled CLIENT-side
               // (same reasoning as `fields.studentOnlyCorrectionHint` above).
               FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),

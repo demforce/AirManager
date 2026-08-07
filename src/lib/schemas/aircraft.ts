@@ -95,12 +95,21 @@ export type UpdateAircraftInput = z.infer<typeof updateAircraftSchema>;
  * re-stated per surface. Omitting it is a legitimate state ("return date not
  * yet known", invariant [b]), and a date in the past is accepted (invariant
  * [a]: the field decides nothing).
+ *
+ * `.nullish()`, not `.optional()` (review MINOR-2): the DTO this same endpoint
+ * RETURNS carries `outOfServiceUntil: string | null`, so a client (the future
+ * Flutter app is a declared consumer) that reads an `Aircraft` and sends the
+ * field back exactly as it read it must not get a 422 for saying `null` —
+ * which is precisely what "return date not yet known" means. Same convention
+ * as every other optional-AND-clearable field in this file
+ * (`updateAircraftSchema`'s `notes`/`seats`/`fuelType`); `null` and an omitted
+ * key are stored identically by `setOutOfService`.
  */
 export const setOutOfServiceSchema = z.object({
   // Length-capped for the same defense-in-depth reason the hour meter is
   // range-capped (review 2.4 F2 / 2.5 F3): an oversized body fails as 422.
   reason: z.string().trim().min(1).max(500),
-  outOfServiceUntil: z.iso.date().optional(),
+  outOfServiceUntil: z.iso.date().nullish(),
 });
 
 export type SetOutOfServiceInput = z.infer<typeof setOutOfServiceSchema>;

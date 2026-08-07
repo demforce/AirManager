@@ -407,6 +407,115 @@ async function findMissingBlockingDocuments(
 }
 
 /**
+ * The FULL blocking-document picture for one flight — both scans
+ * (`findBlockingExpiredDocuments`, shared verbatim with bookings, and
+ * `findMissingBlockingDocuments`, flights-only) over BOTH people
+ * (pilot/student and, when there is one, the instructor), tagged
+ * `role`/`personName` (review F6).
+ *
+ * Extracted (story AOG-1a, review MAJOR-1 — PO decision 2026-08-07, option 2)
+ * because it now has TWO callers inside `resolveFlightInput`: the
+ * `FLIGHT_BLOCKED_BY_EXPIRY` 422 it always fed, AND the
+ * `AIRCRAFT_OUT_OF_SERVICE` 422, which used to answer FIRST and therefore let
+ * an admin derogate a grounding while never being told which documents that
+ * same confirmation would also bypass (measured: 6 unnamed documents scavalcati
+ * by a `forceReason` written for the grounding alone). ONE list, ONE shape, so
+ * the two 422s can never disagree about what is blocking.
+ *
+ * The queries stay SEQUENTIAL, exactly as they were inline.
+ */
+async function scanBlockingDocuments(
+  person: { id: string; name: string; hasActivePilot: boolean; hasActiveStudent: boolean },
+  instructor: { personId: string; name: string } | null,
+  flightDateOnly: string,
+): Promise<FlightBlockingDocument[]> {
+  const personExpired = (await findBlockingExpiredDocuments(person.id, flightDateOnly)).blockingDocuments;
+  const personMissing = await findMissingBlockingDocuments(person.id, {
+    pilot: person.hasActivePilot,
+    student: person.hasActiveStudent,
+    instructor: false,
+  });
+  const instructorExpired = instructor === null ? [] : (await findBlockingExpiredDocuments(instructor.personId, flightDateOnly)).blockingDocuments;
+  const instructorMissing =
+    instructor === null ? [] : await findMissingBlockingDocuments(instructor.personId, { pilot: false, student: false, instructor: true });
+
+  return [
+    ...personExpired.map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt, role: 'person' as const, personName: person.name })),
+    ...personMissing.map((document) => ({ typeName: document.typeName, expiresAt: null, role: 'person' as const, personName: person.name })),
+    ...instructorExpired.map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt, role: 'instructor' as const, personName: instructor!.name })),
+    ...instructorMissing.map((document) => ({ typeName: document.typeName, expiresAt: null, role: 'instructor' as const, personName: instructor!.name })),
+  ];
+}
+
+/**
+ * The instructor row a flight may name, or `null` when that person does not
+ * exist, is archived, or has no active `InstructorProfile` — the three cases
+ * `resolveFlightInput` deliberately folds into ONE `INSTRUCTOR_NOT_FOUND`
+ * (TD-1 AC 9 / decision 5.1 D1: never reveal whether an unknown id belongs to
+ * nobody or to a non-instructor).
+ *
+ * Extracted with `scanBlockingDocuments` above (review MAJOR-1): the
+ * out-of-service guard fires BEFORE the instructor is resolved, and reporting
+ * the instructor's blocking documents there means resolving them there too —
+ * with the SAME predicate, never a second one that could drift. That guard
+ * does not THROW on an invalid instructor (the flight is already refused for
+ * the grounding, and `INSTRUCTOR_NOT_FOUND` is what the caller gets once the
+ * grounding is derogated): it simply reports no instructor document.
+ */
+async function findActiveInstructor(personId: string): Promise<{ personId: string; profileId: string; name: string } | null> {
+  const instructorPerson = await prisma.person.findUnique({
+    where: { id: personId },
+    select: { firstName: true, lastName: true, archivedAt: true, instructorProfile: { select: { id: true, deactivatedAt: true } } },
+  });
+  const instructorProfile = instructorPerson?.instructorProfile ?? null;
+  if (!instructorPerson || instructorPerson.archivedAt !== null || !instructorProfile || instructorProfile.deactivatedAt !== null) {
+    return null;
+  }
+  return { personId, profileId: instructorProfile.id, name: `${instructorPerson.firstName} ${instructorPerson.lastName}` };
+}
+
+/**
+ * The Europe/Rome CALENDAR day a flight is logged under (Dev Notes: "il giorno
+ * ROMA, non UTC" — a 00:30 Roma takeoff is 22:30Z the day before, and must
+ * still log as that Roma day). Derived in ONE place because two guards date
+ * themselves on it: the expiry scan and (review MAJOR-1) the out-of-service
+ * guard's own copy of that scan.
+ */
+function deriveFlightDate(takeoffAtIso: string): Date {
+  return parseDateOnlyUtc(dateOnlyInZone(new Date(takeoffAtIso), APP_TIMEZONE));
+}
+
+/**
+ * Review F4 (ratifica R-14.4-b) — a correction that changes NEITHER the
+ * person, NOR the instructor, NOR the flight date is exempt from the expiry
+ * guard entirely: same "correcting is not registering anew" principle as
+ * R-14.3-a's flightType exemption. `original` is only ever supplied by
+ * `correctFlight` (its own recorded identity); a brand-new `registerFlight`
+ * call never passes it, so it is always fully checked. Without this, a
+ * notes/hour-meter-only correction of a HISTORICAL flight becomes a permanent
+ * dead end (422, no legitimate bypass) the moment a document expires AFTER the
+ * flight was flown, and forces the ADMIN force-override path to stamp a fake
+ * "Deroga" on a flight that was never an operational override.
+ *
+ * A predicate (not an inline expression) since review MAJOR-1: the
+ * out-of-service guard's document scan must honour the SAME exemption as the
+ * expiry guard's, or the two 422s would report different lists.
+ */
+function isIdentityUnchanged(
+  original: OriginalFlightIdentity | undefined,
+  input: RegisterFlightInput,
+  instructorPersonId: string | null,
+  flightDate: Date,
+): boolean {
+  return (
+    original !== undefined &&
+    original.personId === input.personId &&
+    original.instructorPersonId === instructorPersonId &&
+    original.flightDate.getTime() === flightDate.getTime()
+  );
+}
+
+/**
  * All of `registerFlight`'s pre-transaction guards and rate lookups (AC 1/2/
  * 3/4), extracted (story 5.3, Task 2) so `correctFlight` can re-run the
  * EXACT same validation on its NEW data ("tutti i 422 di 5.1 si applicano ai
@@ -415,8 +524,11 @@ async function findMissingBlockingDocuments(
  * exists -> 404; person exists -> 404; aircraft archived ->
  * `AIRCRAFT_ARCHIVED`; aircraft out of service -> `AIRCRAFT_OUT_OF_SERVICE`
  * (story AOG-1a, P2 — `details: { reason, outOfServiceUntil }`, the SAME shape
- * the three booking guards carry; bypassable by the admin `force` below, see
- * the guard's own comment for its perimeter and for why it cannot be dated);
+ * the three booking guards carry, PLUS `documents` when the very same request
+ * is also blocked by an expired/missing document (review MAJOR-1: one `force`
+ * bypasses both, so both must be on screen before it is given); bypassable by
+ * the admin `force` below, see the guard's own comment for its perimeter and
+ * for why it cannot be dated);
  * person archived -> `PERSON_ARCHIVED`; person missing
  * an active pilot/student profile -> `PERSON_NOT_PILOT_OR_STUDENT`; person
  * has an active STUDENT profile and NO active pilot profile, on anything but
@@ -528,6 +640,13 @@ async function resolveFlightInput(
     throw new NotFoundError('Person not found.');
   }
 
+  // Pure derivations off the row just loaded — hoisted above the guards below
+  // (review MAJOR-1) because the out-of-service guard's document scan needs the
+  // person's own view of themselves on this flight. No guard moved with them.
+  const hasActivePilot = person.pilotProfile !== null && person.pilotProfile.deactivatedAt === null;
+  const hasActiveStudent = person.studentProfile !== null && person.studentProfile.deactivatedAt === null;
+  const personDisplayName = `${person.firstName} ${person.lastName}`;
+
   if (aircraft.archivedAt !== null) {
     throw new ValidationError('Cannot register a flight on an archived aircraft.', undefined, 'AIRCRAFT_ARCHIVED');
   }
@@ -552,12 +671,40 @@ async function resolveFlightInput(
   // precisely why the deroga below exists — the aircraft that comes back with
   // a hard landing is grounded immediately, and the flight that caused it must
   // still be loggable.
+  //
+  // Review MAJOR-1 (PO decision 2026-08-07, option 2): this 422 also carries
+  // `details.documents` — the SAME list, in the SAME shape,
+  // `FLIGHT_BLOCKED_BY_EXPIRY` carries. Until this fix the guard answered
+  // BEFORE the document scan, so an admin who confirmed "deroga pensata solo
+  // per il fermo" also scavalcava, in silence, every blocking document of that
+  // flight (measured: 6 of them, none ever named) — and the ONE `force`
+  // ratified by R-AOG-c made that a single, undifferentiated stamp. The
+  // promise written a few screens below ("never partial — the admin sees the
+  // whole picture before deciding to override") is true again on THIS path
+  // too. The key is OMITTED when nothing is blocking, so a grounding with no
+  // document behind it answers with exactly the shape (and the exactly
+  // byte-identical UI sentence) it answered with before.
+  // Cost: the scan is CALLED from two places but RUNS at most once per
+  // request — this branch throws, so the call below is never reached.
   const aircraftUnchanged = original !== undefined && original.aircraftId === input.aircraftId;
   const outOfServiceBlock = aircraft.status === 'OUT_OF_SERVICE' && !aircraftUnchanged;
   if (outOfServiceBlock && !input.force) {
+    const groundedFlightDate = deriveFlightDate(input.takeoffAt);
+    // `=== input.personId` is the `INSTRUCTOR_SAME_AS_PILOT` input the guard
+    // below rejects: there is no instructor slot to scan for it, and reporting
+    // the same person twice under two roles would be noise, not information.
+    const groundedInstructorPersonId = input.instructorPersonId === input.personId ? null : (input.instructorPersonId ?? null);
+    const groundedInstructor = groundedInstructorPersonId === null ? null : await findActiveInstructor(groundedInstructorPersonId);
+    const documents = isIdentityUnchanged(original, input, groundedInstructorPersonId, groundedFlightDate)
+      ? []
+      : await scanBlockingDocuments(
+          { id: person.id, name: personDisplayName, hasActivePilot, hasActiveStudent },
+          groundedInstructor,
+          toDateOnlyString(groundedFlightDate),
+        );
     throw new ValidationError(
       `Aircraft is out of service: ${aircraft.statusReason}.`,
-      outOfServiceDetails(aircraft),
+      documents.length === 0 ? outOfServiceDetails(aircraft) : { ...outOfServiceDetails(aircraft), documents },
       'AIRCRAFT_OUT_OF_SERVICE',
     );
   }
@@ -566,8 +713,6 @@ async function resolveFlightInput(
     throw new ValidationError('Cannot register a flight for an archived person.', undefined, 'PERSON_ARCHIVED');
   }
 
-  const hasActivePilot = person.pilotProfile !== null && person.pilotProfile.deactivatedAt === null;
-  const hasActiveStudent = person.studentProfile !== null && person.studentProfile.deactivatedAt === null;
   if (!hasActivePilot && !hasActiveStudent) {
     throw new ValidationError(
       'Person must have an active pilot or student profile to be logged on a flight.',
@@ -609,10 +754,10 @@ async function resolveFlightInput(
     throw new ValidationError('Flight duration must not exceed 1440 minutes (24h).', undefined, 'FLIGHT_TIMES_INVALID');
   }
 
-  // The Europe/Rome CALENDAR day the flight is logged under (Dev Notes:
-  // "il giorno ROMA, non UTC" — a 00:30 Roma takeoff is 22:30Z the day
-  // before, and must still log as that Roma day).
-  const flightDate = parseDateOnlyUtc(dateOnlyInZone(takeoffAt, APP_TIMEZONE));
+  // The Europe/Rome CALENDAR day the flight is logged under — derived by
+  // `deriveFlightDate` (its own doc-comment), the single derivation shared
+  // with the out-of-service guard above.
+  const flightDate = deriveFlightDate(input.takeoffAt);
   if (flightDate.getTime() > todayDateOnlyUtc().getTime()) {
     throw new ValidationError('Flight date cannot be in the future.', undefined, 'FLIGHT_DATE_IN_FUTURE');
   }
@@ -658,66 +803,43 @@ async function resolveFlightInput(
       throw new ValidationError('The instructor cannot be the same person as the pilot/student.', undefined, 'INSTRUCTOR_SAME_AS_PILOT');
     }
 
-    const instructorPerson = await prisma.person.findUnique({
-      where: { id: instructorPersonId },
-      select: { firstName: true, lastName: true, archivedAt: true, instructorProfile: { select: { id: true, deactivatedAt: true } } },
-    });
-    const instructorProfile = instructorPerson?.instructorProfile ?? null;
     // TD-1, AC 9: an archived Person with an otherwise-active
     // InstructorProfile is treated EXACTLY like a missing/deactivated
     // profile — same folded `INSTRUCTOR_NOT_FOUND` code (anti-enumeration,
     // decision 5.1 D1), never a distinct message that would reveal the
-    // person exists but is archived.
-    if (!instructorPerson || instructorPerson.archivedAt !== null || !instructorProfile || instructorProfile.deactivatedAt !== null) {
+    // person exists but is archived. The three cases collapse inside
+    // `findActiveInstructor` (shared with the out-of-service guard above).
+    const instructor = await findActiveInstructor(instructorPersonId);
+    if (!instructor) {
       throw new ValidationError('Instructor has no active instructor profile.', undefined, 'INSTRUCTOR_NOT_FOUND');
     }
-    instructorProfileId = instructorProfile.id;
-    instructorName = `${instructorPerson.firstName} ${instructorPerson.lastName}`;
+    instructorProfileId = instructor.profileId;
+    instructorName = instructor.name;
   }
 
-  // Review F4 (ratifica R-14.4-b): a correction that changes NEITHER the
-  // person, NOR the instructor, NOR the flight date is exempt from the
-  // expiry guard entirely — same "correcting is not registering anew"
-  // principle as R-14.3-a's flightType exemption above. `original` is only
-  // ever supplied by `correctFlight` (its own recorded identity); a
-  // brand-new `registerFlight` call never passes it, so it is always fully
-  // checked. Without this, a notes/hour-meter-only correction of a
-  // HISTORICAL flight becomes a permanent dead end (422, no legitimate
-  // bypass) the moment a document expires AFTER the flight was flown, and
-  // forces the ADMIN force-override path to stamp a fake "Deroga" on a
-  // flight that was never actually an operational override.
-  const identityUnchanged =
-    original !== undefined &&
-    original.personId === input.personId &&
-    original.instructorPersonId === instructorPersonId &&
-    original.flightDate.getTime() === flightDate.getTime();
+  // Review F4 (ratifica R-14.4-b) — the unchanged-identity exemption, in
+  // `isIdentityUnchanged`'s own doc-comment (shared with the out-of-service
+  // guard above so the two 422s never disagree on what they exempt).
+  const identityUnchanged = isIdentityUnchanged(original, input, instructorPersonId, flightDate);
 
   // Story 14.4, AC 1/2 (ratifica R4) — see this function's own doc-comment.
   // Both the pilot/student AND, when present, the instructor are scanned;
   // every blocking document across EITHER is reported together (never
-  // partial — the admin sees the whole picture before deciding to override).
+  // partial — the admin sees the whole picture before deciding to override,
+  // on THIS path and — since review MAJOR-1 — on the out-of-service one too).
   // Review F5 (ratifica R-14.4-a): R4 says "assente O scaduta" — a blocking
   // type APPLICABLE to the person with NO `Expiry` at all
   // (`findMissingBlockingDocuments`) blocks exactly like an expired one,
   // alongside (never inside) the expired-document scan
   // (`findBlockingExpiredDocuments`, shared verbatim with bookings — AC 5,
   // that surface's own semantics stay frozen).
-  const flightDateOnly = toDateOnlyString(flightDate);
-  const personDisplayName = `${person.firstName} ${person.lastName}`;
-  const pilotExpired = identityUnchanged ? [] : (await findBlockingExpiredDocuments(input.personId, flightDateOnly)).blockingDocuments;
-  const pilotMissing = identityUnchanged
+  const blockingDocuments: FlightBlockingDocument[] = identityUnchanged
     ? []
-    : await findMissingBlockingDocuments(input.personId, { pilot: hasActivePilot, student: hasActiveStudent, instructor: false });
-  const instructorExpired =
-    identityUnchanged || !instructorPersonId ? [] : (await findBlockingExpiredDocuments(instructorPersonId, flightDateOnly)).blockingDocuments;
-  const instructorMissing =
-    identityUnchanged || !instructorPersonId ? [] : await findMissingBlockingDocuments(instructorPersonId, { pilot: false, student: false, instructor: true });
-  const blockingDocuments: FlightBlockingDocument[] = [
-    ...pilotExpired.map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt, role: 'person' as const, personName: personDisplayName })),
-    ...pilotMissing.map((document) => ({ typeName: document.typeName, expiresAt: null, role: 'person' as const, personName: personDisplayName })),
-    ...instructorExpired.map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt, role: 'instructor' as const, personName: instructorName! })),
-    ...instructorMissing.map((document) => ({ typeName: document.typeName, expiresAt: null, role: 'instructor' as const, personName: instructorName! })),
-  ];
+    : await scanBlockingDocuments(
+        { id: input.personId, name: personDisplayName, hasActivePilot, hasActiveStudent },
+        instructorPersonId === null ? null : { personId: instructorPersonId, name: instructorName! },
+        toDateOnlyString(flightDate),
+      );
 
   // Story AOG-1a, AC 10 (ratifica R-AOG-c): ONE `force` covers BOTH blocks.
   // `outOfServiceBlock` can only still be true here if `input.force` was set

@@ -338,6 +338,17 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   // pages now count with ONE reader. (The wider `OPTIONS_PAGE_SIZE` TD on the
   // other three pages stays open, out of this story's perimeter.)
   const aogCount = outOfServiceAircraft.length;
+  // Review MINOR-1 (PO decision 2026-08-07) — the SAME fleet-wide partition
+  // `/dashboard/fleet` states in its own page head ("total non-archived =
+  // available + AOG", that page's doc-comment): `aircraftResult.total` is the
+  // unpaginated count of non-archived aircraft the query above ALREADY
+  // returned, so this costs no new query. Without it the AOG count was
+  // fleet-wide while the KPI denominator and the Flotta card stayed capped at
+  // the first `OPTIONS_PAGE_SIZE`, and the same screen announced two
+  // incompatible fleets (measured: "24 AOG" beside "87 / 88", 88 + 24 = 112 —
+  // neither 100 nor the 175 aircraft actually active).
+  const fleetTotalCount = aircraftResult.total;
+  const fleetOperationalCount = Math.max(0, fleetTotalCount - aogCount);
   const onGroundCount = groundScanResult.items.filter((item) => deriveApprovedPprMovementStatus(item.eta, now) === 'AL_SUOLO').length;
   const subParts = [
     icao || null,
@@ -347,7 +358,16 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   ].filter((part): part is string => Boolean(part));
 
   // --- KPI row (AC 1) ------------------------------------------------------
-  const trulyAvailableCount = operationalIds.filter((id) => !reservedIds.has(id)).length;
+  // "Flotta disponibile" keeps its ratified meaning (story 12.12, AC 1:
+  // OPERATIONAL, non archiviati, non riservati ORA) and its fleet-wide base
+  // (review MINOR-1): the "Riservato" overlay is still read over the first
+  // `OPTIONS_PAGE_SIZE` ids — it is a live, per-aircraft concept that
+  // `/dashboard/fleet` deliberately does not subtract from its own summary at
+  // all, and widening it would need the query this fix is not allowed to add
+  // (the `OPTIONS_PAGE_SIZE` TD stays open). On a fleet within that page the
+  // number is exactly the one this KPI has always shown.
+  const reservedOperationalCount = operationalIds.filter((id) => reservedIds.has(id)).length;
+  const trulyAvailableCount = Math.max(0, fleetOperationalCount - reservedOperationalCount);
   // Review 12.12 F2, PO-ratified overcount 2026-07-19: planned + flown; a
   // today APPROVED booking keeps counting after its flight is registered —
   // FLOWN is a separate manual step.
@@ -540,7 +560,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           <KPI label={t('overview.kpis.flightsToday')} value={flightsToday} />
         </div>
         <div data-testid="kpi-fleet-available">
-          <KPI label={t('overview.kpis.fleetAvailable')} value={trulyAvailableCount} unit={`/ ${operationalIds.length}`} />
+          <KPI label={t('overview.kpis.fleetAvailable')} value={trulyAvailableCount} unit={`/ ${fleetOperationalCount}`} />
         </div>
         <div data-testid="kpi-ppr-pending">
           <KPI label={t('overview.kpis.pprPending')} value={pendingPprResult.total} />
@@ -730,8 +750,8 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         />
         <FleetCard
           items={fleetItems}
-          totalCount={aircraftResult.items.length}
-          availableCount={operationalIds.length}
+          totalCount={fleetTotalCount}
+          availableCount={fleetOperationalCount}
           aogCount={aogCount}
           locale={displayLocale}
           canManageAircraft={hasPermission(actor, 'aircraft.manage')}
@@ -818,6 +838,8 @@ function buildFlightEditorLabels(
       // Story AOG-1a, AC 11 — `{registration}`/`{reason}`/`{date}` filled CLIENT-side, same reasoning.
       AIRCRAFT_OUT_OF_SERVICE: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE'),
       AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL'),
+      // Review MAJOR-1 — appended to either template above when documents block the same request; `{documents}` filled CLIENT-side.
+      AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS'),
       FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
       // Review F5/F6 — `{date}` filled CLIENT-side, same reasoning as above.
       documentExpiredOn: t.raw('editor.errors.documentExpiredOn'),

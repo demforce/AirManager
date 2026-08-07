@@ -1375,6 +1375,7 @@
         "FLIGHT_DATE_IN_FUTURE": "The flight date cannot be in the future.",
         "AIRCRAFT_OUT_OF_SERVICE": "Aircraft {registration} is out of service: {reason}.",
         "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Aircraft {registration} is out of service: {reason}. Grounded until {date} inclusive.",
+        "AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS": "This flight is also blocked by these missing or expired documents: {documents}.",
         "FLIGHT_BLOCKED_BY_EXPIRY": "Cannot log this flight: the following documents are missing or expired: {documents}.",
         "documentExpiredOn": "expired on {date}",
         "documentMissing": "missing",

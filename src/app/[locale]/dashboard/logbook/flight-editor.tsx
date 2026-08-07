@@ -100,6 +100,8 @@ export type FlightEditorLabels = {
     /** Story AOG-1a, AC 11 — `t.raw` templates, `{registration}`/`{reason}` (+ `{date}`): the operator must read WHICH aircraft, WHY, and — only when a date is on file — until when. Without a key here `knownErrors[code] ?? generic` would serve the useless generic message. */
     AIRCRAFT_OUT_OF_SERVICE: string;
     AIRCRAFT_OUT_OF_SERVICE_UNTIL: string;
+    /** Review MAJOR-1 — APPENDED to either template above when the SAME request is also blocked by documents (`details.documents`): the ONE «Forza registrazione» confirmation bypasses the grounding AND them, so they must be on screen before it is written. `{documents}` is client-filled with the very same per-document detail `FLIGHT_BLOCKED_BY_EXPIRY` uses. With no document the sentence is not appended at all, and the message stays byte-identical to the one this app has always shown. */
+    AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS: string;
     /** Story 14.4, AC 1/4 (ratifica R4) — `{documents}` placeholder, client-filled with the comma-joined per-document detail below (`t.raw` pattern, same as `new-booking-form.tsx`'s own `EXPIRED_DOCUMENTS`). */
     FLIGHT_BLOCKED_BY_EXPIRY: string;
     /** Review F5 (ratifica R-14.4-a) — `{date}` placeholder for an EXPIRED document. */
@@ -163,6 +165,32 @@ function personLabel(person: { firstName: string; lastName: string }): string {
 function aircraftOptionLabel(aircraft: AircraftOption, outOfServiceSuffix: string): string {
   if (aircraft.status !== 'OUT_OF_SERVICE') return aircraft.registration;
   return `${aircraft.registration} — ${outOfServiceSuffix.replace('{reason}', aircraft.statusReason ?? '')}`;
+}
+
+/**
+ * One display string per blocking document — "tipo (scaduto il … | mancante) —
+ * pilota/allievo|istruttore Nome" (story 14.4 AC 1/4, review F5/F6: an ABSENT
+ * document is never rendered as a bare date, and `role`/`personName` say WHOSE
+ * it is when a SCHOOL flight blocks on two different people).
+ *
+ * Extracted (story AOG-1a, review MAJOR-1) because TWO 422s now carry the same
+ * `details.documents` and must read the same way: `FLIGHT_BLOCKED_BY_EXPIRY`
+ * and `AIRCRAFT_OUT_OF_SERVICE`, whose single «Forza registrazione»
+ * confirmation bypasses both blocks at once.
+ */
+function describeBlockingDocuments(
+  documents: Array<{ typeName: string; expiresAt: string | null; role: 'person' | 'instructor'; personName: string }>,
+  labels: FlightEditorLabels,
+  moneyLocale: 'it' | 'en',
+): string[] {
+  return documents.map((document) => {
+    const status =
+      document.expiresAt !== null
+        ? labels.errors.documentExpiredOn.replace('{date}', formatDateOnly(document.expiresAt, moneyLocale))
+        : labels.errors.documentMissing;
+    const roleLabel = document.role === 'instructor' ? labels.errors.documentRoleInstructor : labels.errors.documentRolePerson;
+    return `${document.typeName} (${status}) — ${roleLabel} ${document.personName}`;
+  });
 }
 
 /** Server-side people search, profile-scoped (story TD-3) — active only, same domain rule as the aircraft picker above. */
@@ -653,11 +681,21 @@ export function FlightEditor({
         const until = blockedBody?.error?.details?.outOfServiceUntil ?? null;
         const registration = registrationOf(aircraftId);
         const template = until === null ? labels.errors.AIRCRAFT_OUT_OF_SERVICE : labels.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL;
+        const grounded = template
+          .replace('{registration}', registration)
+          .replace('{reason}', reason)
+          .replace('{date}', until === null ? '' : formatDateOnly(until, moneyLocale));
+        // Review MAJOR-1 — the SAME request can be blocked by documents too,
+        // and the ONE confirmation below scavalca them together with the
+        // grounding: they are named here, right under the reason, in the very
+        // same wording `FLIGHT_BLOCKED_BY_EXPIRY` uses. Absent the key on the
+        // wire (a plain grounding) nothing is appended and the sentence is the
+        // one this app has always shown.
+        const groundedDocuments = describeBlockingDocuments(blockedBody?.error?.details?.documents ?? [], labels, moneyLocale);
         setFormError(
-          template
-            .replace('{registration}', registration)
-            .replace('{reason}', reason)
-            .replace('{date}', until === null ? '' : formatDateOnly(until, moneyLocale)),
+          groundedDocuments.length === 0
+            ? grounded
+            : `${grounded} ${labels.errors.AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS.replace('{documents}', groundedDocuments.join(', '))}`,
         );
         if (canForce) {
           // AC 10: the SECOND trigger of the shared "Forza registrazione"
@@ -678,15 +716,7 @@ export function FlightEditor({
         // from "scaduto il …", never rendered as a bare/confusing date.
         // Review F6: `role`/`personName` name WHOSE document it is (a SCHOOL
         // flight can block on the pilot/allievo's OR the instructor's own).
-        const documents = blockedBody?.error?.details?.documents ?? [];
-        const documentNames = documents.map((document) => {
-          const status =
-            document.expiresAt !== null
-              ? labels.errors.documentExpiredOn.replace('{date}', formatDateOnly(document.expiresAt, moneyLocale))
-              : labels.errors.documentMissing;
-          const roleLabel = document.role === 'instructor' ? labels.errors.documentRoleInstructor : labels.errors.documentRolePerson;
-          return `${document.typeName} (${status}) — ${roleLabel} ${document.personName}`;
-        });
+        const documentNames = describeBlockingDocuments(blockedBody?.error?.details?.documents ?? [], labels, moneyLocale);
         setFormError(labels.errors.FLIGHT_BLOCKED_BY_EXPIRY.replace('{documents}', documentNames.join(', ')));
         if (canForce) {
           setBlockedDocuments(documentNames);

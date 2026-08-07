@@ -52,6 +52,20 @@ function aogCountIn(sub: string): number {
   return Number(match[1]);
 }
 
+/** The "N disponibili" of a `N totali · N disponibili · N AOG` summary (the Flotta page head AND the Panoramica's Flotta widget share the template). */
+function availableCountIn(summary: string): number {
+  const match = /(\d+)\s+disponibili/.exec(summary);
+  if (!match) throw new Error(`No "N disponibili" segment in summary: ${JSON.stringify(summary)}`);
+  return Number(match[1]);
+}
+
+/** The denominator of the "Flotta disponibile N / M" KPI — M is the OPERATIONAL fleet the KPI measures against. */
+function kpiDenominator(kpi: string): number {
+  const match = /\/\s*(\d+)/.exec(kpi);
+  if (!match) throw new Error(`No "/ M" unit in the KPI: ${JSON.stringify(kpi)}`);
+  return Number(match[1]);
+}
+
 test.describe('Panoramica fleet-wide AOG count (story AOG-1a, AC 13)', () => {
   test('the Panoramica and the Flotta announce the SAME number of grounded aircraft, past the first OPTIONS_PAGE_SIZE by registration', async ({
     page,
@@ -104,6 +118,13 @@ test.describe('Panoramica fleet-wide AOG count (story AOG-1a, AC 13)', () => {
     // --- the guard: two pages, one number ---------------------------------
     await page.goto('/it/dashboard');
     const overviewSub = (await page.locator('.page-head .sub').first().textContent())?.trim() ?? '';
+    // Review MINOR-1: the OTHER two fleet statements on the SAME screen. Before
+    // that fix the AOG counter was fleet-wide while these two stayed capped at
+    // the first OPTIONS_PAGE_SIZE, so the Panoramica announced two incompatible
+    // fleets at once (measured: "24 AOG" beside "87 / 88", 88 + 24 = 112,
+    // neither 100 nor the 175 aircraft actually active).
+    const overviewKpi = (await page.getByTestId('kpi-fleet-available').textContent())?.trim() ?? '';
+    const overviewFleetWidget = (await page.getByTestId('fleet-card-widget').locator('.card-sub').first().textContent())?.trim() ?? '';
     await page.goto('/it/dashboard/fleet');
     const fleetSub = (await page.locator('.page-head .sub').first().textContent())?.trim() ?? '';
 
@@ -112,5 +133,12 @@ test.describe('Panoramica fleet-wide AOG count (story AOG-1a, AC 13)', () => {
     expect(aogCountIn(overviewSub)).toBe(aogCountIn(fleetSub));
     // ...and the number is a real one, not two zeros agreeing by accident.
     expect(aogCountIn(fleetSub)).toBeGreaterThanOrEqual(1);
+    // Review MINOR-1 — the whole screen tells ONE story: the Flotta widget
+    // repeats the Flotta page's own three buckets, and the KPI measures against
+    // the same operational fleet. Values are compared BETWEEN surfaces, never
+    // against a hard-coded number (the fleet is other specs' fixture too).
+    expect(aogCountIn(overviewFleetWidget)).toBe(aogCountIn(fleetSub));
+    expect(availableCountIn(overviewFleetWidget)).toBe(availableCountIn(fleetSub));
+    expect(kpiDenominator(overviewKpi)).toBe(availableCountIn(fleetSub));
   });
 });

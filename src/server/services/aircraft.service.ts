@@ -400,7 +400,8 @@ export async function unarchiveAircraft(actor: Actor, id: string): Promise<Aircr
  * Story AOG-1a (P3): `outOfServiceUntil` is written HERE, together with the
  * reason, and only here — its semantics/invariants live in ONE place,
  * `schema.prisma`'s own doc-comment on the column. It is OPTIONAL (invariant
- * [b]): an omitted value stores `null` ("return date not yet known"), which is
+ * [b]): an omitted value — or an explicit `null`, which the schema accepts
+ * since review MINOR-2 — stores `null` ("return date not yet known"), which is
  * a legitimate state. A date in the PAST is a legitimate input too and is NOT
  * rejected: invariant [a] means the field never decides anything, so a
  * "must be in the future" rule would be semantically wrong here (and is not
@@ -428,7 +429,10 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
       // untouched, so the concurrency discipline of review 2.2 F1 is
       // unchanged. `@db.Date` is bound as a UTC-midnight calendar date
       // (`parseDateOnlyUtc`, review 3.5 F1's lesson) — never a timestamp.
-      outOfServiceUntil: input.outOfServiceUntil === undefined ? null : parseDateOnlyUtc(input.outOfServiceUntil),
+      // `== null` covers BOTH an omitted key and an explicit `null` (review
+      // MINOR-2, `.nullish()` on the schema): the two mean the same thing —
+      // "return date not yet known" — and are stored the same way.
+      outOfServiceUntil: input.outOfServiceUntil == null ? null : parseDateOnlyUtc(input.outOfServiceUntil),
     },
   });
   if (count === 0) {

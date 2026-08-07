@@ -75,7 +75,13 @@ async function createAircraft(page: Page, withRate = false): Promise<{ id: strin
   return { id: aircraft.id, registration };
 }
 
-async function createPilotPerson(page: Page): Promise<{ personId: string; firstName: string; lastName: string }> {
+/**
+ * A run-unique pilot. `withValidExpiries: false` (review MAJOR-1) deliberately
+ * SKIPS `ensureValidSeedExpiries`, which is the state the review's own
+ * reproduction used: a person for whom every applicable blocking document is
+ * missing.
+ */
+async function createPilotPerson(page: Page, withValidExpiries = true): Promise<{ personId: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const firstName = 'Aog';
   const lastName = `Pilota-${suffix}`;
@@ -88,8 +94,23 @@ async function createPilotPerson(page: Page): Promise<{ personId: string; firstN
   expect(profileResponse.status()).toBe(200);
   // TD 15.5: without this, `POST /api/v1/flights` answers FLIGHT_BLOCKED_BY_EXPIRY
   // long before it ever reaches the guard under test.
-  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
+  if (withValidExpiries) await ensureValidSeedExpiries(page, person.id, 'PILOTS');
   return { personId: person.id, firstName, lastName };
+}
+
+/** `POST /api/v1/flights` for a plain past-dated tourism flight — the shape both 422s under test answer to. */
+async function postFlight(page: Page, aircraftId: string, personId: string, flightDay: string) {
+  return page.request.post('/api/v1/flights', {
+    data: {
+      aircraftId,
+      personId,
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      flightType: 'TOURISM',
+      takeoffAt: `${flightDay}T10:00:00.000Z`,
+      landingAt: `${flightDay}T10:30:00.000Z`,
+    },
+  });
 }
 
 /** Grounds an aircraft through the API, with or without the expected-return date. */
@@ -398,7 +419,102 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
     const ctaCombo = page.getByTestId('flight-form').getByLabel('Velivolo');
     await ctaCombo.click();
     await ctaCombo.fill(aircraft.registration);
-    await expect(page.getByRole('listbox').getByRole('option', { name: new RegExp(`${aircraft.registration} — ${reason} \\(fuori servizio\\)`) })).toBeVisible();
+    await page.getByRole('listbox').getByRole('option', { name: new RegExp(`${aircraft.registration} — ${reason} \\(fuori servizio\\)`) }).click();
+
+    // Review LOW-1 — the record claimed AC 11 was proved "on BOTH call sites"
+    // while only the registro voli one actually SUBMITTED and read the message.
+    // It is proved here: the CTA form is driven to the very same 422 and the
+    // very same named message (the reason and the inclusive fermo clause are
+    // asserted as CONTENT, so an appended documents sentence — review MAJOR-1 —
+    // can never make this a photo of someone else's fixtures).
+    // Every field scoped to the flight form: the Panoramica also renders the
+    // embedded Schedule and its booking panels, so a page-level label would be
+    // ambiguous here in a way it is not on /dashboard/logbook.
+    const ctaForm = page.getByTestId('flight-form');
+    await selectFromCombobox(ctaForm.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await ctaForm.getByLabel('Data volo').fill(dateOnlyFromToday(-4));
+    await ctaForm.getByLabel('Ora decollo').fill('09:00');
+    await ctaForm.getByLabel('Ora atterraggio').fill('09:40');
+    // The submit lives in the SlideOver FOOTER (`form="flight-editor-form"`,
+    // story 15.10 R3), i.e. OUTSIDE the form element — so it is scoped to the
+    // dialog that holds this form, never to the form itself and never
+    // page-level.
+    const ctaPanel = page.getByRole('dialog').filter({ has: page.getByTestId('flight-form') });
+    await ctaPanel.getByRole('button', { name: 'Registra volo' }).click();
+
+    const ctaError = page.getByTestId('flight-form-error');
+    await expect(ctaError).toContainText(aircraft.registration);
+    await expect(ctaError).toContainText(reason);
+    await expect(ctaError).toContainText(`Fermo fino al ${formatDateOnly(until, 'it')} compreso.`);
+    await expect(ctaError).not.toContainText('Riprova');
+    await expect(page.getByTestId('force-flight-section')).toBeVisible();
+  });
+
+  test('a grounded aircraft AND missing documents: the out-of-service 422 NAMES the documents its ONE deroga would also bypass (review MAJOR-1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page, true);
+    // No `ensureValidSeedExpiries` on purpose: this is the review's own
+    // reproduction — a person every blocking document is missing for.
+    const pilot = await createPilotPerson(page, false);
+    const flightDay = dateOnlyFromToday(-5);
+
+    // Precondition, verified rather than assumed (same discipline as the AC 13
+    // guard): without an applicable blocking type on this DB there is nothing
+    // for the 422 to name and the guard would not discriminate.
+    const typesResponse = await page.request.get('/api/v1/expiry-types');
+    expect(typesResponse.status()).toBe(200);
+    const types = (await typesResponse.json()) as { scope: string; blocksBooking: boolean }[];
+    const applicable = types.filter((type) => type.blocksBooking && (type.scope === 'ALL' || type.scope === 'PILOTS'));
+    console.log(`[MAJOR-1] applicable blocking expiry types for a PILOT: ${applicable.length}`);
+    expect(applicable.length).toBeGreaterThan(0);
+
+    // CONTROL, aircraft still OPERATIONAL: the expiry 422 names every blocking
+    // document. This list is MEASURED in this run, never hard-coded — which
+    // blocking types exist is a property of the DB, not of this test.
+    const controlResponse = await postFlight(page, aircraft.id, pilot.personId, flightDay);
+    expect(controlResponse.status()).toBe(422);
+    const controlBody = (await controlResponse.json()) as { error: { code: string; details: { documents: { typeName: string }[] } } };
+    expect(controlBody.error.code).toBe('FLIGHT_BLOCKED_BY_EXPIRY');
+    const expectedNames = controlBody.error.details.documents.map((document) => document.typeName).sort();
+    expect(expectedNames.length).toBeGreaterThan(0);
+
+    // SAME person, SAME flight, aircraft now grounded: before this fix the 422
+    // carried `{reason, outOfServiceUntil}` and NOTHING else, so an admin
+    // derogated "solo per il fermo" and scavalcava these documents unseen.
+    const until = dateOnlyFromToday(20);
+    const reason = `Revisione con documenti ${uniqueSuffix()}`;
+    await ground(page, aircraft.id, reason, until);
+    const groundedResponse = await postFlight(page, aircraft.id, pilot.personId, flightDay);
+    expect(groundedResponse.status()).toBe(422);
+    const groundedBody = (await groundedResponse.json()) as {
+      error: { code: string; details: { reason: string; outOfServiceUntil: string | null; documents?: { typeName: string; role: string; personName: string }[] } };
+    };
+    expect(groundedBody.error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
+    expect(groundedBody.error.details.outOfServiceUntil).toBe(until);
+    expect((groundedBody.error.details.documents ?? []).map((document) => document.typeName).sort()).toEqual(expectedNames);
+
+    // And the operator READS them: the message names the grounding first, then
+    // every document the same single confirmation would bypass.
+    await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+    const aircraftCombo = page.getByTestId('flight-form').getByLabel('Velivolo');
+    await aircraftCombo.click();
+    await aircraftCombo.fill(aircraft.registration);
+    await page.getByRole('listbox').getByRole('option', { name: new RegExp(`${aircraft.registration} — ${reason} \\(fuori servizio\\)`) }).click();
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await page.getByLabel('Data volo').fill(flightDay);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+
+    const formError = page.getByTestId('flight-form-error');
+    await expect(formError).toContainText(reason);
+    await expect(formError).toContainText(`Fermo fino al ${formatDateOnly(until, 'it')} compreso.`);
+    for (const typeName of expectedNames) {
+      await expect(formError).toContainText(typeName);
+    }
+    await expect(page.getByTestId('force-flight-section')).toBeVisible();
   });
 
   test('a grounding whose date is already PAST still blocks both a booking and a flight — the date never returns an aircraft to service (invariant [a], AC 2c)', async ({

@@ -1296,18 +1296,85 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(flightCreateMock).toHaveBeenCalledTimes(1);
     });
 
-    it('WITHOUT force, a grounded aircraft AND a blocking document answers the STATE error first (AC 9, guard order)', async () => {
+    it('WITHOUT force, a grounded aircraft AND a blocking document answers the STATE error first — and NAMES the document it would also bypass (AC 9 + review MAJOR-1)', async () => {
       aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       findBlockingExpiredDocumentsMock.mockResolvedValue({
         blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }],
         warnings: [],
       });
+      // A MISSING blocking document too (review F5's own class), so the 422
+      // proves it reports BOTH scans, not just the expired one.
+      expiryTypeFindMany.mockResolvedValue([{ id: 'type_licenza', name: 'Licenza' }]);
+      expiryFindMany.mockResolvedValue([]);
 
       // Documented order: existence 404 -> state 422 -> domain 422. The
       // aircraft's state is checked next to `AIRCRAFT_ARCHIVED`, well before
-      // the expiry scan runs.
-      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'AIRCRAFT_OUT_OF_SERVICE' });
+      // the expiry scan runs — but since review MAJOR-1 the scan runs FOR it,
+      // because the ONE `force` (R-AOG-c) that lifts the grounding lifts these
+      // documents too: the admin must read them before writing the reason.
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
+        code: 'AIRCRAFT_OUT_OF_SERVICE',
+        details: {
+          reason: 'Revisione 100h',
+          outOfServiceUntil: '2031-05-12',
+          documents: [
+            { typeName: 'Visita medica classe 2', expiresAt: '2019-12-31', role: 'person', personName: 'Mario Rossi' },
+            { typeName: 'Licenza', expiresAt: null, role: 'person', personName: 'Mario Rossi' },
+          ],
+        },
+      });
+    });
+
+    it('a grounded flight whose "instructor" IS the pilot reports no instructor document — that slot is the input the guard below rejects (review MAJOR-1)', async () => {
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      // A person who holds BOTH profiles: without the same-as-pilot check the
+      // scan would list their instructor-scoped documents as a second, phantom
+      // person on the very same flight.
+      personFindUnique.mockResolvedValue({ ...PILOT_PERSON, instructorProfile: { id: 'instr_profile_1', deactivatedAt: null } });
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }], warnings: [] });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_1' });
+
+      const error = (await registerFlight(adminActor(), input).catch((caught: unknown) => caught)) as { code: string; details: { documents: unknown[] } };
+      expect(error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
+      expect(error.details.documents).toEqual([
+        { typeName: 'Visita medica classe 2', expiresAt: '2019-12-31', role: 'person', personName: 'Mario Rossi' },
+      ]);
+    });
+
+    it('a grounding with NOTHING else blocking carries NO documents key at all — the pre-MAJOR-1 shape, unchanged (review MAJOR-1)', async () => {
+      // The complement of the test above, and the guarantee that the sentence
+      // the operator reads for a plain grounding is byte-identical to the one
+      // this app has always shown: an empty list is never reported as one.
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
+
+      const error = (await registerFlight(adminActor(), BASE_INPUT).catch((caught: unknown) => caught)) as { code: string; details: Record<string, unknown> };
+      expect(error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
+      expect(error.details).toEqual({ reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' });
+      expect('documents' in error.details).toBe(false);
+    });
+
+    it('the instructor of a grounded flight is scanned too — the out-of-service 422 is never PARTIAL (review MAJOR-1)', async () => {
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      // Person lookup first, instructor lookup second — the SAME order
+      // `resolveFlightInput` uses on its own (unblocked) path.
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      findBlockingExpiredDocumentsMock.mockImplementation((personId: string) =>
+        Promise.resolve({
+          blockingDocuments: personId === 'person_instructor' ? [{ typeName: 'Visita medica classe 1', expiresAt: '2019-11-30' }] : [],
+          warnings: [],
+        }),
+      );
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({
+        code: 'AIRCRAFT_OUT_OF_SERVICE',
+        details: {
+          documents: [{ typeName: 'Visita medica classe 1', expiresAt: '2019-11-30', role: 'instructor', personName: 'Anna Bianchi' }],
+        },
+      });
     });
 
     it('force: true on an OPERATIONAL aircraft with nothing to bypass still stamps NOTHING (AC 10e)', async () => {

@@ -1375,6 +1375,7 @@
         "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
         "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo {registration} è fuori servizio: {reason}.",
         "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Il velivolo {registration} è fuori servizio: {reason}. Fermo fino al {date} compreso.",
+        "AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS": "Inoltre, la registrazione è bloccata da questi documenti mancanti o scaduti: {documents}.",
         "FLIGHT_BLOCKED_BY_EXPIRY": "Impossibile registrare il volo: risultano mancanti o scaduti i seguenti documenti: {documents}.",
         "documentExpiredOn": "scaduto il {date}",
         "documentMissing": "mancante",
