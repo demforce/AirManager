@@ -559,7 +559,7 @@ action_items:
   - epic: 13
     action: "Claude Security scan 2026-07-23 (scope src, rev c259205, verified): 2 findings auth PRE-esistenti da fixare DOPO l'Epic 13 (decisione utente 2026-07-24: in coda dietro il refactor/UI in corso). F1 (MEDIUM CWE-613): setPasswordWithToken (auth-tokens.service.ts:207) non revoca le sessioni JWT stateless -> attaccante con sessione sopravvive al reset password ~30gg; fix = tokenVersion/sessionsValidFrom su User, bump in transazione, check in applyActiveRecheck. F2 (LOW CWE-367): TOCTOU isLoginLocked/recordFailedLoginAttempt (authorize.ts:33) -> burst concorrente supera il cap 10/finestra; fix = check-and-count atomico. Report completo (gitignored): CLAUDE-SECURITY-20260723-073138/. Candidata a story 13.x dedicata o TD post-epic."
     owner: "post-Epic 13"
-    status: open
+    status: done  # chiuso dalla story TD-6 (2026-07-26, v. HANDOFF «Security findings post-epic: FATTI»): F1 = User.tokenVersion (schema.prisma) con bump in transazione e check in sessione; F2 = reserveLoginAttempt atomico (login-throttle.ts, usato da authorize.ts). Verificato sul codice 2026-08-07.
   - epic: 12
     action: "F5 review 12.11: registrare nel registry OpenAPI le 8 route nuove della 12.11 (settings/{club,scheduling,smtp,smtp/test-email,metar-station,membership-fee}, metar, expiry-alerts/trigger, people/{id}/membership-fee) — registry.test.ts usa arrayContaining e non lo segnala"
     owner: "story 12.13 (cleanup sweep)"
