@@ -4,7 +4,7 @@ baseline_commit: b5a2c93
 
 # Story AOG-1a: `outOfServiceUntil` — il campo, il suo ciclo di vita, le due superfici ratificate e la guardia sulla registrazione del volo
 
-Status: **ready for dev — ratifiche PO chiuse 2026-08-07**
+Status: **review** — implementata 2026-08-07 (dev Opus 5 xhigh); Dev Agent Record in coda. *(Nessuna chiave `aog-1a` esiste in `sprint-status.yaml`: il tracking di questa story vive nello story file — verificato, non assunto.)*
 
 > **Da leggere PRIMA di scrivere una riga**: `_bmad-output/implementation-artifacts/aog-1-velivolo-fuori-servizio.md` **per intero** — è la ricognizione **misurata** su questo stesso baseline (`b5a2c93`): §1 le misure a runtime, §1.4 il probe che prova l'assenza della guardia volo, §2 il censimento delle **15** superfici, §5 il blast radius file-per-file, §7 le dieci domande **con la riga DECISIONE PO**. Questo file è il **perimetro implementabile**; quel file è il **record storico delle misure**. Dove i due divergono (Q1 semantica inclusiva, Q5 perimetro custom), **vince questo file**.
 >
@@ -322,3 +322,284 @@ Copertura: scrittura con data / senza data; azzeramento al rientro (AC 3); guard
 - `docs/handoffs/HANDOFF.md` — ciclo per story su questa macchina, stato branch/PR.
 - `CLAUDE.md` — testid mobile/AD-5, e2e, catena serializzata, `SlideOver`/`MobileSheet` post-15.10, gates, `scripts/e2e.sh`.
 - `.claude/skills/karpathy-guidelines/SKILL.md` — assunzioni esplicitate, semplicità (AD-5/AD-9: niente colonne né percorsi speculativi), chirurgia (§6), criteri verificabili (§2).
+
+---
+
+## Dev Agent Record — AOG-1a
+
+**Dev**: Opus 5 xhigh (subagent) · **Data**: 2026-08-07 · **Baseline**: `414dd66` (codice identico a `b5a2c93`; i commit successivi sono docs-only) · **Macchina**: Fedora locale (Postgres+Mailpit in Docker), NON il container di CLAUDE.md.
+
+### §A — Verifica della ricognizione (ogni riga riverificata prima di toccarla)
+
+| Fatto dichiarato dalla story | Esito sulla riga |
+|---|---|
+| `setOutOfService` `:393-416`, `updateMany` guardata `{ id, status: 'OPERATIONAL' }` | **CONFERMATO** |
+| `returnToService` `:423-438`, guardia speculare | **CONFERMATO** |
+| `flights.service.ts:496-499` seleziona `{ id, registration, archivedAt }` — `status` assente | **CONFERMATO** |
+| 3 `AIRCRAFT_OUT_OF_SERVICE` in `bookings.service.ts` (`:555`, `:926`, `:1155`), 0 in `flights.service.ts` | **CONFERMATO** |
+| `DateInput` già importato in `aircraft-editor.tsx:20`, già usato a `:914` | **CONFERMATO** — zero import nuovi |
+| `correctFlightSchema` accetta già `force`/`forceReason` (`⚠️` AD-6/AC 10d) | **CONFERMATO alla riga**: `schemas/flights.ts:244-246` fa `registerFlightFields.extend({reason}).refine(requireForceReason)` ⇒ **nessun vicolo cieco**, nessuna estensione necessaria (prova e2e + unit, §C AC 10) |
+| Sezione force gated su `blockedDocuments` (`flight-editor.tsx:953`) | **CONFERMATO** — serviva davvero un secondo innesco |
+| 4 punti di rottura in `aircraft.service.test.ts` | **CONFERMATI tutti e quattro** (fixture, `toEqual` letterale, i due `toHaveBeenCalledWith` esatti) |
+| mock `queryRaw` di `bookings.service.test.ts` da aggiornare | **CONFERMATO**: **9** righe letterali (non 8 — la ricognizione elencava 8 posizioni, `:1192` e `:1193` sono due righe distinte). Aggiornate tutte. `:1983` (`toEqual` esatto su `BookableAircraftOption`) **NON si è rotto** ⇒ perimetro R-AOG-e rispettato |
+
+**Correzioni alla ricognizione (2)**
+
+1. **Il DTO NON viaggia come `z.iso.datetime()`.** La ricognizione non lo specificava; la convenzione REALE del repo per una colonna `@db.Date` è `YYYY-MM-DD` sul filo (`AircraftRateListItem.validFrom` → `rates.service.ts:26/57` + `schemas/aircraft.ts:23`; `ExpiryListItem.expiresAt` → `expiries.service.ts:54/92` + `schemas/expiries.ts:51`). Ho seguito quella: `AircraftListItem.outOfServiceUntil: string | null`, `toListItem` converte con `toDateOnlyString`, `aircraftListItemSchema` usa `z.iso.date().nullable()`. Conseguenza: `type SelectedAircraft = AircraftListItem` (alias) è diventato `Omit<AircraftListItem,'outOfServiceUntil'> & { outOfServiceUntil: Date | null }`, esattamente lo stesso split che `rates.service.ts` fa per `validFrom`. **Il vantaggio concreto**: `details.outOfServiceUntil` del 422 e il DTO parlano lo STESSO formato, così la UI non ha due percorsi di parsing.
+2. **`$queryRaw` restituisce un `Date` a mezzanotte UTC per una colonna `@db.Date`** — misurato, non assunto, con un probe `tsx` sul client Prisma 7 + `adapter-pg` di questo repo: `RAW typeof: object | instanceof Date: true | value: 2031-05-12T00:00:00.000Z`. È il presupposto di `outOfServiceDetails`, ed è ora pinnato da un unit test (`bookings.service.test.ts`, «carries the expected-return date as a YYYY-MM-DD calendar day in details»).
+
+### §B — Il difetto, riprodotto e chiuso sulla MIA macchina
+
+Probe write-free (422 prima di ogni transazione), **stesso velivolo, stesso DB, stessa build di produzione**, prima su un worktree a `414dd66` e poi sul repo con il fix:
+
+```
+PRE  (414dd66)  POST /api/v1/flights {aircraft AOG, takeoffAt +400gg}
+                → 422 FLIGHT_DATE_IN_FUTURE
+PRE  (414dd66)  POST /api/v1/flights {aircraft AOG, takeoffAt 2020-01-15}
+                → 422 FLIGHT_BLOCKED_BY_EXPIRY
+PRE  (414dd66)  POST /api/v1/bookings {stesso velivolo, stesso istante}
+                → 422 AIRCRAFT_OUT_OF_SERVICE  details {"reason":"Probe AOG"}
+
+POST (fix)      POST /api/v1/flights {aircraft AOG, takeoffAt +400gg}
+                → 422 AIRCRAFT_OUT_OF_SERVICE  details {"reason":"Probe AOG","outOfServiceUntil":"2031-05-12"}
+POST (fix)      POST /api/v1/flights {aircraft AOG, takeoffAt 2020-01-15}
+                → 422 AIRCRAFT_OUT_OF_SERVICE  details {"reason":"Probe AOG","outOfServiceUntil":"2031-05-12"}
+POST (fix)      POST /api/v1/bookings {stesso velivolo, stesso istante}
+                → 422 AIRCRAFT_OUT_OF_SERVICE  details {"reason":"Probe AOG","outOfServiceUntil":"2031-05-12"}
+```
+
+La riga PRE con data **passata** aggiunge un fatto che la ricognizione non aveva: pre-fix il primo ostacolo su un volo storico non era nemmeno la data, era **la scadenza**. Post-fix è lo stato del velivolo, cioè l'ordine documentato *existence 404 → state 422 → domain 422*.
+
+### §C — Riepilogo per AC, con le prove
+
+| AC | Esito | Prova |
+|---|---|---|
+| **1** campo additivo + semantica una volta sola | ✅ | migrazione `20260807074113_aircraft_out_of_service_until` = **una riga** (`ALTER TABLE "Aircraft" ADD COLUMN "outOfServiceUntil" DATE;`), nessun backfill. `SELECT count(*) … WHERE "outOfServiceUntil" IS NOT NULL` = **0** subito dopo (`total 1 | with_date 0`). `npx prisma generate` eseguito. Doc-comment Prisma con i quattro punti (i) inclusiva (ii) informativa (iii) stesso ciclo di `statusReason` (iv) opzionale — **è la sola fonte**, ogni altro punto la cita |
+| **2a** invariante [a], unit | ✅ | `aircraft.service.test.ts`: 3 test nuovi (`setOutOfService` con data passata resta AOG; `listOutOfServiceAircraft` la restituisce ancora; `getAircraft` idem). `flights.service.test.ts`: «a grounding whose outOfServiceUntil is in the PAST still blocks» |
+| **2b** invariante [a], statico | ✅ | §D — censimento di **tutte** le occorrenze in `src/server/`, classificate una per una. **Zero** dentro una `where`, un `if` di stato o un job |
+| **2c** invariante [a], e2e | ✅ | `aircraft-out-of-service-until.spec.ts` «a grounding whose date is already PAST still blocks both a booking and a flight» — prenotazione **e** volo entrambi 422, `details.outOfServiceUntil` = ieri |
+| **3** invariante [b] + azzeramento | ✅ | POST senza il campo → 200 e `null` (unit + e2e). `returnToService` asserito **esatto**: `data: { status:'OPERATIONAL', statusReason: null, outOfServiceUntil: null }`, `where` **invariata**, MAI indebolito a `objectContaining`. Nessuna validazione «data futura» aggiunta: una data passata è input legittimo (unit dedicato) |
+| **4** contratti + OpenAPI stesso commit | ✅ | 4 punti in fila toccati (`AircraftListItem`, `AIRCRAFT_SELECT`, `toListItem`, `aircraftListItemSchema`). **Verifica a lettura del documento generato** (`generateOpenApiDocument()`, il test `arrayContaining` non la copre): `SetOutOfServiceRequest.properties.outOfServiceUntil = {"type":"string","format":"date"}`, `required = ["reason"]` (quindi opzionale); risposta 200 di `/out-of-service` e items di `GET /api/v1/aircraft` = `{"type":["string","null"],"format":"date"}`; la `description` del path nomina la semantica INCLUSIVA. **La forma della response di `setOutOfService` NON è cambiata** (resta `AircraftListItem`) — la cucitura con 1b è intatta |
+| **5** campo + etichetta inclusiva, e in nessun altro posto | ✅ | §E (misure) e §F (contrasti). `DateInput` già importato — **zero import nuovi**. Etichetta «Fermo fino al (compreso)», hint «Facoltativo: l'ultimo giorno di fermo. Vuoto = rientro da definire.», riga «Stato attuale» = `{motivo} · fermo fino al {data} compreso` / `{motivo} · rientro da definire`. IT+EN insieme. **Nessun `var(--bad)`/`var(--ok)` inline aggiunto** (0 nuovi: il campo usa `Field`+`.fld-hint`, già esistenti) |
+| **6** ≥44px solo a ≤640 | ✅ | §E: **pre 335×34,84** (bottom 840,41 > 812) → **post 335×44** a 375; **desktop 479×34,84 pre e post, identico al centesimo**. Una sola regola, dentro `@media (max-width: 640px)`, ancorata a `[data-testid="out-of-service-submit"]`. Nessun altro controllo nuovo sotto 44 a ≤640 (`out-of-service-until` misurato **44** a 375, eredita la regola `.date-input` della 15.10) |
+| **7** i tre 422 | ✅ | (a) `details` = `{reason, outOfServiceUntil}` sui 4 throw, messaggio server **INVARIATO**; (b) creazione + spostamento + volo mostrano la clausola in IT e EN (e2e); (c) senza data la stringa è **byte-identica**: e2e `toHaveText('Il velivolo è fuori servizio: {reason}.')` — chiave i18n `AIRCRAFT_OUT_OF_SERVICE` **non toccata**, la clausola vive in una chiave NUOVA `AIRCRAFT_OUT_OF_SERVICE_UNTIL`; (d) approvazione dichiarata invariata (§G); (e) data formattata con `formatDateOnly` (il formattatore già in pagina), e **nessun** `hasText` con date negli e2e |
+| **8** il 422 del volo, discriminante | ✅ | §B: entrambe le risposte riportate, misurate su due build reali |
+| **9** perimetro AD-4, 4 percorsi 4 esiti | ✅ | unit (`registerFlight` bloccato; `correctFlight` che cambia velivolo bloccato; `correctFlight` a velivolo invariato **passa** e **senza stamp**; `cancelFlight` mai bloccato) + e2e API che ripete i tre percorsi di correzione/storno. **Ordine**: test dedicato «archiviato E fermo → `AIRCRAFT_ARCHIVED`» |
+| **10** deroga | ✅ | (a) 403 prima di ogni query (unit: `aircraftFindUniqueMock` **non chiamato**); (b) 422 dallo schema (test già esistente, invariato); (c) stamp sulla riga + badge «Deroga» nel registro (e2e); (d) **un solo `force`** su AOG **+** documento bloccante ⇒ un solo `flightCreate`, un solo stamp (unit); il force **raggiunge** `correctFlight` — **misurato, nessun vicolo cieco** (unit «an ADMIN can derogate a correction that moves the flight onto a grounded aircraft»); (e) `force` a vuoto su velivolo operativo ⇒ **nessuno stamp**; (f) doc-comment di `flights.forceExpiry` aggiornato, **identificatore invariato**; (g) remount verificato sul **secondo** call-site (CTA Panoramica): riaperto il pannello, `force-flight-section` ha **count 0** |
+| **11** l'errore arriva con un nome | ✅ | chiave i18n nuova ⇒ **mai** `errors.generic` (e2e asserisce anche `not.toContainText('Riprova')`). Messaggio = marca + motivo + «Fermo fino al {data} compreso». Provato su **entrambi** i call-site. Nessun vicolo cieco: §G lo dichiara con la misura |
+| **12** picker che nomina l'AOG e resta selezionabile | ✅ | `aircraftOptions` guadagna `status`/`statusReason` in **entrambe** le pagine; il label riusa **la stessa chiave i18n del form prenotazione** (`BookingsPage.form.outOfServiceSuffix`), non una copia; opzione **senza** `disabled`/`aria-disabled`, cliccata davvero nell'e2e. **La data NON entra qui.** Anche la ricerca server-side del combobox produce lo stesso label (parità reale, non solo sulla prima pagina) |
+| **13** il conteggio della Panoramica | ✅ | **Pre-fix misurato su questa macchina** (build `414dd66`, 101 velivoli attivi, stesso istante, stesso DB): Panoramica «**0 AOG**», Flotta «**1 AOG**». **Post-fix, stesso DB**: Panoramica «**3 AOG**», Flotta «**3 AOG**». Guardia e2e in project serializzato, con la precondizione verificata dentro il test |
+| **14** superfici non toccate, una per una | ✅ | §G |
+| **15** debito dichiarato | ✅ | §H |
+| **16** unit in shell pulita | ✅ | `env -u DATABASE_URL -u AUTH_SECRET npx vitest run <file>` su tutti e tre i file toccati: **verde**. Nessun import nuovo verso un service «grosso» è entrato in un test (anzi: `outOfServiceDetails` è stato messo in un modulo puro **apposta** per non trascinare `@/lib/env`, §I) |
+| **17** convenzioni e2e + isolamento motivato | ✅ | §J |
+| **18** gate | ✅ | §K |
+
+### §D — AC 2b: censimento di `outOfServiceUntil` in `src/server/`, classificato
+
+| File:riga | Cosa fa | Classe |
+|---|---|---|
+| `aircraft.service.ts:26-27` | tipo del DTO | dichiarazione |
+| `aircraft.service.ts:50` | chiave di `AIRCRAFT_SELECT` | **lettura** |
+| `aircraft.service.ts:58-59` | tipo della riga grezza | dichiarazione |
+| `aircraft.service.ts:71` | `toListItem` → `toDateOnlyString` | **visualizzazione (DTO)** |
+| `aircraft.service.ts:431` | `setOutOfService`, chiave del `data` | **scrittura (ciclo di vita)** |
+| `aircraft.service.ts:460` | `returnToService`, azzeramento | **scrittura (ciclo di vita)** |
+| `bookings.service.ts:547-548 / 914-915 / 1144-1145` | colonna nei tre `SELECT … FOR UPDATE` | **lettura** |
+| `flights.service.ts:509` | chiave del `select` | **lettura** |
+| `aircraft-status.ts:29-36` | `outOfServiceDetails` | **messaggio d'errore** |
+| `prisma/schema.prisma:312` | la colonna | schema |
+
+**Zero** occorrenze dentro una `where` Prisma, dentro un `if` che decida lo stato, o dentro un job/cron. L'invariante [a] è garantita **per costruzione**: la sola cosa che decide se un velivolo vola resta `status`.
+
+### §E — AC 5/6/14: misure pre/post (build di produzione, `playwright-core`, worktree a `414dd66` per il PRE)
+
+Tutte a **1280×900** e **375×812**, tema chiaro e scuro (geometria identica nei due temi).
+
+| Elemento | 1280 PRE | 1280 POST | 375 PRE | 375 POST |
+|---|---|---|---|---|
+| `[role=dialog]` (pannello) | 520×900 @x760 | **520×900 @x760** | 375×812 @x0 | **375×812 @x0** |
+| `.so-body` | 519×756,39 | **519×756,39** | 375×659,23 | **375×659,23** |
+| `availability-current` | 479×15,22 @y556,16 | **479×15,22 @y556,16** | 335×15,22 @y699,44 | **335×15,22 @y699,44** |
+| `out-of-service-reason` | 479×55,69 @y592,59 | **479×55,69 @y592,59** | 335×55,69 @y735,88 | **335×55,69 @y735,88** |
+| `out-of-service-until` (**nuovo**) | — | 232,5×38,84 @y683,5 | — | **335×44** @y826,78 |
+| `out-of-service-submit` | **479×34,84** @y662,28 | **479×34,84** @y777,13 | **335×34,84** @y805,56 (bottom **840,41** > 812) | **335×44** @y908,17 |
+| `identity-submit` (piede) | 115,27×34,84 | **115,27×34,84** | 115,27×44 | **115,27×44** |
+| `documentElement` overflow-X | 0 | **0** | 0 | **0** |
+
+- **Crescita della sezione Disponibilità** (AC 5, pre/post): a **1280** il submit scende da y662,28 a y777,13 ⇒ **+114,85px** (campo 38,84 + label + hint + gap del `.form-grid`); a **375** da y805,56 a y908,17 ⇒ **+102,61px** (campo 44 + label + hint, colonna singola sotto 640). Il **pannello** e il **`.so-body`** non cambiano di un centesimo a nessuna delle due larghezze — la sezione cresce dentro il corpo scrollabile, non sposta la cornice.
+- **AC 6 chiuso**: 34,84 → **44** a 375; **desktop 479×34,84 identico al centesimo** pre e post. La `y` desktop scende di 114,85px perché la story **aggiunge un campo sopra** — è la story stessa a chiederlo (AC 5), non un effetto della regola CSS, che vive dentro `@media (max-width: 640px)`.
+- **Non-regressione AC 14 misurata**: pannello, `.so-body`, «Stato attuale», textarea del motivo e submit primario sono **identici al centesimo** pre/post a entrambe le larghezze.
+- **Le due facce di AD-9, misurate**: su velivolo `OPERATIONAL` la sezione rende motivo + data + submit; su velivolo **già `OUT_OF_SERVICE`** rende la riga di stato + il solo bottone di rientro — `out-of-service-until` e `out-of-service-submit` hanno **count 0** (misurato a 1280 e 375, entrambi i temi). Nessun controllo che porterebbe sempre a un 409.
+
+### §F — AC 5: contrasti WCAG, calcolati (canvas → sRGB → WCAG, sfondo effettivo risalendo gli antenati, cascata reale)
+
+Ogni pixel di testo **nuovo**, nei due temi, a entrambe le larghezze:
+
+| Testo nuovo | Chiaro | Scuro | Soglia |
+|---|---|---|---|
+| `.fld-label` «Fermo fino al (compreso)» (su `--panel`) | **4,85** | **5,72** | ≥4,5 ✅ |
+| `.fld-hint` «Facoltativo: l'ultimo giorno di fermo…» | **4,85** | **5,72** | ≥4,5 ✅ |
+| `availability-current` con la clausola inclusiva | **4,85** | **5,72** | ≥4,5 ✅ |
+| `availability-current` con «rientro da definire» | **4,85** | **5,72** | ≥4,5 ✅ |
+
+Tutti misurati con `getClientRects().length > 0` (niente `display:none`, che darebbe contrasti falsi). Nessun literal di colore nuovo, nessun token cambiato di valore.
+
+**Testo reso, IT ed EN (verbatim dalla misura):**
+- IT: `Stato attuale: Revisione 100h · fermo fino al 12/05/2031 compreso` / `Stato attuale: Attesa pezzo · rientro da definire`
+- EN: `Current status: 100h inspection · grounded until 12/05/2031 inclusive`
+- EN label/hint: `Grounded until (inclusive)` / `Optional: the last day the aircraft stays grounded. Empty = return date not yet known.`
+
+### §G — AC 14: le superfici NON toccate, una per una
+
+| # censimento | Superficie | Motivo |
+|---|---|---|
+| 2 | Card flotta desktop `.ac-card.aog` | **decisione PO R-AOG-e**. `components/dashboard/fleet-card.tsx` **non è nemmeno aperto in scrittura**: `FleetCardItem` è rimasto invariato e il campo è stato aggiunto su un tipo NUOVO di pagina (`FleetConsoleItem`), così il file condiviso con la Panoramica non cambia di una riga |
+| 3 | Card flotta mobile `mobile-fleet-card-{id}` | **decisione PO R-AOG-e** (stesso componente) |
+| 4 | Sheet flotta mobile `mobile-fleet-sheet` | **decisione PO R-AOG-e**. `fleetSheetRows` continua a mostrare «Motivo AOG» e **nessuna** riga «Rientro previsto» |
+| 5 | Testata pagina Flotta `.sub` | **decisione PO R-AOG-e**; già corretta, `listOutOfServiceAircraft` invariata |
+| 7 | Widget Flotta della Panoramica (`FleetCard`) | **decisione PO R-AOG-e**; `fleetItems:399-415` **non toccato** (l'unica riga cambiata in `dashboard/page.tsx` oltre a `aogCount` è `dispatchAircraftOptions`, che è AC 12) |
+| 8 | Timeline desktop — pill `.res-status.aog` | **decisione PO R-AOG-e** |
+| 9 | Timeline desktop — blocco `schedule-aog-block` | **decisione PO R-AOG-e**; `f-sub` resta `statusReason` |
+| 10 | Agenda mobile — righe AOG in testa | **decisione PO R-AOG-e**; `mobile-agenda.ts` non toccato |
+| 11 | Sheet dell'agenda mobile | **decisione PO R-AOG-e** |
+| 12 | Form nuova prenotazione — opzione disabilitata | **decisione PO R-AOG-e**; il suffisso resta `{reason} (fuori servizio)`, senza data. `BookableAircraftOption`/`listBookableAircraft` **non toccati** (prova: `bookings.service.test.ts:1983`, `toEqual` esatto, **non si è rotto**) |
+| 13 | Form modifica prenotazione — idem | **decisione PO R-AOG-e** |
+| 15 | Export Excel velivoli | **decisione PO R-AOG-e**; `exports.service.ts` non toccato |
+| — | **422 di approvazione** (`booking-transition.ts:33,56-57`) | **decisione PO R-AOG-e + AD-3**: non è fra i tre percorsi nominati. Il **contratto** cambia lo stesso (il throw `:1156` porta il `details` arricchito, uniformità AD-3), il **testo** no. Divergenza consapevole, dichiarata qui, non una dimenticanza: chiuderla costa una label e una riga, ma non è ratificata |
+| — | Superficie flotta nuova sulla Panoramica mobile | **non creata** (fuori scope §6) |
+| — | Badge e motivo esistenti ovunque | **invariati**: nessuno rimosso, nessuno ritoccato |
+
+**Vicolo cieco AC 11, misurato e dichiarato**: «attore che non può derogare» è oggi **strutturalmente irraggiungibile** dalla UI — dalla 14.9 nessun ruolo ha `flights.manage` senza `flights.forceExpiry` (fatto già scritto in `flights.service.ts:494-500`, review 14.9 F4). L'e2e prova quindi la cosa vera e verificabile: un attore **senza** `flights.manage` (PILOT) non trova **alcuna** affordance (`logbook-new-button` count 0, `flight-form` count 0) ⇒ nessun messaggio promette una via che non esiste.
+
+### §H — AC 15: il debito, dichiarato voce per voce
+
+| Voce | Stato |
+|---|---|
+| **(a) TD 14.8 F6** — `parseDateOnlyUtc` mappa gli anni `0-99` su `1900+anno` | **EREDITATO e DICHIARATO** (R-AOG-h). `date-only.ts` **non toccato** (0 righe). Il campo nuovo condivide con gli altri consumatori esattamente: `z.iso.date()` in ingresso (`setOutOfServiceSchema`), `parseDateOnlyUtc` per il binding, `@db.Date` a valle, `toDateOnlyString` in uscita — la stessa catena di `AircraftRate.validFrom` e `Expiry.expiresAt`. Un `outOfServiceUntil: '0001-01-01'` finirebbe a DB come `1901-01-01` in silenzio, come per ogni altra data del repo. Nessun percorso reale lo produce (il `DateInput` nativo non emette anni <1000) |
+| **(b) AD-7 / TD 14.9 F11** (422-prima-di-403) | **DICHIARATO, non toccato.** Il 422 nuovo nasce **dentro** il service, **dopo** `authorize(actor,'flights.manage')` e **dopo** il 403 di `flights.forceExpiry` (`flights.service.ts:500-502`): un attore senza permesso prende **403 e non lo vede mai** — provato dall'unit «force without flights.forceExpiry is a 403, BEFORE any query», che asserisce anche che `prisma.aircraft.findUnique` **non è stato chiamato**. Stessa posizione dei tre 422 gemelli delle prenotazioni. Nessun fix qui |
+| **(c) TD `OPTIONS_PAGE_SIZE = 100`** | Chiusa **solo** la faccia della Panoramica (R-AOG-f). Restano aperte `logbook/page.tsx:32`, `bookings/page.tsx`, `billing/page.tsx` |
+| **(d) AD-9** — la data non è modificabile senza rientro in servizio | **TD NUOVO da registrare in `sprint-status.yaml`** (non l'ho scritto io: il file è della sessione principale). Misura: `setOutOfService` è guardata `where: { id, status: 'OPERATIONAL' }` ⇒ una seconda chiamata su un velivolo già AOG dà **409 `ConflictError`**; l'editor perciò **non rende** il campo data su un velivolo già fermo (misurato: count 0). Per correggere una data oggi bisogna `returnToService` + rifermare. **Serve una ratifica PO per aprire un percorso di update** |
+| **(e) 40 `var(--bad)`/`var(--ok)` inline in 19 file** | **Non ne ho toccato uno e non ne ho aggiunto uno.** Verificato: `git diff -U0 | grep '^+.*var(--bad)\|^+.*var(--ok)'` → **0 righe** |
+
+### §I — Decisioni non ovvie
+
+1. **`outOfServiceDetails` vive in `src/server/services/aircraft-status.ts` (file NUOVO), non in `bookings.service.ts`.** Il blast radius della story lo collocava implicitamente in `bookings.service.ts` (dove sta già `findBlockingExpiredDocuments`, l'altro helper condiviso flights↔bookings). L'ho spostato dopo aver **misurato** il costo: `flights.service.test.ts` fa `vi.mock('./bookings.service', () => ({ findBlockingExpiredDocuments: … }))`, cioè sostituisce l'INTERO modulo. Con l'helper lì dentro, il test di flights o (i) esplode con `No "outOfServiceDetails" export is defined on the mock` — è successo, l'ho visto —, oppure (ii) ne mocka una copia, e allora le asserzioni su `details` provano il mock e non il codice, oppure (iii) usa `importOriginal` e trascina `@/server/adapters/mail` + la validazione **eager** di `@/lib/env` (la classe a 3 occorrenze di CLAUDE.md). Un modulo puro che importa solo `date-only` chiude tutte e tre. **4 call-site, 2 service: non è un'astrazione monouso.**
+2. **Il `force` è controllato NELLA guardia AOG, non solo alla fine.** La guardia deve stare **prima** del controllo sulla data (altrimenti il probe di AC 8 non discrimina), ma la deroga si applica **dopo**, insieme ai documenti bloccanti. Soluzione: la guardia lancia solo `if (outOfServiceBlock && !input.force)`, e `outOfServiceBlock` confluisce nella condizione dello `forceStamp`. Conseguenza voluta: quando NON si forza e ci sono **entrambi** i blocchi, vince il 422 di **stato** (`AIRCRAFT_OUT_OF_SERVICE`), coerente con l'ordine documentato — unit dedicato.
+3. **`FleetCardItem` NON è stato allargato.** Il campo vive su `FleetConsoleItem` (nuovo, in `fleet-console.tsx`). Motivo: `FleetCardItem` è il tipo del componente **condiviso** con la Panoramica, e allargarlo avrebbe obbligato a toccare `dashboard/page.tsx#fleetItems`, che la story vieta esplicitamente. Costo: 4 righe in `fleet-console.tsx` (`onCardClick` risale la riga larga per id, perché `FleetCardGrid` restituisce quella stretta). **`components/dashboard/fleet-card.tsx` non compare fra i file modificati.**
+4. **Il suffisso «(fuori servizio)» del picker volo riusa la chiave `BookingsPage.form.outOfServiceSuffix`**, non una copia sotto `LogbookPage`. Due pagine hanno guadagnato un `getTranslations('BookingsPage')` per farlo. Una stringa sola per un fatto solo: le due form non possono divergere.
+5. **La registrazione del velivolo per il messaggio AC 11** non passa dal label del combobox (che ora porta il suffisso) né allargando `SearchCombobox` (primitiva condivisa, 7 call-site). Passa da una `Map` derivata dalle opzioni rese + una `ref` popolata **solo** dalla ricerca server-side (un event handler). Il primo tentativo scriveva la ref dentro il `useMemo` → **errore di lint `react-hooks/refs`** («Cannot access refs during render»), corretto.
+6. **`AircraftOption` è ora esportato da `flight-editor.tsx`** e le due copie locali (`logbook-console.tsx:43`, `dispatch-flight-button.tsx:17`) sono state rimosse — erano diventate strutturalmente incompatibili. `AircraftFilterOption` (barra filtri) è stato reso esplicito invece di derivare da `AircraftOption`: il filtro non ha bisogno di `status`/`statusReason` e la pagina non glieli passa.
+
+### §J — AC 17: e2e, convenzioni e isolamento
+
+**Testid nuovi**: uno solo, `out-of-service-until`. Audit obbligatorio eseguito **prima** di sceglierlo — `grep -rn 'data-testid\^=' e2e/` dà i prefissi: `ac-card-`, `mobile-fleet-card-`, `mobile-fleet-`, `mobile-pilot-row-`, `mobile-instructor-row-`, `mobile-tail-chip-`, `schedule-filter-aircraft-`, `schedule-filter-instructor-`, `reports-fleet-row-`, `flight-row-mobile`. **Nessuno** copre `out-of-service-*`. Il controllo è **un solo nodo DOM a tutte le larghezze** (come `out-of-service-reason`), quindi né suffisso `-mobile` né prefisso `mobile-`: entrambi sarebbero sbagliati.
+
+**Isolamento, con la motivazione (la scelta, non l'implicito):**
+- Il **grosso** (`aircraft-out-of-service-until.spec.ts`, 8 test) resta nel project `chromium` **fullyParallel**. Ogni test crea **il proprio** velivolo run-unique e ferma **quello** — la disciplina identica dei tre spec che già fermano velivoli (`bookings.spec.ts:470`, `mobile-planning.spec.ts:291`, `mobile-registries.spec.ts:300`). Nessun test legge un aggregato globale ⇒ nessun project serializzato serve.
+- La **sola** guardia di AC 13 legge un aggregato **globale** ⇒ project serializzato **nuovo**, `aog-overview-count`, **ULTIMO** della catena (`dependencies: ['mobile-settings']`). **Due** motivi indipendenti, entrambi fatali sotto `fullyParallel`, scritti nel commento del config: (i) asserisce un'**uguaglianza** fra due aggregati globali letti da due navigazioni (la classe che in review Billing-2 F4 ha flakato 2 run su 2); (ii) per **discriminare** deve spingere la flotta attiva oltre `OPTIONS_PAGE_SIZE`, e una flotta 100+ degrada ogni `<select>` della suite (TD aperto) — quindi deve girare quando non resta più niente da girare. Nulla dipende da esso.
+- **La guardia verifica la propria precondizione** prima di asserire: conta i velivoli attivi e, se sono ≤100, crea lo scarto necessario con marche prefissate `I-AFIL…` (che ordinano **prima** della sua `I-ZAOG…`). **Costo misurato e stampato dal test**: `[AC 13] active aircraft before: 13, filler created: 88, active now: 101` — 88 POST, il test dura **2,6 s**. Su DB post-suite il costo tende a zero (i velivoli ci sono già).
+
+**Fixture**: nessuna time-dependent. Ogni data è calcolata con `dateOnlyFromToday(offset)` (mai un letterale che può scadere a metà run), e la data attesa nel messaggio è prodotta dallo **stesso** `Intl.DateTimeFormat` di `formatDateOnly`, non hard-coded. **Nessun `hasText` con date o `H:MM`.** I `<select>` sono pilotati per **valore (id)**, mai per testo dell'opzione — il testo di un'opzione AOG contiene il motivo, e due di questi test fermano il velivolo a metà flusso.
+
+**Precondizione voli**: `ensureValidSeedExpiries(page, personId, 'PILOTS')` su ogni pilota creato — senza, `POST /api/v1/flights` risponde `FLIGHT_BLOCKED_BY_EXPIRY` prima di arrivare alla guardia (l'ho visto nel probe pre-fix: proprio quello è successo sul percorso con data passata).
+
+**Tabella guardia → discriminanza (tutte provate ROSSE simulando il pre-fix, repo ripristinato byte-identico):**
+
+| Guardia nuova | Simulazione del pre-fix | Esito rosso |
+|---|---|---|
+| «44px touch floor» (AC 6) | rimossa la regola `[data-testid="out-of-service-submit"]{min-height:44px}` | **FAILED** (altezza 34,84 < 44) |
+| «picker + 422 + deroga» (AC 8/10/11/12) | guardia AOG neutralizzata in `resolveFlightInput` | **FAILED** (nessun 422, il volo si registra) |
+| «data passata blocca ancora» (AC 2c) | idem | **FAILED** (201 invece di 422) |
+| «perimetro AD-4» (AC 9) | idem | **FAILED** (`Expected: 422 / Received: 201` sulla correzione che sposta il volo su un velivolo fermo) |
+| «Panoramica == Flotta» (AC 13) | `aogCount` riportato a `aircraftResult.items.length - operationalIds.length` | **FAILED** (`Expected: 30 / Received: 9`) |
+
+Ripristino: `sha256sum -c` sui tre file toccati dalla simulazione → **`src/styles/airops.css: OK`, `src/server/services/flights.service.ts: OK`, `src/app/[locale]/dashboard/page.tsx: OK`**. Byte-identico, verificato, non affermato.
+
+Le 4 restanti (editor, i due messaggi 422 di prenotazione) **passano** anche sotto quella simulazione, correttamente: dipendono da `aircraft.service.ts`/`bookings.service.ts`/`aircraft-editor.tsx`, che quella simulazione non toccava.
+
+### §K — Gate ed esiti, onesti
+
+- **`npm run gates`**: `PASS lint (19s) · PASS typecheck (3s) · PASS test (7s) — 1792 passed · PASS build (27s)`. Eseguito **dopo** il ripristino byte-identico della simulazione pre-fix.
+- **Unit in shell pulita**: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` su `aircraft.service.test.ts` (58 passed), `bookings.service.test.ts` (240 passed), `flights.service.test.ts` (150 passed) — verde.
+- **e2e mirati** (build di produzione, `E2E_REUSE_SERVER=1`, via `scripts/e2e.sh`): `--project=chromium -g "story AOG-1a"` → **8 passed, E2E_EXIT=0**; `--project=aog-overview-count --no-deps` → **1 passed, E2E_EXIT=0**.
+- **Suite completa `CI=1` su build di produzione e DB fresco**: esito in §L2.
+- **Lock anti-brute-force (TD-6)**: nessun rosso attribuito alla flake di login; nessuno è occorso.
+
+### §L2 — La suite completa, e un mio errore da dichiarare
+
+**Errore mio, diagnosticato con la prova, non attribuito alla flake**: durante il primo run `CI=1` ho lanciato `npm run gates` (che esegue `next build`) mentre la suite stava servendo dalla **stessa** `.next`. Due test di `mobile-registries.spec.ts` sono caduti con
+
+```
+[WebServer] errno: -2, code: 'ENOENT', syscall: 'open',
+[WebServer] path: '/home/admin/AirManager/.next/server/app-paths-manifest.json'
+```
+
+cioè il manifest del server letto mentre la build lo stava riscrivendo. **Entrambi sono passati al retry #1** (quindi la suite li conta *flaky*, non *failed*), ma la causa non è ambientale: è la regola di CLAUDE.md «MAI ricompilare col server vivo», violata da me. Non l'ho mascherata: ho **rifatto la suite completa da capo**, su DB resettato, senza toccare la build durante il run.
+
+**Run 1 (contaminato da me)** — DB fresco, `CI=1`, `scripts/e2e.sh start`: **518 passed, 2 flaky, 0 failed, 0 skipped, `E2E_EXIT=0`**, 14,1 min. Totale **520** = **511** di baseline (arbitro finale dell'epic 15) **+ 9 miei** (8 in `chromium` + 1 in `aog-overview-count`). I 2 flaky sono i due sopra.
+
+**Run 2 (arbitro pulito)** — DB resettato di nuovo, `CI=1`, nessuna build lanciata durante il run: esito sotto.
+
+*Metodo di reset usato* (l'HANDOFF suggerisce `docker compose down -v`; ho scelto la via meno distruttiva, stesso risultato e container in piedi): `DROP DATABASE … WITH (FORCE)` + `CREATE DATABASE` via `docker compose exec -T postgres psql`, poi `npx prisma migrate deploy && npx prisma db seed`. Verificato dopo ogni reset: `aircraft 1 | with_date 0`.
+
+**Run 2 (arbitro pulito)** — DB resettato, `CI=1`, **nessuna build lanciata durante il run**: **519 passed, 1 flaky, 0 failed, 0 skipped, `E2E_EXIT=0`**, 15,1 min. Totale **520**.
+Il flaky NON è mio e l'ho **diagnosticato con la prova invece di attribuirlo alla flake**: `mobile-expiries-movements.spec.ts:361` è caduto con `apiRequestContext.post: read ECONNRESET` su `POST /api/v1/expiry-types` — un reset di trasporto, non un'asserzione, su uno spec e un endpoint che **il mio diff non tocca** (classe ambientale già registrata nell'HANDOFF come «POST bloccato sotto contesa worker»). Verde al retry #1.
+I miei 9 test: **tutti verdi al primo tentativo in entrambi i run**.
+
+**Coda: una fragilità del MIO spec, trovata da me DOPO l'arbitro, e chiusa.**
+Rilanciando lo spec da solo sul DB **post-suite** (misurato: **400 persone, 204 velivoli**) i due test delle prenotazioni sono andati in timeout su `locator.selectOption … did not find some options` per `select[name="personId"]`. Causa: il picker persona del form prenotazione in modalità **staff** è alimentato da `listPeople(page: 1, pageSize: OPTIONS_PAGE_SIZE)` — **cap a 100** — e una persona appena creata cade fuori da quel centinaio su un DB carico. **Non è un difetto della story: è il TD `OPTIONS_PAGE_SIZE` che la story stessa mi aveva avvisato di diagnosticare prima di attribuire.** Nel run completo i due test passavano solo perché giravano presto (DB ancora leggero): fortuna, non robustezza.
+Chiuso alla radice: i due test ora guidano il form dal **pilota del seed**, in modalità `pilot`, che **non ha il picker persona** (l'admin resta su un secondo contesto, perché solo `aircraft.manage` può fermare un velivolo, e il fermo deve arrivare col form già a schermo). Il picker velivolo resta l'unico usato ed è **non paginato** (`listBookableAircraft`). Aggiunto anche `findBookingRow`, che **cammina le pagine** invece di dare per scontata la prima (la lista è `startsAt`-ascendente su un DB condiviso: su quale pagina cada una prenotazione è una proprietà delle fixture altrui).
+**Riprova sul DB più ostile disponibile** (400 persone, 204 velivoli): `--project=chromium -g "story AOG-1a"` → **8 passed, `E2E_EXIT=0`**; `--project=aog-overview-count --no-deps` → **1 passed, `E2E_EXIT=0`** (`[AC 13] active aircraft before: 187, filler created: 0` — su DB carico la guardia non paga nulla).
+**Gate rieseguiti dopo questa correzione**: `PASS lint (20s) · PASS typecheck (3s) · PASS test (7s) — 1792 passed · PASS build (28s)`.
+Le modifiche sono **solo dentro `e2e/aircraft-out-of-service-until.spec.ts`**: nessuna riga di produzione è cambiata dopo l'arbitro, quindi il verde del run 2 sul codice di produzione resta valido.
+
+Nota su `[AC 13] active aircraft before: 160, filler created: 0` (run 1): su un DB **post-suite** la guardia non paga nulla — i 160 velivoli attivi che la suite crea da sola superano già `OPTIONS_PAGE_SIZE`. Gli 88 POST li paga solo chi la lancia su un DB fresco con `--no-deps`.
+
+### §M — File toccati
+
+**Schema / dati (3)**
+- `prisma/schema.prisma` — `Aircraft.outOfServiceUntil` + doc-comment (la fonte unica della semantica)
+- `prisma/migrations/20260807074113_aircraft_out_of_service_until/migration.sql` — **nuovo**, additivo, una riga
+- `src/generated/prisma/**` — rigenerato (`npx prisma generate`), gitignorato, mai editato a mano
+
+**Service / contratti (7)**
+- `src/server/services/aircraft-status.ts` — **nuovo** (`outOfServiceDetails`, §I.1)
+- `src/server/services/aircraft.service.ts`
+- `src/server/services/bookings.service.ts`
+- `src/server/services/flights.service.ts`
+- `src/lib/schemas/aircraft.ts`
+- `src/lib/schemas/registry.ts`
+- `src/server/auth/rbac.ts` (solo doc-comment)
+
+**API (1)**
+- `src/app/api/v1/aircraft/[id]/out-of-service/route.ts`
+
+**UI + i18n (11)**
+- `src/app/[locale]/dashboard/fleet/aircraft-editor.tsx`
+- `src/app/[locale]/dashboard/fleet/fleet-console.tsx`
+- `src/app/[locale]/dashboard/fleet/page.tsx`
+- `src/app/[locale]/dashboard/page.tsx`
+- `src/app/[locale]/dashboard/dispatch-flight-button.tsx`
+- `src/app/[locale]/dashboard/logbook/page.tsx`
+- `src/app/[locale]/dashboard/logbook/flight-editor.tsx`
+- `src/app/[locale]/dashboard/logbook/logbook-console.tsx`
+- `src/app/[locale]/dashboard/bookings/{new,edit}-booking-form.tsx` + `booking-labels.ts`
+- `src/styles/airops.css` — **una** regola
+- `messages/it.json` + `messages/en.json` — 7 chiavi ciascuno, **parità verificata** (0 chiavi solo-IT, 0 solo-EN)
+
+**Test / config (5)**
+- `src/server/services/aircraft.service.test.ts`
+- `src/server/services/bookings.service.test.ts`
+- `src/server/services/flights.service.test.ts`
+- `e2e/aircraft-out-of-service-until.spec.ts` — **nuovo**
+- `e2e/aog-overview-count.spec.ts` — **nuovo** + `playwright.config.ts` (project serializzato)
+
+**NON toccati, a riprova del perimetro**: `src/components/dashboard/fleet-card.tsx`, `src/app/[locale]/dashboard/bookings/schedule.tsx`, `src/app/[locale]/dashboard/bookings/page.tsx`, `src/lib/mobile-agenda.ts`, `src/app/[locale]/dashboard/bookings/booking-transition.ts`, `src/server/services/exports.service.ts`, `src/lib/date-only.ts`, `src/components/search-combobox.tsx`, `src/components/ui/date-input.tsx`, `src/components/ui/calendar-popover.tsx`.
+
+### §L — Cosa NON ho fatto
+
+- **Tutto il blocco di AOG-1b**: anteprima «Stai per impattare N prenotazioni», doppio passo di conferma (le label `availability.confirm`/`confirmReturnToService` **restano morte**, verificato), conteggio in transazione, **DTO di response nuovo** di `setOutOfService` (la forma è invariata: la cucitura dello split è intatta), banner persistente, riga persistente alla riapertura, **tutte** le email.
+- `groundedAt`, rinomine (`flights.forceExpiry`, `blocksBooking`), il TD `OPTIONS_PAGE_SIZE` sulle altre tre pagine, `date-only.ts`, il TD 14.9 F11, i 40 `var(--bad)`/`var(--ok)` inline, le 42 celle `.cal-popover`, una superficie flotta nuova sulla Panoramica mobile.
+- **`sprint-status.yaml` e `docs/handoffs/HANDOFF.md`**: non toccati (sono della sessione principale). Il TD nuovo di AD-9 va registrato lì — §H (d) ne porta il testo e la misura.
+- **Nessun commit** (per istruzione).
