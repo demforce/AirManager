@@ -4,7 +4,7 @@ baseline_commit: b5a2c93
 
 # Story AOG-1a: `outOfServiceUntil` — il campo, il suo ciclo di vita, le due superfici ratificate e la guardia sulla registrazione del volo
 
-Status: **review** — implementata 2026-08-07 (dev Opus 5 xhigh); Dev Agent Record in coda. *(Nessuna chiave `aog-1a` esiste in `sprint-status.yaml`: il tracking di questa story vive nello story file — verificato, non assunto.)*
+Status: **done** — 2026-08-07: dev Opus 5 xhigh + review adversarial Opus 5 xhigh (**SHIPPABLE-WITH-FIXES**) + fix; arbitro finale su DB fresco **518 passed + 3 skipped ambientali** (mobile-metar: upstream irraggiungibile, skip by contract) su 521 totali = 511 baseline + 10 della story, **0 failed, 0 flaky, exit 0**. Dev Agent Record e Review Record in coda. *(Nessuna chiave `aog-1a` esiste in `sprint-status.yaml`: il tracking di questa story vive nello story file — verificato, non assunto.)*
 
 > **Da leggere PRIMA di scrivere una riga**: `_bmad-output/implementation-artifacts/aog-1-velivolo-fuori-servizio.md` **per intero** — è la ricognizione **misurata** su questo stesso baseline (`b5a2c93`): §1 le misure a runtime, §1.4 il probe che prova l'assenza della guardia volo, §2 il censimento delle **15** superfici, §5 il blast radius file-per-file, §7 le dieci domande **con la riga DECISIONE PO**. Questo file è il **perimetro implementabile**; quel file è il **record storico delle misure**. Dove i due divergono (Q1 semantica inclusiva, Q5 perimetro custom), **vince questo file**.
 >
@@ -603,3 +603,48 @@ Nota su `[AC 13] active aircraft before: 160, filler created: 0` (run 1): su un 
 - `groundedAt`, rinomine (`flights.forceExpiry`, `blocksBooking`), il TD `OPTIONS_PAGE_SIZE` sulle altre tre pagine, `date-only.ts`, il TD 14.9 F11, i 40 `var(--bad)`/`var(--ok)` inline, le 42 celle `.cal-popover`, una superficie flotta nuova sulla Panoramica mobile.
 - **`sprint-status.yaml` e `docs/handoffs/HANDOFF.md`**: non toccati (sono della sessione principale). Il TD nuovo di AD-9 va registrato lì — §H (d) ne porta il testo e la misura.
 - **Nessun commit** (per istruzione).
+
+---
+
+## Review Record — AOG-1a (2026-08-07)
+
+**Reviewer**: `adversarial-reviewer` Opus 5 xhigh (unico layer adversarial, mai degradato). Report integrale committato: `aog-1a-review-report.md`. **Verdetto: SHIPPABLE-WITH-FIXES.**
+
+**Arbitro della review** (priorità zero, DB fresco): `519 passed, 1 flaky, 0 failed, 0 skipped, E2E_EXIT=0` (13,4m; 520 = 511 baseline + 9 della story, tutti verdi al primo tentativo). Il flaky NON era quello osservato dal dev: `flights.spec.ts:602` (201 atteso / 422 ricevuto), diagnosticato con la prova in DB — un `ExpiryType` scope-ALL `blocksBooking` creato 40 ms prima da un describe `serial` solo contro se stesso. **Classe TD 15.5 pre-esistente, seconda faccia misurata** → registrata in `sprint-status.yaml`. Gates riverificati dal reviewer: 1792 unit verdi.
+
+### Findings ed esiti
+
+| # | Finding | Esito |
+|---|---------|-------|
+| MAJOR-1 | La deroga AOG scavalcava IN SILENZIO i documenti bloccanti mai mostrati (422 AOG senza `documents`, force «pensato solo per il fermo» → 201 con 6 documenti scavalcati; il commento `never partial` a `flights.service.ts:697-698` era diventato falso; lo stamp appiattisce) | **FIXATO su decisione PO (opzione 2)**: lo scan documenti gira anche sul percorso AOG e il 422 porta `details.documents` (stessa shape di `FLIGHT_BLOCKED_BY_EXPIRY`, chiave OMESSA a lista vuota → shape e stringa byte-identiche a prima); frase UI appesa al messaggio del fermo nei due locale; «un solo force» (R-AOG-c) INTATTO; il commento è tornato vero |
+| MINOR-1 | Il fix del contatore (AC 13) aveva aperto una contraddizione INTERNA alla Panoramica: sub fleet-wide («24 AOG») vs KPI/widget cappati ai primi 100 (88+24=112 ≠ 100 ≠ 175) | **FIXATO su decisione PO**: KPI e widget passano al lettore fleet-wide (`fleetTotalCount = aircraftResult.total`, zero query nuove); misurato coerente: sub 12 AOG · KPI 87/90 · widget 102·90·12 == `/fleet` 102·90·12; residuo dichiarato: overlay «Riservato» ancora sui primi 100 (TD `OPTIONS_PAGE_SIZE`) |
+| MINOR-2 | Asimmetria di contratto: la risposta restituisce `outOfServiceUntil: null`, la richiesta lo rifiutava (422) — round-trip rotto per un client API | **FIXATO su decisione PO**: `.nullish()` + `== null` nel service (convenzione del file, `updateAircraftSchema`); round-trip provato `null → 200`; OpenAPI generato `type: [string,null]` |
+| LOW-1 | AC 11 dichiarava «provato su entrambi i call-site» ma l'e2e provava il messaggio solo sul registro voli (claim verificato VERO dal vivo dal reviewer: buco di PROVA, non difetto) | **FIXATO**: la CTA «Pianifica volo» ora invia il form e asserisce `flight-form-error` (locator ancorato al dialogo: il submit vive nel piede R3, fuori dal form) |
+| LOW-2 | Il fallback del picker in correzione (velivolo fuori dalle `aircraftOptions`) perde il suffisso «(fuori servizio)» | **DICHIARATO**: caso delimitato dal TD `OPTIONS_PAGE_SIZE` già aperto — nessun codice |
+| LOW-3 | Audit `data-testid^=` di §J incompleto (10 prefissi su 12+1 reali) | **CORRETTO nel record** (§J): conclusione comunque valida, nessuno copre `out-of-service-*` |
+| LOW-4 | TD 14.8 F6 confermato raggiungibile via API (`0001-01-01` → `1901-01-01`) | Dichiarazione §H(a) **accurata, confermata** — resta nel ciclo del TD 14.8 F6 |
+| INFO | `/ppr` spedisce le 7 chiavi i18n nuove nel bundle (0 nodi resi) | Pre-esistente per architettura del bundle, nessuna azione |
+
+### Decisioni PO in review (4, tutte 2026-08-07)
+
+1. **MAJOR-1 → opzione 2** (il 422 AOG porta anche i documenti; il «un solo force» ratificato resta).
+2. **MINOR-1 → estendere il lettore fleet-wide** a KPI e widget.
+3. **MINOR-2 → `.nullish()`**.
+4. **TD AD-9 → registrato come TD** in `sprint-status.yaml` (né accorpato a 1b, né fixato nel giro di fix): la data di rientro non è modificabile senza `returnToService` + nuovo AOG (409 sulla guardia atomica, workaround esistente).
+
+### Giro di fix (commit `0de2316`, fix-subagent `dev-story` Opus 5 xhigh)
+
+Helper `scanBlockingDocuments`/`findActiveInstructor`/`deriveFlightDate`/`isIdentityUnchanged` estratti e CONDIVISI dai due 422 (una scansione, un predicato, una derivazione); guardia AOG rimasta al suo posto nell'ordine ratificato (`AIRCRAFT_ARCHIVED` → AOG → date); sul percorso AOG un istruttore non valido non lancia `INSTRUCTOR_NOT_FOUND` e `instructorPersonId === personId` non è scansionato come istruttore (unit discriminante). **Discriminanze rosse sul pre-fix simulato**: 2 unit («NAMES the document it would also bypass», «never PARTIAL») + 1 e2e su build ricompilata (`Expected -4 / Received +1` su `details.documents`) + 1 unit same-as-pilot + 1 MINOR-1 (`Expected: 90 / Received: 87`); ripristino `sha256sum -c` OK. Gates 1795 unit (1792+3), story spec 9 passed, catena `aog-overview-count` 1 passed, parità i18n 0/0.
+
+### Arbitro finale (sessione principale, DB fresco, build prod CI=1)
+
+```
+518 passed, 3 skipped, 0 failed, 0 flaky (12.9m) — E2E_EXIT=0
+```
+521 totali = 511 baseline + 10 della story (9 dev + 1 fix). I 3 skipped sono AMBIENTALI e diagnosticati: `mobile-metar.spec.ts` (61/167/208) — `test.skip(!metar?.raw)` by contract, upstream aviationweather.gov irraggiungibile dall'host in questo run (la 15.10 lo raggiungeva: 0 skipped lì). Estranei al diff AOG.
+
+### Lezioni durevoli
+
+- **Una deroga condivisa fra blocchi eterogenei deve portare il quadro informativo COMPLETO su OGNI percorso**: la garanzia 14.4 («l'admin vede tutto prima di decidere») era difesa sul percorso expiry e il percorso AOG nuovo la aggirava per costruzione (il throw precedeva lo scan). Quando due 422 condividono il force, devono condividere anche lo scan.
+- **Il fix parziale di un numero cappato può aprire una contraddizione interna sulla stessa schermata**: misurare la PAGINA dopo il fix, non solo il numero fixato (24 AOG fleet-wide accanto a un KPI sui primi 100).
+- **I contratti round-trip**: un campo che la risposta può restituire `null` deve essere accettato `null` in richiesta (`.nullish()`, non `.optional()`) — il primo client reale a fare read-modify-write lo scopre con un 422.

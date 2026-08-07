@@ -1,6 +1,23 @@
-# HANDOFF — AirManager (aggiornato: 2026-08-06 — **EPIC 15 COMPLETO: 10/10 story DONE**. Prossimo lavoro: push (PO) + **PR `dev` → `main`**; poi backlog post-epic: story AOG ratificata, 40 inline dei form, security TD — v. `sprint-status.yaml` action_items)
+# HANDOFF — AirManager (aggiornato: 2026-08-07 — **BACKLOG POST-EPIC: story AOG-1a DONE**. Prossimo lavoro: **AOG-1b** (story file pronto, ratifiche chiuse, baseline = chiusura 1a); PR #22 `dev` → `main` ancora APERTA, merge del PO)
 
-## EPIC 15 — UI mobile AirOps (in corso)
+## BACKLOG POST-EPIC — ciclo AOG (sessione 2026-08-07)
+
+La sessione è ripartita dall'handoff backlog (`/tmp/airmanager-handoff-2026-08-07-backlog.md`): PR #22 verificata APERTA, nessuna attività parallela, voce stale del security scan epic-13 marcata `done` (F1/F2 chiusi da TD-6, verificato sul codice). Il PO ha scelto la **story AOG** dal backlog (AskUserQuestion).
+
+### Ciclo AOG — stato
+
+- **Ricognizione + ratifiche** (`aog-1-velivolo-fuori-servizio.md`, commit `414dd66`): ricognizione misurata su `b5a2c93` (guardia volo assente PROVATA a runtime; 15 superfici censite; difetto nuovo del contatore Panoramica), **10 ratifiche PO** chiuse 2026-08-07 — le decisioni notevoli: Q1 semantica INCLUSIVA (contro la raccomandazione), Q5 perimetro CUSTOM (data solo editor + 3×422), Q10 SPLIT 1a/1b entrambe Opus 5 xhigh. Le righe **DECISIONE PO** sono nel §7 del doc base.
+- **AOG-1a — DONE** (`aog-1a-campo-guardia-volo.md`, Status done con Dev Agent Record e Review Record): campo `outOfServiceUntil` inclusivo, ciclo di vita nel service (invarianti [a][b] testate), guardia volo con deroga (un solo force), 422 con data e — dopo il fix MAJOR-1 — coi **documenti bloccanti nominati**, picker col suffisso, Panoramica fleet-wide coerente, `.nullish()`. Commit: `405f68f` feat / `7e444bf` record / `0de2316` fix. Review **SHIPPABLE-WITH-FIXES** (report committato `aog-1a-review-report.md`); arbitro finale **518 passed + 3 skipped ambientali (METAR upstream), 0 failed, 0 flaky, exit 0** (521 = 511 + 10).
+- **AOG-1b — PROSSIMA** (`aog-1b-avviso-prenotazioni-email.md`, `ready for dev DOPO la chiusura di 1a` — che è avvenuta): anteprima «Stai per impattare N prenotazioni» + doppio passo (label `availability.confirm` mai consumate) + conteggio RICALCOLATO nella transazione del grounding restituito nella response (DTO nuovo → OpenAPI stesso commit) + banner persistente + riga a ogni riapertura + email best-effort post-commit alle sole APPROVED (modello `sendBookingDeniedEmail`, niente email al rientro). ⚠️ Il frontmatter dichiara `baseline_commit: b5a2c93` per i riferimenti misurati: la baseline REALE è la chiusura di 1a — il dev deve riverificare le righe citate sul HEAD corrente.
+- **TD nuovi registrati** in `sprint-status.yaml`: **AD-9** (data non modificabile senza rientro, ratificato TD dal PO) e la **seconda faccia misurata del TD 15.5** (`flights.spec.ts:602`, ExpiryType scope-ALL da describe serial che attraversa fullyParallel).
+
+### Note operative fresche (2026-08-07)
+
+- **Classifier vs reset DB, confermato**: `docker compose down -v` NEGATO al primo tentativo autonomo → il PO l'ha eseguito inline (`! docker compose down -v`) → da lì in poi lo stesso comando è PASSATO per il resto della sessione (3 reset successivi senza attriti). La prassi dell'handoff regge: fermarsi e chiedere l'inline, mai un comando distruttivo alternativo.
+- **I 3 skipped ambientali**: `mobile-metar.spec.ts` skippa by contract quando aviationweather.gov è irraggiungibile dall'host — un arbitro con «3 skipped» può essere verde: diagnosticare i nomi (sono sempre i 3 METAR) prima di gridare alla regressione.
+- Il ciclo per story (Workflow con un agent() per fase + AskUserQuestion per le ratifiche + watcher sulla sentinella) è INVARIATO — prompt-formula di questa sessione in `~/.claude/projects/-home-admin-AirManager/3e49799c-9416-43b4-96f1-e641adecb975/workflows/scripts/`.
+
+## EPIC 15 — UI mobile AirOps (CHIUSO — storico)
 
 Piano vincolante con le 5 ratifiche PO (R1-R5) e l'architettura: `docs/superpowers/plans/2026-07-29-epic-15-mobile-ui.md`.
 Template design: progetto claude.ai/design **`dcd71b3a-dbcf-494e-a543-29325a5435de`**, file `AirOps Mobile.dc.html` +
