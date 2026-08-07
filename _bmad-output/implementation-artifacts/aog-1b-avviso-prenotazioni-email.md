@@ -4,7 +4,7 @@ baseline_commit: b5a2c93
 
 # Story AOG-1b: «Stai per impattare N prenotazioni» — l'anteprima, la conferma a due passi, il numero reale nella response e l'email ai piloti con una prenotazione approvata
 
-Status: **ready for dev DOPO la chiusura di AOG-1a** — ratifiche PO chiuse 2026-08-07.
+Status: **review** — 2026-08-07: dev Opus 5 xhigh. Dev Agent Record in coda. `npm run gates` verde (1 819 unit) e suite e2e completa su build di produzione e DB fresco: esito in §L del record.
 
 > ⚠️ **Baseline effettiva**: il frontmatter dichiara `b5a2c93` perché è il commit su cui è stata **misurata** la ricognizione e su cui sono ancorati **tutti** i riferimenti `file:riga` di questo file. La baseline **reale** di questa story è il **commit di chiusura di AOG-1a**: prima di iniziare, il dev rilegge le righe citate sul HEAD corrente e **corregge questo file** dove sono slittate (è successo al doc base: tre righe slittate di +19 fra fine luglio e il 7 agosto — la prassi di riverificare ha pagato in tutte le story dell'epic 15).
 >
@@ -263,3 +263,245 @@ Copertura: la funzione di dominio (AC 1, sei casi); la transazione del grounding
 - `docs/handoffs/HANDOFF.md` — ciclo per story su questa macchina, stato branch/PR.
 - `CLAUDE.md` — testid mobile/AD-5, e2e, catena serializzata, unit + env eager, gates, `scripts/e2e.sh`.
 - `.claude/skills/karpathy-guidelines/SKILL.md` — assunzioni esplicitate, semplicità (AC 13: niente cap speculativi), chirurgia (AD-8), criteri verificabili (§2).
+
+---
+
+## Dev Agent Record — AOG-1b
+
+**Dev**: Opus 5 xhigh (subagent) · **Data**: 2026-08-07 · **Baseline REALE**: `7f0a2fb` (chiusura di AOG-1a; il frontmatter dichiara `b5a2c93`, che è dove la ricognizione fu **misurata**) · **Macchina**: Fedora locale (Postgres + Mailpit in Docker), NON il container di CLAUDE.md.
+
+### §A — Verifica della ricognizione sul HEAD corrente (ogni riga citata, riverificata prima di toccarla)
+
+1a ha spostato codice: il refactor del fix MAJOR-1 in `flights.service.ts`, il campo data nell'editor, il campo nello schema. **13 righe citate da questo story file sono slittate**; nessun fatto è risultato falso.
+
+| Riferimento dello story file (misurato su `b5a2c93`) | Riga VERA su `7f0a2fb` | Esito |
+|---|---|---|
+| `fleet/aircraft-editor.tsx:286` — sezione Disponibilità montata | **`:305-306`** | **SLITTATO +19** |
+| `AvailabilitySection:690-765` | **`:692-818`** (corpo cresciuto di 53 righe con 1a) | **SLITTATO +2 / corpo diverso** |
+| `aircraft-editor.tsx:713` — il toast del successo | **`:743`** | **SLITTATO +30** |
+| `aircraft-editor.tsx:66-67` — le due label MORTE | **`:67-68`** | **SLITTATO +1** |
+| `fleet/page.tsx:187-188` — le due label passate | **`:194-195`** | **SLITTATO +7** |
+| `toast.tsx:26` — `TOAST_LIFETIME_MS = 2600` | **`:26`** | **CONFERMATO alla riga** |
+| `aircraft.service.ts#setOutOfService:393-416` | **`:410-448`**; `ConflictError` `:411`→**`:439`**; `findUniqueOrThrow` `:414`→**`:442`** | **SLITTATO +17/+28** |
+| `returnToService:423-438` | **`:453-472`** | **SLITTATO +30** |
+| I tre blocchi AOG `bookings.service.ts:554/922/1151` | throw a **`:557` / `:928` / `:1157`** | **SLITTATO** (il fatto tiene) |
+| `schemas/aircraft.ts#setOutOfServiceSchema:90-94` | **`:108-112`** | **SLITTATO +18** |
+| `aircraftListItemSchema:172-186` | **`:191-207`** | **SLITTATO +19** |
+| `registry.ts:1097-1109` — il path dell'out-of-service | **`:1097-1110`** (literal del path a `:1099`) | **CONFERMATO** |
+| `templates.ts:53-350` — «9 template» | file di **344 righe**, `buildBookingDeniedEmail` a **`:327-344`** | **CONFERMATO nel contenuto** (9 builder), range stale |
+| `bookings.service.ts#sendBookingDeniedEmail:1203-1221` | **`:1205-1223`** | **SLITTATO +2** |
+| `airops.css:790-796` — `.alert-box.*` | **`:790-796`** | **CONFERMATO alla riga** |
+| `airops.css:737-742` — `.stat-tone-*` | **`:737-739`** + `.stat-tone-info` a **`:3750`** (aggiunta dalla 15.10) | **CORREZIONE**: nel range citato vivono 3 regole, non 4 |
+| `schemas/bookings.ts:110-117` — `listBookingsQuerySchema` con `aircraftId`/`from`/`to`/`status` | **`:110-117`** | **CONFERMATO alla riga** |
+| `bookings.service.ts:1234` — `BookableAircraftOption` | **`:1236`** | **SLITTATO +2** |
+| `aircraft.service.test.ts:582-585` — il `toHaveBeenCalledWith` di `setOutOfService` | **`:583-587`**; fixture `SELECTED_AIRCRAFT` `:105-120`→**`:105-128`**; `toEqual` letterale `:217-236`→**`:214-243`** | **SLITTATO / CONFERMATO nel contenuto** |
+| I tre spec che fermano un velivolo: `bookings.spec.ts:470`, `mobile-planning.spec.ts:291`, `mobile-registries.spec.ts:300` | **tutte e tre alla riga** | **CONFERMATO** |
+
+**Tre correzioni alla ricognizione (fatti, non righe)**
+
+1. **La superficie del secondo passo esisteva già, ed è quella dell'Archivio.** Lo story file descrive il doppio passo come una novità; `ArchiveSection` (`aircraft-editor.tsx:1208-1259` pre-1b) **ha già** l'idioma esatto — stato `confirming`, domanda + `confirmYes`/`confirmCancel`, il trigger che sparisce. Il doppio passo di AC 3 lo **riusa** invece di inventarne un secondo nella stessa pagina.
+2. **`.fld` è un flex COLONNA** (`airops.css:1143`), non un semplice contenitore: la prima stesura del banner usava `className="alert-box info fld wide"` per prendersi `grid-column: 1 / -1` e ne è uscita una riga vuota (ogni `<br>` diventava un flex item) e due bottoni impilati a tutta larghezza. Misurato e corretto: `gridColumn` inline sul box, `flexDirection: 'row'` **solo** sulla riga armata. È anche il motivo per cui il submit di 1a resta 479×34,84 al centesimo: il suo contenitore è rimasto quello, senza stili.
+3. **Il link «alla lista prenotazioni filtrata per velivolo» non è esprimibile oggi** — v. §H (deviazione 3): `/dashboard/bookings` legge `{page, view, date, status}` (`bookings/page.tsx:37`) e il filtro velivolo della timeline è **stato client** (`schedule.tsx:504-517`), non un parametro d'URL.
+
+### §B — Riepilogo per AC, con le prove
+
+| AC | Esito | Prova |
+|---|---|---|
+| **1** una sola funzione, sei casi | ✅ | `src/server/services/aog-impact.ts#computeAogImpact` — **unica**, 2 call-site (`aircraft.service.ts:476` grounding, `:509` anteprima). 8 unit in `aog-impact.test.ts`: (a) PENDING/APPROVED spaccati 2/1; (b) DENIED/CANCELLED/FLOWN/NO_SHOW → 0; (c) passata e altro velivolo fuori, `gte` chiuso a sinistra; (d) **sopra/sul/sotto** il giorno di `until` → 3 dentro, 1 fuori; (d-bis) il bound esclusivo è mezzanotte del giorno DOPO in `APP_TIMEZONE`; (e) `until = null` → 3 approvate contro 1 delimitata, **stessa fixture**; (f) zero è un risultato. Il client Prisma è un **parametro**: il fake del test VALUTA la `where` emessa, quindi ogni asserzione è comportamentale, non una shape-match |
+| **2** l'anteprima prima dell'atto | ✅ | `aog-impact-preview` (`.alert-box.info`, `role="status"`) all'apertura della Disponibilità di un velivolo OPERATIONAL. Testo misurato: «Stai per impattare 4 prenotazioni. / In attesa (congelate): 0 · Approvate (da gestire): 4 / rientro da definire: conteggio non delimitato · **stima**». **Trigger**: il VALORE del controllo data (`impactUntil`), con debounce **300 ms** — misurato: senza debounce un anno digitato produce **4** richieste (`0002-…`, `0020-…`, `0202-…`, `2026-…`), con debounce **1**. IT+EN |
+| **3** doppio passo, label già tradotta | ✅ | Primo click → `out-of-service-confirm` (label `availability.confirm`, mai consumata prima) + `out-of-service-cancel` (label `cancel`, già esistente); `out-of-service-submit` **count 0** mentre è armato. **Zero stringhe nuove per questo passo.** Annullando: velivolo ancora `OPERATIONAL` **verificato sul DB** (`GET /api/v1/aircraft/{id}`), non sullo schermo. Bersagli: confirm/cancel **44px a 375**, **34,84 a 1280**; `out-of-service-submit` **invariato al centesimo** (§C) |
+| **4** conteggio nella transazione, nella response | ✅ | `setOutOfService` è un `$transaction`; unit sull'**ORDINE**: `['tx-start','updateMany','booking.findMany','tx-end']`. `where` guardata asserita **esatta** (`{ id, status: 'OPERATIONAL' }`), `data` con le tre chiavi di 1a — mai `objectContaining`. 409 su velivolo già AOG ⇒ **nessun conteggio, nessuna email** (asserito). Il conteggio usa la data **riletta dalla riga**, non l'input. DTO + rotta + registry nello stesso commit; verifica **a lettura** in §E |
+| **5** banner persistente oltre il toast | ✅ | `aog-impact-banner` (`.alert-box.bad`, `role="status"`) col numero della response. e2e: dopo **6 000 ms** il toast ha `count 0` e il banner è **ancora visibile e col suo testo**. Il toast (`toast.tsx:26`, 2600 ms) è **invariato**. Discriminanza in §F |
+| **6** la riga a ogni riapertura | ✅ | `aog-impact-row` (`.fld-hint`) su velivolo già AOG: «4 prenotazioni nel fermo · conteggio fino al 17/08/2026 compreso», stessa funzione di dominio via lo stesso GET. Alla riapertura `aog-impact-banner` **count 0** e `out-of-service-confirm` **count 0** (lo stato del doppio passo NON sopravvive al remount — la classe del BLOCKER 14.4 F1, **misurata**: `fleet-console.tsx:307` rimonta l'editor con `key`, incluso `'closed'`). AD-9 rispettato: accanto alla riga non c'è un solo controllo che darebbe 409 |
+| **7** esattezza su fixture proprie | ✅ | Lo spec crea velivolo, 3 persone e **7** prenotazioni proprie: 3 APPROVED dentro (+2, +4 e **+10 = il giorno di `until`**), 1 PENDING dentro (+6), 1 APPROVED oltre (+40), 1 CANCELLED, 1 DENIED. Asserito **1 · 3** e totale **4**, e con `until = null` la coppia 2 → 1 sulla stessa fixture (secondo test). **Nessun aggregato globale** letto |
+| **8** invariante [b] | ✅ | Senza data: anteprima, banner **e** riga dicono «rientro da definire: conteggio non delimitato»; l'email dice «rientro da definire» e **non** contiene «fino al» (asserito in negativo). IT+EN (`return date not yet known: count not delimited`) |
+| **9** invariante [a] | ✅ | §D: censimento completo classificato. **Zero** occorrenze in una `where` che selezioni velivoli per stato, in un `if` che decida se un velivolo vola, in un job. Unit dedicato: un `until` **già passato** conta **tutte** le vive future (identico alla finestra non delimitata), **mai** zero |
+| **10** solo le APPROVED | ✅ | Template **nuovo** `buildAircraftGroundedEmail` (nomina marca, motivo, finestra inclusiva o «rientro da definire», e la prenotazione del destinatario). e2e Mailpit: **1** messaggio al titolare APPROVED (in **inglese**, `User.locale` esplicito), **1** al secondo titolare (fallback `it`, nessun `User`), **0** al titolare PENDING — che **ha** un'email a fascicolo, quindi è un vero «non è stato spedito» e non uno skip silenzioso. `returnToService`: unit che asserisce `sendMock` **non chiamato** |
+| **11** best-effort davvero | ✅ | Unit: `MailSender` che lancia ⇒ **200**, riga scritta, conteggio nella response, e **il secondo destinatario riceve comunque**. Ordine provato: `['tx-start','tx-end','send']` — l'invio è **fuori** e **dopo**. Persona senza email: saltata in silenzio, le altre partono. Discriminanze in §F |
+| **12** e2e Mailpit, stato globale chiuso | ✅ | Filtro **`to:<indirizzo run-unique>` + subject ESATTO** (`groundingSubjects()`): serviva il subject esatto perché la fixture DENIED produce «Prenotazione rifiutata: `<marca>`» **allo stesso destinatario**, e un filtro sulla sola marca l'avrebbe scambiata per un'email di fermo. Mai un totale di casella, mai `messages[0]` |
+| **13** costo del fan-out MISURATO | ✅ | 21 titolari distinti (il caso peggiore reale della ricognizione): il `POST /out-of-service` dura **1 615 ms**, contro **16 ms** con zero destinatari ⇒ **~76 ms/destinatario** contro Mailpit locale; 21 messaggi consegnati. **Nessun cap, nessuna coda, nessun batching introdotti.** TD da registrare in §G |
+| **14** geometria, contrasto, bersagli | ✅ | §C. Tutti i contrasti ≥ 4,5 nei due temi; **nessun `var(--bad)`/`var(--ok)` inline aggiunto** (`git diff -U0 \| grep '^+.*var(--bad)\|^+.*var(--ok)'` → **0**) |
+| **15** nessuna regressione su 1a | ✅ | §C: `out-of-service-submit` **335×44 a 375** e **479×34,84 a 1280**, identico al centesimo; pannello e `.so-body` invariati; i 9 test di 1a + i 4 della 2.5 verdi (`13 passed, E2E_EXIT=0`). I due file di 1a toccati, e perché, in §H |
+| **16** unit in shell PULITA | ✅ | `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` su `aog-impact.test.ts` (8), `aircraft.service.test.ts` (71), `templates.test.ts` (22) — **verde**. `aircraft.service.ts` importa ORA `@/server/adapters/mail`: la catena è mockata nel test (`vi.mock('@/server/adapters/mail')` + `'@/server/adapters/mail/templates'`), che è ciò che tiene la regola a 3 occorrenze di CLAUDE.md |
+| **17** convenzioni e2e + isolamento motivato | ✅ | §E |
+| **18** i gate | ✅ | §L |
+
+### §C — AC 14/AC 15: misure UI (build di produzione, `playwright-core`, 1280×900 e 375×812, tema chiaro e scuro, IT e EN)
+
+**Geometria** (identica nei due temi; le due colonne per larghezza)
+
+| Elemento | 1280 | 375 |
+|---|---|---|
+| `aog-impact-preview` (**nuovo**, `.alert-box.info`) | 479×**78,13** @y571,38 | 335×**78,13** @y714,66 |
+| `aog-impact-banner` (**nuovo**, `.alert-box.bad`) | 479×**101,5** @y161,59 | 335×**101,5** @y201,88 |
+| `aog-impact-row` (**nuovo**, `.fld-hint`) | 479×**17,39** @y586,59 | 335×**17,39** @y729,88 |
+| `out-of-service-confirm` (**nuovo**) | 82,3×**34,84** | 82,3×**44** |
+| `out-of-service-cancel` (**nuovo**) | 67,98×**34,84** | 67,98×**44** |
+| `out-of-service-submit` (1a) | **479×34,84** — invariato al centesimo | **335×44** — invariato al centesimo |
+| `[role=dialog]` | 520×900 @x760 — invariato | 375×812 @x0 — invariato |
+| `.so-body` | 519×756,39 — invariato | 375×659,23 — invariato |
+| `documentElement` overflow-X | **0** | **0** |
+
+**Il fold, dichiarato (AC 14).** La sezione Disponibilità cresce una seconda volta: `out-of-service-submit` passa da **y 908,17** (misura di 1a a 375) a **y 1 000,30** — **+92,13px**, cioè l'altezza del box di anteprima (78,13) più il gap del `.form-grid` (14). Su un `.so-body` alto 659,23 il submit è quindi **a 341px sotto il bordo inferiore del corpo scrollabile** e si raggiunge **scorrendo**: era già così prima di 1b (908,17 > 659,23) e questa story lo peggiora di 92,13px. **Il pannello e il `.so-body` non cambiano di un centesimo**: la sezione cresce dentro il corpo scrollabile, non sposta la cornice. Il baricentro dell'avviso, però, si sposta **in su**: l'anteprima è il primo elemento della sezione ed è **sopra** il fold appena la sezione è a schermo.
+
+**Contrasti WCAG** (canvas → sRGB → WCAG, sfondo effettivo risalendo gli antenati, cascata reale, `getClientRects().length > 0`; ⚠️ misurati **col puntatore lontano e dopo il transition** — leggerli subito dopo un click dà il valore INTERMEDIO della transizione `.btn` e produce falsi 1,04:1)
+
+| Testo nuovo | Chiaro | Scuro | Soglia |
+|---|---|---|---|
+| `aog-impact-preview` — titolo, spacco, finestra (3 span) | **8,46** | **8,79** | ≥4,5 ✅ |
+| `aog-impact-banner` — titolo, spacco, finestra (3 span) | **8,38** | **7,46** | ≥4,5 ✅ |
+| `aog-impact-bookings-link` (dentro `.alert-box.bad`) | **8,38** | **7,46** | ≥4,5 ✅ |
+| `aog-impact-row` (`.fld-hint`, `--ink-3`) | **4,85** | **5,72** | ≥4,5 ✅ |
+| `out-of-service-confirm` (`.btn.primary`) | **17,99** | **17,00** | ≥4,5 ✅ |
+| `out-of-service-cancel` (`.btn`) | **18,79** | **15,74** | ≥4,5 ✅ |
+
+Il link del banner **eredita l'inchiostro del box** e porta la sottolineatura (`color: inherit; text-decoration: underline`) — asserito nell'e2e confrontando `getComputedStyle(link).color` con quello del box, mai contro un literal. Senza quella regola avrebbe ereditato `a{ color: var(--info) }` sul `--bad-soft`: è il difetto a 3,61:1 che R-15.10-i ha già misurato su 64 righe.
+
+**Testo reso, verbatim dalla misura**
+- IT anteprima: `Stai per impattare 4 prenotazioni. / In attesa (congelate): 0 · Approvate (da gestire): 4 / rientro da definire: conteggio non delimitato · stima`
+- IT banner: `Fermo registrato: 1 prenotazione impattata. / In attesa (congelate): 0 · Approvate (da gestire): 1 / conteggio fino al 10/08/2026 compreso / Vedi le prenotazioni`
+- IT riga: `1 prenotazione nel fermo · conteggio fino al 10/08/2026 compreso`
+- EN riga: `1 booking inside the grounding · counted until 10/08/2026 inclusive`
+- EN email (destinatario `locale: 'en'`): subject `Aircraft out of service: I-…`, corpo con `until 17/08/2026 inclusive` e `has NOT been cancelled`
+
+### §D — AC 9: censimento di `outOfServiceUntil`, classificato voce per voce
+
+`grep -rn 'outOfServiceUntil' src/server/ prisma/schema.prisma` (esclusi i test e i doc-comment):
+
+| File:riga | Cosa fa | Classe | Di chi |
+|---|---|---|---|
+| `prisma/schema.prisma:312` | la colonna + il doc-comment che è la **fonte unica** della semantica | schema | 1a |
+| `aircraft.service.ts:31-32` | tipo del DTO | dichiarazione | 1a |
+| `aircraft.service.ts:68` | chiave di `AIRCRAFT_SELECT` | **lettura** | 1a |
+| `aircraft.service.ts:76-77` | tipo della riga grezza | dichiarazione | 1a |
+| `aircraft.service.ts:89` | `toListItem` → `toDateOnlyString` | **visualizzazione (DTO)** | 1a |
+| `aircraft.service.ts:466` | `setOutOfService`, chiave del `data` | **scrittura (ciclo di vita)** | 1a |
+| `aircraft.service.ts:476` | `until` passato a `computeAogImpact` | **limite superiore della finestra di conteggio** | **1b** |
+| `aircraft.service.ts:571` | `outOfServiceUntil` passato al template dell'email | **messaggio** | **1b** |
+| `aircraft.service.ts:601` | `returnToService`, azzeramento | **scrittura (ciclo di vita)** | 1a |
+| `bookings.service.ts:547-548 / 914-915 / 1144-1145` | colonna nei tre `SELECT … FOR UPDATE` | **lettura** | 1a |
+| `flights.service.ts:617/621` | chiave del `select` | **lettura** | 1a |
+| `aircraft-status.ts:29-35` | `outOfServiceDetails` | **messaggio d'errore** | 1a |
+| `templates.ts:369/375` | parametro e frase della finestra nell'email | **messaggio** | **1b** |
+| `aog-impact.ts` | **solo doc-comment**: il parametro si chiama `until`, e la finestra che costruisce filtra `Booking.startsAt`, **mai** `Aircraft` | **limite della finestra** | **1b** |
+
+**Zero** occorrenze dentro una `where` Prisma che selezioni velivoli per stato, dentro un `if` che decida se un velivolo vola, dentro un job o un cron. Le **quattro** voci nuove di 1b sono tutte «limite della finestra di conteggio» o «messaggio»: l'unica cosa che decide se un velivolo vola resta `status`.
+
+⚠️ **Una tensione interna allo story file, risolta e dichiarata**: AC 1 definisce la finestra `[ora, fine giornata di until]`, e AC 9 pretende che un `until` **già passato** NON azzeri il conteggio. Presi alla lettera insieme darebbero 0 (finestra vuota) proprio quando il fermo è andato lungo — che è esattamente ciò che AC 9 vieta. La regola vive in **un solo posto** (`aog-impact.ts`, doc-comment + una riga): **un limite superiore già passato non è un limite**, e la finestra torna quella non delimitata. Discriminanza D2 in §F.
+
+### §E — AC 17: convenzioni e2e, testid, isolamento
+
+**Testid nuovi (5)**: `aog-impact-preview`, `aog-impact-banner`, `aog-impact-row`, `aog-impact-bookings-link`, `out-of-service-confirm`, `out-of-service-cancel`. Audit obbligatorio eseguito **prima** di sceglierli — `grep -rn 'data-testid\^=' e2e/` dà **12 prefissi letterali + 1 loop dinamico** (`ac-card-`, `mobile-fleet-card-`, `mobile-fleet-`, `mobile-pilot-row-`, `mobile-instructor-row-`, `mobile-tail-chip-`, `pilot-row-`, `schedule-filter-aircraft-`, `schedule-filter-instructor-`, `reports-fleet-row-`, `reports-rank-aircraft-row-`, `flight-row-mobile`, + il loop di `mobile-reports.spec.ts:611-612` su `reports-fleet-row-`/`reports-rank-aircraft-row-`/`reports-rank-pilot-row-`/`reports-instructor-row-`). **Nessuno** copre `aog-impact-*` né `out-of-service-*`. Ognuno di questi controlli è **un solo nodo DOM a tutte le larghezze** (come `out-of-service-reason`/`-submit`), quindi né suffisso `-mobile` né prefisso `mobile-`: entrambi sarebbero sbagliati.
+
+**Isolamento, con la motivazione (la scelta, non l'implicito): NESSUN project serializzato.** Lo spec vive nel project `chromium` `fullyParallel`, e regge per costruzione:
+- **il velivolo è run-unique** e ogni test ferma **il proprio** — la disciplina identica dei tre spec che già fermano velivoli e di quello di 1a;
+- **le persone e le prenotazioni sono run-unique**, quindi ogni numero asserito è un numero che il test ha creato: nessuna fotografia di fixture altrui (lezione 15.10);
+- **la casella Mailpit è stato globale**, e viene letta **solo** per `to:<indirizzo run-unique>` + **subject esatto** — mai un totale, mai l'ultimo arrivato;
+- **nessuna asserzione tocca un aggregato globale** (i «N AOG» della Flotta o della Panoramica), che è l'unica cosa che obbligherebbe alla catena (review Billing-2 F4). La guardia di 1a che LEGGE un aggregato globale resta dov'è, nel suo project `aog-overview-count`, e non è stata toccata.
+
+**Fixture**: nessuna time-dependent. Ogni data è `dateOnlyFromToday(offset)`, gli orari sono 08:00-09:00Z (dentro ogni finestra di scheduling che i project serializzati lasciano dietro) e la prenotazione «oltre la finestra» è a **+40 giorni**, che sta dentro il `maxAdvanceDays` più restrittivo (45) che uno dei project serializzati scrive transitoriamente. La data attesa nei messaggi è prodotta dallo **stesso** `Intl.DateTimeFormat` di `formatDateOnly`, mai hard-coded. **Nessun `hasText` con date o `H:MM`**; le righe si trovano per marca run-unique.
+
+**Precondizione prenotazioni**: `ensureValidSeedExpiries(page, personId, 'PILOTS')` su OGNI persona creata — senza, `createBooking` risponde 422 sui documenti scaduti (TD 15.5) prima di arrivare a qualunque cosa di questa story.
+
+**Verifica a lettura dell'OpenAPI generato** (AD-5; `registry.test.ts` usa `arrayContaining` e non la copre): `generateOpenApiDocument()` →
+- `POST /api/v1/aircraft/{id}/out-of-service` → 200 = oggetto con `required: ["aircraft","impactedBookings"]`, `aircraft` = l'`Aircraft` completo (`outOfServiceUntil: {"type":["string","null"],"format":"date"}` ancora al suo posto), `impactedBookings` = `{pending, approved}` interi `minimum: 0`, entrambi `required`;
+- `GET /api/v1/aircraft/{id}/out-of-service-impact` → **registrato** (non è diventata la nona rotta mancante dell'action item «F5 review 12.11»), parametro `until` `{"type":"string","format":"date"}` **non** required, 200 = `{pending, approved}`, errori 401/403/404/422;
+- schemi registrati: `AogBookingImpact`, `SetOutOfServiceResponse`.
+
+### §F — Tabella guardia → discriminanza (tutte provate ROSSE simulando il pre-fix, ripristino byte-identico dichiarato)
+
+| # | Guardia nuova | Simulazione del pre-fix | Esito rosso |
+|---|---|---|---|
+| D1 | boundary INCLUSIVO di AC 1 (d) | finestra ESCLUSIVA (`zonedMidnightUtc(until)` invece di `until+1`) | **4 failed**: `(d)` *expected 1 to be 3*, `(d-bis)` *expected [] to equal ['oneMsBefore']*, + i due unit di service sul `lt` (*'2031-05-11T22:00:00.000Z' vs '2031-05-12T22:00:00.000Z'*) |
+| D2 | invariante [a] di AC 9 | rimosso il clamp «un limite già passato non è un limite» | **1 failed**: *expected `{pending: 0, approved: 0}` to match `{pending: 1, approved: 2}`* |
+| D3 | «una email fallita non ferma le altre» (AC 11) | rimosso il `try/catch` PER destinatario | **1 failed**: *expected "vi.fn()" to be called 2 times, but got 1* |
+| D3-bis | «l'email non può far fallire l'AOG» (AC 11) | rimossi **entrambi** i `try/catch` | **1 failed**: `Error: SMTP down` — il grounding stesso rigetta |
+| D5 | persistenza ≥ 5 s di AC 5 | banner con la vita del toast (`setTimeout(() => setImpact(null), 2600)`), build ricompilata | **1 failed** alla riga **244**, cioè l'asserzione **dopo** i 6 s (`toBeVisible` → *element(s) not found*), con tutte le asserzioni immediate ancora verdi: la discriminanza è esattamente il ritardo |
+| D6 | «nessuna email alle PENDING» di AC 10 | fan-out su TUTTE le impattate (conteggi lasciati identici), build ricompilata | **1 failed** alla riga **279**: *no grounding email for the PENDING holder …* con il messaggio ricevuto stampato per intero |
+| D7 | pavimento 44px dei due controlli nuovi (AC 3) | rimossa la regola CSS (11) | **1 failed**: *out-of-service-confirm touch floor at 375 — Expected: >= 44, Received: 34.84375* |
+
+**Ripristino**: `sha256sum -c` sui quattro file toccati dalle simulazioni → **`aog-impact.ts: OK`, `aircraft.service.ts: OK`, `airops.css: OK`, `aircraft-editor.tsx: OK`**. Byte-identico, verificato, non affermato.
+
+### §G — Decisioni non ovvie
+
+1. **`computeAogImpact` vive in un modulo NUOVO (`aog-impact.ts`), e il client Prisma è un PARAMETRO.** AD-1 chiede di provare l'assenza di ciclo: questo modulo importa **niente** da `services/` (solo `date-only`, `time`, `zoned-time` e i tipi Prisma) e **solo** `aircraft.service.ts` lo importa — non esiste un arco che possa chiudere un ciclo, in nessuna delle due direzioni. Il client come parametro è ciò che permette al grounding di contare sulla **stessa connessione** della transazione e, insieme, ai suoi unit di girare in shell pulita senza mockare la catena della posta che il chiamante ora importa. È lo stesso ragionamento che in 1a ha prodotto `aircraft-status.ts`.
+2. **La response è un WRAPPER `{ aircraft, impactedBookings }`, non un campo additivo.** AD-5 cita `balanceAlert` di `RegisterFlightResult` come «stessa forma, stessa disciplina», e quella forma è un wrapper (`{ flight, account, balanceAlert }`): l'entità sotto la sua chiave, il dato advisory accanto. L'alternativa additiva (una chiave in più a fianco dei campi dell'`Aircraft`) sarebbe stata **non-breaking** ma avrebbe sporcato il DTO che un client legge **e riscrive**. Costo reale della scelta, censito: **due** consumatori, `aircraft-editor.tsx` e l'helper `ground()` dell'e2e di 1a; gli altri quattro spec che fermano un velivolo leggono **solo lo status** e non si sono accorti di nulla.
+3. **Il fan-out fa DUE query batch, non due per destinatario.** `sendBookingDeniedEmail` è il modello per UN destinatario; ripeterlo N volte darebbe 2N round-trip senza guadagno. Il `try/catch` è però **doppio** e deliberato: uno attorno alle due letture (se falliscono, `console.error` e basta) e uno **per destinatario** attorno al `send` (un indirizzo rotto non mangia gli altri) — le due discriminanze D3/D3-bis provano che servono entrambi.
+4. **UNA email per TITOLARE, non per prenotazione**, che nomina la sua prenotazione **più vicina** (`approvedBookings` arriva `startsAt`-ascendente). AC 10 dice «una email ciascuno»; il conteggio invece resta per **prenotazione** (unit dedicato: 2 impattate, 1 email). Conseguenza dichiarata: un titolare con tre prenotazioni impattate ne vede nominata una — ma la frase sul fermo («fino al … compreso» / «rientro da definire») le copre tutte.
+5. **Il secondo passo riusa l'idioma dell'Archivio**, che vive **nello stesso pannello** venti righe più sotto: stato `confirming`, il trigger che **sparisce**, la coppia conferma/annulla. Un secondo linguaggio per «questa azione chiede prima» nella stessa schermata sarebbe stato il difetto. Da qui anche il testid nuovo `out-of-service-confirm` (come `archive-confirm`), che è ciò che rende il doppio passo **provabile** invece che invisibile a un test.
+6. **Il debounce è 300 ms e nasce da una misura**, non da un'abitudine: un `<input type="date">` nativo emette un valore completo **per ogni cifra dell'anno**, quindi senza debounce una data digitata sono 4 richieste, tre delle quali su anni che nessuno ha chiesto (e che, con il TD 14.8 F6, un `0002` lo mapperebbe pure su `1902`).
+7. **Modificare motivo o data mentre il doppio passo è armato lo DISARMA**: altrimenti la seconda pressione scriverebbe qualcosa che la prima non aveva mostrato.
+8. **`role="status"` (polite) e non `role="alert"`** su anteprima e banner: nessuno dei due è un errore dell'utente — uno è un preavviso che si aggiorna mentre si digita, l'altro è il referto di un'azione voluta. `.alert-box.bad` porta il **tono**, non il ruolo.
+
+### §H — Deviazioni, motivate
+
+| # | Deviazione | Motivo |
+|---|---|---|
+| 1 | **Il link del banner NON è filtrato per velivolo**: punta a `/{locale}/dashboard/bookings?status=PENDING,APPROVED` | **Misurato**: `/dashboard/bookings` legge `{page, view, date, status}` (`bookings/page.tsx:37`) e **non** un `aircraftId`; il filtro velivolo della timeline è **stato client** (`schedule.tsx:504-517`), non un URL. Aggiungerne uno significa un contratto d'URL **nuovo** su una pagina che §3 non elenca nel blast radius, con le regole di crosstalk verso `?page`/`?status`/`?view`/`?date` e i due href di export (lezione 6.4 M1). Il link porta quindi **ai due stati di cui il numero parla**, che è la parte esprimibile oggi. Il `?status` CSV è già supportato (`booking-status-filter.ts`) |
+| 2 | **`availability.confirmReturnToService` resta MORTA** | È una **domanda** («Rimettere in servizio questo velivolo?»): consumarla significa aggiungere un doppio passo al **rientro in servizio**, che AC 3 non chiede e che romperebbe due spec e2e esistenti (`aircraft-status-hours.spec.ts:74`, `aircraft-out-of-service-until.spec.ts:205`) — fuori perimetro. `availability.confirm` invece è stata consumata, ed è quella che AC 3 nomina |
+| 3 | **Toccato `e2e/aircraft-out-of-service-until.spec.ts` (1a) oltre i due punti di AD-8**: l'helper `ground()` scarta l'involucro (`body.aircraft`) | Conseguenza **diretta** del cambio di forma della response, che AD-8 autorizza esplicitamente al punto 1. Tre righe, nessuna asserzione di 1a indebolita |
+| 4 | **Toccato `e2e/aircraft-status-hours.spec.ts` (story 2.5)**: due click invece di uno | Conseguenza **diretta** del doppio passo ratificato (AC 3): quel test guida il bottone che ora arma. Tre righe |
+| 5 | **Regola CSS (11) NUOVA invece di allargare la (10) di 1a** | I due controlli del secondo passo sono controlli nuovi e prendono il pavimento a 44px; la regola di 1a resta **byte-identica**, così la sua misura continua a descrivere esattamente ciò che ha misurato |
+| 6 | **Un terzo test e2e non previsto dal §4** (bersagli 44px + inchiostro del link) | AC 3 e AC 14 lo chiedono («il controllo nuovo rispetta i 44px», «ogni pixel di testo nuovo»), e senza una guardia la regola CSS nuova sarebbe l'unica cosa della story senza discriminanza (D7) |
+| 7 | **Il clamp «un limite già passato non è un limite»** | Unica lettura che soddisfa insieme AC 1 e AC 9 — v. §D |
+| 8 | **`impactWindowUntil`/`impactWindowUndelimited` sono stringhe NUOVE** invece di riusare `untilValue`/`untilUnknown` di 1a | Quelle due sono clausole di «Stato attuale» («fermo fino al … compreso»); qui la frase parla del **conteggio** («conteggio fino al … compreso», «rientro da definire: conteggio non delimitato»), che è ciò che AC 8 chiede di dichiarare. Riusare le prime avrebbe detto una cosa diversa da quella che l'AC vuole |
+
+### §I — TD da registrare (non miei: `sprint-status.yaml` è della sessione principale)
+
+- **Costo del fan-out del grounding (AC 13)** — misurato su questa macchina: `POST /api/v1/aircraft/{id}/out-of-service` con **21** titolari APPROVED distinti dura **1 615 ms**, contro **16 ms** con zero destinatari (≈ **76 ms/destinatario**, SMTP verso Mailpit **locale**). L'invio è sequenziale, best-effort e post-commit, dentro la richiesta. Con un provider SMTP remoto il tempo scala col RTT e su un velivolo molto prenotato l'admin aspetta. **Nessun cap, nessuna coda, nessun batching sono stati introdotti** (non ratificati, AC 13): serve una ratifica PO per aprire il tema.
+- **Ereditati e dichiarati, non toccati**: TD 14.8 F6 (`date-only.ts`, anni <100 → 1900+anno — raggiungibile anche dal `until` dell'anteprima, che però è generato dal controllo nativo), TD `OPTIONS_PAGE_SIZE`, TD 14.9 F11, TD AD-9 (la data non è modificabile senza rientro in servizio), i 40 `var(--bad)`/`var(--ok)` inline, le 42 celle `.cal-popover`.
+
+### §J — File toccati
+
+**Dominio / contratti (5)**
+- `src/server/services/aog-impact.ts` — **nuovo** (134 righe): la funzione di dominio unica
+- `src/server/services/aircraft.service.ts` — `SetOutOfServiceResult`, `setOutOfService` in `$transaction`, `previewOutOfServiceImpact`, `sendAircraftGroundedEmails`
+- `src/lib/schemas/aircraft.ts` — `aogBookingImpactSchema`, `setOutOfServiceResponseSchema`, `outOfServiceImpactQuerySchema`
+- `src/lib/schemas/registry.ts` — 2 schemi + la 200 riscritta + il path nuovo
+- `src/app/api/v1/aircraft/[id]/out-of-service-impact/route.ts` — **nuovo**
+
+**Email (3)**
+- `src/server/adapters/mail/templates.ts` — `buildAircraftGroundedEmail` (+ `formatDateOnly` importato da `@/lib/time`, già usato dal modulo per `formatDateTime`)
+- `messages/it.json` + `messages/en.json` — `Emails.aircraftGrounded` (4 chiavi) + `AircraftPage.editor.availability.impact*` (11 chiavi); **parità verificata: 0 chiavi solo-IT, 0 solo-EN** su 1 978
+
+**UI (3)**
+- `src/app/[locale]/dashboard/fleet/aircraft-editor.tsx` — anteprima, doppio passo, banner, riga, `SetOutOfServiceApiResponse`, `IMPACT_DEBOUNCE_MS`
+- `src/app/[locale]/dashboard/fleet/page.tsx` — wiring delle 11 label nuove
+- `src/styles/airops.css` — **due** regole: `.alert-box a` e il pavimento 44px dei due controlli nuovi
+
+**Test (5)**
+- `src/server/services/aog-impact.test.ts` — **nuovo** (8 test)
+- `src/server/services/aircraft.service.test.ts` — mock della catena posta, 3 delegate Prisma nuovi, asserzioni riallineate al valore **corretto**, 13 test nuovi
+- `src/server/adapters/mail/templates.test.ts` — 3 test del template nuovo
+- `e2e/aog-impact-email.spec.ts` — **nuovo** (3 test)
+- `e2e/aircraft-out-of-service-until.spec.ts` + `e2e/aircraft-status-hours.spec.ts` — le due conseguenze dichiarate in §H (3 e 4)
+
+**NON toccati, a riprova del perimetro**: `src/server/services/bookings.service.ts`, `src/server/services/flights.service.ts`, `src/server/services/aircraft-status.ts`, `prisma/schema.prisma`, `src/components/dashboard/fleet-card.tsx`, `src/app/[locale]/dashboard/fleet/fleet-console.tsx`, `src/app/[locale]/dashboard/page.tsx`, `src/app/[locale]/dashboard/bookings/**`, `src/lib/mobile-agenda.ts`, `src/server/services/exports.service.ts`, `src/lib/date-only.ts`, `src/components/ui/{date-input,calendar-popover,toast,slide-over}.tsx`, `src/app/api/v1/aircraft/[id]/out-of-service/route.ts` (la rotta passa avanti ciò che il service restituisce: non è cambiata di una riga), `e2e/aog-overview-count.spec.ts` e `playwright.config.ts`.
+
+### §K — Cosa NON ho fatto
+
+- **Nessun cap, nessuna coda, nessun batching** sul fan-out (AC 13): solo la misura e il TD di §I.
+- **Nessun annullamento automatico** delle prenotazioni impattate, **nessuna email al rientro**, **nessuna email alle PENDING**, **nessun canale nuovo** (push/in-app), **nessuna marcatura** della prenotazione impattata nelle liste del pilota.
+- **Nessun filtro `?aircraftId` nuovo** su `/dashboard/bookings` (§H 1).
+- **Nessuna riga di produzione di 1a riscritta** oltre ai due punti di AD-8: la `where` guardata, il `ConflictError`, la rilettura e l'azzeramento di `returnToService` sono byte-identici; `bookings.service.ts` e `flights.service.ts` non sono stati aperti in scrittura.
+- **`sprint-status.yaml` e `docs/handoffs/HANDOFF.md`**: non toccati (sono della sessione principale). Il TD di §I va registrato lì.
+- **Nessun commit** (per istruzione).
+
+### §L — Gate ed esiti, ONESTI
+
+- **`npm run gates`** (eseguito **dopo** il ripristino byte-identico delle simulazioni pre-fix, su DB fresco):
+  `PASS lint (20s) · PASS typecheck (3s) · PASS test (7s) — Tests 1819 passed (1819) · PASS build (29s)`
+  **1 819 = 1 795 di baseline + 24 miei** (8 `aog-impact.test.ts`, 13 `aircraft.service.test.ts`, 3 `templates.test.ts`).
+- **Unit in shell PULITA** (AC 16): `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` su `aog-impact.test.ts` (**8 passed**), `aircraft.service.test.ts` (**71 passed**), `templates.test.ts` (**22 passed**) — verde. È il gate che la catena della posta appena importata in `aircraft.service.ts` avrebbe rotto senza i `vi.mock`.
+- **e2e mirati** (build di produzione, `E2E_REUSE_SERVER=1`, via `scripts/e2e.sh`, esito letto **solo** con `status`):
+  - `--project=chromium -g "story AOG-1b"` → **3 passed, `E2E_EXIT=0`**
+  - `--project=chromium -g "AOG-1a|Story 2.5"` (non-regressione sui due file toccati) → **13 passed, `E2E_EXIT=0`**
+- **Suite completa `CI=1` su build di produzione e DB FRESCO** (DB ricreato con `DROP DATABASE … WITH (FORCE)` + `CREATE DATABASE` + `migrate deploy` + `db seed`; casella Mailpit svuotata; **nessuna build lanciata durante il run**, `scripts/e2e.sh start`):
+
+  ```
+  524 passed (13.7m) — 0 failed, 0 flaky, 0 skipped — E2E_EXIT=0
+  ```
+
+  **524 = 521 di baseline + 3 miei.** I miei tre sono verdi **al primo tentativo**. I **3 skipped AMBIENTALI** che l'arbitro di 1a aveva registrato (`mobile-metar.spec.ts` 61/167/208, `test.skip(!metar?.raw)` by contract) **non ci sono in questo run**: aviationweather.gov era raggiungibile e i tre test sono **passati** (righe 506/507/508 del log) — quindi 521 = 518 + 3, come dichiarato dall'arbitro di 1a, e il totale torna.
+- **Lock anti-brute-force (TD-6)**: nessun rosso attribuito alla flake di login; nessuno è occorso. Il flaky noto `flights.spec.ts:602` (seconda faccia del TD 15.5) **non si è presentato** in questo run.
+- **Stato finale della macchina**: porta **3000 LIBERA** (il server della suite si chiude col run; quello che avevo aperto per le misure è stato ucciso prima di ogni rebuild, come impone CLAUDE.md); DB **post-suite** (193 velivoli, 17 AOG, 11 con data di rientro, 102 prenotazioni, 394 persone); Mailpit con **168** messaggi (tutti della suite). Nessun commit.
