@@ -38,13 +38,13 @@ import { flightBadgeKind, flightCardSubLine, flightRouteLabel, flightSheetSub, t
 import { formatCents } from '@/lib/money';
 import type { FlightListItemDto, FlightStatusDto, FlightTypeDto } from '@/lib/schemas/flights';
 import { formatDateOnly, formatMinutes, formatTimeOfDay } from '@/lib/time';
-import { FlightEditor, type FlightEditorLabels, type FlightEditorTarget } from './flight-editor';
+import { FlightEditor, type AircraftOption, type FlightEditorLabels, type FlightEditorTarget } from './flight-editor';
 
-type AircraftOption = { id: string; registration: string };
 type PersonOption = { id: string; firstName: string; lastName: string };
 /** The "person" (pilot/allievo) picker's own option shape (story 14.3, AC 2) — see `flight-editor.tsx`'s own `PilotStudentOption` doc-comment. */
 type PilotStudentOption = PersonOption & { profiles: { pilot: boolean; student: boolean } };
-type AircraftFilterOption = AircraftOption & { archived: boolean };
+/** The filter bar's own option — deliberately NOT `AircraftOption & …`: the filter never needs the editor's `status`/`statusReason` (story AOG-1a, AC 12), only the archived flag it already showed. */
+type AircraftFilterOption = { id: string; registration: string; archived: boolean };
 
 export type LogbookFilters = {
   dateFrom: string;

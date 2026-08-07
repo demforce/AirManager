@@ -1035,6 +1035,10 @@
         "setOutOfService": "Out of service",
         "returnToService": "Return to service",
         "reason": "Reason",
+        "until": "Grounded until (inclusive)",
+        "untilHint": "Optional: the last day the aircraft stays grounded. Empty = return date not yet known.",
+        "untilValue": "grounded until {date} inclusive",
+        "untilUnknown": "return date not yet known",
         "confirm": "Confirm",
         "confirmReturnToService": "Return this aircraft to service?"
       },
@@ -1369,6 +1373,8 @@
         "INSTRUCTOR_NOT_FOUND": "The selected instructor has no active instructor profile.",
         "INSTRUCTOR_SAME_AS_PILOT": "The instructor cannot be the same person as the pilot or student.",
         "FLIGHT_DATE_IN_FUTURE": "The flight date cannot be in the future.",
+        "AIRCRAFT_OUT_OF_SERVICE": "Aircraft {registration} is out of service: {reason}.",
+        "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Aircraft {registration} is out of service: {reason}. Grounded until {date} inclusive.",
         "FLIGHT_BLOCKED_BY_EXPIRY": "Cannot log this flight: the following documents are missing or expired: {documents}.",
         "documentExpiredOn": "expired on {date}",
         "documentMissing": "missing",
@@ -1619,6 +1625,7 @@
       "invalidRange": "The end time must be after the start time.",
       "errors": {
         "AIRCRAFT_OUT_OF_SERVICE": "The aircraft is out of service: {reason}.",
+        "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "The aircraft is out of service: {reason}. Grounded until {date} inclusive.",
         "BOOKING_IN_PAST": "The start time must be in the future.",
         "PERSON_NOT_BOOKABLE": "This person has no active profile eligible for a booking.",
         "EXPIRED_DOCUMENTS": "Cannot create this booking: the following documents are expired: {documents}.",

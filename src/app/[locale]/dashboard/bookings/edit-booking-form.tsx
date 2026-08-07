@@ -2,10 +2,12 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
+import { useLocale } from 'next-intl';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input, Select } from '@/components/ui/field';
+import { formatDateOnly } from '@/lib/time';
 import { SlideOver } from '@/components/ui/slide-over';
 import type { AircraftOption } from './new-booking-form';
 import type { BookingRowDto } from './bookings-table';
@@ -28,6 +30,8 @@ export type EditBookingFormLabels = {
     BOOKING_IN_PAST: string;
     /** `{reason}` placeholder, client-filled. */
     AIRCRAFT_OUT_OF_SERVICE: string;
+    /** Story AOG-1a, AC 7 — used only when `details.outOfServiceUntil` is present: the same sentence plus the INCLUSIVE fermo clause (`{date}`). The plain key above stays byte-identical for a grounding with no date (invariant [b]). */
+    AIRCRAFT_OUT_OF_SERVICE_UNTIL: string;
     /** `{documents}` placeholder, client-filled. */
     EXPIRED_DOCUMENTS: string;
     /** Story 15.4 (ratifica R-15.4-g): already interpolated server-side with the airfield's own window — same message the create form shows. */
@@ -76,7 +80,8 @@ function toDatetimeLocalValue(iso: string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-type ApiErrorBody = { error?: { code?: string; details?: { reason?: string; documents?: Array<{ typeName: string }> } } };
+/** Story AOG-1a — `outOfServiceUntil` is additive on the SAME `AIRCRAFT_OUT_OF_SERVICE` details all four guards now share (`aircraft-status.ts#outOfServiceDetails`). */
+type ApiErrorBody = { error?: { code?: string; details?: { reason?: string; outOfServiceUntil?: string | null; documents?: Array<{ typeName: string }> } } };
 
 async function errorBodyOf(response: Response): Promise<ApiErrorBody | null> {
   return (await response.json().catch(() => null)) as ApiErrorBody | null;
@@ -113,6 +118,8 @@ function valuesFromBooking(booking: BookingRowDto | null): FormValues {
  * transition) mounted continuously rather than remounted per booking.
  */
 export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuccess, labels }: EditBookingFormProps) {
+  // Story AOG-1a, AC 7(e) — the fermo date in the out-of-service 422 goes through the app's own date formatter, in the reader's own locale.
+  const displayLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [formError, setFormError] = useState<string | null>(null);
   const {
     register,
@@ -165,7 +172,14 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
       const body = await errorBodyOf(response);
       const code = body?.error?.code;
       if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
-        setFormError(labels.errors.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', body?.error?.details?.reason ?? ''));
+        // Story AOG-1a, AC 7 — same two-template rule as the create form (see
+        // `new-booking-form.tsx`): the fermo clause only when a date exists,
+        // and the no-date string byte-identical to today's.
+        const until = body?.error?.details?.outOfServiceUntil ?? null;
+        const template = until === null ? labels.errors.AIRCRAFT_OUT_OF_SERVICE : labels.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL;
+        setFormError(
+          template.replace('{reason}', body?.error?.details?.reason ?? '').replace('{date}', until === null ? '' : formatDateOnly(until, displayLocale)),
+        );
       } else if (code === 'BOOKING_IN_PAST') {
         setFormError(labels.errors.BOOKING_IN_PAST);
       } else if (code === 'BOOKING_ALREADY_STARTED') {

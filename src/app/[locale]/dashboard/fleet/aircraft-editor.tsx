@@ -35,7 +35,7 @@ import {
   type HourMeterAdjustmentListItemDto,
   type UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
-import type { FleetCardItem } from './fleet-console';
+import type { FleetConsoleItem } from './fleet-console';
 
 export type AircraftEditorLabels = {
   newTitle: string;
@@ -66,6 +66,14 @@ export type AircraftEditorLabels = {
     reason: string;
     confirm: string;
     confirmReturnToService: string;
+    /** Story AOG-1a, AC 5 — the date field's own label. Says "compreso"/"inclusive" IN the label, because R-AOG-a made the day itself part of the fermo. */
+    until: string;
+    /** Optional-ness + what an empty value means, in the `Field` hint slot (never a placeholder-as-label). */
+    untilHint: string;
+    /** `t.raw` template with a `{date}` placeholder — the fermo clause appended to "Stato attuale" when a date is on file. */
+    untilValue: string;
+    /** What "Stato attuale" says instead when the aircraft is grounded with NO date (invariant [b]: a legitimate state, never an empty string or a bare dash). */
+    untilUnknown: string;
   };
   rates: {
     sectionTitle: string;
@@ -128,7 +136,7 @@ type ToastLabels = {
   rateAdded: string;
 };
 
-type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetCardItem };
+type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetConsoleItem };
 
 type AircraftEditorProps = {
   target: EditorTarget | null;
@@ -140,8 +148,16 @@ type AircraftEditorProps = {
   toastLabels: ToastLabels;
 };
 
-/** The editor's own working copy — a subset of `FleetCardItem` (no `wetRateCents`/`reserved`, grid-only presentation fields). */
-type EditableAircraft = Omit<FleetCardItem, 'wetRateCents' | 'reserved'>;
+/**
+ * The editor's own working copy — a subset of `FleetCardItem` (no
+ * `wetRateCents`/`reserved`, grid-only presentation fields) PLUS
+ * `outOfServiceUntil` (story AOG-1a). The date is added HERE rather than on
+ * `FleetCardItem` on purpose: R-AOG-e keeps the fleet cards (desktop, mobile,
+ * and the Panoramica widget that shares the very same component) out of this
+ * story's perimeter, and widening the shared card type would have dragged
+ * `dashboard/page.tsx#fleetItems` in with it.
+ */
+type EditableAircraft = Omit<FleetConsoleItem, 'wetRateCents' | 'reserved'>;
 
 type AircraftApiResponse = {
   id: string;
@@ -152,6 +168,8 @@ type AircraftApiResponse = {
   notes: string | null;
   status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
   statusReason: string | null;
+  /** Story AOG-1a — `YYYY-MM-DD` on the wire (`aircraftListItemSchema`), or `null`. */
+  outOfServiceUntil: string | null;
   seats: number | null;
   fuelType: string | null;
   based: boolean;
@@ -168,6 +186,7 @@ function toEditable(aircraft: AircraftApiResponse): EditableAircraft {
     notes: aircraft.notes,
     status: aircraft.status,
     statusReason: aircraft.statusReason,
+    outOfServiceUntil: aircraft.outOfServiceUntil,
     seats: aircraft.seats,
     fuelType: aircraft.fuelType,
     based: aircraft.based,
@@ -284,7 +303,7 @@ export function AircraftEditor({ target, onClose, onMutated, locale, labels, toa
           />
 
           <Section title={labels.availability.sectionTitle}>
-            <AvailabilitySection aircraft={current} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
+            <AvailabilitySection aircraft={current} locale={locale} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
           </Section>
 
           <Section title={labels.rates.sectionTitle}>
@@ -672,12 +691,15 @@ function BasedSegmented({
 
 function AvailabilitySection({
   aircraft,
+  locale,
   labels,
   toastLabels,
   toast,
   onMutated,
 }: {
   aircraft: EditableAircraft;
+  /** Story AOG-1a — needed only to format the fermo date in "Stato attuale" (same `formatDateOnly` + locale pair `RatesSection`/`HourMeterSection` already take). */
+  locale: 'it' | 'en';
   labels: AircraftEditorLabels;
   toastLabels: ToastLabels;
   toast: { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
@@ -685,6 +707,10 @@ function AvailabilitySection({
 }) {
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
+  // Story AOG-1a, AC 5 — `YYYY-MM-DD` straight out of `DateInput`'s native
+  // `type="date"`, which is exactly the wire format `setOutOfServiceSchema`
+  // expects; an empty string means "not set" and is a legitimate submit.
+  const [until, setUntil] = useState('');
   const [busy, setBusy] = useState(false);
   const isOutOfService = aircraft.status === 'OUT_OF_SERVICE';
 
@@ -698,7 +724,9 @@ function AvailabilitySection({
     const response = await fetch(`/api/v1/aircraft/${aircraft.id}/out-of-service`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: trimmed }),
+      // Invariant [b]: the key is OMITTED when empty, never sent as `null`/`''`
+      // — the schema's `.optional()` is what "return date not yet known" means.
+      body: JSON.stringify({ reason: trimmed, ...(until === '' ? {} : { outOfServiceUntil: until }) }),
     });
     setBusy(false);
 
@@ -710,6 +738,7 @@ function AvailabilitySection({
 
     const updated = (await response.json()) as AircraftApiResponse;
     setReason('');
+    setUntil('');
     setReasonError(null);
     toast.show(toastLabels.setOutOfService, 'ok');
     onMutated(toEditable(updated));
@@ -731,10 +760,22 @@ function AvailabilitySection({
     onMutated(toEditable(updated));
   }
 
+  // Story AOG-1a, AC 5 — the fermo clause of "Stato attuale". Present ONLY
+  // while the aircraft is actually grounded; `null` is a legitimate state
+  // (invariant [b]) and is NAMED ("rientro da definire"), never rendered as an
+  // empty string or as a bare "—" in a spot that already announces a value.
+  const currentStatusText = isOutOfService
+    ? `${aircraft.statusReason} · ${
+        aircraft.outOfServiceUntil === null
+          ? labels.availability.untilUnknown
+          : labels.availability.untilValue.replace('{date}', formatDateOnly(aircraft.outOfServiceUntil, locale))
+      }`
+    : '—';
+
   return (
     <div>
       <p className="fld-label" data-testid="availability-current">
-        {labels.availability.current}: {isOutOfService ? aircraft.statusReason : '—'}
+        {labels.availability.current}: {currentStatusText}
       </p>
 
       {isOutOfService ? (
@@ -742,6 +783,12 @@ function AvailabilitySection({
           {labels.availability.returnToService}
         </button>
       ) : (
+        /* AD-9: the whole grounding form — reason AND date — is rendered ONLY
+           for an OPERATIONAL aircraft, because `setOutOfService`'s atomic
+           `where: { status: 'OPERATIONAL' }` guard (review 2.2 F1, untouched)
+           makes a second call a 409. Offering an editable date on an
+           already-grounded aircraft would be a control that can only ever
+           fail — the dead-end class of lezione 14.6 F2. */
         <div className="form-grid">
           <Field label={labels.availability.reason} wide error={reasonError ?? undefined}>
             <textarea
@@ -755,6 +802,9 @@ function AvailabilitySection({
               }}
               data-testid="out-of-service-reason"
             />
+          </Field>
+          <Field label={labels.availability.until} hint={labels.availability.untilHint}>
+            <DateInput value={until} onChange={(event) => setUntil(event.target.value)} data-testid="out-of-service-until" />
           </Field>
           <div className="fld wide">
             <button type="button" className="btn" disabled={busy} onClick={() => void submitOutOfService()} data-testid="out-of-service-submit">

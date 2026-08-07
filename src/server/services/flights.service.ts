@@ -15,6 +15,7 @@ import {
   sendNegativeBalanceAlert,
   type AccountOverview,
 } from './accounts.service';
+import { outOfServiceDetails } from './aircraft-status';
 import { findBlockingExpiredDocuments, type ExpiredDocument } from './bookings.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { getEffectiveInstructorRate, type InstructorRateListItem } from './instructor-rates.service';
@@ -342,7 +343,7 @@ export type FlightBlockingDocument = {
  * (review F4, ratifica R-14.4-b) — see `resolveFlightInput`'s own
  * doc-comment for what this exempts.
  */
-type OriginalFlightIdentity = { personId: string; instructorPersonId: string | null; flightDate: Date };
+type OriginalFlightIdentity = { aircraftId: string; personId: string; instructorPersonId: string | null; flightDate: Date };
 
 type ResolvedFlightInput = {
   aircraft: { id: string; registration: string };
@@ -412,7 +413,11 @@ async function findMissingBlockingDocuments(
  * DATI NUOVI", Contesto) without a second, drifting copy. Guard order
  * (consolidated pattern: existence 404 -> state 422 -> domain 422): aircraft
  * exists -> 404; person exists -> 404; aircraft archived ->
- * `AIRCRAFT_ARCHIVED`; person archived -> `PERSON_ARCHIVED`; person missing
+ * `AIRCRAFT_ARCHIVED`; aircraft out of service -> `AIRCRAFT_OUT_OF_SERVICE`
+ * (story AOG-1a, P2 — `details: { reason, outOfServiceUntil }`, the SAME shape
+ * the three booking guards carry; bypassable by the admin `force` below, see
+ * the guard's own comment for its perimeter and for why it cannot be dated);
+ * person archived -> `PERSON_ARCHIVED`; person missing
  * an active pilot/student profile -> `PERSON_NOT_PILOT_OR_STUDENT`; person
  * has an active STUDENT profile and NO active pilot profile, on anything but
  * a `SCHOOL` flight AND not already the flight's OWN recorded type (story
@@ -444,7 +449,9 @@ async function findMissingBlockingDocuments(
  * (module doc-comment), which stayed the single place that writes it after
  * story 12.13 retired package consumption.
  *
- * **Blocking-expiry guard-rail (story 14.4, AC 1/2; ratifica R4)**: `force`
+ * **Blocking-expiry guard-rail (story 14.4, AC 1/2; ratifica R4) — since story
+ * AOG-1a the SAME `force` also covers the out-of-service block above
+ * (ratifica R-AOG-c: one confirmation, one stamp, for both)**: `force`
  * without `flights.forceExpiry` (ADMIN-only — the gate lives on this
  * PERMISSION, not a role literal) is a 403, checked FIRST, before any query —
  * same "force-403 before any further query" ordering as `bookings.service.ts#createBooking`'s
@@ -466,7 +473,7 @@ async function findMissingBlockingDocuments(
  * **Unchanged-identity correction exemption (review F4, ratifica
  * R-14.4-b)**: when `original` is supplied (`correctFlight` only) and the
  * NEW `personId`/`instructorPersonId`/`flightDate` are IDENTICAL to the
- * flight's own recorded ones, the ENTIRE guard above is skipped — a
+ * flight's own recorded ones, the ENTIRE expiry guard above is skipped — a
  * notes/hour-meter/times-only correction of a historical flight is never
  * blocked (nor does it need a "Deroga" stamp) by a document that expired, or
  * was only ever required, AFTER the flight was flown. Same
@@ -495,7 +502,11 @@ async function resolveFlightInput(
 
   const aircraft = await prisma.aircraft.findUnique({
     where: { id: input.aircraftId },
-    select: { id: true, registration: true, archivedAt: true },
+    // Story AOG-1a (P2): `status`/`statusReason`/`outOfServiceUntil` join the
+    // select — before this story the flight path never even READ the aircraft's
+    // operational state (measured: a flight on a grounded aircraft passed every
+    // state guard).
+    select: { id: true, registration: true, archivedAt: true, status: true, statusReason: true, outOfServiceUntil: true },
   });
   if (!aircraft) {
     throw new NotFoundError('Aircraft not found.');
@@ -520,6 +531,37 @@ async function resolveFlightInput(
   if (aircraft.archivedAt !== null) {
     throw new ValidationError('Cannot register a flight on an archived aircraft.', undefined, 'AIRCRAFT_ARCHIVED');
   }
+
+  // Story AOG-1a, P2 (ratifica R-AOG-c) — the guard that did not exist. Placed
+  // HERE, immediately after `AIRCRAFT_ARCHIVED`, so the documented order
+  // (existence 404 -> state 422 -> domain 422) is preserved: a grounded
+  // aircraft is rejected BEFORE `FLIGHT_DATE_IN_FUTURE`, which is exactly what
+  // makes the story's own runtime probe discriminant.
+  //
+  // Perimeter (AD-4): `registerFlight` always (`original` undefined); a
+  // correction that MOVES the flight onto a different aircraft (that aircraft
+  // is a new registration for it); NEVER a correction that keeps the same
+  // aircraft — same "correcting is not registering anew" principle as
+  // R-14.4-b/R-14.3-a, because blocking a notes-only correction of a
+  // HISTORICAL flight just because its aircraft is grounded TODAY is a
+  // permanent dead end. `cancelFlight` never comes through here at all.
+  //
+  // AD-5, declared: `Aircraft` has NO grounding START date (`updatedAt` changes
+  // on every write, including `adjustHourMeter`), so this guard can only see
+  // the CURRENT state, never "was it grounded on the flight date". That is
+  // precisely why the deroga below exists — the aircraft that comes back with
+  // a hard landing is grounded immediately, and the flight that caused it must
+  // still be loggable.
+  const aircraftUnchanged = original !== undefined && original.aircraftId === input.aircraftId;
+  const outOfServiceBlock = aircraft.status === 'OUT_OF_SERVICE' && !aircraftUnchanged;
+  if (outOfServiceBlock && !input.force) {
+    throw new ValidationError(
+      `Aircraft is out of service: ${aircraft.statusReason}.`,
+      outOfServiceDetails(aircraft),
+      'AIRCRAFT_OUT_OF_SERVICE',
+    );
+  }
+
   if (person.archivedAt !== null) {
     throw new ValidationError('Cannot register a flight for an archived person.', undefined, 'PERSON_ARCHIVED');
   }
@@ -677,8 +719,14 @@ async function resolveFlightInput(
     ...instructorMissing.map((document) => ({ typeName: document.typeName, expiresAt: null, role: 'instructor' as const, personName: instructorName! })),
   ];
 
+  // Story AOG-1a, AC 10 (ratifica R-AOG-c): ONE `force` covers BOTH blocks.
+  // `outOfServiceBlock` can only still be true here if `input.force` was set
+  // (the guard above threw otherwise), so an admin who confirms once scavalca
+  // the grounding AND every blocking document, and gets exactly ONE stamp.
+  // The "scavalcato un blocco, non spuntata una checkbox" convention is
+  // unchanged: `force: true` with nothing to bypass still stamps nothing.
   let forceStamp: ResolvedFlightInput['forceStamp'] = null;
-  if (blockingDocuments.length > 0) {
+  if (blockingDocuments.length > 0 || outOfServiceBlock) {
     if (input.force) {
       // The force-403 guard at the top of this function already guarantees
       // `flights.forceExpiry` here, and the schema's own refine guarantees
@@ -1247,7 +1295,11 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
   // recorded person/instructor/date so the expiry guard is skipped entirely
   // when a correction changes none of them (see that function's own
   // doc-comment for both).
+  // Story AOG-1a (AD-4): `aircraftId` joins the identity so the out-of-service
+  // guard exempts a correction that KEEPS the same aircraft, while a correction
+  // that MOVES the flight onto a grounded one is blocked like a registration.
   const resolved = await resolveFlightInput(actor, input, originalFlight.flightType, {
+    aircraftId: originalFlight.aircraftId,
     personId: originalFlight.personId,
     instructorPersonId: originalFlight.instructorPersonId,
     flightDate: originalFlight.flightDate,

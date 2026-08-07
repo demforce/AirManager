@@ -37,7 +37,8 @@ import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency
 
 export type FlightEditorTarget = { mode: 'new' } | { mode: 'correct'; flight: FlightListItemDto };
 
-type AircraftOption = { id: string; registration: string };
+/** Story AOG-1a, AC 12 (ratifica R-AOG-d): `status`/`statusReason` travel with the option so the picker NAMES a grounded aircraft exactly like the booking form's own `<select>` does — the option stays SELECTABLE (the admin deroga exists, and a historical flight on that airframe must stay correctable). The return date deliberately does NOT come here (R-AOG-e confines it to the editor and the three 422s). */
+export type AircraftOption = { id: string; registration: string; status: 'OPERATIONAL' | 'OUT_OF_SERVICE'; statusReason: string | null };
 type PersonOption = { id: string; firstName: string; lastName: string };
 /** The "person" (pilot/allievo) picker's own option shape (story 14.3, AC 2): `profiles` carries ACTIVE-profile flags only (mirrors `people.service.ts#PersonListItem`'s own) — just the two this form needs to decide whether a student-only person forces `flightType` to SCHOOL. The instructor picker keeps the plain `PersonOption` (no profile data needed there). */
 type PilotStudentOption = PersonOption & { profiles: { pilot: boolean; student: boolean } };
@@ -96,6 +97,9 @@ export type FlightEditorLabels = {
     INSTRUCTOR_NOT_FOUND: string;
     INSTRUCTOR_SAME_AS_PILOT: string;
     FLIGHT_DATE_IN_FUTURE: string;
+    /** Story AOG-1a, AC 11 — `t.raw` templates, `{registration}`/`{reason}` (+ `{date}`): the operator must read WHICH aircraft, WHY, and — only when a date is on file — until when. Without a key here `knownErrors[code] ?? generic` would serve the useless generic message. */
+    AIRCRAFT_OUT_OF_SERVICE: string;
+    AIRCRAFT_OUT_OF_SERVICE_UNTIL: string;
     /** Story 14.4, AC 1/4 (ratifica R4) — `{documents}` placeholder, client-filled with the comma-joined per-document detail below (`t.raw` pattern, same as `new-booking-form.tsx`'s own `EXPIRED_DOCUMENTS`). */
     FLIGHT_BLOCKED_BY_EXPIRY: string;
     /** Review F5 (ratifica R-14.4-a) — `{date}` placeholder for an EXPIRED document. */
@@ -121,6 +125,8 @@ export type FlightEditorLabels = {
     /** Review F11 — shown when the just-registered/corrected flight has `forcedAt` set: `{reason}` placeholder (this response is ALWAYS the manage actor's own submission, never masked — `toListItem`'s own doc-comment). */
     forcedNotice: string;
   };
+  /** Story AOG-1a, AC 12 — `t.raw` template with a `{reason}` placeholder, the SAME `BookingsPage.form.outOfServiceSuffix` string the booking form uses: one language for one fact across the two forms. */
+  outOfServiceSuffix: string;
   picker: { placeholder: string; noResults: string };
   /** "Forza registrazione" (story 14.4, AC 2) — only ever rendered for `canForce`. Same shape as `NewBookingFormLabels.force`. */
   force: {
@@ -153,13 +159,10 @@ function personLabel(person: { firstName: string; lastName: string }): string {
   return `${person.lastName} ${person.firstName}`;
 }
 
-/** Server-side aircraft search (active only — the form's own domain rule, story TD-3). */
-async function searchAircraft(query: string): Promise<SearchComboboxOption[]> {
-  const params = new URLSearchParams({ q: query, pageSize: '50' });
-  const response = await fetch(`/api/v1/aircraft?${params.toString()}`);
-  if (!response.ok) return [];
-  const body = (await response.json()) as { items: { id: string; registration: string }[] };
-  return body.items.map((aircraft) => ({ id: aircraft.id, label: aircraft.registration }));
+/** Story AOG-1a, AC 12 — one option label for both the server-rendered list and the server search, so a grounded aircraft reads the same either way (and the same way the booking form reads it). */
+function aircraftOptionLabel(aircraft: AircraftOption, outOfServiceSuffix: string): string {
+  if (aircraft.status !== 'OUT_OF_SERVICE') return aircraft.registration;
+  return `${aircraft.registration} — ${outOfServiceSuffix.replace('{reason}', aircraft.statusReason ?? '')}`;
 }
 
 /** Server-side people search, profile-scoped (story TD-3) — active only, same domain rule as the aircraft picker above. */
@@ -335,6 +338,8 @@ export function FlightEditor({
   // is the EXACT body that just got rejected, resent unchanged plus
   // `force`/`forceReason` — the operator never re-fills the form.
   const [blockedDocuments, setBlockedDocuments] = useState<string[] | null>(null);
+  /** Story AOG-1a, AC 10 — the SECOND trigger of the same "Forza registrazione" section: `true` only right after a 422 `AIRCRAFT_OUT_OF_SERVICE` FOR `canForce`. Kept separate from `blockedDocuments` because the two blocks are independent and can fire together. */
+  const [blockedOutOfService, setBlockedOutOfService] = useState(false);
   const [pendingForceBody, setPendingForceBody] = useState<Record<string, unknown> | null>(null);
   const [forceReason, setForceReason] = useState('');
   const [forceReasonTouched, setForceReasonTouched] = useState(false);
@@ -348,6 +353,7 @@ export function FlightEditor({
   /** Clears every force-related state — called at the start of every new submit attempt AND by the force section's own "Annulla" (mirrors `new-booking-form.tsx#resetForceState`). */
   function resetForceState(): void {
     setBlockedDocuments(null);
+    setBlockedOutOfService(false);
     setPendingForceBody(null);
     setForceReason('');
     setForceReasonTouched(false);
@@ -419,12 +425,43 @@ export function FlightEditor({
   }
 
   const aircraftComboOptions = useMemo<SearchComboboxOption[]>(() => {
-    const base = aircraftOptions.map((aircraft) => ({ id: aircraft.id, label: aircraft.registration }));
+    const base = aircraftOptions.map((aircraft) => ({ id: aircraft.id, label: aircraftOptionLabel(aircraft, labels.outOfServiceSuffix) }));
     if (correctingFlight && !base.some((option) => option.id === correctingFlight.aircraft.id)) {
       base.unshift({ id: correctingFlight.aircraft.id, label: correctingFlight.aircraft.registration });
     }
     return base;
+  }, [aircraftOptions, correctingFlight, labels.outOfServiceSuffix]);
+
+  // Story AOG-1a, AC 11: the out-of-service 422 has to NAME the aircraft, and
+  // the combobox's own option LABEL can no longer serve as that name (it now
+  // carries the "(fuori servizio)" suffix), while `SearchCombobox` keeps its
+  // committed label private by design (a shared primitive with seven call
+  // sites — not widened for one message). So: the PLAIN registrations of the
+  // rendered options, derived; plus the ones only a server SEARCH has seen,
+  // recorded by that search (an event handler, never during render).
+  const optionRegistrations = useMemo<Map<string, string>>(() => {
+    const map = new Map(aircraftOptions.map((aircraft) => [aircraft.id, aircraft.registration]));
+    if (correctingFlight) map.set(correctingFlight.aircraft.id, correctingFlight.aircraft.registration);
+    return map;
   }, [aircraftOptions, correctingFlight]);
+  const searchedRegistrations = useRef(new Map<string, string>());
+
+  /** The plain registration of a picked aircraft — called from the submit handler only. `''` for the impossible case of an id from neither source. */
+  function registrationOf(id: string): string {
+    return optionRegistrations.get(id) ?? searchedRegistrations.current.get(id) ?? '';
+  }
+
+  /** Server-side aircraft search (active only — the form's own domain rule, story TD-3), labelled exactly like the server-rendered options above (AC 12). */
+  async function searchAircraft(query: string): Promise<SearchComboboxOption[]> {
+    const params = new URLSearchParams({ q: query, pageSize: '50' });
+    const response = await fetch(`/api/v1/aircraft?${params.toString()}`);
+    if (!response.ok) return [];
+    const body = (await response.json()) as { items: AircraftOption[] };
+    return body.items.map((aircraft) => {
+      searchedRegistrations.current.set(aircraft.id, aircraft.registration);
+      return { id: aircraft.id, label: aircraftOptionLabel(aircraft, labels.outOfServiceSuffix) };
+    });
+  }
   const personComboOptions = useMemo<SearchComboboxOption[]>(() => {
     const base = personOptions.map((person) => ({ id: person.id, label: personLabel(person) }));
     if (correctingFlight && !base.some((option) => option.id === correctingFlight.person.id)) {
@@ -577,7 +614,14 @@ export function FlightEditor({
         .clone()
         .json()
         .catch(() => null)) as {
-        error?: { details?: { documents?: Array<{ typeName: string; expiresAt: string | null; role: 'person' | 'instructor'; personName: string }> } };
+        error?: {
+          details?: {
+            documents?: Array<{ typeName: string; expiresAt: string | null; role: 'person' | 'instructor'; personName: string }>;
+            /** Story AOG-1a — `AIRCRAFT_OUT_OF_SERVICE`'s own additive details (`aircraft-status.ts#outOfServiceDetails`, the shape all four call sites share). */
+            reason?: string | null;
+            outOfServiceUntil?: string | null;
+          };
+        };
       } | null;
       const { code, fieldErrors } = await parseApiError(response);
       if (response.status === 422 && fieldErrors.size > 0) {
@@ -598,6 +642,31 @@ export function FlightEditor({
           setTimeout(() => focusFirstInvalid(formRef.current), 0);
           return;
         }
+      }
+      if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
+        // Story AOG-1a, AC 11 — names the aircraft, the reason, and (only when
+        // one is on file) the fermo, in the INCLUSIVE wording R-AOG-a fixed.
+        // Without this branch `knownErrors[code] ?? generic` would answer with
+        // the useless "Riprova". No dead end (lezione 14.6 F2): the force
+        // section below is offered ONLY to an actor who can actually use it.
+        const reason = blockedBody?.error?.details?.reason ?? '';
+        const until = blockedBody?.error?.details?.outOfServiceUntil ?? null;
+        const registration = registrationOf(aircraftId);
+        const template = until === null ? labels.errors.AIRCRAFT_OUT_OF_SERVICE : labels.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL;
+        setFormError(
+          template
+            .replace('{registration}', registration)
+            .replace('{reason}', reason)
+            .replace('{date}', until === null ? '' : formatDateOnly(until, moneyLocale)),
+        );
+        if (canForce) {
+          // AC 10: the SECOND trigger of the shared "Forza registrazione"
+          // section (the first stays `blockedDocuments`). ONE `force` then
+          // scavalca both blocks server-side and leaves ONE stamp.
+          setBlockedOutOfService(true);
+          setPendingForceBody(body);
+        }
+        return;
       }
       if (code === 'FLIGHT_BLOCKED_BY_EXPIRY') {
         // Story 14.4, AC 1/4 (ratifica R4): names EVERY blocking document
@@ -954,7 +1023,7 @@ export function FlightEditor({
               gate is server-side (AD-5), `canForce` is this component's own
               mirror of that permission. Same markup/tokens as
               `new-booking-form.tsx`'s "Forza prenotazione". */}
-          {blockedDocuments && canForce ? (
+          {(blockedDocuments || blockedOutOfService) && canForce ? (
             <div
               data-testid="force-flight-section"
               style={{ marginTop: 14, padding: 14, borderRadius: 8, background: 'var(--warn-soft)', border: '1px solid color-mix(in oklch, var(--warn) 40%, transparent)' }}

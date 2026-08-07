@@ -50,6 +50,7 @@ export default defineConfig({
         '**/mobile-overview-overflow.spec.ts',
         '**/mobile-membership-fee.spec.ts',
         '**/mobile-settings.spec.ts',
+        '**/aog-overview-count.spec.ts',
       ],
       use: sharedUse,
     },
@@ -161,6 +162,21 @@ export default defineConfig({
       name: 'mobile-settings',
       testMatch: '**/mobile-settings.spec.ts',
       dependencies: ['mobile-membership-fee'],
+      use: sharedUse,
+    },
+    {
+      // Story AOG-1a, AC 13 — the Panoramica's fleet-wide AOG count. TWO
+      // independent reasons this cannot live in the main `fullyParallel`
+      // project: it asserts an EQUALITY between two GLOBAL aggregates read from
+      // two page loads (the class that flaked 2/2 in review Billing-2 F4), and
+      // to DISCRIMINATE at all it must push the active fleet past
+      // `OPTIONS_PAGE_SIZE = 100`, which degrades every `<select>` picker in the
+      // suite (the open `OPTIONS_PAGE_SIZE` TD). ABSOLUTE LAST in the chain for
+      // that second reason — nothing downstream inherits the inflated fleet.
+      // Running it alone locally: `npx playwright test aog-overview-count.spec.ts --no-deps`.
+      name: 'aog-overview-count',
+      testMatch: '**/aog-overview-count.spec.ts',
+      dependencies: ['mobile-settings'],
       use: sharedUse,
     },
   ],

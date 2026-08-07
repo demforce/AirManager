@@ -292,6 +292,24 @@ model Aircraft {
   /// Mandatory while `status == OUT_OF_SERVICE`; reset to `null` on return to
   /// service (enforced in `aircraft.service.ts`, not at the DB level).
   statusReason     String?
+  /// Expected end of the grounding (story AOG-1a, requirement P3), calendar-only.
+  /// THE SINGLE SOURCE OF THIS FIELD'S SEMANTICS — service, i18n and the
+  /// `AIRCRAFT_OUT_OF_SERVICE` 422 messages all cite this comment, none of them
+  /// re-interprets it:
+  /// (i) SEMANTICS (ratifica R-AOG-a, PO 2026-08-07): the LAST day the aircraft
+  ///     is GROUNDED, INCLUSIVE — the grounding window is `[now, end of the
+  ///     `outOfServiceUntil` day]`, so a booking/flight ON that day is still
+  ///     inside the fermo. UI label: "Fermo fino al {data} compreso".
+  /// (ii) INFORMATIVE (invariant [a]): it NEVER returns the aircraft to service
+  ///     by itself — no job, no cron, no `where` that filters out an "expired"
+  ///     grounding. Only an explicit `returnToService` does, and every guard
+  ///     (bookings, flights) keeps reading `status` alone.
+  /// (iii) SAME LIFE-CYCLE AS `statusReason`: written together with it by
+  ///     `setOutOfService`, reset to `null` by `returnToService` — enforced in
+  ///     `aircraft.service.ts`, not at the DB level.
+  /// (iv) OPTIONAL (invariant [b]): `null` means "return date not yet known" and
+  ///     is a legitimate state, not a missing value to be filled in.
+  outOfServiceUntil DateTime?     @db.Date
   /// Number of seats (story 12.5, AC 1) — anagrafica only, optional (not
   /// every legacy row has it on record).
   seats            Int?

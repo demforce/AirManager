@@ -1098,7 +1098,8 @@ registry.registerPath({
   method: 'post',
   path: '/api/v1/aircraft/{id}/out-of-service',
   summary: 'Mark an aircraft out of service, with a mandatory reason',
-  description: 'Not archiving (story 2.5, AC 1) — the aircraft stays in the default fleet list, just flagged as ungrounded/not currently airworthy. Conflict if already out of service.',
+  description:
+    'Not archiving (story 2.5, AC 1) — the aircraft stays in the default fleet list, just flagged as ungrounded/not currently airworthy. Conflict if already out of service. Story AOG-1a: the optional `outOfServiceUntil` (`YYYY-MM-DD`) records the LAST day the aircraft is grounded, INCLUSIVE (ratifica R-AOG-a); it is informative only and never returns the aircraft to service by itself — `POST /return-to-service` clears it together with the reason.',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams, body: { content: jsonContent(setOutOfServiceSchema), required: true } },

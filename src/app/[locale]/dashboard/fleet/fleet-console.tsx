@@ -38,6 +38,16 @@ import { AircraftEditor, type AircraftEditorLabels } from './aircraft-editor';
 
 export type { FleetCardItem } from '@/components/dashboard/fleet-card';
 
+/**
+ * The fleet page's own row: the shared card item PLUS `outOfServiceUntil`
+ * (story AOG-1a), which only the editor's Disponibilità section reads.
+ * Deliberately widened HERE and not on `FleetCardItem` itself: R-AOG-e keeps
+ * every card surface — including the Panoramica's `FleetCardGrid`, which shares
+ * that type — out of this story's perimeter. `FleetCardGrid`/`badgeFor` accept
+ * the narrower type and are handed these rows unchanged.
+ */
+export type FleetConsoleItem = FleetCardItem & { outOfServiceUntil: string | null };
+
 export type FleetConsoleLabels = {
   cardTitle: string;
   searchPlaceholder: string;
@@ -72,7 +82,7 @@ export type FleetConsoleLabels = {
 };
 
 type FleetConsoleProps = {
-  items: FleetCardItem[];
+  items: FleetConsoleItem[];
   page: number;
   totalPages: number;
   initialQuery: string;
@@ -101,7 +111,7 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
   };
 }
 
-type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetCardItem };
+type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetConsoleItem };
 
 export function FleetConsole({
   items,
@@ -208,7 +218,14 @@ export function FleetConsole({
               locale={locale}
               rateLabel={labels.rateLabel}
               badgeLabels={labels.badge}
-              onCardClick={(ac) => setTarget({ mode: 'edit', aircraft: ac })}
+              /* The grid hands back the NARROW shared `FleetCardItem` (story
+                 AOG-1a leaves `fleet-card.tsx` untouched, R-AOG-e) — the row
+                 with the fermo date is looked up here, in this page's own
+                 `items`. */
+              onCardClick={(ac) => {
+                const aircraft = items.find((item) => item.id === ac.id);
+                if (aircraft) setTarget({ mode: 'edit', aircraft });
+              }}
             />
           )}
         </div>
@@ -337,7 +354,7 @@ export function FleetConsole({
 }
 
 /** Detail rows of the fleet sheet — the template's own `openTail` builder (script 598-599), with the app's fields. */
-function fleetSheetRows(aircraft: FleetCardItem, monthMinutes: number, locale: 'it' | 'en', labels: FleetConsoleLabels): BottomSheetRow[] {
+function fleetSheetRows(aircraft: FleetConsoleItem, monthMinutes: number, locale: 'it' | 'en', labels: FleetConsoleLabels): BottomSheetRow[] {
   const statusLabel = aircraft.archivedAt !== null ? labels.badge.archived : aircraft.status === 'OUT_OF_SERVICE' ? labels.badge.aog : aircraft.reserved ? labels.badge.reserved : labels.badge.available;
   const rows: BottomSheetRow[] = [{ k: labels.mobile.sheet.status, v: statusLabel }];
   if (aircraft.status === 'OUT_OF_SERVICE' && aircraft.statusReason) {

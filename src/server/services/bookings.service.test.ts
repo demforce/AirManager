@@ -193,7 +193,8 @@ const ACTIVE_INSTRUCTOR_ACTOR_PERSON = {
   instructorProfile: { id: 'instr_profile_1', deactivatedAt: null },
 };
 
-const LOCKED_OPERATIONAL_AIRCRAFT = [{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, archivedAt: null }];
+/** Story AOG-1a: `outOfServiceUntil` joined the three `SELECT ... FOR UPDATE`s, so every locked-aircraft row literal in this file carries it (the service reads it to build the 422's `details`). */
+const LOCKED_OPERATIONAL_AIRCRAFT = [{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: null }];
 
 const CREATED_BOOKING_ROW = {
   id: 'booking_1',
@@ -423,14 +424,14 @@ describe('createBooking (Story 7.1, AC 1/2/3)', () => {
 
   it('an archived aircraft answers 409', async () => {
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    queryRaw.mockResolvedValue([{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, archivedAt: new Date('2025-01-01T00:00:00.000Z') }]);
+    queryRaw.mockResolvedValue([{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: new Date('2025-01-01T00:00:00.000Z') }]);
 
     await expect(createBooking(adminActor(), baseInput({ personId: 'person_student' }))).rejects.toThrow(ConflictError);
   });
 
   it('an out-of-service aircraft answers 422 AIRCRAFT_OUT_OF_SERVICE with the reason in BOTH details and the message', async () => {
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    queryRaw.mockResolvedValue([{ id: 'aircraft_1', status: 'OUT_OF_SERVICE', statusReason: 'Revisione motore', archivedAt: null }]);
+    queryRaw.mockResolvedValue([{ id: 'aircraft_1', status: 'OUT_OF_SERVICE', statusReason: 'Revisione motore', outOfServiceUntil: null, archivedAt: null }]);
 
     const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
 
@@ -438,7 +439,29 @@ describe('createBooking (Story 7.1, AC 1/2/3)', () => {
     const validationError = error as InstanceType<typeof ValidationError>;
     expect(validationError.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
     expect(validationError.message).toContain('Revisione motore');
-    expect(validationError.details).toEqual({ reason: 'Revisione motore' });
+    // Story AOG-1a, AC 7(a): `details` gained `outOfServiceUntil` — `null` when
+    // the grounding has no expected return date (invariant [b]). The server
+    // MESSAGE is unchanged (AD-3: it is a log line, not a user surface).
+    expect(validationError.details).toEqual({ reason: 'Revisione motore', outOfServiceUntil: null });
+  });
+
+  it('carries the expected-return date as a YYYY-MM-DD calendar day in details (story AOG-1a, AC 7a)', async () => {
+    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+    queryRaw.mockResolvedValue([
+      // `@db.Date` round-trips through `$queryRaw` as a UTC-midnight `Date`
+      // (measured on this repo's Prisma 7 + adapter-pg).
+      { id: 'aircraft_1', status: 'OUT_OF_SERVICE', statusReason: 'Revisione 100h', outOfServiceUntil: new Date(Date.UTC(2031, 4, 12)), archivedAt: null },
+    ]);
+
+    const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
+
+    const validationError = error as InstanceType<typeof ValidationError>;
+    expect(validationError.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
+    // A calendar day, never the instant: the UI reads this back with
+    // `formatDateOnly`, and R-AOG-a's semantics are "the LAST grounded day".
+    expect(validationError.details).toEqual({ reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' });
+    // The message itself is BYTE-IDENTICAL to the no-date case (AD-3).
+    expect(validationError.message).toBe('Aircraft is out of service: Revisione 100h.');
   });
 
   it('startsAt not in the future answers 422 BOOKING_IN_PAST — checked BEFORE the transaction ever opens', async () => {
@@ -1171,14 +1194,14 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
 
   it('an archived destination aircraft answers 409', async () => {
     bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
-    queryRaw.mockResolvedValue([{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, archivedAt: new Date('2025-01-01T00:00:00.000Z') }]);
+    queryRaw.mockResolvedValue([{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: new Date('2025-01-01T00:00:00.000Z') }]);
 
     await expect(updateBooking(adminActor(), 'booking_1', { notes: 'x' })).rejects.toThrow(ConflictError);
   });
 
   it('an OUT_OF_SERVICE destination aircraft answers 422 AIRCRAFT_OUT_OF_SERVICE, even for staff', async () => {
     bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
-    queryRaw.mockResolvedValue([{ id: 'aircraft_2', status: 'OUT_OF_SERVICE', statusReason: 'Revisione motore', archivedAt: null }]);
+    queryRaw.mockResolvedValue([{ id: 'aircraft_2', status: 'OUT_OF_SERVICE', statusReason: 'Revisione motore', outOfServiceUntil: null, archivedAt: null }]);
 
     const error = await updateBooking(adminActor(), 'booking_1', { aircraftId: 'aircraft_2' }).catch((e: unknown) => e);
 
@@ -1189,8 +1212,8 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
   it('changing aircraft locks BOTH the current and destination Aircraft ids in ONE ordered IN (...) query', async () => {
     bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING); // current aircraft_1
     queryRaw.mockResolvedValue([
-      { id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, archivedAt: null },
-      { id: 'aircraft_2', status: 'OPERATIONAL', statusReason: null, archivedAt: null },
+      { id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: null },
+      { id: 'aircraft_2', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: null },
     ]);
 
     await updateBooking(adminActor(), 'booking_1', { aircraftId: 'aircraft_2' });
@@ -1566,7 +1589,7 @@ describe('transitionBooking (Story 12.2, AC 3)', () => {
 
   it('an OUT_OF_SERVICE aircraft answers 422 AIRCRAFT_OUT_OF_SERVICE', async () => {
     mockBookingLock({ status: 'PENDING' });
-    queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', status: 'OUT_OF_SERVICE', statusReason: 'Revisione motore', archivedAt: null }]);
+    queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', status: 'OUT_OF_SERVICE', statusReason: 'Revisione motore', outOfServiceUntil: null, archivedAt: null }]);
 
     const error = await transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED' }).catch((e: unknown) => e);
 
@@ -1576,7 +1599,7 @@ describe('transitionBooking (Story 12.2, AC 3)', () => {
 
   it('an archived aircraft answers 409', async () => {
     mockBookingLock({ status: 'PENDING' });
-    queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, archivedAt: new Date('2025-01-01T00:00:00.000Z') }]);
+    queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: new Date('2025-01-01T00:00:00.000Z') }]);
 
     await expect(transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED' })).rejects.toThrow(ConflictError);
   });

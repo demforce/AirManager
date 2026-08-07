@@ -22,7 +22,7 @@ import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, zonedMidnightUtc 
 import { hasPermission, type Actor } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getAccountOverview, listNegativeBalances } from '@/server/services/accounts.service';
-import { listAircraft } from '@/server/services/aircraft.service';
+import { listAircraft, listOutOfServiceAircraft } from '@/server/services/aircraft.service';
 import { getAirfieldBranding, getAirfieldIcao, getMetarStation, getSchedulingSettings } from '@/server/services/app-settings.service';
 import {
   getOwnInstructorProfileId,
@@ -286,6 +286,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     instructorOptions,
     negativeBalances,
     metarCard,
+    outOfServiceAircraft,
   ] = await Promise.all([
     getAirfieldIcao(),
     getAirfieldBranding(),
@@ -321,10 +322,22 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     // that latency to every render of the home — including at 1280px, where the
     // card has a 0x0 box. R-15.3-f ratified the double fetch, not the wait.
     renderMobileMetarCard(t('mobile.metarTitle')),
+    // Story AOG-1a, AC 13 (ratifica R-AOG-f): the FLEET-WIDE grounded set, the
+    // very same unpaginated reader `/dashboard/fleet` uses for its own "N AOG".
+    // See `aogCount` below for the defect this closes.
+    listOutOfServiceAircraft(actor),
   ]);
 
   // --- .sub: ICAO (D3) + AOG + PPR pending + al suolo (12.4 reuse) --------
-  const aogCount = aircraftResult.items.length - operationalIds.length;
+  // Story AOG-1a, AC 13 — was `aircraftResult.items.length - operationalIds.length`,
+  // i.e. the grounded aircraft among the FIRST `OPTIONS_PAGE_SIZE` (100) by
+  // registration only: measured on a post-suite DB (148 active aircraft) the
+  // Panoramica announced "1 AOG" while the Flotta announced the true "3 AOG",
+  // same instant, same data. `listOutOfServiceAircraft` is unpaginated, filters
+  // on `status`, and is already gated on the same `aircraft.manage` — the two
+  // pages now count with ONE reader. (The wider `OPTIONS_PAGE_SIZE` TD on the
+  // other three pages stays open, out of this story's perimeter.)
+  const aogCount = outOfServiceAircraft.length;
   const onGroundCount = groundScanResult.items.filter((item) => deriveApprovedPprMovementStatus(item.eta, now) === 'AL_SUOLO').length;
   const subParts = [
     icao || null,
@@ -383,7 +396,13 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
 
   // --- "Pianifica volo" CTA — the real `flights.manage` FlightEditor (story 12.8), reused as-is ---
-  const dispatchAircraftOptions = aircraftResult.items.map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration }));
+  // Story AOG-1a, AC 12 — same option shape (and same suffix language) as the registro voli' own picker.
+  const dispatchAircraftOptions = aircraftResult.items.map((aircraft) => ({
+    id: aircraft.id,
+    registration: aircraft.registration,
+    status: aircraft.status,
+    statusReason: aircraft.statusReason,
+  }));
   const dispatchPersonOptions = peopleResult.items
     .filter((person) => person.profiles.pilot || person.profiles.student)
     .map((person) => ({
@@ -511,7 +530,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
             airfieldName={branding.name}
             moneyLocale={displayLocale}
             canForce={hasPermission(actor, 'flights.forceExpiry')}
-            labels={buildFlightEditorLabels(tLogbook)}
+            labels={buildFlightEditorLabels(tLogbook, tBookings)}
           />
         </div>
       </div>
@@ -737,7 +756,10 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
 }
 
 /** `LogbookPage.editor.*` labels for the reused `FlightEditor` (story 12.8) — same keys `logbook/page.tsx` builds, duplicated here (not extracted, Dev Notes: `logbook/page.tsx` is not a declared cross-story touch for this story) so that page stays completely untouched. */
-function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>): FlightEditorLabels {
+function buildFlightEditorLabels(
+  t: Awaited<ReturnType<typeof getTranslations>>,
+  tBookings: Awaited<ReturnType<typeof getTranslations>>,
+): FlightEditorLabels {
   return {
     newTitle: t('editor.newTitle'),
     newSubtitle: t('editor.newSubtitle'),
@@ -793,6 +815,9 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       INSTRUCTOR_NOT_FOUND: t('editor.errors.INSTRUCTOR_NOT_FOUND'),
       INSTRUCTOR_SAME_AS_PILOT: t('editor.errors.INSTRUCTOR_SAME_AS_PILOT'),
       FLIGHT_DATE_IN_FUTURE: t('editor.errors.FLIGHT_DATE_IN_FUTURE'),
+      // Story AOG-1a, AC 11 — `{registration}`/`{reason}`/`{date}` filled CLIENT-side, same reasoning.
+      AIRCRAFT_OUT_OF_SERVICE: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE'),
+      AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL'),
       FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
       // Review F5/F6 — `{date}` filled CLIENT-side, same reasoning as above.
       documentExpiredOn: t.raw('editor.errors.documentExpiredOn'),
@@ -814,6 +839,8 @@ function buildFlightEditorLabels(t: Awaited<ReturnType<typeof getTranslations>>)
       // Review F11 — `{reason}` filled CLIENT-side, same reasoning.
       forcedNotice: t.raw('editor.result.forcedNotice'),
     },
+    // Story AOG-1a, AC 12: the SAME `BookingsPage` key the booking form uses.
+    outOfServiceSuffix: tBookings.raw('form.outOfServiceSuffix') as string,
     picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
     force: {
       title: t('editor.force.title'),

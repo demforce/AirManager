@@ -121,6 +121,8 @@ export function buildNewBookingFormLabels(t: Translator, schedulingWindowSummary
     invalidRange: t('form.invalidRange'),
     errors: {
       AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
+      // Story AOG-1a, AC 7 — the variant WITH the fermo clause; the plain key above is unchanged and still serves every no-date grounding.
+      AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL') as string,
       BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
       PERSON_NOT_BOOKABLE: t('form.errors.PERSON_NOT_BOOKABLE'),
       EXPIRED_DOCUMENTS: t.raw('form.errors.EXPIRED_DOCUMENTS') as string,
@@ -160,6 +162,8 @@ export function buildEditBookingFormLabels(t: Translator, schedulingWindowSummar
       BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
       BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
       AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
+      // Story AOG-1a, AC 7 — same pair as the create form (both are `form.errors.*` keys; the move form has always reused them).
+      AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL') as string,
       EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
       BOOKING_OUTSIDE_WINDOW: outsideWindowMessage(t, schedulingWindowSummary, 'list.actions.errors.generic'),
       conflict: t('list.actions.errors.conflict'),

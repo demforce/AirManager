@@ -1035,6 +1035,10 @@
         "setOutOfService": "Fuori servizio",
         "returnToService": "Rientro in servizio",
         "reason": "Motivo",
+        "until": "Fermo fino al (compreso)",
+        "untilHint": "Facoltativo: l'ultimo giorno di fermo. Vuoto = rientro da definire.",
+        "untilValue": "fermo fino al {date} compreso",
+        "untilUnknown": "rientro da definire",
         "confirm": "Conferma",
         "confirmReturnToService": "Rimettere in servizio questo velivolo?"
       },
@@ -1369,6 +1373,8 @@
         "INSTRUCTOR_NOT_FOUND": "L'istruttore selezionato non ha un profilo istruttore attivo.",
         "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
         "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
+        "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo {registration} è fuori servizio: {reason}.",
+        "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Il velivolo {registration} è fuori servizio: {reason}. Fermo fino al {date} compreso.",
         "FLIGHT_BLOCKED_BY_EXPIRY": "Impossibile registrare il volo: risultano mancanti o scaduti i seguenti documenti: {documents}.",
         "documentExpiredOn": "scaduto il {date}",
         "documentMissing": "mancante",
@@ -1619,6 +1625,7 @@
       "invalidRange": "L'orario di fine deve essere successivo a quello di inizio.",
       "errors": {
         "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
+        "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Il velivolo è fuori servizio: {reason}. Fermo fino al {date} compreso.",
         "BOOKING_IN_PAST": "L'orario di inizio deve essere nel futuro.",
         "PERSON_NOT_BOOKABLE": "Questa persona non ha un profilo attivo idoneo alla prenotazione.",
         "EXPIRED_DOCUMENTS": "Impossibile creare la prenotazione: risultano scaduti i seguenti documenti: {documents}.",

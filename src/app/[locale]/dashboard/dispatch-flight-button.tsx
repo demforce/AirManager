@@ -12,9 +12,9 @@
 import { useState } from 'react';
 import { useRouter } from '@/i18n/navigation';
 import { Icon } from '@/components/ui/icons';
-import { FlightEditor, type FlightEditorLabels } from './logbook/flight-editor';
+import { FlightEditor, type AircraftOption, type FlightEditorLabels } from './logbook/flight-editor';
 
-type AircraftOption = { id: string; registration: string };
+
 type PersonOption = { id: string; firstName: string; lastName: string };
 /** The "person" (pilot/allievo) picker's own option shape (story 14.3, AC 2) — see `flight-editor.tsx`'s own `PilotStudentOption` doc-comment. */
 type PilotStudentOption = PersonOption & { profiles: { pilot: boolean; student: boolean } };

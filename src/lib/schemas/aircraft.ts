@@ -86,11 +86,21 @@ export type UpdateAircraftInput = z.infer<typeof updateAircraftSchema>;
  * `POST /api/v1/aircraft/{id}/out-of-service` body (story 2.5, AC 1):
  * `reason` is mandatory and non-empty — the whole point of the flag is that
  * staff records *why* the aircraft is grounded.
+ *
+ * `outOfServiceUntil` (story AOG-1a, P3) is the OPTIONAL expected end of the
+ * grounding, `YYYY-MM-DD` (`z.iso.date()`, same wire shape as every other
+ * calendar-only date in this repo, `@db.Date` at rest). Its semantics — LAST
+ * grounded day, INCLUSIVE (ratifica R-AOG-a) — are written ONCE in
+ * `schema.prisma`'s doc-comment on `Aircraft.outOfServiceUntil` and never
+ * re-stated per surface. Omitting it is a legitimate state ("return date not
+ * yet known", invariant [b]), and a date in the past is accepted (invariant
+ * [a]: the field decides nothing).
  */
 export const setOutOfServiceSchema = z.object({
   // Length-capped for the same defense-in-depth reason the hour meter is
   // range-capped (review 2.4 F2 / 2.5 F3): an oversized body fails as 422.
   reason: z.string().trim().min(1).max(500),
+  outOfServiceUntil: z.iso.date().optional(),
 });
 
 export type SetOutOfServiceInput = z.infer<typeof setOutOfServiceSchema>;
@@ -178,6 +188,8 @@ export const aircraftListItemSchema = z.object({
   notes: z.string().nullable(),
   status: aircraftStatusSchema,
   statusReason: z.string().nullable(),
+  /** Story AOG-1a — last GROUNDED day, INCLUSIVE (`schema.prisma`'s own doc-comment on the column is the single source of the semantics). Calendar-only `YYYY-MM-DD`, same wire convention as every other `@db.Date` in this API; `null` = "return date not yet known". */
+  outOfServiceUntil: z.iso.date().nullable(),
   seats: z.number().int().min(0).nullable(),
   fuelType: z.string().nullable(),
   based: z.boolean(),

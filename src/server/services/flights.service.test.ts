@@ -181,7 +181,18 @@ function studentActor(): Actor {
   return { userId: 'student_1', personId: 'person_2', roles: ['STUDENT'] };
 }
 
-const AIRCRAFT = { id: 'aircraft_1', registration: 'I-ABCD', archivedAt: null };
+// Story AOG-1a (P2): `resolveFlightInput`'s select now READS the aircraft's
+// operational state — before this story it selected `{ id, registration,
+// archivedAt }` only, which is precisely why a flight on a grounded aircraft
+// went through untouched.
+const AIRCRAFT = { id: 'aircraft_1', registration: 'I-ABCD', archivedAt: null, status: 'OPERATIONAL' as const, statusReason: null, outOfServiceUntil: null };
+/** The same airframe, grounded, with an expected return date on file. */
+const AOG_AIRCRAFT = {
+  ...AIRCRAFT,
+  status: 'OUT_OF_SERVICE' as const,
+  statusReason: 'Revisione 100h',
+  outOfServiceUntil: new Date(Date.UTC(2031, 4, 12)),
+};
 const PILOT_PERSON = {
   id: 'person_1',
   firstName: 'Mario',
@@ -356,6 +367,65 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
       await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
       expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    // --- story AOG-1a, P2 (ratifica R-AOG-c): the out-of-service guard -------
+    // Before this story `registerFlight` on a grounded aircraft succeeded: the
+    // select did not even read `status` (measured at runtime — the only thing
+    // that stopped such a flight was its DATE).
+
+    it('throws a 422 AIRCRAFT_OUT_OF_SERVICE for a grounded aircraft, with reason and date in details (AC 8)', async () => {
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
+        code: 'AIRCRAFT_OUT_OF_SERVICE',
+        // The SAME `details` shape the three booking guards carry — one domain
+        // error, one contract (AD-3).
+        details: { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' },
+      });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('carries outOfServiceUntil: null when the grounding has no expected return date (invariant [b])', async () => {
+      aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, outOfServiceUntil: null });
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
+        code: 'AIRCRAFT_OUT_OF_SERVICE',
+        details: { reason: 'Revisione 100h', outOfServiceUntil: null },
+      });
+    });
+
+    it('a grounding whose outOfServiceUntil is in the PAST still blocks — invariant [a] (AC 2)', async () => {
+      // The date never returns the aircraft to service by itself: only `status`
+      // decides, and the guard reads nothing else.
+      aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, outOfServiceUntil: new Date(Date.UTC(2020, 0, 1)) });
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
+        code: 'AIRCRAFT_OUT_OF_SERVICE',
+        details: { reason: 'Revisione 100h', outOfServiceUntil: '2020-01-01' },
+      });
+    });
+
+    it('an aircraft that is BOTH archived and grounded answers AIRCRAFT_ARCHIVED — state before domain (AC 9)', async () => {
+      aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, archivedAt: new Date('2026-01-01T00:00:00.000Z') });
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+    });
+
+    it('the grounding is checked BEFORE the flight date — a FUTURE-dated flight on a grounded aircraft answers AIRCRAFT_OUT_OF_SERVICE (AC 8, the story probe)', async () => {
+      // This IS the story's own runtime probe, as a unit test: pre-fix the
+      // service answered `FLIGHT_DATE_IN_FUTURE` (measured), because no
+      // out-of-service guard existed anywhere on this path.
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const future = new Date(Date.now() + 400 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes(future, 60) });
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'AIRCRAFT_OUT_OF_SERVICE' });
     });
 
     it('throws a 422 PERSON_ARCHIVED for an archived person', async () => {
@@ -1178,6 +1248,84 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       ).toThrow();
     });
 
+    // --- story AOG-1a, AC 10 (ratifica R-AOG-c): ONE force, TWO blocks -------
+
+    it('force without flights.forceExpiry is a 403, BEFORE any query — the grounded aircraft is never even read (AC 10a)', async () => {
+      // `pilotActor` holds neither `flights.manage` nor `flights.forceExpiry`;
+      // the ordering guarantee is what this asserts (no query ran at all).
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Provo comunque' });
+
+      await expect(registerFlight(pilotActor(), input)).rejects.toThrow(ForbiddenError);
+      expect(aircraftFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('an ADMIN derogating a grounded aircraft registers the flight and stamps the override (AC 10c)', async () => {
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Volo che ha causato il fermo' });
+
+      const result = await registerFlight(adminActor(), input);
+
+      expect(result).toBeDefined();
+      // AD-5's dead end (the flight that CAUSED the grounding) has a way out,
+      // and it leaves a trace: the registro's "Deroga" badge reads this stamp.
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ forcedByUserId: 'admin_1', forceReason: 'Volo che ha causato il fermo', forcedAt: expect.any(Date) }),
+        }),
+      );
+    });
+
+    it('ONE force covers a grounded aircraft AND a blocking document together, leaving exactly ONE stamp (AC 10d)', async () => {
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({
+        blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }],
+        warnings: [],
+      });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Autorizzato dal direttore' });
+
+      await registerFlight(adminActor(), input);
+
+      const data = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+      expect(data['forceReason']).toBe('Autorizzato dal direttore');
+      // ONE `Flight` row, therefore ONE stamp — there is no second override
+      // record, and the operator confirmed once.
+      expect(flightCreateMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('WITHOUT force, a grounded aircraft AND a blocking document answers the STATE error first (AC 9, guard order)', async () => {
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({
+        blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }],
+        warnings: [],
+      });
+
+      // Documented order: existence 404 -> state 422 -> domain 422. The
+      // aircraft's state is checked next to `AIRCRAFT_ARCHIVED`, well before
+      // the expiry scan runs.
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'AIRCRAFT_OUT_OF_SERVICE' });
+    });
+
+    it('force: true on an OPERATIONAL aircraft with nothing to bypass still stamps NOTHING (AC 10e)', async () => {
+      // The grounding guard must not turn `force` into "spuntata una
+      // checkbox": with no block of EITHER kind the stamp stays absent.
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Non necessario ma fornito' });
+
+      await registerFlight(adminActor(), input);
+
+      const data = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+      expect(data['forcedAt']).toBeUndefined();
+      expect(data['forcedByUserId']).toBeUndefined();
+      expect(data['forceReason']).toBeUndefined();
+    });
+
     // Review F5 (ratifica R-14.4-a, verbatim): "un pilota/istruttore per cui
     // NON esiste alcuna Expiry per un ExpiryType bloccante a lui applicabile
     // ⇒ 422 FLIGHT_BLOCKED_BY_EXPIRY" — a SEPARATE predicate from the expired
@@ -1264,6 +1412,15 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
       await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ConflictError);
       expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('story AOG-1a, AC 9: a storno is NEVER blocked by the aircraft being out of service', async () => {
+      // `cancelFlight` does not go through `resolveFlightInput` at all — this
+      // pins the fourth row of AD-4's table so a future refactor that routes
+      // the storno through the shared resolver trips here.
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+
+      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).resolves.toBeDefined();
     });
 
     it("throws ConflictError naming the manual adjustment when the charge's reversal slot is already taken on a still-REGISTERED flight (review 5.3 M1)", async () => {
@@ -1466,6 +1623,60 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
       await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
       expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    // --- story AOG-1a, AD-4/AC 9: the correction perimeter -------------------
+    // Two of the four rows of AD-4's table live here. The line is the AIRCRAFT:
+    // moving a flight ONTO a grounded airframe is a registration on it;
+    // correcting a flight that STAYS on its own airframe is not.
+
+    it('422 AIRCRAFT_OUT_OF_SERVICE when the correction MOVES the flight onto a grounded aircraft (AC 9)', async () => {
+      aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, id: 'aircraft_2', registration: 'I-AOGX' });
+      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2' });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
+        code: 'AIRCRAFT_OUT_OF_SERVICE',
+        details: { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' },
+      });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('a correction that KEEPS the same aircraft is NOT blocked, even though that aircraft is grounded TODAY (AC 9 — the dead end R-14.4-b already closed once)', async () => {
+      // `ORIGINAL_FLIGHT_ROW.aircraftId === 'aircraft_1'` and the correction
+      // keeps it: fixing the minutes/notes of a HISTORICAL flight must not
+      // become impossible the day its airframe goes into maintenance.
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).resolves.toBeDefined();
+      // ...and it is not an override either: no "Deroga" stamp on a correction
+      // that never scavalcò anything.
+      const data = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+      expect(data['forcedAt']).toBeUndefined();
+    });
+
+    it('an ADMIN can derogate a correction that moves the flight onto a grounded aircraft (AC 10)', async () => {
+      aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, id: 'aircraft_2', registration: 'I-AOGX' });
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
+      // The shared `beforeEach` already queued a ONE-aircraft lock row; this
+      // correction locks TWO airframes (original + destination), so the queue
+      // is rebuilt rather than appended to.
+      queryRawMock.mockReset();
+      queryRaw
+        .mockResolvedValueOnce([
+          { id: 'aircraft_1', hourMeterMinutes: 500 },
+          { id: 'aircraft_2', hourMeterMinutes: 100 },
+        ])
+        .mockResolvedValueOnce([]);
+      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2', force: true, forceReason: 'Velivolo corretto a posteriori' });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
+
+      expect(flightCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ forcedByUserId: 'admin_1', forceReason: 'Velivolo corretto a posteriori', forcedAt: expect.any(Date) }),
+        }),
+      );
     });
 
     // Review F3 (ratifica R-14.3-a): correcting a flight while KEEPING its

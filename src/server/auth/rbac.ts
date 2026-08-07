@@ -55,6 +55,12 @@ export type Permission =
   // the gate lives on THIS permission, not on a role literal, so ADMIN being
   // (since story 14.9) the only role holding either is incidental, not the
   // reason the split exists.
+  // Story AOG-1a (ratifica R-AOG-c): this permission now covers TWO blocks —
+  // the blocking expired document above AND the out-of-service aircraft
+  // (`AIRCRAFT_OUT_OF_SERVICE`), with ONE `force` scavalcando both and
+  // producing ONE stamp. The name stays `forceExpiry` DELIBERATELY: renaming it
+  // would touch UI, i18n and tests without changing a single semantic — the
+  // same call story 14.4 F3 made on `ExpiryType.blocksBooking`.
   | 'flights.forceExpiry';
 
 const ALL_PERMISSIONS: Permission[] = [

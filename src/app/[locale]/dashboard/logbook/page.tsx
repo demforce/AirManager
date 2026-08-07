@@ -108,7 +108,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   // Sequential (not `Promise.all`): concurrent `$transaction`s on the shared
   // driver-adapter Prisma client trigger a `pg` "client is already executing
   // a query" warning under load (5.1 Debug Log) — same order as the legacy page.
-  let aircraftOptions: { id: string; registration: string }[] = [];
+  // Story AOG-1a, AC 12: same shape the editor's own `AircraftOption` declares.
+  let aircraftOptions: { id: string; registration: string; status: 'OPERATIONAL' | 'OUT_OF_SERVICE'; statusReason: string | null }[] = [];
   // Story 14.3, AC 2: `profiles` (active-only, pilot/student) travels with
   // the person picker's options so `FlightEditor` can force/lock Tipo volo
   // to SCHOOL for a person with only an active student profile.
@@ -123,7 +124,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
 
     aircraftOptions = aircraftResult.items
       .filter((aircraft) => aircraft.archivedAt === null)
-      .map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration }));
+      // Story AOG-1a, AC 12: `status`/`statusReason` travel so the picker can NAME a grounded aircraft (still selectable — the deroga exists).
+      .map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration, status: aircraft.status, statusReason: aircraft.statusReason }));
     aircraftFilterOptions = aircraftResult.items.map((aircraft) => ({
       id: aircraft.id,
       registration: aircraft.registration,
@@ -193,6 +195,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   const pdfExportHref = buildPdfExportHref('/api/v1/flights/pdf', exportFilters, locale);
 
   const t = await getTranslations('LogbookPage');
+  // Story AOG-1a, AC 12 — only for `form.outOfServiceSuffix`, reused verbatim from the booking form.
+  const tBookings = await getTranslations('BookingsPage');
 
   return (
     <main className="page">
@@ -356,6 +360,9 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               INSTRUCTOR_NOT_FOUND: t('editor.errors.INSTRUCTOR_NOT_FOUND'),
               INSTRUCTOR_SAME_AS_PILOT: t('editor.errors.INSTRUCTOR_SAME_AS_PILOT'),
               FLIGHT_DATE_IN_FUTURE: t('editor.errors.FLIGHT_DATE_IN_FUTURE'),
+              // Story AOG-1a, AC 11 — `{registration}`/`{reason}`/`{date}` filled CLIENT-side, same reasoning.
+              AIRCRAFT_OUT_OF_SERVICE: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE'),
+              AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL'),
               // `t.raw`: the {documents} placeholder is filled CLIENT-side
               // (same reasoning as `fields.studentOnlyCorrectionHint` above).
               FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
@@ -379,6 +386,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               // Review F11 — `{reason}` filled CLIENT-side, same reasoning.
               forcedNotice: t.raw('editor.result.forcedNotice'),
             },
+            // Story AOG-1a, AC 12: the SAME key the booking form uses — one string, so the two forms can never drift apart on the same fact.
+            outOfServiceSuffix: tBookings.raw('form.outOfServiceSuffix') as string,
             picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
             force: {
               title: t('editor.force.title'),

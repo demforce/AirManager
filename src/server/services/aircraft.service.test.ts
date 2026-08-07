@@ -111,6 +111,9 @@ const SELECTED_AIRCRAFT = {
   notes: 'Velivolo scuola volo demo.',
   status: 'OPERATIONAL',
   statusReason: null,
+  // Story AOG-1a: `@db.Date` at rest (a `Date` on the raw row), `YYYY-MM-DD` on
+  // the DTO — `null` here, the state every pre-existing row starts in.
+  outOfServiceUntil: null,
   // Story 12.5, AC 1: additive fleet fields.
   seats: 2,
   fuelType: 'AVGAS 100LL',
@@ -178,7 +181,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     });
 
     it('setOutOfService rejects an actor without aircraft.manage', async () => {
-      await expect(setOutOfService(pilotActor(), 'aircraft_1', 'Engine inspection')).rejects.toThrow(ForbiddenError);
+      await expect(setOutOfService(pilotActor(), 'aircraft_1', { reason: 'Engine inspection' })).rejects.toThrow(ForbiddenError);
       expect(findUniqueMock).not.toHaveBeenCalled();
       expect(updateManyMock).not.toHaveBeenCalled();
     });
@@ -225,6 +228,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
             notes: 'Velivolo scuola volo demo.',
             status: 'OPERATIONAL',
             statusReason: null,
+            outOfServiceUntil: null,
             seats: 2,
             fuelType: 'AVGAS 100LL',
             based: true,
@@ -562,7 +566,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   describe('setOutOfService (story 2.5, AC 1)', () => {
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(setOutOfService(adminActor(), 'missing', 'Engine inspection')).rejects.toThrow(NotFoundError);
+      await expect(setOutOfService(adminActor(), 'missing', { reason: 'Engine inspection' })).rejects.toThrow(NotFoundError);
       expect(updateManyMock).not.toHaveBeenCalled();
     });
 
@@ -575,11 +579,13 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         statusReason: 'Engine inspection',
       });
 
-      const result = await setOutOfService(adminActor(), 'aircraft_1', 'Engine inspection');
+      const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Engine inspection' });
 
       expect(updateManyMock).toHaveBeenCalledWith({
         where: { id: 'aircraft_1', status: 'OPERATIONAL' },
-        data: { status: 'OUT_OF_SERVICE', statusReason: 'Engine inspection' },
+        // Story AOG-1a, invariant [b]: no date supplied -> the column is written
+        // `null` EXPLICITLY, never left at whatever a previous grounding left.
+        data: { status: 'OUT_OF_SERVICE', statusReason: 'Engine inspection', outOfServiceUntil: null },
       });
       expect(result.status).toBe('OUT_OF_SERVICE');
       expect(result.statusReason).toBe('Engine inspection');
@@ -589,8 +595,84 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
       aircraftUpdateMany.mockResolvedValue({ count: 0 });
 
-      await expect(setOutOfService(adminActor(), 'aircraft_1', 'Engine inspection')).rejects.toThrow(ConflictError);
+      await expect(setOutOfService(adminActor(), 'aircraft_1', { reason: 'Engine inspection' })).rejects.toThrow(ConflictError);
       expect(findUniqueOrThrowMock).not.toHaveBeenCalled();
+    });
+
+    // --- story AOG-1a: the expected-return date -------------------------------
+
+    it('writes outOfServiceUntil as a UTC-midnight calendar date, in the SAME guarded updateMany as the reason (AC 1/AC 3)', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue({
+        ...SELECTED_AIRCRAFT,
+        status: 'OUT_OF_SERVICE',
+        statusReason: 'Revisione 100h',
+        outOfServiceUntil: new Date(Date.UTC(2031, 4, 12)),
+      });
+
+      const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' });
+
+      expect(updateManyMock).toHaveBeenCalledWith({
+        // The atomic guard of review 2.2 F1 is BYTE-IDENTICAL — this story adds
+        // one key to `data` and nothing to `where`.
+        where: { id: 'aircraft_1', status: 'OPERATIONAL' },
+        data: { status: 'OUT_OF_SERVICE', statusReason: 'Revisione 100h', outOfServiceUntil: new Date(Date.UTC(2031, 4, 12)) },
+      });
+      // Never a timestamp (review 3.5 F1): a `@db.Date` binding must carry no
+      // time-of-day at all.
+      const written = updateManyMock.mock.calls[0]![0].data.outOfServiceUntil as Date;
+      expect(written.toISOString()).toBe('2031-05-12T00:00:00.000Z');
+      // ...and the DTO hands the caller back the calendar day, not the instant.
+      expect(result.outOfServiceUntil).toBe('2031-05-12');
+    });
+
+    it('accepts a date in the PAST and still leaves the aircraft grounded — invariant [a] (AC 2a/AC 3)', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue({
+        ...SELECTED_AIRCRAFT,
+        status: 'OUT_OF_SERVICE',
+        statusReason: 'Revisione 100h',
+        outOfServiceUntil: new Date(Date.UTC(2020, 0, 1)),
+      });
+
+      const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h', outOfServiceUntil: '2020-01-01' });
+
+      // A past date is a LEGITIMATE input (no "must be in the future" rule is
+      // added: the field decides nothing, so such a rule would be semantically
+      // wrong) and the aircraft stays OUT_OF_SERVICE regardless.
+      expect(result.status).toBe('OUT_OF_SERVICE');
+      expect(result.outOfServiceUntil).toBe('2020-01-01');
+    });
+
+    it('listOutOfServiceAircraft still returns an aircraft whose outOfServiceUntil is in the past — invariant [a] (AC 2a)', async () => {
+      aircraftFindMany.mockResolvedValue([
+        { ...SELECTED_AIRCRAFT, status: 'OUT_OF_SERVICE', statusReason: 'Revisione 100h', outOfServiceUntil: new Date(Date.UTC(2020, 0, 1)) },
+      ]);
+
+      const result = await listOutOfServiceAircraft(adminActor());
+
+      // The `where` is UNCHANGED: `status` alone decides. Nothing filters on
+      // the date, so an "expired" grounding is still a grounding.
+      expect(findManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'OUT_OF_SERVICE', archivedAt: null } }));
+      expect(result).toHaveLength(1);
+      expect(result[0]!.status).toBe('OUT_OF_SERVICE');
+      expect(result[0]!.outOfServiceUntil).toBe('2020-01-01');
+    });
+
+    it('getAircraft still reports a past-dated grounding as OUT_OF_SERVICE — invariant [a] (AC 2a)', async () => {
+      aircraftFindUnique.mockResolvedValue({
+        ...SELECTED_AIRCRAFT,
+        status: 'OUT_OF_SERVICE',
+        statusReason: 'Revisione 100h',
+        outOfServiceUntil: new Date(Date.UTC(2020, 0, 1)),
+      });
+
+      const result = await getAircraft(adminActor(), 'aircraft_1');
+
+      expect(result.status).toBe('OUT_OF_SERVICE');
+      expect(result.outOfServiceUntil).toBe('2020-01-01');
     });
   });
 
@@ -610,7 +692,10 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       expect(updateManyMock).toHaveBeenCalledWith({
         where: { id: 'aircraft_1', status: 'OUT_OF_SERVICE' },
-        data: { status: 'OPERATIONAL', statusReason: null },
+        // Story AOG-1a, AC 3: the date is cleared in the SAME statement as the
+        // reason — asserted EXACTLY (never relaxed to `objectContaining`,
+        // lezione 14.6), because "both keys, one statement" IS the invariant.
+        data: { status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null },
       });
       expect(result.status).toBe('OPERATIONAL');
       expect(result.statusReason).toBeNull();

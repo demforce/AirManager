@@ -9,6 +9,7 @@ import { getMailSender } from '@/server/adapters/mail';
 import { buildBookingDeniedEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { outOfServiceDetails } from './aircraft-status';
 import { getSchedulingSettings } from './app-settings.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
@@ -240,6 +241,7 @@ function isActiveStudent(person: TargetPerson): boolean {
 function isActiveInstructor(person: TargetPerson): boolean {
   return person.instructorProfile !== null && person.instructorProfile.deactivatedAt === null;
 }
+
 
 /** One non-blocking expired document surfaced by a successful `createBooking` (story 7.4, AC 1) — see the function's own doc-comment. */
 export type BookingExpiryWarning = { typeName: string; expiresAt: string };
@@ -542,8 +544,8 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
     // doc-comment), same raw-query pattern as
     // `flights.service.ts#registerFlight`. One fetch serves both the
     // aircraft-state validation below and the overlap invariant (AC 2).
-    const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; archivedAt: Date | null }>>`
-      SELECT "id", "status", "statusReason", "archivedAt" FROM "Aircraft" WHERE "id" = ${input.aircraftId} FOR UPDATE`;
+    const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; outOfServiceUntil: Date | null; archivedAt: Date | null }>>`
+      SELECT "id", "status", "statusReason", "outOfServiceUntil", "archivedAt" FROM "Aircraft" WHERE "id" = ${input.aircraftId} FOR UPDATE`;
     const aircraft = lockedAircraft[0];
     if (!aircraft) {
       throw new NotFoundError('Aircraft not found.');
@@ -552,7 +554,7 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
       throw new ConflictError('Aircraft is archived.');
     }
     if (aircraft.status === 'OUT_OF_SERVICE') {
-      throw new ValidationError(`Aircraft is out of service: ${aircraft.statusReason}.`, { reason: aircraft.statusReason }, 'AIRCRAFT_OUT_OF_SERVICE');
+      throw new ValidationError(`Aircraft is out of service: ${aircraft.statusReason}.`, outOfServiceDetails(aircraft), 'AIRCRAFT_OUT_OF_SERVICE');
     }
 
     // Overlap pre-check (AC 2): semi-open `[startsAt, endsAt)` — two
@@ -909,8 +911,8 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     // doc-comment above): the destination aircraft, plus the CURRENT one if
     // different (a 1-element set covers the common "same aircraft" edit).
     const aircraftIds = Array.from(new Set([existing.aircraftId, nextAircraftId]));
-    const lockedAircraftRows = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; archivedAt: Date | null }>>`
-      SELECT "id", "status", "statusReason", "archivedAt" FROM "Aircraft" WHERE "id" IN (${Prisma.join(aircraftIds)}) ORDER BY "id" FOR UPDATE`;
+    const lockedAircraftRows = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; outOfServiceUntil: Date | null; archivedAt: Date | null }>>`
+      SELECT "id", "status", "statusReason", "outOfServiceUntil", "archivedAt" FROM "Aircraft" WHERE "id" IN (${Prisma.join(aircraftIds)}) ORDER BY "id" FOR UPDATE`;
 
     const destinationAircraft = lockedAircraftRows.find((row) => row.id === nextAircraftId);
     if (!destinationAircraft) {
@@ -922,7 +924,7 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     if (destinationAircraft.status === 'OUT_OF_SERVICE') {
       throw new ValidationError(
         `Aircraft is out of service: ${destinationAircraft.statusReason}.`,
-        { reason: destinationAircraft.statusReason },
+        outOfServiceDetails(destinationAircraft),
         'AIRCRAFT_OUT_OF_SERVICE',
       );
     }
@@ -1139,8 +1141,8 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
       // today".
       await assertWithinSchedulingWindow(existing.startsAt, existing.endsAt);
 
-      const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; archivedAt: Date | null }>>`
-        SELECT "id", "status", "statusReason", "archivedAt" FROM "Aircraft" WHERE "id" = ${existing.aircraftId} FOR UPDATE`;
+      const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; outOfServiceUntil: Date | null; archivedAt: Date | null }>>`
+        SELECT "id", "status", "statusReason", "outOfServiceUntil", "archivedAt" FROM "Aircraft" WHERE "id" = ${existing.aircraftId} FOR UPDATE`;
       const aircraft = lockedAircraft[0];
       if (!aircraft) {
         throw new NotFoundError('Aircraft not found.');
@@ -1151,7 +1153,7 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
       if (aircraft.status === 'OUT_OF_SERVICE') {
         throw new ValidationError(
           `Aircraft is out of service: ${aircraft.statusReason}.`,
-          { reason: aircraft.statusReason },
+          outOfServiceDetails(aircraft),
           'AIRCRAFT_OUT_OF_SERVICE',
         );
       }

@@ -1,10 +1,12 @@
 import type { AircraftStatus } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
+import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type {
   CreateAircraftInput,
   CreateHourMeterAdjustmentInput,
   ListAircraftQuery,
   ListHourMeterAdjustmentsQuery,
+  SetOutOfServiceInput,
   UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
 import { authorize, type Actor } from '@/server/auth/rbac';
@@ -21,6 +23,8 @@ export type AircraftListItem = {
   notes: string | null;
   status: AircraftStatus;
   statusReason: string | null;
+  /** `YYYY-MM-DD` — last day the aircraft is GROUNDED, inclusive (story AOG-1a, ratifica R-AOG-a). Semantics/life-cycle/invariants: `schema.prisma`, `Aircraft.outOfServiceUntil` (the single source; never re-interpreted here). `null` = "return date not yet known". Calendar-only on the wire, same convention every other `@db.Date` DTO field in this repo follows (`AircraftRateListItem.validFrom`, `ExpiryListItem.expiresAt`). */
+  outOfServiceUntil: string | null;
   /** Number of seats (story 12.5, AC 1) — anagrafica only, optional. */
   seats: number | null;
   /** Free-text fuel type (story 12.5, AC 1). */
@@ -43,6 +47,7 @@ const AIRCRAFT_SELECT = {
   notes: true,
   status: true,
   statusReason: true,
+  outOfServiceUntil: true,
   seats: true,
   fuelType: true,
   based: true,
@@ -50,7 +55,8 @@ const AIRCRAFT_SELECT = {
   createdAt: true,
 } as const;
 
-type SelectedAircraft = AircraftListItem;
+/** The raw `AIRCRAFT_SELECT` row: identical to the DTO except `outOfServiceUntil`, which is a `@db.Date` `Date` at rest and a `YYYY-MM-DD` string on the wire (same split `rates.service.ts` uses for `validFrom`). */
+type SelectedAircraft = Omit<AircraftListItem, 'outOfServiceUntil'> & { outOfServiceUntil: Date | null };
 
 function toListItem(aircraft: SelectedAircraft): AircraftListItem {
   return {
@@ -62,6 +68,7 @@ function toListItem(aircraft: SelectedAircraft): AircraftListItem {
     notes: aircraft.notes,
     status: aircraft.status,
     statusReason: aircraft.statusReason,
+    outOfServiceUntil: aircraft.outOfServiceUntil === null ? null : toDateOnlyString(aircraft.outOfServiceUntil),
     seats: aircraft.seats,
     fuelType: aircraft.fuelType,
     based: aircraft.based,
@@ -389,8 +396,17 @@ export async function unarchiveAircraft(actor: Actor, id: string): Promise<Aircr
  * FR-8). This is deliberately NOT archiving (Dev Notes) — the aircraft stays
  * in the default fleet list, just flagged as not currently airworthy; the
  * real booking block lands with Epic 7.
+ *
+ * Story AOG-1a (P3): `outOfServiceUntil` is written HERE, together with the
+ * reason, and only here — its semantics/invariants live in ONE place,
+ * `schema.prisma`'s own doc-comment on the column. It is OPTIONAL (invariant
+ * [b]): an omitted value stores `null` ("return date not yet known"), which is
+ * a legitimate state. A date in the PAST is a legitimate input too and is NOT
+ * rejected: invariant [a] means the field never decides anything, so a
+ * "must be in the future" rule would be semantically wrong here (and is not
+ * ratified). The date never re-opens the aircraft — only `returnToService` does.
  */
-export async function setOutOfService(actor: Actor, id: string, reason: string): Promise<AircraftListItem> {
+export async function setOutOfService(actor: Actor, id: string, input: SetOutOfServiceInput): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
 
   const existing = await prisma.aircraft.findUnique({ where: { id }, select: { id: true } });
@@ -405,7 +421,15 @@ export async function setOutOfService(actor: Actor, id: string, reason: string):
   // other caller's statusReason.
   const { count } = await prisma.aircraft.updateMany({
     where: { id, status: 'OPERATIONAL' },
-    data: { status: 'OUT_OF_SERVICE', statusReason: reason },
+    data: {
+      status: 'OUT_OF_SERVICE',
+      statusReason: input.reason,
+      // Story AOG-1a: ONE extra key in the `data`; the `where` above is
+      // untouched, so the concurrency discipline of review 2.2 F1 is
+      // unchanged. `@db.Date` is bound as a UTC-midnight calendar date
+      // (`parseDateOnlyUtc`, review 3.5 F1's lesson) — never a timestamp.
+      outOfServiceUntil: input.outOfServiceUntil === undefined ? null : parseDateOnlyUtc(input.outOfServiceUntil),
+    },
   });
   if (count === 0) {
     throw new ConflictError('Aircraft is already out of service.');
@@ -417,8 +441,10 @@ export async function setOutOfService(actor: Actor, id: string, reason: string):
 
 /**
  * Returns an out-of-service aircraft to service (story 2.5, AC 1), clearing
- * `statusReason` — a stale reason from a previous grounding must never
- * linger once the aircraft is airworthy again.
+ * `statusReason` AND (story AOG-1a) `outOfServiceUntil` — a stale reason, or a
+ * stale expected-return date, from a previous grounding must never linger once
+ * the aircraft is airworthy again. Both are cleared in the SAME statement, so
+ * no second code path can ever let them diverge.
  */
 export async function returnToService(actor: Actor, id: string): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
@@ -431,7 +457,7 @@ export async function returnToService(actor: Actor, id: string): Promise<Aircraf
   // Same atomic guard as setOutOfService, mirrored for the opposite transition.
   const { count } = await prisma.aircraft.updateMany({
     where: { id, status: 'OUT_OF_SERVICE' },
-    data: { status: 'OPERATIONAL', statusReason: null },
+    data: { status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null },
   });
   if (count === 0) {
     throw new ConflictError('Aircraft is already operational.');

@@ -7,7 +7,7 @@ import { redirect } from '@/i18n/navigation';
 import { listAircraft, listOutOfServiceAircraft, sumFlightMinutesByAircraft } from '@/server/services/aircraft.service';
 import { listReservedAircraftIds } from '@/server/services/bookings.service';
 import { getEffectiveRates, todayDateOnlyUtc } from '@/server/services/rates.service';
-import { FleetConsole, type FleetCardItem } from './fleet-console';
+import { FleetConsole, type FleetConsoleItem } from './fleet-console';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -84,7 +84,7 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
 
   const exportHref = buildExportHref('/api/v1/aircraft', { q, includeArchived: includeArchived ? 'true' : undefined }, locale);
 
-  const items: FleetCardItem[] = aircraftResult.items.map((aircraft) => ({
+  const items: FleetConsoleItem[] = aircraftResult.items.map((aircraft) => ({
     id: aircraft.id,
     registration: aircraft.registration,
     type: aircraft.type,
@@ -93,6 +93,9 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
     notes: aircraft.notes,
     status: aircraft.status,
     statusReason: aircraft.statusReason,
+    // Story AOG-1a — already `YYYY-MM-DD` off the service DTO (same `@db.Date`
+    // wire convention as `AircraftRateListItem.validFrom`), so no conversion here.
+    outOfServiceUntil: aircraft.outOfServiceUntil,
     seats: aircraft.seats,
     fuelType: aircraft.fuelType,
     based: aircraft.based,
@@ -182,6 +185,10 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               sectionTitle: t('editor.availability.sectionTitle'),
               current: t('editor.availability.current'),
               setOutOfService: t('editor.availability.setOutOfService'),
+              until: t('editor.availability.until'),
+              untilHint: t('editor.availability.untilHint'),
+              untilValue: t.raw('editor.availability.untilValue') as string,
+              untilUnknown: t('editor.availability.untilUnknown'),
               returnToService: t('editor.availability.returnToService'),
               reason: t('editor.availability.reason'),
               confirm: t('editor.availability.confirm'),

@@ -3864,4 +3864,18 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
      title is the section's ONLY name, so the rule is anchored to the modifier
      the card sets when `showActor === false`. -20.3px, self face only. */
   .account-head-self .card-title{ display: none; }
+
+  /* --- (10) the "Fuori servizio" submit (story AOG-1a, ratifica R-AOG-g) ---
+     `out-of-service-submit` is the ONE secondary section action this story
+     touches, and it touches it because the story ALSO pushes it further down
+     the panel (the Disponibilità section gains a date field above it). Measured
+     at 375x812 before this rule: 335 x 34.84, bottom edge at y 841 — 29px below
+     the fold. R-15.10-f deliberately left the secondary section actions
+     (tariffe, contaore, archivio) where they were and this rule does NOT
+     reopen that: it is anchored to THIS button's own testid, inside
+     `@media (max-width: 640px)`, so the desktop box stays identical to the
+     hundredth and no other action moves. Same `min-height: 44px` floor, and the
+     same "anchor on something this surface owns" discipline, as the nine rules
+     above. */
+  [data-testid="out-of-service-submit"]{ min-height: 44px; }
 }

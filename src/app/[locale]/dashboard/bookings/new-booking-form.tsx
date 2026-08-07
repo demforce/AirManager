@@ -2,6 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
+import { useLocale } from 'next-intl';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
@@ -10,6 +11,7 @@ import { Field, Input, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
 import { Segmented } from '@/components/ui/segmented';
 import { SlideOver } from '@/components/ui/slide-over';
+import { formatDateOnly } from '@/lib/time';
 
 export type NewBookingFormMode = 'staff' | 'instructor' | 'pilot';
 
@@ -51,6 +53,8 @@ export type NewBookingFormLabels = {
   errors: {
     /** `{reason}` placeholder, client-filled. */
     AIRCRAFT_OUT_OF_SERVICE: string;
+    /** Story AOG-1a, AC 7 — used only when `details.outOfServiceUntil` is present: the same sentence plus the INCLUSIVE fermo clause (`{date}`). The plain key above stays byte-identical for a grounding with no date (invariant [b]). */
+    AIRCRAFT_OUT_OF_SERVICE_UNTIL: string;
     BOOKING_IN_PAST: string;
     PERSON_NOT_BOOKABLE: string;
     /** `{documents}` placeholder, client-filled with the comma-joined blocking document type names (story 7.4, AC 1) — same `t.raw` pattern as `outOfServiceSuffix`. */
@@ -159,7 +163,12 @@ function buildFormSchema(mode: NewBookingFormMode, bookingTarget: 'self' | 'stud
 
 /** Story 7.4: `details` also carries `documents` on an `EXPIRED_DOCUMENTS` 422 (`{ typeName, expiresAt }[]`, `bookings.service.ts#createBooking`'s doc-comment). */
 type ApiErrorBody = {
-  error?: { code?: string; message?: string; details?: { reason?: string; documents?: Array<{ typeName: string; expiresAt: string }> } };
+  error?: {
+    code?: string;
+    message?: string;
+    /** Story AOG-1a — `outOfServiceUntil` is additive on the SAME `AIRCRAFT_OUT_OF_SERVICE` details all four guards now share (`aircraft-status.ts#outOfServiceDetails`). */
+    details?: { reason?: string; outOfServiceUntil?: string | null; documents?: Array<{ typeName: string; expiresAt: string }> };
+  };
 };
 
 /** `POST /api/v1/bookings`'s success envelope (story 7.4, AC 1) — `{ booking, warnings }`, replacing the bare item this route answered before this story. */
@@ -201,6 +210,9 @@ export function NewBookingForm({
   labels,
 }: NewBookingFormProps) {
   const router = useRouter();
+  // Story AOG-1a, AC 7(e) — the fermo date in the out-of-service 422 goes through the app's own date formatter, in the reader's own locale.
+  const displayLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
+
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [warnings, setWarnings] = useState<Array<{ typeName: string; expiresAt: string }>>([]);
@@ -302,7 +314,16 @@ export function NewBookingForm({
       const errorBody = (await response.json().catch(() => null)) as ApiErrorBody | null;
       const code = errorBody?.error?.code;
       if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
-        setFormError(labels.errors.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', errorBody?.error?.details?.reason ?? ''));
+        // Story AOG-1a, AC 7 (precedente R-15.4-g: a 422 must SAY the
+        // constraint it hit). With a date on file the message adds the fermo
+        // clause in the INCLUSIVE wording R-AOG-a fixed; WITHOUT one it is
+        // byte-identical to what it has always been — an absent return date is
+        // a legitimate state (invariant [b]), not a blank to announce.
+        const until = errorBody?.error?.details?.outOfServiceUntil ?? null;
+        const template = until === null ? labels.errors.AIRCRAFT_OUT_OF_SERVICE : labels.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL;
+        setFormError(
+          template.replace('{reason}', errorBody?.error?.details?.reason ?? '').replace('{date}', until === null ? '' : formatDateOnly(until, displayLocale)),
+        );
       } else if (code === 'BOOKING_IN_PAST') {
         setFormError(labels.errors.BOOKING_IN_PAST);
       } else if (code === 'PERSON_NOT_BOOKABLE') {
