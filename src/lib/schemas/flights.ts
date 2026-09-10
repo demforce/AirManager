@@ -103,8 +103,13 @@ const registerFlightFields = z.object({
   isSolo: z.boolean().optional().default(false),
   hourMeterStart: z.number().int().min(0).max(2_147_483_647).optional(),
   hourMeterEnd: z.number().int().min(0).max(2_147_483_647).optional(),
-  takeoffs: z.number().int().min(0).max(500).optional(),
-  landings: z.number().int().min(0).max(500).optional(),
+  // Story 16.2 (F14/AD-7): `min(1)`, not `min(0)` — the literal alignment
+  // with what `schema.prisma`'s own `Flight.takeoffs`/`landings` doc-comment
+  // has always DECLARED ("both NOT NULL DEFAULT 1 — every flight has at
+  // least one of each"). A `0` is now a 422 at the Zod boundary, with the
+  // field in `path`; the DB default stays `1`, so no migration is involved.
+  takeoffs: z.number().int().min(1).max(500).optional(),
+  landings: z.number().int().min(1).max(500).optional(),
   notes: z.string().trim().min(1).max(1000).nullish(),
   force: z.boolean().optional(),
   forceReason: z.string().trim().min(1).max(500).optional(),

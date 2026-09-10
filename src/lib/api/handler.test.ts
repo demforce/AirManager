@@ -267,6 +267,51 @@ describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
       expect(body.error.details).toEqual({ field: 'roles' });
     });
 
+    // Story 16.2 (AD-3): before this story `domainErrorResponse` read
+    // `details` off `ValidationError` ONLY, so a `ConflictError` carrying them
+    // (the constructor has always accepted them) reached the client stripped —
+    // and no test saw it, because no caller populated them. This is the unit
+    // that pins the pass-through, modelled on the `ValidationError` one above.
+    it('maps a domain-level ConflictError with a custom code to 409 WITH its `details` (story 16.2)', async () => {
+      const GET = apiRoute({
+        handle: async () => {
+          throw new ConflictError(
+            'overlapping flight',
+            { flightId: 'flight_1', takeoffAt: '2026-09-01T09:00:00.000Z', landingAt: '2026-09-01T10:00:00.000Z' },
+            'FLIGHT_OVERLAP',
+          );
+        },
+      });
+
+      const response = await GET(req('http://localhost/api/v1/x'));
+
+      expect(response.status).toBe(409);
+      const body = (await readJson(response)) as { error: { code: string; details?: unknown } };
+      expect(body.error.code).toBe('FLIGHT_OVERLAP');
+      expect(body.error.details).toEqual({
+        flightId: 'flight_1',
+        takeoffAt: '2026-09-01T09:00:00.000Z',
+        landingAt: '2026-09-01T10:00:00.000Z',
+      });
+    });
+
+    // The other half of the same line: a `ConflictError` with no `details`
+    // (all 39 pre-existing call sites in `src/server`) must keep answering
+    // with the envelope's `details` key ABSENT, not `undefined`/`null`.
+    it('maps a domain-level ConflictError WITHOUT details to 409 with no `details` key at all', async () => {
+      const GET = apiRoute({
+        handle: async () => {
+          throw new ConflictError('plain conflict');
+        },
+      });
+
+      const response = await GET(req('http://localhost/api/v1/x'));
+
+      expect(response.status).toBe(409);
+      const body = (await readJson(response)) as { error: Record<string, unknown> };
+      expect(body.error).toEqual({ code: 'CONFLICT', message: 'plain conflict' });
+    });
+
     it('maps a domain-level ValidationError with a custom code to 422 with THAT code (story 5.1, AC 3)', async () => {
       const GET = apiRoute({
         handle: async () => {

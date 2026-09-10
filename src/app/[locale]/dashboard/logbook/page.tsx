@@ -318,6 +318,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             conflictError: t('editor.conflictError'),
             requiredField: t('editor.requiredField'),
             invalidHourMeter: t('editor.invalidHourMeter'),
+            invalidCycles: t('editor.invalidCycles'),
             fields: {
               aircraft: t('editor.fields.aircraft'),
               noAircraftAvailable: t('editor.fields.noAircraftAvailable'),
@@ -360,6 +361,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               INSTRUCTOR_NOT_FOUND: t('editor.errors.INSTRUCTOR_NOT_FOUND'),
               INSTRUCTOR_SAME_AS_PILOT: t('editor.errors.INSTRUCTOR_SAME_AS_PILOT'),
               FLIGHT_DATE_IN_FUTURE: t('editor.errors.FLIGHT_DATE_IN_FUTURE'),
+              // Story 16.2, AC 18 — `{date}`/`{from}`/`{to}` filled CLIENT-side (the conflicting flight's own instants), same reasoning.
+              FLIGHT_OVERLAP: t.raw('editor.errors.FLIGHT_OVERLAP'),
               // Story AOG-1a, AC 11 — `{registration}`/`{reason}`/`{date}` filled CLIENT-side, same reasoning.
               AIRCRAFT_OUT_OF_SERVICE: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE'),
               AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL'),

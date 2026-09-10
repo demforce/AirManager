@@ -1343,6 +1343,7 @@
       "conflictError": "This flight has already been cancelled.",
       "requiredField": "Required field.",
       "invalidHourMeter": "The end reading must be greater than the start reading.",
+      "invalidCycles": "Takeoffs and landings must be at least 1.",
       "fields": {
         "aircraft": "Aircraft",
         "noAircraftAvailable": "No active aircraft available.",
@@ -1384,6 +1385,7 @@
         "INSTRUCTOR_NOT_FOUND": "The selected instructor has no active instructor profile.",
         "INSTRUCTOR_SAME_AS_PILOT": "The instructor cannot be the same person as the pilot or student.",
         "FLIGHT_DATE_IN_FUTURE": "The flight date cannot be in the future.",
+        "FLIGHT_OVERLAP": "This aircraft already has a flight logged on {date} from {from} to {to}. Cancel or correct that flight, or change the times.",
         "AIRCRAFT_OUT_OF_SERVICE": "Aircraft {registration} is out of service: {reason}.",
         "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Aircraft {registration} is out of service: {reason}. Grounded until {date} inclusive.",
         "AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS": "This flight is also blocked by these missing or expired documents: {documents}.",

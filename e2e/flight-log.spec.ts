@@ -160,6 +160,8 @@ type RegisterFlightParams = {
   flightDate: string;
   flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
   minutes: number;
+  /** Story 16.2 — the takeoff clock time (UTC, `HH:MM`), so two flights of the SAME test can share an aircraft and a day without overlapping (409 `FLIGHT_OVERLAP`). Defaults to `10:00`, the value every pre-existing call site used implicitly. */
+  takeoffTimeUtc?: string;
 };
 
 /**
@@ -171,7 +173,7 @@ type RegisterFlightParams = {
  * equals `params.flightDate`.
  */
 async function registerFlight(page: Page, params: RegisterFlightParams): Promise<{ id: string }> {
-  const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
+  const takeoffAt = `${params.flightDate}T${params.takeoffTimeUtc ?? '10:00'}:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
     data: {
@@ -211,8 +213,19 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     });
     const cancelResponse = await page.request.post(`/api/v1/flights/${toCancel.id}/cancel`, { data: { reason: 'Errore di prova' } });
     expect(cancelResponse.status()).toBe(200);
-    // Someone else's flight on the SAME aircraft — must NEVER show up in the pilot's own registry.
-    await registerFlight(page, { aircraftId: aircraft.id, personId: otherPerson.personId, flightDate: '2020-02-01', flightType: 'TOURISM', minutes: 40 });
+    // Someone else's flight on the SAME aircraft — must NEVER show up in the
+    // pilot's own registry. Story 16.2: the "same aircraft" IS the point of
+    // this case, so the AIRCRAFT stays and the takeoff moves to 12:00 —
+    // 10:00->10:40 would now overlap the pilot's own 10:00->10:30 flight
+    // above (409 `FLIGHT_OVERLAP`).
+    await registerFlight(page, {
+      aircraftId: aircraft.id,
+      personId: otherPerson.personId,
+      flightDate: '2020-02-01',
+      flightType: 'TOURISM',
+      minutes: 40,
+      takeoffTimeUtc: '12:00',
+    });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, 'PilotOwnView123!');

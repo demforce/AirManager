@@ -56,6 +56,8 @@ export type FlightEditorLabels = {
   conflictError: string;
   requiredField: string;
   invalidHourMeter: string;
+  /** Story 16.2 (AC 18) — the `<form>` is `noValidate`, so `min={1}` on the two cycle inputs is a hint, not a gate: this is the message a typed `0` gets, in the same bottom banner as {@link invalidHourMeter}. */
+  invalidCycles: string;
   fields: {
     aircraft: string;
     noAircraftAvailable: string;
@@ -97,6 +99,8 @@ export type FlightEditorLabels = {
     INSTRUCTOR_NOT_FOUND: string;
     INSTRUCTOR_SAME_AS_PILOT: string;
     FLIGHT_DATE_IN_FUTURE: string;
+    /** Story 16.2 (P1, AC 18) — `t.raw` template, `{date}`/`{from}`/`{to}` filled client-side from `details.takeoffAt`/`details.landingAt`: the 409 must NAME the conflicting flight's day and clock window, because cancelling or correcting THAT flight is the only way out of a guard `force` deliberately does not derogate. */
+    FLIGHT_OVERLAP: string;
     /** Story AOG-1a, AC 11 — `t.raw` templates, `{registration}`/`{reason}` (+ `{date}`): the operator must read WHICH aircraft, WHY, and — only when a date is on file — until when. Without a key here `knownErrors[code] ?? generic` would serve the useless generic message. */
     AIRCRAFT_OUT_OF_SERVICE: string;
     AIRCRAFT_OUT_OF_SERVICE_UNTIL: string;
@@ -590,6 +594,17 @@ export function FlightEditor({
 
     const takeoffs = values.takeoffs.trim() === '' ? undefined : Number(values.takeoffs);
     const landings = values.landings.trim() === '' ? undefined : Number(values.landings);
+    // Story 16.2 (F14, AC 18): the server bound is now `[1, 500]` — the
+    // minimum the Prisma schema always DECLARED. The form is `noValidate`, so
+    // `min={1}` on the two inputs never blocks a submit: without this check a
+    // typed `0` would come back as a field-shaped `VALIDATION_ERROR` on a
+    // path the mapping below does not know (`takeoffs`/`landings` are not in
+    // its `known` list) and the operator would read "Riprova". Same mechanic
+    // and same bottom banner as `invalidHourMeter` above.
+    if ((takeoffs !== undefined && takeoffs < 1) || (landings !== undefined && landings < 1)) {
+      setFormError(labels.invalidCycles);
+      return;
+    }
     const notes = values.notes.trim() === '' ? undefined : values.notes.trim();
     const trimmedReason = reason.trim();
 
@@ -630,27 +645,55 @@ export function FlightEditor({
     if (!isCorrecting) regenerateIdempotencyKey();
 
     if (!response.ok) {
-      if (isCorrecting && response.status === 409) {
-        setFormError(labels.conflictError);
-        return;
-      }
       // `response.clone()`: `parseApiError` below consumes the body via its
       // own `.json()` — cloned so the FLIGHT_BLOCKED_BY_EXPIRY branch can
       // read `error.details.documents` (not part of `parseApiError`'s own,
       // narrower return shape) from the SAME response.
+      // Story 16.2: read BEFORE the `isCorrecting && 409` branch below, which
+      // used to be the FIRST thing a 409 met and answered EVERY 409 during a
+      // correction with «Questo volo è già stato annullato.» — a sentence
+      // that is simply false for the `FLIGHT_OVERLAP` this story adds.
       const blockedBody = (await response
         .clone()
         .json()
         .catch(() => null)) as {
         error?: {
+          /** Story 16.2 — the stable domain code, needed here (not only from `parseApiError` below) to tell one 409 from another. */
+          code?: string;
           details?: {
             documents?: Array<{ typeName: string; expiresAt: string | null; role: 'person' | 'instructor'; personName: string }>;
             /** Story AOG-1a — `AIRCRAFT_OUT_OF_SERVICE`'s own additive details (`aircraft-status.ts#outOfServiceDetails`, the shape all four call sites share). */
             reason?: string | null;
             outOfServiceUntil?: string | null;
+            /** Story 16.2 — `FLIGHT_OVERLAP`'s own details: the conflicting flight's id and its two instants as ISO 8601 UTC strings (`flights.service.ts#assertNoOverlappingFlight`). */
+            flightId?: string;
+            takeoffAt?: string;
+            landingAt?: string;
           };
         };
       } | null;
+      if (response.status === 409 && blockedBody?.error?.code === 'FLIGHT_OVERLAP') {
+        // Story 16.2 (AC 18): names the conflicting flight's day and clock
+        // window instead of a wall — cancelling or correcting THAT flight is
+        // the one way out of a guard `force` does not derogate. Rendered in
+        // the BROWSER's local time, the same convention `localTimeFromIso`
+        // already uses to prefill a correction: the operator reads back the
+        // very times this form would have shown for that flight.
+        const overlapTakeoffAt = blockedBody.error.details?.takeoffAt;
+        const overlapLandingAt = blockedBody.error.details?.landingAt;
+        setFormError(
+          overlapTakeoffAt === undefined || overlapLandingAt === undefined
+            ? labels.errors.generic
+            : labels.errors.FLIGHT_OVERLAP.replace('{date}', formatDateOnly(localDateFromIso(overlapTakeoffAt), moneyLocale))
+                .replace('{from}', localTimeFromIso(overlapTakeoffAt))
+                .replace('{to}', localTimeFromIso(overlapLandingAt)),
+        );
+        return;
+      }
+      if (isCorrecting && response.status === 409) {
+        setFormError(labels.conflictError);
+        return;
+      }
       const { code, fieldErrors } = await parseApiError(response);
       if (response.status === 422 && fieldErrors.size > 0) {
         // Story 14.2, AC 3: a field-shaped 422 marks the matching Field
@@ -995,10 +1038,10 @@ export function FlightEditor({
               />
             </Field>
             <Field label={labels.fields.takeoffs}>
-              <Input type="number" min={0} step={1} inputMode="numeric" {...register('takeoffs')} />
+              <Input type="number" min={1} step={1} inputMode="numeric" {...register('takeoffs')} />
             </Field>
             <Field label={labels.fields.landings}>
-              <Input type="number" min={0} step={1} inputMode="numeric" {...register('landings')} />
+              <Input type="number" min={1} step={1} inputMode="numeric" {...register('landings')} />
             </Field>
             <Field label={labels.fields.hourMeterStart}>
               <Input type="number" min={0} step={1} inputMode="numeric" {...register('hourMeterStart')} />

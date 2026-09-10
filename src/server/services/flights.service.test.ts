@@ -31,10 +31,21 @@ vi.mock('@/server/db/prisma', () => ({
     flight: {
       create: vi.fn(),
       findUnique: vi.fn(),
+      // Story 16.2 — `assertNoOverlappingFlight`'s single read. Defaulted to
+      // `null` in `beforeEach` below so every PRE-EXISTING test keeps passing
+      // unmodified (same treatment as `expiryType.findMany` in story 14.4):
+      // this file mocks prisma entirely, so no two flights ever coexist here.
+      findFirst: vi.fn(),
       update: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
       aggregate: vi.fn(),
+    },
+    // Story 16.2 (F13) — the row `decreaseHourMeterForReversal` writes when
+    // the storno clamp bites. Absent from this mock until now: the table was
+    // only ever touched by `aircraft.service.ts`.
+    hourMeterAdjustment: {
+      create: vi.fn(),
     },
     // Review F5 (ratifica R-14.4-a) — `findMissingBlockingDocuments`'s own
     // direct queries (never routed through the mocked `bookings.service`
@@ -114,6 +125,8 @@ const accountMovementAggregateMock = vi.mocked(prisma.accountMovement.aggregate)
 const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
 const flightCreateMock = vi.mocked(prisma.flight.create);
 const flightFindUniqueMock = vi.mocked(prisma.flight.findUnique);
+const flightFindFirstMock = vi.mocked(prisma.flight.findFirst);
+const hourMeterAdjustmentCreateMock = vi.mocked(prisma.hourMeterAdjustment.create);
 const flightUpdateMock = vi.mocked(prisma.flight.update);
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const flightCountMock = vi.mocked(prisma.flight.count);
@@ -141,6 +154,10 @@ const accountMovementCreate = accountMovementCreateMock as unknown as {
 };
 const flightCreate = flightCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const flightFindUnique = flightFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const flightFindFirst = flightFindFirstMock as unknown as {
+  mockResolvedValue: (v: Fixture) => void;
+  mockResolvedValueOnce: (v: Fixture) => { mockResolvedValueOnce: (v: Fixture) => void };
+};
 const flightUpdate = flightUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const flightFindMany = flightFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const flightCount = flightCountMock as unknown as { mockResolvedValue: (v: number) => void };
@@ -302,6 +319,8 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     accountMovementCreateMock.mockReset();
     flightCreateMock.mockReset();
     flightFindUniqueMock.mockReset();
+    flightFindFirstMock.mockReset();
+    hourMeterAdjustmentCreateMock.mockReset();
     flightUpdateMock.mockReset();
     flightFindManyMock.mockReset();
     flightCountMock.mockReset();
@@ -331,6 +350,10 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     // keeps passing unmodified" rationale as the mock above.
     expiryTypeFindMany.mockResolvedValue([]);
     expiryFindMany.mockResolvedValue([]);
+    // Story 16.2 default: no overlapping flight — every PRE-EXISTING test in
+    // this file keeps passing unmodified; the dedicated describe block below
+    // overrides it per test.
+    flightFindFirst.mockResolvedValue(null);
     mockTransaction();
   });
 
@@ -610,6 +633,41 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
       await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_TIMES_INVALID' });
       expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    // Story 16.2 (F14, AC 17) — the audit's probe 17: 09:00:00Z -> 09:00:20Z
+    // used to be ACCEPTED and stored as a 1-minute flight, because a
+    // `Math.max(1, …)` rounded the derived 0 up. The lower bound of the
+    // duration now lives next to the upper one, with the same code.
+    it('throws a 422 FLIGHT_TIMES_INVALID for a sub-minute duration (20s), instead of rounding it up to 1 minute (story 16.2, F14)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input = registerFlightSchema.parse({
+        ...BASE_INPUT,
+        takeoffAt: '2020-01-15T09:00:00.000Z',
+        landingAt: '2020-01-15T09:00:20.000Z',
+      });
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_TIMES_INVALID' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('accepts a duration of exactly one minute (the new lower boundary itself is valid) and derives minutes = 1', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 1 });
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      const input = registerFlightSchema.parse({
+        ...BASE_INPUT,
+        takeoffAt: '2020-01-15T09:00:00.000Z',
+        landingAt: '2020-01-15T09:01:00.000Z',
+      });
+
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ minutes: 1 }) }));
     });
 
     it('throws a 422 FLIGHT_TIMES_INVALID when the derived duration exceeds 1440 minutes (24h)', async () => {
@@ -2007,6 +2065,467 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
   });
 
+
+  // ==========================================================================
+  // Story 16.2 (ops-audit F3/F13) — no duplicate, no overlap, and no minute
+  // lost in silence.
+  // ==========================================================================
+
+  /** The `where` shape `assertNoOverlappingFlight` passes to `flight.findFirst` — read back by the stand-in below AND asserted verbatim by AC 4/AC 6. */
+  type OverlapWhere = {
+    aircraftId?: string;
+    status?: string;
+    takeoffAt?: Record<string, Date>;
+    landingAt?: Record<string, Date>;
+    id?: { not?: string };
+  };
+  type StoredFlight = { id: string; aircraftId: string; status: string; takeoffAt: Date; landingAt: Date };
+
+  /**
+   * Evaluates ONE comparison clause the way Postgres would, INTERPRETING the
+   * operator the guard actually used. This is what makes the two
+   * touching-boundary units real: they do not compare with a hardcoded
+   * `<`/`>` of their own, so swapping the guard to `lte`/`gte` turns them
+   * red instead of leaving them green.
+   */
+  function matchesInstant(value: Date, clause: Record<string, Date> | undefined): boolean {
+    if (clause === undefined) return true;
+    return Object.entries(clause).every(([operator, bound]) => {
+      switch (operator) {
+        case 'lt':
+          return value.getTime() < bound.getTime();
+        case 'lte':
+          return value.getTime() <= bound.getTime();
+        case 'gt':
+          return value.getTime() > bound.getTime();
+        case 'gte':
+          return value.getTime() >= bound.getTime();
+        default:
+          throw new Error(`Unexpected operator "${operator}" in the overlap where clause`);
+      }
+    });
+  }
+
+  /**
+   * An in-memory stand-in for `prisma.flight.findFirst` under the overlap
+   * guard's own `where` (this file mocks prisma entirely — there is no DB
+   * where two flights could coexist). Every clause is honoured ONLY when the
+   * guard actually passes it, which is exactly what makes the discriminances
+   * of §4.3 bite: drop `status: 'REGISTERED'` and a cancelled flight starts
+   * conflicting; drop `id: { not }` and a conservative correction conflicts
+   * with itself. `orderBy takeoffAt asc` is reproduced too (AC 5).
+   */
+  function findFirstOverlapping(where: OverlapWhere, rows: StoredFlight[]): StoredFlight | null {
+    const matching = rows
+      .filter((row) => {
+        if (where.aircraftId !== undefined && row.aircraftId !== where.aircraftId) return false;
+        if (where.status !== undefined && row.status !== where.status) return false;
+        if (where.id?.not !== undefined && row.id === where.id.not) return false;
+        return matchesInstant(row.takeoffAt, where.takeoffAt) && matchesInstant(row.landingAt, where.landingAt);
+      })
+      .sort((left, right) => left.takeoffAt.getTime() - right.takeoffAt.getTime());
+    return matching[0] ?? null;
+  }
+
+  /** Prisma's overloaded delegate types reject a plain `mockImplementation` — same cast escape hatch as the `mockResolvedValue` wrappers at the top of this file. */
+  function asImpl<A extends unknown[]>(mock: unknown): { mockImplementation: (fn: (...args: A) => unknown) => void } {
+    return mock as { mockImplementation: (fn: (...args: A) => unknown) => void };
+  }
+
+  /** Wires `flight.findFirst` to {@link findFirstOverlapping} over `rows`, and returns the recorded `where` of the LAST call. */
+  function stubOverlapStore(rows: StoredFlight[]): { lastWhere: () => OverlapWhere } {
+    asImpl<[{ where: OverlapWhere }]>(flightFindFirstMock).mockImplementation((args) =>
+      Promise.resolve(findFirstOverlapping(args.where, rows)),
+    );
+    return {
+      lastWhere: () => {
+        const calls = flightFindFirstMock.mock.calls as unknown as Array<[{ where: OverlapWhere }]>;
+        return calls[calls.length - 1]![0].where;
+      },
+    };
+  }
+
+  const EXISTING_09_10: StoredFlight = {
+    id: 'flight_existing',
+    aircraftId: 'aircraft_1',
+    status: 'REGISTERED',
+    takeoffAt: new Date('2020-01-15T09:00:00.000Z'),
+    landingAt: new Date('2020-01-15T10:00:00.000Z'),
+  };
+
+  /** `{ takeoffAt, landingAt }` for a window given as two `HH:MM` UTC clock times on 2020-01-15 — reads like the case it describes, unlike `buildTimes`'s minute count. */
+  function window(takeoffTimeUtc: string, landingTimeUtc: string): { takeoffAt: string; landingAt: string } {
+    return { takeoffAt: `2020-01-15T${takeoffTimeUtc}:00.000Z`, landingAt: `2020-01-15T${landingTimeUtc}:00.000Z` };
+  }
+
+  describe('registerFlight — the overlap guard (story 16.2, P1/P2; ops-audit F3)', () => {
+    beforeEach(() => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+    });
+
+    // U1 — the audit's probe 14.
+    it('U1: a PARTIALLY overlapping flight (09:30->10:30 over 09:00->10:00) is a 409 FLIGHT_OVERLAP — nothing written at all', async () => {
+      stubOverlapStore([EXISTING_09_10]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:30', '10:30') });
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_OVERLAP' });
+      expect(flightCreateMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
+      expect(aircraftUpdateMock).not.toHaveBeenCalled();
+    });
+
+    // U2 — the duplicate is just a TOTAL overlap: one guard covers both.
+    it('U2: a byte-identical interval (the duplicate) is the same 409 FLIGHT_OVERLAP', async () => {
+      stubOverlapStore([EXISTING_09_10]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:00', '10:00') });
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_OVERLAP' });
+      expect(flightCreateMock).not.toHaveBeenCalled();
+    });
+
+    // U6 — the details on the wire (see also `handler.test.ts`, which pins
+    // the pass-through the API layer used to drop).
+    it('U6: the 409 carries details { flightId, takeoffAt, landingAt } with the instants as ISO 8601 UTC STRINGS, not Dates', async () => {
+      stubOverlapStore([EXISTING_09_10]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:30', '10:30') });
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({
+        code: 'FLIGHT_OVERLAP',
+        details: {
+          flightId: 'flight_existing',
+          takeoffAt: '2020-01-15T09:00:00.000Z',
+          landingAt: '2020-01-15T10:00:00.000Z',
+        },
+      });
+    });
+
+    // U3/U4 — the SEMI-OPEN interval, the bookings' own semantics ([I-1]).
+    it('U3: takeoffAt of the new flight EQUAL to landingAt of the existing one (10:00->11:00) is accepted — touching is not overlapping', async () => {
+      stubOverlapStore([EXISTING_09_10]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('10:00', '11:00') });
+
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('U4: landingAt of the new flight EQUAL to takeoffAt of the existing one (08:00->09:00) is accepted too', async () => {
+      stubOverlapStore([EXISTING_09_10]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('08:00', '09:00') });
+
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalledTimes(1);
+    });
+
+    // U5 — only a REGISTERED flight occupies an interval.
+    it('U5: a CANCELLED flight on the very same interval does not conflict (only REGISTERED occupies a slot)', async () => {
+      stubOverlapStore([{ ...EXISTING_09_10, status: 'CANCELLED' }]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:00', '10:00') });
+
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
+      expect(flightCreateMock).toHaveBeenCalledTimes(1);
+    });
+
+    // AC 5 — among several conflicts, the NAMED one is deterministic.
+    it('AC 5: with two conflicting flights, the 409 names the one with the EARLIEST takeoffAt (explicit orderBy)', async () => {
+      const store = stubOverlapStore([
+        { ...EXISTING_09_10, id: 'flight_later', takeoffAt: new Date('2020-01-15T09:45:00.000Z'), landingAt: new Date('2020-01-15T10:15:00.000Z') },
+        EXISTING_09_10,
+      ]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:30', '10:30') });
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ details: { flightId: 'flight_existing' } });
+      expect(store.lastWhere()).toBeDefined();
+      expect(flightFindFirstMock).toHaveBeenCalledWith(expect.objectContaining({ orderBy: { takeoffAt: 'asc' } }));
+    });
+
+    // AC 4 (second half) / AC 6 — the SHAPE of the predicate. A historical
+    // flight with NULL instants (pre-story 11.1) is not producible through
+    // the API, so the property is verified here, on the `where`: no clause
+    // can match a NULL, and `select` asks for exactly the three fields the
+    // `details` needs (no `FLIGHT_SELECT`, no join, no mask).
+    it('AC 4/AC 6: the where has aircraftId + status + the two instant comparisons and NOTHING that could catch a NULL instant; no id filter on a plain registration', async () => {
+      const store = stubOverlapStore([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:30', '10:30') });
+
+      await registerFlight(adminActor(), input);
+
+      expect(store.lastWhere()).toEqual({
+        aircraftId: 'aircraft_1',
+        status: 'REGISTERED',
+        takeoffAt: { lt: new Date('2020-01-15T10:30:00.000Z') },
+        landingAt: { gt: new Date('2020-01-15T09:30:00.000Z') },
+      });
+      expect(flightFindFirstMock).toHaveBeenCalledWith(
+        expect.objectContaining({ select: { id: true, takeoffAt: true, landingAt: true } }),
+      );
+    });
+
+    // AC 6 — the guard runs INSIDE the transaction, AFTER the aircraft lock
+    // and BEFORE every write (the account get-or-create included).
+    it('AC 6: the guard reads AFTER the Aircraft FOR UPDATE lock and BEFORE the account upsert and any write', async () => {
+      stubOverlapStore([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:30', '10:30') });
+
+      await registerFlight(adminActor(), input);
+
+      const lockOrder = queryRawMock.mock.invocationCallOrder[0]!;
+      const guardOrder = flightFindFirstMock.mock.invocationCallOrder[0]!;
+      expect(lockOrder).toBeLessThan(guardOrder);
+      expect(guardOrder).toBeLessThan(accountUpsertMock.mock.invocationCallOrder[0]!);
+      expect(guardOrder).toBeLessThan(flightCreateMock.mock.invocationCallOrder[0]!);
+    });
+
+    // U7 / AC 11 — `force` does NOT derogate this 409 (ratifica del piano
+    // 16-18), unlike FLIGHT_BLOCKED_BY_EXPIRY/AIRCRAFT_OUT_OF_SERVICE.
+    it('U7: force: true + forceReason on an overlapping request is STILL a 409 — no flight row, so no forcedAt either', async () => {
+      stubOverlapStore([EXISTING_09_10]);
+      const input = registerFlightSchema.parse({
+        ...BASE_INPUT,
+        ...window('09:30', '10:30'),
+        force: true,
+        forceReason: 'Autorizzato dal direttore',
+      });
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_OVERLAP' });
+      expect(flightCreateMock).not.toHaveBeenCalled();
+    });
+
+    // The audit's own probes 13a/13b/14, with the expectation ROVESCIATA.
+    // Before this story these two calls produced TWO flights, TWO charges of
+    // -15000 and a contaore going 6000 -> 6060 -> 6120 for 60 minutes flown.
+    it('P2/P6 (probe 13a/13b): the SAME request twice WITHOUT an Idempotency-Key -> 201 then 409, one flight, one charge, contaore 6000 -> 6060 (never 6120)', async () => {
+      const registered: StoredFlight[] = [];
+      let hourMeterMinutes = 6000;
+
+      queryRawMock.mockReset();
+      asImpl<[TemplateStringsArray]>(queryRawMock).mockImplementation((strings) =>
+        Promise.resolve(strings.join('?').includes('Aircraft') ? [{ id: 'aircraft_1', hourMeterMinutes }] : []),
+      );
+      asImpl<[{ data: { hourMeterMinutes: number } }]>(aircraftUpdateMock).mockImplementation((args) => {
+        hourMeterMinutes = args.data.hourMeterMinutes;
+        return Promise.resolve({});
+      });
+      asImpl<[{ where: OverlapWhere }]>(flightFindFirstMock).mockImplementation((args) =>
+        Promise.resolve(findFirstOverlapping(args.where, registered)),
+      );
+      asImpl<[{ data: { takeoffAt: Date; landingAt: Date } }]>(flightCreateMock).mockImplementation((args) => {
+        const id = `flight_${registered.length + 1}`;
+        registered.push({ id, aircraftId: 'aircraft_1', status: 'REGISTERED', takeoffAt: args.data.takeoffAt, landingAt: args.data.landingAt });
+        return Promise.resolve({ ...CREATED_FLIGHT_ROW, id, minutes: 60, aircraftAmountCents: 15000 });
+      });
+
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:00', '10:00') });
+
+      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
+      expect(hourMeterMinutes).toBe(6060);
+
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_OVERLAP' });
+      expect(flightCreateMock).toHaveBeenCalledTimes(1);
+      expect(accountMovementCreateMock).toHaveBeenCalledTimes(1);
+      expect(hourMeterMinutes).toBe(6060);
+
+      // …and the audit's probe 14 on top of the same store: a PARTIAL
+      // overlap on the same aircraft is refused too.
+      const overlapping = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:30', '10:30') });
+      await expect(registerFlight(adminActor(), overlapping)).rejects.toMatchObject({ code: 'FLIGHT_OVERLAP' });
+      expect(flightCreateMock).toHaveBeenCalledTimes(1);
+      expect(hourMeterMinutes).toBe(6060);
+    });
+  });
+
+  describe('correctFlight — the overlap guard (story 16.2, P3)', () => {
+    const CORRECT_BASE = {
+      aircraftId: 'aircraft_1',
+      personId: 'person_1',
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      flightType: 'TOURISM' as const,
+      reason: 'Errore note',
+    };
+    /** The ORIGINAL flight, still REGISTERED at guard time — `loadRegisteredFlightForReversal` returns `ORIGINAL_FLIGHT_ROW` (id `flight_orig`). */
+    const ORIGINAL_IN_STORE: StoredFlight = {
+      id: 'flight_orig',
+      aircraftId: 'aircraft_1',
+      status: 'REGISTERED',
+      takeoffAt: new Date('2020-01-15T09:00:00.000Z'),
+      landingAt: new Date('2020-01-15T10:00:00.000Z'),
+    };
+
+    beforeEach(() => {
+      flightFindUnique.mockResolvedValue(ORIGINAL_FLIGHT_ROW);
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_x' });
+      flightUpdate.mockResolvedValue({});
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig' });
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
+    });
+
+    // U8 — the clause that carries this whole call site: the guard runs
+    // BEFORE the storno, so the original is still REGISTERED and every
+    // conservative correction would be a 409 without `id: { not }`.
+    it('U8: a correction that KEEPS its own slot (same aircraft, same instants, changed notes) is accepted — the original is excluded by id', async () => {
+      const store = stubOverlapStore([ORIGINAL_IN_STORE]);
+      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('09:00', '10:00'), notes: 'Nota corretta' });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
+      expect(store.lastWhere()).toMatchObject({ id: { not: 'flight_orig' } });
+      expect(flightCreateMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('U9a: a correction that MOVES the flight onto a slot occupied by ANOTHER flight on the SAME aircraft is a 409 — the storno never happens', async () => {
+      stubOverlapStore([
+        ORIGINAL_IN_STORE,
+        { ...EXISTING_09_10, id: 'flight_other', takeoffAt: new Date('2020-01-15T14:00:00.000Z'), landingAt: new Date('2020-01-15T15:00:00.000Z') },
+      ]);
+      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('14:30', '15:30') });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
+        code: 'FLIGHT_OVERLAP',
+        details: { flightId: 'flight_other' },
+      });
+      // The whole transaction is a no-op: no status flip, no reversal
+      // movement, no re-registration.
+      expect(flightUpdateMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
+      expect(flightCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('U9b: a correction that moves the flight onto ANOTHER aircraft is checked on THAT aircraft (resolved, never the original)', async () => {
+      aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-ZZZZ' });
+      queryRawMock.mockReset();
+      queryRaw
+        .mockResolvedValueOnce([
+          { id: 'aircraft_1', hourMeterMinutes: 500 },
+          { id: 'aircraft_2', hourMeterMinutes: 900 },
+        ])
+        .mockResolvedValueOnce([]);
+      const store = stubOverlapStore([
+        ORIGINAL_IN_STORE,
+        { id: 'flight_on_two', aircraftId: 'aircraft_2', status: 'REGISTERED', takeoffAt: new Date('2020-01-15T09:00:00.000Z'), landingAt: new Date('2020-01-15T10:00:00.000Z') },
+      ]);
+      const input = correctFlightSchema.parse({ ...CORRECT_BASE, aircraftId: 'aircraft_2', ...window('09:30', '10:30') });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
+        code: 'FLIGHT_OVERLAP',
+        details: { flightId: 'flight_on_two' },
+      });
+      expect(store.lastWhere()).toMatchObject({ aircraftId: 'aircraft_2' });
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('U9b (mirror): the same move onto a FREE slot on the other aircraft succeeds — the guard interrogates aircraft_2 and finds nothing', async () => {
+      aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-ZZZZ' });
+      queryRawMock.mockReset();
+      queryRaw
+        .mockResolvedValueOnce([
+          { id: 'aircraft_1', hourMeterMinutes: 500 },
+          { id: 'aircraft_2', hourMeterMinutes: 900 },
+        ])
+        .mockResolvedValueOnce([]);
+      const store = stubOverlapStore([ORIGINAL_IN_STORE]);
+      const input = correctFlightSchema.parse({ ...CORRECT_BASE, aircraftId: 'aircraft_2', ...window('09:30', '10:30') });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
+      expect(store.lastWhere()).toMatchObject({ aircraftId: 'aircraft_2', id: { not: 'flight_orig' } });
+    });
+  });
+
+  describe('the storno contaore clamp leaves a trace (story 16.2, F13; ops-audit sonda 19)', () => {
+    const CANCEL_INPUT = cancelFlightSchema.parse({ reason: 'Errore inserimento' });
+
+    beforeEach(() => {
+      // The AC's own numbers: a 30-minute flight on I-ABCD, 2020-01-15.
+      flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, minutes: 30 });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_reversal' });
+      flightUpdate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_orig', status: 'CANCELLED' });
+      getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
+    });
+
+    // U10 — the audit measured 25 minutes evaporating with no record.
+    it('U10: contaore 5 and a flight of 30 minutes -> contaore 0 AND an HourMeterAdjustment naming the aircraft, the flight date, the id and the 25 minutes that could not be subtracted', async () => {
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 5 }]).mockResolvedValueOnce([]);
+
+      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).resolves.toBeDefined();
+
+      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith({
+        data: {
+          aircraftId: 'aircraft_1',
+          actorUserId: 'admin_1',
+          previousMinutes: 5,
+          newMinutes: 0,
+          reason: 'Storno volo I-ABCD 2020-01-15 (id flight_orig): 25 minuti non sottraibili dal contaore.',
+        },
+      });
+      expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 0 } });
+    });
+
+    // U11 — non-regression: when the clamp does not bite, the behavior is
+    // byte-identical to before this story (no row, no cost).
+    it('U11: contaore 6000 and a flight of 30 minutes -> contaore 5970 and NO HourMeterAdjustment at all', async () => {
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 6000 }]).mockResolvedValueOnce([]);
+
+      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
+
+      expect(hourMeterAdjustmentCreateMock).not.toHaveBeenCalled();
+      expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 5970 } });
+    });
+
+    // U14 / AC 14 — a storno is ALWAYS lecito: there is no 422 anywhere on
+    // the contaore path, whatever the current reading is.
+    it('AC 14: a storno whose minutes exceed the contaore still answers successfully (never a 422)', async () => {
+      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 0 }]).mockResolvedValueOnce([]);
+
+      const result = await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
+
+      expect(result.flight.status).toBe('CANCELLED');
+      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledTimes(1);
+    });
+
+    // U12 — the same helper in `correctFlight`: the row records the CLAMP
+    // (5 -> 0), and the contaore ends at 0 + the NEW flight's minutes. The
+    // two are distinct events and must not be conflated into one row.
+    it('U12: the clamp inside correctFlight writes the row for 5 -> 0 and the contaore ends at 0 + the new minutes', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_x' });
+      flightUpdate.mockResolvedValue({});
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 30 });
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', hourMeterMinutes: 5 }]).mockResolvedValueOnce([]);
+      stubOverlapStore([]);
+      const input = correctFlightSchema.parse({
+        aircraftId: 'aircraft_1',
+        personId: 'person_1',
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        ...buildTimes('2020-01-15', 30),
+        reason: 'Errore minuti',
+      });
+
+      await correctFlight(adminActor(), 'flight_orig', input);
+
+      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ previousMinutes: 5, newMinutes: 0 }) }),
+      );
+      expect(aircraftUpdateMock).toHaveBeenNthCalledWith(1, { where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 0 } });
+      expect(aircraftUpdateMock).toHaveBeenNthCalledWith(2, { where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 30 } });
+    });
+  });
+
   describe('listFlights (story 5.1 AC 1/2, story 5.4 AC 1/2/3/4 — own-access + filters)', () => {
     function noRoleActor(): Actor {
       return { userId: 'nobody_1', personId: null, roles: [] };
@@ -2368,12 +2887,27 @@ describe('registerFlightSchema (story 11.1, AC 1/2/3 — logbook fields, no more
     expect(registerFlightSchema.safeParse({ ...VALID, notes: 'x'.repeat(1001) }).success).toBe(false);
   });
 
-  it('rejects takeoffs/landings outside [0, 500]', () => {
+  // Story 16.2 (F14, AC 16) — the `0` case is INVERTED, not deleted: as
+  // written before this story it was the standing PROOF that the wrong bound
+  // (`min(0)`) was intentional, against a Prisma doc-comment that has always
+  // declared "every flight has at least one of each". The bound is now
+  // `[1, 500]`, and this is where that is pinned.
+  it('rejects takeoffs/landings outside [1, 500] — a 0 included (story 16.2, F14)', () => {
     expect(registerFlightSchema.safeParse({ ...VALID, landings: -1 }).success).toBe(false);
     expect(registerFlightSchema.safeParse({ ...VALID, landings: 501 }).success).toBe(false);
-    expect(registerFlightSchema.safeParse({ ...VALID, landings: 0 }).success).toBe(true);
+    expect(registerFlightSchema.safeParse({ ...VALID, landings: 0 }).success).toBe(false);
     expect(registerFlightSchema.safeParse({ ...VALID, takeoffs: -1 }).success).toBe(false);
     expect(registerFlightSchema.safeParse({ ...VALID, takeoffs: 501 }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, takeoffs: 0 }).success).toBe(false);
+  });
+
+  // U17 — the still-VALID edges, so tightening the lower bound cannot have
+  // quietly moved the upper one or broken the "omitted is fine" contract
+  // (the DB default is 1).
+  it('still accepts takeoffs/landings at 1 and 500, and both omitted (story 16.2 non-regression)', () => {
+    expect(registerFlightSchema.safeParse({ ...VALID, takeoffs: 1, landings: 1 }).success).toBe(true);
+    expect(registerFlightSchema.safeParse({ ...VALID, takeoffs: 500, landings: 500 }).success).toBe(true);
+    expect(registerFlightSchema.safeParse(VALID).success).toBe(true);
   });
 });
 

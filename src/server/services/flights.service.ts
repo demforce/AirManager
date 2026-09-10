@@ -64,7 +64,21 @@ import { getEffectiveRate } from './rates.service';
  * (`Math.max(0, current - minutes)` — the clamp is deliberate: a manual
  * `HourMeterAdjustment` that already lowered the contaore below this
  * flight's minutes must never BLOCK a cancellation, the audit trail already
- * lives in the flight + any rectifications).
+ * lives in the flight + any rectifications). Story 16.2 (F13) leaves that
+ * clamp exactly where it was and stops it LOSING information: both stornos
+ * now go through `decreaseHourMeterForReversal`, which — only when the clamp
+ * actually bites — writes the `HourMeterAdjustment` recording the minutes it
+ * could not subtract. Cancelling stays always lecito: there is no 422 on any
+ * contaore path.
+ *
+ * **No duplicate, no overlap (story 16.2, F3)**: `registerFlight` and
+ * `correctFlight` both call `assertNoOverlappingFlight` INSIDE their
+ * transaction, right under the `Aircraft` `FOR UPDATE` lock they take for
+ * the contaore anyway — 409 `FLIGHT_OVERLAP`, with the conflicting flight's
+ * id and instants in `details`, not derogable by `force`. See that
+ * function's own doc-comment for the semi-open interval semantics (the
+ * bookings' own), why only `REGISTERED` occupies an interval, and why
+ * `correctFlight` must exclude the flight it is replacing.
  *
  * **`registerFlightCore` (the mandatory refactor, Task 2)**: `registerFlight`
  * (story 5.1) and `correctFlight` (story 5.3) both end in the exact
@@ -748,10 +762,17 @@ async function resolveFlightInput(
   // `minutes` and `flightDate` — never independent inputs anymore.
   const takeoffAt = new Date(input.takeoffAt);
   const landingAt = new Date(input.landingAt);
-  if (landingAt.getTime() <= takeoffAt.getTime()) {
-    throw new ValidationError('landingAt must be strictly after takeoffAt.', undefined, 'FLIGHT_TIMES_INVALID');
+  // Story 16.2 (F14/AD-7): the LOWER bound of the duration lives here, where
+  // the upper bound below already lives — ONE rule ("`landingAt` must be at
+  // least a full minute after `takeoffAt`, and the duration must not exceed
+  // 1440 minutes"), ONE code on the wire, ONE i18n message the form already
+  // maps. Before this story a 20-second interval passed and was ROUNDED UP
+  // to a 1-minute flight by a `Math.max(1, …)` below; that clamp is gone
+  // (orphaned by this guard: a >= 60 000 ms interval can never round to 0).
+  if (landingAt.getTime() - takeoffAt.getTime() < 60_000) {
+    throw new ValidationError('landingAt must be at least one minute after takeoffAt.', undefined, 'FLIGHT_TIMES_INVALID');
   }
-  const minutes = Math.max(1, Math.round((landingAt.getTime() - takeoffAt.getTime()) / 60_000));
+  const minutes = Math.round((landingAt.getTime() - takeoffAt.getTime()) / 60_000);
   if (minutes > 1440) {
     throw new ValidationError('Flight duration must not exceed 1440 minutes (24h).', undefined, 'FLIGHT_TIMES_INVALID');
   }
@@ -900,6 +921,155 @@ async function resolveFlightInput(
     instructorAmountCents,
     forceStamp,
   };
+}
+
+/**
+ * The ONE overlap predicate of the flight registry (story 16.2, P1; AD-1/
+ * AD-2) — two call sites (`registerFlight`, `correctFlight`), never two
+ * implementations. Until this story the registry had NO second line of
+ * defence at all: request idempotency (TD-2) is opt-in on a header, so a
+ * double click or a reload after a timeout registered the SAME flight twice,
+ * charged it twice and advanced the contaore twice (measured: 6000 -> 6060
+ * -> 6120 minutes for 60 minutes flown).
+ *
+ * ASSUMES the caller already holds the `FOR UPDATE` lock on
+ * `params.aircraftId` and calls this INSIDE that transaction: that lock —
+ * taken for the contaore anyway — is what serializes two concurrent
+ * registrations on the same airframe, so the read below can never miss a
+ * flight that a racing transaction is about to commit. This is exactly where
+ * `createBooking`/`approveBooking` put their own three overlap predicates
+ * (`bookings.service.ts`), and putting it in `resolveFlightInput` (which runs
+ * BEFORE the transaction) would reopen the TOCTOU window those closed.
+ *
+ * Interval semantics are the bookings' semantics, deliberately: `[takeoffAt,
+ * landingAt)` is SEMI-OPEN, so two flights that merely TOUCH (a landing at
+ * 10:00 and the next takeoff at 10:00) do NOT overlap — one runway instant,
+ * not a conflict. An app with two different interval rules would itself be
+ * the defect. Only a `REGISTERED` flight occupies an interval (a `CANCELLED`
+ * one freed it, exactly like a cancelled booking), which also makes the
+ * guard independent of WHEN `correctFlight` writes its storno.
+ * `excludeFlightId` is load-bearing there, not decorative: the guard runs
+ * BEFORE that storno, so the original is still `REGISTERED` and every
+ * conservative correction (notes, cycles, hour-meter readings) would answer
+ * 409 without it.
+ *
+ * `orderBy takeoffAt asc` makes the flight NAMED in `details` deterministic
+ * when several overlap — an e2e assertion on a non-deterministic id would be
+ * flaky by construction.
+ *
+ * KNOWN, DECLARED limit: historical flights (pre-story 11.1) may have
+ * `takeoffAt`/`landingAt` NULL. A `NULL` satisfies neither `lt` nor `gt`, so
+ * such a row neither conflicts nor can be conflicted with. That is correct
+ * rather than unfortunate — before 11.1 the instants did not exist, so the
+ * overlap was not even expressible — and it is unreachable through the API
+ * (both instants are mandatory since 11.1).
+ *
+ * NOT derogable by `force`/`forceReason` (ratifica del piano 16-18), unlike
+ * `FLIGHT_BLOCKED_BY_EXPIRY`/`AIRCRAFT_OUT_OF_SERVICE`: there is no dead end
+ * to escape (lezione 14.6 F2) because the 409 NAMES the conflicting flight,
+ * and the way out is to cancel or correct THAT one — an action the app
+ * already offers on every row of the registry.
+ *
+ * Error ordering, for the record: `resolveFlightInput` runs before the
+ * transaction, so all of its 404s and 422s (archived aircraft, grounded
+ * aircraft, person, documents, rates, times) PRECEDE this 409 — a request
+ * that is both overlapping and on an archived aircraft answers
+ * `AIRCRAFT_ARCHIVED`. Same hierarchy as `createBooking`: existence 404 ->
+ * state/domain 422 -> conflict 409.
+ */
+async function assertNoOverlappingFlight(
+  tx: Prisma.TransactionClient,
+  params: { aircraftId: string; takeoffAt: Date; landingAt: Date; excludeFlightId: string | null },
+): Promise<void> {
+  const conflict = await tx.flight.findFirst({
+    where: {
+      aircraftId: params.aircraftId,
+      status: 'REGISTERED',
+      takeoffAt: { lt: params.landingAt },
+      landingAt: { gt: params.takeoffAt },
+      ...(params.excludeFlightId === null ? {} : { id: { not: params.excludeFlightId } }),
+    },
+    orderBy: { takeoffAt: 'asc' },
+    select: { id: true, takeoffAt: true, landingAt: true },
+  });
+  if (!conflict) {
+    return;
+  }
+  throw new ConflictError(
+    `Aircraft already has a registered flight overlapping [${params.takeoffAt.toISOString()}, ${params.landingAt.toISOString()}).`,
+    {
+      flightId: conflict.id,
+      // ISO 8601 UTC by hand, never a `Date` left for `NextResponse.json` to
+      // serialize (same discipline as `aircraft-status.ts#outOfServiceDetails`):
+      // this API is also consumed by the future Flutter app, so the wire
+      // format is written down, not inferred. Non-null by construction — the
+      // `lt`/`gt` clauses above cannot match a NULL instant.
+      takeoffAt: conflict.takeoffAt!.toISOString(),
+      landingAt: conflict.landingAt!.toISOString(),
+    },
+    'FLIGHT_OVERLAP',
+  );
+}
+
+/**
+ * The contaore going DOWN on a storno (story 16.2, F13; AD-6) — the ONE
+ * implementation shared by `cancelFlight` and `correctFlight`, returning the
+ * new value.
+ *
+ * The clamp at 0 is UNCHANGED and stays deliberate (module doc-comment: a
+ * manual `HourMeterAdjustment` that already lowered the contaore below this
+ * flight's minutes must never BLOCK a cancellation — cancelling is always
+ * lecito, so a 422 here was never an option). What changes is that the clamp
+ * no longer swallows information: when it BITES, the minutes that could not
+ * be subtracted get their `HourMeterAdjustment` row, which is what [I-3]
+ * ("the contaore changes only WITH a trace") demands. Measured before this
+ * story: 25 minutes evaporated with no record anywhere.
+ *
+ * Writes the row ONLY when the clamp actually bites — when it does not, the
+ * behavior is byte-identical to before (no row, no cost). The row records the
+ * CLAMP (`current -> 0`), never the final value a following re-registration
+ * leaves behind: in `correctFlight` the rectification of the storno and the
+ * ordinary `+=` of the new flight are two distinct events, and merging them
+ * into one row would narrate an event that never happened.
+ *
+ * `HourMeterAdjustment` has no FK to `Flight` (`schema.prisma`) — adding one
+ * would be a migration nobody asked for — so the link lives in the text, and
+ * that is why the text carries the flight id. `reason` is generated Italian
+ * and VISIBLE to the operator in the aircraft's hour-meter history
+ * (`aircraft-editor.tsx`), exactly like the generated movement descriptions
+ * this service already writes ("Volo {marche} {data} — {H:MM}", "Storno volo
+ * {marche} {data} — {motivo}"): no server-side i18n is introduced for an
+ * audit line. `actorUserId` is whoever performed the storno (the column is
+ * NOT NULL). The row is created in the SAME transaction as the storno, so it
+ * rolls back with it — same shape as `aircraft.service.ts#adjustHourMeter`.
+ */
+async function decreaseHourMeterForReversal(
+  tx: Prisma.TransactionClient,
+  params: {
+    aircraftId: string;
+    currentMinutes: number;
+    flightMinutes: number;
+    actorUserId: string;
+    flight: { id: string; registration: string; flightDate: Date };
+  },
+): Promise<number> {
+  const newMinutes = Math.max(0, params.currentMinutes - params.flightMinutes);
+  if (params.currentMinutes - params.flightMinutes < 0) {
+    const unsubtractableMinutes = params.flightMinutes - params.currentMinutes;
+    await tx.hourMeterAdjustment.create({
+      data: {
+        aircraftId: params.aircraftId,
+        actorUserId: params.actorUserId,
+        previousMinutes: params.currentMinutes,
+        newMinutes,
+        reason:
+          `Storno volo ${params.flight.registration} ${toDateOnlyString(params.flight.flightDate)} ` +
+          `(id ${params.flight.id}): ${unsubtractableMinutes} minuti non sottraibili dal contaore.`,
+      },
+    });
+  }
+  await tx.aircraft.update({ where: { id: params.aircraftId }, data: { hourMeterMinutes: newMinutes } });
+  return newMinutes;
 }
 
 type RegisterFlightCoreInput = {
@@ -1075,7 +1245,8 @@ function isUniqueViolation(error: unknown): boolean {
  * top-up/adjustment/flight on the same account. This lock shape is
  * UNCHANGED from 5.1 (story 5.3, Task 2: no contract change) — only the
  * in-transaction WORK after it now lives in the shared `registerFlightCore`
- * (module doc-comment).
+ * (module doc-comment). Story 16.2 adds ONE read under that same aircraft
+ * lock, before any write: `assertNoOverlappingFlight` (409 `FLIGHT_OVERLAP`).
  *
  * Returns the created flight plus the refreshed account overview. POST-commit
  * (never inside the transaction, Dev Notes): compares the balance band
@@ -1106,6 +1277,17 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
     if (!existingAircraft) {
       throw new NotFoundError('Aircraft not found.');
     }
+
+    // Story 16.2 (P1/P2): 409 `FLIGHT_OVERLAP` under the lock just taken —
+    // placed BEFORE the account get-or-create below so a rejected
+    // registration never even reaches it (economy, not correctness: the
+    // upsert would roll back anyway).
+    await assertNoOverlappingFlight(tx, {
+      aircraftId: resolved.aircraft.id,
+      takeoffAt: resolved.takeoffAt,
+      landingAt: resolved.landingAt,
+      excludeFlightId: null,
+    });
 
     // `createdAt` selected too (H3 fix, below): the fallback account
     // overview built if the post-commit re-read fails needs it.
@@ -1296,7 +1478,13 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
  * (the backstop half, for a concurrent double-cancel that raced past the
  * pre-check), and `Aircraft.hourMeterMinutes = max(0, current - minutes)`
  * (clamped — module doc-comment: a prior manual rectification undershooting
- * this flight's minutes must never BLOCK the cancellation).
+ * this flight's minutes must never BLOCK the cancellation — written through
+ * `decreaseHourMeterForReversal`, which since story 16.2 records the clamp
+ * as an `HourMeterAdjustment` whenever it bites).
+ *
+ * NO overlap guard here (story 16.2, AD-4): a storno creates no interval, so
+ * there is nothing for it to conflict with — the same line story AOG-1a's
+ * out-of-service guard draws.
  *
  * NO balance-band alert (Contesto/module doc-comment): a storno only ever
  * improves or holds the band, same reasoning as `recordTopUp`.
@@ -1355,9 +1543,14 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
       throw error;
     }
 
-    await tx.aircraft.update({
-      where: { id: flight.aircraftId },
-      data: { hourMeterMinutes: Math.max(0, existingAircraft.hourMeterMinutes - flight.minutes) },
+    // Story 16.2 (F13/AD-6): the clamp still clamps, but a clamp that BITES
+    // now leaves its `HourMeterAdjustment` behind (see that helper).
+    await decreaseHourMeterForReversal(tx, {
+      aircraftId: flight.aircraftId,
+      currentMinutes: existingAircraft.hourMeterMinutes,
+      flightMinutes: flight.minutes,
+      actorUserId: actor.userId,
+      flight: { id: flight.id, registration: flight.aircraft.registration, flightDate: flight.flightDate },
     });
 
     return updatedFlight;
@@ -1384,9 +1577,11 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
  * included) never even opens — no orphaned storno from a failed correction
  * (Contesto).
  *
- * Transaction order (Contesto, mandatory): lock -> storno (movimento +
- * status + contaore giù) -> saldo-prima -> nuova registrazione (via
- * `registerFlightCore`) -> alert post-commit if the band worsened.
+ * Transaction order (Contesto, mandatory): lock -> overlap guard (story
+ * 16.2) -> storno (movimento + status + contaore giù) -> saldo-prima ->
+ * nuova registrazione (via `registerFlightCore`) -> alert post-commit if the
+ * band worsened. The guard sits before the storno so a correction onto an
+ * occupied slot leaves NOTHING behind — not even the storno.
  *
  * **Deterministic lock ordering** (module doc-comment): resolves EVERY
  * `Aircraft` id involved (the original flight's, and the corrected one's, if
@@ -1447,6 +1642,19 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       throw new NotFoundError('Aircraft not found.');
     }
 
+    // Story 16.2 (P3): the SAME guard, on the CORRECTED data's aircraft —
+    // `resolved.aircraft.id`, never `originalFlight.aircraftId`: a correction
+    // that MOVES the flight onto another airframe must be checked THERE, and
+    // that airframe is already under lock (`aircraftIds` holds both). The
+    // original is excluded by id because the storno below has not run yet, so
+    // a correction that KEEPS its own slot must not conflict with itself.
+    await assertNoOverlappingFlight(tx, {
+      aircraftId: resolved.aircraft.id,
+      takeoffAt: resolved.takeoffAt,
+      landingAt: resolved.landingAt,
+      excludeFlightId: originalFlight.id,
+    });
+
     // Get-or-create the NEW person's account BEFORE locking (same
     // upsert-then-lock constraint as `registerFlight`) — the ORIGINAL
     // flight's account is already known (its own `FLIGHT_CHARGE` movement).
@@ -1489,9 +1697,20 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       throw error;
     }
 
-    const originalAircraftMeter = hourMeterById.get(originalFlight.aircraftId)!;
-    const originalAircraftNewMeter = Math.max(0, originalAircraftMeter - originalFlight.minutes);
-    await tx.aircraft.update({ where: { id: originalFlight.aircraftId }, data: { hourMeterMinutes: originalAircraftNewMeter } });
+    // Story 16.2 (F13/AD-6): same shared helper as `cancelFlight` — the row
+    // it writes records THIS clamp (`current -> 0`), not the value the
+    // re-registration below leaves.
+    const originalAircraftNewMeter = await decreaseHourMeterForReversal(tx, {
+      aircraftId: originalFlight.aircraftId,
+      currentMinutes: hourMeterById.get(originalFlight.aircraftId)!,
+      flightMinutes: originalFlight.minutes,
+      actorUserId: actor.userId,
+      flight: {
+        id: originalFlight.id,
+        registration: originalFlight.aircraft.registration,
+        flightDate: originalFlight.flightDate,
+      },
+    });
     // Reflect the storno's decrement so `registerFlightCore` below
     // increments from the POST-storno value — matters ONLY when the
     // correction keeps the SAME aircraft (module doc-comment:

@@ -120,11 +120,13 @@ type RegisterFlightParams = {
   instructorPersonId?: string;
   flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
   minutes: number;
+  /** Story 16.2 — the takeoff clock time (UTC, `HH:MM`); defaults to `10:00`, what every pre-existing call site used implicitly. The DAY deliberately stays "today": these KPIs are the CURRENT Rome month's, so only the HOUR may move to keep two flights on the same aircraft from overlapping. */
+  takeoffTimeUtc?: string;
 };
 
 /** Same `takeoffAt`/`landingAt` wire shape as `flight-log.spec.ts#registerFlight` — `flightDate` is TODAY (UTC, `T10:00Z`), so the flight always lands in the CURRENT Rome month (`getStats`'s default `ref`). Charges live under `flight.breakdown.*` (`flights.service.ts#toListItem`); `instructorAmountCents` is OMITTED (not `null`) when there is no instructor, normalized here to `0`. */
 async function registerFlight(page: Page, params: RegisterFlightParams): Promise<{ id: string; aircraftAmountCents: number; instructorAmountCents: number }> {
-  const takeoffAt = `${todayDateOnly()}T10:00:00.000Z`;
+  const takeoffAt = `${todayDateOnly()}T${params.takeoffTimeUtc ?? '10:00'}:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
     data: {
@@ -243,8 +245,18 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
 
     // SCHOOL, 60 min: aircraft 15000c, instructor 4000c.
     const schoolFlight = await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, instructorPersonId: instructor.personId, flightType: 'SCHOOL', minutes: 60 });
-    // TOURISM, 30 min: aircraft 7500c, no instructor.
-    const tourismFlight = await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, flightType: 'TOURISM', minutes: 30 });
+    // TOURISM, 30 min: aircraft 7500c, no instructor. Story 16.2: takeoff at
+    // 12:00 — same aircraft and same DAY as the SCHOOL flight above (the KPIs
+    // asserted below are the current Rome month's, so the day must not move),
+    // but 10:00->10:30 would now overlap its 10:00->11:00 (409
+    // `FLIGHT_OVERLAP`).
+    const tourismFlight = await registerFlight(page, {
+      aircraftId: aircraft.id,
+      personId: pilot.personId,
+      flightType: 'TOURISM',
+      minutes: 30,
+      takeoffTimeUtc: '12:00',
+    });
     // 1 completed transit, landing fee 2500c.
     await createCompletedTransit(page, 2500);
 

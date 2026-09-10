@@ -26,7 +26,11 @@ vi.mock('@/server/db/prisma', () => ({
     person: { findUnique: vi.fn() },
     account: { upsert: vi.fn() },
     accountMovement: { aggregate: vi.fn(), create: vi.fn() },
-    flight: { create: vi.fn() },
+    // Story 16.2 — `assertNoOverlappingFlight`'s single read. Without it the
+    // guard throws `TypeError: tx.flight.findFirst is not a function`; the
+    // `null` default in `beforeEach` keeps every case in this file (all of
+    // them about the EXPIRED boundary) unchanged.
+    flight: { create: vi.fn(), findFirst: vi.fn() },
     expiryType: { findMany: vi.fn() },
     expiry: { findMany: vi.fn() },
     $transaction: vi.fn(),
@@ -77,6 +81,7 @@ const accountUpsertMock = vi.mocked(prisma.account.upsert);
 const accountMovementAggregateMock = vi.mocked(prisma.accountMovement.aggregate);
 const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
 const flightCreateMock = vi.mocked(prisma.flight.create);
+const flightFindFirstMock = vi.mocked(prisma.flight.findFirst);
 const expiryTypeFindManyMock = vi.mocked(prisma.expiryType.findMany);
 const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
 const transactionMock = vi.mocked(prisma.$transaction);
@@ -174,6 +179,7 @@ describe('flights.service — AC 6 boundary, through the REAL findBlockingExpire
     accountMovementAggregateMock.mockReset();
     accountMovementCreateMock.mockReset();
     flightCreateMock.mockReset();
+    flightFindFirstMock.mockReset();
     expiryTypeFindManyMock.mockReset();
     expiryFindManyMock.mockReset();
     transactionMock.mockReset();
@@ -191,6 +197,8 @@ describe('flights.service — AC 6 boundary, through the REAL findBlockingExpire
     accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
     accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
     flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+    // Story 16.2: no overlapping flight, so the guard is transparent here.
+    (flightFindFirstMock as unknown as { mockResolvedValue: (v: null) => void }).mockResolvedValue(null);
     getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
     getAccountOverviewMock.mockResolvedValue({ account: { id: 'account_1', createdAt: new Date('2026-01-01T00:00:00.000Z') }, balanceCents: -20000, recentMovements: [] });
     getNegativeBalanceThresholdCentsMock.mockResolvedValue(-999_999_999);

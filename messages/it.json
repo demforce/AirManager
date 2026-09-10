@@ -1343,6 +1343,7 @@
       "conflictError": "Questo volo è già stato annullato.",
       "requiredField": "Campo obbligatorio.",
       "invalidHourMeter": "Il contaore finale deve essere maggiore dell'iniziale.",
+      "invalidCycles": "Decolli e atterraggi devono essere almeno 1.",
       "fields": {
         "aircraft": "Velivolo",
         "noAircraftAvailable": "Nessun velivolo attivo disponibile.",
@@ -1384,6 +1385,7 @@
         "INSTRUCTOR_NOT_FOUND": "L'istruttore selezionato non ha un profilo istruttore attivo.",
         "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
         "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
+        "FLIGHT_OVERLAP": "Questo velivolo ha già un volo registrato il {date} dalle {from} alle {to}. Annulla o correggi quel volo, oppure cambia gli orari.",
         "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo {registration} è fuori servizio: {reason}.",
         "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Il velivolo {registration} è fuori servizio: {reason}. Fermo fino al {date} compreso.",
         "AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS": "Inoltre, la registrazione è bloccata da questi documenti mancanti o scaduti: {documents}.",
