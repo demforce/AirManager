@@ -476,7 +476,7 @@ development_status:
   # 2026-09-10 (AskUserQuestion + chat), inclusa R-16-h (data valuta futura rifiutata): nessuna ratifica pendente.
   # Ordine: 16 (correttezza dominio) → 17 (scalabilità; 17.1 parallelizzabile) → 18 (mobile 2).
   epic-16: in-progress
-  16-1-un-solo-calendario: backlog
+  16-1-un-solo-calendario: in-progress  # story file 2026-09-10, dev Sonnet 5 dispatched
   16-2-guardie-registro-voli: backlog
   16-3-prenotazioni-persona-istruttore-approvazione: backlog
   16-4-tipo-scadenza-disattivato: backlog
@@ -484,6 +484,7 @@ development_status:
   16-6-ledger-data-valuta-pdf-quota: backlog
   16-7-dati-sessioni-rate-limit: backlog
   16-8-archivio-velivolo-tutele-aog: backlog  # dopo la chiusura del fix cycle AOG-1b
+  16-9-un-solo-calendario-client: backlog  # aggiunta 2026-09-10 dalla ricognizione 16.1 (7 copie client UTC), UI → Opus
   epic-16-retrospective: optional
   epic-17: backlog
   17-1-fondamenta-misura-configurazione: backlog
