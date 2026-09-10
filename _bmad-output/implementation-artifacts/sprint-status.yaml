@@ -480,7 +480,7 @@ development_status:
   16-2-guardie-registro-voli: ready-for-dev  # story file 2026-09-10; dev Opus (tocca flight-editor)
   16-3-prenotazioni-persona-istruttore-approvazione: ready-for-dev  # story file 2026-09-10; dev Opus (3 client scelgono il 409 dallo status)
   16-4-tipo-scadenza-disattivato: ready-for-dev  # story file 2026-09-10; dopo 16.1
-  16-5-compensi-istruttori-snapshot: backlog
+  16-5-compensi-istruttori-snapshot: ready-for-dev  # story file 2026-09-10; dev Opus; 3 domande PO in coda
   16-6-ledger-data-valuta-pdf-quota: backlog
   16-7-dati-sessioni-rate-limit: ready-for-dev  # story file 2026-09-10; dev Opus (bookings-table.tsx:244); stesso file della 16.3
   16-8-archivio-velivolo-tutele-aog: backlog  # dopo la chiusura del fix cycle AOG-1b
