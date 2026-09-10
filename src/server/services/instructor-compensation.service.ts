@@ -1,7 +1,7 @@
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { RecordInstructorPayoutInput } from '@/lib/schemas/instructor-compensation';
 import { APP_TIMEZONE } from '@/lib/time';
-import { todayDateOnlyInZone } from '@/lib/zoned-time';
+import { todayDateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { getOwnInstructorProfileId } from './bookings.service';
@@ -479,7 +479,7 @@ export async function recordPayout(actor: Actor, input: RecordInstructorPayoutIn
     );
   }
 
-  const effectiveDate = parseDateOnlyUtc(todayDateOnlyInZone(APP_TIMEZONE));
+  const effectiveDate = todayDateOnlyUtcInZone(APP_TIMEZONE);
 
   const payout = await prisma.$transaction(async (tx) => {
     const created = await tx.instructorPayout.create({

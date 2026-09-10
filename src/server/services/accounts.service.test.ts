@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseDateOnlyUtc } from '@/lib/date-only';
 import { recordAdjustmentSchema, recordTopUpSchema } from '@/lib/schemas/accounts';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
@@ -748,6 +749,28 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       // either (cash-side corrections are story 3.4).
       expect(cashMovementCreateMock).not.toHaveBeenCalled();
       expect(result.balanceCents).toBe(7500);
+    });
+
+    // Story 16.1, AC 4 — discriminant: `recordAdjustment` used to date the
+    // rettifica on the UTC calendar day, one day BEHIND the Roma day the
+    // ledger's month aggregates (`currentMonthRange`) delimit on
+    // (ledger-audit MAJOR-3).
+    describe('story 16.1, AC 4 — Europe/Rome effectiveDate', () => {
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('at 00:30 Rome on the 1st (CEST), the ADJUSTMENT is dated on the NEW (Roma) month', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep in Rome
+        mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
+
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -2500, reason: 'Importo errato' });
+
+        expect(accountMovementCreateMock).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ effectiveDate: parseDateOnlyUtc('2026-09-01') }) }),
+        );
+      });
     });
 
     it('locks the Account row (FOR UPDATE) inside the movement transaction (review 2.5 F1 pattern)', async () => {

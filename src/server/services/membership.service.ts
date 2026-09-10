@@ -1,6 +1,8 @@
-import { addMonthsClampUtc, todayDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
+import { addMonthsClampUtc, toDateOnlyString } from '@/lib/date-only';
 import { MEMBERSHIP_FEE_TYPE_NAME } from '@/lib/expiry-scope';
 import type { ChargeMembershipFeeInput } from '@/lib/schemas/membership';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { hasNegativeBalanceAlert } from './accounts.service';
@@ -87,7 +89,7 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
     throw new NotFoundError('Person not found.');
   }
 
-  const today = todayDateOnlyUtc();
+  const today = todayDateOnlyUtcInZone(APP_TIMEZONE);
   const paymentYear = today.getUTCFullYear();
 
   const result = await prisma.$transaction(async (tx) => {

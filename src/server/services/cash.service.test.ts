@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseDateOnlyUtc } from '@/lib/date-only';
 import { cashReportQuerySchema, recordCashMovementSchema, reverseCashMovementSchema } from '@/lib/schemas/cash';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
@@ -544,6 +545,47 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       );
       expect(result.reversalOfId).toBe('move_1');
       expect(result.amountCents).toBe(-5000);
+    });
+
+    // Story 16.1, AC 4 — discriminant: `reverseCashMovement` used to date the
+    // storno on the UTC calendar day, one day BEHIND the Roma day the
+    // ledger's month aggregates delimit on (ledger-audit MAJOR-3).
+    describe('story 16.1, AC 4 — Europe/Rome effectiveDate', () => {
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('at 00:30 Rome on the 1st (CEST), the reversal is dated on the NEW (Roma) month', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep in Rome
+        movementFindUnique.mockResolvedValue({
+          id: 'move_1',
+          categoryId: 'cat_1',
+          amountCents: 5000,
+          reversalOfId: null,
+          accountMovementId: null,
+          reversal: null,
+        });
+        movementCreate.mockResolvedValue({
+          id: 'move_reversal',
+          categoryId: 'cat_1',
+          category: { name: 'PPR' },
+          amountCents: -5000,
+          effectiveDate: parseDateOnlyUtc('2026-09-01'),
+          description: 'Importo errato',
+          actorUser: { email: 'staff@airmanager.local' },
+          createdAt: new Date(),
+          reversalOfId: 'move_1',
+          reversal: null,
+          accountMovementId: null,
+        });
+
+        await reverseCashMovement(adminActor(), 'move_1', 'Importo errato');
+
+        expect(movementCreateMock).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ effectiveDate: parseDateOnlyUtc('2026-09-01') }) }),
+        );
+      });
     });
 
     it('inherits the original movement\'s paymentMethod onto the reversal (review Billing-1 F1 — a null method here used to make unattributedCents go negative after a storno)', async () => {

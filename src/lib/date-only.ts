@@ -33,7 +33,17 @@ export function parseDateOnlyUtc(dateOnly: string): Date {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
-/** `@db.Date` calendar-only "today" (server clock, UTC). */
+/**
+ * `@db.Date` calendar-only "today" (server clock, UTC calendar day) —
+ * legitimate ONLY where the compared side is also UTC-calendar by choice
+ * (story 16.1: scadenze/alert-job "oggi", 3 pagine di visualizzazione
+ * tariffe, il default di un form). Where the compared side is the
+ * aviosuperficie's own calendar (a flight's date, a ledger `effectiveDate`,
+ * a month boundary), use `zoned-time.ts#todayDateOnlyUtcInZone` instead —
+ * the two diverge by a day between Rome midnight and UTC midnight (1h CET,
+ * 2h CEST), which is exactly the bug `FLIGHT_DATE_IN_FUTURE` and five
+ * ledger writers used to pay (ops-audit F1 / ledger-audit MAJOR-3).
+ */
 export function todayDateOnlyUtc(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));

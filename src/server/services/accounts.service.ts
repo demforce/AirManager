@@ -2,6 +2,8 @@ import type { AccountMovementType, Prisma, PaymentMethod } from '@/generated/pri
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { AppLocale } from '@/i18n/routing';
 import type { RecordAdjustmentInput, RecordTopUpInput } from '@/lib/schemas/accounts';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildNegativeBalanceAlertEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -572,8 +574,9 @@ export async function sendNegativeBalanceAlert(
  *
  * No `effectiveDate` in the input (Task 2's signature is deliberately just
  * `amountCents`/`reason`/`originalMovementId`) — a rettifica always values
- * as of today, the server clock's UTC calendar date (no time-of-day, same
- * `@db.Date` convention as every other ledger date).
+ * as of today, the aviosuperficie's own Europe/Rome calendar date (story
+ * 16.1; no time-of-day, same `@db.Date` convention as every other ledger
+ * date).
  *
  * No automatic `CashMovement` (Dev Notes: cash-side stornos are story 3.4).
  *
@@ -648,7 +651,7 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
           type: 'ADJUSTMENT',
           amountCents: input.amountCents,
           description: reason,
-          effectiveDate: todayDateOnlyUtc(),
+          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
           actorUserId: actor.userId,
           reversalOfId: originalMovementId,
         },
@@ -700,12 +703,6 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
   // (this endpoint's `amountCents` is signed) whenever the account IS or
   // BECOMES red, even when the band itself doesn't worsen.
   return { ...overview, balanceAlert: hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents) };
-}
-
-/** `@db.Date` calendar-only "today" (server clock, UTC) — a rettifica always values as of today (Dev Notes: no `effectiveDate` input). */
-function todayDateOnlyUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
 export type NegativeBalanceItem = {

@@ -1,5 +1,7 @@
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import type { CashReportQuery, ListCashCategoriesQuery, ListCashMovementsQuery, ReclassifyCashMovementInput, RecordCashMovementInput } from '@/lib/schemas/cash';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError } from './errors';
@@ -283,12 +285,6 @@ function toDateOnlyString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** `@db.Date` calendar-only "today" (server clock, UTC) — same helper as `accounts.service.ts#todayDateOnlyUtc`. */
-function todayDateOnlyUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
-
 function toMovementListItem(movement: SelectedCashMovement): CashMovementListItem {
   return {
     id: movement.id,
@@ -370,9 +366,10 @@ export async function recordCashMovement(actor: Actor, input: RecordCashMovement
  *    create a linked `CashMovement`) — correcting those goes through the
  *    account rettifica (story 3.3) only, never the cash register directly
  *    (Dev Notes: otherwise conto and cassa diverge).
- * `effectiveDate` is always today (server clock, UTC calendar date) — same
- * choice as `recordAdjustment` (story 3.3): a storno is dated when it is
- * recorded, never backdated to the original's date. `paymentMethod` is
+ * `effectiveDate` is always today, the aviosuperficie's own Europe/Rome
+ * calendar date (story 16.1) — same choice as `recordAdjustment` (story
+ * 3.3): a storno is dated when it is recorded, never backdated to the
+ * original's date. `paymentMethod` is
  * INHERITED from the original (review Billing-1 F1) — the treasury balance
  * it affects is the original's own cash/bank pot.
  */
@@ -422,7 +419,7 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
         // while the treasury running balance never subtracted it back out).
         paymentMethod: original.paymentMethod,
         description: reason,
-        effectiveDate: todayDateOnlyUtc(),
+        effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
         actorUserId: actor.userId,
         reversalOfId: original.id,
       },

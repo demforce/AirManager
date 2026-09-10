@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import {
   cancelFlightSchema,
   correctFlightSchema,
@@ -7,6 +7,8 @@ import {
   registerFlightSchema,
   type RegisterFlightInput,
 } from '@/lib/schemas/flights';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
@@ -525,7 +527,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
     });
 
-    it('throws a 422 FLIGHT_DATE_IN_FUTURE for a flight date after today (server UTC clock)', async () => {
+    it('throws a 422 FLIGHT_DATE_IN_FUTURE for a flight date after today (Europe/Rome calendar, story 16.1)', async () => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       // Always in the future, regardless of when this suite runs.
@@ -543,9 +545,58 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes(toDateOnlyString(todayDateOnlyUtc()), 80) });
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes(toDateOnlyString(todayDateOnlyUtcInZone(APP_TIMEZONE)), 80) });
 
       await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
+    });
+
+    // Story 16.1, AC 2 — discriminant: the FLIGHT_DATE_IN_FUTURE guard used
+    // to compare the Roma-calendar `flightDate` against a UTC "today", so a
+    // flight that had already landed inside the 00:00-02:00 Roma window was
+    // rejected as "in the future" (ops-audit F1). These two reproduce the
+    // exact clock/instants the audit measured, in both DST regimes.
+    describe('the 00:00-02:00 Rome window (Europe/Rome "today", story 16.1 AC 2)', () => {
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('accepts a flight that took off 00:10 Rome and landed 00:20 Rome, registered at 01:00 Rome (CEST, summer)', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-07-14T23:00:00.000Z')); // 01:00 CEST, 15 Jul — registration instant
+        aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+        personFindUnique.mockResolvedValue(PILOT_PERSON);
+        accountUpsert.mockResolvedValue({ id: 'account_1' });
+        accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+        accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+        flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+        queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+        const input = registerFlightSchema.parse({
+          ...BASE_INPUT,
+          takeoffAt: '2026-07-14T22:10:00.000Z', // 00:10 Rome, 15 Jul
+          landingAt: '2026-07-14T22:20:00.000Z', // 00:20 Rome, 15 Jul
+        });
+
+        await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
+      });
+
+      it('accepts a flight that took off 00:05 Rome and landed 00:20 Rome, registered at 00:30 Rome (CET, winter)', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-14T23:30:00.000Z')); // 00:30 CET, 15 Jan — registration instant
+        aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+        personFindUnique.mockResolvedValue(PILOT_PERSON);
+        accountUpsert.mockResolvedValue({ id: 'account_1' });
+        accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+        accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+        flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+        queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+        const input = registerFlightSchema.parse({
+          ...BASE_INPUT,
+          takeoffAt: '2026-01-14T23:05:00.000Z', // 00:05 Rome, 15 Jan
+          landingAt: '2026-01-14T23:20:00.000Z', // 00:20 Rome, 15 Jan
+        });
+
+        await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
+      });
     });
 
     it('throws a 422 FLIGHT_TIMES_INVALID when landingAt <= takeoffAt', async () => {
@@ -1462,6 +1513,10 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     });
 
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it('rejects a non-staff actor (flights.manage required), before touching the DB', async () => {
       await expect(cancelFlight(pilotActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ForbiddenError);
       expect(flightFindUniqueMock).not.toHaveBeenCalled();
@@ -1526,11 +1581,25 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
           amountCents: 20000,
           reversalOfId: 'movement_orig',
           flightId: 'flight_orig',
-          effectiveDate: todayDateOnlyUtc(),
+          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
           description: 'Storno volo I-ABCD 2020-01-15 — Errore inserimento',
           actorUserId: 'admin_1',
         },
       });
+    });
+
+    // Story 16.1, AC 4 — discriminant: this writer used to date the storno on
+    // the UTC calendar day, one day BEHIND the Roma day the ledger's month
+    // aggregates (`currentMonthRange`) delimit on (ledger-audit MAJOR-3).
+    it('story 16.1, AC 4: at 00:30 Rome on the 1st (CEST), the reversal is dated on the NEW (Roma) month', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep in Rome
+
+      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
+
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ effectiveDate: parseDateOnlyUtc('2026-09-01') }) }),
+      );
     });
 
     it('sets status CANCELLED, cancelledAt and cancelReason on the flight', async () => {
@@ -1613,6 +1682,10 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 30, aircraftAmountCents: 7500 });
       queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
       getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
     });
 
     it('rejects a non-staff actor (flights.manage required), before touching the DB', async () => {
@@ -1810,11 +1883,26 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
           amountCents: 20000,
           reversalOfId: 'movement_orig',
           flightId: 'flight_orig',
-          effectiveDate: todayDateOnlyUtc(),
+          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
           description: 'Storno volo I-ABCD 2020-01-15 — Errore minuti',
           actorUserId: 'admin_1',
         },
       });
+    });
+
+    // Story 16.1, AC 4 — discriminant, same reasoning as the cancelFlight
+    // twin above: this writer used to date the storno of the ORIGINAL flight
+    // on the UTC calendar day.
+    it('story 16.1, AC 4: at 00:30 Rome on the 1st (CEST), the reversal is dated on the NEW (Roma) month', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep in Rome
+
+      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
+
+      expect(accountMovementCreateMock).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ data: expect.objectContaining({ effectiveDate: parseDateOnlyUtc('2026-09-01') }) }),
+      );
     });
 
     it('the ORIGINAL flight is stornoed (status CANCELLED + cancelledAt/cancelReason) and its aircraft hour meter reduced', async () => {

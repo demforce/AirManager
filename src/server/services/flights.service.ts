@@ -1,9 +1,9 @@
 import { Prisma, type ExpiryScope, type FlightStatus, type FlightType } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
-import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
+import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { CancelFlightInput, CorrectFlightInput, ListFlightsQuery, RegisterFlightInput } from '@/lib/schemas/flights';
 import { APP_TIMEZONE, formatMinutes } from '@/lib/time';
-import { dateOnlyInZone } from '@/lib/zoned-time';
+import { dateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import {
@@ -542,8 +542,10 @@ function isIdentityUnchanged(
  * of `minutes`/`flightDate` now) -> `FLIGHT_TIMES_INVALID` if
  * `landingAt <= takeoffAt` or the derived duration exceeds 1440 minutes;
  * the derived `flightDate` (the Europe/Rome CALENDAR day of `takeoffAt`,
- * Dev Notes: "il giorno ROMA, non UTC") in the future (server-clock UTC
- * "today") -> `FLIGHT_DATE_IN_FUTURE` (unchanged code/check, now applied to
+ * Dev Notes: "il giorno ROMA, non UTC") in the future ("today" is ALSO the
+ * Europe/Rome calendar day now, story 16.1 — comparing a Roma date against a
+ * UTC "today" rejected a flight that had already landed in the 00:00-02:00
+ * Roma window) -> `FLIGHT_DATE_IN_FUTURE` (unchanged code/check, now applied to
  * the derived date); `hourMeterStart`/`hourMeterEnd` (informational only
  * since story 11.1, NEVER the duration source) validated as a
  * self-consistent pair when either is given -> `HOUR_METER_INVALID`;
@@ -758,7 +760,7 @@ async function resolveFlightInput(
   // `deriveFlightDate` (its own doc-comment), the single derivation shared
   // with the out-of-service guard above.
   const flightDate = deriveFlightDate(input.takeoffAt);
-  if (flightDate.getTime() > todayDateOnlyUtc().getTime()) {
+  if (flightDate.getTime() > todayDateOnlyUtcInZone(APP_TIMEZONE).getTime()) {
     throw new ValidationError('Flight date cannot be in the future.', undefined, 'FLIGHT_DATE_IN_FUTURE');
   }
 
@@ -1287,9 +1289,10 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
  * `Flight.update` (`status: 'CANCELLED'`, `cancelledAt`, `cancelReason`),
  * the `FLIGHT_CHARGE_REVERSAL` `AccountMovement` (`amountCents` = the
  * ORIGINAL movement's negated, NEVER recalculated — AD-4 — linked via
- * `reversalOfId`/`flightId`, `effectiveDate` = today UTC date-only, NOT the
- * flight's own date — Contesto: a storno values as of when it happens, same
- * convention as `recordAdjustment`) with a P2002 catch on `reversalOfId`
+ * `reversalOfId`/`flightId`, `effectiveDate` = today Europe/Rome date-only
+ * (story 16.1), NOT the flight's own date — Contesto: a storno values as of
+ * when it happens, same convention as `recordAdjustment`) with a P2002 catch
+ * on `reversalOfId`
  * (the backstop half, for a concurrent double-cancel that raced past the
  * pre-check), and `Aircraft.hourMeterMinutes = max(0, current - minutes)`
  * (clamped — module doc-comment: a prior manual rectification undershooting
@@ -1335,7 +1338,7 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
           amountCents: 0 - flight.originalMovement.amountCents,
           reversalOfId: flight.originalMovement.id,
           flightId: flight.id,
-          effectiveDate: todayDateOnlyUtc(),
+          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
           description: `Storno volo ${flight.aircraft.registration} ${toDateOnlyString(flight.flightDate)} — ${reason}`,
           actorUserId: actor.userId,
         },
@@ -1471,7 +1474,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
           amountCents: 0 - originalFlight.originalMovement.amountCents,
           reversalOfId: originalFlight.originalMovement.id,
           flightId: originalFlight.id,
-          effectiveDate: todayDateOnlyUtc(),
+          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
           description: `Storno volo ${originalFlight.aircraft.registration} ${toDateOnlyString(originalFlight.flightDate)} — ${reason}`,
           actorUserId: actor.userId,
         },

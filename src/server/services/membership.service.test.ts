@@ -289,3 +289,47 @@ describe('chargeMembershipFee — insufficient-balance guard (PO decision 2026-0
     expect(result.balanceAlert).toBe(true);
   });
 });
+
+// Story 16.1, AC 4/AC 5 — a describe of its own that moves the clock to a
+// Rome midnight boundary and restores it (the outer `afterEach` already
+// calls `vi.useRealTimers()`), leaving `FIXED_TODAY` (line 89, deliberately
+// far from any boundary) untouched for every other test in this file.
+describe('chargeMembershipFee — Europe/Rome "today" at a midnight boundary (story 16.1)', () => {
+  it('AC 4: at 00:30 Rome on the 1st (CEST), the ADJUSTMENT is dated on the NEW (Roma) month', async () => {
+    vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep in Rome
+    expiryFindUnique.mockResolvedValue(null);
+    expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2027-09-01') });
+
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+
+    expect(accountMovementCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          effectiveDate: new Date('2026-09-01T00:00:00.000Z'),
+        }),
+      }),
+    );
+  });
+
+  it('AC 5: at 00:30 Rome on 1 Jan 2027 (CET), the fee is "Quota associativa 2027" (not 2026), dated 2027-01-01, expiring 2028-01-01', async () => {
+    vi.setSystemTime(new Date('2026-12-31T23:30:00.000Z')); // 00:30 CET, 1 Jan 2027 in Rome
+    expiryFindUnique.mockResolvedValue(null);
+    expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-01-01') });
+
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+
+    expect(accountMovementCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          description: 'Quota associativa 2027',
+          effectiveDate: new Date('2027-01-01T00:00:00.000Z'),
+        }),
+      }),
+    );
+    expect(expiryCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ expiresAt: new Date('2028-01-01T00:00:00.000Z') }),
+      }),
+    );
+  });
+});
