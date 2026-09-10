@@ -479,7 +479,7 @@ development_status:
   16-1-un-solo-calendario: in-progress  # story file 2026-09-10, dev Sonnet 5 dispatched
   16-2-guardie-registro-voli: ready-for-dev  # story file 2026-09-10; dev Opus (tocca flight-editor)
   16-3-prenotazioni-persona-istruttore-approvazione: backlog
-  16-4-tipo-scadenza-disattivato: backlog
+  16-4-tipo-scadenza-disattivato: ready-for-dev  # story file 2026-09-10; dopo 16.1
   16-5-compensi-istruttori-snapshot: backlog
   16-6-ledger-data-valuta-pdf-quota: backlog
   16-7-dati-sessioni-rate-limit: backlog
