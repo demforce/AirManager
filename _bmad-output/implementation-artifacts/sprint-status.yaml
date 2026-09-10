@@ -477,7 +477,7 @@ development_status:
   # Ordine: 16 (correttezza dominio) → 17 (scalabilità; 17.1 parallelizzabile) → 18 (mobile 2).
   epic-16: in-progress
   16-1-un-solo-calendario: in-progress  # story file 2026-09-10, dev Sonnet 5 dispatched
-  16-2-guardie-registro-voli: backlog
+  16-2-guardie-registro-voli: ready-for-dev  # story file 2026-09-10; dev Opus (tocca flight-editor)
   16-3-prenotazioni-persona-istruttore-approvazione: backlog
   16-4-tipo-scadenza-disattivato: backlog
   16-5-compensi-istruttori-snapshot: backlog
