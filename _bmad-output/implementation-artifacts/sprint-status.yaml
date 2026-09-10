@@ -476,7 +476,7 @@ development_status:
   # 2026-09-10 (AskUserQuestion + chat), inclusa R-16-h (data valuta futura rifiutata): nessuna ratifica pendente.
   # Ordine: 16 (correttezza dominio) → 17 (scalabilità; 17.1 parallelizzabile) → 18 (mobile 2).
   epic-16: in-progress
-  16-1-un-solo-calendario: in-progress  # story file 2026-09-10, dev Sonnet 5 dispatched
+  16-1-un-solo-calendario: review  # dev Sonnet 5 done 2026-09-10 — gates green (1849 unit), 8 discriminances proven red/restored, TD 16.1-a..e still to register (main session)
   16-2-guardie-registro-voli: ready-for-dev  # story file 2026-09-10; dev Opus (tocca flight-editor)
   16-3-prenotazioni-persona-istruttore-approvazione: backlog
   16-4-tipo-scadenza-disattivato: ready-for-dev  # story file 2026-09-10; dopo 16.1

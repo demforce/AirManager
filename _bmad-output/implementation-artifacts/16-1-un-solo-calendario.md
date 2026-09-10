@@ -4,7 +4,7 @@ baseline_commit: 4c45753
 
 # Story 16.1: Un solo calendario — «oggi» del volo e data valuta dei movimenti in Europe/Rome
 
-Status: **ready-for-dev** — 2026-09-10. **Modello dev**: **Sonnet 5 xhigh (backend puro)** — questa story non tocca una riga di UI (v. §6: le 7 copie client di `todayDateOnly()` sono fuori scope DICHIARATO, ed è proprio quel confine che tiene la story su Sonnet). Review: **Opus 5 xhigh adversarial**, come sempre.
+Status: **review** — 2026-09-10. **Modello dev**: **Sonnet 5 xhigh (backend puro)** — questa story non tocca una riga di UI (v. §6: le 7 copie client di `todayDateOnly()` sono fuori scope DICHIARATO, ed è proprio quel confine che tiene la story su Sonnet). Review: **Opus 5 xhigh adversarial**, come sempre.
 
 > ⚠️ **Baseline**: `4c45753` è il HEAD su cui **ho misurato e riverificato** ogni `file:riga` di questo file. I due report d'audit citano righe misurate su `b7b8d13`: **le ho riverificate tutte** e la tabella §A dice quali sono slittate (una sola: `dashboard/billing/page.tsx` 116 → 117). Se il dev parte da un HEAD più avanzato, rilegge le righe citate e **corregge questo file** dove sono slittate — la prassi ha pagato in tutte le story dell'epic 15 e in AOG-1b.
 >
@@ -470,4 +470,215 @@ Tutti i lettori delimitano il periodo su **Roma**, quindi oggi un writer UTC scr
 
 ## Dev Agent Record
 
-*(da compilare dal dev subagent — §A verifica della ricognizione sul HEAD corrente, §B riepilogo per AC con le prove, §C censimento di AC 8 classificato voce per voce, §D tabella guardia → discriminanza con sha256 del ripristino, §E conteggio delle righe storiche di AC 7, §F deviazioni motivate, §G TD da registrare, §H file toccati, §I cosa NON ho fatto, §J gate ed esiti verbatim)*
+### §A — Verifica della ricognizione sul HEAD corrente
+
+Baseline dichiarato nel frontmatter: `4c45753`. HEAD al momento del dev: `738d399` (poi `5edc948`/altri commit docs sopra ancora). `git log 4c45753..738d399 -- src/` e `git diff --stat 4c45753..738d399 -- src/` sono **entrambi vuoti**: zero modifiche di codice fra baseline e HEAD, solo commit di documentazione. Tutte le righe `file:riga` citate dal file sono state riverificate e confermate **esatte**, incluse le tre già segnalate come corrette dall'autore della story (`dashboard/billing/page.tsx` 116→117, verificata a riga 117 = `currentMonthRange()`).
+
+Una discrepanza nuova trovata in ricognizione, non presente nel testo della story: §3.3 dichiara **26** occorrenze di `new Date()` in `src/server` sul baseline. Il mio riconteggio (`git show HEAD:<file> | grep -c "new Date()"`, sommato su ogni file non-test di `src/server`) dà **25**, non 26. Il conteggio post-fix (**23**, dopo la cancellazione delle due copie private che ciascuna ne usava una: `accounts.service.ts:707`, `cash.service.ts:288`) è coerente con 25-2=23, quindi la differenza è un errore di conteggio di una unità nel testo originale della story, non un'occorrenza mancante nel mio lavoro — corretto qui col numero verificato.
+
+### §B — Riepilogo per AC con le prove
+
+**AC 1 — un helper, sette call-site, nessuna seconda formula.** `todayDateOnlyUtcInZone` in `src/lib/zoned-time.ts:195-197`, firma e doc-comment identici ad AD-1. Verifica coi tre grep richiesti:
+```
+$ grep -rn "todayDateOnlyUtcInZone" src --include=*.ts --include=*.tsx | grep -v test
+src/lib/date-only.ts:42                              (doc-comment che rimanda all'helper — testo, non codice)
+src/lib/zoned-time.ts:195                            (definizione)
+src/server/services/instructor-compensation.service.ts:4,482
+src/server/services/accounts.service.ts:6,654
+src/server/services/cash.service.ts:4,422
+src/server/services/membership.service.ts:5,92
+src/server/services/flights.service.ts:6,763,1341,1477
+```
+1 definizione + 7 call-site (guardia volo, cancelFlight, correctFlight, recordAdjustment, reverseCashMovement, chargeMembershipFee, recordPayout) = esattamente i sette di AD-2, nessun ottavo.
+```
+$ grep -rn "function todayDateOnlyUtc" src/server
+(0 righe) — le due copie private sono cancellate
+$ grep -rn "parseDateOnlyUtc(todayDateOnlyInZone" src
+src/lib/zoned-time.ts:196:  return parseDateOnlyUtc(todayDateOnlyInZone(timeZone));
+```
+Questa terza riga è **l'unica** occorrenza, ed è il corpo stesso dell'helper (esattamente il codice che AD-1 prescrive testualmente) — non un secondo call-site che compone la formula. "0 righe" nel testo dell'AC significa "0 righe **fuori** dall'helper"; dentro l'helper la composizione è, per costruzione, quella riga. Nessun'altra occorrenza in `src`. Unit dell'helper: 5 test in `zoned-time.test.ts` (giorno ordinario, 00:30 Roma CEST, 00:30 Roma CET, mezzanotte UTC esatta — 4 assert su ore/minuti/secondi/millisecondi, collasso a valore invariato con AD-2 #7).
+
+**AC 2 — volo già atterrato non è "nel futuro" (discriminante).** Guardia riscritta (`flights.service.ts:763`). Due nuovi test in `flights.service.test.ts` (describe `the 00:00-02:00 Rome window`), estate (`2026-07-14T23:00:00.000Z`, decollo/atterraggio `22:10Z`→`22:20Z`) e inverno (`2026-01-14T23:30:00.000Z`, `23:05Z`→`23:20Z`) — entrambi verdi post-fix, entrambi rossi sul pre-fix simulato (§D).
+
+**AC 3 — il boundary "oggi stesso" resta accettato, ed è il boundary giusto.** Il test esistente (titolo riscritto, ex `:528`) ora costruisce il decollo su `toDateOnlyString(todayDateOnlyUtcInZone(APP_TIMEZONE))` invece di `todayDateOnlyUtc()` — verde.
+
+**AC 4 — i cinque writer UTC datano sul giorno Roma (discriminante, uno per writer).** Cinque nuovi test, orologio `2026-08-31T22:30:00.000Z` (00:30 CEST, 1° settembre Roma), tutti verdi post-fix e tutti provati rossi sul pre-fix simulato: `cancelFlight`, `correctFlight` (`flights.service.test.ts`), `recordAdjustment` (`accounts.service.test.ts`), `reverseCashMovement` (`cash.service.test.ts`), `chargeMembershipFee` (`membership.service.test.ts`). Tutti e 5, non solo i 3 minimi richiesti (§F, deviazione 1).
+
+**AC 5 — la quota associativa cambia anno sul calendario Roma.** Nuovo test in `membership.service.test.ts`, orologio `2026-12-31T23:30:00.000Z` (00:30 CET, 1° gennaio 2027 Roma): `description` = `Quota associativa 2027`, `effectiveDate` = `2027-01-01`, verificato anche l'`Expiry.expiresAt` di un primo abbonamento = `2028-01-01` (12 mesi da `2027-01-01`, stesso `today` di riga `:92`). `FIXED_TODAY` (riga 89, `2027-03-10T12:00:00Z`) **non toccato**: il nuovo caso vive in un `describe` a sé che sposta l'orologio con `vi.setSystemTime` (l'outer `beforeEach` ha già armato `vi.useFakeTimers()`) e lo lascia ripristinare dall'`afterEach` di livello file. Provato rosso sul pre-fix simulato (§D).
+
+**AC 6 — i due giorni di cambio ora, ai quattro bordi (misurato).** Matrice di 8 istanti in `zoned-time.test.ts`, due `it.each`: uno verifica `dateOnlyInZone` (già corretta pre-story), l'altro verifica che `todayDateOnlyUtcInZone` concordi con essa a ognuno degli 8 bordi. Tutti e 16 gli assert (8+8) verdi. **Nessuna simulazione pre-fix rossa qui**: `dateOnlyInZone` esisteva già ed era già esatta prima di questa story (probe "C", già verde su `4c45753` — la story stessa lo dichiara in §2 AC 6), quindi non c'è un comportamento "rotto prima" da riprodurre. La matrice è una **verifica** di un comportamento pre-esistente corretto, esattamente come previsto.
+
+**AC 7 — nessuna ridatazione, conteggio nel record (misurato).** Zero `UPDATE` eseguiti su `AccountMovement`/`CashMovement` (nessuna query di scrittura girata contro quelle tabelle in tutta la sessione). Query eseguita sul DB locale (`docker compose exec -T postgres psql -U airmanager -d airmanager`), 2026-09-10:
+```
+                shape                | tot | slittate
+-------------------------------------+-----+----------
+ AccountMovement/ADJUSTMENT+REVERSAL |   0 |        0
+ CashMovement/storni                 |   0 |        0
+```
+0 su 0 (DB locale appena resettato/seedato dalla sessione principale prima del dispatch — diverso dal DB della story author, 36+3 su 39, ma la conclusione è identica: **zero righe da ridatare**, e comunque non si sarebbe ridatato nulla anche se il numero fosse stato > 0).
+
+**AC 8 — censimento, voce per voce.** Tabella completa in §C.
+
+**AC 9 — tabella guardia → discriminanza con ripristino provato.** Tabella completa in §D, sha256 di 4 file (`flights.service.ts`, `accounts.service.ts`, `cash.service.ts`, `membership.service.ts`) verificati byte-identici dopo ogni simulazione.
+
+**AC 10 — gates verdi, test nuovi verdi anche senza env.** Verbatim in §J.
+
+**AC 11 — suite e2e.** La story dichiara esplicitamente (§2 AC 11) che questa story **non aggiunge spec e2e** — il comportamento vive in una finestra notturna di 1-2 ore che un e2e non può fabbricare senza falsificare l'orologio del server. Ho eseguito comunque, come regressione mirata sulle 5 funzioni di servizio toccate, le spec e2e che le esercitano a orologio reale: risultato in §J.
+
+### §C — Censimento (AC 8), classificato voce per voce
+
+Perimetro: i quattro grep dell'AC, riverificati su HEAD post-fix.
+
+**Grep 1 — `todayDateOnlyUtc()` (12 righe grezze: 1 definizione, 1 commento, 10 usi reali)**
+
+| Occorrenza | Natura | Classificazione |
+|---|---|---|
+| `date-only.ts:47` | definizione della funzione | n/a — non è un uso |
+| `expiry-status.ts:6` | menzione in un doc-comment (testo) | n/a — non è codice |
+| `dashboard/page.tsx:295` | data passata a `getEffectiveRates` (visualizzazione tariffe) | **UTC legittimo per decisione — fuori scope (TD 16.1-b)** |
+| `dashboard/pilots/page.tsx:55` | idem | **UTC legittimo per decisione — fuori scope (TD 16.1-b)** |
+| `dashboard/fleet/page.tsx:65` | idem | **UTC legittimo per decisione — fuori scope (TD 16.1-b)** |
+| `components/dashboard/expiry-editor.tsx:34` | default `expiresAt` in un form client | **UTC legittimo per decisione — fuori scope (TD 16.1-b)** |
+| `expiry-alerts.service.ts:110` | "oggi" dell'alert job | **UTC legittimo per decisione — fuori scope (TD 16.1-a)** |
+| `expiries.service.ts:131,236,289,444,507` | "oggi" di `computeExpiryStatus`/contatori Scadenze (5 righe) | **UTC legittimo per decisione — fuori scope (TD 16.1-a)** |
+
+10 consumatori legittimi-per-decisione residui, come previsto da §3.2 della story.
+
+**Grep 2 — `new Date()` in `src/server` (23 righe grezze post-fix: 22 usi reali + 1 commento)**
+
+| Gruppo | Righe | Classificazione |
+|---|---|---|
+| Istanti puri (colonna `DateTime`, nessuna aritmetica di calendario) | `aircraft.service.ts:386`; `auth-tokens.service.ts:103,211`; `bookings.service.ts:523,1013,1178`; `people.service.ts:601,742`; `ppr.service.ts:411,520,581,710`; `flights.service.ts:859,1326,1467`; `exports.service.ts:145` (etichetta "generato il", solo display) — 16 righe | **UTC legittimo per costruzione** |
+| `now` iniettabile passato a funzione già Roma-corretta | `stats.service.ts:142`; `billing-summary.service.ts:158`; `aircraft.service.ts:447,512` — 4 righe | **Roma corretto (indiretto)** |
+| Data-only Roma già corretta | `bookings.service.ts:345`; `ppr.service.ts:654` (alimenta SIA `closedAt` timestamptz SIA, via `dateOnlyInZone`, `effectiveDate` — duplice ruolo) — 2 righe | **Roma corretto** |
+| Commento (non codice) | `ppr.service.ts:644` (doc-comment che spiega perché `closedAt` non va ricalcolato con un secondo `new Date()`) | n/a |
+
+16+4+2 = 22 usi reali, invariati da questa story (nessuno di questi produce "oggi" per un confronto/`effectiveDate` — sono o istanti puri o già derivati Roma-corretti da un istante specifico, mai "oggi" della guardia).
+
+**Grep 3 — `toISOString().slice(0, *10)` in `src/server`/`src/lib` (6 righe)**
+
+| Riga | Classificazione |
+|---|---|
+| `accounts.service.ts:77` (`toDateOnlyString` privata) | **UTC legittimo** — formatta una `@db.Date` già a mezzanotte UTC |
+| `cash.service.ts:285` (idem) | **UTC legittimo** |
+| `date-only.ts:21` (`toDateOnlyString` canonica) | **UTC legittimo** |
+| `people.service.ts:111` (idem) | **UTC legittimo** |
+| `zoned-time.ts:134` (`weekStartDateOnly`) | **UTC legittimo** — aritmetica di calendario pura, nessun fuso in gioco |
+| `zoned-time.ts:151` (`addDaysDateOnly`) | **UTC legittimo** — idem |
+
+**Grep 4 — `dateOnlyInZone`/`todayDateOnlyInZone`/`zonedMidnightUtc` in `src/server` (tutte pre-esistenti, tutte già Roma-corrette)**
+
+| File | Righe | Classificazione |
+|---|---|---|
+| `aog-impact.ts` | `:85` (`zonedMidnightUtc`) | **Roma corretto**, invariato |
+| `stats.service.ts` | `:107` (`zonedMidnightUtc`), `:226` (`dateOnlyInZone`) | **Roma corretto**, invariato |
+| `instructor-compensation.service.ts` | `:181` (`todayDateOnlyInZone`, bound del report `variantBounds`) | **Roma corretto**, invariato — **non** uno dei 7 call-site (non data un `effectiveDate`/una guardia, delimita un report), confermato in AD-2 |
+| `bookings.service.ts` | `:326,327,344,345,514,889,890,1129` (`dateOnlyInZone`, 8 usi) | **Roma corretto**, invariato |
+| `flights.service.ts` | `:485` (`dateOnlyInZone` dentro `deriveFlightDate`) | **Roma corretto**, invariato |
+| `exports.service.ts` | `:93,98` (`todayDateOnlyInZone`, nomi file export), `:791,792` (`dateOnlyInZone`, filtro query) | **Roma corretto**, invariato |
+| `ppr.service.ts` | `:330,333` (`zonedMidnightUtc`), `:413,524` (`dateOnlyInZone`, anno), `:655` (`dateOnlyInZone`, `effectiveDate` — stesso `closedAt` del grep 2) | **Roma corretto**, invariato — **non** un ottavo call-site, confermato in AD-2 |
+
+Nessuna voce nuova rispetto al censimento §3 della story; solo il riconteggio (§A) e la conferma che, dopo il fix, nessuna occorrenza residua di `todayDateOnlyUtc()` in `src/server` produce un `effectiveDate` o alimenta la guardia `FLIGHT_DATE_IN_FUTURE`.
+
+### §D — Tabella guardia → discriminanza (tutte provate ROSSE simulando il pre-fix, ripristino byte-identico dichiarato)
+
+| # | Guardia nuova | Simulazione del pre-fix | Esito rosso |
+|---|---|---|---|
+| D1 | AC 2, guardia volo (estate) | `flights.service.ts` ripristinato a `git show HEAD` (pre-fix) | **1 failed**: `FLIGHT_DATE_IN_FUTURE` su un volo già atterrato alle 00:20 Roma |
+| D2 | AC 2, guardia volo (inverno) | idem | **1 failed**: idem, CET |
+| D3 | AC 4, `cancelFlight` | idem | **1 failed**: `effectiveDate` atteso `2026-09-01`, ricevuto `2026-08-31` |
+| D4 | AC 4, `correctFlight` | idem | **1 failed**: idem |
+| D5 | AC 4, `recordAdjustment` | `accounts.service.ts` ripristinato a `git show HEAD` | **1 failed**: idem |
+| D6 | AC 4, `reverseCashMovement` | `cash.service.ts` ripristinato a `git show HEAD` | **1 failed**: idem |
+| D7 | AC 4, `chargeMembershipFee` | `membership.service.ts` ripristinato a `git show HEAD` | **1 failed**: `effectiveDate` `2026-08-31` invece di `2026-09-01` |
+| D8 | AC 5, quota anno | idem (stesso ripristino di D7) | **1 failed**: `description` `Quota associativa 2026` invece di `2027`, `effectiveDate` `2026-12-31` invece di `2027-01-01` |
+
+Simulazioni eseguite un file per volta (mai più di un file in pre-fix contemporaneamente), test-runner in shell pulita (`env -u DATABASE_URL -u AUTH_SECRET npx vitest run <file>`), poi ripristino immediato dalla copia salvata e verifica sha256:
+
+```
+flights.service.ts:     942b90e181863f00904c901ef32eda2f49807367e8fede3ec8dd682ab3436665  OK (D1,D2,D3,D4)
+accounts.service.ts:    7ebb320eb98b7cd43d4ddf40295a70a6eff6b4896413f5acbe27713e94f4d1b4  OK (D5)
+cash.service.ts:        a47626a5b92cc27679827c81ba46c74efed8819edec613c8549a809d4c011317  OK (D6)
+membership.service.ts:  a2c1606d0dd0f1d0503cbae340289db347e142fcb142de5d8289bf0493a38dfc  OK (D7,D8)
+```
+Byte-identico, verificato con `sha256sum` prima/dopo ogni simulazione, non affermato. `instructor-compensation.service.ts` non ha una riga in questa tabella: il collasso di AD-2 #7 è a **valore invariato** (non un fix di bug), e la prova è che i due unit esistenti al bordo (`instructor-compensation.service.test.ts:377-425`) restano verdi **senza essere toccati** (`git diff --stat` su quel file: vuoto). `zoned-time.ts`/`date-only.ts` non hanno righe qui per lo stesso motivo di AC 6: l'helper e `dateOnlyInZone` sono codice nuovo/già corretto, non c'è un "prima" rotto da riprodurre.
+
+### §E — Conteggio righe storiche (AC 7)
+
+V. §B, AC 7. Zero righe eseguite in `UPDATE`/`DELETE` contro `AccountMovement`/`CashMovement` in tutta la sessione (invariante [I-b] rispettata per costruzione: nessuna query di scrittura contro quelle tabelle è mai stata emessa da questo dev). Query di misura eseguita in sola lettura sul DB locale: 0 righe totali nelle due forme (`AccountMovement` ADJUSTMENT+REVERSAL, `CashMovement` storni), quindi 0 slittate.
+
+### §F — Deviazioni motivate
+
+1. **Aggiunto un test extra in `date-only.test.ts`** (non richiesto da un AC numerato) che pinna la divergenza deliberata fra `todayDateOnlyUtc()` (UTC) e `todayDateOnlyUtcInZone()` (Roma) alla stessa istante 22:30Z del 31/8. È esattamente la raccomandazione di §3.5 punto 13 della story ("l'unica asserzione che impedisce a un futuro 'cleanup' di unificarli per sbaglio") — costo minimo, beneficio diretto sull'invariante [I-a].
+2. **Provate rosse tutte e 5 le discriminanze di AC 4**, non solo le 3 minime richieste — ogni riga di produzione toccata ha comunque bisogno del proprio test, quindi la copertura completa non ha costo aggiuntivo rispetto al minimo parziale.
+3. **AC 6 non ha una riga nella tabella guardia→discriminanza** (§D): la matrice DST verifica un comportamento **già corretto** prima della story (probe "C", già verde su `4c45753`, dichiarato tale dalla story stessa in §2 AC 6) — non c'è un "prima rotto" da riprodurre in rosso. Coerente con §4 della story, che elenca come discriminanze obbligatorie solo AC 2 (×2) e AC 4/AC 5, mai AC 6.
+4. **Riconteggio**: 25 (non 26) occorrenze di `new Date()` in `src/server` sul baseline — v. §A. Correzione di un numero della ricognizione, non un cambio di conclusione o di perimetro.
+5. **`ppr.service.ts:655` e `instructor-compensation.service.ts:181` confermati NON tra i 7 call-site** e lasciati invariati, come prescritto da AD-2 — nessuna modifica, nessuna riga in `git diff` su quelle righe.
+6. **Nessuna deviazione di perimetro rispetto ad AD-5**: nessun DTO nuovo, nessuna rotta nuova, nessun tocco a OpenAPI/registry, nessuna migrazione Prisma, nessuna env var nuova, zero righe di UI — confermato da `git diff --stat` (nessun file in `src/app`, `prisma/`, `.env.example`, `.github/workflows/ci.yml`).
+
+### §G — TD da registrare
+
+I cinque TD (16.1-a…16.1-e) sono già interamente specificati nella tabella "Da registrare in `sprint-status.yaml`" della story stessa (§7): il testo della story li marca esplicitamente come **azione della sessione principale, non del dev**. Coerentemente, non ho toccato `sprint-status.yaml` oltre al campo di stato della story stessa (`in-progress` → `review`, step standard del workflow `bmad-dev-story`). Nessun TD nuovo emerso durante l'implementazione oltre ai cinque già previsti.
+
+### §H — File toccati
+
+**Produzione (7)**
+- `src/lib/zoned-time.ts` — nuova funzione `todayDateOnlyUtcInZone` + import `parseDateOnlyUtc`.
+- `src/lib/date-only.ts` — solo il doc-comment di `todayDateOnlyUtc` (AD-3).
+- `src/server/services/flights.service.ts` — 3 call-site (`:763`,`:1341`,`:1477`), import, 2 doc-comment (AD-3).
+- `src/server/services/accounts.service.ts` — 1 call-site (`:654`), cancellata la copia privata, doc-comment (AD-3), import.
+- `src/server/services/cash.service.ts` — 1 call-site (`:422`), cancellata la copia privata, doc-comment (AD-3), import.
+- `src/server/services/membership.service.ts` — 1 call-site (`:92`), import.
+- `src/server/services/instructor-compensation.service.ts` — collasso della formula a valore invariato (`:482`), import.
+
+**Test (6)**
+- `src/lib/zoned-time.test.ts` — 5 unit dell'helper (AC 1) + matrice DST 8+8 (AC 6).
+- `src/lib/date-only.test.ts` — 1 unit che pinna la divergenza deliberata (§F, deviazione 1).
+- `src/server/services/flights.service.test.ts` — 2 discriminanti AC 2, boundary AC 3 aggiornato, titolo riscritto, 2 asserzioni AD-4 riallineate, 2 discriminanti AC 4.
+- `src/server/services/accounts.service.test.ts` — 1 discriminante AC 4.
+- `src/server/services/cash.service.test.ts` — 1 discriminante AC 4.
+- `src/server/services/membership.service.test.ts` — 2 discriminanti (AC 4, AC 5).
+
+**Story file**
+- `_bmad-output/implementation-artifacts/16-1-un-solo-calendario.md` — questo Dev Agent Record, status → review.
+
+Nessun altro file toccato (confermato da `git diff --stat`, 13 file di codice + 1 file di story).
+
+### §I — Cosa NON ho fatto
+
+- Non ho toccato le 7 copie client di `todayDateOnly()` (story 16.9, fuori scope dichiarato — è il confine che tiene questa story su Sonnet).
+- Non ho toccato `expiries.service.ts`/`expiry-alerts.service.ts` (dominio Scadenze/alert job, story 16.4).
+- Non ho toccato i 3 call-site di pagina sulle tariffe né il default del form scadenze (TD 16.1-b).
+- Non ho toccato `ppr.service.ts` (`:655`, `deriveFlightDate`-equivalente per `closedAt`) né `instructor-compensation.service.ts:181` (bound di un report) — confermati non fra i 7 call-site.
+- Non ho ridatato nessuna riga storica (0 misurate sul DB locale; anche fosse stato >0 non avrei eseguito nessun `UPDATE`, per invariante [I-b]).
+- Non ho aggiunto DTO, rotte, tocchi a OpenAPI/registry, migrazioni Prisma, env var nuove, o righe di UI.
+- Non ho eseguito la suite e2e COMPLETA: ho eseguito le 6 spec mirate che esercitano i 5 service toccati (`flights.spec.ts`, `flight-reversal.spec.ts`, `billing.spec.ts`, `cash-report.spec.ts`, `membership-fee.spec.ts`, `instructor-compensation.spec.ts`), come da guida ricevuta ("la suite completa è l'arbitro del reviewer"). Ho girato con `E2E_REUSE_SERVER=1` su un server buildato una volta, senza toccare/resettare il DB condiviso (altre sessioni erano potenzialmente attive sulla stessa macchina).
+- Non ho toccato `sprint-status.yaml` oltre allo stato della singola story (i TD restano da registrare alla sessione principale, come dichiarato dalla story stessa).
+
+### §J — Gate ed esiti verbatim
+
+**`npm run gates`** (compatto, come da CLAUDE.md):
+```
+PASS  lint (63s)
+PASS  typecheck (28s)
+PASS  test (14s) — Tests  1849 passed (1849)
+PASS  build (62s)
+[exited with code 0]
+```
+
+**Conteggio unit prima/dopo** (full suite, `env -u DATABASE_URL -u AUTH_SECRET npx vitest run`, misurato con `git stash`/`git stash pop` sui soli file di questa story per isolare l'effetto):
+- Prima (HEAD, pre-fix): **1819 passed** (74 file).
+- Dopo (post-fix): **1849 passed** (74 file) — **+30** nuovi: 21 in `zoned-time.test.ts` (5 helper + 16 matrice DST), 1 in `date-only.test.ts`, 4 in `flights.service.test.ts`, 1 in `accounts.service.test.ts`, 1 in `cash.service.test.ts`, 2 in `membership.service.test.ts`.
+
+**Ogni file di test toccato/creato, in shell pulita** (`env -u DATABASE_URL -u AUTH_SECRET npx vitest run <file>` — AC 10, terza occorrenza della classe env-eager):
+```
+src/lib/zoned-time.test.ts + src/lib/date-only.test.ts .......... 2 files, 73 tests passed
+src/server/services/flights.service.test.ts ..................... 157 tests passed
+src/server/services/accounts.service.test.ts ..................... 81 tests passed
+src/server/services/cash.service.test.ts ......................... 73 tests passed
+src/server/services/membership.service.test.ts ................... 16 tests passed
+src/server/services/instructor-compensation.service.test.ts (non toccato, verificato invariato) . 34 tests passed
+```
+`zoned-time.ts` non importa nulla oltre a `@/lib/date-only` (che a sua volta non importa nulla) — nessuna catena verso `@/lib/env` trascinata, verificato (non assunto) dal fatto che i due file girano puliti senza mock aggiuntivi.
+
+**Suite e2e mirata** (`scripts/e2e.sh start`, `E2E_REUSE_SERVER=1` su build+server avviati una volta, `JOBS_SECRET` esportato in shell): `flights.spec.ts`, `flight-reversal.spec.ts`, `billing.spec.ts`, `cash-report.spec.ts`, `membership-fee.spec.ts`, `instructor-compensation.spec.ts` — **48 test totali, 46 passed, 2 flaky (passati al retry), 0 failed, exit 0**. I 2 flaky sono entrambi `loginExpectingDashboard` in timeout su `toHaveURL(/\/it\/dashboard$/)` al primo tentativo (`flights.spec.ts:799`, `instructor-compensation.spec.ts:167`) — nessuno dei due è un'asserzione su data/timezone: è la classe di flake da login/timeout pre-esistente e non attribuibile a questa story (nessuna delle due spec tocca codice che questa story ha modificato per la parte che è andata in retry — il secondo tentativo passa pulito su entrambe). Non ho eseguito la suite e2e completa: come dichiarato dalla story stessa (AC 11), il comportamento di questa story vive in una finestra notturna sull'orologio REALE del server che Playwright non può falsificare, quindi la copertura vera è quella unit col clock finto (§B/§D) — la suite completa resta l'arbitro del reviewer.
