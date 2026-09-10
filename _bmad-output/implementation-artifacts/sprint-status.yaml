@@ -477,7 +477,7 @@ development_status:
   # Ordine: 16 (correttezza dominio) → 17 (scalabilità; 17.1 parallelizzabile) → 18 (mobile 2).
   epic-16: in-progress
   16-1-un-solo-calendario: review  # dev Sonnet 5 done 2026-09-10 — gates green (1849 unit), 8 discriminances proven red/restored, TD 16.1-a..e still to register (main session)
-  16-2-guardie-registro-voli: ready-for-dev  # story file 2026-09-10; dev Opus (tocca flight-editor)
+  16-2-guardie-registro-voli: review  # feat 3138115, record bc64012; review Opus dispatched 2026-09-10
   16-3-prenotazioni-persona-istruttore-approvazione: ready-for-dev  # story file 2026-09-10; dev Opus (3 client scelgono il 409 dallo status)
   16-4-tipo-scadenza-disattivato: ready-for-dev  # story file 2026-09-10; dopo 16.1
   16-5-compensi-istruttori-snapshot: ready-for-dev  # story file 2026-09-10; dev Opus; 3 domande PO in coda
