@@ -36,8 +36,9 @@ export function parseDateOnlyUtc(dateOnly: string): Date {
 /**
  * `@db.Date` calendar-only "today" (server clock, UTC calendar day) —
  * legitimate ONLY where the compared side is also UTC-calendar by choice
- * (story 16.1: scadenze/alert-job "oggi", 3 pagine di visualizzazione
- * tariffe, il default di un form). Where the compared side is the
+ * (story 16.1: scadenze/alert-job "oggi" (incluso il flag documenti
+ * bloccanti di `pilots/page.tsx`, dominio Scadenze, non tariffe), 2 pagine
+ * di visualizzazione tariffe, il default di un form). Where the compared side is the
  * aviosuperficie's own calendar (a flight's date, a ledger `effectiveDate`,
  * a month boundary), use `zoned-time.ts#todayDateOnlyUtcInZone` instead —
  * the two diverge by a day between Rome midnight and UTC midnight (1h CET,

@@ -503,6 +503,11 @@ describe('instructor-compensation.service (story 12.7)', () => {
     });
 
     it('creates the payout row AND its cash movement gemello (negative uscita, same method, linked via instructorPayoutId) inside ONE transaction', async () => {
+      // Review LOW-2: recordPayout is one of AD-2's 7 "today" call-sites — assert
+      // the Rome VALUE under a fake clock, not just the Date shape, so a
+      // regression to the UTC calendar would be caught here.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 Rome (CEST), 2026-09-01
       personFindUnique.mockResolvedValue({ instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
       cashCategoryFindUnique.mockResolvedValue({ id: 'cat_compensi' });
       payoutCreate.mockResolvedValue({
@@ -536,7 +541,9 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(movementArgs.data['paymentMethod']).toBe('CASH'); // input.method
       expect(movementArgs.data['instructorPayoutId']).toBe('payout_1');
       expect(movementArgs.data['actorUserId']).toBe('admin_1');
-      expect(movementArgs.data['effectiveDate']).toBeInstanceOf(Date);
+      expect(movementArgs.data['effectiveDate']).toEqual(parseDateOnlyUtc('2026-09-01'));
+
+      vi.useRealTimers();
     });
   });
 

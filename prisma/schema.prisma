@@ -969,7 +969,7 @@ model Flight {
   instructorProfile   InstructorProfile? @relation(fields: [instructorProfileId], references: [id])
 
   /// Calendar-only date of the flight (`@db.Date`) — never in the future
-  /// (enforced in the service against the server-clock UTC "today").
+  /// (enforced in the service against the Europe/Rome calendar "today", story 16.1).
   flightDate     DateTime     @db.Date
   flightType     FlightType
   /// Dual/solo distinction on `SCHOOL` flights (story 9.4) — only
