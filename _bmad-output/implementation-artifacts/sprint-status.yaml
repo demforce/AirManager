@@ -488,7 +488,7 @@ development_status:
   16-9-un-solo-calendario-client: ready-for-dev  # story file 2026-09-10; assorbe TD 16.1-b e 16.1-c; dev Opus
   epic-16-retrospective: optional
   epic-17: backlog
-  17-1-fondamenta-misura-configurazione: backlog
+  17-1-fondamenta-misura-configurazione: ready-for-dev  # story file 2026-09-10; dev Sonnet; parallelizzabile con epic 16
   17-2-timeline-pianificazione-scala: backlog
   17-3-saldi-negativi-aggregati: backlog
   17-4-statistiche-ledger-mensile-sql: backlog
