@@ -1,4 +1,22 @@
-# HANDOFF — AirManager (aggiornato: 2026-08-07 — **BACKLOG POST-EPIC: story AOG-1a DONE**. Prossimo lavoro: **AOG-1b** (story file pronto, ratifiche chiuse, baseline = chiusura 1a); PR #22 `dev` → `main` ancora APERTA, merge del PO)
+# HANDOFF — AirManager (aggiornato: 2026-09-10 — **EPIC 16–18 dall'audit 2026-09-10 IN CORSO**: 16.1 DONE, 16.2 in dev (Opus), 16.3/16.4/16.5/16.6a/16.6b/16.7 ready-for-dev; AOG-1b in review col fix cycle PARCHEGGIATO (decisione 1 presa, 2–5 aperte, prerequisito della 16.8); PR #22 `dev` → `main` ancora APERTA, merge del PO)
+
+## EPIC 16–18 — Dall'audit del 2026-09-10 (IN CORSO)
+
+**Come ci siamo arrivati**: il PO ha interrotto il fix cycle di AOG-1b dopo la decisione 1 e ha chiesto un audit a tre facce (UI desktop+mobile, logica dei ledger, seed di carico + performance). Quattro report in `_bmad-output/planning-artifacts/audit-2026-09-10/` (`README.md` = indice con le 12 priorità trasversali), seed `prisma/seed-load.ts` (`npm run seed:load`, guardia `LOAD_SEED_TARGET_DB`, 3,2 min per 60k voli/105k movimenti/1500 velivoli/5000 persone) eseguito sul DB separato **`airmanager_load`** (stesso container, lasciato popolato per le misure prima/dopo dell'epic 17). Poi `/goal` del PO: «turn the audit into epics then epics into stories and then start developing the stories».
+
+**Piano vincolante**: `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md` — Epic 16 Correttezza del dominio (9 story), 17 Scalabilità (8), 18 Mobile 2 e desktop (7); ratifiche PO **R-16-a..k** tutte chiuse (409 secco per doppia prenotazione persona/istruttore; approvare nel passato SÌ e FLOWN futuro NO; tipo scadenza disattivato smette di bloccare; payout istruttore SNAPSHOT sul volo, correzione eredita lo snapshot, voli senza tariffa = 0; archivio velivolo conta e avvisa come l'AOG; relink utente↔persona termina la sessione via tokenVersion; una quota associativa per anno civile salvo storno; data valuta futura rifiutata). Ordine: 16 → 17 (17.1 parallelizzabile) → 18.
+
+**Stato story** (fonte di verità: `sprint-status.yaml`): 16.1 DONE (v. commento in sprint-status); 16.2 in dev Opus; 16.3, 16.4, 16.5, 16.6a, 16.6b, 16.7 ready-for-dev con file story committati (ricognizione su HEAD, probe rosse in scratchpad citate verbatim, TD dichiarati nei §7); 16.8 dopo la chiusura del fix cycle AOG-1b; 16.9 (7 copie client UTC di `todayDateOnly`, finding della ricognizione 16.1) da creare.
+
+**Prassi di questo ciclo (funziona, da rifare così)**:
+- **Story writer in parallelo, dev serializzati**: i file story si scrivono con teammate Opus dedicati (2–3 alla volta, sola lettura sul repo) mentre un solo dev lavora; il fix-subagent di una story può correre in parallelo al dev della successiva SOLO se i file sono disgiunti (dichiararlo a entrambi + `git add` con path espliciti, mai `-A`). I dev/reviewer che devono usare `:3000` e il DB e2e restano uno alla volta.
+- **Tre story writer hanno trovato lo stesso difetto** (`src/lib/api/handler.ts:60` propaga `details` solo per `ValidationError`): la regola scritta nei file è «il primo che atterra lo fa in modo generico, gli altri verificano». Il primo è la 16.2.
+- **Idle senza notifica è la norma, non l'eccezione**: ui-review, story-16-6, review-16-1 (e il dev 16.1 ha mandato il report tre volte) sono andati idle senza che il messaggio finale arrivasse o arrivasse una sola volta. Il deliverable è SEMPRE il file su disco: controllare `ls` del file atteso prima di aspettare oltre.
+- **DB e2e**: reset SOLO con `DROP DATABASE airmanager WITH (FORCE)` + `createdb` + migrate + seed dentro il container — MAI `docker compose down -v` (distruggerebbe `airmanager_load`). `psql` esiste solo nel container. Il residuo dei reviewer (prefissi `rvw*`, `audit_*`) si azzera col reset prima di ogni run che conta.
+- **Ambiente Docker**: Postgres a configurazione di fabbrica con `/dev/shm` 64 MB → sotto carico le query parallele muoiono con `53100` (500 su Statistiche/Panoramica): è la story 17.1 (`shm_size` nel compose), non un difetto del codice. `JOBS_SECRET` placeholder → esportarne uno reale prima di `next start`/`CI=1`.
+
+**AOG-1b** resta in `review` col fix cycle parcheggiato: report `aog-1b-review-report.md` committato; decisione PO 1 = frase DEDICATA per il bound scaduto con finestra effettiva nel DTO; decisioni 2–5 (doppio click sul doppio passo, fold a 1280, link del banner, TD fan-out) aperte. Va chiuso prima della 16.8, che ne riusa il doppio passo.
+
 
 ## BACKLOG POST-EPIC — ciclo AOG (sessione 2026-08-07)
 

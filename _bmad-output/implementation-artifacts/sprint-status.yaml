@@ -509,6 +509,10 @@ development_status:
 
 action_items:
   - epic: 16
+    action: "TD 16.1-a..e (story 16.1, review 2026-09-10). a) Dominio Scadenze e alert job ancora su «oggi» UTC: 6 call-site in src/server + dashboard/pilots/page.tsx:55 (listBlockingExpiriesByPerson) — RIPIEGATO NELLA 16.4 (fold-in già nel piano); include la cucitura membership (Roma) ↔ expiries (UTC): scarto max 1 giorno su un tipo blocksBooking:false, innocua. b) dashboard/page.tsx:295 (solo lookup tariffe) e dashboard/fleet/page.tsx:65 che è ANCHE un bordo di mese UTC (monthStart + finestra sumFlightMinutesByAircraft su flightDate Roma: alle 00:30 Roma del 1° la barra «Ore mese» somma il mese precedente intero) + etichette process-local billing/page.tsx:128 e reports/page.tsx:58-59 (Intl senza timeZone, server UTC in produzione per period-presets.ts:11): casa = story 16.9 (estesa dal solo client alle pagine server di visualizzazione) o 17.4 per il bordo di mese — da decidere alla creazione della 16.9. c) 7 copie client UTC di todayDateOnly() → DECISO: story 16.9. d) period-presets.ts#romeDateParts = quarta implementazione corretta delle parti di calendario Roma: consolidamento, non correttezza. e) Classe di flake latente: 6 helper todayDateOnly() UTC negli spec e2e contro aggregati di mese Roma."
+    owner: "epic 16 (16.4, 16.9) / 17.4"
+    status: open
+  - epic: 16
     action: "TD DA AUDIT 2026-09-10 (fuori dagli epic 16-18, registrati qui): ops F11 storia dei documenti (Expiry = una riga per persona+tipo, il rinnovo sovrascrive: 'quando è scaduta la medica precedente' non è rispondibile — cambio di modello, non fix); ops F15/F17 (senza orario di apertura nessun limite alla durata di una prenotazione; nessuna prenotazione può attraversare la mezzanotte Roma — domanda 7 dell'ops-audit); ledger LOW 1-7 e MINOR-4/5 dichiarati nel report; ui M15/T1/A1 già dichiarati o ratificati; le 10 assunzioni del seed di carico (perf-load-report §1.2) da ratificare se il seed diventa fixture ufficiale; residui audit_*/I-AUD% nel DB e2e (script di pulizia in ops-audit §7) — reset prima della 16.1."
     owner: "backlog post-epic 16-18"
     status: open
