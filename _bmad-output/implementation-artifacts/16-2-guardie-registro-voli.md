@@ -4,7 +4,7 @@ baseline_commit: 738d399
 
 # Story 16.2: Il registro voli rifiuta duplicati e sovrapposizioni, e il contaore non perde minuti in silenzio
 
-Status: **ready-for-dev** — 2026-09-10. **Modello dev: Opus 5 xhigh** (non Sonnet: la story tocca UI — due label i18n nuove in due locale, il ramo 409 del form di correzione che oggi mente, e due `min={0}` → `min={1}`; v. AD-11 e §3.4. È UI di TESTO e di plumbing, nessun layout: se il PO preferisce Sonnet, la parte server è separabile ma il form resterebbe con un messaggio generico su un 409 nuovo — deviazione da dichiarare).
+Status: **review** — 2026-09-10 (implementazione `3138115`; Dev Agent Record in coda a questo file). **Modello dev: Opus 5 xhigh** (non Sonnet: la story tocca UI — due label i18n nuove in due locale, il ramo 409 del form di correzione che oggi mente, e due `min={0}` → `min={1}`; v. AD-11 e §3.4. È UI di TESTO e di plumbing, nessun layout: se il PO preferisce Sonnet, la parte server è separabile ma il form resterebbe con un messaggio generico su un 409 nuovo — deviazione da dichiarare).
 
 > ⚠️ **Baseline e stato del working tree (misurato il 2026-09-10)**: il frontmatter dichiara `738d399`, ma **tutti** i `file:riga` di `flights.service.ts` in questo file sono misurati sul **working tree**, che contiene le modifiche **NON ancora committate** della **story 16.1** (un dev sta implementando «Un solo calendario» adesso, nella stessa directory): `todayDateOnlyUtc` → `todayDateOnlyUtcInZone(APP_TIMEZONE)` alla guardia `FLIGHT_DATE_IN_FUTURE` (`:763`) e alle due `effectiveDate` degli storni (`:1341`, `:1477`), più due doc-comment allungati. Sono state scelte le righe **post-16.1** perché la 16.1 sarà **committata prima** del dispatch di questa story (ciclo per-story del progetto). Sul HEAD `738d399` **puro** le stesse righe stanno **2 righe più in su** fino a ~`:1291` e **3 più in su** dopo.
 > ⇒ **Prima di scrivere una riga: `git log --oneline -3` + rileggere ogni riga citata sul HEAD corrente e correggere questo file dove è slittata** (prassi che ha pagato in tutte le story degli epic 15 e AOG). Se la 16.1 **non** è ancora chiusa quando questa story parte, **fermarsi e chiedere alla sessione principale**: le due story toccano funzioni adiacenti dello stesso file e lavorare su un working tree con modifiche altrui non committate è la ricetta per un conflitto illeggibile.
@@ -438,3 +438,296 @@ Convenzioni obbligatorie: selettori scoped al landmark o `exact: true`; **mai** 
 - **Idioma «una funzione di dominio, due call-site»**: `_bmad-output/implementation-artifacts/aog-1b-avviso-prenotazioni-email.md` (`computeAogImpact`).
 - **Codice**: `flights.service.ts` (doc-comment del modulo `:24-112`, `resolveFlightInput:598`, `registerFlightCore:977`, `registerFlight:1085`, `loadRegisteredFlightForReversal:1204`, `cancelFlight:1304`, `correctFlight:1411`); `handler.ts:34`/`:60`/`:439-447`/`:473-486`; `errors.ts` (`ConflictError`); `aircraft.service.ts:611-660` (`adjustHourMeter`, modello della riga di rettifica); `bookings.service.ts:567`/`:941`/`:1166` (i tre predicati semi-aperti da imitare); `schema.prisma:407-428` (`HourMeterAdjustment`), `:962-1090` (`Flight`, indici a `:1085-1088`).
 - **Domanda PO aperta** (non blocca la story): esiste un minimo di durata di volo sensato per l'aviosuperficie (5 minuti?), o basta rifiutare sotto il minuto? Oggi la story implementa **sotto il minuto = 422** e non inventa altro.
+---
+
+## Dev Agent Record
+
+### §A — Verifica della ricognizione sul HEAD corrente
+
+Il frontmatter dichiara `baseline_commit: 738d399`; la nota di baseline avverte che **tutti** i `file:riga` di `flights.service.ts` sono misurati sul working tree **post-16.1 non committato**, con lo shift dichiarato (2 righe fino a ~`:1291`, 3 dopo) rispetto a `738d399` puro.
+
+Stato al momento del dev: la 16.1 **è chiusa** (`1a57609` = implementazione, `7369abf` = Dev Agent Record). HEAD = `6a1b5c7`; fra `7369abf` e `6a1b5c7` ci sono **solo** commit `docs(...)` delle story 16.3–16.7 (`git log --oneline`), zero modifiche di codice. La condizione della nota («la 16.1 sarà committata prima del dispatch») è quindi soddisfatta e **le righe post-16.1 dello story file sono le righe di HEAD**: la baseline effettiva del mio lavoro è `6a1b5c7`, che per `src/` coincide con `1a57609`.
+
+Riverifica riga per riga sul HEAD, **zero drift trovato** — nessuna correzione da fare nel testo della story:
+
+| Citazione | Verificato su HEAD |
+|---|---|
+| `flights.service.ts` `resolveFlightInput:598`, `registerFlightCore:977`, `registerFlight:1085`, `loadRegisteredFlightForReversal:1204`, `cancelFlight:1304`, `correctFlight:1411` | esatte (elenco `grep -n '^export async function\|^async function'`) |
+| lock velivolo `:1103-1104` (register), `:1443-1444` (correct, multi-riga `ORDER BY id`), `account.upsert:1112` | esatte |
+| clamp `Math.max(0, …)` `:1360` (cancel), `:1493` (correct) | esatte |
+| durata `:749-757`, `Math.max(1, …)` a `:754` | esatte |
+| `:763` `FLIGHT_DATE_IN_FUTURE`, `:1341`/`:1477` `effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE)` (righe della 16.1) | esatte, e **non toccate** |
+| `handler.ts:60` (`const details = error instanceof ValidationError ? …`) | esatta |
+| `schemas/flights.ts:106-107` (`min(0)` su takeoffs/landings) | esatte |
+| `registry.ts:976` / `:1006` (descrizioni), `:982`/`:997`/`:1012` (409 già in `errorResponses`) | esatte |
+| `flight-editor.tsx` `:56` `conflictError`, `:58` `invalidHourMeter`, `:585` `invalidHourMeter`, `:591-592` cicli, `:633-635` ramo 409 (la riga del `setFormError` è la `634`), `:618-625` fetch + `IDEMPOTENCY_KEY_HEADER`, `:630` `regenerateIdempotencyKey()`, `:727-728` fallback `knownErrors[code] ?? generic`, `:894` `noValidate`, `:998`/`:1001` `min={0}`, `:206-215` `composeFlightTimes`, `:230` `todayDateOnly()` | esatte |
+| `logbook/page.tsx:349-377` e `dashboard/page.tsx:824-850` (i due builder di label) | esatte |
+| `schema.prisma` `:274-276` («ONLY via a tracked `HourMeterAdjustment`»), `:407-428` `HourMeterAdjustment` (modello a `:414`), `:1007-1017` istanti nullable, `:1027-1032` «both NOT NULL DEFAULT 1», `:1085` `@@index([aircraftId])` di `Flight` | esatte |
+| `bookings.service.ts:567`/`:941`/`:1166` (i tre predicati semi-aperti) | esatte |
+| `aircraft.service.ts:611-660` `adjustHourMeter` (riga di rettifica a `:645-655`, update a `:654-658`) | esatte |
+| `aircraft-editor.tsx:1404` (`{entry.reason}` nello storico contaore) | esatta |
+| `handler.test.ts:255-267` (il test modello per `details`) | esatta |
+| `flights.service.test.ts` mock prisma `:13-49`, `$transaction` stand-in `:160-166`, delegate `flight` `:29-35`, default di `beforeEach` `:311-330` | esatte |
+| `flights-expiry-boundary.integration.test.ts:23-35` (mock con `flight: { create }` e basta) | esatta |
+| `FlightEditor` usato in 2 punti: `logbook-console.tsx:966`, `dispatch-flight-button.tsx:51`; nessun gemello `-mobile` | esatta |
+
+Una sola citazione **non** allineata al codice reale, già segnalata dalla story stessa: il test di schema «rejects takeoffs/landings outside [0, 500]» è a `:2371-2377`, non `:2283-2289` (l'AC 16 lo indirizza per titolo, che è univoco — nessuna ambiguità).
+
+`grep -rn 'data-testid\^=' e2e/` eseguito come prescritto: 10 occorrenze, tutte su prefissi (`pilot-row-`, `flight-row-mobile`, `mobile-fleet-card-`, `mobile-pilot-row-`, `mobile-instructor-row-`, `mobile-tail-chip-`, `schedule-filter-aircraft-`). Questa story **non aggiunge nessun testid**, quindi la convenzione 15.1/15.5 non è in gioco.
+
+### §B — Riepilogo per AC con le prove
+
+**AC 1 — sovrapposizione parziale → 409, niente scritto.** `assertNoOverlappingFlight` (`flights.service.ts:927-1013`, doc-comment incluso), chiamata in `registerFlight` subito dopo il lock e prima dell'`account.upsert`. Unit **U1** (09:30→10:30 su 09:00→10:00): `code: 'FLIGHT_OVERLAP'`, `flight.create` **mai** chiamato, `accountMovement.create` **mai**, `aircraft.update` **mai**. e2e **E1** sul vero stack: contaore letto via `GET /api/v1/aircraft/{id}` prima e dopo il secondo tentativo, **invariato**; `GET /api/v1/flights?aircraftId=…` → **1** riga.
+
+**AC 2 — bordi che si toccano → 201, un unit per bordo.** Unit **U3** (`takeoff_nuovo == landing_esistente`, 10:00→11:00) e **U4** (`landing_nuovo == takeoff_esistente`, 08:00→09:00), entrambi `resolves` con `flight.create` chiamato una volta. e2e **E4** conferma i due bordi + il volo centrale (3 righe a DB).
+Nota di metodo: `flights.service.test.ts` mocka prisma per intero, quindi un `findFirst` che restituisce una riga fissa **non** proverebbe la semantica di bordo (la deciderebbe il mock). Il mio stand-in (`findFirstOverlapping`/`matchesInstant`, `flights.service.test.ts:2091-2146`) **interpreta l'operatore** che la guardia passa (`lt`/`lte`/`gt`/`gte`) invece di confrontare con un `<`/`>` proprio: è per questo che U3/U4 diventano **rossi** se la guardia passa a `lte`/`gte` (§D riga 2), e non resterebbero verdi.
+
+**AC 3 — `details` sul filo.** `ConflictError('…', { flightId, takeoffAt, landingAt }, 'FLIGHT_OVERLAP')` con gli istanti convertiti a mano con `.toISOString()` (mai `Date` lasciate a `NextResponse.json`, stessa disciplina di `aircraft-status.ts#outOfServiceDetails`). Unit **U6** asserisce le tre chiavi con le **stringhe** ISO. La riga di `handler.ts:60` ha i suoi **due** unit in `handler.test.ts` (§F, deviazione 2): uno che pretende `details` su un `ConflictError` che li porta, uno che pretende la chiave `details` **assente** su un `ConflictError` che non li porta (le 39 pre-esistenti). e2e **E1** legge il payload dal filo e lo confronta con l'`id` del primo volo.
+
+**AC 4 — `CANCELLED` non occupa; istanti `NULL` non conflittano.** Unit **U5** (l'unico candidato è `CANCELLED` → 201). Per il `NULL`: la proprietà non è producibile dall'API (gli istanti sono obbligatori dalla 11.1), quindi è verificata come **forma del predicato** — l'unit `AC 4/AC 6` asserisce il `where` con `toEqual` esatto:
+```
+{ aircraftId: 'aircraft_1', status: 'REGISTERED',
+  takeoffAt: { lt: 2020-01-15T10:30:00.000Z }, landingAt: { gt: 2020-01-15T09:30:00.000Z } }
+```
+Nessuna clausola può catturare un `NULL` (`lt`/`gt` su una colonna nullable non matchano mai `NULL` in SQL), e il limite è **dichiarato** nel doc-comment della guardia. Lo stesso unit pinna il `select` a `{ id, takeoffAt, landingAt }` (nessun `FLIGHT_SELECT`, nessun join). Nessun e2e per il caso `NULL`, come la story prescrive.
+
+**AC 5 — il volo nominato è deterministico.** `orderBy: { takeoffAt: 'asc' }`; unit con **due** conflitti (09:45→10:15 e 09:00→10:00) che asserisce `details.flightId === 'flight_existing'` (il `takeoffAt` minore) **e** l'`orderBy` passato a `findFirst`.
+
+**AC 6 — una sola implementazione, due call-site, dentro la transazione prima di ogni scrittura.**
+```
+$ grep -rn "takeoffAt: { lt\|landingAt: { gt" src/
+src/server/services/flights.service.ts:988      (la guardia)
+src/server/services/flights.service.ts:989      (la guardia)
+src/server/services/flights.service.test.ts:2261 (l'assert del where di AC 4)
+src/server/services/flights.service.test.ts:2262 (idem)
+```
+**Una** occorrenza in codice di produzione (le due righe dello stesso predicato), le altre due sono l'asserzione del test. I due call-site: `registerFlight:1285` e `correctFlight:1651`. L'ordine è pinnato da un unit che confronta `mock.invocationCallOrder`: lock `$queryRaw` **<** `flight.findFirst` **<** `account.upsert` **<** `flight.create`.
+
+**AC 7 — la stessa richiesta due volte senza chiave.** Unit `P2/P6 (probe 13a/13b)` con contaore **stateful** (il `FOR UPDATE` mockato restituisce ciò che l'`aircraft.update` precedente ha scritto) e store dei voli creati: prima chiamata 201 e contaore `6000 → 6060`, seconda `FLIGHT_OVERLAP`, `flight.create` chiamato **1** volta, `accountMovement.create` **1** volta, contaore **6060** (mai 6120). Nello stesso test, terzo passo = la sonda 14 dell'audit (sovrapposizione parziale sullo stesso store) → 409, contaore ancora 6060. e2e **E1**.
+
+**AC 8 — il contratto TD-2 invariato, e la correzione dell'AC del piano.** e2e **E2**: stessa richiesta con lo stesso `Idempotency-Key` → **201** (non 200: `successStatus` della rotta replayato da `handler.ts`, come la story dichiara) + header `idempotency-replayed: true`, **stesso** `flight.id`, **1** riga a DB, contaore avanzato **una** volta. Diff su `handler.ts`: **solo** la riga 60 (`git diff -- src/lib/api/handler.ts` = 1 riga sostituita + 5 di commento, zero righe del gate di idempotenza).
+
+**AC 9 — due POST paralleli.** e2e **E3**: `Promise.all` di due `page.request.post` identici, `[201, 409]` dopo l'ordinamento degli status, 1 riga a DB, contaore avanzato una volta. Il lock `FOR UPDATE` sull'`Aircraft` è ciò che serializza: il secondo si blocca, poi legge la riga committata.
+
+**AC 10 — la correzione.** Unit **U8** (stesso velivolo, stessi istanti, note cambiate → 201, e il `where` contiene `id: { not: 'flight_orig' }`), **U9a** (spostamento su slot occupato dello **stesso** velivolo → 409, e `flight.update`/`accountMovement.create`/`flight.create` **mai** chiamati: la transazione non arriva allo storno), **U9b** (spostamento su un **altro** velivolo occupato → 409 con `aircraftId: 'aircraft_2'` nel `where`) e **U9b (mirror)** (stesso spostamento su slot **libero** del velivolo nuovo → 201). e2e **E5** verifica a DB che dopo il 409 entrambi i voli sono ancora `REGISTERED`.
+
+**AC 11 — `force` non deroga.** Unit **U7**: `force: true` + `forceReason` su richiesta sovrapposta → 409, `flight.create` mai chiamato (quindi nessun `forcedAt` scritto, per costruzione). Il doc-comment della guardia dice **perché** (ratifica del piano) e **dove** sta la via d'uscita (stornare o correggere il volo nominato — azione già offerta su ogni riga del registro).
+
+**AC 12 — il clamp scrive la sua riga.** `decreaseHourMeterForReversal` (`flights.service.ts:1015-1073`, doc-comment incluso). Unit **U10** (contaore 5, volo 30′): `hourMeterAdjustment.create` con `previousMinutes: 5`, `newMinutes: 0` e `reason` **verbatim**
+```
+Storno volo I-ABCD 2020-01-15 (id flight_orig): 25 minuti non sottraibili dal contaore.
+```
+più `aircraft.update` a `0`. Unit **U12** riproduce il caso via `correctFlight`. e2e **E7** sul vero stack: `adjustHourMeter` a 5, storno di un volo da 30′, `GET /api/v1/aircraft/{id}` → **0**, `GET /api/v1/aircraft/{id}/hour-meter-adjustments` → **2** righe, quella del clamp con `previousMinutes 5 / newMinutes 0` e il motivo che nomina marche, data, id e i 25 minuti.
+
+**AC 13 — quando il clamp non morde, nulla cambia.** Unit **U11** (contaore 6000, volo 30′): `hourMeterAdjustment.create` **mai** chiamato, `aircraft.update` a **5970**. È il test di non-regressione che rende rossa la simulazione «scrivi la riga sempre» (§D riga 7).
+
+**AC 14 — nessun 422 sul contaore.** Unit `AC 14`: storno con contaore **0** e volo da 30′ → risolve, `flight.status === 'CANCELLED'`, una riga di rettifica. Il doc-comment del modulo (`flights.service.ts:67-73` per il clamp, `:74-82` per il paragrafo nuovo «No duplicate, no overlap») e quello di `cancelFlight` sono aggiornati: il clamp resta deliberato **e ora lascia traccia**; è aggiunto anche il paragrafo «No duplicate, no overlap».
+
+**AC 15 — censimento degli scrittori del contaore.** §C.
+
+**AC 16 — cicli `[1, 500]`.** `schemas/flights.ts:106-112`: `min(1)` su entrambi, col doc-comment che rimanda al doc-comment Prisma. Il test esistente è **invertito e rititolato** («rejects takeoffs/landings outside **[1, 500]** — a 0 included»), non cancellato, e un secondo test nuovo pinna i bordi ancora validi (1, 500, omessi).
+
+**AC 17 — durata minima.** `resolveFlightInput:749-763`: `landingAt - takeoffAt < 60_000` → 422 `FLIGHT_TIMES_INVALID`; `Math.max(1, …)` **rimosso** perché orfano del cambiamento (con un intervallo ≥ 60 000 ms il `Math.round` non può più dare 0). Unit: 20 s → 422 (la sonda 17 dell'audit), 60 s → 201 con `minutes: 1`. I due test pre-esistenti sul tetto (1441 → 422, 1440 → 201) e su `landingAt == takeoffAt` → 422 passano **non modificati**: `0 < 60_000` è vero, quindi lo stesso codice risponde. e2e nel blocco F14 (20 s via API → 422 `FLIGHT_TIMES_INVALID`).
+
+**AC 18 — la UI.** Tre pezzi:
+1. `min={0}` → `min={1}` sui **soli** due input cicli (`flight-editor.tsx:1041`, `:1044`); i due input contaore restano `min={0}`.
+2. Controllo client-side accanto ai due `Number(...)` (`flight-editor.tsx:597-604`): un valore presente `< 1` risponde con `labels.invalidCycles` nello **stesso** banner `flight-form-error` di `invalidHourMeter`, mai «Riprova».
+3. Il ramo 409: `FLIGHT_OVERLAP` è intercettato **prima** del ramo `isCorrecting && response.status === 409`, che resta **byte-identico** (2 righe di codice invariate) e continua a servire ogni altro 409 della correzione. Il messaggio nomina giorno e finestra orologio del volo in conflitto.
+
+Parità i18n verificata su tutto il file, non solo sulle chiavi nuove:
+```
+solo IT: []   solo EN: []   totale chiavi IT/EN: 2326 / 2326
+```
+Testi (i placeholder `{date}`/`{from}`/`{to}` presenti in entrambi i locale):
+```
+it invalidCycles     Decolli e atterraggi devono essere almeno 1.
+en invalidCycles     Takeoffs and landings must be at least 1.
+it FLIGHT_OVERLAP    Questo velivolo ha già un volo registrato il {date} dalle {from} alle {to}. Annulla o correggi quel volo, oppure cambia gli orari.
+en FLIGHT_OVERLAP    This aircraft already has a flight logged on {date} from {from} to {to}. Cancel or correct that flight, or change the times.
+```
+e2e **E6** guida il form reale nei due percorsi (registrazione e correzione) e asserisce sia la presenza della frase con data e ore, sia l'**assenza** di «già stato annullato». e2e nel blocco F14 asserisce `min="1"` sui due input e la label `invalidCycles` su uno `0` digitato.
+
+**AC 19 — discriminanze rosse.** §D: 9 righe su 9 provate rosse sul pre-fix simulato, con ripristino sha256 verificato a ogni giro.
+
+**AC 20 — gates e suite e2e.** §J.
+
+**AC 21 — OpenAPI nello stesso commit.** `registry.ts:976` e `:1006` riscritte: nominano `FLIGHT_OVERLAP`, la shape di `details`, la semantica semi-aperta, il fatto che solo `REGISTERED` occupa, che il controllo è dentro la transazione sotto il lock, che `force` **non** deroga, il rapporto col replay `Idempotency-Key`, l'esclusione dell'originale in correzione e i due nuovi bordi (`[1, 500]` sui cicli, un minuto di durata minima). Nessuno status nuovo (il 409 era già in `errorResponses` per tutte e tre le POST).
+
+### §C — Censimento degli scrittori del contaore (AC 15)
+
+`grep -rn "data: { hourMeterMinutes\|hourMeterMinutes:" src/server`, classificato voce per voce sul **codice di produzione** (esclusi i `*.test.ts`, che nel grep sono la maggioranza delle righe):
+
+| # | `file:riga` | Cosa | Classe |
+|---|---|---|---|
+| 1 | `flights.service.ts:1218` | `data: { hourMeterMinutes: params.aircraftHourMeterMinutes + params.minutes }` in `registerFlightCore` | **scrittura** — il `+=` della registrazione, invariato ([I-3]: resta un `+=`, mai un `SET` a `hourMeterEnd`) |
+| 2 | `flights.service.ts:1071` | `data: { hourMeterMinutes: newMinutes }` in `decreaseHourMeterForReversal` | **scrittura — NUOVA**, assorbe i due `Math.max(0, …)` separati di `cancelFlight` e `correctFlight` |
+| 3 | `aircraft.service.ts:656` | `data: { hourMeterMinutes: input.newMinutes }` in `adjustHourMeter` | **scrittura** — il `SET` della rettifica manuale, invariato |
+| 4 | `aircraft.service.ts:289` | `hourMeterMinutes: input.hourMeterMinutes` in `createAircraft` | **valore iniziale alla creazione della riga**, non una mutazione del contaore di un velivolo esistente — classificato a parte, invariato |
+| 5 | `aircraft.service.ts:27`, `:64`, `:85` | tipo del DTO, campo del `select`, mapping del DTO | **lettura/tipo**, non scrittura |
+| 6 | `flights.service.ts:1274`, `:1499`, `:1638` | `tx.$queryRaw<Array<{ hourMeterMinutes: number }>>` (i tre `FOR UPDATE`) | **lettura sotto lock** |
+| 7 | `aircraft.service.ts:637` | idem, il `FOR UPDATE` di `adjustHourMeter` | **lettura sotto lock** |
+
+**Scritture che mutano il contaore di un velivolo esistente: 3** (voci 1-3), **una in meno di prima** della story (erano 4: `registerFlightCore`, `cancelFlight`, `correctFlight`, `adjustHourMeter`). La voce 4 è una creazione di riga, non una mutazione, e la story non la considera nel conteggio; la nomino perché il grep dell'AC 15 la cattura e un conteggio "4 `data:`" senza classificazione sembrerebbe contraddire il "tre" dell'AC.
+
+**Nota di onestà pretesa dall'AD-6 (da riportare, non correggere).** `schema.prisma:274-276` dice che `hourMeterMinutes` cambia «**ONLY** via a tracked `HourMeterAdjustment` — never through this table's generic update path». Le scritture reali sono **tre** e due di esse (il `+=` di `registerFlightCore` e ora il clamp) sono esattamente la generic update path: **[I-3]** dell'ops-audit, che descrive tre scrittori, è la lettura corretta e più recente. La divergenza è **pre-esistente** a questa story e non è riconducibile alla sua richiesta: non ho riallineato quel doc-comment (e `prisma/schema.prisma` era comunque in mano a un altro agent in questa sessione, v. §I). Va nel backlog.
+
+### §D — Tabella guardia → discriminanza (9/9 provate ROSSE sul pre-fix simulato)
+
+Metodo: per ogni riga, **una** modifica chirurgica al file di produzione, poi i test che la tabella §4.3 nomina, poi ripristino da una copia pristine presa **prima** di ogni simulazione e verifica `sha256` dei **tre** file (`flights.service.ts`, `handler.ts`, `schemas/flights.ts`) a ogni giro. Esiti verbatim:
+
+| # | Pre-fix simulato | Rosso ottenuto | Ripristino |
+|---|---|---|---|
+| 1 | la guardia diventa un no-op (nessuna `findFirst`) | `12 failed \| 3 passed \| 164 skipped` — U1, U2, U6, U7, AC 4/6, AC 5, AC 6 (ordine), **probe 13a/13b**, U8, U9a, U9b, U9b-mirror | sha256 OK (3/3) |
+| 2 | `lt`/`gt` → `lte`/`gte` | `3 failed \| 12 passed` — **U3**, **U4**, AC 4/6 (il `where`) | sha256 OK (3/3) |
+| 3 | via la clausola `status: 'REGISTERED'` | `2 failed \| 13 passed` — **U5**, AC 4/6 | sha256 OK (3/3) |
+| 4 | via `id: { not: excludeFlightId }` | `2 failed \| 13 passed` — **U8**, U9b-mirror | sha256 OK (3/3) |
+| 5 | `handler.ts:60` torna a `ValidationError` solo | `1 failed \| 3 passed` — **U18** (`handler.test.ts`) | sha256 OK (3/3) |
+| 6 | il clamp torna al `Math.max(0, …)` senza riga | `3 failed \| 2 passed` — **U10**, **U12**, AC 14 | sha256 OK (3/3) |
+| 7 | la riga viene scritta **sempre** | `1 failed \| 4 passed` — **U11** | sha256 OK (3/3) |
+| 8 | ripristinati `<=` e `Math.max(1, …)` | `1 failed` — **U13** (20 s) | sha256 OK (3/3) |
+| 9 | `min(1)` → `min(0)` sui cicli | `1 failed` — **U16** | sha256 OK (3/3) |
+
+Estratto verbatim della riga 1 (la discriminanza che il §4.4 chiede esplicitamente — il test throwaway che **oggi passava** riproducendo `6000 → 6060 → 6120`, portato dentro `flights.service.test.ts` con l'aspettativa rovesciata, e rosso sul pre-fix):
+```
+ROW 1 sovrapposizione parziale: la guardia diventa un no-op (nessuna findFirst)
+  Test Files  1 failed (1)
+  Tests  12 failed | 3 passed | 164 skipped (179)
+  × U1: a PARTIALLY overlapping flight (09:30->10:30 over 09:00->10:00) is a 409 FLIGHT_OVERLAP — nothing written at all
+  × U2: a byte-identical interval (the duplicate) is the same 409 FLIGHT_OVERLAP
+  × U6: the 409 carries details { flightId, takeoffAt, landingAt } with the instants as ISO 8601 UTC STRINGS, not Dates
+  × AC 5: with two conflicting flights, the 409 names the one with the EARLIEST takeoffAt (explicit orderBy)
+  × AC 4/AC 6: the where has aircraftId + status + the two instant comparisons and NOTHING that could catch a NULL instant …
+  × AC 6: the guard reads AFTER the Aircraft FOR UPDATE lock and BEFORE the account upsert and any write
+  × U7: force: true + forceReason on an overlapping request is STILL a 409 — no flight row, so no forcedAt either
+  × P2/P6 (probe 13a/13b): the SAME request twice WITHOUT an Idempotency-Key -> 201 then 409, one flight, one charge, contaore 6000 -> 6060 (never 6120)
+  × U8: a correction that KEEPS its own slot (same aircraft, same instants, changed notes) is accepted — the original is excluded by id
+  × U9a: a correction that MOVES the flight onto a slot occupied by ANOTHER flight on the SAME aircraft is a 409 — the storno never happens
+  × U9b: a correction that moves the flight onto ANOTHER aircraft is checked on THAT aircraft (resolved, never the original)
+  × U9b (mirror): the same move onto a FREE slot on the other aircraft succeeds — the guard interrogates aircraft_2 and finds nothing
+  ripristino sha256: OK (3/3 byte-identici)
+```
+Verifica finale dei tre file dopo tutte le simulazioni:
+```
+$ sha256sum -c pristine/sha256.txt
+src/server/services/flights.service.ts: OK
+src/lib/api/handler.ts: OK
+src/lib/schemas/flights.ts: OK
+```
+**Le discriminanze e2e della tabella §4.3 (E1/E3/E4/E5/E6/E7) non sono state riprodotte separatamente**: ognuna di quelle righe ha almeno un unit nella colonna «rosso atteso», e ogni unit è stato provato rosso. Riprodurre anche il rosso e2e costerebbe una `next build` per riga (l'e2e gira su build di produzione) senza aggiungere informazione sulla discriminanza. Dichiarato come deviazione (§F, 5).
+
+### §E — Le tre fixture e2e spostate (censimento della story, verificato)
+
+| # | `file:riga` | Cosa ho cambiato | Perché così |
+|---|---|---|---|
+| 1 | `e2e/flight-log.spec.ts:221-228` (il volo, `:175` l'helper) | l'helper `registerFlight` accetta `takeoffTimeUtc` (default `'10:00'`, cioè il valore che ogni call-site pre-esistente usava implicitamente) e il terzo volo passa `'12:00'` | il caso ASSERISCE che il volo di **un'altra persona** sullo **stesso velivolo** non compare nel registro own-access: il «same aircraft» è il punto, quindi ho spostato **l'ora**, mai il velivolo. Nessuna asserzione indebolita: il volo esiste ancora, sullo stesso velivolo, nello stesso giorno |
+| 2 | `e2e/reports.spec.ts:253-259` (il volo, `:128` l'helper) | stesso parametro sull'helper (che non prende data: è sempre *oggi*), il volo TOURISM passa `'12:00'` | i KPI asseriti sono quelli del **mese Roma corrente**, quindi il **giorno** non può muoversi. Spostata l'ora, il mese resta lo stesso |
+| 3 | `e2e/flights.spec.ts:455-471` | la chiamata API passa da `2020-01-01T23:30Z → 2020-01-02T00:10Z` a `2020-01-05T23:30Z → 2020-01-06T00:10Z` | il volo registrato **dalla UI** nello stesso test compone gli istanti in ora **locale del browser**: su un host `Etc/UTC` i due intervalli erano **identici** (409 garantito), su un host `Europe/Rome` non si toccavano — la fixture era **TZ-dipendente**. Spostata la **data**, non l'ora: il caso resta «atterraggio dopo mezzanotte via API, `minutes = 40`» e diventa indipendente dal fuso |
+
+Nessun'altra fixture ha preso il 409: il censimento della story (§3.5) è stato eseguito e la suite completa lo conferma (§J). `prisma/seed.ts` non crea voli; `seed-demo.ts` usa il vero `registerFlight` su 24 `daysAgo` distinti (0 coppie velivolo-giorno ripetute) e non è stato toccato.
+
+### §F — Deviazioni motivate
+
+1. **`min(1)` sui cicli senza cambiare il bordo superiore né il messaggio di `FLIGHT_TIMES_INVALID`.** Il controllo client-side nuovo verifica **solo** il bordo inferiore (`< 1`), non `> 500` né la non-interezza: quei due casi rispondono oggi come rispondevano prima della story (422 field-shaped → banner generico). La story cambia il bordo **inferiore**; estendere il controllo agli altri due sarebbe capacità non richiesta.
+2. **Due unit su `handler.ts:60`, non uno.** L'AC 3 chiede l'unit «`ConflictError` con `details` → 409 con `details`». Ne ho aggiunto un secondo, simmetrico: `ConflictError` **senza** `details` → la chiave `details` **assente** dall'envelope. È la metà del contratto che protegge le **39** `ConflictError` pre-esistenti (`errorEnvelope` omette la chiave quando `details === undefined`), e senza di esso una futura "semplificazione" che passasse `details: null` non farebbe rumore.
+3. **Il testo di `FLIGHT_TIMES_INVALID` non è stato riscritto.** La regola ora è «almeno un minuto», ma il messaggio («L'orario di atterraggio deve essere successivo al decollo e la durata non può superare 24 ore.») resta **vero** e la frase non è raggiungibile per il caso sub-minuto **dal form**: i due campi sono `type="time"` a granularità di minuto, e `composeFlightTimes` fa rotolare al giorno successivo un atterraggio uguale al decollo (1440 minuti, non 0). Il caso sub-minuto esiste **solo** via API, dove il consumatore legge il `code`, non la frase italiana. Riscrivere una stringa utente senza un caso utente che la raggiunga è fuori richiesta (karpathy §3).
+4. **Il messaggio del 409 è reso in ora LOCALE del browser.** `details.takeoffAt`/`landingAt` sono ISO 8601 UTC sul filo; il form li rende con `localDateFromIso`/`localTimeFromIso`, gli stessi helper con cui **già** precompila una correzione. È la convenzione unica di questo form: l'operatore rilegge esattamente gli orari che questo form gli mostrerebbe per quel volo. Le sette copie client di `todayDateOnly()` in UTC sono materia della story **16.9** e non sono state toccate (`flight-editor.tsx:230` invariato).
+5. **Discriminanze e2e non riprodotte separatamente** (v. §D, ultimo capoverso).
+6. **Un unit in più su `correctFlight` verso un velivolo diverso.** La story chiede U9 (409 su velivolo diverso occupato); ho aggiunto lo specchio (velivolo diverso **libero** → 201, col `where` su `aircraftId: 'aircraft_2'`). Senza lo specchio, la trappola §5.7 (passare `originalFlight.aircraftId` invece di `resolved.aircraft.id`) resterebbe invisibile: interrogare il velivolo sbagliato **non** fa fallire il caso "occupato" quando anche l'originale è occupato.
+7. **Un helper di test con un interprete di operatori** (`findFirstOverlapping`/`matchesInstant`, `flights.service.test.ts:2091-2146`): è ciò che rende reali U3/U4/U5/U8 in un file dove prisma è interamente mockato (v. AC 2). Ogni ramo di quell'helper è esercitato da almeno un test; non è astrazione a uso singolo.
+8. **`e2e/flights.spec.ts` ha una prima esecuzione rossa nel log, dovuta a un mio selettore.** `getByLabel('Atterraggi')` matcha **anche** «Ora atterraggio» (il name-match di Playwright è substring): strict-mode violation su 2 elementi. Corretto con `exact: true` su entrambi i locator dei cicli, con il commento che cita la lezione 103-F1. È un difetto del mio test, non del codice: nessuna riga di produzione è stata toccata per farlo passare.
+9. **I miei 8 test e2e usano una fixture di persona SENZA login** (`createPilotPerson`, `e2e/flights.spec.ts:917`, locale al blocco), non `createPilotWithLogin`. Motivo misurato, non estetico: il primo arbitro pieno ha prodotto **1 flaky**, ed era il mio E2 — diagnosi in §K. `createPilotWithLogin` attende l'email di invito su Mailpit e naviga il set-password: ~5 secondi fra `ensureValidSeedExpiries` e la prima POST, che è la finestra in cui un `ExpiryType` globale bloccante creato da un altro test rende il volo un 422. Nessuno dei miei test ha bisogno di un login (agiscono tutti da ADMIN, anche E6 che guida il form). Quattro chiamate API sequenziali riducono quella finestra di ~due ordini di grandezza (misurato: E1 da 5,0 s a 2,0 s), e i 16 test di un `--repeat-each=2` passano. **Non la chiude**: il vero fix è alla sorgente (TD 16.2-g).
+
+### §G — TD da registrare (per la sessione principale)
+
+| TD | Cosa | Perché fuori da qui |
+|---|---|---|
+| **16.2-a** | **Sovrapposizione per PERSONA sui voli** (F3, difetto 3: lo stesso pilota su due velivoli nello stesso istante) | il lock sull'`Aircraft` **non** la serializza: servirebbe un lock sulla persona o un vincolo equivalente, che è la decisione aperta della **16.3** (suo AC 2). Una guardia non serializzata regge sui test sequenziali e cede sotto concorrenza: peggio che dichiararla mancante |
+| **16.2-b** | `prisma/seed-load.ts:770` **genera** sovrapposizioni sullo stesso velivolo (dedupla solo l'istante di decollo esatto, `:613-622`) | usa `flight.createMany`, **bypassa** il service: nessun percorso di dominio ci passa. Il DB di carico è lo strumento di misura dell'epic 17 — se quell'epic pretende dati conformi all'invariante, va deduplicato lì |
+| **16.2-c** | il doc-comment di `schema.prisma:274-276` («ONLY via a tracked `HourMeterAdjustment`») **contraddice** le tre scritture reali del contaore | pre-esistente, non riconducibile a questa richiesta (§C) |
+| **16.2-d** | testo morto in `registry.ts:976`: «Exactly one of `minutes` or the `hourMeterStart`/`hourMeterEnd` pair must be given», **falso dalla story 11.1** | idem: l'ho **letto** riscrivendo la descrizione e **non** corretto, perché non è riconducibile a questa richiesta. La descrizione nuova che ho scritto non lo ripete né lo contraddice |
+| **16.2-e** | **le 5 coppie di voli `REGISTERED` già sovrapposte** che il DB di lavoro conteneva prima del reset | registro append-only: la guardia vale sulle scritture nuove. Conseguenza operativa da conoscere: **una correzione** di uno di quei voli può ora legittimamente rispondere 409 |
+| **16.2-f** | domanda PO aperta: esiste un minimo di durata sensato per l'aviosuperficie (5 minuti?) o basta rifiutare sotto il minuto? | l'ipotesi «5 minuti» dell'audit **non è ratificata**; la story implementa «sotto il minuto = 422» e non inventa altro |
+| **16.2-g** | **igiene di suite**: 4 dei 5 test del describe «Blocking expiry guard-rail» (`e2e/flights.spec.ts`) lasciano ATTIVO un `ExpiryType` globale `scope: 'ALL'`, `blocksBooking: true`; `deactivateBlockingType` esiste ed è applicato a **uno** solo. Estenderlo a tutti e 5 chiude alla sorgente una classe di flake già documentata con **quattro** vittime pre-esistenti (`my-account`, `pdf-exports`, `instructor-compensation`, `reports`) e ora una quinta (§K) | sono le fixture della story **14.4**, non di questa: toccare 4 test di un'altra story per un flake che il mio blocco ha soltanto **esposto** sarebbe scope creep. Ho ridotto la mia esposizione (§F, 9) e diagnosticato la causa |
+
+### §H — File toccati
+
+Produzione (7):
+- `src/server/services/flights.service.ts` — 2 funzioni nuove (`assertNoOverlappingFlight`, `decreaseHourMeterForReversal`), 2 call-site ciascuna, bordo inferiore della durata, `Math.max(1, …)` rimosso, doc-comment del modulo/`registerFlight`/`cancelFlight`/`correctFlight`
+- `src/lib/api/handler.ts` — **1** riga (riga 60) + il suo commento
+- `src/lib/schemas/flights.ts` — `min(0)` → `min(1)` sui due campi cicli + doc-comment
+- `src/lib/schemas/registry.ts` — le 2 descrizioni OpenAPI
+- `src/app/[locale]/dashboard/logbook/flight-editor.tsx` — tipo delle label (2 chiavi), controllo cicli, ramo `FLIGHT_OVERLAP`, 2 `min={1}`
+- `src/app/[locale]/dashboard/logbook/page.tsx` — le 2 label nuove
+- `src/app/[locale]/dashboard/page.tsx` — le **stesse** 2 label (builder duplicato per progetto)
+
+i18n (2): `messages/it.json`, `messages/en.json` — `LogbookPage.editor.invalidCycles` e `LogbookPage.editor.errors.FLIGHT_OVERLAP`.
+
+Test (6): `src/server/services/flights.service.test.ts` (mock `flight.findFirst` + `hourMeterAdjustment.create`, 23 test nuovi, 1 invertito e rititolato), `src/lib/api/handler.test.ts` (2 test nuovi), `src/server/services/flights-expiry-boundary.integration.test.ts` (mock `flight.findFirst` + default), `e2e/flights.spec.ts` (blocco nuovo di 8 test + fixture 3), `e2e/flight-log.spec.ts` (fixture 1), `e2e/reports.spec.ts` (fixture 2).
+
+**Nessuna** migrazione Prisma, **nessun** file nuovo, **nessuno** status HTTP nuovo, **nessun** testid nuovo, **nessuna** riga di CSS.
+
+### §I — Cosa NON ho fatto
+
+- **`prisma/schema.prisma`, `src/lib/date-only.ts`, `src/server/services/instructor-compensation.service.test.ts`**: non toccati. Erano in mano a un fix-agent della story 16.1 in questa stessa sessione; lo staging del mio commit elenca i path uno per uno (mai `git add -A`).
+- Le righe della 16.1 in `flights.service.ts` (`:763`, `:1341`, `:1477`): invariate — `git diff` non le tocca.
+- `flight-editor.tsx:230` (`todayDateOnly()` client-side in UTC): invariata, è della story 16.9.
+- `conflictError` non è stato rinominato e il blocco di gestione errori del form non è stato rifattorizzato: ho **aggiunto** un ramo prima, non riscritto il blocco.
+- Nessun backfill, nessuna riscrittura delle coppie sovrapposte già a DB.
+- `Idempotency-Key` **non** è stato reso obbligatorio; il fingerprint, il gate e lo status di replay di `handler.ts` sono invariati.
+- Nessun indice, nessun `@@unique` parziale: `EXPLAIN` sceglie già `Flight_aircraftId_idx` e un unique parziale non coprirebbe la sovrapposizione **parziale**.
+- Nessuna guardia sull'asse **persona** (AD-8, TD 16.2-a).
+
+### §J — Gate ed esiti verbatim
+
+`npm run gates` (mai i 4 comandi separati), eseguito **dopo** che il commit `fix(16.1)` di un altro agent (`6e8d8a9`) era atterrato nell'albero, così che il risultato valga sull'albero reale:
+```
+> airmanager@0.1.0 gates
+> bash scripts/gates.sh
+
+PASS  lint (23s)
+PASS  typecheck (3s)
+PASS  test (10s) — Tests  1873 passed (1873)
+PASS  build (54s)
+```
+**1873 = 1849 baseline + 24 nuovi.** Il baseline non è dedotto ma **misurato**: ripristinando i tre file di test alle loro versioni `HEAD` e rieseguendo gli stessi tre file, il conteggio passa da `224 passed` a `200` (24 di differenza), e `1873 - 24 = 1849` — lo stesso numero che il commit `6e8d8a9` dichiara («gates 1849 unit invariati»). I 24: 21 nel blocco nuovo di `flights.service.test.ts`, 2 sui bordi di durata, 1 di non-regressione sui bordi validi dei cicli, 2 in `handler.test.ts` — meno 2 di somma perché il test dei cicli `[0, 500]` è **invertito**, non aggiunto, e uno dei 21 è la sonda dell'audit. (Il dettaglio è nella lista dei titoli: 25 righe `+it(` di cui **una** è la riscrittura del titolo esistente.)
+
+Verifica CLAUDE.md (validazione eager di `@/lib/env`): i tre file di test toccati girano anche **senza** env esportate —
+```
+$ env -u DATABASE_URL -u AUTH_SECRET npx vitest run src/server/services/flights.service.test.ts \
+      src/lib/api/handler.test.ts src/server/services/flights-expiry-boundary.integration.test.ts
+Tests  224 passed (224)
+```
+Nessun import nuovo verso un service «grosso» è stato introdotto: `hourMeterAdjustment` è una voce del mock prisma già presente, non un modulo nuovo.
+
+Suite e2e **solo** via `scripts/e2e.sh` (mai `playwright test` in foreground), su build di produzione e **DB fresco** (`DROP DATABASE … WITH (FORCE)` + `createdb` + `migrate deploy` + `db seed`, mai `docker compose down -v`, mai il DB `airmanager_load`), con `JOBS_SECRET` non-placeholder esportato.
+
+1. **Run mirato del blocco nuovo** (`--no-deps -g "Story 16.2"`): `8 passed (24.7s)`, `E2E_EXIT=0`.
+2. **Primo arbitro pieno su DB fresco**: `531 passed`, **1 flaky**, 0 failed, `E2E_EXIT=0` — `531 + 1 = 532 = 524 baseline (chiusura 16.1) + 8 di questa story`. Il flaky era **il mio E2**: diagnosi e rimedio in §K.
+3. **Ripetizione del blocco dopo il rimedio** (`--repeat-each=2`): `16 passed (25.0s)`, `E2E_EXIT=0`, con i tempi per test dimezzati (E1 da 5,0 s a 2,0 s).
+4. **ARBITRO FINALE su DB fresco, dopo il rimedio**: `530 passed`, **2 flaky**, **0 failed**, `E2E_EXIT=0` — `530 + 2 = 532`, di nuovo `524 + 8`. I due flaky: uno **pre-esistente e non attribuibile** a questa story (`aircraft-rates.spec.ts:155`, «rate history shows only the last 5 by default»), uno ancora della classe di §K, questa volta atterrato su **E4** invece che su E2 e con la **stessa firma** (la PRIMA POST del test → 422, mai un'asserzione sulla guardia):
+```
+  Error: expect(received).toBe(expected)
+  Expected: 201
+  Received: 422
+    1017 |       data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`),
+  > 1019 |     expect(middle.status()).toBe(201);
+```
+Cioè: il rimedio **ha ridotto** la finestra come misurato, ma — come dichiarato — **non l'ha chiusa**, e la classe resta quella di §K. Le due esecuzioni piene concordano su questo: nessun test del blocco fallisce mai su un'asserzione della guardia, del contaore o del messaggio; il solo modo in cui uno di essi diventa rosso è il 422 di un `ExpiryType` globale altrui. Ho lasciato la diagnosi **nel file**, in testa al describe nuovo, così che chi la incontra la riconosca senza rifare l'analisi, e il fix alla sorgente è il **TD 16.2-g**.
+
+### §K — Il flaky del primo arbitro: diagnosi
+
+Il primo arbitro pieno ha prodotto **1 flaky**, ed era mio: `E2` (replay con `Idempotency-Key`), rosso al primo tentativo **e** al retry #1, verde al retry #2. Il punto di rottura non è la guardia né l'idempotenza:
+```
+Error: expect(received).toBe(expected)
+Expected: 201
+Received: 422
+  944 |     const first = await page.request.post('/api/v1/flights', { data: body, headers: { 'Idempotency-Key': key } });
+> 945 |     expect(first.status()).toBe(201);
+```
+È la **PRIMA** POST che risponde 422, prima che qualunque idempotenza o sovrapposizione entri in gioco. La causa è una classe di flake **pre-esistente e già documentata in questo stesso file** (`e2e/flights.spec.ts`, doc-comment di `deactivateBlockingType` e commento di `test.describe.configure({ mode: 'serial' })`): il describe «Blocking expiry guard-rail» crea `ExpiryType` **globali** `scope: 'ALL'`, `blocksBooking: true` e **4 dei suoi 5 test li lasciano ATTIVI**. Sotto `fullyParallel`, un tipo che diventa attivo **dopo** la scansione `ensureValidSeedExpiries` di una persona fresca blocca la sua registrazione volo con 422 `FLIGHT_BLOCKED_BY_EXPIRY` (per la review F5 della 14.4, un tipo bloccante applicabile **senza** documento registrato è un blocco). L'interleaving del log lo conferma: il mio test #162 girava fra il #161 e il #164 di quel describe.
+
+Il doc-comment esistente elenca **quattro** vittime già osservate di questa stessa classe (`my-account`, `pdf-exports`, `instructor-compensation`, `reports`) e chiude con «serial mode makes this describe block race-free against itself, **the only source of these ALL-scope types in this file**» — vero sulla sorgente, ma il mio blocco è un **consumatore** nuovo nello stesso file.
+
+Rimedio applicato (§F, 9), dentro il mio perimetro: i miei 8 test non usano più `createPilotWithLogin` ma una `createPilotPerson` locale, senza login — nessuno di essi ha bisogno di autenticarsi come pilota (agiscono tutti da ADMIN, E6 incluso). Questo elimina l'attesa dell'email di invito su Mailpit e la navigazione del set-password, riducendo la finestra fra la scansione e la POST da ~5 s a quattro chiamate API sequenziali. Misura: E1 passa da 5,0 s a 2,0 s, e `--repeat-each=2` dà 16/16.
+
+**La finestra non è chiusa, ed è onesto dirlo**: il rimedio vero è disattivare quei tipi alla sorgente (estendere `deactivateBlockingType` a tutti e 5 i test del describe della 14.4), che chiuderebbe anche le quattro vittime pre-esistenti. Non l'ho fatto perché sono fixture di un'altra story e toccare 4 dei suoi test per un flake che il mio blocco ha soltanto **esposto** sarebbe scope creep — registrato come **TD 16.2-g**.
