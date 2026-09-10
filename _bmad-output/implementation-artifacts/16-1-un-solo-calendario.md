@@ -648,7 +648,7 @@ Nessun altro file toccato (confermato da `git diff --stat`, 13 file di codice + 
 
 - Non ho toccato le 7 copie client di `todayDateOnly()` (story 16.9, fuori scope dichiarato — è il confine che tiene questa story su Sonnet).
 - Non ho toccato `expiries.service.ts`/`expiry-alerts.service.ts` (dominio Scadenze/alert job, story 16.4).
-- Non ho toccato i 3 call-site di pagina sulle tariffe né il default del form scadenze (TD 16.1-b).
+- Non ho toccato i 2 call-site di pagina sulle tariffe (TD 16.1-b; `pilots/page.tsx:55` riclassificato in 16.1-a dalla review) né il default del form scadenze.
 - Non ho toccato `ppr.service.ts` (`:655`, `deriveFlightDate`-equivalente per `closedAt`) né `instructor-compensation.service.ts:181` (bound di un report) — confermati non fra i 7 call-site.
 - Non ho ridatato nessuna riga storica (0 misurate sul DB locale; anche fosse stato >0 non avrei eseguito nessun `UPDATE`, per invariante [I-b]).
 - Non ho aggiunto DTO, rotte, tocchi a OpenAPI/registry, migrazioni Prisma, env var nuove, o righe di UI.

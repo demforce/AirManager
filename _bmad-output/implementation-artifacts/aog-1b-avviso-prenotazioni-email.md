@@ -505,3 +505,13 @@ Il link del banner **eredita l'inchiostro del box** e porta la sottolineatura (`
   **524 = 521 di baseline + 3 miei.** I miei tre sono verdi **al primo tentativo**. I **3 skipped AMBIENTALI** che l'arbitro di 1a aveva registrato (`mobile-metar.spec.ts` 61/167/208, `test.skip(!metar?.raw)` by contract) **non ci sono in questo run**: aviationweather.gov era raggiungibile e i tre test sono **passati** (righe 506/507/508 del log) — quindi 521 = 518 + 3, come dichiarato dall'arbitro di 1a, e il totale torna.
 - **Lock anti-brute-force (TD-6)**: nessun rosso attribuito alla flake di login; nessuno è occorso. Il flaky noto `flights.spec.ts:602` (seconda faccia del TD 15.5) **non si è presentato** in questo run.
 - **Stato finale della macchina**: porta **3000 LIBERA** (il server della suite si chiude col run; quello che avevo aperto per le misure è stato ucciso prima di ogni rebuild, come impone CLAUDE.md); DB **post-suite** (193 velivoli, 17 AOG, 11 con data di rientro, 102 prenotazioni, 394 persone); Mailpit con **168** messaggi (tutti della suite). Nessun commit.
+
+## Decisioni PO sui findings della review (2026-09-10 — chiudono le 5 decisioni del report `aog-1b-review-report.md` §5; il fix cycle può partire)
+
+1. **MAJOR-1 (frase vs numero a bound scaduto)** — frase **DEDICATA** (2 chiavi × 2 locale, es. «fermo oltre il {data} previsto: conteggio non delimitato»), e la finestra EFFETTIVA esce da `computeAogImpact` nel DTO (`effectiveUntil: string | null`, null quando il bound è stato clampato); anteprima, banner, riga persistente ed email scelgono la frase su QUELLO (AD-1: nessuna seconda derivazione a valle). Decisione presa il 2026-09-10 in chat.
+2. **MAJOR-2 (doppio click sul doppio passo)** — **idioma Archivio completo**: una domanda (`fld-label`, «Confermi il fermo? N prenotazioni impattate» / caso anteprima assente incluso) davanti alla coppia conferma/annulla, così il Conferma esce dal punto di click del trigger; 2 chiavi × 2 locale; e2e con doppio click che NON scrive.
+3. **MINOR-1 (fold a 1280)** — **compattare a 0 prenotazioni**: con totale 0 l'anteprima è una sola riga («Nessuna prenotazione impattata»); con N > 0 il box completo resta. Rimisurare §C a 1280 e 375.
+4. **MINOR-2 (link del banner non filtrato)** — **tenerlo così e dichiararlo** nel Review Record; il filtro per velivolo arriverà con la story 17.2 (filtro server via URL sulla Pianificazione) e allora il link si aggiorna.
+5. **TD fan-out in-request** — registrato come TD verso la **story 17.8** (invii fuori richiesta per alert e AOG insieme); nessun cap ora.
+
+LOW-1..4: fixare il conteggio unit nel record (LOW-1), dichiarare LOW-2/3/4 nel Review Record. Il fix è UI → **Opus 5 xhigh**; parte dopo il commit della 16.2 (condividono `messages/*.json`).
