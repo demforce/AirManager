@@ -4,7 +4,7 @@ baseline_commit: 4c45753
 
 # Story 16.1: Un solo calendario — «oggi» del volo e data valuta dei movimenti in Europe/Rome
 
-Status: **review** — 2026-09-10. **Modello dev**: **Sonnet 5 xhigh (backend puro)** — questa story non tocca una riga di UI (v. §6: le 7 copie client di `todayDateOnly()` sono fuori scope DICHIARATO, ed è proprio quel confine che tiene la story su Sonnet). Review: **Opus 5 xhigh adversarial**, come sempre.
+Status: **done** — 2026-09-10. **Modello dev**: **Sonnet 5 xhigh (backend puro)** — questa story non tocca una riga di UI (v. §6: le 7 copie client di `todayDateOnly()` sono fuori scope DICHIARATO, ed è proprio quel confine che tiene la story su Sonnet). Review: **Opus 5 xhigh adversarial**, come sempre.
 
 > ⚠️ **Baseline**: `4c45753` è il HEAD su cui **ho misurato e riverificato** ogni `file:riga` di questo file. I due report d'audit citano righe misurate su `b7b8d13`: **le ho riverificate tutte** e la tabella §A dice quali sono slittate (una sola: `dashboard/billing/page.tsx` 116 → 117). Se il dev parte da un HEAD più avanzato, rilegge le righe citate e **corregge questo file** dove sono slittate — la prassi ha pagato in tutte le story dell'epic 15 e in AOG-1b.
 >
@@ -682,3 +682,53 @@ src/server/services/instructor-compensation.service.test.ts (non toccato, verifi
 `zoned-time.ts` non importa nulla oltre a `@/lib/date-only` (che a sua volta non importa nulla) — nessuna catena verso `@/lib/env` trascinata, verificato (non assunto) dal fatto che i due file girano puliti senza mock aggiuntivi.
 
 **Suite e2e mirata** (`scripts/e2e.sh start`, `E2E_REUSE_SERVER=1` su build+server avviati una volta, `JOBS_SECRET` esportato in shell): `flights.spec.ts`, `flight-reversal.spec.ts`, `billing.spec.ts`, `cash-report.spec.ts`, `membership-fee.spec.ts`, `instructor-compensation.spec.ts` — **48 test totali, 46 passed, 2 flaky (passati al retry), 0 failed, exit 0**. I 2 flaky sono entrambi `loginExpectingDashboard` in timeout su `toHaveURL(/\/it\/dashboard$/)` al primo tentativo (`flights.spec.ts:799`, `instructor-compensation.spec.ts:167`) — nessuno dei due è un'asserzione su data/timezone: è la classe di flake da login/timeout pre-esistente e non attribuibile a questa story (nessuna delle due spec tocca codice che questa story ha modificato per la parte che è andata in retry — il secondo tentativo passa pulito su entrambe). Non ho eseguito la suite e2e completa: come dichiarato dalla story stessa (AC 11), il comportamento di questa story vive in una finestra notturna sull'orologio REALE del server che Playwright non può falsificare, quindi la copertura vera è quella unit col clock finto (§B/§D) — la suite completa resta l'arbitro del reviewer.
+
+---
+
+## Review Record — 16.1
+
+**Reviewer**: subagent Opus 5 xhigh adversarial (unico layer adversarial). **Fix**: subagent Sonnet 5 xhigh (review-fix pass, non full `bmad-dev-story`).
+
+### Verdetto
+
+**SHIPPABLE-WITH-FIXES** → tutti i fix richiesti applicati in questo commit. **0 major, 0 blocker.** 11/11 AC verificati empiricamente dal reviewer (non per lettura); la sostituzione è esattamente quella prescritta (1 helper nuovo, 7 call-site, 2 funzioni private cancellate, 5 doc-comment, 0 migrazioni, 0 UI, 13 file di produzione+test). **Nessun difetto di codice trovato** — i 5 findings erano tutti di verità documentale/censimento (AD-3, P5/AC 8), correggibili senza toccare logica.
+
+### Arbitro — suite e2e completa su DB fresco (eseguita dal reviewer)
+
+```
+state: DONE — E2E_EXIT=0
+--- summary ---
+  2 flaky
+  522 passed (20.5m)
+=== e2e end: 2026-09-10T19:59:24+02:00 ===
+E2E_EXIT=0
+```
+**522 passed + 2 flaky + 0 failed + 0 skipped = 524 test, exit 0.** Baseline di confronto (`b7b8d13`): 524 test, 523 passed + 1 flaky — conteggio totale invariato, coerente con AC 11 (nessuno spec e2e aggiunto). I 2 flaky (`mobile-expiries-movements.spec.ts:888` ECONNRESET di trasporto, `settings.spec.ts:133` login-timeout) sono classi preesistenti, nessuno tocca date/fusi; escluso il lock anti-brute-force come causa con la misura (`LoginAttempt`: 3 falliti su 616 nella finestra, contro un cap di 10/identifier).
+
+### Findings e come sono stati corretti (questo commit)
+
+| # | Sev | Sostanza | Fix applicato |
+|---|---|---|---|
+| MINOR-1 | minor | `prisma/schema.prisma:971-972` diceva ancora *«server-clock UTC "today"»* — falso dopo la story, che confronta contro Europe/Rome | Doc-comment riscritto: *«against the Europe/Rome calendar "today" (story 16.1)»*. Una riga, nessuna migrazione (i `///` non producono DDL) |
+| MINOR-2 | minor | Censimento (record §C) e doc-comment di `date-only.ts` classificavano `pilots/page.tsx:55` come pagina tariffe; è `listBlockingExpiriesByPerson`, dominio Scadenze — finiva nel TD sbagliato (16.1-b invece di 16.1-a) | §C corretto (natura reale + TD spostato a 16.1-a); `date-only.ts:39-40` riscritto con l'enumerazione vera (scadenze/alert-job **incluso** il flag documenti bloccanti, 2 pagine tariffe, 1 default form); TD 16.1-a in §7 esteso |
+| MINOR-3 | minor | `fleet/page.tsx:65` produce anche un **bordo di mese** su calendario UTC (`monthStart` + finestra `sumFlightMinutesByAircraft` contro `flightDate` Roma) — il censimento lo diceva «solo lookup tariffe», in contraddizione con l'invariante [I-a] che nomina esplicitamente i bordi di mese | §C corretto con la misura del reviewer (00:30 Roma del 1°: barra «Ore mese» somma il mese precedente intero); TD 16.1-b in §7 riscritto per dire la verità |
+| LOW-1 | low | Le etichette `billing/page.tsx:128` e `reports/page.tsx:58-59` formattano mese/anno senza `timeZone` (fuso del **processo**, UTC in produzione) — un terzo sistema di riferimento non coperto da nessuno dei 5 TD | TD 16.1-b esteso con le due etichette e la conseguenza (Prima Nota titola il mese vecchio, Statistiche l'anno vecchio a Capodanno) |
+| LOW-2 | low | §D citava `instructor-compensation.service.test.ts:377-425` come prova del collasso AD-2 #7 a valore invariato; quei due test esercitano `variantBounds`/`getCompensationSummary`, non `recordPayout` | §D corretto: la prova vera è `zoned-time.test.ts:250` (rossa sul pre-fix). **Opzionale applicato**: `instructor-compensation.service.test.ts:539` portato da `toBeInstanceOf(Date)` al valore Roma sotto orologio finto (`2026-08-31T22:30Z` → `effectiveDate = parseDateOnlyUtc('2026-09-01')`) — `recordPayout` ora ha una guardia di valore come gli altri 6 call-site |
+| O-1 | oss. | §F deviazione 3 diceva genericamente «non c'è un prima rotto da riprodurre» per tutta la matrice DST | Precisato: vale per `dateOnlyInZone` (già esatta prima), non per la seconda metà (helper nuovo), che discrimina in 3 punti su 8 (misurato dal reviewer) |
+| O-2 | oss. | La cucitura `membership` (ora Roma) ↔ `expiries` (ancora UTC) non era nominata in nessun TD | TD 16.1-a esteso: scarto massimo 1 giorno su una validità di 12 mesi, `blocksBooking: false` — innocuo |
+
+Nessun cambio di logica di dominio o runtime: solo doc-comment, censimento, TD e una asserzione di test rafforzata (stessa forma, valore più stretto). Gates: **1849 unit invariati** (nessun test nuovo aggiunto — l'opzionale di LOW-2 rafforza un'asserzione in un `it()` esistente, non ne crea uno). Suite e2e **non rieseguita**: nessun percorso runtime cambia, come dichiarato dal report.
+
+### «Verificato corretto» — sintesi del reviewer (3-4 righe)
+
+Un helper, sette call-site esatti, zero copie private residue (grep riprodotti). Le due asserzioni esatte di `flights.service.test.ts` sono state riallineate al nuovo helper, mai indebolite a `objectContaining`/`expect.any`. Le 8 discriminanze dichiarate in §D sono **reali**: il reviewer le ha riprodotte in un worktree isolato simulando il pre-fix, con corrispondenza uno-a-uno e ripristino byte-identico (sha256 coincidenti con quelli dichiarati). Censimento incrociato per colonna `@db.Date` (non solo per nome funzione): 7 e solo 7 writer di «oggi», nessun ottavo nascosto. Nessuna riga storica ridatata (invariante [I-b], verificato anche su un corpus di carico da 136.000 movimenti). Nessun testo di contratto (OpenAPI/registry/i18n) falsificato. Prove sull'API reale (build di produzione): un volo decollato 22:30Z (giorno UTC 9, giorno Roma 10) viene registrato e datato sul **giorno Roma**, e il volo a cavallo di mezzanotte Roma non si spezza in due giornate — RBAC di non-regressione confermato (403 su pilota).
+
+### TD 16.1-a…e — testo corretto, pronto per `sprint-status.yaml` (sessione principale)
+
+| TD | Contenuto |
+|---|---|
+| **TD 16.1-a** | Dominio Scadenze e alert job ancora su «oggi» UTC (6 call-site in `src/server`, §6, **più** `dashboard/pilots/page.tsx:55` — `listBlockingExpiriesByPerson`, spostato qui dalla revisione: è il flag documenti bloccanti/`daysUntil` di riga, dominio Scadenze, non una pagina tariffe): benigno e misurato, da valutare con la 16.4 che tocca già quelle scansioni. Include la cucitura fra `membership.service.ts` (ora Roma) ed `expiries.service.ts` (ancora UTC): un `Expiry` creato da `chargeMembershipFee` alle 00:30 Roma prende `expiresAt` sul giorno Roma (`membership.service.ts:92,164`) ma `computeExpiryStatus` lo confronta con «oggi» UTC (`expiries.service.ts:131`) — scarto massimo 1 giorno su una validità di 12 mesi, su un `ExpiryType` con `blocksBooking: false` (`membership.service.ts:143`): non blocca nessuno e non tocca denaro. |
+| **TD 16.1-b** | Due call-site di pagina sulle tariffe + default del form scadenze su «oggi» UTC (§6): `dashboard/page.tsx:295` è solo lookup tariffe; `dashboard/fleet/page.tsx:65` è **anche** un bordo di mese su calendario UTC (`monthStart` e la finestra di `sumFlightMinutesByAircraft`) contro una colonna `flightDate` Roma — misurato: alle 00:30 Roma del 1° del mese la barra «Ore mese» somma il mese precedente intero, non solo «visualizzazione, nessun effetto sul denaro» come detto in una revisione precedente. Aggiungere anche le due etichette **process-local** (nessuna `timeZone`, quindi sul fuso del processo — UTC in produzione, `period-presets.ts:11`): `billing/page.tsx:128` e `reports/page.tsx:58-59` (mese/anno) — alle 00:30 Roma del 1° la pagina Prima Nota titola il mese precedente sopra i numeri del mese nuovo, e a Capodanno l'etichetta d'anno di Statistiche dice l'anno vecchio (review LOW-1). |
+| **TD 16.1-c** | **Finding nuovo**: 7 copie client di `todayDateOnly()` in UTC = il terzo calendario, non nominato da nessun audit (§6). **Serve una decisione PO** sulla casa (16.6 o epic 18) prima di aprirlo. |
+| **TD 16.1-d** | `period-presets.ts#romeDateParts` = quarta implementazione (corretta) di «parti di calendario Roma»: consolidamento, non correttezza. |
+| **TD 16.1-e** | Classe di flake latente: 6 helper `todayDateOnly()` UTC negli spec e2e vs aggregati di mese Roma (§5). |
