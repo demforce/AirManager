@@ -481,7 +481,8 @@ development_status:
   16-3-prenotazioni-persona-istruttore-approvazione: ready-for-dev  # story file 2026-09-10; dev Opus (3 client scelgono il 409 dallo status)
   16-4-tipo-scadenza-disattivato: ready-for-dev  # story file 2026-09-10; dopo 16.1
   16-5-compensi-istruttori-snapshot: ready-for-dev  # story file 2026-09-10; dev Opus; 3 domande PO in coda
-  16-6-ledger-data-valuta-pdf-quota: backlog
+  16-6a-data-valuta-e-totali: ready-for-dev  # split 2026-09-10
+  16-6b-quota-rettifiche-catene: ready-for-dev  # split 2026-09-10
   16-7-dati-sessioni-rate-limit: ready-for-dev  # story file 2026-09-10; dev Opus (bookings-table.tsx:244); stesso file della 16.3
   16-8-archivio-velivolo-tutele-aog: backlog  # dopo la chiusura del fix cycle AOG-1b
   16-9-un-solo-calendario-client: backlog  # aggiunta 2026-09-10 dalla ricognizione 16.1 (7 copie client UTC), UI → Opus
