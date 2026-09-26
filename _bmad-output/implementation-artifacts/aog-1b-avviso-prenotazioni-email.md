@@ -4,7 +4,7 @@ baseline_commit: b5a2c93
 
 # Story AOG-1b: «Stai per impattare N prenotazioni» — l'anteprima, la conferma a due passi, il numero reale nella response e l'email ai piloti con una prenotazione approvata
 
-Status: **done** — 2026-08-07: dev Opus 5 xhigh (Dev Agent Record in coda; `npm run gates` verde a 1 819 unit, suite e2e completa verde, §L). 2026-09-26: review SHIPPABLE-WITH-FIXES chiusa dal fix `a1b2362` sulle cinque decisioni PO del 2026-09-10 — «Review Record — AOG-1b» in fondo al file.
+Status: **done** — 2026-08-07: dev Opus 5 xhigh (Dev Agent Record in coda; `npm run gates` verde a 1 819 unit, suite e2e completa verde, §L). 2026-09-26: review SHIPPABLE-WITH-FIXES chiusa dal fix `a1b2362` sulle cinque decisioni PO del 2026-09-10 e dal fix `b12feef` sulla decisione PO 6 dello stesso giorno (doppio click ignorato sul Conferma) — «Review Record — AOG-1b» in fondo al file.
 
 > ⚠️ **Baseline effettiva**: il frontmatter dichiara `b5a2c93` perché è il commit su cui è stata **misurata** la ricognizione e su cui sono ancorati **tutti** i riferimenti `file:riga` di questo file. La baseline **reale** di questa story è il **commit di chiusura di AOG-1a**: prima di iniziare, il dev rilegge le righe citate sul HEAD corrente e **corregge questo file** dove sono slittate (è successo al doc base: tre righe slittate di +19 fra fine luglio e il 7 agosto — la prassi di riverificare ha pagato in tutte le story dell'epic 15).
 >
@@ -527,7 +527,7 @@ LOW-1..4: fixare il conteggio unit nel record (LOW-1), dichiarare LOW-2/3/4 nel 
 
 ## Review Record — AOG-1b
 
-**Review**: `aog-1b-review-report.md` (Opus 5 xhigh, 2026-08-07) — verdetto **SHIPPABLE-WITH-FIXES**: 2 MAJOR, 2 MINOR, 4 LOW, 0 BLOCKER · **Decisioni PO**: 2026-09-10 (sezione precedente) · **Fix**: `a1b2362` (Opus 5 xhigh, subagent, 2026-09-26), su `dev` · **Macchina**: Fedora locale, build di produzione, DB `airmanager` NON resettato (quello base-seminato dalla sessione principale).
+**Review**: `aog-1b-review-report.md` (Opus 5 xhigh, 2026-08-07) — verdetto **SHIPPABLE-WITH-FIXES**: 2 MAJOR, 2 MINOR, 4 LOW, 0 BLOCKER · **Decisioni PO**: 2026-09-10 (sezione precedente) · **Fix**: `a1b2362` (decisioni 1-5) + `b12feef` (decisione PO 6, presa il 2026-09-26 dopo la misura del residuo di MAJOR-2) — Opus 5 xhigh, subagent, su `dev` · **Macchina**: Fedora locale, build di produzione, DB `airmanager` NON resettato (quello base-seminato dalla sessione principale).
 
 ### R.0 — La bozza ereditata (fix agent fermato dal PO il 2026-09-10, ~380 righe mai verificate)
 
@@ -539,7 +539,7 @@ Letta riga per riga contro il mandato. **Tenuto** (verificato, non creduto): `ef
 
 **Tolto**: il testid `out-of-service-confirm-question` (non serviva: l'Archivio non ne ha, e l'e2e trova la domanda con `getByText(…, { exact: true })`). **Nessun testid nuovo** in questo fix; `aog-impact-preview` resta un solo nodo (due rami di render mutuamente esclusivi).
 
-### R.1 — Le cinque decisioni PO, applicate
+### R.1 — Le decisioni PO, applicate (cinque del 2026-09-10 + la sesta del 2026-09-26)
 
 **1. MAJOR-1 — finestra EFFETTIVA dal dominio, frase dedicata.** `computeAogImpact` restituisce `effectiveUntil: string | null` — il giorno del bound se è ancora vivo, `null` sia senza data sia col bound clampato (la regola resta in `aog-impact.ts` e SOLO lì). Il DTO `aogBookingImpactSchema` lo porta, quindi `GET /out-of-service-impact` e `impactedBookings` di `POST /out-of-service`; registry aggiornato nello stesso commit. **OpenAPI generato, letto** (`GET /api/v1/openapi.json`, 84 path): `AogBookingImpact` = `{pending: integer ≥0, approved: integer ≥0, effectiveUntil: {"type":["string","null"],"format":"date"}}`, tutti e tre `required`; `SetOutOfServiceResponse.impactedBookings` identico. UI (anteprima, banner, riga) ed email scelgono la frase su `effectiveUntil`: vivo → `impactWindowUntil`/`windowUntil`; `null` senza data chiesta → `impactWindowUndelimited`/`windowUnknown`; `null` CON data chiesta → **frase nuova**. Chiavi nuove (2 × 2 locale):
 
@@ -568,8 +568,8 @@ Test: unit `aog-impact.test.ts` (bound futuro → il suo giorno, oggi → oggi, 
 
 Domanda: 307,03×15,22 a entrambe le larghezze (a 375 riempie la prima riga e la coppia va a capo). Contrasto domanda **4,85** chiaro / **5,72** scuro (`.fld-label`, `--ink-3` sul pannello), Conferma **17,99**. Bersagli: Conferma/Annulla **82,3×44 / 67,98×44 a 375** (regola (11) di 1b intatta), **82,3×34,84** a 1280; `out-of-service-submit` **479×34,84** a 1280 (identico al centesimo) e **335×44** a 375.
 
-⚠️ **Residuo, dichiarato e non chiuso** (e segnalato alla sessione principale PRIMA del commit): il trigger è **a tutta larghezza** e deve restarlo (479×34,84, vincolo di 1a), quindi nessuna disposizione in flusso tiene la coppia fuori dal suo box. A **1280** il Conferma sta **interamente dentro** il box del trigger (intersezione 82,3×34,84), a destra dell'etichetta centrata (x 1096-1178 contro centro 1020,5): un doppio click in QUEL tratto del trigger armerebbe e confermerebbe ancora. A **375** il Conferma copre i 20,78px inferiori degli 82px di sinistra del trigger, e il punto «bordo sinistro a metà altezza» ne resta fuori di **1,22px**. Le due chiusure complete (coppia spostata di almeno l'altezza del trigger, oppure Conferma disabilitato ~500ms dopo l'armo) **non sono state scelte dal PO** e non le ho introdotte (karpathy §2). Per lo stesso motivo **nessun e2e a 375**: un margine di 1,22px non è una guardia, è un caso.
-e2e `aog-impact-email.spec.ts:375` a 1280: `dblclick` nativo sul bordo sinistro → **zero POST** verso l'endpoint, velivolo **OPERATIONAL** sul DB, domanda visibile, Conferma non sotto il punto cliccato.
+⚠️ **Residuo della sola domanda** (misurato dopo `a1b2362`, segnalato alla sessione principale, **chiuso dalla decisione PO 6** — R.1-6): il trigger è **a tutta larghezza** e deve restarlo (479×34,84, vincolo di 1a), quindi nessuna disposizione in flusso tiene la coppia fuori dal suo box. A **1280** il Conferma sta **interamente dentro** il box del trigger (intersezione 82,3×34,84), a destra dell'etichetta centrata (x 1096-1178 contro centro 1020,5): un doppio click in QUEL tratto del trigger armerebbe e confermerebbe ancora. A **375** il Conferma copre i 20,78px inferiori degli 82px di sinistra del trigger, e il punto «bordo sinistro a metà altezza» ne resta fuori di **1,22px**. Le due chiusure geometriche/temporali (coppia spostata di almeno l'altezza del trigger, oppure Conferma disabilitato ~500ms dopo l'armo) **non sono state scelte**: il PO ha scelto la terza, `event.detail` (R.1-6). E il margine di 1,22px a 375 era **peggio** di quanto sembrasse: col tocco, l'aggiustamento del tap di Chromium lo annulla (R.1-6, misura).
+e2e `aog-impact-email.spec.ts:385` a 1280: `dblclick` sul bordo sinistro → **zero POST** verso l'endpoint, domanda visibile, Conferma non sotto il punto cliccato (e, dalla decisione 6, lo stesso gesto anche nel punto di sovrapposizione — R.1-6).
 
 **3. MINOR-1 — anteprima compatta a zero.** Con totale 0 l'anteprima è **un solo `.fld-hint`**, «Nessuna prenotazione impattata · rientro da definire: conteggio non delimitato» (EN «No bookings impacted · return date not yet known: count not delimited») — la frase della finestra resta perché AC 8 vale anche a zero; con N > 0 il box completo è invariato. **Dove**: sopra i 640px nella cella del `.form-grid` che la data lascia vuota (232,5×34,78, allineata in basso alla cella da 100,84), sotto i 640px riga propria dopo la data. **Fold, prima → dopo** (tabella completa in §C, «Correzione»): a **1280×900** il submit passa da bottom **904,09** (64px sotto il bordo 840,16 del `.so-body`, scroll obbligatorio) a bottom **811,97** — **visibile senza scroll**, `scrollTop 0`, identico al pre-1b al centesimo (y 777,13); a **375×812** da 1 044,30 a **1 000,95** (sotto il fold di 257,95px, era 301,30; pre-1b 209,17: a 375 il submit si raggiunge scorrendo, come sempre). Contrasto della riga **4,85 / 5,72**.
 ⚠️ **Deviazione dalla lettera «una sola riga»**: il testo è UNA riga di hint, ma nella mezza cella va a capo su **2 righe visive** (34,78px). L'alternativa letterale — riga a tutta larghezza in testa alla griglia, 1 riga visiva da 17,39px — è stata **misurata** e lascia il submit a bottom **843,36**, cioè **3,20px sotto** il fold a 1280: mancherebbe proprio l'obiettivo del finding. Scelta la cella accanto alla data, che costa 0px.
@@ -578,6 +578,42 @@ e2e `aog-impact-email.spec.ts:342`: fold asserito per primo (`submitBottom ≤ b
 **4. MINOR-2 — link del banner non filtrato: tenuto così, dichiarato.** `aog-impact-bookings-link` punta ancora a `/{locale}/dashboard/bookings?status=PENDING,APPROVED`: porta ai due stati di cui il numero parla, **non** al solo velivolo del banner, perché `/dashboard/bookings` oggi non ha un filtro velivolo via URL (§H, deviazione 1). Il filtro arriva con la **story 17.2** (filtro server via URL sulla Pianificazione); lì il link si aggiorna. La regola CSS `.alert-box a` non è stata toccata.
 
 **5. TD fan-out in-request — registrato verso la story 17.8** (invii fuori richiesta per alert e AOG insieme): 1 517-1 615ms con 21 destinatari contro 16-27ms a zero (misure del dev e della review), nessun cap ora. La riga in `sprint-status.yaml` la scrive la sessione principale.
+
+**6. Decisione PO 6 (2026-09-26, via AskUserQuestion della sessione principale) — il Conferma ignora la seconda metà di un doppio click.** Aggiunta SOPRA l'idioma della domanda, che resta. `out-of-service-confirm` ha `onClick={(event) => { if (event.detail > 1) return; void submitOutOfService(); }}`: nessun cambiamento visivo, nessun ritardo, a qualunque posizione.
+
+*Fattibilità, misurata PRIMA di implementare* (build `a1b2362`, senza guardia, listener in cattura su `document`, puntando dentro la sovrapposizione Conferma/trigger — 1280: 1137,18/794,55; 375: 61,15/649,56):
+
+| Gesto | Sequenza di click misurata | Esito |
+|---|---|---|
+| `mouse.dblclick` 1280 / 375 | `submit` detail 1 → **`confirm` detail 2** (1 ms dopo) | OUT_OF_SERVICE: il conteggio SOPRAVVIVE al cambio di nodo sotto il puntatore |
+| due `mouse.click` separati (clickCount 1), stesso punto, 45 ms | `submit` 1 → `confirm` **1** | OUT_OF_SERVICE: sotto CDP Chromium **non** conta i click del mouse, il conteggio è quello che Playwright gli passa |
+| due `touchscreen.tap`, contesto `hasTouch`+`isMobile`, subito o a 150 ms | `submit` 1 → **`confirm` 2** | OUT_OF_SERVICE: qui Playwright invia tocchi grezzi senza conteggio, **il 2 lo calcola il rilevatore di gesti di Chromium** |
+| tap singolo sul Conferma 800 ms dopo l'armo | `confirm` 1 | conferma |
+| Invio / Spazio sul Conferma a fuoco | `confirm` **0** | conferma |
+
+*Che cosa dà il browser a un utente vero*: per il **mouse** il conteggio lo fa la piattaforma, non Blink. Su Linux/Windows/ChromeOS è `ui/events/event.cc#MouseEvent::IsRepeatedClickEvent` (letto nel sorgente Chromium): confronta **solo** tipo di pressione, flag del tasto, tempo (≤ `kDoubleClickTimeMs`) e posizione (±2px, `kDoubleClickWidth/Height = 4`), **mai** il target o la finestra; su macOS è il `clickCount` di AppKit, anch'esso tempo+posizione. Quella metà NON è misurabile su questa macchina (nessun server X, nessun `xdotool`): è **citata dal sorgente**, non misurata. Per il **tocco** invece il conteggio è di Chromium ed è **misurato**.
+
+*Verifica sulla build di produzione CON la guardia* (condizione 1 del PO; `b12feef`):
+
+| Gesto | Click visti | POST | Stato |
+|---|---|---|---|
+| 1280, `dblclick` a destra dell'etichetta (1137,18/794,55, dentro Conferma E trigger) | `submit:1 confirm:2` | **0** | **OPERATIONAL**, armato |
+| 1280, `dblclick` sul bordo sinistro (785/794,55) | `submit:1 SPAN:2` (la domanda) | **0** | **OPERATIONAL** |
+| 375 mouse, `dblclick` sul bordo sinistro (24/637,95) | `submit:1 DIV:2` | **0** | OPERATIONAL |
+| 375 mouse, `dblclick` sulla sovrapposizione (61,15/649,56) | `submit:1 confirm:2` | **0** | OPERATIONAL |
+| 375 **tocco**, doppio tap sul **bordo sinistro** (24/637,95) | `submit:1` **`confirm:2`** | **0** | OPERATIONAL |
+| 375 tocco, doppio tap sulla sovrapposizione | `submit:1 confirm:2` | **0** | OPERATIONAL |
+| click singolo sul Conferma (1280, 375 mouse), tap singolo (375 tocco) | `confirm:1` | 1 | OUT_OF_SERVICE (conferma) |
+| Invio / Spazio sul Conferma a fuoco (1280) | `confirm:0` | 1 | OUT_OF_SERVICE (conferma) |
+
+⚠️ **La riga del doppio tap sul bordo sinistro è la scoperta della misura**: il punto è 1,22px SOPRA il Conferma, ma l'**aggiustamento del tap** di Chromium (che aggancia un tocco al nodo cliccabile più vicino entro l'area del dito) ha consegnato il secondo tap al Conferma. Senza la decisione 6 un doppio tap sul bordo sinistro del trigger, a 375, avrebbe fermato il velivolo: la sola geometria non bastava sul telefono, e nessuna misura a punto singolo (come quella della review) poteva vederlo.
+
+*Onestà dei due e2e* (condizione 2):
+- `aog-impact-email.spec.ts:385` (1280, mouse) fa il doppio click sul bordo sinistro E nel punto di sovrapposizione (la sovrapposizione è **asserita**: se un layout futuro la togliesse, il test lo direbbe invece di perdere in silenzio la sua discriminanza), poi controllo negativo con **Invio** (detail 0) che conferma. ⚠️ Prova la metà di Blink (il conteggio arriva al nodo nuovo) e la guardia dell'app, **ma passa anche perché Playwright imposta da sé `clickCount` 1 poi 2**: la metà «la piattaforma conta per tempo e posizione» non la prova, è citata dal sorgente (sopra).
+- `aog-impact-email.spec.ts:448` (375, contesto `hasTouch`+`isMobile`, `storageState` della sessione admin: nessun login in più) fa il doppio **tap** nella sovrapposizione: qui il conteggio lo fa **Chromium**, quindi il test è onesto end-to-end nel browser. Controllo negativo: tap singolo dopo 800 ms (oltre l'intervallo del doppio tap) che conferma. Il click singolo del mouse è il gesto con cui confermano tutti gli altri test del file.
+- Entrambi **ROSSI senza la guardia** (R.4, R6/R7).
+
+*L'Archivio* (condizione 3, sola misura, **non toccato**): `archive-toggle-button` NON è a tutta larghezza (71,42×34,84) e la sua domanda è corta. A **1280** `archive-confirm` nasce a x 981,78 contro un trigger che finisce a 852,42; a **375** a x 220,78 contro 91,42 — intersezione col trigger **nulla** a entrambe le larghezze (il suo Annulla va a capo a 375, 8px sotto il trigger, ed è innocuo). **L'Archivio non ha la geometria del difetto.** Nota per la **16.8**, che riusa questo doppio passo: se il suo trigger è a tutta larghezza (o se una qualunque coppia nasce a portata di dito del trigger — l'aggiustamento del tap allarga il «sotto il punto» a un'area), riusare la stessa guardia `event.detail > 1`.
 
 ### R.2 — LOW
 
@@ -592,7 +628,7 @@ e2e `aog-impact-email.spec.ts:342`: fold asserito per primo (`submitBottom ≤ b
 |---|---|---|
 | 1 | **3 chiavi × 2 locale** per la domanda (One/Many/Unknown), non le 2 stimate | La domanda contiene il conteggio e IT/EN flettono il nome («1 prenotazione impattata» / «{count} prenotazioni impattate»). Le label arrivano al client come stringhe `t.raw` interpolate lato browser, quindi niente ICU plural: la coppia One/Many è la convenzione del file (`impactPreviewOne/Many`, `impactBannerOne/Many`, `impactRowOne/Many`). Più `impactPreviewNone` per MINOR-1: **6 chiavi nuove per locale** in tutto |
 | 2 | **Riga compatta su 2 righe visive** nella mezza cella | v. R.1-3: la riga a tutta larghezza lascia il submit 3,20px sotto il fold |
-| 3 | **Residuo di MAJOR-2** (Conferma dentro il box del trigger a tutta larghezza) | v. R.1-2: le chiusure complete non sono state ratificate |
+| 3 | ~~Residuo di MAJOR-2~~ → **chiuso dalla decisione PO 6** (`b12feef`) | v. R.1-2 e R.1-6: la domanda da sola lasciava il Conferma dentro il box del trigger a tutta larghezza (e, col tocco, raggiungibile anche dal bordo sinistro) |
 | 4 | **`ShownImpact`** (la data chiesta viaggia col conteggio) | Non chiesto alla lettera: è ciò che rende VERA la frase dedicata anche durante il debounce (R.0-1) |
 
 **Parità i18n**: 0 chiavi solo-IT, 0 solo-EN su **1 986** per file (1 980 al HEAD + 6). **Nessun `var(--bad)`/`var(--ok)` inline aggiunto** (`git diff -U0 | grep` → 0). `src/styles/airops.css` non toccato: `.alert-box a` e le regole (10)/(11) byte-identiche. **Nessun testid nuovo.**
@@ -609,27 +645,38 @@ sha256 **prima** delle simulazioni: `aog-impact.ts 53d3638b…3e77`, `templates.
 | R4 | doppio click che non conferma (e2e `:375`) | domanda rimossa (coppia all'origine del trigger), stessa build | **failed alla riga 398**: `a double click must not reach the grounding endpoint` — `Received: ["http://localhost:3000/api/v1/aircraft/…/out-of-service"]` |
 | R5 | fold a 1280 con zero prenotazioni (e2e `:342`) | box completo anche a zero, stessa build | **failed alla riga 357**: `submit bottom 904.09375 must sit above the body edge 840.15625` |
 
-R3-R5 in **un solo** run (`-g "review MAJOR-1|review MAJOR-2|review MINOR-1" --retries=0` → `3 failed`, `E2E_EXIT=1`), ognuno sulla PROPRIA asserzione. Le misure «prima» di R.1-2 e R.1-3 vengono da quella stessa build simulata.
+| R6 | doppio click nel punto di sovrapposizione, 1280 (e2e `:385`, decisione 6) | riga `if (event.detail > 1) return;` sostituita da `void event;` (diff di UNA riga), build ricompilata | **failed alla riga 421**: `a double click at 1123.8515625,794.546875 must not reach the grounding endpoint` — `Received: ["http://localhost:3000/api/v1/aircraft/…/out-of-service"]`; la prima iterazione (bordo sinistro) era passata |
+| R7 | doppio tap a 375 (e2e `:448`, decisione 6) | stessa build | **failed alla riga 478**: `a double tap must not reach the grounding endpoint` — `Received: ["http://localhost:3000/api/v1/aircraft/…/out-of-service"]` |
+
+R3-R5 in **un solo** run (`-g "review MAJOR-1|review MAJOR-2|review MINOR-1" --retries=0` → `3 failed`, `E2E_EXIT=1`), ognuno sulla PROPRIA asserzione; i numeri di riga di R3-R5 sono quelli del file com'era in `a1b2362` (il test del doppio tap, entrato con `b12feef`, li ha spostati: oggi `:385`/`:502`). Le misure «prima» di R.1-2 e R.1-3 vengono da quella stessa build simulata. R6-R7 in un secondo run (`-g "decisione PO 6" --retries=0` → `2 failed`, `E2E_EXIT=1`); `aircraft-editor.tsx` ripristinato da copia prima della build successiva, `sha256sum -c` → `abb45390…b443: OK`. (A 1280 il punto di sovrapposizione nel run e2e è x 1123,85 invece dei 1137,18 del probe: il test lo legge dal box del Conferma, non lo cabla.)
 
 ### R.5 — Gate ed esiti
 
-- **`npm run gates`** (dopo il ripristino, shell senza `.env` esportato):
+- **`npm run gates`** (dopo il ripristino, shell senza `.env` esportato) — per `a1b2362`:
   ```
   PASS  lint (19s)
   PASS  typecheck (9s)
   PASS  test (7s) — Tests  1877 passed (1877)
   PASS  build (28s)
   ```
+  e per `b12feef` (decisione 6, nessun unit nuovo):
+  ```
+  PASS  lint (20s)
+  PASS  typecheck (3s)
+  PASS  test (7s) — Tests  1877 passed (1877)
+  PASS  build (29s)
+  ```
   **1 877 = 1 874 di baseline + 3** (1 `aog-impact.test.ts`, 1 `aircraft.service.test.ts`, 1 `templates.test.ts`).
 - **Unit in shell PULITA** (`env -u DATABASE_URL -u AUTH_SECRET npx vitest run <file>`): `aog-impact.test.ts` **9 passed**, `aircraft.service.test.ts` **72 passed**, `templates.test.ts` **20 passed**.
-- **e2e mirati** (build di produzione, `E2E_REUSE_SERVER=1 scripts/e2e.sh start e2e/aog-impact-email.spec.ts e2e/aircraft-out-of-service-until.spec.ts e2e/aircraft-status-hours.spec.ts`, esito letto con `scripts/e2e.sh status`): **`19 passed (27.8s)`, `E2E_EXIT=0`**. Le righe della story, verbatim:
+- **e2e mirati** (build di produzione di `b12feef`, `E2E_REUSE_SERVER=1 scripts/e2e.sh start e2e/aog-impact-email.spec.ts e2e/aircraft-out-of-service-until.spec.ts e2e/aircraft-status-hours.spec.ts`, esito letto con `scripts/e2e.sh status`): **`20 passed (30.4s)`, `E2E_EXIT=0`** (su `a1b2362` erano `19 passed (27.8s)`, `E2E_EXIT=0`; +1 = il test del doppio tap). Le righe della story, verbatim:
   ```
-  ✓  15 [chromium] › e2e/aog-impact-email.spec.ts:283:7 › Impacted-booking count and grounding email (story AOG-1b) › with NO expected-return date the count is declared NOT delimited, everywhere, and it includes what a dated window would have excluded (AC 8) (5.1s)
+  ✓  15 [chromium] › e2e/aog-impact-email.spec.ts:283:7 › Impacted-booking count and grounding email (story AOG-1b) › with NO expected-return date the count is declared NOT delimited, everywhere, and it includes what a dated window would have excluded (AC 8) (4.6s)
   ✓  16 [chromium] › e2e/aog-impact-email.spec.ts:342:7 › Impacted-booking count and grounding email (story AOG-1b) › with zero impacted bookings the preview is one compact line and the submit is above the fold at 1280x900 (review MINOR-1) (1.3s)
-  ✓  17 [chromium] › e2e/aog-impact-email.spec.ts:375:7 › Impacted-booking count and grounding email (story AOG-1b) › a double click on the Fuori servizio trigger arms the second step and never confirms it (review MAJOR-2) (1.4s)
-  ✓  18 [chromium] › e2e/aog-impact-email.spec.ts:421:7 › Impacted-booking count and grounding email (story AOG-1b) › a fermo past its expected day says so, over a count that is NOT delimited (review MAJOR-1) (2.1s)
-  ✓  14 [chromium] › e2e/aog-impact-email.spec.ts:156:7 › Impacted-booking count and grounding email (story AOG-1b) › the preview, the cancellable two-step submit, the persistent banner with the REAL number, the line at reopen, and the email to the APPROVED holders only (10.9s)
-  ✓  19 [chromium] › e2e/aog-impact-email.spec.ts:456:7 › Impacted-booking count and grounding email (story AOG-1b) › the two controls of the double step reach the 44px floor on the phone, keep their desktop box, and the banner link carries the box ink plus its underline (AC 3/AC 14) (2.2s)
+  ✓  17 [chromium] › e2e/aog-impact-email.spec.ts:385:7 › Impacted-booking count and grounding email (story AOG-1b) › a double click on the Fuori servizio trigger arms the second step and never confirms it, anywhere on the trigger (review MAJOR-2, decisione PO 6) (1.6s)
+  ✓  18 [chromium] › e2e/aog-impact-email.spec.ts:448:7 › Impacted-booking count and grounding email (story AOG-1b) › a double TAP on the trigger at 375 never confirms, a single tap on Conferma does (decisione PO 6) (3.2s)
+  ✓  14 [chromium] › e2e/aog-impact-email.spec.ts:156:7 › Impacted-booking count and grounding email (story AOG-1b) › the preview, the cancellable two-step submit, the persistent banner with the REAL number, the line at reopen, and the email to the APPROVED holders only (11.1s)
+  ✓  20 [chromium] › e2e/aog-impact-email.spec.ts:537:7 › Impacted-booking count and grounding email (story AOG-1b) › the two controls of the double step reach the 44px floor on the phone, keep their desktop box, and the banner link carries the box ink plus its underline (AC 3/AC 14) (2.3s)
+  ✓  19 [chromium] › e2e/aog-impact-email.spec.ts:502:7 › Impacted-booking count and grounding email (story AOG-1b) › a fermo past its expected day says so, over a count that is NOT delimited (review MAJOR-1) (2.5s)
   ```
   I 9 test di 1a e i 4 della 2.5 sono nello stesso run, tutti verdi. `aog-overview-count.spec.ts` non è stato toccato e non è stato rieseguito. **Suite completa: NON eseguita da me**; la esegue la sessione principale, come arbitro, dopo questi commit.
-- **Stato della macchina**: porta **3000 libera** (server ucciso per PID). DB **non resettato**; residui delle misure: **16** velivoli run-unique (`model` `Measure …` / `Alt probe`), di cui **5 OUT_OF_SERVICE** (3 fermati dalla riproduzione del doppio click sulla build pre-fix, 2 fixture «fermo scaduto»), **7** persone `Msr-*` con le loro prenotazioni. Nessun attore di seed e nessun `AppSettings` toccato. Lo script di misura (`playwright-core`, scratchpad) non è committato.
+- **Stato della macchina**: porta **3000 libera** (server ucciso per PID). DB **non resettato**; residui delle misure: **30** velivoli run-unique (`model` `Measure …` / `Alt probe` / `Detail probe` / `Guard probe`), di cui **18 OUT_OF_SERVICE** (3 fermati dalla riproduzione del doppio click sulla build pre-fix, 2 fixture «fermo scaduto», 8 dal probe di fattibilità della decisione 6 senza guardia, 5 dalle conferme legittime del probe con guardia), **7** persone `Msr-*` con le loro prenotazioni; il velivolo della misura dell'Archivio NON è stato archiviato (`archivedAt null`). Nessun attore di seed e nessun `AppSettings` toccato. Lo script di misura (`playwright-core`, scratchpad) non è committato.
