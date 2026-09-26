@@ -1085,6 +1085,10 @@ function AvailabilitySection({
                     // `detail === 2` — the browser counts clicks by time and
                     // position, not by element — and must not confirm. A single
                     // click is `1`, keyboard activation `0`: both still confirm.
+                    // Accepted side effects: a triple click is ignored too, and
+                    // a deliberate click that falls within the double-click
+                    // interval (and a couple of px) of the arming click needs a
+                    // second click.
                     if (event.detail > 1) return;
                     void submitOutOfService();
                   }}
