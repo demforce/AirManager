@@ -362,17 +362,27 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
   });
 
   /**
-   * Review MAJOR-2. The armed state used to put `out-of-service-confirm` at the
-   * trigger's own origin, over the point that had just been clicked, so a plain
-   * double click armed AND confirmed: the aircraft was grounded and the emails
-   * fanned out with nobody reading a confirmation. The question in front of
-   * the pair (the whole `ArchiveSection` idiom) moves the Conferma past the end
-   * of its text. This is the review's own reproduction, inverted: a native
-   * double click on the trigger's LEFT EDGE must issue NO grounding request.
+   * Review MAJOR-2 + decisione PO 6. The armed state used to put
+   * `out-of-service-confirm` at the trigger's own origin, so a plain double
+   * click armed AND confirmed: the aircraft was grounded and the emails fanned
+   * out with nobody reading a confirmation. Two things now stop it, and this
+   * test exercises both on the review's own gesture (a native double click):
+   * - the question in front of the pair moves the Conferma off the trigger's
+   *   LEFT EDGE (the review's reproduction point);
+   * - the trigger is full-width, so the Conferma still lies INSIDE its box,
+   *   right of the centred label. A double click THERE lands its second half on
+   *   the freshly rendered Conferma, and only the `event.detail > 1` check
+   *   stops it.
+   * What this proves and what it does not: Playwright's `dblclick` sets the
+   * click count itself (CDP `clickCount` 1 then 2; under CDP Chromium does not
+   * count mouse clicks on its own). The test therefore proves that the count
+   * survives the swap of element under the pointer and that the app ignores it
+   * — the counting a real user's browser does is covered by the TOUCH test
+   * below, where Chromium computes the tap count itself.
    * The submit is scrolled into view first, as the review did, so this guard
    * does not depend on the fold (MINOR-1 has its own).
    */
-  test('a double click on the Fuori servizio trigger arms the second step and never confirms it (review MAJOR-2)', async ({ page }) => {
+  test('a double click on the Fuori servizio trigger arms the second step and never confirms it, anywhere on the trigger (review MAJOR-2, decisione PO 6)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
 
@@ -383,28 +393,99 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
     await page.getByTestId('out-of-service-submit').scrollIntoViewIfNeeded();
     const trigger = (await page.getByTestId('out-of-service-submit').boundingBox())!;
 
+    // Where the Conferma is born: arm once, read its box, disarm. The overlap
+    // with the trigger is asserted, not assumed — it is what makes the second
+    // gesture below discriminant for the `detail` check.
+    await page.getByTestId('out-of-service-submit').click();
+    const confirm = (await page.getByTestId('out-of-service-confirm').boundingBox())!;
+    await page.getByTestId('out-of-service-cancel').click();
+    const inside = (point: { x: number; y: number }, box: { x: number; y: number; width: number; height: number }) =>
+      point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
+    const leftEdge = { x: trigger.x + 4, y: trigger.y + trigger.height / 2 };
+    const overlap = { x: confirm.x + confirm.width / 2, y: confirm.y + confirm.height / 2 };
+    expect(inside(leftEdge, confirm), 'the Conferma is not under the trigger left edge').toBe(false);
+    expect(inside(overlap, trigger), 'the Conferma point right of the label is ALSO a trigger point').toBe(true);
+
     // The grounding POST is fired synchronously by the click that confirms, so
-    // counting requests is the deterministic witness (the DB read below could
-    // race a POST still in flight).
+    // counting requests is the deterministic witness (the DB read could race a
+    // POST still in flight).
     const groundingPosts: string[] = [];
     page.on('request', (request) => {
       if (request.method() === 'POST' && request.url().endsWith(`/api/v1/aircraft/${aircraft.id}/out-of-service`)) groundingPosts.push(request.url());
     });
-    const clicked = { x: trigger.x + 4, y: trigger.y + trigger.height / 2 };
-    await page.mouse.dblclick(clicked.x, clicked.y);
 
-    // Settled either way: armed (the fix) or already reporting (the defect).
-    await expect(page.getByTestId('out-of-service-confirm').or(page.getByTestId('aog-impact-banner'))).toBeVisible();
-    expect(groundingPosts, 'a double click must not reach the grounding endpoint').toEqual([]);
-    const afterDoubleClick = await page.request.get(`/api/v1/aircraft/${aircraft.id}`);
-    expect(((await afterDoubleClick.json()) as { status: string }).status).toBe('OPERATIONAL');
+    for (const point of [leftEdge, overlap]) {
+      await page.mouse.dblclick(point.x, point.y);
+      // Settled either way: armed (the fix) or already reporting (the defect).
+      await expect(page.getByTestId('out-of-service-confirm').or(page.getByTestId('aog-impact-banner'))).toBeVisible();
+      expect(groundingPosts, `a double click at ${point.x},${point.y} must not reach the grounding endpoint`).toEqual([]);
+      await expect(page.getByText('Confermi il fermo? 0 prenotazioni impattate', { exact: true })).toBeVisible();
+      await page.getByTestId('out-of-service-cancel').click();
+    }
+    const afterDoubleClicks = await page.request.get(`/api/v1/aircraft/${aircraft.id}`);
+    expect(((await afterDoubleClicks.json()) as { status: string }).status).toBe('OPERATIONAL');
 
-    // Armed, with the question that makes it a step, and the Conferma is not
-    // under the point that was double-clicked.
-    await expect(page.getByText('Confermi il fermo? 0 prenotazioni impattate', { exact: true })).toBeVisible();
-    const confirm = (await page.getByTestId('out-of-service-confirm').boundingBox())!;
-    const covered = clicked.x >= confirm.x && clicked.x <= confirm.x + confirm.width && clicked.y >= confirm.y && clicked.y <= confirm.y + confirm.height;
-    expect(covered, 'the armed Conferma must not sit under the trigger click point').toBe(false);
+    // Negative control: the check must not eat a legitimate confirmation.
+    // Keyboard activation carries `detail === 0` (a plain click, `1`, is what
+    // every other test in this file confirms with).
+    await page.getByTestId('out-of-service-submit').click();
+    await page.getByTestId('out-of-service-confirm').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('aog-impact-banner')).toBeVisible();
+    expect(groundingPosts).toHaveLength(1);
+  });
+
+  /**
+   * Decisione PO 6, on a phone. Here nothing sets the count for the browser:
+   * Playwright sends raw touch events and Chromium's own gesture detector
+   * decides that two taps in quick succession at one point are a double tap,
+   * delivering the second synthesized click to the freshly rendered Conferma
+   * with `detail === 2` — which is what a real user's double tap produces. At
+   * 375 the pair wraps to a second row whose Conferma covers the lower-left of
+   * the trigger, so a double tap there is the one the `detail` check closes. A
+   * single tap after a pause (`detail === 1`) still confirms.
+   */
+  test('a double TAP on the trigger at 375 never confirms, a single tap on Conferma does (decisione PO 6)', async ({ page, browser }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+
+    const phone = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, storageState: await page.context().storageState() });
+    const tapPage = await phone.newPage();
+    await tapPage.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+    await tapPage.locator('[data-testid^="mobile-fleet-card-"]').first().tap();
+    await tapPage.getByTestId('aircraft-edit-mobile').tap();
+    await expect(tapPage.getByTestId('aog-impact-preview')).toBeVisible();
+    await tapPage.getByTestId('out-of-service-reason').fill('Doppio tap');
+    await tapPage.getByTestId('out-of-service-submit').scrollIntoViewIfNeeded();
+    const trigger = (await tapPage.getByTestId('out-of-service-submit').boundingBox())!;
+
+    await tapPage.getByTestId('out-of-service-submit').tap();
+    const confirm = (await tapPage.getByTestId('out-of-service-confirm').boundingBox())!;
+    await tapPage.getByTestId('out-of-service-cancel').tap();
+    // The point where the Conferma's box and the trigger's box overlap.
+    const top = Math.max(trigger.y, confirm.y);
+    const bottom = Math.min(trigger.y + trigger.height, confirm.y + confirm.height);
+    expect(bottom - top, 'at 375 the Conferma overlaps the trigger').toBeGreaterThan(0);
+    const overlap = { x: confirm.x + confirm.width / 2, y: (top + bottom) / 2 };
+
+    const groundingPosts: string[] = [];
+    tapPage.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith(`/api/v1/aircraft/${aircraft.id}/out-of-service`)) groundingPosts.push(request.url());
+    });
+    await tapPage.touchscreen.tap(overlap.x, overlap.y);
+    await tapPage.touchscreen.tap(overlap.x, overlap.y);
+    await expect(tapPage.getByTestId('out-of-service-confirm').or(tapPage.getByTestId('aog-impact-banner'))).toBeVisible();
+    expect(groundingPosts, 'a double tap must not reach the grounding endpoint').toEqual([]);
+    const afterDoubleTap = await tapPage.request.get(`/api/v1/aircraft/${aircraft.id}`);
+    expect(((await afterDoubleTap.json()) as { status: string }).status).toBe('OPERATIONAL');
+
+    // Negative control: a deliberate single tap, well past the double-tap
+    // interval, confirms.
+    await tapPage.waitForTimeout(800);
+    await tapPage.getByTestId('out-of-service-confirm').tap();
+    await expect(tapPage.getByTestId('aog-impact-banner')).toBeVisible();
+    expect(groundingPosts).toHaveLength(1);
+    await phone.close();
   });
 
   /**

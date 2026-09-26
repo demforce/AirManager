@@ -1058,10 +1058,11 @@ function AvailabilitySection({
               `out-of-service-confirm` starts past the end of the question text,
               exactly as `archive-confirm` does. The trigger is full-width, so the
               pair still lies inside its box (right of its centred label at 1280,
-              on a second row under its lower-left corner at <=640) — measured and
-              declared in the story's Review Record. It also gives the "the
-              preview never answered" case a question of its own, where before it
-              left two bare buttons with nothing above them to confirm. */}
+              on a second row under its lower-left corner at <=640): that part of
+              the gesture is closed by the `event.detail` check on the Conferma
+              below (decisione PO 6). It also gives the "the preview never
+              answered" case a question of its own, where before it left two bare
+              buttons with nothing above them to confirm. */}
           {/* `.fld` is a COLUMN flex box (`airops.css:1143`) — the plain, unstyled
               wrapper is what gives the lone submit the full-width box story
               AOG-1a measured, and it is left exactly that way. Only the armed
@@ -1078,7 +1079,15 @@ function AvailabilitySection({
                   type="button"
                   className="btn primary"
                   disabled={busy}
-                  onClick={() => void submitOutOfService()}
+                  onClick={(event) => {
+                    // Decisione PO 6: the SECOND half of a double click (or
+                    // double tap) that armed this step lands here with
+                    // `detail === 2` — the browser counts clicks by time and
+                    // position, not by element — and must not confirm. A single
+                    // click is `1`, keyboard activation `0`: both still confirm.
+                    if (event.detail > 1) return;
+                    void submitOutOfService();
+                  }}
                   data-testid="out-of-service-confirm"
                 >
                   {labels.availability.confirm}
