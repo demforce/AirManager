@@ -680,3 +680,18 @@ R3-R5 in **un solo** run (`-g "review MAJOR-1|review MAJOR-2|review MINOR-1" --r
   ```
   I 9 test di 1a e i 4 della 2.5 sono nello stesso run, tutti verdi. `aog-overview-count.spec.ts` non è stato toccato e non è stato rieseguito. **Suite completa: NON eseguita da me**; la esegue la sessione principale, come arbitro, dopo questi commit.
 - **Stato della macchina**: porta **3000 libera** (server ucciso per PID). DB **non resettato**; residui delle misure: **30** velivoli run-unique (`model` `Measure …` / `Alt probe` / `Detail probe` / `Guard probe`), di cui **18 OUT_OF_SERVICE** (3 fermati dalla riproduzione del doppio click sulla build pre-fix, 2 fixture «fermo scaduto», 8 dal probe di fattibilità della decisione 6 senza guardia, 5 dalle conferme legittime del probe con guardia), **7** persone `Msr-*` con le loro prenotazioni; il velivolo della misura dell'Archivio NON è stato archiviato (`archivedAt null`). Nessun attore di seed e nessun `AppSettings` toccato. Lo script di misura (`playwright-core`, scratchpad) non è committato.
+
+### Arbitro finale (sessione principale, 2026-09-27)
+
+Suite completa `CI=1 scripts/e2e.sh start` su DB fresco, albero `4521c80` (= fix cycle `09dd893` + `test(e2e)` `2ee2a1c` + story file 16.8):
+```
+state: DONE — E2E_EXIT=0
+--- summary ---
+  1 flaky
+  536 passed (11.8m)
+=== e2e end: 2026-09-27T01:08:49+02:00 ===
+E2E_EXIT=0
+```
+**536 passed + 1 flaky = 537 = 533 + 4** (i test nuovi di `aog-impact-email.spec.ts`: 3 → 7), exit 0. Il flaky è `billing.spec.ts:296` (aggregato globale «dated today», `Expected: 17000 / Received: 22000` = un movimento da 5 000 di un test parallelo dentro la finestra; verde al retry): classe documentata (CLAUDE.md, review Billing-2 F4), non attribuibile.
+
+Due incidenti di processo prima del verde, entrambi dichiarati: (1) il primo arbitro è stato **invalidato** da un `npm run gates` del fix-agent (commit `fedb868`, solo commento) che ha riscritto `.next/BUILD_ID` sotto il server dell'arbitro → run fermato e rifatto; (2) il secondo arbitro è andato **rosso** su `bookings.spec.ts:1058` (3/3): i 4 test nuovi di questa story creano ~10 prenotazioni fra il 28/09 e il 05/11 e hanno spinto le righe di `FUTURE_DAY` oltre la pagina 1 della lista (20 righe, `startsAt asc`) — difetto di isolamento **preesistente** dello spec (14 lookup che assumevano la pagina 1 accanto all'helper `findBookingRow` che già esisteva), chiuso dal commit `2ee2a1c` con prova a densità iniettata (7 rossi → i 3 di pagina spariti; i 4 residui identici prima/dopo, dovuti al DB sporco: cap 100 del picker persone e scadenze accumulate sul pilota di seed).
