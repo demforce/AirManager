@@ -379,6 +379,31 @@ async function findBookingRow(page: Page, filterText: string | string[]): Promis
   throw new Error(`Booking row matching "${filterText}" not found within ${MAX_PAGES} pages of /dashboard/bookings`);
 }
 
+/**
+ * Sums `booking-row` matches for `filterText` across EVERY page — the
+ * `toHaveCount(N)` counterpart of `findBookingRow` above (N>1 case, same
+ * pagination defect): a page-1-only count is meaningless once a heavily-
+ * reused fixture day's pile can straddle a page boundary between the very
+ * rows being counted.
+ */
+async function countBookingRowsAcrossPages(page: Page, filterText: string | string[]): Promise<number> {
+  const filterTexts = Array.isArray(filterText) ? filterText : [filterText];
+  const MAX_PAGES = 50;
+  let total = 0;
+  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
+    await page.goto(`/it/dashboard/bookings?page=${pageNumber}`);
+    await page.waitForLoadState('networkidle');
+    const row = filterTexts.reduce((locator, text) => locator.filter({ hasText: text }), page.getByTestId('booking-row'));
+    total += await row.count();
+    const statusLocator = page.getByTestId('booking-pagination-status');
+    if ((await statusLocator.count()) === 0) break; // a single page has no pagination controls at all
+    const statusText = (await statusLocator.textContent()) ?? '';
+    const totalPages = Number.parseInt(statusText.split('/')[1]?.trim() ?? '1', 10);
+    if (pageNumber >= totalPages) break;
+  }
+  return total;
+}
+
 test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
   test('pilot books via UI for a future interval; an overlap on an APPROVED booking shows 409 in the form; back-to-back (semi-open) succeeds', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -396,7 +421,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
 
     // Story 12.2, AC 4: only an APPROVED booking occupies a slot (a PENDING
@@ -435,8 +460,11 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await formAfterApproval.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
-    const rows = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
-    await expect(rows).toHaveCount(2);
+    // Both rows share the run-unique aircraft — counted across EVERY page
+    // (never assumed page 1, same reason `findBookingRow` above walks pages):
+    // a heavily-reused fixture day's pile can straddle a page boundary
+    // between these two very rows.
+    expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
   });
 
   test('staff books for another (run-unique) pilot from the "Pilota o allievo" picker', async ({ page }) => {
@@ -454,7 +482,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    const row = await findBookingRow(page, aircraft.registration);
     // `personName` is "Nome Cognome" (Contesto's DTO spec) — firstName first, unlike the picker's "Cognome Nome" option labels above.
     await expect(row).toContainText(`${pilot.firstName} ${pilot.lastName}`);
   });
@@ -529,7 +557,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    const row = await findBookingRow(page, aircraft.registration);
     // `personName`/`instructorName` are "Nome Cognome" (Contesto's DTO spec) — firstName first.
     await expect(row).toContainText(`${student.firstName} ${student.lastName}`);
     await expect(row).toContainText(`${instructor.firstName} ${instructor.lastName}`);
@@ -558,7 +586,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toContainText(`${instructor.firstName} ${instructor.lastName}`);
   });
 
@@ -1081,7 +1109,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // row-action click below (`pointer-events: none` only lifts on `.open`).
     await page.keyboard.press('Escape');
 
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
 
     // Modifica (story 12.3: renamed from "Sposta", same PATCH mechanics):
@@ -1097,8 +1125,11 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // paragraph to a toast (`useToast`, the AirOps-native convention every
     // workflow action in `bookings-table.tsx` uses).
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione modificata.' })).toBeVisible();
+    // `aircraft` is run-unique to this test and had exactly one booking, now
+    // moved away — its absence holds on EVERY page (no findBookingRow needed,
+    // unlike the presence checks here), so a plain page-1 check is correct.
     await expect(page.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
-    const movedRow = page.getByTestId('booking-row').filter({ hasText: aircraft2.registration });
+    const movedRow = await findBookingRow(page, aircraft2.registration);
     await expect(movedRow).toBeVisible();
 
     // Cancella: two-step confirm.
@@ -1148,8 +1179,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
-    const rows = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
-    await expect(rows).toHaveCount(2);
+    expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
 
     // Story 12.2, AC 4: only an APPROVED booking occupies a slot — approve
     // the FIRST (soonest startsAt, 02:00-03:00) booking so the move below
@@ -1170,11 +1200,15 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
     await gotoBookingsAndWaitForHydration(page);
 
-    const rowsAfterApproval = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
-    await expect(rowsAfterApproval).toHaveCount(2);
+    expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
 
-    // The second (later, 05:00-06:00) booking is ordered second (startsAt asc) — move it into the first's slot (02:00-03:00, same aircraft, prefilled).
-    await rowsAfterApproval.nth(1).getByTestId('booking-move-action').click();
+    // The second (later, 05:00-06:00) booking is the one still "In attesa"
+    // (PENDING) after the approval above — disambiguated by its status
+    // badge, never by DOM ordinal (`.nth()`, which only works within a
+    // single page: the two rows can land on different pages of the
+    // paginated list, same reason `findBookingRow` walks pages).
+    const secondRow = await findBookingRow(page, [aircraft.registration, 'In attesa']);
+    await secondRow.getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
     await moveForm.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T03:00`);
@@ -1416,7 +1450,10 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
 
     await expect(page.getByTestId('booking-form-warning')).toBeVisible();
     await expect(page.getByTestId('booking-form-warning')).toContainText(warningType.name);
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    // `soonestFutureSlot()` only beats nearly everything (its own doc-comment)
+    // — under concurrent load another equally-imminent fixture could still
+    // rank ahead of it, so this stays page-independent too.
+    const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
   });
 
@@ -1460,7 +1497,8 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
     await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    // Same `soonestFutureSlot()` caveat as the warning-document test above.
+    const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
 
     // The tracking (AC 2 "chi, quando") is exposed read-side on the item DTO
@@ -1558,7 +1596,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // row-action click below (`pointer-events: none` only lifts on `.open`).
     await page.keyboard.press('Escape');
 
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    let row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
 
     // Same-day time-only move: never rechecked, succeeds even past the block.
@@ -1572,6 +1610,11 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // Wait for the first form to fully close before reopening it — avoids a
     // race between `onSuccess`'s `router.refresh()` and the next click.
     await expect(page.getByTestId('move-booking-form')).toHaveCount(0);
+
+    // Review 12.3 F5: the time-only move above changed `startsAt`, which can
+    // shift this row's rank (and so its page) in the globally-sorted list —
+    // re-locate it rather than reusing the pre-move `row` locator.
+    row = await findBookingRow(page, aircraft.registration);
 
     // Moving to the NEXT day: the document is expired relative to THAT day -> 422, naming it.
     await row.getByTestId('booking-move-action').click();
