@@ -4,7 +4,7 @@ baseline_commit: 738d399
 
 # Story 16.2: Il registro voli rifiuta duplicati e sovrapposizioni, e il contaore non perde minuti in silenzio
 
-Status: **review** — 2026-09-10 (implementazione `3138115`; Dev Agent Record in coda a questo file). **Modello dev: Opus 5 xhigh** (non Sonnet: la story tocca UI — due label i18n nuove in due locale, il ramo 409 del form di correzione che oggi mente, e due `min={0}` → `min={1}`; v. AD-11 e §3.4. È UI di TESTO e di plumbing, nessun layout: se il PO preferisce Sonnet, la parte server è separabile ma il form resterebbe con un messaggio generico su un 409 nuovo — deviazione da dichiarare).
+Status: **done** — 2026-09-26 (implementazione `3138115`; Dev Agent Record e Review Record in coda a questo file). **Modello dev: Opus 5 xhigh** (non Sonnet: la story tocca UI — due label i18n nuove in due locale, il ramo 409 del form di correzione che oggi mente, e due `min={0}` → `min={1}`; v. AD-11 e §3.4). Review: Opus 5.5 xhigh adversarial (re-run 2026-09-26); fix nella sessione principale.
 
 > ⚠️ **Baseline e stato del working tree (misurato il 2026-09-10)**: il frontmatter dichiara `738d399`, ma **tutti** i `file:riga` di `flights.service.ts` in questo file sono misurati sul **working tree**, che contiene le modifiche **NON ancora committate** della **story 16.1** (un dev sta implementando «Un solo calendario» adesso, nella stessa directory): `todayDateOnlyUtc` → `todayDateOnlyUtcInZone(APP_TIMEZONE)` alla guardia `FLIGHT_DATE_IN_FUTURE` (`:763`) e alle due `effectiveDate` degli storni (`:1341`, `:1477`), più due doc-comment allungati. Sono state scelte le righe **post-16.1** perché la 16.1 sarà **committata prima** del dispatch di questa story (ciclo per-story del progetto). Sul HEAD `738d399` **puro** le stesse righe stanno **2 righe più in su** fino a ~`:1291` e **3 più in su** dopo.
 > ⇒ **Prima di scrivere una riga: `git log --oneline -3` + rileggere ogni riga citata sul HEAD corrente e correggere questo file dove è slittata** (prassi che ha pagato in tutte le story degli epic 15 e AOG). Se la 16.1 **non** è ancora chiusa quando questa story parte, **fermarsi e chiedere alla sessione principale**: le due story toccano funzioni adiacenti dello stesso file e lavorare su un working tree con modifiche altrui non committate è la ricetta per un conflitto illeggibile.
@@ -284,7 +284,7 @@ Per il contaore serve inoltre `hourMeterAdjustment: { create: vi.fn() }` nel moc
 
 ### 3.3 Censimento `ConflictError` (per AD-3)
 
-`grep -rn "new ConflictError(" src/server --include=*.ts | grep -v test` → **39** occorrenze in 9 service; **zero** passano un secondo argomento. Il pass-through di `details` non può quindi cambiare nessuna risposta esistente. Le 4 di `flights.service.ts` (`:1239`, `:1258`, `:1353`, `:1487`) restano invariate: la nuova è la **quinta**, l'unica con `details` e con un `code` non generico.
+`grep -rn "new ConflictError(" src/server --include=*.ts | grep -v test` → **39** occorrenze in 9 service *(corretto dalla review, LOW-2: sono **75 in 13 file** pre-story — la conclusione regge: nessuna popola `details`, l'unica con due argomenti, `ppr.service.ts:500`, passa `undefined` esplicito)*; **zero** passano un secondo argomento. Il pass-through di `details` non può quindi cambiare nessuna risposta esistente. Le 4 di `flights.service.ts` (`:1239`, `:1258`, `:1353`, `:1487`) restano invariate: la nuova è la **quinta**, l'unica con `details` e con un `code` non generico.
 
 ### 3.4 UI: cosa il form fa oggi (misurato)
 
@@ -647,7 +647,7 @@ Nessun'altra fixture ha preso il 409: il censimento della story (§3.5) è stato
 | **16.2-d** | testo morto in `registry.ts:976`: «Exactly one of `minutes` or the `hourMeterStart`/`hourMeterEnd` pair must be given», **falso dalla story 11.1** | idem: l'ho **letto** riscrivendo la descrizione e **non** corretto, perché non è riconducibile a questa richiesta. La descrizione nuova che ho scritto non lo ripete né lo contraddice |
 | **16.2-e** | **le 5 coppie di voli `REGISTERED` già sovrapposte** che il DB di lavoro conteneva prima del reset | registro append-only: la guardia vale sulle scritture nuove. Conseguenza operativa da conoscere: **una correzione** di uno di quei voli può ora legittimamente rispondere 409 |
 | **16.2-f** | domanda PO aperta: esiste un minimo di durata sensato per l'aviosuperficie (5 minuti?) o basta rifiutare sotto il minuto? | l'ipotesi «5 minuti» dell'audit **non è ratificata**; la story implementa «sotto il minuto = 422» e non inventa altro |
-| **16.2-g** | **igiene di suite**: 4 dei 5 test del describe «Blocking expiry guard-rail» (`e2e/flights.spec.ts`) lasciano ATTIVO un `ExpiryType` globale `scope: 'ALL'`, `blocksBooking: true`; `deactivateBlockingType` esiste ed è applicato a **uno** solo. Estenderlo a tutti e 5 chiude alla sorgente una classe di flake già documentata con **quattro** vittime pre-esistenti (`my-account`, `pdf-exports`, `instructor-compensation`, `reports`) e ora una quinta (§K) | sono le fixture della story **14.4**, non di questa: toccare 4 test di un'altra story per un flake che il mio blocco ha soltanto **esposto** sarebbe scope creep. Ho ridotto la mia esposizione (§F, 9) e diagnosticato la causa |
+| **16.2-g** | **igiene di suite** *(sorgente CORRETTA dalla review, MINOR-1 — la prima stesura la attribuiva al describe 14.4, che disattiva già tutti e 3 i suoi tipi)*: i tipi `ExpiryType` globali `scope: 'ALL'`, `blocksBooking: true` creati da spec in parallelo — i **4** di `bookings.spec.ts` («Booking expiry block», story 7.4) restano ATTIVI per sempre, i **3** del describe «Blocking expiry guard-rail» di `flights.spec.ts` (14.4) sono attivi per la durata del test che li crea. Una persona fresca scansionata da `ensureValidSeedExpiries` PRIMA della nascita di uno di quei tipi prende 422 `FLIGHT_BLOCKED_BY_EXPIRY` alla POST successiva. La disattivazione a fine test **non** chiude la finestra: rimedio = blocco **per-persona** su un tipo di seed (come l'E8 di questa story) o spostamento di quei describe nella catena serializzata | fixture di altre story (7.4, 14.4): rimedio alla sorgente fuori perimetro; questo blocco ne riduce l'esposizione (§F, 9) e la documenta in testa al describe |
 
 ### §H — File toccati
 
@@ -731,3 +731,47 @@ Il doc-comment esistente elenca **quattro** vittime già osservate di questa ste
 Rimedio applicato (§F, 9), dentro il mio perimetro: i miei 8 test non usano più `createPilotWithLogin` ma una `createPilotPerson` locale, senza login — nessuno di essi ha bisogno di autenticarsi come pilota (agiscono tutti da ADMIN, E6 incluso). Questo elimina l'attesa dell'email di invito su Mailpit e la navigazione del set-password, riducendo la finestra fra la scansione e la POST da ~5 s a quattro chiamate API sequenziali. Misura: E1 passa da 5,0 s a 2,0 s, e `--repeat-each=2` dà 16/16.
 
 **La finestra non è chiusa, ed è onesto dirlo**: il rimedio vero è disattivare quei tipi alla sorgente (estendere `deactivateBlockingType` a tutti e 5 i test del describe della 14.4), che chiuderebbe anche le quattro vittime pre-esistenti. Non l'ho fatto perché sono fixture di un'altra story e toccare 4 dei suoi test per un flake che il mio blocco ha soltanto **esposto** sarebbe scope creep — registrato come **TD 16.2-g**.
+
+## Review Record — 16.2
+
+**Reviewer**: subagent Opus 5.5 xhigh adversarial (unico layer adversarial) — **re-run** del 2026-09-26: il primo reviewer (2026-09-10) è stato fermato dal PO prima del report e il suo arbitro non conta (log perso al reboot, build con WIP altrui nell'albero). Report completo: `16-2-review-report.md`. **Fix**: sessione principale (Opus 5.5), chirurgici, commit `1a9552b`.
+
+### Verdetto
+
+**SHIPPABLE-WITH-FIXES** → tutti i fix applicati. **0 blocker, 1 major, 1 minor, 2 low.** Il cuore server è stato verificato sul vivo, non per lettura: raffiche parallele da 2/3/3/5 POST → sempre **esattamente una** 201; bordi semi-aperti, `CANCELLED` che non occupa, `force` che non deroga, correzione che esclude l'originale e interroga il velivolo NUOVO, TD-2 intatto, clamp del contaore con la sua `HourMeterAdjustment` (solo quando morde, rollback con la transazione), bordi F14, `handler.ts` generico, OpenAPI, RBAC (403 prima del 409). Post-suite: 0 coppie `REGISTERED` sovrapposte, 0 cicli a 0, 0 voli sotto il minuto, 0 contaori negativi.
+
+### Arbitri
+
+- **Reviewer** (DB fresco, `ed205bc`): `state: DONE — E2E_EXIT=0`, **532 passed (12.4m)**, 0 flaky, 0 failed = 524 + 8.
+- **Finale post-fix** (sessione principale, DB fresco, `CI=1 scripts/e2e.sh start`, albero = `1a9552b`):
+```
+state: DONE — E2E_EXIT=0
+--- summary ---
+  1 flaky
+  532 passed (12.4m)
+=== e2e end: 2026-09-26T21:45:25+02:00 ===
+E2E_EXIT=0
+```
+**532 passed + 1 flaky = 533 = 532 + E8**, exit 0. Il flaky è **E3** al primo tentativo con `[422, 422]` (mai due 201: la guardia ha retto), verde al retry: classe **TD 16.2-g**, provata via SQL — la persona di E3 (`Titolare-…-0ynedn`, creata 19:36:57.641) non ha voli e il tipo globale bloccante `Tipo voli …lfcozw` del describe 14.4 è nato **34 ms dopo** (19:36:57.675): scansione prima, POST dopo.
+- **Gates**: `PASS lint · PASS typecheck · PASS test — Tests 1874 passed (1874) · PASS build` (1873 + 1 unit LOW-1). Run mirato del blocco 16.2 post-fix: 9 passed.
+
+### Findings e come sono stati corretti
+
+| # | Sev | Sostanza | Fix applicato (`1a9552b`) |
+|---|---|---|---|
+| MAJOR-1 | major | `onForceSubmit` rispondeva «Impossibile forzare la registrazione. Riprova.» a un 409 `FLIGHT_OVERLAP`; siccome ogni 422 precede il 409 (AD-4), una richiesta bloccata (documento o AOG) **e** sovrapposta arrivava al 409 SOLO dalla forzatura — vicolo cieco deterministico, AC 18 violato, in registrazione e in correzione | Ramo `409 FLIGHT_OVERLAP` in `onForceSubmit`: `resetForceState()` (la forzatura non può aiutare, la sezione si chiude) + la stessa frase dell'invio normale via helper locale `overlapMessage` (due call-site); commento stantio corretto. **e2e E8** (registrazione E correzione, blocco **per-persona** su «Licenza» di seed registrata scaduta prima della scansione — nessun `ExpiryType` globale): **ROSSO sul componente pre-fix** (`git show HEAD:…flight-editor.tsx`, rebuild: banner fermo su «…Licenza (scaduto il 01/06/2019)…» a `flights.spec.ts:1216`), verde col fix; ripristino byte-identico (sha256) |
+| MINOR-1 | minor | TD 16.2-g e i commenti dello spec attribuivano i tipi ALL-bloccanti attivi al describe 14.4 («4 dei 5 test li lasciano attivi»); il describe ha 4 test, 3 creano un tipo e **tutti e 3** lo disattivano; i 4 tipi permanenti sono di `bookings.spec.ts` (7.4) | Commenti `flights.spec.ts` (blocco 16.2, `createPilotPerson`, describe 14.4) riscritti con la sorgente vera e il rimedio che chiude davvero la finestra (blocco per-persona o catena serializzata, non la disattivazione); TD 16.2-g in §G riscritto |
+| LOW-1 | low | Doppia correzione CONCORRENTE dello stesso volo: il perdente riceveva `FLIGHT_OVERLAP` che nomina la correzione del vincitore invece del `CONFLICT` «già annullato» (5/5) — codice sul filo instabile per l'app Flutter | `correctFlight` rilegge lo `status` dell'originale **dentro** la transazione, dopo il lock del velivolo (serializza le due correzioni; READ COMMITTED vede il commit del vincitore) → `ConflictError('Flight is already cancelled.')`. Unit **LOW-1** in `flights.service.test.ts`, **rosso** senza le 4 righe (provato togliendole, ripristino sha256) |
+| LOW-2 | low | Censimento `ConflictError` «39 in 9 service» → **75 in 13 file** pre-story; conclusione (nessuno popola `details`) giusta | Numero corretto in `handler.test.ts:299` e in §3.3 (annotato, non riscritto) |
+
+### Decisioni PO
+
+Nessuna nuova. Resta aperta, com'era dichiarata, **16.2-f** (durata minima di volo oltre il minuto?): raccomandazione del reviewer (a) — sotto il minuto = 422, com'è oggi — finché non emerge un caso reale.
+
+### TD — pronti per `sprint-status.yaml`
+
+16.2-a (sovrapposizione per PERSONA sui voli → decisione della 16.3), 16.2-b (`seed-load.ts` genera sovrapposizioni → epic 17 se serve l'invariante sul DB di carico), 16.2-c/d (doc-comment `schema.prisma:274-276` e testo morto `registry.ts:976`), 16.2-e (coppie già sovrapposte: una correzione può legittimamente 409; l'annullo resta sempre possibile — verificato), 16.2-f (domanda PO sopra), 16.2-g (testo corretto in §G).
+
+### Residuo
+
+Il DB e2e contiene il residuo dell'arbitro finale (nessun probe `rvw162_*`: il reset precedente all'arbitro lo ha azzerato). Server di verifica fermati per PID; `:3000` libero.
