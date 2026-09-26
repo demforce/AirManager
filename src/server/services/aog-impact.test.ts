@@ -141,11 +141,11 @@ describe('computeAogImpact (story AOG-1b, AD-1/AC 1 — the ONE counting functio
     const undelimited = await computeAogImpact(client, { aircraftId: AIRCRAFT, until: null, now: NOW });
     const delimited = await computeAogImpact(client, { aircraftId: AIRCRAFT, until: UNTIL, now: NOW });
 
-    expect(undelimited).toMatchObject({ pending: 1, approved: 3 });
+    expect(undelimited).toMatchObject({ pending: 1, approved: 3, effectiveUntil: null });
     // The SAME fixture, delimited: the two beyond `until` drop out. This pair is
     // the discriminance of invariant [b] — a "no date means today" reading would
     // make the two numbers equal.
-    expect(delimited).toMatchObject({ pending: 1, approved: 1 });
+    expect(delimited).toMatchObject({ pending: 1, approved: 1, effectiveUntil: '2026-08-20' });
   });
 
   it('(f) an aircraft with no live bookings counts ZERO — a result, not an error', async () => {
@@ -154,6 +154,10 @@ describe('computeAogImpact (story AOG-1b, AD-1/AC 1 — the ONE counting functio
     await expect(computeAogImpact(client, { aircraftId: AIRCRAFT, until: UNTIL, now: NOW })).resolves.toEqual({
       pending: 0,
       approved: 0,
+      // A live bound is REPORTED as the window the zero was counted over
+      // (review MAJOR-1): zero inside a delimited window and zero with no
+      // window at all are different statements, and the UI says which.
+      effectiveUntil: '2026-08-20',
       approvedBookings: [],
     });
   });
@@ -171,9 +175,33 @@ describe('computeAogImpact (story AOG-1b, AD-1/AC 1 — the ONE counting functio
     // is that such a bound is no bound...
     const expired = await computeAogImpact(client, { aircraftId: AIRCRAFT, until: new Date(Date.UTC(2026, 7, 6)), now: NOW });
     expect(expired).toMatchObject({ pending: 1, approved: 2 });
+    // ...and (review MAJOR-1) the answer SAYS SO: the bound that was thrown
+    // away is not reported as the window the count respected. This is the
+    // discriminance of the fix — the pre-fix DTO carried no such field, so
+    // every surface rebuilt "fino al 06/08/2026 compreso" from the raw date
+    // and printed it over a count that reached 2031.
+    expect(expired.effectiveUntil).toBeNull();
 
     // ...i.e. IDENTICAL to the undelimited window, never to an empty one.
     const undelimited = await computeAogImpact(client, { aircraftId: AIRCRAFT, until: null, now: NOW });
     expect(expired).toEqual(undelimited);
+  });
+
+  it('reports the EFFECTIVE bound (review MAJOR-1): the live day it counted to, null for no date and null for a day already gone', async () => {
+    const client = fakeClient([booking('a1', 'APPROVED', '2026-08-10T08:00:00.000Z')]);
+    const at = (until: Date | null) => computeAogImpact(client, { aircraftId: AIRCRAFT, until, now: NOW });
+
+    // A future bound: the calendar day of `until` itself, not the exclusive
+    // midnight instant the query used, and not the day after it.
+    expect((await at(UNTIL)).effectiveUntil).toBe('2026-08-20');
+    // TODAY is still a bound: the window `[now, end of today]` has not closed.
+    expect((await at(new Date(Date.UTC(2026, 7, 7)))).effectiveUntil).toBe('2026-08-07');
+    // YESTERDAY is not: `[now, end of yesterday]` is empty, so the count ran
+    // undelimited and the field says exactly that.
+    expect((await at(new Date(Date.UTC(2026, 7, 6)))).effectiveUntil).toBeNull();
+    // No date at all (invariant [b]): the same `null`, reached the other way —
+    // which is why the CALLER, who knows whether it sent a date, is the one
+    // that words the two cases differently.
+    expect((await at(null)).effectiveUntil).toBeNull();
   });
 });

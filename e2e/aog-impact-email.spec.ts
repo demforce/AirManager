@@ -331,6 +331,128 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
     await expect(page.getByTestId('aog-impact-row')).toContainText('return date not yet known: count not delimited');
   });
 
+  /**
+   * Review MINOR-1. The full preview box spent 78.13 px (+14 px of grid gap) to
+   * say "0 prenotazioni" and pushed the primary submit under the bottom edge of
+   * the scrollable body at 1280x900, where before story AOG-1b it was visible
+   * on opening. Zero now takes a one-line `.fld-hint` in the grid cell the date
+   * field leaves empty, so the fold is the pre-story one again. The fold is
+   * asserted FIRST, before any wording: it is what this guard exists for.
+   */
+  test('with zero impacted bookings the preview is one compact line and the submit is above the fold at 1280x900 (review MINOR-1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openFleetEditor(page, aircraft.registration);
+    const preview = page.getByTestId('aog-impact-preview');
+    await expect(preview).toBeVisible();
+
+    const fold = await page.evaluate(() => {
+      const body = document.querySelector('.so-body')!;
+      const submit = document.querySelector('[data-testid="out-of-service-submit"]')!;
+      return { scrollTop: body.scrollTop, bodyBottom: body.getBoundingClientRect().bottom, submitBottom: submit.getBoundingClientRect().bottom };
+    });
+    expect(fold.scrollTop, 'the panel is at rest, nothing has scrolled it').toBe(0);
+    expect(fold.submitBottom, `submit bottom ${fold.submitBottom} must sit above the body edge ${fold.bodyBottom}`).toBeLessThanOrEqual(fold.bodyBottom);
+
+    // Zero is still a result, and still says which window it was counted over
+    // (AC 8) — just without the box.
+    await expect(preview).toHaveText('Nessuna prenotazione impattata · rientro da definire: conteggio non delimitato');
+  });
+
+  /**
+   * Review MAJOR-2. The armed state used to put `out-of-service-confirm` at the
+   * trigger's own origin, over the point that had just been clicked, so a plain
+   * double click armed AND confirmed: the aircraft was grounded and the emails
+   * fanned out with nobody reading a confirmation. The question in front of
+   * the pair (the whole `ArchiveSection` idiom) moves the Conferma past the end
+   * of its text. This is the review's own reproduction, inverted: a native
+   * double click on the trigger's LEFT EDGE must issue NO grounding request.
+   * The submit is scrolled into view first, as the review did, so this guard
+   * does not depend on the fold (MINOR-1 has its own).
+   */
+  test('a double click on the Fuori servizio trigger arms the second step and never confirms it (review MAJOR-2)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openFleetEditor(page, aircraft.registration);
+    await expect(page.getByTestId('aog-impact-preview')).toBeVisible();
+    await page.getByTestId('out-of-service-reason').fill('Doppio click');
+    await page.getByTestId('out-of-service-submit').scrollIntoViewIfNeeded();
+    const trigger = (await page.getByTestId('out-of-service-submit').boundingBox())!;
+
+    // The grounding POST is fired synchronously by the click that confirms, so
+    // counting requests is the deterministic witness (the DB read below could
+    // race a POST still in flight).
+    const groundingPosts: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith(`/api/v1/aircraft/${aircraft.id}/out-of-service`)) groundingPosts.push(request.url());
+    });
+    const clicked = { x: trigger.x + 4, y: trigger.y + trigger.height / 2 };
+    await page.mouse.dblclick(clicked.x, clicked.y);
+
+    // Settled either way: armed (the fix) or already reporting (the defect).
+    await expect(page.getByTestId('out-of-service-confirm').or(page.getByTestId('aog-impact-banner'))).toBeVisible();
+    expect(groundingPosts, 'a double click must not reach the grounding endpoint').toEqual([]);
+    const afterDoubleClick = await page.request.get(`/api/v1/aircraft/${aircraft.id}`);
+    expect(((await afterDoubleClick.json()) as { status: string }).status).toBe('OPERATIONAL');
+
+    // Armed, with the question that makes it a step, and the Conferma is not
+    // under the point that was double-clicked.
+    await expect(page.getByText('Confermi il fermo? 0 prenotazioni impattate', { exact: true })).toBeVisible();
+    const confirm = (await page.getByTestId('out-of-service-confirm').boundingBox())!;
+    const covered = clicked.x >= confirm.x && clicked.x <= confirm.x + confirm.width && clicked.y >= confirm.y && clicked.y <= confirm.y + confirm.height;
+    expect(covered, 'the armed Conferma must not sit under the trigger click point').toBe(false);
+  });
+
+  /**
+   * Review MAJOR-1: a fermo whose expected return day has already passed is
+   * still a fermo (invariant [a]), so the count runs UNDELIMITED — and the
+   * sentence beside it used to be rebuilt from the raw date and read "conteggio
+   * fino al {ieri} compreso" over a number that had counted a booking weeks
+   * later. The window now comes out of the domain function
+   * (`impactedBookings.effectiveUntil`), so the three cases have three
+   * sentences. Grounded through the API on purpose: what is under test is the
+   * WORDING of an already-overrun fermo, which no UI path can produce in one
+   * session.
+   */
+  test('a fermo past its expected day says so, over a count that is NOT delimited (review MAJOR-1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const holder = await createPilotPerson(page, 'past');
+    // Far beyond any date this test writes: it is INSIDE an undelimited window
+    // and OUTSIDE the expired one, which is what makes the number discriminant.
+    await book(page, aircraft.id, holder.personId, dateOnlyFromToday(40));
+
+    const yesterday = dateOnlyFromToday(-1);
+    const grounded = await page.request.post(`/api/v1/aircraft/${aircraft.id}/out-of-service`, {
+      data: { reason: 'Fermo scaduto', outOfServiceUntil: yesterday },
+    });
+    expect(grounded.status(), await grounded.text()).toBe(200);
+    // The DTO itself: counted, and counted with NO bound.
+    expect((await grounded.json()) as unknown).toMatchObject({ impactedBookings: { pending: 0, approved: 1, effectiveUntil: null } });
+
+    await openFleetEditor(page, aircraft.registration);
+    const row = page.getByTestId('aog-impact-row');
+    await expect(row).toContainText('1 prenotazione nel fermo');
+    await expect(row).toContainText(`fermo oltre il ${formatDateOnly(yesterday, 'it')} previsto: conteggio non delimitato`);
+    // The sentence the pre-fix UI printed here, over the very same number.
+    await expect(row).not.toContainText('compreso');
+
+    await openFleetEditor(page, aircraft.registration, 'en');
+    await expect(page.getByTestId('aog-impact-row')).toContainText(
+      `grounding past the expected ${formatDateOnly(yesterday, 'en')}: count not delimited`,
+    );
+
+    // The email the holder received says the same thing: the date is the
+    // EXPECTED one, not the end of the window it was warned about.
+    const mail = await waitForMailpitMessage(holder.email, `Velivolo fuori servizio: ${aircraft.registration}`);
+    expect(mail.Text).toContain(`oltre il ${formatDateOnly(yesterday, 'it')} previsto, rientro da definire`);
+    expect(mail.Text).not.toContain(`fino al ${formatDateOnly(yesterday, 'it')} compreso`);
+  });
+
   test('the two controls of the double step reach the 44px floor on the phone, keep their desktop box, and the banner link carries the box ink plus its underline (AC 3/AC 14)', async ({
     page,
   }) => {

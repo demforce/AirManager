@@ -1111,7 +1111,7 @@ registry.registerPath({
   responses: {
     200: {
       description:
-        'The aircraft, now out of service, PLUS the number of live bookings the grounding just impacted (story AOG-1b, ratifica R-AOG-b). The count is recomputed INSIDE the grounding transaction, so it is authoritative for that instant; it is split into `pending` (already frozen — an approval on a grounded aircraft answers 422) and `approved` (nothing in the app stops these, and their holders receive the best-effort grounding email).',
+        'The aircraft, now out of service, PLUS the number of live bookings the grounding just impacted (story AOG-1b, ratifica R-AOG-b). The count is recomputed INSIDE the grounding transaction, so it is authoritative for that instant; it is split into `pending` (already frozen — an approval on a grounded aircraft answers 422) and `approved` (nothing in the app stops these, and their holders receive the best-effort grounding email). `impactedBookings.effectiveUntil` is the bound the count was actually taken over: it equals `outOfServiceUntil` for a live bound, and is `null` both when no date was given AND when the given day had already passed (such a bound is no bound, so the count is not delimited). Present the number with the sentence that field implies, never with one rebuilt from `outOfServiceUntil`.',
       content: jsonContent(setOutOfServiceResponseSchema),
     },
     ...errorResponses(401, 403, 404, 409, 422),
@@ -1123,12 +1123,12 @@ registry.registerPath({
   path: '/api/v1/aircraft/{id}/out-of-service-impact',
   summary: 'Preview how many live bookings a grounding would impact',
   description:
-    'Story AOG-1b (AD-2): the number the admin sees BEFORE grounding an aircraft. `until` is the CANDIDATE expected-return date (`YYYY-MM-DD`); the counting window is `[now, end of that calendar day]`, INCLUSIVE (ratifica R-AOG-a). OMITTING `until` means the window is NOT delimited (`[now, +infinity)`), which is a different answer from "delimited by today". Only `PENDING` and `APPROVED` bookings count; a booking that has already started never does. This is a STIMA: the authoritative number is the one `POST /out-of-service` returns, computed inside its own transaction.',
+    'Story AOG-1b (AD-2): the number the admin sees BEFORE grounding an aircraft. `until` is the CANDIDATE expected-return date (`YYYY-MM-DD`); the counting window is `[now, end of that calendar day]`, INCLUSIVE (ratifica R-AOG-a). OMITTING `until` means the window is NOT delimited (`[now, +infinity)`), which is a different answer from "delimited by today". An `until` whose day has ALREADY PASSED is no bound either: the count is not delimited and `effectiveUntil` answers `null`, so a client can tell that case apart from the omitted one (it sent the date) and word it accordingly. Only `PENDING` and `APPROVED` bookings count; a booking that has already started never does. This is a STIMA: the authoritative number is the one `POST /out-of-service` returns, computed inside its own transaction.',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams, query: outOfServiceImpactQuerySchema },
   responses: {
-    200: { description: 'The impacted-booking counts, split by state.', content: jsonContent(aogBookingImpactSchema) },
+    200: { description: 'The impacted-booking counts, split by state, plus the bound the count was actually taken over.', content: jsonContent(aogBookingImpactSchema) },
     ...errorResponses(401, 403, 404, 422),
   },
 });

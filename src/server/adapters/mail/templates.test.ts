@@ -256,6 +256,7 @@ describe('buildAircraftGroundedEmail (story AOG-1b, ratifica R-AOG-i)', () => {
       startsAt: BOOKING_START,
       reason: 'Revisione 100h',
       outOfServiceUntil: '2031-05-12',
+      effectiveUntil: '2031-05-12',
     });
 
     expect(email.subject).toBe('Velivolo fuori servizio: I-ABCD');
@@ -278,6 +279,7 @@ describe('buildAircraftGroundedEmail (story AOG-1b, ratifica R-AOG-i)', () => {
       startsAt: BOOKING_START,
       reason: 'Attesa pezzo',
       outOfServiceUntil: null,
+      effectiveUntil: null,
     });
 
     expect(email.text).toContain('rientro da definire');
@@ -294,6 +296,7 @@ describe('buildAircraftGroundedEmail (story AOG-1b, ratifica R-AOG-i)', () => {
       startsAt: BOOKING_START,
       reason: '100h inspection',
       outOfServiceUntil: '2031-05-12',
+      effectiveUntil: '2031-05-12',
     });
     const undated = await buildAircraftGroundedEmail('en', {
       firstName: 'John',
@@ -301,11 +304,47 @@ describe('buildAircraftGroundedEmail (story AOG-1b, ratifica R-AOG-i)', () => {
       startsAt: BOOKING_START,
       reason: 'Waiting for a part',
       outOfServiceUntil: null,
+      effectiveUntil: null,
     });
 
     expect(dated.subject).toBe('Aircraft out of service: I-ABCD');
     expect(dated.text).toContain('until 12/05/2031 inclusive');
     expect(dated.text).toContain('has NOT been cancelled');
     expect(undated.text).toContain('return date not yet known');
+  });
+
+  /**
+   * Review MAJOR-1, the sentence that was lying. A fermo whose expected return
+   * day has already passed is STILL a fermo (invariant [a]), so
+   * `computeAogImpact` counts it undelimited and `effectiveUntil` comes back
+   * `null` while `outOfServiceUntil` still holds that date. Before the fix the
+   * template read the raw date and wrote "fino al {ieri} compreso" over a
+   * booking weeks later: an email that contradicted itself.
+   */
+  it('a fermo past its expected day names that day as EXPECTED, never as the end of the window (review MAJOR-1)', async () => {
+    const overdue = await buildAircraftGroundedEmail('it', {
+      firstName: 'Lontano',
+      aircraftRegistration: 'I-ABCD',
+      startsAt: BOOKING_START,
+      reason: 'Fermo scaduto',
+      outOfServiceUntil: '2026-08-06',
+      effectiveUntil: null,
+    });
+
+    expect(overdue.text).toContain('oltre il 06/08/2026 previsto, rientro da definire');
+    // The claim the pre-fix body made, and the reason this test exists.
+    expect(overdue.text).not.toContain('fino al 06/08/2026 compreso');
+
+    const overdueEn = await buildAircraftGroundedEmail('en', {
+      firstName: 'John',
+      aircraftRegistration: 'I-ABCD',
+      startsAt: BOOKING_START,
+      reason: 'Overrun grounding',
+      outOfServiceUntil: '2026-08-06',
+      effectiveUntil: null,
+    });
+
+    expect(overdueEn.text).toContain('past the expected 06/08/2026, return date not yet known');
+    expect(overdueEn.text).not.toContain('inclusive');
   });
 });

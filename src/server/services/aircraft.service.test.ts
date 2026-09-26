@@ -641,8 +641,10 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       });
       expect(result.aircraft.status).toBe('OUT_OF_SERVICE');
       expect(result.aircraft.statusReason).toBe('Engine inspection');
-      // Story AOG-1b, AD-5: the count travels WITH the aircraft, beside it.
-      expect(result.impactedBookings).toEqual({ pending: 0, approved: 0 });
+      // Story AOG-1b, AD-5: the count travels WITH the aircraft, beside it —
+      // and (review MAJOR-1) with the bound it was counted over, `null` here
+      // because no date was given (invariant [b]).
+      expect(result.impactedBookings).toEqual({ pending: 0, approved: 0, effectiveUntil: null });
     });
 
     it('throws ConflictError when the atomic guard matches zero rows (already out of service)', async () => {
@@ -773,7 +775,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' });
 
-      expect(result.impactedBookings).toEqual({ pending: 1, approved: 2 });
+      expect(result.impactedBookings).toEqual({ pending: 1, approved: 2, effectiveUntil: '2031-05-12' });
       // The count is a REPORT of the write, so it runs after it, and it runs on
       // the transaction's own connection: no TOCTOU between the two.
       expect(order).toEqual(['tx-start', 'updateMany', 'booking.findMany', 'tx-end']);
@@ -826,6 +828,10 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         startsAt: new Date('2031-05-02T09:00:00.000Z'),
         reason: 'Revisione 100h',
         outOfServiceUntil: '2031-05-12',
+        // Review MAJOR-1: the window the count was TAKEN over travels with the
+        // date on file, so the template never has to re-decide whether that
+        // date is still a bound. Here it is (2031), so the two agree.
+        effectiveUntil: '2031-05-12',
       });
     });
 
@@ -861,7 +867,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h' });
 
       // The COUNT still says two bookings — the fan-out is what dedupes.
-      expect(result.impactedBookings).toEqual({ pending: 0, approved: 2 });
+      expect(result.impactedBookings).toEqual({ pending: 0, approved: 2, effectiveUntil: null });
       expect(sendMock).toHaveBeenCalledTimes(1);
       expect(buildAircraftGroundedEmail).toHaveBeenCalledWith('it', expect.objectContaining({ startsAt: new Date('2031-05-02T09:00:00.000Z') }));
     });
@@ -885,7 +891,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       expect(sendMock).toHaveBeenCalledTimes(1);
       expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'elena@example.test' }));
-      expect(result.impactedBookings).toEqual({ pending: 0, approved: 2 });
+      expect(result.impactedBookings).toEqual({ pending: 0, approved: 2, effectiveUntil: null });
     });
 
     it('a MailSender that THROWS cannot fail the grounding — 200, row written, count in the response (AC 11)', async () => {
@@ -908,7 +914,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h' });
 
       expect(result.aircraft.status).toBe('OUT_OF_SERVICE');
-      expect(result.impactedBookings).toEqual({ pending: 0, approved: 2 });
+      expect(result.impactedBookings).toEqual({ pending: 0, approved: 2, effectiveUntil: null });
       expect(updateManyMock).toHaveBeenCalledTimes(1);
       // ...and the SECOND recipient still got their mail: one bad address does
       // not swallow the rest of the fan-out.
@@ -962,11 +968,27 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       const impact = await previewOutOfServiceImpact(adminActor(), 'aircraft_1', { until: '2031-05-12' });
 
-      // Counts ONLY: the recipient list never leaves the service.
-      expect(impact).toEqual({ pending: 1, approved: 1 });
+      // Counts ONLY (plus the window they were counted over, review MAJOR-1):
+      // the recipient list never leaves the service.
+      expect(impact).toEqual({ pending: 1, approved: 1, effectiveUntil: '2031-05-12' });
       const where = bookingFindManyMock.mock.calls[0]![0]!.where as { startsAt: { lt?: Date } };
       expect(where.startsAt.lt?.toISOString()).toBe('2031-05-12T22:00:00.000Z');
       expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('a CANDIDATE date already gone answers `effectiveUntil: null` — the DTO says the count was not delimited (review MAJOR-1)', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      bookingFindMany.mockResolvedValue([{ id: 'b1', status: 'APPROVED', personId: 'person_1', startsAt: new Date('2031-05-02T09:00:00.000Z') }]);
+
+      // A day that is past under any clock this suite can run on, so the
+      // assertion never depends on the wall clock (lezione 15.4 F1).
+      const impact = await previewOutOfServiceImpact(adminActor(), 'aircraft_1', { until: '2020-01-01' });
+
+      expect(impact).toEqual({ pending: 0, approved: 1, effectiveUntil: null });
+      // Not delimited in the QUERY either: the number and the window it reports
+      // are the same decision, taken once (AD-1).
+      const where = bookingFindManyMock.mock.calls[0]![0]!.where as { startsAt: { lt?: Date } };
+      expect(where.startsAt.lt).toBeUndefined();
     });
 
     it('with NO candidate date the window is not delimited (invariant [b])', async () => {

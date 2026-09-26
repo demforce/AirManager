@@ -34,7 +34,9 @@
  * an aircraft — so the arithmetic answer for `[now, end of a past day]` (an
  * empty window, count zero) would silence the warning EXACTLY when the fermo
  * has overrun, which is when it matters most. Such a bound therefore falls
- * back to the undelimited window, in this ONE place, for both call sites.
+ * back to the undelimited window, in this ONE place, for both call sites — and
+ * the fact that it did is REPORTED (`effectiveUntil`, see the type below), so
+ * no surface downstream has to guess it back from the raw date.
  *
  * **The states**: exactly `PENDING` and `APPROVED`. `DENIED`/`CANCELLED`/
  * `FLOWN`/`NO_SHOW` are CLOSED states and never count. The split is not
@@ -53,6 +55,24 @@ export type AogBookingImpact = {
   pending: number;
   /** Bookings nothing in the app stops — the ones a human has to deal with, and the email recipients (R-AOG-i). */
   approved: number;
+  /**
+   * The upper bound the count ACTUALLY used, as a `YYYY-MM-DD` calendar day, or
+   * `null` when the window was not delimited at all — which happens for BOTH
+   * reasons this module knows about: no date was given (invariant [b]) and a
+   * date was given but its day had already ended (the clamp above).
+   *
+   * It exists because the count and the SENTENCE that accompanies it were being
+   * derived twice — the rule here, the words in `aircraft-editor.tsx` and in
+   * `templates.ts` from the raw `outOfServiceUntil` — and the two disagreed
+   * exactly in the clamped case: "conteggio fino al {ieri} compreso" printed
+   * over a number that had counted every future booking (review MAJOR-1, a
+   * grounding gone long, i.e. the day after every overrun fermo). AD-1 asks for
+   * one definition of the window; this field is how the one definition reaches
+   * the words. A caller that also knows the REQUESTED date can tell the two
+   * undelimited cases apart (`until` set + `effectiveUntil` null = overrun),
+   * but the RULE — is this bound a bound? — is only ever decided here.
+   */
+  effectiveUntil: string | null;
 };
 
 /** One impacted APPROVED booking, reduced to what the grounding email needs (story AOG-1b, AC 10). */
@@ -103,9 +123,11 @@ export async function computeAogImpact(
   params: { aircraftId: string; until: Date | null; now: Date },
 ): Promise<AogImpact> {
   // An `until` whose day has already ended is not a bound at all (module
-  // doc-comment, AC 9): `undefined` here IS the undelimited window.
-  const end = params.until === null ? undefined : windowEndExclusive(params.until);
-  const upperBound = end !== undefined && end.getTime() > params.now.getTime() ? end : undefined;
+  // doc-comment, AC 9): `null` here IS the undelimited window. The requested
+  // day travels WITH its instant so that `effectiveUntil` can report the bound
+  // that survived this test without re-testing it (review MAJOR-1).
+  const requested = params.until === null ? null : { day: toDateOnlyString(params.until), end: windowEndExclusive(params.until) };
+  const bound = requested !== null && requested.end.getTime() > params.now.getTime() ? requested : null;
 
   const rows = await client.booking.findMany({
     where: {
@@ -113,7 +135,7 @@ export async function computeAogImpact(
       status: { in: ['PENDING', 'APPROVED'] },
       startsAt: {
         gte: params.now,
-        ...(upperBound === undefined ? {} : { lt: upperBound }),
+        ...(bound === null ? {} : { lt: bound.end }),
       },
     },
     select: { id: true, status: true, personId: true, startsAt: true },
@@ -130,5 +152,5 @@ export async function computeAogImpact(
     }
   }
 
-  return { pending, approved: approvedBookings.length, approvedBookings };
+  return { pending, approved: approvedBookings.length, effectiveUntil: bound === null ? null : bound.day, approvedBookings };
 }

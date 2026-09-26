@@ -15,7 +15,7 @@ import { getMailSender } from '@/server/adapters/mail';
 import { buildAircraftGroundedEmail } from '@/server/adapters/mail/templates';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { computeAogImpact, type AogBookingImpact, type ImpactedApprovedBooking } from './aog-impact';
+import { computeAogImpact, type AogBookingImpact, type AogImpact, type ImpactedApprovedBooking } from './aog-impact';
 import { ConflictError, NotFoundError } from './errors';
 import { createAircraftRateCore } from './rates.service';
 
@@ -478,9 +478,12 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
   });
 
   const listItem = toListItem(aircraft);
-  await sendAircraftGroundedEmails(listItem, impact.approvedBookings);
+  await sendAircraftGroundedEmails(listItem, impact);
 
-  return { aircraft: listItem, impactedBookings: { pending: impact.pending, approved: impact.approved } };
+  // Story AOG-1b (review MAJOR-1): `effectiveUntil` travels with the two
+  // numbers, so the sentence the admin reads describes the window the count
+  // was actually taken over — never one rebuilt from `outOfServiceUntil`.
+  return { aircraft: listItem, impactedBookings: { pending: impact.pending, approved: impact.approved, effectiveUntil: impact.effectiveUntil } };
 }
 
 /**
@@ -511,7 +514,7 @@ export async function previewOutOfServiceImpact(actor: Actor, id: string, query:
     until: query.until === undefined ? null : parseDateOnlyUtc(query.until),
     now: new Date(),
   });
-  return { pending: impact.pending, approved: impact.approved };
+  return { pending: impact.pending, approved: impact.approved, effectiveUntil: impact.effectiveUntil };
 }
 
 /**
@@ -537,7 +540,8 @@ export async function previewOutOfServiceImpact(actor: Actor, id: string, query:
  * the others, and NOTHING in here can propagate: the write already committed
  * and stays valid.
  */
-async function sendAircraftGroundedEmails(aircraft: AircraftListItem, approvedBookings: ImpactedApprovedBooking[]): Promise<void> {
+async function sendAircraftGroundedEmails(aircraft: AircraftListItem, impact: AogImpact): Promise<void> {
+  const approvedBookings = impact.approvedBookings;
   if (approvedBookings.length === 0) return;
 
   try {
@@ -569,6 +573,10 @@ async function sendAircraftGroundedEmails(aircraft: AircraftListItem, approvedBo
           // Just written by this function's own transaction — safe to assert.
           reason: aircraft.statusReason!,
           outOfServiceUntil: aircraft.outOfServiceUntil,
+          // Review MAJOR-1: the window the count was actually taken over. The
+          // recipient of a fermo whose expected day had already passed used to
+          // be told "fino al {ieri} compreso" about a booking 41 days later.
+          effectiveUntil: impact.effectiveUntil,
         });
         await getMailSender().send({ to: person.email, subject, text });
       } catch (error) {

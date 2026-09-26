@@ -127,6 +127,16 @@ export type SetOutOfServiceInput = z.infer<typeof setOutOfServiceSchema>;
 export const aogBookingImpactSchema = z.object({
   pending: z.number().int().min(0),
   approved: z.number().int().min(0),
+  /**
+   * The upper bound the count ACTUALLY used (`YYYY-MM-DD`), or `null` when the
+   * window was not delimited — no date given (invariant [b]) OR a date whose
+   * day had already passed, which `computeAogImpact` treats as no bound at all.
+   * Every surface that puts a SENTENCE beside the number chooses it on this
+   * field: deriving the window a second time from `outOfServiceUntil` is
+   * exactly the drift review MAJOR-1 found ("conteggio fino al {ieri}
+   * compreso" printed over a count that had counted every future booking).
+   */
+  effectiveUntil: z.iso.date().nullable(),
 });
 
 export type AogBookingImpactDto = z.infer<typeof aogBookingImpactSchema>;

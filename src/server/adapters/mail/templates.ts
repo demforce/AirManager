@@ -358,21 +358,31 @@ export async function buildBookingDeniedEmail(
  * cancelled (decisione PO 2026-07-31, option 2 of 3 — the AOG counts and warns,
  * it never decides for the admin).
  *
- * `outOfServiceUntil` is the `YYYY-MM-DD` calendar day of the DTO or `null`;
- * the two produce two different, NAMED sentences (`windowUntil` /
- * `windowUnknown`) — invariant [b] is a legitimate state, never an empty spot.
- * The date is rendered with the same `formatDateOnly` the UI uses, in the
+ * The fermo window is stated in one of THREE named sentences, chosen on
+ * `effectiveUntil` — the bound `aog-impact.ts#computeAogImpact` actually
+ * counted over — and never re-derived from `outOfServiceUntil` (review
+ * MAJOR-1): a live bound gives `windowUntil`, no date at all gives
+ * `windowUnknown` (invariant [b] is a legitimate state, never an empty spot),
+ * and a date whose day has already passed gives `windowOverdue`, which names
+ * that date as the EXPECTED one instead of pretending the fermo ended there.
+ * The third case is the one that was lying: the recipient of an overrun fermo
+ * was told "fino al {ieri} compreso" while being warned about a booking weeks
+ * later. Dates are rendered with the same `formatDateOnly` the UI uses, in the
  * RECIPIENT's locale.
  */
 export async function buildAircraftGroundedEmail(
   locale: AppLocale,
-  params: { firstName: string; aircraftRegistration: string; startsAt: Date; reason: string; outOfServiceUntil: string | null },
+  params: { firstName: string; aircraftRegistration: string; startsAt: Date; reason: string; outOfServiceUntil: string | null; effectiveUntil: string | null },
 ): Promise<AircraftGroundedEmailContent> {
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'Emails.aircraftGrounded' });
   const when = formatDateTime(params.startsAt, locale);
   const window =
-    params.outOfServiceUntil === null ? t('windowUnknown') : t('windowUntil', { date: formatDateOnly(params.outOfServiceUntil, locale) });
+    params.effectiveUntil !== null
+      ? t('windowUntil', { date: formatDateOnly(params.effectiveUntil, locale) })
+      : params.outOfServiceUntil === null
+        ? t('windowUnknown')
+        : t('windowOverdue', { date: formatDateOnly(params.outOfServiceUntil, locale) });
 
   return {
     subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),

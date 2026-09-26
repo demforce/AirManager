@@ -1041,6 +1041,10 @@
         "untilUnknown": "rientro da definire",
         "confirm": "Conferma",
         "confirmReturnToService": "Rimettere in servizio questo velivolo?",
+        "confirmQuestionOne": "Confermi il fermo? 1 prenotazione impattata",
+        "confirmQuestionMany": "Confermi il fermo? {count} prenotazioni impattate",
+        "confirmQuestionUnknown": "Confermi il fermo? Conteggio non disponibile",
+        "impactPreviewNone": "Nessuna prenotazione impattata",
         "impactPreviewOne": "Stai per impattare 1 prenotazione.",
         "impactPreviewMany": "Stai per impattare {count} prenotazioni.",
         "impactBannerOne": "Fermo registrato: 1 prenotazione impattata.",
@@ -1050,6 +1054,7 @@
         "impactSplit": "In attesa (congelate): {pending} · Approvate (da gestire): {approved}",
         "impactWindowUntil": "conteggio fino al {date} compreso",
         "impactWindowUndelimited": "rientro da definire: conteggio non delimitato",
+        "impactWindowOverdue": "fermo oltre il {date} previsto: conteggio non delimitato",
         "impactEstimate": "stima",
         "impactBookingsLink": "Vedi le prenotazioni"
       },
@@ -2380,7 +2385,8 @@
       "subject": "Velivolo fuori servizio: {aircraftRegistration}",
       "body": "Ciao {firstName},\n\nIl velivolo {aircraftRegistration}, su cui hai una prenotazione approvata, è stato messo fuori servizio.\n\nMotivo: {reason}\nFermo: {window}\nLa tua prima prenotazione interessata: {when}\n\nLa prenotazione NON è stata annullata: contatta l'aviosuperficie per concordare come procedere.",
       "windowUntil": "fino al {date} compreso",
-      "windowUnknown": "rientro da definire"
+      "windowUnknown": "rientro da definire",
+      "windowOverdue": "oltre il {date} previsto, rientro da definire"
     }
   },
   "BillingPage": {

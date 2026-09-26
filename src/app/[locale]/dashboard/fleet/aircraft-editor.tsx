@@ -67,6 +67,10 @@ export type AircraftEditorLabels = {
     reason: string;
     confirm: string;
     confirmReturnToService: string;
+    /** Review MAJOR-2 — the question in FRONT of the armed pair (full `ArchiveSection` idiom): it moves `out-of-service-confirm` off the point that armed it, so a double click on the trigger no longer arms AND confirms. Three forms because the count is part of the question and Italian inflects the noun; the `Unknown` one covers the preview that never answered. */
+    confirmQuestionOne: string;
+    confirmQuestionMany: string;
+    confirmQuestionUnknown: string;
     /** Story AOG-1a, AC 5 — the date field's own label. Says "compreso"/"inclusive" IN the label, because R-AOG-a made the day itself part of the fermo. */
     until: string;
     /** Optional-ness + what an empty value means, in the `Field` hint slot (never a placeholder-as-label). */
@@ -78,6 +82,8 @@ export type AircraftEditorLabels = {
     /** Story AOG-1b, AC 2 — the preview headline, BEFORE the act. Two forms because Italian and English both inflect the noun; `{count}` is client-interpolated (same `t.raw` convention as `rates.showAll`). */
     impactPreviewOne: string;
     impactPreviewMany: string;
+    /** Review MINOR-1 — the whole preview when the count is ZERO: nothing to split, nothing to warn about, so it collapses to this one line instead of spending the full box (measured: it was pushing the primary submit under the fold at 1280x900). */
+    impactPreviewNone: string;
     /** AC 5 — the persistent banner's headline, AFTER the act, on the number the grounding transaction itself computed. */
     impactBannerOne: string;
     impactBannerMany: string;
@@ -90,6 +96,8 @@ export type AircraftEditorLabels = {
     impactWindowUntil: string;
     /** AC 8 — invariant [b]: no date means the count is NOT delimited, and both halves of that are named. */
     impactWindowUndelimited: string;
+    /** Review MAJOR-1 — the THIRD case: a date IS on file but its day has already passed, so the count is not delimited either. It names that date as the EXPECTED one (`{date}`) instead of claiming the fermo ended there, which is what the `impactWindowUntil` wording did over a count of every future booking. */
+    impactWindowOverdue: string;
     /** AC 2 — the preview number is a STIMA; the authoritative one is the response's. */
     impactEstimate: string;
     /** AC 5 — the banner's way out towards the bookings it is talking about. */
@@ -723,6 +731,15 @@ function BasedSegmented({
  */
 const IMPACT_DEBOUNCE_MS = 300;
 
+/**
+ * A count on screen TOGETHER with the date it was asked about (review
+ * MAJOR-1). The sentence beside the number is chosen on this pair — never on
+ * the date field's current value, which moves ahead of the count for a whole
+ * debounce + request: an undelimited answer next to a freshly typed future
+ * date would otherwise read "fermo oltre il {that date} previsto".
+ */
+type ShownImpact = AogBookingImpactDto & { askedUntil: string | null };
+
 function AvailabilitySection({
   aircraft,
   locale,
@@ -755,7 +772,7 @@ function AvailabilitySection({
    */
   const [confirming, setConfirming] = useState(false);
   /** The impacted-booking count currently on screen — `null` until the first read answers. */
-  const [impact, setImpact] = useState<AogBookingImpactDto | null>(null);
+  const [impact, setImpact] = useState<ShownImpact | null>(null);
   /**
    * Which of the two things that number IS: the estimate the preview fetched
    * (`false`, AC 2) or the one `POST /out-of-service` recomputed inside its own
@@ -797,7 +814,7 @@ function AvailabilitySection({
         try {
           const response = await fetch(`/api/v1/aircraft/${aircraft.id}/out-of-service-impact${query}`, { signal: controller.signal });
           if (!response.ok) return;
-          setImpact((await response.json()) as AogBookingImpactDto);
+          setImpact({ ...((await response.json()) as AogBookingImpactDto), askedUntil: impactUntil });
         } catch {
           // An aborted/failed preview is not an error the admin has to act on:
           // the count is advisory, and the authoritative one still arrives with
@@ -847,7 +864,7 @@ function AvailabilitySection({
     setReason('');
     setUntil('');
     setReasonError(null);
-    setImpact(result.impactedBookings);
+    setImpact({ ...result.impactedBookings, askedUntil: result.aircraft.outOfServiceUntil });
     setAuthoritative(true);
     toast.show(toastLabels.setOutOfService, 'ok');
     onMutated(toEditable(result.aircraft));
@@ -886,21 +903,36 @@ function AvailabilitySection({
       }`
     : '—';
 
-  /**
-   * Story AOG-1b, AC 2/AC 8 — the window, stated in words, on EVERY surface
-   * that shows a number. A `null` date is NAMED ("rientro da definire") and the
-   * count is declared NOT delimited: invariant [b] is a legitimate state, and
-   * the one thing it must never look like is a delimited count with a missing
-   * end.
-   */
-  const windowText =
-    impactUntil === null
-      ? labels.availability.impactWindowUndelimited
-      : labels.availability.impactWindowUntil.replace('{date}', formatDateOnly(impactUntil, locale));
-
   function countText(one: string, many: string, count: number): string {
     return count === 1 ? one : many.replace('{count}', String(count));
   }
+
+  /**
+   * Story AOG-1b, AC 2/AC 8 — the window, stated in words, on EVERY surface
+   * that shows a number, and (review MAJOR-1) chosen on the bound the count was
+   * ACTUALLY taken over: `impactedBookings.effectiveUntil`, straight from the
+   * domain function. Three cases, three sentences:
+   * - a live bound -> "conteggio fino al {date} compreso";
+   * - no date at all -> "rientro da definire: conteggio non delimitato"
+   *   (invariant [b] is a legitimate state, and the one thing it must never
+   *   look like is a delimited count with a missing end);
+   * - a date whose day has already passed -> "fermo oltre il {date} previsto",
+   *   because `computeAogImpact` counted WITHOUT a bound (AC 9: an overrun
+   *   fermo must not have its warning silenced) and saying "fino al {ieri}"
+   *   over that number was simply false.
+   *
+   * The rule that decides case 3 lives ONLY in the domain function; what is
+   * read here is its answer plus the date that answer was asked about
+   * (`ShownImpact`). The empty string is unreachable in render: every consumer
+   * sits inside `impact ? ... : null`.
+   */
+  const windowText = !impact
+    ? ''
+    : impact.effectiveUntil !== null
+      ? labels.availability.impactWindowUntil.replace('{date}', formatDateOnly(impact.effectiveUntil, locale))
+      : impact.askedUntil === null
+        ? labels.availability.impactWindowUndelimited
+        : labels.availability.impactWindowOverdue.replace('{date}', formatDateOnly(impact.askedUntil, locale));
 
   const splitText = impact
     ? labels.availability.impactSplit.replace('{pending}', String(impact.pending)).replace('{approved}', String(impact.approved))
@@ -953,9 +985,13 @@ function AvailabilitySection({
            already-grounded aircraft would be a control that can only ever
            fail — the dead-end class of lezione 14.6 F2. */
         <div className="form-grid">
-          {impact ? (
+          {impact && impactTotal > 0 ? (
             /* AC 2: the warning arrives BEFORE the act, not after it. `role="status"`
-               so the number is re-announced when the candidate date changes it. */
+               so the number is re-announced when the candidate date changes it.
+               Only when there IS something to warn about: review MINOR-1 measured
+               this box spending 78,13 px + 14 px of gap to say "0 prenotazioni",
+               which is what pushed the primary submit under the fold of the
+               scrollable body at 1280x900. Zero takes the one-line form below. */
             <p className="alert-box info" role="status" style={{ gridColumn: '1 / -1', lineHeight: 1.55 }} data-testid="aog-impact-preview">
               <span style={{ display: 'block', fontWeight: 600 }}>
                 {countText(labels.availability.impactPreviewOne, labels.availability.impactPreviewMany, impactTotal)}
@@ -992,20 +1028,52 @@ function AvailabilitySection({
               data-testid="out-of-service-until"
             />
           </Field>
+          {impact && impactTotal === 0 ? (
+            /* Review MINOR-1: the whole preview, as one hint line, when there
+               is nothing to warn about. Above 640px it sits in the grid cell
+               BESIDE the date field — the one the 2-column `.form-grid` leaves
+               empty — because that cell is vertical space the form already
+               pays for: measured at 1280x900, it costs 0 px of extra height and
+               the submit is back at the pre-story y 777.13, above the fold (a
+               full-width row of its own would have left it 3.20 px under).
+               At <=640px the grid is one column and it is a row after the date
+               field. It is also where it belongs: "no bookings impacted" is an
+               answer ABOUT the window that date defines, in the same `.fld-hint`
+               idiom as the persistent row of an already-grounded aircraft.
+               `role="status"` stays, so narrowing the window to zero is
+               announced like any other change of the number. */
+            <p className="fld-hint" role="status" style={{ alignSelf: 'end', margin: 0 }} data-testid="aog-impact-preview">
+              {labels.availability.impactPreviewNone} · {windowText}
+            </p>
+          ) : null}
           {/* AC 3, the DOUBLE STEP. Same idiom as `ArchiveSection` two sections
-              below — the armed state REPLACES the trigger with a confirm/cancel
-              pair — so the panel keeps one language for "this asks first".
-              `availability.confirm` has been translated since story 12.5 and
-              never consumed until now, and this step adds NO string of its own:
-              the question it answers is the preview right above it, which is
-              exactly what the admin is confirming. */}
+              below, now taken WHOLE (review MAJOR-2): the armed state replaces
+              the trigger with a QUESTION followed by the confirm/cancel pair.
+              The question is not decoration — it is what makes the second step a
+              step. Without it the `Conferma` button was born at the trigger's
+              own origin (both measured at x 781, y 444.25) and its box covered
+              the point that had just been clicked, so a plain double click armed
+              AND confirmed: the grounding was written and the emails fanned out
+              with nobody ever reading a confirmation. With the question in front,
+              `out-of-service-confirm` starts past the end of the question text,
+              exactly as `archive-confirm` does. The trigger is full-width, so the
+              pair still lies inside its box (right of its centred label at 1280,
+              on a second row under its lower-left corner at <=640) — measured and
+              declared in the story's Review Record. It also gives the "the
+              preview never answered" case a question of its own, where before it
+              left two bare buttons with nothing above them to confirm. */}
           {/* `.fld` is a COLUMN flex box (`airops.css:1143`) — the plain, unstyled
               wrapper is what gives the lone submit the full-width box story
               AOG-1a measured, and it is left exactly that way. Only the armed
               state turns the row horizontal, for its two controls. */}
-          <div className="fld wide" style={confirming ? { flexDirection: 'row', flexWrap: 'wrap', gap: 8 } : undefined}>
+          <div className="fld wide" style={confirming ? { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 } : undefined}>
             {confirming ? (
               <>
+                <span className="fld-label">
+                  {impact
+                    ? countText(labels.availability.confirmQuestionOne, labels.availability.confirmQuestionMany, impactTotal)
+                    : labels.availability.confirmQuestionUnknown}
+                </span>
                 <button
                   type="button"
                   className="btn primary"
