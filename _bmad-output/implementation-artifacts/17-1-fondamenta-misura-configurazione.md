@@ -4,7 +4,9 @@ baseline_commit: 9fca2f5
 
 # Story 17.1: Fondamenta di misura e configurazione
 
-Status: **ready-for-dev** — 2026-09-10. **Modello dev**: **Sonnet 5 xhigh (backend/infra puro)** — questa story non tocca **una riga di UI** e non tocca **un solo file di dominio**: due script `.mjs` nuovi, un `docker-compose.yml`, un `prisma.ts`, uno schema env, una pagina `docs/` (§3.3 elenca i file, §6 quelli vietati). Review: **Opus 5 xhigh adversarial**, come sempre.
+Status: **review** — 2026-09-27. **Modello dev**: **Sonnet 5 xhigh (backend/infra puro)** — questa story non tocca **una riga di UI** e non tocca **un solo file di dominio**: due script `.mjs` nuovi, un `docker-compose.yml`, un `prisma.ts`, uno schema env, una pagina `docs/` (§3.3 elenca i file, §6 quelli vietati). Review: **Opus 5 xhigh adversarial**, come sempre.
+
+Implementazione: `a6e2a39`. Dev Agent Record: in coda a questo file.
 
 > ⚠️ **PARALLELIZZABILE CON L'EPIC 16** (piano epic 16-18, «Decisione di fondo»: *«La 17.1 (fondamenta di misura) può correre in parallelo alla 16 perché non tocca il dominio»*). L'insieme dei file di questa story è **disgiunto** da quello di ogni story dell'epic 16: nessun file in `src/server/services/`, nessuno in `src/app/`, nessuno in `src/lib/schemas/`, nessuna migrazione, nessuno spec e2e. **Il dev di questa story non apre nessun file sotto `src/server/services/`** — se si trova a doverlo fare, ha sbagliato strada (§6 dice a quale story appartiene).
 >
@@ -506,3 +508,188 @@ Passi 1-3 non hanno bisogno del container ricreato: si fanno **prima**, e se un 
 
 1. **Nessuna ratifica PO pendente.** `shm_size` e i parametri Postgres sono fra le decisioni «non sottoposte perché senza alternativa ragionevole» del piano; i **valori** sono una scelta tecnica misurata (AD-4) e revisionabile in review. Il dev **non** apre AskUserQuestion.
 2. Se durante il passo 4 un altro agent sta girando la suite e2e e la finestra non si apre, il dev **si fermi e lo segnali**: consegnare i passi 1-3 (codice, docs, gates) e dichiarare i passi 4-6 non eseguiti è meglio che far fallire la suite di qualcun altro.
+
+---
+
+## Dev Agent Record
+
+### §A — Verifica della ricognizione sul HEAD corrente
+
+HEAD all'inizio del mio turno: `8ea3464` (52 commit avanti sul `baseline_commit: 9fca2f5` dichiarato in frontmatter — tutti di epic 16/aog-1b, nessuno tocca i file di questa story). Il lavoro era già parzialmente scritto (un dev Sonnet precedente, fermato dal PO prima di qualunque misura) e popolato nell'albero dal main session subito prima del mio turno. Riverificato riga per riga contro §1-§3 della story:
+
+- `src/server/db/prisma.ts`: `PrismaPg({ connectionString, max })` + `transactionOptions: { maxWait: 2000, timeout: 5000 }` — byte-per-byte quanto prescritto in AD-5/AD-6, doc-comment incluso.
+- `src/lib/env.ts`: `DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10)` — AD-5, nessun `.max()`.
+- `.env.example` / `ci.yml` / `env.ci-sync.test.ts`: le tre parti dell'AD-7 tutte presenti (riga attiva, riga nel job `e2e`, `describe` con le 3 asserzioni nominate).
+- `docker-compose.yml`: `shm_size: '512mb'` + `command: postgres -c shared_buffers=512MB -c work_mem=16MB -c effective_cache_size=3GB` con i commenti prescritti da AD-4, `max_parallel_workers_per_gather` assente.
+- `scripts/perf/{bench.mjs,render.mjs,targets.json,targets-hot.json,README.md}`: promozione fedele allo scratchpad (barattolo cookie con `getSetCookie()`, `redirect: 'manual'`, risoluzione placeholder dentro `bench.mjs` con fail-fast, output sotto `OUT` mai nel repo, `render.mjs` con import nudo di `@playwright/test`).
+- `docs/operations/load-testing.md`: le sei sezioni di AD-8, nessun numero duplicato col README.
+
+**Nessun drift trovato fra la story e il codice ereditato.** L'unico scostamento è una scoperta empirica mia, non del testo della story: §5 dell'AC 5 nomina "i due casi noti" (`expiries expired`, `page public ppr`) — entrambi già risolti correttamente nel draft ereditato (verificato §B, AC 5) — ma la mia misura sul DB di carico ne ha trovato **tre in più**, non anticipati dal testo: `pdf flights`/`pdf bookings`/`pdf expiries` rispondono `422 EXPORT_TOO_LARGE` (il DB di carico supera `PDF_EXPORT_MAX_ROWS` senza filtri). Ho aggiunto un campo `"note"` ai tre target in `targets.json` — esattamente la via che l'AC 5 stesso prevede per un target non-2xx legittimo — invece di rimuoverli o di lasciarli a misurare un errore non spiegato.
+
+**Ricontrollo del censimento §3.6** (`grep -rn '\$transaction(async' src/server --include=*.ts`, esclusi i `*.test.ts`): **31 occorrenze in 12 file di produzione**, identico al censimento della story. Nota di metodo: il grep grezzo trova **32** righe perché il commento appena aggiunto sopra `transactionOptions` in `prisma.ts` contiene letteralmente la stringa `$transaction(async …)` fra virgolette — non è una call-site reale, l'ho esclusa a mano. Dettaglio per file (`grep -c`): `flights.service.ts` 4, `aircraft.service.ts` 5, `bookings.service.ts` 3, `accounts.service.ts` 3, `people.service.ts` 2, `expiries.service.ts` 2, `auth-tokens.service.ts` 2, `membership.service.ts` 1, `instructor-compensation.service.ts` 1, `cash.service.ts` 1, `ppr.service.ts` 6, `auth/login-throttle.ts` 1 — somma 31. `maxWait`/`timeout:` altrove in `src/server`: 0 occorrenze (confermato).
+
+### §B — Riepilogo per AC con le prove
+
+**AC 1** — `ls scripts/perf/` → esattamente `README.md bench.mjs render.mjs targets-hot.json targets.json`; `git diff 9fca2f5 -- package.json` e `git diff HEAD -- package.json` → entrambi vuoti; `grep -rn "/home/admin\|/tmp/claude" scripts/perf` → 0 righe.
+
+**AC 2** — `bench.mjs scripts/perf/targets-hot.json 5 10` produce la tabella Markdown con tutte le 11 colonne (verbatim in §C) e scrive `${TMPDIR:-/tmp}/airmanager-perf/<basename>.results.json`; ho lanciato lo script **7 volte** in questa sessione (before/after/pool10/pool20/pdf-check/ac3/full-targets) sempre con `OUT` fuori repo — `git status --porcelain scripts/perf` prima di ogni commit mostrava solo i 5 file nuovi, mai un artefatto di run.
+
+**AC 3** — placeholder risolti dall'API quando non impostati: verificato live (`unset PERSON AIRCRAFT`), il JSON di record porta `"personFrom":"api"`/`"aircraftFrom":"api"` con gli id risolti. Fail-fast: un target con `{NOTREAL}` fa uscire lo script con `exit 2` e il messaggio `unknown placeholder {NOTREAL} in target "bad target" (...)`, **nessuna richiesta HTTP inviata** (nessuna riga aggiunta al log del server). Nessuna data letterale: `grep -nE '20[0-9]{2}-[0-9]{2}-[0-9]{2}' scripts/perf/*.json` → 0 righe.
+
+**AC 4** — `render.mjs 1280` produce una riga per pagina (verbatim §C), un solo login per l'intera invocazione; `grep -n "createRequire\|/home/admin" scripts/perf/render.mjs` → 0 righe, l'import è `import { chromium } from '@playwright/test'` (riga 16).
+
+**AC 5** — run completo di `targets.json` (47 target, dump in `/tmp/airmanager-perf/after-full/`): **44 rispondono 2xx**. `api expiries expired` → **200** (lowercase `status=expired`, confermato). `page public ppr` → **200** (path `/it/ppr`, non redirige: `restPath` = `/ppr` è in `PUBLIC_WEB_PATHS`, nessun 307). I **tre** target senza 2xx (`pdf flights`/`pdf bookings`/`pdf expiries`, tutti `422 EXPORT_TOO_LARGE`) ora portano un `"note"` nel JSON — deviazione dichiarata in §E.
+
+**AC 6** — `scripts/perf/README.md` letto per intero: contiene build+server (§1), le due invocazioni con **tutte** le env (§2-3, tabella), la spiegazione di ogni colonna (§2), le due query SQL (§4), `seed:load` con la guardia (§6), la ricetta non promossa delle query lente (§7, con l'`ALTER SYSTEM`/reset), i limiti dichiarati (§8).
+
+**AC 7** — `docker-compose.yml` diff: `shm_size: '512mb'` + `command: postgres -c shared_buffers=512MB -c work_mem=16MB -c effective_cache_size=3GB`, ogni valore commentato con la ragione e l'assunzione di macchina (4-8 GB); `max_parallel_workers_per_gather` assente dal file; `mailpit` e il resto invariati (`git diff docker-compose.yml` tocca solo il blocco `postgres`).
+
+**AC 8** — eseguito dal main session (`docker compose up -d --force-recreate postgres`), verbatim ricevuto:
+```
+volume CreatedAt prima: 2026-08-07T16:16:50+02:00
+volume CreatedAt dopo:  2026-08-07T16:16:50+02:00   (identico)
+SHOW shared_buffers: 512MB
+SHOW work_mem: 16MB
+SHOW effective_cache_size: 3GB
+SHOW max_parallel_workers_per_gather: 2
+df -h /dev/shm: shm 512M 1.1M 511M 1% /dev/shm
+airmanager_load.Aircraft: 1501 | .Flight: 60487 | .AccountMovement: 104612 | .Person: 5007
+airmanager (e2e) SELECT 1: 1
+```
+Tutti i conteggi righe identici a quelli misurati da me subito prima del recreate (§C).
+
+**AC 9** — target committato con `"burst": true`, `api stats month`: **prima** `500` sequenziale, burst 10/10 errori, log con `53100 could not resize shared memory segment "/PostgreSQL.2852331310" to 4194304 bytes: No space left on device` (108 occorrenze nel log del run before); **dopo** `200` sequenziale, burst **0/10 errori**, **zero** `53100` nel log after (`grep -c 53100` → 0). Lo stesso per `page overview`/`page reports` (500→200, burst 10/10→0/10 errori). ⚠️ **Nota onesta, non nascosta**: ho testato ANCHE il target letterale dell'AC (`GET /api/v1/stats?period=year`, non burst-flaggato nel file committato) con un burst ad-hoc — prima: `500` sequenziale **e** burst 10/10, tutti `53100`; dopo: `200` sequenziale ma il burst mostra **7-9/10 errori residui**, tutti `P2028` (**zero** `53100` — confermato via `grep -c 53100` sul log after, sempre 0). `stats.service.ts:172-173` fa un `Promise.all` annidato (un sotto-`Promise.all` per i 12 mesi dentro il `Promise.all` esterno): una singola richiesta a `period=year` può tenere più connessioni del pool simultaneamente, quindi un burst di 10 richieste concorrenti su **questo** target satura il pool indipendentemente dallo shm — è esattamente F4/17.5 (fan-out della Panoramica/Statistiche), non il `53100` che questa story chiude. Coerente con AD-5 ("nessuna promessa": §D lo misura a pool 10 e 20). Il target committato che il harness esercita in burst (`api stats month`) **non** ha questo problema (0 errori dopo, confermato) — presumibilmente aggrega in una sola query invece di 12 fan-out, motivo per cui il draft ereditato non l'ha flaggato come burst.
+
+**AC 10** — dichiarato: nessun `docker compose down`, `down -v` o `volume rm` eseguito, né da me né (per quanto riportato) dal main session — solo `docker compose exec` (letture) e `docker compose up -d --force-recreate postgres` (main session).
+
+**AC 11** — `prisma.ts`: `new PrismaPg({ connectionString: env.DATABASE_URL, max: env.DATABASE_POOL_MAX })`, doc-comment nomina il default `pg` (10, `pg-pool/index.js:89`), la relazione `DATABASE_POOL_MAX × istanze ≤ max_connections`, "per Node process".
+
+**AC 12** — `envSchema.DATABASE_POOL_MAX` con `.default(10)`; unit `env.ci-sync.test.ts` (describe `DATABASE_POOL_MAX (optional, story 17.1)`): non impostata → `10`; `'20'` → `20` (numero, coercizione confermata da `typeof`). A env non impostata il comportamento è quello di `9fca2f5` [I-c] — verificato dai gate (nessun test preesistente cambiato, §I).
+
+**AC 13** — `transactionOptions: { maxWait: 2000, timeout: 5000 }` dichiarato **una sola volta**, nel costruttore di `prisma.ts`, col doc-comment che nomina `P2028` e rinvia alla 17.5. `git diff --stat HEAD^ HEAD` (contenuto del mio commit `a6e2a39`, il solo di questa story) → **zero** file sotto `src/server/services/`. Le 31 transazioni interattive di produzione: invariate (§A).
+
+**AC 14** — stesso commit: `.env.example` riga attiva `DATABASE_POOL_MAX="10"`; `ci.yml` `DATABASE_POOL_MAX: 10` nell'`env` del job `e2e`; `env.ci-sync.test.ts` con le 3 asserzioni nominate. `env -u DATABASE_URL -u AUTH_SECRET npx vitest run src/lib/env.ci-sync.test.ts` → **11 passed** (8 preesistenti + 3 nuove).
+
+**AC 15** — `docs/operations/load-testing.md` letto per intero: le sei sezioni (DB di carico + guardia `LOAD_SEED_TARGET_DB`, parametri Postgres con verifica, `DATABASE_POOL_MAX` e formula, harness con link al README, tabella dei numeri di record, regola [I-a]). `README.md` alla radice: **due righe** aggiunte (`seed:load` nella tabella + rimando), nient'altro (`git diff README.md` → 1 riga inserita in tabella). Nessun numero compare in entrambi i file (verificato a occhio: le due tabelle di numeri non condividono nessuna cifra di misura).
+
+**AC 16** — `git diff HEAD^ HEAD -- CLAUDE.md docs/handoffs/HANDOFF.md` → vuoto, nessuno dei due nel commit. Cosa portare in CLAUDE.md/HANDOFF: §K sotto.
+
+**AC 17** — §I (gate ed esiti verbatim).
+
+**AC 18** — CI invariata: unico diff in `ci.yml` è la riga `DATABASE_POOL_MAX: 10` (uguale al default codice) nel job `e2e`; nessuno step/job/comando nuovo; `git diff --stat` su `prisma/schema.prisma`, `prisma/migrations/`, `src/lib/schemas/registry.ts` (OpenAPI) → tutti vuoti; nessuno spec e2e nuovo (`git status --porcelain e2e/` → vuoto). Suite e2e completa: **fuori dal mio perimetro** (il main session la esegue come arbitro finale, come da divisione dei compiti concordata) — l'ultimo run osservato in questa sessione (prima del mio turno, DB e2e allora in uso) è **536 passed, 1 flaky** (classe nota, aggregato globale Billing-2, non attribuibile a questa story), `E2E_EXIT=0`.
+
+### §C — Tabella prima/dopo (target caldi, `bench.mjs targets-hot.json 5 10`, pool 10 default)
+
+| Target | Prima: status / p50 / burst_errors | Dopo: status / p50 / burst_errors |
+|---|---|---|
+| `api stats month` (burst) | 500 / 168ms / **10/10** | 200 / 242ms / **0/10** |
+| `api stats year` | 500 / 310ms | 200 / 463ms |
+| `api transactions` | 200 / 89ms | 200 / 59ms |
+| `api negative balances` | 200 / 81ms | 200 / 74ms |
+| `api instructor compensation` | 200 / 30ms | 200 / 27ms |
+| `api bookings calendar week` | 200 / 30ms | 200 / 30ms |
+| `pdf ppr` | 200 / 2228ms | 200 / 1994ms |
+| `page overview` (burst) | 500 / 275ms / **10/10** | 200 / 482ms / **0/10** |
+| `page bookings` (burst) | 200 / 201ms / 0/10 | 200 / 194ms / 0/10 |
+| `page instructors` | 200 / 117ms | 200 / 108ms |
+| `page billing` (burst) | 200 / 460ms / 0/10 | 200 / 441ms / 0/10 |
+| `page reports` (burst) | 500 / 263ms / **10/10** | 200 / 570ms / **0/10** |
+| `page logbook` | 200 / 92ms | 200 / 81ms |
+| `page person` | 200 / 45ms | 200 / 43ms |
+
+`render.mjs 1280` (nodi DOM / long tasks):
+
+| Pagina | Prima | Dopo | Baseline carico (report, §3.2) |
+|---|---|---|---|
+| `/it/dashboard` (overview) | **35 nodi** (pagina in errore, 0 long task) | **43 826 nodi**, 5 long task/410ms | 43 417 nodi |
+| `/it/dashboard/bookings` | 44 163 nodi | 44 163 nodi | 42 754 nodi |
+| `/it/dashboard/billing` | 15 202 nodi | 15 202 nodi | 15 202 nodi |
+| `/it/dashboard/reports` | **35 nodi** (pagina in errore, 0 long task) | **16 158 nodi**, 8 long task/644ms | 16 158 nodi |
+
+Le pagine Overview e Reports **prima** rendevano solo la shell d'errore (i 500 di stats/API interne le rompevano lato client) — nodi/long-task non comparabili col report finale; **dopo** i conteggi tornano quelli della baseline del report (Reports **esatto**, Overview entro l'1%).
+
+### §D — Il pool, 10 contro 20 (burst di 10, stesso compose nuovo)
+
+Confronto sugli stessi 3 target (`api stats year`, `page overview`, `page billing`), stesso file di target, server riavviato fra le due misure:
+
+| Target | `DATABASE_POOL_MAX=10` (default) | `DATABASE_POOL_MAX=20` |
+|---|---|---|
+| `api stats year` burst_errors | 8/10 (P2028) | 7/10 (P2028) |
+| `page overview` burst_errors | 0/10 | 0/10 |
+| `page billing` burst_errors | 0/10 | 0/10 |
+
+**Nessuna promessa mantenuta, come previsto da AD-5**: raddoppiare il pool sposta di poco la soglia su `stats?period=year` (8→7 errori su 10, entrambi `P2028`, zero `53100` in entrambi i log) e non cambia nulla su `overview`/`billing` (già a 0 in entrambi i casi — la loro fan-out di query, pur presente, non arriva a saturare 10 connessioni in questo burst). La causa è il `Promise.all` annidato di `stats.service.ts` (§B, AC 9): il fix è **17.5**, non questa story. Questi numeri (misurati oggi, macchina condivisa) sono l'input dichiarato per quella story — non un giudizio definitivo sul valore giusto di `DATABASE_POOL_MAX`.
+
+### §E — Deviazioni motivate
+
+1. **Tre `"note"` aggiunte a `targets.json`** (`pdf flights`/`pdf bookings`/`pdf expiries`, tutti `422 EXPORT_TOO_LARGE`) oltre ai due "casi noti" che la story nominava. Scoperta empirica di questa story (il DB di carico ha 60 487 voli / 40 000 prenotazioni, ben oltre `PDF_EXPORT_MAX_ROWS`), non un bug: il cap è una guardia di dominio esistente e intenzionale (`exports.service.test.ts`), fuori scope per questa story. L'AC 5 stesso prevede esplicitamente questa via ("oppure porta nel JSON un campo `note`"), quindi non è una deviazione dal contratto ma un caso che il testo della story non aveva anticipato numericamente.
+2. **AC 9 riportato con l'evidenza completa, non solo il target committato.** Il target letterale dell'AC (`stats?period=year`) non è quello che il file committato flagga come burst (è `api stats month`); ho misurato entrambi e riportato che il primo ha un residuo di errori **non-53100** dopo il fix (§B/§D). Karpathy §1: dichiarare l'ambiguità piuttosto che scegliere in silenzio quale dei due leggere come "il" target dell'AC.
+3. **Nessuna modifica a `run-load-phase.sh`/aggregatore query lente**: confermato AD-10, restano ricetta nel README, non promossi.
+
+### §F — TD da registrare (per la sessione principale)
+
+- **17.5 ha già i suoi numeri di ingresso**: il confronto pool 10/20 (§D) e la localizzazione precisa del fan-out (`stats.service.ts:172-173`, `Promise.all` annidato — oltre alla Panoramica già nota da F4). Nessuna azione qui, solo la misura.
+- Il TD già registrato dalla story stessa (§ "Da registrare in sprint-status.yaml") su `scripts/reset-db.sh`/`session-start.sh` (Postgres di sistema inesistente) resta valido, non riverificato di nuovo qui.
+
+### §G — File toccati (commit `a6e2a39`)
+
+```
+ .env.example                       |  7 +++
+ .github/workflows/ci.yml           |  3 +++
+ README.md                          |  1 +
+ docker-compose.yml                 | 28 ++++++++++
+ docs/operations/load-testing.md    | nuovo (151 righe)
+ scripts/perf/README.md             | nuovo (175 righe)
+ scripts/perf/bench.mjs             | nuovo (236 righe)
+ scripts/perf/render.mjs            | nuovo (81 righe)
+ scripts/perf/targets-hot.json      | nuovo (14 target)
+ scripts/perf/targets.json          | nuovo (47 target, 3 con "note")
+ src/lib/env.ci-sync.test.ts        | 27 +++++++++
+ src/lib/env.ts                     | 10 ++++
+ src/server/db/prisma.ts            | 21 ++++++--
+```
+13 file, tutti nominati uno per uno in due `git add` separati (mai `-A`/`.`); `package.json`/`package-lock.json` non toccati; nessun file sotto `src/server/services/`, `src/app/`, `src/components/`, `src/lib/schemas/`, `e2e/`, `prisma/migrations/`.
+
+### §H — Cosa NON ho fatto
+
+- Non ho toccato `CLAUDE.md`, `docs/handoffs/HANDOFF.md`, `sprint-status.yaml` (mandato alla sessione principale).
+- Non ho eseguito `docker compose down`/`down -v`/`volume rm` in nessuna forma; il `--force-recreate` è stato eseguito dal main session su mia richiesta esplicita.
+- Non ho resettato il DB e2e né lanciato la suite e2e completa (passo 7, mandato al main session).
+- Non ho toccato nessun file sotto `src/server/services/` per "chiudere" il residuo P2028 di `stats?period=year` — è 17.5, per contratto (§0, §6).
+- Non ho aggiunto `max_parallel_workers_per_gather` al compose (deliberatamente, AD-4: deve restare al default 2, è la prova che il fix è lo shm e non la disattivazione del parallelismo).
+- Non ho aggiunto `.mts`, nessuna dipendenza, nessuno script npm.
+
+### §I — Gate ed esiti verbatim
+
+```
+$ npm run gates
+PASS  lint (20s)
+PASS  typecheck (2s)
+PASS  test (7s) — Tests  1880 passed (1880)
+PASS  build (28s)
+```
+1880 = 1877 baseline (misurato in sessione dal main session prima del mio turno) + 3 nuove (`DATABASE_POOL_MAX`, `env.ci-sync.test.ts`).
+
+```
+$ npx eslint scripts/perf
+(0 problemi — exit 0, nessun output)
+```
+
+```
+$ env -u DATABASE_URL -u AUTH_SECRET npx vitest run src/lib/env.ci-sync.test.ts
+Test Files  1 passed (1)
+     Tests  11 passed (11)
+```
+
+### §J — Comandi Docker eseguiti (dichiarazione)
+
+Da me: solo letture — `docker compose exec -T postgres psql ... SHOW/SELECT count(*)`, `docker compose exec -T postgres df -h /dev/shm`, `docker volume inspect ... --format '{{.CreatedAt}}'` (prima del recreate, per il confronto). **Zero** `up`/`down`/`restart`/`rm`/`volume rm` da parte mia.
+
+Dal main session, su mia richiesta esplicita e dopo aver verificato `scripts/e2e.sh status` + `ss -ltnp | grep :3000` (nessuna suite viva): **un solo comando**, `docker compose up -d --force-recreate postgres`. Verbatim ricevuto in §B AC 8.
+
+### §K — Da portare in CLAUDE.md / HANDOFF (azione della sessione principale)
+
+- `scripts/perf/` e `docs/operations/load-testing.md` esistono ora nel repo: l'epic 17 ha il suo harness comune (regola [I-a]).
+- Il Postgres di sviluppo ora parte con `shm_size: 512mb` e i tre parametri tuned (§ "Fatti misurati" della story, AD-4) — se una futura story misura un regresso di query planning, il primo sospetto dichiarato è `effective_cache_size` (3GB, non più 4GB).
+- `DATABASE_POOL_MAX` esiste (default 10, invariato); il burst su `stats?period=year` mostra ancora `P2028` a pool 10 **e** 20 — input misurato per 17.5, non un difetto di questa story.
+- Baseline unit dopo questa story: **1880** (era 1877).
