@@ -701,9 +701,9 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
 });
 
 test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3/4; ratifica R4)', () => {
-  // Story 14.4 blast-radius fixture fix: 4 of the 5 tests below each create
-  // their OWN active, scope: 'ALL', blocksBooking: true `ExpiryType` (never
-  // deactivated afterward) — under `fullyParallel: true` a SIBLING test in
+  // Story 14.4 blast-radius fixture fix: 3 of the 4 tests below each create
+  // their OWN active, scope: 'ALL', blocksBooking: true `ExpiryType` (active
+  // until `deactivateBlockingType` runs at that test's end) — under `fullyParallel: true` a SIBLING test in
   // this SAME describe block could otherwise run concurrently on a
   // different worker and have its fresh pilot's `ensureValidSeedExpiries`
   // dynamic scan (e2e/helpers.ts) land BEFORE one of these types is
@@ -869,20 +869,23 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
  * and touches no global `AppSettings`, so this block deliberately stays out
  * of `playwright.config.ts`'s serialized chain.
  *
- * ⚠️ KNOWN FLAKE CLASS, not this block's own (TD 16.2-g): the "Blocking
- * expiry guard-rail" describe further down creates GLOBAL active
- * `scope: 'ALL'`, `blocksBooking: true` `ExpiryType`s and 4 of its 5 tests
- * leave them ACTIVE (see `deactivateBlockingType`'s doc-comment, which
- * already lists four cross-file victims). Under `fullyParallel` a type that
- * goes active AFTER a fresh person's `ensureValidSeedExpiries` scan blocks
- * that person's later flight registration with **422
- * FLIGHT_BLOCKED_BY_EXPIRY** — so the symptom here is always the FIRST
- * `POST /api/v1/flights` of a test answering 422 instead of 201, never an
- * assertion about the overlap guard itself. `createPilotPerson` below keeps
- * the exposed window to four sequential API calls instead of the ~5 seconds
- * `createPilotWithLogin` spends waiting on the Mailpit invite; the real fix
- * is deactivating those types at their source, which belongs to that
- * describe, not to this one.
+ * ⚠️ KNOWN FLAKE CLASS, not this block's own (TD 16.2-g, source corrected by
+ * the review, MINOR-1): GLOBAL active `scope: 'ALL'`, `blocksBooking: true`
+ * `ExpiryType`s created by specs running in parallel — the 4 of
+ * `bookings.spec.ts` ("Booking expiry block", story 7.4) stay ACTIVE for
+ * good, the 3 of the "Blocking expiry guard-rail" describe below are active
+ * for the duration of the test that creates each (`deactivateBlockingType`
+ * runs at its end). Under `fullyParallel` a type that goes active AFTER a
+ * fresh person's `ensureValidSeedExpiries` scan blocks that person's later
+ * flight registration with **422 FLIGHT_BLOCKED_BY_EXPIRY** — so the
+ * symptom here is always the FIRST `POST /api/v1/flights` of a test
+ * answering 422 instead of 201, never an assertion about the overlap guard
+ * itself. Deactivating at the end of a test cannot close that window; a
+ * PER-PERSON block on a seed type (as `createPilotPerson`'s
+ * `expiredSeedType` does) or moving those describes into the serialized
+ * chain would. `createPilotPerson` below keeps the exposed window to four
+ * sequential API calls instead of the ~5 seconds `createPilotWithLogin`
+ * spends waiting on the Mailpit invite.
  */
 test.describe('Flight registry guards: no duplicate, no overlap, no minute lost (Story 16.2)', () => {
   /** The registry's own view of one aircraft's flights (admin scope) — how a refused registration is proved to have written nothing. */
@@ -905,16 +908,17 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
    * round-trip of `createPilotWithLogin` buys nothing here — and it costs ~5
    * seconds between `ensureValidSeedExpiries` and the first flight POST.
    * That window is what makes a fixture vulnerable to the GLOBAL, active,
-   * `scope: 'ALL'`, `blocksBooking: true` `ExpiryType`s the "Blocking expiry
-   * guard-rail" describe below leaves behind (its own doc-comment names the
-   * cross-file leak, observed in `my-account`/`pdf-exports`/
-   * `instructor-compensation`/`reports`): a type that goes active AFTER the
-   * scan blocks the later registration with 422 `FLIGHT_BLOCKED_BY_EXPIRY`.
-   * Four sequential API calls shrink that window by ~two orders of magnitude.
-   * It does not CLOSE it — the real fix is deactivating those types at their
-   * source, which is not this story's block (declared as a TD).
+   * `scope: 'ALL'`, `blocksBooking: true` `ExpiryType`s other specs create
+   * while this block runs (TD 16.2-g, block doc-comment above): a type that
+   * goes active AFTER the scan blocks the later registration with 422
+   * `FLIGHT_BLOCKED_BY_EXPIRY`. Four sequential API calls shrink that window
+   * by ~two orders of magnitude; they do not CLOSE it.
+   *
+   * `expiredSeedType` (review MAJOR-1): registers that SEED type EXPIRED for
+   * this person BEFORE the scan (which then skips it) — a PER-PERSON block
+   * that mutates no catalogue row, so it adds nothing to the flake class.
    */
-  async function createPilotPerson(page: Page): Promise<{ personId: string; firstName: string; lastName: string }> {
+  async function createPilotPerson(page: Page, expiredSeedType?: string): Promise<{ personId: string; firstName: string; lastName: string }> {
     const suffix = uniqueSuffix();
     const firstName = 'Volo';
     const lastName = `Titolare-${suffix}`;
@@ -927,6 +931,13 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
       data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
     });
     expect(profileResponse.status()).toBe(200);
+    if (expiredSeedType !== undefined) {
+      const typesResponse = await page.request.get('/api/v1/expiry-types');
+      expect(typesResponse.status()).toBe(200);
+      const seedType = ((await typesResponse.json()) as { id: string; name: string }[]).find((type) => type.name === expiredSeedType);
+      expect(seedType, `seeded expiry type "${expiredSeedType}"`).toBeTruthy();
+      await registerExpiry(page, person.id, seedType!.id, EXPIRED_BEFORE_PAST_DATE);
+    }
     await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
     return { personId: person.id, firstName, lastName };
@@ -1171,6 +1182,89 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
     const correctionError = page.getByTestId('flight-form-error');
     await expect(correctionError).toContainText(conflictText);
     await expect(correctionError).not.toContainText('già stato annullato');
+  });
+
+  // E8 — review MAJOR-1: every 422 precedes the 409 (AD-4), so a request that
+  // is BOTH blocked by a document AND overlapping meets FLIGHT_OVERLAP only
+  // on the "Forza registrazione" submit. `force` does not derogate the
+  // guard: the force section must close and the banner must name the
+  // conflicting flight — never the endless «Riprova».
+  test('E8: on the FORCE submit a 409 FLIGHT_OVERLAP closes the force section and names the conflicting flight, in registration AND in correction', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const cleanPilot = await createPilotPerson(page);
+    const blockedPilot = await createPilotPerson(page, 'Licenza');
+    const spareDeparture = `Spare-${uniqueSuffix()}`;
+    const conflictText = 'ha già un volo registrato il 01/01/2020 dalle 10:00 alle 11:00';
+
+    async function fillCommonFields(pilot: { firstName: string; lastName: string }): Promise<void> {
+      await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+      await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+      await page.getByLabel('Data volo').fill(PAST_DATE);
+    }
+
+    async function forceAndExpectOverlap(reason: string): Promise<void> {
+      await expect(page.getByTestId('flight-form-error')).toContainText('Licenza');
+      const forceSection = page.getByTestId('force-flight-section');
+      await expect(forceSection).toBeVisible();
+      await forceSection.getByTestId('force-flight-reason').fill(reason);
+      await forceSection.getByTestId('force-flight-submit').click();
+
+      const formError = page.getByTestId('flight-form-error');
+      await expect(formError).toContainText(conflictText);
+      await expect(forceSection).toHaveCount(0);
+    }
+
+    // The flight that will be conflicted with (clean pilot): 10:00 -> 11:00
+    // local, registered through the form so the message's clock times are
+    // independent of the host's TZ (same reasoning as E6).
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await fillCommonFields(cleanPilot);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('11:00');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+    await page.getByTestId('flight-result-close').click();
+
+    // Registration: blocked pilot, overlapping window -> 422 (document), then
+    // the forced resend -> 409.
+    await openNewEntryForm(page);
+    await fillCommonFields(blockedPilot);
+    await page.getByLabel('Ora decollo').fill('10:30');
+    await page.getByLabel('Ora atterraggio').fill('11:30');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await forceAndExpectOverlap('Verifica del 409 forzato in registrazione');
+    expect(await countFlights(page, aircraft.id)).toBe(1);
+
+    // Correction: a spare flight of the clean pilot in a free window, then
+    // corrected onto the blocked pilot AND the first flight's window.
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await fillCommonFields(cleanPilot);
+    await page.getByLabel('Ora decollo').fill('20:00');
+    await page.getByLabel('Ora atterraggio').fill('20:30');
+    await page.getByLabel('Aeroporto di partenza').fill(spareDeparture);
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+    await page.getByTestId('flight-result-close').click();
+
+    await page.getByTestId('flight-filter-person').fill(cleanPilot.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(cleanPilot.lastName)}`));
+    const spareRow = page.getByTestId('flight-row').filter({ hasText: spareDeparture });
+    await expect(spareRow).toHaveCount(1);
+    await spareRow.getByTestId('flight-correct-action').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), blockedPilot.lastName, `${blockedPilot.lastName} ${blockedPilot.firstName}`);
+    await page.getByLabel('Ora decollo').fill('10:30');
+    await page.getByLabel('Ora atterraggio').fill('11:30');
+    await page.getByLabel('Motivo della correzione').fill('Verifica del 409 forzato in correzione');
+    await page.getByRole('button', { name: 'Conferma correzione' }).click();
+    await forceAndExpectOverlap('Verifica del 409 forzato in correzione');
+    expect(await countFlights(page, aircraft.id)).toBe(2);
   });
 
   // E7 — F13: the clamp keeps clamping, but no longer in silence.

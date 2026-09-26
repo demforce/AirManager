@@ -2439,6 +2439,28 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       await expect(correctFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
       expect(store.lastWhere()).toMatchObject({ aircraftId: 'aircraft_2', id: { not: 'flight_orig' } });
     });
+
+    // Review LOW-1 — two concurrent corrections of the SAME flight: the loser
+    // passed the pre-check while the original was still REGISTERED, then
+    // waited on the aircraft lock while the winner reversed it and wrote its
+    // own correction on the same slot.
+    it('LOW-1: a correction whose original was reversed while it waited on the aircraft lock answers CONFLICT, never FLIGHT_OVERLAP naming the winner', async () => {
+      flightFindUniqueMock.mockReset();
+      flightFindUniqueMock
+        .mockResolvedValueOnce(ORIGINAL_FLIGHT_ROW as never)
+        .mockResolvedValueOnce({ status: 'CANCELLED' } as never);
+      stubOverlapStore([
+        { ...ORIGINAL_IN_STORE, status: 'CANCELLED' },
+        { ...EXISTING_09_10, id: 'flight_winner' },
+      ]);
+      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('09:00', '10:00'), notes: 'Nota corretta' });
+
+      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(flightFindFirstMock).not.toHaveBeenCalled();
+      expect(flightUpdateMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
+      expect(flightCreateMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('the storno contaore clamp leaves a trace (story 16.2, F13; ops-audit sonda 19)', () => {

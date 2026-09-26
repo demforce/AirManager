@@ -296,7 +296,7 @@ describe('apiRoute (Story 1.5 — shared API wrapper, AD-8)', () => {
     });
 
     // The other half of the same line: a `ConflictError` with no `details`
-    // (all 39 pre-existing call sites in `src/server`) must keep answering
+    // (all 75 pre-existing call sites, 13 files in `src/server` — review LOW-2) must keep answering
     // with the envelope's `details` key ABSENT, not `undefined`/`null`.
     it('maps a domain-level ConflictError WITHOUT details to 409 with no `details` key at all', async () => {
       const GET = apiRoute({

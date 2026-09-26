@@ -1642,6 +1642,17 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       throw new NotFoundError('Aircraft not found.');
     }
 
+    // Story 16.2, review LOW-1: a concurrent correction of the SAME flight
+    // serializes on the original aircraft's lock just taken, and READ
+    // COMMITTED lets this re-read see the winner's commit. Without it the
+    // loser would meet the winner's NEW flight in the overlap guard below and
+    // answer `FLIGHT_OVERLAP` naming it, instead of the CONFLICT the
+    // pre-check (`loadRegisteredFlightForReversal`) answers sequentially.
+    const originalNow = await tx.flight.findUnique({ where: { id: originalFlight.id }, select: { status: true } });
+    if (originalNow?.status !== 'REGISTERED') {
+      throw new ConflictError('Flight is already cancelled.');
+    }
+
     // Story 16.2 (P3): the SAME guard, on the CORRECTED data's aircraft —
     // `resolved.aircraft.id`, never `originalFlight.aircraftId`: a correction
     // that MOVES the flight onto another airframe must be checked THERE, and

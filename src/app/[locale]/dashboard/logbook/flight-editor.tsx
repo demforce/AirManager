@@ -392,6 +392,24 @@ export function FlightEditor({
     setForceError(null);
   }
 
+  /**
+   * Story 16.2 (AC 18): the `FLIGHT_OVERLAP` sentence — names the conflicting
+   * flight's day and clock window instead of a wall, since cancelling or
+   * correcting THAT flight is the one way out of a guard `force` does not
+   * derogate. Rendered in the BROWSER's local time, the same convention
+   * `localTimeFromIso` already uses to prefill a correction: the operator
+   * reads back the very times this form would have shown for that flight.
+   * Shared by the primary and the force submit (review MAJOR-1).
+   */
+  function overlapMessage(details: { takeoffAt?: string; landingAt?: string } | undefined): string {
+    const takeoffAt = details?.takeoffAt;
+    const landingAt = details?.landingAt;
+    if (takeoffAt === undefined || landingAt === undefined) return labels.errors.generic;
+    return labels.errors.FLIGHT_OVERLAP.replace('{date}', formatDateOnly(localDateFromIso(takeoffAt), moneyLocale))
+      .replace('{from}', localTimeFromIso(takeoffAt))
+      .replace('{to}', localTimeFromIso(landingAt));
+  }
+
   const {
     register,
     handleSubmit,
@@ -673,21 +691,7 @@ export function FlightEditor({
         };
       } | null;
       if (response.status === 409 && blockedBody?.error?.code === 'FLIGHT_OVERLAP') {
-        // Story 16.2 (AC 18): names the conflicting flight's day and clock
-        // window instead of a wall — cancelling or correcting THAT flight is
-        // the one way out of a guard `force` does not derogate. Rendered in
-        // the BROWSER's local time, the same convention `localTimeFromIso`
-        // already uses to prefill a correction: the operator reads back the
-        // very times this form would have shown for that flight.
-        const overlapTakeoffAt = blockedBody.error.details?.takeoffAt;
-        const overlapLandingAt = blockedBody.error.details?.landingAt;
-        setFormError(
-          overlapTakeoffAt === undefined || overlapLandingAt === undefined
-            ? labels.errors.generic
-            : labels.errors.FLIGHT_OVERLAP.replace('{date}', formatDateOnly(localDateFromIso(overlapTakeoffAt), moneyLocale))
-                .replace('{from}', localTimeFromIso(overlapTakeoffAt))
-                .replace('{to}', localTimeFromIso(overlapLandingAt)),
-        );
+        setFormError(overlapMessage(blockedBody.error.details));
         return;
       }
       if (isCorrecting && response.status === 409) {
@@ -811,9 +815,21 @@ export function FlightEditor({
     if (!isCorrecting) regenerateIdempotencyKey();
 
     if (!response.ok) {
-      // A concurrent change (e.g. the person/aircraft got archived meanwhile)
-      // — the generic message is enough here, the primary submit path above
-      // already covers every other domain code.
+      // Story 16.2, review MAJOR-1: every 422 precedes the overlap 409 (AD-4),
+      // so a request that is both blocked AND overlapping meets
+      // `FLIGHT_OVERLAP` ONLY here. `force` does not derogate it: the section
+      // closes (retrying could only repeat the 409) and the bottom banner
+      // names the flight to cancel or correct, as on the primary submit.
+      const errorBody = (await response.json().catch(() => null)) as {
+        error?: { code?: string; details?: { takeoffAt?: string; landingAt?: string } };
+      } | null;
+      if (response.status === 409 && errorBody?.error?.code === 'FLIGHT_OVERLAP') {
+        resetForceState();
+        setFormError(overlapMessage(errorBody.error.details));
+        return;
+      }
+      // Any other failure is a concurrent change (e.g. the person/aircraft
+      // got archived meanwhile) — the generic message is enough here.
       setForceError(labels.force.generic);
       return;
     }
