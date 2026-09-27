@@ -768,3 +768,15 @@ Nessun test preesistente toccato; nessuna riga sotto `src/server/services/`, `sr
 ### Cosa NON è stato applicato
 
 Nessuno dei findings è stato lasciato aperto: tutti i MAJOR/MINOR/LOW/NIT sopra sono chiusi. L'unica cosa esplicitamente NON fatta per mandato: nessuna riga toccata sotto `src/server/services/` (il residuo `P2028` è per contratto della 17.5, non di questo fix); nessun reset del DB e2e; nessuna suite e2e completa eseguita da questo fix agent (arbitro finale a carico della sessione principale, come da divisione dei compiti).
+
+### Arbitro finale (sessione principale, 2026-09-27)
+
+Suite completa `CI=1 scripts/e2e.sh start` su DB e2e fresco, container col compose finale (`shm_size: 1gb`, secondo `--force-recreate`), albero `141c444`:
+```
+state: DONE — E2E_EXIT=0
+--- summary ---
+  537 passed (12.4m)
+=== e2e end: 2026-09-27T09:27:21+02:00 ===
+E2E_EXIT=0
+```
+**537 passed, 0 flaky, 0 failed**, conteggio invariato (la story non aggiunge e2e). Anche l'arbitro del reviewer sul container a 512 MB era 537/537, 0 flaky.
